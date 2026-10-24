@@ -326,6 +326,38 @@ pub struct ChunkAnalysisReport {
     pub export_aliases: Vec<ExportAliasRecord>,
     pub unresolved_exports: Vec<ExportAliasRecord>,
     pub kept_top_level_declarations: Vec<KeptTopLevelDeclarationRecord>,
+    /// Syntax-derived facts captured from the original SWC parse. These are
+    /// consumed by the conservative export-reentry proof and are intentionally
+    /// omitted from the public report format.
+    #[serde(skip)]
+    pub runtime_facts: ChunkRuntimeFacts,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ChunkRuntimeFacts {
+    pub module_kind: ChunkModuleKind,
+    pub has_top_level_await: bool,
+    pub has_cjs_interop: bool,
+    pub static_requests: Vec<StaticModuleRequest>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ChunkModuleKind {
+    #[default]
+    Unknown,
+    Esm,
+}
+
+#[derive(Debug, Clone)]
+pub struct StaticModuleRequest {
+    pub specifier: String,
+    pub mode: StaticModuleRequestMode,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StaticModuleRequestMode {
+    OrdinaryEsm,
+    Unsupported,
 }
 
 /// Decomposition result for a single chunk — set during `materialize_logical_modules`.

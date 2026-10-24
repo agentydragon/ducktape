@@ -1,11 +1,28 @@
 use super::*;
 
+/// Controls only whether the source module's export surface contributes
+/// synthetic execution roots to unknown-call fallback.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ExportReentryPolicy {
+    #[default]
+    Conservative,
+    NoStaticImporterReentry,
+}
+
 /// Finds an `await` outside lazy scopes: function, arrow, method and
 /// accessor bodies and class instance-field initializers may contain
 /// `await` without making the module a top-level-await module.
 #[derive(Default)]
 struct TopLevelAwaitFinder {
     found: bool,
+}
+
+pub fn module_has_top_level_await(module: &Module) -> bool {
+    module.body.iter().any(|item| {
+        let mut finder = TopLevelAwaitFinder::default();
+        item.visit_with(&mut finder);
+        finder.found
+    })
 }
 
 impl Visit for TopLevelAwaitFinder {
@@ -168,6 +185,7 @@ where
 pub fn analyze_chunk_with_policy<F>(
     structural: StructuralChunkAnalysis<'_>,
     hints: &AnalysisHints,
+    export_reentry_policy: ExportReentryPolicy,
     source_path: Option<&str>,
     mut line_range_for_span: F,
 ) -> ChunkFactAnalysis
@@ -255,7 +273,13 @@ where
         })
         .collect();
     value_flow.augment_calls(&body, &mut facts);
-    super::sync_effects::annotate_synchronous_calls(&body, &value_flow, &shadowed, &mut facts);
+    super::sync_effects::annotate_synchronous_calls(
+        &body,
+        &value_flow,
+        &shadowed,
+        export_reentry_policy,
+        &mut facts,
+    );
     ChunkFactAnalysis {
         facts,
         top_level_await,
@@ -287,7 +311,13 @@ where
     F: FnMut(Span) -> Option<(usize, usize, usize)>,
 {
     let structural = analyze_chunk_structural(module, source_path, &mut line_range_for_span);
-    analyze_chunk_with_policy(structural, hints, source_path, line_range_for_span)
+    analyze_chunk_with_policy(
+        structural,
+        hints,
+        ExportReentryPolicy::Conservative,
+        source_path,
+        line_range_for_span,
+    )
 }
 
 /// Fold the policy-independent per-statement facts together with the

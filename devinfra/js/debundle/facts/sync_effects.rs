@@ -1341,6 +1341,7 @@ pub(crate) fn annotate_synchronous_calls(
     body: &[TopLevelItemView<'_>],
     flow: &ChunkValueFlow,
     shadowed: &BTreeSet<&'static str>,
+    export_reentry_policy: ExportReentryPolicy,
     facts: &mut [StatementFacts],
 ) {
     let index = ExecutionIndex::collect(body);
@@ -1378,8 +1379,11 @@ pub(crate) fn annotate_synchronous_calls(
         }
     }
     let owner_read_closure = FactsOwnerReadClosure::new(facts);
-    let mut exported_owners = index.exported_declaration_owners.clone();
-    exported_owners.extend(owner_read_closure.owners_for_bindings(&index.exported_bindings));
+    let mut exported_owners = BTreeSet::new();
+    if export_reentry_policy == ExportReentryPolicy::Conservative {
+        exported_owners.extend(index.exported_declaration_owners.iter().copied());
+        exported_owners.extend(owner_read_closure.owners_for_bindings(&index.exported_bindings));
+    }
     let initial_export_roots = exported_owners
         .intersection(&index.hoisted_function_owners)
         .copied()

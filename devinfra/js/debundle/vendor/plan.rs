@@ -182,6 +182,17 @@ impl VendorResolutionPlan {
         self.full_swaps.iter().map(|swap| swap.chunk_id).collect()
     }
 
+    pub fn affected_chunk_ids(&self) -> BTreeSet<ChunkId> {
+        self.boundary_renames
+            .iter()
+            .map(|plan| plan.chunk_id)
+            .chain(self.full_swaps.iter().map(|swap| swap.chunk_id))
+            .chain(self.partial_swaps.keys().copied())
+            .chain(self.bundled_partial_swaps.keys().copied())
+            .chain(self.suppressed.iter().copied())
+            .collect()
+    }
+
     /// Wire-facing full-swap resolutions keyed by chunk path — the
     /// `full` section of the combined vendor swaps report, projected
     /// straight from the plan.

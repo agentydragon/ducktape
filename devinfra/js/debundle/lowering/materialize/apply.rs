@@ -155,6 +155,7 @@ mod tests {
                 export_aliases: Vec::new(),
                 unresolved_exports: Vec::new(),
                 kept_top_level_declarations: Vec::new(),
+                runtime_facts: Default::default(),
             },
         }
     }

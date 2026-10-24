@@ -400,6 +400,7 @@ mod tests {
                         export_aliases: analysis.export_aliases,
                         unresolved_exports: Vec::new(),
                         kept_top_level_declarations: Vec::new(),
+                        runtime_facts: analysis.runtime_facts,
                     },
                 });
             }

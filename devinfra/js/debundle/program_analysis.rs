@@ -1,12 +1,14 @@
 use std::collections::HashSet;
 
-use swc_common::Spanned;
+use analysis::facts::module_has_top_level_await;
+use swc_common::{Spanned, SyntaxContext};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
 use artifact::{
-    ChunkAnalysisReport, ChunkCounts, ChunkFileRecord, ExportAliasRecord, FileRole, ImportRecord,
-    ImportSpecifierKind, ImportSpecifierRecord, KeptTopLevelDeclarationRecord,
+    ChunkAnalysisReport, ChunkCounts, ChunkFileRecord, ChunkModuleKind, ChunkRuntimeFacts,
+    ExportAliasRecord, FileRole, ImportRecord, ImportSpecifierKind, ImportSpecifierRecord,
+    KeptTopLevelDeclarationRecord, StaticModuleRequest, StaticModuleRequestMode,
     TopLevelDeclarationKind,
 };
 use binding_targets::{
@@ -61,6 +63,67 @@ fn worker_relative_specifier(node: &NewExpr) -> Option<String> {
     is_relative_specifier(&v).then_some(v)
 }
 
+fn member_is_named(member: &MemberExpr, name: &str) -> bool {
+    match &member.prop {
+        MemberProp::Ident(ident) => ident.sym == name,
+        MemberProp::Computed(computed) => match &*computed.expr {
+            Expr::Lit(Lit::Str(string)) => str_value(string) == name,
+            _ => false,
+        },
+        MemberProp::PrivateName(_) => false,
+    }
+}
+
+fn is_host_require_member(member: &MemberExpr, unresolved_context: SyntaxContext) -> bool {
+    member_is_named(member, "require")
+        && match &*member.obj {
+            Expr::MetaProp(meta) => meta.kind == MetaPropKind::ImportMeta,
+            Expr::Ident(ident) => ident.sym == *"globalThis" && ident.ctxt == unresolved_context,
+            _ => false,
+        }
+}
+
+fn import_decl_has_runtime_request(import: &ImportDecl) -> bool {
+    // The declaration-level `type` modifier is erased. Keep non-type-only
+    // imports even when all bindings are type-marked: their emitted form may
+    // still be an empty import whose dependency has evaluation side effects.
+    !import.type_only
+}
+
+fn named_export_has_runtime_request(export: &NamedExport) -> bool {
+    !export.type_only
+        && (export.src.is_some()
+            || export.specifiers.is_empty()
+            || export.specifiers.iter().any(|specifier| match specifier {
+                ExportSpecifier::Named(named) => !named.is_type_only,
+                ExportSpecifier::Default(_) | ExportSpecifier::Namespace(_) => true,
+            }))
+}
+
+fn module_decl_is_runtime_esm(decl: &ModuleDecl) -> bool {
+    match decl {
+        ModuleDecl::Import(import) => import_decl_has_runtime_request(import),
+        ModuleDecl::ExportDecl(export) => match &export.decl {
+            Decl::Fn(decl) => !decl.declare,
+            Decl::Class(decl) => !decl.declare,
+            Decl::Var(decl) => !decl.declare,
+            Decl::TsInterface(_) | Decl::TsTypeAlias(_) | Decl::TsEnum(_) | Decl::TsModule(_) => {
+                false
+            }
+            _ => true,
+        },
+        ModuleDecl::ExportNamed(export) => named_export_has_runtime_request(export),
+        ModuleDecl::ExportDefaultDecl(export) => {
+            !matches!(&export.decl, DefaultDecl::TsInterfaceDecl(_))
+        }
+        ModuleDecl::ExportDefaultExpr(_) => true,
+        ModuleDecl::ExportAll(export) => !export.type_only,
+        ModuleDecl::TsImportEquals(_)
+        | ModuleDecl::TsExportAssignment(_)
+        | ModuleDecl::TsNamespaceExport(_) => false,
+    }
+}
+
 pub struct ProgramAnalysis {
     pub imports: Vec<ImportRecord>,
     pub import_local_names: HashSet<String>,
@@ -78,6 +141,7 @@ pub struct ProgramAnalysis {
     /// `prepare_js_chunks` can decide AST retention without a second
     /// full-tree visit.
     pub has_rewritable_specifier: bool,
+    pub runtime_facts: ChunkRuntimeFacts,
 }
 
 pub struct OwnerRecord {
@@ -114,16 +178,53 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
     // rewritable-specifier presence). Each concern's `visit_*`
     // hooks live on the same struct and write into independent
     // fields, so adding/removing concerns is local.
-    let mut module_scan = ModuleScanVisitor::default();
+    let mut module_scan = ModuleScanVisitor {
+        unresolved_context: SyntaxContext::empty().apply_mark(parsed.unresolved_mark),
+        ..ModuleScanVisitor::default()
+    };
     parsed.module.visit_with(&mut module_scan);
     let ModuleScanVisitor {
         dynamic_import_count,
         observable_module_effect,
         has_rewritable_specifier,
+        has_cjs_interop: visitor_has_cjs_interop,
+        ..
     } = module_scan;
+    let has_cjs_interop = visitor_has_cjs_interop
+        || parsed.module.body.iter().any(|item| {
+            matches!(
+                item,
+                ModuleItem::ModuleDecl(
+                    ModuleDecl::TsImportEquals(_) | ModuleDecl::TsExportAssignment(_)
+                )
+            )
+        });
+
+    let mut runtime_facts = ChunkRuntimeFacts {
+        module_kind: if parsed.module.body.iter().any(
+            |item| matches!(item, ModuleItem::ModuleDecl(decl) if module_decl_is_runtime_esm(decl)),
+        ) {
+            ChunkModuleKind::Esm
+        } else {
+            ChunkModuleKind::Unknown
+        },
+        has_top_level_await: module_has_top_level_await(&parsed.module),
+        has_cjs_interop,
+        ..ChunkRuntimeFacts::default()
+    };
 
     for item in &parsed.module.body {
         if let ModuleItem::ModuleDecl(ModuleDecl::Import(decl)) = item {
+            if import_decl_has_runtime_request(decl) {
+                runtime_facts.static_requests.push(StaticModuleRequest {
+                    specifier: str_value(&decl.src),
+                    mode: if matches!(&decl.phase, ImportPhase::Evaluation) && decl.with.is_none() {
+                        StaticModuleRequestMode::OrdinaryEsm
+                    } else {
+                        StaticModuleRequestMode::Unsupported
+                    },
+                });
+            }
             let import_record = describe_import(&line_index, decl);
             import_local_names.extend(
                 import_record
@@ -133,6 +234,33 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
             );
             imports.push(import_record);
             continue;
+        }
+
+        if let ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) = item
+            && named_export_has_runtime_request(named)
+            && let Some(source) = &named.src
+        {
+            runtime_facts.static_requests.push(StaticModuleRequest {
+                specifier: str_value(source),
+                mode: if named.with.is_none() {
+                    StaticModuleRequestMode::OrdinaryEsm
+                } else {
+                    StaticModuleRequestMode::Unsupported
+                },
+            });
+        }
+
+        if let ModuleItem::ModuleDecl(ModuleDecl::ExportAll(export_all)) = item
+            && !export_all.type_only
+        {
+            runtime_facts.static_requests.push(StaticModuleRequest {
+                specifier: str_value(&export_all.src),
+                mode: if export_all.with.is_none() {
+                    StaticModuleRequestMode::OrdinaryEsm
+                } else {
+                    StaticModuleRequestMode::Unsupported
+                },
+            });
         }
 
         if let ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) = item
@@ -194,6 +322,7 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
         dynamic_import_count,
         observable_module_effect,
         has_rewritable_specifier,
+        runtime_facts,
     }
 }
 
@@ -249,6 +378,7 @@ pub fn build_chunk_manifest_from_analysis(
         export_aliases: analysis.export_aliases.clone(),
         unresolved_exports,
         kept_top_level_declarations,
+        runtime_facts: analysis.runtime_facts.clone(),
     }
 }
 
@@ -324,9 +454,19 @@ struct ModuleScanVisitor {
     dynamic_import_count: usize,
     observable_module_effect: bool,
     has_rewritable_specifier: bool,
+    has_cjs_interop: bool,
+    unresolved_context: SyntaxContext,
 }
 
 impl Visit for ModuleScanVisitor {
+    fn visit_ident(&mut self, node: &Ident) {
+        if node.ctxt == self.unresolved_context
+            && matches!(node.sym.as_ref(), "require" | "module" | "exports")
+        {
+            self.has_cjs_interop = true;
+        }
+    }
+
     fn visit_call_expr(&mut self, node: &CallExpr) {
         if matches!(node.callee, Callee::Import(_)) {
             self.dynamic_import_count += 1;
@@ -346,6 +486,11 @@ impl Visit for ModuleScanVisitor {
     }
 
     fn visit_member_expr(&mut self, node: &MemberExpr) {
+        // Treat the loader reference itself as host interop even when it is
+        // captured and called through an alias later.
+        if is_host_require_member(node, self.unresolved_context) {
+            self.has_cjs_interop = true;
+        }
         if !self.observable_module_effect
             && member_root_sym(&node.obj).is_some_and(|sym| sym == "window" || sym == "document")
         {

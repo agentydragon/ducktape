@@ -51,7 +51,9 @@ use swc_ecma_ast::Module;
 
 use analysis::AnalysisHints;
 use analysis::atomic_units::{OwnerGraphAndUnits, compute_owner_graph_and_units_with};
-use analysis::facts::{ChunkFactAnalysis, StructuralChunkAnalysis, analyze_chunk_with_policy};
+use analysis::facts::{
+    ChunkFactAnalysis, ExportReentryPolicy, StructuralChunkAnalysis, analyze_chunk_with_policy,
+};
 use analysis::graph::OwnerGraphOptions;
 use analysis::purity::{RedundantPureMemberReason, RedundantPurityReason};
 
@@ -95,13 +97,19 @@ pub fn compute_chunk_analysis<F>(
     source_path: Option<&str>,
     line_range_for_span: F,
     owner_graph_options: OwnerGraphOptions,
+    export_reentry_policy: ExportReentryPolicy,
     resolve_dynamic_import: &dyn Fn(&str) -> DynamicImportTarget,
 ) -> Result<ChunkAnalysisOutput>
 where
     F: FnMut(Span) -> Option<(usize, usize, usize)>,
 {
-    let fact_analysis =
-        analyze_chunk_with_policy(structural, hints, source_path, line_range_for_span);
+    let fact_analysis = analyze_chunk_with_policy(
+        structural,
+        hints,
+        export_reentry_policy,
+        source_path,
+        line_range_for_span,
+    );
     report_redundant_hints_to_stderr(chunk_id, &fact_analysis);
     if let Some(ord) = fact_analysis.top_level_await {
         bail!(

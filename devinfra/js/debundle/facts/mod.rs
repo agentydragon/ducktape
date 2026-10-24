@@ -75,7 +75,10 @@ pub(crate) use statement_facts::ConstructorFacts;
 pub(crate) use value_flow::{CandidateObjectIndex, ChunkValueFlow, ValueOrigin};
 
 // Public API: importable at `facts::<item>` exactly as before the split.
-pub use analyze::{analyze_chunk, analyze_chunk_structural, analyze_chunk_with_policy};
+pub use analyze::{
+    ExportReentryPolicy, analyze_chunk, analyze_chunk_structural, analyze_chunk_with_policy,
+    module_has_top_level_await,
+};
 pub use item_views::{TopLevelItemView, top_level_item_views};
 pub use local_effects::local_namespace_iife_target;
 pub use statement_facts::{

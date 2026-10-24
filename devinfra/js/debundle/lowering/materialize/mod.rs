@@ -33,6 +33,7 @@ use crate::{
     ChunkModulesCounts, ChunkModulesReport, FinalModuleContent, ReportEmission,
     RequestedLogicalModule,
 };
+use analysis::facts::ExportReentryPolicy;
 use analysis::{
     AnalysisHints, LocalEffectPolicy, LogicalModuleIndex, ModuleId, OwnerGraphAndUnits,
     OwnerGraphOptions, PlannedModule, top_level_id,
@@ -85,6 +86,7 @@ pub(super) struct ChunkContext<'a> {
     pub(super) keep_going: bool,
     pub(super) list_template_identifiers: bool,
     pub(super) report_emission: &'a ReportEmission,
+    pub(super) export_reentry_policies: &'a BTreeMap<ChunkId, ExportReentryPolicy>,
     /// Vendor-plan consultation for runtime re-import construction;
     /// `None` when no vendor mark could
     /// affect construction.
@@ -384,6 +386,7 @@ pub(super) fn finish_logical_chunk(
         target_dir,
         report_emission,
         vendor_import_oracle,
+        export_reentry_policies,
         ..
     } = context;
     let ChunkSpec {
@@ -468,6 +471,10 @@ pub(super) fn finish_logical_chunk(
         Some(&source_path),
         |span| line_index.line_range_and_start_column_for_span(span),
         owner_graph_options,
+        export_reentry_policies
+            .get(&chunk_id_interned)
+            .copied()
+            .unwrap_or_default(),
         &resolve_dynamic_import,
     )?;
     emit_debundle_progress(chunk_id, "compute_chunk_analysis", "end");

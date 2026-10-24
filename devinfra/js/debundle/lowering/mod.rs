@@ -6,10 +6,12 @@ use rayon::prelude::*;
 use serde::Serialize;
 use swc_common::GLOBALS;
 
+use analysis::facts::ExportReentryPolicy;
 use analysis::{OwnerGraphOptions, RedundantPurityHint};
 
 use artifact::{
-    ArtifactIndexes, ChunkBundle, ChunkId, SelectedModuleLowering, normalize_module_path,
+    ArtifactIndexes, ChunkBundle, ChunkId, SelectedModuleLowering, StaticModuleRequestMode,
+    normalize_module_path,
 };
 
 use output_layout::MODULES_REPORT;
@@ -227,6 +229,9 @@ pub fn materialize_logical_modules(
         prune_artifact_to_chunk_ids(&mut artifact, &selected_chunk_ids);
     }
     let artifact_indexes = ArtifactIndexes::build(&artifact)?;
+    let vendor_affected_chunk_ids = vendor_plan.affected_chunk_ids();
+    let export_reentry_policies =
+        export_reentry_policies(&artifact, &artifact_indexes, &vendor_affected_chunk_ids)?;
     // Program-level pass over the selected chunks' retained static-import
     // closure: cross-module purity verdicts for each chunk's imported
     // function bindings, consumed per chunk via
@@ -276,6 +281,7 @@ pub fn materialize_logical_modules(
                                 list_template_identifiers: options.list_template_identifiers,
                                 report_emission: &options.report_emission,
                                 vendor_import_oracle: vendor_import_oracle.as_ref(),
+                                export_reentry_policies: &export_reentry_policies,
                             },
                             spec: ChunkSpec {
                                 logical_modules,
@@ -363,4 +369,118 @@ pub fn materialize_logical_modules(
         vendor_reference_rewrites,
         unmatched_spec_claims,
     })
+}
+
+fn export_reentry_policies(
+    artifact: &ChunkBundle,
+    indexes: &ArtifactIndexes,
+    vendor_affected_chunk_ids: &BTreeSet<ChunkId>,
+) -> Result<BTreeMap<ChunkId, ExportReentryPolicy>> {
+    // An incomplete artifact cannot certify incoming host/nonordinary edges.
+    let all_chunks_present = artifact.chunks.len() == artifact.chunk_table.len();
+    let no_global_host_or_phase_escape = all_chunks_present
+        && artifact.chunks.iter().all(|chunk| {
+            !chunk.analysis.runtime_facts.has_cjs_interop
+                && chunk
+                    .analysis
+                    .runtime_facts
+                    .static_requests
+                    .iter()
+                    .all(|request| request.mode == StaticModuleRequestMode::OrdinaryEsm)
+        });
+    let mut policies = BTreeMap::new();
+    for chunk_id in artifact.list_chunk_ids() {
+        let policy = if no_global_host_or_phase_escape
+            && can_prove_no_static_importer_reentry(
+                chunk_id,
+                artifact,
+                indexes,
+                vendor_affected_chunk_ids,
+            )? {
+            ExportReentryPolicy::NoStaticImporterReentry
+        } else {
+            ExportReentryPolicy::Conservative
+        };
+        policies.insert(chunk_id, policy);
+    }
+    Ok(policies)
+}
+
+fn can_prove_no_static_importer_reentry(
+    target: ChunkId,
+    artifact: &ChunkBundle,
+    indexes: &ArtifactIndexes,
+    vendor_affected_chunk_ids: &BTreeSet<ChunkId>,
+) -> Result<bool> {
+    // A static importer can re-enter this module during evaluation only if
+    // its SCC contains the target; that SCC is contained in this closure.
+    let mut outgoing = BTreeMap::<ChunkId, BTreeSet<ChunkId>>::new();
+    let mut closure = BTreeSet::from([target]);
+    let mut pending = vec![target];
+    while let Some(source) = pending.pop() {
+        let chunk = artifact.chunk(source)?;
+        let runtime = &chunk.analysis.runtime_facts;
+        if runtime.module_kind != artifact::ChunkModuleKind::Esm
+            || runtime.has_top_level_await
+            || runtime.has_cjs_interop
+            || vendor_affected_chunk_ids.contains(&source)
+        {
+            return Ok(false);
+        }
+        for request in &runtime.static_requests {
+            if request.mode != StaticModuleRequestMode::OrdinaryEsm {
+                return Ok(false);
+            }
+            let Some(resolved) = indexes.resolve_runtime_import_reference(
+                &request.specifier,
+                source,
+                &chunk.analysis.entry_file,
+                &artifact.chunk_table,
+            ) else {
+                return Ok(false);
+            };
+            if !artifact.has_chunk(resolved.target_chunk_id) {
+                return Ok(false);
+            }
+            if artifact
+                .chunk(resolved.target_chunk_id)?
+                .analysis
+                .entry_file
+                != resolved.target_file
+            {
+                return Ok(false);
+            }
+            outgoing
+                .entry(source)
+                .or_default()
+                .insert(resolved.target_chunk_id);
+            if closure.insert(resolved.target_chunk_id) {
+                pending.push(resolved.target_chunk_id);
+            }
+        }
+    }
+
+    let mut incoming = BTreeMap::<ChunkId, BTreeSet<ChunkId>>::new();
+    for (source, targets) in &outgoing {
+        for destination in targets {
+            incoming.entry(*destination).or_default().insert(*source);
+        }
+    }
+    let mut reaches_target = BTreeSet::from([target]);
+    let mut pending = vec![target];
+    while let Some(destination) = pending.pop() {
+        if let Some(sources) = incoming.get(&destination) {
+            for source in sources {
+                if reaches_target.insert(*source) {
+                    pending.push(*source);
+                }
+            }
+        }
+    }
+    let target_has_cycle = outgoing.get(&target).is_some_and(|destinations| {
+        destinations
+            .iter()
+            .any(|destination| reaches_target.contains(destination))
+    });
+    Ok(!target_has_cycle)
 }

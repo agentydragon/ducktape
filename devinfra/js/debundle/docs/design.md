@@ -732,6 +732,19 @@ are linkage metadata and do not initialize their bindings. Direct `eval` or
 whole-chunk fallback. This broader promotion is confined to the unproved
 intrinsic call; creating a returned closure alone does not trigger it.
 
+During materialization, a target may omit those synthetic export roots only
+when the original static-import facts prove a closed ordinary-ESM dependency
+closure, with no top-level `await`, CJS interop, vendor rewrite, or pruned
+chunk, and the target belongs to a singleton static-import SCC. Ordinary ESM
+importers cannot run their bodies until the dependency finishes evaluation; a
+cycle, including a self-import, is the only static route for an importer to
+call a hoisted export while that evaluation is paused. The proof is per target,
+so unrelated open or cyclic chunks do not disable it. Unknown edges,
+unsupported import phases or attributes, and ineligible module syntax keep the
+conservative export roots.
+Executed or otherwise locally leaked callables remain roots under either
+policy.
+
 Property writes and updates have a separate accessor-effect summary. The
 index records setter definitions by static property name and source owner.
 For a potentially matching write, the executor promotes the setter owner's

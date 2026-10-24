@@ -846,6 +846,7 @@ rust_library(
     crate_root = "program_analysis.rs",
     edition = "2024",
     deps = [
+        ":analysis",
         ":artifact",
         ":binding_targets",
         ":js_ast",
