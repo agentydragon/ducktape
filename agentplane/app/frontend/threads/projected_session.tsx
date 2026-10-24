@@ -1049,6 +1049,8 @@ function ModelActivityHint({
   );
 }
 
+const DEFAULT_COMPOSER_PLACEHOLDER = "Enter sends, Shift+Enter or Ctrl+Enter for a new line";
+
 function ProjectedSessionBody({
   threadId,
   entities,
@@ -1056,6 +1058,7 @@ function ProjectedSessionBody({
   history,
   available,
   canQueueCommands,
+  composerPlaceholder,
   onStatusChange,
 }: {
   threadId: string;
@@ -1064,6 +1067,7 @@ function ProjectedSessionBody({
   history: Pick<ThreadWindow, "olderAvailable" | "loadingOlder" | "loadOlder" | "connection">;
   available: boolean;
   canQueueCommands: boolean;
+  composerPlaceholder: string;
   onStatusChange: (status: ThreadTabTitleStatus) => void;
 }): JSX.Element {
   const [draft, setDraft] = useState("");
@@ -1249,9 +1253,9 @@ function ProjectedSessionBody({
           value={draft}
           onChange={(event) => setDraft(event.currentTarget.value)}
           aria-label="Message"
-          placeholder="Enter sends, Shift+Enter or Ctrl+Enter for a new line"
+          placeholder={composerPlaceholder}
           autosize
-          minRows={2}
+          minRows={composerPlaceholder === DEFAULT_COMPOSER_PLACEHOLDER ? 2 : 4}
           maxRows={12}
           disabled={!canSend}
           onKeyDown={composerKey}
@@ -1346,12 +1350,14 @@ function SyncedThread({
   thread,
   available,
   canQueueCommands,
+  composerPlaceholder,
   onStatusChange,
 }: {
   threadId: string;
   thread: ThreadView;
   available: boolean;
   canQueueCommands: boolean;
+  composerPlaceholder: string;
   onStatusChange: (status: ThreadTabTitleStatus) => void;
 }): JSX.Element {
   const { window: shown, error } = useThreadSync().useThread();
@@ -1382,6 +1388,7 @@ function SyncedThread({
         history={shown}
         available={available}
         canQueueCommands={canQueueCommands}
+        composerPlaceholder={composerPlaceholder}
         onStatusChange={onStatusChange}
       />
     </>
@@ -1391,6 +1398,18 @@ function SyncedThread({
 /** Why the thread's sandbox cannot take commands, as the inventory last reported it; the composer's
  * dot says only "Sandbox unavailable". An absence reads as a deletion only from a current inventory:
  * a stale or dropped stream may not have seen the sandbox since. */
+function suspendedSandboxLabel(sandbox: SandboxView): string {
+  const reason = suspensionReason(sandbox);
+  return reason === null ? "Sandbox is suspended." : `Sandbox is suspended (${reason}).`;
+}
+
+function sandboxComposerPlaceholder(sandbox: SandboxView | undefined, inventoryFresh: boolean): string {
+  if (!sandbox || !inventoryFresh || !sandboxSuspended(sandbox) || !sandbox.wake_on_send) {
+    return DEFAULT_COMPOSER_PLACEHOLDER;
+  }
+  return `${suspendedSandboxLabel(sandbox)} Wake on message is on; submitted commands will queue while it wakes.`;
+}
+
 function sandboxNotice(sandbox: SandboxView | undefined, inventoryFresh: boolean): string | null {
   if (sandbox === undefined) {
     return inventoryFresh
@@ -1399,11 +1418,8 @@ function sandboxNotice(sandbox: SandboxView | undefined, inventoryFresh: boolean
   }
   if (sandboxReady(sandbox)) return null;
   if (sandboxSuspended(sandbox) && inventoryFresh) {
-    const reason = suspensionReason(sandbox);
-    const suspended = reason === null ? "Sandbox is suspended." : `Sandbox is suspended (${reason}).`;
-    return sandbox.wake_on_send
-      ? `${suspended} Wake on message is on; submitted commands will queue while it wakes.`
-      : `${suspended} Wake on message is off; submitted commands stay queued until you resume it manually.`;
+    if (sandbox.wake_on_send) return null;
+    return `${suspendedSandboxLabel(sandbox)} Wake on message is off; submitted commands stay queued until you resume it manually.`;
   }
   const summary = sandboxSummary(sandbox);
   if (inventoryFresh && sandboxStarting(sandbox)) {
@@ -1435,6 +1451,7 @@ export function ProjectedSession({
   const sandbox = environment.snapshot?.sandboxes.find((candidate) => candidate.name === thread?.sandbox);
   const notice = thread && environment.snapshot && sandboxNotice(sandbox, inventoryFresh);
   const suspended = sandboxSuspended(sandbox);
+  const composerPlaceholder = sandboxComposerPlaceholder(sandbox, inventoryFresh);
   const canQueueCommands = inventoryFresh && sandbox !== undefined && (suspended || sandboxStarting(sandbox));
   useEffect(() => {
     let current = true;
@@ -1515,6 +1532,7 @@ export function ProjectedSession({
               thread={thread}
               available={inventoryFresh && sandboxReady(sandbox)}
               canQueueCommands={canQueueCommands}
+              composerPlaceholder={composerPlaceholder}
               onStatusChange={setTabStatus}
             />
           </sync.Thread>

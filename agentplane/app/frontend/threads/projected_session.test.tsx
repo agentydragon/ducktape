@@ -409,7 +409,11 @@ it("sends the draft on Enter and clears it", async () => {
 it.each([true, false])(
   "queues a message through the Dispatcher for a fresh suspended Sandbox with wake-on-message %s",
   async (wakeOnSend) => {
-    sandboxes = [inventorySandbox("Suspended", wakeOnSend)];
+    sandboxes = [
+      wakeOnSend
+        ? { ...inventorySandbox("Suspended", true), suspended_by: "Requested" }
+        : inventorySandbox("Suspended", false),
+    ];
     sharedThread = {
       harness_state: "HARNESS_STATE_STOPPED",
       feed_status: "ended",
@@ -421,11 +425,20 @@ it.each([true, false])(
     const field = composer(container);
     expect(field.disabled).toBe(false);
     expect(button(container, "Send").disabled).toBe(true);
-    expect(container.textContent).toContain(
-      wakeOnSend
-        ? "Wake on message is on; submitted commands will queue while it wakes."
-        : "Wake on message is off; submitted commands stay queued until you resume it manually."
-    );
+    if (wakeOnSend) {
+      expect(field.placeholder).toBe(
+        "Sandbox is suspended (on request). Wake on message is on; submitted commands will queue while it wakes."
+      );
+      expect(container.textContent).not.toContain(
+        "Sandbox is suspended (on request). Wake on message is on; submitted commands will queue while it wakes."
+      );
+      expect(buttonIn(container, "Resume Sandbox")).toBeUndefined();
+    } else {
+      expect(container.textContent).toContain(
+        "Wake on message is off; submitted commands stay queued until you resume it manually."
+      );
+      expect(buttonIn(container, "Resume Sandbox")).toBeDefined();
+    }
 
     await type(field, "Continue after resume");
     await press(field, {});

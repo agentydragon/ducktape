@@ -2187,6 +2187,7 @@ function enableSuspendedSandboxWakeOnMessage(): void {
   const sandbox = SANDBOXES.find((candidate) => candidate.name === "suspended-sandbox");
   if (!sandbox) throw new Error("Missing suspended Sandbox fixture");
   sandbox.wake_on_send = true;
+  sandbox.suspended_by = "Requested";
 }
 
 function rememberDispatch(threadId = RUNNING_THREAD): void {

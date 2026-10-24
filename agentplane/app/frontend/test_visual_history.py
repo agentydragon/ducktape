@@ -371,11 +371,12 @@ async def test_dispatcher_queued_while_sandbox_wakes(
     await view.check(context="fixture ready")
     page = view.page
     await expect(page.get_by_role("textbox", name="Message")).to_be_enabled()
-    await expect(
-        page.get_by_text(
-            "Sandbox is suspended. Wake on message is on; submitted commands will queue while it wakes.", exact=True
-        )
-    ).to_be_visible()
+    await expect(page.get_by_role("textbox", name="Message")).to_have_attribute(
+        "placeholder",
+        "Sandbox is suspended (on request). Wake on message is on; submitted commands will queue while it wakes.",
+    )
+    await expect(page.get_by_text("Sandbox is suspended", exact=False)).to_have_count(0)
+    await expect(page.get_by_role("button", name="Resume Sandbox")).to_have_count(0)
     row = page.locator('[data-command-id="queued-dispatch"]')
     await expect(row).to_contain_text("Sandbox is waking; message is queued")
     await expect(row.locator('[data-stage="queued"]')).to_be_visible()
