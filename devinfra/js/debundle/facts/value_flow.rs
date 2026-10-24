@@ -1272,7 +1272,7 @@ enum FlowEvent {
     },
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 enum FlowDependency {
     Binding(Id),
     Property(u32, String),
@@ -1316,7 +1316,7 @@ impl FlowProgram {
             },
             events: self.events,
             dependencies: Vec::new(),
-            watchers: BTreeMap::new(),
+            watchers: HashMap::new(),
             pending: BTreeSet::new(),
             scheduled_round: Vec::new(),
             round_zero_new_parameters: BTreeSet::new(),
@@ -1567,7 +1567,7 @@ struct FlowSolver {
     flow: ChunkValueFlow,
     events: Vec<FlowEvent>,
     dependencies: Vec<BTreeSet<FlowDependency>>,
-    watchers: BTreeMap<FlowDependency, BTreeSet<usize>>,
+    watchers: HashMap<FlowDependency, Vec<usize>>,
     pending: BTreeSet<(usize, usize)>,
     scheduled_round: Vec<Option<usize>>,
     round_zero_new_parameters: BTreeSet<u32>,
@@ -1590,11 +1590,17 @@ impl FlowSolver {
         // Legacy convergence only counted value-map merges, not params metadata.
         if self.round_zero_had_fact_change {
             let functions = std::mem::take(&mut self.round_zero_new_parameters);
-            for function in functions {
-                if let Some(watchers) = self.watchers.get(&FlowDependency::Parameters(function)) {
-                    let watchers: Vec<_> = watchers.iter().copied().collect();
-                    for watcher in watchers {
-                        self.schedule(watcher, 1);
+            {
+                let watchers_by_dependency = &self.watchers;
+                let pending = &mut self.pending;
+                let scheduled_round = &mut self.scheduled_round;
+                for function in functions {
+                    if let Some(watchers) =
+                        watchers_by_dependency.get(&FlowDependency::Parameters(function))
+                    {
+                        for &watcher in watchers {
+                            schedule_event(pending, scheduled_round, watcher, 1);
+                        }
                     }
                 }
             }
@@ -1812,8 +1818,10 @@ impl FlowSolver {
 
     fn record_event_dependencies(&mut self, index: usize, dependencies: BTreeSet<FlowDependency>) {
         for dependency in dependencies {
+            // The per-event set admits each watcher once, so a Vec is a compact
+            // lookup-only reverse index with the same uniqueness semantics.
             if self.dependencies[index].insert(dependency.clone()) {
-                self.watchers.entry(dependency).or_default().insert(index);
+                self.watchers.entry(dependency).or_default().push(index);
             }
         }
     }
@@ -1826,12 +1834,14 @@ impl FlowSolver {
         changed: BTreeSet<FlowDependency>,
     ) {
         // Preserve sweep timing: only later source-order events can run this round.
+        let watchers_by_dependency = &self.watchers;
+        let pending = &mut self.pending;
+        let scheduled_round = &mut self.scheduled_round;
         for dependency in changed {
-            let Some(watchers) = self.watchers.get(&dependency) else {
+            let Some(watchers) = watchers_by_dependency.get(&dependency) else {
                 continue;
             };
-            let watchers: Vec<_> = watchers.iter().copied().collect();
-            for watcher in watchers {
+            for &watcher in watchers {
                 if initial_sweep && watcher > index {
                     continue;
                 }
@@ -1840,20 +1850,27 @@ impl FlowSolver {
                 } else {
                     round.checked_add(1).expect("value-flow round overflow")
                 };
-                self.schedule(watcher, next_round);
+                // Watcher visitation order is immaterial: the pending set keeps
+                // source-index order and schedule_event retains the earliest round.
+                schedule_event(pending, scheduled_round, watcher, next_round);
             }
         }
     }
+}
 
-    fn schedule(&mut self, index: usize, round: usize) {
-        if self.scheduled_round[index].is_some_and(|scheduled| scheduled <= round) {
-            return;
-        }
-        if let Some(scheduled) = self.scheduled_round[index].replace(round) {
-            self.pending.remove(&(scheduled, index));
-        }
-        self.pending.insert((round, index));
+fn schedule_event(
+    pending: &mut BTreeSet<(usize, usize)>,
+    scheduled_round: &mut [Option<usize>],
+    index: usize,
+    round: usize,
+) {
+    if scheduled_round[index].is_some_and(|scheduled| scheduled <= round) {
+        return;
     }
+    if let Some(scheduled) = scheduled_round[index].replace(round) {
+        pending.remove(&(scheduled, index));
+    }
+    pending.insert((round, index));
 }
 
 pub(crate) fn static_prop(prop: &MemberProp) -> Option<String> {
