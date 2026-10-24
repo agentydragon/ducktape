@@ -50,25 +50,9 @@ SERVICE = ServiceRef(
 )
 _CONFIG_SECRET = "cli-proxy-api-config"
 _DATA_CLAIM = "cli-proxy-api-state"
-_SEAWEED_DATA_CLAIM = "cli-proxy-api-data"
 _INIT_RESOURCES = k8s.ResourceRequirements(
     requests={"cpu": k8s.Quantity.from_string("10m"), "memory": k8s.Quantity.from_string("16Mi")},
     limits={"memory": k8s.Quantity.from_string("64Mi")},
-)
-# One-time copy of the auth files off the Seaweed claim; the marker makes later starts skip it.
-_SEAWEED_COPY = k8s.Container(
-    name="copy-from-seaweed",
-    image="busybox:1.38",
-    resources=_INIT_RESOURCES,
-    command=[
-        "sh",
-        "-ec",
-        "[ -e /data/.copied-from-seaweed ] || { cp -a /seaweed/. /data/ && touch /data/.copied-from-seaweed; }",
-    ],
-    volume_mounts=[
-        k8s.VolumeMount(name="seaweed-data", mount_path="/seaweed", read_only=True),
-        k8s.VolumeMount(name="data", mount_path="/data"),
-    ],
 )
 _ADMIN_OIDC = SecretRef(namespace=NAMESPACE, name="cli-proxy-api-admin-oidc")
 # The SOPS-managed management key; aiquota reads it too.
@@ -94,22 +78,6 @@ def _data_claim(scope: Construct) -> None:
             access_modes=["ReadWriteOnce"],
             storage_class_name="piraeus-ssd-2-autodiskful",
             resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("256Mi")}),
-        ),
-    )
-    # CLEANUP(added 2026-10-24): Remove this claim, its volume and `_SEAWEED_COPY` once the Pod has
-    #   started on `_DATA_CLAIM` with the copied auth files. Prune is disabled first so dropping the
-    #   declaration leaves the claim (and its Seaweed data, reclaim Delete) as a backup until the
-    #   owner releases it.
-    k8s.KubePersistentVolumeClaim(
-        scope,
-        "seaweed-data",
-        metadata=k8s.ObjectMeta(
-            name=_SEAWEED_DATA_CLAIM, namespace=NAMESPACE, annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"}
-        ),
-        spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteOnce"],
-            storage_class_name="seaweedfs-ovh",
-            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("1Gi")}),
         ),
     )
 
@@ -158,20 +126,16 @@ def _deployment(scope: Construct) -> None:
                     security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
                     automount_service_account_token=False,
                     image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
-                    # Existing Seaweed PVs can lack node affinity. The CSI driver runs only in OVH;
-                    # StorageClass allowedTopologies does not constrain an already-bound claim.
-                    node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
                     # Allow control planes as overflow capacity for this single-writer service.
                     tolerations=[node_scheduling.CONTROL_PLANE_TOLERATION],
                     init_containers=[
-                        _SEAWEED_COPY,
                         k8s.Container(
                             name="init-auth-dir",
                             image="busybox:1.38",
                             resources=_INIT_RESOURCES,
                             command=["sh", "-c", "mkdir -p /data/auth"],
                             volume_mounts=[k8s.VolumeMount(name="data", mount_path="/data")],
-                        ),
+                        )
                     ],
                     containers=[
                         k8s.Container(
@@ -215,12 +179,6 @@ def _deployment(scope: Construct) -> None:
                         k8s.Volume(
                             name="data",
                             persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(claim_name=_DATA_CLAIM),
-                        ),
-                        k8s.Volume(
-                            name="seaweed-data",
-                            persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(
-                                claim_name=_SEAWEED_DATA_CLAIM, read_only=True
-                            ),
                         ),
                     ],
                 ),

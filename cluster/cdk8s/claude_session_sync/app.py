@@ -41,7 +41,6 @@ HOSTNAME = "claude-session-sync.allegedly.works"
 _OIDC = SecretRef(namespace=NAMESPACE, name="claude-session-sync-oidc")
 _OIDC_FIELDS = ("oidc_issuer", "oidc_client_id", "oidc_client_secret", "oidc_session_secret", "oidc_allowed_subject")
 _DATA_CLAIM = "claude-session-sync-state"
-_SEAWEED_DATA_CLAIM = "claude-session-sync-data"
 _DATA_DIR = "/data"
 _CREDENTIALS_FILE = f"{_DATA_DIR}/credentials.json"
 _CONTROL_NAME = f"{NAME}-control"  # the control Pods' label value and container name
@@ -103,42 +102,6 @@ def _data_claim(chart: Chart) -> None:
             resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("64Mi")}),
         ),
     )
-    # CLEANUP(added 2026-10-24): Remove this claim, its volume and `_SEAWEED_COPY` once the control Pod has
-    #   started on `_DATA_CLAIM` with the copied credential. Prune is disabled first so dropping the
-    #   declaration leaves the claim (and its Seaweed data, reclaim Delete) as a backup until the owner
-    #   releases it.
-    k8s.KubePersistentVolumeClaim(
-        chart,
-        "seaweed-data",
-        metadata=k8s.ObjectMeta(
-            name=_SEAWEED_DATA_CLAIM, namespace=NAMESPACE, annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"}
-        ),
-        spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteOnce"],
-            storage_class_name="seaweedfs-ovh",
-            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("1Gi")}),
-        ),
-    )
-
-
-# One-time copy of the credential off the Seaweed claim; the marker makes later starts skip it.
-_SEAWEED_COPY = k8s.Container(
-    name="copy-from-seaweed",
-    image="busybox:1.38",
-    resources=k8s.ResourceRequirements(
-        requests={"cpu": k8s.Quantity.from_string("10m"), "memory": k8s.Quantity.from_string("16Mi")},
-        limits={"memory": k8s.Quantity.from_string("64Mi")},
-    ),
-    command=[
-        "sh",
-        "-ec",
-        f"[ -e {_DATA_DIR}/.copied-from-seaweed ] || {{ cp -a /seaweed/. {_DATA_DIR}/ && touch {_DATA_DIR}/.copied-from-seaweed; }}",
-    ],
-    volume_mounts=[
-        k8s.VolumeMount(name="seaweed-data", mount_path="/seaweed", read_only=True),
-        k8s.VolumeMount(name="data", mount_path=_DATA_DIR),
-    ],
-)
 
 
 def _healthz(service: ServiceRef, *, initial_delay_seconds: int, period_seconds: int) -> k8s.Probe:
@@ -165,7 +128,6 @@ def _deployment(
     description: str,
     volumes: list[k8s.Volume] | None = None,
     volume_mounts: list[k8s.VolumeMount] | None = None,
-    init_containers: list[k8s.Container] | None = None,
     tolerate_control_plane: bool = False,
 ) -> None:
     deployment = k8s.KubeDeployment(
@@ -186,7 +148,6 @@ def _deployment(
                     security_context=k8s.PodSecurityContext(
                         run_as_non_root=True, run_as_user=_UID, run_as_group=_UID, fs_group=_UID
                     ),
-                    init_containers=init_containers,
                     containers=[
                         k8s.Container(
                             name=container,
@@ -264,16 +225,9 @@ def _control_deployment(chart: Chart) -> None:
         volumes=[
             k8s.Volume(
                 name="data", persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(claim_name=_DATA_CLAIM)
-            ),
-            k8s.Volume(
-                name="seaweed-data",
-                persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(
-                    claim_name=_SEAWEED_DATA_CLAIM, read_only=True
-                ),
-            ),
+            )
         ],
         volume_mounts=[k8s.VolumeMount(name="data", mount_path=_DATA_DIR)],
-        init_containers=[_SEAWEED_COPY],
         tolerate_control_plane=True,
     )
 

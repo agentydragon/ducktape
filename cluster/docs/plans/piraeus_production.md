@@ -637,16 +637,19 @@ Review Grocy's backup destinations independently, preserving verified recovery
 outside each primary's failure set. Inventory direct S3 consumers as well as
 PVCs; object data and backups need an explicit retained or replacement service.
 
-Owner decisions, 2026-10-24: `cli-proxy-api-data` and `claude-session-sync-data`
-move with their contents to the replicated `piraeus-ssd-2-autodiskful` class.
-GitHub API proxy capture, the Haku UI WALs and Matrix media restart on new empty
-claims. Each new claim is sized to its data with growth headroom rather than the
-old 1–100Gi requests; keep each old Seaweed claim unmounted (unpruned) as the
-backup until the owner releases it. The class still needs its own acceptance
-before any of these move: placement stays in `hil-ovh` and off `optiplex`,
-diskless attach from a worker, auto-diskful follow and cleanup on a control
-plane, primary-node loss with quorum suspend-io, resync, expansion. Run the
-node-loss step only once no Seaweed evacuation is in flight.
+Owner decisions, 2026-10-24: consumers move to the replicated
+`piraeus-ssd-2-autodiskful` class. CLIProxyAPI, Claude session sync, GitHub API
+proxy capture and Matrix media have moved; their old Seaweed claims stay
+unmounted (unpruned) as backups until the owner releases them. The Haku UI WALs
+restart on new empty claims, sized to their data with growth headroom, in the
+haku-state manifest. Still to run for the class: primary-node loss with quorum
+suspend-io, resync and expansion, once no Seaweed evacuation is in flight.
+
+Goal, owner 2026-10-24: multi-writer (RWX) storage on Piraeus eventually, so
+Forgejo-style shared volumes can leave Seaweed too. Today's Piraeus volumes are
+RWO filesystems; candidates are linstor-csi's NFS export (drbd-reactor failover)
+if the deployed version supports it, otherwise a separate shared-filesystem
+design.
 
 Pilot one app, verify copy/application/backup and controlled failover behavior,
 then migrate serially. Qualify the intended site, copy count, fencing, degraded

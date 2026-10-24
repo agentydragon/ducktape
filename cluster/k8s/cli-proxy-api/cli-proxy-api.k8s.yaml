@@ -20,21 +20,6 @@ spec:
       storage: 256Mi
   storageClassName: piraeus-ssd-2-autodiskful
 ---
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  annotations:
-    kustomize.toolkit.fluxcd.io/prune: disabled
-  name: cli-proxy-api-data
-  namespace: cli-proxy-api
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 1Gi
-  storageClassName: seaweedfs-ovh
----
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
@@ -163,24 +148,6 @@ spec:
       initContainers:
         - command:
             - sh
-            - -ec
-            - "[ -e /data/.copied-from-seaweed ] || { cp -a /seaweed/. /data/ && touch /data/.copied-from-seaweed; }"
-          image: busybox:1.38
-          name: copy-from-seaweed
-          resources:
-            limits:
-              memory: 64Mi
-            requests:
-              cpu: 10m
-              memory: 16Mi
-          volumeMounts:
-            - mountPath: /seaweed
-              name: seaweed-data
-              readOnly: true
-            - mountPath: /data
-              name: data
-        - command:
-            - sh
             - -c
             - mkdir -p /data/auth
           image: busybox:1.38
@@ -194,8 +161,6 @@ spec:
           volumeMounts:
             - mountPath: /data
               name: data
-      nodeSelector:
-        topology.kubernetes.io/zone: hil-ovh
       securityContext:
         seccompProfile:
           type: RuntimeDefault
@@ -210,10 +175,6 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: cli-proxy-api-state
-        - name: seaweed-data
-          persistentVolumeClaim:
-            claimName: cli-proxy-api-data
-            readOnly: true
 ---
 apiVersion: v1
 kind: Service

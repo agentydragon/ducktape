@@ -171,21 +171,6 @@ spec:
       storage: 64Mi
   storageClassName: piraeus-ssd-2-autodiskful
 ---
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  annotations:
-    kustomize.toolkit.fluxcd.io/prune: disabled
-  name: claude-session-sync-data
-  namespace: claude-session-sync
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 1Gi
-  storageClassName: seaweedfs-ovh
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -365,30 +350,6 @@ spec:
               name: data
       imagePullSecrets:
         - name: forgejo-images-creds
-      initContainers:
-        - command:
-            - sh
-            - -ec
-            - "[ -e /data/.copied-from-seaweed ] || { cp -a /seaweed/. /data/ && touch /data/.copied-from-seaweed; }"
-          image: busybox:1.38
-          name: copy-from-seaweed
-          resources:
-            limits:
-              memory: 64Mi
-            requests:
-              cpu: 10m
-              memory: 16Mi
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
-          volumeMounts:
-            - mountPath: /seaweed
-              name: seaweed-data
-              readOnly: true
-            - mountPath: /data
-              name: data
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
       securityContext:
@@ -406,10 +367,6 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: claude-session-sync-state
-        - name: seaweed-data
-          persistentVolumeClaim:
-            claimName: claude-session-sync-data
-            readOnly: true
 ---
 apiVersion: v1
 kind: Service
