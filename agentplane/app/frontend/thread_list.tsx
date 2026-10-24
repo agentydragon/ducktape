@@ -74,8 +74,7 @@ function ThreadRow({
   ]
     .filter(Boolean)
     .join(" ");
-  // TODO: Archive's Enter/Space events also trigger row navigation. Use sibling controls or scope
-  // the row's keyboard handler to events targeting the row itself.
+  // The Archive button is inside the keyboard-activated row, so only the row itself should navigate.
   return (
     <div
       className={className}
@@ -84,6 +83,7 @@ function ThreadRow({
       title={readonly ? "Sandbox deleted — read only" : undefined}
       onClick={() => onOpen(thread)}
       onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return;
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
           onOpen(thread);
