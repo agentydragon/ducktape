@@ -154,12 +154,28 @@ status links to that invocation while the native `Test & Build` job is still
 running. Open that status and stream the same log locally with:
 
 ```bash
-bbapi invocation watch <invocation-id>
+set +e
+bbapi invocation watch <invocation-id> --fail-on-test-failure --result-file "$RUNNER_TEMP/invocation.json"
+watch_exit=$?
+set -e
+jq -r '"\(.state) \(.reason) \(.failed_test // \"\")"' "$RUNNER_TEMP/invocation.json"
 ```
 
 To stop as soon as BuildBuddy indexes the first non-passing `TestResult`, use
 `--fail-on-test-failure`. The command returns nonzero with the failing target
 label; the normal workflow continues collecting its remaining test results.
+`--result-file` atomically writes versioned JSON state without mixing it into
+the streamed log. It first writes `state: "pending"`, `reason: "watching"`;
+then it writes one final result. The schema has `version`, `invocation_id`,
+`url`, `state`, `reason`, and `invocation_complete` fields, plus `failed_test`
+when a test fails. States are `pending`, `success`, `failure`, and `error`;
+reasons are `watching`, `completed`, `test_failure`, and `disconnected`. On
+early failure it writes `state: "failure"` and `reason: "test_failure"` before
+returning nonzero. `invocation_complete` says whether BuildBuddy had already
+marked the invocation complete. If the watcher exits before it observes an
+outcome, the file remains pending; do not treat that as a test result.
+The shell must capture `watch_exit` before reading the result file.
+
 The status is informational and settles to the final invocation result; the
 native `Test & Build` job remains authoritative.
 

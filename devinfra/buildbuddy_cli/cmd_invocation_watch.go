@@ -2,9 +2,13 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	commonpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
@@ -19,6 +23,7 @@ import (
 func invocationWatchCmd() *cobra.Command {
 	var pollInterval time.Duration
 	var failOnTestFailure bool
+	var resultFile string
 	cmd := &cobra.Command{
 		Use:   "watch <invocation-id>",
 		Short: "Stream live BuildBuddy logs for an invocation",
@@ -26,19 +31,87 @@ func invocationWatchCmd() *cobra.Command {
 
 The log comes from BuildBuddy's event log, which is written from the Build Event
 Stream. Use --fail-on-test-failure to exit as soon as BuildBuddy indexes a
-non-passing test result, even if Bazel is still running other tests.`,
+non-passing test result, even if Bazel is still running other tests. Use
+--result-file to atomically write a versioned JSON outcome while keeping the
+live log on stdout.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			c, err := newClient()
 			if err != nil {
 				return err
 			}
-			return watchInvocation(c, args[0], os.Stdout, pollInterval, failOnTestFailure)
+			return watchInvocation(c, args[0], os.Stdout, pollInterval, failOnTestFailure, resultFile)
 		},
 	}
 	cmd.Flags().DurationVar(&pollInterval, "poll-interval", 2*time.Second, "How often to check for new log chunks")
 	cmd.Flags().BoolVar(&failOnTestFailure, "fail-on-test-failure", false, "Exit when the first non-passing test result is indexed")
+	cmd.Flags().StringVar(&resultFile, "result-file", "", "Write pending and final JSON watch states to this file")
 	return cmd
+}
+
+// invocationWatchResult is the machine-readable outcome of an invocation watch.
+// Version lets scripts reject an incompatible future schema explicitly.
+type invocationWatchResult struct {
+	Version            int    `json:"version"`
+	InvocationID       string `json:"invocation_id"`
+	URL                string `json:"url"`
+	State              string `json:"state"`
+	Reason             string `json:"reason"`
+	InvocationComplete bool   `json:"invocation_complete"`
+	FailedTest         string `json:"failed_test,omitempty"`
+}
+
+func writeInvocationWatchResult(path string, result invocationWatchResult) error {
+	if path == "" {
+		return nil
+	}
+
+	data, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal invocation watch result: %w", err)
+	}
+	data = append(data, '\n')
+
+	temp, err := os.CreateTemp(filepath.Dir(path), ".bbapi-invocation-watch-*.json")
+	if err != nil {
+		return fmt.Errorf("create invocation watch result: %w", err)
+	}
+	tempPath := temp.Name()
+	defer os.Remove(tempPath)
+	if _, err := temp.Write(data); err != nil {
+		_ = temp.Close()
+		return fmt.Errorf("write invocation watch result: %w", err)
+	}
+	if err := temp.Close(); err != nil {
+		return fmt.Errorf("close invocation watch result: %w", err)
+	}
+	if err := os.Rename(tempPath, path); err != nil {
+		return fmt.Errorf("publish invocation watch result: %w", err)
+	}
+	return nil
+}
+
+func invocationWatchOutcome(c *client, invocationID, state, reason string, complete bool, failedTest string) invocationWatchResult {
+	baseURL := strings.TrimRight(c.baseURL, "/")
+	if baseURL == "" {
+		baseURL = defaultBaseURL
+	}
+	return invocationWatchResult{
+		Version:            1,
+		InvocationID:       invocationID,
+		URL:                fmt.Sprintf("%s/invocation/%s", baseURL, url.PathEscape(invocationID)),
+		State:              state,
+		Reason:             reason,
+		InvocationComplete: complete,
+		FailedTest:         failedTest,
+	}
+}
+
+func recordInvocationWatchOutcome(resultFile string, c *client, invocationID, state, reason string, complete bool, failedTest string) error {
+	return writeInvocationWatchResult(
+		resultFile,
+		invocationWatchOutcome(c, invocationID, state, reason, complete, failedTest),
+	)
 }
 
 func getInvocation(c *client, invocationID string) (*invocationpb.Invocation, error) {
@@ -76,9 +149,14 @@ func failedTest(c *client, invocationID, groupID string) (string, error) {
 	return "", nil
 }
 
-func watchInvocation(c *client, invocationID string, out io.Writer, pollInterval time.Duration, failFast bool) error {
+func watchInvocation(c *client, invocationID string, out io.Writer, pollInterval time.Duration, failFast bool, resultFile string) error {
 	if pollInterval <= 0 {
 		return fmt.Errorf("poll interval must be positive")
+	}
+	// Replace any previous result before the first API call so a failed lookup
+	// cannot leave a stale terminal result for callers to mistake as current.
+	if err := recordInvocationWatchOutcome(resultFile, c, invocationID, "pending", "watching", false, ""); err != nil {
+		return err
 	}
 	inv, err := getInvocation(c, invocationID)
 	if err != nil {
@@ -133,6 +211,10 @@ func watchInvocation(c *client, invocationID string, out io.Writer, pollInterval
 						return fmt.Errorf("check test results: %w", err)
 					}
 					if label != "" {
+						complete := inv.GetInvocationStatus() == invocationstatuspb.InvocationStatus_COMPLETE_INVOCATION_STATUS
+						if err := recordInvocationWatchOutcome(resultFile, c, invocationID, "failure", "test_failure", complete, label); err != nil {
+							return fmt.Errorf("first non-passing test result: %s (write result: %w)", label, err)
+						}
 						return fmt.Errorf("first non-passing test result: %s", label)
 					}
 				}
@@ -154,14 +236,28 @@ func watchInvocation(c *client, invocationID string, out io.Writer, pollInterval
 				return fmt.Errorf("check test results: %w", err)
 			}
 			if label != "" {
+				complete := inv.GetInvocationStatus() == invocationstatuspb.InvocationStatus_COMPLETE_INVOCATION_STATUS
+				if err := recordInvocationWatchOutcome(resultFile, c, invocationID, "failure", "test_failure", complete, label); err != nil {
+					return fmt.Errorf("first non-passing test result: %s (write result: %w)", label, err)
+				}
 				return fmt.Errorf("first non-passing test result: %s", label)
 			}
 		}
 
 		switch inv.GetInvocationStatus() {
 		case invocationstatuspb.InvocationStatus_COMPLETE_INVOCATION_STATUS:
+			state := "failure"
+			if inv.GetSuccess() {
+				state = "success"
+			}
+			if err := recordInvocationWatchOutcome(resultFile, c, invocationID, state, "completed", true, ""); err != nil {
+				return err
+			}
 			return nil
 		case invocationstatuspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS:
+			if err := recordInvocationWatchOutcome(resultFile, c, invocationID, "error", "disconnected", false, ""); err != nil {
+				return err
+			}
 			return fmt.Errorf("BuildBuddy invocation %s disconnected before completion", invocationID)
 		}
 		<-ticker.C
