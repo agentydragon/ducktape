@@ -568,7 +568,8 @@ console.log(globalThis.earlyRead, globalThis.earlyValue, later);
 
 #[test]
 fn no_sync_callback_member_hint_keeps_stored_provider_deferred() {
-    let source = r#"import { registry } from "./registry.js";
+    let source = r#"import { registry as importedRegistry } from "./registry.js";
+const registry = importedRegistry;
 const provider = { read() { return later; } };
 registry.registerProvider(provider);
 const later = 42;
@@ -589,7 +590,8 @@ console.log("ready");
 fn unhinted_unknown_registration_still_preserves_callback_tdz() {
     expect_atomic_conflict_rejection(
         FixtureOpts::new(
-            r#"import { registry } from "./registry.js";
+            r#"import { registry as importedRegistry } from "./registry.js";
+const registry = importedRegistry;
 const provider = { read() { return later; } };
 registry.registerProvider(provider);
 const later = 42;

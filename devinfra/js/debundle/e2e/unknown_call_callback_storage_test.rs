@@ -80,6 +80,37 @@ fn same_owner_assignment_is_visible_to_unknown_call_callback() {
 }
 
 #[test]
+fn assignment_before_opaque_call_publishes_the_exported_var_callback() {
+    const PEER: &str = r#"import { reader } from "./app.js";
+globalThis.host = () => {
+  try { globalThis.observed = reader(); }
+  catch (error) { globalThis.observed = error.name; }
+};
+export {};
+"#;
+    const PROVIDER: &str = r#"import "./peer.js";
+export var reader;
+const outcome = (reader = () => later, host());
+const later = 42;
+console.log(globalThis.observed);
+export { outcome, later };
+"#;
+    let peer = [("static/peer", PEER)];
+    let peer_modules = [("static/peer", Vec::new())];
+    let fixture = run_fixture(
+        FixtureOpts::new(PROVIDER, vec![])
+            .with_extra_chunks(&peer)
+            .with_extra_chunk_logical_modules(&peer_modules),
+    );
+    assert_preserved_entry_output(&fixture, "ReferenceError\n");
+    expect_atomic_conflict_rejection(
+        split_later(PROVIDER, &["reader", "outcome"]).with_extra_chunks(&peer),
+        &["callbacks/invocation", "values/later"],
+        &[],
+    );
+}
+
+#[test]
 fn provider_peer_cycle_rejects_split_and_colocation_preserves_tdz() {
     const PEER: &str = r#"import "./app.js";
 globalThis.host = () => {
