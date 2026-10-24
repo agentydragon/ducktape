@@ -56,7 +56,8 @@ func newCodexServer(r *Runner, launch harness.LaunchConfig) *codexServer {
 }
 
 // host returns the running app-server with `s` among its hosted Sessions, starting one if none runs.
-// Concurrent callers share one start.
+// Concurrent callers share one start. The Session that starts it is hosted from the first output, so it
+// records what the app-server writes before answering initialize, and the exit of a failed start.
 func (c *codexServer) host(ctx context.Context, s *Session) (*codexProcess, error) {
 	for {
 		c.mu.Lock()
@@ -77,7 +78,7 @@ func (c *codexServer) host(ctx context.Context, s *Session) (*codexProcess, erro
 			started := make(chan struct{})
 			c.starting = started
 			c.mu.Unlock()
-			err := c.start(ctx)
+			err := c.start(ctx, s)
 			c.mu.Lock()
 			c.starting = nil
 			close(started)
@@ -96,7 +97,7 @@ func (c *codexServer) host(ctx context.Context, s *Session) (*codexProcess, erro
 	}
 }
 
-func (c *codexServer) start(ctx context.Context) error {
+func (c *codexServer) start(ctx context.Context, s *Session) error {
 	command, err := codex.ServerCommand(c.launch)
 	if err != nil {
 		return err
@@ -124,6 +125,7 @@ func (c *codexServer) start(ctx context.Context) error {
 		id: uuid.NewString(), process: process, router: codex.NewRouter[*Session](),
 		state: runnerpb.ProcessState_PROCESS_STATE_STARTING, initialized: make(chan error, 1), ended: make(chan struct{}),
 	}
+	p.router.Host(s)
 	p.readers.Add(2)
 	go c.readStdout(p)
 	go c.readStderr(p)
@@ -145,6 +147,9 @@ func (c *codexServer) start(ctx context.Context) error {
 		err = process.WriteLine(ctx, string(initialized))
 	}
 	if err != nil {
+		s.mu.Lock()
+		s.stopping = true
+		s.mu.Unlock()
 		stopErr := process.Stop(context.WithoutCancel(ctx), 5*time.Second)
 		p.readers.Wait()
 		return errors.Join(fmt.Errorf("Codex app-server startup failed: %w; %s", err, process.ExitDescription()), stopErr)

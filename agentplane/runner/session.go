@@ -529,9 +529,11 @@ func (s *Session) startOnCodexServer(ctx context.Context) error {
 	}
 	server := s.runner.codex
 	adapter := codex.New(s, server.store)
-	// Frames for every hosted Session can reach this one as soon as it is hosted.
+	// Frames for every hosted Session, and the exit of a start it makes, can reach this one as soon as
+	// it is hosted.
 	s.mu.Lock()
 	s.adapter = adapter
+	s.stopping = false
 	s.mu.Unlock()
 	p, err := server.host(ctx, s)
 	if err != nil {
@@ -541,7 +543,6 @@ func (s *Session) startOnCodexServer(ctx context.Context) error {
 	s.process = p.process
 	s.codex = p
 	s.processID = p.id
-	s.stopping = false
 	s.mu.Unlock()
 	server.handshakeMu.Lock()
 	err = s.prepare(ctx, adapter, p.process.PID())
