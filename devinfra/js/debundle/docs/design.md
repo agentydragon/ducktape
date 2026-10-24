@@ -949,9 +949,13 @@ host-, or export-provided callbacks, and must not publish the callback outside
 the returned fresh ordinary callable/plain-object graph. It must not
 synchronously access importer-owned state through another route, including
 imported lexical cells or caller-owned objects. Provider-private effects are
-allowed. The consumer may later reach or invoke the captured callback through that result. Authors must audit
-all provider branches and helpers, callback-bearing property access, and
-prototype integrity; the returned graph must contain no proxies or accessors.
+allowed. A retained input must be a fresh ordinary callable/plain-object graph
+from another audited factory; the outer factory must return another such graph
+that retains the original callback. The consumer may later reach or invoke the
+captured callback through that result. Authors must audit all provider and type
+branches, helpers, callback-bearing property access on both input and result,
+and prototype integrity; neither graph may contain proxies or accessors at the
+call.
 Nested audited factories retain the original callback through each returned
 graph. Invoking or publishing a result before the captured lexical cells are
 initialized reactivates the ordinary callback-read analysis. Namespace member

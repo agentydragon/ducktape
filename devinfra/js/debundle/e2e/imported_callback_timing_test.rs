@@ -492,3 +492,33 @@ fn namespace_alias_mutation_disables_the_factory_contract() {
         &[],
     );
 }
+
+#[test]
+fn altered_retained_object_cannot_hide_an_early_accessor_read() {
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            "import { api } from './peer.js';\n\
+             const inner = api.make(() => 0);\n\
+             const configured = Object.defineProperty(inner, 'invoke', { get() { return later; } });\n\
+             const wrapped = api.wrap(inner);\n\
+             const later = 42;\nconsole.log(wrapped.invoke());\n",
+            vec![
+                logical_module(
+                    "callbacks/wrapped",
+                    &[
+                        Member::new("inner"),
+                        Member::new("configured"),
+                        Member::new("wrapped"),
+                    ],
+                ),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        )
+        .with_extra_chunks(&[("static/peer", NAMESPACE_FACTORY)])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+            .with_callback_factory_members("api", &["make", "wrap"])
+            .build()]),
+        &["callbacks/wrapped", "values/later"],
+        &[],
+    );
+}

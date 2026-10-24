@@ -171,10 +171,12 @@ pub struct ChunkExportPurity {
     /// allowed, including imported lexical cells or caller-owned objects.
     /// Provider-private effects are allowed.
     /// Call sites must pass exactly one non-spread inline function or arrow
-    /// callback and must not construct the export; other shapes stay
-    /// conservative. The author must audit every implementation/helper path,
-    /// property access in the callback-bearing result graph, and prototype
-    /// integrity. The graph must not contain proxies or accessors.
+    /// callback, or a retained result from another audited factory, and must
+    /// not construct the export; other shapes stay conservative. A retained
+    /// result is a fresh ordinary callable/plain-object graph. The author
+    /// must audit every implementation/helper and type branch, property
+    /// access in the retained argument and result graphs, and prototype
+    /// integrity. Neither graph may contain proxies or accessors at the call.
     /// This is a callback-flow contract, not a purity assertion: the call may
     /// still have observable effects and remains ordered as an impure call.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
