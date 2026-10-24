@@ -187,17 +187,20 @@ exports whose calls are audited to defer a single callback argument.
 `callback_factory_members` lists static members on an imported namespace with
 the same contract. At an importer, the analyzer applies either contract only
 to a call with exactly one non-spread inline function or arrow callback, or a
-retained result of another audited factory. Construction and other argument
-shapes remain conservative. The provider must not invoke that callback or any
+retained result of another audited factory. The retained input is a fresh
+ordinary callable/plain-object graph, and the outer factory must preserve the
+original callback inside its own fresh returned graph. Construction and other
+argument shapes remain conservative. The provider must not invoke that callback or any
 caller-, host-, or export-provided callback synchronously, or publish the
 callback outside the returned fresh ordinary callable/plain-object graph. The
 consumer may later reach or invoke the captured callback through that result.
 The provider must not synchronously read or write importer-owned state through
 another route, including imported lexical cells or caller-owned objects; effects
 confined to provider-private state are allowed.
-The author must audit every provider branch and helper, callback-bearing
-property access, and prototype integrity; returned graphs must not contain
-proxies or accessors. This assertion describes callback flow only. It does not
+The author must audit every provider and type branch, helper, callback-bearing
+property access on both input and result, and prototype integrity; neither
+graph may contain proxies or accessors at the call. This assertion describes
+callback flow only. It does not
 assert that the factory call is pure or effect-free. Writes through the result
 that can install opaque values, accessors, or a new prototype conservatively
 restore callback effects; known primitive metadata writes retain deferral.

@@ -204,9 +204,11 @@ argument outside the returned fresh ordinary callable/plain-object graph. It
 must not synchronously access importer-owned state through other routes, including
 imported lexical cells or caller-owned objects. Provider-private effects are
 allowed. The analyzer enforces the call-site shape and conservatively handles other shapes;
-the author remains responsible for every provider branch/helper, ordinary
-property access, and prototype integrity. The returned graph may expose or
-invoke the captured callback later, and must not contain proxies or accessors.
+the author remains responsible for every provider and type branch, helper,
+ordinary property access on both input and result, and prototype integrity.
+The retained input and returned graph must be fresh ordinary callable/plain-object
+graphs with no proxies or accessors at the call. The returned graph may expose
+or invoke the captured callback later.
 Factory calls remain effectful for ordering unless a separate purity contract
 applies. See <design.md> for how this contract scopes callback-flow analysis.
 
