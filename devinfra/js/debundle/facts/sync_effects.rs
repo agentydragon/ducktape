@@ -1277,6 +1277,7 @@ impl Executor<'_> {
         let mut callbacks = Values::new();
         let mut pending: Vec<_> = values.iter().cloned().collect();
         let mut visited_objects = BTreeSet::new();
+        let mut expanded_unknown = false;
         while let Some(value) = pending.pop() {
             match &value {
                 AbstractValue::Origin(ValueOrigin::Function(_)) | AbstractValue::Closure(_, _) => {
@@ -1298,6 +1299,40 @@ impl Executor<'_> {
                 }
                 AbstractValue::GlobalObject => {
                     pending.extend(self.global_escaped_callbacks.iter().cloned());
+                }
+                AbstractValue::Unknown if !expanded_unknown => {
+                    // An unknown argument may be an opaque container holding
+                    // any callback value that has reached the current prefix.
+                    // Expanding these roots is deliberately conservative; it
+                    // prevents an untracked property/spread from hiding a
+                    // callback from the call-site summary.
+                    expanded_unknown = true;
+                    pending.extend(
+                        self.prefix_values
+                            .values()
+                            .flat_map(|values| values.iter().cloned())
+                            .filter(|value| !matches!(value, AbstractValue::Unknown)),
+                    );
+                    pending.extend(
+                        self.global_escaped_callbacks
+                            .iter()
+                            .filter(|value| !matches!(value, AbstractValue::Unknown))
+                            .cloned(),
+                    );
+                    pending.extend(
+                        self.prefix_object_properties
+                            .values()
+                            .flat_map(|properties| properties.values())
+                            .flat_map(|values| values.iter())
+                            .filter(|value| !matches!(value, AbstractValue::Unknown))
+                            .cloned(),
+                    );
+                    pending.extend(
+                        self.exported_runtime_values
+                            .iter()
+                            .filter(|value| !matches!(value, AbstractValue::Unknown))
+                            .cloned(),
+                    );
                 }
                 _ => {}
             }
@@ -1850,8 +1885,12 @@ pub(crate) fn annotate_synchronous_calls(
     }
     for writes in &index.top_member_value_writes {
         for (receiver, _, expression) in writes {
-            if index.global_object_names.contains(receiver.0.as_ref()) || needed.contains(receiver)
-            {
+            if index.global_object_names.contains(receiver.0.as_ref()) {
+                // Global-object writes are potential callback escape roots at
+                // every later opaque call, even when the receiver alias is
+                // not mentioned by a statically visible callee.
+                expression.bindings(&mut needed);
+            } else if needed.contains(receiver) {
                 expression.bindings(dependencies.entry(receiver.clone()).or_default());
             }
         }
