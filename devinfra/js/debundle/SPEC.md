@@ -212,12 +212,14 @@ not thereby part of this package. The strip pass rejects non-shareable items
 also needed by residual exports and checks retained bindings and observable
 writes before removing swapped items.
 
-## Audited callback-factory exports
+## Audited callback factories
 
 `chunk_export_purity.<defining chunk>.callback_factory_exports` lists named
-exports whose calls are audited to defer a single callback argument. At an
-importer, the analyzer applies this contract only to a call with exactly one
-non-spread inline function or arrow callback; construction and other argument
+exports whose calls are audited to defer a single callback argument.
+`callback_factory_members` lists static members on an imported namespace with
+the same contract. At an importer, the analyzer applies either contract only
+to a call with exactly one non-spread inline function or arrow callback, or a
+retained result of another audited factory. Construction and other argument
 shapes remain conservative. The provider must not invoke that callback or any
 caller-, host-, or export-provided callback synchronously, or publish the
 callback outside the returned fresh ordinary callable/plain-object graph. The

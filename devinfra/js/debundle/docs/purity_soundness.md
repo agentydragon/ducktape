@@ -194,9 +194,11 @@ classification. There is no "declare a whole module pure" shorthand.
 
 ## Audited callback-factory exports
 
-`chunk_export_purity.<defining chunk>.callback_factory_exports` is not a
-purity annotation. It asserts that a call to the named export, with one inline
-function or arrow callback, neither invokes that callback or other
+`chunk_export_purity.<defining chunk>.callback_factory_exports` and
+`callback_factory_members` are not purity annotations. They assert that a call
+to the named export or static namespace member, with one inline function or
+arrow callback or a retained audited-factory result, neither invokes that
+callback or other
 caller-, host-, or export-provided callbacks synchronously nor publishes the
 argument outside the returned fresh ordinary callable/plain-object graph. It
 must not synchronously access importer-owned state through other routes, including
