@@ -517,7 +517,7 @@ func (a *claudeAdapter) ChangeModel(ctx context.Context, commandID, model string
 		a.mu.Unlock()
 		return err
 	}
-	err := a.sendControlRequest(ctx, requestID, claudeSetModelRequest{Subtype: "set_model", Model: model})
+	err = a.sendControlRequest(ctx, requestID, claudeSetModelRequest{Subtype: "set_model", Model: model})
 	if err != nil && !errors.Is(err, harness.ErrNativeResponsePending) {
 		a.mu.Lock()
 		delete(a.modelChanges, requestID)
@@ -545,7 +545,7 @@ func (a *claudeAdapter) ChangeReasoningEffort(ctx context.Context, commandID, ef
 	}
 	request := claudeApplyFlagSettingsRequest{Subtype: "apply_flag_settings"}
 	request.Settings.EffortLevel = effort
-	err := a.sendControlRequest(ctx, requestID, request)
+	err = a.sendControlRequest(ctx, requestID, request)
 	if err != nil && !errors.Is(err, harness.ErrNativeResponsePending) {
 		a.mu.Lock()
 		delete(a.effortChanges, requestID)
