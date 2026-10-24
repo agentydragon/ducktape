@@ -3326,7 +3326,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Home Assistant with encrypted Restic/VolSync backups and its dedicated private SeaweedFS S3 bucket.
+    description: Home Assistant with its recorder Postgres, encrypted Restic/VolSync backups and its dedicated private SeaweedFS S3 bucket.
   name: home-assistant
   namespace: ducktape-flux
 spec:
@@ -3342,6 +3342,8 @@ spec:
     - name: seaweedfs-operator
       namespace: ducktape-flux
     - name: monitoring-crds
+      namespace: ducktape-flux
+    - name: cnpg
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/home-assistant

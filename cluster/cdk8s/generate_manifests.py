@@ -171,6 +171,7 @@ from cluster.cdk8s.haku_ci import runner as haku_ci_runner
 from cluster.cdk8s.home_assistant import (
     app as home_assistant_app,
     backup as home_assistant_backup,
+    db as home_assistant_db,
     flux_kustomizations as home_assistant_flux_kustomizations,
     namespace as home_assistant_namespace,
 )
@@ -291,6 +292,7 @@ def generate_manifests(root: Path) -> None:
     forgejo_app.write_manifests(root)
     home_assistant_app.write_manifests(root)
     home_assistant_backup.write_manifests(root)
+    home_assistant_db.write_manifests(root)
     grocy_mcp.write_manifests(root)
     for household in grocy_app.HOUSEHOLDS:
         grocy_app.write_manifests(root, household, mcp_dir=grocy_mcp.output_dir(household))
@@ -1437,6 +1439,7 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
         seaweedfs_operator_kustomization,
         monitoring_crds_kustomization,
+        cnpg_kustomization,
     )
     matrix_user_provisioner_artifact = artifact(
         "matrix-user-provisioner", matrix_user_provisioner.OUTPUT_DIR, matrix_user_provisioner.PINS_DIR

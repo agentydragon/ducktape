@@ -15,6 +15,7 @@ def home_assistant(
     external_secrets_operator: Kustomization,
     seaweedfs_operator: Kustomization,
     monitoring_crds: Kustomization,
+    cnpg: Kustomization,
 ) -> Kustomization:
     name = "home-assistant"
     return flux_kustomization(
@@ -30,8 +31,11 @@ def home_assistant(
             seaweedfs_operator,
             # ServiceMonitor + PrometheusRule
             monitoring_crds,
+            # The recorder's Cluster
+            cnpg,
         ),
         description=(
-            "Home Assistant with encrypted Restic/VolSync backups and its dedicated private SeaweedFS S3 bucket."
+            "Home Assistant with its recorder Postgres, encrypted Restic/VolSync backups and its dedicated private "
+            "SeaweedFS S3 bucket."
         ),
     )

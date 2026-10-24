@@ -20,6 +20,7 @@ Only these CNPG cluster profiles are permitted:
 | **OVH-HA with Piraeus pilot replica**      | 3         | `topology.kubernetes.io/zone: hil-ovh`   | Existing claims unchanged; new claim uses Piraeus | required, `kubernetes.io/hostname` |
 | **OVH-HA with Piraeus migration template** | 2         | `topology.kubernetes.io/zone: hil-ovh`   | Existing claims unchanged; new claim uses Piraeus | required, `kubernetes.io/hostname` |
 | **Proxmox-single**                         | 1         | `topology.kubernetes.io/region: proxmox` | `local-path-proxmox`                              | n/a                                |
+| **Optiplex-single**                        | 1         | `kubernetes.io/hostname: optiplex`       | `piraeus-ssd-local`                               | n/a                                |
 
 **OVH-HA**: For services co-located with the SeaweedFS cluster on the OVH
 nodes. Two instances on separate nodes.
@@ -63,6 +64,11 @@ instance on a schedulable node if needed.
 **Proxmox-single**: For homelab services. Single instance co-located with the
 app on Proxmox. Relies on ZFS for local reliability; off-site backups via
 pg_dump CronJobs (see backup strategy in <plan.md>).
+
+**Optiplex-single** (`cnpg.OPTIPLEX_PIRAEUS_SSD`): for a database whose app is
+pinned to the OptiPlex at home (Home Assistant's recorder), so writes stay
+on-node. Recovery comes from barman-cloud base backups and WAL in SeaweedFS on
+OVH, not from a replica.
 
 **Why only these**: CNPG applies affinity uniformly to all instances (primary
 and replicas). If a cluster spans regions, a failover can promote the remote

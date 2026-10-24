@@ -7,6 +7,7 @@ py_library(
     srcs = ["app.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        ":db",
         "//cluster/cdk8s:config_format",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:gateway",
@@ -50,6 +51,19 @@ py_library(
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "db",
+    srcs = ["db.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        "//cluster/cdk8s:cnpg",
+        "//cluster/cdk8s:cnpg_backup",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:manifest_roots",
+        "@pypi//cdk8s",
     ],
 )
 

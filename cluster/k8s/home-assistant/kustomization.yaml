@@ -3,5 +3,6 @@ kind: Kustomization
 resources:
   - home-assistant.k8s.yaml
   - backup.k8s.yaml
+  - db.k8s.yaml
   - credentials-secret.sops.yaml
   - app/
