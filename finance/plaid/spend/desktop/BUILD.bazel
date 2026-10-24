@@ -1,5 +1,5 @@
 # gazelle:ignore
-load("@rules_python//python:packaging.bzl", "py_wheel")
+load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 py_library(
@@ -86,6 +86,26 @@ py_library(
     srcs = ["__init__.py"],
 )
 
+py_package(
+    name = "plaid_spend_desktop_pkg",
+    packages = [
+        "finance",
+        "finance.plaid",
+        "finance.plaid.spend",
+        "finance.plaid.spend.desktop",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":cli",
+        ":credentials",
+        ":daemon",
+        ":oauth",
+        ":package_init",
+        "//finance/plaid/spend:allowance",
+        "//finance/plaid/spend:models",
+    ],
+)
+
 py_wheel(
     name = "plaid_spend_desktop_wheel",
     distribution = "plaid-spend-desktop",
@@ -98,6 +118,7 @@ py_wheel(
     python_requires = ">=3.14",
     requires = [
         "Babel>=2.15.0",
+        "ducktape-network-monitor",
         "dbus-next>=0.2.3",
         "httpx>=0.27.0",
         "pydantic>=2.0",
@@ -105,14 +126,5 @@ py_wheel(
     ],
     version = "0.1.0",
     visibility = ["//visibility:public"],
-    deps = [
-        ":cli",
-        ":credentials",
-        ":daemon",
-        ":oauth",
-        ":package_init",
-        "//finance/plaid/spend:allowance",
-        "//finance/plaid/spend:models",
-        "//util:network_monitor",
-    ],
+    deps = [":plaid_spend_desktop_pkg"],
 )

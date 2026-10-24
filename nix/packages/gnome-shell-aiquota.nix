@@ -4,6 +4,7 @@
   pkgs,
   python314Packages,
   claudeApi,
+  networkMonitor,
 }:
 let
   wheel = artifacts.aiquota;
@@ -26,7 +27,10 @@ python314Packages.buildPythonApplication {
       pydantic
       typer
     ]
-    ++ [ claudeApi ];
+    ++ [
+      claudeApi
+      networkMonitor
+    ];
   pythonImportsCheck = [ "aiquota.cli" ];
   doCheck = false;
   dontUsePytestCheck = true;

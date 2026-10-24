@@ -238,6 +238,12 @@ let
       tenacity
     ];
   };
+  ducktape-network-monitor = mkWheel {
+    pname = "ducktape-network-monitor";
+    description = "Shared NetworkManager D-Bus monitor";
+    importsCheck = [ "util.network_monitor" ];
+    propagatedBuildInputs = with python314Packages; [ dbus-next ];
+  };
 
   ducktape-git-hooks = mkWheel {
     pname = "ducktape-git-hooks";
@@ -281,10 +287,12 @@ let
   aiquota = pkgs.callPackage ./gnome-shell-aiquota.nix {
     inherit artifacts lib python314Packages;
     claudeApi = ducktape-claude-api;
+    networkMonitor = ducktape-network-monitor;
   };
 
   plaid-spend-desktop = pkgs.callPackage ./plaid-spend-desktop.nix {
     inherit artifacts lib python314Packages;
+    networkMonitor = ducktape-network-monitor;
   };
 
   mkBinaryArtifact =
@@ -331,6 +339,7 @@ let
 in
 rec {
   inherit ducktape-util;
+  inherit ducktape-network-monitor;
   inherit ducktape-git-hooks;
   inherit ducktape-claude-api;
   inherit aiquota;

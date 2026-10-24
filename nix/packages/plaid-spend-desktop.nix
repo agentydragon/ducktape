@@ -3,6 +3,7 @@
   lib,
   pkgs,
   python314Packages,
+  networkMonitor,
 }:
 let
   extensionUuid = "plaid-spend@allegedly.works";
@@ -20,6 +21,7 @@ python314Packages.buildPythonApplication {
     httpx
     pydantic
     pyyaml
+    networkMonitor
   ];
   pythonImportsCheck = [
     "finance.plaid.spend.desktop.cli"

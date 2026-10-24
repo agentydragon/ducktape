@@ -346,15 +346,11 @@ py_test(
 
 py_package(
     name = "aiquota_pkg",
-    packages = [
-        "aiquota",
-        "util",
-    ],
+    packages = ["aiquota"],
     visibility = ["//visibility:public"],
     deps = [
         ":cli_lib",
         ":desktop_lib",
-        "//util:network_monitor",
     ],
 )
 
@@ -372,6 +368,7 @@ py_wheel(
     requires = [
         "atomicwrites>=1.4.1",
         "ducktape-claude-api",
+        "ducktape-network-monitor",
         "dbus-next>=0.2.3",
         "httpx>=0.27",
         "httpx-sse>=0.4.3",

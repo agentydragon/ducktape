@@ -479,3 +479,19 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_package(
+    name = "network_monitor_pkg",
+    packages = ["util"],
+    deps = [":network_monitor"],
+)
+
+py_wheel(
+    name = "network_monitor_wheel",
+    distribution = "ducktape-network-monitor",
+    python_requires = ">=3.14",
+    requires = ["dbus-next>=0.2.3"],
+    version = "0.1.0",
+    visibility = ["//visibility:public"],
+    deps = [":network_monitor_pkg"],
+)

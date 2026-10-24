@@ -50,6 +50,11 @@
       "filename": "ducktape_util-0.1.0-py3-none-any.whl",
       "release": "ducktape-util"
     },
+    "ducktape-network-monitor": {
+      "target": "//util:network_monitor_wheel",
+      "filename": "ducktape_network_monitor-0.1.0-py3-none-any.whl",
+      "release": "ducktape-network-monitor"
+    },
     "gterm-theme": {
       "target": "//gnome/gterm_theme:wheel",
       "filename": "gterm_theme-0.1.0-py3-none-any.whl",
@@ -154,6 +159,10 @@
     },
     "ducktape-util": {
       "tests": "//util/...",
+      "nixPackage": true
+    },
+    "ducktape-network-monitor": {
+      "tests": "",
       "nixPackage": true
     },
     "gterm-theme": {
