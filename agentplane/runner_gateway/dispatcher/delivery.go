@@ -8,7 +8,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/observability"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	"go.opentelemetry.io/otel/attribute"
+	otelcodes "go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"k8s.io/client-go/util/workqueue"
@@ -462,8 +466,18 @@ func (w *DeliveryWorker) retryStorage(ctx context.Context, fn func() error) {
 }
 
 func (w *DeliveryWorker) deliverCommand(ctx context.Context, head *Dispatch, sandbox SandboxSnapshot, owner Owner) bool {
+	ctx = observability.WithTraceparent(ctx, head.Traceparent)
+	ctx, span := observability.Start(
+		ctx, "Dispatcher Deliver Command",
+		trace.WithAttributes(
+			attribute.String("session.id", head.SessionID),
+			attribute.String("sandbox.name", head.SandboxName),
+		),
+	)
+	defer span.End()
 	claimed, err := w.Store.Settle(ctx, head.CommandID, owner, []string{QueueState}, DeliveringState, "", nil)
 	if err != nil {
+		span.SetStatus(otelcodes.Error, "dispatch claim failed")
 		w.Logger.Error("cannot claim queued dispatch", "command_id", head.CommandID, "error", err)
 		return false
 	}
@@ -471,6 +485,9 @@ func (w *DeliveryWorker) deliverCommand(ctx context.Context, head *Dispatch, san
 		return false
 	}
 	admission, callErr := w.Runner.Deliver(ctx, sandbox, head.SessionID, head.Command)
+	if callErr != nil {
+		span.SetStatus(otelcodes.Error, "runner delivery failed")
+	}
 	state, reason := AdmittedState, ""
 	if callErr != nil {
 		state, reason = w.deliveryFailure(head.SessionID, head.CommandID, head.SandboxUID, sandbox.Incarnation, callErr)
@@ -486,9 +503,19 @@ func (w *DeliveryWorker) deliverCommand(ctx context.Context, head *Dispatch, san
 }
 
 func (w *DeliveryWorker) deliverOpening(ctx context.Context, opening *Opening, sandbox SandboxSnapshot, owner Owner) bool {
+	ctx = observability.WithTraceparent(ctx, opening.Traceparent)
+	ctx, span := observability.Start(
+		ctx, "Dispatcher Deliver Session Opening",
+		trace.WithAttributes(
+			attribute.String("session.id", opening.SessionID),
+			attribute.String("sandbox.name", opening.SandboxName),
+		),
+	)
+	defer span.End()
 	key := "opening:" + opening.SessionID
 	claimed, err := w.Store.SettleOpening(ctx, opening.SessionID, owner, []string{QueueState}, DeliveringState, "")
 	if err != nil {
+		span.SetStatus(otelcodes.Error, "session opening claim failed")
 		w.Logger.Error("cannot claim queued opening", "session_id", opening.SessionID, "error", err)
 		return false
 	}
@@ -496,6 +523,9 @@ func (w *DeliveryWorker) deliverOpening(ctx context.Context, opening *Opening, s
 		return false
 	}
 	callErr := w.Runner.OpenSession(ctx, sandbox, opening.SessionID, opening.Spec, opening.SetupScript)
+	if callErr != nil {
+		span.SetStatus(otelcodes.Error, "runner session opening failed")
+	}
 	state, reason := AdmittedState, ""
 	if callErr != nil {
 		state, reason = w.deliveryFailure(opening.SessionID, key, opening.SandboxUID, sandbox.Incarnation, callErr)

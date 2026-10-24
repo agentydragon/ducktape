@@ -440,6 +440,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/runner",
     deps = [
         "//agentplane/history_service:runner_ingress_go_proto",
+        "//agentplane/observability",
         "//agentplane/proto:command_go_proto",
         "//agentplane/proto:event_go_proto",
         "//agentplane/proto:event_log_go_proto",
@@ -454,6 +455,8 @@ go_library(
         "@com_github_google_uuid//:uuid",
         "@com_github_pressly_goose_v3//:goose",
         "@com_github_sethvargo_go_retry//:go-retry",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel_trace//:trace",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//backoff",
         "@org_golang_google_grpc//codes",

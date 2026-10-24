@@ -30,6 +30,7 @@ from cluster.cdk8s.agentplane import (
     platform_routes,
     runner_vm,
     sandbox_pod,
+    telemetry,
 )
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy, isolate_ingress
@@ -188,7 +189,7 @@ class RunnerSandbox(Construct):
                 self,
                 "runner-vm-template",
                 env,
-                labels=_LABELS,
+                labels={**_LABELS, **telemetry.EMITTER_RUNNER_CLASS_LABELS},
                 state_volume=template.spec["stateVolume"],
                 workspace_volume=workspace_volume_spec(
                     template.spec["stateVolume"], layout_type="RawDiskImage", filesystem="ext4"
@@ -304,6 +305,12 @@ class RunnerTemplate(Construct):
                 [
                     k8s.EnvVar(name="LITELLM_URL", value=llm_ingress.proxied_url(self.env.namespace)),
                     *(
+                        k8s.EnvVar(name=key, value=value)
+                        for key, value in telemetry.service_environment(
+                            self.env.namespace, "agentplane-runner", endpoint=platform_routes.telemetry_endpoint()
+                        ).items()
+                    ),
+                    *(
                         [k8s.EnvVar(name="BBR_BUILDBUDDY_API_KEY_FILE", value=f"{_BUILDBUDDY_MOUNT}/api-key")]
                         if self.buildbuddy_secret
                         else []
@@ -362,7 +369,7 @@ class RunnerTemplate(Construct):
     def _add_sandbox_template(self, *, name: str, image: str) -> dict[str, Any]:
         sidecar_settings = self._add_sidecar_settings(name=f"{name}-egress-sidecar")
         pod = sandbox_pod.render_pod_template(
-            _LABELS,
+            {**_LABELS, **telemetry.EMITTER_RUNNER_CLASS_LABELS},
             sandbox_pod.pod_spec(
                 self.env,
                 workload=self._runner_container(image),
@@ -393,6 +400,7 @@ class RunnerTemplate(Construct):
                 ],
                 sidecar_resources=self.sidecar_resources,
                 image_pull_secret_name=self.image_pull_secret_name,
+                enable_telemetry=True,
             ),
         )
         state_volume = {

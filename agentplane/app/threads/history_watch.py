@@ -6,12 +6,14 @@ import logging
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator, Callable
 
+from opentelemetry import trace
 from sqlalchemy.exc import SQLAlchemyError
 
 from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.history_service.client import HistoryServiceClient
 
 logger = logging.getLogger(__name__)
+tracer = trace.get_tracer(__name__)
 
 
 class _Rewatch(ABC):
@@ -84,6 +86,8 @@ class SessionOpenings(_Rewatch):
     async def _follow(self) -> AsyncIterator[None]:
         async for opened in self._history.watch_session_openings(after_position=self._opened_through):
             # A failure leaves the position behind this Session, so the next stream offers it again.
-            await self._event_logs.open(str(opened.session_id))
+            with tracer.start_as_current_span("agentplane.session.opening.record") as span:
+                span.set_attribute("agentplane.session.opening.position", opened.position)
+                await self._event_logs.open(str(opened.session_id))
             self._opened_through = opened.position
             yield

@@ -15,12 +15,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/observability"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	controlpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -444,7 +447,15 @@ func writeDurable(path string, data []byte) error {
 	return syncDirectory(filepath.Dir(path))
 }
 
-func (r *Runner) OpenSession(_ context.Context, request *runnerservicepb.OpenSessionRequest) (*runnerservicepb.OpenSessionResponse, error) {
+func (r *Runner) OpenSession(ctx context.Context, request *runnerservicepb.OpenSessionRequest) (response *runnerservicepb.OpenSessionResponse, resultErr error) {
+	ctx, span := observability.Start(
+		ctx, "Runner OpenSession",
+		trace.WithAttributes(
+			attribute.String("session.id", request.GetSessionId()),
+			attribute.String("sandbox.name", r.config.Launch.Sandbox.Name),
+		),
+	)
+	defer func() { observability.End(span, resultErr) }()
 	if request.Spec == nil {
 		return nil, status.Error(codes.InvalidArgument, "spec is required")
 	}
@@ -497,7 +508,7 @@ func (r *Runner) OpenSession(_ context.Context, request *runnerservicepb.OpenSes
 		}
 		return &runnerservicepb.OpenSessionResponse{Attached: s.attached()}, nil
 	}
-	budget, err := r.config.ResolveModelConfig(r.ctx, spec.Harness, spec.Model)
+	budget, err := r.config.ResolveModelConfig(ctx, spec.Harness, spec.Model)
 	if err != nil {
 		return nil, status.Error(codes.FailedPrecondition, err.Error())
 	}

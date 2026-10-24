@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/util/netlistener"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -44,7 +45,7 @@ func bindPlatformRoutes(routes map[string]platformRouteConfig) ([]*platformRoute
 			stopPlatformRoutes(started)
 			return nil, fmt.Errorf("listen for platform route %q: %w", name, err)
 		}
-		conn, err := grpc.NewClient(config.Upstream, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		conn, err := grpc.NewClient(config.Upstream, observability.GRPCClientOption(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
 			_ = listener.Close()
 			stopPlatformRoutes(started)
@@ -52,6 +53,7 @@ func bindPlatformRoutes(routes map[string]platformRouteConfig) ([]*platformRoute
 		}
 		forwarder := &routeForwarder{conn: conn, tokenFile: config.TokenFile}
 		server := grpc.NewServer(
+			observability.GRPCServerOption(),
 			grpc.UnknownServiceHandler(forwarder.forward),
 			grpc.ForceServerCodec(rawCodec{}),
 		)
@@ -74,9 +76,13 @@ func (f *routeForwarder) forward(_ any, workload grpc.ServerStream) error {
 	if !okay {
 		return status.Error(codes.Internal, "gRPC method is unavailable")
 	}
-	token, err := readToken(f.tokenFile)
-	if err != nil {
-		return status.Errorf(codes.Unavailable, "egress sidecar has no token at %s", f.tokenFile)
+	var token string
+	if f.tokenFile != "" {
+		var err error
+		token, err = readToken(f.tokenFile)
+		if err != nil {
+			return status.Errorf(codes.Unavailable, "egress sidecar has no token at %s", f.tokenFile)
+		}
 	}
 	incoming, _ := metadata.FromIncomingContext(workload.Context())
 	outgoing := metadata.MD{}
@@ -86,7 +92,9 @@ func (f *routeForwarder) forward(_ any, workload grpc.ServerStream) error {
 		}
 		outgoing[key] = append([]string(nil), values...)
 	}
-	outgoing.Set("authorization", "Bearer "+token)
+	if token != "" {
+		outgoing.Set("authorization", "Bearer "+token)
+	}
 
 	ctx, cancel := context.WithCancel(metadata.NewOutgoingContext(workload.Context(), outgoing))
 	defer cancel()

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/observability"
 	"golang.org/x/sync/singleflight"
 	"k8s.io/apimachinery/pkg/util/cache"
 )
@@ -51,7 +52,8 @@ func NewVisibility(apiBaseURL string, ttl time.Duration) (*Visibility, error) {
 	}
 	return &Visibility{
 		client: &http.Client{
-			Timeout: visibilityRequestTimeout,
+			Timeout:   visibilityRequestTimeout,
+			Transport: observability.HTTPTransport(http.DefaultTransport),
 			// A redirect is neither of the two answers that confirm anything.
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 		},

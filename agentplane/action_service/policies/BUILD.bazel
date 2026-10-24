@@ -134,6 +134,7 @@ go_library(
     deps = [
         "//agentplane/action_service/catalog",
         "//agentplane/action_service/store",
+        "//agentplane/observability",
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/policy/reader",
         "@com_github_santhosh_tekuri_jsonschema_v6//:jsonschema",

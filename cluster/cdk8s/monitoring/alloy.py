@@ -16,6 +16,8 @@ from cdk8s_plus_34 import k8s
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 
 from cluster.cdk8s import node_scheduling
+from cluster.cdk8s.agentplane import telemetry
+from cluster.cdk8s.agentplane.namespaces import STAGING_NAMESPACE
 from cluster.cdk8s.flux import (
     ConfigMapArgs,
     GeneratorOptions,
@@ -32,7 +34,8 @@ from cluster.cdk8s.monitoring import grafana_helmrepository, loki, mimir, tempo
 _NAME = "alloy"
 NAMESPACE = "monitoring"
 OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/alloy"
-_OTLP_HTTP_PORT = 4318
+_OTLP_GRPC_PORT = telemetry.OTLP_GRPC_PORT
+_OTLP_HTTP_PORT = telemetry.OTLP_HTTP_PORT
 # The chart's default `alloy.listenPort`, serving Alloy's own /metrics.
 _HTTP_PORT = 12345
 _CONFIG_MAP = "alloy-config"
@@ -59,6 +62,7 @@ _CONFIG_ENV = {
     "MIMIR_GATEWAY_URL": mimir.GATEWAY_URL,
     "LOKI_PUSH_URL": loki.PUSH_URL,
     "TEMPO_OTLP_GRPC_ENDPOINT": tempo.OTLP_GRPC_ENDPOINT,
+    "OTLP_GRPC_LISTEN_ADDRESS": f"0.0.0.0:{_OTLP_GRPC_PORT}",
     "OTLP_HTTP_LISTEN_ADDRESS": f"0.0.0.0:{_OTLP_HTTP_PORT}",
 }
 
@@ -100,7 +104,8 @@ def chart(app: App) -> Chart:
                 # The Grafana Alloy chart reads extraPorts from .Values.alloy and reuses
                 # them for both the Service and the container port list.
                 "extraPorts": [
-                    {"name": "otlp-http", "port": _OTLP_HTTP_PORT, "targetPort": _OTLP_HTTP_PORT, "protocol": "TCP"}
+                    {"name": "otlp-grpc", "port": _OTLP_GRPC_PORT, "targetPort": _OTLP_GRPC_PORT, "protocol": "TCP"},
+                    {"name": "otlp-http", "port": _OTLP_HTTP_PORT, "targetPort": _OTLP_HTTP_PORT, "protocol": "TCP"},
                 ],
             },
             "controller": {
@@ -241,6 +246,22 @@ def chart(app: App) -> Chart:
                         )
                     ],
                     ports=[k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(_OTLP_HTTP_PORT), protocol="TCP")],
+                ),
+                # Agentplane services, runners, and their egress sidecars emit from labelled Pods
+                # in the staging namespace.
+                k8s.NetworkPolicyIngressRule(
+                    from_=[
+                        k8s.NetworkPolicyPeer(
+                            namespace_selector=k8s.LabelSelector(
+                                match_labels={"kubernetes.io/metadata.name": STAGING_NAMESPACE}
+                            ),
+                            pod_selector=k8s.LabelSelector(match_labels=telemetry.EMITTER_LABELS),
+                        )
+                    ],
+                    ports=[
+                        k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(port), protocol="TCP")
+                        for port in (_OTLP_GRPC_PORT, _OTLP_HTTP_PORT)
+                    ],
                 ),
                 # The chart's ServiceMonitor targets this pod, so the alloy-node on its node scrapes it.
                 k8s.NetworkPolicyIngressRule(

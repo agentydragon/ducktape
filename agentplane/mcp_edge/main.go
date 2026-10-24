@@ -23,6 +23,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/connections"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/mcpserver"
+	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/probes"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
@@ -67,6 +68,7 @@ func run(ctx context.Context, c config) error {
 	if err != nil {
 		return err
 	}
+	kubeConfig.WrapTransport = observability.WrapHTTPTransport(kubeConfig.WrapTransport)
 	kubeConfig.QPS = -1
 	kube, err := kubernetes.NewForConfig(kubeConfig)
 	if err != nil {
@@ -104,7 +106,8 @@ func serve(ctx context.Context, c config, kubeConfig *rest.Config, kube kubernet
 	}
 	gate := api.NewGate(api.GateOptions{Operators: operators})
 	connectionStore := connections.NewStore(db, callers)
-	grpcServer := grpc.NewServer(grpc.ChainUnaryInterceptor(gate.UnaryInterceptor), grpc.ChainStreamInterceptor(gate.StreamInterceptor))
+	grpcServer := grpc.NewServer(observability.GRPCServerOption(),
+		grpc.ChainUnaryInterceptor(gate.UnaryInterceptor), grpc.ChainStreamInterceptor(gate.StreamInterceptor))
 	health := probes.New(db, hub)
 	healthpb.RegisterHealthServer(grpcServer, readiness{Probes: health, callers: callers})
 	connection_servicepb.RegisterConnectionServiceServer(grpcServer, connections.NewService(connectionStore, gate, hub))
@@ -124,7 +127,7 @@ func serve(ctx context.Context, c config, kubeConfig *rest.Config, kube kubernet
 		}
 		defer connection.Close()
 	}
-	server := &http.Server{Handler: routes, ReadHeaderTimeout: 10 * time.Second}
+	server := &http.Server{Handler: observability.HTTPHandler(routes), ReadHeaderTimeout: 10 * time.Second}
 	facade.MountGRPC(server, grpcServer)
 	failed := make(chan error, 1)
 	go func() { failed <- server.Serve(listener) }()
@@ -197,7 +200,14 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	if err := run(ctx, c); err != nil && !errors.Is(err, context.Canceled) {
+	shutdownTracing, err := observability.Init(ctx, "mcp-edge")
+	if err != nil {
+		slog.Error("MCP edge tracing setup failed", "error", err)
+		os.Exit(1)
+	}
+	err = run(ctx, c)
+	shutdownTracing()
+	if err != nil && !errors.Is(err, context.Canceled) {
 		slog.Error("MCP edge stopped", "error", err)
 		os.Exit(1)
 	}

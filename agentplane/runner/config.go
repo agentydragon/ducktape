@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
 
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
@@ -91,10 +92,11 @@ func (c Config) ResolveModelConfig(ctx context.Context, harness runnerpb.Harness
 		return nil, err
 	}
 	req.Header.Set("Authorization", "Bearer "+launch.Token)
-	client := c.HTTPClient
-	if client == nil {
-		client = &http.Client{Timeout: 10 * time.Second}
+	client := http.Client{Timeout: 10 * time.Second}
+	if c.HTTPClient != nil {
+		client = *c.HTTPClient
 	}
+	client.Transport = observability.HTTPTransport(client.Transport)
 	res, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("could not query the LLM proxy for model configuration: %w", err)

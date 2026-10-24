@@ -15,6 +15,7 @@ import (
 
 	"github.com/SherClockHolmes/webpush-go"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
+	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 )
@@ -78,7 +79,7 @@ func NewNotifier(db *sql.DB, requests *store.Store, identity *Identity, baseURL 
 		db: db, requests: requests, identity: identity, baseURL: strings.TrimRight(baseURL, "/"), timing: timing,
 		// A push service's redirect is not followed: the endpoint is the only destination a subscription names.
 		client: &http.Client{
-			Transport:     transport,
+			Transport:     observability.HTTPTransport(transport),
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 		},
 	}, nil

@@ -41,7 +41,7 @@ def test_fresh_database_and_repeat_are_idempotent(postgres_admin_url: str, datab
         try:
             with engine.connect() as conn:
                 assert conn.scalar(text("SELECT to_regclass('dispatch') IS NOT NULL"))
-                assert conn.scalar(text(f"SELECT max(version_id) FROM {_VERSION}")) == 4
+                assert conn.scalar(text(f"SELECT max(version_id) FROM {_VERSION}")) == 5
         finally:
             engine.dispose()
 
@@ -57,7 +57,7 @@ def test_concurrent_runners_serialize(postgres_admin_url: str, database_names: D
         engine = create_engine(url)
         try:
             with engine.connect() as conn:
-                assert conn.scalar(text(f"SELECT count(*) FROM {_VERSION} WHERE version_id=4 AND is_applied")) == 1
+                assert conn.scalar(text(f"SELECT count(*) FROM {_VERSION} WHERE version_id=5 AND is_applied")) == 1
         finally:
             engine.dispose()
 
@@ -111,7 +111,7 @@ def test_empty_admissions_are_cleared_and_runner_admissions_kept(
                         {"command_id": command_id, "state": state, "admission": admission},
                     )
                 # Reapply the migration over data it did not see at its first run.
-                conn.execute(text(f"DELETE FROM {_VERSION} WHERE version_id = 4"))
+                conn.execute(text(f"DELETE FROM {_VERSION} WHERE version_id >= 4"))
             _run(url)
             with engine.connect() as conn:
                 assert dict(conn.execute(text("SELECT command_id, admission FROM dispatch")).tuples().all()) == {

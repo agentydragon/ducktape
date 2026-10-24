@@ -7,6 +7,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
+from opentelemetry import trace
 from pydantic import BaseModel, ConfigDict, Field
 
 from agentplane.app.sandbox_models import sandbox_view
@@ -19,6 +20,8 @@ from agentplane.app.threads.view.content import ContentStore
 # Not `runner_pb2`: that name is the runner's protocol here.
 from agentplane.proto import runner_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
+
+tracer = trace.get_tracer(__name__)
 
 # gazelle:include_dep @pypi//grpcio
 
@@ -83,10 +86,11 @@ class RunnerBridge:
         request = session_dispatcher_pb2.OpenSessionRequest(sandbox=sandbox, session_id=str(session_id), spec=spec)
         if setup_script is not None:
             request.setup_script = setup_script
-        response = cast(
-            session_dispatcher_pb2.OpenSessionResponse,
-            await self.dispatcher.unary(self.dispatcher.stub.OpenSession, request),
-        )
+        with tracer.start_as_current_span("agentplane.dispatcher.open_session"):
+            response = cast(
+                session_dispatcher_pb2.OpenSessionResponse,
+                await self.dispatcher.unary(self.dispatcher.stub.OpenSession, request),
+            )
         return response.opening
 
     async def session_opening(self, sandbox: str, session_id: UUID) -> session_dispatcher_pb2.SessionOpening:
@@ -132,30 +136,31 @@ Bridge = Annotated[RunnerBridge, Depends(_bridge)]
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_session(request: Request, bridge: Bridge, name: str, body: NewSession) -> dict[str, object]:
-    services = request.app.state.services
-    sandbox = sandbox_view(await services.inventory.get(name))
-    try:
-        defaults = services.presets.defaults_for_sandbox(sandbox.preset)
-    except KeyError as error:
-        raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from error
+    with tracer.start_as_current_span("agentplane.session.create"):
+        services = request.app.state.services
+        sandbox = sandbox_view(await services.inventory.get(name))
+        try:
+            defaults = services.presets.defaults_for_sandbox(sandbox.preset)
+        except KeyError as error:
+            raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from error
 
-    spec = _parse(
-        runner_pb2.SessionSpec(), defaults.model_dump(mode="json", exclude_none=True, exclude={"setup_script"})
-    )
-    spec = _parse(spec, body.spec)  # Request fields, including explicit empty strings, override the preset.
-    spec.cwd = spec.cwd.replace("{session_id}", str(body.session_id))
-    setup_script = body.setup_script if "setup_script" in body.model_fields_set else defaults.setup_script or None
-    auto_title = (
-        services.auto_title_on_first_message_default
-        if body.auto_title_on_first_message is None
-        else body.auto_title_on_first_message
-    )
-    if auto_title and services.titles is None:
-        raise HTTPException(status.HTTP_409_CONFLICT, "automatic Thread titles are not configured")
-    # Persist the per-Thread app setting before the Dispatcher can start a harness which receives input.
-    await services.store.open_thread(body.session_id, auto_title_on_first_message=auto_title)
-    opening = await bridge.create_session(name, body.session_id, spec, setup_script)
-    return MessageToDict(opening)
+        spec = _parse(
+            runner_pb2.SessionSpec(), defaults.model_dump(mode="json", exclude_none=True, exclude={"setup_script"})
+        )
+        spec = _parse(spec, body.spec)  # Request fields, including explicit empty strings, override the preset.
+        spec.cwd = spec.cwd.replace("{session_id}", str(body.session_id))
+        setup_script = body.setup_script if "setup_script" in body.model_fields_set else defaults.setup_script or None
+        auto_title = (
+            services.auto_title_on_first_message_default
+            if body.auto_title_on_first_message is None
+            else body.auto_title_on_first_message
+        )
+        if auto_title and services.titles is None:
+            raise HTTPException(status.HTTP_409_CONFLICT, "automatic Thread titles are not configured")
+        # Persist the per-Thread app setting before the Dispatcher can start a harness which receives input.
+        await services.store.open_thread(body.session_id, auto_title_on_first_message=auto_title)
+        opening = await bridge.create_session(name, body.session_id, spec, setup_script)
+        return MessageToDict(opening)
 
 
 @router.get("/{session_id}/opening")

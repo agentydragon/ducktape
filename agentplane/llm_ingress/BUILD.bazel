@@ -64,6 +64,7 @@ go_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/llm_ingress",
     deps = [
+        "//agentplane/observability",
         "//agentplane/workload_auth/go/auth",
         "@com_github_spf13_viper//:viper",
         "@io_k8s_client_go//kubernetes/typed/authentication/v1:authentication",

@@ -5,7 +5,7 @@ disk) and the tests (synthesize it in memory via `cdk8s.Testing`) build.
 
 from __future__ import annotations
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from constructs import Construct
 
 from agentplane.subjects import ServiceAccountRef
@@ -27,10 +27,12 @@ from cluster.cdk8s.agentplane import (
     sandbox_controller,
     sandbox_pod,
     session_dispatcher,
+    telemetry,
 )
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME as REGISTRY_SECRET_NAME
 from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
 
 
@@ -57,6 +59,13 @@ def environment_chart(app: App, env: Environment, *, db: database.DbProps) -> Ch
     may keep adding objects to the returned chart and they are still checked."""
     chart = Chart(app, "agentplane", disable_resource_name_hashes=True)
     Namespace(chart, "namespace", env)
+    NetworkPolicy(
+        chart,
+        "otel-egress",
+        metadata=ApiObjectMetadata(name="otel-egress", namespace=env.namespace),
+        endpoint_selector=telemetry.EMITTER_SERVICE_CLASS_LABELS,
+        egress=[telemetry.ALLOY_OTLP_GRPC.egress()],
+    )
     database.Db(chart, "db", env, db)
     app_credentials = database.postgres(env).app_secret
     app_database_url = app_credentials.key("uri").env_value(chart, "postgres-app-database-url")

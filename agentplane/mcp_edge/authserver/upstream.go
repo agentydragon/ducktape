@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
 )
@@ -41,7 +42,7 @@ type session struct {
 }
 
 func newUpstream(ctx context.Context, config Config, redirectURL string) (*upstream, error) {
-	client := &http.Client{Transport: outageTransport{next: http.DefaultTransport}, Timeout: upstreamTimeout}
+	client := &http.Client{Transport: outageTransport{next: observability.HTTPTransport(http.DefaultTransport)}, Timeout: upstreamTimeout}
 	// The key set fetches with this context for as long as the server runs, so it keeps no deadline of New's.
 	ctx = oidc.ClientContext(context.WithoutCancel(ctx), client)
 	provider, err := oidc.NewProvider(ctx, config.UpstreamIssuer)

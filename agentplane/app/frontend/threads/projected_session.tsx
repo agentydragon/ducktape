@@ -63,6 +63,7 @@ import { isoTime } from "../format_time";
 import { TimeAgo } from "../time_ago";
 import { NotificationStatus } from "../notification_status";
 import { TopbarActions, TopbarTitle } from "../topbar";
+import { finishSessionCreate, withinSessionCreate } from "../tracing";
 import { installThreadFavicon } from "../thread_favicon";
 import {
   appDocumentTitle,
@@ -1442,7 +1443,7 @@ export function ProjectedSession({
       setThread(snapshotThread);
     } else {
       setThread(null);
-      void getThread(threadId).then(
+      void withinSessionCreate(threadId, () => getThread(threadId)).then(
         (view) => {
           if (current) setThread(view);
         },
@@ -1455,6 +1456,9 @@ export function ProjectedSession({
       current = false;
     };
   }, [snapshotThread, threadId]);
+  useEffect(() => {
+    if (thread !== null) finishSessionCreate(threadId);
+  }, [thread, threadId]);
   useEffect(() => {
     document.title = settingsOpen
       ? appDocumentTitle("/", true)

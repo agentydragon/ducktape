@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/observability"
 	tunnelpb "github.com/agentydragon/ducktape/agentplane/proto/grpc_tunnel"
 	runnercontrolpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
 	"google.golang.org/grpc"
@@ -61,7 +62,7 @@ func (t *tunnel) call(ctx context.Context, method string, request, response prot
 		return status.Error(codes.Internal, "could not encode runner request")
 	}
 	id := t.nextID.Add(1)
-	call := &tunnelpb.Call{CallId: id, Method: method, Request: encoded}
+	call := &tunnelpb.Call{CallId: id, Method: method, Request: encoded, Traceparent: observability.Traceparent(ctx)}
 	if deadline, ok := ctx.Deadline(); ok {
 		remaining := time.Until(deadline)
 		if remaining <= 0 {

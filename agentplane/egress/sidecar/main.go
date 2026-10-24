@@ -7,6 +7,8 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+
+	"github.com/agentydragon/ducktape/agentplane/observability"
 )
 
 func main() {
@@ -18,7 +20,14 @@ func main() {
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
-	if err := (&sidecar{config: c}).run(ctx); err != nil {
+	shutdownTracing, err := observability.Init(ctx, "egress-sidecar")
+	if err != nil {
+		slog.Error("egress sidecar tracing setup failed", "error", err)
+		os.Exit(1)
+	}
+	err = (&sidecar{config: c}).run(ctx)
+	shutdownTracing()
+	if err != nil {
 		slog.Error("egress sidecar stopped", "error", err)
 		os.Exit(1)
 	}

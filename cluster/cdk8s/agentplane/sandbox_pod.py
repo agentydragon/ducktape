@@ -27,7 +27,7 @@ from agentplane.runner_gateway.api import RUNNER_CONTROL_AUDIENCE
 from agentplane.sandboxes.kubernetes_grants import RoleBindingGrant, RoleRef
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import node_scheduling
-from cluster.cdk8s.agentplane import egress, notifications
+from cluster.cdk8s.agentplane import egress, notifications, telemetry
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME
@@ -224,7 +224,12 @@ def add_sidecar_settings(
                 audience: audience_token_file(audience) for audience in _SUBSTITUTABLE_AUDIENCE_FILES
             },
             **(
-                {"platform_routes": {route: spec.model_dump(mode="json") for route, spec in platform_routes.items()}}
+                {
+                    "platform_routes": {
+                        route: spec.model_dump(mode="json", exclude_none=True)
+                        for route, spec in platform_routes.items()
+                    }
+                }
                 if platform_routes
                 else {}
             ),
@@ -233,11 +238,21 @@ def add_sidecar_settings(
     )
 
 
-def _egress_sidecar(settings: PodWiring, resources: k8s.ResourceRequirements) -> k8s.Container:
+def _egress_sidecar(
+    env: Environment, settings: PodWiring, resources: k8s.ResourceRequirements, *, telemetry_enabled: bool
+) -> k8s.Container:
+    telemetry_env = (
+        [
+            k8s.EnvVar(name=name, value=value)
+            for name, value in telemetry.service_environment(env.namespace, "agentplane-egress-sidecar").items()
+        ]
+        if telemetry_enabled
+        else []
+    )
     return k8s.Container(
         name=sidecar_config.CONTAINER_NAME,
         image=f"{_EGRESS_SIDECAR_IMAGE}:{_PLACEHOLDER_TAG}",
-        env=[settings.path_env],
+        env=[settings.path_env, *telemetry_env],
         security_context=workload_security_context(),
         readiness_probe=k8s.Probe(
             http_get=k8s.HttpGetAction(
@@ -297,6 +312,7 @@ def pod_spec(
     workload_volumes: Sequence[k8s.Volume] = (),
     sidecar_resources: k8s.ResourceRequirements | None = None,
     image_pull_secret_name: str | None = SECRET_NAME,
+    enable_telemetry: bool = False,
 ) -> k8s.PodSpec:
     """`workload` beside the egress sidecar, as uid 1000, with no ServiceAccount token in the Pod: the
     projected tokens are mounted by the sidecar alone, which is what keeps an account shared by
@@ -313,12 +329,14 @@ def pod_spec(
         containers=[
             workload,
             _egress_sidecar(
+                env,
                 settings,
                 sidecar_resources
                 or k8s.ResourceRequirements(
                     requests={"cpu": k8s.Quantity.from_string("10m"), "memory": k8s.Quantity.from_string("32Mi")},
                     limits={"cpu": k8s.Quantity.from_string("100m"), "memory": k8s.Quantity.from_string("128Mi")},
                 ),
+                telemetry_enabled=enable_telemetry,
             ),
         ],
         automount_service_account_token=False,

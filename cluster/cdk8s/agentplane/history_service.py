@@ -133,6 +133,7 @@ class HistoryService(Construct):
                 memory_limit=migrate_memory_limit,
             ),
             placement=placement,
+            telemetry_enabled=True,
             registry_secret_name=registry_secret_name,
         )
         config.mount_into(workload.container, env=Settings.config_file_env)

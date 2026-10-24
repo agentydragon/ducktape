@@ -33,6 +33,7 @@ let
   seedDiskOf = {
     "config.json" = "config";
     "kubeconfig" = "config";
+    "runner.env" = "config";
     "launch.json" = "launch";
     "ca-certificates.crt" = "trust";
     "ca-certificates.p12" = "trust";
@@ -289,6 +290,7 @@ in
       OPENAI_API_KEY = "agentplane-credential-agentplane-workload";
     };
     serviceConfig = {
+      EnvironmentFile = "${runtimeDir}/runner.env";
       Type = "simple";
       ExecStart = "${runnerDir}/bin/agentplane-runner-vm";
       UMask = "0007";

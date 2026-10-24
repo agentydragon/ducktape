@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/observability"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -30,6 +31,7 @@ func Dial(target, tokenPath string, timeout time.Duration, options ...grpc.DialO
 	}
 	return grpc.NewClient(target, append([]grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		observability.GRPCClientOption(),
 		grpc.WithUnaryInterceptor(withBearerTokenAndTimeout(tokenPath, timeout)),
 		grpc.WithStreamInterceptor(withBearerToken(tokenPath)),
 		grpc.WithDisableRetry(),

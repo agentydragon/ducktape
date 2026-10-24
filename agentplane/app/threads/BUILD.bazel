@@ -116,6 +116,7 @@ py_library(
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
         "@pypi//fastapi",
         "@pypi//grpcio",
+        "@pypi//opentelemetry_api",
         "@pypi//protobuf",
         "@pypi//pydantic",
     ],
@@ -155,6 +156,7 @@ py_library(
     deps = [
         "//agentplane/app/threads/events:event_log",
         "//agentplane/history_service:client",
+        "@pypi//opentelemetry_api",
         "@pypi//sqlalchemy",
     ],
 )

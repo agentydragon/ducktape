@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
+	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
@@ -100,6 +101,7 @@ func NewOperatorVerifier(settings OperatorOIDCSettings) (*OperatorVerifier, erro
 	// The keys are fetched without following a redirect, so only the pinned URL is ever asked.
 	client := &http.Client{
 		Timeout:       keysTimeout,
+		Transport:     observability.HTTPTransport(http.DefaultTransport),
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
 	keys := &expiringKeys{ctx: oidc.ClientContext(context.Background(), client), url: settings.JWKSURI}

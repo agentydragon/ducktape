@@ -22,6 +22,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/history_service/reads"
 	runneringresspb "github.com/agentydragon/ducktape/agentplane/history_service/runner_ingresspb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
+	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"github.com/agentydragon/ducktape/util/netlistener"
@@ -54,6 +55,7 @@ func kubernetesConfig(c config) (*rest.Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	kubeConfig.WrapTransport = observability.WrapHTTPTransport(kubeConfig.WrapTransport)
 	// Every read and every push is a TokenReview; client-go's default of 5 requests per second (burst 10) would
 	// queue them client-side. API Priority and Fairness bounds the load on the server.
 	kubeConfig.QPS = -1
@@ -177,11 +179,11 @@ func serve(ctx context.Context, c config, reviews auth.TokenReviews, listener, i
 		Reader: &reads.Reader{DB: readDB, History: history}, Wakeups: hub, Resolver: readerAuth, Callers: c.ReaderAccounts,
 		RequestTimeout: seconds(c.RequestTimeoutSeconds), WatchLease: seconds(c.WatchLeaseSeconds),
 	})
-	server := grpc.NewServer()
+	server := grpc.NewServer(observability.GRPCServerOption())
 	historypb.RegisterHistoryServiceServer(server, service)
 	healthServer := health.NewServer()
 	healthpb.RegisterHealthServer(server, healthServer)
-	ingressServer := grpc.NewServer()
+	ingressServer := grpc.NewServer(observability.GRPCServerOption())
 	runneringresspb.RegisterRunnerIngressServer(ingressServer, &ingress.Service{
 		Principals: writerAuth, History: storage.NewStore(ingressDB, c.Ingress.SettleDeltas),
 		Timing: ingress.Timing{IdleAck: ingressIdleAck, SilenceLimit: ingressSilenceLimit},
@@ -243,7 +245,14 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	if err := run(ctx, c); err != nil && !errors.Is(err, context.Canceled) {
+	shutdownTracing, err := observability.Init(ctx, "history-service")
+	if err != nil {
+		slog.Error("History Service tracing setup failed", "error", err)
+		os.Exit(1)
+	}
+	err = run(ctx, c)
+	shutdownTracing()
+	if err != nil && !errors.Is(err, context.Canceled) {
 		slog.Error("History Service stopped", "error", err)
 		os.Exit(1)
 	}

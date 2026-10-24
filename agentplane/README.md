@@ -84,6 +84,8 @@ flowchart LR
       direction LR
         index[Git index]
     end
+    alloy[Alloy OTLP receiver]
+    sdk_services[[Instrumented Agentplane services]]
 
     browser -->|HTTPS, one origin| edge
     edge -->|HTML, assets and service worker| frontend
@@ -99,6 +101,8 @@ flowchart LR
     app -->|gRPC| egress
     app --> electric
     app --> k8s
+    sdk_services -->|OTLP/gRPC| alloy
+    app -->|browser trace relay: OTLP/HTTP| alloy
 
     gw --> k8s
     notif --> k8s
@@ -108,9 +112,13 @@ flowchart LR
     runner --> sidecar --> egress
     guest --> relay --> egress
     runner -.->|RunnerControl.Connect| sidecar
+    runner -.->|OTLP/gRPC telemetry route| sidecar
     sidecar -.->|outbound platform route| gw
+    sidecar -->|OTLP/gRPC| alloy
     guest -.->|RunnerControl.Connect| relay
+    guest -.->|OTLP/gRPC telemetry route| relay
     relay -.->|outbound platform route| gw
+    relay -->|OTLP/gRPC| alloy
     gw -->|tunneled Runner RPCs| runner
     gw -->|tunneled Runner RPCs| guest
     runner -.->|dials RunnerIngress.Push| sidecar
@@ -149,6 +157,9 @@ embeds files through an embedding endpoint and owns its own PostgreSQL database
   KubeVirt launcher Pod. Commands and lifecycle requests reach runners over the `RunnerControl`
   stream they dial to the Runner Gateway, routed per Sandbox by its `<sandbox>-control` Service and
   `<sandbox>-runner` Lease ([runner control stream](docs/runner_control.md)).
+- **Telemetry uses Alloy as its collector.** SDK-instrumented services export OTLP/gRPC to Alloy.
+  Browser spans post to the same-origin App relay, which forwards OTLP/HTTP to Alloy. Runner spans use
+  the sidecar's local telemetry route; VM guest spans use the launcher relay's guest gateway route.
 - **Databases.** Each service owns a database on one shared CNPG cluster: `app`, `sandbox_service`
   (Session history, owned by the History Service), `actions`, `egress`, `notifications` and
   `session_dispatcher` (also the Gateway's queue; the Gateway has no registry database).

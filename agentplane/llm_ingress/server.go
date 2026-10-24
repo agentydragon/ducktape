@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 )
 
@@ -71,7 +72,7 @@ func newIngressHandler(c config, resolver *auth.Resolver, logger *slog.Logger) (
 		return writeTimeoutConn{Conn: conn, timeout: 60 * time.Second}, nil
 	}
 	backend := &http.Client{
-		Transport: transport,
+		Transport: observability.HTTPTransport(transport),
 		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
 			return http.ErrUseLastResponse
 		},

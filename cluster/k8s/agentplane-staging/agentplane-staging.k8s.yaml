@@ -10,6 +10,26 @@ metadata:
   name: agentplane-staging
 spec: {}
 ---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: otel-egress
+  namespace: agentplane-staging
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: alloy
+            k8s:io.kubernetes.pod.namespace: monitoring
+      toPorts:
+        - ports:
+            - port: "4317"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      agentplane.io/otel-class: service
+      agentplane.io/otel-emitter: "true"
+---
 apiVersion: generators.external-secrets.io/v1alpha1
 kind: Password
 metadata:
@@ -1113,6 +1133,8 @@ spec:
   template:
     metadata:
       labels:
+        agentplane.io/otel-class: service
+        agentplane.io/otel-emitter: "true"
         app.kubernetes.io/name: llm-ingress
         cdk8s.io/metadata.addr: agentplane-llm-ingress-deployment-c81387cd
     spec:
@@ -1127,6 +1149,18 @@ spec:
               value: 0.0.0.0
             - name: AGENTPLANE_LLM_INGRESS_PORT
               value: "8080"
+            - name: OTEL_SERVICE_NAME
+              value: llm-ingress
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: service.namespace=agentplane,deployment.environment.name=agentplane-staging
+            - name: OTEL_TRACES_EXPORTER
+              value: otlp
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: grpc
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://alloy.monitoring.svc.cluster.local:4317
+            - name: OTEL_TRACES_SAMPLER
+              value: parentbased_always_on
             - name: AGENTPLANE_LLM_INGRESS_LITELLM_KEY
               valueFrom:
                 secretKeyRef:
@@ -1315,6 +1349,8 @@ spec:
   template:
     metadata:
       labels:
+        agentplane.io/otel-class: service
+        agentplane.io/otel-emitter: "true"
         app.kubernetes.io/name: egress
         cdk8s.io/metadata.addr: agentplane-egress-deployment-c84e690f
     spec:
@@ -1355,6 +1391,18 @@ spec:
                 secretKeyRef:
                   key: uri
                   name: postgres-egress
+            - name: OTEL_SERVICE_NAME
+              value: egress
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: service.namespace=agentplane,deployment.environment.name=agentplane-staging
+            - name: OTEL_TRACES_EXPORTER
+              value: otlp
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: grpc
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://alloy.monitoring.svc.cluster.local:4317
+            - name: OTEL_TRACES_SAMPLER
+              value: parentbased_always_on
             - name: AGENTPLANE_EGRESS_CONFIG_FILE
               value: /etc/agentplane-egress/settings/settings.yaml
           image: git.allegedly.works/ducktape-ci/agentplane-egress-proxy:unset
@@ -2318,6 +2366,8 @@ spec:
   template:
     metadata:
       labels:
+        agentplane.io/otel-class: service
+        agentplane.io/otel-emitter: "true"
         app.kubernetes.io/name: history-service
         cdk8s.io/metadata.addr: agentplane-history-service-deployment-c83c36d1
     spec:
@@ -2329,6 +2379,18 @@ spec:
                 secretKeyRef:
                   key: uri
                   name: postgres-sandbox-service
+            - name: OTEL_SERVICE_NAME
+              value: history-service
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: service.namespace=agentplane,deployment.environment.name=agentplane-staging
+            - name: OTEL_TRACES_EXPORTER
+              value: otlp
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: grpc
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://alloy.monitoring.svc.cluster.local:4317
+            - name: OTEL_TRACES_SAMPLER
+              value: parentbased_always_on
             - name: AGENTPLANE_HISTORY_SERVICE_CONFIG_FILE
               value: /etc/agentplane-history-service/config.yaml
           image: git.allegedly.works/ducktape-ci/agentplane-history-service:unset
@@ -3064,6 +3126,8 @@ spec:
   template:
     metadata:
       labels:
+        agentplane.io/otel-class: service
+        agentplane.io/otel-emitter: "true"
         app.kubernetes.io/name: app
         cdk8s.io/metadata.addr: agentplane-app-deployment-c8d92233
     spec:
@@ -3113,6 +3177,22 @@ spec:
               value: http://mcp-edge.agentplane-staging.svc:8080/
             - name: AGENTPLANE_RUNNER_GATEWAY_CONTROL_TARGET
               value: "{sandbox}-control.{namespace}.svc:8080"
+            - name: OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
+              value: http://alloy.monitoring.svc.cluster.local:4318/v1/traces
+            - name: OTEL_EXPORTER_OTLP_TRACES_PROTOCOL
+              value: http/protobuf
+            - name: OTEL_SERVICE_NAME
+              value: app
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: service.namespace=agentplane,deployment.environment.name=agentplane-staging
+            - name: OTEL_TRACES_EXPORTER
+              value: otlp
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: grpc
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://alloy.monitoring.svc.cluster.local:4317
+            - name: OTEL_TRACES_SAMPLER
+              value: parentbased_always_on
             - name: AGENTPLANE_CONFIG_FILE
               value: /etc/agentplane/config.yaml
           image: git.allegedly.works/ducktape-ci/agentplane-app:unset
@@ -3574,6 +3654,14 @@ spec:
               protocol: TCP
     - toEndpoints:
         - matchLabels:
+            app.kubernetes.io/name: alloy
+            k8s:io.kubernetes.pod.namespace: monitoring
+      toPorts:
+        - ports:
+            - port: "4318"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
             k8s:cnpg.io/cluster: postgres
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
@@ -3927,6 +4015,9 @@ data:
         listen_address: 127.0.0.1:3131
         upstream: history-service.agentplane-staging.svc.cluster.local:8081
         token_file: /var/run/agentplane-egress/runner-ingress-token
+      telemetry:
+        listen_address: 127.0.0.1:3132
+        upstream: alloy.monitoring.svc.cluster.local:4317
 immutable: false
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
@@ -3938,6 +4029,8 @@ spec:
   pod:
     metadata:
       labels:
+        agentplane.io/otel-class: runner
+        agentplane.io/otel-emitter: "true"
         app.kubernetes.io/name: agentplane-runner
     spec:
       automountServiceAccountToken: false
@@ -4014,6 +4107,18 @@ spec:
           env:
             - name: LITELLM_URL
               value: http://llm-ingress.agentplane-staging.svc.cluster.local:8080
+            - name: OTEL_SERVICE_NAME
+              value: agentplane-runner
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: service.namespace=agentplane,deployment.environment.name=agentplane-staging
+            - name: OTEL_TRACES_EXPORTER
+              value: otlp
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: grpc
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://127.0.0.1:3132
+            - name: OTEL_TRACES_SAMPLER
+              value: parentbased_always_on
             - name: HTTP_PROXY
               value: http://127.0.0.1:3128
             - name: HTTPS_PROXY
@@ -4097,6 +4202,18 @@ spec:
         - env:
             - name: AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE
               value: /etc/agentplane-egress-sidecar/settings.yaml
+            - name: OTEL_SERVICE_NAME
+              value: agentplane-egress-sidecar
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: service.namespace=agentplane,deployment.environment.name=agentplane-staging
+            - name: OTEL_TRACES_EXPORTER
+              value: otlp
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: grpc
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://alloy.monitoring.svc.cluster.local:4317
+            - name: OTEL_TRACES_SAMPLER
+              value: parentbased_always_on
           image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
           name: egress-sidecar
           readinessProbe:
@@ -4228,6 +4345,9 @@ data:
         listen_address: 0.0.0.0:3131
         upstream: history-service.agentplane-staging.svc.cluster.local:8081
         token_file: /var/run/agentplane-egress/runner-ingress-token
+      telemetry:
+        listen_address: 0.0.0.0:3132
+        upstream: alloy.monitoring.svc.cluster.local:4317
 immutable: false
 ---
 apiVersion: kyverno.io/v1
@@ -4362,6 +4482,18 @@ spec:
               - env:
                   - name: AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE
                     value: /etc/agentplane-egress-sidecar/settings.yaml
+                  - name: OTEL_SERVICE_NAME
+                    value: agentplane-egress-sidecar
+                  - name: OTEL_RESOURCE_ATTRIBUTES
+                    value: service.namespace=agentplane,deployment.environment.name=agentplane-staging
+                  - name: OTEL_TRACES_EXPORTER
+                    value: otlp
+                  - name: OTEL_EXPORTER_OTLP_PROTOCOL
+                    value: grpc
+                  - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                    value: http://alloy.monitoring.svc.cluster.local:4317
+                  - name: OTEL_TRACES_SAMPLER
+                    value: parentbased_always_on
                 image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
                 name: egress-sidecar
                 readinessProbe:
@@ -4510,6 +4642,13 @@ data:
           cluster: in-cluster
           user: workload
     current-context: in-cluster
+  runner.env: |
+    OTEL_EXPORTER_OTLP_ENDPOINT="http://10.0.2.1:3132"
+    OTEL_EXPORTER_OTLP_PROTOCOL="grpc"
+    OTEL_RESOURCE_ATTRIBUTES="service.namespace=agentplane,deployment.environment.name=agentplane-staging"
+    OTEL_SERVICE_NAME="agentplane-runner"
+    OTEL_TRACES_EXPORTER="otlp"
+    OTEL_TRACES_SAMPLER="parentbased_always_on"
 immutable: false
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
@@ -4523,6 +4662,8 @@ spec:
       metadata:
         labels:
           app.kubernetes.io/name: agentplane-runner
+          agentplane.io/otel-emitter: "true"
+          agentplane.io/otel-class: runner
       spec:
         domain:
           cpu:
@@ -4661,6 +4802,14 @@ spec:
         - ports:
             - port: "8081"
               protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: alloy
+            k8s:io.kubernetes.pod.namespace: monitoring
+      toPorts:
+        - ports:
+            - port: "4317"
+              protocol: TCP
   endpointSelector:
     matchLabels:
       app.kubernetes.io/name: agentplane-runner
@@ -4703,6 +4852,25 @@ spec:
             - port: "8081"
               protocol: TCP
 ---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: platform-route-agentplane-staging-telemetry
+  namespace: monitoring
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: alloy
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-runner
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "4317"
+              protocol: TCP
+---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -4733,6 +4901,8 @@ spec:
   template:
     metadata:
       labels:
+        agentplane.io/otel-class: service
+        agentplane.io/otel-emitter: "true"
         app.kubernetes.io/name: sandbox-controller
         cdk8s.io/metadata.addr: agentplane-sandbox-controller-deployment-c8a54474
     spec:
@@ -4749,6 +4919,18 @@ spec:
               value: "{sandbox}-control.{namespace}.svc:8080"
             - name: AGENTPLANE_SANDBOX_CONTROLLER_RUNNER_GATEWAY_TOKEN_FILE
               value: /var/run/secrets/agentplane-runner-gateway/token
+            - name: OTEL_SERVICE_NAME
+              value: sandbox-controller
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: service.namespace=agentplane,deployment.environment.name=agentplane-staging
+            - name: OTEL_TRACES_EXPORTER
+              value: otlp
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: grpc
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://alloy.monitoring.svc.cluster.local:4317
+            - name: OTEL_TRACES_SAMPLER
+              value: parentbased_always_on
           image: git.allegedly.works/ducktape-ci/agentplane-sandbox-controller:unset
           imagePullPolicy: IfNotPresent
           livenessProbe:
@@ -5238,6 +5420,8 @@ spec:
   template:
     metadata:
       labels:
+        agentplane.io/otel-class: service
+        agentplane.io/otel-emitter: "true"
         app.kubernetes.io/name: actions
         cdk8s.io/metadata.addr: agentplane-actions-deployment-c8d4c10b
     spec:
@@ -5261,6 +5445,18 @@ spec:
                 secretKeyRef:
                   key: client_id
                   name: haku-console-github-mcp-client-credentials
+            - name: OTEL_SERVICE_NAME
+              value: actions
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: service.namespace=agentplane,deployment.environment.name=agentplane-staging
+            - name: OTEL_TRACES_EXPORTER
+              value: otlp
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: grpc
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://alloy.monitoring.svc.cluster.local:4317
+            - name: OTEL_TRACES_SAMPLER
+              value: parentbased_always_on
             - name: AGENTPLANE_ACTIONS_CONFIG_FILE
               value: /etc/agentplane-actions/settings.yaml
           image: git.allegedly.works/ducktape-ci/agentplane-action-service:unset
@@ -5847,6 +6043,8 @@ spec:
   template:
     metadata:
       labels:
+        agentplane.io/otel-class: service
+        agentplane.io/otel-emitter: "true"
         app.kubernetes.io/name: mcp-edge
         cdk8s.io/metadata.addr: agentplane-mcp-edge-deployment-c88c8f8c
     spec:
@@ -5863,6 +6061,18 @@ spec:
                 secretKeyRef:
                   key: oauth
                   name: agentplane-mcp-oauth
+            - name: OTEL_SERVICE_NAME
+              value: mcp-edge
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: service.namespace=agentplane,deployment.environment.name=agentplane-staging
+            - name: OTEL_TRACES_EXPORTER
+              value: otlp
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: grpc
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://alloy.monitoring.svc.cluster.local:4317
+            - name: OTEL_TRACES_SAMPLER
+              value: parentbased_always_on
             - name: AGENTPLANE_MCP_EDGE_CONFIG_FILE
               value: /etc/agentplane-mcp-edge/settings.yaml
           image: git.allegedly.works/ducktape-ci/agentplane-mcp-edge:unset
@@ -6254,6 +6464,8 @@ spec:
   template:
     metadata:
       labels:
+        agentplane.io/otel-class: service
+        agentplane.io/otel-emitter: "true"
         app.kubernetes.io/name: notifications
         cdk8s.io/metadata.addr: agentplane-notifications-deployment-c8c45f99
     spec:
@@ -6265,6 +6477,18 @@ spec:
                 secretKeyRef:
                   key: uri
                   name: postgres-notifications
+            - name: OTEL_SERVICE_NAME
+              value: notifications
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: service.namespace=agentplane,deployment.environment.name=agentplane-staging
+            - name: OTEL_TRACES_EXPORTER
+              value: otlp
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: grpc
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://alloy.monitoring.svc.cluster.local:4317
+            - name: OTEL_TRACES_SAMPLER
+              value: parentbased_always_on
             - name: AGENTPLANE_NOTIFICATIONS_GITHUB__PRIVATE_KEY
               valueFrom:
                 secretKeyRef:
@@ -6619,6 +6843,9 @@ data:
         listen_address: 127.0.0.1:3131
         upstream: history-service.agentplane-staging.svc.cluster.local:8081
         token_file: /var/run/agentplane-egress/runner-ingress-token
+      telemetry:
+        listen_address: 127.0.0.1:3132
+        upstream: alloy.monitoring.svc.cluster.local:4317
 immutable: false
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
@@ -6630,6 +6857,8 @@ spec:
   pod:
     metadata:
       labels:
+        agentplane.io/otel-class: runner
+        agentplane.io/otel-emitter: "true"
         app.kubernetes.io/name: agentplane-runner
     spec:
       automountServiceAccountToken: false
@@ -6708,6 +6937,18 @@ spec:
           env:
             - name: LITELLM_URL
               value: http://llm-ingress.agentplane-staging.svc.cluster.local:8080
+            - name: OTEL_SERVICE_NAME
+              value: agentplane-runner
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: service.namespace=agentplane,deployment.environment.name=agentplane-staging
+            - name: OTEL_TRACES_EXPORTER
+              value: otlp
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: grpc
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://127.0.0.1:3132
+            - name: OTEL_TRACES_SAMPLER
+              value: parentbased_always_on
             - name: BBR_BUILDBUDDY_API_KEY_FILE
               value: /run/buildbuddy/api-key
             - name: HTTP_PROXY
@@ -6796,6 +7037,18 @@ spec:
         - env:
             - name: AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE
               value: /etc/agentplane-egress-sidecar/settings.yaml
+            - name: OTEL_SERVICE_NAME
+              value: agentplane-egress-sidecar
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: service.namespace=agentplane,deployment.environment.name=agentplane-staging
+            - name: OTEL_TRACES_EXPORTER
+              value: otlp
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: grpc
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://alloy.monitoring.svc.cluster.local:4317
+            - name: OTEL_TRACES_SAMPLER
+              value: parentbased_always_on
           image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
           name: egress-sidecar
           readinessProbe:
@@ -7609,6 +7862,8 @@ spec:
   template:
     metadata:
       labels:
+        agentplane.io/otel-class: service
+        agentplane.io/otel-emitter: "true"
         app.kubernetes.io/name: policy-controller
         cdk8s.io/metadata.addr: agentplane-policy-controller-deployment-c883d3e9
     spec:
@@ -7623,6 +7878,18 @@ spec:
               value: :8081
             - name: AGENTPLANE_POLICY_CONTROLLER_SUBJECT_NAMESPACES
               value: agentplane-staging
+            - name: OTEL_SERVICE_NAME
+              value: policy-controller
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: service.namespace=agentplane,deployment.environment.name=agentplane-staging
+            - name: OTEL_TRACES_EXPORTER
+              value: otlp
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: grpc
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://alloy.monitoring.svc.cluster.local:4317
+            - name: OTEL_TRACES_SAMPLER
+              value: parentbased_always_on
           image: git.allegedly.works/ducktape-ci/agentplane-policy-controller:unset
           imagePullPolicy: IfNotPresent
           livenessProbe:

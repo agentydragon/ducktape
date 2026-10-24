@@ -41,6 +41,20 @@ py_library(
 )
 
 py_library(
+    name = "tracing",
+    srcs = ["tracing.py"],
+    deps = [
+        "@pypi//opentelemetry_api",
+        "@pypi//opentelemetry_exporter_otlp_proto_grpc",
+        "@pypi//opentelemetry_exporter_otlp_proto_http",
+        "@pypi//opentelemetry_instrumentation_fastapi",
+        "@pypi//opentelemetry_instrumentation_grpc",
+        "@pypi//opentelemetry_instrumentation_httpx",
+        "@pypi//opentelemetry_sdk",
+    ],
+)
+
+py_library(
     name = "kubernetes_watch",
     srcs = ["kubernetes_watch.py"],
 )

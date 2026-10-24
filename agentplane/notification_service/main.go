@@ -31,6 +31,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/webhook"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/worker"
+	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/probes"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
@@ -75,6 +76,7 @@ func inClusterDeps() (kubeDeps, error) {
 	if err != nil {
 		return kubeDeps{}, err
 	}
+	kubeConfig.WrapTransport = observability.WrapHTTPTransport(kubeConfig.WrapTransport)
 	// Every call is a TokenReview; client-go's default of 5 requests per second (burst 10) would queue them
 	// client-side. API Priority and Fairness bounds the load on the server.
 	kubeConfig.QPS = -1
@@ -235,7 +237,7 @@ func serve(ctx context.Context, c config, deps kubeDeps, listener net.Listener) 
 	operator := api.NewNotificationsOperator(options)
 	// A worker that stops ends the process, so a ready replica's workers are running.
 	health := probes.New(db, hub)
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(observability.GRPCServerOption())
 	notificationspb.RegisterNotificationsServer(grpcServer, api.NewNotifications(options))
 	operatorpb.RegisterNotificationsOperatorServer(grpcServer, operator)
 	healthpb.RegisterHealthServer(grpcServer, health)
@@ -252,7 +254,7 @@ func serve(ctx context.Context, c config, deps kubeDeps, listener net.Listener) 
 	if err != nil {
 		return err
 	}
-	server := &http.Server{Handler: routes, ReadHeaderTimeout: readHeaderTimeout}
+	server := &http.Server{Handler: observability.HTTPHandler(routes), ReadHeaderTimeout: readHeaderTimeout}
 	facade.MountGRPC(server, grpcServer)
 
 	// Each worker follows the commits on its own signal.
@@ -308,7 +310,14 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	if err := run(ctx, c); err != nil && !errors.Is(err, context.Canceled) {
+	shutdownTracing, err := observability.Init(ctx, "notification-service")
+	if err != nil {
+		slog.Error("Notification Service tracing setup failed", "error", err)
+		os.Exit(1)
+	}
+	err = run(ctx, c)
+	shutdownTracing()
+	if err != nil && !errors.Is(err, context.Canceled) {
 		slog.Error("Notification Service stopped", "error", err)
 		os.Exit(1)
 	}

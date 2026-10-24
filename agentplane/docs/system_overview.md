@@ -53,6 +53,41 @@ The runner opens the long-lived `RunnerControl.Connect` stream through its Pod's
 the VM launcher's relay. The Gateway sends `Runner` RPC calls back through that existing stream,
 and responses return there; neither Pod accepts an inbound Gateway connection.
 
+## Telemetry
+
+```mermaid
+flowchart LR
+    browser([Browser])
+    app[Integration App and OTLP relay]
+    services[[Instrumented Agentplane services]]
+    alloy[Alloy OTLP receiver]
+    subgraph sandbox[Sandbox Pod]
+        runner[Runner]
+        sidecar[Egress sidecar]
+    end
+    subgraph vm_guest[VM guest]
+        guest[Guest runner]
+    end
+    subgraph vm_pod[VM launcher Pod]
+        relay[Egress relay]
+    end
+
+    browser -->|same-origin POST /telemetry/v1/traces| app
+    app -->|OTLP/HTTP :4318| alloy
+    services -->|OTLP/gRPC :4317| alloy
+    runner -.->|OTLP/gRPC 127.0.0.1:3132| sidecar
+    sidecar -->|OTLP/gRPC :4317| alloy
+    guest -.->|OTLP/gRPC 10.0.2.1:3132| relay
+    relay -->|OTLP/gRPC :4317| alloy
+```
+
+The browser exports protobuf traces to the same-origin App endpoint. The App fixes the upstream
+receiver from its server-side configuration and forwards the bounded request to Alloy over OTLP/HTTP;
+the browser cannot choose a destination. Instrumented backend services export OTLP/gRPC directly to
+Alloy. Runners use an unauthenticated local gRPC route in their egress sidecar; VM guests use the
+launcher relay at the guest gateway. Both relays forward to Alloy, and the sidecar and relay export
+their own traces directly there as well.
+
 ## History and browser sync
 
 ```mermaid

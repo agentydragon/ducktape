@@ -120,9 +120,12 @@ mimir.rules.kubernetes "rules" {
   address = sys.env("MIMIR_GATEWAY_URL")
 }
 
-// --- OTLP ingestion (OpenClaw traces, logs, metrics) ---
+// --- OTLP ingestion (Agentplane and browser relay traces, logs, metrics) ---
 
-otelcol.receiver.otlp "openclaw" {
+otelcol.receiver.otlp "agentplane" {
+  grpc {
+    endpoint = sys.env("OTLP_GRPC_LISTEN_ADDRESS")
+  }
   http {
     endpoint = sys.env("OTLP_HTTP_LISTEN_ADDRESS")
   }

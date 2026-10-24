@@ -15,6 +15,7 @@ go_library(
     deps = [
         "//agentplane/notification_service/store",
         "//agentplane/notification_service/worker",
+        "//agentplane/observability",
         "@com_github_bradleyfalzon_ghinstallation_v2//:ghinstallation",
         "@com_github_google_go_github_v88//github",
         "@com_github_google_uuid//:uuid",

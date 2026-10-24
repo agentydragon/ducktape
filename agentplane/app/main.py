@@ -50,6 +50,7 @@ from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.sandboxes.inventory import SandboxInventory
 from agentplane.service_process import configure_logging, kubernetes_configuration
 from agentplane.subjects import ServiceAccountRef
+from agentplane.tracing import configure_tracing
 from util.kubernetes import CustomObjectsClient
 
 # Each System page probe's budget; the probes run together, so the page answers within it.
@@ -74,7 +75,12 @@ class AppServer(uvicorn.Server):
 def main() -> None:
     settings = Settings()
     configure_logging(settings.log_levels)
-    asyncio.run(async_main(settings))
+    tracer_provider = configure_tracing("agentplane-app")
+    try:
+        asyncio.run(async_main(settings))
+    finally:
+        if tracer_provider is not None:
+            tracer_provider.shutdown()
 
 
 async def async_main(settings: Settings) -> None:

@@ -47,6 +47,8 @@ spec:
   template:
     metadata:
       labels:
+        agentplane.io/otel-class: service
+        agentplane.io/otel-emitter: "true"
         app.kubernetes.io/name: runner-gateway
         cdk8s.io/metadata.addr: agentplane-runner-gateway-deployment-c8a3e7b5
     spec:
@@ -78,6 +80,18 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: status.podIP
+            - name: OTEL_SERVICE_NAME
+              value: runner-gateway
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: service.namespace=agentplane,deployment.environment.name=agentplane-staging
+            - name: OTEL_TRACES_EXPORTER
+              value: otlp
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: grpc
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://alloy.monitoring.svc.cluster.local:4317
+            - name: OTEL_TRACES_SAMPLER
+              value: parentbased_always_on
             - name: AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE
               value: /etc/agentplane-runner-gateway/settings/settings.yaml
           image: git.allegedly.works/ducktape-ci/agentplane-runner-gateway:unset

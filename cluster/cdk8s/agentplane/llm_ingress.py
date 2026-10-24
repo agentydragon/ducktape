@@ -28,6 +28,7 @@ from constructs import Construct
 from agentplane.llm_ingress.settings import Settings
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
+from cluster.cdk8s.agentplane import telemetry
 from cluster.cdk8s.agentplane.codex_models import codex_catalog
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.probes import http_probe
@@ -153,7 +154,7 @@ class LlmIngress(Construct):
                     "secret.reloader.stakater.com/reload": self.env.llm_ingress.litellm_key_secret_name,
                 },
             ),
-            pod_metadata=ApiObjectMetadata(labels=_LABELS),
+            pod_metadata=ApiObjectMetadata(labels={**_LABELS, **telemetry.EMITTER_SERVICE_CLASS_LABELS}),
             replicas=self.env.replicas.count,
             strategy=self.env.replicas.strategy,
             service_account=service_account,
@@ -180,6 +181,10 @@ class LlmIngress(Construct):
                         "host": "0.0.0.0",
                         "port": self.service.pod_port,
                     }.items()
+                },
+                **{
+                    name: EnvValue.from_value(value)
+                    for name, value in telemetry.service_environment(self.env.namespace, _NAME).items()
                 },
                 # The only real model credential in this service; runners never mount it.
                 env_name(Settings, "litellm_key"): SecretRef(

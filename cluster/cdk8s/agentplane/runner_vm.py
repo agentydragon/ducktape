@@ -34,7 +34,7 @@ from pydantic import AnyHttpUrl
 
 from agentplane.crd_group import GROUP
 from agentplane.sandboxes.guest_config import CA_BUNDLE, Endpoint, GuestConfig
-from cluster.cdk8s.agentplane import launcher_relay, llm_ingress, platform_routes, sandbox_pod
+from cluster.cdk8s.agentplane import launcher_relay, llm_ingress, platform_routes, sandbox_pod, telemetry
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.kubevirt.virtual_machine import container_disk_template
@@ -43,6 +43,7 @@ NAME = "runner-vm"
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-vm:unset"  # image-pins/ sets the tag
 RUNNER_DISK_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-disk:unset"  # image-pins/ sets the tag
 _CONFIG_MAP_NAME = "runner-vm-config"
+_RUNNER_ENV_FILE = "runner.env"
 _WORKSPACE = "workspace"
 # The guest listens on nothing; a listed port keeps masquerade from forwarding every other port,
 # kubelet's probe of the relay's readiness port among them, to the guest.
@@ -91,6 +92,17 @@ class RunnerVmTemplate(Construct):
             # that sets it needs the image that reads it.
             "config.json": config.model_dump_json(exclude_defaults=True),
             "kubeconfig": yaml_config(sandbox_pod.kubeconfig(str(CA_BUNDLE))),
+            # systemd loads the runner process's SDK settings from the same read-only config disk.
+            _RUNNER_ENV_FILE: "".join(
+                f'{name}="{value}"\n'
+                for name, value in sorted(
+                    telemetry.service_environment(
+                        env.namespace,
+                        "agentplane-runner",
+                        endpoint=platform_routes.telemetry_endpoint(host=launcher_relay.GUEST_GATEWAY),
+                    ).items()
+                )
+            ),
         }
         ConfigMap(
             self, "config", metadata=ApiObjectMetadata(name=_CONFIG_MAP_NAME, namespace=namespace), data=config_map_data

@@ -32,6 +32,7 @@ from constructs import Construct
 from more_itertools import one
 
 from cluster.cdk8s import node_scheduling, pod_policy
+from cluster.cdk8s.agentplane import telemetry
 from cluster.cdk8s.agentplane.environment import Environment, ReplicaProfile
 from cluster.cdk8s.service_ref import ServiceRef
 
@@ -118,6 +119,7 @@ def add_service_workload(
     create_service: bool = True,
     traffic_distribution: str | None = None,
     placement: node_scheduling.Placement | None = None,
+    telemetry_enabled: bool = False,
     registry_secret_name: str | None = None,
     automount_service_account_token: bool = True,
     read_only_root_filesystem: bool = False,
@@ -142,7 +144,9 @@ def add_service_workload(
         scope,
         "deployment",
         metadata=ApiObjectMetadata(name=name, namespace=env.namespace, labels=labels, annotations=annotations),
-        pod_metadata=ApiObjectMetadata(labels=labels),
+        pod_metadata=ApiObjectMetadata(
+            labels={**labels, **(telemetry.EMITTER_SERVICE_CLASS_LABELS if telemetry_enabled else {})}
+        ),
         replicas=replicas.count,
         strategy=replicas.strategy,
         min_ready=replicas.min_ready,
@@ -159,12 +163,21 @@ def add_service_workload(
         # A migration failure blocks startup; no migration command has a retry loop.
         init_containers=[migrate] if migrate is not None else None,
     )
+    service_environment = (
+        {name: EnvValue.from_value(value) for name, value in telemetry.service_environment(env.namespace, name).items()}
+        if telemetry_enabled
+        else {}
+    )
+    conflicting_environment = set(service_environment) & set(env_variables or {})
+    if conflicting_environment:
+        names = ", ".join(sorted(conflicting_environment))
+        raise ValueError(f"service telemetry environment conflicts with workload environment: {names}")
     main = deployment.add_container(
         name=container,
         image=image,
         image_pull_policy=image_pull_policy,
         args=args,
-        env_variables=env_variables,
+        env_variables={**(env_variables or {}), **service_environment},
         ports=[*ports.values(), *(extra_ports or [])],
         readiness=readiness,
         liveness=liveness,

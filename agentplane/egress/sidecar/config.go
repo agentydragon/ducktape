@@ -13,7 +13,7 @@ const configFileEnv = "AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE"
 type platformRouteConfig struct {
 	ListenAddress string `yaml:"listen_address"`
 	Upstream      string `yaml:"upstream"`
-	TokenFile     string `yaml:"token_file"`
+	TokenFile     string `yaml:"token_file,omitempty"`
 }
 
 type config struct {
@@ -69,8 +69,8 @@ func (c config) validate() error {
 		return errors.New("platform_routes must be an object")
 	}
 	for name, route := range c.PlatformRoutes {
-		if route.ListenAddress == "" || route.Upstream == "" || route.TokenFile == "" {
-			return fmt.Errorf("platform route %q requires listen_address, upstream, and token_file", name)
+		if route.ListenAddress == "" || route.Upstream == "" {
+			return fmt.Errorf("platform route %q requires listen_address and upstream", name)
 		}
 	}
 	return nil

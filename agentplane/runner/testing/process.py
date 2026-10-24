@@ -52,6 +52,7 @@ class RunningRunner:
         environment.update(
             {key: os.environ[key] for key in ("RUNFILES_DIR", "RUNFILES_MANIFEST_FILE") if key in os.environ}
         )
+        environment["OTEL_SDK_DISABLED"] = "true"
         if self.config.claude is not None:
             environment["ANTHROPIC_AUTH_TOKEN"] = self.config.claude.token
         if self.config.codex is not None:

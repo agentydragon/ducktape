@@ -124,6 +124,7 @@ class McpEdge(Construct):
                 image_pull_policy=migrate_pull_policy,
             ),
             placement=placement,
+            telemetry_enabled=True,
             registry_secret_name=registry_secret_name,
             annotations={
                 "configmap.reloader.stakater.com/reload": settings.config_map.name,

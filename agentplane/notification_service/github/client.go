@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/bradleyfalzon/ghinstallation/v2"
 	"github.com/google/go-github/v88/github"
 )
@@ -74,10 +75,10 @@ func New(settings Settings) (*Client, error) {
 		baseURL:    strings.TrimRight(settings.APIURL, "/"),
 		appID:      settings.AppID,
 		privateKey: []byte(settings.PrivateKey),
-		transport: apiHeaders{
+		transport: observability.HTTPTransport(apiHeaders{
 			next:    http.DefaultTransport.(*http.Transport).Clone(),
 			version: settings.APIVersion,
-		},
+		}),
 		now:           time.Now,
 		installations: map[int64]*installationAuth{},
 	}

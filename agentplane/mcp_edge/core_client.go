@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	uniqueauth "github.com/modelcontextprotocol/go-sdk/auth"
 	"google.golang.org/grpc"
@@ -219,6 +220,7 @@ func (s *checkedStream) CloseSend() error {
 func dialActions(target string, caller *coreCaller) (*grpc.ClientConn, error) {
 	return grpc.NewClient(
 		target,
+		observability.GRPCClientOption(),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithUnaryInterceptor(caller.unary), grpc.WithStreamInterceptor(caller.stream), grpc.WithDisableRetry(),
 	)

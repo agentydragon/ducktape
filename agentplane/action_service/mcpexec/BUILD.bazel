@@ -17,6 +17,7 @@ go_library(
         "//agentplane/action_service/linkage",
         "//agentplane/action_service/store",
         "//agentplane/action_service/worker",
+        "//agentplane/observability",
         "@com_github_modelcontextprotocol_go_sdk//mcp",
         "@com_github_santhosh_tekuri_jsonschema_v6//:jsonschema",
         "@com_github_sethvargo_go_retry//:go-retry",

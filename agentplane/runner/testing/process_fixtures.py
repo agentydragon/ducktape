@@ -84,6 +84,7 @@ def runner_environment(home: Path) -> dict[str, str]:
         **{key: os.environ[key] for key in ("RUNFILES_DIR", "RUNFILES_MANIFEST_FILE") if key in os.environ},
         "ANTHROPIC_AUTH_TOKEN": launches.TOKEN,
         "OPENAI_API_KEY": launches.TOKEN,
+        "OTEL_SDK_DISABLED": "true",
     }
 
 

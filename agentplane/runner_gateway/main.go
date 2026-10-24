@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
+	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/gateway"
@@ -36,10 +37,18 @@ import (
 )
 
 func kubernetesConfig(c config) (*rest.Config, error) {
+	var kubeConfig *rest.Config
+	var err error
 	if c.Kubeconfig != "" {
-		return clientcmd.BuildConfigFromFlags("", c.Kubeconfig)
+		kubeConfig, err = clientcmd.BuildConfigFromFlags("", c.Kubeconfig)
+	} else {
+		kubeConfig, err = rest.InClusterConfig()
 	}
-	return rest.InClusterConfig()
+	if err != nil {
+		return nil, err
+	}
+	kubeConfig.WrapTransport = observability.WrapHTTPTransport(kubeConfig.WrapTransport)
+	return kubeConfig, nil
 }
 
 func accountSet(accounts []auth.Account) map[auth.Account]struct{} {
@@ -99,7 +108,7 @@ func serveFacade(ctx context.Context, listener net.Listener, grpcListener net.Li
 		return nil, err
 	}
 	// No write timeout: WatchDispatches streams for its lease.
-	server := &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second}
+	server := &http.Server{Handler: observability.HTTPHandler(handler), ReadHeaderTimeout: 10 * time.Second}
 	go func() { reportUnexpected(ctx, failed, "HTTP listener", server.Serve(listener)) }()
 	return server, nil
 }
@@ -223,7 +232,7 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 		WakeCallers: accountSet(c.WakeCallers), Sandboxes: catalog, Runner: runner,
 		Hub: hub, WatchLease: time.Duration(c.WatchLeaseSeconds) * time.Second,
 	}
-	server := grpc.NewServer()
+	server := grpc.NewServer(observability.GRPCServerOption())
 	dispatcherpb.RegisterSessionDispatcherServer(server, service)
 	g.RegisterProxy(server)
 	g.RegisterRunnerControl(server)
@@ -274,7 +283,14 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	if err := listenAndServe(ctx, c); err != nil && !errors.Is(err, context.Canceled) {
+	shutdownTracing, err := observability.Init(ctx, "runner-gateway")
+	if err != nil {
+		slog.Error("Runner Gateway tracing setup failed", "error", err)
+		os.Exit(1)
+	}
+	err = listenAndServe(ctx, c)
+	shutdownTracing()
+	if err != nil && !errors.Is(err, context.Canceled) {
 		slog.Error("Runner Gateway stopped", "error", err)
 		os.Exit(1)
 	}

@@ -55,8 +55,10 @@ async def go_process(
 ) -> AsyncIterator[GoProcess]:
     """`binary` with only `env` and inherited descriptors, once it reports SERVING on `health_port`."""
     with stderr.open("wb") as log:
+        # These test services have no collector. Avoid waiting for OTLP export during shutdown.
+        process_env = {**env, "OTEL_SDK_DISABLED": "true"}
         process = await asyncio.create_subprocess_exec(
-            binary, env=dict(env), stdout=log, stderr=log, pass_fds=tuple(pass_fds)
+            binary, env=process_env, stdout=log, stderr=log, pass_fds=tuple(pass_fds)
         )
     running = GoProcess(process, stderr, health_port)
     try:

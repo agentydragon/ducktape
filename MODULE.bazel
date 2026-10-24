@@ -2190,8 +2190,8 @@ go_deps.module(
 )
 go_deps.module(
     path = "go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc",
-    sum = "h1:EtFWSnwW9hGObjkIdmlnWSydO+Qs8OwzfzXLUPg4xOc=",
-    version = "v1.37.0",
+    sum = "h1:qazEJlUOQzhCpzQpFETGby7EdqjI1wsd0W+6Gg1SCTU=",
+    version = "v1.44.0",
 )
 go_deps.module(
     path = "go.opentelemetry.io/proto/otlp",
@@ -2289,6 +2289,7 @@ use_repo(
     "io_k8s_sigs_controller_tools",
     "io_kubevirt_api",
     "io_opentelemetry_go_auto_sdk",
+    "io_opentelemetry_go_contrib_instrumentation_google_golang_org_grpc_otelgrpc",
     "io_opentelemetry_go_otel",
     "io_opentelemetry_go_otel_exporters_otlp_otlptrace",
     "io_opentelemetry_go_otel_exporters_otlp_otlptrace_otlptracegrpc",

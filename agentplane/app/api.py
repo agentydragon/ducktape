@@ -15,7 +15,7 @@ import httpx
 import httpx2
 from authlib.integrations.starlette_client import OAuth
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Path, Query, Request, status
-from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import JSONResponse, RedirectResponse, Response, StreamingResponse
 from google.protobuf.json_format import MessageToDict
 from pydantic import AfterValidator, AwareDatetime, BaseModel, ConfigDict, Field, field_validator
 
@@ -82,6 +82,7 @@ from agentplane.app.threads.store import (
 from agentplane.app.threads.thread_view import ThreadView
 from agentplane.app.threads.title_generation import ThreadTitles, TitleGenerationUnavailableError
 from agentplane.app.threads.view.content import CommandIdConflictError, ContentStore
+from agentplane.app.trace_relay import relay_traces
 from agentplane.app.upstream_proxy import UpstreamProxy, response_body
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.grpc.calls import RefusedError, ServiceError
@@ -108,6 +109,7 @@ from agentplane.sandboxes.errors import (
 )
 from agentplane.sse import frame, sse_response
 from agentplane.subjects import ServiceAccountRef
+from agentplane.tracing import instrument_fastapi
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # SessionMiddleware signs cookies with itsdangerous, imported inside starlette;
@@ -189,6 +191,15 @@ def _require_operator_login(request: Request) -> None:
 
 
 OperatorLogin = Depends(_require_operator_login)
+
+trace_relay_router = APIRouter(prefix="/telemetry", include_in_schema=False)
+
+
+@trace_relay_router.post("/v1/traces", dependencies=[OperatorLogin])
+async def browser_trace_export(request: Request) -> Response:
+    """Forward same-origin browser spans to the server-configured OTLP/HTTP receiver."""
+    return await relay_traces(request)
+
 
 models = APIRouter(prefix="/models", tags=["models"])
 
@@ -1175,6 +1186,7 @@ def create_app(
         action_policy_router,
         live_router,
         system_router,
+        trace_relay_router,
     ):
         app.include_router(api_router, dependencies=[Depends(require_caller)])
     app.include_router(mcp_callback_router)
@@ -1208,4 +1220,5 @@ def create_app(
         # The Deployment's readiness probe: the drain middleware answers 503 here once shutdown begins.
         pass
 
+    instrument_fastapi(app)
     return app

@@ -18,6 +18,8 @@ message Call {
   bytes request = 3;
   // The caller's deadline as time remaining when it sent the call; absent for none.
   google.protobuf.Duration timeout = 4;
+  // W3C trace context from the caller's gRPC metadata.
+  string traceparent = 5;
 }
 
 // Callee to caller, exactly once per call it receives. A carrying stream that ends leaves its

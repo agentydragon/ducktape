@@ -6,6 +6,7 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -22,7 +23,9 @@ type Registration func(ctx context.Context, mux *runtime.ServeMux, endpoint stri
 func NewHandler(ctx context.Context, target string, registrations ...Registration) (http.Handler, error) {
 	mux := runtime.NewServeMux()
 	for _, register := range registrations {
-		if err := register(ctx, mux, target, []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}); err != nil {
+		if err := register(ctx, mux, target, []grpc.DialOption{
+			observability.GRPCClientOption(), grpc.WithTransportCredentials(insecure.NewCredentials()),
+		}); err != nil {
 			return nil, err
 		}
 	}

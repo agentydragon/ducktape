@@ -29,9 +29,15 @@ spec:
           value: http://loki-write.loki.svc.cluster.local:3100/loki/api/v1/push
         - name: TEMPO_OTLP_GRPC_ENDPOINT
           value: tempo.monitoring.svc.cluster.local:4317
+        - name: OTLP_GRPC_LISTEN_ADDRESS
+          value: 0.0.0.0:4317
         - name: OTLP_HTTP_LISTEN_ADDRESS
           value: 0.0.0.0:4318
       extraPorts:
+        - name: otlp-grpc
+          port: 4317
+          protocol: TCP
+          targetPort: 4317
         - name: otlp-http
           port: 4318
           protocol: TCP
@@ -179,6 +185,18 @@ spec:
               app.kubernetes.io/component: server
               app.kubernetes.io/instance: authentik
       ports:
+        - port: 4318
+          protocol: TCP
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: agentplane-staging
+          podSelector:
+            matchLabels:
+              agentplane.io/otel-emitter: "true"
+      ports:
+        - port: 4317
+          protocol: TCP
         - port: 4318
           protocol: TCP
     - from:

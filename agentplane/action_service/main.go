@@ -41,6 +41,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/connections"
+	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/probes"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
@@ -78,6 +79,7 @@ func inClusterDeps() (deps, error) {
 	if err != nil {
 		return deps{}, err
 	}
+	kubeConfig.WrapTransport = observability.WrapHTTPTransport(kubeConfig.WrapTransport)
 	// Every call is a TokenReview; client-go's default of 5 requests per second (burst 10) would queue them
 	// client-side. API Priority and Fairness bounds the load on the server.
 	kubeConfig.QPS = -1
@@ -85,7 +87,7 @@ func inClusterDeps() (deps, error) {
 	if err != nil {
 		return deps{}, err
 	}
-	return deps{Reviews: kube.AuthenticationV1().TokenReviews(), Kube: kubeConfig, PushTransport: http.DefaultTransport}, nil
+	return deps{Reviews: kube.AuthenticationV1().TokenReviews(), Kube: kubeConfig, PushTransport: observability.HTTPTransport(http.DefaultTransport)}, nil
 }
 
 // run serves on the configured address until ctx ends, authenticating workloads with the cluster's TokenReview API
@@ -359,6 +361,7 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 
 	health := probes.New(db, hub)
 	grpcServer := grpc.NewServer(
+		observability.GRPCServerOption(),
 		grpc.ChainUnaryInterceptor(admission.UnaryInterceptor), grpc.ChainStreamInterceptor(admission.StreamInterceptor),
 	)
 	healthpb.RegisterHealthServer(grpcServer, readiness{Probes: health, policy: policy.Freshness})
@@ -401,7 +404,7 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 			return err
 		}
 	}
-	server := &http.Server{Handler: routes, ReadHeaderTimeout: readHeaderTimeout}
+	server := &http.Server{Handler: observability.HTTPHandler(routes), ReadHeaderTimeout: readHeaderTimeout}
 	facade.MountGRPC(server, grpcServer)
 
 	working, drain := context.WithCancel(ctx)
@@ -480,7 +483,14 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	if err := run(ctx, c); err != nil && !errors.Is(err, context.Canceled) {
+	shutdownTracing, err := observability.Init(ctx, "action-service")
+	if err != nil {
+		slog.Error("Action Service tracing setup failed", "error", err)
+		os.Exit(1)
+	}
+	err = run(ctx, c)
+	shutdownTracing()
+	if err != nil && !errors.Is(err, context.Canceled) {
 		slog.Error("Action Service stopped", "error", err)
 		os.Exit(1)
 	}

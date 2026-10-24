@@ -759,6 +759,7 @@ func TestRealBinaryStartsWithYAMLAndEnvironmentConfiguration(t *testing.T) {
 	var logs bytes.Buffer
 	command := exec.Command(binary)
 	command.Env = []string{
+		"OTEL_SDK_DISABLED=true",
 		configFileEnv + "=" + settings,
 		"AGENTPLANE_LLM_INGRESS_LITELLM_KEY=" + testBackendKey,
 		"AGENTPLANE_LLM_INGRESS_HOST=127.0.0.1",

@@ -44,6 +44,7 @@ import { StatusView } from "./sandbox_status_view";
 import { hasVmConsole, sandboxReady, sandboxStatusDetail, sandboxSummary, sandboxSuspended } from "./sandbox_status";
 import { SANDBOX_STATUS_MARKS } from "./status_mark";
 import { snapshotFresh } from "./thread_status";
+import { beginSessionCreate, finishSessionCreate, withinSessionCreate } from "./tracing";
 import { TopbarActions, TopbarTitle } from "./topbar";
 import type { SessionSpec } from "../../proto/runner_pb";
 
@@ -180,24 +181,38 @@ export function SandboxPage({
     const sessionId = crypto.randomUUID();
     // Only the Session ID survives reload. In particular, never persist instructions or bootstrap.
     rememberOpen({ sessionId });
+    beginSessionCreate(sessionId, name);
     setLaunching(false);
     setCreatingSession(true);
     setError(null);
+    let openingAccepted = false;
     try {
-      const opening = await openSession(name, sessionId, spec, setupScript, autoTitleOnFirstMessage);
+      const opening = await withinSessionCreate(sessionId, () =>
+        openSession(name, sessionId, spec, setupScript, autoTitleOnFirstMessage)
+      );
       if (!opening.sessionId) throw new Error("Open returned without a Session ID");
+      openingAccepted = true;
       // The live projection may have resolved this attempt while the Open response was in flight.
       // Do not resurrect its pending record after navigation, or after the user forgot it.
-      if (sessionStorage.getItem(pendingOpenKey(name)) !== sessionId) return;
+      if (sessionStorage.getItem(pendingOpenKey(name)) !== sessionId) {
+        finishSessionCreate(sessionId, "unknown");
+        return;
+      }
       rememberOpen({ sessionId, state: opening.state, reason: opening.reason });
+      if (opening.state === "DELIVERY_STATE_FAILED") finishSessionCreate(sessionId, "failed");
       if (
         opening.state === "DELIVERY_STATE_RUNNER_ADMITTED" &&
-        (threadBySession[sessionId] || (await findThread(sessionId)))
+        (threadBySession[sessionId] || (await withinSessionCreate(sessionId, () => findThread(sessionId))))
       ) {
         await openThread(sessionId, sessionId);
       }
     } catch (reason: unknown) {
       // Outcome may be ambiguous. Do not replay Open or bootstrap, even in this tab.
+      if (!openingAccepted) {
+        const rejectedStatus =
+          reason instanceof HttpError && reason.status >= 400 && reason.status < 500 && reason.status !== 408;
+        finishSessionCreate(sessionId, rejectedStatus ? "rejected" : "unknown");
+      }
       setError(`${displayableError(reason)} Check this attempt before starting another session.`);
     } finally {
       setCreatingSession(false);
@@ -210,12 +225,13 @@ export function SandboxPage({
     setError(null);
     try {
       const { sessionId } = pendingOpen;
-      if (threadBySession[sessionId] || (await findThread(sessionId))) {
+      if (threadBySession[sessionId] || (await withinSessionCreate(sessionId, () => findThread(sessionId)))) {
         await openThread(sessionId, sessionId);
       } else {
         try {
-          const opening = await getSessionOpening(name, sessionId);
+          const opening = await withinSessionCreate(sessionId, () => getSessionOpening(name, sessionId));
           rememberOpen({ sessionId, state: opening.state, reason: opening.reason });
+          if (opening.state === "DELIVERY_STATE_FAILED") finishSessionCreate(sessionId, "failed");
           setError(`${openingStateLabel(opening.state)}${opening.reason ? `: ${opening.reason}` : "."}`);
         } catch (reason: unknown) {
           if (reason instanceof HttpError && (reason.status === 404 || reason.status === 503)) {
@@ -242,7 +258,9 @@ export function SandboxPage({
       resolvingOpen.current = attempt;
     }
     try {
-      const thread = threadBySession[sessionId] ?? (await getThread(sessionId));
+      const thread = attempt
+        ? await withinSessionCreate(attempt, async () => threadBySession[sessionId] ?? (await getThread(sessionId)))
+        : (threadBySession[sessionId] ?? (await getThread(sessionId)));
       if (attempt) {
         if (sessionStorage.getItem(pendingOpenKey(name)) !== attempt) {
           resolvingOpen.current = null;

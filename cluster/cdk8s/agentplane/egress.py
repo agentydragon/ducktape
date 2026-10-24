@@ -832,6 +832,7 @@ class Egress(Construct):
             placement=self.placement if zones is None else None,
             replica_profile=self.env.egress.replicas,
             traffic_distribution=self.env.egress.traffic_distribution,
+            telemetry_enabled=True,
             registry_secret_name=self.registry_secret_name,
         )
         if zones is not None:

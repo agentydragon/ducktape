@@ -69,7 +69,6 @@ func TestLoadConfigRefusesWhatTheSettingsFileGetsWrong(t *testing.T) {
 		"route unknown key":     required + "platform_routes: {control: {listen_address: 127.0.0.1:3130, upstream: u, token_file: /t, extra: true}}\n",
 		"route missing address": required + "platform_routes: {control: {upstream: u, token_file: /t}}\n",
 		"route empty address":   required + "platform_routes: {control: {listen_address: '', upstream: u, token_file: /t}}\n",
-		"route missing key":     required + "platform_routes: {control: {listen_address: 127.0.0.1:3130, upstream: u}}\n",
 		"port not an integer":   required + "proxy_port: eight\n",
 		"not an object":         "- proxy_host\n",
 		"empty":                 "",

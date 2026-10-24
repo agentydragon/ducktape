@@ -25,6 +25,7 @@ go_library(
         "//agentplane/egress/rules",
         "//agentplane/egress/upstream",
         "//agentplane/grpc/facade",
+        "//agentplane/observability",
         "//agentplane/policy/reader",
         "//agentplane/workload_auth/go/auth",
         "//util/netlistener",

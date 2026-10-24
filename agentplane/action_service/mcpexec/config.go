@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
+	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/oauth2"
 )
@@ -208,7 +209,7 @@ func (s stdioServer) transport(Linkages, time.Duration) (mcp.Transport, error) {
 func (s httpServer) transport(linkages Linkages, lifecycle time.Duration) (mcp.Transport, error) {
 	transport := &mcp.StreamableClientTransport{
 		Endpoint:   s.URL,
-		HTTPClient: &http.Client{Transport: headers{values: s.Headers, next: http.DefaultTransport}},
+		HTTPClient: &http.Client{Transport: headers{values: s.Headers, next: observability.HTTPTransport(http.DefaultTransport)}},
 	}
 	switch credential := s.credential.(type) {
 	case linkedAccount:

@@ -6,5 +6,8 @@ go_binary(
     importpath = "github.com/agentydragon/ducktape/agentplane/runner/cmd",
     pure = "on",
     visibility = ["//visibility:public"],
-    deps = ["//agentplane/runner"],
+    deps = [
+        "//agentplane/observability",
+        "//agentplane/runner",
+    ],
 )

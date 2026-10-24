@@ -2,6 +2,7 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"os"
 	"time"
@@ -23,6 +24,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
+	"github.com/agentydragon/ducktape/agentplane/observability"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	sandboxcontroller "github.com/agentydragon/ducktape/agentplane/sandbox_controller"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
@@ -34,7 +36,12 @@ func main() {
 	log := ctrl.Log.WithName("sandbox-controller")
 	c, err := loadConfig()
 	if err == nil {
-		err = run(c)
+		var shutdown func()
+		shutdown, err = observability.Init(context.Background(), "sandbox-controller")
+		if err == nil {
+			err = run(c)
+			shutdown()
+		}
 	}
 	if err != nil {
 		log.Error(err, "controller failed")
@@ -62,6 +69,7 @@ func run(c config) error {
 	}
 	ours := labels.NewSelector().Add(*labelled)
 	restConfig := ctrl.GetConfigOrDie()
+	restConfig.WrapTransport = observability.WrapHTTPTransport(restConfig.WrapTransport)
 	kubeVirt, err := servesKubeVirt(restConfig)
 	if err != nil {
 		return err

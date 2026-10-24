@@ -11,6 +11,7 @@ import (
 	"time"
 
 	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/runner_ingresspb"
+	"github.com/agentydragon/ducktape/agentplane/observability"
 	tunnelpb "github.com/agentydragon/ducktape/agentplane/proto/grpc_tunnel"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
@@ -37,7 +38,7 @@ func (e *localStreamError) Error() string { return e.err.Error() }
 func (e *localStreamError) Unwrap() error { return e.err }
 
 func connection(endpoint Endpoint) (*grpc.ClientConn, error) {
-	return grpc.NewClient(endpoint.Target, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithConnectParams(grpc.ConnectParams{Backoff: backoff.Config{BaseDelay: 500 * time.Millisecond, Multiplier: 2, Jitter: 0.2, MaxDelay: 30 * time.Second}, MinConnectTimeout: 10 * time.Second}))
+	return grpc.NewClient(endpoint.Target, observability.GRPCClientOption(), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithConnectParams(grpc.ConnectParams{Backoff: backoff.Config{BaseDelay: 500 * time.Millisecond, Multiplier: 2, Jitter: 0.2, MaxDelay: 30 * time.Second}, MinConnectTimeout: 10 * time.Second}))
 }
 
 func authenticated(ctx context.Context, endpoint Endpoint) context.Context {
@@ -231,6 +232,13 @@ func (r *Runner) connectControl(ctx context.Context, endpoint Endpoint) (bool, e
 // relay uses the generated service descriptor's decoder and handler, preserving
 // the generated request types and gRPC errors without a second RPC dispatcher.
 func (r *Runner) relay(ctx context.Context, call *tunnelpb.Call) *tunnelpb.Reply {
+	traceparent := call.GetTraceparent()
+	if traceparent != "" {
+		ctx = metadata.NewIncomingContext(ctx, metadata.Pairs("traceparent", traceparent))
+		ctx = observability.WithTraceparent(ctx, traceparent)
+	}
+	ctx, span := observability.Start(ctx, "Runner RPC")
+	defer span.End()
 	if call.Timeout != nil {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, call.Timeout.AsDuration())

@@ -11,6 +11,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/admin"
 	egressadminpb "github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
+	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"google.golang.org/grpc"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
@@ -51,7 +52,7 @@ func (c *config) adminGRPCCallers() ([]auth.Account, error) {
 // the EgressAdmin API beside it when c configures the admin gRPC API: it admits the callers and the
 // audience from c. options holds what the services read.
 func mountAdminGRPC(adminServer *http.Server, c config, reviews auth.TokenReviews, options admin.ServiceOptions) (shutdowner, error) {
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(observability.GRPCServerOption())
 	healthpb.RegisterHealthServer(grpcServer, admin.NewProbes(options.Index, options.Clock))
 	var shutdown shutdowner = adminServer
 	if c.adminGRPCEnabled() {

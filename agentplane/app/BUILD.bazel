@@ -55,9 +55,11 @@ py_library(
         ":sandbox_models",
         ":shutdown",
         ":system_status",
+        ":trace_relay",
         ":upstream_proxy",
         "//agentplane:sse",
         "//agentplane:subjects",
+        "//agentplane:tracing",
         "//agentplane/action_service:policy_view",
         "//agentplane/app/threads:bridge",
         "//agentplane/app/threads:runner_directory",
@@ -84,6 +86,15 @@ py_library(
         "@pypi//itsdangerous",
         "@pypi//protobuf",
         "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "trace_relay",
+    srcs = ["trace_relay.py"],
+    deps = [
+        "@pypi//fastapi",
+        "@pypi//httpx",
     ],
 )
 
@@ -133,6 +144,7 @@ py_library(
         "//agentplane:kubernetes_watch",
         "//agentplane:service_process",
         "//agentplane:subjects",
+        "//agentplane:tracing",
         "//agentplane/app/threads:bridge",
         "//agentplane/app/threads:dispatcher_client",
         "//agentplane/app/threads:history_watch",
@@ -281,6 +293,7 @@ py_test(
     name = "test_api",
     size = "medium",
     srcs = ["test_api.py"],
+    env = {"OTEL_SDK_DISABLED": "true"},
     deps = [
         ":action_policy",
         ":api",
@@ -358,7 +371,10 @@ py_test(
         "@agentplane_codex_cli_linux_x64//:files",  # keep: the pinned native harnesses the runner drives
         "@claude_code_cli_linux_x64//:claude",  # keep: the pinned native harnesses the runner drives
     ],
-    env = {"DOCKER_HOST": "tcp://127.0.0.1:2375"},
+    env = {
+        "DOCKER_HOST": "tcp://127.0.0.1:2375",
+        "OTEL_SDK_DISABLED": "true",
+    },
     exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
     requires_docker = True,
     shard_count = 2,

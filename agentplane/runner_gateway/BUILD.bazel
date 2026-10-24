@@ -124,6 +124,7 @@ go_library(
     visibility = ["//agentplane/runner_gateway:__subpackages__"],
     deps = [
         "//agentplane/grpc/facade",
+        "//agentplane/observability",
         "//agentplane/runner_gateway/dispatcher",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",
         "//agentplane/runner_gateway/gateway",

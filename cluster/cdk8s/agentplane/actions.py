@@ -298,6 +298,7 @@ class Actions(Construct):
                 memory_limit=self.migrate_memory_limit,
             ),
             placement=self.placement,
+            telemetry_enabled=True,
             registry_secret_name=self.registry_secret_name,
             annotations={
                 **({"secret.reloader.stakater.com/reload": ",".join(reload_secrets)} if reload_secrets else {}),

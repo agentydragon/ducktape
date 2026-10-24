@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"code.dny.dev/ssrf"
+	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/modelcontextprotocol/go-sdk/oauthex"
 	"github.com/zitadel/oidc/v3/pkg/oidc"
 	"github.com/zitadel/oidc/v3/pkg/op"
@@ -36,7 +37,7 @@ func NewDocumentClient() *http.Client {
 	transport.DialContext = (&net.Dialer{Control: ssrf.New(ssrf.WithAnyPort()).Safe}).DialContext
 	// A proxy would dial in its place, past the guard.
 	transport.Proxy = nil
-	return &http.Client{Transport: transport, Timeout: documentTimeout}
+	return &http.Client{Transport: observability.HTTPTransport(transport), Timeout: documentTimeout}
 }
 
 // client is a public client: one this server registered (RFC 7591), or one whose client_id is the URL of its

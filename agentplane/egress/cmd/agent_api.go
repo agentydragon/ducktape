@@ -10,6 +10,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	"github.com/agentydragon/ducktape/agentplane/egress/rules"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
+	"github.com/agentydragon/ducktape/agentplane/observability"
 	"google.golang.org/grpc"
 )
 
@@ -22,8 +23,8 @@ func newAgentAPI(ctx context.Context, address string, verifier *identity.Verifie
 	if err != nil {
 		return nil, err
 	}
-	server := &http.Server{Handler: rules.New(rulesFacade, agentDocs, openAPI), ReadHeaderTimeout: readHeaderTimeout}
-	rulesGRPC := grpc.NewServer()
+	server := &http.Server{Handler: observability.HTTPHandler(rules.New(rulesFacade, agentDocs, openAPI)), ReadHeaderTimeout: readHeaderTimeout}
+	rulesGRPC := grpc.NewServer(observability.GRPCServerOption())
 	egressrulespb.RegisterEgressRulesServer(rulesGRPC, rules.NewService(verifier, index))
 	facade.MountGRPC(server, rulesGRPC)
 	return server, nil

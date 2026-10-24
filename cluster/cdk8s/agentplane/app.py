@@ -38,6 +38,7 @@ from cluster.cdk8s.agentplane import (
     notifications,
     runner_gateway,
     session_dispatcher,
+    telemetry,
 )
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
@@ -253,7 +254,12 @@ class App(Construct):
                 host="0.0.0.0",
                 port=self.service.pod_port,
             ),
-            env_variables={**env, env_name(Settings, "runner_gateway_control_target"): control_target},
+            env_variables={
+                **env,
+                env_name(Settings, "runner_gateway_control_target"): control_target,
+                "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": EnvValue.from_value(telemetry.OTLP_HTTP_ENDPOINT + "/v1/traces"),
+                "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL": EnvValue.from_value("http/protobuf"),
+            },
             readiness=http_probe("/readyz", port=self.service.pod_port, initial_delay_seconds=3, period_seconds=10),
             liveness=http_probe("/healthz", port=self.service.pod_port, initial_delay_seconds=20, period_seconds=30),
             resources=ContainerResources(
@@ -273,6 +279,7 @@ class App(Construct):
                 memory_limit=self.migrate_memory_limit,
             ),
             placement=self.placement,
+            telemetry_enabled=True,
             registry_secret_name=self.registry_secret_name,
             annotations={
                 # A re-minted client secret otherwise leaves the pod on the old
@@ -362,6 +369,8 @@ class App(Construct):
                 # network reachability grants no review authority.
                 actions.service(namespace).egress(),
                 *([self.electric.egress()] if self.electric is not None else []),
+                # The browser's same-origin OTLP relay is served by this App Pod and sends HTTP OTLP.
+                telemetry.ALLOY_OTLP_HTTP.egress(),
                 database.egress(namespace),
                 *title_egress,
             ],

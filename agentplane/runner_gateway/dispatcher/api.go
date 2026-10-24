@@ -7,10 +7,13 @@ import (
 	"slices"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/observability"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -198,7 +201,12 @@ func (s *Service) sandbox(ctx context.Context, name string) (SandboxSnapshot, er
 	return current, nil
 }
 
-func (s *Service) enqueue(ctx context.Context, commandID, sessionID, sandbox string, command *commandpb.Command) (*dispatcherpb.Dispatch, error) {
+func (s *Service) enqueue(ctx context.Context, commandID, sessionID, sandbox string, command *commandpb.Command) (dispatch *dispatcherpb.Dispatch, resultErr error) {
+	ctx, span := observability.Start(
+		ctx, "Dispatcher Enqueue",
+		trace.WithAttributes(attribute.String("session.id", sessionID), attribute.String("sandbox.name", sandbox)),
+	)
+	defer func() { observability.End(span, resultErr) }()
 	wake, err := s.caller(ctx)
 	if err != nil {
 		return nil, err
@@ -250,7 +258,15 @@ func (s *Service) ChangeReasoningEffort(ctx context.Context, request *dispatcher
 	return &dispatcherpb.ChangeReasoningEffortResponse{Dispatch: row}, nil
 }
 
-func (s *Service) OpenSession(ctx context.Context, request *dispatcherpb.OpenSessionRequest) (*dispatcherpb.OpenSessionResponse, error) {
+func (s *Service) OpenSession(ctx context.Context, request *dispatcherpb.OpenSessionRequest) (response *dispatcherpb.OpenSessionResponse, resultErr error) {
+	ctx, span := observability.Start(
+		ctx, "Dispatcher OpenSession",
+		trace.WithAttributes(
+			attribute.String("session.id", request.GetSessionId()),
+			attribute.String("sandbox.name", request.GetSandbox()),
+		),
+	)
+	defer func() { observability.End(span, resultErr) }()
 	wake, err := s.caller(ctx)
 	if err != nil {
 		return nil, err

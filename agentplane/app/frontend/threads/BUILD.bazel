@@ -206,6 +206,7 @@ ts_library(
         "//agentplane/app/frontend:thread_tab",
         "//agentplane/app/frontend:time_ago",
         "//agentplane/app/frontend:topbar",
+        "//agentplane/app/frontend:tracing",
         "//agentplane/proto:command_pb",
         "//agentplane/proto:event_pb",
     ],

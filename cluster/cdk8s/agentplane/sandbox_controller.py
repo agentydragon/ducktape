@@ -101,6 +101,7 @@ class SandboxController(Construct):
             ),
             termination_grace=Duration.seconds(30),
             placement=placement,
+            telemetry_enabled=True,
             registry_secret_name=registry_secret_name,
         )
         workload.project_tokens("runner-gateway-token", _GATEWAY_TOKEN_DIR, {"token": gateway_audience})

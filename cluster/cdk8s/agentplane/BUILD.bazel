@@ -44,6 +44,7 @@ py_library(
     srcs = ["service_workload.py"],
     deps = [
         ":environment",
+        ":telemetry",
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:pod_policy",
         "//cluster/cdk8s:service_ref",
@@ -51,6 +52,18 @@ py_library(
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
         "@pypi//more_itertools",
+    ],
+)
+
+py_library(
+    name = "telemetry",
+    srcs = ["telemetry.py"],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/monitoring:__pkg__",
+    ],
+    deps = [
+        "//cluster/cdk8s:service_ref",
     ],
 )
 
@@ -282,6 +295,7 @@ py_library(
     deps = [
         ":codex_models",
         ":environment",
+        ":telemetry",
         "//agentplane/llm_ingress:settings",
         "//agentplane/workload_auth:audience",
         "//cluster/cdk8s:cilium",
@@ -324,6 +338,7 @@ py_library(
         ":egress",
         ":environment",
         ":notifications",
+        ":telemetry",
         "//agentplane/egress:platform_routes",
         "//agentplane/egress:resources",
         "//agentplane/egress:sidecar_config",
@@ -356,6 +371,7 @@ py_library(
         ":runner_gateway",
         ":service_workload",
         ":session_dispatcher",
+        ":telemetry",
         "//agentplane:crd_group",
         "//agentplane/app:oidc",
         "//agentplane/app:settings",
@@ -390,6 +406,7 @@ py_library(
         ":platform_routes",
         ":runner_vm",
         ":sandbox_pod",
+        ":telemetry",
         "//agentplane:crd_group",
         "//agentplane/runner:platform_instructions",
         "//cluster/cdk8s:cilium",
@@ -411,6 +428,7 @@ py_library(
         ":llm_ingress",
         ":platform_routes",
         ":sandbox_pod",
+        ":telemetry",
         "//agentplane:crd_group",
         "//agentplane/sandboxes:guest_config",
         "//cluster/cdk8s:config_format",
@@ -707,11 +725,13 @@ py_library(
         ":sandbox_controller",
         ":sandbox_pod",
         ":session_dispatcher",
+        ":telemetry",
         "//agentplane:subjects",
         "//cluster/cdk8s:namespaces",
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
+        "//cluster/cdk8s/providers/cilium:network_policy",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
@@ -1129,6 +1149,11 @@ py_library(
 py_library(
     name = "namespaces",
     srcs = ["namespaces.py"],
+    visibility = [
+        "//agentplane/x/k3s_env:__pkg__",
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/monitoring:__pkg__",
+    ],
 )
 
 py_library(
@@ -1178,6 +1203,7 @@ py_library(
         ":history_service",
         ":runner_gateway",
         ":sandbox_pod",
+        ":telemetry",
         "//agentplane/egress:platform_routes",
         "//agentplane/history_service:settings",
         "//agentplane/runner_gateway:api",

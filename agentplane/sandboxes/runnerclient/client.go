@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/observability"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"google.golang.org/grpc"
@@ -55,7 +56,7 @@ func WithClient(ctx context.Context, config Config, call func(context.Context, r
 	if token == "" {
 		return errors.New("runner proxy token is empty")
 	}
-	dialOptions := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
+	dialOptions := []grpc.DialOption{observability.GRPCClientOption(), grpc.WithTransportCredentials(insecure.NewCredentials())}
 	if config.DisableRetry {
 		dialOptions = append(dialOptions, grpc.WithDisableRetry())
 	}

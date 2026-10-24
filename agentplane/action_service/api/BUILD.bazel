@@ -36,6 +36,7 @@ go_library(
         "//agentplane/action_service/push",
         "//agentplane/action_service/store",
         "//agentplane/action_service/worker",
+        "//agentplane/observability",
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/postgres/go/wakeups",
         "//agentplane/proto:sandboxes_go_proto",

@@ -233,6 +233,7 @@ class RunnerGateway(Construct):
             ),
             create_service=False,
             migrate=migration,
+            telemetry_enabled=True,
             registry_secret_name=registry_secret_name,
             placement=placement,
         )

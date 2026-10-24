@@ -31,6 +31,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	"github.com/agentydragon/ducktape/agentplane/egress/presentation"
 	"github.com/agentydragon/ducktape/agentplane/egress/upstream"
+	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/google/uuid"
 )
 
@@ -69,7 +70,7 @@ func New(options Options) (*Proxy, error) {
 	}
 	p := &Proxy{options: options, leaves: leaves, producer: uuid.New(), flights: newFlights()}
 	p.server = &http.Server{
-		Handler: http.HandlerFunc(p.serve), ReadHeaderTimeout: 30 * time.Second, ErrorLog: log.New(io.Discard, "", 0),
+		Handler: observability.HTTPHandler(http.HandlerFunc(p.serve)), ReadHeaderTimeout: 30 * time.Second, ErrorLog: log.New(io.Discard, "", 0),
 		ConnContext: func(ctx context.Context, _ net.Conn) context.Context {
 			return context.WithValue(ctx, connectionIDKey{}, uuid.NewString())
 		},
@@ -195,7 +196,7 @@ func (p *Proxy) serveTunnel(conn net.Conn, buffered *bufio.Reader, authority str
 	protocols.SetUnencryptedHTTP2(true)
 	inner := &http.Server{
 		Protocols: protocols, ErrorLog: log.New(io.Discard, "", 0), ReadHeaderTimeout: 30 * time.Second,
-		Handler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		Handler: observability.HTTPHandler(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			if req.Method == http.MethodConnect {
 				http.Error(w, "CONNECT inside a tunnel", http.StatusMethodNotAllowed)
 				return
@@ -207,7 +208,7 @@ func (p *Proxy) serveTunnel(conn net.Conn, buffered *bufio.Reader, authority str
 			}
 			req.URL.Scheme, req.URL.Host = scheme, host
 			p.forward(w, req, client)
-		}),
+		})),
 	}
 	p.tunnels.serving(conn, inner)
 	// http.Server serves one accepted connection and returns when it ends, or when Drain shuts the

@@ -2,6 +2,7 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"os"
 
@@ -17,6 +18,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
+	"github.com/agentydragon/ducktape/agentplane/observability"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	policycontroller "github.com/agentydragon/ducktape/agentplane/policy_controller"
 )
@@ -26,7 +28,12 @@ func main() {
 	log := ctrl.Log.WithName("policy-controller")
 	c, err := loadConfig()
 	if err == nil {
-		err = run(c)
+		var shutdown func()
+		shutdown, err = observability.Init(context.Background(), "policy-controller")
+		if err == nil {
+			err = run(c)
+			shutdown()
+		}
 	}
 	if err != nil {
 		log.Error(err, "controller failed")
@@ -55,7 +62,9 @@ func run(c config) error {
 	}
 	// The cache holds only what the controller reads: its own namespace's policy objects, the
 	// subject namespaces' accounts, and the native bindings carrying its label.
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+	config := ctrl.GetConfigOrDie()
+	config.WrapTransport = observability.WrapHTTPTransport(config.WrapTransport)
+	mgr, err := ctrl.NewManager(config, ctrl.Options{
 		Scheme:                 scheme,
 		Metrics:                metricsserver.Options{BindAddress: c.MetricsBindAddress},
 		HealthProbeBindAddress: c.HealthProbeBindAddress,

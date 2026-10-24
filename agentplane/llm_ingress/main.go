@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	authenticationclient "k8s.io/client-go/kubernetes/typed/authentication/v1"
 	"k8s.io/client-go/rest"
@@ -28,7 +29,14 @@ func main() {
 	logger := configureLogging(c.LogLevels)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := serve(ctx, c, logger); err != nil {
+	shutdownTracing, err := observability.Init(ctx, "llm-ingress")
+	if err != nil {
+		logger.Error("LLM ingress tracing setup failed", "error", err)
+		os.Exit(1)
+	}
+	err = serve(ctx, c, logger)
+	shutdownTracing()
+	if err != nil {
 		logger.Error("LLM ingress stopped", "error", err)
 		os.Exit(1)
 	}
@@ -59,7 +67,7 @@ func serve(ctx context.Context, c config, logger *slog.Logger) error {
 	}
 	defer listener.Close()
 	server := &http.Server{
-		Handler:           handler,
+		Handler:           observability.HTTPHandler(handler),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	logger.Info("forwarding authenticated Sandbox model traffic to LiteLLM", "url", c.LiteLLMURL, "address", address)
@@ -98,6 +106,7 @@ func kubernetesConfig(c config) (*rest.Config, error) {
 	}
 	kubeconfig.ContentType = "application/json"
 	kubeconfig.AcceptContentTypes = "application/json"
+	kubeconfig.WrapTransport = observability.WrapHTTPTransport(kubeconfig.WrapTransport)
 	return kubeconfig, nil
 }
 

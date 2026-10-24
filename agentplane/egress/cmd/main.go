@@ -25,6 +25,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	"github.com/agentydragon/ducktape/agentplane/egress/proxy"
 	"github.com/agentydragon/ducktape/agentplane/egress/upstream"
+	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"github.com/agentydragon/ducktape/util/netlistener"
@@ -59,7 +60,14 @@ func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	if err := run(ctx, c); err != nil {
+	shutdownTracing, err := observability.Init(ctx, "egress-proxy")
+	if err != nil {
+		slog.Error("egress-proxy tracing setup failed", "error", err)
+		os.Exit(1)
+	}
+	err = run(ctx, c)
+	shutdownTracing()
+	if err != nil {
 		slog.Error("egress-proxy stopped", "error", err)
 		os.Exit(1)
 	}
@@ -91,6 +99,7 @@ func kubernetesConfig(kubeconfig string) (*rest.Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load Kubernetes client configuration: %w", err)
 	}
+	base.WrapTransport = observability.WrapHTTPTransport(base.WrapTransport)
 	base.ContentType, base.AcceptContentTypes = "application/json", "application/json"
 	// Every proxied request is a TokenReview; client-go's default of 5 requests per second (burst 10)
 	// would queue admissions client-side. API Priority and Fairness bounds the load on the server.

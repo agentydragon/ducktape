@@ -82,6 +82,7 @@ class PolicyController(Construct):
             ),
             termination_grace=Duration.seconds(30),
             placement=placement,
+            telemetry_enabled=True,
             registry_secret_name=registry_secret_name,
         )
         self.account = workload.account

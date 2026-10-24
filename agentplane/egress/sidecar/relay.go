@@ -17,6 +17,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/util/netlistener"
 )
 
@@ -110,7 +111,7 @@ func (s *sidecar) serve(ctx context.Context, proxyListener, readinessListener ne
 func (s *sidecar) bindReadiness(listener net.Listener) {
 	s.readinessListener = listener
 	s.readinessServer = &http.Server{
-		Handler: http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		Handler: observability.HTTPHandler(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 			if request.URL.Path != readinessPath {
 				http.NotFound(writer, request)
 				return
@@ -128,7 +129,7 @@ func (s *sidecar) bindReadiness(listener net.Listener) {
 			} else if !ready && request.Method != http.MethodHead {
 				_, _ = writer.Write([]byte(`{"ready":false}`))
 			}
-		}),
+		})),
 	}
 }
 

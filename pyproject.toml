@@ -187,6 +187,11 @@ dependencies = [
     # Claude tooling
     "opentelemetry-api>=1.20",
     "opentelemetry-sdk>=1.20",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.20",
+    "opentelemetry-exporter-otlp-proto-http>=1.20",
+    "opentelemetry-instrumentation-fastapi>=0.41b0",
+    "opentelemetry-instrumentation-grpc>=0.41b0",
+    "opentelemetry-instrumentation-httpx>=0.41b0",
     "pyjwt>=2.14.0",
 
     "numpy>=2.5.3",

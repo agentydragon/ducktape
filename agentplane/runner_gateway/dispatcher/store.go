@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/observability"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
@@ -52,6 +53,7 @@ type Dispatch struct {
 	Command                 *commandpb.Command
 	State, Reason           string
 	Admission               *eventlogpb.EventEntry
+	Traceparent             string
 	CreatedAt, UpdatedAt    time.Time
 }
 
@@ -64,6 +66,7 @@ type Opening struct {
 	Spec                               *runnerpb.SessionSpec
 	SetupScript                        *string
 	State, Reason                      string
+	Traceparent                        string
 	CreatedAt, UpdatedAt               time.Time
 }
 
@@ -123,7 +126,7 @@ func wire(message proto.Message) ([]byte, error) {
 
 const dispatchColumns = `position, command_id, session_id, sandbox_name, sandbox_uid::text,
 	wake_eligible, wake_caller_namespace, wake_caller_name, wake_from_incarnation,
-	wake_requested_at, operation, command, state, reason, admission, created_at, updated_at`
+	wake_requested_at, operation, command, state, reason, admission, traceparent, created_at, updated_at`
 
 func scanDispatch(row interface{ Scan(...any) error }) (*Dispatch, error) {
 	d := &Dispatch{}
@@ -132,7 +135,7 @@ func scanDispatch(row interface{ Scan(...any) error }) (*Dispatch, error) {
 	var commandBytes, admissionBytes []byte
 	err := row.Scan(&d.Position, &d.CommandID, &d.SessionID, &d.SandboxName, &d.SandboxUID,
 		&d.WakeEligible, &callerNS, &callerName, &incarnation, &wakeAt, &d.Operation,
-		&commandBytes, &d.State, &reason, &admissionBytes, &d.CreatedAt, &d.UpdatedAt)
+		&commandBytes, &d.State, &reason, &admissionBytes, &d.Traceparent, &d.CreatedAt, &d.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -216,9 +219,10 @@ func (s *Store) Enqueue(ctx context.Context, sessionID, sandboxName, sandboxUID 
 		}
 		result, err = scanDispatch(tx.QueryRowContext(ctx, `INSERT INTO dispatch
 			(command_id,session_id,sandbox_name,sandbox_uid,wake_eligible,wake_caller_namespace,wake_caller_name,
-			 operation,command,state,created_at,updated_at)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now(),now()) RETURNING `+dispatchColumns,
-			command.GetCommandId(), sessionID, sandboxName, sandboxUID, wakeEligible, ns, name, op, data, QueueState))
+			 operation,command,state,traceparent,created_at,updated_at)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,now(),now()) RETURNING `+dispatchColumns,
+			command.GetCommandId(), sessionID, sandboxName, sandboxUID, wakeEligible, ns, name, op, data, QueueState,
+			observability.Traceparent(ctx)))
 		if err != nil {
 			return err
 		}
@@ -294,7 +298,7 @@ func (s *Store) Cancel(ctx context.Context, id string) (*Dispatch, error) {
 
 const openingColumns = `session_id, sandbox_name, sandbox_uid::text, wake_eligible,
 	wake_caller_namespace, wake_caller_name, wake_from_incarnation, wake_requested_at,
-	spec, setup_script, state, reason, created_at, updated_at`
+	spec, setup_script, state, reason, traceparent, created_at, updated_at`
 
 func scanOpening(row interface{ Scan(...any) error }) (*Opening, error) {
 	o := &Opening{}
@@ -303,7 +307,7 @@ func scanOpening(row interface{ Scan(...any) error }) (*Opening, error) {
 	var spec []byte
 	err := row.Scan(&o.SessionID, &o.SandboxName, &o.SandboxUID, &o.WakeEligible,
 		&callerNS, &callerName, &incarnation, &wakeAt, &spec, &script, &o.State,
-		&reason, &o.CreatedAt, &o.UpdatedAt)
+		&reason, &o.Traceparent, &o.CreatedAt, &o.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -363,9 +367,10 @@ func (s *Store) OpenSession(ctx context.Context, sessionID, sandboxName, sandbox
 		}
 		result, err = scanOpening(tx.QueryRowContext(ctx, `INSERT INTO session_opening
 			(session_id,sandbox_name,sandbox_uid,wake_eligible,wake_caller_namespace,wake_caller_name,
-			 spec,setup_script,state,created_at,updated_at)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,now(),now()) RETURNING `+openingColumns,
-			sessionID, sandboxName, sandboxUID, wakeCaller != nil, ns, name, data, setupScript, QueueState))
+			 spec,setup_script,state,traceparent,created_at,updated_at)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now(),now()) RETURNING `+openingColumns,
+			sessionID, sandboxName, sandboxUID, wakeCaller != nil, ns, name, data, setupScript, QueueState,
+			observability.Traceparent(ctx)))
 		if err != nil {
 			return err
 		}

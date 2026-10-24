@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/lib/pq"
 	"github.com/modelcontextprotocol/go-sdk/oauthex"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -139,7 +140,7 @@ func httpClient(timeout time.Duration) *http.Client {
 	return &http.Client{
 		// http.DefaultTransport dials as the process does: a server or its authorization server may be in the
 		// cluster, at a private address.
-		Transport:     http.DefaultTransport,
+		Transport:     observability.HTTPTransport(http.DefaultTransport),
 		Timeout:       timeout,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
