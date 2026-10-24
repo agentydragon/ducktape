@@ -183,7 +183,9 @@ consumer may later reach or invoke the captured callback through that result.
 The author must audit every provider branch and helper, callback-bearing
 property access, and prototype integrity; returned graphs must not contain
 proxies or accessors. This assertion describes callback flow only. It does not
-assert that the factory call is pure or effect-free.
+assert that the factory call is pure or effect-free. Writes through the result
+that can install opaque values, accessors, or a new prototype conservatively
+restore callback effects; known primitive metadata writes retain deferral.
 
 Without an assertion, source inference recognizes only immutable exported
 function declarations with one simple identifier parameter. The body must

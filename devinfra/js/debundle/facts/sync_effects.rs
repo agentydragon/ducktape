@@ -158,7 +158,7 @@ impl ValueExpr {
                 .last()
                 .map_or(Self::Unknown, |expr| Self::from_expr(expr)),
             Expr::Assign(assign) => Self::from_expr(&assign.right),
-            Expr::Lit(_) | Expr::Tpl(_) | Expr::This(_) => Self::NonCallable,
+            Expr::Lit(_) | Expr::Tpl(_) => Self::NonCallable,
             _ => Self::Unknown,
         }
     }
@@ -266,6 +266,13 @@ fn static_property_name(name: &PropName) -> Option<String> {
 }
 
 #[derive(Debug, Clone)]
+struct CallbackResultWrite {
+    receiver: ValueExpr,
+    property: Option<String>,
+    value: ValueExpr,
+}
+
+#[derive(Debug, Clone)]
 struct Callable {
     owner: StatementOrdinal,
     params: Vec<Parameter>,
@@ -279,6 +286,7 @@ struct Callable {
     escaped_bindings: BTreeSet<Id>,
     member_writes: Vec<(Id, String)>,
     member_value_writes: Vec<(Id, Option<String>, ValueExpr)>,
+    callback_result_writes: Vec<CallbackResultWrite>,
     dynamic_property_effect: bool,
     opaque: bool,
     generator: bool,
@@ -299,6 +307,7 @@ impl Default for Callable {
             escaped_bindings: BTreeSet::new(),
             member_writes: Vec::new(),
             member_value_writes: Vec::new(),
+            callback_result_writes: Vec::new(),
             dynamic_property_effect: false,
             opaque: false,
             generator: false,
@@ -353,6 +362,7 @@ struct ExecutionIndex {
     top_assignments: Vec<Vec<(Id, ValueExpr)>>,
     top_definite_initializers: Vec<BTreeSet<Id>>,
     top_member_value_writes: Vec<Vec<(Id, Option<String>, ValueExpr)>>,
+    top_callback_result_writes: Vec<Vec<CallbackResultWrite>>,
     top_exported_values: Vec<Vec<ValueExpr>>,
     hoisted_bindings: BTreeMap<Id, u32>,
     exported_hoisted_functions: BTreeSet<u32>,
@@ -384,6 +394,7 @@ impl Default for ExecutionIndex {
             top_assignments: Vec::new(),
             top_definite_initializers: Vec::new(),
             top_member_value_writes: Vec::new(),
+            top_callback_result_writes: Vec::new(),
             top_exported_values: Vec::new(),
             hoisted_bindings: BTreeMap::new(),
             exported_hoisted_functions: BTreeSet::new(),
@@ -409,6 +420,7 @@ impl ExecutionIndex {
             top_assignments: vec![Vec::new(); body.len()],
             top_definite_initializers: vec![BTreeSet::new(); body.len()],
             top_member_value_writes: vec![Vec::new(); body.len()],
+            top_callback_result_writes: vec![Vec::new(); body.len()],
             top_exported_values: vec![Vec::new(); body.len()],
             global_object_names: super::global_object::unshadowed_global_object_aliases(body),
             no_sync_callback_members: hints.no_sync_callback_members.clone(),
@@ -889,6 +901,20 @@ impl Visit for ExecutionIndex {
                 self.top_definite_initializers[self.owner.0].insert(binding.id.to_id());
             }
         } else if let AssignTarget::Simple(SimpleAssignTarget::Member(member)) = &assignment.left {
+            let write = CallbackResultWrite {
+                receiver: ValueExpr::from_expr(&member.obj),
+                property: static_prop(&member.prop),
+                value: ValueExpr::from_expr(&assignment.right),
+            };
+            if let Some(key) = self.current {
+                self.callables
+                    .get_mut(&key)
+                    .unwrap()
+                    .callback_result_writes
+                    .push(write);
+            } else {
+                self.top_callback_result_writes[self.owner.0].push(write);
+            }
             if let Expr::Ident(receiver) = member.obj.unwrap_parens()
                 && let Some(key) = static_prop(&member.prop)
             {
@@ -1558,6 +1584,43 @@ impl Executor<'_> {
                     _ => {}
                 }
             }
+        }
+    }
+
+    fn promote_callback_result_writes(
+        &mut self,
+        writes: &[CallbackResultWrite],
+        env: &Context,
+        captures: &Context,
+        owner: StatementOrdinal,
+        outcome: &mut Outcome,
+    ) {
+        for write in writes {
+            let receivers = self.evaluate(&write.receiver, env, captures);
+            let callbacks = self.callback_values(&receivers);
+            if !callbacks
+                .iter()
+                .any(|value| matches!(value, AbstractValue::DeferredCallbacks(_)))
+            {
+                continue;
+            }
+            if write
+                .property
+                .as_deref()
+                .is_some_and(|property| property != "__proto__")
+                && matches!(write.value, ValueExpr::NonCallable | ValueExpr::Undefined)
+            {
+                continue;
+            }
+            // Installing an opaque value can add an accessor anywhere in the
+            // returned graph. Include its effects now: a later plain member
+            // read can execute a getter without another explicit Call node.
+            outcome.complete = false;
+            outcome.unknown_call = true;
+            self.note_unknown_execution(owner);
+            let values = self.evaluate(&write.value, env, captures);
+            self.promote_deferred_callbacks(&values, outcome);
+            self.invoke_possible_callbacks(&[callbacks, values], false, outcome);
         }
     }
 
@@ -2236,6 +2299,13 @@ impl Executor<'_> {
         // opaque calls; if source order put a write afterward, this only adds
         // a conservative callback possibility.
         self.apply_member_value_writes(&callable.member_value_writes, &env, &env);
+        self.promote_callback_result_writes(
+            &callable.callback_result_writes,
+            &env,
+            &env,
+            callable.owner,
+            &mut outcome,
+        );
         for call in &callable.calls {
             self.execute_call(call, &env, &env, &mut outcome);
         }
@@ -2623,6 +2693,13 @@ pub(crate) fn annotate_synchronous_calls(
         // opaque call in the same statement.
         let member_writes = &index.top_member_value_writes[fact.ordinal.0];
         executor.apply_member_value_writes(member_writes, &top_env, &top_captures);
+        executor.promote_callback_result_writes(
+            &index.top_callback_result_writes[fact.ordinal.0],
+            &top_env,
+            &top_captures,
+            fact.ordinal,
+            &mut outcome,
+        );
         for call in calls {
             executor.execute_call(call, &top_env, &top_captures, &mut outcome);
         }

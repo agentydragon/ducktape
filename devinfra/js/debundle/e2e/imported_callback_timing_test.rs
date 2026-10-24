@@ -272,3 +272,66 @@ fn import_and_local_aliases_preserve_factory_identity() {
     );
     assert_preserved_entry_output(&fixture, "42\n");
 }
+
+#[test]
+fn result_mutation_cannot_hide_an_early_getter_read() {
+    let peers = [(
+        "static/peer",
+        "export function factory(callback) { return () => callback(); }\n",
+    )];
+    for (property, read) in [
+        ("__proto__", "wrapped.value"),
+        ("options", "wrapped.options.value"),
+    ] {
+        let source = format!(
+            "import {{ factory }} from './peer.js';\n\
+             const wrapped = factory(() => 0);\n\
+             const configured = (wrapped.{property} = {{ get value() {{ return later; }} }});\n\
+             const outcome = {read};\nconst later = 42;\nconsole.log(outcome);\n",
+        );
+        expect_atomic_conflict_rejection(
+            FixtureOpts::new(
+                &source,
+                vec![
+                    logical_module(
+                        "callbacks/wrapped",
+                        &[
+                            Member::new("wrapped"),
+                            Member::new("configured"),
+                            Member::new("outcome"),
+                        ],
+                    ),
+                    logical_module("values/later", &[Member::new("later")]),
+                ],
+            )
+            .with_extra_chunks(&peers),
+            &["callbacks/wrapped", "values/later"],
+            &[],
+        );
+    }
+}
+
+#[test]
+fn primitive_metadata_writes_keep_the_callback_deferred() {
+    let peers = [(
+        "static/peer",
+        "export function factory(callback) { return () => callback(); }\n",
+    )];
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import { factory } from './peer.js';\n\
+         const wrapped = factory(() => later);\n\
+         const named = (wrapped.label = 'factory');\n\
+         const later = 42;\nconsole.log(wrapped(), wrapped.label);\n",
+            vec![
+                logical_module(
+                    "callbacks/wrapped",
+                    &[Member::new("wrapped"), Member::new("named")],
+                ),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        )
+        .with_extra_chunks(&peers),
+    );
+    assert_preserved_entry_output(&fixture, "42 factory\n");
+}

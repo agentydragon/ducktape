@@ -41,3 +41,26 @@ Initial integrated checks passed in
 `129ae8d9-57a4-4ef1-a597-a7299e89316d`: the analysis tests and the first ten
 cross-module callback cases passed. Final checks also include source-proof limits,
 import/local aliases, purity-only assertions, and mutation of the returned value.
+
+## Mutation boundary
+
+A focused follow-up exposed a candidate soundness hole: changing the returned
+wrapper's prototype to install a getter could hide an early read, because a
+plain member read has no explicit Call node. In invocation
+`069dca3b-94ce-4e6d-b621-a29bf7ccafaf`, the first thirteen cases passed and the
+new rejection case incorrectly accepted the split.
+
+Writes through the returned carrier, including nested receiver paths and aliases,
+now invalidate the accessor-free proof unless they store a statically primitive
+value in a known ordinary property. The mutation event conservatively includes
+the installed value's full lazy effects and opaque reentry. Prototype changes
+and unknown keys always take that path. The regression covers both prototype
+replacement and a getter installed under an ordinary nested property; primitive
+metadata writes retain callback deferral. The first mutation repair and analysis
+tests passed in `68ef062d-b44c-4066-a516-f18f259af3aa`.
+
+The earlier production candidate passed all 165 full-suite Bazel test targets
+in `d8640b04-2054-4e29-ab79-ba90ef63c866`. A real consumer run with an audited
+complex-provider contract removed two callback-timing conflicts, leaving two
+independent conflicts. It completed in 129.224 seconds wall time on RBE. The
+final mutation safeguard is checked again on the complete suite and consumer.
