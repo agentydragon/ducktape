@@ -882,7 +882,8 @@ def _target_section(test: ReviewTest, *, url: str, open_section: bool, ci_detail
         if asset.baseline_stale:
             asset_title += " — ⚠️ stale baseline"
         asset_anchor = html.escape(f"{gallery_url}#{urllib.parse.quote(asset.path, safe='/')}", quote=True)
-        asset_title = f'<a href="{asset_anchor}">{asset_title}</a>'
+        # Only a short link: clicking elsewhere in the summary toggles the disclosure.
+        asset_title += f' · <a href="{asset_anchor}">link</a>'
         content = _asset_comment_lines(
             asset, asset_base=asset_base, gallery_url=gallery_url, test=test, include_heading=False
         )
