@@ -133,12 +133,25 @@ was stopped with its partial copy cleaned up and original intact; the replacemen
 copy-only Job `replication-repair-refresh-103711-20261024` now targets `103711`
 and refreshes topology after each volume. At `06:29 UTC`, native server
 inventories showed all 600 logical IDs present, 540 with two copies and 60
-with one copy (about 442GiB still to copy). The same Job's deadline was extended
+with one copy (about 442GiB still to copy). The Job's deadline was extended
 from 6 to 12 hours at `06:31 UTC` because the observed rate put completion
-beyond the original deadline; its Pod identity was preserved. The `replication-repair` AdminScript
-is temporarily suspended with its own Flux reconciliation disabled. Restore
-its original unsuspended state and remove that annotation after the replacement
-Job terminates and native copy/lock checks pass. The new
+beyond the original deadline; its Pod identity was preserved. Its Pod exited
+with `lock is lost` at `08:35:48 UTC`, and Kubernetes marked the Job failed at
+`08:35:51 UTC` with `BackoffLimitExceeded`; the 12-hour deadline had not elapsed.
+The last copy, volume 250, completed at `08:25 UTC` and is present on both source
+and destination. Fresh inventories at `14:14 UTC` showed 606 logical IDs: 577
+with two copies and 29 single-copy IDs (206.74GiB). The CronJob and
+`replication-repair` AdminScript remain suspended, with Flux reconciliation
+disabled for the AdminScript; no replacement repair Job has started. Pinned
+SeaweedFS 4.46 source confirms the command reports `lock is lost` after losing
+its renewable admin-lock state. The specific renewal failure or leader event is
+unproven. A fresh `14:17 UTC` inventory found all 29 remaining single-copy IDs
+only on `102453`; wiping the source would lose about 206.74GiB. See the private
+diagnosis at
+`/tmp/piraeus-hdd-roll-20261023/last-hdd-102453/seaweed-repair-failure-20261024/analysis.md`
+and off-source inventory at
+`/tmp/piraeus-hdd-roll-20261023/last-hdd-102453/seaweed-off-source-proof-private.json`.
+The new
 500Gi ClickHouse host-0 is Ready with its two-database, 26-object catalog
 replayed, including two pre-existing orphan materialized views restored with a
 per-command compatibility setting. Catalog UUID/definition and migration-ledger
@@ -284,9 +297,11 @@ volumes. No CNPG Pods remain on the source, no per-cluster reconciliation holds
 remain, and all 19 cluster-wide CNPG clusters are Ready. Source PV metadata and
 files remain retained.
 
-The node stays cordoned. ClickHouse host-0 catch-up is accepted. Seaweed copy
-repair, ClickHouse host-1 and authored/historical data still need acceptance
-before a physical reset. Private per-cluster proofs are in
+The `ovh-ns102453` source stays cordoned. ClickHouse host-0 and replica 1 have final application
+acceptance. Seaweed repair stopped with 29 single-copy IDs remaining; authored
+and historical data still need acceptance before a physical reset. All 29
+single-copy IDs are on this source, so erasing its data disk would lose them.
+Private per-cluster proofs are in
 `/tmp/piraeus-hdd-roll-20261023/last-hdd-102453/`, including
 `root-final-independent-acceptance.json`.
 
@@ -316,29 +331,25 @@ placement is stable. Leave the legacy `hdd` group unchanged. Monitor thin pools
 throughout: the accepted projection is 475 GiB free (25.6%) on `103656` and
 248 GiB free (13.4%, below the 15% floor) on `103711`.
 
-### ClickHouse replica 1 on 103656 — 2026-10-24 (in progress)
+### ClickHouse replica 1 on 103656 — accepted 2026-10-24 at 14:16 UTC
 
-Replica 1 started on a fresh 500Gi `piraeus-hdd-local` claim on
-`ovh-ns103656`; its target storage proof passed. Its two-database, 26-object
-catalog was restored, and the accepted application window verified a clean
-106-row migration ledger (latest version 53), plus 17 writable tables with two
-active replicas and no lost parts. After a controlled stop and restart, native
-copy resumed with the same PVC, PV and CSI identity. At the 08:26 UTC acceptance,
-it had 640 queued tasks and 16 active fetches, so catch-up is still incomplete.
-Source replica 0 remains Ready with its original Pod UID on
-`ovh-ns103711`; client routing remains pinned there. The ClickHouse Flux
-Kustomization and native CHI are the remaining holds until full catch-up and
-final application gates pass. The former replica-1 Retain claim, PV and files
-are preserved.
+Replica 1 is on a fresh 500Gi `piraeus-hdd-local` claim on `ovh-ns103656`.
+Final acceptance at `14:16:25 UTC` found both ClickHouse Pods at their accepted
+identities with zero restarts, all 17 replicated tables healthy with two active
+members and zero queued tasks, and the exact 26-object catalog UUID/DDL capture
+restored. The 106-row migration ledger is clean at version 53. Keeper quorum is
+healthy, both replica endpoints are Ready, and an authenticated query through
+the normal Service returned `1`; client routing includes both Piraeus members.
+The native CHI is `Completed`; Flux is current and Ready without holds. The
+earlier controlled target restart preserved the same PVC, PV and CSI identity.
+The former replica-1 Retain claim, PV and files on `102453` remain preserved.
+Private final proof:
+`/tmp/piraeus-hdd-roll-20261023/last-hdd-102453/clickhouse-replica1/root-final-accepted.json`.
 
 AIQuota and Langfuse are Ready under normal Flux management. Langfuse web is
 Ready on SSD control-plane `ovh-ns1001419` using its existing placement policy.
 Both `103656` and `103711` are uncordoned; `102453` remains cordoned while
-Seaweed repair continues. Private proofs are under
-`/tmp/piraeus-hdd-roll-20261023/last-hdd-102453/clickhouse-replica1/`, including
-`root-start-handoff-accepted.json` and `app-window-complete.json`.
-Refresh application gates before restoring normal ClickHouse routing or
-reconciliation.
+Seaweed repair remains stopped pending a verified safe resume.
 
 OCI-cache and Langfuse Valkey were then evacuated serially: coordinated native
 failover to each existing Piraeus member on `103656`, followed by rebuilding

@@ -380,6 +380,13 @@ rate-limit moves and require two healthy destination copies per affected volume
 outside the outage set before final retirement. Never delete surplus replicas
 as an automatic part of the readiness check.
 
+For SeaweedFS 4.46, `volume.fix.replication` can exit with `lock is lost` after
+the client loses its renewable admin-lock state. Treat that command error
+separately from the Job deadline: inspect Pod termination and logs, and do not
+read `BackoffLimitExceeded` as the underlying cause. Before starting another
+manual repair, use the read-only `GetAdminLockStatus` and verify no repair is
+active.
+
 Refresh long-lived FUSE clients while the old endpoint still exists, then check
 that requests no longer depend on it. The [retirement caveat](rolling_seaweedfs_volume_pvc.md#caveat-retiring-a-volume-server-refresh-fuse-clients-before-you-delete-it)
 describes the cached-location failure. Retire only the evacuated ordinal:
