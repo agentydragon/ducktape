@@ -1,8 +1,10 @@
 use super::*;
+use serde::Serialize;
 
 /// Controls only whether the source module's export surface contributes
 /// synthetic execution roots to unknown-call fallback.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ExportReentryPolicy {
     #[default]
     Conservative,

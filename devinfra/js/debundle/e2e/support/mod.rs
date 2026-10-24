@@ -31,7 +31,7 @@ use serde_json::Value;
 
 /// Re-exported so test files can reference the spec enums behind
 /// `Member::with_purity` / `Member::with_effect` without a direct `spec` dep.
-pub use spec::{InitializerPurity, MemberEffect, MemberPurity};
+pub use spec::{InitializerPurity, MemberEffect, MemberPurity, VendorLevel, VendorMark};
 
 use std::collections::BTreeSet;
 use std::fs;

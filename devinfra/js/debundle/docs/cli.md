@@ -531,9 +531,11 @@ Typical debundle outputs:
   `rename_queue.json`, `vendor_swaps.json` when those outputs are
   configured
 - per-chunk reports under `reports/tree/<chunk-id>/`: `chunk.json`,
-  `modules.json`, `owner_graph.json`, `selector_diagnostics.json` when any
-  selector did not resolve or resolved with a warning, plus `cycles.json` /
-  `atomic_unit_conflicts.json` only when validation rejects
+  `modules.json`, `owner_graph.json`, `export_reentry.json`,
+  `selector_diagnostics.json` when any selector did not resolve or resolved
+  with a warning, plus `cycles.json` / `atomic_unit_conflicts.json` only when
+  validation rejects. `export_reentry.json` is also kept on a dry-run
+  rejection and omitted on an accepted dry run.
 - mirrored per-directory and per-file dependency reports under
   `reports/tree/**/index.json` and `reports/tree/**/*.js.json`
 

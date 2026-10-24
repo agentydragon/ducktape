@@ -782,6 +782,18 @@ conservative export roots.
 Executed or otherwise locally leaked callables remain roots under either
 policy.
 
+For each selected chunk, materialization records the decision and every
+independently observed blocker in `export_reentry.json`, beside
+`owner_graph.json`. `global_blockers` names artifact incompleteness, CJS
+interop, and nonordinary static requests across the artifact. The per-target
+`closure_blockers` names non-ESM, top-level-await, CJS, and vendor-affected
+closure chunks; unsupported, unresolved, missing, or non-entry static
+requests; and a target cycle. Request blockers carry their source chunk and
+specifier, plus the resolved chunk/file when resolution succeeded. The report
+does not change the proof: any blocker keeps `policy: conservative`. Full
+reports include accepted and rejected chunks; `--dry-run` writes it only for a
+rejection, preserving accepted dry-run's no-report contract.
+
 Property writes and updates have a separate accessor-effect summary. The
 index records setter definitions by static property name and source owner.
 For a potentially matching write, the executor promotes the setter owner's

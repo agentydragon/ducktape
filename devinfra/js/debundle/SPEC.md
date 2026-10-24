@@ -170,6 +170,16 @@ unprocessed importer leaves the old import form unchanged. Dynamic imports and
 namespace imports continue to use the original minified export names. Bindings
 without a spec-assigned name are not changed by this cross-chunk pass.
 
+## Export-reentry diagnostics
+
+Materialization reports the selected export-reentry policy and its observed
+blockers in `export_reentry.json` beside the per-chunk owner graph. This is
+diagnostic evidence only: it does not change the analyzer's proof or emitted
+JavaScript. `Full` reports include accepted and rejected chunks; rejection-only
+reports include it on rejection, while accepted dry runs remain silent. The
+typed wire schema and blocker fields are described in
+<docs/wire_format.md#export-reentry-diagnostics>.
+
 ## Audited callback-factory exports
 
 `chunk_export_purity.<defining chunk>.callback_factory_exports` lists named

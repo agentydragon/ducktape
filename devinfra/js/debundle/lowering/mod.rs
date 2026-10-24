@@ -10,8 +10,8 @@ use analysis::facts::ExportReentryPolicy;
 use analysis::{OwnerGraphOptions, RedundantPurityHint};
 
 use artifact::{
-    ArtifactIndexes, ChunkBundle, ChunkId, SelectedModuleLowering, StaticModuleRequestMode,
-    normalize_module_path,
+    ArtifactIndexes, ChunkBundle, ChunkId, SelectedModuleLowering, StaticModuleRequest,
+    StaticModuleRequestMode, normalize_module_path,
 };
 
 use output_layout::MODULES_REPORT;
@@ -140,6 +140,78 @@ pub struct RequestedLogicalModule {
     pub residual: bool,
 }
 
+/// Why the unknown-call fallback includes the chunk's export surface.
+/// The policy remains conservative whenever either blocker list is non-empty.
+#[derive(Debug, Clone, Serialize)]
+pub struct ExportReentryReport {
+    pub policy: ExportReentryPolicy,
+    pub global_blockers: Vec<ExportReentryGlobalBlocker>,
+    pub closure_blockers: Vec<ExportReentryClosureBlocker>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "reason", rename_all = "snake_case")]
+pub enum ExportReentryGlobalBlocker {
+    IncompleteArtifact {
+        present_chunks: usize,
+        expected_chunks: usize,
+    },
+    CommonJsInterop {
+        source_chunk: String,
+    },
+    NonOrdinaryStaticRequest {
+        source_chunk: String,
+        specifier: String,
+        resolved_target: Option<ExportReentryTarget>,
+    },
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "reason", rename_all = "snake_case")]
+pub enum ExportReentryClosureBlocker {
+    NonEsmChunk {
+        source_chunk: String,
+    },
+    TopLevelAwait {
+        source_chunk: String,
+    },
+    CommonJsInterop {
+        source_chunk: String,
+    },
+    VendorAffectedChunk {
+        source_chunk: String,
+    },
+    UnsupportedStaticRequest {
+        source_chunk: String,
+        specifier: String,
+        resolved_target: Option<ExportReentryTarget>,
+    },
+    UnresolvedStaticRequest {
+        source_chunk: String,
+        specifier: String,
+    },
+    MissingTargetChunk {
+        source_chunk: String,
+        specifier: String,
+        target_chunk: String,
+    },
+    NonEntryStaticRequest {
+        source_chunk: String,
+        specifier: String,
+        resolved_target: ExportReentryTarget,
+        entry_file: String,
+    },
+    TargetCycle {
+        target_chunk: String,
+    },
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ExportReentryTarget {
+    pub chunk: String,
+    pub file: String,
+}
+
 /// Where (and when) per-chunk validation reports are written.
 #[derive(Debug, Clone)]
 pub enum ReportEmission {
@@ -230,8 +302,17 @@ pub fn materialize_logical_modules(
     }
     let artifact_indexes = ArtifactIndexes::build(&artifact)?;
     let vendor_affected_chunk_ids = vendor_plan.affected_chunk_ids();
-    let export_reentry_policies =
-        export_reentry_policies(&artifact, &artifact_indexes, &vendor_affected_chunk_ids)?;
+    let export_reentry_reports = export_reentry_reports(
+        &artifact,
+        &artifact_indexes,
+        &vendor_affected_chunk_ids,
+        &selected_chunk_ids,
+        options.report_emission.rejection_dir().is_some(),
+    )?;
+    let export_reentry_policies = export_reentry_reports
+        .iter()
+        .map(|(chunk_id, report)| (*chunk_id, report.policy))
+        .collect();
     // Program-level pass over the selected chunks' retained static-import
     // closure: cross-module purity verdicts for each chunk's imported
     // function bindings, consumed per chunk via
@@ -280,6 +361,7 @@ pub fn materialize_logical_modules(
                                 keep_going: options.keep_going,
                                 list_template_identifiers: options.list_template_identifiers,
                                 report_emission: &options.report_emission,
+                                export_reentry_reports: &export_reentry_reports,
                                 vendor_import_oracle: vendor_import_oracle.as_ref(),
                                 export_reentry_policies: &export_reentry_policies,
                             },
@@ -371,65 +453,126 @@ pub fn materialize_logical_modules(
     })
 }
 
-fn export_reentry_policies(
+fn export_reentry_reports(
     artifact: &ChunkBundle,
     indexes: &ArtifactIndexes,
     vendor_affected_chunk_ids: &BTreeSet<ChunkId>,
-) -> Result<BTreeMap<ChunkId, ExportReentryPolicy>> {
+    selected_chunk_names: &[String],
+    include_closure_diagnostics: bool,
+) -> Result<BTreeMap<ChunkId, ExportReentryReport>> {
     // An incomplete artifact cannot certify incoming host/nonordinary edges.
     let all_chunks_present = artifact.chunks.len() == artifact.chunk_table.len();
-    let no_global_host_or_phase_escape = all_chunks_present
-        && artifact.chunks.iter().all(|chunk| {
-            !chunk.analysis.runtime_facts.has_cjs_interop
-                && chunk
-                    .analysis
-                    .runtime_facts
-                    .static_requests
-                    .iter()
-                    .all(|request| request.mode == StaticModuleRequestMode::OrdinaryEsm)
+    let mut global_blockers = Vec::new();
+    if !all_chunks_present {
+        global_blockers.push(ExportReentryGlobalBlocker::IncompleteArtifact {
+            present_chunks: artifact.chunks.len(),
+            expected_chunks: artifact.chunk_table.len(),
         });
-    let mut policies = BTreeMap::new();
-    for chunk_id in artifact.list_chunk_ids() {
-        let policy = if no_global_host_or_phase_escape
-            && can_prove_no_static_importer_reentry(
-                chunk_id,
-                artifact,
-                indexes,
-                vendor_affected_chunk_ids,
-            )? {
+    }
+    for chunk in &artifact.chunks {
+        let source_chunk = artifact.chunk_table.name(chunk.chunk_id).to_string();
+        let runtime = &chunk.analysis.runtime_facts;
+        if runtime.has_cjs_interop {
+            global_blockers.push(ExportReentryGlobalBlocker::CommonJsInterop {
+                source_chunk: source_chunk.clone(),
+            });
+        }
+        for request in &runtime.static_requests {
+            if request.mode != StaticModuleRequestMode::OrdinaryEsm {
+                global_blockers.push(ExportReentryGlobalBlocker::NonOrdinaryStaticRequest {
+                    source_chunk: source_chunk.clone(),
+                    specifier: request.specifier.clone(),
+                    resolved_target: resolve_report_target(
+                        request,
+                        chunk.chunk_id,
+                        &chunk.analysis.entry_file,
+                        artifact,
+                        indexes,
+                    ),
+                });
+            }
+        }
+    }
+
+    let global_proof_is_blocked = !global_blockers.is_empty();
+    let mut reports = BTreeMap::new();
+    for name in selected_chunk_names {
+        let Some(target) = artifact.chunk_table.get(name) else {
+            continue;
+        };
+        let closure_blockers = if artifact.has_chunk(target)
+            && (include_closure_diagnostics || !global_proof_is_blocked)
+        {
+            collect_closure_blockers(target, artifact, indexes, vendor_affected_chunk_ids)?
+        } else {
+            Vec::new()
+        };
+        let policy = if !global_proof_is_blocked && closure_blockers.is_empty() {
             ExportReentryPolicy::NoStaticImporterReentry
         } else {
             ExportReentryPolicy::Conservative
         };
-        policies.insert(chunk_id, policy);
+        reports.insert(
+            target,
+            ExportReentryReport {
+                policy,
+                global_blockers: global_blockers.clone(),
+                closure_blockers,
+            },
+        );
     }
-    Ok(policies)
+    Ok(reports)
 }
 
-fn can_prove_no_static_importer_reentry(
+fn collect_closure_blockers(
     target: ChunkId,
     artifact: &ChunkBundle,
     indexes: &ArtifactIndexes,
     vendor_affected_chunk_ids: &BTreeSet<ChunkId>,
-) -> Result<bool> {
-    // A static importer can re-enter this module during evaluation only if
-    // its SCC contains the target; that SCC is contained in this closure.
+) -> Result<Vec<ExportReentryClosureBlocker>> {
+    // Follow resolved static requests even when another blocker is present,
+    // so the report exposes independent predicates and structural cycles.
     let mut outgoing = BTreeMap::<ChunkId, BTreeSet<ChunkId>>::new();
     let mut closure = BTreeSet::from([target]);
     let mut pending = vec![target];
+    let mut blockers = Vec::new();
     while let Some(source) = pending.pop() {
         let chunk = artifact.chunk(source)?;
         let runtime = &chunk.analysis.runtime_facts;
-        if runtime.module_kind != artifact::ChunkModuleKind::Esm
-            || runtime.has_top_level_await
-            || runtime.has_cjs_interop
-            || vendor_affected_chunk_ids.contains(&source)
-        {
-            return Ok(false);
+        let source_name = artifact.chunk_table.name(source).to_string();
+        if runtime.module_kind != artifact::ChunkModuleKind::Esm {
+            blockers.push(ExportReentryClosureBlocker::NonEsmChunk {
+                source_chunk: source_name.clone(),
+            });
+        }
+        if runtime.has_top_level_await {
+            blockers.push(ExportReentryClosureBlocker::TopLevelAwait {
+                source_chunk: source_name.clone(),
+            });
+        }
+        if runtime.has_cjs_interop {
+            blockers.push(ExportReentryClosureBlocker::CommonJsInterop {
+                source_chunk: source_name.clone(),
+            });
+        }
+        if vendor_affected_chunk_ids.contains(&source) {
+            blockers.push(ExportReentryClosureBlocker::VendorAffectedChunk {
+                source_chunk: source_name.clone(),
+            });
         }
         for request in &runtime.static_requests {
             if request.mode != StaticModuleRequestMode::OrdinaryEsm {
-                return Ok(false);
+                blockers.push(ExportReentryClosureBlocker::UnsupportedStaticRequest {
+                    source_chunk: source_name.clone(),
+                    specifier: request.specifier.clone(),
+                    resolved_target: resolve_report_target(
+                        request,
+                        source,
+                        &chunk.analysis.entry_file,
+                        artifact,
+                        indexes,
+                    ),
+                });
             }
             let Some(resolved) = indexes.resolve_runtime_import_reference(
                 &request.specifier,
@@ -437,18 +580,39 @@ fn can_prove_no_static_importer_reentry(
                 &chunk.analysis.entry_file,
                 &artifact.chunk_table,
             ) else {
-                return Ok(false);
+                blockers.push(ExportReentryClosureBlocker::UnresolvedStaticRequest {
+                    source_chunk: source_name.clone(),
+                    specifier: request.specifier.clone(),
+                });
+                continue;
             };
             if !artifact.has_chunk(resolved.target_chunk_id) {
-                return Ok(false);
+                blockers.push(ExportReentryClosureBlocker::MissingTargetChunk {
+                    source_chunk: source_name.clone(),
+                    specifier: request.specifier.clone(),
+                    target_chunk: artifact
+                        .chunk_table
+                        .name(resolved.target_chunk_id)
+                        .to_string(),
+                });
+                continue;
             }
-            if artifact
+            let target_entry = &artifact
                 .chunk(resolved.target_chunk_id)?
                 .analysis
-                .entry_file
-                != resolved.target_file
-            {
-                return Ok(false);
+                .entry_file;
+            if target_entry != &resolved.target_file {
+                blockers.push(ExportReentryClosureBlocker::NonEntryStaticRequest {
+                    source_chunk: source_name.clone(),
+                    specifier: request.specifier.clone(),
+                    resolved_target: report_target(
+                        resolved.target_chunk_id,
+                        &resolved.target_file,
+                        artifact,
+                    ),
+                    entry_file: target_entry.clone(),
+                });
+                continue;
             }
             outgoing
                 .entry(source)
@@ -482,5 +646,37 @@ fn can_prove_no_static_importer_reentry(
             .iter()
             .any(|destination| reaches_target.contains(destination))
     });
-    Ok(!target_has_cycle)
+    if target_has_cycle {
+        blockers.push(ExportReentryClosureBlocker::TargetCycle {
+            target_chunk: artifact.chunk_table.name(target).to_string(),
+        });
+    }
+    Ok(blockers)
+}
+
+fn resolve_report_target(
+    request: &StaticModuleRequest,
+    source: ChunkId,
+    entry_file: &str,
+    artifact: &ChunkBundle,
+    indexes: &ArtifactIndexes,
+) -> Option<ExportReentryTarget> {
+    let resolved = indexes.resolve_runtime_import_reference(
+        &request.specifier,
+        source,
+        entry_file,
+        &artifact.chunk_table,
+    )?;
+    Some(report_target(
+        resolved.target_chunk_id,
+        &resolved.target_file,
+        artifact,
+    ))
+}
+
+fn report_target(target: ChunkId, file: &str, artifact: &ChunkBundle) -> ExportReentryTarget {
+    ExportReentryTarget {
+        chunk: artifact.chunk_table.name(target).to_string(),
+        file: file.to_string(),
+    }
 }

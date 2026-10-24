@@ -696,6 +696,11 @@ pub struct FixtureOpts<'a> {
     /// `chunk_export_purity` entries as `(defining chunk_id, assertion)`,
     /// built via [`ChunkExportPurityBuilder`]. Default empty.
     pub chunk_export_purity: &'a [(&'a str, spec::ChunkExportPurity)],
+    /// Additional vendor marks keyed by chunk ID, for report and rewrite cases.
+    pub vendor_marks: &'a [(&'a str, spec::VendorMark)],
+    /// Keep only `chunk_id` in the materialization artifact while retaining
+    /// the full chunk table, exercising incomplete-artifact fallback.
+    pub prune_other_chunks: bool,
 }
 
 impl<'a> FixtureOpts<'a> {
@@ -721,6 +726,8 @@ impl<'a> FixtureOpts<'a> {
             source_paths: &[],
             extra_chunk_logical_modules: &[],
             chunk_export_purity: &[],
+            vendor_marks: &[],
+            prune_other_chunks: false,
         }
     }
 
@@ -750,6 +757,16 @@ impl<'a> FixtureOpts<'a> {
         entries: &'a [(&'a str, spec::ChunkExportPurity)],
     ) -> Self {
         self.chunk_export_purity = entries;
+        self
+    }
+
+    pub fn with_vendor_marks(mut self, vendor_marks: &'a [(&'a str, spec::VendorMark)]) -> Self {
+        self.vendor_marks = vendor_marks;
+        self
+    }
+
+    pub fn with_prune_other_chunks(mut self) -> Self {
+        self.prune_other_chunks = true;
         self
     }
 
@@ -945,7 +962,11 @@ pub(super) fn build_spec(opts: &FixtureOpts<'_>, setup: &PreparedFixture) -> Tra
             input_root: setup.snapshot_root.clone(),
             js_list_path: setup.js_list_path.clone(),
         },
-        vendor: BTreeMap::new(),
+        vendor: opts
+            .vendor_marks
+            .iter()
+            .map(|(chunk_id, mark)| ((*chunk_id).to_string(), mark.clone()))
+            .collect(),
         logical_modules,
         chunk_renames,
         unassigned_mode,
@@ -953,7 +974,7 @@ pub(super) fn build_spec(opts: &FixtureOpts<'_>, setup: &PreparedFixture) -> Tra
         chunk_export_purity,
         swap_vendor_chunks: SwapVendorChunksConfig::default(),
         materialize_logical_modules: MaterializeLogicalModulesConfig {
-            prune_other_chunks: false,
+            prune_other_chunks: opts.prune_other_chunks,
             report_out_dir: Some(setup.report_root.clone()),
             target_dir: "modules".to_string(),
             ..Default::default()

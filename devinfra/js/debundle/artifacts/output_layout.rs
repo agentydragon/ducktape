@@ -21,6 +21,7 @@ pub const OWNER_GRAPH_REPORT: &str = "owner_graph.json";
 pub const CYCLES_REPORT: &str = "cycles.json";
 pub const ATOMIC_UNIT_CONFLICTS_REPORT: &str = "atomic_unit_conflicts.json";
 pub const SELECTOR_DIAGNOSTICS_REPORT: &str = "selector_diagnostics.json";
+pub const EXPORT_REENTRY_REPORT: &str = "export_reentry.json";
 pub const INDEX_REPORT: &str = "index.json";
 
 #[derive(Debug, Clone)]

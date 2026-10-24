@@ -27,6 +27,29 @@ strings), **not** as SWC `Id = (Atom, SyntaxContext)`. The
 `Serialize` impl. That impl writes the **string content** — interned
 in memory, but the wire form is the string itself, which is portable.
 
+### Export-reentry diagnostics
+
+`export_reentry.json` is a per-selected-chunk diagnostic, not analyzer input.
+Its `policy` is `conservative` or `no_static_importer_reentry`. The typed
+`global_blockers` and `closure_blockers` arrays use a `reason` tag. Chunk
+references are canonical chunk IDs; static-request entries carry the source
+chunk and original specifier, with `resolved_target: {"chunk", "file"}` when
+the index resolves one. The global predicates are collected once per
+materialization; closure predicates are checked for each selected target even
+when a global blocker already forces the conservative policy. The report
+never relaxes the proof.
+
+```json
+{
+  "policy": "conservative",
+  "global_blockers": [{ "reason": "common_js_interop", "source_chunk": "static/provider" }],
+  "closure_blockers": [
+    { "reason": "vendor_affected_chunk", "source_chunk": "static/provider" },
+    { "reason": "target_cycle", "target_chunk": "static/provider" }
+  ]
+}
+```
+
 ### Why the convention works for these files
 
 These files all carry **post-filter** data — data that has already

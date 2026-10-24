@@ -30,8 +30,8 @@ use crate::plans::{
 use crate::rebind_fold::compute_rebind_folds;
 use crate::rename_ledger::{RenameLedger, SealValidation};
 use crate::{
-    ChunkModulesCounts, ChunkModulesReport, FinalModuleContent, ReportEmission,
-    RequestedLogicalModule,
+    ChunkModulesCounts, ChunkModulesReport, ExportReentryReport, FinalModuleContent,
+    ReportEmission, RequestedLogicalModule,
 };
 use analysis::facts::ExportReentryPolicy;
 use analysis::{
@@ -48,7 +48,8 @@ use chunk_analysis::{ChunkAnalysisOutput, DynamicImportTarget, compute_chunk_ana
 use gate::{ChunkFactorization, render_atomic_unit_conflict_summary, render_cycle_summary};
 use js_ast::{ParsedJsModule, statement_ordinal_for_body_index};
 use output_layout::{
-    ATOMIC_UNIT_CONFLICTS_REPORT, CYCLES_REPORT, OWNER_GRAPH_REPORT, SELECTOR_DIAGNOSTICS_REPORT,
+    ATOMIC_UNIT_CONFLICTS_REPORT, CYCLES_REPORT, EXPORT_REENTRY_REPORT, OWNER_GRAPH_REPORT,
+    SELECTOR_DIAGNOSTICS_REPORT,
 };
 use spec::{ChunkRenames, InitializerPurity, LogicalModule, MemberPurity, UnassignedMode};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -87,6 +88,7 @@ pub(super) struct ChunkContext<'a> {
     pub(super) list_template_identifiers: bool,
     pub(super) report_emission: &'a ReportEmission,
     pub(super) export_reentry_policies: &'a BTreeMap<ChunkId, ExportReentryPolicy>,
+    pub(super) export_reentry_reports: &'a BTreeMap<ChunkId, ExportReentryReport>,
     /// Vendor-plan consultation for runtime re-import construction;
     /// `None` when no vendor mark could
     /// affect construction.
@@ -387,6 +389,7 @@ pub(super) fn finish_logical_chunk(
         report_emission,
         vendor_import_oracle,
         export_reentry_policies,
+        export_reentry_reports,
         ..
     } = context;
     let ChunkSpec {
@@ -567,6 +570,7 @@ pub(super) fn finish_logical_chunk(
         report_emission,
         &factorization,
         &factorization_report,
+        &export_reentry_reports[&chunk_id_interned],
     )?;
 
     let lowered = lower_chunk(LowerChunkInputs {
@@ -974,6 +978,7 @@ fn validate_and_emit_reports(
     report_emission: &ReportEmission,
     factorization: &ChunkFactorization,
     factorization_report: &::gate::FactorizationReport,
+    export_reentry_report: &ExportReentryReport,
 ) -> Result<()> {
     let rejected = !factorization_report.atomic_unit_conflicts.is_empty()
         || !factorization_report.cycles.is_empty();
@@ -992,6 +997,12 @@ fn validate_and_emit_reports(
             chunk_id,
             OWNER_GRAPH_REPORT,
             &owner_graph_report,
+        )?;
+        write_chunk_report_json(
+            report_out_dir,
+            chunk_id,
+            EXPORT_REENTRY_REPORT,
+            export_reentry_report,
         )?;
     }
     if !factorization_report.atomic_unit_conflicts.is_empty() {
