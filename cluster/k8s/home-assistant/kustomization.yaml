@@ -6,9 +6,3 @@ resources:
   - db.k8s.yaml
   - credentials-secret.sops.yaml
   - app/
-configMapGenerator:
-  - name: recorder-import
-    namespace: home-assistant
-    files:
-      - recorder-import/prepare.py
-      - recorder-import/load.sh

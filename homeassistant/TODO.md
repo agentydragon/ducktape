@@ -29,8 +29,6 @@
     dashboard for availability, request behavior, entity counts, and automation failures.
   - Define the queries and retention requirements before choosing storage. Keep operational
     metrics in Prometheus and avoid exporting high-cardinality entity history by default.
-  - Evaluate external PostgreSQL as the primary recorder database for durable Home Assistant
-    history and easier recovery from loss of the local PVC.
   - Add InfluxDB or another time-series store only if concrete long-retention entity-state
     analysis or Grafana queries are not served well by the recorder database.
 
