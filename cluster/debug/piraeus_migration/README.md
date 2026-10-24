@@ -290,6 +290,32 @@ before a physical reset. Private per-cluster proofs are in
 `/tmp/piraeus-hdd-roll-20261023/last-hdd-102453/`, including
 `root-final-independent-acceptance.json`.
 
+### Seaweed HDD-1 repair and evacuation
+
+`repair-hdd-102453` and `evacuate-hdd-102453` are separate, suspended-by-default
+AdminScripts. Keep the existing hourly `replication-repair` held. Activate only
+the copy-only repair phase first; both scripts lock and set the source to
+`maintenanceOn`, which prevents new allocations there while allowing reads and
+outgoing copies. Verify the master's source state and the owned S3 write/read/delete
+probe before copies begin; if that probe fails, restore `maintenanceOff` only after
+checking the source state. A successful repair Job is insufficient because
+`volume.fix.replication` can return without progress. Before enabling evacuation,
+take a fresh full census of every volume still held by the source. Verify that no
+original volume ID is missing, every source-held volume has at least two distinct
+healthy locations under normal replication policy `001`, and none is erasure-coded.
+Do not use only the historical 29-singleton list as this gate. Suspend the repair
+script, then enable only
+`evacuate-hdd-102453`. Its CronJob retries failed runs with Job backoff and its
+10-minute schedule; do not add an internal shell retry, `-target`, or
+`-skipNonMoveable`. SeaweedFS verifies each new target before deleting that
+volume's source copy, so the source Pod and PVC remain until the off-source
+replicas and client-refresh gates pass. Keep `maintenanceOn` through retirement;
+refresh FUSE clients while the source server is still alive. Then remove both
+temporary AdminScripts and resume hourly copy-only repair after placement is
+stable. Leave the legacy `hdd` group unchanged. Monitor thin pools throughout:
+the accepted projection is 475 GiB free (25.6%) on `103656` and 248 GiB free
+(13.4%, below the 15% floor) on `103711`.
+
 ### ClickHouse replica 1 on 103656 — 2026-10-24 (in progress)
 
 Replica 1 started on a fresh 500Gi `piraeus-hdd-local` claim on

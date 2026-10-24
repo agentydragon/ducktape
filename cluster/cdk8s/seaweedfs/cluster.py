@@ -34,6 +34,7 @@ from seaweed_adminscript_crds.com.seaweedfs.seaweed import (
     AdminScriptSpecResourcesLimits,
     AdminScriptSpecResourcesRequests,
     AdminScriptSpecRestartPolicy,
+    AdminScriptSpecTolerations,
 )
 from seaweed_resourcereferencegrant_crds.com.seaweedfs.seaweed import (
     ResourceReferenceGrantSpecFrom,
@@ -631,6 +632,57 @@ def chart(app: App) -> Chart:
             ),
         ),
     )
+    for name, description, script in (
+        (
+            "repair-hdd-102453",
+            "Copy-only replica repair for the 102453 HDD evacuation; verify every volume has two copies before evacuation.",
+            "lock\n"
+            "volumeServer.state -nodes=seaweedfs-volume-hdd-1.seaweedfs-volume-hdd-peer.seaweedfs:8444 -maintenanceOn\n"
+            "volume.fix.replication -apply -doDelete=false -maxParallelization=2"
+            " -maxParallelizationPerServer=1 -retry=5 -volumesPerStep=1\n"
+            "unlock\n",
+        ),
+        (
+            "evacuate-hdd-102453",
+            "Evacuate the 102453 SeaweedFS HDD volume server after all target volumes have two copies.",
+            "lock\n"
+            "volumeServer.state -nodes=seaweedfs-volume-hdd-1.seaweedfs-volume-hdd-peer.seaweedfs:8444 -maintenanceOn\n"
+            "volumeServer.evacuate -node=seaweedfs-volume-hdd-1.seaweedfs-volume-hdd-peer.seaweedfs:8444 -apply\n"
+            "unlock\n",
+        ),
+    ):
+        AdminScript(
+            chart,
+            name,
+            metadata=ApiObjectMetadata(name=name, namespace=namespace.NAME, annotations={"description": description}),
+            spec=AdminScriptSpec(
+                cluster_ref=AdminScriptSpecClusterRef(name=NAME),
+                schedule="*/10 * * * *",
+                time_zone="Etc/UTC",
+                suspend=True,
+                concurrency_policy=AdminScriptSpecConcurrencyPolicy.FORBID,
+                restart_policy=AdminScriptSpecRestartPolicy.NEVER,
+                backoff_limit=2,
+                starting_deadline_seconds=300,
+                active_deadline_seconds=43200,
+                successful_jobs_history_limit=1,
+                failed_jobs_history_limit=3,
+                resources=AdminScriptSpecResources(
+                    requests={
+                        "cpu": AdminScriptSpecResourcesRequests.from_string("100m"),
+                        "memory": AdminScriptSpecResourcesRequests.from_string("128Mi"),
+                    },
+                    limits={"memory": AdminScriptSpecResourcesLimits.from_string("512Mi")},
+                ),
+                node_selector={**node_scheduling.HIL_OVH_NODE_SELECTOR, "storage.allegedly.works/tier": "ssd"},
+                tolerations=[
+                    AdminScriptSpecTolerations(
+                        key=node_scheduling.CONTROL_PLANE_TAINT_KEY, operator="Exists", effect="NoSchedule"
+                    )
+                ],
+                script=script,
+            ),
+        )
     # The descheduler honors PDBs unconditionally, so these are the lever that stops it (and
     # `kubectl drain` / node-autoscaler) from breaking quorum via voluntary eviction -- the
     # trigger behind the 2026-06-19 crash-loop incident (cluster/docs/lessons_learned/
