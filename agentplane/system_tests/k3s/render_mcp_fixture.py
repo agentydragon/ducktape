@@ -4,9 +4,9 @@ import os
 from dataclasses import asdict
 from pathlib import Path
 
-from agentplane.x.k3s_env import fixture_chart, mcp_fixture_chart
-from agentplane.x.k3s_env.render_fixture import write_fixture
-from agentplane.x.k3s_env.rendered_fixture import (
+from agentplane.system_tests.k3s import fixture_chart, mcp_fixture_chart
+from agentplane.system_tests.k3s.render_fixture import write_fixture
+from agentplane.system_tests.k3s.rendered_fixture import (
     MCP_PLACEHOLDERS,
     MODEL_PLACEHOLDERS,
     PLACEHOLDERS,

@@ -10,7 +10,7 @@ py_library(
     name = "egress_credential",
     srcs = ["egress_credential.py"],
     visibility = [
-        "//agentplane/x/k3s_env:__pkg__",
+        "//agentplane/system_tests/k3s:__pkg__",
         "//cluster/cdk8s:__subpackages__",
     ],
     deps = [
@@ -38,7 +38,7 @@ py_library(
     name = "policy_set",
     srcs = ["policy_set.py"],
     visibility = [
-        "//agentplane/x/k3s_env:__pkg__",
+        "//agentplane/system_tests/k3s:__pkg__",
         "//cluster/cdk8s:__subpackages__",
     ],
     deps = [

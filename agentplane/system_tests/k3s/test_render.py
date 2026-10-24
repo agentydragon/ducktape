@@ -17,8 +17,8 @@ from agentplane.action_service.settings import Settings as ActionsSettings
 from agentplane.app.settings import Settings as AppSettings
 from agentplane.mcp_edge.settings import Settings as McpEdgeSettings
 from agentplane.runner_gateway.settings import Settings
-from agentplane.x.k3s_env import fixture_chart, fixture_database, rendered_fixture
-from agentplane.x.k3s_env.rendered_fixture import LocalModel, McpInputs, RuntimeInputs
+from agentplane.system_tests.k3s import fixture_chart, fixture_database, rendered_fixture
+from agentplane.system_tests.k3s.rendered_fixture import LocalModel, McpInputs, RuntimeInputs
 from util.bazel.runfiles import get_required_path
 from util.settings_contract import env_name
 

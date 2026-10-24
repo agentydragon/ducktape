@@ -11,7 +11,7 @@ cdk8s_import(
     module_name = "cnpg_cluster_crds",
     module_path = "io/cnpg/postgresql",
     visibility = [
-        "//agentplane/x/k3s_env:__pkg__",
+        "//agentplane/system_tests/k3s:__pkg__",
         "//cluster/cdk8s:__subpackages__",
     ],
 )
@@ -22,7 +22,7 @@ cdk8s_import(
     module_name = "cnpg_database_crds",
     module_path = "io/cnpg/postgresql",
     visibility = [
-        "//agentplane/x/k3s_env:__pkg__",
+        "//agentplane/system_tests/k3s:__pkg__",
         "//cluster/cdk8s:__subpackages__",
     ],
 )
@@ -58,7 +58,7 @@ py_library(
     name = "cnpg_database",
     srcs = ["database.py"],
     visibility = [
-        "//agentplane/x/k3s_env:__pkg__",
+        "//agentplane/system_tests/k3s:__pkg__",
         "//cluster/cdk8s:__subpackages__",
     ],
     deps = [

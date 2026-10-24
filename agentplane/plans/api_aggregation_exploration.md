@@ -121,7 +121,7 @@ delete, so none is built.
 
 A bounded spike answers the questions that would end the idea. Its answers matter only once
 `ActionRequest` is committed, so it can wait for that. The Go Dispatcher, already deployed on the k3s
-environment (`agentplane/x/k3s_env`), is the cheapest vehicle: a read-only `Dispatch` list, get and
+environment (`agentplane/system_tests/k3s`), is the cheapest vehicle: a read-only `Dispatch` list, get and
 watch, served by an extension server in its own Deployment, so that the server's outage is not an
 `APIService` outage, which breaks discovery cluster-wide. It asks:
 

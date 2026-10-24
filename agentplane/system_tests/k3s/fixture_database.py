@@ -39,7 +39,7 @@ _LABELS = {"app.kubernetes.io/name": NAME}
 
 
 def _fixture_file(name: str) -> str:
-    return get_required_path(own_repo_rlocation(f"agentplane/x/k3s_env/{name}")).read_text(encoding="utf-8")
+    return get_required_path(own_repo_rlocation(f"agentplane/system_tests/k3s/{name}")).read_text(encoding="utf-8")
 
 
 def _database_secret(

@@ -2,7 +2,7 @@
 sandboxes that clean up after themselves.
 
 Which instance is under test comes from the environment: a scenario's target publishes a k3s stack of
-its own (`agentplane.x.k3s_env.system_test_target`). The live checks that need what only a deployment
+its own (`agentplane.system_tests.k3s.system_test_target`). The live checks that need what only a deployment
 has (`test_thread_latency`, `test_ollama_routes`) default to staging.
 
 So does the model backend (`MODEL_BACKEND`): a real model, the default, or one the scenario scripts

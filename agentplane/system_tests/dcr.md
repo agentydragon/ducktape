@@ -3,7 +3,7 @@
 `//agentplane/system_tests:test_dcr` starts an actual MCP Python SDK `ClientSession` over
 Streamable HTTP against the standalone MCP edge of a k3s stack with the MCP fixtures, at the `/mcp`
 endpoint of the loopback origin its OAuth server names itself by (`MCP_EDGE_URL`, a port-forward:
-[`x/k3s_env`](../x/k3s_env/README.md)). The SDK receives the unauthenticated challenge, fetches its
+[`k3s`](k3s/README.md)). The SDK receives the unauthenticated challenge, fetches its
 protected-resource metadata, follows the advertised authorization server, and registers through its
 advertised endpoint. Wire observers require JSON content types and RFC 7591 `201`; the SDK validates
 the result, and the probe checks that the requested client metadata survives. Loopback and

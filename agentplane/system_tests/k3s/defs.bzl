@@ -31,11 +31,11 @@ K3S_VM_IMAGES = {
 # What a stack rendered with VM Sandboxes needs besides the stack's own: KubeVirt's and Kyverno's
 # release manifests and image layouts, and the test guest's images.
 K3S_VM_DATA = [
-    "//agentplane/x/k3s_env:vm_sandboxes/" + name + "_layout"
+    "//agentplane/system_tests/k3s:vm_sandboxes/" + name + "_layout"
     for name in K3S_VM_IMAGES
 ] + [
-    "//agentplane/x/k3s_env/guest:vm_guest_boot_layout",
-    "//agentplane/x/k3s_env/guest:vm_guest_root_layout",
+    "//agentplane/system_tests/k3s/guest:vm_guest_boot_layout",
+    "//agentplane/system_tests/k3s/guest:vm_guest_root_layout",
     "@kubevirt_operator_bundle//file",
     "@kyverno_install//file",
 ]

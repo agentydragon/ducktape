@@ -25,7 +25,7 @@ READY_SECONDS = 600
 # What virt-operator deploys, besides itself, at its own registry and version. Launcher Pods run
 # virt-launcher.
 _KUBEVIRT_COMPONENTS = ("virt-api", "virt-controller", "virt-handler", "virt-launcher")
-_LAYOUTS = "_main/agentplane/x/k3s_env/vm_sandboxes"
+_LAYOUTS = "_main/agentplane/system_tests/k3s/vm_sandboxes"
 
 
 def _manifest(variable: str) -> list[dict[str, Any]]:

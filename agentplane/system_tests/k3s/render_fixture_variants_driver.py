@@ -3,7 +3,7 @@
 import os
 from pathlib import Path
 
-from agentplane.x.k3s_env import render_fixture, render_mcp_fixture
+from agentplane.system_tests.k3s import render_fixture, render_mcp_fixture
 
 
 def main() -> None:

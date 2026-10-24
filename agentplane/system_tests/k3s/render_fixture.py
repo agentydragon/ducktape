@@ -9,8 +9,8 @@ from dataclasses import asdict
 from enum import StrEnum
 from pathlib import Path
 
-from agentplane.x.k3s_env import fixture_chart
-from agentplane.x.k3s_env.rendered_fixture import (
+from agentplane.system_tests.k3s import fixture_chart
+from agentplane.system_tests.k3s.rendered_fixture import (
     MODEL_PLACEHOLDERS,
     PLACEHOLDERS,
     Backend,

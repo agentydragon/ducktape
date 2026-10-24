@@ -1,6 +1,6 @@
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//agentplane/x/k3s_env:defs.bzl", "K3S_BINARY", "K3S_VM_IMAGES")
+load("//agentplane/system_tests/k3s:defs.bzl", "K3S_BINARY", "K3S_VM_IMAGES")
 load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
@@ -34,7 +34,7 @@ pkg_tar(
     mode = "0755",
     package_dir = "/opt/harnesses",
     strip_prefix = ".",
-    visibility = ["//agentplane/x/k3s_env/guest:__pkg__"],
+    visibility = ["//agentplane/system_tests/k3s/guest:__pkg__"],
 )
 
 # The base image's /bin is a symlink to usr/bin.
@@ -59,7 +59,7 @@ pkg_tar(
     mode = "0755",
     package_dir = "/opt/harnesses",
     strip_prefix = ".",
-    visibility = ["//agentplane/x/k3s_env/guest:__pkg__"],
+    visibility = ["//agentplane/system_tests/k3s/guest:__pkg__"],
 )
 
 pkg_tar(
@@ -176,6 +176,7 @@ py_test(
         "//agentplane/app:settings",
         "//agentplane/mcp_edge:settings",
         "//agentplane/runner_gateway:settings",
+        "//agentplane/system_tests:conftest",
         "//util:settings_contract",
         "//util/bazel:runfiles",
         "@pypi//bcrypt",
@@ -322,7 +323,7 @@ py_binary(
     name = "render_fixture_bin",
     testonly = True,
     imports = ["../../.."],
-    main_module = "agentplane.x.k3s_env.render_fixture",
+    main_module = "agentplane.system_tests.k3s.render_fixture",
     deps = [":render_fixture"],
 )
 
@@ -343,7 +344,7 @@ py_binary(
     name = "render_mcp_fixture_bin",
     testonly = True,
     imports = ["../../.."],
-    main_module = "agentplane.x.k3s_env.render_mcp_fixture",
+    main_module = "agentplane.system_tests.k3s.render_mcp_fixture",
     deps = [":render_mcp_fixture"],
 )
 
@@ -428,6 +429,7 @@ py_test(
     },
     deps = [
         "//:conftest",
+        "//agentplane/system_tests:conftest",
         "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",
         "@pypi//pytest_bazel",
@@ -463,6 +465,6 @@ py_binary(
     name = "render_fixture_variants_for_test_bin",
     testonly = True,
     imports = ["../../.."],
-    main_module = "agentplane.x.k3s_env.render_fixture_variants_driver",
+    main_module = "agentplane.system_tests.k3s.render_fixture_variants_driver",
     deps = [":render_fixture_variants_driver"],
 )

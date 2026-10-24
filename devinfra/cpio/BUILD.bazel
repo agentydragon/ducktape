@@ -3,7 +3,7 @@ load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 py_library(
     name = "cpio_tool",
     srcs = ["cpio_tool.py"],
-    visibility = ["//agentplane/x/k3s_env/guest:__pkg__"],
+    visibility = ["//agentplane/system_tests/k3s/guest:__pkg__"],
     deps = ["@rules_pkg//pkg/private:manifest"],
 )
 

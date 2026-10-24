@@ -34,9 +34,9 @@ import yaml
 from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.system_tests.conftest import AGENT_SERVICE_ACCOUNT, AUDIENCE
+from agentplane.system_tests.k3s import rendered_fixture, vm_sandboxes
+from agentplane.system_tests.k3s.bootstrap import Bootstrap
 from agentplane.testing import tls
-from agentplane.x.k3s_env import rendered_fixture, vm_sandboxes
-from agentplane.x.k3s_env.bootstrap import Bootstrap
 from util.bazel.runfiles import get_required_path
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -481,7 +481,7 @@ def running_stack(*, models: rendered_fixture.Models, timeline: Timeline) -> Ite
     """
     crds = sorted(get_required_path("_main/agentplane/crds/manifests").glob("crd-*.yaml"))
     fixture = rendered_fixture.read(get_required_path(os.environ["K3S_FIXTURE_RLOCATION"]))
-    layouts = sorted(get_required_path("_main/agentplane/x/k3s_env").glob("*_layout.rloc"))
+    layouts = sorted(get_required_path("_main/agentplane/system_tests/k3s").glob("*_layout.rloc"))
     layouts.append(get_required_path(os.environ["K3S_RUNNER_LAYOUT_RLOCATION"]))
     if fixture.mcp_fixtures is not None:
         layouts.extend(get_required_path(path) for path in os.environ["K3S_MCP_FIXTURE_LAYOUTS"].split())
@@ -507,7 +507,7 @@ def running_stack(*, models: rendered_fixture.Models, timeline: Timeline) -> Ite
             mcp,
         )
         if fixture.vm_sandboxes:
-            layouts += sorted(get_required_path("_main/agentplane/x/k3s_env/guest").glob("*_layout.rloc"))
+            layouts += sorted(get_required_path("_main/agentplane/system_tests/k3s/guest").glob("*_layout.rloc"))
         images = {_ci_image(rloc): rloc for rloc in layouts}
         if missing := _deployment_images(fixture.objects) - images.keys():
             raise ValueError(f"Fixture workloads lack OCI layouts for: {sorted(missing)}")

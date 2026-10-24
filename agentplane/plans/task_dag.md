@@ -37,7 +37,6 @@ flowchart LR
     end
     FAKE_CLIENTS_TO_ENVTEST[Candidate: remaining fake API clients to envtest]
     APP_TEST_RUNNER_FIXTURES_GO[Candidate: app test runners use the Go Gateway and History ingress]
-    K3S_ENV_OUT_OF_X[Blocked: the k3s stack leaves x/]
     RUNNER_LAYERING_VM[Paused: layered VM guest, section 7] --> K3S_TEST_GUEST_RETIRE[Blocked: delete the k3s test guest]
     ACTION_TRACK -. after .-> REFACTOR_COHERENCE_AUDIT[Candidate: whole-refactor coherence audit, section 9]
     DISPATCH_TRACK -. after .-> REFACTOR_COHERENCE_AUDIT
@@ -520,7 +519,7 @@ flowchart LR
 
 ### `VM_HARNESS_RESOURCE_LIMITS` — accept per-harness resource limits on the VM guest
 
-**Blocked on `VM_GUEST_BUDGET_DERIVE` and `RUNNER_LAYERING_VM`; the k3s test guest (`agentplane/x/k3s_env/guest`) is an optional fixture.**
+**Blocked on `VM_GUEST_BUDGET_DERIVE` and `RUNNER_LAYERING_VM`; the k3s test guest (`agentplane/system_tests/k3s/guest`) is an optional fixture.**
 The guest already places each native harness and its tool descendants in a delegated cgroup with CPU,
 memory, task and workspace I/O limits. Exercise those limits on the slim guest: resource pressure must
 respect the aggregate and per-harness budgets, and exhausting one harness's memory group must terminate
@@ -814,7 +813,7 @@ messages, by shimming the web interface's control protocol. Builds on the viewer
 The independent candidates below were requested by the operator on 2026-10-16 PDT; none waits
 for the others. Use equivalent source/scenarios and report transfer, import/unpack, process
 readiness and total test time separately in
-[the k3s stack timings](../x/k3s_env/debug/stack_timings.md).
+[the k3s stack timings](../system_tests/k3s/debug/stack_timings.md).
 Preserve assertions and timeouts. Language rewrites require Rai's decision;
 rank them by unique image bytes removed and startup time on the dependency chain. Remaining
 Python services still need the shared interpreter.
@@ -1241,7 +1240,7 @@ reserve, stage 2 gets the rest.
 Deliver a lean bootable guest: a bare root filesystem with the runner and harnesses available from
 their chosen layer, and the tools-heavy environment separate. The layering decision still owns exact
 disk placement. `VM_HARNESS_RESOURCE_LIMITS` acceptance waits for this slim runtime; existing guest
-resource controls remain in place while it is prepared. The k3s test guest (`agentplane/x/k3s_env/guest`)
+resource controls remain in place while it is prepared. The k3s test guest (`agentplane/system_tests/k3s/guest`)
 shows a guest root filesystem can be an `oci_image` target: a candidate runtime then needs no Nix or Attic
 and is an additive target rather than a second release pipeline.
 
@@ -1258,7 +1257,7 @@ Record only observed gaps and what survived; VM-local disks and processes are lo
 while retained state/workspace volumes survive. No claim of a completed VM UI drive follows from
 the automated Pod/VM lifecycle coverage.
 
-Related: [lifecycle coverage](../x/k3s_env/README.md#sandbox-lifecycle-coverage), and `VM_RAM_SUSPEND` for
+Related: [lifecycle coverage](../system_tests/k3s/README.md#sandbox-lifecycle-coverage), and `VM_RAM_SUSPEND` for
 resuming with memory retained.
 
 ### `AGENT_RESUME_NOTICE` — tell agents when their Sandbox was suspended and resumed
@@ -1276,7 +1275,7 @@ message through the Dispatcher; and the wording agents act on. Test a suspend an
 background process, a terminal and workspace files, and a crash restart (no suspend) that reads
 differently.
 
-Related: [lifecycle coverage](../x/k3s_env/README.md#sandbox-lifecycle-coverage).
+Related: [lifecycle coverage](../system_tests/k3s/README.md#sandbox-lifecycle-coverage).
 
 ### `RUNNER_BUSY_TRACKING` — the runner counts terminals and background processes as busy
 
@@ -1685,7 +1684,7 @@ scope its included flows, omitted services and remaining state owners explicitly
 contract, if selected, remains online-only and does not wake suspended Sandboxes; the durable-queue
 mode remains the owner of wake-to-deliver.
 
-The existing `agentplane/x/k3s_env` suite already runs without the CNPG operator, Cilium or cert-manager (and KubeVirt outside its VM rendering),
+The existing `agentplane/system_tests/k3s` suite already runs without the CNPG operator, Cilium or cert-manager (and KubeVirt outside its VM rendering),
 against one plain PostgreSQL Deployment and the Runner Gateway; this node is about removing the PostgreSQL dependency
 itself. Direct admission and new sender grants remain separate decisions.
 
@@ -1880,7 +1879,6 @@ produce are named at the fake and are not cleanups.
 flowchart LR
     FAKE_CLIENTS_TO_ENVTEST[Candidate: remaining fake API clients to envtest]
     APP_TEST_RUNNER_FIXTURES_GO[Candidate: app test runners use the Go Gateway and History ingress]
-    K3S_ENV_OUT_OF_X[Blocked: the k3s stack leaves x/]
     RUNNER_LAYERING_VM[Paused: layered VM guest, section 7] --> K3S_TEST_GUEST_RETIRE[Blocked: delete the k3s test guest]
 ```
 
@@ -1909,15 +1907,9 @@ One PR per file. Exit: each reads from `testing/kubeapiserver`, or keeps only a 
 Exit: those users go through the Go Gateway's runner proxy (`sandbox_control` in `app/testing/runner_gateway.py`),
 the runner fixtures push straight to `GoHistoryService`'s ingress, and both stand-ins are deleted.
 
-### `K3S_ENV_OUT_OF_X` — the k3s stack leaves `x/`
-
-**Blocked on the fixture and VM lanes no longer editing it; its targets run in PR CI (#11370), so it is no longer
-experimental.** Move `agentplane/x/k3s_env` to a stable home and update every reference (BUILD labels, system
-test targets, docs, workflows).
-
 ### `K3S_TEST_GUEST_RETIRE` — delete the k3s test guest
 
-**Blocked on `RUNNER_LAYERING_VM`.** The system tests' `_vm` targets boot a Bazel-built test guest under `x/k3s_env/guest`, a
+**Blocked on `RUNNER_LAYERING_VM`.** The system tests' `_vm` targets boot a Bazel-built test guest under `system_tests/k3s/guest`, a
 second copy of `runner/vm.nix`'s guest contract (disks by serial, workspace format, cgroup delegation, harness and
 tool paths). Delete it once the production guest is Bazel-built and boots in seconds under
 emulation, and point the k3s VM scenarios at that guest.

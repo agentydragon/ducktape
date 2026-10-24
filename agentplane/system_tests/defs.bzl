@@ -1,40 +1,40 @@
 """A system test scenario: run on a k3s stack of its own, opted in with VM Sandboxes or a real model."""
 
-load("//agentplane/x/k3s_env:defs.bzl", "K3S_BINARY", "K3S_BINARY_RLOCATION", "K3S_EXEC_PROPERTIES", "K3S_TAGS", "K3S_VM_DATA", "K3S_VM_ENV")
+load("//agentplane/system_tests/k3s:defs.bzl", "K3S_BINARY", "K3S_BINARY_RLOCATION", "K3S_EXEC_PROPERTIES", "K3S_TAGS", "K3S_VM_DATA", "K3S_VM_ENV")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
-_HARNESSES_LAYOUT = "//agentplane/x/k3s_env:harnesses/runner_layout"
+_HARNESSES_LAYOUT = "//agentplane/system_tests/k3s:harnesses/runner_layout"
 
 # The k3s target's runner image, by what its scenarios run.
 _RUNNER_LAYOUTS = {
     # No harness, so the image imports faster.
-    "model_free": "//agentplane/x/k3s_env:model_free/runner_layout",
+    "model_free": "//agentplane/system_tests/k3s:model_free/runner_layout",
     "scripted": _HARNESSES_LAYOUT,
 }
 
 # The stack's manifest, LLM ingress forwarding to the scenario's scripted model; and with Dex and the
 # MCP servers `test_mcp` calls, whose image layouts the stack then imports too.
-_FIXTURE = "//agentplane/x/k3s_env:rendered/local-model.json"
-_MCP_FIXTURE = "//agentplane/x/k3s_env:rendered/local-model-mcp-fixtures.json"
+_FIXTURE = "//agentplane/system_tests/k3s:rendered/local-model.json"
+_MCP_FIXTURE = "//agentplane/system_tests/k3s:rendered/local-model-mcp-fixtures.json"
 _MCP_FIXTURE_LAYOUTS = [
-    "//agentplane/x/k3s_env:mcp_fixtures/dex_layout",
-    "//agentplane/x/k3s_env:mcp_fixtures/mcp_everything_layout",
-    "//agentplane/x/k3s_env:mcp_fixtures/oauth_fixture_layout",
+    "//agentplane/system_tests/k3s:mcp_fixtures/dex_layout",
+    "//agentplane/system_tests/k3s:mcp_fixtures/mcp_everything_layout",
+    "//agentplane/system_tests/k3s:mcp_fixtures/oauth_fixture_layout",
 ]
 
 # The `_vm` target's manifest: the local model's, with VM Sandboxes.
-_VM_FIXTURE = "//agentplane/x/k3s_env:rendered/local-model-vm.json"
+_VM_FIXTURE = "//agentplane/system_tests/k3s:rendered/local-model-vm.json"
 
 # The `_real_model` target's manifest: LLM ingress forwarding to the public LiteLLM with BuildBuddy's
 # live-test key (`OPENAI_API_KEY`), decrypted into the test action alone, as for `live_openai_py_test`.
-_REAL_MODEL_FIXTURE = "//agentplane/x/k3s_env:rendered/public-litellm.json"
+_REAL_MODEL_FIXTURE = "//agentplane/system_tests/k3s:rendered/public-litellm.json"
 _REAL_MODEL_SECRET = "OPENAI_API_KEY"
 
 def system_test(name, srcs, deps, k3s = None, vm_sandboxes = None, real_model = False, mcp_fixtures = False):
     """Generates `name` when `k3s` names its scenarios' kind, `name + "_vm"` when `vm_sandboxes` says
     where it runs, and `name + "_real_model"` when `real_model` is True.
 
-    `name` starts its own k3s stack in one RBE action (`agentplane.x.k3s_env.system_test_target`) and
+    `name` starts its own k3s stack in one RBE action (`agentplane.system_tests.k3s.system_test_target`) and
     runs the `scripted_model` scenarios and the unmarked ones, in PR CI like any test; `k3s` is
     `"model_free"` when none runs a turn, else `"scripted"`; `mcp_fixtures` adds Dex and the MCP
     servers to its stack. `name + "_vm"` does the same for the `vm_sandboxes` scenarios, which only it
@@ -107,10 +107,10 @@ def _k3s_test(name, runner_layout, fixture, layouts, main_module, deps, data = [
             "K3S_FIXTURE_RLOCATION": "$(rlocationpath " + fixture + ")",
             "K3S_MCP_FIXTURE_LAYOUTS": " ".join(["$(rlocationpath " + layout + ")" for layout in layouts]),
             "K3S_RUNNER_LAYOUT_RLOCATION": "$(rlocationpath " + runner_layout + ")",
-            "PYTEST_PLUGINS": "agentplane.x.k3s_env.system_test_target",
+            "PYTEST_PLUGINS": "agentplane.system_tests.k3s.system_test_target",
         } | env,
         exec_properties = K3S_EXEC_PROPERTIES | exec_properties,
         tags = K3S_TAGS + tags,
         main_module = main_module,
-        deps = deps + ["//agentplane/x/k3s_env:system_test_target"],
+        deps = deps + ["//agentplane/system_tests/k3s:system_test_target"],
     )

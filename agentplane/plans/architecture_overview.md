@@ -372,7 +372,7 @@ Held until one is chosen:
 - **Agentplane's share of the cluster's control plane.** Read Agentplane's object counts and request
   rates from the staging apiserver's metrics, with a read-only RBAC PR first if `claude-ai` cannot.
   Separates D1 from D3 at scale; the [size reading](#size-today) did not read etcd.
-- **A nodeless apiserver on Postgres.** k3s, already pinned for `x/k3s_env`, can keep its datastore in
+- **A nodeless apiserver on Postgres.** k3s, already pinned for the system tests' stack (`system_tests/k3s`), can keep its datastore in
   Postgres through kine. Install the Agentplane CRDs and try what D3 leaves untried: token
   authentication through a primary, the watch cache turned off for custom resources, and a Flux
   `spec.kubeConfig` apply.

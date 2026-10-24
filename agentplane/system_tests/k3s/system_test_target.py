@@ -20,9 +20,9 @@ import pytest
 
 from agentplane.system_tests import operator_login
 from agentplane.system_tests.conftest import BASE_URL, MCP_EDGE_URL, NAMESPACE, TOKEN
-from agentplane.x.k3s_env import rendered_fixture
-from agentplane.x.k3s_env.rendered_fixture import Backend, LocalModel, PublicLiteLLM
-from agentplane.x.k3s_env.stack import Timeline, node_ip, running_stack
+from agentplane.system_tests.k3s import rendered_fixture
+from agentplane.system_tests.k3s.rendered_fixture import Backend, LocalModel, PublicLiteLLM
+from agentplane.system_tests.k3s.stack import Timeline, node_ip, running_stack
 from util.bazel.runfiles import get_required_path
 from util.net import Listener, listen_tcp
 

@@ -16,7 +16,7 @@ package(
         "//agentplane/runner_gateway:__subpackages__",
         "//agentplane/sandboxes:__subpackages__",
         "//agentplane/system_tests:__pkg__",
-        "//agentplane/x/k3s_env:__pkg__",
+        "//agentplane/system_tests/k3s:__pkg__",
         "//agentplane/x/runner_layering:__pkg__",
     ],
 )

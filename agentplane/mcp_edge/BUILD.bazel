@@ -12,7 +12,7 @@ py_library(
     name = "settings",
     srcs = ["settings.py"],
     visibility = [
-        "//agentplane/x/k3s_env:__pkg__",
+        "//agentplane/system_tests/k3s:__pkg__",
         "//cluster/cdk8s:__subpackages__",
     ],
     deps = [

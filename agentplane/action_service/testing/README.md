@@ -10,7 +10,7 @@
 
 The system tests create scoped PolicySets and bindings for its Sandbox; running Everything
 alone does not auto-approve its tools. Both fixtures run only on the
-[k3s system test stack](../../x/k3s_env/README.md), cluster-internal and with no workload credentials.
+[k3s system test stack](../../system_tests/k3s/README.md), cluster-internal and with no workload credentials.
 
 The OAuth system test scenario reuses the operator's Dex login, completes authorization through the
 app callback, then executes the protected echo tool. The fixture verifies tokens with Dex's JWKS;

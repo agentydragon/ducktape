@@ -44,8 +44,8 @@ from agentplane.action_service.sandbox.binding import PodExecutorBinding
 from agentplane.app.settings import AppSettingsConfig
 from agentplane.subjects import ServiceAccountRef
 from agentplane.system_tests import launch_preset, probe_credential, runtime_grant, send_grant
-from agentplane.x.k3s_env import fixture_database
-from agentplane.x.k3s_env.rendered_fixture import LocalModel, Models, PublicLiteLLM
+from agentplane.system_tests.k3s import fixture_database
+from agentplane.system_tests.k3s.rendered_fixture import LocalModel, Models, PublicLiteLLM
 from cluster.cdk8s import agent_access_profiles as access
 from cluster.cdk8s.agentplane import (
     actions,

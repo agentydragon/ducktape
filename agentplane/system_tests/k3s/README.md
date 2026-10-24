@@ -1,6 +1,6 @@
 # k3s system test stack
 
-The stack every [system test](../../system_tests/README.md) scenario runs on: the Agentplane services on a
+The stack every [system test](../README.md) scenario runs on: the Agentplane services on a
 bare k3s inside the scenario's own RBE action (no Cilium), which PR CI runs like any test.
 [`system_test_target.py`](system_test_target.py) is the pytest plugin that starts it and publishes it as
 the deployment under test, with LLM ingress forwarding to the scenario's scripted model on the node.
@@ -113,7 +113,7 @@ Exact bootstrap and seal-before-stop ordering belongs in deterministic
 
 ## VM Sandboxes
 
-A system test scenario's `_vm` target ([system tests README](../../system_tests/README.md)) runs on a
+A system test scenario's `_vm` target ([system tests README](../README.md)) runs on a
 stack rendered with VM Sandboxes (`rendered/local-model-vm.json`), so [`vm_sandboxes.py`](vm_sandboxes.py)
 installs production's KubeVirt release with `useEmulation` (QEMU TCG; the executor has no `/dev/kvm`)
 and Kyverno's admission controller, which adds the egress relay to each launcher Pod as in

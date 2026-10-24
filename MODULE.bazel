@@ -296,7 +296,7 @@ oci.pull(
 )
 
 # Bare-k3s fixture: published PostgreSQL 18 without LLVM JIT. CNPG supplies the
-# binaries; //agentplane/x/k3s_env owns standalone initialization and startup.
+# binaries; //agentplane/system_tests/k3s owns standalone initialization and startup.
 oci.pull(
     name = "postgres_18_minimal",
     digest = "sha256:e5fffed938c8b55b41d9a6a88a47424d46f90aa15d807aa60348b85ea5bd498f",
@@ -322,7 +322,7 @@ oci.pull(
 )
 
 # Bare-k3s fixture: the KubeVirt and Kyverno images that `@kubevirt_operator_bundle` and
-# `@kyverno_install` run with VM Sandboxes (agentplane/x/k3s_env/vm_sandboxes.py); keep the tags
+# `@kyverno_install` run with VM Sandboxes (agentplane/system_tests/k3s/vm_sandboxes.py); keep the tags
 # equal to those releases.
 oci.pull(
     name = "kubevirt_virt_operator",
@@ -629,7 +629,7 @@ apt.install(
     ],
 )
 
-# The k3s fixture's VM test guest (agentplane/x/k3s_env/guest): busybox for its init, what the init
+# The k3s fixture's VM test guest (agentplane/system_tests/k3s/guest): busybox for its init, what the init
 # runs to format and hand over the workspace, and Git and `findmnt` (util-linux), which VM acceptance
 # scenarios run in Session setup.
 apt.install(
@@ -1478,7 +1478,7 @@ http_file(
     urls = ["https://raw.githubusercontent.com/kyverno/kyverno/v1.19.1/config/crds/kyverno/kyverno.io_cleanuppolicies.yaml"],
 )
 
-# The k3s fixture's Kyverno (agentplane/x/k3s_env/vm_sandboxes.py); keep the `kyverno_*` images'
+# The k3s fixture's Kyverno (agentplane/system_tests/k3s/vm_sandboxes.py); keep the `kyverno_*` images'
 # tags equal.
 http_file(
     name = "kyverno_install",
@@ -1781,7 +1781,7 @@ http_archive(
     urls = ["https://github.com/firecracker-microvm/firecracker/releases/download/v1.12.1/firecracker-v1.12.1-x86_64.tgz"],
 )
 
-# The Debian cloud kernel of the k3s fixture's VM test guest (agentplane/x/k3s_env/guest), which builds
+# The Debian cloud kernel of the k3s fixture's VM test guest (agentplane/system_tests/k3s/guest), which builds
 # virtio-pci, virtiofs and ext4 in.
 http_file(
     name = "vm_guest_kernel_deb",

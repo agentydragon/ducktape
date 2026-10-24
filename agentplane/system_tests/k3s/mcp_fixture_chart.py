@@ -17,8 +17,8 @@ from agentplane.action_service.oauth_settings import OAuthSettings
 from agentplane.action_service.policies.resources import CALLER_LABEL
 from agentplane.subjects import ServiceAccountRef
 from agentplane.system_tests import mcp_servers
-from agentplane.x.k3s_env import fixture_chart
-from agentplane.x.k3s_env.rendered_fixture import McpInputs, Models
+from agentplane.system_tests.k3s import fixture_chart
+from agentplane.system_tests.k3s.rendered_fixture import McpInputs, Models
 from cluster.cdk8s.agentplane import actions, actions_testing_fixtures, dex
 
 DEX_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-dex:unset"

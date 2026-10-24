@@ -18,7 +18,7 @@ from pydantic import BaseModel, ConfigDict, SecretStr
 
 from agentplane.app.oidc import INSECURE_COOKIE, SECURE_COOKIE
 
-# The k3s fixture's own apiserver (`agentplane/x/k3s_env`), which holds only its test operator.
+# The k3s fixture's own apiserver (`agentplane/system_tests/k3s`), which holds only its test operator.
 K3S_FIXTURE_API = "https://127.0.0.1:6443"
 SECRET_PATH_ENV = "AGENTPLANE_OPERATOR_SECRET_PATH"
 _DEX_AUTHORIZATION_PATH = "/dex/auth"
