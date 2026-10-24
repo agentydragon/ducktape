@@ -29,7 +29,7 @@ function HeadAndOptions({ args }: { args: CreatePullRequestArguments }): JSX.Ele
         from <Code>{args.head}</Code>
       </Text>
       {pullRequestOptions(args).map((option) => (
-        <Badge key={option} variant="light" color="gray" size="sm" tt="none" maw="100%">
+        <Badge key={option} variant="light" color="gray" size="sm" tt="none" fw={500} maw="100%">
           {option}
         </Badge>
       ))}
