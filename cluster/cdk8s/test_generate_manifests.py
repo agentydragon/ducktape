@@ -107,7 +107,6 @@ def test_piraeus_storage_is_confined_to_prepared_nodes(
         if doc.get("kind") == "HelmRelease" and doc["metadata"].get("name") == "linstor-cluster"
     )
     values = release["spec"]["values"]
-    canary_selector = {"storage.allegedly.works/drbd-canary": "true"}
     controller_selector = {"storage.allegedly.works/piraeus-ready": "true", "topology.kubernetes.io/region": "hil"}
 
     assert values["createInternalTLS"] == "cert-manager"
@@ -116,8 +115,11 @@ def test_piraeus_storage_is_confined_to_prepared_nodes(
     assert "nodeSelector" not in cluster
     assert cluster["nodeAffinity"] == {
         "nodeSelectorTerms": [
-            {"matchExpressions": [{"key": label, "operator": "In", "values": ["true"]}]}
-            for label in ("storage.allegedly.works/drbd-canary", "storage.allegedly.works/piraeus-ready")
+            {
+                "matchExpressions": [
+                    {"key": "storage.allegedly.works/piraeus-ready", "operator": "In", "values": ["true"]}
+                ]
+            }
         ]
     }
     for component in ("controller", "csiController", "affinityController"):
@@ -127,7 +129,6 @@ def test_piraeus_storage_is_confined_to_prepared_nodes(
     assert cluster["nfsServer"] == {"enabled": False}
 
     (
-        satellite,
         ssd_satellite,
         next_ssd_satellite,
         third_ssd_satellite,
@@ -136,19 +137,12 @@ def test_piraeus_storage_is_confined_to_prepared_nodes(
         _next_hdd_satellite,
         _last_hdd_satellite,
     ) = values["linstorSatelliteConfigurations"]
-    assert satellite["nodeSelector"] == canary_selector
-    assert satellite["deletionPolicy"] == "Retain"
-    [pool] = satellite["storagePools"]
-    assert pool == {"name": "local-canary", "fileThinPool": {"directory": "/var/mnt/local-path-ovh-hdd/linstor-canary"}}
-
     assert ssd_satellite["nodeSelector"] == {
         "storage.allegedly.works/piraeus-ready": "true",
         "kubernetes.io/hostname": "ovh-ns1001419",
     }
     assert ssd_satellite["deletionPolicy"] == "Retain"
-    assert ssd_satellite["podTemplate"] == satellite["podTemplate"]
-    assert ssd_satellite["patches"] == satellite["patches"]
-    [reactor_patch] = satellite["patches"]
+    [reactor_patch] = ssd_satellite["patches"]
     assert reactor_patch["target"] == {"version": "v1", "kind": "ConfigMap", "name": "reactor-config"}
     assert 'address = "127.0.0.1:9942"' in reactor_patch["patch"]
     assert "satellite-config" not in reactor_patch["patch"]
@@ -212,26 +206,22 @@ def test_piraeus_storage_is_confined_to_prepared_nodes(
         "source": {"hostDevices": ["/dev/disk/by-id/ata-HGST_HUS726020ALA610_K5H8UMLA"]},
     }
 
-    storage_class, ssd_class, hdd_class, replicated_ssd_class = values["storageClasses"]
-    assert storage_class["name"] == "local-canary"
-    assert storage_class["reclaimPolicy"] == "Retain"
-    assert storage_class["volumeBindingMode"] == "WaitForFirstConsumer"
-    assert storage_class["allowVolumeExpansion"] is True
-    assert storage_class["parameters"] == {
-        "linstor.csi.linbit.com/storagePool": "local-canary",
-        "linstor.csi.linbit.com/placementCount": "1",
-        "linstor.csi.linbit.com/allowRemoteVolumeAccess": "false",
-    }
-    assert "annotations" not in storage_class
+    ssd_class, hdd_class, replicated_ssd_class = values["storageClasses"]
     assert ssd_class == {
-        **storage_class,
         "name": "piraeus-ssd-local",
-        "parameters": {**storage_class["parameters"], "linstor.csi.linbit.com/storagePool": "ssd"},
+        "reclaimPolicy": "Retain",
+        "volumeBindingMode": "WaitForFirstConsumer",
+        "allowVolumeExpansion": True,
+        "parameters": {
+            "linstor.csi.linbit.com/storagePool": "ssd",
+            "linstor.csi.linbit.com/placementCount": "1",
+            "linstor.csi.linbit.com/allowRemoteVolumeAccess": "false",
+        },
     }
     assert hdd_class == {
-        **storage_class,
+        **ssd_class,
         "name": "piraeus-hdd-local",
-        "parameters": {**storage_class["parameters"], "linstor.csi.linbit.com/storagePool": "hdd"},
+        "parameters": {**ssd_class["parameters"], "linstor.csi.linbit.com/storagePool": "hdd"},
     }
     # Replicated copies and remote attachments both stay inside the OVH site: never over the
     # home/OVH link.

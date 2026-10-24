@@ -1,4 +1,4 @@
-"""Piraeus Operator with file-backed canaries and local SSD and HDD pools."""
+"""Piraeus Operator with local SSD and HDD pools."""
 
 from __future__ import annotations
 
@@ -25,18 +25,12 @@ NAMESPACE = "piraeus-datastore"
 OPERATOR_OUTPUT_DIR = f"{GENERATED_ROOT}/piraeus/operator"
 CLUSTER_OUTPUT_DIR = f"{GENERATED_ROOT}/piraeus/cluster"
 
-_CANARY_LABEL = "storage.allegedly.works/drbd-canary"
-_CANARY_SELECTOR = {_CANARY_LABEL: "true"}
 _PIRAEUS_READY_LABEL = "storage.allegedly.works/piraeus-ready"
-# Controller Pods can run on any prepared OVH node before a canary is evacuated.
+# Controller Pods can run on any prepared OVH node.
 _CONTROLLER_NODE_SELECTOR = {_PIRAEUS_READY_LABEL: "true", "topology.kubernetes.io/region": "hil"}
 _CLUSTER_NODE_AFFINITY = {
-    "nodeSelectorTerms": [
-        {"matchExpressions": [{"key": _CANARY_LABEL, "operator": "In", "values": ["true"]}]},
-        {"matchExpressions": [{"key": _PIRAEUS_READY_LABEL, "operator": "In", "values": ["true"]}]},
-    ]
+    "nodeSelectorTerms": [{"matchExpressions": [{"key": _PIRAEUS_READY_LABEL, "operator": "In", "values": ["true"]}]}]
 }
-_POOL_DIRECTORY = "/var/mnt/local-path-ovh-hdd/linstor-canary"
 _FIRST_NODE_VOLUME_GROUP = "piraeus_ssd"
 _FIRST_NODE_THIN_POOL = "data"
 _FIRST_NODE_SELECTOR = {_PIRAEUS_READY_LABEL: "true", "kubernetes.io/hostname": "ovh-ns1001419"}
@@ -138,7 +132,7 @@ def operator_chart(app: App) -> Chart:
 
 
 def cluster_chart(app: App) -> Chart:
-    """Declare LINSTOR, the Talos satellite patch, and local canary and SSD classes."""
+    """Declare LINSTOR, the Talos satellite patch, and the SSD and HDD classes."""
     chart = Chart(app, "piraeus-cluster", disable_resource_name_hashes=True)
     k8s.KubeConfigMap(
         chart,
@@ -169,17 +163,10 @@ def cluster_chart(app: App) -> Chart:
                                     k8s.NodeSelectorTerm(
                                         match_expressions=[
                                             k8s.NodeSelectorRequirement(
-                                                key=_CANARY_LABEL, operator="In", values=["true"]
-                                            )
-                                        ]
-                                    ),
-                                    k8s.NodeSelectorTerm(
-                                        match_expressions=[
-                                            k8s.NodeSelectorRequirement(
                                                 key=_PIRAEUS_READY_LABEL, operator="In", values=["true"]
                                             )
                                         ]
-                                    ),
+                                    )
                                 ]
                             )
                         )
@@ -395,26 +382,6 @@ def cluster_chart(app: App) -> Chart:
             },
             "linstorSatelliteConfigurations": [
                 {
-                    "name": "talos-canary",
-                    "nodeSelector": _CANARY_SELECTOR,
-                    # Removing an eligible node must not trigger an automatic evacuation.
-                    "deletionPolicy": "Retain",
-                    # Reactor metrics are unauthenticated. Monitoring is disabled for
-                    # this canary, so keep the endpoint local to the host-network Pod.
-                    "patches": _TALOS_SATELLITE_PATCHES,
-                    "podTemplate": _TALOS_SATELLITE_POD_TEMPLATE,
-                    "storagePools": [
-                        {
-                            "name": "local-canary",
-                            # No source.hostDevices: LINSTOR must not prepare a disk. This
-                            # directory is on each worker's existing XFS data mount.
-                            # Monitor physical use against the 20Gi per-node stop threshold
-                            # in cluster/docs/drbd_canary.md; sparse FILE_THIN has no quota.
-                            "fileThinPool": {"directory": _POOL_DIRECTORY},
-                        }
-                    ],
-                },
-                {
                     "name": "ssd-first-node",
                     "nodeSelector": _FIRST_NODE_SELECTOR,
                     "patches": _TALOS_SATELLITE_PATCHES,
@@ -561,17 +528,6 @@ def cluster_chart(app: App) -> Chart:
                 },
             ],
             "storageClasses": [
-                {
-                    "name": "local-canary",
-                    "reclaimPolicy": "Retain",
-                    "volumeBindingMode": "WaitForFirstConsumer",
-                    "allowVolumeExpansion": True,
-                    "parameters": {
-                        "linstor.csi.linbit.com/storagePool": "local-canary",
-                        "linstor.csi.linbit.com/placementCount": "1",
-                        "linstor.csi.linbit.com/allowRemoteVolumeAccess": "false",
-                    },
-                },
                 {
                     "name": "piraeus-ssd-local",
                     "reclaimPolicy": "Retain",

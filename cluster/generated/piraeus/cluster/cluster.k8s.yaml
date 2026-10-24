@@ -57,11 +57,6 @@ spec:
           requiredDuringSchedulingIgnoredDuringExecution:
             nodeSelectorTerms:
               - matchExpressions:
-                  - key: storage.allegedly.works/drbd-canary
-                    operator: In
-                    values:
-                      - "true"
-              - matchExpressions:
                   - key: storage.allegedly.works/piraeus-ready
                     operator: In
                     values:
@@ -2900,11 +2895,6 @@ spec:
       nodeAffinity:
         nodeSelectorTerms:
           - matchExpressions:
-              - key: storage.allegedly.works/drbd-canary
-                operator: In
-                values:
-                  - "true"
-          - matchExpressions:
               - key: storage.allegedly.works/piraeus-ready
                 operator: In
                 values:
@@ -2917,57 +2907,6 @@ spec:
           key: node-role.kubernetes.io/control-plane
           operator: Exists
     linstorSatelliteConfigurations:
-      - deletionPolicy: Retain
-        name: talos-canary
-        nodeSelector:
-          storage.allegedly.works/drbd-canary: "true"
-        patches:
-          - patch: |
-              apiVersion: v1
-              kind: ConfigMap
-              metadata:
-                name: reactor-config
-              data:
-                prometheus.toml: |
-                  [[prometheus]]
-                  enums = true
-                  address = "127.0.0.1:9942"
-            target:
-              kind: ConfigMap
-              name: reactor-config
-              version: v1
-        podTemplate:
-          spec:
-            dnsPolicy: ClusterFirstWithHostNet
-            hostNetwork: true
-            initContainers:
-              - $patch: delete
-                name: drbd-shutdown-guard
-              - $patch: delete
-                name: drbd-module-loader
-            volumes:
-              - $patch: delete
-                name: run-systemd-system
-              - $patch: delete
-                name: run-drbd-shutdown-guard
-              - $patch: delete
-                name: systemd-bus-socket
-              - $patch: delete
-                name: lib-modules
-              - $patch: delete
-                name: usr-src
-              - hostPath:
-                  path: /var/etc/lvm/backup
-                  type: DirectoryOrCreate
-                name: etc-lvm-backup
-              - hostPath:
-                  path: /var/etc/lvm/archive
-                  type: DirectoryOrCreate
-                name: etc-lvm-archive
-        storagePools:
-          - fileThinPool:
-              directory: /var/mnt/local-path-ovh-hdd/linstor-canary
-            name: local-canary
       - deletionPolicy: Retain
         name: ssd-first-node
         nodeSelector:
@@ -3409,14 +3348,6 @@ spec:
         enabled: false
       enabled: true
     storageClasses:
-      - allowVolumeExpansion: true
-        name: local-canary
-        parameters:
-          linstor.csi.linbit.com/allowRemoteVolumeAccess: "false"
-          linstor.csi.linbit.com/placementCount: "1"
-          linstor.csi.linbit.com/storagePool: local-canary
-        reclaimPolicy: Retain
-        volumeBindingMode: WaitForFirstConsumer
       - allowVolumeExpansion: true
         name: piraeus-ssd-local
         parameters:
