@@ -5,30 +5,41 @@ use debundle_e2e_support::*;
 const PEER: &str = r#"import { readLater } from "./provider.js";
 globalThis.runBeforeInitialization = function runBeforeInitialization() {
   try {
-    readLater();
+    globalThis.earlyValue = readLater();
     globalThis.earlyRead = "returned";
   } catch {
     globalThis.earlyRead = "threw";
   }
   return "prefix";
 };
-export {};
+export const ready = true;
+"#;
+
+const PEER_WITH_CALLBACK: &str = r#"import { readLater } from "./provider.js";
+globalThis.runBeforeInitialization = function runBeforeInitialization(callback) {
+  try {
+    globalThis.earlyValue = (callback || readLater)();
+    globalThis.earlyRead = "returned";
+  } catch {
+    globalThis.earlyRead = "threw";
+  }
+  return "prefix";
+};
+export const ready = true;
 "#;
 
 fn split_modules() -> Vec<LogicalModuleEntry> {
     vec![
         logical_module(
             "values/dynamic",
-            &[Member::new("prefix"), Member::new("dynamic")],
-        ),
-        logical_module(
-            "values/later",
             &[
-                Member::new("later"),
+                Member::new("prefix"),
+                Member::new("dynamic"),
                 Member::new("getLater"),
                 Member::new("readLater"),
             ],
         ),
+        logical_module("values/later", &[Member::new("later")]),
     ]
 }
 
@@ -36,16 +47,13 @@ fn class_split_modules() -> Vec<LogicalModuleEntry> {
     vec![
         logical_module(
             "values/dynamic",
-            &[Member::new("prefix"), Member::new("dynamic")],
-        ),
-        logical_module(
-            "values/later",
             &[
-                Member::new("later"),
+                Member::new("prefix"),
+                Member::new("dynamic"),
                 Member::new("Reader"),
-                Member::new("readLater"),
             ],
         ),
+        logical_module("values/later", &[Member::new("later")]),
     ]
 }
 
@@ -58,6 +66,19 @@ fn independent_later_modules() -> Vec<LogicalModuleEntry> {
         logical_module(
             "values/later",
             &[Member::new("later"), Member::new("readLater")],
+        ),
+    ]
+}
+
+fn independent_value_modules() -> Vec<LogicalModuleEntry> {
+    vec![
+        logical_module(
+            "values/dynamic",
+            &[Member::new("prefix"), Member::new("dynamic")],
+        ),
+        logical_module(
+            "values/value",
+            &[Member::new("value"), Member::new("readLater")],
         ),
     ]
 }
@@ -110,6 +131,118 @@ fn independent_later_fixture(source: &'static str) -> Fixture {
     )
 }
 
+fn independent_value_colocated_fixture(source: &'static str) -> Fixture {
+    let peer_chunks = [("static/peer", PEER)];
+    run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module(
+                "values/all",
+                &[
+                    Member::new("prefix"),
+                    Member::new("dynamic"),
+                    Member::new("value"),
+                    Member::new("readLater"),
+                ],
+            )],
+        )
+        .with_chunk_id("static/provider")
+        .with_extra_chunks(&peer_chunks),
+    )
+}
+
+fn independent_later_colocated_fixture(source: &'static str) -> Fixture {
+    let peer_chunks = [("static/peer", PEER)];
+    run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module(
+                "values/all",
+                &[
+                    Member::new("prefix"),
+                    Member::new("dynamic"),
+                    Member::new("later"),
+                    Member::new("readLater"),
+                ],
+            )],
+        )
+        .with_chunk_id("static/provider")
+        .with_extra_chunks(&peer_chunks),
+    )
+}
+
+fn expect_independent_later_conflict(source: &'static str, peer: &'static str) {
+    let peer_chunks = [("static/peer", peer)];
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(source, independent_later_modules())
+            .with_chunk_id("static/provider")
+            .with_extra_chunks(&peer_chunks),
+        &["values/dynamic", "values/later"],
+        &[],
+    );
+}
+
+fn expect_independent_later_alias_conflict(source: &'static str) {
+    let peer_chunks = [("static/peer", PEER_WITH_CALLBACK)];
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(source, independent_later_modules())
+            .with_chunk_id("static/provider")
+            .with_extra_chunks(&peer_chunks),
+        &["values/dynamic", "values/later"],
+        &[],
+    );
+}
+
+fn expect_independent_value_conflict(source: &'static str) {
+    let peer_chunks = [("static/peer", PEER)];
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(source, independent_value_modules())
+            .with_chunk_id("static/provider")
+            .with_extra_chunks(&peer_chunks),
+        &["values/value"],
+        &["eager_rebind"],
+    );
+}
+
+fn expect_independent_later_colocated_runtime(source: &'static str, expected: &str) {
+    let fixture = independent_later_colocated_fixture(source);
+    assert_preserved_entry_output(&fixture, expected);
+    assert_generated_module_after_entry_script(
+        &fixture,
+        "const values = await import('./static/provider/modules/values/all.js');\n\
+         console.log(values.readLater());\n",
+        "42\n",
+    );
+}
+
+fn expect_alias_colocated_runtime(source: &'static str, expected: &str) {
+    let peer_chunks = [("static/peer", PEER_WITH_CALLBACK)];
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module(
+                "values/all",
+                &[
+                    Member::new("prefix"),
+                    Member::new("dynamic"),
+                    Member::new("later"),
+                    Member::new("readLater"),
+                    Member::new("capturedReader"),
+                ],
+            )],
+        )
+        .with_chunk_id("static/provider")
+        .with_extra_chunks(&peer_chunks),
+    );
+    assert_preserved_entry_output(&fixture, expected);
+    assert_generated_module_after_entry_script(
+        &fixture,
+        "const values = await import('./static/provider/modules/values/all.js');\n\
+         console.log(values.readLater());\n",
+        "42\n",
+    );
+}
+
 fn expect_class_split_conflict(source: &'static str) {
     let peer_chunks = [("static/peer", PEER)];
     expect_atomic_conflict_rejection(
@@ -124,37 +257,37 @@ fn expect_class_split_conflict(source: &'static str) {
 #[test]
 fn late_const_callable_is_unavailable_during_unknown_call_reentry() {
     let fixture = split_fixture(
-        r#"import "./peer.js";
+        r#"import { ready } from "./peer.js";
 export function readLater() { return getLater(); }
-const prefix = globalThis.runBeforeInitialization();
+const prefix = ready && globalThis.runBeforeInitialization();
 const dynamic = ((object) => {
   object[(object.key = 0)] = "ready";
   return object;
 })({});
-const later = dynamic;
-const getLater = () => later;
+const getLater = () => dynamic;
+const later = 42;
 console.log(globalThis.earlyRead, readLater() === dynamic);
 "#,
     );
 
-    assert_entry_output(&fixture, "threw true\n");
+    assert_preserved_entry_output(&fixture, "threw true\n");
     assert_generated_module_after_entry_script(
         &fixture,
-        "const dynamic = await import('./static/provider/modules/values/dynamic.js');\n\
-         const later = await import('./static/provider/modules/values/later.js');\n\
-         console.log(later.readLater() === dynamic.dynamic);\n",
+        "const provider = await import('./static/provider/entry.js');\n\
+         const dynamic = await import('./static/provider/modules/values/dynamic.js');\n\
+         console.log(provider.readLater() === dynamic.dynamic);\n",
         "true\n",
     );
     assert_module_exports(
         &fixture.out_root,
-        "static/provider/modules/values/dynamic.js",
-        &["dynamic"],
+        "static/provider/modules/values/later.js",
+        &["later"],
         &[],
     );
     assert_module_exports(
         &fixture.out_root,
-        "static/provider/modules/values/later.js",
-        &["later", "readLater"],
+        "static/provider/entry.js",
+        &["readLater"],
         &[],
     );
     assert_all_emitted_js_checks(&fixture);
@@ -163,22 +296,22 @@ console.log(globalThis.earlyRead, readLater() === dynamic);
 #[test]
 fn split_modules_preserve_the_early_tdz_and_later_read() {
     let fixture = split_fixture(
-        r#"import "./peer.js";
+        r#"import { ready } from "./peer.js";
 export function readLater() { return getLater(); }
-const prefix = globalThis.runBeforeInitialization();
+const prefix = ready && globalThis.runBeforeInitialization();
 const dynamic = { ready: "ready" };
-const later = dynamic;
-const getLater = () => later;
+const getLater = () => dynamic;
+const later = 42;
 console.log(globalThis.earlyRead, readLater() === dynamic);
 "#,
     );
 
-    assert_entry_output(&fixture, "threw true\n");
+    assert_preserved_entry_output(&fixture, "threw true\n");
     assert_generated_module_after_entry_script(
         &fixture,
-        "const dynamic = await import('./static/provider/modules/values/dynamic.js');\n\
-         const later = await import('./static/provider/modules/values/later.js');\n\
-         console.log(later.readLater() === dynamic.dynamic);\n",
+        "const provider = await import('./static/provider/entry.js');\n\
+         const dynamic = await import('./static/provider/modules/values/dynamic.js');\n\
+         console.log(provider.readLater() === dynamic.dynamic);\n",
         "true\n",
     );
     assert_all_emitted_js_checks(&fixture);
@@ -187,9 +320,9 @@ console.log(globalThis.earlyRead, readLater() === dynamic);
 #[test]
 fn colocated_late_const_callable_runs_after_module_initialization() {
     let fixture = colocated_fixture(
-        r#"import "./peer.js";
+        r#"import { ready } from "./peer.js";
 export function readLater() { return getLater(); }
-const prefix = globalThis.runBeforeInitialization();
+const prefix = ready && globalThis.runBeforeInitialization();
 const dynamic = ((object) => {
   object[(object.key = 0)] = "ready";
   return object;
@@ -200,7 +333,7 @@ console.log(globalThis.earlyRead, readLater() === dynamic);
 "#,
     );
 
-    assert_entry_output(&fixture, "threw true\n");
+    assert_preserved_entry_output(&fixture, "threw true\n");
     assert_generated_module_after_entry_script(
         &fixture,
         "const values = await import('./static/provider/modules/values/all.js');\n\
@@ -213,25 +346,25 @@ console.log(globalThis.earlyRead, readLater() === dynamic);
 #[test]
 fn late_class_intermediate_is_unavailable_during_unknown_call_reentry() {
     let fixture = class_split_fixture(
-        r#"import "./peer.js";
+        r#"import { ready } from "./peer.js";
 export function readLater() { return new Reader().read(); }
-const prefix = globalThis.runBeforeInitialization();
+const prefix = ready && globalThis.runBeforeInitialization();
 const dynamic = ((object) => {
   object[(object.key = 0)] = "ready";
   return object;
 })({});
-const later = dynamic;
-class Reader { read() { return later; } }
+class Reader { read() { return dynamic; } }
+const later = 42;
 console.log(globalThis.earlyRead, readLater() === dynamic);
 "#,
     );
 
-    assert_entry_output(&fixture, "threw true\n");
+    assert_preserved_entry_output(&fixture, "threw true\n");
     assert_generated_module_after_entry_script(
         &fixture,
-        "const dynamic = await import('./static/provider/modules/values/dynamic.js');\n\
-         const later = await import('./static/provider/modules/values/later.js');\n\
-         console.log(later.readLater() === dynamic.dynamic);\n",
+        "const provider = await import('./static/provider/entry.js');\n\
+         const dynamic = await import('./static/provider/modules/values/dynamic.js');\n\
+         console.log(provider.readLater() === dynamic.dynamic);\n",
         "true\n",
     );
     assert_all_emitted_js_checks(&fixture);
@@ -240,10 +373,10 @@ console.log(globalThis.earlyRead, readLater() === dynamic);
 #[test]
 fn initialized_class_really_reaches_the_later_binding() {
     expect_class_split_conflict(
-        r#"import "./peer.js";
+        r#"import { ready } from "./peer.js";
 export function readLater() { return new Reader().read(); }
 class Reader { read() { return later; } }
-const prefix = globalThis.runBeforeInitialization();
+const prefix = ready && globalThis.runBeforeInitialization();
 const dynamic = ((object) => {
   object[(object.key = 0)] = "ready";
   return object;
@@ -255,18 +388,90 @@ console.log(globalThis.earlyRead, readLater() === dynamic);
 }
 
 #[test]
-fn unknown_call_keeps_callsite_order_without_iife_property_writes() {
-    let fixture = independent_later_fixture(
-        r#"import "./peer.js";
+fn split_rejects_const_tdz_observed_during_unknown_call_without_iife_writes() {
+    expect_independent_later_conflict(
+        r#"import { ready } from "./peer.js";
 export function readLater() { return later; }
-const prefix = globalThis.runBeforeInitialization();
+const prefix = ready && globalThis.runBeforeInitialization();
 const dynamic = {};
 const later = 42;
-console.log(globalThis.earlyRead, later);
+console.log(globalThis.earlyRead, globalThis.earlyValue, later);
+"#,
+        PEER,
+    );
+}
+
+#[test]
+fn split_rejects_const_tdz_observed_during_unknown_call_with_fresh_iife_writes() {
+    expect_independent_later_conflict(
+        r#"import { ready } from "./peer.js";
+export function readLater() { return later; }
+const prefix = ready && globalThis.runBeforeInitialization();
+const dynamic = ((object) => {
+  object[(object.key = 0)] = "ready";
+  return object;
+})({});
+const later = 42;
+console.log(globalThis.earlyRead, globalThis.earlyValue, later);
+"#,
+        PEER,
+    );
+}
+
+#[test]
+fn colocated_unknown_call_preserves_const_tdz_before_later_read() {
+    expect_independent_later_colocated_runtime(
+        r#"import { ready } from "./peer.js";
+export function readLater() { return later; }
+const prefix = ready && globalThis.runBeforeInitialization();
+const dynamic = ((object) => {
+  object[(object.key = 0)] = "ready";
+  return object;
+})({});
+const later = 42;
+console.log(globalThis.earlyRead, globalThis.earlyValue, later);
+"#,
+        "threw undefined 42\n",
+    );
+}
+
+#[test]
+fn split_rejects_var_read_before_its_assignment() {
+    expect_independent_later_conflict(
+        r#"import { ready } from "./peer.js";
+export function readLater() { return later; }
+const prefix = ready && globalThis.runBeforeInitialization();
+const dynamic = {};
+var later = 42;
+console.log(globalThis.earlyRead, globalThis.earlyValue, later);
+"#,
+        PEER,
+    );
+    expect_independent_later_colocated_runtime(
+        r#"import { ready } from "./peer.js";
+export function readLater() { return later; }
+const prefix = ready && globalThis.runBeforeInitialization();
+const dynamic = {};
+var later = 42;
+console.log(globalThis.earlyRead, globalThis.earlyValue, later);
+"#,
+        "returned undefined 42\n",
+    );
+}
+
+#[test]
+fn split_accepts_var_initialized_before_unknown_call() {
+    let fixture = independent_later_fixture(
+        r#"import { ready } from "./peer.js";
+var later = 42;
+export function readLater() { return later; }
+const prefix = ready && globalThis.runBeforeInitialization();
+const dynamic = {};
+console.log(globalThis.earlyRead, globalThis.earlyValue, later);
 "#,
     );
 
-    assert_preserved_entry_output(&fixture, "threw 42\n");
+    assert_preserved_entry_output(&fixture, "returned 42 42\n");
     assert_generated_module_after_entry_script(
         &fixture,
         "const later = await import('./static/provider/modules/values/later.js');\n\
@@ -276,25 +481,69 @@ console.log(globalThis.earlyRead, later);
 }
 
 #[test]
-fn unknown_call_keeps_callsite_order_with_fresh_iife_property_writes() {
+fn split_accepts_const_available_before_unknown_call() {
     let fixture = independent_later_fixture(
-        r#"import "./peer.js";
-export function readLater() { return later; }
-const prefix = globalThis.runBeforeInitialization();
-const dynamic = ((object) => {
-  object[(object.key = 0)] = "ready";
-  return object;
-})({});
+        r#"import { ready } from "./peer.js";
 const later = 42;
-console.log(globalThis.earlyRead, later);
+export function readLater() { return later; }
+const prefix = ready && globalThis.runBeforeInitialization();
+const dynamic = {};
+console.log(globalThis.earlyRead, globalThis.earlyValue, later);
 "#,
     );
 
-    assert_preserved_entry_output(&fixture, "threw 42\n");
+    assert_preserved_entry_output(&fixture, "returned 42 42\n");
     assert_generated_module_after_entry_script(
         &fixture,
         "const later = await import('./static/provider/modules/values/later.js');\n\
          console.log(later.readLater());\n",
         "42\n",
+    );
+}
+
+#[test]
+fn split_is_rejected_when_callback_value_precedes_a_later_var_reassignment() {
+    let source = r#"import { ready } from "./peer.js";
+var value = 1;
+export function readLater() { return value; }
+const prefix = ready && globalThis.runBeforeInitialization();
+const dynamic = {};
+value = 42;
+console.log(globalThis.earlyRead, globalThis.earlyValue, value);
+"#;
+    expect_independent_value_conflict(source);
+
+    let fixture = independent_value_colocated_fixture(source);
+    assert_preserved_entry_output(&fixture, "returned 1 42\n");
+    assert_generated_module_after_entry_script(
+        &fixture,
+        "const values = await import('./static/provider/modules/values/all.js');\n\
+         console.log(values.readLater());\n",
+        "42\n",
+    );
+}
+
+#[test]
+fn split_rejects_previously_captured_callback_reading_const_tdz() {
+    expect_independent_later_alias_conflict(
+        r#"import { ready } from "./peer.js";
+export function readLater() { return later; }
+const capturedReader = readLater;
+const prefix = ready && globalThis.runBeforeInitialization(capturedReader);
+const dynamic = {};
+const later = 42;
+console.log(globalThis.earlyRead, globalThis.earlyValue, later);
+"#,
+    );
+    expect_alias_colocated_runtime(
+        r#"import { ready } from "./peer.js";
+export function readLater() { return later; }
+const capturedReader = readLater;
+const prefix = ready && globalThis.runBeforeInitialization(capturedReader);
+const dynamic = {};
+const later = 42;
+console.log(globalThis.earlyRead, globalThis.earlyValue, later);
+"#,
+        "threw undefined 42\n",
     );
 }
