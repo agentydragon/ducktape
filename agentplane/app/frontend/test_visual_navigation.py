@@ -25,7 +25,7 @@ async def test_archived_thread_toggle(view: VisualPage, app: AgentplaneFixture) 
     await app.mount_app("/")
     await view.check(context="fixture ready")
     page = view.page
-    sidebar = page.get_by_role("navigation", name="Threads")
+    sidebar = page.get_by_role("navigation")
     await sidebar.locator(".agentplane-thread-list-archived-toggle label").click()
     await expect(sidebar.get_by_role("switch", name="Show archived threads")).to_be_checked()
     await expect(sidebar.locator('.agentplane-thread-status-indicator[data-status="archived"]')).to_be_visible()
@@ -37,7 +37,7 @@ async def test_archived_thread_toggle(view: VisualPage, app: AgentplaneFixture) 
 async def expect_notice_badges(page: Page, *, stale: bool) -> None:
     """The fixture's two unprocessed-count badges and one failed-delivery badge in the sidebar, all
     painted, and faded exactly when the notice stream is down."""
-    badges = page.get_by_role("navigation", name="Threads").locator(".agentplane-thread-list-row-notices")
+    badges = page.get_by_role("navigation").locator(".agentplane-thread-list-row-notices")
     for state, count in [("pending", 2), ("error", 1)]:
         await expect(badges.and_(page.locator(f'[data-state="{state}"]'))).to_have_count(count)
     for badge in await badges.all():
@@ -51,7 +51,7 @@ async def test_thread_notice_badges(view: VisualPage, app: AgentplaneFixture) ->
     await view.check(context="fixture ready")
     page = view.page
     await expect_notice_badges(page, stale=False)
-    await view.capture(target=page.get_by_role("navigation", name="Threads"))
+    await view.capture(target=page.get_by_role("navigation"))
 
 
 @DESKTOP_AND_MOBILE
@@ -134,7 +134,7 @@ async def test_debug_tools_in_sidebar_footer(view: VisualPage, app: AgentplaneFi
     await view.check(context="fixture ready")
     page = view.page
     await _open_phone_navigation(page)
-    sidebar = page.get_by_role("navigation", name="Threads")
+    sidebar = page.get_by_role("navigation")
     debug = sidebar.locator(".agentplane-sidebar-footer").get_by_role("button", name="Debug tools")
     await expect(debug).to_be_visible()
     await debug.click()

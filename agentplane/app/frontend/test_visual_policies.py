@@ -76,7 +76,7 @@ async def test_pending_actions_on_every_route(
         await app.mount_app(route)
     await view.check(context="fixture ready")
     page = view.page
-    sidebar = page.get_by_role("navigation", name="Threads")
+    sidebar = page.get_by_role("navigation")
     if await sidebar.is_visible() != sidebar_open:
         await page.get_by_role("button", name="Toggle navigation").click()
     await expect(sidebar).to_be_visible(visible=sidebar_open)

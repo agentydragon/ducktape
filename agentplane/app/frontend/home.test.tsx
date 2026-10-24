@@ -112,7 +112,7 @@ function home(): HTMLElement {
 }
 
 function sidebar(): HTMLElement {
-  const found = container.querySelector<HTMLElement>('nav[aria-label="Threads"]');
+  const found = container.querySelector<HTMLElement>("nav.agentplane-sidebar");
   if (!found) throw new Error("missing sidebar");
   return found;
 }

@@ -74,7 +74,6 @@ export function Sidebar({ settingsOpen, onOpenSettings, open, onClose }: Sidebar
   return (
     <nav
       className={`agentplane-sidebar${open ? " agentplane-sidebar-open" : ""}`}
-      aria-label="Threads"
       style={{ width: `${pane.size}px` }}
     >
       <ResizeHandle pane={pane} axis="x" className="agentplane-sidebar-resize-handle" aria-label="Resize sidebar" />
