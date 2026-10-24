@@ -1,5 +1,8 @@
 """What every test that starts its own k3s stack runs with: one RBE action with room for k3s."""
 
+# No extra pod runner-recycling-key: resource properties already distinguish k3s snapshots.
+# 2026-10-23 A/B (2 warm runs/arm): both retained the same 121-blob tmpfs cache;
+# median imports were 7.50s without a key vs 7.75s with one. No demonstrated benefit.
 K3S_EXEC_PROPERTIES = {
     "dockerNetwork": "bridge",
     "EstimatedComputeUnits": "4",
