@@ -235,7 +235,7 @@ def test_piraeus_storage_is_confined_to_prepared_nodes(
     }
     # Replicated copies and remote attachments both stay inside the OVH site: never over the
     # home/OVH link.
-    assert replicated_ssd_class["name"] == "piraeus-ssd-2"
+    assert replicated_ssd_class["name"] == "piraeus-ssd-2-autodiskful"
     replicated_parameters = replicated_ssd_class["parameters"]
     assert replicated_parameters["linstor.csi.linbit.com/placementCount"] == "2"
     assert replicated_parameters["linstor.csi.linbit.com/replicasOnSame"] == "topology.kubernetes.io/zone=hil-ovh"

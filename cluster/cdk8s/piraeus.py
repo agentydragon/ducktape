@@ -600,8 +600,11 @@ def cluster_chart(app: App) -> Chart:
                     # two-copy, run-anywhere behavior. Copies and attachments stay in hil-ovh, never
                     # replicating over the home/OVH link (optiplex also has an `ssd` pool). LINSTOR
                     # adds a diskless tiebreaker on a third node; losing quorum suspends I/O rather
-                    # than letting a partitioned copy diverge.
-                    "name": "piraeus-ssd-2",
+                    # than letting a partitioned copy diverge. Auto-diskful gives the consuming node its
+                    # own copy after a minute of diskless use (where that node has an `ssd` pool), and
+                    # cleanup then drops the surplus copy. Meant for small volumes, where that resync
+                    # is trivial.
+                    "name": "piraeus-ssd-2-autodiskful",
                     "reclaimPolicy": "Retain",
                     "volumeBindingMode": "WaitForFirstConsumer",
                     "allowVolumeExpansion": True,
@@ -614,7 +617,11 @@ def cluster_chart(app: App) -> Chart:
                         "linstor.csi.linbit.com/allowRemoteVolumeAccess": (
                             f"- fromSame:\n  - {node_scheduling.ZONE_LABEL}\n"
                         ),
-                        "property.linstor.csi.linbit.com/DrbdOptions/auto-quorum": "suspend-io",
+                        # Plain `DrbdOptions/...` keys, as proven on the auto-diskful canary
+                        # (cluster/debug/drbd_canary/auto_diskful/).
+                        "DrbdOptions/auto-quorum": "suspend-io",
+                        "DrbdOptions/auto-diskful": "1",
+                        "DrbdOptions/auto-diskful-allow-cleanup": "true",
                     },
                 },
             ],
