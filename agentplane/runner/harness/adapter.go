@@ -57,6 +57,9 @@ type NativeReceipt struct {
 
 var ErrNativeResponsePending = errors.New("native response is pending")
 
+// ErrUnknownRecoveryTurn means no TurnStarted has been journaled under this native turn ID yet.
+var ErrUnknownRecoveryTurn = errors.New("unknown recovery turn")
+
 // NativeResponsePendingError means a native write may have reached the harness, but its
 // outcome is uncertain. The command may still take effect; callers must leave it pending.
 type NativeResponsePendingError struct{ Cause error }
@@ -85,6 +88,7 @@ type UserMessageConfirmation struct {
 // AdapterJournal exposes the durable evidence needed to translate frames and reconcile a turn.
 type AdapterJournal interface {
 	ObservedItems(context.Context, string) (map[string]ObservedItem, error)
+	RecoveryTurns(context.Context) ([]string, error)
 	TurnEvents(context.Context, string) ([]*eventlogpb.EventEntry, error)
 	PendingCommandRecords(context.Context) ([]CommandRecord, error)
 	PendingNativeRequests(context.Context) ([]NativeRequest, error)
@@ -102,7 +106,8 @@ type AdapterHost interface {
 	Journal() AdapterJournal
 	RecordNativeRequest(context.Context, string, NativeRequestKind, []string) error
 	SendNative(context.Context, json.RawMessage) error
-	// RequestNativeHandshake sequences startup protocol exchanges; command methods should send and
+	// RequestNativeHandshake sequences startup and read-only history exchanges outside the stdout
+	// reader; command methods should send and
 	// let OnFrame advance their durable state instead of waiting for a response.
 	RequestNativeHandshake(context.Context, json.RawMessage, func(json.RawMessage) bool) (NativeReceipt, error)
 	Emit(context.Context, *eventpb.Event, []uint64) error

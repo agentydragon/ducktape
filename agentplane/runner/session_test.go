@@ -294,3 +294,90 @@ func TestConfirmationReplayKeepsTerminalReceipt(t *testing.T) {
 		t.Fatal("replay published another terminal event")
 	}
 }
+
+type rpcReconciliationAdapter struct {
+	harness.Adapter
+	session *Session
+}
+
+func (a *rpcReconciliationAdapter) OnFrame(ctx context.Context, raw json.RawMessage, sequence uint64) error {
+	if string(raw) == `{"interrupt":true}` {
+		return a.session.Emit(ctx, observation(&eventpb.TurnCompleted{TurnId: "turn", Status: eventpb.TurnStatus_TURN_STATUS_INTERRUPTED}), []uint64{sequence})
+	}
+	return nil
+}
+
+func (a *rpcReconciliationAdapter) Reconcile(ctx context.Context, turn string, _ bool) (*eventpb.ConversationReconciled, error) {
+	// Even a concurrent kick cannot dispatch the next input while reconciliation is waiting.
+	if err := a.session.dispatch(ctx, &commandpb.Command{CommandId: "later"}); err != nil {
+		return nil, err
+	}
+	a.session.mu.Lock()
+	dispatched := a.session.dispatched["later"]
+	a.session.mu.Unlock()
+	if dispatched {
+		return nil, errors.New("input dispatched before reconciliation")
+	}
+	_, err := a.session.RequestNativeHandshake(ctx, json.RawMessage(`{"history":true}`), func(raw json.RawMessage) bool { return string(raw) == `{"history":true}` })
+	return &eventpb.ConversationReconciled{TurnId: turn}, err
+}
+
+func TestInterruptedReconciliationLeavesStdoutFreeForHistoryRPC(t *testing.T) {
+	s, p := frameTestSession(t, []string{"/bin/sh", "-c", `while IFS= read -r line; do printf '%s\n' "$line"; done`})
+	adapter := &rpcReconciliationAdapter{session: s}
+	s.adapter = adapter
+	s.ready = true
+	if err := s.Emit(context.Background(), observation(&eventpb.TurnStarted{TurnId: "turn"}), nil); err != nil {
+		t.Fatal(err)
+	}
+	s.readers.Add(1)
+	go s.readStdout(p, adapter)
+	s.work.Add(1)
+	go s.commandLoop()
+	t.Cleanup(func() { s.runner.cancel(); s.work.Wait() })
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := s.SendNative(ctx, json.RawMessage(`{"interrupt":true}`)); err != nil {
+		t.Fatal(err)
+	}
+	var cursor uint64
+	for {
+		entries, err := s.journal.Since(ctx, cursor, 100)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, entry := range entries {
+			cursor = entry.Cursor
+			if entry.Event.GetConversationReconciled() != nil {
+				return
+			}
+		}
+		if err := s.journal.WaitBeyond(ctx, cursor); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestObservedItemKeepsOwningTurnWhenItCompletesLater(t *testing.T) {
+	journal := openTestJournal(t)
+	ctx := context.Background()
+	for _, event := range []*eventpb.Event{
+		observation(&eventpb.TurnStarted{TurnId: "owner"}),
+		observation(&eventpb.ItemStarted{ItemId: "tool", Kind: eventpb.ItemKind_ITEM_KIND_TOOL_CALL, ToolName: "commandExecution"}),
+		observation(&eventpb.TurnCompleted{TurnId: "owner", Status: eventpb.TurnStatus_TURN_STATUS_COMPLETED}),
+		observation(&eventpb.TurnStarted{TurnId: "later"}),
+		observation(&eventpb.ItemCompleted{ItemId: "tool", Outcome: &eventpb.ItemCompleted_Tool{Tool: &eventpb.ToolResult{Output: "done", Succeeded: true}}}),
+		observation(&eventpb.TurnCompleted{TurnId: "later", Status: eventpb.TurnStatus_TURN_STATUS_INTERRUPTED}),
+	} {
+		if _, err := journal.Append(ctx, event, AppendOptions{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	items, err := journal.ObservedItems(ctx, "later")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items["tool"].TurnID != "owner" || !items["tool"].Completed || items["tool"].Output != "done" {
+		t.Fatalf("lost item owner or later completion: %+v", items)
+	}
+}

@@ -281,6 +281,19 @@ observed item is `RETAINED`, `ABSENT`, `REVISED` (with its continuing content), 
 future compaction. Native interpretation belongs to the runner adapter; clients consume the
 same dispositions for every harness.
 
+Codex reconciliation requires `paginated` history, checked from `thread/start` or `thread/resume`.
+It pages `thread/items/list` with a native `turnId`, at most 100 items per response. An ordinary
+interruption reads that turn; resume reads the most recent completed turn and later turns from the
+runner journal. An item that finishes in a later turn adds its original owning turn to the reads.
+Empty turns need no RPCs, and one history snapshot serves all turns of a resume. There is no private
+Codex file/database reader or legacy-format fallback. Unsupported history, an incomplete/invalid
+page sequence, or a compaction marker in the inspected window produces `UNKNOWN`. Unsupported tools
+and command executions without a fully observed completed result also remain `UNKNOWN`; API
+display output cannot establish the synthetic model continuation of an interrupted command.
+
+Interruption reconciliation runs outside native stdout translation, so the shared Codex reader can
+deliver history responses. Subsequent input waits until the reconciliation report is committed.
+
 Process loss first ends the active turn as `PROCESS_LOST` and reports its items `UNKNOWN`.
 Explicit resume replaces those decisions using surviving native evidence. An unreadable or
 unsupported native history stays `UNKNOWN`; absence of evidence does not establish `ABSENT`.
@@ -298,6 +311,11 @@ Both native harnesses run against asserting model endpoints. Tests compare recov
 and materialized Thread payloads with the next model request, and verify that recovery does not
 repeat a shell side effect. This does not establish exact equality for harness-private context,
 reasoning, compaction, or unmodeled tools.
+
+`//agentplane/runner:test_restart` additionally checks turn-scoped Codex RPCs across failed-turn
+resume and live interruption. Its 101-reasoning-item fixture forces pagination and compares the
+actual next model request, while an unrelated older turn must not be fetched. Unit tests cover
+cross-turn ownership, mode and cursor failures, compaction barriers, and stdout/scheduler ordering.
 
 ## Standing instructions across a resume
 

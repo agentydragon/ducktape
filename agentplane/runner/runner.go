@@ -844,6 +844,9 @@ func (r *Runner) stopSessions(ctx context.Context, sessions []*Session, seal boo
 	if r.codex != nil {
 		errs = append(errs, r.codex.stop(ctx))
 	}
+	for _, s := range sessions {
+		errs = append(errs, s.reconcilePending(ctx))
+	}
 	if err := errors.Join(errs...); err != nil || !seal {
 		return err
 	}

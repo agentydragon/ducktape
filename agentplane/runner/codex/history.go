@@ -1,278 +1,189 @@
 package codex
 
 import (
-	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
-	"io/fs"
-	"os"
-	"path/filepath"
+	"maps"
+	"slices"
 	"strings"
-
-	"github.com/agentydragon/ducktape/agentplane/runner/harness"
+	"time"
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
+	"github.com/agentydragon/ducktape/agentplane/runner/codex/protocol"
+	"github.com/agentydragon/ducktape/agentplane/runner/harness"
 )
 
-type codexHistoryRecord struct {
-	Type    string          `json:"type"`
-	Payload json.RawMessage `json:"payload"`
+// Codex history is a display projection. The paginated contract preserves the tested visible
+// items; legacy history loses identities and calls. Never fall back to private Codex storage.
+// See agentplane/debug/codex_app_server_history_apis.md for the real-binary characterization.
+type codexHistorySnapshot struct {
+	items map[string]protocol.ThreadItemEntry
+	err   error
 }
 
-type codexResponseItemType struct {
-	Type string `json:"type"`
-}
-
-// Codex CLI v0.152.0 serializes both tool-output response items with
-// FunctionCallOutputBody: a string or an array of FunctionCallOutputContentItem.
-// This history fold projects arrays to text and currently supports InputText
-// items only. The upstream definitions are pinned here:
-// ResponseItem: https://github.com/openai/codex/blob/316795b3cf2a45e90d121d9f46499d4658b2645c/codex-rs/protocol/src/models.rs#L1072-L1129
-// Content items: https://github.com/openai/codex/blob/316795b3cf2a45e90d121d9f46499d4658b2645c/codex-rs/protocol/src/models.rs#L2036-L2053
-// Output body: https://github.com/openai/codex/blob/316795b3cf2a45e90d121d9f46499d4658b2645c/codex-rs/protocol/src/models.rs#L2116-L2131
-type codexInputText struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
-}
-
-type codexContentPart struct {
-	Text string `json:"text"`
-}
-
-type codexSummaryPart struct {
-	Text string `json:"text"`
-}
-
-type codexMessagePayload struct {
-	ID      string             `json:"id"`
-	Role    string             `json:"role"`
-	Content []codexContentPart `json:"content"`
-}
-
-type codexReasoningPayload struct {
-	ID      string             `json:"id"`
-	Summary []codexSummaryPart `json:"summary"`
-}
-
-type codexFunctionCallPayload struct {
-	CallID string `json:"call_id"`
-}
-
-type codexFunctionCallOutputPayload struct {
-	CallID string          `json:"call_id"`
-	Output codexToolOutput `json:"output"`
-}
-
-type codexCustomToolCallPayload struct {
-	CallID string `json:"call_id"`
-}
-
-type codexCustomToolCallOutputPayload struct {
-	CallID string          `json:"call_id"`
-	Output codexToolOutput `json:"output"`
-}
-
-type codexToolOutputValue interface {
-	text() string
-}
-
-type codexToolOutputText string
-
-func (output codexToolOutputText) text() string { return string(output) }
-
-type codexToolOutputTextParts []codexInputText
-
-func (parts codexToolOutputTextParts) text() string {
-	var text strings.Builder
-	for _, part := range parts {
-		text.WriteString(part.Text)
-	}
-	return text.String()
-}
-
-type codexToolOutput struct {
-	value codexToolOutputValue
-}
-
-func (output *codexToolOutput) UnmarshalJSON(data []byte) error {
-	var text string
-	if err := json.Unmarshal(data, &text); err == nil {
-		output.value = codexToolOutputText(text)
-		return nil
-	}
-	var parts []codexInputText
-	if err := json.Unmarshal(data, &parts); err != nil {
-		return fmt.Errorf("expected a string or array of input_text: %w", err)
-	}
-	for _, part := range parts {
-		if part.Type != "input_text" {
-			return fmt.Errorf("unsupported content type %q", part.Type)
-		}
-	}
-	output.value = codexToolOutputTextParts(parts)
-	return nil
-}
-
-func (output codexToolOutput) text() string {
-	if output.value == nil {
-		return ""
-	}
-	return output.value.text()
-}
-
-// readCodexHistory extracts continuation items from Codex's model-facing rollout, which differs
-// from the app-server thread projection. In pinned Codex 0.157.0, legacy API history omits a
-// completed shell call and merges reasoning IDs that survive in the next model request. New
-// paginated history preserves those tested items; this is not proof that it needs private parsing.
-// See agentplane/debug/codex_app_server_history_apis.md and the native test_history_projection test.
-// A nil map means the transcript cannot establish a view.
-func readCodexHistory(directory, sessionID string, observed map[string]harness.ObservedItem) (map[string]harness.ObservedItem, error) {
-	paths := make([]string, 0, 1)
-	sessionsDir := filepath.Join(directory, "sessions")
-	err := filepath.WalkDir(sessionsDir, func(path string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if !entry.IsDir() && strings.HasSuffix(entry.Name(), sessionID+".jsonl") {
-			paths = append(paths, path)
-		}
-		return nil
-	})
-	if os.IsNotExist(err) {
-		return nil, nil
-	}
+func (a *codexAdapter) Reconcile(ctx context.Context, turnID string, resumed bool) (*eventpb.ConversationReconciled, error) {
+	a.historyMu.Lock()
+	defer a.historyMu.Unlock()
+	observed, err := a.host.Journal().ObservedItems(ctx, turnID)
 	if err != nil {
 		return nil, err
 	}
-	if len(paths) != 1 {
-		return nil, nil
+	if len(observed) == 0 {
+		return &eventpb.ConversationReconciled{TurnId: turnID}, nil
 	}
-	file, err := os.Open(paths[0])
-	if err != nil {
-		return nil, err
+	a.mu.Lock()
+	mode := a.historyMode
+	a.mu.Unlock()
+	if mode == nil || *mode != protocol.Paginated {
+		return harness.UnknownReport(turnID, observed, "Codex continuation requires paginated history"), nil
 	}
-	defer file.Close()
-
-	texts := make(map[string]string)
-	summaries := make(map[string]string)
-	calls := make(map[string]bool)
-	outputs := make(map[string]string)
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 64*1024), harness.MaxFrameLineBytes)
-	for scanner.Scan() {
-		var record codexHistoryRecord
-		if err := json.Unmarshal(scanner.Bytes(), &record); err != nil {
-			return nil, err
-		}
-		if record.Type == "compacted" {
-			return nil, nil
-		}
-		if record.Type == "event_msg" {
-			var payload struct {
-				Type string `json:"type"`
-			}
-			if err := json.Unmarshal(record.Payload, &payload); err != nil {
+	snapshot := a.resumedHistory
+	if !resumed || snapshot == nil {
+		turns := []string{turnID}
+		if resumed {
+			turns, err = a.host.Journal().RecoveryTurns(ctx)
+			if err != nil {
 				return nil, err
 			}
-			if payload.Type == "thread_rolled_back" {
-				return nil, nil
-			}
 		}
-		if record.Type != "response_item" {
+		ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		snapshot = a.readHistory(ctx, turns)
+		if resumed {
+			a.resumedHistory = snapshot
+		}
+	}
+	if snapshot.err != nil {
+		return harness.UnknownReport(turnID, observed, "cannot establish Codex continuation: "+snapshot.err.Error()), nil
+	}
+	report := &eventpb.ConversationReconciled{TurnId: turnID}
+	for _, id := range slices.Sorted(maps.Keys(observed)) {
+		item := observed[id]
+		if item.Kind != eventpb.ItemKind_ITEM_KIND_ASSISTANT_TEXT && item.Kind != eventpb.ItemKind_ITEM_KIND_REASONING &&
+			(item.Kind != eventpb.ItemKind_ITEM_KIND_TOOL_CALL || item.ToolName != "commandExecution") {
+			report.Items = append(report.Items, harness.UnknownItem(id, "unsupported Codex continuation item: "+item.ToolName))
 			continue
 		}
-		var payload codexResponseItemType
-		if err := json.Unmarshal(record.Payload, &payload); err != nil {
-			return nil, err
+		saved, ok := snapshot.items[id]
+		if !ok {
+			// A command may have run without a durable model-facing result. A missing display
+			// item cannot prove that its synthetic interruption output is absent from context.
+			if item.Kind == eventpb.ItemKind_ITEM_KIND_TOOL_CALL {
+				report.Items = append(report.Items, harness.UnknownItem(id, "Codex history does not establish the tool continuation"))
+			} else {
+				report.Items = append(report.Items, harness.CompareItem(item, nil))
+			}
+			continue
 		}
-		switch payload.Type {
-		case "message":
-			var message codexMessagePayload
-			if err := json.Unmarshal(record.Payload, &message); err != nil {
-				return nil, fmt.Errorf("decode message response item: %w", err)
+		recovered := item
+		valid := true
+		switch {
+		case item.Kind == eventpb.ItemKind_ITEM_KIND_ASSISTANT_TEXT && saved.Item.Type == protocol.ThreadItemTypeAgentMessage && saved.Item.Text != nil:
+			recovered.Text = *saved.Item.Text
+		case item.Kind == eventpb.ItemKind_ITEM_KIND_REASONING && saved.Item.Type == protocol.ThreadItemTypeReasoning:
+			recovered.Text = strings.Join(saved.Item.Summary, "\n")
+		case item.Kind == eventpb.ItemKind_ITEM_KIND_TOOL_CALL && saved.Item.Type == protocol.ThreadItemTypeCommandExecution:
+			native := saved.Item
+			if !item.Completed || native.Status == nil || *native.Status != "completed" ||
+				native.AggregatedOutput == nil || native.Command == nil || native.Cwd == nil {
+				valid = false
+				break
 			}
-			if message.Role != "assistant" {
-				continue
+			arguments, err := json.Marshal(map[string]string{"command": *native.Command, "cwd": *native.Cwd})
+			if err != nil {
+				return nil, err
 			}
-			var text strings.Builder
-			for _, part := range message.Content {
-				text.WriteString(part.Text)
-			}
-			texts[message.ID] = text.String()
-		case "reasoning":
-			var reasoning codexReasoningPayload
-			if err := json.Unmarshal(record.Payload, &reasoning); err != nil {
-				return nil, fmt.Errorf("decode reasoning response item: %w", err)
-			}
-			var summary strings.Builder
-			for i, part := range reasoning.Summary {
-				if i > 0 {
-					summary.WriteByte('\n')
-				}
-				summary.WriteString(part.Text)
-			}
-			summaries[reasoning.ID] = summary.String()
-		case "function_call":
-			var call codexFunctionCallPayload
-			if err := json.Unmarshal(record.Payload, &call); err != nil {
-				return nil, fmt.Errorf("decode function call response item: %w", err)
-			}
-			calls[call.CallID] = true
-		case "function_call_output":
-			var output codexFunctionCallOutputPayload
-			if err := json.Unmarshal(record.Payload, &output); err != nil {
-				return nil, fmt.Errorf("decode function call output response item: %w", err)
-			}
-			outputs[output.CallID] = output.Output.text()
-		case "custom_tool_call":
-			var call codexCustomToolCallPayload
-			if err := json.Unmarshal(record.Payload, &call); err != nil {
-				return nil, fmt.Errorf("decode custom tool call response item: %w", err)
-			}
-			calls[call.CallID] = true
-		case "custom_tool_call_output":
-			var output codexCustomToolCallOutputPayload
-			if err := json.Unmarshal(record.Payload, &output); err != nil {
-				return nil, fmt.Errorf("decode custom tool call output response item: %w", err)
-			}
-			outputs[output.CallID] = output.Output.text()
-		}
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, err
-	}
-
-	recovered := make(map[string]harness.ObservedItem)
-	for itemID, item := range observed {
-		switch item.Kind {
-		case eventpb.ItemKind_ITEM_KIND_ASSISTANT_TEXT:
-			if text, ok := texts[itemID]; ok {
-				item.Text = text
-				recovered[itemID] = item
-			}
-		case eventpb.ItemKind_ITEM_KIND_TOOL_CALL:
-			if calls[itemID] {
-				output, ok := outputs[itemID]
-				if !ok {
-					output = "aborted"
-				}
-				// Shell results wrap the observed stdout in execution metadata.
-				if item.Completed && strings.Contains(output, item.Output) {
-					output = item.Output
-				}
-				item.Output = output
-				recovered[itemID] = item
-			}
-		case eventpb.ItemKind_ITEM_KIND_REASONING:
-			if text, ok := summaries[itemID]; ok {
-				item.Text = text
-				recovered[itemID] = item
-			}
+			recovered.Arguments = string(arguments)
+			recovered.Output = *native.AggregatedOutput
 		default:
-			if item.Completed {
-				recovered[itemID] = item
+			valid = false
+		}
+		if !valid {
+			report.Items = append(report.Items, harness.UnknownItem(id, "Codex history does not establish this item's model continuation"))
+		} else {
+			report.Items = append(report.Items, harness.CompareItem(item, &recovered))
+		}
+	}
+	return report, nil
+}
+
+// Read only turns selected by the runner's recovery window, plus owners of items that finish in a
+// later turn. One snapshot serves all turns in a resume, including any compaction barrier in that
+// window. Empty turns do not require RPCs. The stdout reader remains free to deliver these replies.
+func (a *codexAdapter) readHistory(ctx context.Context, turns []string) *codexHistorySnapshot {
+	snapshot := &codexHistorySnapshot{items: make(map[string]protocol.ThreadItemEntry)}
+	owners := make(map[string]bool)
+	for _, turn := range turns {
+		observed, err := a.host.Journal().ObservedItems(ctx, turn)
+		if err != nil {
+			snapshot.err = err
+			return snapshot
+		}
+		if len(observed) == 0 {
+			continue
+		}
+		owners[turn] = true
+		for _, item := range observed {
+			if item.TurnID != "" {
+				owners[item.TurnID] = true
 			}
 		}
 	}
-	return recovered, nil
+	for _, turn := range slices.Sorted(maps.Keys(owners)) {
+		if err := a.readTurnHistory(ctx, turn, snapshot.items); err != nil {
+			snapshot.err = err
+			return snapshot
+		}
+	}
+	return snapshot
+}
+
+func (a *codexAdapter) readTurnHistory(ctx context.Context, turnID string, items map[string]protocol.ThreadItemEntry) error {
+	limit := int64(100) // The pinned server's maximum: bound each response without needless round trips.
+	a.mu.Lock()
+	threadID := a.threadID
+	a.mu.Unlock()
+	params := protocol.ThreadItemsListParams{ThreadID: threadID, TurnID: &turnID, Limit: &limit}
+	cursors := make(map[string]bool)
+	for {
+		requestID, err := a.nextID()
+		if err != nil {
+			return err
+		}
+		frame, _, err := a.request(ctx, requestID, map[string]any{"id": requestID, "method": "thread/items/list", "params": params})
+		if err != nil {
+			return err
+		}
+		if err := codexResponseError(frame); err != nil {
+			return err
+		}
+		var page protocol.ThreadItemsListResponse
+		if err := json.Unmarshal(frame.Result, &page); err != nil {
+			return err
+		}
+		if page.Data == nil {
+			return fmt.Errorf("missing Codex history page data")
+		}
+		for _, entry := range page.Data {
+			if entry.TurnID != turnID || entry.Item.ID == "" {
+				return fmt.Errorf("invalid Codex history item scope or identity")
+			}
+			if entry.Item.Type == protocol.ContextCompaction {
+				return fmt.Errorf("Codex compacted the recovery window; display history does not establish model continuation")
+			}
+			if _, exists := items[entry.Item.ID]; exists {
+				return fmt.Errorf("duplicate Codex history item %q", entry.Item.ID)
+			}
+			items[entry.Item.ID] = entry
+		}
+		if page.NextCursor == nil {
+			return nil
+		}
+		if *page.NextCursor == "" || cursors[*page.NextCursor] {
+			return fmt.Errorf("invalid or repeated Codex history cursor")
+		}
+		cursors[*page.NextCursor] = true
+		params.Cursor = page.NextCursor
+	}
 }

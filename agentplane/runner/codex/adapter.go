@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
-	"slices"
 	"strings"
 	"sync"
 
@@ -42,9 +40,10 @@ type codexTurnStart struct {
 }
 
 type codexAdapter struct {
-	host harness.AdapterHost
-	// store is the Runner's one Codex home, shared by every Codex Session.
-	store string
+	historyMu      sync.Mutex
+	host           harness.AdapterHost
+	historyMode    *protocol.ThreadHistoryMode
+	resumedHistory *codexHistorySnapshot
 
 	mu                   sync.Mutex
 	threadID             string
@@ -56,15 +55,15 @@ type codexAdapter struct {
 }
 
 // New creates an adapter for one runner-owned Session hosted as a thread of the Runner's shared
-// app-server, whose Codex home is `store`.
-func New(host harness.AdapterHost, store string) harness.Adapter {
+// app-server. Native history is read through that server's public RPCs.
+func New(host harness.AdapterHost) harness.Adapter {
 	snapshot := host.Session()
 	threadID := ""
 	if snapshot.Resuming {
 		threadID = snapshot.NativeSessionID
 	}
 	return &codexAdapter{
-		host: host, store: store, threadID: threadID, adapterID: uuid.NewString(),
+		host: host, threadID: threadID, adapterID: uuid.NewString(),
 		turnStarts: make(map[string]codexTurnStart), processingResponses: make(map[string]bool),
 	}
 }
@@ -135,58 +134,30 @@ func (a *codexAdapter) Handshake(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("Codex %s returned no result", method)
 	}
 	var nativeThreadID string
+	var historyMode *protocol.ThreadHistoryMode
 	if method == "thread/resume" {
 		var response protocol.ThreadResumeResponse
 		if err := json.Unmarshal(result, &response); err != nil {
 			return "", err
 		}
 		nativeThreadID = response.Thread.ID
+		historyMode = response.Thread.HistoryMode
 	} else {
 		var response protocol.ThreadStartResponse
 		if err := json.Unmarshal(result, &response); err != nil {
 			return "", err
 		}
 		nativeThreadID = response.Thread.ID
+		historyMode = response.Thread.HistoryMode
 	}
 	if nativeThreadID == "" {
 		return "", fmt.Errorf("Codex %s returned no thread id", method)
 	}
 	a.mu.Lock()
 	a.threadID = nativeThreadID
+	a.historyMode = historyMode
 	a.mu.Unlock()
 	return nativeThreadID, nil
-}
-
-func (a *codexAdapter) Reconcile(ctx context.Context, turnID string, _ bool) (*eventpb.ConversationReconciled, error) {
-	observed, err := a.host.Journal().ObservedItems(ctx, turnID)
-	if err != nil {
-		return nil, err
-	}
-	a.mu.Lock()
-	threadID := a.threadID
-	a.mu.Unlock()
-	recovered, err := readCodexHistory(a.store, threadID, observed)
-	if err != nil {
-		return harness.UnknownReport(turnID, observed, "cannot inspect native continuation: "+err.Error()), nil
-	}
-	if recovered == nil {
-		return harness.UnknownReport(turnID, observed, "native continuation evidence is unavailable or unsupported"), nil
-	}
-	report := &eventpb.ConversationReconciled{TurnId: turnID}
-	for _, itemID := range slices.Sorted(maps.Keys(observed)) {
-		item := observed[itemID]
-		if item.Kind == eventpb.ItemKind_ITEM_KIND_TOOL_CALL && item.ToolName != "commandExecution" {
-			report.Items = append(report.Items, harness.UnknownItem(item.ItemID, fmt.Sprintf("the adapter does not match %s items to saved function calls", item.ToolName)))
-			continue
-		}
-		recoveredItem, ok := recovered[itemID]
-		if !ok {
-			report.Items = append(report.Items, harness.CompareItem(item, nil))
-		} else {
-			report.Items = append(report.Items, harness.CompareItem(item, &recoveredItem))
-		}
-	}
-	return report, nil
 }
 
 func (a *codexAdapter) Recover(ctx context.Context) error {
@@ -561,7 +532,7 @@ func (a *codexAdapter) applyTurnStartResponse(ctx context.Context, frame codexWi
 	}
 	started := false
 	turnEvents, err := a.host.Journal().TurnEvents(ctx, result.Turn.ID)
-	if err != nil {
+	if err != nil && !errors.Is(err, harness.ErrUnknownRecoveryTurn) {
 		return err
 	}
 	for _, entry := range turnEvents {

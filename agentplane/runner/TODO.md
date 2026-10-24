@@ -19,21 +19,19 @@ and `claude_history.py` must then handle the flushed case.
 
 ## Reconcile conversations that were compacted
 
-`read_history` gives up on a compacted Codex rollout (`compacted`, `thread_rolled_back`) and on a
-compacted Claude transcript (`compact_boundary`), so every item of the reconciled turn is reported
-unknown. No real compacted history was captured for either harness; the Claude case has only a
-synthetic unit test. Capture one of each, work out what a resume loads from it, and report the items
-it keeps.
+Codex history RPCs report `UNKNOWN` when a compaction item appears in the recovery window;
+Claude's transcript reader does the same for `compact_boundary`. Characterize the public Codex
+projection against actual model continuation after compaction, and report retained items only
+where the protocol establishes them. Compaction outside Agentplane's observed recovery window and
+external rollback are not supported continuation proofs.
 
 ## Codex reconcile edge cases
 
-- A tool call that is not `commandExecution` (a `fileChange`, an MCP call) is always reported
-  unknown: the adapter does not match those items to saved function calls.
-- A reasoning item's text is compared with the saved record's summary parts joined by newlines. Only
-  single-part summaries were captured. If a multi-part summary joined differently, the item would be
-  reported revised and the text the operator sees replaced by the saved summary.
-- A saved reasoning record without an `id` makes `read_history` raise, so the whole turn is reported
-  unknown. Nobody knows whether the routed model ever produces one.
+- Tools other than `commandExecution` remain unknown until their API history can be compared with
+  actual model continuation in real-binary tests.
+- Failed or incomplete command executions remain unknown: their API display output does not establish the
+  synthetic interruption output sent to the next model request.
+- Reasoning recovery compares visible summaries, not the encrypted reasoning payload.
 
 ## Claude reconcile edge cases
 

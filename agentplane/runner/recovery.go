@@ -27,8 +27,12 @@ func (j *Journal) ObservedItems(ctx context.Context, turnID string) (map[string]
 	if err != nil {
 		return nil, err
 	}
+	ownerTurn := ""
 	for _, entry := range entries {
 		event := entry.GetEvent()
+		if started := event.GetTurnStarted(); started != nil {
+			ownerTurn = started.GetTurnId()
+		}
 		itemID := eventItemID(event)
 		if _, belongs := itemIDs[itemID]; !belongs {
 			continue
@@ -42,7 +46,7 @@ func (j *Journal) ObservedItems(ctx context.Context, turnID string) (map[string]
 		case event.GetItemStarted() != nil:
 			started := event.GetItemStarted()
 			items[started.GetItemId()] = harness.ObservedItem{
-				ItemID: started.GetItemId(), Kind: started.GetKind(), ToolName: started.GetToolName(), FirstCursor: entry.GetCursor(),
+				TurnID: ownerTurn, ItemID: started.GetItemId(), Kind: started.GetKind(), ToolName: started.GetToolName(), FirstCursor: entry.GetCursor(),
 			}
 		case event.GetTextDelta() != nil:
 			delta := event.GetTextDelta()

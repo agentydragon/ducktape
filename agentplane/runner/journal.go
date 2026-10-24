@@ -28,7 +28,6 @@ var (
 	ErrJournalFailed         = errors.New("journal failed; reopen it for recovery")
 	ErrJournalSealed         = errors.New("journal is sealed")
 	ErrUnknownCommand        = errors.New("unknown command ID")
-	ErrUnknownRecoveryTurn   = errors.New("unknown recovery turn")
 	ErrJournalChangedOutside = errors.New("journal changed outside its owner; reopen it for recovery")
 )
 
@@ -1036,7 +1035,7 @@ func (j *Journal) turnBoundary(ctx context.Context, turnID string) (start, end u
 		"SELECT start_cursor, end_cursor FROM turn_boundary WHERE turn_id = ?", turnID,
 	).Scan(&startCursor, &endCursor)
 	if errors.Is(err, sql.ErrNoRows) {
-		return 0, 0, fmt.Errorf("%w %q", ErrUnknownRecoveryTurn, turnID)
+		return 0, 0, fmt.Errorf("%w %q", harness.ErrUnknownRecoveryTurn, turnID)
 	}
 	if err != nil {
 		return 0, 0, err

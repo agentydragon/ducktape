@@ -12,6 +12,8 @@ const roots = [
   "ThreadStartResponse",
   "ThreadResumeParams",
   "ThreadResumeResponse",
+  "ThreadItemsListParams",
+  "ThreadItemsListResponse",
   "TurnStartParams",
   "TurnStartResponse",
   "TurnInterruptParams",

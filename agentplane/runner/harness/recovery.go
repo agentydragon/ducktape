@@ -12,6 +12,8 @@ import (
 
 // ObservedItem is the runner's durable view of an item emitted during a turn.
 type ObservedItem struct {
+	// TurnID owns the item even when its completion appears during a later turn.
+	TurnID      string
 	ItemID      string
 	Kind        eventpb.ItemKind
 	ToolName    string

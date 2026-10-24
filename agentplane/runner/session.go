@@ -56,6 +56,14 @@ type matchedReply struct {
 }
 type interruptTargetKey struct{}
 
+// Run read-only reconciliation off the stdout reader, which must deliver its RPC replies.
+type pendingReconciliation struct {
+	turnID  string
+	adapter harness.Adapter
+	sources []uint64
+	ready   bool
+}
+
 type Session struct {
 	runner                                                      *Runner
 	id                                                          string
@@ -65,11 +73,14 @@ type Session struct {
 	admitMu                                                     sync.Mutex
 	writeMu                                                     sync.Mutex
 	shutdownMu                                                  sync.Mutex
+	reconcileMu                                                 sync.Mutex
 	process                                                     *Process
 	adapter                                                     harness.Adapter
 	processID                                                   string
 	processState                                                runnerpb.ProcessState
 	ready, resuming, stopping, sealing, tearingDown, activating bool
+	reconciliations                                             []*pendingReconciliation
+	reconciling                                                 bool
 	activeTurn                                                  string
 	setup                                                       runnerpb.SetupState
 	launch                                                      runnerpb.LaunchOutcome
@@ -206,11 +217,16 @@ func (s *Session) completeTurn(ctx context.Context, turn *eventpb.TurnCompleted,
 	if err := s.journal.CommitBatch(ctx); err != nil {
 		return err
 	}
+	var reconciliation *pendingReconciliation
 	s.mu.Lock()
 	interrupt := s.interrupts[turn.TurnId]
 	delete(s.interrupts, turn.TurnId)
 	adapter := s.adapter
 	teardown := s.tearingDown
+	if turn.Status == eventpb.TurnStatus_TURN_STATUS_INTERRUPTED && adapter != nil {
+		reconciliation = &pendingReconciliation{turnID: turn.TurnId, adapter: adapter, sources: append([]uint64(nil), sources...)}
+		s.reconciliations = append(s.reconciliations, reconciliation)
+	}
 	s.mu.Unlock()
 	ids := []string{}
 	if turn.Status == eventpb.TurnStatus_TURN_STATUS_INTERRUPTED {
@@ -223,20 +239,17 @@ func (s *Session) completeTurn(ctx context.Context, turn *eventpb.TurnCompleted,
 	if _, err := s.recordEvent(ctx, observation(turn), sources, ids); err != nil {
 		return err
 	}
+	if reconciliation != nil {
+		s.mu.Lock()
+		reconciliation.ready = true
+		s.mu.Unlock()
+	}
 	if turn.Status == eventpb.TurnStatus_TURN_STATUS_PROCESS_LOST {
 		items, err := s.journal.ObservedItems(ctx, turn.TurnId)
 		if err != nil {
 			return err
 		}
 		if err := s.Emit(ctx, observation(harness.UnknownReport(turn.TurnId, items, "the harness exited before continuation could be inspected")), nil); err != nil {
-			return err
-		}
-	} else if turn.Status == eventpb.TurnStatus_TURN_STATUS_INTERRUPTED && adapter != nil {
-		report, err := adapter.Reconcile(ctx, turn.TurnId, false)
-		if err != nil {
-			return err
-		}
-		if err := s.Emit(ctx, observation(report), sources); err != nil {
 			return err
 		}
 	}
@@ -557,7 +570,7 @@ func (s *Session) startOnCodexServer(ctx context.Context) error {
 		return err
 	}
 	server := s.runner.codex
-	adapter := codex.New(s, server.store)
+	adapter := codex.New(s)
 	if err := recoverAdapter(ctx, adapter); err != nil {
 		return err
 	}
@@ -647,6 +660,16 @@ func (s *Session) commandLoop() {
 		case <-s.kick:
 		}
 		s.mu.Lock()
+		running := s.ready
+		s.mu.Unlock()
+		if !running {
+			continue
+		}
+		if err := s.reconcilePending(s.runner.ctx); err != nil {
+			s.runner.fail(err)
+			return
+		}
+		s.mu.Lock()
 		ready := s.ready && !s.sealing
 		s.mu.Unlock()
 		if !ready {
@@ -676,6 +699,30 @@ func (s *Session) commandLoop() {
 	}
 }
 
+func (s *Session) reconcilePending(ctx context.Context) error {
+	s.reconcileMu.Lock()
+	defer s.reconcileMu.Unlock()
+	for {
+		s.mu.Lock()
+		if len(s.reconciliations) == 0 || !s.reconciliations[0].ready {
+			s.reconciling = false
+			s.mu.Unlock()
+			return nil
+		}
+		pending := s.reconciliations[0]
+		s.reconciliations = s.reconciliations[1:]
+		s.reconciling = true
+		s.mu.Unlock()
+		report, err := pending.adapter.Reconcile(ctx, pending.turnID, false)
+		if err != nil {
+			return err
+		}
+		if err := s.Emit(ctx, observation(report), pending.sources); err != nil {
+			return err
+		}
+	}
+}
+
 func (s *Session) dispatchControl(command *commandpb.Command) {
 	s.work.Add(1)
 	go func() {
@@ -688,7 +735,7 @@ func (s *Session) dispatchControl(command *commandpb.Command) {
 
 func (s *Session) dispatch(ctx context.Context, c *commandpb.Command) error {
 	s.mu.Lock()
-	if s.dispatched[c.CommandId] || s.adapter == nil || !s.ready || (s.sealing && c.GetInterruptTurn() == nil) {
+	if s.dispatched[c.CommandId] || s.adapter == nil || !s.ready || s.reconciling || len(s.reconciliations) != 0 || (s.sealing && c.GetInterruptTurn() == nil) {
 		s.mu.Unlock()
 		return nil
 	}
@@ -824,7 +871,8 @@ func (s *Session) SendNative(ctx context.Context, frame json.RawMessage) error {
 	return nil
 }
 
-// RequestNativeHandshake sequences native startup exchanges. Runtime commands use send-and-observe
+// RequestNativeHandshake sequences native startup and read-only history exchanges. It must not
+// run on the stdout reader that delivers the reply. Runtime commands use send-and-observe
 // transitions instead, so their scheduler never waits here for a native response.
 func (s *Session) RequestNativeHandshake(ctx context.Context, frame json.RawMessage, match func(json.RawMessage) bool) (harness.NativeReceipt, error) {
 	waiter := &nativeWaiter{matches: match, result: make(chan nativeResult, 1)}

@@ -590,6 +590,16 @@ async def test_tool_recovery_reports_context_without_repeating_side_effects(
         f"printf '%s\\n' ready > {shlex.quote(str(ready))}; "
         "printf 'partial tool output'; exec sleep 3600"
     )
+    codex = spec.harness == runner_pb2.HARNESS_CODEX
+    expected = (
+        {event_pb2.RECOVERY_DISPOSITION_UNKNOWN}
+        if codex
+        else {
+            event_pb2.RECOVERY_DISPOSITION_RETAINED,
+            event_pb2.RECOVERY_DISPOSITION_ABSENT,
+            event_pb2.RECOVERY_DISPOSITION_REVISED,
+        }
+    )
     async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=agent_auth) as http:
         thread_id = await _open_thread_with_seed(http, model, spec, seed_prompt=seed_prompt, seed_answer=seed_answer)
         accepted = await http.post(
@@ -633,13 +643,7 @@ async def test_tool_recovery_reports_context_without_repeating_side_effects(
             history,
             thread_id,
             lambda rows, payloads: (
-                rows[item_id].revision_cursor >= recovery_cursor
-                and rows[item_id].state["recovery"]
-                in {
-                    event_pb2.RECOVERY_DISPOSITION_RETAINED,
-                    event_pb2.RECOVERY_DISPOSITION_ABSENT,
-                    event_pb2.RECOVERY_DISPOSITION_REVISED,
-                }
+                rows[item_id].revision_cursor >= recovery_cursor and rows[item_id].state["recovery"] in expected
             ),
         )
         recovered = items[item_id]
@@ -653,7 +657,9 @@ async def test_tool_recovery_reports_context_without_repeating_side_effects(
             recovered.state["recovery"] != event_pb2.RECOVERY_DISPOSITION_ABSENT
         )
         recovered_output = _folded_body(chunks, recovered.output_ref)
-        if recovered_output and recovered.state["recovery"] != event_pb2.RECOVERY_DISPOSITION_ABSENT:
+        # Codex's display history cannot establish the synthetic model output of an
+        # interrupted command. Preserve the observed output without presenting it as retained.
+        if not codex and recovered_output and recovered.state["recovery"] != event_pb2.RECOVERY_DISPOSITION_ABSENT:
             assert any(output.contains(recovered_output) for output in request.tool_outputs)
         assert marker.read_text().splitlines() == [token]
         await model.reply(request, Text("TOOL_RECOVERY_DONE"))

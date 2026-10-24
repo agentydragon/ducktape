@@ -45,8 +45,9 @@ It does not establish that paginated APIs are equivalent to model continuation a
 process loss, compaction, rollback, or for every tool kind. The public reasoning item also omits
 `encrypted_content`; seeing a summary is not proof of the encrypted continuation payload. The
 runner compares observed item content, so that field difference alone does not establish that it
-needs private storage. **The necessity of private parsing for new paginated threads remains an
-open design question.**
+needs private storage. The runner uses turn-scoped public history RPCs and reports unknown when
+those RPCs cannot establish continuation; see the
+[runner recovery contract](../runner/SPEC.md#interrupted-turns-and-continuation-recovery).
 
 ### Why the pinned source behaves this way
 
@@ -112,12 +113,34 @@ Codex's persisted display projection, not a raw Responses API `response_item` jo
 `itemsView: "full"` means full projected `ThreadItem` values available from app-server history.
 The 0.157.0 item-list cursor is an opaque string and entries carry optional timestamps.
 
+## Runner regression coverage
+
+`//agentplane/runner:test_restart` runs the Go runner, the real pinned Codex binary and a scripted
+model endpoint. The paginated recovery case includes 101 reasoning items, assistant text and a
+completed shell command followed by a failed turn and process replacement. It checks retained
+visible items, unchanged encrypted reasoning in the next model request, complete cursor traversal,
+and native RPCs scoped to the latest completed turn plus later turns. An older completed turn is
+present but must not be read. A live interruption case exercises reconciliation without a process
+restart. `//agentplane/app:test_bridge` checks the materialized Thread and side effects across
+ordinary interruption, shutdown and kill for both native harnesses; interrupted Codex commands
+must remain explicitly unknown.
+
+Go tests cover empty turns, cross-turn item ownership, shared resume snapshots, invalid/partial
+page sequences, unsupported history modes/items, and compaction barriers. A scheduler regression
+requires a history RPC response to pass through stdout while reconciliation waits, and checks that
+later input cannot dispatch before the report. A separate command regression covers a native
+`turn/start` response arriving before its `turn/started` notification.
+
 ## Recovery implications
 
-The public API can replace private rollout parsing as the source of Codex's stored turn/item
-projection, and it lets a client fetch that history in bounded pages. For history inspection alone,
-prefer `thread/read` without turns followed by the paginated APIs; reserve `thread/resume` for the
-separate need to attach a live Codex session.
+The runner uses the public API as its Codex history source. `thread/start` and `thread/resume`
+return the history mode; no separate metadata read or private file/database access is needed.
+`thread/items/list(threadId, turnId)` reads only selected recovery turns and any original owning
+turn of an item that finishes later. It follows all pages within those turns with limit 100,
+shares the snapshot across a resume, and skips turns without observed items. It does not page
+through unrelated older turns. The runner checks the paginated contract and treats unsupported
+or incomplete reads as unknown. Read-only RPCs execute off the stdout reader and gate further
+input until reconciliation commits.
 
 This is not by itself a completion guarantee for an external side effect. A missing or unsupported
 item page, partial pagination, or a Codex item that does not prove the corresponding runner action
@@ -141,4 +164,3 @@ Codex history; it does not replace Agentplane's canonical Action/Event evidence.
 - [0.157.0 pagination handlers](https://github.com/openai/codex/blob/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs/app-server/src/request_processors/thread_processor.rs#L3043-L3117)
   and [item-list handler](https://github.com/openai/codex/blob/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs/app-server/src/request_processors/thread_processor.rs#L3402-L3460):
   bounds, store support, and response projection.
-  This note records the current protocol baseline; it does not implement the protocol migration.

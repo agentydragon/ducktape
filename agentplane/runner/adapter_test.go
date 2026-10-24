@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -19,12 +20,13 @@ import (
 )
 
 type adapterTestJournal struct {
-	items    map[string]harness.ObservedItem
-	events   []*eventlogpb.EventEntry
-	pending  []harness.CommandRecord
-	requests []harness.NativeRequest
-	seen     map[string]bool
-	blocks   map[string]int
+	turnEventsErr error
+	items         map[string]harness.ObservedItem
+	events        []*eventlogpb.EventEntry
+	pending       []harness.CommandRecord
+	requests      []harness.NativeRequest
+	seen          map[string]bool
+	blocks        map[string]int
 }
 
 func newAdapterTestJournal() *adapterTestJournal {
@@ -37,8 +39,10 @@ func (j *adapterTestJournal) ObservedItems(context.Context, string) (map[string]
 	return j.items, nil
 }
 
+func (j *adapterTestJournal) RecoveryTurns(context.Context) ([]string, error) { return nil, nil }
+
 func (j *adapterTestJournal) TurnEvents(context.Context, string) ([]*eventlogpb.EventEntry, error) {
-	return j.events, nil
+	return j.events, j.turnEventsErr
 }
 
 func (j *adapterTestJournal) PendingCommandRecords(context.Context) ([]harness.CommandRecord, error) {
@@ -221,7 +225,7 @@ func codexTurnStartResponse(t *testing.T, requestID, turnID string) json.RawMess
 func TestCodexLateTurnStartResponseConfirmsPendingCommand(t *testing.T) {
 	ctx := context.Background()
 	host := newAdapterTestHost()
-	adapter := codex.New(host, t.TempDir())
+	adapter := codex.New(host)
 	if err := adapter.Submit(ctx, "input-1", "hello"); err != nil {
 		t.Fatalf("Submit error = %v", err)
 	}
@@ -273,7 +277,7 @@ func TestCodexRecoveryReplaysJournaledLateTurnStartResponse(t *testing.T) {
 			Line:      string(codexTurnStartResponse(t, requestID, "turn-late")),
 		}}},
 	}}
-	adapter := codex.New(host, t.TempDir())
+	adapter := codex.New(host)
 	if err := adapter.(harness.RecoveryAdapter).Recover(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -477,7 +481,7 @@ func TestCodexHandshakeAndUnsupportedServerRequest(t *testing.T) {
 	base.session.Resuming = false
 	base.session.Environment = map[string]string{"AGENTPLANE_DESTINATION": "test-destination"}
 	host := &adapterHandshakeHost{adapterTestHost: base}
-	adapter := codex.New(host, "/tmp/codex-store")
+	adapter := codex.New(host)
 	threadID, err := adapter.Handshake(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -562,7 +566,7 @@ func TestClaudeChildFramesStayOutsideRootTurnAndInputCohort(t *testing.T) {
 func TestCodexIgnoresChildFramesAndKeepsUnknownItemFields(t *testing.T) {
 	ctx := context.Background()
 	host := newAdapterTestHost()
-	adapter := codex.New(host, "/tmp/codex-store")
+	adapter := codex.New(host)
 	childFrame := json.RawMessage(`{"method":"item/completed","params":{"threadId":"child-thread","turnId":"child-turn","item":{"type":"agentMessage","id":"child-item","text":"CHILD_ONLY"}}}`)
 	childBefore := append(json.RawMessage(nil), childFrame...)
 	if err := adapter.OnFrame(ctx, childFrame, 1); err != nil {
@@ -657,5 +661,41 @@ func TestRecoveryComparesArgumentsWithoutLosingNumbers(t *testing.T) {
 				t.Fatalf("revision lost the recovered payload: %v", result)
 			}
 		})
+	}
+}
+
+func TestCodexStartReplyBeforeNotificationSettlesInputAndUnblocksDispatch(t *testing.T) {
+	host := newAdapterTestHost()
+	host.session.ActiveTurnID = ""
+	// This is the actual journal response before the native turn/started notification arrives.
+	host.journal.turnEventsErr = fmt.Errorf("%w %q", harness.ErrUnknownRecoveryTurn, "new-turn")
+	adapter := codex.New(host)
+	if err := adapter.Submit(context.Background(), "input", "hello"); err != nil {
+		t.Fatal(err)
+	}
+	var request struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(host.nativeWrites[0], &request); err != nil {
+		t.Fatal(err)
+	}
+	response := json.RawMessage(fmt.Sprintf(`{"id":%q,"result":{"turn":{"id":"new-turn"}}}`, request.ID))
+	if err := adapter.OnFrame(context.Background(), response, 1); err != nil {
+		t.Fatal(err)
+	}
+	if adapter.BlocksCommandDispatch() || len(host.confirmations) != 1 || host.session.ActiveTurnID != "new-turn" {
+		t.Fatalf("early reply left input pending: blocked=%v confirmations=%v active=%q", adapter.BlocksCommandDispatch(), host.confirmations, host.session.ActiveTurnID)
+	}
+	if err := adapter.OnFrame(context.Background(), json.RawMessage(`{"method":"turn/started","params":{"threadId":"thread-root","turn":{"id":"new-turn"}}}`), 2); err != nil {
+		t.Fatal(err)
+	}
+	starts := 0
+	for _, event := range host.events {
+		if event.GetTurnStarted() != nil {
+			starts++
+		}
+	}
+	if starts != 1 {
+		t.Fatalf("late notification duplicated TurnStarted: %d", starts)
 	}
 }

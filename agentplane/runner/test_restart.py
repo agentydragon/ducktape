@@ -8,8 +8,9 @@ import json
 import os
 import shlex
 import shutil
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from pathlib import Path
+from typing import Any
 
 import pytest
 import pytest_bazel
@@ -39,6 +40,62 @@ async def _wait_for_session_ready(driver: RunnerDriver, session_id: str) -> None
                 if session.execution_state == runner_pb2.SESSION_EXECUTION_STATE_READY:
                     return
             await asyncio.sleep(0.01)
+
+
+def _native_frames(entries: Sequence[Any], direction: int) -> list[dict[str, Any]]:
+    return [
+        json.loads(entry.event.native.line)
+        for entry in events.of_kind(entries, "native")
+        if entry.event.native.direction == direction
+    ]
+
+
+def _codex_history_items(
+    entries: Sequence[Any], *, recovery_turn_ids: set[str], require_resume: bool = False
+) -> dict[str, list[dict[str, Any]]]:
+    """Read the item pages recorded on the runner's public native-frame archive."""
+    requests = _native_frames(entries, event_pb2.DIRECTION_TO_HARNESS)
+    responses = _native_frames(entries, event_pb2.DIRECTION_FROM_HARNESS)
+    responses_by_id = {frame["id"]: frame for frame in responses if "id" in frame}
+
+    handshake_frames = [frame for frame in requests if frame.get("method") in {"thread/start", "thread/resume"}]
+    assert handshake_frames
+    assert all(frame["id"] in responses_by_id for frame in handshake_frames)
+    assert all(
+        responses_by_id[frame["id"]]["result"]["thread"]["historyMode"] == "paginated" for frame in handshake_frames
+    )
+    thread_ids = {responses_by_id[frame["id"]]["result"]["thread"]["id"] for frame in handshake_frames}
+    assert len(thread_ids) == 1, thread_ids
+    (thread_id,) = thread_ids
+    resume_frames = [frame for frame in handshake_frames if frame["method"] == "thread/resume"]
+    if require_resume:
+        assert resume_frames
+        assert all(frame["params"].get("excludeTurns") is True for frame in resume_frames)
+
+    assert not [frame for frame in requests if frame.get("method") == "thread/read"]
+    assert not [frame for frame in requests if frame.get("method") in {"thread/turns/list", "thread/timeline/list"}]
+    page_requests = [frame for frame in requests if frame.get("method") == "thread/items/list"]
+    assert page_requests
+
+    pages_by_turn: dict[str, list[dict[str, Any]]] = {}
+    next_cursor_by_turn: dict[str, str | None] = {}
+    for frame in page_requests:
+        params = frame["params"]
+        turn_id = params.get("turnId")
+        assert turn_id in recovery_turn_ids, frame
+        assert params.get("threadId") == thread_id, frame
+        assert params.get("limit") == 100, frame
+        assert params.get("cursor") == next_cursor_by_turn.get(turn_id), frame
+        assert frame["id"] in responses_by_id, frame
+        response = responses_by_id[frame["id"]]
+        assert "error" not in response, response
+        result = response["result"]
+        assert all(row["turnId"] == turn_id for row in result["data"]), result
+        pages_by_turn.setdefault(turn_id, []).extend(row["item"] for row in result["data"])
+        next_cursor_by_turn[turn_id] = result.get("nextCursor")
+
+    assert all(cursor is None for cursor in next_cursor_by_turn.values()), next_cursor_by_turn
+    return pages_by_turn
 
 
 async def test_runner_shutdown_waits_for_setup_to_finish(
@@ -653,80 +710,142 @@ async def test_a_reasoning_item_cut_off_by_a_harness_kill_is_reported_absent_and
 
 
 @pytest.mark.parametrize("harness", [runner_pb2.HARNESS_CODEX], ids=["codex"])
-async def test_codex_failed_turn_reconciles_array_tool_output_before_continuation(
+async def test_codex_failed_turn_recovery_uses_selected_paginated_history(
     driver: RunnerDriver,
     endpoint: object,
     model: ScriptedModel,
     spec: runner_pb2.SessionSpec,
     start_runner: Callable[..., Awaitable[RunnerProcess]],
-    tmp_path: Path,
 ) -> None:
-    """The real Codex binary persists an array tool output that recovery must fold after an LLM error."""
+    """The pinned binary recovers selected history pages after its runner process is replaced."""
     assert isinstance(endpoint, OpenAIResponses)
     endpoint.serve_catalog([model_catalog.bundled("gpt-6-luna", slug=spec.model)])
 
-    session_id = "codex-llm-error-reconcile"
+    session_id = "codex-paginated-recovery"
     first_runner = await start_runner()
     first = await driver.attach(session_id, spec=spec)
-    await first.submit_input("error-turn", "Run the tool, then continue.")
+
+    # An older completed turn makes an all-history scan visible in the public JSON-RPC archive.
+    await first.submit_input("old-turn", "Reply with exactly: OLD_TURN_ONLY")
+    old_request = await model.request()
+    await model.reply(old_request, Text("OLD_TURN_ONLY"))
+    old_turn = await first.until(events.turn_completed)
+
+    await first.submit_input("seed-turn", "Reply with exactly: LATEST_SEED_OK")
+    seed_request = await model.request()
+    await model.reply(seed_request, Text("LATEST_SEED_OK"))
+    seed_turn = await first.until(events.turn_completed)
+
+    before_recovery_turn = first.cursor
+    await first.submit_input("interrupted-turn", "Think through this, run the tool, then wait.")
 
     request = await model.request()
     assert request.native.code_mode
-    await model.reply(request, ShellCall("call_history_array", "printf CODEX_HISTORY_OUTPUT"))
+    reasoning_summaries = [f"recovery reasoning {index:03}" for index in range(101)]
+    answer: list[Reasoning | Text] = [Reasoning(summary) for summary in reasoning_summaries]
+    answer.append(Text("RECOVERY_ASSISTANT_TEXT"))
+    await model.reply(request, *answer, ShellCall("call_history_array", "printf CODEX_HISTORY_OUTPUT"))
 
-    failed_request = await model.request()
+    tool_request = await model.request()
+    custom_output = next(
+        output for output in tool_request.native.custom_tool_call_outputs if output.call_id == "call_history_array"
+    )
+    assert isinstance(custom_output.output, list)
+    assert any("CODEX_HISTORY_OUTPUT" in part.text for part in custom_output.output)
+    assert tool_request.assistant_texts[-1] == "RECOVERY_ASSISTANT_TEXT"
+    pre_crash_reasoning = [
+        (item.encrypted_content, [part.text for part in item.summary]) for item in tool_request.native.reasoning
+    ]
+    assert [summary for _, summaries in pre_crash_reasoning for summary in summaries] == reasoning_summaries
+
+    active_turn = next(
+        entry.event.turn_started.turn_id
+        for entry in first.seen
+        if entry.cursor > before_recovery_turn and events.kind(entry) == "turn_started"
+    )
+    (tool_call_id,) = [
+        entry.event.item_started.item_id
+        for entry in first.seen
+        if entry.cursor > before_recovery_turn
+        and events.kind(entry) == "item_started"
+        and entry.event.item_started.kind == event_pb2.ITEM_KIND_TOOL_CALL
+    ]
+    await first.until(
+        lambda entry: events.kind(entry) == "item_completed" and entry.event.item_completed.item_id == tool_call_id
+    )
+    reasoning_ids = [
+        entry.event.item_started.item_id
+        for entry in first.seen
+        if entry.cursor > before_recovery_turn
+        and events.kind(entry) == "item_started"
+        and entry.event.item_started.kind == event_pb2.ITEM_KIND_REASONING
+    ]
+    assistant_ids = [
+        entry.event.item_started.item_id
+        for entry in first.seen
+        if entry.cursor > before_recovery_turn
+        and events.kind(entry) == "item_started"
+        and entry.event.item_started.kind == event_pb2.ITEM_KIND_ASSISTANT_TEXT
+    ]
+    assert len(reasoning_ids) == 101
+    assert len(assistant_ids) == 1
+    failed_request = tool_request
     for attempt in range(3):
         if attempt:
             failed_request = await model.request()
-        custom_output = next(
-            output
-            for output in failed_request.native.custom_tool_call_outputs
-            if output.call_id == "call_history_array"
+        assert any(
+            output.call_id == "call_history_array" and output.contains("CODEX_HISTORY_OUTPUT")
+            for output in failed_request.tool_outputs
         )
-        assert isinstance(custom_output.output, list)
-        assert any("CODEX_HISTORY_OUTPUT" in part.text for part in custom_output.output)
         await model.http_error(failed_request)
-
     failed = await first.until(events.turn_completed)
     assert failed.event.turn_completed.status == event_pb2.TURN_STATUS_FAILED
-    (tool_call_id,) = events.items(first.seen, event_pb2.ITEM_KIND_TOOL_CALL)
-
-    codex_home = tmp_path / "state" / "codex"
-    rollout_files = list((codex_home / "sessions").glob("**/rollout-*.jsonl"))
-    assert len(rollout_files) == 1
-    rollout = [json.loads(line) for line in rollout_files[0].read_text().splitlines()]
-    (persisted_output,) = [
-        record["payload"]
-        for record in rollout
-        if record["type"] == "response_item"
-        and record["payload"]["type"] == "custom_tool_call_output"
-        and record["payload"]["call_id"] == "call_history_array"
-    ]
-    assert isinstance(persisted_output["output"], list)
-    assert any("CODEX_HISTORY_OUTPUT" in part["text"] for part in persisted_output["output"])
 
     harness_pids = [entry.event.harness_started.pid for entry in events.of_kind(first.seen, "harness_started")]
     await first_runner.crash(harness_pids)
 
     await start_runner()
     reconnected = await driver.attach(session_id, after_cursor=first.cursor)
-    await reconnected.submit_input("continue-after-error", "Continue from the failed turn and reply CONTINUED_OK.")
+    await reconnected.submit_input("continue-after-restart", "Continue and reply CONTINUED_OK.")
     started = await reconnected.until(events.is_kind("harness_started"))
     assert started.event.harness_started.resumed
     reconciled = await reconnected.until(
         lambda entry: (
             events.kind(entry) == "conversation_reconciled"
-            and entry.event.conversation_reconciled.turn_id == failed.event.turn_completed.turn_id
+            and entry.event.conversation_reconciled.turn_id == active_turn
         )
     )
-    assert tool_call_id in {item.item_id for item in reconciled.event.conversation_reconciled.items}
-    assert all(
-        item.disposition != event_pb2.RECOVERY_DISPOSITION_UNKNOWN
-        for item in reconciled.event.conversation_reconciled.items
+    report = {item.item_id: item for item in reconciled.event.conversation_reconciled.items}
+    assert set(reasoning_ids + assistant_ids + [tool_call_id]) <= report.keys()
+    assert all(report[item_id].disposition == event_pb2.RECOVERY_DISPOSITION_RETAINED for item_id in reasoning_ids)
+    assert report[assistant_ids[0]].disposition == event_pb2.RECOVERY_DISPOSITION_RETAINED
+    assert report[tool_call_id].disposition == event_pb2.RECOVERY_DISPOSITION_RETAINED
+
+    # API reads include the newest completed turn and the interrupted turn, but not older history.
+    pages_by_turn = _codex_history_items(
+        reconnected.seen, recovery_turn_ids={seed_turn.event.turn_completed.turn_id, active_turn}, require_resume=True
+    )
+    assert set(pages_by_turn) == {seed_turn.event.turn_completed.turn_id, active_turn}
+    assert active_turn in pages_by_turn
+    assert old_turn.event.turn_completed.turn_id not in pages_by_turn
+    active_items = pages_by_turn[active_turn]
+    assert len(active_items) > 100
+    assert len([item for item in active_items if item.get("type") == "reasoning"]) == 101
+    assert {summary for item in active_items if item.get("type") == "reasoning" for summary in item["summary"]} == set(
+        reasoning_summaries
+    )
+    assert [item["text"] for item in active_items if item.get("type") == "agentMessage"] == ["RECOVERY_ASSISTANT_TEXT"]
+    assert any(
+        item.get("type") == "commandExecution" and "CODEX_HISTORY_OUTPUT" in item.get("aggregatedOutput", "")
+        for item in active_items
     )
 
     request = await model.request()
-    assert request.user_texts[-1] == "Continue from the failed turn and reply CONTINUED_OK."
+    assert request.user_texts[-1] == "Continue and reply CONTINUED_OK."
+    assert [
+        (item.encrypted_content, [part.text for part in item.summary]) for item in request.native.reasoning
+    ] == pre_crash_reasoning
+    assert "RECOVERY_ASSISTANT_TEXT" in request.assistant_texts
     assert any(
         output.call_id == "call_history_array" and output.contains("CODEX_HISTORY_OUTPUT")
         for output in request.tool_outputs
@@ -734,8 +853,69 @@ async def test_codex_failed_turn_reconciles_array_tool_output_before_continuatio
     await model.reply(request, Text("CONTINUED_OK"))
     continued = await reconnected.until(events.turn_completed)
     assert continued.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
-    assert continued.event.turn_completed.turn_id != failed.event.turn_completed.turn_id
     events.assert_contiguous([*first.seen, *reconnected.seen])
+
+
+@pytest.mark.parametrize("harness", [runner_pb2.HARNESS_CODEX], ids=["codex"])
+async def test_codex_normal_interrupt_reconciles_on_the_live_command_loop(
+    driver: RunnerDriver,
+    endpoint: object,
+    model: ScriptedModel,
+    spec: runner_pb2.SessionSpec,
+    start_runner: Callable[..., Awaitable[RunnerProcess]],
+) -> None:
+    assert isinstance(endpoint, OpenAIResponses)
+    endpoint.serve_catalog([model_catalog.bundled("gpt-6-luna", slug=spec.model)])
+
+    first_runner = await start_runner()
+    first = await driver.attach("codex-normal-interrupt", spec=spec)
+    before_interrupted_turn = first.cursor
+    await first.submit_input("interrupt-input", "Run the tool, then wait for my interrupt.")
+    request = await model.request()
+    await model.reply(
+        request,
+        Reasoning("INTERRUPTED_REASONING"),
+        Text("INTERRUPTED_ASSISTANT_TEXT"),
+        ShellCall("call_interrupted_tool", "printf INTERRUPTED_TOOL_OUTPUT"),
+    )
+    tool_request = await model.request()
+    assert any(
+        output.call_id == "call_interrupted_tool" and output.contains("INTERRUPTED_TOOL_OUTPUT")
+        for output in tool_request.tool_outputs
+    )
+    active_turn = next(
+        entry.event.turn_started.turn_id
+        for entry in first.seen
+        if entry.cursor > before_interrupted_turn and events.kind(entry) == "turn_started"
+    )
+    (tool_call_id,) = events.items(first.seen, event_pb2.ITEM_KIND_TOOL_CALL)
+    await model.hold(tool_request)
+
+    await first.interrupt_turn("interrupt-now", active_turn)
+    interrupted = await first.until(
+        lambda entry: events.kind(entry) == "turn_completed" and entry.event.turn_completed.turn_id == active_turn
+    )
+    assert interrupted.event.turn_completed.status == event_pb2.TURN_STATUS_INTERRUPTED
+    reconciled = await first.until(
+        lambda entry: (
+            events.kind(entry) == "conversation_reconciled"
+            and entry.event.conversation_reconciled.turn_id == active_turn
+        )
+    )
+    assert reconciled.event.conversation_reconciled.items
+    interrupted_report = {item.item_id: item for item in reconciled.event.conversation_reconciled.items}
+    assert interrupted_report[tool_call_id].disposition == event_pb2.RECOVERY_DISPOSITION_RETAINED
+    pages_by_turn = _codex_history_items(first.seen, recovery_turn_ids={active_turn})
+    assert set(pages_by_turn) == {active_turn}
+    assert any(
+        item.get("type") == "agentMessage" and item.get("text") == "INTERRUPTED_ASSISTANT_TEXT"
+        for item in pages_by_turn[active_turn]
+    )
+    assert any(
+        item.get("type") == "commandExecution" and "INTERRUPTED_TOOL_OUTPUT" in item.get("aggregatedOutput", "")
+        for item in pages_by_turn[active_turn]
+    )
+    await first_runner.stop()
 
 
 if __name__ == "__main__":
