@@ -2,7 +2,7 @@
 
 `//agentplane/app/frontend/serving:static_image` packages the React bundle and service worker on
 the pinned unprivileged nginx base. CI publishes it as `agentplane-frontend`, separately from the
-`agentplane-app` API image. The process runs as `1000:1000`, listens on port 8080, and accepts a
+`agentplane-app` Go API image. The API process runs as `1000:1000`, listens on port 8080, and accepts a
 read-only root filesystem with one writable `/tmp` volume. `/healthz` reports local server health.
 
 The Kubernetes Gateway shares one hostname between the two Services:

@@ -1,0 +1,6096 @@
+{
+  "components": {
+    "schemas": {
+      "ActionPolicySetView": {
+        "additionalProperties": false,
+        "description": "A PolicySet's identity and the parser's refusal reason, if its rules are invalid.",
+        "properties": {
+          "generation": {
+            "title": "Generation",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "refused": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why a rule does not parse, when one does not; such a set contributes nothing. A PolicySet has no status of its own: each binding's `ActionsReady` says whether its sets resolved.",
+            "title": "Refused"
+          }
+        },
+        "required": ["name", "generation"],
+        "title": "ActionPolicySetView",
+        "type": "object"
+      },
+      "ActionPolicyUnavailable": {
+        "additionalProperties": false,
+        "description": "The Action Service could not be asked, and the page says so rather than showing an empty\npolicy as the answer: the failure an operator route would answer with, in the frame instead.",
+        "properties": {
+          "code": {
+            "description": "A federation failure code (`operator_session_required`, `operator_federation_not_configured`, `operator_reauthentication_required`, ...), or `upstream_request_failed` when a request itself failed.",
+            "title": "Code",
+            "type": "string"
+          },
+          "kind": {
+            "const": "unavailable",
+            "default": "unavailable",
+            "title": "Kind",
+            "type": "string"
+          },
+          "upstream": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UpstreamFailure"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For `upstream_request_failed`: the request that failed, without secrets."
+          }
+        },
+        "required": ["code"],
+        "title": "ActionPolicyUnavailable",
+        "type": "object"
+      },
+      "ActionPolicyView": {
+        "additionalProperties": false,
+        "description": "The Action Service's answer for a ServiceAccount: what it would evaluate at admission, from\nthe objects as its informer holds them. Deny wins over approve; a request matching nothing takes\nthe human path.",
+        "properties": {
+          "auto_approve_if": {
+            "description": "In evaluation order; the first match approves.",
+            "items": {
+              "$ref": "#/components/schemas/EffectivePolicyView"
+            },
+            "title": "Auto Approve If",
+            "type": "array"
+          },
+          "synced": {
+            "description": "False until the service's copy is complete, and again if its watch stops refreshing it: nothing auto-decides then, whatever the objects say.",
+            "title": "Synced",
+            "type": "boolean"
+          }
+        },
+        "required": ["synced", "auto_approve_if"],
+        "title": "ActionPolicyView",
+        "type": "object"
+      },
+      "ArchivedCommandAdmission": {
+        "properties": {
+          "admission": {
+            "additionalProperties": true,
+            "title": "Admission",
+            "type": "object"
+          },
+          "kind": {
+            "const": "archived_admission",
+            "default": "archived_admission",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": ["admission"],
+        "title": "ArchivedCommandAdmission",
+        "type": "object"
+      },
+      "ArchivedObservation": {
+        "additionalProperties": false,
+        "description": "Identity and kind only; the raw entry is fetched per observation on expansion.",
+        "properties": {
+          "cursor": {
+            "title": "Cursor",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": ["cursor", "kind"],
+        "title": "ArchivedObservation",
+        "type": "object"
+      },
+      "ArchivedObservationEntry": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "title": "Cursor",
+            "type": "string"
+          },
+          "entry": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Entry",
+            "type": "object"
+          }
+        },
+        "required": ["cursor", "entry"],
+        "title": "ArchivedObservationEntry",
+        "type": "object"
+      },
+      "ArgumentSchemaView": {
+        "additionalProperties": false,
+        "properties": {
+          "actions": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "description": "Action names by ActionGroup key, sorted.",
+            "title": "Actions",
+            "type": "object"
+          },
+          "argument_schema": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "description": "The JSON Schema the arguments must satisfy.",
+            "title": "Argument Schema",
+            "type": "object"
+          },
+          "type": {
+            "const": "argument_schema",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": ["type", "actions", "argument_schema"],
+        "title": "ArgumentSchemaView",
+        "type": "object"
+      },
+      "BasicPasswordTarget": {
+        "additionalProperties": false,
+        "description": "`Basic base64(<username>:<credential>)`.",
+        "properties": {
+          "header": {
+            "description": "Request header this presentation puts the credential in.",
+            "minLength": 1,
+            "title": "Header",
+            "type": "string"
+          },
+          "method": {
+            "const": "basicPassword",
+            "title": "Method",
+            "type": "string"
+          }
+        },
+        "required": ["header", "method"],
+        "title": "BasicPasswordTarget",
+        "type": "object"
+      },
+      "BasicUsernameTarget": {
+        "additionalProperties": false,
+        "description": "`Basic base64(<credential>:<password>)`.",
+        "properties": {
+          "header": {
+            "description": "Request header this presentation puts the credential in.",
+            "minLength": 1,
+            "title": "Header",
+            "type": "string"
+          },
+          "method": {
+            "const": "basicUsername",
+            "title": "Method",
+            "type": "string"
+          }
+        },
+        "required": ["header", "method"],
+        "title": "BasicUsernameTarget",
+        "type": "object"
+      },
+      "BasicWholeTarget": {
+        "additionalProperties": false,
+        "description": "`Basic base64(<credential>)` \u2014 a payload that is the credential, colon or no colon.",
+        "properties": {
+          "header": {
+            "description": "Request header this presentation puts the credential in.",
+            "minLength": 1,
+            "title": "Header",
+            "type": "string"
+          },
+          "method": {
+            "const": "basicWhole",
+            "title": "Method",
+            "type": "string"
+          }
+        },
+        "required": ["header", "method"],
+        "title": "BasicWholeTarget",
+        "type": "object"
+      },
+      "BindingProvenance": {
+        "enum": ["git", "sandbox", "operator"],
+        "title": "BindingProvenance",
+        "type": "string"
+      },
+      "BindingView": {
+        "additionalProperties": false,
+        "properties": {
+          "conditions": {
+            "description": "The verdict of each reader that has judged the binding, by type; none until one has.",
+            "items": {
+              "$ref": "#/components/schemas/ConditionView"
+            },
+            "title": "Conditions",
+            "type": "array"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "generation": {
+            "description": "The binding's metadata generation; a verdict judged at an older one is stale.",
+            "title": "Generation",
+            "type": "integer"
+          },
+          "missing_policy_sets": {
+            "description": "Names in the binding that no PolicySet answers to.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Policy Sets",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "policy_sets": {
+            "description": "The named PolicySets that exist, refused ones included, in the binding's order.",
+            "items": {
+              "$ref": "#/components/schemas/PolicySetView"
+            },
+            "title": "Policy Sets",
+            "type": "array"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/BindingProvenance",
+            "description": "git: Flux applied it, so removing it is git's. sandbox: the Sandbox's own, which its controller keeps equal to the Sandbox's policy sets. operator: granted at runtime."
+          },
+          "subjects": {
+            "description": "The ServiceAccounts this binding names.",
+            "items": {
+              "$ref": "#/components/schemas/ServiceAccountRef"
+            },
+            "title": "Subjects",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "provenance",
+          "generation",
+          "subjects",
+          "conditions",
+          "policy_sets",
+          "missing_policy_sets"
+        ],
+        "title": "BindingView",
+        "type": "object"
+      },
+      "CallerGrantView": {
+        "additionalProperties": false,
+        "description": "Account-scoped CR projections, not a new grant authority or Kubernetes RBAC evaluator.",
+        "properties": {
+          "action_policy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActionPolicyView"
+              },
+              {
+                "$ref": "#/components/schemas/ActionPolicyUnavailable"
+              }
+            ],
+            "title": "Action Policy"
+          },
+          "bindings": {
+            "items": {
+              "$ref": "#/components/schemas/BindingView"
+            },
+            "title": "Bindings",
+            "type": "array"
+          }
+        },
+        "required": ["bindings", "action_policy"],
+        "title": "CallerGrantView",
+        "type": "object"
+      },
+      "ChangeModelBody": {
+        "additionalProperties": false,
+        "properties": {
+          "commandId": {
+            "minLength": 1,
+            "title": "Commandid",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          }
+        },
+        "required": ["commandId", "model"],
+        "title": "ChangeModelBody",
+        "type": "object"
+      },
+      "ChangeReasoningEffortBody": {
+        "additionalProperties": false,
+        "properties": {
+          "commandId": {
+            "minLength": 1,
+            "title": "Commandid",
+            "type": "string"
+          },
+          "effort": {
+            "title": "Effort",
+            "type": "string"
+          }
+        },
+        "required": ["commandId", "effort"],
+        "title": "ChangeReasoningEffortBody",
+        "type": "object"
+      },
+      "CommandOutcome": {
+        "enum": ["pending", "effected", "failed", "noop"],
+        "title": "CommandOutcome",
+        "type": "string"
+      },
+      "ComponentState": {
+        "enum": ["ok", "down"],
+        "title": "ComponentState",
+        "type": "string"
+      },
+      "ComponentStatus": {
+        "properties": {
+          "checked_at": {
+            "format": "date-time",
+            "title": "Checked At",
+            "type": "string"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the component is down; absent when it is ok.",
+            "title": "Detail"
+          },
+          "name": {
+            "description": "The component, as the System page labels it.",
+            "title": "Name",
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/ComponentState"
+          }
+        },
+        "required": ["name", "state", "detail", "checked_at"],
+        "title": "ComponentStatus",
+        "type": "object"
+      },
+      "ConditionStatus": {
+        "enum": ["True", "False", "Unknown"],
+        "title": "ConditionStatus",
+        "type": "string"
+      },
+      "ConditionView": {
+        "additionalProperties": false,
+        "description": "One reader's verdict on a binding, as it wrote it to the binding's status.",
+        "properties": {
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "observed_generation": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The generation judged; behind the binding's while an edit is unjudged.",
+            "title": "Observed Generation"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ConditionStatus"
+          },
+          "type": {
+            "description": "Which reader judged: `EgressReady`, `ActionsReady` or `KubernetesReady`.",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": ["type", "status", "reason", "message"],
+        "title": "ConditionView",
+        "type": "object"
+      },
+      "CredentialView": {
+        "additionalProperties": false,
+        "description": "A credential a rule lets a subject present. Source metadata names no credential value.",
+        "properties": {
+          "description": {
+            "description": "What the credential is and what it can do, as its owner wrote it.",
+            "title": "Description",
+            "type": "string"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Source Secret key, absent for a workload-token source.",
+            "title": "Key"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "placeholder": {
+            "description": "What a sandbox sends in its place; derived from the name.",
+            "title": "Placeholder",
+            "type": "string"
+          },
+          "secret": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Source Secret, absent for a workload-token source.",
+            "title": "Secret"
+          },
+          "targets": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "basicPassword": "#/components/schemas/BasicPasswordTarget",
+                  "basicUsername": "#/components/schemas/BasicUsernameTarget",
+                  "basicWhole": "#/components/schemas/BasicWholeTarget",
+                  "jsonField": "#/components/schemas/JsonFieldTarget",
+                  "schemeToken": "#/components/schemas/SchemeTokenTarget",
+                  "wholeValue": "#/components/schemas/WholeValueTarget"
+                },
+                "propertyName": "method"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/WholeValueTarget"
+                },
+                {
+                  "$ref": "#/components/schemas/SchemeTokenTarget"
+                },
+                {
+                  "$ref": "#/components/schemas/BasicUsernameTarget"
+                },
+                {
+                  "$ref": "#/components/schemas/BasicPasswordTarget"
+                },
+                {
+                  "$ref": "#/components/schemas/BasicWholeTarget"
+                },
+                {
+                  "$ref": "#/components/schemas/JsonFieldTarget"
+                }
+              ]
+            },
+            "title": "Targets",
+            "type": "array"
+          }
+        },
+        "required": ["name", "description", "placeholder", "targets"],
+        "title": "CredentialView",
+        "type": "object"
+      },
+      "Decision": {
+        "description": "One admission shown in the browser; names only, never values.\n\nPaths are deliberately never captured: arbitrary path segments can contain secrets.",
+        "properties": {
+          "address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The address the host was pinned to, when admitted.",
+            "title": "Address"
+          },
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "binding": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Binding"
+          },
+          "host": {
+            "title": "Host",
+            "type": "string"
+          },
+          "method": {
+            "title": "Method",
+            "type": "string"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/Outcome"
+          },
+          "policy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policy"
+          },
+          "port": {
+            "title": "Port",
+            "type": "integer"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The proxy's machine-readable refusal, on a deny.",
+            "title": "Reason"
+          },
+          "rule": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rule"
+          },
+          "substituted": {
+            "default": false,
+            "description": "Whether a credential replaced a placeholder.",
+            "title": "Substituted",
+            "type": "boolean"
+          }
+        },
+        "required": ["at", "method", "host", "port", "outcome"],
+        "title": "Decision",
+        "type": "object"
+      },
+      "DecisionsSnapshot": {
+        "additionalProperties": false,
+        "description": "A frame of one sandbox's egress decision stream.",
+        "properties": {
+          "decisions": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/Decision"
+                },
+                "type": "array"
+              },
+              {
+                "$ref": "#/components/schemas/DecisionsUnavailable"
+              }
+            ],
+            "description": "Oldest first.",
+            "title": "Decisions"
+          },
+          "watching": {
+            "title": "Watching",
+            "type": "boolean"
+          }
+        },
+        "required": ["watching", "decisions"],
+        "title": "DecisionsSnapshot",
+        "type": "object"
+      },
+      "DecisionsUnavailable": {
+        "additionalProperties": false,
+        "description": "Why the egress proxy's decisions could not be read; the frame says it rather than ending the stream.",
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          }
+        },
+        "required": ["detail"],
+        "title": "DecisionsUnavailable",
+        "type": "object"
+      },
+      "DispatchedCommand": {
+        "properties": {
+          "dispatch": {
+            "additionalProperties": true,
+            "title": "Dispatch",
+            "type": "object"
+          },
+          "kind": {
+            "const": "dispatch",
+            "default": "dispatch",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": ["dispatch"],
+        "title": "DispatchedCommand",
+        "type": "object"
+      },
+      "EffectivePolicyView": {
+        "additionalProperties": false,
+        "description": "One policy as admission walks it: the binding and set it came through and its position\nthere, which is what a Decision's `MatchedPolicy` names.",
+        "properties": {
+          "binding": {
+            "title": "Binding",
+            "type": "string"
+          },
+          "index": {
+            "minimum": 0.0,
+            "title": "Index",
+            "type": "integer"
+          },
+          "policy": {
+            "discriminator": {
+              "mapping": {
+                "argument_schema": "#/components/schemas/ArgumentSchemaView",
+                "exact_actions": "#/components/schemas/ExactActionsView",
+                "github_public_repository": "#/components/schemas/GitHubPublicRepositoryView",
+                "github_repository": "#/components/schemas/GitHubRepositoryView",
+                "home_assistant_entity_control": "#/components/schemas/HomeAssistantEntityControlView"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ExactActionsView"
+              },
+              {
+                "$ref": "#/components/schemas/ArgumentSchemaView"
+              },
+              {
+                "$ref": "#/components/schemas/GitHubRepositoryView"
+              },
+              {
+                "$ref": "#/components/schemas/GitHubPublicRepositoryView"
+              },
+              {
+                "$ref": "#/components/schemas/HomeAssistantEntityControlView"
+              }
+            ],
+            "title": "Policy"
+          },
+          "policy_set": {
+            "title": "Policy Set",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/PolicySource",
+            "description": "The list of the set the policy sits in."
+          }
+        },
+        "required": ["binding", "policy_set", "source", "index", "policy"],
+        "title": "EffectivePolicyView",
+        "type": "object"
+      },
+      "EgressRuleView": {
+        "additionalProperties": false,
+        "properties": {
+          "credential": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CredentialView"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The EgressCredential this rule lets a subject present, when it resolves."
+          },
+          "hosts": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Hosts",
+            "type": "array"
+          },
+          "kind": {
+            "const": "egress",
+            "title": "Kind",
+            "type": "string"
+          },
+          "methods": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Absent admits any method.",
+            "title": "Methods"
+          },
+          "missing_credential": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Named by the rule and absent from the namespace, so the rule substitutes nothing.",
+            "title": "Missing Credential"
+          },
+          "number": {
+            "description": "The rule's position among all of the set's rules, of every type.",
+            "title": "Number",
+            "type": "integer"
+          },
+          "paths": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Absent admits any path.",
+            "title": "Paths"
+          }
+        },
+        "required": ["kind", "number", "hosts"],
+        "title": "EgressRuleView",
+        "type": "object"
+      },
+      "EvidenceObservation": {
+        "additionalProperties": false,
+        "properties": {
+          "has_native": {
+            "title": "Has Native",
+            "type": "boolean"
+          },
+          "observation_cursor": {
+            "title": "Observation Cursor",
+            "type": "string"
+          }
+        },
+        "required": ["observation_cursor", "has_native"],
+        "title": "EvidenceObservation",
+        "type": "object"
+      },
+      "EvidencePage": {
+        "additionalProperties": false,
+        "properties": {
+          "next_after_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next After Cursor"
+          },
+          "observations": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceObservation"
+            },
+            "title": "Observations",
+            "type": "array"
+          }
+        },
+        "required": ["observations", "next_after_cursor"],
+        "title": "EvidencePage",
+        "type": "object"
+      },
+      "ExactActionsView": {
+        "additionalProperties": false,
+        "properties": {
+          "actions": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "description": "Action names by ActionGroup key, sorted.",
+            "title": "Actions",
+            "type": "object"
+          },
+          "type": {
+            "const": "exact_actions",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": ["type", "actions"],
+        "title": "ExactActionsView",
+        "type": "object"
+      },
+      "GitHubPublicRepositoryView": {
+        "additionalProperties": false,
+        "properties": {
+          "actions": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "description": "Action names by ActionGroup key, sorted.",
+            "title": "Actions",
+            "type": "object"
+          },
+          "type": {
+            "const": "github_public_repository",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": ["type", "actions"],
+        "title": "GitHubPublicRepositoryView",
+        "type": "object"
+      },
+      "GitHubRepositoryView": {
+        "additionalProperties": false,
+        "properties": {
+          "actions": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "description": "Action names by ActionGroup key, sorted.",
+            "title": "Actions",
+            "type": "object"
+          },
+          "owner": {
+            "description": "The GitHub repository owner the call must target.",
+            "title": "Owner",
+            "type": "string"
+          },
+          "repository": {
+            "description": "The GitHub repository name the call must target.",
+            "title": "Repository",
+            "type": "string"
+          },
+          "type": {
+            "const": "github_repository",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": ["type", "actions", "owner", "repository"],
+        "title": "GitHubRepositoryView",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "Harness": {
+        "description": "The runner protocol Harness enum names, reused by configuration and session projections.",
+        "enum": ["HARNESS_CLAUDE", "HARNESS_CODEX"],
+        "title": "Harness",
+        "type": "string"
+      },
+      "HarnessProcessView": {
+        "properties": {
+          "assigned_session_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Assigned Session Ids",
+            "type": "array"
+          },
+          "harness": {
+            "$ref": "#/components/schemas/Harness"
+          },
+          "pid": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pid"
+          },
+          "process_id": {
+            "title": "Process Id",
+            "type": "string"
+          },
+          "state": {
+            "enum": ["PROCESS_STATE_STARTING", "PROCESS_STATE_RUNNING", "PROCESS_STATE_STOPPING"],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": ["process_id", "harness", "state", "assigned_session_ids"],
+        "title": "HarnessProcessView",
+        "type": "object"
+      },
+      "HomeAssistantEntityControlView": {
+        "additionalProperties": false,
+        "properties": {
+          "actions": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "description": "Action names by ActionGroup key, sorted.",
+            "title": "Actions",
+            "type": "object"
+          },
+          "entities": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "description": "The Home Assistant entity ids a call may target, each with the services it may use, sorted.",
+            "title": "Entities",
+            "type": "object"
+          },
+          "type": {
+            "const": "home_assistant_entity_control",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": ["type", "actions", "entities"],
+        "title": "HomeAssistantEntityControlView",
+        "type": "object"
+      },
+      "InterruptResultSubmission": {
+        "properties": {
+          "kind": {
+            "const": "interrupt_result",
+            "default": "interrupt_result",
+            "title": "Kind",
+            "type": "string"
+          },
+          "result": {
+            "additionalProperties": true,
+            "title": "Result",
+            "type": "object"
+          }
+        },
+        "required": ["result"],
+        "title": "InterruptResultSubmission",
+        "type": "object"
+      },
+      "InterruptTurnBody": {
+        "additionalProperties": false,
+        "properties": {
+          "commandId": {
+            "minLength": 1,
+            "title": "Commandid",
+            "type": "string"
+          },
+          "turnId": {
+            "title": "Turnid",
+            "type": "string"
+          }
+        },
+        "required": ["commandId", "turnId"],
+        "title": "InterruptTurnBody",
+        "type": "object"
+      },
+      "JsonFieldTarget": {
+        "additionalProperties": false,
+        "description": "An exact string value in one top-level JSON object field; no paths or templates.",
+        "properties": {
+          "field": {
+            "description": "Top-level JSON field whose entire string value must equal the placeholder.",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Field",
+            "type": "string"
+          },
+          "method": {
+            "const": "jsonField",
+            "title": "Method",
+            "type": "string"
+          }
+        },
+        "required": ["method", "field"],
+        "title": "JsonFieldTarget",
+        "type": "object"
+      },
+      "JsonValue": {},
+      "ModelCatalog": {
+        "additionalProperties": false,
+        "description": "The app's configuration: every model it can open a session with, and which harnesses\naccept it. A thread carries its harness and model; a sandbox is a Pod and carries neither.\n\n`models` holds each model's metadata once; `harnesses` references it by `model` id, so a\nmodel two harnesses both accept (e.g. a local Ollama route) names its display name only once.\nAn empty harness list pauses its launch-form offerings, not its existing sessions\nor the low-level runner API.",
+        "properties": {
+          "harnesses": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/Harness"
+            },
+            "title": "Harnesses",
+            "type": "object"
+          },
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/ModelOption"
+            },
+            "title": "Models",
+            "type": "array"
+          }
+        },
+        "required": ["models", "harnesses"],
+        "title": "ModelCatalog",
+        "type": "object"
+      },
+      "ModelOption": {
+        "additionalProperties": false,
+        "description": "One model a harness may be opened with, offered to the session form.",
+        "properties": {
+          "display_name": {
+            "description": "Short human name for the session form, e.g. \"Sonnet 5\".",
+            "title": "Display Name",
+            "type": "string"
+          },
+          "model": {
+            "description": "The route name a session opens with; opaque to the operator.",
+            "title": "Model",
+            "type": "string"
+          },
+          "reasoning_efforts": {
+            "description": "Reasoning effort values exposed for this model across its configured harnesses; empty means unsupported.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Reasoning Efforts",
+            "type": "array"
+          }
+        },
+        "required": ["model", "display_name", "reasoning_efforts"],
+        "title": "ModelOption",
+        "type": "object"
+      },
+      "NativeFrame": {
+        "additionalProperties": false,
+        "properties": {
+          "availability": {
+            "enum": ["present", "unavailable"],
+            "title": "Availability",
+            "type": "string"
+          },
+          "entry": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entry"
+          },
+          "source_sequence": {
+            "title": "Source Sequence",
+            "type": "string"
+          }
+        },
+        "required": ["source_sequence", "availability", "entry"],
+        "title": "NativeFrame",
+        "type": "object"
+      },
+      "NativeFramePage": {
+        "additionalProperties": false,
+        "properties": {
+          "frames": {
+            "items": {
+              "$ref": "#/components/schemas/NativeFrame"
+            },
+            "title": "Frames",
+            "type": "array"
+          },
+          "next_after_sequence": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next After Sequence"
+          }
+        },
+        "required": ["frames", "next_after_sequence"],
+        "title": "NativeFramePage",
+        "type": "object"
+      },
+      "NewSandbox": {
+        "additionalProperties": false,
+        "description": "Concrete Sandbox choices; session launch defaults live in the app preset catalog.",
+        "properties": {
+          "bootstrap": {
+            "default": "",
+            "description": "Runner initialization script for this Sandbox.",
+            "maxLength": 65536,
+            "title": "Bootstrap",
+            "type": "string"
+          },
+          "idle_suspend_after_seconds": {
+            "anyOf": [
+              {
+                "minimum": 60.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How long its runner must stay idle before the Sandbox is suspended; null never suspends it.",
+            "title": "Idle Suspend After Seconds"
+          },
+          "inbox_tags": {
+            "description": "Inbox tags it starts with: groups a send grant can target it by.",
+            "items": {
+              "maxLength": 63,
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Inbox Tags",
+            "type": "array"
+          },
+          "name": {
+            "description": "Kubernetes Sandbox CR name, unique in this namespace.",
+            "maxLength": 57,
+            "minLength": 1,
+            "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "policy_sets": {
+            "description": "PolicySet names to bind.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Policy Sets",
+            "type": "array"
+          },
+          "preset": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The preset the form's fields were taken from, if any.",
+            "title": "Preset"
+          },
+          "template": {
+            "description": "SandboxTemplate each of its incarnations starts from.",
+            "minLength": 1,
+            "title": "Template",
+            "type": "string"
+          },
+          "wake_on_send": {
+            "default": false,
+            "description": "Whether an incoming message may resume this Sandbox after suspension.",
+            "title": "Wake On Send",
+            "type": "boolean"
+          }
+        },
+        "required": ["name", "template"],
+        "title": "NewSandbox",
+        "type": "object"
+      },
+      "NewSession": {
+        "additionalProperties": false,
+        "properties": {
+          "auto_title_on_first_message": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whether to title this Thread after its first confirmed user message.",
+            "title": "Auto Title On First Message"
+          },
+          "session_id": {
+            "description": "A fresh UUID the client minted for this Session; a retry of the same Open repeats it.",
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "setup_script": {
+            "anyOf": [
+              {
+                "maxLength": 65536,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Setup Script"
+          },
+          "spec": {
+            "additionalProperties": true,
+            "description": "Explicit proto-JSON SessionSpec fields; configured preset defaults fill omitted fields.",
+            "title": "Spec",
+            "type": "object"
+          }
+        },
+        "required": ["spec", "session_id"],
+        "title": "NewSession",
+        "type": "object"
+      },
+      "ObservationPage": {
+        "additionalProperties": false,
+        "description": "One chronological archive window, including observations without projected items.",
+        "properties": {
+          "next_after_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next After Cursor"
+          },
+          "next_before_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Before Cursor"
+          },
+          "observations": {
+            "items": {
+              "$ref": "#/components/schemas/ArchivedObservation"
+            },
+            "title": "Observations",
+            "type": "array"
+          }
+        },
+        "required": ["observations", "next_before_cursor", "next_after_cursor"],
+        "title": "ObservationPage",
+        "type": "object"
+      },
+      "OperatingMode": {
+        "description": "Whether the Sandbox Controller runs the Sandbox.",
+        "enum": ["Running", "Suspended"],
+        "title": "OperatingMode",
+        "type": "string"
+      },
+      "OtherRuleView": {
+        "additionalProperties": false,
+        "description": "A rule another reader enforces, as the set states it.",
+        "properties": {
+          "fields": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "description": "The rule's fields but its type.",
+            "title": "Fields",
+            "type": "object"
+          },
+          "kind": {
+            "const": "other",
+            "title": "Kind",
+            "type": "string"
+          },
+          "number": {
+            "description": "The rule's position among all of the set's rules, of every type.",
+            "title": "Number",
+            "type": "integer"
+          },
+          "type": {
+            "description": "The rule type, which selects the reader that enforces it.",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": ["kind", "number", "type", "fields"],
+        "title": "OtherRuleView",
+        "type": "object"
+      },
+      "Outcome": {
+        "enum": ["allow", "deny"],
+        "title": "Outcome",
+        "type": "string"
+      },
+      "OwnerReferenceView": {
+        "additionalProperties": false,
+        "properties": {
+          "api_version": {
+            "title": "Api Version",
+            "type": "string"
+          },
+          "controller": {
+            "title": "Controller",
+            "type": "boolean"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "uid": {
+            "title": "Uid",
+            "type": "string"
+          }
+        },
+        "required": ["api_version", "kind", "name", "uid", "controller"],
+        "title": "OwnerReferenceView",
+        "type": "object"
+      },
+      "PayloadField": {
+        "enum": ["text", "arguments", "output", "confirmed_input", "command_input"],
+        "title": "PayloadField",
+        "type": "string"
+      },
+      "PodView": {
+        "additionalProperties": false,
+        "description": "The owned Pod's identity metadata and the kubelet's unmodified status object.",
+        "properties": {
+          "deleting": {
+            "title": "Deleting",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "namespace": {
+            "title": "Namespace",
+            "type": "string"
+          },
+          "node_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Node Name"
+          },
+          "owner_references": {
+            "items": {
+              "$ref": "#/components/schemas/OwnerReferenceView"
+            },
+            "title": "Owner References",
+            "type": "array"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "uid": {
+            "title": "Uid",
+            "type": "string"
+          }
+        },
+        "required": ["name", "namespace", "uid", "deleting", "owner_references"],
+        "title": "PodView",
+        "type": "object"
+      },
+      "PolicyGrant": {
+        "additionalProperties": false,
+        "properties": {
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the Policy Controller deletes the binding; absent grants until revoked.",
+            "title": "Expires At"
+          },
+          "policy_sets": {
+            "description": "PolicySet names of any rule type to grant, as one new binding naming this sandbox.",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Policy Sets",
+            "type": "array"
+          }
+        },
+        "required": ["policy_sets"],
+        "title": "PolicyGrant",
+        "type": "object"
+      },
+      "PolicySetView": {
+        "additionalProperties": false,
+        "properties": {
+          "generation": {
+            "title": "Generation",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "refused": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why an egress rule does not parse, when one does not; the egress proxy then enforces nothing from the set. Another reader's refusal is in its condition on the binding.",
+            "title": "Refused"
+          },
+          "rules": {
+            "description": "Every rule of every type in the set's order; none when it is refused.",
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "egress": "#/components/schemas/EgressRuleView",
+                  "other": "#/components/schemas/OtherRuleView"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/EgressRuleView"
+                },
+                {
+                  "$ref": "#/components/schemas/OtherRuleView"
+                }
+              ]
+            },
+            "title": "Rules",
+            "type": "array"
+          }
+        },
+        "required": ["name", "generation", "rules"],
+        "title": "PolicySetView",
+        "type": "object"
+      },
+      "PolicySource": {
+        "description": "Which PolicySet list contains a policy.",
+        "enum": ["rules"],
+        "title": "PolicySource",
+        "type": "string"
+      },
+      "RunnerSessionView": {
+        "properties": {
+          "active_turn_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Turn Id"
+          },
+          "busy": {
+            "title": "Busy",
+            "type": "boolean"
+          },
+          "execution_state": {
+            "enum": [
+              "SESSION_EXECUTION_STATE_DORMANT",
+              "SESSION_EXECUTION_STATE_PREPARING",
+              "SESSION_EXECUTION_STATE_READY",
+              "SESSION_EXECUTION_STATE_FAILED"
+            ],
+            "title": "Execution State",
+            "type": "string"
+          },
+          "failure_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Cursor"
+          },
+          "native_session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Native Session Id"
+          },
+          "process_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Process Id"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": ["session_id", "execution_state", "busy"],
+        "title": "RunnerSessionView",
+        "type": "object"
+      },
+      "RunnerStatusView": {
+        "properties": {
+          "processes": {
+            "items": {
+              "$ref": "#/components/schemas/HarnessProcessView"
+            },
+            "title": "Processes",
+            "type": "array"
+          },
+          "runner_boot_id": {
+            "title": "Runner Boot Id",
+            "type": "string"
+          },
+          "sessions": {
+            "items": {
+              "$ref": "#/components/schemas/RunnerSessionView"
+            },
+            "title": "Sessions",
+            "type": "array"
+          }
+        },
+        "required": ["runner_boot_id", "processes", "sessions"],
+        "title": "RunnerStatusView",
+        "type": "object"
+      },
+      "SandboxBinding": {
+        "additionalProperties": false,
+        "description": "The bootstrap script selected for the Sandbox.",
+        "properties": {
+          "bootstrap": {
+            "maxLength": 65536,
+            "title": "Bootstrap",
+            "type": "string"
+          }
+        },
+        "required": ["bootstrap"],
+        "title": "SandboxBinding",
+        "type": "object"
+      },
+      "SandboxForm": {
+        "additionalProperties": false,
+        "properties": {
+          "policy_sets": {
+            "description": "The PolicySets a new Sandbox may name.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Policy Sets",
+            "type": "array"
+          }
+        },
+        "required": ["policy_sets"],
+        "title": "SandboxForm",
+        "type": "object"
+      },
+      "SandboxIdleSuspendChange": {
+        "additionalProperties": false,
+        "description": "The idle suspension time, fenced to the Sandbox incarnation the browser displayed.",
+        "properties": {
+          "idle_suspend_after_seconds": {
+            "anyOf": [
+              {
+                "minimum": 60.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How long its runner must stay idle before the Sandbox is suspended; null turns it off.",
+            "title": "Idle Suspend After Seconds"
+          },
+          "uid": {
+            "format": "uuid",
+            "title": "Uid",
+            "type": "string"
+          }
+        },
+        "required": ["uid", "idle_suspend_after_seconds"],
+        "title": "SandboxIdleSuspendChange",
+        "type": "object"
+      },
+      "SandboxPhase": {
+        "description": "Where the Sandbox is in its lifecycle, as the shared Sandbox inventory derives it.",
+        "enum": ["Unspecified", "Creating", "Running", "Suspending", "Suspended", "Quiescing", "Tearing down"],
+        "title": "SandboxPhase",
+        "type": "string"
+      },
+      "SandboxPresetView": {
+        "additionalProperties": false,
+        "properties": {
+          "bootstrap": {
+            "title": "Bootstrap",
+            "type": "string"
+          },
+          "inbox_tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Inbox Tags",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "policy_sets": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Policy Sets",
+            "type": "array"
+          },
+          "session_defaults": {
+            "$ref": "#/components/schemas/SessionDefaults"
+          },
+          "template": {
+            "title": "Template",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": ["name", "title", "template", "policy_sets", "inbox_tags", "session_defaults", "bootstrap"],
+        "title": "SandboxPresetView",
+        "type": "object"
+      },
+      "SandboxSnapshot": {
+        "additionalProperties": false,
+        "description": "A frame of one sandbox's stream: the sandbox itself, the bindings that grant its account\nthings, what the Action Service auto-decides for it, and its threads.",
+        "properties": {
+          "action_policy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActionPolicyView"
+              },
+              {
+                "$ref": "#/components/schemas/ActionPolicyUnavailable"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Action Service's answer for the sandbox, or why it could not be asked; None only with the sandbox, since a policy subject pins its UID and a gone sandbox has none.",
+            "title": "Action Policy"
+          },
+          "bindings": {
+            "items": {
+              "$ref": "#/components/schemas/BindingView"
+            },
+            "title": "Bindings",
+            "type": "array"
+          },
+          "sandbox": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SandboxView"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "None once the sandbox is gone: deleted, or never there."
+          },
+          "threads": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ThreadView"
+                },
+                "type": "array"
+              },
+              {
+                "$ref": "#/components/schemas/ThreadsUnavailable"
+              }
+            ],
+            "title": "Threads"
+          },
+          "updates_connected": {
+            "description": "Whether this replica is listening for PostgreSQL Thread changes.",
+            "title": "Updates Connected",
+            "type": "boolean"
+          },
+          "watch": {
+            "$ref": "#/components/schemas/WatchHealth"
+          }
+        },
+        "required": ["sandbox", "bindings", "action_policy", "threads", "updates_connected", "watch"],
+        "title": "SandboxSnapshot",
+        "type": "object"
+      },
+      "SandboxView": {
+        "additionalProperties": false,
+        "description": "One inventory row: the Sandbox's identity plus what it and its Pod say.",
+        "properties": {
+          "binding": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SandboxBinding"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The bootstrap selected for this Sandbox."
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "idle_suspend_after_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How long its runner must stay idle before the Sandbox is suspended; null never.",
+            "title": "Idle Suspend After Seconds"
+          },
+          "name": {
+            "description": "The Sandbox name, and its Pod's; the handle for every operation.",
+            "title": "Name",
+            "type": "string"
+          },
+          "namespace": {
+            "title": "Namespace",
+            "type": "string"
+          },
+          "operating_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OperatingMode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The controller-reported effective mode; null until its first reconciliation."
+          },
+          "phase": {
+            "$ref": "#/components/schemas/SandboxPhase",
+            "description": "Unspecified means the controller has not reported an effective mode yet. Quiescing and Tearing down mean deletion was asked for: it seals and waits for its ingress, then is removed. A Sandbox in either takes no new work and cannot be suspended or resumed."
+          },
+          "pod": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PodView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "preset": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The preset it was made from, when it was made from one.",
+            "title": "Preset"
+          },
+          "service_account": {
+            "$ref": "#/components/schemas/ServiceAccountRef",
+            "description": "The ServiceAccount its Pod runs as, read off the Sandbox: the subject every egress and action-policy binding names it by."
+          },
+          "status": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "suspended_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SuspendedBy"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the Sandbox is suspended: its runner was idle for `idle_suspend_after_seconds`, or a requester suspended it. Null while it runs and until the controller reports."
+          },
+          "uid": {
+            "description": "The API server's identity of this Sandbox; what an owned binding references.",
+            "format": "uuid",
+            "title": "Uid",
+            "type": "string"
+          },
+          "wake_on_send": {
+            "default": false,
+            "description": "Whether an incoming message may resume this Sandbox.",
+            "title": "Wake On Send",
+            "type": "boolean"
+          }
+        },
+        "required": ["name", "uid", "namespace", "created_at", "service_account", "phase"],
+        "title": "SandboxView",
+        "type": "object"
+      },
+      "SandboxWakePolicyChange": {
+        "additionalProperties": false,
+        "description": "The user-controlled wake policy, fenced to the Sandbox incarnation the browser displayed.",
+        "properties": {
+          "uid": {
+            "format": "uuid",
+            "title": "Uid",
+            "type": "string"
+          },
+          "wake_on_send": {
+            "title": "Wake On Send",
+            "type": "boolean"
+          }
+        },
+        "required": ["uid", "wake_on_send"],
+        "title": "SandboxWakePolicyChange",
+        "type": "object"
+      },
+      "SandboxesSnapshot": {
+        "additionalProperties": false,
+        "description": "A frame of the sandbox-list stream.",
+        "properties": {
+          "sandboxes": {
+            "items": {
+              "$ref": "#/components/schemas/SandboxView"
+            },
+            "title": "Sandboxes",
+            "type": "array"
+          },
+          "watch": {
+            "$ref": "#/components/schemas/WatchHealth"
+          }
+        },
+        "required": ["sandboxes", "watch"],
+        "title": "SandboxesSnapshot",
+        "type": "object"
+      },
+      "SchemeTokenTarget": {
+        "additionalProperties": false,
+        "description": "`<scheme> <credential>`.",
+        "properties": {
+          "header": {
+            "description": "Request header this presentation puts the credential in.",
+            "minLength": 1,
+            "title": "Header",
+            "type": "string"
+          },
+          "method": {
+            "const": "schemeToken",
+            "title": "Method",
+            "type": "string"
+          },
+          "scheme": {
+            "description": "Scheme the value must carry, compared case-insensitively (`Bearer`).",
+            "minLength": 1,
+            "title": "Scheme",
+            "type": "string"
+          }
+        },
+        "required": ["header", "method", "scheme"],
+        "title": "SchemeTokenTarget",
+        "type": "object"
+      },
+      "ServiceAccountRef": {
+        "additionalProperties": false,
+        "description": "One ServiceAccount, by namespace and name.\n\nNamespaced because a subject is not always in the namespace enforcing it: an agent this cluster\ndoes not host runs where it runs, and naming its namespace is how a binding reaches it.",
+        "properties": {
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "namespace": {
+            "minLength": 1,
+            "title": "Namespace",
+            "type": "string"
+          }
+        },
+        "required": ["namespace", "name"],
+        "title": "ServiceAccountRef",
+        "type": "object"
+      },
+      "SessionDefaults": {
+        "additionalProperties": false,
+        "description": "Editable session launch fields; null means the caller deliberately left that field unspecified.",
+        "properties": {
+          "cwd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cwd"
+          },
+          "harness": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Harness"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "instructions": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instructions"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "reasoning_effort": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reasoning Effort"
+          },
+          "setup_script": {
+            "anyOf": [
+              {
+                "maxLength": 65536,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Setup Script"
+          }
+        },
+        "title": "SessionDefaults",
+        "type": "object"
+      },
+      "SubmitInputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "commandId": {
+            "minLength": 1,
+            "title": "Commandid",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": ["commandId", "text"],
+        "title": "SubmitInputBody",
+        "type": "object"
+      },
+      "SubsetRequest": {
+        "additionalProperties": false,
+        "description": "An Electric subset snapshot, as its client sends one.",
+        "properties": {
+          "limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limit"
+          },
+          "order_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order By"
+          },
+          "params": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Params"
+          },
+          "where": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Where"
+          }
+        },
+        "title": "SubsetRequest",
+        "type": "object"
+      },
+      "SuspendedBy": {
+        "description": "Why the Sandbox Controller reports a Sandbox as suspended.",
+        "enum": ["Idle", "Requested"],
+        "title": "SuspendedBy",
+        "type": "string"
+      },
+      "ThreadCommandEntityView": {
+        "additionalProperties": false,
+        "properties": {
+          "arguments_ref": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThreadPayloadReference"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cursor": {
+            "title": "Cursor",
+            "type": "integer"
+          },
+          "entity_id": {
+            "title": "Entity Id",
+            "type": "string"
+          },
+          "entity_kind": {
+            "const": "command",
+            "title": "Entity Kind",
+            "type": "string"
+          },
+          "input_ref": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThreadPayloadReference"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "output_ref": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThreadPayloadReference"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pending": {
+            "title": "Pending",
+            "type": "boolean"
+          },
+          "projection_epoch": {
+            "title": "Projection Epoch",
+            "type": "string"
+          },
+          "revision_cursor": {
+            "title": "Revision Cursor",
+            "type": "integer"
+          },
+          "state": {
+            "$ref": "#/components/schemas/ThreadCommandState"
+          },
+          "text_ref": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThreadPayloadReference"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "thread_id": {
+            "format": "uuid",
+            "title": "Thread Id",
+            "type": "string"
+          },
+          "turn_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turn Id"
+          }
+        },
+        "required": [
+          "thread_id",
+          "projection_epoch",
+          "entity_id",
+          "cursor",
+          "revision_cursor",
+          "pending",
+          "turn_id",
+          "text_ref",
+          "arguments_ref",
+          "output_ref",
+          "input_ref",
+          "entity_kind",
+          "state"
+        ],
+        "title": "ThreadCommandEntityView",
+        "type": "object"
+      },
+      "ThreadCommandState": {
+        "additionalProperties": false,
+        "properties": {
+          "operation": {
+            "title": "Operation",
+            "type": "string"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/CommandOutcome"
+          },
+          "outcome_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome Cursor"
+          },
+          "outcome_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome Reason"
+          },
+          "requested_value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Requested Value"
+          }
+        },
+        "required": ["operation", "outcome", "outcome_cursor", "outcome_reason"],
+        "title": "ThreadCommandState",
+        "type": "object"
+      },
+      "ThreadConfirmedInputEntityView": {
+        "additionalProperties": false,
+        "properties": {
+          "arguments_ref": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThreadPayloadReference"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cursor": {
+            "title": "Cursor",
+            "type": "integer"
+          },
+          "entity_id": {
+            "title": "Entity Id",
+            "type": "string"
+          },
+          "entity_kind": {
+            "const": "confirmed_input",
+            "title": "Entity Kind",
+            "type": "string"
+          },
+          "input_ref": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThreadPayloadReference"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "output_ref": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThreadPayloadReference"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pending": {
+            "title": "Pending",
+            "type": "boolean"
+          },
+          "projection_epoch": {
+            "title": "Projection Epoch",
+            "type": "string"
+          },
+          "revision_cursor": {
+            "title": "Revision Cursor",
+            "type": "integer"
+          },
+          "state": {
+            "$ref": "#/components/schemas/ThreadConfirmedInputState"
+          },
+          "text_ref": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThreadPayloadReference"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "thread_id": {
+            "format": "uuid",
+            "title": "Thread Id",
+            "type": "string"
+          },
+          "turn_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turn Id"
+          }
+        },
+        "required": [
+          "thread_id",
+          "projection_epoch",
+          "entity_id",
+          "cursor",
+          "revision_cursor",
+          "pending",
+          "turn_id",
+          "text_ref",
+          "arguments_ref",
+          "output_ref",
+          "input_ref",
+          "entity_kind",
+          "state"
+        ],
+        "title": "ThreadConfirmedInputEntityView",
+        "type": "object"
+      },
+      "ThreadConfirmedInputState": {
+        "additionalProperties": false,
+        "properties": {
+          "harness_message_id": {
+            "title": "Harness Message Id",
+            "type": "string"
+          },
+          "origin_command_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Origin Command Ids",
+            "type": "array"
+          }
+        },
+        "required": ["harness_message_id", "origin_command_ids"],
+        "title": "ThreadConfirmedInputState",
+        "type": "object"
+      },
+      "ThreadControlsState": {
+        "additionalProperties": false,
+        "properties": {
+          "active_turn_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Turn Id"
+          },
+          "applied_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Applied Model"
+          },
+          "applied_reasoning_effort": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Applied Reasoning Effort"
+          },
+          "harness_state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Harness State"
+          }
+        },
+        "required": ["applied_model", "active_turn_id", "harness_state"],
+        "title": "ThreadControlsState",
+        "type": "object"
+      },
+      "ThreadEntityView": {
+        "discriminator": {
+          "mapping": {
+            "command": "#/components/schemas/ThreadCommandEntityView",
+            "confirmed_input": "#/components/schemas/ThreadConfirmedInputEntityView",
+            "item": "#/components/schemas/ThreadItemEntityView",
+            "lifecycle": "#/components/schemas/ThreadLifecycleEntityView",
+            "view_state": "#/components/schemas/ThreadViewStateEntityView"
+          },
+          "propertyName": "entity_kind"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ThreadViewStateEntityView"
+          },
+          {
+            "$ref": "#/components/schemas/ThreadItemEntityView"
+          },
+          {
+            "$ref": "#/components/schemas/ThreadConfirmedInputEntityView"
+          },
+          {
+            "$ref": "#/components/schemas/ThreadLifecycleEntityView"
+          },
+          {
+            "$ref": "#/components/schemas/ThreadCommandEntityView"
+          }
+        ]
+      },
+      "ThreadFeedErrorState": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cursor"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": ["cursor", "message"],
+        "title": "ThreadFeedErrorState",
+        "type": "object"
+      },
+      "ThreadForm": {
+        "additionalProperties": false,
+        "properties": {
+          "auto_title_on_first_message_default": {
+            "title": "Auto Title On First Message Default",
+            "type": "boolean"
+          },
+          "title_generation_available": {
+            "title": "Title Generation Available",
+            "type": "boolean"
+          }
+        },
+        "required": ["auto_title_on_first_message_default", "title_generation_available"],
+        "title": "ThreadForm",
+        "type": "object"
+      },
+      "ThreadItemEntityView": {
+        "additionalProperties": false,
+        "properties": {
+          "arguments_ref": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThreadPayloadReference"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cursor": {
+            "title": "Cursor",
+            "type": "integer"
+          },
+          "entity_id": {
+            "title": "Entity Id",
+            "type": "string"
+          },
+          "entity_kind": {
+            "const": "item",
+            "title": "Entity Kind",
+            "type": "string"
+          },
+          "input_ref": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThreadPayloadReference"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "output_ref": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThreadPayloadReference"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pending": {
+            "title": "Pending",
+            "type": "boolean"
+          },
+          "projection_epoch": {
+            "title": "Projection Epoch",
+            "type": "string"
+          },
+          "revision_cursor": {
+            "title": "Revision Cursor",
+            "type": "integer"
+          },
+          "state": {
+            "$ref": "#/components/schemas/ThreadItemState"
+          },
+          "text_ref": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThreadPayloadReference"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "thread_id": {
+            "format": "uuid",
+            "title": "Thread Id",
+            "type": "string"
+          },
+          "turn_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turn Id"
+          }
+        },
+        "required": [
+          "thread_id",
+          "projection_epoch",
+          "entity_id",
+          "cursor",
+          "revision_cursor",
+          "pending",
+          "turn_id",
+          "text_ref",
+          "arguments_ref",
+          "output_ref",
+          "input_ref",
+          "entity_kind",
+          "state"
+        ],
+        "title": "ThreadItemEntityView",
+        "type": "object"
+      },
+      "ThreadItemState": {
+        "additionalProperties": false,
+        "properties": {
+          "completion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completion"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "integer"
+          },
+          "recovery": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recovery"
+          },
+          "recovery_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recovery Reason"
+          },
+          "tool_name": {
+            "title": "Tool Name",
+            "type": "string"
+          },
+          "tool_succeeded": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Succeeded"
+          }
+        },
+        "required": ["kind", "tool_name", "completion", "tool_succeeded", "recovery", "recovery_reason"],
+        "title": "ThreadItemState",
+        "type": "object"
+      },
+      "ThreadLifecycleEntityView": {
+        "additionalProperties": false,
+        "properties": {
+          "arguments_ref": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThreadPayloadReference"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cursor": {
+            "title": "Cursor",
+            "type": "integer"
+          },
+          "entity_id": {
+            "title": "Entity Id",
+            "type": "string"
+          },
+          "entity_kind": {
+            "const": "lifecycle",
+            "title": "Entity Kind",
+            "type": "string"
+          },
+          "input_ref": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThreadPayloadReference"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "output_ref": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThreadPayloadReference"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pending": {
+            "title": "Pending",
+            "type": "boolean"
+          },
+          "projection_epoch": {
+            "title": "Projection Epoch",
+            "type": "string"
+          },
+          "revision_cursor": {
+            "title": "Revision Cursor",
+            "type": "integer"
+          },
+          "state": {
+            "$ref": "#/components/schemas/ThreadLifecycleState"
+          },
+          "text_ref": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThreadPayloadReference"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "thread_id": {
+            "format": "uuid",
+            "title": "Thread Id",
+            "type": "string"
+          },
+          "turn_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turn Id"
+          }
+        },
+        "required": [
+          "thread_id",
+          "projection_epoch",
+          "entity_id",
+          "cursor",
+          "revision_cursor",
+          "pending",
+          "turn_id",
+          "text_ref",
+          "arguments_ref",
+          "output_ref",
+          "input_ref",
+          "entity_kind",
+          "state"
+        ],
+        "title": "ThreadLifecycleEntityView",
+        "type": "object"
+      },
+      "ThreadLifecycleState": {
+        "additionalProperties": false,
+        "properties": {
+          "event": {
+            "$ref": "#/components/schemas/JsonValue"
+          },
+          "observation": {
+            "title": "Observation",
+            "type": "string"
+          }
+        },
+        "required": ["observation", "event"],
+        "title": "ThreadLifecycleState",
+        "type": "object"
+      },
+      "ThreadOperationalState": {
+        "additionalProperties": false,
+        "description": "Feed lifecycle state with an independent version, never a fabricated runner cursor.",
+        "properties": {
+          "feed_error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThreadFeedErrorState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "last_verified_cursor": {
+            "title": "Last Verified Cursor",
+            "type": "string"
+          },
+          "status": {
+            "enum": ["active", "ended", "failed"],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": ["status", "last_verified_cursor", "feed_error"],
+        "title": "ThreadOperationalState",
+        "type": "object"
+      },
+      "ThreadPage": {
+        "additionalProperties": false,
+        "properties": {
+          "next_page_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Continues this listing; None on its last page.",
+            "title": "Next Page Token"
+          },
+          "threads": {
+            "items": {
+              "$ref": "#/components/schemas/ThreadView"
+            },
+            "title": "Threads",
+            "type": "array"
+          }
+        },
+        "required": ["threads", "next_page_token"],
+        "title": "ThreadPage",
+        "type": "object"
+      },
+      "ThreadPayloadReference": {
+        "additionalProperties": false,
+        "properties": {
+          "chunk_count": {
+            "description": "How many of the generation's chunks this revision spans; a reader renders at most these.",
+            "title": "Chunk Count",
+            "type": "string"
+          },
+          "field": {
+            "$ref": "#/components/schemas/PayloadField"
+          },
+          "generation": {
+            "title": "Generation",
+            "type": "string"
+          },
+          "owner_cursor": {
+            "title": "Owner Cursor",
+            "type": "string"
+          },
+          "owner_id": {
+            "title": "Owner Id",
+            "type": "string"
+          },
+          "projection_epoch": {
+            "title": "Projection Epoch",
+            "type": "string"
+          },
+          "revision_cursor": {
+            "title": "Revision Cursor",
+            "type": "string"
+          }
+        },
+        "required": [
+          "projection_epoch",
+          "owner_cursor",
+          "owner_id",
+          "field",
+          "revision_cursor",
+          "generation",
+          "chunk_count"
+        ],
+        "title": "ThreadPayloadReference",
+        "type": "object"
+      },
+      "ThreadRename": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The new name, whitespace-trimmed; blank or null leaves the thread unnamed.",
+            "title": "Name"
+          }
+        },
+        "required": ["name"],
+        "title": "ThreadRename",
+        "type": "object"
+      },
+      "ThreadScopeResponse": {
+        "properties": {
+          "projection_epoch": {
+            "description": "The epoch a reader names on every shape request; a stale one gets 410.",
+            "title": "Projection Epoch",
+            "type": "string"
+          },
+          "through_cursor": {
+            "description": "The last event the fold has applied; the reader is caught up at it.",
+            "title": "Through Cursor",
+            "type": "string"
+          }
+        },
+        "required": ["projection_epoch", "through_cursor"],
+        "title": "ThreadScopeResponse",
+        "type": "object"
+      },
+      "ThreadView": {
+        "additionalProperties": false,
+        "properties": {
+          "active_turn_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The runner's currently active turn, or None when it is idle.",
+            "title": "Active Turn Id"
+          },
+          "archived": {
+            "title": "Archived",
+            "type": "boolean"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "cwd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The runner's working directory, from the last attached runner's spec; None until an attachment is folded.",
+            "title": "Cwd"
+          },
+          "feed_status": {
+            "anyOf": [
+              {
+                "enum": ["active", "ended", "failed"],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Runner feed lifecycle; None before the first attachment.",
+            "title": "Feed Status"
+          },
+          "harness": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Harness"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The runner protocol Harness enum member, from the last attached runner's spec; None until the Thread's fold summary has a runner attachment."
+          },
+          "harness_state": {
+            "description": "The protocol's HarnessState enum member, by name: HARNESS_STATE_RUNNING, HARNESS_STATE_STOPPED, or HARNESS_STATE_UNSPECIFIED while no feed has ever attached to this thread.",
+            "title": "Harness State",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "idle_since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the harness last became idle, running with no turn in progress; None while a turn runs, while the harness is stopped, or before the fold has seen the event that sets it.",
+            "title": "Idle Since"
+          },
+          "last_cursor": {
+            "description": "The highest stored Event cursor; 0 while nothing is stored.",
+            "title": "Last Cursor",
+            "type": "integer"
+          },
+          "last_event_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Event At"
+          },
+          "last_model_activity_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Inferred from this Thread's model-originated events; not an observed provider request or cache hit.",
+            "title": "Last Model Activity At"
+          },
+          "last_turn_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The protocol's TurnStatus enum member, by name, of the thread's most recently completed turn: TURN_STATUS_COMPLETED, TURN_STATUS_INTERRUPTED, TURN_STATUS_FAILED, TURN_STATUS_PROCESS_LOST, or TURN_STATUS_UNSPECIFIED when the turn ended without a status; None while no turn has completed.",
+            "title": "Last Turn Status"
+          },
+          "launch_outcome": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The protocol's LaunchOutcome enum member, by name: whether the harness's first launch is still pending, started or failed; None before attachment.",
+            "title": "Launch Outcome"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The current model, from the last attached runner's spec; None until an attachment is folded.",
+            "title": "Model"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Thread title; None while the thread is unnamed.",
+            "title": "Name"
+          },
+          "reasoning_effort": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Last attached runner reasoning effort; None before attachment.",
+            "title": "Reasoning Effort"
+          },
+          "sandbox": {
+            "title": "Sandbox",
+            "type": "string"
+          },
+          "setup_state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "One-shot Thread setup state, once attached.",
+            "title": "Setup State"
+          }
+        },
+        "required": [
+          "id",
+          "sandbox",
+          "harness",
+          "model",
+          "cwd",
+          "created_at",
+          "name",
+          "archived",
+          "last_cursor",
+          "harness_state"
+        ],
+        "title": "ThreadView",
+        "type": "object"
+      },
+      "ThreadViewState": {
+        "additionalProperties": false,
+        "properties": {
+          "controls": {
+            "$ref": "#/components/schemas/ThreadControlsState"
+          },
+          "operational": {
+            "$ref": "#/components/schemas/ThreadOperationalState"
+          }
+        },
+        "required": ["controls", "operational"],
+        "title": "ThreadViewState",
+        "type": "object"
+      },
+      "ThreadViewStateEntityView": {
+        "additionalProperties": false,
+        "properties": {
+          "arguments_ref": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThreadPayloadReference"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cursor": {
+            "title": "Cursor",
+            "type": "integer"
+          },
+          "entity_id": {
+            "title": "Entity Id",
+            "type": "string"
+          },
+          "entity_kind": {
+            "const": "view_state",
+            "title": "Entity Kind",
+            "type": "string"
+          },
+          "input_ref": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThreadPayloadReference"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "output_ref": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThreadPayloadReference"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pending": {
+            "title": "Pending",
+            "type": "boolean"
+          },
+          "projection_epoch": {
+            "title": "Projection Epoch",
+            "type": "string"
+          },
+          "revision_cursor": {
+            "title": "Revision Cursor",
+            "type": "integer"
+          },
+          "state": {
+            "$ref": "#/components/schemas/ThreadViewState"
+          },
+          "text_ref": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThreadPayloadReference"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "thread_id": {
+            "format": "uuid",
+            "title": "Thread Id",
+            "type": "string"
+          },
+          "turn_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turn Id"
+          }
+        },
+        "required": [
+          "thread_id",
+          "projection_epoch",
+          "entity_id",
+          "cursor",
+          "revision_cursor",
+          "pending",
+          "turn_id",
+          "text_ref",
+          "arguments_ref",
+          "output_ref",
+          "input_ref",
+          "entity_kind",
+          "state"
+        ],
+        "title": "ThreadViewStateEntityView",
+        "type": "object"
+      },
+      "ThreadsSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "archived_count": {
+            "description": "Archived threads in all, whether or not the listing carries them.",
+            "title": "Archived Count",
+            "type": "integer"
+          },
+          "more": {
+            "description": "Whether the listing has threads past these.",
+            "title": "More",
+            "type": "boolean"
+          },
+          "sandboxes": {
+            "items": {
+              "$ref": "#/components/schemas/SandboxView"
+            },
+            "title": "Sandboxes",
+            "type": "array"
+          },
+          "threads": {
+            "description": "The newest threads of the listing, newest first, then the open thread if it is not among them.",
+            "items": {
+              "$ref": "#/components/schemas/ThreadView"
+            },
+            "title": "Threads",
+            "type": "array"
+          },
+          "updates_connected": {
+            "description": "Whether this replica is listening for PostgreSQL Thread changes.",
+            "title": "Updates Connected",
+            "type": "boolean"
+          },
+          "watch": {
+            "$ref": "#/components/schemas/WatchHealth"
+          }
+        },
+        "required": ["sandboxes", "watch", "threads", "more", "archived_count", "updates_connected"],
+        "title": "ThreadsSnapshot",
+        "type": "object"
+      },
+      "ThreadsUnavailable": {
+        "additionalProperties": false,
+        "description": "The Runner Gateway could not say which Sessions run in the sandbox, so its threads are not\nknown; carried in the frame so the rest of the page, its lifecycle controls included, still\nshows.",
+        "properties": {
+          "code": {
+            "description": "The gRPC status code the Runner Gateway answered with.",
+            "title": "Code",
+            "type": "string"
+          },
+          "kind": {
+            "const": "unavailable",
+            "default": "unavailable",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": ["code"],
+        "title": "ThreadsUnavailable",
+        "type": "object"
+      },
+      "UpstreamFailure": {
+        "additionalProperties": false,
+        "description": "A failed upstream request -- to the identity provider or the Action Service -- without\ncredentials, query, or provider text.",
+        "properties": {
+          "error_type": {
+            "description": "The httpx exception class, which names the failure shape.",
+            "title": "Error Type",
+            "type": "string"
+          },
+          "method": {
+            "title": "Method",
+            "type": "string"
+          },
+          "upstream_status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The status answered, or None when no response arrived.",
+            "title": "Upstream Status"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": ["method", "url", "upstream_status", "error_type"],
+        "title": "UpstreamFailure",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": ["loc", "msg", "type"],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "WatchHealth": {
+        "additionalProperties": false,
+        "description": "Whether what the frame carries is still moving, and the ages the verdict is drawn from.",
+        "properties": {
+          "fresh": {
+            "description": "False once any kind has missed its cycles: the data may be stale.",
+            "title": "Fresh",
+            "type": "boolean"
+          },
+          "refreshed_seconds_ago": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "description": "Per watched kind, how long ago it last completed a list-and-watch cycle.",
+            "title": "Refreshed Seconds Ago",
+            "type": "object"
+          },
+          "stale_after_seconds": {
+            "title": "Stale After Seconds",
+            "type": "number"
+          }
+        },
+        "required": ["fresh", "stale_after_seconds", "refreshed_seconds_ago"],
+        "title": "WatchHealth",
+        "type": "object"
+      },
+      "WholeValueTarget": {
+        "additionalProperties": false,
+        "description": "`<credential>` \u2014 the header value is the credential and nothing else.",
+        "properties": {
+          "header": {
+            "description": "Request header this presentation puts the credential in.",
+            "minLength": 1,
+            "title": "Header",
+            "type": "string"
+          },
+          "method": {
+            "const": "wholeValue",
+            "title": "Method",
+            "type": "string"
+          }
+        },
+        "required": ["header", "method"],
+        "title": "WholeValueTarget",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "Agentplane",
+    "version": "0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/action-policy/sets": {
+      "get": {
+        "description": "The namespace's sets with the Action Service's verdict on each: what a launch picks from.",
+        "operationId": "list_policy_sets_action_policy_sets_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ActionPolicySetView"
+                  },
+                  "title": "Response List Policy Sets Action Policy Sets Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Policy Sets",
+        "tags": ["action-policy"]
+      }
+    },
+    "/caller-grants/{namespace}/{name}": {
+      "get": {
+        "description": "Inspect an account even without a Sandbox or current Action-caller label.",
+        "operationId": "caller_grants_caller_grants__namespace___name__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "namespace",
+            "required": true,
+            "schema": {
+              "title": "Namespace",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallerGrantView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Caller Grants",
+        "tags": ["operator"]
+      }
+    },
+    "/live/sandboxes": {
+      "get": {
+        "description": "The sandbox list, pushed.",
+        "operationId": "live_sandboxes_live_sandboxes_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SandboxesSnapshot"
+                }
+              },
+              "text/event-stream": {}
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Live Sandboxes",
+        "tags": ["live"]
+      }
+    },
+    "/live/sandboxes/{name}": {
+      "get": {
+        "description": "One sandbox page, pushed: the sandbox, its bindings, its action policy, and its threads.\n\nThreads are not Kubernetes and no watch reaches them; the store notifies when it creates,\nrenames, or archives one, which is every change a page shows. The action policy is the Action\nService's answer, asked as the operator this session is; the watch on the policy kinds only says\nwhen to ask again.",
+        "operationId": "live_sandbox_live_sandboxes__name__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Also carry archived threads.",
+            "in": "query",
+            "name": "include_archived",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Also carry archived threads.",
+              "title": "Include Archived",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SandboxSnapshot"
+                }
+              },
+              "text/event-stream": {}
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Live Sandbox",
+        "tags": ["live"]
+      }
+    },
+    "/live/sandboxes/{name}/egress/decisions": {
+      "get": {
+        "description": "Follow the proxy's subject-filtered snapshots; keep backend outages visible to the browser.",
+        "operationId": "live_egress_decisions_live_sandboxes__name__egress_decisions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisionsSnapshot"
+                }
+              },
+              "text/event-stream": {}
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Live Egress Decisions",
+        "tags": ["live"]
+      }
+    },
+    "/live/threads": {
+      "get": {
+        "description": "The sidebar's window onto the thread list, pushed: a reader who wants more asks again with a\nlarger `limit`, so every thread it shows stays current.",
+        "operationId": "live_threads_live_threads_get",
+        "parameters": [
+          {
+            "description": "Carry at most this many of the listing.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "description": "Carry at most this many of the listing.",
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Only threads whose name or sandbox contains this, or whose ID starts with it.",
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only threads whose name or sandbox contains this, or whose ID starts with it.",
+              "title": "Search"
+            }
+          },
+          {
+            "description": "Also list archived threads.",
+            "in": "query",
+            "name": "include_archived",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Also list archived threads.",
+              "title": "Include Archived",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Also carry this thread, whether or not the listing reaches it.",
+            "in": "query",
+            "name": "open_thread",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Also carry this thread, whether or not the listing reaches it.",
+              "title": "Open Thread"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadsSnapshot"
+                }
+              },
+              "text/event-stream": {}
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Live Threads",
+        "tags": ["live"]
+      }
+    },
+    "/mcp-linkage/callback": {
+      "get": {
+        "description": "Bridge the provider's registered callback to the public Action Service callback.",
+        "operationId": "complete_mcp_linkage_mcp_linkage_callback_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "state",
+            "required": true,
+            "schema": {
+              "title": "State",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "303": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "See Other",
+            "headers": {
+              "Location": {
+                "description": "Frontend route after successful linkage.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Complete Mcp Linkage",
+        "tags": ["connections"]
+      }
+    },
+    "/models": {
+      "get": {
+        "operationId": "list_models_models_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelCatalog"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Models",
+        "tags": ["models"]
+      }
+    },
+    "/policy-bindings/{name}": {
+      "delete": {
+        "description": "Revoke a runtime binding by deleting it; one from git or the Sandbox's own is refused with 409.",
+        "operationId": "revoke_binding_policy_bindings__name__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke Binding",
+        "tags": ["policy-bindings"]
+      }
+    },
+    "/presets": {
+      "get": {
+        "operationId": "list_presets_presets_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SandboxPresetView"
+                  },
+                  "title": "Response List Presets Presets Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Presets",
+        "tags": ["presets"]
+      }
+    },
+    "/sandboxes": {
+      "get": {
+        "operationId": "list_sandboxes_sandboxes_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SandboxView"
+                  },
+                  "title": "Response List Sandboxes Sandboxes Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Sandboxes",
+        "tags": ["sandboxes"]
+      },
+      "post": {
+        "description": "Create exactly the fields the caller selected; browser presets have already filled them.",
+        "operationId": "create_sandbox_sandboxes_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewSandbox"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SandboxView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Sandbox",
+        "tags": ["sandboxes"]
+      }
+    },
+    "/sandboxes/form": {
+      "get": {
+        "description": "What the create form offers.",
+        "operationId": "sandbox_form_sandboxes_form_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SandboxForm"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Sandbox Form",
+        "tags": ["sandboxes"]
+      }
+    },
+    "/sandboxes/templates": {
+      "get": {
+        "description": "The templates the operator may select in a concrete new-Sandbox request.",
+        "operationId": "list_templates_sandboxes_templates_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "title": "Response List Templates Sandboxes Templates Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Templates",
+        "tags": ["sandboxes"]
+      }
+    },
+    "/sandboxes/{name}": {
+      "delete": {
+        "description": "Start deleting the sandbox and everything on its volume, once its runner's ingress has\nacknowledged every Session's seal; 409 while it is still running.",
+        "operationId": "delete_sandbox_sandboxes__name__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Sandbox",
+        "tags": ["sandboxes"]
+      },
+      "get": {
+        "operationId": "get_sandbox_sandboxes__name__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SandboxView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Sandbox",
+        "tags": ["sandboxes"]
+      }
+    },
+    "/sandboxes/{name}/console/stream": {
+      "get": {
+        "description": "Operator-only SSE of a VM Sandbox's serial console from now on; each `output` event carries\nbase64 bytes. The console is output-only here: nothing reaches the guest.",
+        "operationId": "sandbox_console_stream_sandboxes__name__console_stream_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sandbox Console Stream",
+        "tags": ["sandboxes"]
+      }
+    },
+    "/sandboxes/{name}/egress": {
+      "get": {
+        "description": "The bindings naming the ServiceAccount the sandbox runs as, with the policy sets they name.",
+        "operationId": "sandbox_egress_sandboxes__name__egress_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/BindingView"
+                  },
+                  "title": "Response Sandbox Egress Sandboxes  Name  Egress Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sandbox Egress",
+        "tags": ["sandboxes"]
+      }
+    },
+    "/sandboxes/{name}/idle-suspend": {
+      "patch": {
+        "description": "Change how long this exact Sandbox incarnation's runner must be idle before it is suspended.",
+        "operationId": "set_sandbox_idle_suspend_sandboxes__name__idle_suspend_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SandboxIdleSuspendChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Sandbox Idle Suspend",
+        "tags": ["sandboxes"]
+      }
+    },
+    "/sandboxes/{name}/notifications/stream": {
+      "get": {
+        "description": "Operator-only SSE of the Sandbox's notification state, scoped to the current incarnation's UID.",
+        "operationId": "sandbox_notifications_stream_sandboxes__name__notifications_stream_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sandbox Notifications Stream",
+        "tags": ["sandboxes"]
+      }
+    },
+    "/sandboxes/{name}/policy-bindings": {
+      "post": {
+        "description": "Grant policy sets of any rule type to a sandbox already running: a new binding naming it,\nnever an edit of one it has, so this grant's expiry and revocation are its own. Operator login\nonly: a workload token must not be able to widen anyone's authority through the app.",
+        "operationId": "grant_sandbox_policy_sets_sandboxes__name__policy_bindings_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PolicyGrant"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BindingView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Grant Sandbox Policy Sets",
+        "tags": ["sandboxes"]
+      }
+    },
+    "/sandboxes/{name}/resume": {
+      "post": {
+        "operationId": "resume_sandbox_sandboxes__name__resume_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Resume Sandbox",
+        "tags": ["sandboxes"]
+      }
+    },
+    "/sandboxes/{name}/runner-status": {
+      "get": {
+        "operationId": "sandbox_runner_status_sandboxes__name__runner_status_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerStatusView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sandbox Runner Status",
+        "tags": ["sandboxes"]
+      }
+    },
+    "/sandboxes/{name}/sessions": {
+      "post": {
+        "operationId": "create_session_sandboxes__name__sessions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewSession"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Session Sandboxes  Name  Sessions Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Session",
+        "tags": ["sessions"]
+      }
+    },
+    "/sandboxes/{name}/sessions/{session_id}/opening": {
+      "get": {
+        "operationId": "session_opening_sandboxes__name__sessions__session_id__opening_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Session Opening Sandboxes  Name  Sessions  Session Id  Opening Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Session Opening",
+        "tags": ["sessions"]
+      }
+    },
+    "/sandboxes/{name}/suspend": {
+      "post": {
+        "operationId": "suspend_sandbox_sandboxes__name__suspend_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Suspend Sandbox",
+        "tags": ["sandboxes"]
+      }
+    },
+    "/sandboxes/{name}/wake-policy": {
+      "patch": {
+        "description": "Change whether messages may resume this exact Sandbox incarnation; this does not wake it.",
+        "operationId": "set_sandbox_wake_policy_sandboxes__name__wake_policy_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SandboxWakePolicyChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Sandbox Wake Policy",
+        "tags": ["sandboxes"]
+      }
+    },
+    "/system/status": {
+      "get": {
+        "operationId": "read_system_status_system_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ComponentStatus"
+                  },
+                  "title": "Response Read System Status System Status Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Read System Status",
+        "tags": ["system"]
+      }
+    },
+    "/threads": {
+      "get": {
+        "description": "Persisted threads, newest first; a thread outlives its sandbox.",
+        "operationId": "list_threads_threads_get",
+        "parameters": [
+          {
+            "description": "Only threads of this sandbox.",
+            "in": "query",
+            "name": "sandbox",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only threads of this sandbox.",
+              "title": "Sandbox"
+            }
+          },
+          {
+            "description": "Also list archived threads.",
+            "in": "query",
+            "name": "include_archived",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Also list archived threads.",
+              "title": "Include Archived",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Only threads whose name or sandbox contains this, or whose ID starts with it.",
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only threads whose name or sandbox contains this, or whose ID starts with it.",
+              "title": "Search"
+            }
+          },
+          {
+            "description": "At most this many threads.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "description": "At most this many threads.",
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "A previous page's `next_page_token`, with the same filters.",
+            "in": "query",
+            "name": "page_token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A previous page's `next_page_token`, with the same filters.",
+              "title": "Page Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Threads",
+        "tags": ["threads"]
+      }
+    },
+    "/threads/form": {
+      "get": {
+        "operationId": "thread_form_threads_form_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadForm"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Thread Form",
+        "tags": ["threads"]
+      }
+    },
+    "/threads/notices/stream": {
+      "get": {
+        "description": "Operator-only SSE of the named threads' live notification inboxes: entries queued for a\nnotice, entries a notice delivered that the agent has not acknowledged, and how far the latest\nnotice got. Following it acknowledges nothing.",
+        "operationId": "thread_notices_stream_threads_notices_stream_get",
+        "parameters": [
+          {
+            "description": "The threads to follow.",
+            "in": "query",
+            "name": "thread_id",
+            "required": true,
+            "schema": {
+              "description": "The threads to follow.",
+              "items": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "maxItems": 200,
+              "title": "Thread Id",
+              "type": "array"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Thread Notices Stream",
+        "tags": ["threads"]
+      }
+    },
+    "/threads/{thread_id}": {
+      "get": {
+        "operationId": "get_thread_threads__thread_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "thread_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Thread Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Thread",
+        "tags": ["threads"]
+      },
+      "patch": {
+        "operationId": "rename_thread_threads__thread_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "thread_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Thread Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ThreadRename"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rename Thread",
+        "tags": ["threads"]
+      }
+    },
+    "/threads/{thread_id}/archive": {
+      "post": {
+        "operationId": "archive_thread_threads__thread_id__archive_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "thread_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Thread Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Archive Thread",
+        "tags": ["threads"]
+      }
+    },
+    "/threads/{thread_id}/auto-title": {
+      "post": {
+        "operationId": "auto_title_thread_threads__thread_id__auto_title_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "thread_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Thread Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Auto Title Thread",
+        "tags": ["threads"]
+      }
+    },
+    "/threads/{thread_id}/change-model": {
+      "post": {
+        "operationId": "change_model_threads__thread_id__change_model_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "thread_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Thread Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangeModelBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "discriminator": {
+                    "mapping": {
+                      "archived_admission": "#/components/schemas/ArchivedCommandAdmission",
+                      "dispatch": "#/components/schemas/DispatchedCommand"
+                    },
+                    "propertyName": "kind"
+                  },
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/DispatchedCommand"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ArchivedCommandAdmission"
+                    }
+                  ],
+                  "title": "Response Change Model Threads  Thread Id  Change Model Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Change Model",
+        "tags": ["threads"]
+      }
+    },
+    "/threads/{thread_id}/change-reasoning-effort": {
+      "post": {
+        "operationId": "change_reasoning_effort_threads__thread_id__change_reasoning_effort_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "thread_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Thread Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangeReasoningEffortBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "discriminator": {
+                    "mapping": {
+                      "archived_admission": "#/components/schemas/ArchivedCommandAdmission",
+                      "dispatch": "#/components/schemas/DispatchedCommand"
+                    },
+                    "propertyName": "kind"
+                  },
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/DispatchedCommand"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ArchivedCommandAdmission"
+                    }
+                  ],
+                  "title": "Response Change Reasoning Effort Threads  Thread Id  Change Reasoning Effort Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Change Reasoning Effort",
+        "tags": ["threads"]
+      }
+    },
+    "/threads/{thread_id}/events/stream": {
+      "get": {
+        "operationId": "thread_event_stream_threads__thread_id__events_stream_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "thread_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Thread Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Replay EventEntries with a greater cursor.",
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Replay EventEntries with a greater cursor.",
+              "minimum": 0,
+              "title": "After",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "A command submitted after `after`: the stream does not end before its admission.",
+            "in": "query",
+            "name": "awaiting_command_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A command submitted after `after`: the stream does not end before its admission.",
+              "title": "Awaiting Command Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "last-event-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Last-Event-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Thread Event Stream",
+        "tags": ["threads"]
+      }
+    },
+    "/threads/{thread_id}/evidence": {
+      "get": {
+        "operationId": "thread_evidence_threads__thread_id__evidence_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "thread_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Thread Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "projection_epoch",
+            "required": true,
+            "schema": {
+              "title": "Projection Epoch",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "entity_kind",
+            "required": true,
+            "schema": {
+              "title": "Entity Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "entity_id",
+            "required": true,
+            "schema": {
+              "title": "Entity Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after_cursor",
+            "required": false,
+            "schema": {
+              "default": "0",
+              "pattern": "^\\d+$",
+              "title": "After Cursor",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvidencePage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Thread Evidence",
+        "tags": ["threads"]
+      }
+    },
+    "/threads/{thread_id}/evidence/{observation_cursor}/frames": {
+      "get": {
+        "operationId": "thread_native_frames_threads__thread_id__evidence__observation_cursor__frames_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "thread_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Thread Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "observation_cursor",
+            "required": true,
+            "schema": {
+              "pattern": "^\\d+$",
+              "title": "Observation Cursor",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "projection_epoch",
+            "required": true,
+            "schema": {
+              "title": "Projection Epoch",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "entity_kind",
+            "required": true,
+            "schema": {
+              "title": "Entity Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "entity_id",
+            "required": true,
+            "schema": {
+              "title": "Entity Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after_sequence",
+            "required": false,
+            "schema": {
+              "default": "0",
+              "pattern": "^\\d+$",
+              "title": "After Sequence",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NativeFramePage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Thread Native Frames",
+        "tags": ["threads"]
+      }
+    },
+    "/threads/{thread_id}/interrupt-turn": {
+      "post": {
+        "operationId": "interrupt_turn_threads__thread_id__interrupt_turn_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "thread_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Thread Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InterruptTurnBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "discriminator": {
+                    "mapping": {
+                      "archived_admission": "#/components/schemas/ArchivedCommandAdmission",
+                      "interrupt_result": "#/components/schemas/InterruptResultSubmission"
+                    },
+                    "propertyName": "kind"
+                  },
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/InterruptResultSubmission"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ArchivedCommandAdmission"
+                    }
+                  ],
+                  "title": "Response Interrupt Turn Threads  Thread Id  Interrupt Turn Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Interrupt Turn",
+        "tags": ["threads"]
+      }
+    },
+    "/threads/{thread_id}/observations": {
+      "get": {
+        "description": "Original chronological observations; default to the tail, including unlinked debug data.",
+        "operationId": "thread_observations_threads__thread_id__observations_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "thread_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Thread Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "before_cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^\\d+$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Before Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after_cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^\\d+$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "After Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObservationPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Thread Observations",
+        "tags": ["threads"]
+      }
+    },
+    "/threads/{thread_id}/observations/{cursor}": {
+      "get": {
+        "description": "The raw entry behind one listed observation, read only when a reader expands it.",
+        "operationId": "thread_observation_entry_threads__thread_id__observations__cursor__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "thread_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Thread Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "cursor",
+            "required": true,
+            "schema": {
+              "title": "Cursor",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchivedObservationEntry"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Thread Observation Entry",
+        "tags": ["threads"]
+      }
+    },
+    "/threads/{thread_id}/submit-input": {
+      "post": {
+        "operationId": "submit_input_threads__thread_id__submit_input_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "thread_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Thread Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitInputBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "discriminator": {
+                    "mapping": {
+                      "archived_admission": "#/components/schemas/ArchivedCommandAdmission",
+                      "dispatch": "#/components/schemas/DispatchedCommand"
+                    },
+                    "propertyName": "kind"
+                  },
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/DispatchedCommand"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ArchivedCommandAdmission"
+                    }
+                  ],
+                  "title": "Response Submit Input Threads  Thread Id  Submit Input Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Submit Input",
+        "tags": ["threads"]
+      }
+    },
+    "/threads/{thread_id}/sync/chunks/{field}": {
+      "get": {
+        "operationId": "get_chunks_threads__thread_id__sync_chunks__field__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "thread_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Thread Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "field",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/PayloadField"
+            }
+          },
+          {
+            "in": "query",
+            "name": "projection_epoch",
+            "required": true,
+            "schema": {
+              "title": "Projection Epoch",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Offset"
+            }
+          },
+          {
+            "in": "query",
+            "name": "handle",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Handle"
+            }
+          },
+          {
+            "in": "query",
+            "name": "live",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Live"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Chunks",
+        "tags": ["thread-sync"]
+      },
+      "post": {
+        "operationId": "post_chunks_threads__thread_id__sync_chunks__field__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "thread_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Thread Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "field",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/PayloadField"
+            }
+          },
+          {
+            "in": "query",
+            "name": "projection_epoch",
+            "required": true,
+            "schema": {
+              "title": "Projection Epoch",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubsetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Chunks",
+        "tags": ["thread-sync"]
+      }
+    },
+    "/threads/{thread_id}/sync/entities": {
+      "get": {
+        "operationId": "get_entities_threads__thread_id__sync_entities_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "thread_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Thread Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "projection_epoch",
+            "required": true,
+            "schema": {
+              "title": "Projection Epoch",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Offset"
+            }
+          },
+          {
+            "in": "query",
+            "name": "handle",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Handle"
+            }
+          },
+          {
+            "in": "query",
+            "name": "live",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Live"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Entities",
+        "tags": ["thread-sync"]
+      },
+      "post": {
+        "operationId": "post_entities_threads__thread_id__sync_entities_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "thread_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Thread Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "projection_epoch",
+            "required": true,
+            "schema": {
+              "title": "Projection Epoch",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubsetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Entities",
+        "tags": ["thread-sync"]
+      }
+    },
+    "/threads/{thread_id}/sync/scope": {
+      "get": {
+        "operationId": "get_scope_threads__thread_id__sync_scope_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "thread_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Thread Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadScopeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "204": {
+            "description": "Still no fold at the end of the hold: ask again."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Scope",
+        "tags": ["thread-sync"]
+      }
+    },
+    "/threads/{thread_id}/unarchive": {
+      "post": {
+        "operationId": "unarchive_thread_threads__thread_id__unarchive_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "thread_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Thread Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Unarchive Thread",
+        "tags": ["threads"]
+      }
+    },
+    "/upstream/dispatcher/{path}": {
+      "get": {
+        "description": "The Session Dispatcher's HTTP/JSON reads (`agentplane/runner_gateway/dispatcher/session_dispatcher.proto`), unchanged,\nfor as long as the operator session lasts. Its commands are not reachable here: they go through the\nThread routes, whose checks the Dispatcher does not make.",
+        "operationId": "dispatcher_upstream_upstream_dispatcher__path__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "title": "Path",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Dispatcher Upstream",
+        "tags": ["upstream"]
+      }
+    }
+  }
+}

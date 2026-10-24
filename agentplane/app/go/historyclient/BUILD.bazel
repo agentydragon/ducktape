@@ -1,0 +1,14 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+package(default_visibility = ["//agentplane/app:__subpackages__"])
+
+go_library(
+    name = "historyclient",
+    srcs = ["historyclient.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/app/go/historyclient",
+    deps = [
+        "//agentplane/grpc/bearer",
+        "//agentplane/history_service:history_service_go_proto",
+        "@org_golang_google_grpc//:grpc",
+    ],
+)

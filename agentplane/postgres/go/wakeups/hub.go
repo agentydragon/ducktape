@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/lib/pq"
@@ -17,8 +18,9 @@ import (
 
 // Hub follows NOTIFY channels on one LISTEN connection and fans each out to its subscribers.
 type Hub struct {
-	listener *pq.Listener
-	mu       sync.Mutex
+	listener  *pq.Listener
+	connected atomic.Bool
+	mu        sync.Mutex
 	// subscribers holds each listened channel's subscribers' signals.
 	subscribers map[string]map[chan struct{}]struct{}
 }
@@ -31,6 +33,7 @@ func Listen(ctx context.Context, dsn string, channels ...string) (*Hub, error) {
 		hub.subscribers[channel] = map[chan struct{}]struct{}{}
 	}
 	hub.listener = pq.NewListener(dsn, time.Second, 30*time.Second, func(event pq.ListenerEventType, err error) {
+		hub.observeConnectionEvent(event)
 		if err != nil {
 			// The error text can carry the connection string; the type and SQLSTATE name the failure.
 			slog.Warn("PostgreSQL listener event failed", "event", event, "error_type", fmt.Sprintf("%T", err), "sqlstate", sqlState(err))
@@ -60,6 +63,19 @@ func Listen(ctx context.Context, dsn string, channels ...string) (*Hub, error) {
 	go hub.fanOut()
 	return hub, nil
 }
+
+func (h *Hub) observeConnectionEvent(event pq.ListenerEventType) {
+	switch event {
+	case pq.ListenerEventConnected, pq.ListenerEventReconnected:
+		h.connected.Store(true)
+	case pq.ListenerEventDisconnected, pq.ListenerEventConnectionAttemptFailed:
+		h.connected.Store(false)
+	}
+}
+
+// Connected reports the last connection state reported by lib/pq. It is suitable for live status
+// frames, while Ping provides an active health check when a caller needs one.
+func (h *Hub) Connected() bool { return h.connected.Load() }
 
 func sqlState(err error) string {
 	if failure, ok := err.(*pq.Error); ok {
