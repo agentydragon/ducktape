@@ -454,6 +454,11 @@ pub(super) fn finish_logical_chunk(
         if let Some(constructors) = cross_module_purities.constructors.get(chunk_id) {
             hints.declared_pure_new.extend(constructors.iter().cloned());
         }
+        if let Some(callback_factories) = cross_module_purities.callback_factories.get(chunk_id) {
+            hints
+                .callback_factories
+                .extend(callback_factories.iter().cloned());
+        }
         if owner_graph_options.local_property_effects {
             hints.local_effect_policy = LocalEffectPolicy::LocalPropertyWrites;
         }

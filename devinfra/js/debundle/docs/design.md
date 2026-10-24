@@ -891,6 +891,24 @@ Purity annotations alone do not assert that callback arguments are deferred.
 Property writes inside collection callbacks retain the conservative accessor
 fallback when receiver integrity is unproved.
 
+**Audited callback-factory exports.**
+`chunk_export_purity.<defining chunk>.callback_factory_exports` is a separate
+callback-flow contract. The analyzer uses it only when an importer calls a
+listed export with exactly one non-spread inline function or arrow callback;
+construction and other call shapes keep the conservative fallback. The
+provider must neither invoke that callback nor synchronously invoke caller-,
+host-, or export-provided callbacks, and must not publish the callback outside
+the returned fresh ordinary callable/plain-object graph. The consumer may later
+reach or invoke the captured callback through that result. Authors must audit
+all provider branches and helpers, callback-bearing property access, and
+prototype integrity; the returned graph must contain no proxies or accessors.
+Calls remain impure for S-chain ordering unless a separate purity contract
+applies. Without an author assertion, source inference recognizes only
+immutable exported function declarations with one simple identifier parameter.
+Their body must only return a zero-argument function or arrow that only calls
+that parameter with no arguments. Reassigned bindings and dynamic scopes stay
+opaque.
+
 **Residual limitations.** Dynamic global/property stashes and values
 arriving from other chunks are outside the identity-based local flow
 model. The unresolved-call fallback applies when their possible

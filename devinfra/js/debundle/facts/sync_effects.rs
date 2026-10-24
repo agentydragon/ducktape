@@ -14,26 +14,28 @@ type Context = BTreeMap<Id, Values>;
 /// captures becomes identity equality, so comparing value sets and cache keys
 /// never recursively compares a shared capture DAG along every path.
 #[derive(Debug, Clone)]
-struct CapturedContext {
+struct Captured<T> {
     identity: usize,
-    values: Arc<Context>,
+    values: Arc<T>,
 }
 
-impl PartialEq for CapturedContext {
+type CapturedContext = Captured<Context>;
+
+impl<T> PartialEq for Captured<T> {
     fn eq(&self, other: &Self) -> bool {
         self.identity == other.identity
     }
 }
 
-impl Eq for CapturedContext {}
+impl<T> Eq for Captured<T> {}
 
-impl PartialOrd for CapturedContext {
+impl<T> PartialOrd for Captured<T> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Ord for CapturedContext {
+impl<T> Ord for Captured<T> {
     fn cmp(&self, other: &Self) -> Ordering {
         self.identity.cmp(&other.identity)
     }
@@ -43,6 +45,9 @@ impl Ord for CapturedContext {
 enum AbstractValue {
     Origin(ValueOrigin),
     Closure(u32, CapturedContext),
+    CallbackFactory,
+    /// A fresh opaque return value retaining callbacks without publishing them.
+    DeferredCallbacks(Captured<Values>),
     ObjectAssign,
     GlobalObject,
     Undefined,
@@ -121,16 +126,18 @@ impl ValueExpr {
                 Box::new(Self::from_expr(&member.obj)),
                 static_prop(&member.prop),
             ),
-            Expr::Call(call) => match &call.callee {
-                Callee::Expr(callee) => Self::Call(
-                    Box::new(Self::from_expr(callee)),
-                    call.args
-                        .iter()
-                        .map(|arg| Self::from_expr(&arg.expr))
-                        .collect(),
-                ),
-                Callee::Import(_) | Callee::Super(_) => Self::Unknown,
-            },
+            Expr::Call(call) if call.args.iter().all(|arg| arg.spread.is_none()) => {
+                match &call.callee {
+                    Callee::Expr(callee) => Self::Call(
+                        Box::new(Self::from_expr(callee)),
+                        call.args
+                            .iter()
+                            .map(|arg| Self::from_expr(&arg.expr))
+                            .collect(),
+                    ),
+                    Callee::Import(_) | Callee::Super(_) => Self::Unknown,
+                }
+            }
             Expr::Cond(cond) => Self::Alternatives(vec![
                 Self::from_expr(&cond.cons),
                 Self::from_expr(&cond.alt),
@@ -220,6 +227,7 @@ struct Call {
     owner: StatementOrdinal,
     plain_object_sources: bool,
     no_sync_arguments: bool,
+    has_spread: bool,
 }
 
 fn plain_assign_source_property(property: &PropOrSpread) -> bool {
@@ -298,6 +306,39 @@ impl Default for Callable {
     }
 }
 
+fn sole_return_expression(body: &BlockStmt) -> Option<&Expr> {
+    match body.stmts.as_slice() {
+        [Stmt::Return(ret)] => ret.arg.as_deref(),
+        _ => None,
+    }
+}
+
+fn is_callback_forwarder(expr: &Expr, callback: &Id) -> bool {
+    let body = match expr.unwrap_parens() {
+        Expr::Arrow(arrow) if !arrow.is_async && arrow.params.is_empty() => {
+            match arrow.body.as_ref() {
+                ArrowFunctionBody::Expr(expr) => Some(expr.as_ref()),
+                ArrowFunctionBody::BlockStmt(body) => sole_return_expression(body),
+            }
+        }
+        Expr::Fn(function)
+            if !function.function.is_async
+                && !function.function.is_generator
+                && function.function.params.is_empty()
+                && function.function.decorators.is_empty() =>
+        {
+            function
+                .function
+                .body
+                .as_ref()
+                .and_then(sole_return_expression)
+        }
+        _ => None,
+    };
+    matches!(body.map(Expr::unwrap_parens), Some(Expr::Call(call)) if call.args.is_empty()
+        && matches!(&call.callee, Callee::Expr(callee) if matches!(callee.unwrap_parens(), Expr::Ident(ident) if ident.to_id() == *callback)))
+}
+
 struct ExecutionIndex {
     owner: StatementOrdinal,
     current: Option<u32>,
@@ -323,6 +364,8 @@ struct ExecutionIndex {
     dynamic_scope_owners: BTreeSet<StatementOrdinal>,
     opaque_top: BTreeSet<StatementOrdinal>,
     no_sync_callback_members: BTreeMap<String, BTreeSet<String>>,
+    callback_factory_imports: BTreeSet<Id>,
+    callback_factory_functions: BTreeSet<u32>,
 }
 
 impl Default for ExecutionIndex {
@@ -352,6 +395,8 @@ impl Default for ExecutionIndex {
             dynamic_scope_owners: BTreeSet::new(),
             opaque_top: BTreeSet::new(),
             no_sync_callback_members: BTreeMap::new(),
+            callback_factory_imports: BTreeSet::new(),
+            callback_factory_functions: BTreeSet::new(),
         }
     }
 }
@@ -377,6 +422,14 @@ impl ExecutionIndex {
             index.literal_depth = 0;
             index.collect_uninitialized_lexical_bindings(item.as_module_item());
             index.collect_export_roots(item.as_module_item());
+            if let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item.as_module_item() {
+                for specifier in &import.specifiers {
+                    let local = specifier.local();
+                    if hints.callback_factories.contains(local.sym.as_ref()) {
+                        index.callback_factory_imports.insert(local.to_id());
+                    }
+                }
+            }
             item.as_module_item().visit_with(&mut index);
         }
         index
@@ -727,6 +780,20 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_function(&mut self, function: &Function) {
+        if let [param] = function.params.as_slice()
+            && let Pat::Ident(binding) = &param.pat
+            && param.decorators.is_empty()
+            && !function.is_async
+            && !function.is_generator
+            && function.decorators.is_empty()
+            && function
+                .body
+                .as_ref()
+                .and_then(sole_return_expression)
+                .is_some_and(|expr| is_callback_forwarder(expr, &binding.id.to_id()))
+        {
+            self.callback_factory_functions.insert(function.span.lo.0);
+        }
         // Decorator expressions run when the method is defined. Defaults in
         // parameter patterns and the body run only when it is called.
         function.decorators.visit_with(self);
@@ -926,6 +993,7 @@ impl Visit for ExecutionIndex {
                     .map(|arg| ValueExpr::from_expr(&arg.expr))
                     .collect(),
                 is_new: false,
+                has_spread: call.args.iter().any(|arg| arg.spread.is_some()),
                 no_sync_arguments: is_no_sync_callback_member_call(
                     callee,
                     &self.no_sync_callback_members,
@@ -976,6 +1044,12 @@ impl Visit for ExecutionIndex {
                 .map(|arg| ValueExpr::from_expr(&arg.expr))
                 .collect(),
             is_new: true,
+            has_spread: new_expr
+                .args
+                .as_deref()
+                .unwrap_or_default()
+                .iter()
+                .any(|arg| arg.spread.is_some()),
             no_sync_arguments: false,
             caller: self.current,
             owner: self.owner,
@@ -1088,6 +1162,7 @@ struct Executor<'a> {
     fallback_callback_sizes: Option<(usize, usize)>,
     fallback_local_owners: BTreeSet<StatementOrdinal>,
     capture_contexts: BTreeMap<Arc<Context>, usize>,
+    callback_sets: BTreeMap<Arc<Values>, usize>,
     active: BTreeSet<ActiveInvocation>,
     cache: BTreeMap<InvocationSignature, Outcome>,
 }
@@ -1406,6 +1481,11 @@ impl Executor<'_> {
                         );
                     }
                 }
+                AbstractValue::DeferredCallbacks(captured) => {
+                    if callbacks.insert(value.clone()) {
+                        pending.extend(captured.values.iter().cloned());
+                    }
+                }
                 AbstractValue::Origin(ValueOrigin::Object(object)) => {
                     if visited_objects.insert(*object)
                         && let Some(properties) = self.prefix_object_properties.get(object)
@@ -1464,7 +1544,7 @@ impl Executor<'_> {
                             self.prefix_revision = self.prefix_revision.wrapping_add(1);
                         }
                     }
-                    AbstractValue::Unknown => {
+                    AbstractValue::Unknown | AbstractValue::DeferredCallbacks(_) => {
                         // A write through an untracked object may publish the
                         // callback through that object before it is passed to
                         // opaque code. Retain it as an escaped callback root.
@@ -1492,6 +1572,38 @@ impl Executor<'_> {
         let values = Arc::new(captures);
         self.capture_contexts.insert(Arc::clone(&values), identity);
         CapturedContext { identity, values }
+    }
+
+    fn deferred_callbacks(&mut self, values: Values) -> AbstractValue {
+        if let Some((values, &identity)) = self.callback_sets.get_key_value(&values) {
+            return AbstractValue::DeferredCallbacks(Captured {
+                identity,
+                values: Arc::clone(values),
+            });
+        }
+        let identity = self.callback_sets.len();
+        let values = Arc::new(values);
+        self.callback_sets.insert(Arc::clone(&values), identity);
+        AbstractValue::DeferredCallbacks(Captured { identity, values })
+    }
+
+    /// The foreign wrapper's body is opaque once invoked. Include the full
+    /// lazy closure, including callbacks returned by the original callback.
+    fn promote_deferred_callbacks(&self, captured: &Values, outcome: &mut Outcome) {
+        let effect_owner = self.current_top_owner.unwrap();
+        for callback in self.callback_values(captured) {
+            let key = match callback {
+                AbstractValue::Origin(ValueOrigin::Function(key))
+                | AbstractValue::Closure(key, _) => key,
+                _ => continue,
+            };
+            if let Some(callable) = self.index.callables.get(&key) {
+                let (reads, rebinds) = self
+                    .owner_read_closure
+                    .lazy_effects_for_owner(callable.owner);
+                self.promote_lazy_effects(reads, rebinds, effect_owner, outcome);
+            }
+        }
     }
 
     fn closure_captures(&mut self, key: u32, captures: &Context) -> CapturedContext {
@@ -1603,6 +1715,10 @@ impl Executor<'_> {
                 break;
             }
             let nested = match callback {
+                AbstractValue::DeferredCallbacks(captured) => {
+                    self.promote_deferred_callbacks(&captured.values, outcome);
+                    continue;
+                }
                 AbstractValue::Origin(ValueOrigin::Function(key)) => {
                     self.invoke(key, args_for(key, self.index), None)
                 }
@@ -1796,6 +1912,9 @@ impl Executor<'_> {
     fn evaluate(&mut self, expr: &ValueExpr, env: &Context, captures: &Context) -> Values {
         match expr {
             ValueExpr::Binding(id) => {
+                if self.index.callback_factory_imports.contains(id) {
+                    return BTreeSet::from([AbstractValue::CallbackFactory]);
+                }
                 if self.top_bindings.contains(id) {
                     if let Some(prefix_values) = self.prefix_values.get(id) {
                         let mut values = prefix_values.clone();
@@ -1890,6 +2009,9 @@ impl Executor<'_> {
                         AbstractValue::Unavailable => {
                             values.insert(AbstractValue::Unavailable);
                         }
+                        AbstractValue::DeferredCallbacks(captured) => {
+                            values.insert(AbstractValue::DeferredCallbacks(captured));
+                        }
                         AbstractValue::Origin(ValueOrigin::Object(object_id)) => {
                             if let Some(properties) = self.prefix_object_properties.get(&object_id)
                             {
@@ -1934,6 +2056,10 @@ impl Executor<'_> {
                 if targets.len() == 1 && targets.contains(&AbstractValue::Unavailable) {
                     return BTreeSet::from([AbstractValue::Unavailable]);
                 }
+                let fresh_callback = matches!(
+                    args.as_slice(),
+                    [ValueExpr::Origin(ValueOrigin::Function(_))]
+                );
                 let mut args: Vec<Values> = args
                     .iter()
                     .map(|arg| self.evaluate(arg, env, captures))
@@ -1964,6 +2090,14 @@ impl Executor<'_> {
                     });
                 for target in targets {
                     match target {
+                        AbstractValue::CallbackFactory if fresh_callback => {
+                            let callbacks = self.callback_values(&args[0]);
+                            returns.insert(self.deferred_callbacks(callbacks));
+                        }
+                        AbstractValue::DeferredCallbacks(captured) => {
+                            returns.insert(AbstractValue::DeferredCallbacks(captured));
+                            returns.insert(AbstractValue::Unknown);
+                        }
                         AbstractValue::Unavailable
                         | AbstractValue::Undefined
                         | AbstractValue::NonCallable => {}
@@ -2167,6 +2301,22 @@ impl Executor<'_> {
         let mut invoked_unknown_callbacks = targets.is_empty();
         for target in targets {
             match target {
+                AbstractValue::CallbackFactory
+                    if !call.is_new
+                        && !call.has_spread
+                        && matches!(
+                            call.args.as_slice(),
+                            [ValueExpr::Origin(ValueOrigin::Function(_))]
+                        ) => {}
+                AbstractValue::DeferredCallbacks(captured) => {
+                    outcome.complete = false;
+                    outcome.unknown_call = true;
+                    self.note_unknown_call(call);
+                    let mut possible_args = args.clone();
+                    possible_args.push((*captured.values).clone());
+                    self.promote_deferred_callbacks(&captured.values, outcome);
+                    self.invoke_possible_callbacks(&possible_args, false, outcome);
+                }
                 AbstractValue::Unavailable
                 | AbstractValue::Undefined
                 | AbstractValue::NonCallable => {}
@@ -2236,6 +2386,41 @@ impl Executor<'_> {
             }
         }
     }
+}
+
+/// Prove the narrow return-only wrapper shape using the same execution index
+/// as call promotion. Whole-chunk flow must contain exactly that function;
+/// aliases with unknown/reassigned targets and dynamic scopes remain opaque.
+pub(crate) fn infer_returned_callback_factories(
+    body: &[TopLevelItemView<'_>],
+    exported_locals: &BTreeSet<String>,
+) -> BTreeSet<String> {
+    let index = ExecutionIndex::collect(body, &AnalysisHints::default());
+    if !index.dynamic_scope_owners.is_empty() {
+        return BTreeSet::new();
+    }
+    let candidates: Vec<_> = index
+        .hoisted_bindings
+        .iter()
+        .filter(|(id, key)| {
+            exported_locals.contains(id.0.as_ref())
+                && index.callback_factory_functions.contains(key)
+        })
+        .collect();
+    if candidates.is_empty() {
+        return BTreeSet::new();
+    }
+    let flow = ChunkValueFlow::analyze(body);
+    candidates
+        .into_iter()
+        .filter_map(|(id, key)| {
+            let values = flow.values_of_binding(id);
+            values
+                .iter()
+                .eq([ValueOrigin::Function(*key)])
+                .then(|| id.0.to_string())
+        })
+        .collect()
 }
 
 pub(crate) fn annotate_synchronous_calls(
@@ -2371,6 +2556,7 @@ pub(crate) fn annotate_synchronous_calls(
         fallback_callback_sizes: None,
         fallback_local_owners: BTreeSet::new(),
         capture_contexts: BTreeMap::new(),
+        callback_sets: BTreeMap::new(),
         active: BTreeSet::new(),
         cache: BTreeMap::new(),
     };

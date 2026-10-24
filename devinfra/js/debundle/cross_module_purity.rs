@@ -278,6 +278,72 @@ pub fn resolve_imported_purities(
         .collect()
 }
 
+/// Callback transfer is independent of purity, including asserted purity.
+/// Infer only immutable one-return function wrappers; more complex providers
+/// need an explicit audited return-only contract. Missing exports stay opaque.
+pub fn resolve_imported_callback_factories(
+    modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
+    asserted: &BTreeMap<ModuleKey, BTreeSet<String>>,
+) -> BTreeMap<ModuleKey, BTreeSet<String>> {
+    let required: BTreeSet<_> = modules
+        .values()
+        .flat_map(|facts| facts.imports.values())
+        .map(|target| (target.module.clone(), target.export.clone()))
+        .collect();
+    let mut factories = BTreeSet::new();
+    for (module, exports) in asserted {
+        for export in exports {
+            if modules
+                .get(module)
+                .is_some_and(|facts| facts.exports.contains_key(export))
+            {
+                factories.insert((module.clone(), export.clone()));
+            } else {
+                eprintln!(
+                    "cross_module_purity: dangling callback_factory_exports assertion {module}:{export} — no such analyzed module export; ignoring"
+                );
+            }
+        }
+    }
+    for (module, facts) in modules {
+        let locals: BTreeSet<_> = facts
+            .exports
+            .iter()
+            .filter(|(export, _)| {
+                let key = (module.clone(), (*export).clone());
+                required.contains(&key) && !factories.contains(&key)
+            })
+            .map(|(_, local)| local.clone())
+            .collect();
+        if locals.is_empty() {
+            continue;
+        }
+        let views = top_level_item_views(facts.body);
+        let inferred = crate::facts::infer_returned_callback_factories(&views, &locals);
+        factories.extend(
+            facts
+                .exports
+                .iter()
+                .filter(|(_, local)| inferred.contains(*local))
+                .map(|(export, _)| (module.clone(), export.clone())),
+        );
+    }
+    modules
+        .iter()
+        .map(|(module, facts)| {
+            let bindings = facts
+                .imports
+                .iter()
+                .filter(|(_, target)| {
+                    factories.contains(&(target.module.clone(), target.export.clone()))
+                })
+                .map(|(local, _)| local.clone())
+                .collect();
+            (module.clone(), bindings)
+        })
+        .collect()
+}
+
 /// Project author-asserted pure members of exported namespace-like objects
 /// (`chunk_export_purity.<chunk>.pure_members`) onto each importing module's
 /// local binding names. Pure axiom projection — no fixpoint: for every import

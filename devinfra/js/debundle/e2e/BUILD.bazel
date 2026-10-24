@@ -56,6 +56,8 @@ debundle_e2e_test(name = "unknown_call_intermediate_availability_test")
 
 debundle_e2e_test(name = "unknown_call_callback_storage_test")
 
+debundle_e2e_test(name = "imported_callback_timing_test")
+
 # A larger branching callback pool used to exhaust this bound in analysis.
 debundle_e2e_test(
     name = "opaque_callback_scale_test",

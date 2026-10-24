@@ -63,6 +63,9 @@ pub struct AnalysisHints {
     /// oracle (`crate::cross_module_purity`); empty in strictly per-chunk
     /// paths, where imported callees stay `unknown_call`.
     pub imported_purities: BTreeMap<String, std::sync::Arc<Purity>>,
+    /// Imported callback factories with the return-only callback-flow contract.
+    /// Independent of call purity; used only for checked fresh-callback calls.
+    pub callback_factories: BTreeSet<String>,
     /// Local binding names of this chunk that import an author-asserted
     /// fluent export (`chunk_export_purity.<chunk>.fluent_exports`,
     /// projected by `crate::cross_module_purity` onto importer locals).

@@ -192,6 +192,20 @@ and args are still classified independently. The annotation is
 **per-member**: a sibling member without it stays subject to inferred
 classification. There is no "declare a whole module pure" shorthand.
 
+## Audited callback-factory exports
+
+`chunk_export_purity.<defining chunk>.callback_factory_exports` is not a
+purity annotation. It asserts that a call to the named export, with one inline
+function or arrow callback, neither invokes that callback or other
+caller-, host-, or export-provided callbacks synchronously nor publishes the
+argument outside the returned fresh ordinary callable/plain-object graph. The
+analyzer enforces the call-site shape and conservatively handles other shapes;
+the author remains responsible for every provider branch/helper, ordinary
+property access, and prototype integrity. The returned graph may expose or
+invoke the captured callback later, and must not contain proxies or accessors.
+Factory calls remain effectful for ordering unless a separate purity contract
+applies. See <design.md> for how this contract scopes callback-flow analysis.
+
 ## `ChunkBinding::PlainData`
 
 A chunk-top binding admits as `PlainData` when its declared value is a

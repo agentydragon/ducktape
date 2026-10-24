@@ -169,3 +169,23 @@ a collision with an existing or nested binding, an ambiguous alias, or an
 unprocessed importer leaves the old import form unchanged. Dynamic imports and
 namespace imports continue to use the original minified export names. Bindings
 without a spec-assigned name are not changed by this cross-chunk pass.
+
+## Audited callback-factory exports
+
+`chunk_export_purity.<defining chunk>.callback_factory_exports` lists named
+exports whose calls are audited to defer a single callback argument. At an
+importer, the analyzer applies this contract only to a call with exactly one
+non-spread inline function or arrow callback; construction and other argument
+shapes remain conservative. The provider must not invoke that callback or any
+caller-, host-, or export-provided callback synchronously, or publish the
+callback outside the returned fresh ordinary callable/plain-object graph. The
+consumer may later reach or invoke the captured callback through that result.
+The author must audit every provider branch and helper, callback-bearing
+property access, and prototype integrity; returned graphs must not contain
+proxies or accessors. This assertion describes callback flow only. It does not
+assert that the factory call is pure or effect-free.
+
+Without an assertion, source inference recognizes only immutable exported
+function declarations with one simple identifier parameter. The body must
+only return a zero-argument function or arrow that only calls that parameter
+with no arguments. Reassigned bindings and dynamic scopes remain opaque.

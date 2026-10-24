@@ -827,7 +827,7 @@ pub fn unassigned_mode_mini_factors() -> UnassignedMode {
 }
 
 /// Fluent wrapper for building a `(chunk, ChunkExportPurity)` tuple with the
-/// member-level and fluent surfaces populated.
+/// export-level assertion surfaces populated.
 pub struct ChunkExportPurityBuilder {
     chunk: &'static str,
     purity: spec::ChunkExportPurity,
@@ -839,6 +839,11 @@ impl ChunkExportPurityBuilder {
             chunk,
             purity: spec::ChunkExportPurity::default(),
         }
+    }
+
+    pub fn with_pure_exports(mut self, exports: &[&str]) -> Self {
+        self.purity.pure_exports = exports.iter().map(|s| (*s).to_string()).collect();
+        self
     }
 
     /// Assert construction through the listed exports is pure, while
@@ -862,6 +867,13 @@ impl ChunkExportPurityBuilder {
     /// (see `spec::ChunkExportPurity::fluent_exports`).
     pub fn with_fluent_exports(mut self, exports: &[&str]) -> Self {
         self.purity.fluent_exports = exports.iter().map(|s| (*s).to_string()).collect();
+        self
+    }
+
+    /// Assert the listed exports satisfy the audited callback-factory contract
+    /// (see `spec::ChunkExportPurity::callback_factory_exports`).
+    pub fn with_callback_factories(mut self, exports: &[&str]) -> Self {
+        self.purity.callback_factory_exports = exports.iter().map(|s| (*s).to_string()).collect();
         self
     }
 

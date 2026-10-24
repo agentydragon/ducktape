@@ -70,14 +70,12 @@ pub struct TransformSpec {
     /// spec explicitly opts in.
     #[serde(default)]
     pub chunk_analysis_options: BTreeMap<String, OwnerGraphOptions>,
-    /// Author-asserted purity of a chunk's exports, keyed by the
-    /// *defining* chunk. The cross-module purity oracle seeds these as
-    /// trusted axioms (pinned `Pure`, exempt from fixpoint demotion) and
-    /// propagates them to every importing chunk — the assertion is made
-    /// once, where the audited code lives, not per consumer. Same trust
-    /// contract as member-level `purity: pure` (docs/design.md A9):
-    /// an incorrect assertion can produce a buggy debundle; soundness
-    /// shifts to the spec author.
+    /// Author-asserted contracts for exports, keyed by the *defining*
+    /// chunk. Purity assertions seed trusted axioms in the cross-module
+    /// purity oracle; callback-factory assertions separately describe
+    /// callback flow and do not imply purity. Each assertion is made once,
+    /// where the audited code lives, not per consumer. Incorrect assertions
+    /// can produce a buggy debundle; soundness shifts to the spec author.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub chunk_export_purity: BTreeMap<String, ChunkExportPurity>,
 
@@ -105,7 +103,7 @@ pub struct TransformSpec {
     pub emit_browser_harness: Option<EmitBrowserHarnessConfig>,
 }
 
-/// Author-asserted purity for one defining chunk's exports. See
+/// Author-asserted contracts for one defining chunk's exports. See
 /// [`TransformSpec::chunk_export_purity`].
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -149,6 +147,19 @@ pub struct ChunkExportPurity {
     /// (docs/design.md A9).
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub fluent_exports: BTreeSet<String>,
+    /// Export names whose calls accept one inline callback without invoking
+    /// it or other caller/host/export callbacks synchronously, or publishing
+    /// the argument outside the returned fresh ordinary callable/plain-object
+    /// graph. That result may later expose or invoke the captured callback.
+    /// Call sites must pass exactly one non-spread inline function or arrow
+    /// callback and must not construct the export; other shapes stay
+    /// conservative. The author must audit every implementation/helper path,
+    /// property access in the callback-bearing result graph, and prototype
+    /// integrity. The graph must not contain proxies or accessors.
+    /// This is a callback-flow contract, not a purity assertion: the call may
+    /// still have observable effects and remains ordered as an impure call.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub callback_factory_exports: BTreeSet<String>,
 }
 
 /// Per-chunk owner-graph build options. Each field defaults to the

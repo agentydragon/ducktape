@@ -10,7 +10,7 @@ use std::sync::Arc;
 use analysis::cross_module_purity::{
     ModulePurityFacts, ResolvedImport, resolve_asserted_fluent_bindings,
     resolve_asserted_member_purities, resolve_asserted_pure_new_bindings,
-    resolve_imported_purities,
+    resolve_imported_callback_factories, resolve_imported_purities,
 };
 use analysis::purity::Purity;
 use anyhow::{Context, Result};
@@ -65,6 +65,9 @@ pub(super) struct CrossModulePurities {
     /// Per-chunk local names whose imported exports have an asserted pure
     /// construction contract (`chunk_export_purity.pure_new_exports`).
     pub(super) constructors: BTreeMap<String, BTreeSet<String>>,
+    /// Per-chunk local names whose imported exports have an audited
+    /// callback-factory contract (`chunk_export_purity.callback_factory_exports`).
+    pub(super) callback_factories: BTreeMap<String, BTreeSet<String>>,
 }
 
 /// Static-import chunk closure for program-level purity analysis.
@@ -311,6 +314,12 @@ pub(super) fn collect_cross_module_imported_purities(
         .filter(|(chunk, _)| modules.contains_key(*chunk))
         .map(|(chunk, assertion)| (chunk.clone(), assertion.fluent_exports.clone()))
         .collect();
+    let asserted_callback_factories: BTreeMap<String, BTreeSet<String>> = chunk_export_purity
+        .iter()
+        .filter(|(_, assertion)| !assertion.callback_factory_exports.is_empty())
+        .filter(|(chunk, _)| modules.contains_key(*chunk))
+        .map(|(chunk, assertion)| (chunk.clone(), assertion.callback_factory_exports.clone()))
+        .collect();
     let mut asserted_pure_new: BTreeMap<String, BTreeSet<String>> = chunk_export_purity
         .iter()
         .filter(|(_, assertion)| !assertion.pure_new_exports.is_empty())
@@ -338,6 +347,10 @@ pub(super) fn collect_cross_module_imported_purities(
         members: resolve_asserted_member_purities(&modules, &asserted_members),
         fluent: resolve_asserted_fluent_bindings(&modules, &asserted_fluent),
         constructors: resolve_asserted_pure_new_bindings(&modules, &asserted_pure_new),
+        callback_factories: resolve_imported_callback_factories(
+            &modules,
+            &asserted_callback_factories,
+        ),
     }
 }
 
