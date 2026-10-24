@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { ActionRequestView } from "../../types";
 import type { ActionNotificationParts } from "../types";
 
-import { kubernetesTarget } from "./target";
+import { kubernetesTarget } from "../../schemas/kubernetes_admin/target";
 
 const resourcesDeleteNotificationArguments = z.strictObject({
   apiVersion: z.string().min(1),

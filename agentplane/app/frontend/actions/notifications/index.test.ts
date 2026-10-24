@@ -20,8 +20,17 @@ function actionRequest(
   };
 }
 
-const kubernetesNotificationCases: [string, { [key: string]: JsonValue }, string][] = [
-  ["resources_create_or_update", { resource: "apiVersion: v1\nkind: Secret" }, "Apply Kubernetes resource"],
+// [Action name, arguments, notification's Action title, notification text when it is not the description]
+const kubernetesNotificationCases: [string, { [key: string]: JsonValue }, string, string?][] = [
+  ["resources_create_or_update", { resource: "apiVersion: v1\nkind: Secret" }, "Apply Secret"],
+  [
+    "resources_create_or_update",
+    {
+      resource:
+        "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: a\n---\napiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: b\n---\napiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: c\n",
+    },
+    "Apply 3 Kubernetes resources: ConfigMap a, ConfigMap b, and 1 more",
+  ],
   [
     "resources_get",
     { apiVersion: "apps/v1", kind: "Deployment", name: "api", namespace: "apps" },
@@ -32,6 +41,18 @@ const kubernetesNotificationCases: [string, { [key: string]: JsonValue }, string
     { apiVersion: "apps/v1", kind: "Deployment", name: "api", namespace: "apps", gracePeriodSeconds: 0 },
     "⚠ Delete Deployment apps/api",
   ],
+  [
+    "resources_delete",
+    { apiVersion: "v1", kind: "PersistentVolume", name: "test-volume" },
+    "⚠ Delete PersistentVolume test-volume",
+  ],
+  ["resources_list", { apiVersion: "v1", kind: "Node" }, "List Node resources"],
+  [
+    "resources_list",
+    { apiVersion: "v1", kind: "PersistentVolumeClaim", namespace: "apps", labelSelector: "app=api" },
+    "List PersistentVolumeClaim resources in namespace apps",
+  ],
+  ["events_list", { namespace: "apps", fieldSelector: "type=Warning" }, "List events in namespace apps"],
   ["pods_delete", { name: "api-0", namespace: "apps" }, "⚠ Delete Pod apps/api-0"],
   [
     "pods_list_in_namespace",
@@ -40,14 +61,15 @@ const kubernetesNotificationCases: [string, { [key: string]: JsonValue }, string
   ],
   [
     "pods_exec",
-    { name: "api-0", namespace: "apps", container: "api", command: ["id"] },
+    { name: "api-0", namespace: "apps", container: "api", command: ["printf", "%s\n", "hello world"] },
     "Run command in Pod apps/api-0",
+    "$ printf '%s\n' 'hello world' · Container api",
   ],
   ["pods_get", { name: "api-0", namespace: "apps" }, "Get Pod apps/api-0"],
   [
     "pods_log",
     { name: "api-0", namespace: "apps", container: "api", previous: false, tail: 50 },
-    "View logs for Pod apps/api-0",
+    "View logs for Pod apps/api-0, container api, last 50 lines",
   ],
 ];
 
@@ -60,6 +82,8 @@ const malformedKubernetesNotificationCases: [string, { [key: string]: JsonValue 
   ["pods_exec", { name: "api-0", namespace: "apps", command: "id" }],
   ["pods_get", { name: "api-0", namespace: 7 }],
   ["pods_log", { name: "api-0", namespace: "apps", previous: "false" }],
+  ["resources_list", { apiVersion: "v1", kind: 7 }],
+  ["events_list", { namespace: 7 }],
 ];
 
 describe("action notification formatting", () => {
@@ -91,6 +115,39 @@ describe("action notification formatting", () => {
       {
         "text": "$ df -h · Timeout 30 s",
         "title": "Check disk space · Run command on deploy@build-01",
+      }
+    `);
+  });
+
+  it("marks an SSH command that runs as root", () => {
+    const request = actionRequest({
+      action: { group: "ssh", name: "exec" },
+      arguments: { user: "root", host: "build-01", command: "df -h" },
+      title: "Check disk space",
+      description: null,
+    });
+
+    expect(formatActionNotification(request).title).toBe("Check disk space · ⚠ Run command on root@build-01");
+  });
+
+  it("snapshots sandbox exec with its target, script, and settings", () => {
+    const request = actionRequest({
+      action: { group: "sandbox", name: "exec" },
+      arguments: {
+        name: "test-sandbox",
+        script: "git status",
+        timeout_seconds: 60,
+        max_output_bytes: 4096,
+        cwd: "/workspace",
+      },
+      title: "Check the checkout",
+      description: null,
+    });
+
+    expect(formatActionNotification(request)).toMatchInlineSnapshot(`
+      {
+        "text": "$ git status · Working directory /workspace · Timeout 60 s · Output limit 4096 bytes per stream",
+        "title": "Check the checkout · Run command in sandbox test-sandbox",
       }
     `);
   });
@@ -184,19 +241,22 @@ describe("action notification formatting", () => {
     });
   });
 
-  it.each(kubernetesNotificationCases)("formats the Kubernetes notification for %s", (name, args, actionTitle) => {
-    const request = actionRequest({
-      action: { group: "kubernetes_admin", name },
-      arguments: args,
-      title: "Review the cluster operation",
-      description: "The controller is waiting for this change.",
-    });
+  it.each(kubernetesNotificationCases)(
+    "formats the Kubernetes notification for %s",
+    (name, args, actionTitle, text = "The controller is waiting for this change.") => {
+      const request = actionRequest({
+        action: { group: "kubernetes_admin", name },
+        arguments: args,
+        title: "Review the cluster operation",
+        description: "The controller is waiting for this change.",
+      });
 
-    expect(formatActionNotification(request)).toEqual({
-      title: `Review the cluster operation · ${actionTitle}`,
-      text: "The controller is waiting for this change.",
-    });
-  });
+      expect(formatActionNotification(request)).toEqual({
+        title: `Review the cluster operation · ${actionTitle}`,
+        text,
+      });
+    }
+  );
 
   it.each(kubernetesNotificationCases)("falls back for %s when arguments contain an unknown field", (name, args) => {
     const request = actionRequest({

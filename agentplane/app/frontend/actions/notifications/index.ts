@@ -1,4 +1,5 @@
 import type { ActionRequestView } from "../types";
+import { eventsListNotification } from "./kubernetes_admin/events_list";
 import { podsDeleteNotification } from "./kubernetes_admin/pods_delete";
 import { podsExecNotification } from "./kubernetes_admin/pods_exec";
 import { podsGetNotification } from "./kubernetes_admin/pods_get";
@@ -10,6 +11,8 @@ import { podsInNamespaceNotification } from "./kubernetes_admin/pods_list_in_nam
 import { resourcesCreateOrUpdateNotification } from "./kubernetes_admin/resources_create_or_update";
 import { resourcesDeleteNotification } from "./kubernetes_admin/resources_delete";
 import { resourcesGetNotification } from "./kubernetes_admin/resources_get";
+import { resourcesListNotification } from "./kubernetes_admin/resources_list";
+import { sandboxExecNotification } from "./sandbox/exec";
 import { sshExecNotification } from "./ssh/exec";
 import { tanaCalendarNodeNotification } from "./tana/get_or_create_calendar_node";
 import type { ActionNotificationContent, ActionNotificationParts } from "./types";
@@ -37,6 +40,8 @@ const FORMATTERS: ReadonlyMap<string, ReadonlyMap<string, ActionNotificationForm
       ["pods_exec", podsExecNotification],
       ["pods_get", podsGetNotification],
       ["pods_log", podsLogNotification],
+      ["resources_list", resourcesListNotification],
+      ["events_list", eventsListNotification],
     ]),
   ],
   [
@@ -54,6 +59,7 @@ const FORMATTERS: ReadonlyMap<string, ReadonlyMap<string, ActionNotificationForm
       ["threads_list", fixedActionNotification("Gmail: Search threads")],
     ]),
   ],
+  ["sandbox", new Map([["exec", sandboxExecNotification]])],
   ["ssh", new Map([["exec", sshExecNotification]])],
   ["tana", new Map([["get_or_create_calendar_node", tanaCalendarNodeNotification]])],
 ]);

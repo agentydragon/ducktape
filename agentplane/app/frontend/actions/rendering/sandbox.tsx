@@ -2,7 +2,8 @@ import type { ActionPresentation } from "./presentation";
 import { Badge, Code, Group, Stack, Table, Text } from "@mantine/core";
 import { z } from "zod";
 
-import { CommandCallView, OutputBlock } from "../../command_view";
+import { CommandCallView, CommandSummary, OutputBlock } from "../../command_view";
+import { sandboxExecNotes } from "../schemas/sandbox/exec";
 import { definePreview, type ArgumentsPreview } from "./entry";
 import { defineResultPreview, type ResultPreview } from "./result_entry";
 
@@ -18,20 +19,14 @@ const empty = z.strictObject({});
 
 export const sandboxExecLabel: ArgumentsPreview = definePreview(exec, ({ args }) => (
   <Text size="sm" fw={600}>
-    Run script in sandbox <Code>{args.name}</Code>
+    Run command in sandbox <Code>{args.name}</Code>
   </Text>
 ));
+export const sandboxExecCollapsed: ArgumentsPreview = definePreview(exec, ({ args }) => (
+  <CommandSummary text={args.script} />
+));
 export const sandboxExecArguments: ArgumentsPreview = definePreview(exec, ({ args }) => (
-  <CommandCallView
-    command={args.script}
-    notes={[
-      `Timeout ${args.timeout_seconds} s`,
-      `Output limit ${args.max_output_bytes} bytes per stream`,
-      ...(args.cwd == null ? [] : [`Working directory ${args.cwd}`]),
-    ]}
-    releaseWhenFar
-    surface="framed"
-  />
+  <CommandCallView command={args.script} notes={sandboxExecNotes(args)} releaseWhenFar surface="framed" />
 ));
 export const sandboxCreateLabel: ArgumentsPreview = definePreview(create, ({ args }) => (
   <Text size="sm" fw={600}>
@@ -53,21 +48,19 @@ export const sandboxDisposeLabel: ArgumentsPreview = definePreview(named, ({ arg
     Dispose sandbox <Code>{args.name}</Code>
   </Text>
 ));
-export const sandboxNamedArguments: ArgumentsPreview = definePreview(named, () => (
-  <Text size="sm" c="dimmed">
-    No additional arguments.
-  </Text>
-));
+// The label carries every argument; direct previews preserve null as the slot suppression signal.
+export const sandboxNamedArguments: ArgumentsPreview = { schema: named, render: () => null };
 export const sandboxListLabel: ArgumentsPreview = definePreview(empty, () => (
   <Text size="sm" fw={600}>
     List sandboxes
   </Text>
 ));
-export const sandboxListArguments: ArgumentsPreview = definePreview(empty, () => (
-  <Text size="sm" c="dimmed">
-    No arguments.
-  </Text>
-));
+export const sandboxListArguments: ArgumentsPreview = { schema: empty, render: () => null };
+
+// The label is the whole call.
+function argumentsMatch(schema: z.ZodType): (args: unknown) => boolean {
+  return (args) => schema.safeParse(args).success;
+}
 
 const condition = z.strictObject({
   type: z.string(),
@@ -212,7 +205,7 @@ export const sandboxExecResult: ResultPreview = defineResultPreview(execution, (
 
 export const sandboxExecPresentation: ActionPresentation = {
   label: sandboxExecLabel,
-  pane: { opened: sandboxExecArguments },
+  pane: { collapsed: sandboxExecCollapsed, opened: sandboxExecArguments },
   details: { arguments: sandboxExecArguments, nativeResult: sandboxExecResult },
 };
 
@@ -226,18 +219,21 @@ export const sandboxGetPresentation: ActionPresentation = {
   label: sandboxGetLabel,
   pane: { opened: sandboxNamedArguments },
   details: { arguments: sandboxNamedArguments, nativeResult: sandboxInfoResult },
+  offersCardDecisionButtons: argumentsMatch(named),
 };
 
 export const sandboxDisposePresentation: ActionPresentation = {
   label: sandboxDisposeLabel,
   pane: { opened: sandboxNamedArguments },
   details: { arguments: sandboxNamedArguments, nativeResult: sandboxDisposeResult },
+  offersCardDecisionButtons: argumentsMatch(named),
 };
 
 export const sandboxListPresentation: ActionPresentation = {
   label: sandboxListLabel,
   pane: { opened: sandboxListArguments },
   details: { arguments: sandboxListArguments, nativeResult: sandboxListResult },
+  offersCardDecisionButtons: argumentsMatch(empty),
 };
 
 export const sandboxRenderers: ReadonlyMap<string, ActionPresentation> = new Map([

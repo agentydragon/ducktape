@@ -14,16 +14,10 @@ export function offersCardDecisionButtonsEventsList(args: unknown): boolean {
   return eventsListArguments.safeParse(args).success;
 }
 
-function Events({ args }: { args: z.infer<typeof eventsListArguments> }): JSX.Element {
+function Events({ fieldSelector }: { fieldSelector: string }): JSX.Element {
   return (
     <Text size="sm" style={{ overflowWrap: "anywhere" }}>
-      {args.fieldSelector ? (
-        <>
-          Show events matching <Code>{args.fieldSelector}</Code>.
-        </>
-      ) : (
-        "Show all events."
-      )}
+      Show events matching <Code>{fieldSelector}</Code>.
     </Text>
   );
 }
@@ -43,7 +37,13 @@ function EventsLabel({ args }: { args: z.infer<typeof eventsListArguments> }): J
 }
 
 export const eventsListLabel: ArgumentsPreview = definePreview(eventsListArguments, EventsLabel);
-export const eventsListPane: ArgumentsPreview = definePreview(eventsListArguments, Events);
+// Without a field selector the label is the whole call; direct previews preserve null as the slot
+// suppression signal after schema validation.
+export const eventsListPane: ArgumentsPreview = {
+  schema: eventsListArguments,
+  render: (args: z.infer<typeof eventsListArguments>) =>
+    args.fieldSelector === undefined ? null : <Events fieldSelector={args.fieldSelector} />,
+};
 
 export const eventsListPresentation: ActionPresentation = {
   label: eventsListLabel,

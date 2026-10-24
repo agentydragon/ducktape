@@ -42,7 +42,6 @@ export function OperationPresentationVisual(): JSX.Element {
         />
         <JsonBlock heading="Recorded data" value={{ phase: "Running", replicas: 2 }} clamp={false} />
         <CommandCallView
-          target="Pod test-apps/demo-0"
           argv={["printf", "hello from argv", "line 2"]}
           notes={["Container app"]}
           releaseWhenFar

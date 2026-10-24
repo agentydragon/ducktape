@@ -223,23 +223,6 @@ const CODE_BLOCK_THEME = EditorView.theme({
   "&.cm-focused": { outline: "none" },
 });
 
-const LABEL_CODE_THEME = EditorView.theme({
-  "&": {
-    backgroundColor: "transparent",
-    border: "none",
-    borderRadius: "0",
-    color: "var(--mantine-color-text)",
-    fontSize: "var(--mantine-font-size-sm)",
-    fontWeight: "600",
-  },
-  ".cm-content": {
-    fontFamily: "var(--mantine-font-family-monospace)",
-    padding: 0,
-  },
-  ".cm-scroller": { fontFamily: "inherit" },
-  "&.cm-focused": { outline: "none" },
-});
-
 const MUTED_CODE_THEME = EditorView.theme({
   "&": {
     backgroundColor: "transparent",
@@ -321,7 +304,7 @@ function MountedCodeBlock({
   text: string;
   language?: Language;
   streamingCursorOffset?: number;
-  presentation: "block" | "label" | "muted";
+  presentation: "block" | "muted";
   surface: CodeBlockSurface;
   font: CodeBlockFont;
 }): JSX.Element {
@@ -331,9 +314,7 @@ function MountedCodeBlock({
       highlightSpecialChars({ specialChars: VISIBLE_SPECIAL_CHARS, render: renderSpecialChar }),
       syntaxHighlighting(CODE_HIGHLIGHT),
     ];
-    if (presentation === "label") {
-      result.push(LABEL_CODE_THEME);
-    } else if (presentation === "muted") {
+    if (presentation === "muted") {
       result.push(MUTED_CODE_THEME);
     } else {
       result.push(CODE_BLOCK_THEME);
@@ -371,7 +352,7 @@ export function CodeBlock({
   text: string;
   language?: Language;
   streamingCursorOffset?: number;
-  presentation?: "block" | "label" | "muted";
+  presentation?: "block" | "muted";
   /** Framed code owns its border and gutter; plain code uses spacing from its surrounding surface. */
   surface?: CodeBlockSurface;
   /** Use proportional text for prose while retaining exact CodeMirror selection and Unicode markers. */

@@ -54,12 +54,13 @@ describe("ActionRequests", () => {
   it("draws a registered Action's arguments with its widget, and the card's Raw switch turns them to JSON", async () => {
     const container = await renderLive(<ActionRequests />, [sshExec("decision_pending")]);
     expect(container.textContent).toContain("test-user@test-host.example");
+    expect(container.querySelector(".agentplane-command-call")).not.toBeNull();
     expect(container.textContent).not.toContain('"command"');
     const raw = container.querySelector<HTMLInputElement>('input[type="checkbox"]');
     if (!raw) throw new Error("missing the Raw switch");
     await act(async () => raw.click());
     expect(container.textContent).toContain('"command": "echo test-output"');
-    expect(container.textContent).not.toContain("test-user@test-host.example");
+    expect(container.querySelector(".agentplane-command-call")).toBeNull();
   });
 
   it("uses a human-facing Action label instead of the technical group and name", async () => {

@@ -3,6 +3,8 @@ import { z } from "zod";
 import type { ActionRequestView } from "../../types";
 import type { ActionNotificationParts } from "../types";
 
+import { kubernetesResourceSummary } from "../../schemas/kubernetes_admin/manifest";
+
 const resourcesCreateOrUpdateNotificationArguments = z.strictObject({ resource: z.string().min(1) });
 
 export function resourcesCreateOrUpdateNotification(request: ActionRequestView): ActionNotificationParts | null {
@@ -10,7 +12,7 @@ export function resourcesCreateOrUpdateNotification(request: ActionRequestView):
   if (!parsed.success) return null;
 
   return {
-    actionTitle: "Apply Kubernetes resource",
+    actionTitle: kubernetesResourceSummary(parsed.data.resource) ?? "Apply Kubernetes resource",
     text: request.description ?? "Action requires approval",
   };
 }

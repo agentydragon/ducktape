@@ -35,10 +35,10 @@ function streams(container: HTMLElement): Array<[string, string]> {
 afterEach(() => vi.restoreAllMocks());
 
 describe("ssh exec arguments", () => {
-  it("shows the target as user@host and the command as text, never as markup", async () => {
+  it("shows the command as text, never as markup, leaving the target to the label", async () => {
     const command = 'echo "<b>test</b>" > /tmp/test-file && cat /tmp/test-file';
     const container = await drawn(renderPreview(execArgumentsPreview, { ...ARGUMENTS, command }));
-    expect(container.textContent).toContain("test-user@test-host.example");
+    expect(container.textContent).not.toContain("test-host.example");
     expect(streams(container)[0][1]).toBe(command);
     expect(container.querySelector("b")).toBeNull();
     expect(container.textContent).not.toContain("Timeout");
@@ -56,10 +56,10 @@ describe("ssh exec arguments", () => {
 });
 
 describe("ssh exec summary", () => {
-  it("shows where the command runs, then the command as highlighted shell", async () => {
+  it("shows the command as highlighted shell", async () => {
     const command = "if true; then echo test-output; fi";
     const container = await drawn(renderPreview(execCollapsedPreview, { ...ARGUMENTS, command }));
-    expect(container.textContent).toContain(`test-user@test-host.example · $ ${command}`);
+    expect(container.textContent).toContain(command);
     expect([...container.querySelectorAll(".agentplane-tok-keyword")].map((node) => node.textContent)).toEqual(
       expect.arrayContaining(["if", "then", "fi"])
     );

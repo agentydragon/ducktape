@@ -9,7 +9,7 @@ import { CodeBlock } from "../../../../../../util/frontend/code_block";
 import { CommandCallView, CommandSummary, OutputBlock } from "../../../command_view";
 import { definePreview, type ArgumentsPreview, type PreviewProps } from "../entry";
 import { defineResultPreview, type ResultPreview, type ResultPreviewProps } from "../result_entry";
-import { zSshExecArguments, zSshExecResult } from "../../schemas/ssh/exec";
+import { sshExecNotes, zSshExecArguments, zSshExecResult } from "../../schemas/ssh/exec";
 
 type SshExecArguments = z.infer<typeof zSshExecArguments>;
 type SshExecResult = z.infer<typeof zSshExecResult>;
@@ -17,9 +17,8 @@ type SshExecResult = z.infer<typeof zSshExecResult>;
 function ExecArguments({ args }: PreviewProps<SshExecArguments>): JSX.Element {
   return (
     <CommandCallView
-      target={`${args.user}@${args.host}`}
       command={args.command}
-      notes={args.timeout_seconds == null ? [] : [`Timeout ${args.timeout_seconds} s`]}
+      notes={sshExecNotes(args)}
       releaseWhenFar
       surface="framed"
       stickyCollapse={false}
@@ -28,31 +27,19 @@ function ExecArguments({ args }: PreviewProps<SshExecArguments>): JSX.Element {
 }
 
 function ExecLabel({ args }: PreviewProps<SshExecArguments>): JSX.Element {
-  void args;
+  const root = args.user === "root";
   return (
     <Text size="sm" fw={600}>
-      Run SSH command
+      Run command on{" "}
+      <Code c={root ? "red" : undefined} title={root ? "Runs as root" : undefined}>
+        {args.user}@{args.host}
+      </Code>
     </Text>
   );
 }
 
 function ExecCollapsed({ args }: PreviewProps<SshExecArguments>): JSX.Element {
-  return (
-    <CommandSummary
-      text={args.command}
-      lead={
-        <>
-          <Code>
-            {args.user}@{args.host}
-          </Code>
-          {" · "}
-          <Text span ff="monospace">
-            {"$ "}
-          </Text>
-        </>
-      }
-    />
-  );
+  return <CommandSummary text={args.command} />;
 }
 
 function ExecResult({ result }: ResultPreviewProps<SshExecResult>): JSX.Element {

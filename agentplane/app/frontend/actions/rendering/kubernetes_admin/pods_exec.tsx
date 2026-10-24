@@ -3,11 +3,13 @@ import type { JSX } from "react";
 import { z } from "zod";
 
 import type { ActionPresentation } from "../presentation";
-import { argvText, CommandCallView, CommandSummary, OutputBlock } from "../../../command_view";
+import { argvText } from "../../../argv_text";
+import { CommandCallView, CommandSummary, OutputBlock } from "../../../command_view";
 
 import { definePreview, type ArgumentsPreview } from "../entry";
 import { defineResultPreview, type ResultPreview, type ResultPreviewProps } from "../result_entry";
-import { kubernetesTarget } from "./resource_common";
+import { podsExecNotes } from "../../schemas/kubernetes_admin/pods_exec";
+import { kubernetesTarget } from "../../schemas/kubernetes_admin/target";
 
 const podsExecArguments = z.strictObject({
   name: z.string().min(1),
@@ -31,14 +33,7 @@ function PodsExecLabel({ args }: { args: PodsExecArguments }): JSX.Element {
 }
 
 function Opened({ args }: { args: PodsExecArguments }): JSX.Element {
-  return (
-    <CommandCallView
-      argv={args.command}
-      notes={args.container === undefined ? [] : [`Container ${args.container}`]}
-      releaseWhenFar
-      surface="framed"
-    />
-  );
+  return <CommandCallView argv={args.command} notes={podsExecNotes(args)} releaseWhenFar surface="framed" />;
 }
 
 function PodExecOutput({ result }: ResultPreviewProps<string>): JSX.Element {
@@ -54,6 +49,10 @@ export const podsExecLabel: ArgumentsPreview = definePreview(podsExecArguments, 
 
 const podsDeleteArguments = z.strictObject({ name: z.string().min(1), namespace: z.string().min(1).optional() });
 const podsDeleteResult = z.literal("Pod deleted successfully");
+
+export function offersCardDecisionButtonsPodsDelete(args: unknown): boolean {
+  return podsDeleteArguments.safeParse(args).success;
+}
 
 function PodsDeleteLabel({ args }: { args: z.infer<typeof podsDeleteArguments> }): JSX.Element {
   return (
@@ -77,6 +76,7 @@ export const podsDeletePresentation: ActionPresentation = {
     arguments: podsDeletePane,
     result: podsDeleteResultPreview,
   },
+  offersCardDecisionButtons: offersCardDecisionButtonsPodsDelete,
 };
 
 export const podsExecPresentation: ActionPresentation = {

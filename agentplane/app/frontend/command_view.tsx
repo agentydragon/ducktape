@@ -2,8 +2,9 @@
 // harness's own shell tool calls: the command as highlighted shell, and its output as text, each
 // capped in height with the rest one click away.
 import { Button, Stack, Text } from "@mantine/core";
-import { type JSX, type ReactNode, useState } from "react";
+import { type JSX, useState } from "react";
 
+import { argvText } from "./argv_text";
 import { ClampedBlock, lineCount, TEXT_MAX_HEIGHT_REM } from "./clamped_block";
 import { CodeBlock, type CodeBlockSurface, InlineCode } from "../../../util/frontend/code_block";
 import { Disclosure, DisclosureBody } from "./disclosure";
@@ -19,34 +20,21 @@ type Expansion = readonly [boolean, (expanded: boolean) => void];
 
 type CommandInput = { command: string; argv?: never } | { command?: never; argv: readonly string[] };
 
-function shellQuote(argument: string): string {
-  return /^[A-Za-z0-9_./:=,@+-]+$/.test(argument) ? argument : `'${argument.replaceAll("'", "'\\''")}'`;
-}
-
-/** A shell-safe display of argv that preserves each argument boundary without implying shell execution. */
-export function argvText(argv: readonly string[]): string {
-  return argv.map(shellQuote).join(" ");
-}
-
 /** A command on a compact card's collapsed row: highlighted shell, its line breaks read as spaces, cut
- * off after `COMMAND_SUMMARY_MAX_LINES` lines. The opened preview and the full card hold all of it.
- * `lead` is what comes before the command on the first line, such as where it runs. */
-export function CommandSummary({ text, lead }: { text: string; lead?: ReactNode }): JSX.Element {
+ * off after `COMMAND_SUMMARY_MAX_LINES` lines. The opened preview and the full card hold all of it. */
+export function CommandSummary({ text }: { text: string }): JSX.Element {
   return (
     <Text size="xs" lineClamp={COMMAND_SUMMARY_MAX_LINES} style={{ overflowWrap: "anywhere" }}>
-      {lead}
       <InlineCode text={text} language="bash" />
     </Text>
   );
 }
 
-/** The call as the reader judges it: what the model said it is for, where it runs, the exact
- * command, and the settings that change how it runs. */
+/** The call as the reader judges it: what the model said it is for, the exact command, and the
+ * settings that change how it runs. Where it runs belongs in the Action's label. */
 export function CommandCallView(
   props: {
     description?: string;
-    /** Where the command runs, such as `user@host` or `Pod namespace/name`. */
-    target?: string;
     notes: readonly string[];
     expansion?: Expansion;
     /** Release CodeMirror's editor when this Action call is far outside the viewport. */
@@ -57,19 +45,16 @@ export function CommandCallView(
     stickyCollapse?: boolean;
   } & CommandInput
 ): JSX.Element {
-  const { description, target, notes, expansion, releaseWhenFar = false, surface, stickyCollapse = true } = props;
+  const { description, notes, expansion, releaseWhenFar = false, surface, stickyCollapse = true } = props;
   const command = "command" in props ? props.command : undefined;
   const argv = "argv" in props ? props.argv : undefined;
   const commandText = command ?? (argv === undefined ? "" : argvText(argv));
   const commandLabel = command === undefined ? "Arguments" : "Command";
   const content = (
     <Stack className="agentplane-command-call" gap={0}>
-      {(description || target) && (
+      {description && (
         <DisclosureBody>
-          <Stack gap={4}>
-            {description && <Text size="sm">{description}</Text>}
-            {target && <CodeBlock text={target} presentation="label" />}
-          </Stack>
+          <Text size="sm">{description}</Text>
         </DisclosureBody>
       )}
       <ClampedBlock
@@ -90,13 +75,9 @@ export function CommandCallView(
       </ClampedBlock>
       {notes.length > 0 && (
         <DisclosureBody>
-          <Stack gap={4}>
-            {notes.map((note) => (
-              <Text key={note} size="xs" c="dimmed">
-                {note}
-              </Text>
-            ))}
-          </Stack>
+          <Text size="xs" c="dimmed">
+            {notes.join(" · ")}
+          </Text>
         </DisclosureBody>
       )}
     </Stack>

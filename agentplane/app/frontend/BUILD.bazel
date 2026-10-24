@@ -277,10 +277,17 @@ ts_library(
 )
 
 ts_library(
+    name = "argv_text",
+    srcs = ["argv_text.ts"],
+    tsconfig = TSCONFIG,
+)
+
+ts_library(
     name = "command_view",
     srcs = ["command_view.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":argv_text",
         ":clamped_block",
         ":disclosure",
         ":json_view",

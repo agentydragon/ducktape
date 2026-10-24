@@ -140,6 +140,27 @@ describe("Action presentation slots", () => {
     expect(eventsPane.textContent).toContain("Show events matching");
     expect(eventsPane.textContent).toContain("type=Warning");
     expect(eventsPane.textContent).not.toContain("apps");
+    expect(renderPaneCollapsed(eventsAction, { namespace: "apps" })).toBeNull();
+    expect(renderPaneOpened(eventsAction, { namespace: "apps" })).toBeNull();
+  });
+
+  it("names a cluster-scoped delete by its kind and name", async () => {
+    const action = { group: "kubernetes_admin", name: "resources_delete" };
+    const args = { apiVersion: "v1", kind: "PersistentVolume", name: "test-volume" };
+    expect((await mount(renderActionLabel(action, args))).textContent).toContain("Delete PersistentVolume test-volume");
+    expect((await mount(renderPaneOpened(action, args))).textContent).toContain("Use API version v1");
+    expect(actionOffersCardDecisionButtons(action, args)).toBe(true);
+  });
+
+  it.each([
+    [{ container: "sidecar" }, "View logs for Pod apps/web-0, container sidecar"],
+    [{ previous: true, tail: 60 }, "View logs for Pod apps/web-0, previous run, last 60 lines"],
+    [{ previous: false, tail: -1 }, "View logs for Pod apps/web-0, tail -1"],
+  ])("puts how a log read is cut into its label: %o", async (options, expected) => {
+    const action = { group: "kubernetes_admin", name: "pods_log" };
+    const args = { name: "web-0", namespace: "apps", ...options };
+    expect((await mount(renderActionLabel(action, args))).textContent).toContain(expected);
+    expect(renderPaneOpened(action, args)).toBeNull();
   });
 
   it("shows calendar context and explicit delete grace in the collapsed pane", async () => {
@@ -164,14 +185,25 @@ describe("Action presentation slots", () => {
     expect(deletion.textContent).not.toContain("apps/web-0");
   });
 
-  it("uses SSH's custom pane and full-details argument renderers", async () => {
+  it("puts the SSH target in the label and the command in the pane", async () => {
+    const label = await mount(renderActionLabel(SSH_EXEC, SSH_EXEC_ARGUMENTS));
     const collapsed = await mount(renderPaneCollapsed(SSH_EXEC, SSH_EXEC_ARGUMENTS));
     const opened = await mount(renderPaneOpened(SSH_EXEC, SSH_EXEC_ARGUMENTS));
     const details = await mount(renderDetailsArguments(SSH_EXEC, SSH_EXEC_ARGUMENTS));
 
-    expect(collapsed.textContent).toContain("$ echo test-output");
-    expect(opened.textContent).toContain("test-user@test-host.example");
-    expect(details.textContent).toContain("test-user@test-host.example");
+    expect(label.textContent).toContain("Run command on test-user@test-host.example");
+    expect(collapsed.textContent).toContain("echo test-output");
+    expect(collapsed.textContent).not.toContain("test-host.example");
+    expect(opened.textContent).toContain("echo test-output");
+    expect(details.textContent).toContain("echo test-output");
+    expect(details.textContent).not.toContain("test-host.example");
+  });
+
+  it("marks an SSH command that runs as root", async () => {
+    const label = await mount(renderActionLabel(SSH_EXEC, { ...SSH_EXEC_ARGUMENTS, user: "root" }));
+    expect(label.querySelector('[title="Runs as root"]')?.textContent).toBe("root@test-host.example");
+    const unprivileged = await mount(renderActionLabel(SSH_EXEC, SSH_EXEC_ARGUMENTS));
+    expect(unprivileged.querySelector('[title="Runs as root"]')).toBeNull();
   });
 
   it("renders Gmail drafts from submitted data without repeating their subject", async () => {
@@ -425,7 +457,6 @@ describe("Action presentation slots", () => {
 
   it.each([
     ["resources_get", { apiVersion: "apps/v1", kind: "Deployment", name: "api" }, ["Read with API version apps/v1"]],
-    ["pods_log", { name: "api-0", tail: -1 }, ['"tail": -1']],
   ] as const)(
     "uses the opened-pane argument widget for %s when optional fields are omitted",
     async (name, args, visible) => {
@@ -505,28 +536,57 @@ describe("details result rendering", () => {
     expect(malformed.textContent).toContain("kind: [broken");
   });
 
-  it("summarizes applied resources by their supplied identities", async () => {
+  it("names applied resources in the label", async () => {
     const action = { group: "kubernetes_admin", name: "resources_create_or_update" };
-    const single = await mount(
-      renderPaneCollapsed(action, {
-        resource: "{apiVersion: v1, kind: ConfigMap, metadata: {name: settings, namespace: apps}}",
-      })
+    const label = async (resource: string) => (await mount(renderActionLabel(action, { resource }))).textContent;
+
+    expect(await label("{apiVersion: v1, kind: ConfigMap, metadata: {name: settings, namespace: apps}}")).toContain(
+      "Apply ConfigMap apps/settings"
     );
-    expect(single.textContent).toContain("Apply ConfigMap apps/settings");
+    expect(
+      await label(
+        "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: settings\n  namespace: apps\n---\napiVersion: v1\nkind: Secret\nmetadata:\n  name: token\n  namespace: apps\n"
+      )
+    ).toContain("Apply 2 Kubernetes resources: ConfigMap apps/settings, Secret apps/token");
+    expect(await label("apiVersion: v1\nkind: Service\n")).toContain("Apply Service");
+    expect(await label("kind: [broken")).toContain("Apply Kubernetes resource");
+  });
 
-    const multiple = await mount(
+  it.each([
+    [
+      "lists a few short fields",
+      "{apiVersion: v1, kind: PersistentVolume, metadata: {name: test-volume}, spec: {persistentVolumeReclaimPolicy: Delete}}",
+      "spec.persistentVolumeReclaimPolicy: Delete",
+    ],
+    [
+      "counts many fields by group",
+      "{apiVersion: v1, kind: ConfigMap, metadata: {name: settings, labels: {a: x, b: y}}, data: {c: z, d: w}}",
+      "Sets 4 fields under metadata.labels, data",
+    ],
+    [
+      "counts a multi-line field",
+      '{apiVersion: v1, kind: ConfigMap, metadata: {name: settings}, data: {script: "line one\\nline two"}}',
+      "Sets 1 field under data",
+    ],
+  ])("summarizes what an apply sets: %s", async (_, resource, expected) => {
+    const action = { group: "kubernetes_admin", name: "resources_create_or_update" };
+    const collapsed = await mount(renderPaneCollapsed(action, { resource }));
+    expect(collapsed.textContent).toContain(expected);
+    expect(collapsed.textContent).not.toContain("settings");
+    expect(collapsed.textContent).not.toContain("test-volume");
+  });
+
+  it("leaves the collapsed row to the label for several resources or bare identities", () => {
+    const action = { group: "kubernetes_admin", name: "resources_create_or_update" };
+    expect(
       renderPaneCollapsed(action, {
-        resource:
-          "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: settings\n  namespace: apps\n---\napiVersion: v1\nkind: Secret\nmetadata:\n  name: token\n  namespace: apps\n",
+        resource: "apiVersion: v1\nkind: ConfigMap\n---\napiVersion: v1\nkind: Secret\ndata: {a: b}\n",
       })
-    );
-    expect(multiple.textContent).toContain("Apply 2 Kubernetes resources: ConfigMap apps/settings, Secret apps/token");
-
-    const unnamed = await mount(renderPaneCollapsed(action, { resource: "apiVersion: v1\nkind: Service\n" }));
-    expect(unnamed.textContent).toContain("Apply Service");
-
-    const malformed = await mount(renderPaneCollapsed(action, { resource: "kind: [broken" }));
-    expect(malformed.textContent).toContain("Kubernetes manifest");
+    ).toBeNull();
+    expect(
+      renderPaneCollapsed(action, { resource: "{apiVersion: v1, kind: Namespace, metadata: {name: x}}" })
+    ).toBeNull();
+    expect(renderPaneCollapsed(action, { resource: "kind: [broken" })).toBeUndefined();
   });
 
   it("renders a returned YAML sequence as separate Kubernetes resources", async () => {
@@ -685,13 +745,19 @@ const cardDecisionButtonCases: Array<{
     group: "kubernetes_admin",
     name: "pods_log",
     args: { name: "api-0", container: "sidecar", previous: true, tail: -1 },
-    visible: ['"container": "sidecar"', '"previous": true', '"tail": -1'],
+    visible: ["container sidecar", "previous run", "tail -1"],
   },
   {
     group: "kubernetes_admin",
     name: "resources_delete",
     args: { apiVersion: "v1", kind: "Pod", name: "api-0", namespace: "prod", gracePeriodSeconds: 0 },
-    visible: ["request a 0s grace period"],
+    visible: ["Delete Pod prod/api-0", "request a 0s grace period"],
+  },
+  {
+    group: "kubernetes_admin",
+    name: "pods_delete",
+    args: { name: "api-0", namespace: "prod" },
+    visible: ["Delete Pod prod/api-0"],
   },
   {
     group: "kubernetes_admin",
@@ -699,6 +765,19 @@ const cardDecisionButtonCases: Array<{
     args: { namespace: "prod", fieldSelector: "type=Warning" },
     visible: ["Show events matching", "type=Warning"],
   },
+  {
+    group: "sandbox",
+    name: "get",
+    args: { name: "inspected-sandbox" },
+    visible: ["Inspect sandbox inspected-sandbox"],
+  },
+  {
+    group: "sandbox",
+    name: "dispose",
+    args: { name: "disposed-sandbox" },
+    visible: ["Dispose sandbox disposed-sandbox"],
+  },
+  { group: "sandbox", name: "list", args: {}, visible: ["List sandboxes"] },
   { group: "grocy_sf", name: "products_list", args: { detail: "full" }, visible: ["Full Product records"] },
   { group: "grocy_sf", name: "quantity_units_list", args: {}, visible: ["Quantity unit names"] },
   {
@@ -734,10 +813,16 @@ const cardDecisionButtonCases: Array<{
 ];
 
 describe("opened-pane renderers", () => {
+  // Card decision buttons sit on the compact card, so what it shows is the label and the opened pane.
   it.each(cardDecisionButtonCases.filter(({ name }) => name !== "pods_list_in_namespace"))(
     "draws all displayed request fields for $group/$name",
     async ({ group, name, args, visible }) => {
-      const container = await mount(renderPaneOpened({ group, name }, args));
+      const container = await mount(
+        <>
+          {renderActionLabel({ group, name }, args)}
+          {renderPaneOpened({ group, name }, args)}
+        </>
+      );
       for (const value of visible) expect(container.textContent).toContain(value);
     }
   );
@@ -762,7 +847,7 @@ describe("opened-pane renderers", () => {
 });
 
 describe("card decision buttons capability", () => {
-  it.each(cardDecisionButtonCases.filter(({ name }) => name !== "resources_delete"))(
+  it.each(cardDecisionButtonCases)(
     "validates the whole $group/$name request independently",
     ({ group, name, args }) => {
       expect(actionOffersCardDecisionButtons({ group, name }, args)).toBe(true);
@@ -775,15 +860,6 @@ describe("card decision buttons capability", () => {
     expect(actionOffersCardDecisionButtons(search, { q: "label:inbox" })).toBe(true);
     expect(actionOffersCardDecisionButtons(search, { q: "label:inbox", pageToken: "next" })).toBe(false);
     expect(actionOffersCardDecisionButtons(search, { q: "label:inbox", includeSpamTrash: true })).toBe(false);
-  });
-
-  it("never offers card decision buttons for a delete", () => {
-    expect(
-      actionOffersCardDecisionButtons(
-        { group: "kubernetes_admin", name: "resources_delete" },
-        { apiVersion: "v1", kind: "Pod", name: "api-0", namespace: "prod" }
-      )
-    ).toBe(false);
   });
 
   it("requires full review for PR descriptions, hidden defaults, and unknown actions", () => {
@@ -828,14 +904,11 @@ describe("sandbox rendering", () => {
 
   it.each([
     ["create", { name: "new-sandbox", template: "python" }, "Create sandbox", "Template: python"],
-    ["get", { name: "waiting-sandbox" }, "Inspect sandbox", "No additional arguments."],
-    ["dispose", { name: "disposed-sandbox" }, "Dispose sandbox", "No additional arguments."],
-    ["list", {}, "List sandboxes", "No arguments."],
     [
       "exec",
       { name: "script-sandbox", script: 'echo "$HOME"', timeout_seconds: 60, max_output_bytes: 0, cwd: "/workspace" },
-      "Run script in sandbox",
-      "Output limit 0 bytes per stream",
+      "Run command in sandbox script-sandbox",
+      "Working directory /workspace · Timeout 60 s · Output limit 0 bytes per stream",
     ],
   ])("renders %s without authorizing compact decisions", async (name, args, label, body) => {
     expect((await mount(renderActionLabel(action(name), args))).textContent).toContain(label);
@@ -843,6 +916,11 @@ describe("sandbox rendering", () => {
     expect(actionOffersCardDecisionButtons(action(name), args)).toBe(false);
     const recorded = await mount(renderDetailsArguments(action(name), { ...args, hidden: true }));
     expect(recorded.textContent).toContain("Details shown as recorded data");
+  });
+
+  it("summarizes a sandbox script on the collapsed row", async () => {
+    const args = { name: "script-sandbox", script: 'echo "$HOME"', timeout_seconds: 60, max_output_bytes: 0 };
+    expect((await mount(renderPaneCollapsed(action("exec"), args))).textContent).toContain('echo "$HOME"');
   });
 
   it("shows readiness conditions and empty lists", async () => {

@@ -1,9 +1,12 @@
 import { z } from "zod";
 
 import type { ActionRequestView } from "../../types";
+import { argvText } from "../../../argv_text";
+import { commandNotificationText } from "../command";
 import type { ActionNotificationParts } from "../types";
 
-import { kubernetesTarget } from "./target";
+import { podsExecNotes } from "../../schemas/kubernetes_admin/pods_exec";
+import { kubernetesTarget } from "../../schemas/kubernetes_admin/target";
 
 const podsExecNotificationArguments = z.strictObject({
   name: z.string().min(1),
@@ -18,6 +21,6 @@ export function podsExecNotification(request: ActionRequestView): ActionNotifica
 
   return {
     actionTitle: `Run command in ${kubernetesTarget("Pod", parsed.data.name, parsed.data.namespace)}`,
-    text: request.description ?? "Action requires approval",
+    text: commandNotificationText(argvText(parsed.data.command), podsExecNotes(parsed.data)),
   };
 }

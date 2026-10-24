@@ -13,3 +13,8 @@
   of it. Never a bare `<Code>` of a command.
 - Never render a lone Approve or Deny: use the shared `ActionDecisionButtons` (green/check Approve,
   red/cross Deny).
+- Command-running Actions (SSH, Pod and sandbox exec) read alike: the label is "Run command on/in
+  <target>", the pane never repeats the target, and the settings that change how it runs are one
+  line of `CommandCallView` notes built by a `schemas/` helper that the notification text shares.
+- Offer card decision buttons when the label and the opened preview show the whole call; a
+  destructive call is no exception.

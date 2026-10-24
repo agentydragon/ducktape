@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import type { ActionPresentation } from "../presentation";
 import { definePreview, type ArgumentsPreview } from "../entry";
-import { kubernetesTarget } from "./resource_common";
+import { kubernetesTarget } from "../../schemas/kubernetes_admin/target";
 
 const podsGetArguments = z.strictObject({
   name: z.string().min(1),

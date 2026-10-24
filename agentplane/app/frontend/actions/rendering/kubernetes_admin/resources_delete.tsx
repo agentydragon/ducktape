@@ -6,13 +6,19 @@ import type { ActionPresentation } from "../presentation";
 import { defineCallPreview, definePreview, type ArgumentsPreview, type CallPreview } from "../entry";
 import type { ResultPreview } from "../result_entry";
 
-import { kubernetesTarget, resource } from "./resource_common";
+import { kubernetesTarget } from "../../schemas/kubernetes_admin/target";
+import { resource } from "./resource_common";
 
 const resourcesDeleteArguments = z.strictObject({
   ...resource,
   gracePeriodSeconds: z.int().nonnegative().optional(),
 });
 const resourcesDeleteResult = z.literal("Resource deleted successfully");
+
+// The label names the whole target; the opened card adds the API version and any grace period.
+export function offersCardDecisionButtonsResourcesDelete(args: unknown): boolean {
+  return resourcesDeleteArguments.safeParse(args).success;
+}
 
 function Delete({ args }: { args: z.infer<typeof resourcesDeleteArguments> }): JSX.Element {
   return (
@@ -58,4 +64,5 @@ export const resourcesDeletePresentation: ActionPresentation = {
   pane: { collapsed: resourcesDeleteSummary, opened: resourcesDeletePane },
   call: resourcesDeleteCall,
   details: { arguments: resourcesDeletePane, result: resourcesDeleteResultPreview },
+  offersCardDecisionButtons: offersCardDecisionButtonsResourcesDelete,
 };

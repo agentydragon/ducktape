@@ -222,8 +222,8 @@ async def test_sidebar_compact_pod_approval(view: VisualPage, app: AgentplaneFix
                 "previous": True,
                 "tail": -1,
             },
-            ['"container": "sidecar-', '"previous": true', '"tail": -1'],
-            "Previous logs",
+            ["container sidecar-", "previous run", "tail -1"],
+            "previous run",
             id="previous-pod-logs",
         ),
         pytest.param(
@@ -286,12 +286,12 @@ async def test_action_argument_layouts(
         await section.get_by_role("button", name=f"Expand {title}").click()
         for value in visible:
             await expect(section.get_by_text(value, exact=False)).to_be_visible()
-        if (group, name) not in {("kubernetes_admin", "resources_delete"), ("tana", "get_or_create_calendar_node")}:
+        if (group, name) != ("tana", "get_or_create_calendar_node"):
             await expect(section.get_by_role("button", name=f"Approve {title}")).to_be_visible()
             await expect(section.get_by_role("button", name=f"Deny {title}")).to_be_visible()
     else:
         await expect(section.get_by_text(overview, exact=False)).to_be_visible()
-        if (group, name) not in {("kubernetes_admin", "resources_delete"), ("tana", "get_or_create_calendar_node")}:
+        if (group, name) != ("tana", "get_or_create_calendar_node"):
             await expect(section.get_by_role("button", name=f"Approve {title}")).to_be_visible()
             await expect(section.get_by_role("button", name=f"Deny {title}")).to_be_visible()
     await view.capture(target=section)
@@ -380,7 +380,11 @@ async def test_sandbox_action_results(
             "kubernetes_admin", "pods_get", {"name": "web-0", "namespace": "apps"}, "Get Pod apps/web-0", id="pod-get"
         ),
         pytest.param(
-            "kubernetes_admin", "pods_log", {"name": "web-0", "previous": True, "tail": -1}, '"tail": -1', id="pod-log"
+            "kubernetes_admin",
+            "pods_log",
+            {"name": "web-0", "previous": True, "tail": -1},
+            "previous run, tail -1",
+            id="pod-log",
         ),
         pytest.param(
             "kubernetes_admin",
@@ -453,11 +457,13 @@ async def test_sandbox_action_results(
             id="sandbox-exec",
         ),
         pytest.param("sandbox", "create", {"name": "new-sandbox", "template": "python"}, "python", id="sandbox-create"),
-        pytest.param("sandbox", "get", {"name": "inspected-sandbox"}, "No additional arguments.", id="sandbox-get"),
         pytest.param(
-            "sandbox", "dispose", {"name": "disposed-sandbox"}, "No additional arguments.", id="sandbox-dispose"
+            "sandbox", "get", {"name": "inspected-sandbox"}, "Inspect sandbox inspected-sandbox", id="sandbox-get"
         ),
-        pytest.param("sandbox", "list", {}, "No arguments.", id="sandbox-list"),
+        pytest.param(
+            "sandbox", "dispose", {"name": "disposed-sandbox"}, "Dispose sandbox disposed-sandbox", id="sandbox-dispose"
+        ),
+        pytest.param("sandbox", "list", {}, "List sandboxes", id="sandbox-list"),
         pytest.param("grocy_sf", "products_list", {"detail": "full"}, "Full Product records", id="grocy-products"),
         pytest.param("grocy_sf", "quantity_units_list", {}, "Quantity unit names", id="grocy-units"),
         pytest.param(
@@ -527,7 +533,16 @@ async def test_compact_action_summaries(
             "Get or create Tana calendar node"
         )
     await expect(section.get_by_role("link", name=f"View details for {title}")).to_be_visible()
-    if group == "kubernetes_admin" and name in {"resources_get", "pods_list_in_namespace", "pods_get", "pods_log"}:
+    if (group, name) in {
+        ("kubernetes_admin", "resources_get"),
+        ("kubernetes_admin", "pods_list_in_namespace"),
+        ("kubernetes_admin", "pods_get"),
+        ("kubernetes_admin", "pods_log"),
+        ("kubernetes_admin", "resources_delete"),
+        ("sandbox", "get"),
+        ("sandbox", "dispose"),
+        ("sandbox", "list"),
+    }:
         await expect(section.get_by_role("button", name=f"Approve {title}")).to_be_visible()
     await view.capture(target=section)
 
@@ -1159,7 +1174,7 @@ async def test_long_action_text(view: VisualPage, app: AgentplaneFixture, captur
     if kind == "json":
         await expect(page.get_by_text("Structured content", exact=True)).to_be_visible()
     elif kind == "manifest":
-        await expect(page.get_by_text("Apply Kubernetes resource", exact=True)).to_be_visible()
+        await expect(page.get_by_text("Apply ConfigMap", exact=True)).to_be_visible()
 
     if kind in {"text", "json"}:
         block = page.get_by_test_id("action-execution-outcome").locator(".agentplane-clamped-block")
@@ -1212,7 +1227,7 @@ async def test_kubernetes_applied_manifest_receipt(view: VisualPage, app: Agentp
     await app.mount_app("/actions")
     await _open_history_receipts(view.page)
     page = view.page
-    await expect(page.get_by_text("Apply Kubernetes resource", exact=True)).to_be_visible()
+    await expect(page.get_by_text("Apply ConfigMap apps/settings", exact=True)).to_be_visible()
     await expect(page.locator('[data-operation-heading="Manifest · ConfigMap apps/settings"]:visible')).to_be_visible()
     await expect(
         page.locator('[data-operation-heading="Resource 1 · ConfigMap apps/settings"]:visible')

@@ -222,11 +222,27 @@ ts_library(
     ],
 )
 
+# React-free Kubernetes Action helpers shared by the app's renderers and the service worker's notifications.
 ts_library(
-    name = "kubernetes_pod_list_schema",
-    srcs = ["schemas/kubernetes_admin/pods_list_in_namespace.ts"],
+    name = "kubernetes_action_schemas",
+    srcs = [
+        "schemas/kubernetes_admin/manifest.ts",
+        "schemas/kubernetes_admin/pods_exec.ts",
+        "schemas/kubernetes_admin/pods_list_in_namespace.ts",
+        "schemas/kubernetes_admin/pods_log.ts",
+        "schemas/kubernetes_admin/target.ts",
+    ],
     tsconfig = TSCONFIG,
-    deps = ["//:node_modules/zod"],
+    deps = [
+        "//:node_modules/yaml",
+        "//:node_modules/zod",
+    ],
+)
+
+ts_library(
+    name = "sandbox_action_schemas",
+    srcs = ["schemas/sandbox/exec.ts"],
+    tsconfig = TSCONFIG,
 )
 
 agentplane_vitest_test(
@@ -314,10 +330,12 @@ agentplane_vitest_test(
 ts_library(
     name = "notifications",
     srcs = [
+        "notifications/command.ts",
         "notifications/grocy/get_system_info.ts",
         "notifications/grocy/products_list.ts",
         "notifications/grocy/quantity_units_list.ts",
         "notifications/index.ts",
+        "notifications/kubernetes_admin/events_list.ts",
         "notifications/kubernetes_admin/pods_delete.ts",
         "notifications/kubernetes_admin/pods_exec.ts",
         "notifications/kubernetes_admin/pods_get.ts",
@@ -326,16 +344,20 @@ ts_library(
         "notifications/kubernetes_admin/resources_create_or_update.ts",
         "notifications/kubernetes_admin/resources_delete.ts",
         "notifications/kubernetes_admin/resources_get.ts",
-        "notifications/kubernetes_admin/target.ts",
+        "notifications/kubernetes_admin/resources_list.ts",
+        "notifications/sandbox/exec.ts",
         "notifications/ssh/exec.ts",
         "notifications/tana/get_or_create_calendar_node.ts",
         "notifications/types.ts",
     ],
     tsconfig = TSCONFIG,
     deps = [
+        ":kubernetes_action_schemas",
+        ":sandbox_action_schemas",
         ":ssh_action_schemas",
         ":types",
         "//:node_modules/zod",
+        "//agentplane/app/frontend:argv_text",
     ],
 )
 

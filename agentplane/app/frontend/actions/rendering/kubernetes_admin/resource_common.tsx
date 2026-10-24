@@ -1,12 +1,14 @@
 import { z } from "zod";
 
-export const resource: Record<"apiVersion" | "kind" | "name" | "namespace", z.ZodString> = {
+// Cluster-scoped kinds (Namespace, PersistentVolume, Node) have no namespace.
+export const resource: {
+  apiVersion: z.ZodString;
+  kind: z.ZodString;
+  name: z.ZodString;
+  namespace: z.ZodOptional<z.ZodString>;
+} = {
   apiVersion: z.string().min(1),
   kind: z.string().min(1),
   name: z.string().min(1),
-  namespace: z.string().min(1),
+  namespace: z.string().min(1).optional(),
 };
-
-export function kubernetesTarget(kind: string, name: string, namespace?: string): string {
-  return `${kind} ${namespace ? `${namespace}/` : ""}${name}`;
-}

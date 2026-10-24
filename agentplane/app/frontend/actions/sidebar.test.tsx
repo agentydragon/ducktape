@@ -119,7 +119,7 @@ it("expands a compact action preview and only offers a decision on the compact c
   expect(podLabel?.textContent).not.toContain("kubernetes_admin / pods_list_in_namespace");
   expect(container.textContent?.match(/List pods in namespace test-namespace/g)).toHaveLength(1);
   expect(container.textContent).toContain("Matching pods where");
-  expect(container.textContent).toContain("$ systemctl restart backup");
+  expect(container.textContent).toContain("systemctl restart backup");
   const podDisclosure = container.querySelector<HTMLButtonElement>(`button[aria-label="Expand ${pod.title}"]`);
   if (!podDisclosure) throw new Error("missing pod action disclosure");
   await act(async () => podDisclosure.click());
@@ -190,7 +190,7 @@ it("shows approval widgets for Kubernetes resource, pod-list, and log reads", as
         arguments: { name: "api-0", container: "sidecar", previous: true, tail: -1 },
         title: "inspect pod logs",
       },
-      visible: ['"container": "sidecar"', '"previous": true', '"tail": -1'],
+      visible: ["container sidecar", "previous run", "tail -1"],
     },
     {
       request: {
@@ -203,7 +203,7 @@ it("shows approval widgets for Kubernetes resource, pod-list, and log reads", as
     },
   ];
   await send(reads.map(({ request: row }) => row));
-  await vi.waitFor(() => expect(container.textContent).toContain("Previous logs"));
+  await vi.waitFor(() => expect(container.textContent).toContain("previous run"));
   for (const { request: read, visible } of reads) {
     const disclosure = container.querySelector<HTMLButtonElement>(`button[aria-label="Expand ${read.title}"]`);
     if (!disclosure) throw new Error(`missing disclosure for ${read.title}`);

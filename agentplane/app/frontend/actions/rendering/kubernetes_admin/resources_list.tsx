@@ -14,7 +14,7 @@ const listSelectors = {
 const resourcesListArguments = z.strictObject({
   apiVersion: resource.apiVersion,
   kind: resource.kind,
-  namespace: resource.namespace.optional(),
+  namespace: resource.namespace,
   ...listSelectors,
 });
 

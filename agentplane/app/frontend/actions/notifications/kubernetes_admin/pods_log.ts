@@ -3,7 +3,8 @@ import { z } from "zod";
 import type { ActionRequestView } from "../../types";
 import type { ActionNotificationParts } from "../types";
 
-import { kubernetesTarget } from "./target";
+import { podsLogOptions } from "../../schemas/kubernetes_admin/pods_log";
+import { kubernetesTarget } from "../../schemas/kubernetes_admin/target";
 
 const podsLogNotificationArguments = z.strictObject({
   name: z.string().min(1),
@@ -18,7 +19,10 @@ export function podsLogNotification(request: ActionRequestView): ActionNotificat
   if (!parsed.success) return null;
 
   return {
-    actionTitle: `View logs for ${kubernetesTarget("Pod", parsed.data.name, parsed.data.namespace)}`,
+    actionTitle: [
+      `View logs for ${kubernetesTarget("Pod", parsed.data.name, parsed.data.namespace)}`,
+      ...podsLogOptions(parsed.data),
+    ].join(", "),
     text: request.description ?? "Action requires approval",
   };
 }
