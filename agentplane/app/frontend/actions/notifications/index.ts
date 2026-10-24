@@ -1,4 +1,8 @@
 import type { ActionRequestView } from "../types";
+import { createBranchNotification } from "./github/create_branch";
+import { createPullRequestNotification } from "./github/create_pull_request";
+import { pushFilesNotification } from "./github/push_files";
+import { updatePullRequestNotification } from "./github/update_pull_request";
 import { eventsListNotification } from "./kubernetes_admin/events_list";
 import { podsDeleteNotification } from "./kubernetes_admin/pods_delete";
 import { podsExecNotification } from "./kubernetes_admin/pods_exec";
@@ -50,6 +54,15 @@ const FORMATTERS: ReadonlyMap<string, ReadonlyMap<string, ActionNotificationForm
       ["products_list", grocyProductsListNotification],
       ["quantity_units_list", grocyQuantityUnitsListNotification],
       ["get_system_info", grocySystemInfoNotification],
+    ]),
+  ],
+  [
+    "github",
+    new Map([
+      ["push_files", pushFilesNotification],
+      ["update_pull_request", updatePullRequestNotification],
+      ["create_branch", createBranchNotification],
+      ["create_pull_request", createPullRequestNotification],
     ]),
   ],
   [

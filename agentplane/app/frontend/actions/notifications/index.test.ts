@@ -302,6 +302,127 @@ describe("action notification formatting", () => {
     });
   });
 
+  it("names a GitHub push's target and lists its commit message and first files by UTF-8 size", () => {
+    const request = actionRequest({
+      action: { group: "github", name: "push_files" },
+      arguments: {
+        owner: "test-owner",
+        repo: "test-repo",
+        branch: "test-branch",
+        message: "test: update fixtures",
+        files: [
+          { path: "test/accented.txt", content: "é".repeat(406) },
+          { path: "test/small.txt", content: "x".repeat(1906) },
+          { path: "test/large.txt", content: "x".repeat(72047) },
+          { path: "test/extra-1.txt", content: "" },
+          { path: "test/extra-2.txt", content: "" },
+        ],
+      },
+      title: "Push the test fixtures",
+      description: "Description the notification does not need.",
+    });
+
+    expect(formatActionNotification(request)).toEqual({
+      title: "Push the test fixtures · Push 5 files to test-branch in test-owner/test-repo",
+      text: [
+        "test: update fixtures",
+        "test/accented.txt · 812 B",
+        "test/small.txt · 1.9 KB",
+        "test/large.txt · 72 KB",
+        "and 2 more files",
+      ].join("\n"),
+    });
+  });
+
+  it("names what a GitHub pull request update changes and shows the new text", () => {
+    const request = actionRequest({
+      action: { group: "github", name: "update_pull_request" },
+      arguments: {
+        owner: "test-owner",
+        repo: "test-repo",
+        pullNumber: 7,
+        state: "closed",
+        title: "Test title",
+        body: "Closed pending test evidence.",
+      },
+      title: "Close the test PR",
+      description: null,
+    });
+
+    expect(formatActionNotification(request)).toEqual({
+      title: "Close the test PR · Close test-owner/test-repo#7: retitle, replace description",
+      text: "New title: Test title\nClosed pending test evidence.",
+    });
+  });
+
+  it("uses the caller's description when a pull request update carries no new text", () => {
+    const request = actionRequest({
+      action: { group: "github", name: "update_pull_request" },
+      arguments: { owner: "test-owner", repo: "test-repo", pullNumber: 7, draft: false },
+      title: "Ready the test PR",
+      description: "CI is green.",
+    });
+
+    expect(formatActionNotification(request)).toEqual({
+      title: "Ready the test PR · Update test-owner/test-repo#7: mark ready for review",
+      text: "CI is green.",
+    });
+  });
+
+  it("names a GitHub branch with its source and repository", () => {
+    const request = actionRequest({
+      action: { group: "github", name: "create_branch" },
+      arguments: { owner: "test-owner", repo: "test-repo", branch: "test-branch", from_branch: "test-base" },
+      title: "Create the test branch",
+      description: "Branch for the test change.",
+    });
+
+    expect(formatActionNotification(request)).toEqual({
+      title: "Create the test branch · Create branch test-branch from test-base in test-owner/test-repo",
+      text: "Branch for the test change.",
+    });
+  });
+
+  it("names a GitHub pull request's base and title, then its head, settings and description", () => {
+    const request = actionRequest({
+      action: { group: "github", name: "create_pull_request" },
+      arguments: {
+        owner: "test-owner",
+        repo: "test-repo",
+        title: "Test title",
+        head: "test-head",
+        base: "test-base",
+        body: "Test description.",
+        draft: true,
+        maintainer_can_modify: false,
+      },
+      title: "Open the test PR",
+      description: null,
+    });
+
+    expect(formatActionNotification(request)).toEqual({
+      title: "Open the test PR · Open PR into test-base of test-owner/test-repo: Test title",
+      text: "from test-head · draft · maintainers cannot edit\nTest description.",
+    });
+  });
+
+  it.each(["push_files", "update_pull_request", "create_branch", "create_pull_request"])(
+    "falls back for GitHub %s arguments with a field the formatter cannot show",
+    (name) => {
+      const request = actionRequest({
+        action: { group: "github", name },
+        arguments: { owner: "test-owner", repo: "test-repo", unshown: true },
+        title: "Review the GitHub change",
+        description: "Caller description.",
+      });
+
+      expect(formatActionNotification(request)).toEqual({
+        title: `Review the GitHub change · github / ${name}`,
+        text: "Caller description.",
+      });
+    }
+  );
+
   it("falls back when SSH arguments contain fields the widget cannot show", () => {
     const request = actionRequest({
       action: { group: "ssh", name: "exec" },

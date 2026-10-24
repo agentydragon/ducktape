@@ -33,19 +33,25 @@ ts_library(
 ts_library(
     name = "github",
     srcs = [
+        "github/create_branch.tsx",
         "github/create_pull_request.tsx",
         "github/index.ts",
+        "github/push_files.tsx",
+        "github/update_pull_request.tsx",
     ],
     tsconfig = TSCONFIG,
     deps = [
         ":entry",
         ":presentation",
-        ":result_entry",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
-        "//:node_modules/zod",
+        "//agentplane/app/frontend:clamped_block",
+        "//agentplane/app/frontend:disclosure",
+        "//agentplane/app/frontend:operation_section",
         "//agentplane/app/frontend:text_block",
+        "//agentplane/app/frontend/actions:github_action_schemas",
+        "//util/frontend:code_block",
     ],
 )
 
@@ -179,6 +185,18 @@ agentplane_vitest_test(
         "//:node_modules/@types/react",
         "//:node_modules/vitest",
         "//agentplane/app/frontend/actions:call_tool_result",
+        "//agentplane/app/frontend/actions:testing",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "github_test",
+    srcs = ["github/index.test.tsx"],
+    deps = [
+        ":index",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/vitest",
         "//agentplane/app/frontend/actions:testing",
     ],
 )

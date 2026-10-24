@@ -1,113 +1,69 @@
 import type { JSX } from "react";
-import { z } from "zod";
+import { Badge, Code, Group, Stack, Text } from "@mantine/core";
 
 import type { ActionPresentation } from "../presentation";
-import { Code, Stack, Text } from "@mantine/core";
-
 import { definePreview, type ArgumentsPreview } from "../entry";
 import { TextBlock } from "../../../text_block";
+import {
+  type CreatePullRequestArguments,
+  pullRequestOptions,
+  zCreatePullRequestArguments,
+} from "../../schemas/github/create_pull_request";
 
-// Inline card decisions are limited to calls with no description; a compact preview never stands in
-// for reviewing authored text, which remains available in the full argument view.
-const createArgs = {
-  owner: z.string().min(1),
-  repo: z.string().min(1),
-  title: z.string().min(1),
-  head: z.string().min(1),
-  base: z.string().min(1),
-  body: z.string().optional(),
-  draft: z.boolean().optional(),
-  maintainer_can_modify: z.boolean().optional(),
-  reviewers: z.array(z.string().min(1)).optional(),
-};
-const createPullRequest = z.strictObject(createArgs);
-const approvablePullRequest = z.strictObject({
-  ...createArgs,
-  title: z.string().min(1).max(120),
-  body: z.literal("").optional(),
-  reviewers: z.array(z.string().min(1)).max(4).optional(),
-});
-
-function CreatePullRequest({ args }: { args: z.infer<typeof createPullRequest> }): JSX.Element {
+function CreatePullRequestLabel({ args }: { args: CreatePullRequestArguments }): JSX.Element {
   return (
-    <Stack gap="xs">
-      <Text size="sm" style={{ overflowWrap: "anywhere" }}>
-        Create{" "}
-        <Code>
-          {args.owner}/{args.repo}
-        </Code>{" "}
-        pull request “{args.title}” from <Code>{args.head}</Code> into <Code>{args.base}</Code>.
-      </Text>
-      {args.body && <TextBlock text={args.body} heading="Description" format="prose" clamp={false} />}
-      {args.draft === true && <Text size="sm">Create as a draft.</Text>}
-      {args.maintainer_can_modify !== undefined && (
-        <Text size="sm">
-          {args.maintainer_can_modify
-            ? "Allow maintainers to edit the branch."
-            : "Do not allow maintainers to edit the branch."}
-        </Text>
-      )}
-      {args.reviewers !== undefined && args.reviewers.length > 0 && (
-        <Text size="sm" style={{ overflowWrap: "anywhere" }}>
-          Request review from {args.reviewers.join(", ")}.
-        </Text>
-      )}
-    </Stack>
-  );
-}
-
-function CreatePullRequestCollapsed({ args }: { args: z.infer<typeof createPullRequest> }): JSX.Element {
-  return (
-    <Stack gap="xs">
-      <Text size="sm" style={{ overflowWrap: "anywhere" }}>
-        Open{" "}
-        <Code>
-          {args.owner}/{args.repo}
-        </Code>{" "}
-        pull request “{args.title}” from <Code>{args.head}</Code> into <Code>{args.base}</Code>.
-      </Text>
-      {args.body && (
-        <Text size="sm" lineClamp={2} style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-          Description: {args.body}
-        </Text>
-      )}
-      {args.draft === true && <Text size="sm">Draft pull request.</Text>}
-      {args.reviewers !== undefined && args.reviewers.length > 0 && (
-        <Text size="sm" style={{ overflowWrap: "anywhere" }}>
-          Request review from {args.reviewers.join(", ")}.
-        </Text>
-      )}
-      {args.maintainer_can_modify !== undefined && (
-        <Text size="sm">
-          {args.maintainer_can_modify
-            ? "Allow maintainers to edit the branch."
-            : "Do not allow maintainers to edit the branch."}
-        </Text>
-      )}
-    </Stack>
-  );
-}
-
-function CreatePullRequestLabel({ args }: { args: z.infer<typeof createPullRequest> }): JSX.Element {
-  void args;
-  return (
-    <Text size="sm" fw={600}>
-      Create pull request
+    <Text size="sm" fw={600} style={{ overflowWrap: "anywhere" }}>
+      Open PR into <Code>{args.base}</Code> of{" "}
+      <Code>
+        {args.owner}/{args.repo}
+      </Code>
+      : {args.title}
     </Text>
   );
 }
 
-export const createPullRequestLabel: ArgumentsPreview = definePreview(createPullRequest, CreatePullRequestLabel);
-export const createPullRequestCollapsed: ArgumentsPreview = definePreview(
-  createPullRequest,
-  CreatePullRequestCollapsed
-);
-export const createPullRequestPane: ArgumentsPreview = definePreview(createPullRequest, CreatePullRequest);
-export function offersCardDecisionButtonsPullRequest(args: unknown): boolean {
-  return approvablePullRequest.safeParse(args).success;
+function HeadAndOptions({ args }: { args: CreatePullRequestArguments }): JSX.Element {
+  return (
+    <Group gap={4} wrap="wrap">
+      <Text size="sm" style={{ overflowWrap: "anywhere" }}>
+        from <Code>{args.head}</Code>
+      </Text>
+      {pullRequestOptions(args).map((option) => (
+        <Badge key={option} variant="light" color="gray" size="sm" tt="none" maw="100%">
+          {option}
+        </Badge>
+      ))}
+    </Group>
+  );
 }
 
+function CreatePullRequest({ args }: { args: CreatePullRequestArguments }): JSX.Element {
+  return (
+    <Stack gap="xs">
+      <HeadAndOptions args={args} />
+      {args.body && <TextBlock text={args.body} heading="Description" format="prose" clamp={false} />}
+    </Stack>
+  );
+}
+
+// Card decisions are limited to calls with no description; a compact card never stands in for
+// reviewing authored text, which remains available in the opened card and the full card.
+export function offersCardDecisionButtonsPullRequest(args: unknown): boolean {
+  const parsed = zCreatePullRequestArguments.safeParse(args);
+  return (
+    parsed.success && !parsed.data.body && parsed.data.title.length <= 120 && (parsed.data.reviewers?.length ?? 0) <= 4
+  );
+}
+
+export const createPullRequestLabel: ArgumentsPreview = definePreview(
+  zCreatePullRequestArguments,
+  CreatePullRequestLabel
+);
+export const createPullRequestCollapsed: ArgumentsPreview = definePreview(zCreatePullRequestArguments, HeadAndOptions);
+export const createPullRequestPane: ArgumentsPreview = definePreview(zCreatePullRequestArguments, CreatePullRequest);
+
 export const createPullRequestPresentation: ActionPresentation = {
+  fallbackLabel: "Open GitHub pull request",
   label: createPullRequestLabel,
   pane: { collapsed: createPullRequestCollapsed, opened: createPullRequestPane },
   details: { arguments: createPullRequestPane },

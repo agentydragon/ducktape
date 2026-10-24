@@ -23,6 +23,19 @@ ts_library(
     deps = [":ssh_action_schemas_generated"],
 )
 
+# Validators and text shared by the GitHub Action widgets and their notification formatters.
+ts_library(
+    name = "github_action_schemas",
+    srcs = [
+        "schemas/github/create_branch.ts",
+        "schemas/github/create_pull_request.ts",
+        "schemas/github/push_files.ts",
+        "schemas/github/update_pull_request.ts",
+    ],
+    tsconfig = TSCONFIG,
+    deps = ["//:node_modules/zod"],
+)
+
 ts_library(
     name = "types",
     srcs = ["types.ts"],
@@ -331,6 +344,10 @@ ts_library(
     name = "notifications",
     srcs = [
         "notifications/command.ts",
+        "notifications/github/create_branch.ts",
+        "notifications/github/create_pull_request.ts",
+        "notifications/github/push_files.ts",
+        "notifications/github/update_pull_request.ts",
         "notifications/grocy/get_system_info.ts",
         "notifications/grocy/products_list.ts",
         "notifications/grocy/quantity_units_list.ts",
@@ -352,6 +369,7 @@ ts_library(
     ],
     tsconfig = TSCONFIG,
     deps = [
+        ":github_action_schemas",
         ":kubernetes_action_schemas",
         ":sandbox_action_schemas",
         ":ssh_action_schemas",

@@ -800,15 +800,7 @@ const cardDecisionButtonCases: Array<{
       maintainer_can_modify: false,
       reviewers: ["reviewer1"],
     },
-    visible: [
-      "example/repo",
-      "Update docs",
-      "from feature",
-      "into devel",
-      "Create as a draft.",
-      "Do not allow maintainers to edit the branch.",
-      "Request review from reviewer1.",
-    ],
+    visible: ["from feature", "draft", "maintainers cannot edit", "review from reviewer1"],
   },
 ];
 
@@ -841,8 +833,8 @@ describe("opened-pane renderers", () => {
     const collapsed = await mount(renderPaneCollapsed(action, args));
     const opened = await mount(renderPaneOpened(action, args));
 
-    expect(collapsed.textContent).toContain("Allow maintainers to edit the branch.");
-    expect(opened.textContent).toContain("Allow maintainers to edit the branch.");
+    expect(collapsed.textContent).toContain("maintainers can edit");
+    expect(opened.textContent).toContain("maintainers can edit");
   });
 });
 

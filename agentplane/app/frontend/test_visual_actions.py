@@ -104,6 +104,45 @@ EXAMPLES = (
     ),
     ActionExample(
         "github",
+        "push_files",
+        {
+            "owner": "example",
+            "repo": "service",
+            "branch": "docs",
+            "message": "docs: document deployment checks",
+            "files": [
+                {
+                    "path": "docs/deployment.md",
+                    "content": "# Deployment checks\n\nWait for readiness before shifting traffic.\n",
+                },
+                {"path": "deploy/checks.py", "content": "def ready(status: str) -> bool:\n    return status == 'ok'\n"},
+            ],
+        },
+        {"ref": "refs/heads/docs", "object": {"sha": "0123456789abcdef0123456789abcdef01234567", "type": "commit"}},
+        "0123456789abcdef",
+    ),
+    ActionExample(
+        "github",
+        "update_pull_request",
+        {
+            "owner": "example",
+            "repo": "service",
+            "pullNumber": 42,
+            "state": "closed",
+            "body": "Closed in favor of a smaller change.\nThe readiness checks move to a follow-up.",
+        },
+        {"id": "4200", "html_url": "https://github.com/example/service/pull/42"},
+        "pull/42",
+    ),
+    ActionExample(
+        "github",
+        "create_branch",
+        {"owner": "example", "repo": "service", "branch": "docs", "from_branch": "devel"},
+        {"ref": "refs/heads/docs", "object": {"sha": "0123456789abcdef0123456789abcdef01234567", "type": "commit"}},
+        "refs/heads/docs",
+    ),
+    ActionExample(
+        "github",
         "create_pull_request",
         {
             "owner": "example",
