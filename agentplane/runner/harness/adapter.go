@@ -86,9 +86,9 @@ type PendingCommandInfo struct {
 // NativeCorrelation is the versioned adapter payload needed to match a native response to a
 // dispatched command. Payload is encoded according to the adapter's own schema.
 type NativeCorrelation struct {
-	Adapter      string          `json:"adapter"`
-	SchemaVersion uint32         `json:"schema_version"`
-	Payload      json.RawMessage `json:"payload"`
+	Adapter       string          `json:"adapter"`
+	SchemaVersion uint32          `json:"schema_version"`
+	Payload       json.RawMessage `json:"payload"`
 }
 
 // UserMessageConfirmation records native evidence that an input reached a model request.

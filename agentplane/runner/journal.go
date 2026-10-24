@@ -52,13 +52,13 @@ type SealState struct {
 
 // CommandRecord is the journal's durable admission and dispatch receipt for a command.
 type CommandRecord struct {
-	Command                  *commandpb.Command
-	AdmittedCursor           uint64
-	DispatchPlanned          bool
-	NativeCorrelation        *harness.NativeCorrelation
-	LegacyNativeCorrelation  json.RawMessage
-	ReceiptMetadata          CommandReceiptMetadata
-	TerminalCursor           *uint64
+	Command                 *commandpb.Command
+	AdmittedCursor          uint64
+	DispatchPlanned         bool
+	NativeCorrelation       *harness.NativeCorrelation
+	LegacyNativeCorrelation json.RawMessage
+	ReceiptMetadata         CommandReceiptMetadata
+	TerminalCursor          *uint64
 }
 
 type AppendOptions struct {

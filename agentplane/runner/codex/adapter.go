@@ -85,8 +85,8 @@ type codexNativeCorrelationV1 struct {
 }
 
 type codexTurnStartCorrelation struct {
-	RequestID   string                   `json:"request_id"`
-	ModelChange *codexChangeCorrelation  `json:"model_change,omitempty"`
+	RequestID    string                  `json:"request_id"`
+	ModelChange  *codexChangeCorrelation `json:"model_change,omitempty"`
 	EffortChange *codexChangeCorrelation `json:"effort_change,omitempty"`
 }
 

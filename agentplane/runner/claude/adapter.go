@@ -75,8 +75,8 @@ const (
 const claudeNativeCorrelationVersion = 1
 
 type claudeNativeCorrelationV1 struct {
-	Submit      *claudeSubmitCorrelation `json:"submit,omitempty"`
-	ModelChange *claudeModelCorrelation `json:"model_change,omitempty"`
+	Submit       *claudeSubmitCorrelation `json:"submit,omitempty"`
+	ModelChange  *claudeModelCorrelation  `json:"model_change,omitempty"`
 	EffortChange *claudeEffortCorrelation `json:"effort_change,omitempty"`
 }
 
