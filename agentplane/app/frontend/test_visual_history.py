@@ -373,7 +373,7 @@ async def test_dispatcher_queued_while_sandbox_wakes(
     await expect(page.get_by_role("textbox", name="Message")).to_be_enabled()
     await expect(page.get_by_role("textbox", name="Message")).to_have_attribute(
         "placeholder",
-        "Sandbox is suspended (on request). Wake on message is on; submitted commands will queue while it wakes.",
+        "Sandbox is suspended (on request). Wake on message is on; submitted commands will queue while it wakes. Enter sends, Shift+Enter or Ctrl+Enter for a new line",
     )
     await expect(page.get_by_text("Sandbox is suspended", exact=False)).to_have_count(0)
     await expect(page.get_by_role("button", name="Resume Sandbox")).to_have_count(0)

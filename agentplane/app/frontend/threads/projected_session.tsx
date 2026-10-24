@@ -1407,7 +1407,7 @@ function sandboxComposerPlaceholder(sandbox: SandboxView | undefined, inventoryF
   if (!sandbox || !inventoryFresh || !sandboxSuspended(sandbox) || !sandbox.wake_on_send) {
     return DEFAULT_COMPOSER_PLACEHOLDER;
   }
-  return `${suspendedSandboxLabel(sandbox)} Wake on message is on; submitted commands will queue while it wakes.`;
+  return `${suspendedSandboxLabel(sandbox)} Wake on message is on; submitted commands will queue while it wakes. ${DEFAULT_COMPOSER_PLACEHOLDER}`;
 }
 
 function sandboxNotice(sandbox: SandboxView | undefined, inventoryFresh: boolean): string | null {

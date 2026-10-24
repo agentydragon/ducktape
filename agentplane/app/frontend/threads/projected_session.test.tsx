@@ -427,7 +427,7 @@ it.each([true, false])(
     expect(button(container, "Send").disabled).toBe(true);
     if (wakeOnSend) {
       expect(field.placeholder).toBe(
-        "Sandbox is suspended (on request). Wake on message is on; submitted commands will queue while it wakes."
+        "Sandbox is suspended (on request). Wake on message is on; submitted commands will queue while it wakes. Enter sends, Shift+Enter or Ctrl+Enter for a new line"
       );
       expect(container.textContent).not.toContain(
         "Sandbox is suspended (on request). Wake on message is on; submitted commands will queue while it wakes."
