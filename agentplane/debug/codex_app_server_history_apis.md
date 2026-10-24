@@ -1,9 +1,76 @@
 # Codex app-server history APIs
 
-Checked 2026-10-06 against the [Codex app-server documentation](https://learn.chatgpt.com/docs/app-server/)
+Checked 2026-10-24 against the [Codex app-server documentation](https://learn.chatgpt.com/docs/app-server/)
 and source at [`rust-v0.157.0`](https://github.com/openai/codex/tree/rust-v0.157.0), the current
 runner and Bazel fixture pin. Use that selected release for recovery protocol work; do not assume
 schema changes from newer CLI releases without updating the runner pin and fixture together.
+
+## Verified omission, and its limit
+
+The omission claim is **true for legacy history in the pinned 0.157.0 binary**. It is too broad
+as a justification for private rollout parsing on every thread: new persisted threads on the local store default to
+paginated history, which preserves the tested items and their identities.
+
+[`test_history_projection_against_resumed_model_input`](../native/codex/test_history_projection.py)
+starts the real pinned binary against the scripted Responses endpoint. It completes one turn with
+reasoning A, a successful `exec_command`, reasoning B, and an assistant message. It reads every
+page (page size 1), closes the process, reads from a fresh process before resume, resumes with
+`excludeTurns: false`, and captures the next actual model request. It covers both an omitted
+`historyMode` (asserted to select `paginated`) and explicit `legacy`.
+
+| View after restart                                | Legacy history                                                                     | Default paginated history                                                          |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `thread/read(includeTurns: true)`                 | Shell call absent; reasoning A/B merged into one synthetic-ID item                 | Both reasoning IDs/summaries, shell call/output and assistant ID preserved         |
+| `thread/turns/list(itemsView: "full")`, all pages | Same omission and identity loss                                                    | Same tested items preserved                                                        |
+| `thread/items/list`, all pages                    | Method not found, code -32601                                                      | Same tested items preserved                                                        |
+| `thread/timeline/list`, all pages                 | Method not found, code -32601                                                      | Same tested items preserved                                                        |
+| `thread/resume(excludeTurns: false)`              | Same omission and identity loss                                                    | Same tested items preserved                                                        |
+| Next actual Responses request                     | Both original reasoning summaries/encrypted payloads and shell call/output present | Both original reasoning summaries/encrypted payloads and shell call/output present |
+
+The same API differences are asserted while the original process is loaded and after resume.
+The rollout retains each reasoning record under the ID announced by `item/completed`; the test
+asserts those identities against the live notifications. This is not an inference from the word
+"projection", an empty first page, or `excludeTurns: true`.
+
+Run `bbr test //agentplane/native/codex:test_history_projection`. Both cases passed on
+2026-10-24 ([BuildBuddy invocation](https://app.buildbuddy.io/invocation/b2e513cd-9c39-4811-8786-295e4db9e58e)).
+Its undeclared outputs contain
+`native/test_history_projection_against_resumed_model_input[None]/history-comparison.json` and
+`...[legacy]/history-comparison.json`, plus the raw stdin/stdout traces for each process. The JSON
+contains every history page, live completed items, rollout records, and the resumed model request.
+It contains only scripted fixture data.
+
+This verifies a completed shell call and two reasoning items across a clean process restart.
+It does not establish that paginated APIs are equivalent to model continuation after interruption,
+process loss, compaction, rollback, or for every tool kind. The public reasoning item also omits
+`encrypted_content`; seeing a summary is not proof of the encrypted continuation payload. The
+runner compares observed item content, so that field difference alone does not establish that it
+needs private storage. **The necessity of private parsing for new paginated threads remains an
+open design question.**
+
+### Why the pinned source behaves this way
+
+All source links below use immutable commit
+[`00c972ed5d6ff6499317fd41b7f23605b8e6850d`](https://github.com/openai/codex/commit/00c972ed5d6ff6499317fd41b7f23605b8e6850d),
+the target of tag `rust-v0.157.0`.
+
+- [Persistence policy](https://github.com/openai/codex/blob/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs/rollout/src/policy.rs#L39-L63)
+  saves raw reasoning, function calls and outputs. But legacy mode does not save completed
+  `CommandExecution` items, and shell begin/end events are transient
+  ([policy](https://github.com/openai/codex/blob/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs/rollout/src/policy.rs#L93-L175)).
+- The [legacy history builder](https://github.com/openai/codex/blob/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs/app-server-protocol/src/protocol/thread_history.rs#L477-L496)
+  ignores raw reasoning/function response records. Its
+  [reasoning handler](https://github.com/openai/codex/blob/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs/app-server-protocol/src/protocol/thread_history.rs#L538-L577)
+  assigns synthetic IDs and merges adjacent reasoning events; with the shell item missing,
+  these two reasoning summaries become adjacent.
+- [Default selection](https://github.com/openai/codex/blob/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs/app-server/src/request_processors/thread_processor.rs#L1460-L1463)
+  selects paginated history for a persisted thread when its store supports it. Paginated mode
+  saves completed items, and its
+  [projector](https://github.com/openai/codex/blob/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs/app-server-protocol/src/protocol/thread_history_projection.rs#L76-L102)
+  preserves their IDs through `ThreadItem::from`.
+- [Model-context loading](https://github.com/openai/codex/blob/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs/thread-store/src/local/model_context.rs#L35-L79)
+  reads rollout history separately from these display items. The actual captured next request
+  establishes which records survive into model input in this scenario.
 
 ## Documented read paths
 
@@ -54,9 +121,10 @@ separate need to attach a live Codex session.
 
 This is not by itself a completion guarantee for an external side effect. A missing or unsupported
 item page, partial pagination, or a Codex item that does not prove the corresponding runner action
-outcome must remain unknown. Since the public API exposes a projection, absence from a returned page
-cannot prove that raw model context or rollout records lack an item. Reconciliation still needs to
-preserve command provenance, compare stable item identity and terminal state only where the protocol
+outcome must remain unknown. The legacy counterexample above establishes that even complete API
+history can omit an item that survives in model input. The paginated case above does not show that
+omission. Reconciliation still needs to preserve command provenance, compare stable item identity
+and terminal state only where the protocol
 exposes it, and never replay a prior side effect. In particular, the app-server protocol describes
 Codex history; it does not replace Agentplane's canonical Action/Event evidence.
 
@@ -64,13 +132,13 @@ Codex history; it does not replace Agentplane's canonical Action/Event evidence.
 
 - [Codex app-server docs](https://learn.chatgpt.com/docs/app-server/): experimental API negotiation,
   `thread/read`, turn/item pagination, and store support.
-- [0.157.0 request registry](https://github.com/openai/codex/blob/rust-v0.157.0/codex-rs/app-server-protocol/src/protocol/common.rs#L817-L827)
-  and [timeline registration](https://github.com/openai/codex/blob/rust-v0.157.0/codex-rs/app-server-protocol/src/protocol/common.rs#L1051-L1056):
+- [0.157.0 request registry](https://github.com/openai/codex/blob/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs/app-server-protocol/src/protocol/common.rs#L846-L862)
+  and [timeline registration](https://github.com/openai/codex/blob/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs/app-server-protocol/src/protocol/common.rs#L1086-L1090):
   history methods and experimental annotation.
-- [0.157.0 resume and history schemas](https://github.com/openai/codex/blob/rust-v0.157.0/codex-rs/app-server-protocol/src/protocol/v2/thread.rs#L383-L472)
-  and [turn/item/timeline schemas](https://github.com/openai/codex/blob/rust-v0.157.0/codex-rs/app-server-protocol/src/protocol/v2/thread.rs#L1604-L1742):
+- [0.157.0 resume and history schemas](https://github.com/openai/codex/blob/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs/app-server-protocol/src/protocol/v2/thread.rs#L354-L435)
+  and [turn/item/timeline schemas](https://github.com/openai/codex/blob/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs/app-server-protocol/src/protocol/v2/thread.rs#L1705-L1840):
   resume exclusion, opaque cursors, timestamps, and timeline entries.
-- [0.157.0 pagination handlers](https://github.com/openai/codex/blob/rust-v0.157.0/codex-rs/app-server/src/request_processors/thread_processor.rs#L846-L872)
-  and [item-list handler](https://github.com/openai/codex/blob/rust-v0.157.0/codex-rs/app-server/src/request_processors/thread_processor.rs#L3230-L3293):
+- [0.157.0 pagination handlers](https://github.com/openai/codex/blob/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs/app-server/src/request_processors/thread_processor.rs#L3043-L3117)
+  and [item-list handler](https://github.com/openai/codex/blob/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs/app-server/src/request_processors/thread_processor.rs#L3402-L3460):
   bounds, store support, and response projection.
   This note records the current protocol baseline; it does not implement the protocol migration.

@@ -121,7 +121,11 @@ func (output codexToolOutput) text() string {
 }
 
 // readCodexHistory extracts continuation items from Codex's model-facing rollout, which differs
-// from the app-server thread projection. A nil map means the transcript cannot establish a view.
+// from the app-server thread projection. In pinned Codex 0.157.0, legacy API history omits a
+// completed shell call and merges reasoning IDs that survive in the next model request. New
+// paginated history preserves those tested items; this is not proof that it needs private parsing.
+// See agentplane/debug/codex_app_server_history_apis.md and the native test_history_projection test.
+// A nil map means the transcript cannot establish a view.
 func readCodexHistory(directory, sessionID string, observed map[string]harness.ObservedItem) (map[string]harness.ObservedItem, error) {
 	paths := make([]string, 0, 1)
 	sessionsDir := filepath.Join(directory, "sessions")

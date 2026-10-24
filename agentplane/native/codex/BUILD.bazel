@@ -346,3 +346,29 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "test_history_projection",
+    size = "medium",
+    srcs = ["test_history_projection.py"],
+    data = ["@agentplane_codex_cli_linux_x64//:files"],
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        ":conftest",
+        ":driver",
+        ":scenarios",
+        "//:conftest",
+        "//agentplane/native:conftest",
+        "//agentplane/native/codex/testing:harness",
+        "//agentplane/native/codex/testing:model",
+        "//agentplane/native/codex/testing:responses",
+        "//agentplane/native/codex/testing:responses_sse",
+        "//agentplane/native/testing:async_process",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
