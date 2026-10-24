@@ -14,7 +14,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 from threading import Event
-from typing import Any
+from typing import Any, cast
 
 DEFAULT_BUILDBUDDY_URL = "https://app.buildbuddy.io"
 DEFAULT_GITHUB_API_URL = "https://api.github.com"
@@ -31,7 +31,7 @@ def _json_request(url: str, *, headers: dict[str, str], body: dict[str, Any] | N
     request = urllib.request.Request(url, data=data, headers=headers, method="POST" if body is not None else "GET")
     try:
         with urllib.request.urlopen(request, timeout=10) as response:
-            return json.loads(response.read())
+            return cast(dict[str, Any], json.loads(response.read()))
     except (urllib.error.URLError, TimeoutError, ValueError) as error:
         raise APIError(f"{url.split('?', maxsplit=1)[0]}: {error}") from error
 
