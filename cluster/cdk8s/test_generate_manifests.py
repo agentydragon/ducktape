@@ -108,6 +108,7 @@ def test_piraeus_storage_is_confined_to_prepared_nodes(
     )
     values = release["spec"]["values"]
     canary_selector = {"storage.allegedly.works/drbd-canary": "true"}
+    controller_selector = {"storage.allegedly.works/piraeus-ready": "true", "topology.kubernetes.io/region": "hil"}
 
     assert values["createInternalTLS"] == "cert-manager"
     assert values["createApiTLS"] == "cert-manager"
@@ -120,7 +121,7 @@ def test_piraeus_storage_is_confined_to_prepared_nodes(
         ]
     }
     for component in ("controller", "csiController", "affinityController"):
-        assert cluster[component]["podTemplate"]["spec"]["nodeSelector"] == canary_selector
+        assert cluster[component]["podTemplate"]["spec"]["nodeSelector"] == controller_selector
     assert cluster["properties"] == [{"name": "TcpPortAutoRange", "value": "7900-7999"}]
     assert cluster["highAvailabilityController"] == {"enabled": False}
     assert cluster["nfsServer"] == {"enabled": False}

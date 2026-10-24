@@ -28,6 +28,8 @@ CLUSTER_OUTPUT_DIR = f"{GENERATED_ROOT}/piraeus/cluster"
 _CANARY_LABEL = "storage.allegedly.works/drbd-canary"
 _CANARY_SELECTOR = {_CANARY_LABEL: "true"}
 _PIRAEUS_READY_LABEL = "storage.allegedly.works/piraeus-ready"
+# Controller Pods can run on any prepared OVH worker before a canary is evacuated.
+_CONTROLLER_NODE_SELECTOR = {_PIRAEUS_READY_LABEL: "true", "topology.kubernetes.io/region": "hil"}
 _CLUSTER_NODE_AFFINITY = {
     "nodeSelectorTerms": [
         {"matchExpressions": [{"key": _CANARY_LABEL, "operator": "In", "values": ["true"]}]},
@@ -353,20 +355,23 @@ def cluster_chart(app: App) -> Chart:
             "createInternalTLS": "cert-manager",
             "createApiTLS": "cert-manager",
             "linstorCluster": {
-                # Keep node workloads on the two file canaries, or on the first production
-                # node after its post-evacuation rebuild config adds the readiness label.
+                # Admit canaries and workers explicitly prepared to join Piraeus.
                 "nodeAffinity": _CLUSTER_NODE_AFFINITY,
                 "tolerations": [
                     {"key": "node-role.kubernetes.io/control-plane", "operator": "Exists", "effect": "NoSchedule"}
                 ],
                 "properties": [{"name": "TcpPortAutoRange", "value": "7900-7999"}],
-                "controller": {"enabled": True, "podTemplate": {"spec": {"nodeSelector": _CANARY_SELECTOR}}},
-                "csiController": {"enabled": True, "podTemplate": {"spec": {"nodeSelector": _CANARY_SELECTOR}}},
+                "controller": {"enabled": True, "podTemplate": {"spec": {"nodeSelector": _CONTROLLER_NODE_SELECTOR}}},
+                "csiController": {
+                    "enabled": True,
+                    "podTemplate": {"spec": {"nodeSelector": _CONTROLLER_NODE_SELECTOR}},
+                },
                 "csiNode": {"enabled": True},
-                # Keep local PV affinity updates, but omit unrelated NFS and HA/eviction
-                # components during this evaluation. The affinity controller only needs
-                # to run on the existing file canaries.
-                "affinityController": {"enabled": True, "podTemplate": {"spec": {"nodeSelector": _CANARY_SELECTOR}}},
+                # Keep local PV affinity updates, but omit unrelated NFS and HA/eviction components.
+                "affinityController": {
+                    "enabled": True,
+                    "podTemplate": {"spec": {"nodeSelector": _CONTROLLER_NODE_SELECTOR}},
+                },
                 "highAvailabilityController": {"enabled": False},
                 "nfsServer": {"enabled": False},
             },

@@ -2494,19 +2494,22 @@ spec:
         podTemplate:
           spec:
             nodeSelector:
-              storage.allegedly.works/drbd-canary: "true"
+              storage.allegedly.works/piraeus-ready: "true"
+              topology.kubernetes.io/region: hil
       controller:
         enabled: true
         podTemplate:
           spec:
             nodeSelector:
-              storage.allegedly.works/drbd-canary: "true"
+              storage.allegedly.works/piraeus-ready: "true"
+              topology.kubernetes.io/region: hil
       csiController:
         enabled: true
         podTemplate:
           spec:
             nodeSelector:
-              storage.allegedly.works/drbd-canary: "true"
+              storage.allegedly.works/piraeus-ready: "true"
+              topology.kubernetes.io/region: hil
       csiNode:
         enabled: true
       highAvailabilityController:
