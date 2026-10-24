@@ -15,8 +15,7 @@ from agentplane.runner.harness import Harness
 
 # The names of the objects other modules create. `settings()` below grants the public-coder
 # preset its baseline policies, so it refers to them; each comes from the module that creates the
-# policy answering to it, which is what lets either environment's preset name the same policy
-# without repeating the string.
+# policy answering to it, so a preset names a policy without repeating the string.
 from cluster.cdk8s.agentplane import egress
 from cluster.cdk8s.agentplane.egress import (
     BASIC_POLICY,

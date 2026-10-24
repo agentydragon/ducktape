@@ -271,17 +271,16 @@ resolve that condition before the node roll. After the node returns and is
 uncordoned, verify the local-PVC replica schedules and catches up before
 moving to the next node.
 
-### Explicitly approved single-instance testing CNPG
+### Explicitly approved single-instance CNPG
 
 A single-instance cluster has no replica to promote and its PDB correctly
 blocks drain by default. Only for a disposable/test cluster whose downtime has
-been explicitly approved, use CNPG's node-maintenance window with PVC reuse.
-For the currently approved `agentplane-testing/postgres` exception:
+been explicitly approved, use CNPG's node-maintenance window with PVC reuse:
 
 ```bash
-kubectl cnpg -n agentplane-testing maintenance set postgres --reusePVC -y
-kubectl get cluster -n agentplane-testing postgres -o yaml
-kubectl get pdb -n agentplane-testing
+kubectl cnpg -n <namespace> maintenance set <cluster> --reusePVC -y
+kubectl get cluster -n <namespace> <cluster> -o yaml
+kubectl get pdb -n <namespace>
 ```
 
 Verify `nodeMaintenanceWindow.inProgress: true`, `reusePVC: true`, and that the
@@ -352,12 +351,12 @@ Wait for local-PV pods to rebind to their original PVCs and for the node's
 workloads to return. Then verify:
 
 1. CNPG clusters are healthy with the expected primary and all expected
-   replicas. Restore any temporary testing-cluster maintenance window only
+   replicas. Restore any temporary single-instance maintenance window only
    after its instance is Running/Ready on the preserved PVC:
 
    ```bash
-   kubectl cnpg -n agentplane-testing status postgres
-   kubectl cnpg -n agentplane-testing maintenance unset postgres -y
+   kubectl cnpg -n <namespace> status <cluster>
+   kubectl cnpg -n <namespace> maintenance unset <cluster> -y
    ```
 
 2. If this node hosted a SeaweedFS volume server, it is Ready and the

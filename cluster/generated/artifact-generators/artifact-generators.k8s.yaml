@@ -33,20 +33,6 @@ spec:
       name: ntfy
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/generated/agentplane-testing/**"
-          to: "@artifact/cluster/generated/agentplane-testing/"
-        - from: "@repo/cluster/k8s/agentplane-testing-image-pins/**"
-          to: "@artifact/cluster/k8s/agentplane-testing-image-pins/"
-      name: agentplane-testing
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/generated/agentplane-testing-delivery/**"
-          to: "@artifact/cluster/generated/agentplane-testing-delivery/"
-        - from: "@repo/cluster/k8s/agentplane-testing-image-pins/**"
-          to: "@artifact/cluster/k8s/agentplane-testing-image-pins/"
-      name: agentplane-testing-delivery
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/generated/agents/agent-rbac-base/**"
           to: "@artifact/cluster/generated/agents/agent-rbac-base/"
       name: claude-rbac

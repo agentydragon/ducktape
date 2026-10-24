@@ -88,17 +88,11 @@ py_library(
         ":app",
         "//agentplane/action_service:operator_oidc_settings",
         "//agentplane/app:action_federation_settings",
-        "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:config_format",
-        "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:pod_policy",
         "//cluster/cdk8s:probes",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
-        "//cluster/cdk8s/external_secrets:minted_secret",
-        "//cluster/cdk8s/providers/cilium:network_policy",
-        "//cluster/cdk8s/providers/external_secrets:external_secret",
-        "//cluster/cdk8s/providers/external_secrets:externalsecret",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
@@ -779,47 +773,6 @@ py_library(
 )
 
 py_library(
-    name = "testing",
-    srcs = ["testing.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
-    deps = [
-        ":app",
-        ":app_settings",
-        ":chart",
-        ":command_sandbox",
-        ":database",
-        ":dex",
-        ":egress",
-        ":egress_credentials",
-        ":egress_testing_credentials",
-        ":environment",
-        ":generation",
-        ":mcp_edge",
-        ":namespaces",
-        ":policy_controller",
-        ":policy_controller_rbac",
-        ":sandbox_pod",
-        "//agentplane/action_service:catalog",
-        "//agentplane/action_service/sandbox:binding",
-        "//cluster/cdk8s:agent_access_profiles",
-        "//cluster/cdk8s:cilium",
-        "//cluster/cdk8s:cnpg",
-        "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s:model_selections",
-        "//cluster/cdk8s:node_scheduling",
-        "//cluster/cdk8s:secret_ref",
-        "//cluster/cdk8s/forgejo_registry:pull_credentials",
-        "//cluster/cdk8s/providers/agentplane:policy_set",
-        "//cluster/cdk8s/providers/cilium:network_policy",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
-        "//model_catalog:catalog",
-        "@pypi//cdk8s",
-        "@pypi//cdk8s_plus_34",
-        "@pypi//constructs",
-    ],
-)
-
-py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
@@ -828,7 +781,6 @@ py_library(
         ":runner_gateway_workload",
         ":staging",
         ":staging_grants",
-        ":testing",
         "@pypi//cdk8s",
         "@pypi//pytest",
     ],
@@ -887,7 +839,6 @@ py_test(
         ":policy_controller",
         ":staging",
         ":staging_grants",
-        ":testing",
         "//:conftest",
         "//cluster/cdk8s:agent_access_profiles",
         "//cluster/cdk8s/clickhouse:client",
@@ -951,17 +902,6 @@ py_library(
     ],
 )
 
-py_library(
-    name = "egress_testing_credentials",
-    srcs = ["egress_testing_credentials.py"],
-    deps = [
-        ":egress_credentials",
-        "@pypi//cdk8s",
-        "@pypi//cdk8s_plus_34",
-        "@pypi//constructs",
-    ],
-)
-
 py_test(
     name = "test_egress_credentials",
     srcs = ["test_egress_credentials.py"],
@@ -992,21 +932,6 @@ py_test(
 )
 
 py_test(
-    name = "test_egress_testing_credentials",
-    # Synth imports the agentplane services' Settings, and with them their runtime modules.
-    size = "medium",
-    srcs = ["test_egress_testing_credentials.py"],
-    data = ["@nodejs_linux_amd64//:bin/node"],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
-    deps = [
-        ":conftest",
-        ":testing",
-        "//:conftest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "test_runner_vm",
     # Synth imports the agentplane services' Settings, and with them their runtime modules.
     size = "medium",
@@ -1015,7 +940,7 @@ py_test(
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         ":runner_vm",
-        ":testing",
+        ":staging",
         "//:conftest",
         "@pypi//cdk8s",
         "@pypi//more_itertools",
@@ -1036,7 +961,7 @@ py_test(
         ":history_service",
         ":notifications",
         ":runner_gateway",
-        ":testing",
+        ":staging",
         "//:conftest",
         "//agentplane:crd_group",
         "//cluster/cdk8s:pod_policy",
@@ -1142,6 +1067,7 @@ py_test(
         ":notifications",
         ":runner_gateway",
         ":session_dispatcher",
+        ":staging",
         "//:conftest",
         "//util:settings_contract",
         "@pypi//more_itertools",
@@ -1164,6 +1090,7 @@ py_test(
         ":notifications",
         ":runner_gateway",
         ":session_dispatcher",
+        ":staging",
         "//:conftest",
         "//agentplane/runner_gateway:settings",
         "@pypi//more_itertools",
@@ -1271,6 +1198,7 @@ py_test(
         ":app",
         ":conftest",
         ":frontend",
+        ":staging",
         "//:conftest",
         "@pypi//more_itertools",
         "@pypi//pytest",

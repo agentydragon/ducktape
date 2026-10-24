@@ -75,7 +75,6 @@ spec:
     - namespaces:
         - agentplane-staging
         - agentplane-staging-egress-credentials
-        - agentplane-testing-egress-credentials
         - agents-infra
         - cert-manager
         - claude-sandbox
@@ -132,7 +131,6 @@ spec:
     - namespaces:
         - activitywatch
         - agentplane-staging
-        - agentplane-testing
         - agents-infra
         - airlock
         - claude-session-sync

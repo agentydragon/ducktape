@@ -14,7 +14,7 @@ from cdk8s import (
 )
 from more_itertools import one
 
-from cluster.cdk8s.agentplane import runner_vm, testing
+from cluster.cdk8s.agentplane import runner_vm, staging
 
 HARNESS_ENV = {"EXAMPLE_SERVICE_URL": "http://service.test"}
 
@@ -24,7 +24,7 @@ def _runner_vm_manifests(*, console_autologin: bool) -> dict[str, dict[str, Any]
     runner_vm.RunnerVmTemplate(
         chart,
         "runner-vm-template",
-        replace(testing.ENV, vm_console_autologin=console_autologin),
+        replace(staging.ENV, vm_console_autologin=console_autologin),
         labels={},
         state_volume={"claim": {"storageClassName": "test-storage"}},
         workspace_volume={

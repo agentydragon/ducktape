@@ -2,33 +2,27 @@
 
 from typing import Any
 
-import pytest
 import pytest_bazel
 import yaml
 from more_itertools import one
 
-from cluster.cdk8s.agentplane import app, history_service, notifications, runner_gateway, session_dispatcher
-from cluster.cdk8s.agentplane.conftest import NAMESPACES
+from cluster.cdk8s.agentplane import app, history_service, notifications, runner_gateway, session_dispatcher, staging
 
 
 def _resource(documents: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any]:
     return one(doc for doc in documents if doc["kind"] == kind and doc["metadata"]["name"] == name)
 
 
-@pytest.mark.parametrize("namespace", NAMESPACES)
-def test_sandbox_service_resources_are_absent(
-    namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
-) -> None:
-    documents = agentplane_manifests[namespace]
-    names = {document["metadata"]["name"] for document in documents}
+def test_sandbox_service_resources_are_absent(staging_manifests: list[dict[str, Any]]) -> None:
+    names = {document["metadata"]["name"] for document in staging_manifests}
     assert not any(name.startswith("agentplane-sandbox-service") for name in names)
-    assert f"{namespace}-sandbox-service-token-reviewer" not in names
+    assert f"{staging.ENV.namespace}-sandbox-service-token-reviewer" not in names
 
-    history = _resource(documents, "Deployment", history_service.NAME)["spec"]["template"]["spec"]
+    history = _resource(staging_manifests, "Deployment", history_service.NAME)["spec"]["template"]["spec"]
     history_database = {"name": "postgres-sandbox-service", "key": "uri"}
-    history_external_secret = _resource(documents, "ExternalSecret", "postgres-sandbox-service")
+    history_external_secret = _resource(staging_manifests, "ExternalSecret", "postgres-sandbox-service")
     assert history_external_secret["spec"]["target"]["name"] == "postgres-sandbox-service"
-    history_database_resource = _resource(documents, "Database", "sandbox-service")
+    history_database_resource = _resource(staging_manifests, "Database", "sandbox-service")
     assert history_database_resource["spec"]["name"] == "sandbox_service"
     assert history_database_resource["spec"]["owner"] == "sandbox_service"
     assert any(
@@ -38,15 +32,13 @@ def test_sandbox_service_resources_are_absent(
     )
 
 
-@pytest.mark.parametrize("namespace", NAMESPACES)
-def test_app_uses_direct_sandbox_access(namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]) -> None:
-    documents = agentplane_manifests[namespace]
-    application = _resource(documents, "Deployment", app.NAME)["spec"]["template"]["spec"]
+def test_app_uses_direct_sandbox_access(staging_manifests: list[dict[str, Any]]) -> None:
+    application = _resource(staging_manifests, "Deployment", app.NAME)["spec"]["template"]["spec"]
     container = one(item for item in application["containers"] if item["name"] == "app")
     assert not any(arg.startswith("--sandbox-service-target=") for arg in container["args"])
     assert not any(volume["name"] == "sandbox-service-token" for volume in application["volumes"])
 
-    app_rules = _resource(documents, "Role", app.NAME.removeprefix("agentplane-"))["rules"]
+    app_rules = _resource(staging_manifests, "Role", app.NAME.removeprefix("agentplane-"))["rules"]
     for rule in app_rules:
         if rule["resources"] not in (["policybindings"], ["sandboxes"]):
             assert set(rule["verbs"]) <= {"get", "list", "watch"}
@@ -54,16 +46,12 @@ def test_app_uses_direct_sandbox_access(namespace: str, agentplane_manifests: di
     assert (("agentplane.allegedly.works",), ("sandboxtemplates",), ("list",)) in permissions
     assert (("subresources.kubevirt.io",), ("virtualmachineinstances/console",), ("get",)) in permissions
 
-    gateway = _resource(documents, "Deployment", runner_gateway.NAME)["spec"]["template"]["spec"]
+    gateway = _resource(staging_manifests, "Deployment", runner_gateway.NAME)["spec"]["template"]["spec"]
     assert gateway["serviceAccountName"] == runner_gateway.NAME
 
 
-@pytest.mark.parametrize("namespace", NAMESPACES)
-def test_notifications_have_no_app_or_sandbox_service_dependency(
-    namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
-) -> None:
-    documents = agentplane_manifests[namespace]
-    pod = _resource(documents, "Deployment", notifications.NAME)["spec"]["template"]["spec"]
+def test_notifications_have_no_app_or_sandbox_service_dependency(staging_manifests: list[dict[str, Any]]) -> None:
+    pod = _resource(staging_manifests, "Deployment", notifications.NAME)["spec"]["template"]["spec"]
     assert pod["serviceAccountName"] == notifications.NAME
     tokens = one(volume for volume in pod["volumes"] if volume["name"] == "service-tokens")
     assert {source["serviceAccountToken"]["audience"] for source in tokens["projected"]["sources"]} == {
@@ -73,10 +61,10 @@ def test_notifications_have_no_app_or_sandbox_service_dependency(
         session_dispatcher.TOKEN_AUDIENCE,
     }
     settings = yaml.safe_load(
-        _resource(documents, "ConfigMap", f"{notifications.NAME}-settings")["data"]["settings.yaml"]
+        _resource(staging_manifests, "ConfigMap", f"{notifications.NAME}-settings")["data"]["settings.yaml"]
     )
     assert "sandbox_service" not in settings
-    policy = _resource(documents, "CiliumNetworkPolicy", notifications.NAME.removeprefix("agentplane-"))["spec"]
+    policy = _resource(staging_manifests, "CiliumNetworkPolicy", notifications.NAME.removeprefix("agentplane-"))["spec"]
     assert not any(
         target["matchLabels"].get("app.kubernetes.io/name") == app.NAME
         for rule in policy["egress"]

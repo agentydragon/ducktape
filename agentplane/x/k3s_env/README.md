@@ -1,6 +1,6 @@
 # k3s environment spike
 
-Does the Agentplane testing chart come up on a bare k3s in an RBE action (no Cilium)? The
+Does the Agentplane stack come up on a bare k3s in an RBE action (no Cilium)? The
 model-free lifecycle target runs in the separate
 [`Agentplane k3s lifecycle` workflow](../../../.github/workflows/agentplane-k3s-lifecycle.yml), launched explicitly with
 `workflow_dispatch`. It does not run automatically on pull requests or pushes while its cost remains
@@ -55,10 +55,10 @@ can run it.
 [`fixture_chart.py`](fixture_chart.py) constructs the chart directly
 with shared service constructs and explicit bare-k3s settings. It supplies fixture Secrets,
 local-path storage and a test egress CA. The fixture runs the Go egress proxy
-and Goose history migrator through the same construct as testing, with fixture-only PostgreSQL TLS
+and Goose history migrator through the same construct as staging, with fixture-only PostgreSQL TLS
 settings. The shared construct supplies the egress RBAC, policies, trust mounts, images and flags.
 Actions uses its Go service and Goose migrator images, with native gRPC readiness and `livez` probes.
-The fixture selects that runtime explicitly; the deployed tiers select theirs independently.
+The fixture selects that runtime explicitly; staging selects its own independently.
 The standalone MCP edge runs in every stack because the app's Connection Service endpoint targets it;
 its own PostgreSQL database, Goose init migrator, caller-token RBAC and gRPC readiness are rendered
 through the shared construct. MCP fixture stacks add the edge OAuth Secret and Dex trust.
@@ -271,7 +271,9 @@ build outputs of the same revision (PostgreSQL from its pinned descriptor sizes)
 | PostgreSQL                                                                                                      |  78.8 |
 
 382.1 MiB of the Python group is used by no other image; the rest is the Debian base the tools
-image shares. The eight Go images share under 1 MiB.
+image shares. The eight Go images share under 1 MiB. The Python group still counts the Action
+Service and its migrator, which the Go port has since replaced, so remeasure before using these
+shares to prioritize further ports.
 
 ### Fixture chart rendered at build time, 2026-10-21
 
@@ -784,8 +786,8 @@ unchanged. Do not use this one pair to justify moving the expensive workflow int
 
 The separate workflow runs only the model-free lifecycle target. Its bare-cluster fixtures do not
 provide Cilium or OIDC/Dex coverage (KubeVirt runs only in the system tests' `_vm` targets), and this target is not
-Dispatcher multi-replica acceptance. Keep the `agentplane-testing` environment and fixture/spike
-cleanup as separate future work until those coverage gaps have an explicit owner and replacement.
+Dispatcher multi-replica acceptance. Keep fixture/spike cleanup as separate future work until those
+coverage gaps have an explicit owner and replacement.
 
 Earlier evidence from [#10414](https://github.com/agentydragon/ducktape/pull/10414) was 784 seconds for
 four lifecycle tests and 590 seconds for the model test; those timings predate Dispatcher deployment.

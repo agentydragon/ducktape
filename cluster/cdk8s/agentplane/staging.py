@@ -485,7 +485,7 @@ def chart(app: App) -> Chart:
         backend=notification_service,
         paths=["/v1/webhooks/github"],
     )
-    # Add to the workload-only policy without opening the testing environment to the Gateway.
+    # Add to the workload-only policy.
     NetworkPolicy(
         chart,
         "notifications-github-webhook-policy",
@@ -628,7 +628,7 @@ def _add_session_secret(scope: Chart) -> None:
     """Generate the staging app's local session-signing key with ESO.
 
     Rotating this value invalidates existing browser sessions, but does not touch the
-    Authentik OAuth client credentials or the Agentplane testing environment.
+    Authentik OAuth client credentials.
     """
     mint_bearer_secret(
         scope,

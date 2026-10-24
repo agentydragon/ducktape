@@ -352,7 +352,6 @@ These bundles are plain deployment-side grant lists, not a new API or a broad
 cluster-wide role. Metadata and log readers retain their separate namespaced
 RoleBindings; service-specific Roles retain their existing rules and ownership.
 Haku composes the shared reads with its existing additional authority below.
-The testing environment's public-coder preset does not select these staging grants.
 
 Preset changes affect **new Sandboxes only**. After deployment, launch a new Sandbox
 (or explicitly migrate through the operator workflow), then check its effective

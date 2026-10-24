@@ -2,7 +2,6 @@
 
 The standalone backend serves `agentplane-staging` only, which owns the approval policy;
 the backend owns SSH transport and private keys.
-`agentplane-testing` has neither an SSH binding nor the backend bearer.
 
 ## Credentials and reconciliation
 

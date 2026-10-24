@@ -47,20 +47,21 @@ def test_gaffer_write_policies_are_finance_agent_only() -> None:
         assert GAFFER_PRIVATE_BRANCH_AND_PR_CREATION_SET not in policies
 
 
-def test_haku_preset_binds_what_its_account_binding_names(
-    agentplane_manifests: dict[str, list[dict[str, Any]]],
-) -> None:
+def test_haku_preset_binds_what_its_account_binding_names(staging_manifests: list[dict[str, Any]]) -> None:
     """The Haku preset covers every Action set the `haku-agent` binding names, plus Haku's one
     write. The binding is the reviewed bundle; the preset is what a launch actually gets, because a
     managed runner Pod runs as its own per-Sandbox ServiceAccount and never sees that binding."""
-    docs = agentplane_manifests[staging.ENV.namespace]
-    binding = one(doc for doc in docs if doc["kind"] == "PolicyBinding" and doc["metadata"]["name"] == "haku-agent")
-    app_config = one(doc for doc in docs if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "app-config")
+    binding = one(
+        doc for doc in staging_manifests if doc["kind"] == "PolicyBinding" and doc["metadata"]["name"] == "haku-agent"
+    )
+    app_config = one(
+        doc for doc in staging_manifests if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "app-config"
+    )
     preset = yaml.safe_load(app_config["data"]["config.yaml"])["sandbox_presets"]["haku"]["policy_sets"]
     assert len(preset) == len(set(preset))
     action_sets = {
         doc["metadata"]["name"]
-        for doc in docs
+        for doc in staging_manifests
         if doc["kind"] == "PolicySet" and any(rule["type"] == "action_auto_approve" for rule in doc["spec"]["rules"])
     }
     bound = set(binding["spec"]["policySets"]) & action_sets
@@ -70,7 +71,7 @@ def test_haku_preset_binds_what_its_account_binding_names(
 
     # Every name the preset binds must resolve to a PolicySet this namespace actually creates, or the
     # The app refuses the launch outright.
-    created = {doc["metadata"]["name"] for doc in docs if doc["kind"] == "PolicySet"}
+    created = {doc["metadata"]["name"] for doc in staging_manifests if doc["kind"] == "PolicySet"}
     assert set(preset) <= created, sorted(set(preset) - created)
 
 

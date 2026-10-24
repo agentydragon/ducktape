@@ -76,7 +76,6 @@ from cluster.cdk8s.agentplane import (
     generation as agentplane_generation,
     runner_gateway_workload,
     staging,
-    testing,
 )
 from cluster.cdk8s.agents import flux_kustomizations as agents_flux_kustomizations, namespaces as agents_namespaces
 from cluster.cdk8s.artifact_generators import (
@@ -180,7 +179,6 @@ from cluster.cdk8s.kyverno import app as kyverno_app, policies as kyverno_polici
 from cluster.cdk8s.langfuse import app as langfuse_app
 from cluster.cdk8s.litellm import (
     buildbuddy_sync as litellm_buildbuddy_sync,
-    credentials as litellm_credentials,
     crossplane_keys as litellm_crossplane_keys,
     database as litellm_database,
     keys as litellm_keys,
@@ -260,14 +258,8 @@ def generate_manifests(root: Path) -> None:
     )
     staging_assignable_grants = staging.assignable_grants()
     binding_delegation.write_manifests(root, staging.ENV, staging_assignable_grants)
-    agentplane_testing_resource_chart = agentplane_generation.write_environment_manifests(
-        root, testing.LAYOUT, testing.chart, litellm_credentials.agentplane_testing_chart
-    )
     agentplane_staging_health_checks = agentplane_generation.environment_health_checks(
         agentplane_staging_resource_chart, staging.ENV.namespace
-    )
-    agentplane_testing_health_checks = agentplane_generation.environment_health_checks(
-        agentplane_testing_resource_chart, testing.ENV.namespace
     )
     public_coder_app.write_manifests(root)
     ssh_config = ssh_mcp_config.load()
@@ -1634,31 +1626,6 @@ def generate_manifests(root: Path) -> None:
         haku_egress_proxy_kustomization,
         external_secrets_operator_kustomization,
     )
-    agentplane_testing_artifact = artifact("agentplane-testing", testing.LAYOUT.output_dir, testing.LAYOUT.image_pins)
-    agentplane_testing_kustomization = testing.agentplane_testing(
-        flux_chart,
-        agentplane_testing_artifact,
-        agentplane_testing_health_checks,
-        agentplane_crds_kustomization,
-        cert_manager_trust_kustomization,
-        cnpg_kustomization,
-        external_secrets_operator_kustomization,
-        kyverno_kustomization,
-        litellm_crossplane_keys_kustomization,
-    )
-    agentplane_testing_delivery_artifact = artifact(
-        "agentplane-testing-delivery", testing.LAYOUT.delivery_output_dir, testing.LAYOUT.image_pins
-    )
-    runner_gateway_workload.serving(
-        flux_chart,
-        write_directory(
-            root,
-            agentplane_testing_delivery_artifact,
-            functools.partial(runner_gateway_workload.serving_chart, env=testing.ENV),
-            components=[posixpath.relpath(testing.LAYOUT.image_pins, testing.LAYOUT.delivery_output_dir)],
-        ),
-        agentplane_testing_kustomization,
-    )
     haku_console_artifact = artifact("haku-console", haku_charts.PATH)
     haku_console_kustomization = haku_charts.haku_console(
         flux_chart,
@@ -1716,7 +1683,6 @@ def generate_manifests(root: Path) -> None:
     namespace_dependencies = {
         "activitywatch": activitywatch_kustomization,
         "agent-sandbox-system": agent_sandbox_controller_kustomization,
-        "agentplane-testing": agentplane_testing_kustomization,
         "airlock": airlock_kustomization,
         "authentik": authentik_kustomization,
         "cert-manager": cert_manager_kustomization,
@@ -1768,8 +1734,6 @@ def generate_manifests(root: Path) -> None:
             agentplane_staging_db_backups_artifact,
             monitoring_stack_artifact,
             ntfy_artifact,
-            agentplane_testing_artifact,
-            agentplane_testing_delivery_artifact,
             claude_rbac_artifact,
             authentik_artifact,
             authentik_tf_artifact,

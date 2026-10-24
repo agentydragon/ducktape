@@ -72,7 +72,7 @@ def service(namespace: str) -> ServiceRef:
 
 
 def oidc_secret(namespace: str) -> SecretRef:
-    """The OIDC client Secret the app reads; in testing, Dex writes it (dex.py)."""
+    """The OIDC client Secret the app reads."""
     return SecretRef(namespace=namespace, name="agentplane-oidc")
 
 

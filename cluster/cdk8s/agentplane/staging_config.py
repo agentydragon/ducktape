@@ -114,13 +114,9 @@ def config(
         ],
         default_policy_sets=set(DEFAULT_POLICIES),
     )
-    # The "haku" and "finance-agent" launch presets live only here, not in app_settings.py:
-    # they name staging-only credentials (haku: forgejo-haku, haku-mailbox; finance-agent:
-    # forgejo-finance-agent, plaid-pgweb) that agentplane-testing never provisions, so there is
-    # no second caller to share a definition with and nothing for `settings()` to compose.
-    # Defining them here is what makes staging the only environment that ships them -- adding
-    # one to agentplane-testing would mean provisioning its credentials first, not passing a
-    # flag. Preset order here is the launch form's order.
+    # The "haku" and "finance-agent" launch presets name staging's own credentials (haku:
+    # forgejo-haku, haku-mailbox; finance-agent: forgejo-finance-agent, plaid-pgweb). Preset order
+    # here is the launch form's order.
     #
     # Haku launches on the local Qwen3.8 route with the wider 256K window the runner is
     # configured for; the OpenAI-compatible wire is the one that carries reasoning effort.

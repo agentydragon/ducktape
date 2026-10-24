@@ -365,12 +365,6 @@ desired count. Pause the CNPG operator only for a bounded member-removal
 transaction if necessary, not while waiting for replication. Record and remove
 every hold.
 
-The operator authorized discarding `agentplane-testing/postgres` and recreating
-it with native initdb on a fresh 5Gi Piraeus claim (PR #11604). This exception
-does not authorize discarding other singleton databases. Hold the testing Flux
-owner during replacement, retain the exact old PV until the disk reset, and
-restore its owner after the new primary and service are accepted.
-
 ### Seaweed volume servers
 
 Keep the source running while using native locked evacuation, with new

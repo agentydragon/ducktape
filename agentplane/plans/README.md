@@ -42,8 +42,6 @@ operator decisions and proportional acceptance from the [low-priority freezer](t
   cheaper route
 - [Scoped Session reads](scoped_session_reads.md) — proposed ServiceAccount read policy for
   retained Session history
-- [Retiring `agentplane-testing`](testing_retirement.md) — in progress: every workflow on the testing instance moves to
-  the k3s system tests (a real-model key on RBE for the few that need one) or staging, then the instance is deleted
 - [KubeVirt execution environments](kubevirt_environments.md) — the live gates for VM Sandboxes that no
   DAG node names; the design is [VM Sandboxes](../docs/vm_sandboxes.md)
 - [User stories](user_stories.md) — north-star product context, not an implementation queue

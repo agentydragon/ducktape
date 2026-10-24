@@ -118,7 +118,6 @@ def _add_mcp_fixtures(
                 mcp_edge_login=mcp_edge_login,
                 operator=_OPERATOR,
                 password_hash=password_hash,
-                serve_tls=True,
             ),
         },
     )
@@ -138,10 +137,7 @@ def _add_mcp_fixtures(
         "dex",
         image=DEX_IMAGE,
         config_secret=OPERATOR_SECRET,
-        cpu_limit=None,
-        memory_limit=None,
         tls_secret=_DEX_TLS_SECRET,
-        mcp_linkage=True,
         mcp_edge_login_secret_name=_MCP_EDGE_OAUTH_SECRET,
     )
     actions_testing_fixtures.add_mcp_everything(chart, image=MCP_EVERYTHING_IMAGE)

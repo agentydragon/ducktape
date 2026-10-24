@@ -71,7 +71,7 @@ assignments.
 ## Parked Agentplane Claude offerings
 
 During the [model-roster audit](https://github.com/agentydragon/ducktape/issues/9121),
-Agentplane staging and testing offer only Codex in new-session launch forms. An empty
+Agentplane staging offers only Codex in new-session launch forms. An empty
 Claude list in the app model catalogue disables that harness in those forms; a new
 session defaults to an available harness. Staging's Haku preset follows: it launches
 Codex against the local Qwen3.8 route's 256K window, the widest one the runner is

@@ -101,7 +101,7 @@ ACTIONS_SERVICE = actions.service(NAMESPACE)
 MCP_EDGE_SERVICE = mcp_edge.service(NAMESPACE)
 DEX_HOST = dex.service().host
 DEX_ISSUER = dex.issuer(f"https://{DEX_HOST}:{dex.HTTPS_PORT.number}")
-# Test-only Dex clients and operator in place of testing's, which an operator's deployment uses.
+# The fixture's own Dex clients.
 _APP_LOGIN = dex.StaticClient(id="test-app-login", name="Test app login", redirect_uri=f"{APP_ORIGIN}/auth/callback")
 _MCP_LINKAGE = dex.StaticClient(
     id="test-mcp-linkage", name="Test MCP linkage", redirect_uri=f"{APP_ORIGIN}/mcp-linkage/callback"
@@ -111,7 +111,8 @@ _VM_GUEST_ROOT_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-vm-guest-root
 # The serial guest/initramfs_init mounts as the root.
 _VM_GUEST_ROOT_SERIAL = "guest-root"
 # What the app offers when LLM ingress forwards to the public LiteLLM: models the BuildBuddy live-test key's
-# lane admits (`cheap_experiments_models`), neither waiting on the shared GPU as testing's Claude model does.
+# lane admits (`cheap_experiments_models`), neither waiting on the shared GPU as `TESTING_APP_MODELS`' Claude
+# model does.
 _PUBLIC_LITELLM_MODELS = HarnessRoutes(claude=(HAIKU_API,), codex=(GPT6_LUNA_RESPONSES,))
 _ONE_REPLICA = ReplicaProfile(count=1, strategy=DeploymentStrategy.recreate(), min_ready=None, pdb_min_available=None)
 _EGRESS_CA = "agentplane-testing-egress-ca"

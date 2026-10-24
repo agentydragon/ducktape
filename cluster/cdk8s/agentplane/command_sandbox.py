@@ -36,8 +36,7 @@ _COMMAND_RESOURCES = k8s.ResourceRequirements(
     requests={"cpu": k8s.Quantity.from_string("100m"), "memory": k8s.Quantity.from_string("256Mi")},
     limits={"cpu": k8s.Quantity.from_string("1"), "memory": k8s.Quantity.from_string("2Gi")},
 )
-# The most the testing LimitRange lets one container have (testing.py); a Bazel build of the
-# system test suite fits in.
+# A Bazel build of the system test suite fits in.
 _BUILD_RESOURCES = k8s.ResourceRequirements(
     requests={"cpu": k8s.Quantity.from_string("500m"), "memory": k8s.Quantity.from_string("1Gi")},
     limits={"cpu": k8s.Quantity.from_string("2"), "memory": k8s.Quantity.from_string("4Gi")},

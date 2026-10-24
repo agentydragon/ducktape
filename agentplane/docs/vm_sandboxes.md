@@ -128,8 +128,7 @@ The subsequent conversation-recovery failure is addressed separately in
   guest services or the configured resource budgets. This does not protect Runner-owned state from
   other code in the same Sandbox; the journal is not tamper-proof against agent code.
 - The launcher's memory limit covers guest RAM plus QEMU overhead, disk helpers and the relay;
-  a limit equal to guest RAM is not isolation. `agentplane-testing`'s 4Gi container limit caps a guest at
-  about 1.7Gi. Guests need KVM-capable nodes (`kubevirt.io/schedulable`); do not fall back to
+  a limit equal to guest RAM is not isolation. Guests need KVM-capable nodes (`kubevirt.io/schedulable`); do not fall back to
   software emulation.
 - A cold start on an early guest took two minutes to pull the image, four to scan and format
   its blank disks and three to build a Java trust store one certificate at a time (the trust disk now

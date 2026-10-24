@@ -44,19 +44,22 @@ def ssh_resources(ssh_config: ssh_mcp_config.SshMcpConfig) -> list[dict[str, Any
 
 
 def test_actions_binding_uses_the_bearer_ssh_mcp_mints(
-    agentplane_manifests: dict[str, list[dict[str, Any]]], ssh_resources: list[dict[str, Any]]
+    staging_manifests: list[dict[str, Any]], ssh_resources: list[dict[str, Any]]
 ) -> None:
-    documents = agentplane_manifests["agentplane-staging"]
     settings = yaml.safe_load(
-        one(doc for doc in documents if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "actions-settings")[
-            "data"
-        ]["settings.yaml"]
+        one(
+            doc
+            for doc in staging_manifests
+            if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "actions-settings"
+        )["data"]["settings.yaml"]
     )
     config = settings["action_groups"]["ssh"]["executor"]["config"]
     assert config["auth"] == "static_bearer"
     assert config["url"] == ssh_mcp_config.MCP_URL
     bearer_file = Path(config["bearer_file"])
-    deployment = one(doc for doc in documents if doc["kind"] == "Deployment" and doc["metadata"]["name"] == "actions")
+    deployment = one(
+        doc for doc in staging_manifests if doc["kind"] == "Deployment" and doc["metadata"]["name"] == "actions"
+    )
     pod = deployment["spec"]["template"]["spec"]
     actions = one(pod["containers"])
     mount = one(m for m in actions["volumeMounts"] if Path(m["mountPath"]) == bearer_file.parent)
@@ -69,7 +72,7 @@ def test_actions_binding_uses_the_bearer_ssh_mcp_mints(
     # The mounted Secret is ESO's copy of the one ssh-mcp mints.
     copy = one(
         doc
-        for doc in documents
+        for doc in staging_manifests
         if doc["kind"] == "ExternalSecret" and doc["spec"]["target"]["name"] == volume["secret"]["secretName"]
     )
     remote_ref = one(d for d in copy["spec"]["data"] if d["secretKey"] == key)["remoteRef"]
@@ -81,7 +84,9 @@ def test_actions_binding_uses_the_bearer_ssh_mcp_mints(
     assert remote_ref["key"] == source["spec"]["target"]["name"]
     assert remote_ref["property"] in source["spec"]["target"]["template"]["data"]
     store_ref = copy["spec"]["secretStoreRef"]
-    store = one(d for d in documents if (d["kind"], d["metadata"]["name"]) == (store_ref["kind"], store_ref["name"]))
+    store = one(
+        d for d in staging_manifests if (d["kind"], d["metadata"]["name"]) == (store_ref["kind"], store_ref["name"])
+    )
     provider = store["spec"]["provider"]["kubernetes"]
     namespace = source["metadata"]["namespace"]
     assert provider["remoteNamespace"] == namespace
@@ -94,11 +99,13 @@ def test_actions_binding_uses_the_bearer_ssh_mcp_mints(
         "namespace": copy["metadata"]["namespace"],
     }
     roles = {
-        d["metadata"]["name"]: d for d in documents if d["kind"] == "Role" and d["metadata"]["namespace"] == namespace
+        d["metadata"]["name"]: d
+        for d in staging_manifests
+        if d["kind"] == "Role" and d["metadata"]["namespace"] == namespace
     }
     granted = [
         rule
-        for binding in documents
+        for binding in staging_manifests
         if binding["kind"] == "RoleBinding"
         and binding["metadata"]["namespace"] == namespace
         and any({k: s[k] for k in reader} == reader for s in binding["subjects"])
@@ -122,7 +129,7 @@ def test_actions_binding_uses_the_bearer_ssh_mcp_mints(
 
 
 def test_bearer_reaches_exactly_the_namespaces_that_may_call(
-    agentplane_manifests: dict[str, list[dict[str, Any]]], ssh_resources: list[dict[str, Any]]
+    staging_manifests: list[dict[str, Any]], ssh_resources: list[dict[str, Any]]
 ) -> None:
     """The stores on ssh-mcp's namespace admit the namespaces the CiliumNetworkPolicy admits,
     and no Reflector annotation hands the Secret out anywhere else."""
@@ -137,8 +144,7 @@ def test_bearer_reaches_exactly_the_namespaces_that_may_call(
     assert not any(annotation.startswith("reflector.v1.k8s.emberstack.com/") for annotation in annotations)
     readers = {
         namespace
-        for documents in agentplane_manifests.values()
-        for store in documents
+        for store in staging_manifests
         if store["kind"] == "ClusterSecretStore"
         and store["spec"]["provider"].get("kubernetes", {}).get("remoteNamespace") == source["metadata"]["namespace"]
         for condition in store["spec"]["conditions"]

@@ -37,7 +37,7 @@ deployment or replica snapshot; dash runner-initiated platform routes.
 
 ## Deployed state is disposable
 
-Agentplane has only staging and testing tiers, so its deployed state is disposable (agentplane
+Agentplane has only a staging tier, so its deployed state is disposable (agentplane
 only; another component's is not unless its own `AGENTS.md` says so). A schema, CRD or wire change
 need not keep existing rows, custom resources or messages readable: change the shape and
 delete/recreate whatever no longer parses. No migration, tolerant reader or compatibility field to

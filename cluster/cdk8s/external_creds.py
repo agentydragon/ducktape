@@ -96,10 +96,6 @@ CREDENTIALS = (
                 "agentplane-staging-egress-credentials",
                 "buildbuddy-api-key-agentplane-staging-egress-credentials-reader",
             ),
-            ApprovedConsumer(
-                "agentplane-testing-egress-credentials",
-                "buildbuddy-api-key-agentplane-testing-egress-credentials-reader",
-            ),
         ),
     ),
     Credential(
@@ -116,10 +112,6 @@ CREDENTIALS = (
             ApprovedConsumer(
                 "agentplane-staging-egress-credentials",
                 "github-agentydragon-agent-agentplane-staging-egress-credentials-reader",
-            ),
-            ApprovedConsumer(
-                "agentplane-testing-egress-credentials",
-                "github-agentydragon-agent-agentplane-testing-egress-credentials-reader",
             ),
         ),
     ),

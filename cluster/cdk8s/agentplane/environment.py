@@ -1,4 +1,4 @@
-"""One `Environment` per Agentplane stack (staging.py, testing.py, the k3s fixture). Every
+"""One `Environment` per Agentplane stack (staging.py, the k3s fixture). Every
 construct in this package takes the whole environment and reads what it needs, so a value
 two constructs share (the egress CA name the runner template mounts, the namespace) is
 written once.
@@ -63,12 +63,12 @@ class AppProps:
     origin: str
     oidc_issuer: str
     # staging's OIDC provider is the in-cluster Authentik Service, reached both by its
-    # public hostname and directly; testing's Dex is reached only by its public hostname.
+    # public hostname and directly.
     reach_incluster_authentik: bool
     # Pin runner Pods to a zone (near the database/LiteLLM), or None for no pin.
     runner_zone: str | None
     # The OIDC client secret and the session signing key can have separate owners.
-    # Testing leaves this at `agentplane-oidc`; staging uses an ESO-generated Secret.
+    # The k3s fixture leaves this at `agentplane-oidc`; staging uses an ESO-generated Secret.
     oidc_session_secret_name: str = "agentplane-oidc"
 
     @property

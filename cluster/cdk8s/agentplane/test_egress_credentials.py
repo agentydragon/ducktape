@@ -4,27 +4,28 @@ environment's own module decides which credentials it gets."""
 import pytest_bazel
 from cdk8s import Testing as Cdk8sTesting
 
-from cluster.cdk8s.agentplane.egress_credentials import TESTING_CREDENTIALS_NAMESPACE, EgressCredentials
+from cluster.cdk8s.agentplane.egress_credentials import EgressCredentials
+
+_CREDENTIALS_NAMESPACE = "test-egress-credentials"
+_PROXY_NAMESPACE = "test-proxy"
 
 
 def test_only_the_proxy_reads_and_nothing_is_copied() -> None:
     chart = Cdk8sTesting.chart()
-    EgressCredentials(
-        chart, "credentials", namespace=TESTING_CREDENTIALS_NAMESPACE, proxy_namespace="agentplane-testing"
-    )
+    EgressCredentials(chart, "credentials", namespace=_CREDENTIALS_NAMESPACE, proxy_namespace=_PROXY_NAMESPACE)
     objects = Cdk8sTesting.synth(chart)
     assert not any(obj["kind"] in {"ExternalSecret", "ClusterSecretStore", "ServiceAccount"} for obj in objects)
     bindings = [obj for obj in objects if obj["kind"] == "RoleBinding"]
     assert len(bindings) == 1
     assert bindings[0]["metadata"]["name"] == "egress"
-    assert bindings[0]["metadata"]["namespace"] == TESTING_CREDENTIALS_NAMESPACE
+    assert bindings[0]["metadata"]["namespace"] == _CREDENTIALS_NAMESPACE
     assert bindings[0]["roleRef"] == {
         "apiGroup": "rbac.authorization.k8s.io",
         "kind": "Role",
         "name": "egress-credentials-reader",
     }
     assert bindings[0]["subjects"] == [
-        {"apiGroup": "", "kind": "ServiceAccount", "name": "egress", "namespace": "agentplane-testing"}
+        {"apiGroup": "", "kind": "ServiceAccount", "name": "egress", "namespace": _PROXY_NAMESPACE}
     ]
 
 

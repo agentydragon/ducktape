@@ -1,4 +1,4 @@
-"""Write staging and testing Agentplane environment manifests."""
+"""Write a deployed Agentplane environment's manifests."""
 
 from __future__ import annotations
 

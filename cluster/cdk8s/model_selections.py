@@ -32,8 +32,8 @@ class HarnessRoutes:
 
 # Agentplane's hosted Claude and Codex pickers share the supported Antigravity Claude
 # and Gemini routes. Claude uses Anthropic Messages; Codex reaches the same upstream
-# through LiteLLM's Responses-to-Messages bridge. Testing offers Claude only its local
-# smoke model.
+# through LiteLLM's Responses-to-Messages bridge. `TESTING_APP_MODELS`, the k3s fixture's
+# local-model catalog, offers Claude only the local smoke model.
 _AGENTPLANE_ANTIGRAVITY_ROUTES = (
     ANTIGRAVITY_OPUS,
     ANTIGRAVITY_SONNET,
@@ -43,7 +43,7 @@ _AGENTPLANE_ANTIGRAVITY_ROUTES = (
 )
 
 # The Agentplane Codex picker offers Qwen at 256K only; the 128K native route remains
-# available in testing for the live Claude smoke flow.
+# available in `TESTING_APP_MODELS` for the Claude smoke flow.
 _AGENTPLANE_OLLAMA_OPENAI_ROUTES = tuple(
     route for route in OLLAMA_OPENAI_ROUTES if route != OLLAMA_QWEN_IQ4XS_128K.openai
 )

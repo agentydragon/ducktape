@@ -164,10 +164,6 @@ deprecated `local-path-ovh` alias, plus `forgejo-db-ssd` and
   PGDATA including WAL, rounded up to whole GiB; larger existing requests are
   retained. Apply the primary Pod UID preservation rule above before replacing
   each standby.
-- `postgres` (`generated/agentplane-testing/`): 1 instance pinned
-  `zone: hil-ovh` on `local-path-ovh-ssd`, shared by testing's three disposable
-  logical databases. This experimental environment deliberately accepts no
-  CNPG-level or storage-level replication; the manifest comment is the record.
 
 Parked clusters (retained in Git; R2/R3 bind again on revival):
 

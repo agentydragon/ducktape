@@ -40,11 +40,11 @@ how to regenerate: `cluster/AGENTS.md` § Generated manifests.
   multi-module component gets a named subpackage (`agentplane/`, `haku/`, `clickhouse/`,
   `litellm/`). No directory for one file, no `agents/` layer, no `_constructs` suffix
   (`agentplane/actions.py`, `litellm/proxy.py`).
-- **One frozen `Environment` per deployed namespace** (`agentplane/environment.py`;
-  instances in `agentplane/staging.py`, `agentplane/testing.py`). Constructs take the
+- **One frozen `Environment` per Agentplane stack** (`agentplane/environment.py`;
+  instances in `agentplane/staging.py` and the k3s fixture). Constructs take the
   whole environment and read what they need (`env.namespace`, `env.replicas.count`), so
   shared values are written once. Data only — never a callable "also build this" field.
-- **One chart function per environment** (`staging.py`/`testing.py` `chart(app)`), shared
+- **One chart function per environment** (`staging.py` `chart(app)`), shared
   by `generate_manifests.py` and test fixtures. It calls `agentplane/chart.py`'s
   `environment_chart(app, env)` and adds environment-only objects to the returned chart —
   never `if env.namespace == ...` in a construct, never a callback hook. Objects added

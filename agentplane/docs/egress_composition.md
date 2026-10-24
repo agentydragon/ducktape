@@ -235,7 +235,7 @@ until a rule needs one.
 
 ## Inference experiments
 
-The `inference-experiments` set in staging and testing grants direct Ollama
+The `inference-experiments` set in staging grants direct Ollama
 inference and LiteLLM's existing `cheap-experiments` key. It is separate from
 `basic`, which contains Agentplane platform operations only. New sandbox launches
 receive both through the deployment's default policies; standing caller bindings

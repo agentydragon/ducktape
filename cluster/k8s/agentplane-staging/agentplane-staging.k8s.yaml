@@ -7420,7 +7420,6 @@ spec:
     - namespaces:
         - activitywatch
         - agentplane-staging
-        - agentplane-testing
         - airlock
         - authentik
         - cert-manager
@@ -7457,7 +7456,6 @@ spec:
         - activitywatch
         - agent-sandbox-system
         - agentplane-staging
-        - agentplane-testing
         - airlock
         - authentik
         - cert-manager

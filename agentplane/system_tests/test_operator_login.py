@@ -112,7 +112,7 @@ async def test_federation_preflight_withholds_response_and_transport_details(
 
 def _mcp_authorization() -> str:
     return (
-        f"{DEX}/dex/auth?client_id=agentplane-testing-mcp&response_type=code&"
+        f"{DEX}/dex/auth?client_id=test-mcp-linkage&response_type=code&"
         f"redirect_uri={APP}/mcp-linkage/callback&state=bff-state&"
         "code_challenge=bff-pkce&code_challenge_method=S256"
     )
@@ -253,14 +253,14 @@ async def test_dex_linkage_uses_a_fresh_local_form_and_preserves_bff_state_pkce(
             return httpx.Response(
                 302,
                 headers={
-                    "location": "/dex/auth/local?client_id=agentplane-testing-mcp&response_type=code&"
+                    "location": "/dex/auth/local?client_id=test-mcp-linkage&response_type=code&"
                     f"redirect_uri={APP}/mcp-linkage/callback&state=bff-state&"
                     "code_challenge=bff-pkce&code_challenge_method=S256"
                 },
             )
         if request.url.path == "/dex/auth/local":
             assert dict(request.url.params) == {
-                "client_id": "agentplane-testing-mcp",
+                "client_id": "test-mcp-linkage",
                 "response_type": "code",
                 "redirect_uri": f"{APP}/mcp-linkage/callback",
                 "state": "bff-state",

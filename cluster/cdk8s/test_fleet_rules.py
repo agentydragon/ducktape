@@ -229,13 +229,13 @@ def test_an_sni_pin_may_not_share_an_endpoint_with_open_https_egress() -> None:
         "egress", [_https({"toEntities": ["world", "remote-node", "host"]})], namespace=_STAGING, labels=proxy
     )
     pinned_egress = _policy_for(
-        "egress-to-testing-app",
-        [_https({"toEntities": ["remote-node", "host"]}, ["agentplane-testing.allegedly.works"])],
+        "egress-to-pinned-app",
+        [_https({"toEntities": ["remote-node", "host"]}, ["pinned-app.example.test"])],
         namespace=_STAGING,
         labels=proxy,
     )
     conflict = (
-        "CiliumNetworkPolicy/egress-to-testing-app pins SNI on outside HTTPS while "
+        "CiliumNetworkPolicy/egress-to-pinned-app pins SNI on outside HTTPS while "
         "CiliumNetworkPolicy/egress leaves port 443 open for the same endpoints: the pin decides "
         "every name on that port, not just its own"
     )

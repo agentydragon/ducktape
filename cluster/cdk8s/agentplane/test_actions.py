@@ -5,11 +5,10 @@ from __future__ import annotations
 import json
 from typing import Any
 
-import pytest
 import pytest_bazel
 from more_itertools import one
 
-from cluster.cdk8s.agentplane.conftest import NAMESPACES
+from cluster.cdk8s.agentplane import staging
 
 # REST, docs, health and consent live behind the Action API's own authentication, never on
 # the public MCP origin.
@@ -27,11 +26,9 @@ _MCP_PROTOCOL_PATHS = {
 }
 
 
-def test_public_route_exposes_protocol_paths_only(agentplane_manifests: dict[str, list[dict[str, Any]]]) -> None:
+def test_public_route_exposes_protocol_paths_only(staging_manifests: list[dict[str, Any]]) -> None:
     route = one(
-        doc
-        for doc in agentplane_manifests["agentplane-staging"]
-        if doc["kind"] == "HTTPRoute" and doc["metadata"]["name"] == "mcp-edge-mcp"
+        doc for doc in staging_manifests if doc["kind"] == "HTTPRoute" and doc["metadata"]["name"] == "mcp-edge-mcp"
     )
     paths = set()
     for rule in route["spec"]["rules"]:
@@ -44,19 +41,17 @@ def test_public_route_exposes_protocol_paths_only(agentplane_manifests: dict[str
     assert paths >= _MCP_PROTOCOL_PATHS
 
 
-def _gaffer_approval(manifests: dict[str, list[dict[str, Any]]], action: str) -> dict[str, Any]:
+def _gaffer_approval(manifests: list[dict[str, Any]], action: str) -> dict[str, Any]:
     policy = one(
         doc
-        for doc in manifests["agentplane-staging"]
+        for doc in manifests
         if doc["kind"] == "PolicySet" and doc["metadata"]["name"] == "gaffer-private-branch-and-pr-creation"
     )
     return one(rule["policy"] for rule in policy["spec"]["rules"] if rule["policy"]["actions"] == {"github": [action]})
 
 
-def test_gaffer_branch_policy_approves_only_create_branch(
-    agentplane_manifests: dict[str, list[dict[str, Any]]],
-) -> None:
-    approval = _gaffer_approval(agentplane_manifests, "create_branch")
+def test_gaffer_branch_policy_approves_only_create_branch(staging_manifests: list[dict[str, Any]]) -> None:
+    approval = _gaffer_approval(staging_manifests, "create_branch")
     assert approval["type"] == "argument_schema"
     assert approval["schema"]["properties"]["owner"] == {"const": "agentydragon"}
     assert approval["schema"]["properties"]["repo"] == {"const": "gaffer-private"}
@@ -64,10 +59,8 @@ def test_gaffer_branch_policy_approves_only_create_branch(
     assert approval["schema"]["additionalProperties"] is False
 
 
-def test_gaffer_pr_policy_approves_only_create_pull_request(
-    agentplane_manifests: dict[str, list[dict[str, Any]]],
-) -> None:
-    approval = _gaffer_approval(agentplane_manifests, "create_pull_request")
+def test_gaffer_pr_policy_approves_only_create_pull_request(staging_manifests: list[dict[str, Any]]) -> None:
+    approval = _gaffer_approval(staging_manifests, "create_pull_request")
     assert approval["type"] == "argument_schema"
     assert approval["schema"]["properties"]["owner"] == {"const": "agentydragon"}
     assert approval["schema"]["properties"]["repo"] == {"const": "gaffer-private"}
@@ -77,29 +70,19 @@ def test_gaffer_pr_policy_approves_only_create_pull_request(
     assert approval["schema"]["additionalProperties"] is False
 
 
-@pytest.mark.parametrize("namespace", NAMESPACES)
-def test_cross_owner_reader_is_explicit_and_json_encoded(
-    namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
-) -> None:
+def test_cross_owner_reader_is_explicit_and_json_encoded(staging_manifests: list[dict[str, Any]]) -> None:
     deployment = one(
-        doc
-        for doc in agentplane_manifests[namespace]
-        if doc["kind"] == "Deployment" and doc["metadata"]["name"] == "actions"
+        doc for doc in staging_manifests if doc["kind"] == "Deployment" and doc["metadata"]["name"] == "actions"
     )
     container = one(item for item in deployment["spec"]["template"]["spec"]["containers"] if item["name"] == "actions")
     readers = one(item for item in container["env"] if item["name"] == "AGENTPLANE_ACTIONS_READER_ACCOUNTS")
-    assert json.loads(readers["value"]) == [{"namespace": namespace, "name": "notifications"}]
+    assert json.loads(readers["value"]) == [{"namespace": staging.ENV.namespace, "name": "notifications"}]
     assert not any(arg.startswith("--reader-accounts") for arg in container.get("args", []))
 
 
-@pytest.mark.parametrize("namespace", NAMESPACES)
-def test_actions_roll_does_not_overlap_execution_protocols(
-    namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
-) -> None:
+def test_actions_roll_does_not_overlap_execution_protocols(staging_manifests: list[dict[str, Any]]) -> None:
     deployment = one(
-        doc
-        for doc in agentplane_manifests[namespace]
-        if doc["kind"] == "Deployment" and doc["metadata"]["name"] == "actions"
+        doc for doc in staging_manifests if doc["kind"] == "Deployment" and doc["metadata"]["name"] == "actions"
     )
     assert deployment["spec"]["strategy"] == {"type": "Recreate"}
 

@@ -34,9 +34,6 @@ flowchart LR
     subgraph MESSAGING_TRACK[Agent messaging]
         NOTIFICATION_SERVICE_SPLIT[Unscheduled: inbox model and service rename]
     end
-    subgraph K3S_TRACK[System tests on k3s, retiring agentplane-testing]
-            TESTING_ENVIRONMENT_RETIRE[Candidate: delete agentplane-testing]
-    end
     subgraph TIER_TRACK[Test tiers: envtest and the bridge split]
         FAKE_CLIENTS_TO_ENVTEST[Candidate: remaining fake API clients to envtest]
         APP_TEST_RUNNER_FIXTURES_GO[Candidate: app test runners use the Go Gateway and History ingress]
@@ -45,12 +42,11 @@ flowchart LR
         DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: merge plan awaiting review]
         DISPATCHER_QUEUE_OPTIONAL[Unscheduled: run without the queue]
     end
-    K3S_TRACK --> K3S_ENV_OUT_OF_X[Blocked: the k3s stack leaves x/]
-    K3S_TRACK --> K3S_SPIKE_TARGETS_RETIRE[Blocked: delete the k3s lifecycle spike]
+    K3S_ENV_OUT_OF_X[Blocked: the k3s stack leaves x/]
+    K3S_SPIKE_TARGETS_RETIRE[Blocked: delete the k3s lifecycle spike]
     RUNNER_LAYERING_VM[In flight: layered VM guest, section 7] --> K3S_TEST_GUEST_RETIRE[Blocked: delete the k3s test guest]
     ACTION_TRACK -. after .-> REFACTOR_COHERENCE_AUDIT[Candidate: whole-refactor coherence audit, section 9]
     MESSAGING_TRACK -. after .-> REFACTOR_COHERENCE_AUDIT
-    K3S_TRACK -. after .-> REFACTOR_COHERENCE_AUDIT
     TIER_TRACK -. after .-> REFACTOR_COHERENCE_AUDIT
     DISPATCH_TRACK -. after .-> REFACTOR_COHERENCE_AUDIT
 ```
@@ -1915,37 +1911,11 @@ Do not delete retained runner stores, native conversations or History. Confirm e
 routing to the private store, suspended-queue retry and restart on the deployed images before retiring
 old paths.
 
-## 14. System tests on k3s and retiring `agentplane-testing`
-
-**In progress ([the plan](testing_retirement.md)).** The system tests run on the disposable k3s stack in
-[`x/k3s_env`](../x/k3s_env/README.md) in PR CI ([system tests README](../system_tests/README.md)). The operator's
-direction (2026-10-21 22:02): move every workflow off the testing instance, give RBE a real-model key for the tests
-that need one, and delete the instance.
-
-The [K3s startup experiment constraints](#k3s-startup-experiment-constraints) still apply to fixture
-changes.
-
-```mermaid
-flowchart LR
-    TESTING_ENVIRONMENT_RETIRE[Candidate: delete agentplane-testing]
-```
-
-### `TESTING_ENVIRONMENT_RETIRE` — delete `agentplane-testing`
-
-**Candidate.** Three PRs: the Flux kustomization, image pins, generated manifests, DNS and
-routes; the Dex MCP client, Action groups, LiteLLM key, `*-acceptance-*` Secrets and RBAC; the testing databases and
-volumes, a data drop the operator cleared for any time (2026-10-23: nothing there is kept). Preserve staging. The k3s
-fixture builds on testing's environment (`cluster/cdk8s/agentplane/testing.py`'s `ENV`, operator OIDC and Action
-federation), so the first PR moves what the fixture reads into it rather than deleting it.
-`ACTION_MCP_EDGE_SPLIT` rehearses its handoff on testing first ([MCP edge extraction](mcp_edge_extraction.md)), so
-the PR deleting the Flux kustomization waits for that step, or for the operator to drop it.
-
 ## 15. Cleanups after the current tracks
 
 Dead code, transitional pieces and test leftovers each current track reports it will leave behind (census of the
 lanes, 2026-10-21). Removals that a track's own plan already lists stay there: the integrated Connection/OAuth runtime
-and its old tables in [MCP edge extraction](mcp_edge_extraction.md#remaining-work); testing's Dex MCP client and Action groups
-in `TESTING_ENVIRONMENT_RETIRE`. The overview's graph is in
+and its old tables in [MCP edge extraction](mcp_edge_extraction.md#remaining-work). The overview's graph is in
 [Current tracks](#current-tracks-and-what-they-leave-behind). Fakes kept to inject faults the real API server cannot
 produce are named at the fake and are not cleanups.
 

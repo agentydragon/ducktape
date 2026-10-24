@@ -99,7 +99,6 @@ class RunnerVmTemplate(Construct):
             labels=labels,
             image=_IMAGE,
             cpu=VirtualMachineSpecTemplateSpecDomainCpu(cores=1),
-            # agentplane-testing's 4Gi container limit caps a guest at about 1.7Gi.
             resources=VirtualMachineSpecTemplateSpecDomainResources(
                 requests={"memory": VirtualMachineSpecTemplateSpecDomainResourcesRequests.from_string("1536Mi")}
             ),

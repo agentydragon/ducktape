@@ -662,7 +662,6 @@ def add_staging_action_policies(scope: Construct) -> None:
     # in plaid-mcp and presents pgweb's HTTP Basic password only on its query API, so a sandbox of
     # this caller's can inspect sync health and run SQL over the Plaid mirror as `plaid_ro`, which
     # can only SELECT (agent_access_profiles.py, egress_staging_credentials.py).
-    # `agentplane-testing` presents nothing either: the system tests bring their own app token.
     # `mimir-reads` presents nothing either: GET on Mimir's Prometheus query API over the cluster Service.
     # `github-downloads` presents nothing either: public GitHub downloads, GET and HEAD only.
     # `github-clone` presents nothing either: the anonymous smart-HTTP git protocol

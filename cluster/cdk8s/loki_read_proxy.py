@@ -40,7 +40,6 @@ NAMESPACE_ALLOWLIST = (
     # keep-sorted start
     "activitywatch",
     "agentplane-staging",
-    "agentplane-testing",
     "airlock",
     "analytics",
     "authentik",

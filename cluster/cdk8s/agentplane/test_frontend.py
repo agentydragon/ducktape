@@ -2,24 +2,19 @@
 
 from typing import Any
 
-import pytest
 import pytest_bazel
 from more_itertools import one
 
-from cluster.cdk8s.agentplane import app, frontend
-from cluster.cdk8s.agentplane.conftest import NAMESPACES
+from cluster.cdk8s.agentplane import app, frontend, staging
 
 
-@pytest.mark.parametrize("namespace", NAMESPACES)
-def test_static_routes_leave_api_and_auth_on_the_app(
-    namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
-) -> None:
-    routes = [doc for doc in agentplane_manifests[namespace] if doc["kind"] == "HTTPRoute"]
+def test_static_routes_leave_api_and_auth_on_the_app(staging_manifests: list[dict[str, Any]]) -> None:
+    routes = [doc for doc in staging_manifests if doc["kind"] == "HTTPRoute"]
     static = one(doc for doc in routes if doc["metadata"]["name"] == frontend.NAME)
     api = one(doc for doc in routes if doc["metadata"]["name"] == app.NAME)
     assert static["spec"]["hostnames"] == api["spec"]["hostnames"]
     rule = one(static["spec"]["rules"])
-    assert one(rule["backendRefs"])["name"] == frontend.service(namespace).name
+    assert one(rule["backendRefs"])["name"] == frontend.service(staging.ENV.namespace).name
     assert {m["path"]["value"] for m in rule["matches"] if m["path"]["type"] == "Exact"} == {
         "/",
         "/index.html",
@@ -32,20 +27,16 @@ def test_static_routes_leave_api_and_auth_on_the_app(
     # API URLs and auth keep their current public paths, including long-lived streams.
     api_rule = one(api["spec"]["rules"])
     assert not api_rule.get("matches")
-    assert one(api_rule["backendRefs"])["name"] == app.service(namespace).name
+    assert one(api_rule["backendRefs"])["name"] == app.service(staging.ENV.namespace).name
     assert api_rule["timeouts"]["request"] == "3600s"
 
 
-@pytest.mark.parametrize("namespace", NAMESPACES)
-def test_frontend_has_no_runtime_credentials_or_outbound_access(
-    namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
-) -> None:
-    documents = agentplane_manifests[namespace]
-    pod = one(doc for doc in documents if doc["kind"] == "Deployment" and doc["metadata"]["name"] == frontend.NAME)[
-        "spec"
-    ]["template"]["spec"]
+def test_frontend_has_no_runtime_credentials_or_outbound_access(staging_manifests: list[dict[str, Any]]) -> None:
+    pod = one(
+        doc for doc in staging_manifests if doc["kind"] == "Deployment" and doc["metadata"]["name"] == frontend.NAME
+    )["spec"]["template"]["spec"]
     account = one(
-        doc for doc in documents if doc["kind"] == "ServiceAccount" and doc["metadata"]["name"] == frontend.NAME
+        doc for doc in staging_manifests if doc["kind"] == "ServiceAccount" and doc["metadata"]["name"] == frontend.NAME
     )
     assert pod["automountServiceAccountToken"] is False
     assert account["automountServiceAccountToken"] is False
@@ -60,12 +51,14 @@ def test_frontend_has_no_runtime_credentials_or_outbound_access(
     assert "emptyDir" in one(pod["volumes"])
     assert not any(
         subject["kind"] == "ServiceAccount" and subject["name"] == frontend.NAME
-        for doc in documents
+        for doc in staging_manifests
         if doc["kind"] in {"RoleBinding", "ClusterRoleBinding"}
         for subject in doc.get("subjects", [])
     )
     policy = one(
-        doc for doc in documents if doc["kind"] == "CiliumNetworkPolicy" and doc["metadata"]["name"] == frontend.NAME
+        doc
+        for doc in staging_manifests
+        if doc["kind"] == "CiliumNetworkPolicy" and doc["metadata"]["name"] == frontend.NAME
     )["spec"]
     assert policy["egressDeny"] == [{"toEntities": ["all"]}]
     assert not policy.get("egress")

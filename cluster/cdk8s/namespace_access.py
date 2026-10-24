@@ -20,7 +20,6 @@ NAMESPACE_DIAGNOSTICS = {
     "activitywatch": AgentReadable.LOGS,
     "agent-sandbox-system": AgentReadable.METADATA,
     "agentplane-staging": AgentReadable.LOGS,
-    "agentplane-testing": AgentReadable.LOGS,
     "airlock": AgentReadable.LOGS,
     "authentik": AgentReadable.LOGS,
     "cert-manager": AgentReadable.LOGS,

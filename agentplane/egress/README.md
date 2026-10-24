@@ -246,8 +246,7 @@ writes only when the condition it decides differs from the one the binding carri
 Substituted credentials live in a namespace of their own because RBAC cannot filter Secrets by
 label: a namespace-wide read where the sandboxes run would hand the proxy the model key and the
 database credential along with the ones it is meant to substitute. Staging uses
-`agentplane-staging-egress-credentials` for GitHub and Forgejo; testing uses
-`agentplane-testing-egress-credentials` for GitHub only.
+`agentplane-staging-egress-credentials`.
 
 ### Rejected: binding a bearer to its Pod's source address
 

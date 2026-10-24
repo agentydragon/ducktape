@@ -1,8 +1,7 @@
 """Isolated credentials namespaces for outbound authentication.
 
-`EgressCredentials` renders only the namespace and the egress proxy's read access to it. Each
-environment's own module copies in the credentials that environment gets
-(`egress_staging_credentials.py`, `egress_testing_credentials.py`).
+`EgressCredentials` renders only the namespace and the egress proxy's read access to it. Staging's
+credentials are copied in by `egress_staging_credentials.py`.
 """
 
 from cdk8s import ApiObjectMetadata
@@ -23,7 +22,7 @@ from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSec
 
 STAGING_CREDENTIALS_NAMESPACE = "agentplane-staging-egress-credentials"
 TESTING_CREDENTIALS_NAMESPACE = "agentplane-testing-egress-credentials"
-# The Secret `egress.py`'s `github-pat` EgressCredential reads, in both environments.
+# The Secret `egress.py`'s `github-pat` EgressCredential reads.
 GITHUB_PAT_SECRET = "agentplane-github-pat"
 BUILDBUDDY_API_KEY_SECRET = "buildbuddy-api-key"
 EXTERNAL_CREDS_STORE = "kubernetes-external-creds-secret-store"

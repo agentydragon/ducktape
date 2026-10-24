@@ -1,7 +1,6 @@
 """agentplane-staging's egress credentials: each real account the staging proxy presents for a
 sandbox, with the Secret plumbing that delivers it and, beyond the GitHub PAT whose EgressCredential
-and policy both environments share (`egress.py`), the egress PolicySet that scopes where it is
-presented. Testing shares GitHub, BuildBuddy, and inference credentials (`egress_testing_credentials.py`).
+and policy `egress.py` defines, the egress PolicySet that scopes where it is presented.
 
 Keep each public Gateway egress PolicySet in sync with the shared Cilium backend grants in
 add_staging_egress_credentials: a Gateway on the proxy's own node rechecks the proxy's egress

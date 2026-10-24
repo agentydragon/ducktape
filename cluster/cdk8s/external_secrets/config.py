@@ -126,7 +126,6 @@ def chart(app: App) -> Chart:
             # keep-sorted start
             "activitywatch",
             "agentplane-staging",
-            "agentplane-testing",
             "agents-infra",
             "airlock",
             "claude-session-sync",

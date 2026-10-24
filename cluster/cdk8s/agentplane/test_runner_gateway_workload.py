@@ -3,7 +3,6 @@
 from pathlib import PurePosixPath
 from typing import Any, cast
 
-import pytest
 import pytest_bazel
 import yaml
 from cdk8s import Chart, Testing as Cdk8sTesting
@@ -19,7 +18,6 @@ from cluster.cdk8s.agentplane import (
     session_dispatcher,
     staging,
 )
-from cluster.cdk8s.agentplane.conftest import NAMESPACES
 from util.settings_contract import env_name
 
 
@@ -58,14 +56,16 @@ def test_gateway_preserves_services_and_fences_listener_ingress() -> None:
     http = session_dispatcher.http_service(staging.ENV.namespace)
     assert {p["containerPort"] for p in container["ports"]} == {8080, http.pod_port}
     settings = _gateway_settings(docs, container)
-    namespace = staging.ENV.namespace
     assert settings["listen_address"] == "0.0.0.0:8080"
     assert settings["http_listen_address"] == f"0.0.0.0:{http.pod_port}"
     assert settings["dispatcher_audience"] == session_dispatcher.TOKEN_AUDIENCE
     assert settings["gateway_audience"] == runner_gateway.TOKEN_AUDIENCE
-    assert set(settings["dispatcher_callers"]) == {f"{namespace}/{app.NAME}", f"{namespace}/{notifications.NAME}"}
-    assert f"{namespace}/{runner_gateway.NAME}" in settings["gateway_callers"]
-    assert f"{namespace}/{app.NAME}" in settings["wake_callers"]
+    assert set(settings["dispatcher_callers"]) == {
+        f"{staging.ENV.namespace}/{app.NAME}",
+        f"{staging.ENV.namespace}/{notifications.NAME}",
+    }
+    assert f"{staging.ENV.namespace}/{runner_gateway.NAME}" in settings["gateway_callers"]
+    assert f"{staging.ENV.namespace}/{app.NAME}" in settings["wake_callers"]
     migration = one(pod["initContainers"])
     assert migration["name"] == "migrate"
     assert migration["image"] == "git.allegedly.works/ducktape-ci/agentplane-runner-gateway-queue-migrate:unset"
@@ -115,13 +115,11 @@ def test_the_settings_file_the_gateway_reads_is_mounted_beside_its_token() -> No
     assert "projected" in volumes[mounted["/var/run/secrets/agentplane-runner-gateway"]]
 
 
-@pytest.mark.parametrize("namespace", NAMESPACES)
-def test_runner_platform_route_fences_name_the_gateway_listener_port(
-    namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
-) -> None:
+def test_runner_platform_route_fences_name_the_gateway_listener_port(staging_manifests: list[dict[str, Any]]) -> None:
     """Cilium matches after the Service's translation, so each fence must name the Pods' own port."""
-    documents = agentplane_manifests[namespace]
-    container = one(_resource(documents, "Deployment", runner_gateway.NAME)["spec"]["template"]["spec"]["containers"])
+    container = one(
+        _resource(staging_manifests, "Deployment", runner_gateway.NAME)["spec"]["template"]["spec"]["containers"]
+    )
     listening = {port["containerPort"] for port in container["ports"] if port["name"] == "grpc"}
 
     def ports(rules: list[dict[str, Any]], peers: str) -> set[int]:
@@ -135,8 +133,8 @@ def test_runner_platform_route_fences_name_the_gateway_listener_port(
             for port in target["ports"]
         }
 
-    control = _resource(documents, "CiliumNetworkPolicy", "platform-route-control")["spec"]
-    clients = _resource(documents, "CiliumNetworkPolicy", "platform-route-clients")["spec"]
+    control = _resource(staging_manifests, "CiliumNetworkPolicy", "platform-route-control")["spec"]
+    clients = _resource(staging_manifests, "CiliumNetworkPolicy", "platform-route-clients")["spec"]
     admitted = {
         int(port["port"]) for rule in control["ingress"] for target in rule["toPorts"] for port in target["ports"]
     }
