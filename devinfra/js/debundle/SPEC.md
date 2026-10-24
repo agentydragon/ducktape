@@ -214,6 +214,7 @@ The stronger summary applies only to a whole expression statement shaped as
 `helper([bare identifiers], LocalClass.prototype, literalStringKey, 1|2)`, with
 a nonempty spread-free array and a key other than `"__proto__"`. Analysis must
 prove exact stable local function/class identities and initialized bindings.
-Dynamic scopes and unsupported forms stay conservative. Eager argument reads,
+Helpers with non-top-level captured state, dynamic scopes and unsupported forms
+keep conservative timing. Eager argument reads,
 the helper's and local decorators' syntactic lazy read/rebind dependency closure,
 and target-local mutation/co-location edges remain. This is not purity.
