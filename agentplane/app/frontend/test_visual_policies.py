@@ -5,7 +5,7 @@ import re
 import pytest
 import pytest_asyncio
 import pytest_bazel
-from playwright.async_api import Page, expect
+from playwright.async_api import Locator, Page, expect
 
 from agentplane.app.frontend.testing.visual_assertions import (
     _focus,
@@ -40,31 +40,57 @@ async def test_actions_sidebar_queue(view: VisualPage, app: AgentplaneFixture) -
     await view.capture()
 
 
+async def _close_navigation_for_strip(page: Page, viewport: Viewport) -> Locator:
+    """Close the desktop sidebar (phones start without it) so the attention strip carries the queue."""
+    if viewport == DESKTOP:
+        await page.get_by_role("button", name="Toggle navigation").click()
+    await expect(page.get_by_role("navigation")).to_be_visible(visible=False)
+    return page.locator(".agentplane-actions-attention")
+
+
 @DESKTOP_AND_MOBILE
 @pytest.mark.parametrize("expanded", [False, True], ids=["collapsed", "expanded"])
 async def test_actions_attention_strip_over_thread(
     view: VisualPage, app: AgentplaneFixture, viewport: Viewport, expanded: bool
 ) -> None:
-    """A queue longer than the strip shows: the first two cards, and the rest behind "Show 1 more"."""
+    """A queue longer than the strip shows: the first two cards, and the rest behind "Show 2 more"."""
     await app.set_flag(Flag.PENDING_ACTION_OVERFLOW)
     await app.mount_thread(IDLE_THREAD)
     page = view.page
-    if viewport == DESKTOP:
-        await page.get_by_role("button", name="Toggle navigation").click()
-    await expect(page.get_by_role("navigation")).to_be_visible(visible=False)
-    strip = page.locator(".agentplane-actions-attention")
+    strip = await _close_navigation_for_strip(page, viewport)
     await expect(strip.get_by_role("button", name="Approve inspect running demo pods")).to_be_visible()
-    await expect(strip.get_by_text("echo the test repository handle back")).to_be_visible()
-    hidden = strip.get_by_text("restart the test backup service")
+    await expect(strip.get_by_role("button", name="Approve read the demo config")).to_be_visible()
+    hidden = strip.get_by_text(re.compile("^(echo the test repository handle back|restart the test backup service)$"))
     await expect(hidden).to_have_count(0)
     if expanded:
-        await strip.get_by_role("button", name="Show 1 more").click()
-        await expect(hidden).to_be_visible()
+        await strip.get_by_role("button", name="Show 2 more").click()
+        await expect(hidden).to_have_count(2)
         await expect(strip.get_by_role("button", name="Show fewer")).to_have_attribute("aria-expanded", "true")
     # The clicks leave the pointer over whatever moved under it: a card or the top bar's buttons.
     await page.mouse.move(0, 0)
     await expect(page.get_by_label("Message")).to_be_visible()
     await view.check(context="Actions strip over the open thread")
+    await view.capture()
+
+
+@DESKTOP_AND_MOBILE
+async def test_actions_attention_strip_keeps_expansion_after_decision(
+    view: VisualPage, app: AgentplaneFixture, viewport: Viewport
+) -> None:
+    """Approving on a details page opened from the expanded strip returns to the thread still expanded."""
+    await app.set_flag(Flag.PENDING_ACTION_OVERFLOW)
+    await app.mount_thread(IDLE_THREAD)
+    page = view.page
+    strip = await _close_navigation_for_strip(page, viewport)
+    await strip.get_by_role("button", name="Show 2 more").click()
+    await strip.get_by_role("link", name="View details for echo the test repository handle back").click()
+    await page.get_by_role("button", name="Approve", exact=True).click()
+    await expect(page.get_by_label("Message")).to_be_visible()
+    await expect(strip.get_by_role("button", name="Show fewer")).to_have_attribute("aria-expanded", "true")
+    await expect(strip.get_by_text("restart the test backup service")).to_be_visible()
+    await expect(strip.get_by_text("echo the test repository handle back")).to_have_count(0)
+    await page.mouse.move(0, 0)
+    await view.check(context="back on the thread after the decision")
     await view.capture()
 
 

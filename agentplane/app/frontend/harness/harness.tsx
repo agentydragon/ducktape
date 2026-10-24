@@ -1256,6 +1256,16 @@ const COMPACT_POD_ACTION: ActionRequestView = {
   idempotency_key: "visual-pods-compact-pending",
 };
 
+const COMPACT_RESOURCE_ACTION: ActionRequestView = {
+  ...COMPACT_POD_ACTION,
+  id: "70000000-0000-4000-8000-000000000011",
+  action: { group: "kubernetes_admin", name: "resources_get" },
+  arguments: { apiVersion: "v1", kind: "ConfigMap", namespace: "test-apps", name: "test-demo-config" },
+  title: "read the demo config",
+  description: "Read-only inspection of the demo configuration.",
+  idempotency_key: "visual-resource-compact-pending",
+};
+
 const GMAIL_DRAFT_ACTION: ActionRequestView = {
   id: "70000000-0000-4000-8000-000000000010",
   action: { group: "gmail", name: "drafts_create" },
@@ -2414,7 +2424,7 @@ function pendingActions(): ActionRequestView[] {
     : flags.has("compactPodAction")
       ? [COMPACT_POD_ACTION]
       : flags.has("pendingActionOverflow")
-        ? [COMPACT_POD_ACTION, ...pending]
+        ? [COMPACT_POD_ACTION, COMPACT_RESOURCE_ACTION, ...pending]
         : flags.has("pendingActions")
           ? pending
           : [];

@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
 import { act, type JSX } from "react";
-import { MemoryRouter, useLocation } from "react-router";
+import { Link, MemoryRouter, useLocation } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { ActionsAttentionBar, ActionsSidebarSection } from "./sidebar";
@@ -12,6 +12,17 @@ import type { ActionRequestView } from "./types";
 function CurrentPath(): JSX.Element {
   const location = useLocation();
   return <div data-testid="current-path">{location.pathname}</div>;
+}
+
+/** The shell's placement: hidden, not unmounted, on the Actions pages. */
+function StripOutsideActionPages(): JSX.Element {
+  const location = useLocation();
+  return (
+    <>
+      <ActionsAttentionBar visible={!location.pathname.startsWith("/actions")} />
+      <Link to="/threads/test-thread">test return link</Link>
+    </>
+  );
 }
 
 afterEach(async () => {
@@ -227,7 +238,7 @@ it("shows the first two pending requests in the closed-sidebar strip and the res
   const container = await mount(
     <MemoryRouter initialEntries={["/threads/test-thread"]}>
       <ActionRequestsProvider>
-        <ActionsAttentionBar />
+        <ActionsAttentionBar visible />
       </ActionRequestsProvider>
     </MemoryRouter>
   );
@@ -265,4 +276,33 @@ it("shows the first two pending requests in the closed-sidebar strip and the res
   expect(shown()).toEqual([first.id, second.id]);
   await send([]);
   expect(container.querySelector(".agentplane-actions-attention")).toBeNull();
+});
+
+it("keeps the strip's expansion across a visit to a details page that decides one request", async () => {
+  const container = await mount(
+    <MemoryRouter initialEntries={["/threads/test-thread"]}>
+      <ActionRequestsProvider>
+        <StripOutsideActionPages />
+      </ActionRequestsProvider>
+    </MemoryRouter>
+  );
+  const pending = [1, 2, 3, 4].map((index) => request("decision_pending", index));
+  const decided = pending[2]!;
+  await send(pending);
+  const expansion = (): HTMLButtonElement | null =>
+    container.querySelector<HTMLButtonElement>('button[aria-controls="agentplane-actions-attention-content"]');
+  await act(async () => expansion()?.click());
+  expect(expansion()?.getAttribute("aria-expanded")).toBe("true");
+
+  const details = container.querySelector<HTMLAnchorElement>(`a[href="/actions/${decided.id}"]`);
+  if (!details) throw new Error("missing details link for the request to decide");
+  await act(async () => details.click());
+  expect(container.querySelector(".agentplane-actions-attention")).toBeNull();
+  await send(pending.filter((request) => request.id !== decided.id));
+  const back = container.querySelector<HTMLAnchorElement>('a[href="/threads/test-thread"]');
+  if (!back) throw new Error("missing return link");
+  await act(async () => back.click());
+
+  expect(expansion()?.getAttribute("aria-expanded")).toBe("true");
+  expect(container.querySelectorAll(".agentplane-actions-sidebar-request")).toHaveLength(3);
 });

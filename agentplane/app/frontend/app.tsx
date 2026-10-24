@@ -162,7 +162,7 @@ function AppRoutes(): JSX.Element {
               <ConnectionIndicator />
             </div>
             {/* The sidebar carries the queue while it is open, and the Actions pages are the queue. */}
-            {!sidebarOpen && actionsRoute === null && <ActionsAttentionBar />}
+            <ActionsAttentionBar visible={!sidebarOpen && actionsRoute === null} />
             <div className={`agentplane-shell-main-content${fullBleed ? " agentplane-shell-fullbleed" : ""}`}>
               {threadRoute !== null ? <SandboxesLiveProvider>{routes}</SandboxesLiveProvider> : routes}
             </div>

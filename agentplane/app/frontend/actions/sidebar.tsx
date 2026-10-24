@@ -288,8 +288,9 @@ const ATTENTION_STRIP_REQUESTS = 2;
 
 /** The pending queue for when the navigation sidebar is closed, as at phone width: the first
     requests' compact cards above the routed page and the rest behind "Show N more", in a bounded
-    scroll area, so the open thread and its composer stay usable beneath it. */
-export function ActionsAttentionBar(): JSX.Element | null {
+    scroll area, so the open thread and its composer stay usable beneath it. The shell keeps it
+    mounted while `visible` is false, so the expansion survives a decision on a details page. */
+export function ActionsAttentionBar({ visible }: { visible: boolean }): JSX.Element | null {
   const actions = useContext(ActionRequestsContext);
   const pending = usePendingRequests();
   const [showAll, setShowAll] = useState(false);
@@ -299,7 +300,7 @@ export function ActionsAttentionBar(): JSX.Element | null {
     if (hidden <= 0) setShowAll(false);
   }, [hidden]);
 
-  if (actions === null || pending.length === 0) return null;
+  if (!visible || actions === null || pending.length === 0) return null;
 
   return (
     <section className="agentplane-actions-attention" aria-label="Actions awaiting review">
