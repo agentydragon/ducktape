@@ -314,28 +314,39 @@ pub fn sequenced_owner_causes(
     owner_graph: &crate::OwnerGraph,
     members: &[crate::OwnerId],
 ) -> Vec<SequencedOwnerCause> {
-    let member_set: std::collections::BTreeSet<_> = members.iter().copied().collect();
-    let mut source_owners = std::collections::BTreeSet::new();
-    for edge in owner_graph.iter_edges() {
-        if edge.reason.kind == DepKind::Sequenced && member_set.contains(&edge.from) {
-            source_owners.insert(edge.from);
-        }
-    }
-    source_owners
+    let members: std::collections::BTreeSet<_> = members.iter().copied().collect();
+    members
         .into_iter()
         .filter_map(|owner| {
-            let node = owner_graph.node(owner)?;
-            let Purity::NotPure { .. } = &node.purity else {
-                return None;
-            };
-            Some(SequencedOwnerCause {
-                owner_id: crate::reports::owner_key(owner),
-                binding_names: node.declared.iter().map(|id| id.0.clone()).collect(),
-                source_location: node.source_location.clone(),
-                purity: node.purity.clone(),
-            })
+            owner_graph
+                .out_edges_of(owner)
+                .iter()
+                .map(|id| owner_graph.edge(*id))
+                .find(|edge| edge.reason.kind == DepKind::Sequenced)
+                .and_then(|edge| sequenced_edge_cause(owner_graph, edge))
         })
         .collect()
+}
+
+/// Describe a sequencing edge's impure source directly. Callers that already
+/// have its provenance need no graph-wide search to rediscover that edge.
+pub fn sequenced_edge_cause(
+    owner_graph: &crate::OwnerGraph,
+    edge: &crate::OwnerEdge,
+) -> Option<SequencedOwnerCause> {
+    if edge.reason.kind != DepKind::Sequenced {
+        return None;
+    }
+    let node = owner_graph.node(edge.from)?;
+    let Purity::NotPure { .. } = &node.purity else {
+        return None;
+    };
+    Some(SequencedOwnerCause {
+        owner_id: crate::reports::owner_key(edge.from),
+        binding_names: node.declared.iter().map(|id| id.0.clone()).collect(),
+        source_location: node.source_location.clone(),
+        purity: node.purity.clone(),
+    })
 }
 
 impl AtomicUnitConflictReport {

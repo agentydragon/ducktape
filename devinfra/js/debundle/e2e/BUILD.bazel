@@ -67,6 +67,12 @@ debundle_e2e_test(
     timeout = "short",
 )
 
+debundle_e2e_test(
+    name = "conflict_diagnostics_scale_test",
+    timeout = "short",
+    deps = ["//devinfra/js/debundle:spec"],
+)
+
 debundle_e2e_test(name = "soundness_dynamic_scope_test")
 
 debundle_e2e_test(

@@ -486,13 +486,7 @@ fn cycle_edges_for(
                     .get(&edge.reason.statement_ordinal)
                     .cloned(),
                 kind: edge.reason.kind,
-                sequenced_owner: (edge.reason.kind == DepKind::Sequenced)
-                    .then(|| {
-                        analysis::reports::schema::sequenced_owner_causes(owner_graph, &[edge.from])
-                            .into_iter()
-                            .next()
-                    })
-                    .flatten(),
+                sequenced_owner: analysis::reports::schema::sequenced_edge_cause(owner_graph, edge),
             }
         })
         .collect();
