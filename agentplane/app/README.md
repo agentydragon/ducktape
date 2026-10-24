@@ -124,7 +124,7 @@ reads the feed state the same way. Sandbox lifecycle and Action review keep work
   reason, never an error response. The optional title backend is not probed. The Kubernetes API is
   not probed either; the freshness of the live views shows it.
 - `action_federation.py`: request-bound operator federation into the canonical Action Service.
-- `frontend/connection_service_client.ts`: generated ConnectionService HTTP/NDJSON message adapters for the consent
+- `frontend/connections/connection_service_client.ts`: generated ConnectionService HTTP/NDJSON message adapters for the consent
   page and OAuth-client settings; the service owns Connections and consent.
 - `operator_sessions.py`: PostgreSQL browser identity and pending OAuth state, shared across replicas.
 - `database.py`: the declarative `Base` every table maps onto, and the app's one connection pool;

@@ -1,5 +1,5 @@
 import { Alert, Button, Group, Select, Stack, Table, Text } from "@mantine/core";
-import "./connections.css";
+import "./management.css";
 import { type StreamConnection } from "../live_stream";
 import { Fragment, type JSX, useCallback, useEffect, useState } from "react";
 
@@ -20,10 +20,10 @@ import {
   rebindConnection,
   renameConnection,
   unbindConnection,
-} from "../connection_service_client";
+} from "./connection_service_client";
 import { followWatch } from "../watch_stream";
 
-import { CallerGrants } from "../caller_grants";
+import { CallerGrants } from "./caller_grants";
 import { InlineName } from "../inline_name";
 
 type Grant = Connection["grants"][number];

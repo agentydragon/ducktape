@@ -20,7 +20,7 @@ holds what is still open.
   validation before `SubmitInput`) have a home that is not a hand-written route: the app-contract
   decision. Deferred, not asked: whether the app's own views (Threads, Sandboxes) become protos. No
   track needs it, and an early answer would be hard to reverse.
-- **Error codes in the browser.** `sandbox_page.tsx` and `settings/connections.tsx` (three times)
+- **Error codes in the browser.** `sandbox_page.tsx` and `connections/management.tsx` (three times)
   branch on HTTP status; they move to the body's gRPC `code`, which `HttpError` then carries.
 - **Attribution.** Services see the app, not the operator; the Dispatcher's per-caller wake budget is
   per app. Per-operator attribution is the separate delegated-caller question.

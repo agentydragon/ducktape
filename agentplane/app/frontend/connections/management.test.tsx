@@ -4,9 +4,9 @@ import { MemoryRouter } from "react-router";
 import { expect, it, vi } from "vitest";
 
 import type { CallerGrantReader, Connection } from "../client";
-import { answerConnectionFacade, mountConnectionService, type Sent } from "../connection_service_test_support";
-import { Connections } from "./connections";
-import { sampleConnection } from "../connections_fixture";
+import { answerConnectionFacade, mountConnectionService, type Sent } from "./test_support";
+import { Connections } from "./management";
+import { sampleConnection } from "./fixture";
 
 const OTHER = { namespace: "agentplane-test", name: "other" };
 const ROOT = "/upstream/connections/v1/operator";

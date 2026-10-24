@@ -7,7 +7,7 @@ import { ActionRequestDetail } from "./actions/detail";
 import { ActionHistory } from "./actions/history";
 import { ActionRequests, ActionRequestsProvider } from "./actions/requests";
 import { ActionsAttentionBar } from "./actions/sidebar";
-import { ConnectionConsent } from "./consent";
+import { ConnectionConsent } from "./connections/consent";
 import { Home } from "./threads/home";
 import { SandboxPage } from "./sandboxes/sandbox_page";
 import { RoutedThreadsLiveProvider, SandboxesLiveProvider } from "./live";

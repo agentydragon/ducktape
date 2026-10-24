@@ -1,7 +1,7 @@
 import type { JSX } from "react";
 import { Modal, Tabs } from "@mantine/core";
 
-import { Connections } from "./connections";
+import { Connections } from "../connections/management";
 import { McpServers } from "./mcp_servers";
 import { PushSettings } from "./push";
 

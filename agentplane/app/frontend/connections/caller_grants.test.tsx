@@ -6,7 +6,7 @@ import { MemoryRouter } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { CallerGrants } from "./caller_grants";
-import type { CallerGrantReader, CallerGrantView } from "./client";
+import type { CallerGrantReader, CallerGrantView } from "../client";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let root: ReturnType<typeof createRoot>;

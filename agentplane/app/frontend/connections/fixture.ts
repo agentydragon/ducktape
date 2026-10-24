@@ -1,4 +1,4 @@
-import type { Connection } from "./client";
+import type { Connection } from "../client";
 
 export function sampleConnection(): Connection {
   return {

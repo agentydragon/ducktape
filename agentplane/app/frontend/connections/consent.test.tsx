@@ -3,10 +3,10 @@
 import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import { answerConnectionFacade, mountConnectionService, type Sent } from "./connection_service_test_support";
+import { answerConnectionFacade, mountConnectionService, type Sent } from "./test_support";
 import { ConnectionConsent } from "./consent";
 import type { ConsentPreview, ConsentResult } from "./connection_service_client";
-import { sampleConnection } from "./connections_fixture";
+import { sampleConnection } from "./fixture";
 
 function preview(): ConsentPreview {
   return {

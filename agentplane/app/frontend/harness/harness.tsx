@@ -39,7 +39,7 @@ import {
   mcpLinkagesSnapshotProtoJson,
   mcpLinkageUpsertProtoJson,
 } from "../actions/proto_test_fixtures";
-import { sampleConnection } from "../connections_fixture";
+import { sampleConnection } from "../connections/fixture";
 import type {
   BindingView,
   Decision,

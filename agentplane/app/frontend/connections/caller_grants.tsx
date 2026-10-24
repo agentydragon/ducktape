@@ -1,8 +1,8 @@
 import { Alert, Button, Group, Stack, Text, Title } from "@mantine/core";
 import { type JSX, useEffect, useState } from "react";
 
-import { ActionPolicySection } from "./actions/policy";
-import { BindingsTable } from "./bindings_table";
+import { ActionPolicySection } from "../actions/policy";
+import { BindingsTable } from "../bindings_table";
 import {
   type CallerGrantReader,
   type CallerGrantView,
@@ -10,7 +10,7 @@ import {
   displayableError,
   readCallerGrants,
   serviceAccountKey,
-} from "./client";
+} from "../client";
 
 /** Read-only account snapshot. Sandbox pages use the same renderers with their live data. */
 export function CallerGrants({

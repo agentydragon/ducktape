@@ -127,19 +127,6 @@ ts_library(
     ],
 )
 
-ts_library(
-    name = "connection_service_client",
-    srcs = ["connection_service_client.ts"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":client",
-        "//:node_modules/@bufbuild/protobuf",
-        "//agentplane/action_service:action_service_pb",
-        "//agentplane/mcp_edge:connection_service_pb",
-        "//agentplane/proto:sandboxes_pb",
-    ],
-)
-
 agentplane_vitest_test(
     name = "client_test",
     srcs = ["client.test.ts"],
@@ -155,35 +142,6 @@ ts_library(
     name = "operator_login",
     srcs = ["operator_login.ts"],
     tsconfig = TSCONFIG,
-)
-
-ts_library(
-    name = "consent",
-    srcs = ["consent.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":client",
-        ":connection_service_client",
-        ":time_ago",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-    ],
-)
-
-agentplane_vitest_test(
-    name = "consent_test",
-    srcs = ["consent.test.tsx"],
-    deps = [
-        ":connection_service_client",
-        ":connection_service_test_support",
-        ":connections_fixture",
-        ":consent",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//:node_modules/vitest",
-        "//agentplane/app/frontend/actions:testing",
-    ],
 )
 
 ts_library(
@@ -302,11 +260,6 @@ ts_library(
     tsconfig = TSCONFIG,
 )
 
-js_library(
-    name = "connections_css",
-    srcs = ["settings/connections.css"],
-)
-
 ts_library(
     name = "inline_name",
     srcs = [
@@ -325,56 +278,6 @@ ts_library(
 js_library(
     name = "inline_name_css",
     srcs = ["inline_name.css"],
-)
-
-ts_library(
-    name = "caller_grants",
-    srcs = ["caller_grants.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":bindings_table",
-        ":client",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//agentplane/app/frontend/actions:policy",
-    ],
-)
-
-agentplane_vitest_test(
-    name = "caller_grants_test",
-    srcs = ["caller_grants.test.tsx"],
-    deps = [
-        ":caller_grants",
-        ":client",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/@types/react-dom",
-        "//:node_modules/react",
-        "//:node_modules/react-dom",
-        "//:node_modules/react-router",
-        "//:node_modules/vitest",
-    ],
-)
-
-ts_library(
-    name = "connections",
-    srcs = [
-        "settings/connections.tsx",
-    ],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":caller_grants",
-        ":client",
-        ":connection_service_client",
-        ":connections_css",
-        ":inline_name",
-        ":live_stream",
-        ":watch_stream",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-    ],
 )
 
 ts_library(
@@ -434,56 +337,16 @@ agentplane_vitest_test(
 )
 
 ts_library(
-    name = "connections_fixture",
-    testonly = True,
-    srcs = ["connections_fixture.ts"],
-    tsconfig = TSCONFIG,
-    deps = [":client"],
-)
-
-ts_library(
-    name = "connection_service_test_support",
-    testonly = True,
-    srcs = ["connection_service_test_support.ts"],
-    tsconfig = TSCONFIG,
-    deps = [
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/@types/react-dom",
-        "//:node_modules/react",
-        "//:node_modules/react-dom",
-        "//:node_modules/vitest",
-    ],
-)
-
-ts_library(
     name = "settings",
     srcs = ["settings/dialog.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":connections",
         ":mcp_servers",
         ":push",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
-    ],
-)
-
-agentplane_vitest_test(
-    name = "connections_test",
-    srcs = ["settings/connections.test.tsx"],
-    deps = [
-        ":client",
-        ":connection_service_client",
-        ":connection_service_test_support",
-        ":connections",
-        ":connections_fixture",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//:node_modules/react-router",
-        "//:node_modules/vitest",
-        "//agentplane/app/frontend/actions:testing",
+        "//agentplane/app/frontend/connections:management",
     ],
 )
 
@@ -858,7 +721,6 @@ ts_library(
     ],
     tsconfig = TSCONFIG,
     deps = [
-        ":consent",
         ":icons",
         ":live",
         ":settings",
@@ -876,6 +738,7 @@ ts_library(
         "//agentplane/app/frontend/actions:history",
         "//agentplane/app/frontend/actions:requests",
         "//agentplane/app/frontend/actions:sidebar",
+        "//agentplane/app/frontend/connections:consent",
         "//agentplane/app/frontend/sandboxes:list",
         "//agentplane/app/frontend/sandboxes:sandbox_page",
         "//agentplane/app/frontend/threads:home",
@@ -974,7 +837,6 @@ ts_library(
         ":clamped_block",
         ":client",
         ":command_view",
-        ":connections_fixture",
         ":disclosure",
         ":harness_network",
         ":live",
@@ -994,6 +856,7 @@ ts_library(
         "//agentplane/app/frontend/actions:action_client",
         "//agentplane/app/frontend/actions:proto_test_fixtures",
         "//agentplane/app/frontend/actions/rendering:index",
+        "//agentplane/app/frontend/connections:fixture",
         "//agentplane/app/frontend/threads:local_commands",
         "//agentplane/proto:runner_pb",
     ],
