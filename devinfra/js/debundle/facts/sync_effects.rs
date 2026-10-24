@@ -185,6 +185,7 @@ struct Call {
     caller: Option<u32>,
     owner: StatementOrdinal,
     plain_object_sources: bool,
+    no_sync_arguments: bool,
 }
 
 fn plain_assign_source_property(property: &PropOrSpread) -> bool {
@@ -287,6 +288,7 @@ struct ExecutionIndex {
     linkage_owners: BTreeSet<StatementOrdinal>,
     dynamic_scope_owners: BTreeSet<StatementOrdinal>,
     opaque_top: BTreeSet<StatementOrdinal>,
+    no_sync_callback_members: BTreeMap<String, BTreeSet<String>>,
 }
 
 impl Default for ExecutionIndex {
@@ -315,12 +317,13 @@ impl Default for ExecutionIndex {
             linkage_owners: BTreeSet::new(),
             dynamic_scope_owners: BTreeSet::new(),
             opaque_top: BTreeSet::new(),
+            no_sync_callback_members: BTreeMap::new(),
         }
     }
 }
 
 impl ExecutionIndex {
-    fn collect(body: &[TopLevelItemView<'_>]) -> Self {
+    fn collect(body: &[TopLevelItemView<'_>], hints: &AnalysisHints) -> Self {
         let mut index = Self {
             top_calls: vec![Vec::new(); body.len()],
             top_property_writes: vec![Vec::new(); body.len()],
@@ -329,6 +332,7 @@ impl ExecutionIndex {
             top_member_value_writes: vec![Vec::new(); body.len()],
             top_exported_values: vec![Vec::new(); body.len()],
             global_object_names: super::global_object::unshadowed_global_object_aliases(body),
+            no_sync_callback_members: hints.no_sync_callback_members.clone(),
             ..Self::default()
         };
         for (ordinal, item) in body.iter().enumerate() {
@@ -376,8 +380,7 @@ impl ExecutionIndex {
             }
             ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => {
                 self.exported_declaration_owners.insert(self.owner);
-                self.exported_bindings
-                    .extend(collect_declared_names(item).into_iter());
+                self.exported_bindings.extend(collect_declared_names(item));
                 if matches!(export.decl, Decl::Fn(_)) {
                     self.hoisted_function_owners.insert(self.owner);
                 }
@@ -889,6 +892,10 @@ impl Visit for ExecutionIndex {
                     .map(|arg| ValueExpr::from_expr(&arg.expr))
                     .collect(),
                 is_new: false,
+                no_sync_arguments: is_no_sync_callback_member_call(
+                    callee,
+                    &self.no_sync_callback_members,
+                ),
                 caller: self.current,
                 owner: self.owner,
                 plain_object_sources: call.args.len() > 1
@@ -935,6 +942,7 @@ impl Visit for ExecutionIndex {
                 .map(|arg| ValueExpr::from_expr(&arg.expr))
                 .collect(),
             is_new: true,
+            no_sync_arguments: false,
             caller: self.current,
             owner: self.owner,
             plain_object_sources: false,
@@ -1419,14 +1427,18 @@ impl Executor<'_> {
         callbacks
     }
 
-    fn invoke_possible_callbacks(&mut self, args: &[Values], outcome: &mut Outcome) {
+    fn invoke_possible_callbacks(
+        &mut self,
+        args: &[Values],
+        no_sync_arguments: bool,
+        outcome: &mut Outcome,
+    ) {
         let mut callbacks = self.global_escaped_callbacks.clone();
         callbacks.extend(self.available_export_callbacks());
-        for values in args {
-            callbacks.extend(self.callback_values(values));
-        }
-        if callbacks.is_empty() {
-            return;
+        if !no_sync_arguments {
+            for values in args {
+                callbacks.extend(self.callback_values(values));
+            }
         }
         // Unknown host code may invoke any callback it received with another
         // currently available callback, so each formal gets the conservative
@@ -1773,7 +1785,7 @@ impl Executor<'_> {
             outcome.complete = false;
             outcome.unknown_call = true;
             self.note_unknown_call(call);
-            self.invoke_possible_callbacks(&args, outcome);
+            self.invoke_possible_callbacks(&args, call.no_sync_arguments, outcome);
         }
         let mut invoked_unknown_callbacks = targets.is_empty();
         for target in targets {
@@ -1837,7 +1849,7 @@ impl Executor<'_> {
                     outcome.unknown_call = true;
                     self.note_unknown_call(call);
                     if !invoked_unknown_callbacks {
-                        self.invoke_possible_callbacks(&args, outcome);
+                        self.invoke_possible_callbacks(&args, call.no_sync_arguments, outcome);
                         invoked_unknown_callbacks = true;
                     }
                 }
@@ -1850,10 +1862,11 @@ pub(crate) fn annotate_synchronous_calls(
     body: &[TopLevelItemView<'_>],
     flow: &ChunkValueFlow,
     shadowed: &BTreeSet<&'static str>,
+    hints: &AnalysisHints,
     export_reentry_policy: ExportReentryPolicy,
     facts: &mut [StatementFacts],
 ) {
-    let index = ExecutionIndex::collect(body);
+    let index = ExecutionIndex::collect(body, hints);
     // Every top-level call is executed by `top_calls`, regardless of whether
     // its result is retained. Keep an initializer's value only if a later
     // call may read it, directly or through another initializer/function.

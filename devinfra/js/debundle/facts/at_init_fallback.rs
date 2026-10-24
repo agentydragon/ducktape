@@ -315,7 +315,7 @@ fn member_is_add_event_listener(member: &MemberExpr) -> bool {
     )
 }
 
-fn is_no_sync_callback_member_call(
+pub(crate) fn is_no_sync_callback_member_call(
     callee: &Expr,
     no_sync_callback_members: &BTreeMap<String, BTreeSet<String>>,
 ) -> bool {

@@ -277,6 +277,7 @@ where
         &body,
         &value_flow,
         &shadowed,
+        hints,
         export_reentry_policy,
         &mut facts,
     );
