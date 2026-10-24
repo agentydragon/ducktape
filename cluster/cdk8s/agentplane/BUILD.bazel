@@ -654,6 +654,7 @@ py_library(
         ":egress_staging_credentials",
         "//agentplane/app:action_federation_settings",
         "//agentplane/app:presets",
+        "//agentplane/app:sandbox_models",
         "//agentplane/app:settings",
         "//agentplane/runner:harness",
         "//cluster/cdk8s:agent_access_profiles",

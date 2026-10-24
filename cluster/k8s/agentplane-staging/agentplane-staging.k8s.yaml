@@ -3108,6 +3108,9 @@ data:
     default_policy_sets:
       - basic
       - inference-experiments
+    new_sandbox_defaults:
+      wake_on_send: true
+      idle_suspend_after_seconds: 900
     egress_admin_url: http://egress-admin.agentplane-staging.svc:8081/
     action_federation:
       service_url: http://actions.agentplane-staging.svc:8080/
