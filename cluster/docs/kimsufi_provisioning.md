@@ -59,12 +59,9 @@ holds the hostname, Nebula IP and role):
 | `kimsufi_service_name_ks_game_0` | `ovh-ns104952` | `10.42.0.16/16` | control plane | NVMe serial `BTPF8256006P450RGN` | NVMe serial `BTPF8304019P450RGN` |
 | `kimsufi_service_name_ks_game_1` | `ovh-ns104963` | `10.42.0.17/16` | control plane | NVMe serial `BTPF8256002V450RGN` | NVMe serial `BTPF8256009U450RGN` |
 
-`data_disk_match` becomes a Talos `UserVolumeConfig` disk selector; it mounts at
-`/var/mnt/seaweedfs-data` (legacy name) or `/var/mnt/local-path-ovh-<tier>` on nodes
-that have gone through the OVH storage-tiering rename (see `ovh-nodes.tf`'s
-`data_disk_mount_renamed_nodes`) — `local-path-ovh` (now the deprecated hdd-tier
-alias) uses whichever path applies on
-each listed node.
+Talos owns only the system disk, split into the volumes in
+`local.piraeus_talos_node_layouts`; Piraeus initializes the whole data disk named
+in `cluster/cdk8s/piraeus.py`. A new node needs entries in both before its first apply.
 
 ## 2. Set the service name
 

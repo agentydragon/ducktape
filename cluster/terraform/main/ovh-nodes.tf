@@ -16,62 +16,36 @@
 # SERVER MAP
 
 locals {
-  # talos_storage_enabled adds machine.install.disk, dedicated system volumes,
-  # and removes the legacy data-disk UserVolumeConfig from the generated machine
-  # config. It does not run the rescue/dd installer. piraeus_ready_enabled is a
-  # separate gate: it selects the node-specific raw-device pool configuration.
-  # System volumes remain Talos-only; Piraeus uses the separate whole data disk.
-  # Apply a newly enabled system layout through maintenance mode after evacuation.
-  # Keep raw-device readiness false until the data disk is verified clear.
+  # Talos-owned system volumes on the system disk. Piraeus owns the whole data disk
+  # (cluster/cdk8s/piraeus.py names each node's device). A layout change repartitions
+  # the system disk: apply it through maintenance mode after evacuation, never live.
   piraeus_talos_node_layouts = {
     "ovh-ns1001419" = {
-      talos_storage_enabled = true
-      piraeus_ready_enabled = true
       system_disk_match     = "disk.serial == '190130800417'"
       system_volume_profile = "controlplane"
-      data_disk_serial      = "1951A3449505"
     }
     "ovh-ns104952" = {
-      talos_storage_enabled = true
-      piraeus_ready_enabled = true
       system_disk_match     = "disk.serial == 'BTPF8256006P450RGN'"
       system_volume_profile = "controlplane"
-      data_disk_serial      = "BTPF8304019P450RGN"
     }
     "ovh-ns104963" = {
-      talos_storage_enabled = true
-      piraeus_ready_enabled = true
       system_disk_match     = "disk.serial == 'BTPF8256002V450RGN'"
       system_volume_profile = "controlplane"
-      data_disk_serial      = "BTPF8256009U450RGN"
     }
     "ovh-ns103656" = {
-      talos_storage_enabled = true
-      piraeus_ready_enabled = true
       # Talos omits this disk's serial; pin the split system volumes by WWID.
       system_disk_match     = "disk.wwid == 'naa.5000cca25ed0aa31'"
       system_volume_profile = "worker"
     }
     "ovh-ns103711" = {
-      talos_storage_enabled = true
-      piraeus_ready_enabled = true
       system_disk_match     = "disk.wwid == 'naa.5000cca25ed0d7d6'"
       system_volume_profile = "worker"
     }
     "ovh-ns102453" = {
-      talos_storage_enabled = true
-      piraeus_ready_enabled = true
       system_disk_match     = "disk.wwid == 'naa.5000cca0bcd2d1b0'"
       system_volume_profile = "worker"
     }
   }
-
-  piraeus_talos_storage_enabled_nodes = toset([
-    for node, layout in local.piraeus_talos_node_layouts : node if layout.talos_storage_enabled
-  ])
-  piraeus_ready_nodes = toset([
-    for node, layout in local.piraeus_talos_node_layouts : node if layout.piraeus_ready_enabled
-  ])
 
   piraeus_system_volume_sizes = {
     controlplane = {
@@ -104,63 +78,57 @@ locals {
           grow    = false
         }
       })
-    ] if layout.talos_storage_enabled
+    ]
   }
 
   # Per-server provisioning facts, keyed by host name. The host name, Nebula IP and
   # Kubernetes role are the mesh roster's (local.nebula_hosts, nebula.tf), merged in below.
   kimsufi_server_provisioning = {
     "ovh-ns103656" = {
-      service_name    = var.kimsufi_service_name
-      apply_mode      = "staged_if_needing_reboot"
-      install_disk    = "/dev/disk/by-id/ata-HGST_HUS726020ALA610_K5H5NGHA"
-      data_disk_match = "disk.wwid == 'naa.5000cca25ed21ab1'"
-      zone            = "hil-ovh"
-      # Media of the data disk (/var/mnt/seaweedfs-data). Drives the
+      service_name = var.kimsufi_service_name
+      apply_mode   = "staged_if_needing_reboot"
+      install_disk = "/dev/disk/by-id/ata-HGST_HUS726020ALA610_K5H5NGHA"
+      zone         = "hil-ovh"
+      # Media of the data disk. Drives the
       # `storage.allegedly.works/tier` node label; keyed to hardware, NOT role, so it stays
       # correct if this node is later re-designated control-plane/worker.
       storage_tier = "hdd"
     }
     "ovh-ns103711" = {
-      service_name    = var.kimsufi_service_name_1
-      apply_mode      = "staged_if_needing_reboot"
-      install_disk    = "/dev/disk/by-id/ata-HGST_HUS726020ALA610_K5H61MEA"
-      data_disk_match = "disk.wwid == 'naa.5000cca25ed00a31'"
-      zone            = "hil-ovh"
-      storage_tier    = "hdd"
+      service_name = var.kimsufi_service_name_1
+      apply_mode   = "staged_if_needing_reboot"
+      install_disk = "/dev/disk/by-id/ata-HGST_HUS726020ALA610_K5H61MEA"
+      zone         = "hil-ovh"
+      storage_tier = "hdd"
     }
     "ovh-ns104952" = {
-      service_name    = var.kimsufi_service_name_ks_game_0
-      apply_mode      = "staged_if_needing_reboot"
-      install_disk    = "/dev/disk/by-id/nvme-INTEL_SSDPE2MX450G7_BTPF8256006P450RGN"
-      data_disk_match = "disk.serial == '${local.piraeus_talos_node_layouts["ovh-ns104952"].data_disk_serial}'"
-      zone            = "hil-ovh"
-      storage_tier    = "ssd"
+      service_name = var.kimsufi_service_name_ks_game_0
+      apply_mode   = "staged_if_needing_reboot"
+      install_disk = "/dev/disk/by-id/nvme-INTEL_SSDPE2MX450G7_BTPF8256006P450RGN"
+      zone         = "hil-ovh"
+      storage_tier = "ssd"
     }
     "ovh-ns104963" = {
-      service_name    = var.kimsufi_service_name_ks_game_1
-      apply_mode      = "staged_if_needing_reboot"
-      install_disk    = "/dev/disk/by-id/nvme-INTEL_SSDPE2MX450G7_BTPF8256002V450RGN"
-      data_disk_match = "disk.serial == '${local.piraeus_talos_node_layouts["ovh-ns104963"].data_disk_serial}'"
-      zone            = "hil-ovh"
-      storage_tier    = "ssd"
+      service_name = var.kimsufi_service_name_ks_game_1
+      apply_mode   = "staged_if_needing_reboot"
+      install_disk = "/dev/disk/by-id/nvme-INTEL_SSDPE2MX450G7_BTPF8256002V450RGN"
+      zone         = "hil-ovh"
+      storage_tier = "ssd"
     }
     "ovh-ns1001419" = {
       service_name = var.kimsufi_service_name_sys1
       apply_mode   = "staged_if_needing_reboot"
       # The rescue/dd path and the Talos install path use the verified system NVMe identity.
-      install_disk    = "/dev/disk/by-id/nvme-WDC_CL_SN720_SDAQNTW-512G-2000_190130800417"
-      data_disk_match = "disk.serial == '${local.piraeus_talos_node_layouts["ovh-ns1001419"].data_disk_serial}'"
-      zone            = "hil-ovh"
-      storage_tier    = "ssd"
+      install_disk = "/dev/disk/by-id/nvme-WDC_CL_SN720_SDAQNTW-512G-2000_190130800417"
+      zone         = "hil-ovh"
+      storage_tier = "ssd"
     }
     "ovh-ns102453" = {
-      service_name    = var.kimsufi_service_name_cp0
-      apply_mode      = "staged_if_needing_reboot"
-      install_disk    = "/dev/disk/by-id/ata-HGST_HUS726T4TALA6L1_V1HADBTH"
-      data_disk_match = "disk.wwid == 'naa.5000cca0c4cf8efa'"
-      zone            = "hil-ovh"
-      storage_tier    = "hdd"
+      service_name = var.kimsufi_service_name_cp0
+      apply_mode   = "staged_if_needing_reboot"
+      install_disk = "/dev/disk/by-id/ata-HGST_HUS726T4TALA6L1_V1HADBTH"
+      zone         = "hil-ovh"
+      storage_tier = "hdd"
     }
   }
 
@@ -190,7 +158,6 @@ locals {
     "ovh-ns103656" = "v1.14.0"
     "ovh-ns103711" = "v1.14.0"
     "ovh-ns102453" = "v1.14.0"
-    "optiplex"     = "v1.14.0"
   }
   kimsufi_installer_version = {
     for k in keys(local.kimsufi_servers) :
@@ -397,57 +364,14 @@ locals {
     if v.role == "controlplane"
   }
 
-  # Data-disk mount rename (OVH storage tiering — cluster/docs/plans/ovh_storage_tiering.md).
-  # Renaming a UserVolume repartitions/WIPES the disk, so roll it one node at a time: add a node
-  # here (empty set = no-op; every node keeps the legacy `seaweedfs-data` name) AND flip that
-  # node's nodePathMap entry in cluster/cdk8s/local_path_provisioner.py (regenerated) in the SAME
-  # commit, then `tofu apply -target=` for just that node under the plan's health gates
-  # (G-all + G-losable) — never a blanket bootstrap. A renamed node gets a tier-named UserVolume
-  # `local-path-ovh-${storage_tier}` mounted at `/var/mnt/local-path-ovh-${tier}`; its
-  # nodePathMap path becomes `/var/mnt/local-path-ovh-${tier}/local-path`. First node: 103711.
-  data_disk_mount_renamed_nodes = toset([
-    "ovh-ns103711", # rolled 2026-07-05; /dev/sdb repartitioned seaweedfs-data -> local-path-ovh-hdd
-    "ovh-ns102453", # rolled 2026-07-05; /dev/sdb repartitioned seaweedfs-data -> local-path-ovh-hdd
-    "ovh-ns103656", # rolled 2026-07-05; /dev/sdb repartitioned seaweedfs-data -> local-path-ovh-hdd (etcd on /dev/sda untouched)
-  ])
-
-  # Per-node user-volume patches. KS-5 nodes expose /dev/sdb; KS-GAME nodes
-  # expose a second NVMe. Both are mounted at the same path so local-path-ovh
-  # can use OVH-local capacity uniformly.
-  kimsufi_user_volume_config_patches = {
-    for k, v in merge(local.kimsufi_servers, local.kimsufi_cp_servers) :
-    k => contains(local.piraeus_talos_storage_enabled_nodes, k) || v.data_disk_match == null ? [] : [
-      yamlencode({
-        apiVersion = "v1alpha1"
-        kind       = "UserVolumeConfig"
-        name       = contains(local.data_disk_mount_renamed_nodes, k) ? "local-path-ovh-${v.storage_tier}" : "seaweedfs-data"
-        volumeType = "disk"
-        provisioning = {
-          diskSelector = {
-            match = v.data_disk_match
-          }
-        }
-        # Prepare the existing XFS data volume for a future quota-aware local-PV provisioner.
-        filesystem = {
-          type                = "xfs"
-          projectQuotaSupport = true
-        }
-      })
-    ]
-  }
-
   kimsufi_controlplane_machine_config_patches = {
     for k, v in local.kimsufi_servers :
     k => yamlencode({
       machine = merge(local.common_machine_base, {
-        install = merge(
-          {
-            image = "factory.talos.dev/metal-installer/${talos_image_factory_schematic.kimsufi.id}:${lookup(local.talos_installer_version_overrides, k, var.talos_version)}"
-          },
-          contains(local.piraeus_talos_storage_enabled_nodes, k) ? {
-            disk = v.install_disk
-          } : {},
-        )
+        install = {
+          image = "factory.talos.dev/metal-installer/${talos_image_factory_schematic.kimsufi.id}:${lookup(local.talos_installer_version_overrides, k, var.talos_version)}"
+          disk  = v.install_disk
+        }
         files = local.cp_auth_files
         # Topology labels set explicitly. The installed talos-CCM only populates
         # ExternalIP / providerID when `--cloud-provider=external` is in the kubelet
@@ -455,18 +379,13 @@ locals {
         # CCM transformation matches on `region=hil` set here.
         # `storage.allegedly.works/tier` drives the media-scoped local-path-ovh-{hdd,ssd} SCs
         # (cluster/generated/local-path-provisioner); see cluster/docs/plans/ovh_storage_tiering.md.
-        # Apply this target's desired config only after data evacuation and the
-        # system reset. The label gates Piraeus raw-pool creation.
-        nodeLabels = merge(
-          {
-            "topology.kubernetes.io/region" = "hil"
-            "topology.kubernetes.io/zone"   = v.zone
-            "storage.allegedly.works/tier"  = v.storage_tier
-          },
-          contains(local.piraeus_ready_nodes, k) ? {
-            "storage.allegedly.works/piraeus-ready" = "true"
-          } : {},
-        )
+        # piraeus-ready selects the node's Piraeus satellite and raw-device pool.
+        nodeLabels = {
+          "topology.kubernetes.io/region"         = "hil"
+          "topology.kubernetes.io/zone"           = v.zone
+          "storage.allegedly.works/tier"          = v.storage_tier
+          "storage.allegedly.works/piraeus-ready" = "true"
+        }
       })
       cluster = local.kimsufi_controlplane_cluster_config_by_node[k]
     })
@@ -477,14 +396,10 @@ locals {
     for k, v in local.kimsufi_servers :
     k => yamlencode({
       machine = merge(local.worker_machine_base, {
-        install = merge(
-          {
-            image = "factory.talos.dev/metal-installer/${talos_image_factory_schematic.kimsufi.id}:${local.kimsufi_installer_version[k]}"
-          },
-          contains(local.piraeus_talos_storage_enabled_nodes, k) ? {
-            disk = v.install_disk
-          } : {},
-        )
+        install = {
+          image = "factory.talos.dev/metal-installer/${talos_image_factory_schematic.kimsufi.id}:${local.kimsufi_installer_version[k]}"
+          disk  = v.install_disk
+        }
         # Talos hardens user.max_user_namespaces to 0; the haku-ci runner's rootless
         # dind (docker:dind-rootless) needs user namespaces to start. Scoped to the
         # OVH/hil workers, not cluster-wide; the runner has no node affinity, so any
@@ -495,16 +410,12 @@ locals {
         # Topology labels set explicitly — no CCM for OVH bare metal.
         # `storage.allegedly.works/tier` drives the media-scoped local-path-ovh-{hdd,ssd} SCs
         # (cluster/generated/local-path-provisioner); see cluster/docs/plans/ovh_storage_tiering.md.
-        nodeLabels = merge(
-          {
-            "topology.kubernetes.io/region" = "hil"
-            "topology.kubernetes.io/zone"   = v.zone
-            "storage.allegedly.works/tier"  = v.storage_tier
-          },
-          contains(local.piraeus_ready_nodes, k) ? {
-            "storage.allegedly.works/piraeus-ready" = "true"
-          } : {},
-        )
+        nodeLabels = {
+          "topology.kubernetes.io/region"         = "hil"
+          "topology.kubernetes.io/zone"           = v.zone
+          "storage.allegedly.works/tier"          = v.storage_tier
+          "storage.allegedly.works/piraeus-ready" = "true"
+        }
       })
       cluster = local.worker_cluster_config
     })
@@ -660,13 +571,12 @@ data "talos_machine_configuration" "kimsufi" {
         hostname   = each.value.hostname
       }),
     ],
-    local.kimsufi_user_volume_config_patches[each.key],
     local.kimsufi_eno1_peer_route_patches[each.key],
     local.kimsufi_cloud_provider_external_patches[each.key],
     local.nebula_machine_patches[each.key],
     [local.talos_node_logging_patch],
-    local.drbd_canary_machine_config_patches[each.key],
-    lookup(local.piraeus_system_volume_config_patches, each.key, []),
+    local.drbd_machine_config_patches[each.key],
+    local.piraeus_system_volume_config_patches[each.key],
   )
 }
 
@@ -777,7 +687,6 @@ data "talos_machine_configuration" "kimsufi_cp" {
         hostname   = each.value.hostname
       }),
     ],
-    local.kimsufi_user_volume_config_patches[each.key],
     local.kimsufi_eno1_peer_route_patches[each.key],
     local.kimsufi_cloud_provider_external_patches[each.key],
     local.nebula_machine_patches[each.key],

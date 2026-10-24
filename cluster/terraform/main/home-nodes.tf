@@ -11,13 +11,8 @@ locals {
     optiplex = {
       install_disk = "/dev/disk/by-id/nvme-BC511_NVMe_SK_hynix_256GB_AS9CN54631CA0CT13"
       disk_serial  = "AS9CN54631CA0CT13"
-      # Advance these independently during the maintenance window. The live
-      # single-disk layout cannot be converted by an ordinary config apply.
-      drbd_installer_enabled = true
-      talos_storage_enabled  = true
-      piraeus_ready_enabled  = true
-      region                 = "home"
-      zone                   = "home-lan"
+      region       = "home"
+      zone         = "home-lan"
       # A fixed LAN address beside the DHCP lease, below the AT&T gateway's DHCP pool
       # (docs/home_lan.md). The home switch and gateway send their syslog here. Keep in sync with
       # HOME_LAN.optiplex and .network in cluster/cdk8s/home_lan.py.
@@ -62,7 +57,7 @@ locals {
           grow         = false
         }
       })],
-    ) if node.talos_storage_enabled
+    )
   }
 
   home_worker_machine_config_patches = {
@@ -73,7 +68,7 @@ locals {
         {
           install = {
             disk  = node.install_disk
-            image = node.drbd_installer_enabled ? local.drbd_canary_installer_image : "factory.talos.dev/metal-installer/${talos_image_factory_schematic.kimsufi.id}:${lookup(local.talos_installer_version_overrides, node.hostname, var.talos_version)}"
+            image = local.drbd_installer_image
           }
           # haku-ci's rootless dind needs user namespaces. Scoped to OptiPlex rather
           # than all Talos workers because it is the only home worker approved for CI.
@@ -87,26 +82,15 @@ locals {
               addresses      = [node.lan_address]
             }]
           })
-          nodeLabels = merge(
-            {
-              "topology.kubernetes.io/region" = node.region
-              "topology.kubernetes.io/zone"   = node.zone
-              "storage.allegedly.works/tier"  = "ssd"
-            },
-            node.piraeus_ready_enabled ? { "storage.allegedly.works/piraeus-ready" = "true" } : {},
-          )
-        },
-        node.drbd_installer_enabled ? {
-          kernel = {
-            modules = [
-              { name = "drbd", parameters = ["usermode_helper=disabled"] },
-              { name = "drbd_transport_tcp" },
-              { name = "dm_thin_pool" },
-              { name = "dm_snapshot" },
-            ]
+          nodeLabels = {
+            "topology.kubernetes.io/region"         = node.region
+            "topology.kubernetes.io/zone"           = node.zone
+            "storage.allegedly.works/tier"          = "ssd"
+            "storage.allegedly.works/piraeus-ready" = "true"
           }
-        } : {},
-        node.talos_storage_enabled ? {
+          kernel = {
+            modules = local.drbd_kernel_modules
+          }
           kubelet = merge(local.worker_machine_base.kubelet, {
             extraConfig = {
               imageGCHighThresholdPercent = 70
@@ -114,7 +98,7 @@ locals {
               imageMaximumGCAge           = "168h"
             }
           })
-        } : {},
+        },
       )
       cluster = local.worker_cluster_config
     })
@@ -145,7 +129,7 @@ data "talos_machine_configuration" "home_worker" {
     ],
     local.nebula_machine_patches[each.key],
     [local.talos_node_logging_patch],
-    lookup(local.home_worker_storage_config_patches, each.key, []),
+    local.home_worker_storage_config_patches[each.key],
   )
 }
 
@@ -160,15 +144,4 @@ resource "talos_machine_configuration_apply" "home_worker" {
   machine_configuration_input = data.talos_machine_configuration.home_worker[each.key].machine_configuration
   apply_mode                  = "staged_if_needing_reboot"
   node                        = each.value.nebula_ip
-
-  lifecycle {
-    precondition {
-      condition     = !each.value.talos_storage_enabled || each.value.drbd_installer_enabled
-      error_message = "The OptiPlex DRBD installer must be enabled before its storage layout."
-    }
-    precondition {
-      condition     = !each.value.piraeus_ready_enabled || each.value.talos_storage_enabled
-      error_message = "The OptiPlex storage layout must be enabled before Piraeus readiness."
-    }
-  }
 }
