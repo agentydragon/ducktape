@@ -1039,6 +1039,9 @@ type ActiveInvocation = (u32, Option<StatementOrdinal>);
 // evade the state-specific memoization key. Bound recursive analysis separately
 // from that cache so a finite source program cannot consume the Rust stack.
 const MAX_SYNCHRONOUS_INVOCATION_DEPTH: usize = 64;
+// Count actual expansions, including those whose changing prefix state defeats
+// memoization. A cache-size limit alone does not bound a branching call tree.
+const MAX_SYNCHRONOUS_INVOCATIONS: usize = 256;
 
 struct Executor<'a> {
     index: &'a ExecutionIndex,
@@ -1064,6 +1067,9 @@ struct Executor<'a> {
     fresh_mutation_callables: BTreeSet<u32>,
     prefix_revision: u64,
     invocation_depth: usize,
+    invocation_count: usize,
+    fallback_expanded: BTreeSet<StatementOrdinal>,
+    fallback_outcome: Outcome,
     active: BTreeSet<ActiveInvocation>,
     cache: BTreeMap<InvocationSignature, Outcome>,
 }
@@ -1332,8 +1338,12 @@ impl Executor<'_> {
         while let Some(value) = pending.pop() {
             match &value {
                 AbstractValue::Origin(ValueOrigin::Function(_)) | AbstractValue::Closure(_, _) => {
-                    callbacks.insert(value.clone());
-                    if let AbstractValue::Closure(_, captured) = &value {
+                    // Capture snapshots form a DAG: multiple bindings can
+                    // contain the same closure. Expand each closure once,
+                    // rather than revisit it along every path through captures.
+                    if callbacks.insert(value.clone())
+                        && let AbstractValue::Closure(_, captured) = &value
+                    {
                         pending.extend(
                             captured
                                 .0
@@ -1490,7 +1500,41 @@ impl Executor<'_> {
                 .map_or(0, |callable| callable.params.len());
             vec![possible_argument.clone(); count]
         };
+        let reentrant_pool = callbacks.iter().any(|callback| {
+            let key = match callback {
+                AbstractValue::Origin(ValueOrigin::Function(key))
+                | AbstractValue::Closure(key, _) => *key,
+                _ => return false,
+            };
+            self.active.contains(&(key, self.current_top_owner))
+        });
         for callback in callbacks.clone() {
+            if reentrant_pool
+                || self.invocation_count >= MAX_SYNCHRONOUS_INVOCATIONS
+                || self.invocation_depth >= MAX_SYNCHRONOUS_INVOCATION_DEPTH
+            {
+                // A recursive member already falls back to a closure over the
+                // entire pool in its arguments. Summarize that pool once rather
+                // than enumerate permutations of callbacks around the cycle.
+                // The same batch fallback bounds exhausted acyclic expansions.
+                let nested = self.bounded_invocation_fallback(
+                    self.current_top_owner
+                        .expect("callback call has a top owner"),
+                    std::slice::from_ref(&callbacks),
+                    &Context::new(),
+                );
+                self.apply_rebind_effects(&nested.effects.rebinds);
+                outcome.effects.reads.extend(nested.effects.reads);
+                outcome.effects.rebinds.extend(nested.effects.rebinds);
+                outcome
+                    .effects
+                    .uninitialized_reads
+                    .extend(nested.effects.uninitialized_reads);
+                outcome.executed_owners.extend(nested.executed_owners);
+                outcome.unknown_call |= nested.unknown_call;
+                outcome.complete &= nested.complete;
+                break;
+            }
             let nested = match callback {
                 AbstractValue::Origin(ValueOrigin::Function(key)) => {
                     self.invoke(key, args_for(key, self.index), None)
@@ -1546,12 +1590,14 @@ impl Executor<'_> {
         captured: &Context,
     ) -> Outcome {
         let effect_owner = self.current_top_owner.unwrap_or(owner);
-        let mut outcome = Outcome {
-            returns: unknown(),
-            complete: false,
-            unknown_call: true,
-            ..Outcome::default()
-        };
+        // Within one source prefix initialization is fixed. Keep a monotone
+        // summary so each reachable owner's lazy effects are promoted once,
+        // even when recursion or changing abstract arguments hit the bound
+        // repeatedly. Reusing earlier fallback roots only adds constraints.
+        let mut outcome = std::mem::take(&mut self.fallback_outcome);
+        outcome.returns = unknown();
+        outcome.complete = false;
+        outcome.unknown_call = true;
         outcome.executed_owners.insert(owner);
 
         // The recursive summary is no longer being expanded. Preserve reads
@@ -1576,19 +1622,22 @@ impl Executor<'_> {
                 roots.insert(callback_owner);
             }
         }
-        let mut expanded = BTreeSet::new();
         let mut owners = BTreeSet::new();
-        self.owner_read_closure.extend_reachable_owners(
+        let mut reached = self.owner_read_closure.extend_reachable_owners(
             roots.iter().copied(),
-            &mut expanded,
+            &mut self.fallback_expanded,
             &mut owners,
         );
         self.extend_reachable_owners(roots.iter().copied());
         if self.reachability.incomplete {
             // Dynamic lexical scope defeats the normal binding-read closure.
-            owners.extend(self.all_owners());
+            for fact in self.facts {
+                if self.fallback_expanded.insert(fact.ordinal) {
+                    reached.push(fact.ordinal);
+                }
+            }
         }
-        for accessor_owner in owners {
+        for accessor_owner in reached {
             self.promote_lazy_owner(accessor_owner, effect_owner, &mut outcome);
         }
 
@@ -1599,6 +1648,7 @@ impl Executor<'_> {
         if self.global_escaped_callbacks.len() != before {
             self.prefix_revision = self.prefix_revision.wrapping_add(1);
         }
+        self.fallback_outcome = outcome.clone();
         outcome
     }
 
@@ -1845,12 +1895,13 @@ impl Executor<'_> {
         let active_invocation = (key, self.current_top_owner);
         if self.active.contains(&active_invocation)
             || self.invocation_depth >= MAX_SYNCHRONOUS_INVOCATION_DEPTH
-            || self.cache.len() + self.active.len() >= 4096
+            || self.invocation_count >= MAX_SYNCHRONOUS_INVOCATIONS
         {
             return self.bounded_invocation_fallback(callable_owner, &args, captured_context);
         }
         self.active.insert(active_invocation);
         self.invocation_depth += 1;
+        self.invocation_count += 1;
         let Some(callable) = self.index.callables.get(&key) else {
             self.active.remove(&active_invocation);
             self.invocation_depth -= 1;
@@ -2173,6 +2224,9 @@ pub(crate) fn annotate_synchronous_calls(
         ),
         prefix_revision: 0,
         invocation_depth: 0,
+        invocation_count: 0,
+        fallback_expanded: BTreeSet::new(),
+        fallback_outcome: Outcome::default(),
         active: BTreeSet::new(),
         cache: BTreeMap::new(),
     };
@@ -2187,6 +2241,9 @@ pub(crate) fn annotate_synchronous_calls(
         // Cache keys include this owner; previous statement snapshots cannot
         // be reused and should not consume this statement's bounded budget.
         executor.cache.clear();
+        executor.invocation_count = 0;
+        executor.fallback_expanded.clear();
+        executor.fallback_outcome = Outcome::default();
         let fact_roots = executor.fact_roots(fact);
         if executor.reachability.unknown_call_seen {
             executor.extend_reachable_owners(fact_roots.iter().copied());

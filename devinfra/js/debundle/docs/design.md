@@ -709,9 +709,17 @@ before suspension at that call site. Returning a closure does not execute its
 body. A complete result lists the reads and rebinds reachable through those
 calls; each promoted edge retains the lexical callee owner for the
 cross-module realizability check. Separate calls to the same factory keep
-separate argument environments. The pass memoizes call contexts and caps its
-work; recursive or unknown targets, unsupported syntax, and mutable captures
-fall back conservatively.
+separate argument environments. The pass memoizes call contexts and bounds
+both recursion depth and the total number of body expansions per source
+statement. Changing prefix revisions cannot reset that expansion budget. At
+the bound, or on reentry into an active callback, an opaque call summarizes
+its callback pool together;
+recursive or unknown targets, unsupported syntax, and mutable captures fall
+back conservatively. Fallback read closures grow incrementally, promoting each
+reachable owner's lazy reads and rebinds once per statement. The summary is
+reset at the next source prefix so initialization timing is never reused across
+statements. Callback discovery visits each closure's capture snapshot once,
+including snapshots shared through several captured bindings.
 
 The summary also records reads at the callback's source prefix. For each
 callback-read binding, the graph builds a source-order timeline of callback
