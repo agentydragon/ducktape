@@ -58,13 +58,11 @@ const rooted = return_cycle();
                 .filter(|origin| matches!(origin, ValueOrigin::Object(_))),
         );
     }
-    for name in ["cycle"] {
-        candidates.extend(
-            flow.values_of_binding(&id(name))
-                .iter()
-                .filter(|origin| matches!(origin, ValueOrigin::Function(_))),
-        );
-    }
+    candidates.extend(
+        flow.values_of_binding(&id("cycle"))
+            .iter()
+            .filter(|origin| matches!(origin, ValueOrigin::Function(_))),
+    );
 
     // This candidate comes from a second parsed source with a much larger
     // source span, so it is outside the first flow's collected origin table.
