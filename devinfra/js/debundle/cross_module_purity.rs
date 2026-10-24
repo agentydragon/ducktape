@@ -355,6 +355,21 @@ pub fn resolve_asserted_member_purities(
     modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
     asserted_members: &BTreeMap<ModuleKey, BTreeMap<String, BTreeSet<String>>>,
 ) -> BTreeMap<ModuleKey, BTreeMap<String, BTreeSet<String>>> {
+    resolve_asserted_members(modules, asserted_members, "pure_members")
+}
+
+pub fn resolve_asserted_callback_factory_members(
+    modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
+    asserted_members: &BTreeMap<ModuleKey, BTreeMap<String, BTreeSet<String>>>,
+) -> BTreeMap<ModuleKey, BTreeMap<String, BTreeSet<String>>> {
+    resolve_asserted_members(modules, asserted_members, "callback_factory_members")
+}
+
+fn resolve_asserted_members(
+    modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
+    asserted_members: &BTreeMap<ModuleKey, BTreeMap<String, BTreeSet<String>>>,
+    contract: &str,
+) -> BTreeMap<ModuleKey, BTreeMap<String, BTreeSet<String>>> {
     for (module, by_export) in asserted_members {
         for export_name in by_export.keys() {
             let known_export = modules
@@ -362,7 +377,7 @@ pub fn resolve_asserted_member_purities(
                 .is_some_and(|facts| facts.exports.contains_key(export_name));
             if !known_export {
                 eprintln!(
-                    "cross_module_purity: dangling pure_members assertion \
+                    "cross_module_purity: dangling {contract} assertion \
                      {module}:{export_name} — no such analyzed module export; ignoring"
                 );
             }
