@@ -544,10 +544,12 @@ in
       };
 
       "org/gnome/shell/extensions/just-perfection" = {
+        # Keep the clock on the left while Rugged tries the centered status area.
         clock-menu-position = 2;
         clock-menu-position-offset = 0;
-        panel-button-padding-size = 4;
-        panel-indicator-padding-size = 4;
+        # Previous compact spacing; keep GNOME's defaults for this layout trial.
+        # panel-button-padding-size = 4;
+        # panel-indicator-padding-size = 4;
         workspace-background-corner-size = 4;
       };
 
