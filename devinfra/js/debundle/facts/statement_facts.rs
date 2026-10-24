@@ -153,6 +153,11 @@ pub struct StatementFacts {
 pub(crate) struct SynchronousCalls {
     pub reads: BTreeSet<(Id, StatementOrdinal)>,
     pub rebinds: BTreeSet<(Id, StatementOrdinal)>,
+    /// Bindings a synchronous callee can observe before their source-order
+    /// initializer has executed. This is a subset of `reads`; it distinguishes
+    /// a real prefix value from a TDZ/initial-`undefined` observation so the
+    /// owner graph can preserve that observation point.
+    pub uninitialized_reads: BTreeSet<Id>,
     pub complete: bool,
 }
 
