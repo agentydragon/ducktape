@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/url"
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
@@ -52,6 +53,36 @@ type NativeReceipt struct {
 	Sequence uint64
 }
 
+var ErrNativeResponsePending = errors.New("native response is pending")
+
+// NativeResponsePendingError means the native request may have reached the harness, but
+// its response was not observed before the caller stopped waiting. The command may still
+// take effect; callers must leave it pending.
+type NativeResponsePendingError struct{ Cause error }
+
+func (e *NativeResponsePendingError) Error() string {
+	if e.Cause == nil {
+		return ErrNativeResponsePending.Error()
+	}
+	return fmt.Sprintf("%s: %v", ErrNativeResponsePending, e.Cause)
+}
+
+func (e *NativeResponsePendingError) Unwrap() error { return e.Cause }
+
+func (e *NativeResponsePendingError) Is(target error) bool {
+	return target == ErrNativeResponsePending
+}
+
+type PendingCommandInfo struct {
+	CommandID                  string
+	AdmittedCursor             uint64
+	SubmitText                 string
+	ChangeModelValue           string
+	ChangeReasoningEffortValue string
+	DispatchPlanned            bool
+	NativeCorrelation          map[string]string
+}
+
 // UserMessageConfirmation records native evidence that an input reached a model request.
 type UserMessageConfirmation struct {
 	HarnessMessageID string
@@ -64,6 +95,9 @@ type UserMessageConfirmation struct {
 type AdapterJournal interface {
 	ObservedItems(context.Context, string) (map[string]ObservedItem, error)
 	TurnEvents(context.Context, string) ([]*eventlogpb.EventEntry, error)
+	PendingCommandInfo(context.Context) ([]PendingCommandInfo, error)
+	Since(context.Context, uint64, int) ([]*eventlogpb.EventEntry, error)
+	LastCursor() uint64
 	RememberAdapterItem(context.Context, string, string) (bool, error)
 	HasAdapterItem(context.Context, string, string) (bool, error)
 	NextAdapterBlock(context.Context, string, string) (int, error)
@@ -74,6 +108,7 @@ type AdapterJournal interface {
 type AdapterHost interface {
 	Session() SessionSnapshot
 	Journal() AdapterJournal
+	RecordNativeCorrelation(context.Context, string, map[string]string) error
 	SendNative(context.Context, json.RawMessage) error
 	RequestNative(context.Context, json.RawMessage, func(json.RawMessage) bool) (NativeReceipt, error)
 	Emit(context.Context, *eventpb.Event, []uint64) error
@@ -95,4 +130,8 @@ type Adapter interface {
 	ChangeModel(context.Context, string, string) error
 	ChangeReasoningEffort(context.Context, string, string) error
 	OnFrame(context.Context, json.RawMessage, uint64) error
+}
+
+type RecoveryAdapter interface {
+	Recover(context.Context) error
 }

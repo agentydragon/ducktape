@@ -223,6 +223,46 @@ func TestOneEventCoalescesCommandReceiptsAtomically(t *testing.T) {
 	}
 }
 
+func TestNativeRequestCorrelationSurvivesJournalReopen(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "journal.sqlite")
+	command := &commandpb.Command{
+		CommandId: "input-1",
+		Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "hello"}},
+	}
+	journal, err := OpenJournal(ctx, path, "test-source")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := journal.Admit(ctx, command, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := journal.DispatchPlanned(ctx, command.CommandId, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := journal.RecordNativeCorrelation(ctx, command.CommandId, map[string]string{
+		"codex.turn_start.request_id": "agentplane-test-request",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := journal.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := OpenJournal(ctx, path, "test-source")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	pending, err := reopened.PendingCommandInfo(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 || pending[0].CommandID != command.CommandId || pending[0].SubmitText != "hello" || !pending[0].DispatchPlanned || pending[0].NativeCorrelation["codex.turn_start.request_id"] != "agentplane-test-request" {
+		t.Fatalf("recovered native request correlation = %+v", pending)
+	}
+}
+
 func TestJournalBatchPublishesAtCommitBoundary(t *testing.T) {
 	journal := openTestJournal(t)
 	ctx := context.Background()

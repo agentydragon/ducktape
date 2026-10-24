@@ -15,6 +15,7 @@ import (
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
+	"github.com/agentydragon/ducktape/agentplane/runner/harness"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	_ "modernc.org/sqlite"
@@ -894,6 +895,45 @@ func (j *Journal) DispatchPlanned(ctx context.Context, commandID string, nativeC
 	return planned, err
 }
 
+func (j *Journal) RecordNativeCorrelation(ctx context.Context, commandID string, nativeCorrelation map[string]string) error {
+	return j.write(ctx, func(_ *journalBatch) error {
+		var terminal sql.NullInt64
+		var rawCorrelation string
+		if err := j.conn.QueryRowContext(
+			ctx,
+			"SELECT terminal_cursor, native_correlation FROM command WHERE command_id = ?",
+			commandID,
+		).Scan(&terminal, &rawCorrelation); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return fmt.Errorf("%w %q", ErrUnknownCommand, commandID)
+			}
+			return storageError("read native request correlation", err)
+		}
+		if terminal.Valid {
+			return nil
+		}
+		correlation, err := decodeCorrelation(rawCorrelation)
+		if err != nil {
+			return storageError("decode command correlation", err)
+		}
+		for key, value := range nativeCorrelation {
+			correlation[key] = value
+		}
+		encoded, err := json.Marshal(correlation)
+		if err != nil {
+			return err
+		}
+		if _, err := j.conn.ExecContext(
+			ctx,
+			"UPDATE command SET native_correlation = ? WHERE command_id = ? AND terminal_cursor IS NULL",
+			string(encoded), commandID,
+		); err != nil {
+			return storageError("record native request correlation", err)
+		}
+		return nil
+	})
+}
+
 func (j *Journal) GetCommand(ctx context.Context, commandID string) (*CommandRecord, error) {
 	if !j.ownsBatch(ctx) {
 		j.mu.Lock()
@@ -961,6 +1001,57 @@ func (j *Journal) PendingCommands(ctx context.Context) ([]*commandpb.Command, er
 			return nil, err
 		}
 		commands = append(commands, command)
+	}
+	return commands, rows.Err()
+}
+
+func (j *Journal) PendingCommandInfo(ctx context.Context) ([]harness.PendingCommandInfo, error) {
+	if !j.ownsBatch(ctx) {
+		j.mu.Lock()
+		defer j.mu.Unlock()
+	}
+	if err := j.checkWritableLocked(); err != nil {
+		return nil, err
+	}
+	rows, err := j.conn.QueryContext(
+		ctx,
+		"SELECT payload, admitted_cursor, dispatch_planned, native_correlation FROM command WHERE terminal_cursor IS NULL ORDER BY admitted_cursor",
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	commands := []harness.PendingCommandInfo{}
+	for rows.Next() {
+		var payload []byte
+		var admittedCursor int64
+		var planned bool
+		var rawCorrelation string
+		if err := rows.Scan(&payload, &admittedCursor, &planned, &rawCorrelation); err != nil {
+			return nil, err
+		}
+		command := &commandpb.Command{}
+		if err := proto.Unmarshal(payload, command); err != nil {
+			return nil, err
+		}
+		correlation, err := decodeCorrelation(rawCorrelation)
+		if err != nil {
+			return nil, err
+		}
+		info := harness.PendingCommandInfo{
+			CommandID: command.GetCommandId(), AdmittedCursor: uint64(admittedCursor),
+			DispatchPlanned: planned, NativeCorrelation: correlation,
+		}
+		if input := command.GetSubmitInput(); input != nil {
+			info.SubmitText = input.GetText()
+		}
+		if model := command.GetChangeModel(); model != nil {
+			info.ChangeModelValue = model.GetModel()
+		}
+		if effort := command.GetChangeReasoningEffort(); effort != nil {
+			info.ChangeReasoningEffortValue = effort.GetEffort()
+		}
+		commands = append(commands, info)
 	}
 	return commands, rows.Err()
 }

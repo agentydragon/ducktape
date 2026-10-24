@@ -63,6 +63,14 @@ type claudeAdapter struct {
 	adapterID       string
 }
 
+const (
+	claudeSubmitUUID         = "claude.submit.message_uuid"
+	claudeModelRequestID     = "claude.model.request_id"
+	claudeModelRequestValue  = "claude.model.value"
+	claudeEffortRequestID    = "claude.effort.request_id"
+	claudeEffortRequestValue = "claude.effort.value"
+)
+
 // New creates an adapter bound to one runner-owned Session.
 func New(host harness.AdapterHost, launch harness.LaunchConfig) harness.Adapter {
 	snapshot := host.Session()
@@ -156,6 +164,85 @@ func (a *claudeAdapter) Handshake(ctx context.Context) (string, error) {
 	nativeID := a.nativeSessionID
 	a.mu.Unlock()
 	return nativeID, nil
+}
+
+func (a *claudeAdapter) Recover(ctx context.Context) error {
+	pending, err := a.host.Journal().PendingCommandInfo(ctx)
+	if err != nil {
+		return err
+	}
+	correlations := map[string]bool{}
+	var replayFrom uint64
+	a.mu.Lock()
+	for _, command := range pending {
+		if !command.DispatchPlanned {
+			continue
+		}
+		hasCorrelation := false
+		if uuid := command.NativeCorrelation[claudeSubmitUUID]; uuid != "" && command.SubmitText != "" {
+			a.pending[uuid] = claudePendingInput{commandID: command.CommandID, text: command.SubmitText}
+			correlations[uuid] = true
+			hasCorrelation = true
+		}
+		if requestID := command.NativeCorrelation[claudeModelRequestID]; requestID != "" {
+			a.modelChanges[requestID] = claudeChange{commandID: command.CommandID, value: command.NativeCorrelation[claudeModelRequestValue]}
+			correlations[requestID] = true
+			hasCorrelation = true
+		}
+		if requestID := command.NativeCorrelation[claudeEffortRequestID]; requestID != "" {
+			a.effortChanges[requestID] = claudeChange{commandID: command.CommandID, value: command.NativeCorrelation[claudeEffortRequestValue]}
+			correlations[requestID] = true
+			hasCorrelation = true
+		}
+		if hasCorrelation {
+			before := uint64(0)
+			if command.AdmittedCursor > 0 {
+				before = command.AdmittedCursor - 1
+			}
+			if replayFrom == 0 || before < replayFrom {
+				replayFrom = before
+			}
+		}
+	}
+	a.mu.Unlock()
+	if len(correlations) == 0 {
+		return nil
+	}
+
+	cursor := replayFrom
+	for cursor < a.host.Journal().LastCursor() {
+		entries, err := a.host.Journal().Since(ctx, cursor, 128)
+		if err != nil {
+			return err
+		}
+		if len(entries) == 0 {
+			break
+		}
+		for _, entry := range entries {
+			cursor = entry.GetCursor()
+			native := entry.GetEvent().GetNative()
+			if native == nil || native.GetDirection() != eventpb.Direction_DIRECTION_FROM_HARNESS {
+				continue
+			}
+			var frame claudeWireFrame
+			if json.Unmarshal([]byte(native.GetLine()), &frame) != nil {
+				continue
+			}
+			matching := correlations[frame.UUID] || correlations[frame.UserMessageUUID] || correlations[frame.CommandUUID]
+			if frame.Type == "control_response" {
+				response, err := decodeClaudeControlResponse(json.RawMessage(native.GetLine()))
+				if err == nil && correlations[response.RequestID] {
+					matching = true
+				}
+			}
+			if matching {
+				if err := a.OnFrame(ctx, json.RawMessage(native.GetLine()), entry.GetOrigin().GetSequence()); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func (a *claudeAdapter) Reconcile(ctx context.Context, turnID string, resumed bool) (*eventpb.ConversationReconciled, error) {
@@ -255,6 +342,9 @@ func (a *claudeAdapter) Submit(ctx context.Context, commandID, text string) erro
 		}
 	}
 	messageUUID := uuid.NewString()
+	if err := a.host.RecordNativeCorrelation(ctx, commandID, map[string]string{claudeSubmitUUID: messageUUID}); err != nil {
+		return err
+	}
 	frame, err := json.Marshal(map[string]any{
 		"type": "user", "message": map[string]string{"role": "user", "content": text}, "parent_tool_use_id": nil, "uuid": messageUUID,
 	})
@@ -265,9 +355,11 @@ func (a *claudeAdapter) Submit(ctx context.Context, commandID, text string) erro
 	a.pending[messageUUID] = claudePendingInput{commandID: commandID, text: text}
 	a.mu.Unlock()
 	if err := a.host.SendNative(ctx, frame); err != nil {
-		a.mu.Lock()
-		delete(a.pending, messageUUID)
-		a.mu.Unlock()
+		if !errors.Is(err, harness.ErrNativeResponsePending) {
+			a.mu.Lock()
+			delete(a.pending, messageUUID)
+			a.mu.Unlock()
+		}
 		return err
 	}
 	return nil
@@ -291,8 +383,14 @@ func (a *claudeAdapter) ChangeModel(ctx context.Context, commandID, model string
 	a.mu.Lock()
 	a.modelChanges[requestID] = claudeChange{commandID: commandID, value: model}
 	a.mu.Unlock()
+	if err := a.host.RecordNativeCorrelation(ctx, commandID, map[string]string{claudeModelRequestID: requestID, claudeModelRequestValue: model}); err != nil {
+		a.mu.Lock()
+		delete(a.modelChanges, requestID)
+		a.mu.Unlock()
+		return err
+	}
 	err := a.requestAndTranslate(ctx, requestID, claudeSetModelRequest{Subtype: "set_model", Model: model})
-	if err != nil {
+	if err != nil && !errors.Is(err, harness.ErrNativeResponsePending) {
 		a.mu.Lock()
 		delete(a.modelChanges, requestID)
 		a.mu.Unlock()
@@ -305,10 +403,16 @@ func (a *claudeAdapter) ChangeReasoningEffort(ctx context.Context, commandID, ef
 	a.mu.Lock()
 	a.effortChanges[requestID] = claudeChange{commandID: commandID, value: effort}
 	a.mu.Unlock()
+	if err := a.host.RecordNativeCorrelation(ctx, commandID, map[string]string{claudeEffortRequestID: requestID, claudeEffortRequestValue: effort}); err != nil {
+		a.mu.Lock()
+		delete(a.effortChanges, requestID)
+		a.mu.Unlock()
+		return err
+	}
 	request := claudeApplyFlagSettingsRequest{Subtype: "apply_flag_settings"}
 	request.Settings.EffortLevel = effort
 	err := a.requestAndTranslate(ctx, requestID, request)
-	if err != nil {
+	if err != nil && !errors.Is(err, harness.ErrNativeResponsePending) {
 		a.mu.Lock()
 		delete(a.effortChanges, requestID)
 		a.mu.Unlock()

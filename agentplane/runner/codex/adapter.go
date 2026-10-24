@@ -50,10 +50,10 @@ type codexAdapter struct {
 	mu                   sync.Mutex
 	threadID             string
 	adapterID            string
-	nextRequest          uint64
 	pendingModelChanges  []codexPendingChange
 	pendingEffortChanges []codexPendingChange
 	turnStarts           map[string]codexTurnStart
+	processingResponses  map[string]bool
 }
 
 // New creates an adapter bound to one runner-owned Session.
@@ -65,9 +65,17 @@ func New(host harness.AdapterHost, launch harness.LaunchConfig) harness.Adapter 
 	}
 	return &codexAdapter{
 		host: host, launch: launch, threadID: threadID, adapterID: uuid.NewString(),
-		turnStarts: make(map[string]codexTurnStart),
+		turnStarts: make(map[string]codexTurnStart), processingResponses: make(map[string]bool),
 	}
 }
+
+const (
+	codexStartRequestID       = "codex.turn_start.request_id"
+	codexStartModelCommandID  = "codex.turn_start.model_command_id"
+	codexStartModelValue      = "codex.turn_start.model_value"
+	codexStartEffortCommandID = "codex.turn_start.effort_command_id"
+	codexStartEffortValue     = "codex.turn_start.effort_value"
+)
 
 func (a *codexAdapter) Command() ([]string, error) {
 	catalogURL, err := a.launch.PlatformURL(codexCatalogPath)
@@ -258,6 +266,91 @@ func (a *codexAdapter) Reconcile(ctx context.Context, turnID string, _ bool) (*e
 	return report, nil
 }
 
+func (a *codexAdapter) Recover(ctx context.Context) error {
+	pending, err := a.host.Journal().PendingCommandInfo(ctx)
+	if err != nil {
+		return err
+	}
+	requestIDs := map[string]bool{}
+	inFlightChanges := map[string]bool{}
+	var replayFrom uint64
+	a.mu.Lock()
+	for _, command := range pending {
+		if !command.DispatchPlanned {
+			continue
+		}
+		requestID := command.NativeCorrelation[codexStartRequestID]
+		if requestID == "" || command.SubmitText == "" {
+			continue
+		}
+		start := codexTurnStart{commandID: command.CommandID, text: command.SubmitText}
+		if id := command.NativeCorrelation[codexStartModelCommandID]; id != "" {
+			start.modelChange = &codexPendingChange{commandID: id, value: command.NativeCorrelation[codexStartModelValue]}
+			inFlightChanges[id] = true
+		}
+		if id := command.NativeCorrelation[codexStartEffortCommandID]; id != "" {
+			start.effortChange = &codexPendingChange{commandID: id, value: command.NativeCorrelation[codexStartEffortValue]}
+			inFlightChanges[id] = true
+		}
+		a.turnStarts[requestID] = start
+		requestIDs[requestID] = true
+		before := uint64(0)
+		if command.AdmittedCursor > 0 {
+			before = command.AdmittedCursor - 1
+		}
+		if replayFrom == 0 || before < replayFrom {
+			replayFrom = before
+		}
+	}
+	for _, command := range pending {
+		if !command.DispatchPlanned {
+			continue
+		}
+		if command.ChangeModelValue != "" && !inFlightChanges[command.CommandID] {
+			a.pendingModelChanges = append(a.pendingModelChanges, codexPendingChange{commandID: command.CommandID, value: command.ChangeModelValue})
+		}
+		if command.ChangeReasoningEffortValue != "" && !inFlightChanges[command.CommandID] {
+			a.pendingEffortChanges = append(a.pendingEffortChanges, codexPendingChange{commandID: command.CommandID, value: command.ChangeReasoningEffortValue})
+		}
+	}
+	a.mu.Unlock()
+	if len(requestIDs) == 0 {
+		return nil
+	}
+
+	cursor := replayFrom
+	for cursor < a.host.Journal().LastCursor() {
+		entries, err := a.host.Journal().Since(ctx, cursor, 128)
+		if err != nil {
+			return err
+		}
+		if len(entries) == 0 {
+			break
+		}
+		for _, entry := range entries {
+			cursor = entry.GetCursor()
+			native := entry.GetEvent().GetNative()
+			if native == nil || native.GetDirection() != eventpb.Direction_DIRECTION_FROM_HARNESS {
+				continue
+			}
+			var frame codexWireFrame
+			if json.Unmarshal([]byte(native.GetLine()), &frame) != nil || len(frame.ID) == 0 || frame.Method != "" {
+				continue
+			}
+			requestID, ok := jsonString(frame.ID)
+			if !ok || !requestIDs[requestID] {
+				continue
+			}
+			sequence := entry.GetOrigin().GetSequence()
+			if err := a.onResponse(ctx, frame, requestID, []uint64{sequence}); err != nil {
+				return err
+			}
+			delete(requestIDs, requestID)
+		}
+	}
+	return nil
+}
+
 func (a *codexAdapter) Submit(ctx context.Context, commandID, text string) error {
 	modelChange, err := a.takePendingChange(ctx, &a.pendingModelChanges, "model")
 	if err != nil {
@@ -287,6 +380,18 @@ func (a *codexAdapter) Submit(ctx context.Context, commandID, text string) error
 		return err
 	}
 	start := codexTurnStart{commandID: commandID, text: text, modelChange: modelChange, effortChange: effortChange}
+	correlation := map[string]string{codexStartRequestID: requestID}
+	if modelChange != nil {
+		correlation[codexStartModelCommandID] = modelChange.commandID
+		correlation[codexStartModelValue] = modelChange.value
+	}
+	if effortChange != nil {
+		correlation[codexStartEffortCommandID] = effortChange.commandID
+		correlation[codexStartEffortValue] = effortChange.value
+	}
+	if err := a.host.RecordNativeCorrelation(ctx, commandID, correlation); err != nil {
+		return err
+	}
 	a.mu.Lock()
 	a.turnStarts[requestID] = start
 	a.mu.Unlock()
@@ -298,14 +403,16 @@ func (a *codexAdapter) Submit(ctx context.Context, commandID, text string) error
 		},
 	})
 	if err != nil {
-		a.mu.Lock()
-		delete(a.turnStarts, requestID)
-		a.mu.Unlock()
+		if !errors.Is(err, harness.ErrNativeResponsePending) {
+			a.mu.Lock()
+			delete(a.turnStarts, requestID)
+			a.mu.Unlock()
+		}
 		return err
 	}
 	// The native reader also dispatches this receipt to OnFrame. The pending request is removed
 	// atomically there, so calling it here closes the gap if the response waiter won the race.
-	return a.onResponse(ctx, response, requestID, []uint64{sourceSequence}, sourceSequence)
+	return a.onResponse(ctx, response, requestID, []uint64{sourceSequence})
 }
 
 func (a *codexAdapter) Interrupt(ctx context.Context, turnID string) error {
@@ -400,7 +507,7 @@ func (a *codexAdapter) OnFrame(ctx context.Context, raw json.RawMessage, sourceS
 	if len(frame.ID) > 0 && len(frame.Method) == 0 {
 		id, ok := jsonString(frame.ID)
 		if ok {
-			return a.onResponse(ctx, frame, id, sources, sourceSequence)
+			return a.onResponse(ctx, frame, id, sources)
 		}
 		return nil
 	}
@@ -465,16 +572,26 @@ func (a *codexAdapter) OnFrame(ctx context.Context, raw json.RawMessage, sourceS
 	return nil
 }
 
-func (a *codexAdapter) onResponse(ctx context.Context, frame codexWireFrame, requestID string, sources []uint64, sequence uint64) error {
+func (a *codexAdapter) onResponse(ctx context.Context, frame codexWireFrame, requestID string, sources []uint64) error {
 	a.mu.Lock()
 	start, ok := a.turnStarts[requestID]
-	if ok {
+	if !ok || a.processingResponses[requestID] {
+		a.mu.Unlock()
+		return nil
+	}
+	a.processingResponses[requestID] = true
+	a.mu.Unlock()
+	err := a.applyTurnStartResponse(ctx, frame, start, sources)
+	a.mu.Lock()
+	delete(a.processingResponses, requestID)
+	if err == nil {
 		delete(a.turnStarts, requestID)
 	}
 	a.mu.Unlock()
-	if !ok {
-		return nil
-	}
+	return err
+}
+
+func (a *codexAdapter) applyTurnStartResponse(ctx context.Context, frame codexWireFrame, start codexTurnStart, sources []uint64) error {
 	if frame.Error != nil || len(frame.Result) == 0 || string(frame.Result) == "null" {
 		reason := "turn/start returned no result"
 		if frame.Error != nil {
@@ -509,7 +626,18 @@ func (a *codexAdapter) onResponse(ctx context.Context, frame codexWireFrame, req
 	if result.Turn.ID == "" {
 		return errors.New("Codex turn/start returned no turn id")
 	}
-	if result.Turn.ID != a.host.Session().ActiveTurnID {
+	started := false
+	turnEvents, err := a.host.Journal().TurnEvents(ctx, result.Turn.ID)
+	if err != nil {
+		return err
+	}
+	for _, entry := range turnEvents {
+		if entry.GetEvent().GetTurnStarted() != nil {
+			started = true
+			break
+		}
+	}
+	if !started && result.Turn.ID != a.host.Session().ActiveTurnID {
 		if err := a.emit(ctx, &eventpb.Event_TurnStarted{TurnStarted: &eventpb.TurnStarted{TurnId: result.Turn.ID, Model: a.host.Session().Model}}, sources); err != nil {
 			return err
 		}
@@ -688,10 +816,7 @@ func (a *codexAdapter) request(ctx context.Context, requestID string, request an
 }
 
 func (a *codexAdapter) nextID() (string, error) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.nextRequest++
-	return fmt.Sprintf("agentplane-%d", a.nextRequest), nil
+	return "agentplane-" + uuid.NewString(), nil
 }
 
 func (a *codexAdapter) send(ctx context.Context, value any) error {

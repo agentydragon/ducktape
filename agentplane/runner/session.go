@@ -118,6 +118,9 @@ func (s *Session) harnessEnvironment() map[string]string {
 	return environment
 }
 func (s *Session) Journal() harness.AdapterJournal { return s.journal }
+func (s *Session) RecordNativeCorrelation(ctx context.Context, commandID string, correlation map[string]string) error {
+	return s.journal.RecordNativeCorrelation(ctx, commandID, correlation)
+}
 
 func (s *Session) apply(entry *eventlogpb.EventEntry, ids []string) {
 	e := entry.Event
@@ -468,6 +471,11 @@ func (s *Session) startHarness(ctx context.Context) error {
 	} else {
 		return errors.New("this runner is not configured for the selected harness")
 	}
+	if recovery, ok := adapter.(harness.RecoveryAdapter); ok {
+		if err := recovery.Recover(ctx); err != nil {
+			return fmt.Errorf("recover pending native requests: %w", err)
+		}
+	}
 	command, err := adapter.Command()
 	if err != nil {
 		return err
@@ -597,6 +605,10 @@ func (s *Session) dispatch(ctx context.Context, c *commandpb.Command) error {
 	if stored == nil || stored.TerminalCursor != nil {
 		return nil
 	}
+	if stored.DispatchPlanned {
+		// This marker is committed before native I/O. Its presence cannot prove that retry is safe.
+		return nil
+	}
 	if input := c.GetSubmitInput(); input != nil && input.Text == "" {
 		return s.FailCommand(ctx, c.CommandId, "submit_input.text is required", nil)
 	}
@@ -672,6 +684,9 @@ func (s *Session) dispatch(ctx context.Context, c *commandpb.Command) error {
 		err = errors.New("unrecognized command operation")
 	}
 	if err != nil {
+		if errors.Is(err, harness.ErrNativeResponsePending) {
+			return nil
+		}
 		if errors.Is(err, errStaleInterrupt) {
 			return s.NoopCommand(ctx, c.CommandId, err.Error(), nil)
 		}
@@ -704,7 +719,10 @@ func (s *Session) SendNative(ctx context.Context, frame json.RawMessage) error {
 	if process == nil || !process.Running() {
 		return errors.New("the harness is not running")
 	}
-	return process.WriteLine(ctx, string(frame))
+	if err := process.WriteLine(ctx, string(frame)); err != nil {
+		return &harness.NativeResponsePendingError{Cause: err}
+	}
+	return nil
 }
 
 func (s *Session) RequestNative(ctx context.Context, frame json.RawMessage, match func(json.RawMessage) bool) (harness.NativeReceipt, error) {
@@ -731,9 +749,9 @@ func (s *Session) RequestNative(ctx context.Context, frame json.RawMessage, matc
 	case reply := <-waiter.result:
 		return reply.receipt, reply.err
 	case <-ctx.Done():
-		return harness.NativeReceipt{}, ctx.Err()
+		return harness.NativeReceipt{}, &harness.NativeResponsePendingError{Cause: ctx.Err()}
 	case <-timer.C:
-		return harness.NativeReceipt{}, errors.New("native request did not receive its response within 60s")
+		return harness.NativeReceipt{}, &harness.NativeResponsePendingError{Cause: errors.New("native response wait reached 60s")}
 	}
 }
 
@@ -958,6 +976,13 @@ func (s *Session) recover(ctx context.Context) error {
 	}
 	for _, c := range commands {
 		if c.GetInterruptTurn() != nil {
+			stored, err := s.journal.GetCommand(ctx, c.CommandId)
+			if err != nil {
+				return err
+			}
+			if stored == nil || stored.DispatchPlanned {
+				continue
+			}
 			if err := s.NoopCommand(ctx, c.CommandId, "the target turn is no longer active after the runner restarted", nil); err != nil {
 				return err
 			}
