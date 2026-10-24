@@ -146,6 +146,8 @@ impl FactsOwnerReadClosure {
     ///
     /// The caller retains `expanded` as roots grow, so every owner is expanded
     /// at most once even when the same reachability set is extended repeatedly.
+    /// Return the newly expanded owners so callers can check exceptional scope
+    /// effects without rescanning the accumulated closure.
     /// `owners` may already contain unrelated direct roots; `expanded` is the
     /// separate traversal state that distinguishes those from expanded nodes.
     pub(crate) fn extend_reachable_owners(
@@ -153,11 +155,13 @@ impl FactsOwnerReadClosure {
         roots: impl IntoIterator<Item = StatementOrdinal>,
         expanded: &mut BTreeSet<StatementOrdinal>,
         owners: &mut BTreeSet<StatementOrdinal>,
-    ) {
+    ) -> Vec<StatementOrdinal> {
         let mut pending = VecDeque::new();
+        let mut reached = Vec::new();
         for root in roots {
             if self.owner_adjacency.contains_key(&root) && expanded.insert(root) {
                 owners.insert(root);
+                reached.push(root);
                 pending.push_back(root);
             }
         }
@@ -168,10 +172,12 @@ impl FactsOwnerReadClosure {
             for &target in neighbors {
                 if expanded.insert(target) {
                     owners.insert(target);
+                    reached.push(target);
                     pending.push_back(target);
                 }
             }
         }
+        reached
     }
 
     /// Return the transitive lazy reads and rebinds for one owner, retaining

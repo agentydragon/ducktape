@@ -722,19 +722,31 @@ keeps any reads it proved, adds the normal unresolved-call fallback, and
 conservatively promotes nested lazy reads of owners already executed while
 constructing the target and source values. For a top-level call it also keeps
 such reads from earlier effectful statements, which may have installed an
-accessor. An earlier unknown call expands that last set to the whole chunk.
-This broader promotion is confined to the unproved intrinsic call; creating a
-returned closure alone does not trigger it.
+accessor. After an earlier unknown call, the fallback follows the transitive
+owner-read closure of earlier facts, the active call site's eager reads and
+rebinds, and executed callables. The closure includes externally reachable
+exports: hoisted function declarations are available from instantiation;
+other values enter when their declarations execute. Export lists themselves
+are linkage metadata and do not initialize their bindings. Direct `eval` or
+`with` in a reachable owner makes reachability incomplete and retains the
+whole-chunk fallback. This broader promotion is confined to the unproved
+intrinsic call; creating a returned closure alone does not trigger it.
 
 Property writes and updates have a separate accessor-effect summary. The
 index records setter definitions by static property name and source owner.
 For a potentially matching write, the executor promotes the setter owner's
 lazy reads and rebinds when that owner may have participated in constructing
 the receiver or run earlier at top level. Unknown receivers broaden the owner
-set; an earlier unknown call broadens the effects to every chunk owner because
-it may have installed an accessor or Proxy trap. A static data-property write
-to a proved fresh local function retains the same A11 fast path. This keeps
-unrelated returned closures deferred when no setter can be reached.
+set. After an earlier unknown call, possible accessor effects include the
+transitive owner-read closure of the execution prefix, active call site, and
+available exports. Unsupported execution syntax still contributes all of its
+syntactic reads to that closure; it does not expose unreferenced locals.
+Dynamic lexical scope retains the whole-chunk fallback because its binding
+references need not appear in the AST. Unknown accessor effects retain the
+actual top-level caller as their promotion owner, and memoized invocations
+include that caller and the reachability revision. A static data-property
+write to a proved fresh local function retains the same A11 fast path. This
+keeps unrelated returned closures deferred when no setter can be reached.
 
 For statements without a complete call-site result, `promote_at_init_calls`
 uses its SCC closure: it builds the call graph among chunk-declared, resolvable

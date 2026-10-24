@@ -222,6 +222,11 @@ struct ExecutionIndex {
     top_calls: Vec<Vec<Call>>,
     top_property_writes: Vec<Vec<(Option<Id>, Option<String>)>>,
     top_assignments: Vec<Vec<(Id, ValueExpr)>>,
+    hoisted_function_owners: BTreeSet<StatementOrdinal>,
+    exported_declaration_owners: BTreeSet<StatementOrdinal>,
+    exported_bindings: BTreeSet<Id>,
+    linkage_owners: BTreeSet<StatementOrdinal>,
+    dynamic_scope_owners: BTreeSet<StatementOrdinal>,
     opaque_top: BTreeSet<StatementOrdinal>,
 }
 
@@ -238,6 +243,11 @@ impl Default for ExecutionIndex {
             top_calls: Vec::new(),
             top_property_writes: Vec::new(),
             top_assignments: Vec::new(),
+            hoisted_function_owners: BTreeSet::new(),
+            exported_declaration_owners: BTreeSet::new(),
+            exported_bindings: BTreeSet::new(),
+            linkage_owners: BTreeSet::new(),
+            dynamic_scope_owners: BTreeSet::new(),
             opaque_top: BTreeSet::new(),
         }
     }
@@ -256,9 +266,49 @@ impl ExecutionIndex {
             index.past_await = false;
             index.may_skip_await_depth = 0;
             index.literal_depth = 0;
+            index.collect_export_roots(item.as_module_item());
             item.as_module_item().visit_with(&mut index);
         }
         index
+    }
+
+    fn collect_export_roots(&mut self, item: &ModuleItem) {
+        match item {
+            ModuleItem::Stmt(Stmt::Decl(Decl::Fn(_))) => {
+                self.hoisted_function_owners.insert(self.owner);
+            }
+            ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => {
+                self.exported_declaration_owners.insert(self.owner);
+                if matches!(export.decl, Decl::Fn(_)) {
+                    self.hoisted_function_owners.insert(self.owner);
+                }
+            }
+            ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultDecl(export)) => {
+                self.exported_declaration_owners.insert(self.owner);
+                if matches!(export.decl, DefaultDecl::Fn(_)) {
+                    self.hoisted_function_owners.insert(self.owner);
+                }
+            }
+            ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultExpr(_)) => {
+                self.exported_declaration_owners.insert(self.owner);
+            }
+            ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(export)) => {
+                self.linkage_owners.insert(self.owner);
+                if export.src.is_none() {
+                    for specifier in &export.specifiers {
+                        if let ExportSpecifier::Named(named) = specifier
+                            && let ModuleExportName::Ident(local) = &named.orig
+                        {
+                            self.exported_bindings.insert(local.to_id());
+                        }
+                    }
+                }
+            }
+            ModuleItem::ModuleDecl(ModuleDecl::ExportAll(_)) => {
+                self.linkage_owners.insert(self.owner);
+            }
+            _ => {}
+        }
     }
 
     fn with_callable(&mut self, key: u32, params: Vec<Parameter>, visit: impl FnOnce(&mut Self)) {
@@ -279,6 +329,9 @@ impl ExecutionIndex {
     }
 
     fn record_call(&mut self, call: Call) {
+        if matches!(&call.callee, ValueExpr::Binding(id) if id.0.as_ref() == "eval") {
+            self.dynamic_scope_owners.insert(self.owner);
+        }
         if self.current.is_some() && self.past_await {
             return;
         }
@@ -347,6 +400,12 @@ impl ExecutionIndex {
 }
 
 impl Visit for ExecutionIndex {
+    fn visit_with_stmt(&mut self, statement: &WithStmt) {
+        self.dynamic_scope_owners.insert(self.owner);
+        statement.visit_children_with(self);
+        self.mark_opaque();
+    }
+
     fn visit_class_member(&mut self, member: &ClassMember) {
         // Defining a class evaluates computed keys and static initializers,
         // but does not run its constructor or instance field initializers.
@@ -742,6 +801,17 @@ struct Outcome {
     unknown_call: bool,
 }
 
+#[derive(Debug, Clone, Default)]
+struct ReachabilityState {
+    unknown_call_seen: bool,
+    incomplete: bool,
+    revision: u64,
+    expanded: BTreeSet<StatementOrdinal>,
+    owners: BTreeSet<StatementOrdinal>,
+}
+
+type InvocationSignature = (u32, Vec<Values>, Context, u64, Option<StatementOrdinal>);
+
 struct Executor<'a> {
     index: &'a ExecutionIndex,
     facts: &'a [StatementFacts],
@@ -749,15 +819,28 @@ struct Executor<'a> {
     shadowed: &'a BTreeSet<&'static str>,
     top_bindings: BTreeSet<Id>,
     binding_owner: BTreeMap<Id, StatementOrdinal>,
+    owner_read_closure: FactsOwnerReadClosure,
+    exported_owners: BTreeSet<StatementOrdinal>,
+    prior_reachability_roots: Option<BTreeSet<StatementOrdinal>>,
+    current_top_owner: Option<StatementOrdinal>,
     prior_effect_owners: BTreeSet<StatementOrdinal>,
-    prior_unknown_call: bool,
+    reachability: ReachabilityState,
     mutable_captures: BTreeSet<Id>,
-    active: BTreeSet<(u32, Vec<Values>, Context)>,
-    cache: BTreeMap<(u32, Vec<Values>, Context), Outcome>,
+    active: BTreeSet<InvocationSignature>,
+    cache: BTreeMap<InvocationSignature, Outcome>,
 }
 
 impl Executor<'_> {
-    fn promote_lazy_owner(&self, owner: StatementOrdinal, outcome: &mut Outcome) {
+    fn all_owners(&self) -> impl Iterator<Item = StatementOrdinal> + '_ {
+        self.facts.iter().map(|fact| fact.ordinal)
+    }
+
+    fn promote_lazy_owner(
+        &self,
+        owner: StatementOrdinal,
+        effect_owner: StatementOrdinal,
+        outcome: &mut Outcome,
+    ) {
         let fact = &self.facts[owner.0];
         outcome.effects.reads.extend(
             fact.reads
@@ -765,7 +848,7 @@ impl Executor<'_> {
                 .iter()
                 .filter(|id| self.top_bindings.contains(*id))
                 .cloned()
-                .map(|id| (id, owner)),
+                .map(|id| (id, effect_owner)),
         );
         outcome.effects.rebinds.extend(
             fact.rebinds
@@ -773,8 +856,100 @@ impl Executor<'_> {
                 .iter()
                 .filter(|id| self.top_bindings.contains(*id))
                 .cloned()
-                .map(|id| (id, owner)),
+                .map(|id| (id, effect_owner)),
         );
+    }
+
+    fn roots_for_owner(&self, owner: StatementOrdinal) -> BTreeSet<StatementOrdinal> {
+        let mut roots = BTreeSet::from([owner]);
+        if let Some(fact) = self.facts.get(owner.0) {
+            roots.extend(
+                self.owner_read_closure
+                    .owners_for_bindings(fact.reads.eager.iter().chain(fact.rebinds.eager.iter())),
+            );
+        }
+        roots
+    }
+
+    fn fact_roots(&self, fact: &StatementFacts) -> BTreeSet<StatementOrdinal> {
+        let mut roots = BTreeSet::new();
+        // Export lists link bindings; evaluating one does not expose a value
+        // whose declaration has not run yet.
+        if self.index.linkage_owners.contains(&fact.ordinal) {
+            return roots;
+        }
+        if self.exported_owners.contains(&fact.ordinal)
+            || !(fact.purity.is_pure() && fact.declares_direct_function)
+        {
+            roots.insert(fact.ordinal);
+        }
+        roots.extend(
+            self.owner_read_closure
+                .owners_for_bindings(fact.reads.eager.iter().chain(fact.rebinds.eager.iter())),
+        );
+        roots
+    }
+
+    fn extend_reachable_owners(
+        &mut self,
+        roots: impl IntoIterator<Item = StatementOrdinal>,
+    ) -> bool {
+        let before = self.reachability.owners.len();
+        let reached = self.owner_read_closure.extend_reachable_owners(
+            roots,
+            &mut self.reachability.expanded,
+            &mut self.reachability.owners,
+        );
+        let changed = self.reachability.owners.len() != before;
+        if changed {
+            self.reachability.revision = self.reachability.revision.wrapping_add(1);
+        }
+        if reached
+            .iter()
+            .any(|owner| self.index.dynamic_scope_owners.contains(owner))
+        {
+            self.mark_reachability_incomplete();
+        }
+        changed
+    }
+
+    fn mark_reachability_incomplete(&mut self) {
+        if !self.reachability.incomplete {
+            self.reachability.incomplete = true;
+            self.reachability.revision = self.reachability.revision.wrapping_add(1);
+        }
+        // Incomplete reachability always falls back to the whole chunk.
+        self.prior_reachability_roots = None;
+    }
+
+    fn note_unknown_execution(&mut self, owner: StatementOrdinal) {
+        let mut changed = !self.reachability.unknown_call_seen;
+        self.reachability.unknown_call_seen = true;
+        let roots = self
+            .prior_reachability_roots
+            .take()
+            .into_iter()
+            .flatten()
+            .chain(self.roots_for_owner(owner));
+        changed |= self.extend_reachable_owners(roots);
+        if changed {
+            self.reachability.revision = self.reachability.revision.wrapping_add(1);
+        }
+    }
+
+    fn note_unknown_call(&mut self, call: &Call) {
+        self.note_unknown_execution(call.owner);
+        if matches!(&call.callee, ValueExpr::Binding(id) if id.0.as_ref() == "eval") {
+            self.mark_reachability_incomplete();
+        }
+    }
+
+    fn record_executed_owner(&mut self, owner: StatementOrdinal) {
+        if self.reachability.unknown_call_seen {
+            self.extend_reachable_owners([owner]);
+        } else if let Some(roots) = &mut self.prior_reachability_roots {
+            roots.insert(owner);
+        }
     }
 
     fn promote_property_writes(
@@ -786,8 +961,8 @@ impl Executor<'_> {
         if writes.is_empty() {
             return;
         }
-        if self.index.setter_owners.is_empty() && !outcome.unknown_call && !self.prior_unknown_call
-        {
+        let unknown_call = outcome.unknown_call || self.reachability.unknown_call_seen;
+        if self.index.setter_owners.is_empty() && !unknown_call {
             return;
         }
         let mut possible_owners = outcome.executed_owners.clone();
@@ -801,11 +976,16 @@ impl Executor<'_> {
             }
         }
         let unknown_receiver = writes.iter().any(|(receiver, _)| receiver.is_none());
-        if outcome.unknown_call || self.prior_unknown_call || unknown_receiver {
-            possible_owners.extend(self.facts.iter().map(|fact| fact.ordinal));
+        if unknown_call {
+            possible_owners.extend(self.reachability.owners.iter().copied());
+            if self.reachability.incomplete {
+                possible_owners.extend(self.all_owners());
+            }
+        } else if unknown_receiver {
+            possible_owners.extend(self.all_owners());
         }
         let mut accessor_owners = BTreeSet::new();
-        if outcome.unknown_call || self.prior_unknown_call {
+        if unknown_call {
             accessor_owners.extend(possible_owners);
         } else {
             for (_, property) in writes {
@@ -841,8 +1021,13 @@ impl Executor<'_> {
                 .collect();
         }
         if !accessor_owners.is_empty() {
+            let effect_owner = if unknown_call {
+                self.current_top_owner.unwrap_or(owner)
+            } else {
+                owner
+            };
             for accessor_owner in accessor_owners {
-                self.promote_lazy_owner(accessor_owner, outcome);
+                self.promote_lazy_owner(accessor_owner, effect_owner, outcome);
             }
             outcome.complete = false;
         }
@@ -973,10 +1158,28 @@ impl Executor<'_> {
     }
 
     fn invoke(&mut self, key: u32, args: Vec<Values>, captured: &Context) -> Outcome {
+        let Some((callable_owner, callable_opaque)) = self
+            .index
+            .callables
+            .get(&key)
+            .map(|callable| (callable.owner, callable.opaque))
+        else {
+            return Outcome::default();
+        };
+        self.record_executed_owner(callable_owner);
+        if callable_opaque {
+            self.note_unknown_execution(callable_owner);
+        }
         if self.cache.len() + self.active.len() >= 4096 {
             return Outcome::default();
         }
-        let signature = (key, args.clone(), captured.clone());
+        let signature = (
+            key,
+            args.clone(),
+            captured.clone(),
+            self.reachability.revision,
+            self.current_top_owner,
+        );
         if let Some(cached) = self.cache.get(&signature) {
             return cached.clone();
         }
@@ -1076,6 +1279,7 @@ impl Executor<'_> {
         if targets.is_empty() {
             outcome.complete = false;
             outcome.unknown_call = true;
+            self.note_unknown_call(call);
         }
         for target in targets {
             match target {
@@ -1094,25 +1298,15 @@ impl Executor<'_> {
                     // and target values. The first-order fallback excludes
                     // those bodies because merely creating a closure does
                     // not execute it.
-                    let mut possible_accessors = outcome.executed_owners.clone();
-                    possible_accessors.insert(call.owner);
-                    if call.caller.is_none() {
-                        possible_accessors.extend(self.prior_effect_owners.iter().copied());
+                    self.note_unknown_call(call);
+                    let mut possible_accessors = self.reachability.owners.clone();
+                    possible_accessors.extend(outcome.executed_owners.iter().copied());
+                    if self.reachability.incomplete {
+                        possible_accessors.extend(self.all_owners());
                     }
-                    for arg in &call.args {
-                        let mut bindings = BTreeSet::new();
-                        arg.bindings(&mut bindings);
-                        possible_accessors.extend(
-                            bindings
-                                .iter()
-                                .filter_map(|id| self.binding_owner.get(id).copied()),
-                        );
-                    }
-                    if outcome.unknown_call || (call.caller.is_none() && self.prior_unknown_call) {
-                        possible_accessors.extend(self.facts.iter().map(|fact| fact.ordinal));
-                    }
-                    for owner in possible_accessors {
-                        self.promote_lazy_owner(owner, outcome);
+                    let effect_owner = self.current_top_owner.unwrap_or(call.owner);
+                    for accessor_owner in possible_accessors {
+                        self.promote_lazy_owner(accessor_owner, effect_owner, outcome);
                     }
                     outcome.complete = false;
                     outcome.unknown_call = true;
@@ -1136,6 +1330,7 @@ impl Executor<'_> {
                 _ => {
                     outcome.complete = false;
                     outcome.unknown_call = true;
+                    self.note_unknown_call(call);
                 }
             }
         }
@@ -1182,6 +1377,13 @@ pub(crate) fn annotate_synchronous_calls(
             }
         }
     }
+    let owner_read_closure = FactsOwnerReadClosure::new(facts);
+    let mut exported_owners = index.exported_declaration_owners.clone();
+    exported_owners.extend(owner_read_closure.owners_for_bindings(&index.exported_bindings));
+    let initial_export_roots = exported_owners
+        .intersection(&index.hoisted_function_owners)
+        .copied()
+        .collect();
     let mut executor = Executor {
         index: &index,
         facts,
@@ -1195,8 +1397,12 @@ pub(crate) fn annotate_synchronous_calls(
             .iter()
             .flat_map(|fact| fact.declared.iter().cloned().map(|id| (id, fact.ordinal)))
             .collect(),
+        owner_read_closure,
+        exported_owners,
+        prior_reachability_roots: Some(initial_export_roots),
+        current_top_owner: None,
         prior_effect_owners: BTreeSet::new(),
-        prior_unknown_call: false,
+        reachability: ReachabilityState::default(),
         mutable_captures: index
             .callables
             .values()
@@ -1212,6 +1418,18 @@ pub(crate) fn annotate_synchronous_calls(
         .iter()
         .zip(index.top_calls.iter().zip(&index.top_assignments))
     {
+        executor.current_top_owner = Some(fact.ordinal);
+        let fact_roots = executor.fact_roots(fact);
+        if executor.reachability.unknown_call_seen {
+            executor.extend_reachable_owners(fact_roots.iter().copied());
+        } else if let Some(roots) = &mut executor.prior_reachability_roots {
+            // Include the active call site before any nested unknown call can
+            // consume the prefix roots.
+            roots.extend(fact_roots.iter().copied());
+        }
+        if index.opaque_top.contains(&fact.ordinal) {
+            executor.note_unknown_execution(fact.ordinal);
+        }
         let mut outcome = Outcome {
             complete: true,
             ..Outcome::default()
@@ -1231,7 +1449,11 @@ pub(crate) fn annotate_synchronous_calls(
             prior_effect_owners.insert(fact.ordinal);
         }
         executor.prior_effect_owners.extend(prior_effect_owners);
-        executor.prior_unknown_call |= outcome.unknown_call;
+        if !executor.reachability.unknown_call_seen
+            && let Some(roots) = &mut executor.prior_reachability_roots
+        {
+            roots.extend(outcome.executed_owners.iter().copied());
+        }
         effects.push(outcome.effects);
         for (id, expression) in assignments {
             if !needed.contains(id) {
