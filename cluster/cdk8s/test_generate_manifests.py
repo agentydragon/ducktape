@@ -134,6 +134,7 @@ def test_piraeus_storage_is_confined_to_prepared_nodes(
         optiplex_satellite,
         hdd_satellite,
         _next_hdd_satellite,
+        _last_hdd_satellite,
     ) = values["linstorSatelliteConfigurations"]
     assert satellite["nodeSelector"] == canary_selector
     assert satellite["deletionPolicy"] == "Retain"
