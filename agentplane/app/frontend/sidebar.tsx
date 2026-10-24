@@ -72,10 +72,7 @@ export function Sidebar({ settingsOpen, onOpenSettings, open, onClose }: Sidebar
   }
 
   return (
-    <nav
-      className={`agentplane-sidebar${open ? " agentplane-sidebar-open" : ""}`}
-      style={{ width: `${pane.size}px` }}
-    >
+    <nav className={`agentplane-sidebar${open ? " agentplane-sidebar-open" : ""}`} style={{ width: `${pane.size}px` }}>
       <ResizeHandle pane={pane} axis="x" className="agentplane-sidebar-resize-handle" aria-label="Resize sidebar" />
       <div className="agentplane-sidebar-header">
         <div style={{ display: "flex", gap: 2, alignItems: "center" }}>
