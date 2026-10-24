@@ -302,11 +302,10 @@ reconciler if needed between those and live sandboxes", which the history-tag wa
 
 Candidates; each still needs the operator's go.
 
-- **Record the writing Sandbox's UID in History and check it on every push.** D1 deletes by it, D2
-  keys grants by it, and D3 and D4 still identify a Sandbox by an ID History must record. The re-key
-  is not part of this; only D2's reads might need it (`HISTORY_SESSION_KEY_DESIGN`). History is
-  being ported to Go with its schema unchanged, so this, History's record of the Sandbox and the
-  history-tag watch land in Go after the port.
+- **Record the writing Sandbox's UID in History and check it on every push.** Landed (#11835), with
+  the global Session ID kept as the key. D1 deletes by it, D2 keys grants by it, and D3 and D4 still
+  identify a Sandbox by it. History's record of the Sandbox and the history-tag watch remain
+  (`HISTORY_SANDBOX_RECORD`).
 - **Inbox tags on the Sandbox.** The operator (09:58): a collection as "something like a tag
   on one or more Sandboxes that's just a string, without a UID identity or a k8s object backing it,
   no Membership objects"; inbox tags and history tags are separate (2026-10-20 00:21). An

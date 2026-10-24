@@ -21,33 +21,26 @@ contracts remain multi-replica unless a reviewed temporary restriction says othe
 
 ### Current tracks and what they leave behind
 
-One group per track that has work in flight (2026-10-21), holding its open nodes; the nodes after a group are the
+One group per track that has work open (2026-10-24), holding its open nodes; the nodes after a group are the
 cleanups due once that track finishes, each in [section 15](#15-cleanups-after-the-current-tracks) unless it names
-another. Tracks whose PRs leave nothing behind (the Electric cache headers, the Action grant-recheck drop, the Codex
-code-mode fixture) have no group. `REFACTOR_COHERENCE_AUDIT` sweeps what remains after all of them.
+another. Agent messaging and the test-tier split have finished; what they left is `NOTIFICATION_SERVICE_SPLIT`
+(section 2) and the section 15 candidates. `REFACTOR_COHERENCE_AUDIT` sweeps what remains after all of them.
 
 ```mermaid
 flowchart LR
     subgraph ACTION_TRACK[MCP edge extraction]
-        ACTION_MCP_EDGE_SPLIT[Active: staging handoff]
-    end
-    subgraph MESSAGING_TRACK[Agent messaging]
-        NOTIFICATION_SERVICE_SPLIT[Unscheduled: inbox model and service rename]
-    end
-    subgraph TIER_TRACK[Test tiers: envtest and the bridge split]
-        FAKE_CLIENTS_TO_ENVTEST[Candidate: remaining fake API clients to envtest]
-        APP_TEST_RUNNER_FIXTURES_GO[Candidate: app test runners use the Go Gateway and History ingress]
+        ACTION_MCP_EDGE_SPLIT[Active: retire Actions' integrated Connection ownership]
     end
     subgraph DISPATCH_TRACK[Dispatcher and Gateway merge]
         DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: merge plan awaiting review]
         DISPATCHER_QUEUE_OPTIONAL[Unscheduled: run without the queue]
     end
+    FAKE_CLIENTS_TO_ENVTEST[Candidate: remaining fake API clients to envtest]
+    APP_TEST_RUNNER_FIXTURES_GO[Candidate: app test runners use the Go Gateway and History ingress]
     K3S_ENV_OUT_OF_X[Blocked: the k3s stack leaves x/]
     K3S_SPIKE_TARGETS_RETIRE[Blocked: delete the k3s lifecycle spike]
-    RUNNER_LAYERING_VM[In flight: layered VM guest, section 7] --> K3S_TEST_GUEST_RETIRE[Blocked: delete the k3s test guest]
+    RUNNER_LAYERING_VM[Paused: layered VM guest, section 7] --> K3S_TEST_GUEST_RETIRE[Blocked: delete the k3s test guest]
     ACTION_TRACK -. after .-> REFACTOR_COHERENCE_AUDIT[Candidate: whole-refactor coherence audit, section 9]
-    MESSAGING_TRACK -. after .-> REFACTOR_COHERENCE_AUDIT
-    TIER_TRACK -. after .-> REFACTOR_COHERENCE_AUDIT
     DISPATCH_TRACK -. after .-> REFACTOR_COHERENCE_AUDIT
 ```
 
@@ -301,12 +294,9 @@ the remaining contracts below still require review before implementation.
 flowchart TD
     MULTIAGENT_MODEL[Decision: identities, relationships and native-child boundary]
     THREAD_READ_POLICY_DESIGN[Held decision: remaining history read contract]
-    HISTORY_SANDBOX_RECORD[Blocked: History's Sandbox record and history tags]
+    HISTORY_SANDBOX_RECORD[Unscheduled: History's Sandbox record and history tags]
     THREAD_READ_POLICY[Blocked: scoped archive reads]
-    HISTORY_SESSION_KEY_DESIGN[Decision: record the Sandbox UID and keep the global Session ID key]
-    HISTORY_SANDBOX_UID[Active: History records and checks the Sandbox UID]
-    APP_THREAD_SANDBOX_UID[Active: the app carries the recorded UID into filters and live actions]
-    HISTORY_SESSION_REKEY[Deferred: reconsider the History key only if global Session IDs change]
+    HISTORY_SANDBOX_ASSOCIATION_SOURCE[Unscheduled: an authoritative Sandbox UID source for History]
     THREAD_CREATE_POLICY[Decision: opening a session in an existing Sandbox]
     THREAD_CREATE_AUTHORIZATION[Blocked: implement session-create grants]
     AGENT_LAUNCH_POLICY_DESIGN[Decision: constrained Sandbox launch and delegation]
@@ -314,10 +304,6 @@ flowchart TD
     MULTIAGENT_MODEL --> THREAD_CREATE_POLICY
     MULTIAGENT_MODEL --> AGENT_LAUNCH_POLICY_DESIGN
     THREAD_READ_POLICY_DESIGN --> THREAD_READ_POLICY
-    HISTORY_SESSION_KEY_DESIGN --> HISTORY_SANDBOX_UID
-    HISTORY_SESSION_KEY_DESIGN -. read API shape .-> THREAD_READ_POLICY
-    HISTORY_SANDBOX_UID --> APP_THREAD_SANDBOX_UID
-    HISTORY_SANDBOX_UID --> HISTORY_SANDBOX_RECORD
     HISTORY_SANDBOX_RECORD --> THREAD_READ_POLICY
     THREAD_CREATE_POLICY --> THREAD_CREATE_AUTHORIZATION
     AGENT_LAUNCH_POLICY_DESIGN --> AGENT_SANDBOX_LAUNCH
@@ -360,7 +346,7 @@ Cover discovery, linked evidence, live-feed revocation and unknown historical as
 this on a messaging transport.
 
 **Question for review:** should an `allSandboxes` read also reach histories with no recorded Sandbox
-UID, which are operator-only today (`HISTORY_SESSION_KEY_DESIGN`)? Those rows keep the recorded
+UID, which are operator-only today ([History README](../history_service/README.md#which-sandbox-wrote-a-session))? Those rows keep the recorded
 namespace, which is all that target matches on; a history with no recorded Sandbox stays operator-only
 either way.
 
@@ -375,35 +361,9 @@ deterministic service tests plus a bounded deployed auth check. Cover a listing-
 from transcript/evidence reads and follows. Recheck stream authorization/freshness and stop Event
 emission on observed grant loss or stale required policy state.
 
-### `HISTORY_SESSION_KEY_DESIGN` — record the Sandbox UID and keep the global Session ID key
-
-**Decision (operator, 2026-10-24):** History records the Sandbox UID while keeping the globally unique
-Session UUID as the History and app key. The UID is an immutable association and a check on every
-writer reconnect; it does not re-key Session rows. The Dispatcher (`Dispatch.sandbox_uid`), Runner
-Gateway connection index and Notifications (`DestinationRef.uid`) already identify a Sandbox by UID.
-History obtains it from the controller ownerReference on the writer ServiceAccount, with namespaced
-`get serviceaccounts` permission. A nullable `session_history.sandbox_uid` and optional `SandboxRef.uid`
-hold the association. Existing rows can fill a NULL UID when the same writer reconnects; History
-refuses a different UID. The app carries the UID from History summaries into exact Sandbox filtering
-and UID-fenced live actions without adding it to the Thread table.
-
-### `HISTORY_SANDBOX_UID` — History records and checks the Sandbox UID
-
-**Active; depends on the chosen History key above.** Add the nullable `sandbox_uid` and `SandboxRef.uid`;
-resolve and cache the pusher's Sandbox UID at bind, fill a NULL value from a matching writer and compare
-a recorded one, refusing a mismatch. A ServiceAccount with no Sandbox owner records no UID. If the
-ServiceAccount read fails, the push is `UNAVAILABLE` and the runner retries from its journal. Test a first
-bind, a reconnect that fills a NULL, a same-name replacement refused, a failed read, and `FindSessions`
-and summaries reporting the UID. A ServiceAccount recreated in place under the same Sandbox keeps failing
-as a different writer; letting the Sandbox UID take over as the pin is a separate decision.
-
-**TODO:** consider whether the Sandbox Controller can expose a cleaner authoritative Sandbox UID
-association to History than resolving the writer ServiceAccount's ownerReference. Keep the ownerReference
-as the current implementation until that design is reviewed.
-
 ### `HISTORY_SANDBOX_RECORD` — History's Sandbox record and history tags
 
-**Blocked on `HISTORY_SANDBOX_UID`; it lands in the Go History Service.**
+**Unscheduled; no prerequisite left, since #11835 records the Sandbox UID it keys on. It lands in the Go History Service.**
 [Design](sandbox_tags.md#historys-record-of-a-sandbox). Add a set-typed `spec.historyTags` to `Sandbox`
 in the same change, since History is its only reader; app presets supply a launch's initial history tags.
 The Role granting History `get`, `list` and `watch` on Sandboxes lands first, then the code. History
@@ -413,18 +373,14 @@ never deletes it. The History rule in [service boundaries](../docs/service_bound
 record, a deleted Sandbox keeping its last tags, a same-name replacement getting its own record, and a
 restarted watch catching up.
 
-### `APP_THREAD_SANDBOX_UID` — the app stores each Thread's Sandbox UID
+### `HISTORY_SANDBOX_ASSOCIATION_SOURCE` — an authoritative Sandbox UID source for History
 
-**Active; depends on `HISTORY_SANDBOX_UID`.** Keep the app's `Thread` row keyed by the Session ID and
-carry `sandbox_uid` from History summaries in Thread views. Sandbox-page filters and live actions use
-that UID; Dispatcher checks it against the current Sandbox before enqueueing or interrupting. Legacy
-Threads without a recorded UID remain visible in name searches but cannot be routed to a live Sandbox.
-
-### `HISTORY_SESSION_REKEY` — reconsider the History key only if global Session IDs change
-
-**Deferred.** Keep the globally unique Session UUID key selected in `HISTORY_SESSION_KEY_DESIGN`.
-Reconsider re-keying only if that global identity contract changes; UID recording and routing do not
-depend on it.
+**Unscheduled TODO (operator, #11835).** History resolves a writer's Sandbox UID from the controller
+ownerReference on its ServiceAccount ([README](../history_service/README.md#which-sandbox-wrote-a-session)).
+Consider whether the Sandbox Controller can expose a cleaner authoritative association instead; keep the
+ownerReference until that is reviewed. Related: a ServiceAccount recreated in place under the same Sandbox
+keeps failing as a different writer, and letting the Sandbox UID take over as the pin is a separate
+decision.
 
 ### `THREAD_CREATE_POLICY` — authorize session creation separately
 
@@ -550,14 +506,14 @@ flowchart LR
     VM_CONSOLE_DEFERRED_ATTACH[Unscheduled: attach the console when a starting VM becomes attachable]
     VM_HARNESS_RESOURCE_LIMITS[Blocked: accept VM per-harness resource limits]
     VM_INTRA_SANDBOX_HARDENING[Deferred: optional intra-Sandbox process/state hardening]
-    RUNNER_LAYERING_VM[In flight: slim VM runtime, section 7]
+    RUNNER_LAYERING_VM[Paused: slim VM runtime, section 7]
     VM_LIFECYCLE[Blocked: integrated lifecycle]
     STATE_VOLUME_BLOCK -. related .-> VM_RAM_SUSPEND
     VM_HARNESS_RESOURCE_LIMITS --> VM_LIFECYCLE
     VM_GUEST_BUDGET_DERIVE --> VM_HARNESS_RESOURCE_LIMITS
     RUNNER_LAYERING_VM --> VM_HARNESS_RESOURCE_LIMITS
     VM_LIFECYCLE --> SANDBOX_VM_ISOLATION[Capstone: selectable VM-backed Sandbox]
-    VM_GUEST_MEMORY[Parked: 8 GiB PR held for workload-image prototype]
+    VM_GUEST_MEMORY[Unscheduled: an 8 GiB guest for real builds]
     VM_GUEST_BUDGET_DERIVE[Candidate: guest budgets derive from the VM spec]
     SANDBOX_VM_ISOLATION --> LOCAL_BAZEL[Blocked: bounded local Bazel client in VM]
     VM_GUEST_MEMORY --> LOCAL_BAZEL
@@ -632,18 +588,15 @@ prerequisite: no client budget inside the guest is workable until the guest has 
 
 ### `VM_GUEST_MEMORY` — size the VM guest for real builds
 
-**Parked by operator request, 2026-10-16: keep [#10734](https://github.com/agentydragon/ducktape/pull/10734)
-unchanged and unmerged while the owner reviews the now-passing `RUNNER_LAYERING_SPIKE` workload-image
-proof.**
-The patch requests the approved 8 GiB, retaining one vCPU. It raises testing's aggregate memory
-request quota to 16 GiB and container/Pod limit caps to 24 GiB, retaining the 28 GiB aggregate
-memory limit. The patch remains unchanged; it has not established live guest acceptance.
+**Unscheduled; the PR parked for it ([#10734](https://github.com/agentydragon/ducktape/pull/10734), 8 GiB
+with one vCPU and larger `agentplane-testing` quotas) was closed unmerged on 2026-10-20, and testing is
+deleted.** The `runner-vm` template still requests 1536Mi. The approved size is 8 GiB; one VM per OVH node is
+approved; CPU sizing and derived guest budgets remain separate work.
 
-After merge/reconciliation, inspect actual launcher requests/limits, namespace usage and node
+After reconciliation on staging, inspect actual launcher requests/limits, namespace usage and node
 capacity: KubeVirt adds overhead and quota-derived limits, not a fixed 240 MiB surcharge. Confirm
 larger guest `MemTotal`, then run a representative `bbr build` and `bbr test` without guest OOM.
 Record useful sizing evidence in VM documentation and delete this node when acceptance is complete.
-One VM per OVH node is approved; CPU sizing and derived guest budgets remain separate work.
 
 ### `VM_GUEST_BUDGET_DERIVE` — derive the guest's cgroup budgets from the VM's memory
 
@@ -1166,7 +1119,7 @@ flowchart TD
     RUNNER_LAYERING_SPIKE --> RUNNER_LAYERING_SPIKE_EXIT
     RUNNER_LAYERING_SPIKE_EXIT --> RUNNER_IMAGE_LAYERING_DESIGN
     RUNNER_IMAGE_LAYERING_DESIGN --> RUNNER_LAYERING_SPIKE_RETIRE
-    RUNNER_IMAGE_LAYERING_DESIGN --> RUNNER_LAYERING_VM[In flight: a guest takes runner and tools from separate images]
+    RUNNER_IMAGE_LAYERING_DESIGN --> RUNNER_LAYERING_VM[Paused: a guest takes runner and tools from separate images]
 ```
 
 ### `SANDBOX_GENERIC_SPLIT` — separate the generic Sandbox from the runner's sealing
@@ -1274,7 +1227,7 @@ package, kernel pin, and child fence; do not leave the experiment as an implicit
 
 ### `RUNNER_LAYERING_VM` — a guest takes the runner, harnesses and tools from separate images
 
-**In flight; operator chose to split the disks on KubeVirt first (2026-10-20 PDT); Firecracker and a runtime-class abstraction stay later, and whether harnesses become a separate disk stays open in `RUNNER_IMAGE_LAYERING_DESIGN`.**
+**Paused (no worker since the runner disk landed, 2026-10-20); operator chose to split the disks on KubeVirt first (2026-10-20 PDT); Firecracker and a runtime-class abstraction stay later, and whether harnesses become a separate disk stays open in `RUNNER_IMAGE_LAYERING_DESIGN`.**
 Split the guest so a runner bump or a template's tool list does not rebuild and repush the whole VM. The
 two-stage shape the operator named — lean stage 1 booting the runner and mounting a stage 2 filesystem,
 with the runner jailing a forked child into stage 2 to exec Claude/Codex — is one option, with the
@@ -1468,7 +1421,7 @@ first; changes follow as their own nodes.
 ## 9. Legacy burn-down
 
 Dead code, finished gates, compatibility shims and stale names found by the 2026-10-10 PDT audit of
-devel. A gate counts as legacy once its rollout is finished on both testing and staging or nothing
+devel. A gate counts as legacy once its rollout is finished on staging or nothing
 reads it; the delta settlement flag stays (operator, 2026-10-13 PDT). Lane named per
 node; leftovers of in-flight work belong to the lane already changing that code. Upstream-gated
 tombstones with a verifiable condition in code (`keepingOffset` in
@@ -1512,6 +1465,81 @@ selectable; the freezer's
 [`RUNNER_JOURNAL_SETTLEMENT`](task_freezer.md#runner_journal_settlement--settle-deltas-in-the-runner-journal-too) is the same idea at the delta level. Not designed: what the runner still needs locally (cursors, seal state, entries a
 resumed harness or a lost push reads back) once acknowledged entries are gone, including what a revived incarnation reads back
 (the retained incarnation history).
+
+## 11. History reads and follows
+
+The History Service serves paged reads (`ReadSessionEvents` over raw entries by cursor, `ReadThreadEntities`
+over fold rows) and `WatchSessionSummaries`, one payload-free `changed` for every Session at once
+([README](../history_service/README.md#thread-fold)). Nothing reads one Session's history from a position and
+then follows it, so each consumer builds its own loop on that signal; the browser follows Threads through
+Electric instead ([thread sync](thread_sync/README.md)).
+
+```mermaid
+flowchart TD
+    HISTORY_READ_FOLLOW_DESIGN[Decision: read and follow one Session's history]
+    HISTORY_READ_FOLLOW_API[Blocked: implement the reviewed read/follow API]
+    THREAD_TITLE_GENERATION[Blocked: automatic titles on the follow API, staging re-enabled]
+    HISTORY_READS_FACADE[Candidate: History reads as a generated browser API, section 13]
+    SESSION_ACTIVITY_STREAM[Unscheduled: deliver on a Session's idle time, section 7]
+    NOTIFICATION_COMMAND_OUTCOME_DESIGN[Unscheduled: notice delivery without reading history, section 2]
+    THREAD_READ_POLICY[Blocked: scoped archive reads, section 3]
+    HISTORY_READ_FOLLOW_DESIGN --> HISTORY_READ_FOLLOW_API
+    HISTORY_READ_FOLLOW_API --> THREAD_TITLE_GENERATION
+    HISTORY_READ_FOLLOW_API -. browser watch .-> HISTORY_READS_FACADE
+    HISTORY_READ_FOLLOW_API -. possible consumer .-> SESSION_ACTIVITY_STREAM
+    HISTORY_READ_FOLLOW_DESIGN -. related .- NOTIFICATION_COMMAND_OUTCOME_DESIGN
+    HISTORY_READ_FOLLOW_API -. a feed it must authorize .-> THREAD_READ_POLICY
+```
+
+### `HISTORY_READ_FOLLOW_DESIGN` — read and follow one Session's history
+
+**Decision; operator, 2026-10-24 UTC: "a proper history reading/following API before automatic titles".**
+Design one History API that reads a Session's history from a position and keeps following it as it commits,
+so consumers stop building follow loops on `WatchSessionSummaries`. The loops today:
+
+- the app's title worker wakes on each `changed`, pages raw `ReadSessionEvents` for every Thread awaiting a
+  title from a scan cursor it stores in the app database, and reopens the watch after 60 s without one
+  (`app/threads/title_generation.py`); the Auto-title action reads the 1000 raw cursors below the
+  watermark, which can miss a Thread's confirmed user messages
+  ([#11817](https://github.com/agentydragon/ducktape/issues/11817));
+- the Notification Service scans raw history for its own command's admission and confirmation
+  (`NOTIFICATION_COMMAND_OUTCOME_DESIGN`);
+- `SESSION_ACTIVITY_STREAM` would re-read a summary after every `changed`;
+- the browser follows Threads through Electric shapes over the fold tables.
+
+Decide what a follow carries (raw runner entries, fold entities or both, and whether a caller selects kinds
+such as confirmed user messages); where a reader starts (a cursor, the tail, or N matching items back); how
+settlements, removed ranges and a replaced projection epoch appear in the stream; how a reconnect resumes
+with no gap or duplicate; flow control and bounds; how replicas wake followers (today's NOTIFY); and how a
+stream ends (`reconnect_required`, as the watch does). It is gRPC with a JSON server-stream facade, per the
+approved transport direction (section 13). Callers stay the configured reader accounts until
+`THREAD_READ_POLICY` covers follows. State whether the browser moves to it or stays on Electric: the
+[thread sync plan](thread_sync/README.md) holds Electric's open work and the second-implementation
+candidates, and #11817 asks for that comparison without a parallel sync path unless a concrete gap needs one.
+
+**Question for review:** which consumers the first version serves (the backend ones only, or the browser
+too), and whether it follows raw entries, fold entities or both. Exit: a reviewed API (proto sketch,
+start, resume and end semantics, settlement and epoch behavior, bounds) and the consumers that move to it.
+
+### `HISTORY_READ_FOLLOW_API` — implement the reviewed read/follow API
+
+**Blocked on `HISTORY_READ_FOLLOW_DESIGN`.** Add the call to the Go History Service with its facade and
+client, and move the first consumers the design names onto it. Test a follow that starts mid-history and
+catches up to live, a reconnect from the last cursor with no gap or duplicate, a settlement and a removed
+range arriving while following, a projection epoch replaced under a follower, replica failover, and a
+denied caller.
+
+### `THREAD_TITLE_GENERATION` — automatic titles on the follow API
+
+**Blocked on `HISTORY_READ_FOLLOW_API`; staging generation is off (#11818), tracked in
+[#11817](https://github.com/agentydragon/ducktape/issues/11817).** The app's title generation
+([app README](../app/README.md)) reads raw history by cursor window, and its click-to-title path reported
+no confirmed user message for Threads that had them. Move both paths onto the follow API: the first-message
+worker follows each Thread awaiting a title instead of keeping a scan cursor, and Auto-title reads the
+recent confirmed user messages without scanning cursor ranges, with defined behavior for an empty or
+lagging history. Decide whether title generation and its backend configuration stay in the integration
+app (the open Go port, #11821, carries them over) or move to another component. Exit: titles generated for
+Threads with confirmed user messages, long ones included, and title generation re-enabled on staging.
 
 ## 12. The Runner Gateway serves the runner's own service
 
@@ -1738,9 +1766,9 @@ its Go port, from the same proto. Design, alternatives and exit evidence:
 ```mermaid
 flowchart LR
     HISTORY_READS_FACADE[Candidate: History reads as a generated browser API]
+    HISTORY_READ_FOLLOW_API[Blocked: read/follow API, section 11] -. browser watch .-> HISTORY_READS_FACADE
     WEB_PUSH_SERVICE[Decision, unscheduled: Web Push as its own sender]
-    HISTORY_SANDBOX_UID[Blocked: History records the Sandbox UID, section 3]
-    ACTION_MCP_EDGE_SPLIT[Active: staging handoff]
+    ACTION_MCP_EDGE_SPLIT[Active: retire Actions' integrated Connection ownership]
 ```
 
 ### `HISTORY_READS_FACADE` — History reads as a generated browser API
@@ -1748,21 +1776,18 @@ flowchart LR
 **Candidate.** Annotate the browser's History
 reads and replace the app's mirror models (`app/threads/view/content.py`,
 `app/threads/events/debug.py`) with the generic proxy. `WatchSessionSummaries` says only that something
-changed, so a browser-facing watch gets frames that carry state. Decide on purpose whether the app's Thread
+changed; the browser-facing watch is the follow stream of `HISTORY_READ_FOLLOW_API` (section 11). Decide on purpose whether the app's Thread
 check on `thread_observations` (404 for a Session no Thread links) is kept or dropped.
 
 ### `ACTION_MCP_EDGE_SPLIT` — finish the MCP edge handoff
 
-**Active (Codex, 2026-10-23; merged preparation and live state checked).** The Go port,
-Python retirement and legacy schema cleanup are complete. Edge runtime, scoped TokenRequest
-permissions, transfer tooling, deployments and Flux image automation are merged. The edge
-Deployment is configured with zero replicas in staging; the operator dropped the testing
-rehearsal (2026-10-24), so staging is the first cluster the edge runs on. Callers have not moved.
-The app's endpoint split is being prepared separately.
+**Active (Codex).** The Go port, Python retirement and legacy schema cleanup are complete. Staging's
+handoff configuration is merged (#11729, #11734): one edge replica serves the public MCP/OAuth routes and
+the app's Connection calls, and Actions' integrated ConnectionService is off
+(`integrated_connection_service: false`).
 
-Remaining outcomes: staging's preserved-state and public MCP/OAuth handoff, then deletion of
-integrated runtime and source tables. Detailed sequence and
-constraints: [MCP edge extraction](mcp_edge_extraction.md#remaining-work).
+Remaining outcome: deletion of Actions' integrated Connection/OAuth runtime and its six source tables.
+Detailed sequence and constraints: [MCP edge extraction](mcp_edge_extraction.md#remaining-work).
 The current token audience is `agentplane-egress`; a dedicated audience is a separate change.
 Actions retains its upstream CIMD endpoint and the app retains upstream OAuth callbacks.
 External-client reauthorization remains unverified; extraction preserves existing issuer URLs
@@ -1861,7 +1886,7 @@ flowchart LR
     APP_TEST_RUNNER_FIXTURES_GO[Candidate: app test runners use the Go Gateway and History ingress]
     K3S_SPIKE_TARGETS_RETIRE[Blocked: delete the k3s lifecycle spike]
     K3S_ENV_OUT_OF_X[Blocked: the k3s stack leaves x/]
-    RUNNER_LAYERING_VM[In flight: layered VM guest, section 7] --> K3S_TEST_GUEST_RETIRE[Blocked: delete the k3s test guest]
+    RUNNER_LAYERING_VM[Paused: layered VM guest, section 7] --> K3S_TEST_GUEST_RETIRE[Blocked: delete the k3s test guest]
 ```
 
 ### `FAKE_CLIENTS_TO_ENVTEST` — the remaining fake API clients move to envtest
@@ -1869,14 +1894,11 @@ flowchart LR
 **Candidate; any time (standing rule: Go tests that talk only to Go code use envtest).** These still build fake
 Kubernetes clients for state envtest can hold:
 
-- Go `clientfake` or `kubernetes/fake`: `notification_service/api/fixture_test.go` (Sandboxes, inbox tags,
-  `recreateSandbox`), `notification_service/main_test.go`, `runner_gateway/gateway/records_test.go`,
-  `runner_gateway/dispatcher/sandbox_kubernetes_test.go`, `sandboxes/sandboxreader/reader_test.go`.
-- Python: `app/testing/replication_process.py`, the browser tests' app process, reads `SandboxAccess` from
-  `FakeCustomObjectsApi` and `FakeCoreV1Api`, seeded from the envtest Sandbox.
+Go `clientfake` or `kubernetes/fake`: `notification_service/api/fixture_test.go` (Sandboxes, inbox tags,
+`recreateSandbox`), `notification_service/main_test.go`, `runner_gateway/gateway/records_test.go`,
+`runner_gateway/dispatcher/sandbox_kubernetes_test.go`, `sandboxes/sandboxreader/reader_test.go`.
 
-One PR per file. Exit: each reads from `testing/kubeapiserver` (Go) or `testing/kubernetes_apiserver.py` (Python), or
-keeps only a fault it injects, named at the fake.
+One PR per file. Exit: each reads from `testing/kubeapiserver`, or keeps only a fault it injects, named at the fake.
 
 ### `APP_TEST_RUNNER_FIXTURES_GO` — app tests reach runners through the Go Gateway and History ingress
 

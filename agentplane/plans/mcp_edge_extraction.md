@@ -2,28 +2,17 @@
 
 Go Actions, generated callers, Python retirement and legacy schema cleanup are complete;
 [retained-state evidence](../debug/actions_schema_retirement_20261023.md) lives outside the plan.
-Runtime, schema/transfer tooling, scoped RBAC and Flux image automation are merged. The edge
-Deployment is configured with zero replicas in staging. The operator dropped the testing
-rehearsal (2026-10-24) and testing is deleted, so staging is the first cluster the edge runs on;
-the k3s system tests already run the app against the standalone edge. Public routes and app
-Connection calls still use Actions (verified 2026-10-23).
+Staging's handoff configuration is merged (#11729, #11734): one edge replica serves the public
+MCP/OAuth routes and the app's Connection calls, and Actions runs with
+`integrated_connection_service: false`. The k3s system tests run the app against the standalone edge.
 
 ## Remaining work
 
-1. **App Connection endpoint.** Land the app's independent Connection endpoint setting, still
-   pointing at Actions. Do not stop the old endpoint while its consumers still depend on it.
-2. **Staging handoff.** Initialize the edge schema, fence legacy writers and preserve the state found at preflight
-   (one Connection, three grants and four enrollments) using the
-   [transfer procedure](../mcp_edge/README.md#schema-and-data-handoff). OAuth client, authorization
-   and token tables were empty at preflight; recheck before execution. Move the app's Connection
-   calls and external MCP/OAuth routes, adding app egress and Gateway ingress explicitly.
-   Preserve public issuer/resource URLs, Actions' `/oauth/client-metadata.json` and the app's
-   `/mcp-linkage/callback`. Verify current bindings, operator authorization and actual edge-to-Actions
-   calls; external-client reauthorization is still unverified.
-3. **Retire integrated ownership.** After staging uses the edge, remove Actions' integrated
-   Connection/OAuth runtime, its ConnectionService and configuration. Drop its six old tables through a separate new
-   migration after the handoff is verified; retain Actions history, decisions, executions,
-   policies and Web Push state.
+1. **Retire integrated ownership.** Remove Actions' integrated Connection/OAuth runtime, its
+   ConnectionService and configuration. Drop its six old tables through a separate new migration
+   after the handoff is verified; retain Actions history, decisions, executions, policies and Web
+   Push state. Actions keeps its upstream `/oauth/client-metadata.json` and the app its
+   `/mcp-linkage/callback`.
 
 ## Cutover constraints
 

@@ -439,15 +439,13 @@ own for every history bound to a writer, which is what the split would build on.
 
 **Interaction with the History key decisions.**
 
-- `HISTORY_SANDBOX_UID` stays the first node to dispatch. The UID becomes the archive's own owner
-  identity, the value UID-pinned archive grants match, copied once from the writer ServiceAccount's
+- History records and checks the Sandbox UID (#11835). The UID is the archive's own owner
+  identity, the value UID-pinned archive grants match, copied from the writer ServiceAccount's
   ownerReference at bind; afterwards the archive never reads the live object. A name-based archive
   grant covers a deleted Sandbox and its same-name replacement alike; a UID-pinned one covers one
   incarnation.
-- `HISTORY_SESSION_KEY_DESIGN`'s recommendation stands: record and check the UID first, decide the
-  re-key once recorded values exist. A `(sandbox_uid, session_id)` key would make a scoped read a
-  lookup inside one owner's keys, but a grant can match the recorded column without it, so the
-  split does not force the re-key.
+- The global Session ID stays the key (operator, 2026-10-24): a grant matches the recorded UID
+  column, so the split does not need a `(sandbox_uid, session_id)` key.
 - The send path is unaffected: it checks `send_message` against live Sandboxes and History's
   recorded namespace and name. `session_inbox_access` carries `send_message` alone,
   and the archive operations get their own rule type with or without the split

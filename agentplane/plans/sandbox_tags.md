@@ -72,7 +72,8 @@ probably not split its storage" (2026-10-20 00:12).
   the change that adds the watch.
 - History tags are stored once per Sandbox, never copied into Session rows, and grants match them at
   read time, so retagging a deleted Sandbox later needs no backfill.
-- Each Session links to its record by the Sandbox UID that `HISTORY_SANDBOX_UID` records.
+- Each Session links to its record by the Sandbox UID History records at bind
+  ([README](../history_service/README.md#which-sandbox-wrote-a-session)).
 
 ## Deleting a Sandbox
 
@@ -84,8 +85,7 @@ stopped instead, with `spec.wakeOnSend: false`, and stays a CR.
 
 ## Steps
 
-1. After `HISTORY_SANDBOX_UID`, in the Go History Service: history tags and History's record
-   (`HISTORY_SANDBOX_RECORD`).
+1. In the Go History Service: history tags and History's record (`HISTORY_SANDBOX_RECORD`).
 
 ## Deferred
 

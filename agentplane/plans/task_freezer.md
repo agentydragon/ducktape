@@ -369,6 +369,12 @@ On confirmed eligible subscription-linked credit use. Review provider route, ide
 
 When reporting that credit is useful and its data source exists. Keep it distinct from Claude Code usage; do not invent quota evidence.
 
+### `HISTORY_SESSION_REKEY` — key History by Sandbox UID and Session ID
+
+Only if the globally unique public Session ID contract changes. History and the app keep the global
+Session UUID as their key and record the Sandbox UID beside it (operator, 2026-10-24; #11835); a
+`(sandbox_uid, session_id)` key is reconsidered only then.
+
 ### `API_AGGREGATION` — serve agent-facing records as a Kubernetes aggregated API
 
 Held by the operator, 2026-10-17. [The exploration](api_aggregation_exploration.md) has the candidates and costs.
@@ -399,7 +405,7 @@ process and start it again when input arrives, with no caller-visible kill or re
 as idle for a process (not `idle_since` alone, which is display and delivery timing), the threshold, and
 that a reap must not end a turn, a background process or a Session another caller is waiting on. Measure
 idle RAM per harness first.
-The current runtime still uses one process per Session for both harnesses; Codex multiplexing is a
-demonstrated capability, not a placement change in v1. Reaping must account for native children and
+Claude runs one process per Session; Codex runs one app-server per Runner for all of its Codex
+Sessions, so reaping that process touches every one of them. Reaping must account for native children and
 background work ([child evidence](../native/docs/child_sessions.md),
 [background work](../docs/background_work.md)), which the current busy signal does not track.
