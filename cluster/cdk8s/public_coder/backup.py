@@ -6,13 +6,6 @@ from __future__ import annotations
 
 from cdk8s import App, Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
-from volsync_replicationsource_crds.backube.volsync import (
-    ReplicationSourceSpecResticMoverAffinity,
-    ReplicationSourceSpecResticMoverAffinityNodeAffinity,
-    ReplicationSourceSpecResticMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution,
-    ReplicationSourceSpecResticMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms,
-    ReplicationSourceSpecResticMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions,
-)
 
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import PARKED_ROOT
@@ -51,23 +44,10 @@ def chart(app: App) -> Chart:
         # 09:17 UTC is 02:17 PDT / 01:17 PST; run away from normal interactive use.
         schedule="17 09 * * *",
         cache_storage_class_name="local-path-ovh-hdd",
-        mover_affinity=ReplicationSourceSpecResticMoverAffinity(
-            node_affinity=ReplicationSourceSpecResticMoverAffinityNodeAffinity(
-                required_during_scheduling_ignored_during_execution=ReplicationSourceSpecResticMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution(
-                    node_selector_terms=[
-                        ReplicationSourceSpecResticMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms(
-                            match_expressions=[
-                                ReplicationSourceSpecResticMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
-                                    key="kubernetes.io/hostname", operator="In", values=["ovh-ns102453"]
-                                )
-                            ]
-                        )
-                    ]
-                )
-            )
-        ),
-        # Parked with the paused app: the state PVC holds 10M files on ovh-ns102453's HDD, and
-        # each run rescans all of them.
+        # No mover affinity: the Direct mover mounts the already-bound state PVC, so its PV's
+        # node affinity places the mover and its WaitForFirstConsumer cache on ovh-ns102453.
+        # Parked with the paused app: the state PVC holds 10M files there, and each run rescans
+        # all of them.
         paused=True,
     )
     return chart
