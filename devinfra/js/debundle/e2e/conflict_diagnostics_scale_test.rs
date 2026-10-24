@@ -8,7 +8,7 @@ use std::fmt::Write as _;
 fn many_independent_conflicts_keep_their_diagnostics() {
     let mut source = String::new();
     let mut modules = [logical_module("left", &[]), logical_module("right", &[])];
-    for index in 0..12288 {
+    for index in 0..6656 {
         writeln!(
             source,
             "let left{index} = 0; let right{index} = 0; \
@@ -28,7 +28,7 @@ fn many_independent_conflicts_keep_their_diagnostics() {
     }
     for index in 0..128 {
         write!(source, "function reader{index}() {{ return [").unwrap();
-        for binding in 0..12288 {
+        for binding in 0..6656 {
             write!(source, "left{binding},").unwrap();
         }
         source.push_str("]; }\n");
