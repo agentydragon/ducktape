@@ -513,6 +513,7 @@ def test_legacy_agentplane_accounts_are_not_haku_profile_aliases(
     if account == "claude-ai":
         for kind, name, namespace in (
             ("ClusterRole", "cluster-diagnostics-reader", None),
+            ("ClusterRole", "agent-redisreplication-reader", None),
             ("Role", "claude-ai-coinbase-reader", "agentplane-staging"),
             ("Role", "claude-ai-sandbox-reader", "agentplane-staging"),
             ("Role", "agent-haku-console-metadata-reader", "haku-console"),
@@ -584,13 +585,13 @@ def test_agent_permission_denials(
         for verb in ("create", "patch", "delete")
     }
     denied |= {
-        Permission("agentplane-staging", "", "serviceaccounts/token", "create", "sandbox-controller"),
-        Permission("agentplane-staging", "apps", "deployments", "patch", "app"),
+        Permission("agentplane-testing", "", "serviceaccounts/token", "create", "sandbox-controller"),
+        Permission("agentplane-testing", "apps", "deployments", "patch", "app"),
         Permission("agentplane-staging", "apps", "deployments/scale", "patch", "runner-gateway"),
     }
     denied |= {
         Permission(namespace, "kustomize.toolkit.fluxcd.io", "kustomizations", "patch")
-        for namespace in ("flux-system", "ducktape-flux", "agentplane-staging")
+        for namespace in ("flux-system", "ducktape-flux", "agentplane-testing", "agentplane-staging")
     }
     coinbase = Permission("agentplane-staging", "", "secrets", "get", "coinbase-api-credentials")
     denied |= {

@@ -1,6 +1,8 @@
-"""Cluster-scoped agent RBAC (cluster/generated/agents/shared-rbac): the ClusterRoleBinding that
-grants every agent identity the secret-free cluster-diagnostics-reader ClusterRole.
-Namespace-scoped RoleBindings live in per-service agent-rbac/ directories
+"""Cluster-scoped agent RBAC (cluster/generated/agents/shared-rbac).
+
+The shared-rbac chart binds the secret-free cluster-diagnostics-reader to its existing
+cluster-diagnostics identities, plus separately selected resource readers to their profile
+identities. Namespace-scoped RoleBindings live in per-service agent-rbac/ directories
 (cluster/docs/agent_rbac.md).
 """
 
@@ -25,6 +27,13 @@ def chart(app: App) -> Chart:
         metadata=k8s.ObjectMeta(name="agent-cluster-diagnostics-reader"),
         role_ref=access.role_ref("cluster-diagnostics"),
         subjects=[subject.k8s() for subject in access.CLUSTER_DIAGNOSTIC_SUBJECTS],
+    )
+    k8s.KubeClusterRoleBinding(
+        chart,
+        "redisreplication-reader",
+        metadata=k8s.ObjectMeta(name="agent-redisreplication-reader"),
+        role_ref=access.role_ref("redisreplication-read"),
+        subjects=[subject.k8s() for subject in access.profile_subjects("redisreplication-read")],
     )
     return chart
 
