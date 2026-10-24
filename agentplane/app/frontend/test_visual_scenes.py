@@ -375,8 +375,16 @@ async def test_session_deleted_sandbox(view: VisualPage, app: AgentplaneFixture)
 async def test_session_suspended_sandbox(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_thread(SUSPENDED_THREAD)
     await view.page.wait_for_selector('[aria-label="Sandbox suspended"]', state="attached")
-    await view.page.wait_for_selector(':text("Wake on message is off")', state="attached")
-    await expect(view.page.get_by_role("textbox", name="Message")).to_be_enabled()
+    field = view.page.get_by_role("textbox", name="Message")
+    await expect(field).to_be_disabled()
+    await expect(field).to_have_attribute(
+        "placeholder",
+        "Sandbox is suspended. Wake on message is off; submitted commands stay queued until you resume it manually.",
+    )
+    await expect(view.page.get_by_text("Sandbox is suspended.", exact=True)).to_have_count(0)
+    await expect(view.page.get_by_role("button", name="Interrupt")).to_have_count(0)
+    await expect(view.page.get_by_role("button", name="Send")).to_have_count(0)
+    await expect(view.page.get_by_role("button", name="Resume Sandbox")).to_be_visible()
     await view.page.wait_for_selector('[data-thread-anchor="34"]', state="attached")
     await view.check(context="fixture ready")
     await view.capture()
