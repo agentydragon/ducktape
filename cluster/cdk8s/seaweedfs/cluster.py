@@ -607,6 +607,7 @@ def chart(app: App) -> Chart:
             cluster_ref=AdminScriptSpecClusterRef(name=NAME),
             schedule="17 * * * *",
             time_zone="Etc/UTC",
+            suspend=True,
             concurrency_policy=AdminScriptSpecConcurrencyPolicy.FORBID,
             restart_policy=AdminScriptSpecRestartPolicy.NEVER,
             backoff_limit=0,
@@ -632,10 +633,11 @@ def chart(app: App) -> Chart:
             ),
         ),
     )
-    for name, description, script in (
+    for name, description, suspend, script in (
         (
             "repair-hdd-102453",
             "Copy-only replica repair for the 102453 HDD evacuation; verify every volume has two copies before evacuation.",
+            False,
             "lock\n"
             "volumeServer.state -nodes=seaweedfs-volume-hdd-1.seaweedfs-volume-hdd-peer.seaweedfs:8444 -maintenanceOn\n"
             "volume.fix.replication -apply -doDelete=false -maxParallelization=2"
@@ -645,6 +647,7 @@ def chart(app: App) -> Chart:
         (
             "evacuate-hdd-102453",
             "Evacuate the 102453 SeaweedFS HDD volume server after all target volumes have two copies.",
+            True,
             "lock\n"
             "volumeServer.state -nodes=seaweedfs-volume-hdd-1.seaweedfs-volume-hdd-peer.seaweedfs:8444 -maintenanceOn\n"
             "volumeServer.evacuate -node=seaweedfs-volume-hdd-1.seaweedfs-volume-hdd-peer.seaweedfs:8444 -apply\n"
@@ -659,7 +662,7 @@ def chart(app: App) -> Chart:
                 cluster_ref=AdminScriptSpecClusterRef(name=NAME),
                 schedule="*/10 * * * *",
                 time_zone="Etc/UTC",
-                suspend=True,
+                suspend=suspend,
                 concurrency_policy=AdminScriptSpecConcurrencyPolicy.FORBID,
                 restart_policy=AdminScriptSpecRestartPolicy.NEVER,
                 backoff_limit=2,

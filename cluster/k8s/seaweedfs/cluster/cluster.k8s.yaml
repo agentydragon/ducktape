@@ -351,6 +351,7 @@ spec:
     unlock
   startingDeadlineSeconds: 300
   successfulJobsHistoryLimit: 1
+  suspend: true
   timeZone: Etc/UTC
 ---
 apiVersion: seaweed.seaweedfs.com/v1
@@ -385,7 +386,7 @@ spec:
     unlock
   startingDeadlineSeconds: 300
   successfulJobsHistoryLimit: 1
-  suspend: true
+  suspend: false
   timeZone: Etc/UTC
   tolerations:
     - effect: NoSchedule
