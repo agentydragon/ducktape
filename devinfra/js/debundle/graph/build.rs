@@ -5,7 +5,7 @@ use petgraph::algo::tarjan_scc;
 use petgraph::graphmap::DiGraphMap;
 use swc_ecma_ast::Id;
 
-use crate::facts::EffectCell;
+use crate::facts::{EffectCell, FactsOwnerReadClosure};
 use crate::{StatementFacts, StatementKind, StatementOrdinal};
 
 // `OwnerGraphOptions` lives in `spec/spec.rs` — both the spec YAML surface
@@ -825,10 +825,9 @@ fn promote_at_init_calls(
         if fallback_roots.is_empty() {
             continue;
         }
-        let fallback =
-            fallback.get_or_insert_with(|| UnresolvedCallFallback::build(facts, binding_owner));
+        let fallback = fallback.get_or_insert_with(|| UnresolvedCallFallback::build(facts));
         for root in fallback_roots {
-            let (closure_reads, closure_rebinds) = fallback.closures_for(root);
+            let (closure_reads, closure_rebinds) = fallback.closures_for(StatementOrdinal(root.0));
             // Rebind targets get an *order* constraint only (EagerUse,
             // not EagerRebind): assignment to a TDZ-locked binding
             // throws until its statement runs, so the target must
@@ -888,90 +887,17 @@ fn promote_at_init_calls(
 /// them — there is no precisely-known callee module whose evaluation
 /// could make the constraint redundant.
 struct UnresolvedCallFallback {
-    scc_of: BTreeMap<OwnerId, usize>,
-    scc_reads: Vec<BTreeSet<Id>>,
-    scc_rebinds: Vec<BTreeSet<Id>>,
+    closure: FactsOwnerReadClosure,
 }
 
 impl UnresolvedCallFallback {
-    fn build(facts: &[StatementFacts], binding_owner: &HashMap<Id, OwnerId>) -> Self {
-        let mut read_graph: DiGraphMap<OwnerId, ()> = DiGraphMap::new();
-        for stmt in facts {
-            let owner = OwnerId(stmt.ordinal.0);
-            read_graph.add_node(owner);
-            for binding in &stmt.declared {
-                if let Some(&representative) = binding_owner.get(binding)
-                    && representative != owner
-                {
-                    read_graph.add_edge(owner, representative, ());
-                    read_graph.add_edge(representative, owner, ());
-                }
-            }
-            for id in stmt.reads.eager.iter().chain(stmt.reads.lazy.iter()) {
-                if let Some(&target) = binding_owner.get(id) {
-                    read_graph.add_edge(owner, target, ());
-                }
-            }
-        }
-        let mut stmt_by_owner: BTreeMap<OwnerId, &StatementFacts> = BTreeMap::new();
-        for stmt in facts {
-            stmt_by_owner.insert(OwnerId(stmt.ordinal.0), stmt);
-        }
-        let sccs = tarjan_scc(&read_graph);
-        let mut scc_of: BTreeMap<OwnerId, usize> = BTreeMap::new();
-        for (idx, scc) in sccs.iter().enumerate() {
-            for owner in scc {
-                scc_of.insert(*owner, idx);
-            }
-        }
-        let mut scc_reads: Vec<BTreeSet<Id>> = vec![BTreeSet::new(); sccs.len()];
-        let mut scc_rebinds: Vec<BTreeSet<Id>> = vec![BTreeSet::new(); sccs.len()];
-        for (scc_idx, scc) in sccs.iter().enumerate() {
-            let mut reads: BTreeSet<Id> = BTreeSet::new();
-            let mut rebinds: BTreeSet<Id> = BTreeSet::new();
-            for owner in scc {
-                let Some(stmt) = stmt_by_owner.get(owner) else {
-                    continue;
-                };
-                for id in &stmt.reads.lazy {
-                    if binding_owner.contains_key(id) {
-                        reads.insert(id.clone());
-                    }
-                }
-                for id in &stmt.rebinds.lazy {
-                    if binding_owner.contains_key(id) {
-                        rebinds.insert(id.clone());
-                    }
-                }
-            }
-            for owner in scc {
-                for (_, target, _) in read_graph.edges(*owner) {
-                    let Some(&target_scc) = scc_of.get(&target) else {
-                        continue;
-                    };
-                    if target_scc == scc_idx {
-                        continue;
-                    }
-                    reads.extend(scc_reads[target_scc].iter().cloned());
-                    rebinds.extend(scc_rebinds[target_scc].iter().cloned());
-                }
-            }
-            scc_reads[scc_idx] = reads;
-            scc_rebinds[scc_idx] = rebinds;
-        }
+    fn build(facts: &[StatementFacts]) -> Self {
         Self {
-            scc_of,
-            scc_reads,
-            scc_rebinds,
+            closure: FactsOwnerReadClosure::new(facts),
         }
     }
 
-    fn closures_for(&self, owner: OwnerId) -> (&BTreeSet<Id>, &BTreeSet<Id>) {
-        static EMPTY: std::sync::OnceLock<BTreeSet<Id>> = std::sync::OnceLock::new();
-        let empty = EMPTY.get_or_init(BTreeSet::new);
-        match self.scc_of.get(&owner) {
-            Some(&idx) => (&self.scc_reads[idx], &self.scc_rebinds[idx]),
-            None => (empty, empty),
-        }
+    fn closures_for(&self, owner: StatementOrdinal) -> (&BTreeSet<Id>, &BTreeSet<Id>) {
+        self.closure.lazy_effects_for_owner(owner)
     }
 }

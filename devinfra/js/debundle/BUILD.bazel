@@ -425,6 +425,7 @@ rust_library(
         "facts/local_effect_targets.rs",
         "facts/local_effects.rs",
         "facts/mod.rs",
+        "facts/owner_read_closure.rs",
         "facts/purity_classification.rs",
         "facts/statement_facts.rs",
         "facts/sync_effects.rs",
