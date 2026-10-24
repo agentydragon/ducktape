@@ -836,8 +836,19 @@ An `await` cuts off synchronous effects only on paths that must reach it.
 Conditional branches are joined conservatively; loops, switches, and
 try/catch/finally retain effects across possible paths. Under A11, the
 call-site pass also recognizes `new WeakMap()` and `Object.assign` to a fresh
-local function from plain object-literal data sources. Other constructor and
-member calls remain unknown and take the conservative path. Generator calls
+local function from plain object-literal data sources. A local class declaration
+also has a narrow constructor path: its binding may only be used as a direct
+`new` target or as the right operand of `instanceof`, and the class may have no
+superclass, decorators, static initializers, computed method keys, or setter.
+Instance fields may be empty or initialize a deferred function. The constructor
+may only assign identifiers, literals, or properties read from fresh plain data
+objects to static `this` properties, including comma sequences and simple
+nullish/equality expressions; a write or opaque exposure invalidates the
+plain-data proof. At `new`, the pass invokes the indexed constructor and retains
+its argument graph and class methods on the instance value, so later member
+calls and publication can still expose stored callbacks. Reflective access to
+an instance invalidates later construction of that class. Other constructor
+and member calls remain unknown and take the conservative path. Generator calls
 also take that path because their parameter defaults execute at call time
 while their bodies wait for iteration; spread arguments may likewise execute
 iterator code before the callee runs.
