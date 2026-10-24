@@ -13,7 +13,7 @@ import { useLocation, useNavigate } from "react-router";
 import { ActionsSidebarSection } from "./actions/sidebar";
 import { ResizeHandle, usePaneSize } from "./resize_handle";
 import "./sidebar.css";
-import { ThreadList } from "./thread_list";
+import { ThreadList } from "./threads/thread_list";
 import { ScrollDebugTools } from "./threads/scroll_debug_tools";
 
 // Matches sidebar.css's own phone breakpoint.

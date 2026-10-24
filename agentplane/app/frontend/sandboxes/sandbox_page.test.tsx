@@ -1,17 +1,17 @@
 // @vitest-environment happy-dom
 import { MantineProvider } from "@mantine/core";
-import { TEST_REASONING_EFFORTS, testModelCatalog } from "./test_model_catalog";
+import { TEST_REASONING_EFFORTS, testModelCatalog } from "../test_model_catalog";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { Link, MemoryRouter, Route, Routes } from "react-router";
 import { afterAll, afterEach, expect, it, vi, type Mock } from "vitest";
 
-import { api, type RunnerStatusView, type SandboxView, type ThreadView } from "./client";
-import type * as LiveModule from "./live";
-import type { Live, SandboxSnapshot } from "./live";
-import { SandboxRoute } from "./app";
+import { api, type RunnerStatusView, type SandboxView, type ThreadView } from "../client";
+import type * as LiveModule from "../live";
+import type { Live, SandboxSnapshot } from "../live";
+import { SandboxRoute } from "../app";
 import { SandboxPage } from "./sandbox_page";
-import { TopbarContext } from "./topbar";
+import { TopbarContext } from "../topbar";
 
 const fetchMock = vi.hoisted(() => {
   const fetch = vi.fn<(request: Request) => Promise<Response>>();
@@ -67,7 +67,7 @@ const live = vi.hoisted(
       },
     }) satisfies Live<SandboxSnapshot>
 );
-vi.mock("./live", async (importOriginal) => ({
+vi.mock("../live", async (importOriginal) => ({
   ...(await importOriginal<typeof LiveModule>()),
   useLive: () => live,
 }));

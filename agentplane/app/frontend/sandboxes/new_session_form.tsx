@@ -11,9 +11,9 @@ import {
   type Harness,
   type ModelCatalog,
   type SessionDefaults,
-} from "./client";
-import { Disclosure, DisclosureBody } from "./disclosure";
-import { SessionSpecSchema, type SessionSpec } from "../../proto/runner_pb";
+} from "../client";
+import { Disclosure, DisclosureBody } from "../disclosure";
+import { SessionSpecSchema, type SessionSpec } from "../../../proto/runner_pb";
 
 type LoadedPresetDefaults = { preset: string | null; defaults: SessionDefaults | null };
 

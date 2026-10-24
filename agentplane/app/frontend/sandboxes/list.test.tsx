@@ -1,19 +1,19 @@
 // @vitest-environment happy-dom
 import { MantineProvider } from "@mantine/core";
-import { TEST_REASONING_EFFORTS, testModelCatalog } from "./test_model_catalog";
+import { TEST_REASONING_EFFORTS, testModelCatalog } from "../test_model_catalog";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 
-import { api, type NewSandboxDefaults, type SandboxPresetView, type SandboxView } from "./client";
-import { SandboxList } from "./sandboxes";
+import { api, type NewSandboxDefaults, type SandboxPresetView, type SandboxView } from "../client";
+import { SandboxList } from "./list";
 import { deletable, SuspendResume } from "./lifecycle";
-import { sandboxSummary } from "./sandbox_status";
+import { sandboxSummary } from "../sandbox_status";
 
 const liveSandboxData = vi.hoisted(() => ({ snapshot: null as { sandboxes: unknown[] } | null }));
 
-vi.mock("./live", () => ({
+vi.mock("../live", () => ({
   liveSandboxesUrl: () => "/live/sandboxes",
   useLive: () => liveSandboxData,
 }));

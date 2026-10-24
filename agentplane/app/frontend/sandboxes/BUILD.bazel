@@ -1,0 +1,304 @@
+load("//agentplane/app/frontend:vitest.bzl", "agentplane_vitest_test")
+load("//devinfra/js:ts_library.bzl", "ts_library")
+load("//devinfra/js:vitest.bzl", "check_vitest_specs")
+
+package(default_visibility = ["//agentplane/app:__subpackages__"])
+
+TSCONFIG = "//agentplane/app/frontend:tsconfig"
+
+# The lifecycle controls both sandbox views share: suspend/resume, and delete with its confirmation.
+ts_library(
+    name = "lifecycle",
+    srcs = [
+        "lifecycle.tsx",
+        # The ambient declaration for the @tabler/icons-react subpaths lifecycle.tsx imports; see
+        # the note in the file itself.
+        "tabler_icons.d.ts",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@tabler/icons-react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/app/frontend:client",
+    ],
+)
+
+ts_library(
+    name = "sandbox_name",
+    srcs = ["sandbox_name.ts"],
+    tsconfig = TSCONFIG,
+)
+
+agentplane_vitest_test(
+    name = "sandbox_name_test",
+    srcs = ["sandbox_name.test.ts"],
+    deps = [
+        ":sandbox_name",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "idle_suspend",
+    srcs = ["idle_suspend.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/app/frontend:client",
+    ],
+)
+
+ts_library(
+    name = "wake_on_send",
+    srcs = ["wake_on_send.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/app/frontend:client",
+    ],
+)
+
+ts_library(
+    name = "sandbox_status_view",
+    srcs = ["sandbox_status_view.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":idle_suspend",
+        ":lifecycle",
+        ":wake_on_send",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:json_view",
+        "//agentplane/app/frontend:raw_switch",
+        "//agentplane/app/frontend:sandbox_status",
+        "//agentplane/app/frontend:time_ago",
+    ],
+)
+
+ts_library(
+    name = "list",
+    srcs = [
+        "list.tsx",
+        # Ambient module declarations for the @tabler/icons-react per-icon subpaths this file
+        # imports. A declaration file is type-only, so it joins this target's program without
+        # being emitted.
+        "tabler_icons.d.ts",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":idle_suspend",
+        ":lifecycle",
+        ":sandbox_name",
+        ":wake_on_send",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@tabler/icons-react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/react-router",
+        "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:disclosure",
+        "//agentplane/app/frontend:live",
+        "//agentplane/app/frontend:mark_glyph",
+        "//agentplane/app/frontend:sandbox_status",
+        "//agentplane/app/frontend:status_mark",
+        "//agentplane/app/frontend:topbar",
+        "//agentplane/app/frontend/actions:action_client",
+        "//agentplane/app/frontend/actions:policy",
+    ],
+)
+
+ts_library(
+    name = "decision_groups",
+    srcs = ["decision_groups.ts"],
+    tsconfig = TSCONFIG,
+    deps = ["//agentplane/app/frontend:client"],
+)
+
+agentplane_vitest_test(
+    name = "decision_groups_test",
+    srcs = ["decision_groups.test.ts"],
+    deps = [
+        ":decision_groups",
+        "//:node_modules/vitest",
+        "//agentplane/app/frontend:client",
+    ],
+)
+
+ts_library(
+    name = "egress",
+    srcs = ["egress.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":decision_groups",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/react-router",
+        "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:live",
+        "//agentplane/app/frontend:live_stream",
+        "//agentplane/app/frontend:stream_status",
+        "//agentplane/app/frontend:time_ago",
+    ],
+)
+
+ts_library(
+    name = "policy_bindings",
+    srcs = ["policy_bindings.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/app/frontend:bindings_table",
+        "//agentplane/app/frontend:client",
+    ],
+)
+
+ts_library(
+    name = "sandbox_console",
+    srcs = ["sandbox_console.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":console_text",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/app/frontend:live_stream",
+    ],
+)
+
+ts_library(
+    name = "console_text",
+    srcs = ["console_text.ts"],
+    tsconfig = TSCONFIG,
+)
+
+agentplane_vitest_test(
+    name = "console_text_test",
+    srcs = ["console_text.test.ts"],
+    deps = [
+        ":console_text",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "new_session_form",
+    srcs = ["new_session_form.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:disclosure",
+        "//agentplane/proto:runner_pb",
+    ],
+)
+
+ts_library(
+    name = "sandbox_sessions",
+    srcs = [
+        "sandbox_sessions.tsx",
+        # The ambient declaration for the @tabler/icons-react subpaths this file imports; see the
+        # note in tabler_icons.d.ts.
+        "tabler_icons.d.ts",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@tabler/icons-react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:time_ago",
+        "//agentplane/app/frontend/threads:thread_status",
+        "//agentplane/app/frontend/threads:thread_status_indicator",
+    ],
+)
+
+ts_library(
+    name = "sandbox_page",
+    srcs = [
+        "sandbox_page.tsx",
+        # Ambient module declarations for the @tabler/icons-react per-icon subpaths this file
+        # imports. A declaration file is type-only, so it joins this target's program without
+        # being emitted.
+        "tabler_icons.d.ts",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":egress",
+        ":lifecycle",
+        ":new_session_form",
+        ":policy_bindings",
+        ":sandbox_console",
+        ":sandbox_sessions",
+        ":sandbox_status_view",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@tabler/icons-react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/react-router",
+        "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:live",
+        "//agentplane/app/frontend:mark_glyph",
+        "//agentplane/app/frontend:notification_status",
+        "//agentplane/app/frontend:sandbox_status",
+        "//agentplane/app/frontend:status_mark",
+        "//agentplane/app/frontend:topbar",
+        "//agentplane/app/frontend:tracing",
+        "//agentplane/app/frontend/actions:policy",
+        "//agentplane/app/frontend/threads:thread_status",
+        "//agentplane/proto:runner_pb",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "sandbox_page_test",
+    srcs = ["sandbox_page.test.tsx"],
+    deps = [
+        ":sandbox_page",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/react-router",
+        "//:node_modules/vitest",
+        "//agentplane/app/frontend:app",
+        "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:live",
+        "//agentplane/app/frontend:test_model_catalog",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "list_test",
+    srcs = ["list.test.tsx"],
+    deps = [
+        ":list",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/react-router",
+        "//:node_modules/vitest",
+        "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:test_model_catalog",
+        "//agentplane/app/frontend/actions:action_client",
+    ],
+)
+
+check_vitest_specs()

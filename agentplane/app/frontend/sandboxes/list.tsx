@@ -27,15 +27,15 @@ import {
   type NewSandboxDefaults,
   type SandboxPresetView,
   type SandboxView,
-} from "./client";
+} from "../client";
 import { IdleSuspendField, IdleSuspendInput } from "./idle_suspend";
 import { ConfirmDelete, deletable, deleting, SuspendResume } from "./lifecycle";
-import { liveSandboxesUrl, useLive, type SandboxesSnapshot } from "./live";
-import { MarkGlyph } from "./mark_glyph";
+import { liveSandboxesUrl, useLive, type SandboxesSnapshot } from "../live";
+import { MarkGlyph } from "../mark_glyph";
 import { placeholderSandboxName, sandboxNameError } from "./sandbox_name";
-import { podIp, sandboxStatusDetail, sandboxSummary } from "./sandbox_status";
-import { SANDBOX_STATUS_MARKS } from "./status_mark";
-import { TopbarTitle } from "./topbar";
+import { podIp, sandboxStatusDetail, sandboxSummary } from "../sandbox_status";
+import { SANDBOX_STATUS_MARKS } from "../status_mark";
+import { TopbarTitle } from "../topbar";
 import { WakeOnSendCheckbox } from "./wake_on_send";
 
 const EMPTY_FORM: NewSandbox = {

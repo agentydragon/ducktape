@@ -55,16 +55,16 @@ import { ChronologicalDebugProvider, useOpenChronologicalDebug } from "./chronol
 import { markThreadViewEvent, LayoutSettle, type FollowReason } from "./thread_view_timing";
 import { rememberRowHeight, rememberedRowHeight } from "./history_sizes";
 import { ThreadTitle } from "./thread_title";
-import { ThreadStatusIndicator } from "../thread_status_indicator";
+import { ThreadStatusIndicator } from "./thread_status_indicator";
 import { DISCLOSURE_STICKY_Z_INDEX, DisclosureCard } from "../disclosure";
-import { snapshotFresh, threadStatusFromSnapshot } from "../thread_status";
+import { snapshotFresh, threadStatusFromSnapshot } from "./thread_status";
 import { sandboxReady, sandboxStarting, sandboxSummary, sandboxSuspended, suspensionReason } from "../sandbox_status";
 import { isoTime } from "../format_time";
 import { TimeAgo } from "../time_ago";
 import { NotificationStatus } from "../notification_status";
 import { TopbarActions, TopbarTitle } from "../topbar";
 import { finishSessionCreate, withinSessionCreate } from "../tracing";
-import { installThreadFavicon } from "../thread_favicon";
+import { installThreadFavicon } from "./thread_favicon";
 import {
   appDocumentTitle,
   CONNECTING_TAB_STATUS,

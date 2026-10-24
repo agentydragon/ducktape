@@ -7,7 +7,7 @@ import type { JSX } from "react";
 import { Link } from "react-router";
 
 import { ThreadList } from "./thread_list";
-import { TopbarActions, TopbarTitle } from "./topbar";
+import { TopbarActions, TopbarTitle } from "../topbar";
 
 export function Home(): JSX.Element {
   return (

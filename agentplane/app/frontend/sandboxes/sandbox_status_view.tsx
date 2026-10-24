@@ -1,11 +1,11 @@
 import { Accordion, Badge, Button, Group, Paper, Stack, Table, Text, Title } from "@mantine/core";
 import { type JSX, type ReactNode, useEffect, useState } from "react";
 
-import { displayableError, getRunnerStatus, harnessLabel, type RunnerStatusView, type SandboxView } from "./client";
+import { displayableError, getRunnerStatus, harnessLabel, type RunnerStatusView, type SandboxView } from "../client";
 import { IdleSuspendInput } from "./idle_suspend";
-import { JsonView } from "./json_view";
+import { JsonView } from "../json_view";
 import { deleting } from "./lifecycle";
-import { RawSwitch } from "./raw_switch";
+import { RawSwitch } from "../raw_switch";
 import {
   containerStatuses,
   podIp,
@@ -15,8 +15,8 @@ import {
   sandboxSummary,
   type ContainerStatus,
   type RawCondition,
-} from "./sandbox_status";
-import { TimeAgo } from "./time_ago";
+} from "../sandbox_status";
+import { TimeAgo } from "../time_ago";
 import { WakeOnSendCheckbox } from "./wake_on_send";
 
 function Ago({ value }: { value: string | null }): JSX.Element {

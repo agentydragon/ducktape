@@ -2,12 +2,12 @@ import { Badge, Button, SegmentedControl, Stack, Table, Text, Title, Tooltip } f
 import { type JSX, useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 
-import { TimeAgo } from "./time_ago";
-import type { Decision } from "./client";
+import { TimeAgo } from "../time_ago";
+import type { Decision } from "../client";
 import { type DecisionGroup, groupDecisions } from "./decision_groups";
-import { type DecisionsSnapshot, liveEgressDecisionsUrl } from "./live";
-import { followStream, type StreamConnection } from "./live_stream";
-import { useStreamStatus } from "./stream_status";
+import { type DecisionsSnapshot, liveEgressDecisionsUrl } from "../live";
+import { followStream, type StreamConnection } from "../live_stream";
+import { useStreamStatus } from "../stream_status";
 
 /** The groups whose requests are listed, comma-separated; a group key has no comma in it. */
 const GROUPS_PARAM = "decision_groups";

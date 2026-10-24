@@ -182,7 +182,10 @@ ts_library(
         ":thread_cards",
         ":thread_commands",
         ":thread_evidence",
+        ":thread_status",
+        ":thread_status_indicator",
         ":thread_sync",
+        ":thread_tab",
         ":thread_title",
         ":thread_view_timing",
         "//:node_modules/@bufbuild/protobuf",
@@ -201,9 +204,6 @@ ts_library(
         "//agentplane/app/frontend:status_mark",
         "//agentplane/app/frontend:stream_status",
         "//agentplane/app/frontend:tab_metadata",
-        "//agentplane/app/frontend:thread_status",
-        "//agentplane/app/frontend:thread_status_indicator",
-        "//agentplane/app/frontend:thread_tab",
         "//agentplane/app/frontend:time_ago",
         "//agentplane/app/frontend:topbar",
         "//agentplane/app/frontend:tracing",
@@ -532,6 +532,167 @@ agentplane_vitest_test(
         "//:node_modules/react-dom",
         "//:node_modules/vitest",
         "//agentplane/app/frontend:client",
+    ],
+)
+
+ts_library(
+    name = "thread_tab",
+    srcs = ["thread_favicon.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//agentplane/app/frontend:status_mark",
+        "//agentplane/app/frontend:tab_metadata",
+    ],
+)
+
+ts_library(
+    name = "thread_groups",
+    srcs = ["thread_groups.ts"],
+    tsconfig = TSCONFIG,
+    deps = ["//agentplane/app/frontend:client"],
+)
+
+agentplane_vitest_test(
+    name = "thread_groups_test",
+    srcs = ["thread_groups.test.ts"],
+    deps = [
+        ":thread_groups",
+        "//:node_modules/vitest",
+        "//agentplane/app/frontend:client",
+    ],
+)
+
+ts_library(
+    name = "thread_status",
+    srcs = ["thread_status.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":history_rows",
+        "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:live",
+        "//agentplane/app/frontend:sandbox_status",
+        "//agentplane/app/frontend:tab_metadata",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "thread_status_test",
+    srcs = ["thread_status.test.ts"],
+    deps = [
+        ":thread_status",
+        "//:node_modules/vitest",
+        "//agentplane/app/frontend:client",
+    ],
+)
+
+ts_library(
+    name = "thread_status_indicator",
+    srcs = [
+        "css.d.ts",
+        "thread_status_indicator.tsx",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":thread_status_indicator_css",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/app/frontend:mark_glyph",
+        "//agentplane/app/frontend:status_mark",
+    ],
+)
+
+js_library(
+    name = "thread_status_indicator_css",
+    srcs = ["thread_status_indicator.css"],
+)
+
+js_library(
+    name = "thread_list_css",
+    srcs = ["thread_list.css"],
+)
+
+ts_library(
+    name = "thread_list",
+    srcs = [
+        "thread_list.tsx",
+        # `declare module "*.css"` for the stylesheet import above.
+        "css.d.ts",
+        # Ambient module declarations for the @tabler/icons-react per-icon subpaths this file
+        # imports. A declaration file is type-only, so it joins this target's program without
+        # being emitted.
+        "tabler_icons.d.ts",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":thread_groups",
+        ":thread_list_css",
+        ":thread_notices",
+        ":thread_status",
+        ":thread_status_indicator",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@tabler/icons-react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/react-router",
+        "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:live",
+        "//agentplane/app/frontend:mark_glyph",
+        "//agentplane/app/frontend:sandbox_status",
+        "//agentplane/app/frontend:status_mark",
+        "//agentplane/app/frontend:time_ago",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "home_test",
+    srcs = ["home.test.tsx"],
+    deps = [
+        ":home",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/react-router",
+        "//:node_modules/vitest",
+        "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:live",
+        "//agentplane/app/frontend:notification_types",
+        "//agentplane/app/frontend:sidebar",
+    ],
+)
+
+ts_library(
+    name = "home",
+    srcs = [
+        "home.tsx",
+        # The ambient declaration for the @tabler/icons-react subpath this file imports.
+        "tabler_icons.d.ts",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":thread_list",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@tabler/icons-react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/react-router",
+        "//agentplane/app/frontend:topbar",
+    ],
+)
+
+ts_library(
+    name = "thread_notices",
+    srcs = ["thread_notices.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/app/frontend:format_time",
+        "//agentplane/app/frontend:live_stream",
+        "//agentplane/app/frontend:notification_types",
     ],
 )
 

@@ -1,8 +1,8 @@
 import { Button, Group, MultiSelect, Select, Stack, Text, Title } from "@mantine/core";
 import { type JSX, useEffect, useState } from "react";
 
-import { BindingsTable } from "./bindings_table";
-import { api, displayableError, type BindingView } from "./client";
+import { BindingsTable } from "../bindings_table";
+import { api, displayableError, type BindingView } from "../client";
 
 /** How long a grant lasts; the Policy Controller deletes the binding when it ends. */
 const GRANT_DURATIONS = [

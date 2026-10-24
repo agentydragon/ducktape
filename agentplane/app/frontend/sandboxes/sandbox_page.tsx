@@ -1,4 +1,4 @@
-import { NotificationStatus } from "./notification_status";
+import { NotificationStatus } from "../notification_status";
 import {
   ActionIcon,
   Alert,
@@ -30,23 +30,23 @@ import {
   openSession,
   type SandboxView,
   type ThreadView,
-} from "./client";
-import { ActionPolicySection } from "./actions/policy";
+} from "../client";
+import { ActionPolicySection } from "../actions/policy";
 import { EgressLog } from "./egress";
-import { MarkGlyph } from "./mark_glyph";
+import { MarkGlyph } from "../mark_glyph";
 import { ConfirmDelete, deletable, DELETE_NEEDS_SUSPENDED, SuspendResume } from "./lifecycle";
-import { liveSandboxUrl, useLive, type SandboxSnapshot } from "./live";
+import { liveSandboxUrl, useLive, type SandboxSnapshot } from "../live";
 import { NewSessionForm } from "./new_session_form";
 import { PolicyBindingsSection } from "./policy_bindings";
 import { SandboxConsole } from "./sandbox_console";
 import { SessionsTable } from "./sandbox_sessions";
 import { StatusView } from "./sandbox_status_view";
-import { hasVmConsole, sandboxReady, sandboxStatusDetail, sandboxSummary, sandboxSuspended } from "./sandbox_status";
-import { SANDBOX_STATUS_MARKS } from "./status_mark";
-import { snapshotFresh } from "./thread_status";
-import { beginSessionCreate, finishSessionCreate, withinSessionCreate } from "./tracing";
-import { TopbarActions, TopbarTitle } from "./topbar";
-import type { SessionSpec } from "../../proto/runner_pb";
+import { hasVmConsole, sandboxReady, sandboxStatusDetail, sandboxSummary, sandboxSuspended } from "../sandbox_status";
+import { SANDBOX_STATUS_MARKS } from "../status_mark";
+import { snapshotFresh } from "../threads/thread_status";
+import { beginSessionCreate, finishSessionCreate, withinSessionCreate } from "../tracing";
+import { TopbarActions, TopbarTitle } from "../topbar";
+import type { SessionSpec } from "../../../proto/runner_pb";
 
 // Persist only the Session ID, never instructions or setup scripts (which can contain secrets).
 function pendingOpenKey(sandbox: string): string {

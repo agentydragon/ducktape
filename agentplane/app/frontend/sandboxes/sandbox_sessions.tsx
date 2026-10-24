@@ -3,10 +3,10 @@ import { ActionIcon, Button, Group, Menu, Stack, Table, Text } from "@mantine/co
 import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertical.mjs";
 import type { JSX } from "react";
 
-import { harnessLabel, type SandboxView, type ThreadView } from "./client";
-import { TimeAgo } from "./time_ago";
-import { archiveBlockReason, threadStatusFromSnapshot } from "./thread_status";
-import { ThreadStatusIndicator } from "./thread_status_indicator";
+import { harnessLabel, type SandboxView, type ThreadView } from "../client";
+import { TimeAgo } from "../time_ago";
+import { archiveBlockReason, threadStatusFromSnapshot } from "../threads/thread_status";
+import { ThreadStatusIndicator } from "../threads/thread_status_indicator";
 
 /** The one-line note under a Session's name while its setup script has not completed; null once it has, or had none. */
 function setupNote(state: string | null | undefined): { text: string; failed: boolean } | null {

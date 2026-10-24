@@ -2,8 +2,8 @@
 import { Box, Tooltip } from "@mantine/core";
 import type { JSX } from "react";
 
-import { MarkGlyph } from "./mark_glyph";
-import { THREAD_STATUS_MARKS, type ThreadStatusKind } from "./status_mark";
+import { MarkGlyph } from "../mark_glyph";
+import { THREAD_STATUS_MARKS, type ThreadStatusKind } from "../status_mark";
 import "./thread_status_indicator.css";
 
 export function ThreadStatusIndicator({ kind, label }: { kind: ThreadStatusKind; label: string }): JSX.Element {

@@ -10,16 +10,16 @@ import IconSearch from "@tabler/icons-react/dist/esm/icons/IconSearch.mjs";
 import { type JSX, useState } from "react";
 import { Link, useMatch, useNavigate } from "react-router";
 
-import { archiveThread, displayableError, harnessLabel, type SandboxView, type ThreadView } from "./client";
-import { THREAD_PAGE, useRequiredThreadsLive, useThreadListing } from "./live";
-import { MarkGlyph } from "./mark_glyph";
-import { sandboxStatusDetail, sandboxSummary } from "./sandbox_status";
-import { SANDBOX_STATUS_MARKS } from "./status_mark";
+import { archiveThread, displayableError, harnessLabel, type SandboxView, type ThreadView } from "../client";
+import { THREAD_PAGE, useRequiredThreadsLive, useThreadListing } from "../live";
+import { MarkGlyph } from "../mark_glyph";
+import { sandboxStatusDetail, sandboxSummary } from "../sandbox_status";
+import { SANDBOX_STATUS_MARKS } from "../status_mark";
 import "./thread_list.css";
 import { groupThreads, type ThreadGroup } from "./thread_groups";
 import { ThreadNoticeBadge, type ThreadNotices, useThreadNotices } from "./thread_notices";
 import { ThreadStatusIndicator } from "./thread_status_indicator";
-import { TimeAgo } from "./time_ago";
+import { TimeAgo } from "../time_ago";
 import { archiveBlockReason, snapshotFresh, threadStatusFromSnapshot } from "./thread_status";
 
 function GroupStateIcon({ sandbox }: { sandbox: SandboxView | null }): JSX.Element {

@@ -1,9 +1,9 @@
 /** One status decision for a Thread, shared by every page that lists Threads from a live snapshot. */
-import type { SandboxView, ThreadView } from "./client";
-import type { Live } from "./live";
-import type { ThreadTabStatus } from "./tab_metadata";
-import { sandboxReady, sandboxSummary, suspensionReason } from "./sandbox_status";
-import { turnErrorLabel } from "./threads/history_rows";
+import type { SandboxView, ThreadView } from "../client";
+import type { Live } from "../live";
+import type { ThreadTabStatus } from "../tab_metadata";
+import { sandboxReady, sandboxSummary, suspensionReason } from "../sandbox_status";
+import { turnErrorLabel } from "./history_rows";
 
 /** Whether the stream is current and its Thread updates are being heard, so a snapshot's Thread states are live. */
 export function snapshotFresh(live: Live<{ updates_connected: boolean }>): boolean {
