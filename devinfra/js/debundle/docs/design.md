@@ -717,9 +717,11 @@ create a large argument-value cross product, an opaque call summarizes its
 callback pool together;
 recursive or unknown targets, unsupported syntax, and mutable captures fall
 back conservatively. Fallback read closures grow incrementally, promoting each
-reachable owner's lazy reads and rebinds once per statement. The summary is
-reset at the next source prefix so initialization timing is never reused across
-statements. Callback discovery visits each closure's capture snapshot once,
+reachable owner's lazy reads and rebinds once. Callbacks retained by a fallback
+remain escaped, so their static read closure grows incrementally across source
+statements. The directly truncated callable uses the shared SCC summary without
+escaping its private roots. Applying either summary rechecks initialization at
+the active source prefix; per-statement outcomes are reset at the next prefix. Callback discovery visits each closure's capture snapshot once,
 including snapshots shared through several captured bindings. The executor
 interns immutable capture contexts bottom-up, so value-set and invocation-key
 comparisons use canonical identities rather than recursively comparing the

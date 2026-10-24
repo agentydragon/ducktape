@@ -149,3 +149,49 @@ fn exported_aliases_share_one_callback_discovery_traversal() {
     );
     assert_preserved_entry_output(&fixture, "7\n");
 }
+
+#[test]
+fn escaped_callback_read_closure_is_reused_across_source_prefixes() {
+    let mut source = String::from("globalThis.host = () => 7;\nconst state = 7;\n");
+    for index in 0..512 {
+        write!(source, "function reader{index}() {{ return [state,").unwrap();
+        for dependency in 0..index {
+            write!(source, "reader{dependency},").unwrap();
+        }
+        source.push_str("]; }\n");
+    }
+    source.push_str("const payload = {");
+    for index in 0..512 {
+        write!(source, "reader{index},").unwrap();
+    }
+    source.push_str("};\n");
+    for index in 0..512 {
+        writeln!(source, "const result{index} = host(payload);").unwrap();
+    }
+    source.push_str("console.log(result511);\nexport { result511 };\n");
+    let fixture = run_fixture(
+        FixtureOpts::new(&source, vec![]).with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&fixture, "7\n");
+}
+
+#[test]
+fn cached_callback_summary_grows_at_a_later_tdz_read() {
+    let source = format!(
+        "const state = 7;\n{}\nconst second = host(() => later);\n\
+         const later = 42;\nexport {{ second, later }};\n",
+        callback_pool(),
+    );
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            &source,
+            vec![
+                logical_module("callbacks/second", &[Member::new("second")]),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+        &["callbacks/second", "values/later"],
+        &[],
+    );
+}

@@ -1023,6 +1023,16 @@ struct ReachabilityState {
     owners: BTreeSet<StatementOrdinal>,
 }
 
+/// Callback roots retained by a fallback stay escaped for the rest of the
+/// chunk. Cache their static read closure once; initialization timing is still
+/// checked against the current prefix when the summary is applied.
+#[derive(Default)]
+struct CallbackFallbackSummary {
+    expanded: BTreeSet<StatementOrdinal>,
+    reads: BTreeSet<Id>,
+    rebinds: BTreeSet<Id>,
+}
+
 type InvocationSignature = (
     u32,
     Vec<Values>,
@@ -1071,7 +1081,7 @@ struct Executor<'a> {
     prefix_revision: u64,
     invocation_depth: usize,
     invocation_count: usize,
-    fallback_expanded: BTreeSet<StatementOrdinal>,
+    callback_fallback: CallbackFallbackSummary,
     fallback_outcome: Outcome,
     capture_contexts: BTreeMap<Arc<Context>, usize>,
     active: BTreeSet<ActiveInvocation>,
@@ -1090,20 +1100,24 @@ impl Executor<'_> {
         outcome: &mut Outcome,
     ) {
         let fact = &self.facts[owner.0];
-        for id in fact
-            .reads
-            .lazy
-            .iter()
-            .filter(|id| self.top_bindings.contains(*id))
-        {
+        self.promote_lazy_effects(&fact.reads.lazy, &fact.rebinds.lazy, effect_owner, outcome);
+    }
+
+    fn promote_lazy_effects(
+        &self,
+        reads: &BTreeSet<Id>,
+        rebinds: &BTreeSet<Id>,
+        effect_owner: StatementOrdinal,
+        outcome: &mut Outcome,
+    ) {
+        for id in reads.iter().filter(|id| self.top_bindings.contains(*id)) {
             outcome.effects.reads.insert((id.clone(), effect_owner));
             if !self.initialized_bindings.contains(id) {
                 outcome.effects.uninitialized_reads.insert(id.clone());
             }
         }
         outcome.effects.rebinds.extend(
-            fact.rebinds
-                .lazy
+            rebinds
                 .iter()
                 .filter(|id| self.top_bindings.contains(*id))
                 .cloned()
@@ -1625,7 +1639,7 @@ impl Executor<'_> {
         possible_values.extend(self.global_escaped_callbacks.iter().cloned());
         possible_values.extend(self.available_export_callbacks());
         let callbacks = self.callback_values(&possible_values);
-        let mut roots = BTreeSet::from([owner]);
+        let mut roots = BTreeSet::new();
         for callback in &callbacks {
             let key = match callback {
                 AbstractValue::Origin(ValueOrigin::Function(key))
@@ -1638,24 +1652,49 @@ impl Executor<'_> {
                 roots.insert(callback_owner);
             }
         }
+        self.extend_reachable_owners(roots.iter().copied().chain([owner]));
         let mut owners = BTreeSet::new();
         let mut reached = self.owner_read_closure.extend_reachable_owners(
             roots.iter().copied(),
-            &mut self.fallback_expanded,
+            &mut self.callback_fallback.expanded,
             &mut owners,
         );
-        self.extend_reachable_owners(roots.iter().copied());
         if self.reachability.incomplete {
             // Dynamic lexical scope defeats the normal binding-read closure.
             for fact in self.facts {
-                if self.fallback_expanded.insert(fact.ordinal) {
+                if self.callback_fallback.expanded.insert(fact.ordinal) {
                     reached.push(fact.ordinal);
                 }
             }
         }
-        for accessor_owner in reached {
-            self.promote_lazy_owner(accessor_owner, effect_owner, &mut outcome);
+        for reached_owner in reached {
+            let fact = &self.facts[reached_owner.0];
+            self.callback_fallback.reads.extend(
+                fact.reads
+                    .lazy
+                    .iter()
+                    .filter(|id| self.top_bindings.contains(*id))
+                    .cloned(),
+            );
+            self.callback_fallback.rebinds.extend(
+                fact.rebinds
+                    .lazy
+                    .iter()
+                    .filter(|id| self.top_bindings.contains(*id))
+                    .cloned(),
+            );
         }
+        self.promote_lazy_effects(
+            &self.callback_fallback.reads,
+            &self.callback_fallback.rebinds,
+            effect_owner,
+            &mut outcome,
+        );
+        // The directly truncated callable need not escape. Its static SCC
+        // summary already contains the same transitive lazy effects, without
+        // adding its private roots to the persistent callback cache.
+        let (reads, rebinds) = self.owner_read_closure.lazy_effects_for_owner(owner);
+        self.promote_lazy_effects(reads, rebinds, effect_owner, &mut outcome);
 
         // The truncated body may have passed one of these callback values to
         // opaque code. Retain only this proven escape set for later calls.
@@ -2241,7 +2280,7 @@ pub(crate) fn annotate_synchronous_calls(
         prefix_revision: 0,
         invocation_depth: 0,
         invocation_count: 0,
-        fallback_expanded: BTreeSet::new(),
+        callback_fallback: CallbackFallbackSummary::default(),
         fallback_outcome: Outcome::default(),
         capture_contexts: BTreeMap::new(),
         active: BTreeSet::new(),
@@ -2259,7 +2298,6 @@ pub(crate) fn annotate_synchronous_calls(
         // be reused and should not consume this statement's bounded budget.
         executor.cache.clear();
         executor.invocation_count = 0;
-        executor.fallback_expanded.clear();
         executor.fallback_outcome = Outcome::default();
         let fact_roots = executor.fact_roots(fact);
         if executor.reachability.unknown_call_seen {
