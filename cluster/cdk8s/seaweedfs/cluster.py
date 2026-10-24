@@ -647,4 +647,3 @@ def chart(app: App) -> Chart:
 
 def write_manifests(root: Path) -> None:
     write_charts(root, OUTPUT_DIR, chart, s3_config.chart, filer_db.chart, stateful_infra.priority_class_chart)
-
