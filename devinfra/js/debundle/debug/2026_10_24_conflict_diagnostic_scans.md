@@ -23,3 +23,10 @@ The CLI regression asserts that the independently conflicting module claims
 are still reported. Existing purity-reason and cycle tests cover the diagnostic
 contents. The test keeps the ordinary short timeout; it does not raise the
 limit to accommodate the repeated scan.
+
+The committed regression uses 6,656 pairs and 128 readers so it also fits the
+default CI compilation mode. With the previous reporting helper, the exact
+fixture timed out at 60 seconds in BuildBuddy invocation
+`be2bb2fc-d8fd-4ef8-97ef-d261931b6bd2`. The indexed implementation passed the same fixture in 52.824 seconds in
+`92530750-af69-4b39-8315-fde444fbe65a`, with the ordinary short timeout
+unchanged.
