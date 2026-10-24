@@ -74,6 +74,7 @@ pub struct ModulePurityFacts<'a> {
 struct PreparedModulePurityFacts<'a> {
     views: Vec<TopLevelItemView<'a>>,
     shadowed: BTreeSet<&'static str>,
+    set_iterable_proof: crate::facts::SetIterableProof,
     plain_data_bindings: Vec<String>,
 }
 
@@ -82,10 +83,13 @@ impl<'a> ModulePurityFacts<'a> {
         let views = top_level_item_views(self.body);
         let shadowed = compute_shadowed_globals(&views);
         let value_flow = ChunkValueFlow::analyze(&views);
+        let set_iterable_proof =
+            crate::facts::SetIterableProof::analyze(&views, &shadowed, &value_flow);
         let plain_data_bindings = collect_plain_data_bindings(&views, &shadowed, &value_flow);
         PreparedModulePurityFacts {
             views,
             shadowed,
+            set_iterable_proof,
             plain_data_bindings,
         }
     }
@@ -119,6 +123,7 @@ impl<'a> ModulePurityFacts<'a> {
             &BTreeMap::new(),
             imported,
             &BTreeSet::new(),
+            &prepared.set_iterable_proof,
             &prepared.plain_data_bindings,
             Some(&mut locate),
         )

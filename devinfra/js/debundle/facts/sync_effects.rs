@@ -266,6 +266,7 @@ impl Parameter {
 struct Call {
     callee: ValueExpr,
     args: Vec<ValueExpr>,
+    span: Span,
     is_new: bool,
     caller: Option<u32>,
     owner: StatementOrdinal,
@@ -1353,6 +1354,7 @@ impl Visit for ExecutionIndex {
                     .map(|arg| ValueExpr::from_expr(&arg.expr))
                     .collect(),
                 is_new: false,
+                span: call.span,
                 has_spread: call.args.iter().any(|arg| arg.spread.is_some()),
                 no_sync_arguments: is_no_sync_callback_member_call(
                     callee,
@@ -1411,6 +1413,7 @@ impl Visit for ExecutionIndex {
                 .map(|arg| ValueExpr::from_expr(&arg.expr))
                 .collect(),
             is_new: true,
+            span: new_expr.span,
             has_spread: new_expr
                 .args
                 .as_deref()
@@ -1503,6 +1506,7 @@ struct Executor<'a> {
     index: &'a ExecutionIndex,
     facts: &'a [StatementFacts],
     flow: &'a ChunkValueFlow,
+    set_iterable_proof: &'a SetIterableProof,
     shadowed: &'a BTreeSet<&'static str>,
     top_bindings: BTreeSet<Id>,
     binding_owner: BTreeMap<Id, StatementOrdinal>,
@@ -2942,6 +2946,15 @@ impl Executor<'_> {
         captures: &Context,
         outcome: &mut Outcome,
     ) {
+        // Only a fresh primitive literal or a checked const alias to one is
+        // safe to omit from callback effects. A pure object/function element
+        // can be retained by the Set and invoked by a later opaque consumer.
+        if call.is_new
+            && call.caller.is_none()
+            && self.set_iterable_proof.contains_constructor(call.span)
+        {
+            return;
+        }
         if call.is_new
             && matches!(&call.callee, ValueExpr::Binding(id) if id.0.as_ref() == "WeakMap" && !self.flow.is_declared(id))
             && !self.shadowed.contains("WeakMap")
@@ -3151,6 +3164,7 @@ pub(crate) fn infer_returned_callback_factories(
 pub(crate) fn annotate_synchronous_calls(
     body: &[TopLevelItemView<'_>],
     flow: &ChunkValueFlow,
+    set_iterable_proof: &SetIterableProof,
     shadowed: &BTreeSet<&'static str>,
     hints: &AnalysisHints,
     export_reentry_policy: ExportReentryPolicy,
@@ -3239,6 +3253,7 @@ pub(crate) fn annotate_synchronous_calls(
         index: &index,
         facts,
         flow,
+        set_iterable_proof,
         shadowed,
         top_bindings,
         binding_owner: facts
