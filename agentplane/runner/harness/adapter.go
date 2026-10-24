@@ -79,7 +79,16 @@ type PendingCommandInfo struct {
 	ChangeModelValue           string
 	ChangeReasoningEffortValue string
 	DispatchPlanned            bool
-	NativeCorrelation          map[string]string
+	NativeCorrelation          *NativeCorrelation
+	LegacyNativeCorrelation    json.RawMessage
+}
+
+// NativeCorrelation is the versioned adapter payload needed to match a native response to a
+// dispatched command. Payload is encoded according to the adapter's own schema.
+type NativeCorrelation struct {
+	Adapter      string          `json:"adapter"`
+	SchemaVersion uint32         `json:"schema_version"`
+	Payload      json.RawMessage `json:"payload"`
 }
 
 // UserMessageConfirmation records native evidence that an input reached a model request.
@@ -107,7 +116,7 @@ type AdapterJournal interface {
 type AdapterHost interface {
 	Session() SessionSnapshot
 	Journal() AdapterJournal
-	RecordNativeCorrelation(context.Context, string, map[string]string) error
+	RecordNativeCorrelation(context.Context, string, NativeCorrelation) error
 	SendNative(context.Context, json.RawMessage) error
 	// RequestNativeHandshake sequences startup protocol exchanges; command methods should send and
 	// let OnFrame advance their durable state instead of waiting for a response.

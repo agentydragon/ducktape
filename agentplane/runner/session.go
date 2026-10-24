@@ -118,7 +118,7 @@ func (s *Session) harnessEnvironment() map[string]string {
 	return environment
 }
 func (s *Session) Journal() harness.AdapterJournal { return s.journal }
-func (s *Session) RecordNativeCorrelation(ctx context.Context, commandID string, correlation map[string]string) error {
+func (s *Session) RecordNativeCorrelation(ctx context.Context, commandID string, correlation harness.NativeCorrelation) error {
 	return s.journal.RecordNativeCorrelation(ctx, commandID, correlation)
 }
 
@@ -173,7 +173,7 @@ func (s *Session) apply(entry *eventlogpb.EventEntry, ids []string) {
 	}
 }
 
-func (s *Session) recordEvent(ctx context.Context, e *eventpb.Event, sources []uint64, ids []string, correlation map[string]string) (*eventlogpb.EventEntry, error) {
+func (s *Session) recordEvent(ctx context.Context, e *eventpb.Event, sources []uint64, ids []string, receipt CommandReceiptMetadata) (*eventlogpb.EventEntry, error) {
 	// Turn transitions share the final native-write gate with exact-turn controls.
 	// Once a successor is recorded, an interrupt cannot reach its stdin under the
 	// predecessor's identity.
@@ -181,7 +181,7 @@ func (s *Session) recordEvent(ctx context.Context, e *eventpb.Event, sources []u
 		s.writeMu.Lock()
 		defer s.writeMu.Unlock()
 	}
-	entry, err := s.journal.Append(ctx, e, AppendOptions{Sources: sources, TerminalCommandIDs: ids, NativeCorrelation: correlation})
+	entry, err := s.journal.Append(ctx, e, AppendOptions{Sources: sources, TerminalCommandIDs: ids, ReceiptMetadata: receipt})
 	if err != nil {
 		return nil, err
 	}
@@ -194,7 +194,7 @@ func (s *Session) Emit(ctx context.Context, e *eventpb.Event, sources []uint64) 
 	if turn := e.GetTurnCompleted(); turn != nil {
 		return s.completeTurn(ctx, turn, sources)
 	}
-	_, err := s.recordEvent(ctx, e, sources, nil, nil)
+	_, err := s.recordEvent(ctx, e, sources, nil, CommandReceiptMetadata{})
 	return err
 }
 
@@ -216,7 +216,7 @@ func (s *Session) completeTurn(ctx context.Context, turn *eventpb.TurnCompleted,
 			ids = append(ids, interrupt)
 		}
 	}
-	if _, err := s.recordEvent(ctx, observation(turn), sources, ids, map[string]string{"turn_id": turn.TurnId}); err != nil {
+	if _, err := s.recordEvent(ctx, observation(turn), sources, ids, CommandReceiptMetadata{TurnID: turn.TurnId}); err != nil {
 		return err
 	}
 	if turn.Status == eventpb.TurnStatus_TURN_STATUS_PROCESS_LOST {
@@ -246,12 +246,12 @@ func (s *Session) completeTurn(ctx context.Context, turn *eventpb.TurnCompleted,
 }
 
 func (s *Session) FailCommand(ctx context.Context, id, reason string, sources []uint64) error {
-	_, err := s.recordEvent(ctx, observation(&eventpb.CommandFailed{CommandId: id, Reason: reason}), sources, []string{id}, nil)
+	_, err := s.recordEvent(ctx, observation(&eventpb.CommandFailed{CommandId: id, Reason: reason}), sources, []string{id}, CommandReceiptMetadata{})
 	return err
 }
 
 func (s *Session) NoopCommand(ctx context.Context, id, reason string, sources []uint64) error {
-	_, err := s.recordEvent(ctx, observation(&eventpb.CommandNoop{CommandId: id, Reason: reason}), sources, []string{id}, nil)
+	_, err := s.recordEvent(ctx, observation(&eventpb.CommandNoop{CommandId: id, Reason: reason}), sources, []string{id}, CommandReceiptMetadata{})
 	return err
 }
 
@@ -271,7 +271,7 @@ func (s *Session) ModelChanged(ctx context.Context, id, model string, sources []
 	if err := s.runner.store.Write(s.id, record); err != nil {
 		return err
 	}
-	_, err = s.recordEvent(ctx, observation(&eventpb.ModelChanged{CommandId: id, PreviousModel: previous, Model: model}), sources, []string{id}, nil)
+	_, err = s.recordEvent(ctx, observation(&eventpb.ModelChanged{CommandId: id, PreviousModel: previous, Model: model}), sources, []string{id}, CommandReceiptMetadata{})
 	return err
 }
 
@@ -291,7 +291,7 @@ func (s *Session) ReasoningEffortChanged(ctx context.Context, id, effort string,
 	if err := s.runner.store.Write(s.id, record); err != nil {
 		return err
 	}
-	_, err = s.recordEvent(ctx, observation(&eventpb.ReasoningEffortChanged{CommandId: id, PreviousEffort: previous, Effort: effort}), sources, []string{id}, nil)
+	_, err = s.recordEvent(ctx, observation(&eventpb.ReasoningEffortChanged{CommandId: id, PreviousEffort: previous, Effort: effort}), sources, []string{id}, CommandReceiptMetadata{})
 	return err
 }
 
@@ -302,7 +302,7 @@ func (s *Session) ConfirmUserMessage(ctx context.Context, c harness.UserMessageC
 	if err := s.checkpoint(ctx, "before-user-message-confirmed", c.OriginCommandIDs[0]); err != nil {
 		return err
 	}
-	_, err := s.recordEvent(ctx, observation(&eventpb.HarnessUserMessageConfirmed{HarnessMessageId: c.HarnessMessageID, Text: c.Text, OriginCommandIds: c.OriginCommandIDs, TurnId: c.TurnID}), sources, c.OriginCommandIDs, map[string]string{"harness_message_id": c.HarnessMessageID, "turn_id": c.TurnID})
+	_, err := s.recordEvent(ctx, observation(&eventpb.HarnessUserMessageConfirmed{HarnessMessageId: c.HarnessMessageID, Text: c.Text, OriginCommandIds: c.OriginCommandIDs, TurnId: c.TurnID}), sources, c.OriginCommandIDs, CommandReceiptMetadata{HarnessMessageID: c.HarnessMessageID, TurnID: c.TurnID})
 	if err != nil {
 		return err
 	}
@@ -655,11 +655,7 @@ func (s *Session) dispatch(ctx context.Context, c *commandpb.Command) error {
 		s.admitMu.Unlock()
 		return nil
 	}
-	correlation := map[string]string{}
-	if v := c.GetInterruptTurn(); v != nil {
-		correlation["turn_id"] = v.TurnId
-	}
-	planned, err := s.journal.DispatchPlanned(ctx, c.CommandId, correlation)
+	planned, err := s.journal.DispatchPlanned(ctx, c.CommandId)
 	s.admitMu.Unlock()
 	if err != nil || !planned {
 		return err
@@ -760,7 +756,7 @@ func (s *Session) RequestNativeHandshake(ctx context.Context, frame json.RawMess
 }
 
 func (s *Session) receive(ctx context.Context, line []byte, adapter harness.Adapter) error {
-	entry, err := s.recordEvent(ctx, observation(&eventpb.Native{Direction: eventpb.Direction_DIRECTION_FROM_HARNESS, Line: string(line)}), nil, nil, nil)
+	entry, err := s.recordEvent(ctx, observation(&eventpb.Native{Direction: eventpb.Direction_DIRECTION_FROM_HARNESS, Line: string(line)}), nil, nil, CommandReceiptMetadata{})
 	if err != nil {
 		return err
 	}

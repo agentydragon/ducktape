@@ -1,6 +1,7 @@
 package claude
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -70,6 +71,110 @@ const (
 	claudeEffortRequestID    = "claude.effort.request_id"
 	claudeEffortRequestValue = "claude.effort.value"
 )
+
+const claudeNativeCorrelationVersion = 1
+
+type claudeNativeCorrelationV1 struct {
+	Submit      *claudeSubmitCorrelation `json:"submit,omitempty"`
+	ModelChange *claudeModelCorrelation `json:"model_change,omitempty"`
+	EffortChange *claudeEffortCorrelation `json:"effort_change,omitempty"`
+}
+
+type claudeSubmitCorrelation struct {
+	MessageUUID string `json:"message_uuid"`
+}
+
+type claudeModelCorrelation struct {
+	RequestID string `json:"request_id"`
+	Model     string `json:"model"`
+}
+
+type claudeEffortCorrelation struct {
+	RequestID string `json:"request_id"`
+	Effort    string `json:"effort"`
+}
+
+func encodeClaudeNativeCorrelation(value claudeNativeCorrelationV1) (harness.NativeCorrelation, error) {
+	if err := value.validate(); err != nil {
+		return harness.NativeCorrelation{}, err
+	}
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return harness.NativeCorrelation{}, err
+	}
+	return harness.NativeCorrelation{Adapter: "claude", SchemaVersion: claudeNativeCorrelationVersion, Payload: payload}, nil
+}
+
+func decodeClaudeNativeCorrelation(correlation *harness.NativeCorrelation, legacy json.RawMessage) (claudeNativeCorrelationV1, error) {
+	if correlation == nil {
+		return decodeLegacyClaudeNativeCorrelation(legacy)
+	}
+	if correlation.Adapter != "claude" {
+		return claudeNativeCorrelationV1{}, fmt.Errorf("Claude command has %q native correlation", correlation.Adapter)
+	}
+	if correlation.SchemaVersion != claudeNativeCorrelationVersion {
+		return claudeNativeCorrelationV1{}, fmt.Errorf("unsupported Claude native correlation schema version %d", correlation.SchemaVersion)
+	}
+	var value claudeNativeCorrelationV1
+	decoder := json.NewDecoder(bytes.NewReader(correlation.Payload))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&value); err != nil {
+		return claudeNativeCorrelationV1{}, fmt.Errorf("decode Claude native correlation: %w", err)
+	}
+	if err := value.validate(); err != nil {
+		return claudeNativeCorrelationV1{}, err
+	}
+	return value, nil
+}
+
+func (value claudeNativeCorrelationV1) validate() error {
+	kinds := 0
+	if value.Submit != nil {
+		kinds++
+		if value.Submit.MessageUUID == "" {
+			return errors.New("Claude submit correlation requires a message UUID")
+		}
+	}
+	if value.ModelChange != nil {
+		kinds++
+		if value.ModelChange.RequestID == "" || value.ModelChange.Model == "" {
+			return errors.New("Claude model correlation requires request ID and model")
+		}
+	}
+	if value.EffortChange != nil {
+		kinds++
+		if value.EffortChange.RequestID == "" || value.EffortChange.Effort == "" {
+			return errors.New("Claude effort correlation requires request ID and effort")
+		}
+	}
+	if kinds > 1 {
+		return errors.New("Claude command correlation must describe one native request")
+	}
+	return nil
+}
+
+func decodeLegacyClaudeNativeCorrelation(raw json.RawMessage) (claudeNativeCorrelationV1, error) {
+	legacy := map[string]string{}
+	if len(raw) != 0 {
+		if err := json.Unmarshal(raw, &legacy); err != nil {
+			return claudeNativeCorrelationV1{}, fmt.Errorf("decode legacy Claude native correlation: %w", err)
+		}
+	}
+	var value claudeNativeCorrelationV1
+	if uuid := legacy[claudeSubmitUUID]; uuid != "" {
+		value.Submit = &claudeSubmitCorrelation{MessageUUID: uuid}
+	}
+	if requestID := legacy[claudeModelRequestID]; requestID != "" {
+		value.ModelChange = &claudeModelCorrelation{RequestID: requestID, Model: legacy[claudeModelRequestValue]}
+	}
+	if requestID := legacy[claudeEffortRequestID]; requestID != "" {
+		value.EffortChange = &claudeEffortCorrelation{RequestID: requestID, Effort: legacy[claudeEffortRequestValue]}
+	}
+	if err := value.validate(); err != nil {
+		return claudeNativeCorrelationV1{}, err
+	}
+	return value, nil
+}
 
 // New creates an adapter bound to one runner-owned Session.
 func New(host harness.AdapterHost, launch harness.LaunchConfig) harness.Adapter {
@@ -184,20 +289,25 @@ func (a *claudeAdapter) Recover(ctx context.Context) error {
 		if !command.DispatchPlanned {
 			continue
 		}
+		correlation, err := decodeClaudeNativeCorrelation(command.NativeCorrelation, command.LegacyNativeCorrelation)
+		if err != nil {
+			a.mu.Unlock()
+			return fmt.Errorf("restore Claude correlation for command %q: %w", command.CommandID, err)
+		}
 		hasCorrelation := false
-		if uuid := command.NativeCorrelation[claudeSubmitUUID]; uuid != "" && command.SubmitText != "" {
-			a.pending[uuid] = claudePendingInput{commandID: command.CommandID, text: command.SubmitText}
-			correlations[uuid] = true
+		if correlation.Submit != nil && correlation.Submit.MessageUUID != "" && command.SubmitText != "" {
+			a.pending[correlation.Submit.MessageUUID] = claudePendingInput{commandID: command.CommandID, text: command.SubmitText}
+			correlations[correlation.Submit.MessageUUID] = true
 			hasCorrelation = true
 		}
-		if requestID := command.NativeCorrelation[claudeModelRequestID]; requestID != "" {
-			a.modelChanges[requestID] = claudeChange{commandID: command.CommandID, value: command.NativeCorrelation[claudeModelRequestValue]}
-			correlations[requestID] = true
+		if model := correlation.ModelChange; model != nil && model.RequestID != "" {
+			a.modelChanges[model.RequestID] = claudeChange{commandID: command.CommandID, value: model.Model}
+			correlations[model.RequestID] = true
 			hasCorrelation = true
 		}
-		if requestID := command.NativeCorrelation[claudeEffortRequestID]; requestID != "" {
-			a.effortChanges[requestID] = claudeChange{commandID: command.CommandID, value: command.NativeCorrelation[claudeEffortRequestValue]}
-			correlations[requestID] = true
+		if effort := correlation.EffortChange; effort != nil && effort.RequestID != "" {
+			a.effortChanges[effort.RequestID] = claudeChange{commandID: command.CommandID, value: effort.Effort}
+			correlations[effort.RequestID] = true
 			hasCorrelation = true
 		}
 		if hasCorrelation {
@@ -348,7 +458,13 @@ func (a *claudeAdapter) Submit(ctx context.Context, commandID, text string) erro
 		}
 	}
 	messageUUID := uuid.NewString()
-	if err := a.host.RecordNativeCorrelation(ctx, commandID, map[string]string{claudeSubmitUUID: messageUUID}); err != nil {
+	correlation, err := encodeClaudeNativeCorrelation(claudeNativeCorrelationV1{
+		Submit: &claudeSubmitCorrelation{MessageUUID: messageUUID},
+	})
+	if err != nil {
+		return err
+	}
+	if err := a.host.RecordNativeCorrelation(ctx, commandID, correlation); err != nil {
 		return err
 	}
 	frame, err := json.Marshal(map[string]any{
@@ -386,10 +502,16 @@ func (a *claudeAdapter) Interrupt(ctx context.Context, turnID string) error {
 
 func (a *claudeAdapter) ChangeModel(ctx context.Context, commandID, model string) error {
 	requestID := nativeRequestID()
+	correlation, err := encodeClaudeNativeCorrelation(claudeNativeCorrelationV1{
+		ModelChange: &claudeModelCorrelation{RequestID: requestID, Model: model},
+	})
+	if err != nil {
+		return err
+	}
 	a.mu.Lock()
 	a.modelChanges[requestID] = claudeChange{commandID: commandID, value: model}
 	a.mu.Unlock()
-	if err := a.host.RecordNativeCorrelation(ctx, commandID, map[string]string{claudeModelRequestID: requestID, claudeModelRequestValue: model}); err != nil {
+	if err := a.host.RecordNativeCorrelation(ctx, commandID, correlation); err != nil {
 		a.mu.Lock()
 		delete(a.modelChanges, requestID)
 		a.mu.Unlock()
@@ -406,10 +528,16 @@ func (a *claudeAdapter) ChangeModel(ctx context.Context, commandID, model string
 
 func (a *claudeAdapter) ChangeReasoningEffort(ctx context.Context, commandID, effort string) error {
 	requestID := nativeRequestID()
+	correlation, err := encodeClaudeNativeCorrelation(claudeNativeCorrelationV1{
+		EffortChange: &claudeEffortCorrelation{RequestID: requestID, Effort: effort},
+	})
+	if err != nil {
+		return err
+	}
 	a.mu.Lock()
 	a.effortChanges[requestID] = claudeChange{commandID: commandID, value: effort}
 	a.mu.Unlock()
-	if err := a.host.RecordNativeCorrelation(ctx, commandID, map[string]string{claudeEffortRequestID: requestID, claudeEffortRequestValue: effort}); err != nil {
+	if err := a.host.RecordNativeCorrelation(ctx, commandID, correlation); err != nil {
 		a.mu.Lock()
 		delete(a.effortChanges, requestID)
 		a.mu.Unlock()

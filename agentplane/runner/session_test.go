@@ -191,7 +191,7 @@ func TestRecoveryKeepsDispatchedInterruptPending(t *testing.T) {
 	if _, _, err := s.journal.Admit(ctx, command, "turn-1"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.journal.DispatchPlanned(ctx, command.CommandId, map[string]string{"turn_id": "turn-1"}); err != nil {
+	if _, err := s.journal.DispatchPlanned(ctx, command.CommandId); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.recover(ctx); err != nil {
