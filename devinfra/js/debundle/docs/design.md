@@ -712,8 +712,9 @@ cross-module realizability check. Separate calls to the same factory keep
 separate argument environments. The pass memoizes call contexts and bounds
 both recursion depth and the total number of body expansions per source
 statement. Changing prefix revisions cannot reset that expansion budget. At
-the bound, or on reentry into an active callback, an opaque call summarizes
-its callback pool together;
+the bound, on reentry into an active callback, or when the callback pool would
+create a large argument-value cross product, an opaque call summarizes its
+callback pool together;
 recursive or unknown targets, unsupported syntax, and mutable captures fall
 back conservatively. Fallback read closures grow incrementally, promoting each
 reachable owner's lazy reads and rebinds once per statement. The summary is

@@ -87,3 +87,32 @@ fn shared_and_equivalent_capture_dags_preserve_output() {
     );
     assert_preserved_entry_output(&fixture, "7\n");
 }
+
+#[test]
+fn repeated_opaque_calls_do_not_grow_callback_capture_cross_products() {
+    let mut source = String::from(
+        "globalThis.host = () => 7;\n\
+         const state = 7;\n\
+         function retain(callback) { return () => callback(); }\n",
+    );
+    for index in 0..256 {
+        writeln!(
+            source,
+            "function factory{index}(callback) {{ host(retain(callback)); return state; }}"
+        )
+        .unwrap();
+    }
+    source.push_str("const payload = {");
+    for index in 0..256 {
+        write!(source, "factory{index},").unwrap();
+    }
+    source.push_str("};\n");
+    for index in 0..512 {
+        writeln!(source, "const result{index} = host(payload);").unwrap();
+    }
+    source.push_str("console.log(result511);\nexport { result511 };\n");
+    let fixture = run_fixture(
+        FixtureOpts::new(&source, vec![]).with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&fixture, "7\n");
+}

@@ -1041,6 +1041,10 @@ const MAX_SYNCHRONOUS_INVOCATION_DEPTH: usize = 64;
 // Count actual expansions, including those whose changing prefix state defeats
 // memoization. A cache-size limit alone does not bound a branching call tree.
 const MAX_SYNCHRONOUS_INVOCATIONS: usize = 256;
+// Giving every callback the entire pool as an argument creates a quadratic
+// value cross product, even without recursion. Summarize large pools before
+// manufacturing capture snapshots that retain that cross product.
+const MAX_SYNCHRONOUS_CALLBACK_POOL: usize = 64;
 
 struct Executor<'a> {
     index: &'a ExecutionIndex,
@@ -1523,6 +1527,7 @@ impl Executor<'_> {
         });
         for callback in callbacks.clone() {
             if reentrant_pool
+                || callbacks.len() > MAX_SYNCHRONOUS_CALLBACK_POOL
                 || self.invocation_count >= MAX_SYNCHRONOUS_INVOCATIONS
                 || self.invocation_depth >= MAX_SYNCHRONOUS_INVOCATION_DEPTH
             {
