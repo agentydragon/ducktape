@@ -28,7 +28,6 @@ def chart(app: App) -> Chart:
         ref=DATABASE,
         profile=cnpg.OPTIPLEX_PIRAEUS_SSD,
         instances=1,
-        # A year of GPS fixes plus 30 days of everything else.
         size="10Gi",
         initdb=cnpg.same_owner_initdb("homeassistant"),
         wal_archive=True,

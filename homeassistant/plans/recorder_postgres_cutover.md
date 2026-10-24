@@ -19,8 +19,7 @@ Delete this plan once the cutover has run.
    rerun safe. If foreign keys reject pgloader's load order, `disable triggers` needs a superuser,
    which the `homeassistant` owner is not.
 3. **Cut over:** one change sets `recorder: db_url: !env_var RECORDER_DB_URL` (the Cluster's
-   `uri`), `purge_keep_days: 365` and the nightly trim of everything but `device_tracker`/`person`
-   to 30 days, restores `replicas: 1`, and removes the Job and `recorder-import/`. Check the History
+   `uri`), restores `replicas: 1`, and removes the Job and `recorder-import/`. Check the History
    panel shows days before the cutover.
 
 Fallback: skip the comparison and cut over anyway; the recorder then starts fresh in Postgres,
