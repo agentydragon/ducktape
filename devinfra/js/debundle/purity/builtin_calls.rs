@@ -129,6 +129,31 @@ pub(crate) fn classify_new_expr_purity(
         )
         .worst(arg_purity);
     }
+    // `new Set(values)` is admitted only when the shared structural proof
+    // established that this exact call consumes an unescaped top-level const
+    // alias to a primitive array literal. The alias reference itself is pure;
+    // array creation and every alias initializer are classified at their own
+    // declaration sites.
+    if callee.sym.as_ref() == "Set"
+        && !shadowed.contains("Set")
+        && !local_shadowed.contains("Set")
+        && graph.has_proven_set_iterable(new_expr.span)
+        && let Some(args) = new_expr.args.as_ref()
+        && args.len() == 1
+        && args[0].spread.is_none()
+        && matches!(args[0].expr.unwrap_parens(), Expr::Ident(_))
+    {
+        let arg_purity = all_args_pure(args, shadowed, local_shadowed, declared_pure, graph);
+        if arg_purity.is_pure() {
+            return Purity::Pure;
+        }
+        return Purity::from_reason_with_detail(
+            PurityRule::UnknownNew,
+            new_expr.span,
+            "new Set(array_alias) has an impure argument".to_string(),
+        )
+        .worst(arg_purity);
+    }
     if let Some(name) = PURE_BUILTIN_NEW_ARRAY_ITERABLE
         .iter()
         .copied()

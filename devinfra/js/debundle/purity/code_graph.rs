@@ -1,4 +1,5 @@
 use super::*;
+use crate::facts::SetIterableProof;
 use std::sync::Arc;
 
 /// Chunk-wide code graph: indexes top-level bindings and answers
@@ -37,6 +38,9 @@ pub struct ChunkCodeGraph {
     /// `X.forEach(cb)` as if those built-ins might invoke functions
     /// held inside `X`; the callback body is still modeled separately.
     plain_array_bindings: BTreeSet<String>,
+    /// Exact Set-constructor spans with a structurally checked fresh-array
+    /// iterable. The same proof is consumed by synchronous effect analysis.
+    set_iterable_proof: SetIterableProof,
     /// Purity verdict for chunk-top bindings that are imports of a
     /// function from another module, keyed by local binding name.
     /// Populated by the program-level cross-module purity oracle;
@@ -158,9 +162,11 @@ impl ChunkCodeGraph {
         locate: Option<&mut dyn FnMut(Span) -> Option<SourceLocation>>,
     ) -> Self {
         let value_flow = crate::facts::ChunkValueFlow::analyze(body);
+        let set_iterable_proof = SetIterableProof::analyze(body, shadowed, &value_flow);
         Self::build_full_with_locations_and_flow(
             body,
             &value_flow,
+            &set_iterable_proof,
             shadowed,
             declared_pure,
             declared_pure_new,
@@ -175,6 +181,7 @@ impl ChunkCodeGraph {
     pub(crate) fn build_full_with_locations_and_flow(
         body: &[TopLevelItemView<'_>],
         value_flow: &crate::facts::ChunkValueFlow,
+        set_iterable_proof: &SetIterableProof,
         shadowed: &BTreeSet<&'static str>,
         declared_pure: &BTreeSet<String>,
         declared_pure_new: &BTreeSet<String>,
@@ -192,6 +199,7 @@ impl ChunkCodeGraph {
             declared_pure_members,
             imported_purities,
             fluent_bindings,
+            set_iterable_proof,
             &plain_data_bindings,
             locate,
         )
@@ -207,6 +215,7 @@ impl ChunkCodeGraph {
         declared_pure_members: &BTreeMap<String, BTreeSet<String>>,
         imported_purities: &BTreeMap<String, Arc<Purity>>,
         fluent_bindings: &BTreeSet<String>,
+        set_iterable_proof: &SetIterableProof,
         plain_data_bindings: &[String],
         mut locate: Option<&mut dyn FnMut(Span) -> Option<SourceLocation>>,
     ) -> Self {
@@ -265,6 +274,7 @@ impl ChunkCodeGraph {
             declared_pure_members: declared_pure_members.clone(),
             primitive_const_bindings: collect_primitive_const_bindings(body),
             plain_array_bindings: collect_plain_array_bindings(body, shadowed),
+            set_iterable_proof: set_iterable_proof.clone(),
             imported_purities: imported_purities.clone(),
             fluent_bindings: collect_fluent_const_bindings(body, fluent_bindings),
         };
@@ -367,6 +377,10 @@ impl ChunkCodeGraph {
     /// array-method at-init fallback refinement.
     pub(crate) fn is_plain_array(&self, name: &str) -> bool {
         self.plain_array_bindings.contains(name)
+    }
+
+    pub(crate) fn has_proven_set_iterable(&self, span: Span) -> bool {
+        self.set_iterable_proof.contains_constructor(span)
     }
 
     pub(crate) fn is_declared_pure_new(&self, name: &str) -> bool {

@@ -312,6 +312,7 @@ pub(crate) struct ConstructorFacts {
 pub struct StructuralChunkAnalysis<'a> {
     pub body: Vec<TopLevelItemView<'a>>,
     pub(crate) value_flow: super::ChunkValueFlow,
+    pub(crate) set_iterable_proof: super::SetIterableProof,
     pub shadowed: BTreeSet<&'static str>,
     pub per_statement: Vec<StructuralStatementFacts>,
     pub top_level_await: Option<StatementOrdinal>,

@@ -168,9 +168,11 @@ where
         .collect();
     apply_global_escape_taint(&body, &global_object_names, &mut per_statement);
     let value_flow = ChunkValueFlow::analyze(&body);
+    let set_iterable_proof = SetIterableProof::analyze(&body, &shadowed, &value_flow);
     StructuralChunkAnalysis {
         body,
         value_flow,
+        set_iterable_proof,
         shadowed,
         per_statement,
         top_level_await,
@@ -197,6 +199,7 @@ where
     let StructuralChunkAnalysis {
         body,
         value_flow,
+        set_iterable_proof,
         shadowed,
         per_statement,
         top_level_await,
@@ -215,6 +218,7 @@ where
         ChunkCodeGraph::build_full_with_locations_and_flow(
             &body,
             &value_flow,
+            &set_iterable_proof,
             &shadowed,
             &hints.declared_pure,
             &hints.declared_pure_new,
@@ -282,6 +286,7 @@ where
     super::sync_effects::annotate_synchronous_calls(
         &body,
         &value_flow,
+        &set_iterable_proof,
         &shadowed,
         hints,
         export_reentry_policy,
