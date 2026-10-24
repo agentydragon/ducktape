@@ -677,7 +677,6 @@ def chart(app: App) -> Chart:
                     },
                     limits={"memory": AdminScriptSpecResourcesLimits.from_string("512Mi")},
                 ),
-                node_selector={**node_scheduling.HIL_OVH_NODE_SELECTOR, "storage.allegedly.works/tier": "ssd"},
                 tolerations=[
                     AdminScriptSpecTolerations(
                         key=node_scheduling.CONTROL_PLANE_TAINT_KEY, operator="Exists", effect="NoSchedule"

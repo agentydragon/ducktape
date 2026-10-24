@@ -368,9 +368,6 @@ spec:
     name: seaweedfs
   concurrencyPolicy: Forbid
   failedJobsHistoryLimit: 3
-  nodeSelector:
-    storage.allegedly.works/tier: ssd
-    topology.kubernetes.io/zone: hil-ovh
   resources:
     limits:
       memory: 512Mi
@@ -407,9 +404,6 @@ spec:
     name: seaweedfs
   concurrencyPolicy: Forbid
   failedJobsHistoryLimit: 3
-  nodeSelector:
-    storage.allegedly.works/tier: ssd
-    topology.kubernetes.io/zone: hil-ovh
   resources:
     limits:
       memory: 512Mi
