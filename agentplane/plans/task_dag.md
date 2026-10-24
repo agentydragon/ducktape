@@ -790,6 +790,10 @@ design: **full card** (the detail view with the whole `ActionCall`) and **notifi
 (Approve/Deny on a Web Push notification), then use every name everywhere (UI copy, docs), since "quick
 approve" could mean the buttons on a card or on a desktop notification. `NOTIFICATION_PRESENTATION` (section 2) renders notices on the same surfaces and uses the same card
 names.
+Known inconsistency, left as is (operator, 2026-10-24: acceptable for now, handling still to be
+thought through): notification buttons ignore `offersCardDecisionButtons`. The service worker offers
+Approve/Deny whenever exactly one Action waits, whatever its arguments, so a notification can approve
+a call (a long shell script, a large file push) that the app offers only on the full card.
 
 ### `DOCKABLE_PANES` — dockable panes in the web app
 
