@@ -6,6 +6,7 @@ import { Link, useLocation } from "react-router";
 import { JsonBlock } from "../text_block";
 import { ResizeHandle, usePaneSize } from "../resize_handle";
 import {
+  actionCompactCardExpands,
   actionOffersCardDecisionButtons,
   renderActionLabel,
   renderPaneCollapsed,
@@ -47,7 +48,8 @@ function usePendingRequests(): ActionRequestView[] {
   );
 }
 
-/** One row per pending request: expandable preview, decision buttons where eligible, details link. */
+/** One row per pending request: expandable preview where it adds something, decision buttons where eligible,
+    details link. */
 function PendingActionList({
   pending,
   onNavigate,
@@ -62,7 +64,10 @@ function PendingActionList({
   return (
     <>
       {pending.map((request) => {
-        const expanded = expandedId === request.id;
+        const expands = actionCompactCardExpands(request.action, request.arguments);
+        const expanded = expands && expandedId === request.id;
+        // A card without an expanded version shows all it has at once.
+        const unclamped = expanded || !expands;
         const actionLabel = renderActionLabel(request.action, request.arguments);
         const collapsedPreview = renderPaneCollapsed(request.action, request.arguments);
         const openedPreview = renderPaneOpened(request.action, request.arguments);
@@ -84,32 +89,40 @@ function PendingActionList({
           },
         };
 
+        const summary = (
+          <div
+            className={`agentplane-actions-sidebar-request-label${unclamped ? " is-unclamped" : ""}${decision === null ? "" : " offers-card-decision"}`}
+          >
+            <div className="agentplane-actions-sidebar-name">
+              {actionLabel === undefined ? `${request.action.group} / ${request.action.name}` : actionLabel}
+            </div>
+            {showRequestTitle && (
+              <Text size="xs" lineClamp={unclamped ? undefined : 1} title={request.title}>
+                {request.title}
+              </Text>
+            )}
+            {!expanded && collapsedPreview !== null && collapsedPreview !== undefined && (
+              <div className="agentplane-actions-sidebar-collapsed-preview">{collapsedPreview}</div>
+            )}
+          </div>
+        );
+
         return (
           <div className="agentplane-actions-sidebar-request" key={request.id}>
             <div className="agentplane-actions-sidebar-request-heading">
-              <UnstyledButton
-                className="agentplane-actions-sidebar-expand"
-                aria-label={`${expanded ? "Collapse" : "Expand"} ${request.title}`}
-                aria-expanded={expanded}
-                onClick={() => setExpandedId(expanded ? null : request.id)}
-              >
-                {expanded ? <IconChevronDown size={12} /> : <IconChevronRight size={12} />}
-                <div
-                  className={`agentplane-actions-sidebar-request-label${expanded ? " is-expanded" : ""}${decision === null ? "" : " offers-card-decision"}`}
+              {expands ? (
+                <UnstyledButton
+                  className="agentplane-actions-sidebar-summary agentplane-actions-sidebar-expand"
+                  aria-label={`${expanded ? "Collapse" : "Expand"} ${request.title}`}
+                  aria-expanded={expanded}
+                  onClick={() => setExpandedId(expanded ? null : request.id)}
                 >
-                  <div className="agentplane-actions-sidebar-name">
-                    {actionLabel === undefined ? `${request.action.group} / ${request.action.name}` : actionLabel}
-                  </div>
-                  {showRequestTitle && (
-                    <Text size="xs" lineClamp={expanded ? undefined : 1} title={request.title}>
-                      {request.title}
-                    </Text>
-                  )}
-                  {!expanded && collapsedPreview !== null && collapsedPreview !== undefined && (
-                    <div className="agentplane-actions-sidebar-collapsed-preview">{collapsedPreview}</div>
-                  )}
-                </div>
-              </UnstyledButton>
+                  {expanded ? <IconChevronDown size={12} /> : <IconChevronRight size={12} />}
+                  {summary}
+                </UnstyledButton>
+              ) : (
+                <div className="agentplane-actions-sidebar-summary is-static">{summary}</div>
+              )}
               <Tooltip label="View full details" withArrow>
                 <Link
                   className="agentplane-actions-sidebar-details"

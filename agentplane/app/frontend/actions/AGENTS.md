@@ -8,6 +8,9 @@
   accessible names must not reintroduce identifiers like `pods_list_in_namespace`.
 - The whole collapsed action row (content and background) is the disclosure control; the separate
   right-arrow details link is the row's only navigation target.
+- No disclosure when opening would add nothing: an Action whose closed compact card already shows
+  every argument declares `compactCardExpands` false for that invocation
+  (`expandsForRejectedArguments`), and drops its `pane.opened` slot.
 - A command is always highlighted shell: `CommandSummary` on the compact card's collapsed row, cut
   off after three lines; `CommandCallView` in the opened preview and the full card, which hold all
   of it. Never a bare `<Code>` of a command.
@@ -16,5 +19,5 @@
 - Command-running Actions (SSH, Pod and sandbox exec) read alike: the label is "Run command on/in
   <target>", the pane never repeats the target, and the settings that change how it runs are one
   line of `CommandCallView` notes built by a `schemas/` helper that the notification text shares.
-- Offer card decision buttons when the label and the opened preview show the whole call; a
-  destructive call is no exception.
+- Offer card decision buttons when the compact card (label, collapsed and opened previews) shows
+  the whole call; a destructive call is no exception.

@@ -25,6 +25,20 @@ from util.testing.visual_capture import VisualPage
 pytest_plugins = ("util.testing.visual_fixtures", "agentplane.app.frontend.testing.visual_fixtures")
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
+# Actions whose closed compact card already shows every argument of the calls below, so it has no expanded version.
+CLOSED_CARD_SHOWS_EVERYTHING = frozenset(
+    {
+        ("kubernetes_admin", "pods_list_in_namespace"),
+        ("kubernetes_admin", "pods_get"),
+        ("kubernetes_admin", "pods_log"),
+        ("kubernetes_admin", "events_list"),
+        ("sandbox", "get"),
+        ("sandbox", "dispose"),
+        ("sandbox", "list"),
+        ("tana", "get_or_create_calendar_node"),
+    }
+)
+
 
 @DESKTOP_AND_MOBILE
 async def test_actions_sidebar_queue(view: VisualPage, app: AgentplaneFixture) -> None:
@@ -149,8 +163,7 @@ async def test_actions_sidebar_resize(view: VisualPage, app: AgentplaneFixture) 
 
 
 @DESKTOP_AND_MOBILE
-@pytest.mark.parametrize("expanded", [False, True], ids=["collapsed", "expanded"])
-async def test_sidebar_compact_pod_approval(view: VisualPage, app: AgentplaneFixture, expanded: bool) -> None:
+async def test_sidebar_compact_pod_approval(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.set_flag(Flag.COMPACT_POD_ACTION)
     await app.mount_thread(IDLE_THREAD)
     page = view.page
@@ -162,109 +175,103 @@ async def test_sidebar_compact_pod_approval(view: VisualPage, app: AgentplaneFix
     )
     await expect(section.get_by_role("link", name="View details for inspect running demo pods")).to_be_visible()
     await expect(section.get_by_text("kubernetes_admin / pods_list_in_namespace", exact=True)).to_have_count(0)
-    if expanded:
-        disclosure = section.get_by_role("button", name="Expand inspect running demo pods")
-        bounds = await disclosure.bounding_box()
-        assert bounds is not None
-        await disclosure.click(position={"x": bounds["width"] - 4, "y": bounds["height"] - 3})
-        preview = section.locator(".agentplane-actions-sidebar-preview")
-        await expect(preview.get_by_text("label selector app=demo")).to_be_visible()
-        await expect(preview.get_by_text("field selector status.phase=Running")).to_be_visible()
-        await expect(preview.get_by_text("List pods in namespace", exact=False)).to_have_count(0)
-        await expect(section.get_by_text("test-apps", exact=True)).to_have_count(1)
-        await expect(section.get_by_text("Requested by", exact=False)).to_have_count(0)
-        await expect(section.get_by_text("Check the exact call before approving.", exact=True)).to_have_count(0)
-        await expect(section.get_by_text("app=demo")).to_be_visible()
-        await expect(section.get_by_role("button", name="Approve inspect running demo pods")).to_be_visible()
-        await expect(section.get_by_role("button", name="Deny inspect running demo pods")).to_be_visible()
-    else:
-        await expect(section.get_by_text("Matching pods where")).to_be_visible()
-        await expect(
-            section.locator(".agentplane-actions-sidebar-collapsed-preview").get_by_text("test-apps")
-        ).to_have_count(0)
-        await expect(section.get_by_text("test-apps", exact=True)).to_have_count(1)
-        await expect(section.get_by_role("button", name="Approve inspect running demo pods")).to_be_visible()
-        await expect(section.get_by_role("button", name="Deny inspect running demo pods")).to_be_visible()
+    await expect(section.get_by_role("button", name="Expand inspect running demo pods")).to_have_count(0)
+    summary = section.locator(".agentplane-actions-sidebar-collapsed-preview")
+    await expect(summary.get_by_text("Matching pods where")).to_be_visible()
+    await expect(summary.get_by_text("app=demo")).to_be_visible()
+    await expect(summary.get_by_text("status.phase=Running")).to_be_visible()
+    await expect(summary.get_by_text("test-apps")).to_have_count(0)
+    await expect(section.get_by_text("test-apps", exact=True)).to_have_count(1)
+    await expect(section.get_by_text("Requested by", exact=False)).to_have_count(0)
+    await expect(section.get_by_text("Check the exact call before approving.", exact=True)).to_have_count(0)
+    await expect(section.get_by_role("button", name="Approve inspect running demo pods")).to_be_visible()
+    await expect(section.get_by_role("button", name="Deny inspect running demo pods")).to_be_visible()
     await view.capture(target=section)
 
 
+ARGUMENT_LAYOUTS = [
+    pytest.param(
+        "kubernetes_admin",
+        "pods_list_in_namespace",
+        {
+            "namespace": "test-namespace-" + "n" * 48,
+            "labelSelector": "app=" + "demo-" + "d" * 56,
+            "fieldSelector": "status.phase=Running," + "x" * 48,
+        },
+        ["test-namespace-", "label selector", "status.phase=Running"],
+        "Matching pods where",
+        id="long-target-and-selectors",
+    ),
+    pytest.param(
+        "gmail",
+        "threads_list",
+        {"q": "from:deployments@example.com " + "query-" * 12, "maxResults": 23},
+        ['"maxResults": 23', "from:deployments@example.com"],
+        "from:deployments@example.com",
+        id="gmail-query-limit",
+    ),
+    pytest.param(
+        "kubernetes_admin",
+        "pods_log",
+        {
+            "name": "api-" + "pod-" * 12,
+            "namespace": "apps",
+            "container": "sidecar-" + "container-" * 8,
+            "previous": True,
+            "tail": -1,
+        },
+        ["container sidecar-", "previous run", "tail -1"],
+        "previous run",
+        id="previous-pod-logs",
+    ),
+    pytest.param(
+        "kubernetes_admin",
+        "resources_list",
+        {
+            "apiVersion": "v1",
+            "kind": "Pod",
+            "namespace": "apps",
+            "fieldSelector": "status.phase=Running," + "x" * 48,
+            "labelSelector": "app=" + "demo-" + "d" * 56,
+        },
+        ["field selector status.phase=Running", "label selector app=demo-"],
+        "Matching resources where",
+        id="resource-list-selectors",
+    ),
+    pytest.param(
+        "kubernetes_admin",
+        "events_list",
+        {"namespace": "apps", "fieldSelector": "type=Warning," + "reason-" * 8},
+        ["Show events matching", "type=Warning"],
+        "Show events matching",
+        id="event-field-selector",
+    ),
+    pytest.param(
+        "kubernetes_admin",
+        "resources_delete",
+        {"apiVersion": "v1", "kind": "Pod", "name": "web-0", "namespace": "apps", "gracePeriodSeconds": 0},
+        ["Use API version v1", "request a 0s grace period"],
+        "Request a 0s grace period",
+        id="resource-delete-grace-period",
+    ),
+    pytest.param(
+        "tana",
+        "get_or_create_calendar_node",
+        {"workspaceId": "workspace-123", "granularity": "week", "date": "2026-10-12"},
+        ["week calendar node", "2026-10-12", "workspace-123"],
+        "week calendar node",
+        id="calendar-context",
+    ),
+]
+
+
 @DESKTOP_AND_MOBILE
-@pytest.mark.parametrize("expanded", [False, True], ids=["collapsed", "expanded"])
 @pytest.mark.parametrize(
-    ("group", "name", "arguments", "visible", "overview"),
+    ("group", "name", "arguments", "visible", "overview", "expanded"),
     [
-        pytest.param(
-            "kubernetes_admin",
-            "pods_list_in_namespace",
-            {
-                "namespace": "test-namespace-" + "n" * 48,
-                "labelSelector": "app=" + "demo-" + "d" * 56,
-                "fieldSelector": "status.phase=Running," + "x" * 48,
-            },
-            ["test-namespace-", "label selector", "status.phase=Running"],
-            "Matching pods where",
-            id="long-target-and-selectors",
-        ),
-        pytest.param(
-            "gmail",
-            "threads_list",
-            {"q": "from:deployments@example.com " + "query-" * 12, "maxResults": 23},
-            ['"maxResults": 23', "from:deployments@example.com"],
-            "from:deployments@example.com",
-            id="gmail-query-limit",
-        ),
-        pytest.param(
-            "kubernetes_admin",
-            "pods_log",
-            {
-                "name": "api-" + "pod-" * 12,
-                "namespace": "apps",
-                "container": "sidecar-" + "container-" * 8,
-                "previous": True,
-                "tail": -1,
-            },
-            ["container sidecar-", "previous run", "tail -1"],
-            "previous run",
-            id="previous-pod-logs",
-        ),
-        pytest.param(
-            "kubernetes_admin",
-            "resources_list",
-            {
-                "apiVersion": "v1",
-                "kind": "Pod",
-                "namespace": "apps",
-                "fieldSelector": "status.phase=Running," + "x" * 48,
-                "labelSelector": "app=" + "demo-" + "d" * 56,
-            },
-            ["field selector status.phase=Running", "label selector app=demo-"],
-            "Matching resources where",
-            id="resource-list-selectors",
-        ),
-        pytest.param(
-            "kubernetes_admin",
-            "events_list",
-            {"namespace": "apps", "fieldSelector": "type=Warning," + "reason-" * 8},
-            ["Show events matching", "type=Warning"],
-            "Show events matching",
-            id="event-field-selector",
-        ),
-        pytest.param(
-            "kubernetes_admin",
-            "resources_delete",
-            {"apiVersion": "v1", "kind": "Pod", "name": "web-0", "namespace": "apps", "gracePeriodSeconds": 0},
-            ["Use API version v1", "request a 0s grace period"],
-            "Request a 0s grace period",
-            id="resource-delete-grace-period",
-        ),
-        pytest.param(
-            "tana",
-            "get_or_create_calendar_node",
-            {"workspaceId": "workspace-123", "granularity": "week", "date": "2026-10-12"},
-            ["week calendar node", "2026-10-12", "workspace-123"],
-            "week calendar node",
-            id="calendar-context",
-        ),
+        pytest.param(*layout.values, expanded, id=f"{layout.id}-{'expanded' if expanded else 'collapsed'}")
+        for layout in ARGUMENT_LAYOUTS
+        for expanded in ((False,) if tuple(layout.values[:2]) in CLOSED_CARD_SHOWS_EVERYTHING else (False, True))
     ],
 )
 async def test_action_argument_layouts(
@@ -283,15 +290,19 @@ async def test_action_argument_layouts(
     await _open_phone_navigation(page)
     section = page.locator(".agentplane-actions-sidebar")
     title = "inspect running demo pods" if name == "pods_list_in_namespace" else f"review {name.replace('_', ' ')}"
+    disclosure = section.get_by_role("button", name=f"Expand {title}")
     if expanded:
-        await section.get_by_role("button", name=f"Expand {title}").click()
+        await disclosure.click()
         for value in visible:
             await expect(section.get_by_text(value, exact=False)).to_be_visible()
-        if (group, name) != ("tana", "get_or_create_calendar_node"):
-            await expect(section.get_by_role("button", name=f"Approve {title}")).to_be_visible()
-            await expect(section.get_by_role("button", name=f"Deny {title}")).to_be_visible()
+        await expect(section.get_by_role("button", name=f"Approve {title}")).to_be_visible()
+        await expect(section.get_by_role("button", name=f"Deny {title}")).to_be_visible()
     else:
         await expect(section.get_by_text(overview, exact=False)).to_be_visible()
+        if (group, name) in CLOSED_CARD_SHOWS_EVERYTHING:
+            await expect(disclosure).to_have_count(0)
+            for value in visible:
+                await expect(section.get_by_text(value, exact=False)).to_be_visible()
         if (group, name) != ("tana", "get_or_create_calendar_node"):
             await expect(section.get_by_role("button", name=f"Approve {title}")).to_be_visible()
             await expect(section.get_by_role("button", name=f"Deny {title}")).to_be_visible()
@@ -495,8 +506,6 @@ async def test_compact_action_summaries(
         title = f"review {name.replace('_', ' ')}"
     disclosure = section.get_by_role("button", name=f"Expand {title}")
     collapsed_summary = section.locator(".agentplane-actions-sidebar-collapsed-preview")
-    bounds = await disclosure.bounding_box()
-    assert bounds is not None
     if group == "gmail" and name == "drafts_create":
         await expect(collapsed_summary.get_by_text("Deployment review", exact=True)).to_be_visible()
         await expect(collapsed_summary.get_by_text("Cc team@example.com", exact=True)).to_be_visible()
@@ -508,7 +517,12 @@ async def test_compact_action_summaries(
         for chip in ("draft", "maintainers cannot edit", "review from reviewer1, reviewer2"):
             await expect(collapsed_summary.get_by_text(chip, exact=True)).to_be_visible()
         await view.capture(f"{capture_name}-collapsed", target=section)
-    await disclosure.click(position={"x": bounds["width"] - 4, "y": bounds["height"] - 3})
+    if (group, name) in CLOSED_CARD_SHOWS_EVERYTHING:
+        await expect(disclosure).to_have_count(0)
+    else:
+        bounds = await disclosure.bounding_box()
+        assert bounds is not None
+        await disclosure.click(position={"x": bounds["width"] - 4, "y": bounds["height"] - 3})
     await expect(section.get_by_text(visible)).to_be_visible()
     if group == "kubernetes_admin" and name == "pods_list_in_namespace":
         await expect(section.locator(".agentplane-actions-sidebar-name")).to_contain_text("List pods in namespace")

@@ -2,7 +2,7 @@ import type { JSX } from "react";
 import { Code, Text } from "@mantine/core";
 import { z } from "zod";
 
-import type { ActionPresentation } from "../presentation";
+import { type ActionPresentation, expandsForRejectedArguments } from "../presentation";
 import { definePreview, type ArgumentsPreview } from "../entry";
 
 const eventsListArguments = z.strictObject({
@@ -47,7 +47,8 @@ export const eventsListPane: ArgumentsPreview = {
 
 export const eventsListPresentation: ActionPresentation = {
   label: eventsListLabel,
-  pane: { collapsed: eventsListPane, opened: eventsListPane },
+  pane: { collapsed: eventsListPane },
   details: { arguments: eventsListPane },
   offersCardDecisionButtons: offersCardDecisionButtonsEventsList,
+  compactCardExpands: expandsForRejectedArguments(eventsListArguments),
 };

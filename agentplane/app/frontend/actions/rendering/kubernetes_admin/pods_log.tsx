@@ -2,7 +2,7 @@ import type { JSX } from "react";
 import { Code, Text } from "@mantine/core";
 import { z } from "zod";
 
-import type { ActionPresentation } from "../presentation";
+import { type ActionPresentation, expandsForRejectedArguments } from "../presentation";
 import { definePreview, type ArgumentsPreview } from "../entry";
 import { podsLogOptions } from "../../schemas/kubernetes_admin/pods_log";
 import { kubernetesTarget } from "../../schemas/kubernetes_admin/target";
@@ -36,7 +36,7 @@ export const podsLogPreview: ArgumentsPreview = { schema: podsLogArguments, rend
 
 export const podsLogPresentation: ActionPresentation = {
   label: podsLogLabel,
-  pane: { opened: podsLogPreview },
   details: { arguments: podsLogPreview },
   offersCardDecisionButtons: offersCardDecisionButtonsPodsLog,
+  compactCardExpands: expandsForRejectedArguments(podsLogArguments),
 };

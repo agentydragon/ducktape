@@ -1,4 +1,4 @@
-import type { ActionPresentation } from "./presentation";
+import { type ActionPresentation, expandsForRejectedArguments } from "./presentation";
 import { Stack, Text } from "@mantine/core";
 import type { JSX } from "react";
 import { z } from "zod";
@@ -159,9 +159,9 @@ export const quantityUnitsListPresentation: ActionPresentation = {
 
 export const systemInfoPresentation: ActionPresentation = {
   label: systemInfoLabel,
-  pane: { opened: systemInfoArguments },
   details: { arguments: systemInfoArguments, result: systemInfoResult },
   offersCardDecisionButtons: offersCardDecisionButtonsSystemInfo,
+  compactCardExpands: expandsForRejectedArguments(noArguments),
 };
 
 export const grocyRenderers: ReadonlyMap<string, ActionPresentation> = new Map([

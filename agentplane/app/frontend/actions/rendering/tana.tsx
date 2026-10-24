@@ -1,4 +1,4 @@
-import type { ActionPresentation } from "./presentation";
+import { type ActionPresentation, expandsForRejectedArguments } from "./presentation";
 import { Code, Text } from "@mantine/core";
 import type { JSX } from "react";
 import { z } from "zod";
@@ -44,8 +44,9 @@ export const calendarNodeArgumentsPreview: ArgumentsPreview = definePreview(
 
 export const calendarNodePresentation: ActionPresentation = {
   label: calendarNodeLabel,
-  pane: { collapsed: calendarNodeArgumentsPreview, opened: calendarNodeArgumentsPreview },
+  pane: { collapsed: calendarNodeArgumentsPreview },
   details: { arguments: calendarNodeArgumentsPreview },
+  compactCardExpands: expandsForRejectedArguments(calendarNodeArguments),
 };
 
 export const tanaRenderers: ReadonlyMap<string, ActionPresentation> = new Map([

@@ -239,5 +239,6 @@ ts_library(
     deps = [
         ":entry",
         ":result_entry",
+        "//:node_modules/zod",
     ],
 )

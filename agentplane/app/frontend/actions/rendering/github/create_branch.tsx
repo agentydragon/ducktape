@@ -1,7 +1,7 @@
 import type { JSX } from "react";
 import { Code, Text } from "@mantine/core";
 
-import type { ActionPresentation } from "../presentation";
+import { type ActionPresentation, expandsForRejectedArguments } from "../presentation";
 import { definePreview, type ArgumentsPreview } from "../entry";
 import { type CreateBranchArguments, zCreateBranchArguments } from "../../schemas/github/create_branch";
 
@@ -33,7 +33,7 @@ export const createBranchArguments: ArgumentsPreview = definePreview(zCreateBran
 export const createBranchPresentation: ActionPresentation = {
   fallbackLabel: "Create GitHub branch",
   label: createBranchLabel,
-  pane: { opened: createBranchArguments },
   details: { arguments: createBranchArguments },
   offersCardDecisionButtons: offersCardDecisionButtonsCreateBranch,
+  compactCardExpands: expandsForRejectedArguments(zCreateBranchArguments),
 };

@@ -2,7 +2,7 @@ import { Code, Text } from "@mantine/core";
 import type { JSX } from "react";
 import { z } from "zod";
 
-import type { ActionPresentation } from "../presentation";
+import { type ActionPresentation, expandsForRejectedArguments } from "../presentation";
 import { argvText } from "../../../argv_text";
 import { CommandCallView, CommandSummary, OutputBlock } from "../../../command_view";
 
@@ -71,12 +71,12 @@ export const podsDeletePresentation: ActionPresentation = {
   outcome: (value) =>
     podsDeleteResult.safeParse(value).success ? { label: "Deletion accepted", failed: false } : undefined,
   label: podsDeleteLabel,
-  pane: { opened: podsDeletePane },
   details: {
     arguments: podsDeletePane,
     result: podsDeleteResultPreview,
   },
   offersCardDecisionButtons: offersCardDecisionButtonsPodsDelete,
+  compactCardExpands: expandsForRejectedArguments(podsDeleteArguments),
 };
 
 export const podsExecPresentation: ActionPresentation = {

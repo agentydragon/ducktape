@@ -2,7 +2,7 @@ import { Code, Text } from "@mantine/core";
 import type { JSX } from "react";
 import type { z } from "zod";
 
-import type { ActionPresentation } from "../presentation";
+import { type ActionPresentation, expandsForRejectedArguments } from "../presentation";
 import { definePreview, type ArgumentsPreview } from "../entry";
 import { zPodsInNamespaceArguments } from "../../schemas/kubernetes_admin/pods_list_in_namespace";
 
@@ -37,9 +37,9 @@ function podsInNamespaceFilters(args: z.infer<typeof zPodsInNamespaceArguments>)
   );
 }
 
-// The pane heading already carries the action label and namespace. Show only the extra criteria
-// here, so expanding the card adds information instead of restating its heading.
-function PodsInNamespacePane({ args }: { args: z.infer<typeof zPodsInNamespaceArguments> }): JSX.Element {
+// The full card's heading already carries the action label and namespace. Show only the extra
+// criteria here, so the arguments add information instead of restating the heading.
+function PodsInNamespaceDetails({ args }: { args: z.infer<typeof zPodsInNamespaceArguments> }): JSX.Element {
   const hasFilters = args.fieldSelector !== undefined || args.labelSelector !== undefined;
   return hasFilters ? (
     <Text size="sm" style={{ overflowWrap: "anywhere" }}>
@@ -50,8 +50,10 @@ function PodsInNamespacePane({ args }: { args: z.infer<typeof zPodsInNamespaceAr
   );
 }
 
-export const podsInNamespacePane: ArgumentsPreview = definePreview(zPodsInNamespaceArguments, PodsInNamespacePane);
-export const podsInNamespaceDetails: ArgumentsPreview = podsInNamespacePane;
+export const podsInNamespaceDetails: ArgumentsPreview = definePreview(
+  zPodsInNamespaceArguments,
+  PodsInNamespaceDetails
+);
 
 function PodsInNamespaceLabel({ args }: { args: z.infer<typeof zPodsInNamespaceArguments> }): JSX.Element {
   return (
@@ -68,7 +70,7 @@ function PodsInNamespaceLabel({ args }: { args: z.infer<typeof zPodsInNamespaceA
 
 export const podsInNamespaceLabel: ArgumentsPreview = definePreview(zPodsInNamespaceArguments, PodsInNamespaceLabel);
 
-// This is intentionally a separate widget from the opened pane: each Action owns both
+// This is intentionally a separate widget from the details view: each Action owns both
 // representations. Card decision buttons eligibility lives in a separate capability registry.
 function PodsInNamespaceCollapsed({ args }: { args: z.infer<typeof zPodsInNamespaceArguments> }): JSX.Element {
   const hasFilters = args.fieldSelector !== undefined || args.labelSelector !== undefined;
@@ -105,9 +107,9 @@ export const podsInNamespacePresentation: ActionPresentation = {
   label: podsInNamespaceLabel,
   pane: {
     collapsed: podsInNamespaceCollapsed,
-    opened: podsInNamespacePane,
     requestTitleIsRedundant: podsInNamespaceTitleIsRedundant,
   },
   details: { arguments: podsInNamespaceDetails },
   offersCardDecisionButtons: offersCardDecisionButtonsPodsInNamespace,
+  compactCardExpands: expandsForRejectedArguments(zPodsInNamespaceArguments),
 };

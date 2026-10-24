@@ -2,7 +2,7 @@ import type { JSX } from "react";
 import { Code, Text } from "@mantine/core";
 import { z } from "zod";
 
-import type { ActionPresentation } from "../presentation";
+import { type ActionPresentation, expandsForRejectedArguments } from "../presentation";
 import { definePreview, type ArgumentsPreview } from "../entry";
 import { kubernetesTarget } from "../../schemas/kubernetes_admin/target";
 
@@ -34,7 +34,7 @@ export const podsGetPreview: ArgumentsPreview = definePreview(podsGetArguments, 
 
 export const podsGetPresentation: ActionPresentation = {
   label: podsGetLabel,
-  pane: { opened: podsGetPreview },
   details: { arguments: podsGetPreview },
   offersCardDecisionButtons: offersCardDecisionButtonsPodsGet,
+  compactCardExpands: expandsForRejectedArguments(podsGetArguments),
 };

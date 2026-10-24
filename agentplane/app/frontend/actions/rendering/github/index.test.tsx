@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import { mount } from "../../testing";
 import {
+  actionCompactCardExpands,
   actionOffersCardDecisionButtons,
   renderActionLabel,
   renderDetailsArguments,
@@ -143,9 +144,8 @@ describe("GitHub create_branch", () => {
     ],
   ])("puts every argument of %j in the label", async (callArgs, expected) => {
     const label = await mount(renderActionLabel(CREATE_BRANCH, callArgs));
-    const opened = await mount(renderPaneOpened(CREATE_BRANCH, callArgs));
     expect(shownText(label)).toBe(expected);
-    expect(shownText(opened)).toBe("");
+    expect(actionCompactCardExpands(CREATE_BRANCH, callArgs)).toBe(false);
   });
 
   it("offers card decision buttons only for arguments the label shows", async () => {
@@ -153,7 +153,8 @@ describe("GitHub create_branch", () => {
     const extra = { ...args, sha: "0000000" };
     expect(actionOffersCardDecisionButtons(CREATE_BRANCH, extra)).toBe(false);
     expect(shownText(await mount(renderActionLabel(CREATE_BRANCH, extra)))).toBe("Create GitHub branch");
-    expect((await mount(renderPaneOpened(CREATE_BRANCH, extra))).textContent).toContain('"sha": "0000000"');
+    expect(actionCompactCardExpands(CREATE_BRANCH, extra)).toBe(true);
+    expect((await mount(renderDetailsArguments(CREATE_BRANCH, extra))).textContent).toContain('"sha": "0000000"');
   });
 });
 

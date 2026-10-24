@@ -120,14 +120,6 @@ it("expands a compact action preview and only offers a decision on the compact c
   expect(container.textContent?.match(/List pods in namespace test-namespace/g)).toHaveLength(1);
   expect(container.textContent).toContain("Matching pods where");
   expect(container.textContent).toContain("systemctl restart backup");
-  const podDisclosure = container.querySelector<HTMLButtonElement>(`button[aria-label="Expand ${pod.title}"]`);
-  if (!podDisclosure) throw new Error("missing pod action disclosure");
-  await act(async () => podDisclosure.click());
-  expect(container.textContent?.match(/List pods in namespace/g)).toHaveLength(1);
-  expect(container.textContent).toContain("test-namespace");
-  expect(container.querySelector(".agentplane-actions-sidebar-preview")?.textContent).not.toContain(
-    "List pods in namespace"
-  );
   expect(container.textContent).not.toContain("Requested by");
   expect(container.textContent).not.toContain("test description adding what the decision_pending title leaves out");
   const approveButton = container.querySelector<HTMLButtonElement>(`button[aria-label="Approve ${pod.title}"]`);
@@ -142,7 +134,9 @@ it("expands a compact action preview and only offers a decision on the compact c
   if (!sshDisclosure) throw new Error("missing SSH action disclosure");
   await act(async () => sshDisclosure.click());
   expect(container.textContent).toContain("test-user@test-host.example");
-  expect(container.textContent).toContain("systemctl restart backup");
+  expect(container.querySelector(".agentplane-actions-sidebar-preview")?.textContent).toContain(
+    "systemctl restart backup"
+  );
   expect(container.querySelector<HTMLButtonElement>(`button[aria-label="Approve ${ssh.title}"]`)).toBeNull();
   expect(container.querySelector(`a[aria-label="View details for ${ssh.title}"]`)).not.toBeNull();
   expect(container.querySelector('[data-testid="current-path"]')?.textContent).toBe("/threads/test-thread");
@@ -160,7 +154,7 @@ it("shows approval widgets for Kubernetes resource, pod-list, and log reads", as
       </ActionRequestsProvider>
     </MemoryRouter>
   );
-  const reads: { request: ActionRequestView; visible: string[] }[] = [
+  const reads: { request: ActionRequestView; visible: string[]; expands: boolean }[] = [
     {
       request: {
         ...request("decision_pending", 3),
@@ -169,6 +163,7 @@ it("shows approval widgets for Kubernetes resource, pod-list, and log reads", as
         title: "inspect deployment",
       },
       visible: ["Read with API version apps/v1"],
+      expands: true,
     },
     {
       request: {
@@ -182,6 +177,7 @@ it("shows approval widgets for Kubernetes resource, pod-list, and log reads", as
         title: "list namespace pods",
       },
       visible: ["List pods in namespace", "test-namespace", "app=example", "status.phase=Running"],
+      expands: false,
     },
     {
       request: {
@@ -191,6 +187,7 @@ it("shows approval widgets for Kubernetes resource, pod-list, and log reads", as
         title: "inspect pod logs",
       },
       visible: ["container sidecar", "previous run", "tail -1"],
+      expands: false,
     },
     {
       request: {
@@ -200,18 +197,64 @@ it("shows approval widgets for Kubernetes resource, pod-list, and log reads", as
         title: "search deployment mail",
       },
       visible: ["from:deployments@example.com", '"maxResults": 5'],
+      expands: true,
     },
   ];
   await send(reads.map(({ request: row }) => row));
   await vi.waitFor(() => expect(container.textContent).toContain("previous run"));
-  for (const { request: read, visible } of reads) {
+  for (const { request: read, visible, expands } of reads) {
     const disclosure = container.querySelector<HTMLButtonElement>(`button[aria-label="Expand ${read.title}"]`);
-    if (!disclosure) throw new Error(`missing disclosure for ${read.title}`);
-    await act(async () => disclosure.click());
+    if (expands) {
+      if (!disclosure) throw new Error(`missing disclosure for ${read.title}`);
+      await act(async () => disclosure.click());
+    } else {
+      expect(disclosure).toBeNull();
+    }
     for (const value of visible) expect(container.textContent).toContain(value);
     expect(container.querySelector<HTMLButtonElement>(`button[aria-label="Approve ${read.title}"]`)).not.toBeNull();
     expect(container.textContent).not.toContain("Decisions require full review.");
   }
+});
+
+it("leaves the disclosure off a card whose opened version would add nothing", async () => {
+  const container = await mount(
+    <MemoryRouter initialEntries={["/threads/test-thread"]}>
+      <ActionRequestsProvider>
+        <CurrentPath />
+        <ActionsSidebarSection />
+      </ActionRequestsProvider>
+    </MemoryRouter>
+  );
+  const read = {
+    ...request("decision_pending", 8),
+    action: { group: "sandbox", name: "get" },
+    arguments: { name: "test-sandbox" },
+    title: "inspect the test sandbox",
+  };
+  const unparsed = {
+    ...request("decision_pending", 9),
+    action: read.action,
+    arguments: { name: "test-sandbox", test_extra: "shown on opening" },
+    title: "inspect the test sandbox with an unknown argument",
+  };
+  await send([read, unparsed]);
+
+  expect(container.querySelector(`button[aria-label="Expand ${read.title}"]`)).toBeNull();
+  expect(container.textContent).toContain("Inspect sandbox test-sandbox");
+  expect(container.textContent).toContain(read.title);
+  expect(container.querySelector(`button[aria-label="Approve ${read.title}"]`)).not.toBeNull();
+  expect(container.querySelector(`button[aria-label="Deny ${read.title}"]`)).not.toBeNull();
+  const details = container.querySelector<HTMLAnchorElement>(`a[aria-label="View details for ${read.title}"]`);
+  if (!details) throw new Error("missing details arrow on a card without an expanded version");
+
+  // Arguments the Action cannot draw keep the expanded version, which shows them as recorded.
+  const disclosure = container.querySelector<HTMLButtonElement>(`button[aria-label="Expand ${unparsed.title}"]`);
+  if (!disclosure) throw new Error("missing disclosure for undrawn arguments");
+  await act(async () => disclosure.click());
+  expect(container.querySelector(".agentplane-actions-sidebar-preview")?.textContent).toContain("shown on opening");
+
+  await act(async () => details.click());
+  expect(container.querySelector('[data-testid="current-path"]')?.textContent).toBe(`/actions/${read.id}`);
 });
 
 it("offers Approve and Deny on a collapsed card of an opted-in Action, including one from an external caller", async () => {

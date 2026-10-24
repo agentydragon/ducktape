@@ -1,4 +1,4 @@
-import type { ActionPresentation } from "./presentation";
+import { type ActionPresentation, expandsForRejectedArguments } from "./presentation";
 import { Badge, Code, Group, Stack, Table, Text } from "@mantine/core";
 import { z } from "zod";
 
@@ -217,23 +217,23 @@ export const sandboxCreatePresentation: ActionPresentation = {
 
 export const sandboxGetPresentation: ActionPresentation = {
   label: sandboxGetLabel,
-  pane: { opened: sandboxNamedArguments },
   details: { arguments: sandboxNamedArguments, nativeResult: sandboxInfoResult },
   offersCardDecisionButtons: argumentsMatch(named),
+  compactCardExpands: expandsForRejectedArguments(named),
 };
 
 export const sandboxDisposePresentation: ActionPresentation = {
   label: sandboxDisposeLabel,
-  pane: { opened: sandboxNamedArguments },
   details: { arguments: sandboxNamedArguments, nativeResult: sandboxDisposeResult },
   offersCardDecisionButtons: argumentsMatch(named),
+  compactCardExpands: expandsForRejectedArguments(named),
 };
 
 export const sandboxListPresentation: ActionPresentation = {
   label: sandboxListLabel,
-  pane: { opened: sandboxListArguments },
   details: { arguments: sandboxListArguments, nativeResult: sandboxListResult },
   offersCardDecisionButtons: argumentsMatch(empty),
+  compactCardExpands: expandsForRejectedArguments(empty),
 };
 
 export const sandboxRenderers: ReadonlyMap<string, ActionPresentation> = new Map([

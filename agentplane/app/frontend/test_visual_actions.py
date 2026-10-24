@@ -24,6 +24,8 @@ class ActionExample:
     arguments: dict[str, object]
     result: object
     result_text: str
+    # False where the closed compact card already shows every argument, so it has no expanded version.
+    compact_card_expands: bool = True
 
     @property
     def key(self) -> str:
@@ -48,6 +50,7 @@ EXAMPLES = (
         {"namespace": "apps", "labelSelector": "app=web", "fieldSelector": "status.phase=Running"},
         [POD],
         "web-0",
+        compact_card_expands=False,
     ),
     ActionExample(
         "kubernetes_admin", "resources_create_or_update", {"resource": json.dumps(CONFIG_MAP)}, CONFIG_MAP, "settings"
@@ -58,6 +61,7 @@ EXAMPLES = (
         {"name": "web-0", "namespace": "apps"},
         "Pod deleted successfully",
         "Deletion accepted",
+        compact_card_expands=False,
     ),
     ActionExample(
         "kubernetes_admin",
@@ -87,13 +91,21 @@ EXAMPLES = (
         "Resource deleted successfully",
         "Deletion accepted",
     ),
-    ActionExample("kubernetes_admin", "pods_get", {"name": "web-0", "namespace": "apps"}, POD, "apiVersion"),
+    ActionExample(
+        "kubernetes_admin",
+        "pods_get",
+        {"name": "web-0", "namespace": "apps"},
+        POD,
+        "apiVersion",
+        compact_card_expands=False,
+    ),
     ActionExample(
         "kubernetes_admin",
         "pods_log",
         {"name": "web-0", "namespace": "apps", "container": "main", "previous": True, "tail": 100},
         "Starting web server\nListening on :8080\n",
         "Listening on :8080",
+        compact_card_expands=False,
     ),
     ActionExample(
         "kubernetes_admin",
@@ -101,6 +113,7 @@ EXAMPLES = (
         {"namespace": "apps", "fieldSelector": "type=Warning"},
         [{"reason": "BackOff", "message": "Back-off restarting failed container"}],
         "BackOff",
+        compact_card_expands=False,
     ),
     ActionExample(
         "github",
@@ -140,6 +153,7 @@ EXAMPLES = (
         {"owner": "example", "repo": "service", "branch": "docs", "from_branch": "devel"},
         {"ref": "refs/heads/docs", "object": {"sha": "0123456789abcdef0123456789abcdef01234567", "type": "commit"}},
         "refs/heads/docs",
+        compact_card_expands=False,
     ),
     ActionExample(
         "github",
@@ -199,6 +213,7 @@ EXAMPLES = (
         {},
         {"grocy_version": {"Version": "4.5.0"}, "php_version": "8.4", "sqlite_version": "3.50", "db_version": 1},
         "4.5.0",
+        compact_card_expands=False,
     ),
     ActionExample(
         "tana",
@@ -206,6 +221,7 @@ EXAMPLES = (
         {"workspaceId": "workspace-123", "granularity": "week", "date": "2026-10-12"},
         {"nodeId": "calendar-week-42"},
         "calendar-week-42",
+        compact_card_expands=False,
     ),
     ActionExample(
         "sandbox",
@@ -226,11 +242,16 @@ EXAMPLES = (
         "ready for review",
     ),
     ActionExample("sandbox", "create", {"name": "review-sandbox", "template": "python"}, SANDBOX, "Running"),
-    ActionExample("sandbox", "get", {"name": "review-sandbox"}, SANDBOX, "Running"),
+    ActionExample("sandbox", "get", {"name": "review-sandbox"}, SANDBOX, "Running", compact_card_expands=False),
     ActionExample(
-        "sandbox", "dispose", {"name": "review-sandbox"}, {"name": "review-sandbox", "existed": True}, "disposed"
+        "sandbox",
+        "dispose",
+        {"name": "review-sandbox"},
+        {"name": "review-sandbox", "existed": True},
+        "disposed",
+        compact_card_expands=False,
     ),
-    ActionExample("sandbox", "list", {}, {"sandboxes": [SANDBOX]}, "Running"),
+    ActionExample("sandbox", "list", {}, {"sandboxes": [SANDBOX]}, "Running", compact_card_expands=False),
     ActionExample(
         "ssh",
         "exec",
@@ -268,15 +289,21 @@ async def test_action_presentations(
     await expect(sidebar.get_by_text("Details shown as recorded data", exact=True)).to_have_count(0)
     await wait_for_stable(page)
     await view.capture(f"{capture_name}-sidebar-collapsed", target=sidebar)
-    await sidebar.get_by_role("button", name="Expand ", exact=False).click()
-    await expect(sidebar.get_by_text("Details shown as recorded data", exact=True)).to_have_count(0)
-    await wait_for_stable(page)
-    await expect(sidebar.locator(".agentplane-code-block-placeholder")).to_have_count(0)
-    await wait_for_stable(page)
-    await view.capture(f"{capture_name}-sidebar-expanded", target=sidebar)
+    disclosure = sidebar.get_by_role("button", name="Expand ", exact=False)
+    if example.compact_card_expands:
+        await disclosure.click()
+        await expect(sidebar.get_by_text("Details shown as recorded data", exact=True)).to_have_count(0)
+        await wait_for_stable(page)
+        await expect(sidebar.locator(".agentplane-code-block-placeholder")).to_have_count(0)
+        await wait_for_stable(page)
+        await view.capture(f"{capture_name}-sidebar-expanded", target=sidebar)
+        review_link = sidebar.get_by_role("link", name="Details", exact=True)
+    else:
+        await expect(disclosure).to_have_count(0)
+        review_link = sidebar.get_by_role("link", name="View details for ", exact=False)
 
     # Follow the actual review link so pending detail controls and argument composition are visible too.
-    await sidebar.get_by_role("link", name="Details", exact=True).click()
+    await review_link.click()
     pending = page.locator(".agentplane-shell-main .mantine-Paper-root").filter(
         has=page.get_by_role("button", name="Approve", exact=True)
     )

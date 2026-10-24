@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { CallToolResultView, type CallToolResult, parseCallToolResult } from "../call_tool_result";
 import { mount, SSH_EXEC_ARGUMENTS, sshExec } from "../testing";
 import {
+  actionCompactCardExpands,
   actionOffersCardDecisionButtons,
   renderActionCall,
   renderActionLabel,
@@ -31,7 +32,7 @@ function stored(returned: Record<string, unknown> = {}): CallToolResult {
 }
 
 describe("Action presentation slots", () => {
-  it("uses a distinct collapsed-pane view from the opened-pane and details views", async () => {
+  it("uses a distinct collapsed-pane view from the details view", async () => {
     const args = {
       namespace: "prod",
       fieldSelector: "status.phase=Running",
@@ -40,17 +41,12 @@ describe("Action presentation slots", () => {
     const collapsed = await mount(
       renderPaneCollapsed({ group: "kubernetes_admin", name: "pods_list_in_namespace" }, args)
     );
-    const opened = await mount(renderPaneOpened({ group: "kubernetes_admin", name: "pods_list_in_namespace" }, args));
     const details = await mount(
       renderDetailsArguments({ group: "kubernetes_admin", name: "pods_list_in_namespace" }, args)
     );
 
     expect(collapsed.textContent).toContain("Matching pods where");
     expect(collapsed.textContent).not.toContain("namespace prod");
-    expect(opened.textContent).toContain("field selector status.phase=Running");
-    expect(opened.textContent).toContain("label selector app=web");
-    expect(opened.textContent).not.toContain("List pods in namespace");
-    expect(opened.textContent).not.toContain("namespace prod");
     expect(details.textContent).toContain("field selector status.phase=Running");
     expect(details.textContent).not.toContain("List pods in namespace");
     expect(details.textContent).not.toContain("namespace prod");
@@ -132,16 +128,11 @@ describe("Action presentation slots", () => {
     const eventsAction = { group: "kubernetes_admin", name: "events_list" };
     const eventsLabel = await mount(renderActionLabel(eventsAction, eventsArgs));
     const eventsCollapsed = await mount(renderPaneCollapsed(eventsAction, eventsArgs));
-    const eventsPane = await mount(renderPaneOpened(eventsAction, eventsArgs));
     expect(eventsLabel.textContent).toContain("List events in namespace apps");
     expect(eventsCollapsed.textContent).toContain("Show events matching");
     expect(eventsCollapsed.textContent).toContain("type=Warning");
     expect(eventsCollapsed.textContent).not.toContain("apps");
-    expect(eventsPane.textContent).toContain("Show events matching");
-    expect(eventsPane.textContent).toContain("type=Warning");
-    expect(eventsPane.textContent).not.toContain("apps");
     expect(renderPaneCollapsed(eventsAction, { namespace: "apps" })).toBeNull();
-    expect(renderPaneOpened(eventsAction, { namespace: "apps" })).toBeNull();
   });
 
   it("names a cluster-scoped delete by its kind and name", async () => {
@@ -160,7 +151,6 @@ describe("Action presentation slots", () => {
     const action = { group: "kubernetes_admin", name: "pods_log" };
     const args = { name: "web-0", namespace: "apps", ...options };
     expect((await mount(renderActionLabel(action, args))).textContent).toContain(expected);
-    expect(renderPaneOpened(action, args)).toBeNull();
   });
 
   it("shows calendar context and explicit delete grace in the collapsed pane", async () => {
@@ -352,13 +342,13 @@ describe("Action presentation slots", () => {
   it("renders Tana calendar arguments from submitted data without resolving the workspace", async () => {
     const action = { group: "tana", name: "get_or_create_calendar_node" };
     const args = { workspaceId: "workspace-123", granularity: "week", date: "2026-10-12" };
-    const opened = await mount(renderPaneOpened(action, args));
+    const collapsed = await mount(renderPaneCollapsed(action, args));
     const details = await mount(renderDetailsArguments(action, args));
     const label = await mount(renderActionLabel(action, args));
 
     expect(label.textContent).toContain("Get or create Tana calendar node");
 
-    for (const rendered of [opened, details]) {
+    for (const rendered of [collapsed, details]) {
       expect(rendered.textContent).toContain("week");
       expect(rendered.textContent).toContain("2026-10-12");
       expect(rendered.textContent).toContain("workspace-123");
@@ -804,20 +794,37 @@ const cardDecisionButtonCases: Array<{
   },
 ];
 
-describe("opened-pane renderers", () => {
-  // Card decision buttons sit on the compact card, so what it shows is the label and the opened pane.
-  it.each(cardDecisionButtonCases.filter(({ name }) => name !== "pods_list_in_namespace"))(
+describe("compact card renderers", () => {
+  // Card decision buttons sit on the compact card, so what it shows is the label, the collapsed
+  // preview and, where the card has an expanded version, the opened preview.
+  it.each(cardDecisionButtonCases)(
     "draws all displayed request fields for $group/$name",
     async ({ group, name, args, visible }) => {
+      const action = { group, name };
       const container = await mount(
         <>
-          {renderActionLabel({ group, name }, args)}
-          {renderPaneOpened({ group, name }, args)}
+          {renderActionLabel(action, args)}
+          {renderPaneCollapsed(action, args)}
+          {actionCompactCardExpands(action, args) && renderPaneOpened(action, args)}
         </>
       );
       for (const value of visible) expect(container.textContent).toContain(value);
+      // Arguments the card cannot draw always open to their recorded data.
+      expect(actionCompactCardExpands(action, { ...args, invisible: "must review" })).toBe(true);
     }
   );
+
+  it.each([
+    ["kubernetes_admin", "pods_get", { name: "web-0", namespace: "apps" }, false],
+    ["kubernetes_admin", "events_list", { namespace: "apps" }, false],
+    ["sandbox", "list", {}, false],
+    // The opened card adds the API version.
+    ["kubernetes_admin", "resources_get", { apiVersion: "v1", kind: "Pod", name: "web-0" }, true],
+    ["ssh", "exec", SSH_EXEC_ARGUMENTS, true],
+    ["__proto__", "constructor", {}, true],
+  ] as const)("%s/%s with %o expands: %s", (group, name, args, expands) => {
+    expect(actionCompactCardExpands({ group, name }, args)).toBe(expands);
+  });
 
   it("shows an explicitly supplied maintainer edit permission in compact and opened PR summaries", async () => {
     const action = { group: "github", name: "create_pull_request" };

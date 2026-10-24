@@ -128,6 +128,11 @@ export function actionOffersCardDecisionButtons(action: ActionIdentity, args: un
   return presentation(action)?.offersCardDecisionButtons?.(args) ?? false;
 }
 
+/** Whether this invocation's compact card opens; unknown Actions open to their recorded arguments. */
+export function actionCompactCardExpands(action: ActionIdentity, args: unknown): boolean {
+  return presentation(action)?.compactCardExpands?.(args) ?? true;
+}
+
 /** Native executors store their result models directly, without an MCP envelope. */
 export function renderNativeDetailsResult(action: ActionIdentity, value: unknown): ReactNode | null | undefined {
   const preview = presentation(action)?.details?.nativeResult;

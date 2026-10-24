@@ -89,7 +89,7 @@
   align-items: stretch;
 }
 
-.agentplane-actions-sidebar-expand {
+.agentplane-actions-sidebar-summary {
   display: flex;
   flex: 1 1 auto;
   align-items: flex-start;
@@ -106,12 +106,17 @@
   outline: none;
 }
 
+/* A card without an expanded version keeps the chevron's space, so labels line up down the queue. */
+.agentplane-actions-sidebar-summary.is-static {
+  padding-left: 22px;
+}
+
 .agentplane-actions-sidebar-request-label {
   flex: 1;
   min-width: 0;
 }
 
-.agentplane-actions-sidebar-request-label.is-expanded {
+.agentplane-actions-sidebar-request-label.is-unclamped {
   overflow-wrap: anywhere;
 }
 
@@ -154,7 +159,7 @@
 }
 
 /* Card decision buttons promise the card shows the whole call, so their label is never cut off. */
-.agentplane-actions-sidebar-request-label.is-expanded .agentplane-actions-sidebar-name,
+.agentplane-actions-sidebar-request-label.is-unclamped .agentplane-actions-sidebar-name,
 .agentplane-actions-sidebar-request-label.offers-card-decision .agentplane-actions-sidebar-name {
   display: block;
   overflow: visible;
