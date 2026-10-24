@@ -485,7 +485,7 @@ def keeper_chart(app: App) -> Chart:
                     ClickHouseKeeperInstallationSpecTemplatesVolumeClaimTemplates(
                         name=claim,
                         reclaim_policy=ClickHouseKeeperInstallationSpecTemplatesVolumeClaimTemplatesReclaimPolicy.RETAIN,
-                        spec=_claim_spec("2Gi"),
+                        spec=_claim_spec("2Gi", storage_class=_PIRAEUS_SSD_STORAGE_CLASS),
                     )
                     for claim in (data_claim, control_plane_data_claim)
                 ]

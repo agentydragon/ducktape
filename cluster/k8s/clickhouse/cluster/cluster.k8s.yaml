@@ -225,7 +225,7 @@ spec:
           resources:
             requests:
               storage: 2Gi
-          storageClassName: local-path-ovh-hdd-retain
+          storageClassName: piraeus-ssd-local
       - name: keeper-data-control-plane
         reclaimPolicy: Retain
         spec:
@@ -234,7 +234,7 @@ spec:
           resources:
             requests:
               storage: 2Gi
-          storageClassName: local-path-ovh-hdd-retain
+          storageClassName: piraeus-ssd-local
       - name: keeper-data-ssd
         reclaimPolicy: Retain
         spec:
