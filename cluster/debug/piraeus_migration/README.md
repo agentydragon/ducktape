@@ -138,9 +138,10 @@ from 6 to 12 hours at `06:31 UTC` because the observed rate put completion
 beyond the original deadline; its Pod identity was preserved. Its Pod exited
 with `lock is lost` at `08:35:48 UTC`, and Kubernetes marked the Job failed at
 `08:35:51 UTC` with `BackoffLimitExceeded`; the 12-hour deadline had not elapsed.
-The last copy, volume 250, completed at `08:25 UTC` and is present on both source
-and destination. Fresh inventories at `14:14 UTC` showed 606 logical IDs: 577
-with two copies and 29 single-copy IDs (206.74GiB). The CronJob and
+The last copy, volume 250, started at `08:25 UTC` and was confirmed complete
+before the `08:35 UTC` lock-loss exit; fresh inventories found it on both source
+and destination. Inventories at `14:14 UTC` showed 606 logical IDs: 577 with
+two copies and 29 single-copy IDs (206.74GiB). The CronJob and
 `replication-repair` AdminScript remain suspended, with Flux reconciliation
 disabled for the AdminScript; no replacement repair Job has started. Pinned
 SeaweedFS 4.46 source confirms the command reports `lock is lost` after losing
