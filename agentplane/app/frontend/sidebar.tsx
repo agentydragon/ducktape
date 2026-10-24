@@ -1,5 +1,5 @@
 /** The persistent left sidebar: the thread list, the Actions queue, and the footer's page links. */
-import { ActionIcon, Text, Tooltip } from "@mantine/core";
+import { ActionIcon, Tooltip } from "@mantine/core";
 // Per-icon subpaths, never the barrel: see tabler_icons.d.ts.
 import IconBox from "@tabler/icons-react/dist/esm/icons/IconBox.mjs";
 import IconHeartbeat from "@tabler/icons-react/dist/esm/icons/IconHeartbeat.mjs";
@@ -78,9 +78,6 @@ export function Sidebar({ settingsOpen, onOpenSettings, open, onClose }: Sidebar
     >
       <ResizeHandle pane={pane} axis="x" className="agentplane-sidebar-resize-handle" aria-label="Resize sidebar" />
       <div className="agentplane-sidebar-header">
-        <Text fw={700} size="xs" tt="uppercase" c="dimmed">
-          Threads
-        </Text>
         <div style={{ display: "flex", gap: 2, alignItems: "center" }}>
           {/* The unscoped new-thread composer isn't built yet, so "+" sends the operator to the
               Sandbox list to start one the existing way -- label says exactly that rather than
