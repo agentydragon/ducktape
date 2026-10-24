@@ -141,7 +141,7 @@ def _volume_topology(
     disk: str,
     replicas: int,
     max_volume_counts: int,
-    additional_node_selector: dict[str, str] | None = None,
+    node_selector: dict[str, str] | None = None,
     anti_affinity_labels: dict[str, str] | None = None,
 ) -> SeaweedSpecVolumeTopology:
     return SeaweedSpecVolumeTopology(
@@ -184,7 +184,7 @@ def _volume_topology(
         # collection. Thin volumes make over-committing ~free; disk-full is bounded by
         # minFreeSpacePercent, not the slot cap.
         max_volume_counts=max_volume_counts,
-        node_selector=additional_node_selector or {},
+        node_selector=node_selector or {},
         tolerations=[
             SeaweedSpecVolumeTopologyTolerations(
                 key=node_scheduling.CONTROL_PLANE_TAINT_KEY, operator="Exists", effect="NoSchedule"
@@ -345,7 +345,7 @@ def seaweed(scope: Construct) -> Seaweed:
                     disk="hdd",
                     replicas=1,
                     max_volume_counts=2000,
-                    additional_node_selector={
+                    node_selector={
                         **node_scheduling.HIL_OVH_NODE_SELECTOR,
                         _HOSTNAME: "ovh-ns103656",
                         "storage.allegedly.works/piraeus-ready": "true",
@@ -360,7 +360,7 @@ def seaweed(scope: Construct) -> Seaweed:
                     disk="hdd",
                     replicas=1,
                     max_volume_counts=2000,
-                    additional_node_selector={
+                    node_selector={
                         **node_scheduling.HIL_OVH_NODE_SELECTOR,
                         _HOSTNAME: "ovh-ns103711",
                         "storage.allegedly.works/piraeus-ready": "true",
@@ -390,7 +390,7 @@ def seaweed(scope: Construct) -> Seaweed:
                     disk="ssd",
                     replicas=1,
                     max_volume_counts=200,
-                    additional_node_selector={_HOSTNAME: "ovh-ns1001419"},
+                    node_selector={_HOSTNAME: "ovh-ns1001419"},
                     # Match every Seaweed volume group without rolling the legacy ssd template.
                     # Required anti-affinity also protects this pod when peers are scheduled.
                     anti_affinity_labels={"app.kubernetes.io/instance": NAME, **_component_labels("volume")},
@@ -402,10 +402,7 @@ def seaweed(scope: Construct) -> Seaweed:
                     disk="ssd",
                     replicas=1,
                     max_volume_counts=200,
-                    additional_node_selector={
-                        _HOSTNAME: "ovh-ns104952",
-                        "storage.allegedly.works/piraeus-ready": "true",
-                    },
+                    node_selector={_HOSTNAME: "ovh-ns104952", "storage.allegedly.works/piraeus-ready": "true"},
                     anti_affinity_labels={"app.kubernetes.io/instance": NAME, **_component_labels("volume")},
                 ),
                 "ssd-piraeus-104963": _volume_topology(
@@ -415,10 +412,7 @@ def seaweed(scope: Construct) -> Seaweed:
                     disk="ssd",
                     replicas=1,
                     max_volume_counts=200,
-                    additional_node_selector={
-                        _HOSTNAME: "ovh-ns104963",
-                        "storage.allegedly.works/piraeus-ready": "true",
-                    },
+                    node_selector={_HOSTNAME: "ovh-ns104963", "storage.allegedly.works/piraeus-ready": "true"},
                     anti_affinity_labels={"app.kubernetes.io/instance": NAME, **_component_labels("volume")},
                 ),
             },
