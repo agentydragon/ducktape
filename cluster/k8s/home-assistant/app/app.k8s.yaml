@@ -178,10 +178,6 @@ spec:
               name: configuration
               readOnly: true
               subPath: configuration.yaml
-            - mountPath: /config/recorder-packages.yaml
-              name: configuration
-              readOnly: true
-              subPath: recorder-packages.yaml
         - env:
             - name: METRICS_TOKEN
               valueFrom:

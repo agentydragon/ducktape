@@ -13,7 +13,6 @@ configMapGenerator:
       disableNameSuffixHash: true
     files:
       - configuration.yaml=configuration.yaml.conf
-      - recorder-packages.yaml=recorder-packages.yaml.conf
   - name: home-assistant-caddy
     namespace: home-assistant
     options:

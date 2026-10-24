@@ -95,7 +95,7 @@ _CONFIGURATION_CONFIG_MAP = ConfigMapArgs(
     name="home-assistant-configuration",
     namespace=_NAMESPACE,
     options=_FIXED_NAME,
-    files=["configuration.yaml=configuration.yaml.conf", "recorder-packages.yaml=recorder-packages.yaml.conf"],
+    files=["configuration.yaml=configuration.yaml.conf"],
 )
 _CADDY_CONFIG_MAP = ConfigMapArgs(
     name="home-assistant-caddy", namespace=_NAMESPACE, options=_FIXED_NAME, files=["Caddyfile"]
@@ -275,12 +275,6 @@ def _deployment(scope: Construct) -> None:
                                     name="configuration",
                                     mount_path=f"{_CONFIG_DIR}/configuration.yaml",
                                     sub_path="configuration.yaml",
-                                    read_only=True,
-                                ),
-                                k8s.VolumeMount(
-                                    name="configuration",
-                                    mount_path=f"{_CONFIG_DIR}/recorder-packages.yaml",
-                                    sub_path="recorder-packages.yaml",
                                     read_only=True,
                                 ),
                             ],
