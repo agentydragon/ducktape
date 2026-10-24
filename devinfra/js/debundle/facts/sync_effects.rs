@@ -13,6 +13,7 @@ enum AbstractValue {
     Origin(ValueOrigin),
     Closure(u32, Box<Context>),
     ObjectAssign,
+    GlobalObject,
     Undefined,
     NonCallable,
     Unknown,
@@ -22,6 +23,8 @@ enum AbstractValue {
 enum ValueExpr {
     Binding(Id),
     Origin(ValueOrigin),
+    ObjectLiteral(u32, Vec<(Option<String>, Self)>),
+    Undefined,
     NonCallable,
     Member(Box<Self>, Option<String>),
     Call(Box<Self>, Vec<Self>),
@@ -36,8 +39,50 @@ impl ValueExpr {
             Expr::Fn(function) => Self::Origin(ValueOrigin::Function(function.function.span.lo.0)),
             Expr::Arrow(arrow) => Self::Origin(ValueOrigin::Function(arrow.span.lo.0)),
             Expr::Class(class) => Self::Origin(ValueOrigin::Class(class.class.span.lo.0)),
-            Expr::Object(object) => Self::Origin(ValueOrigin::Object(object.span.lo.0)),
-            Expr::Array(array) => Self::Origin(ValueOrigin::Object(array.span.lo.0)),
+            Expr::Object(object) => Self::ObjectLiteral(
+                object.span.lo.0,
+                object
+                    .props
+                    .iter()
+                    .map(|property| match property {
+                        PropOrSpread::Spread(spread) => (None, Self::from_expr(&spread.expr)),
+                        PropOrSpread::Prop(property) => match property.as_ref() {
+                            Prop::KeyValue(pair) => (
+                                static_property_name(&pair.key),
+                                Self::from_expr(&pair.value),
+                            ),
+                            Prop::Shorthand(ident) => {
+                                (Some(ident.sym.to_string()), Self::Binding(ident.to_id()))
+                            }
+                            Prop::Assign(assign) => (
+                                Some(assign.key.sym.to_string()),
+                                Self::from_expr(&assign.value),
+                            ),
+                            Prop::Method(method) => (
+                                static_property_name(&method.key),
+                                Self::Origin(ValueOrigin::Function(method.function.span.lo.0)),
+                            ),
+                            Prop::Getter(getter) => (
+                                static_property_name(&getter.key),
+                                Self::Origin(ValueOrigin::Function(getter.function.span.lo.0)),
+                            ),
+                            Prop::Setter(setter) => (
+                                static_property_name(&setter.key),
+                                Self::Origin(ValueOrigin::Function(setter.function.span.lo.0)),
+                            ),
+                        },
+                    })
+                    .collect(),
+            ),
+            Expr::Array(array) => Self::ObjectLiteral(
+                array.span.lo.0,
+                array
+                    .elems
+                    .iter()
+                    .flatten()
+                    .map(|element| (None, Self::from_expr(&element.expr)))
+                    .collect(),
+            ),
             Expr::Member(member) => Self::Member(
                 Box::new(Self::from_expr(&member.obj)),
                 static_prop(&member.prop),
@@ -94,7 +139,12 @@ impl ValueExpr {
                     option.bindings(result);
                 }
             }
-            Self::Origin(_) | Self::NonCallable | Self::Unknown => {}
+            Self::ObjectLiteral(_, properties) => {
+                for (_, value) in properties {
+                    value.bindings(result);
+                }
+            }
+            Self::Origin(_) | Self::Undefined | Self::NonCallable | Self::Unknown => {}
         }
     }
 }
@@ -185,6 +235,7 @@ struct Callable {
     literal_captures: BTreeSet<Id>,
     escaped_bindings: BTreeSet<Id>,
     member_writes: Vec<(Id, String)>,
+    member_value_writes: Vec<(Id, Option<String>, ValueExpr)>,
     dynamic_property_effect: bool,
     opaque: bool,
     generator: bool,
@@ -204,6 +255,7 @@ impl Default for Callable {
             literal_captures: BTreeSet::new(),
             escaped_bindings: BTreeSet::new(),
             member_writes: Vec::new(),
+            member_value_writes: Vec::new(),
             dynamic_property_effect: false,
             opaque: false,
             generator: false,
@@ -216,12 +268,19 @@ struct ExecutionIndex {
     current: Option<u32>,
     past_await: bool,
     may_skip_await_depth: u32,
+    conditional_depth: u32,
     literal_depth: u32,
     callables: BTreeMap<u32, Callable>,
     setter_owners: BTreeMap<Option<String>, BTreeSet<StatementOrdinal>>,
     top_calls: Vec<Vec<Call>>,
     top_property_writes: Vec<Vec<(Option<Id>, Option<String>)>>,
     top_assignments: Vec<Vec<(Id, ValueExpr)>>,
+    top_definite_initializers: Vec<BTreeSet<Id>>,
+    top_member_value_writes: Vec<Vec<(Id, Option<String>, ValueExpr)>>,
+    top_exported_values: Vec<Vec<ValueExpr>>,
+    hoisted_bindings: BTreeMap<Id, u32>,
+    exported_hoisted_functions: BTreeSet<u32>,
+    global_object_names: BTreeSet<&'static str>,
     hoisted_function_owners: BTreeSet<StatementOrdinal>,
     exported_declaration_owners: BTreeSet<StatementOrdinal>,
     exported_bindings: BTreeSet<Id>,
@@ -237,12 +296,19 @@ impl Default for ExecutionIndex {
             current: None,
             past_await: false,
             may_skip_await_depth: 0,
+            conditional_depth: 0,
             literal_depth: 0,
             callables: BTreeMap::new(),
             setter_owners: BTreeMap::new(),
             top_calls: Vec::new(),
             top_property_writes: Vec::new(),
             top_assignments: Vec::new(),
+            top_definite_initializers: Vec::new(),
+            top_member_value_writes: Vec::new(),
+            top_exported_values: Vec::new(),
+            hoisted_bindings: BTreeMap::new(),
+            exported_hoisted_functions: BTreeSet::new(),
+            global_object_names: BTreeSet::new(),
             hoisted_function_owners: BTreeSet::new(),
             exported_declaration_owners: BTreeSet::new(),
             exported_bindings: BTreeSet::new(),
@@ -259,17 +325,48 @@ impl ExecutionIndex {
             top_calls: vec![Vec::new(); body.len()],
             top_property_writes: vec![Vec::new(); body.len()],
             top_assignments: vec![Vec::new(); body.len()],
+            top_definite_initializers: vec![BTreeSet::new(); body.len()],
+            top_member_value_writes: vec![Vec::new(); body.len()],
+            top_exported_values: vec![Vec::new(); body.len()],
+            global_object_names: super::global_object::unshadowed_global_object_aliases(body),
             ..Self::default()
         };
         for (ordinal, item) in body.iter().enumerate() {
             index.owner = StatementOrdinal(ordinal);
             index.past_await = false;
             index.may_skip_await_depth = 0;
+            index.conditional_depth = 0;
             index.literal_depth = 0;
+            index.collect_uninitialized_lexical_bindings(item.as_module_item());
             index.collect_export_roots(item.as_module_item());
             item.as_module_item().visit_with(&mut index);
         }
         index
+    }
+
+    fn collect_uninitialized_lexical_bindings(&mut self, item: &ModuleItem) {
+        let Some(declaration) = var_decl_of_item(item) else {
+            return;
+        };
+        if declaration.kind == VarDeclKind::Var {
+            for declarator in &declaration.decls {
+                if declarator.init.is_some()
+                    && let Pat::Ident(binding) = &declarator.name
+                {
+                    self.top_definite_initializers[self.owner.0].insert(binding.id.to_id());
+                }
+            }
+            return;
+        }
+        for declarator in &declaration.decls {
+            if let Pat::Ident(binding) = &declarator.name {
+                let id = binding.id.to_id();
+                self.top_definite_initializers[self.owner.0].insert(id.clone());
+                if declarator.init.is_none() {
+                    self.top_assignments[self.owner.0].push((id, ValueExpr::Undefined));
+                }
+            }
+        }
     }
 
     fn collect_export_roots(&mut self, item: &ModuleItem) {
@@ -279,18 +376,23 @@ impl ExecutionIndex {
             }
             ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => {
                 self.exported_declaration_owners.insert(self.owner);
+                self.exported_bindings
+                    .extend(collect_declared_names(item).into_iter());
                 if matches!(export.decl, Decl::Fn(_)) {
                     self.hoisted_function_owners.insert(self.owner);
                 }
             }
             ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultDecl(export)) => {
                 self.exported_declaration_owners.insert(self.owner);
-                if matches!(export.decl, DefaultDecl::Fn(_)) {
+                if let DefaultDecl::Fn(function) = &export.decl {
                     self.hoisted_function_owners.insert(self.owner);
+                    self.exported_hoisted_functions
+                        .insert(function.function.span.lo.0);
                 }
             }
-            ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultExpr(_)) => {
+            ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultExpr(export)) => {
                 self.exported_declaration_owners.insert(self.owner);
+                self.top_exported_values[self.owner.0].push(ValueExpr::from_expr(&export.expr));
             }
             ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(export)) => {
                 self.linkage_owners.insert(self.owner);
@@ -315,6 +417,7 @@ impl ExecutionIndex {
         let saved_current = self.current.replace(key);
         let saved_await = std::mem::replace(&mut self.past_await, false);
         let saved_may_skip = std::mem::replace(&mut self.may_skip_await_depth, 0);
+        let saved_conditional = std::mem::replace(&mut self.conditional_depth, 0);
         let opaque_params = params.iter().any(|param| param.binding.is_none());
         self.callables.entry(key).or_insert_with(|| Callable {
             owner: self.owner,
@@ -326,6 +429,7 @@ impl ExecutionIndex {
         self.current = saved_current;
         self.past_await = saved_await;
         self.may_skip_await_depth = saved_may_skip;
+        self.conditional_depth = saved_conditional;
     }
 
     fn record_call(&mut self, call: Call) {
@@ -393,7 +497,9 @@ impl ExecutionIndex {
     fn visit_may_skip<N: VisitWith<Self>>(&mut self, node: &N) {
         let before = self.past_await;
         self.may_skip_await_depth += 1;
+        self.conditional_depth += 1;
         node.visit_children_with(self);
+        self.conditional_depth -= 1;
         self.may_skip_await_depth -= 1;
         self.past_await = before;
     }
@@ -492,18 +598,36 @@ impl Visit for ExecutionIndex {
                 declaration.ident.to_id(),
                 ValueExpr::Origin(ValueOrigin::Function(declaration.function.span.lo.0)),
             ));
+        } else {
+            self.hoisted_bindings
+                .insert(declaration.ident.to_id(), declaration.function.span.lo.0);
         }
         declaration.visit_children_with(self);
+    }
+
+    fn visit_class_decl(&mut self, declaration: &ClassDecl) {
+        declaration.visit_children_with(self);
+        if self.current.is_none() {
+            self.top_definite_initializers[self.owner.0].insert(declaration.ident.to_id());
+            self.top_assignments[self.owner.0].push((
+                declaration.ident.to_id(),
+                ValueExpr::Origin(ValueOrigin::Class(declaration.class.span.lo.0)),
+            ));
+        }
     }
 
     fn visit_if_stmt(&mut self, statement: &IfStmt) {
         statement.test.visit_with(self);
         let after_test = self.past_await;
+        self.conditional_depth += 1;
         statement.cons.visit_with(self);
+        self.conditional_depth -= 1;
         let after_then = self.past_await;
         self.past_await = after_test;
         if let Some(else_branch) = &statement.alt {
+            self.conditional_depth += 1;
             else_branch.visit_with(self);
+            self.conditional_depth -= 1;
             self.past_await &= after_then;
         } else {
             self.past_await = after_test;
@@ -513,21 +637,32 @@ impl Visit for ExecutionIndex {
     fn visit_cond_expr(&mut self, expression: &CondExpr) {
         expression.test.visit_with(self);
         let after_test = self.past_await;
+        self.conditional_depth += 1;
         expression.cons.visit_with(self);
+        self.conditional_depth -= 1;
         let after_then = self.past_await;
         self.past_await = after_test;
+        self.conditional_depth += 1;
         expression.alt.visit_with(self);
+        self.conditional_depth -= 1;
         self.past_await &= after_then;
     }
 
     fn visit_bin_expr(&mut self, expression: &BinExpr) {
         expression.left.visit_with(self);
         let after_left = self.past_await;
+        if matches!(
+            expression.op,
+            BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::NullishCoalescing
+        ) {
+            self.conditional_depth += 1;
+        }
         expression.right.visit_with(self);
         if matches!(
             expression.op,
             BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::NullishCoalescing
         ) {
+            self.conditional_depth -= 1;
             self.past_await = after_left;
         }
     }
@@ -646,7 +781,43 @@ impl Visit for ExecutionIndex {
         } else if let AssignTarget::Simple(SimpleAssignTarget::Ident(binding)) = &assignment.left {
             self.top_assignments[self.owner.0]
                 .push((binding.id.to_id(), ValueExpr::from_expr(&assignment.right)));
+            if self.conditional_depth == 0 {
+                self.top_definite_initializers[self.owner.0].insert(binding.id.to_id());
+            }
         } else if let AssignTarget::Simple(SimpleAssignTarget::Member(member)) = &assignment.left {
+            if let Expr::Ident(receiver) = member.obj.unwrap_parens()
+                && let Some(key) = static_prop(&member.prop)
+            {
+                let write = (
+                    receiver.to_id(),
+                    Some(key),
+                    ValueExpr::from_expr(&assignment.right),
+                );
+                if let Some(callable) = self.current {
+                    self.callables
+                        .get_mut(&callable)
+                        .unwrap()
+                        .member_value_writes
+                        .push(write);
+                } else {
+                    self.top_member_value_writes[self.owner.0].push(write);
+                }
+            } else if let Expr::Ident(receiver) = member.obj.unwrap_parens() {
+                let write = (
+                    receiver.to_id(),
+                    None,
+                    ValueExpr::from_expr(&assignment.right),
+                );
+                if let Some(callable) = self.current {
+                    self.callables
+                        .get_mut(&callable)
+                        .unwrap()
+                        .member_value_writes
+                        .push(write);
+                } else {
+                    self.top_member_value_writes[self.owner.0].push(write);
+                }
+            }
             if let Some(key) = self.current {
                 ValueExpr::from_expr(&assignment.right)
                     .bindings(&mut self.callables.get_mut(&key).unwrap().escaped_bindings);
@@ -810,7 +981,14 @@ struct ReachabilityState {
     owners: BTreeSet<StatementOrdinal>,
 }
 
-type InvocationSignature = (u32, Vec<Values>, Context, u64, Option<StatementOrdinal>);
+type InvocationSignature = (
+    u32,
+    Vec<Values>,
+    Context,
+    u64,
+    u64,
+    Option<StatementOrdinal>,
+);
 
 struct Executor<'a> {
     index: &'a ExecutionIndex,
@@ -826,6 +1004,14 @@ struct Executor<'a> {
     prior_effect_owners: BTreeSet<StatementOrdinal>,
     reachability: ReachabilityState,
     mutable_captures: BTreeSet<Id>,
+    prefix_values: Context,
+    initialized_bindings: BTreeSet<Id>,
+    var_bindings: BTreeSet<Id>,
+    global_escaped_callbacks: Values,
+    prefix_object_properties: BTreeMap<u32, BTreeMap<Option<String>, Values>>,
+    exported_runtime_values: Values,
+    export_reentry_enabled: bool,
+    prefix_revision: u64,
     active: BTreeSet<InvocationSignature>,
     cache: BTreeMap<InvocationSignature, Outcome>,
 }
@@ -842,14 +1028,17 @@ impl Executor<'_> {
         outcome: &mut Outcome,
     ) {
         let fact = &self.facts[owner.0];
-        outcome.effects.reads.extend(
-            fact.reads
-                .lazy
-                .iter()
-                .filter(|id| self.top_bindings.contains(*id))
-                .cloned()
-                .map(|id| (id, effect_owner)),
-        );
+        for id in fact
+            .reads
+            .lazy
+            .iter()
+            .filter(|id| self.top_bindings.contains(*id))
+        {
+            outcome.effects.reads.insert((id.clone(), effect_owner));
+            if !self.initialized_bindings.contains(id) {
+                outcome.effects.uninitialized_reads.insert(id.clone());
+            }
+        }
         outcome.effects.rebinds.extend(
             fact.rebinds
                 .lazy
@@ -1083,22 +1272,249 @@ impl Executor<'_> {
             })
     }
 
-    fn evaluate(&mut self, expr: &ValueExpr, env: &Context, captures: &Context) -> Values {
-        match expr {
-            ValueExpr::Binding(id) => env.get(id).cloned().unwrap_or_else(|| {
-                let values = from_flow(self.flow.values_of_binding(id));
-                if values.is_empty() { unknown() } else { values }
-            }),
-            ValueExpr::Origin(ValueOrigin::Function(key)) => {
-                if captures.len() > 64
-                    || captures.keys().any(|id| self.mutable_captures.contains(id))
-                {
-                    unknown()
-                } else {
-                    BTreeSet::from([AbstractValue::Closure(*key, Box::new(captures.clone()))])
+    fn callback_values(&self, values: &Values) -> Values {
+        let mut callbacks = Values::new();
+        let mut pending: Vec<_> = values.iter().cloned().collect();
+        let mut visited_objects = BTreeSet::new();
+        while let Some(value) = pending.pop() {
+            match &value {
+                AbstractValue::Origin(ValueOrigin::Function(_)) | AbstractValue::Closure(_, _) => {
+                    callbacks.insert(value.clone());
+                    if let AbstractValue::Closure(_, captured) = &value {
+                        pending.extend(captured.values().flat_map(|values| values.iter().cloned()));
+                    }
+                }
+                AbstractValue::Origin(ValueOrigin::Object(object)) => {
+                    if visited_objects.insert(*object)
+                        && let Some(properties) = self.prefix_object_properties.get(object)
+                    {
+                        pending.extend(
+                            properties
+                                .values()
+                                .flat_map(|values| values.iter().cloned()),
+                        );
+                    }
+                }
+                AbstractValue::GlobalObject => {
+                    pending.extend(self.global_escaped_callbacks.iter().cloned());
+                }
+                _ => {}
+            }
+        }
+        callbacks
+    }
+
+    fn apply_member_value_writes(
+        &mut self,
+        writes: &[(Id, Option<String>, ValueExpr)],
+        env: &Context,
+        captures: &Context,
+    ) {
+        for (receiver, property, expression) in writes {
+            let receivers = self.evaluate(&ValueExpr::Binding(receiver.clone()), env, captures);
+            let values = self.evaluate(expression, env, captures);
+            for receiver in receivers {
+                match receiver {
+                    AbstractValue::GlobalObject => {
+                        let callbacks = self.callback_values(&values);
+                        let before = self.global_escaped_callbacks.len();
+                        self.global_escaped_callbacks.extend(callbacks);
+                        if self.global_escaped_callbacks.len() != before {
+                            self.prefix_revision = self.prefix_revision.wrapping_add(1);
+                        }
+                    }
+                    AbstractValue::Origin(ValueOrigin::Object(object)) => {
+                        let properties = self.prefix_object_properties.entry(object).or_default();
+                        let values_for_property = properties.entry(property.clone()).or_default();
+                        let before = values_for_property.len();
+                        values_for_property.extend(values.iter().cloned());
+                        if values_for_property.len() != before {
+                            self.prefix_revision = self.prefix_revision.wrapping_add(1);
+                        }
+                    }
+                    _ => {}
                 }
             }
+        }
+    }
+
+    fn closure_captures(&self, key: u32, captures: &Context) -> Context {
+        let Some(callable) = self.index.callables.get(&key) else {
+            return Context::new();
+        };
+        let free_bindings = callable.reads.iter().chain(callable.rebinds.iter());
+        let mut captured = Context::new();
+        for id in free_bindings {
+            if self.top_bindings.contains(id) {
+                continue;
+            }
+            if let Some(values) = captures.get(id) {
+                captured.insert(
+                    id.clone(),
+                    if self.mutable_captures.contains(id) || captured.len() >= 64 {
+                        unknown()
+                    } else {
+                        values.clone()
+                    },
+                );
+            }
+        }
+        captured
+    }
+
+    fn available_export_callbacks(&self) -> Values {
+        if !self.export_reentry_enabled {
+            return Values::new();
+        }
+        let mut callbacks = Values::new();
+        for binding in &self.index.exported_bindings {
+            if let Some(values) = self.prefix_values.get(binding) {
+                callbacks.extend(self.callback_values(values));
+            }
+        }
+        callbacks.extend(
+            self.index
+                .exported_hoisted_functions
+                .iter()
+                .copied()
+                .map(|key| AbstractValue::Origin(ValueOrigin::Function(key))),
+        );
+        callbacks.extend(self.callback_values(&self.exported_runtime_values));
+        callbacks
+    }
+
+    fn invoke_possible_callbacks(&mut self, args: &[Values], outcome: &mut Outcome) {
+        let mut callbacks = self.global_escaped_callbacks.clone();
+        callbacks.extend(self.available_export_callbacks());
+        for values in args {
+            callbacks.extend(self.callback_values(values));
+        }
+        if callbacks.is_empty() {
+            return;
+        }
+        // Unknown host code may invoke any callback it received with another
+        // currently available callback, so each formal gets the conservative
+        // callback set plus a non-callable/unknown possibility.
+        let mut possible_argument = callbacks.clone();
+        possible_argument.insert(AbstractValue::Unknown);
+        let args_for = |key: u32, index: &ExecutionIndex| {
+            let count = index
+                .callables
+                .get(&key)
+                .map_or(0, |callable| callable.params.len());
+            vec![possible_argument.clone(); count]
+        };
+        for callback in callbacks.clone() {
+            let nested = match callback {
+                AbstractValue::Origin(ValueOrigin::Function(key)) => {
+                    self.invoke(key, args_for(key, self.index), &Context::new())
+                }
+                AbstractValue::Closure(key, captured) => {
+                    self.invoke(key, args_for(key, self.index), &captured)
+                }
+                _ => continue,
+            };
+            self.apply_rebind_effects(&nested.effects.rebinds);
+            outcome.effects.reads.extend(nested.effects.reads);
+            outcome.effects.rebinds.extend(nested.effects.rebinds);
+            outcome
+                .effects
+                .uninitialized_reads
+                .extend(nested.effects.uninitialized_reads);
+            outcome.executed_owners.extend(nested.executed_owners);
+            outcome.unknown_call |= nested.unknown_call;
+            outcome.complete &= nested.complete;
+        }
+        // An opaque callee can retain any callback passed to it and invoke it
+        // during a later prefix event.
+        let before = self.global_escaped_callbacks.len();
+        for values in args {
+            self.global_escaped_callbacks
+                .extend(self.callback_values(values));
+        }
+        if self.global_escaped_callbacks.len() != before {
+            self.prefix_revision = self.prefix_revision.wrapping_add(1);
+        }
+    }
+
+    fn apply_rebind_effects(&mut self, rebinds: &BTreeSet<(Id, StatementOrdinal)>) {
+        for (id, _) in rebinds {
+            if !self.top_bindings.contains(id) {
+                continue;
+            }
+            let changed = self
+                .prefix_values
+                .entry(id.clone())
+                .or_default()
+                .insert(AbstractValue::Unknown);
+            if changed {
+                self.prefix_revision = self.prefix_revision.wrapping_add(1);
+            }
+        }
+    }
+
+    fn evaluate(&mut self, expr: &ValueExpr, env: &Context, captures: &Context) -> Values {
+        match expr {
+            ValueExpr::Binding(id) => {
+                if self.top_bindings.contains(id) {
+                    if let Some(prefix_values) = self.prefix_values.get(id) {
+                        let mut values = prefix_values.clone();
+                        if !self.initialized_bindings.contains(id) {
+                            values.insert(if self.var_bindings.contains(id) {
+                                AbstractValue::Undefined
+                            } else {
+                                AbstractValue::Unknown
+                            });
+                        }
+                        values
+                    } else if self.var_bindings.contains(id) {
+                        BTreeSet::from([AbstractValue::Undefined])
+                    } else {
+                        // Whole-chunk flow includes future initializers. A
+                        // missing prefix value for a local binding is TDZ.
+                        unknown()
+                    }
+                } else if let Some(values) = env.get(id) {
+                    values.clone()
+                } else if self.index.global_object_names.contains(id.0.as_ref())
+                    && !self.flow.is_declared(id)
+                    && !self.shadowed.contains(id.0.as_ref())
+                {
+                    BTreeSet::from([AbstractValue::GlobalObject])
+                } else {
+                    let values = from_flow(self.flow.values_of_binding(id));
+                    if values.is_empty() { unknown() } else { values }
+                }
+            }
+            ValueExpr::Origin(ValueOrigin::Function(key)) => {
+                BTreeSet::from([AbstractValue::Closure(
+                    *key,
+                    Box::new(self.closure_captures(*key, captures)),
+                )])
+            }
             ValueExpr::Origin(origin) => BTreeSet::from([AbstractValue::Origin(*origin)]),
+            ValueExpr::ObjectLiteral(key, properties) => {
+                let mut evaluated = BTreeMap::<Option<String>, Values>::new();
+                for (property, expression) in properties {
+                    evaluated
+                        .entry(property.clone())
+                        .or_default()
+                        .extend(self.evaluate(expression, env, captures));
+                }
+                let current = self.prefix_object_properties.entry(*key).or_default();
+                let mut changed = false;
+                for (property, values) in evaluated {
+                    let current_values = current.entry(property).or_default();
+                    let before = current_values.len();
+                    current_values.extend(values);
+                    changed |= current_values.len() != before;
+                }
+                if changed {
+                    self.prefix_revision = self.prefix_revision.wrapping_add(1);
+                }
+                BTreeSet::from([AbstractValue::Origin(ValueOrigin::Object(*key))])
+            }
+            ValueExpr::Undefined => BTreeSet::from([AbstractValue::Undefined]),
             ValueExpr::NonCallable => BTreeSet::from([AbstractValue::NonCallable]),
             ValueExpr::Member(object, property) => {
                 if matches!(object.as_ref(), ValueExpr::Binding(id) if id.0.as_ref() == "Object" && !self.flow.is_declared(id))
@@ -1110,16 +1526,46 @@ impl Executor<'_> {
                 let objects = self.evaluate(object, env, captures);
                 let mut values = Values::new();
                 for object in objects {
-                    if let (AbstractValue::Origin(ValueOrigin::Object(object)), Some(property)) =
-                        (object, property)
-                    {
-                        if let Some(found) = self.flow.values_of_property(object, property) {
-                            values.extend(from_flow(found.clone()));
-                        } else {
+                    match object {
+                        AbstractValue::GlobalObject => {
+                            values.extend(self.global_escaped_callbacks.iter().cloned());
                             values.insert(AbstractValue::Unknown);
                         }
-                    } else {
-                        values.insert(AbstractValue::Unknown);
+                        AbstractValue::Origin(ValueOrigin::Object(object_id)) => {
+                            if let Some(properties) = self.prefix_object_properties.get(&object_id)
+                            {
+                                if let Some(property) = property {
+                                    if let Some(found) = properties.get(&Some(property.clone())) {
+                                        values.extend(found.iter().cloned());
+                                    } else {
+                                        values.insert(AbstractValue::Unknown);
+                                    }
+                                    values.extend(
+                                        properties
+                                            .get(&None)
+                                            .into_iter()
+                                            .flat_map(|found| found.iter().cloned()),
+                                    );
+                                } else {
+                                    values.extend(
+                                        properties.values().flat_map(|found| found.iter().cloned()),
+                                    );
+                                }
+                            } else if let Some(property) = property {
+                                if let Some(found) =
+                                    self.flow.values_of_property(object_id, property)
+                                {
+                                    values.extend(from_flow(found.clone()));
+                                } else {
+                                    values.insert(AbstractValue::Unknown);
+                                }
+                            } else {
+                                values.insert(AbstractValue::Unknown);
+                            }
+                        }
+                        _ => {
+                            values.insert(AbstractValue::Unknown);
+                        }
                     }
                 }
                 values
@@ -1178,6 +1624,7 @@ impl Executor<'_> {
             args.clone(),
             captured.clone(),
             self.reachability.revision,
+            self.prefix_revision,
             self.current_top_owner,
         );
         if let Some(cached) = self.cache.get(&signature) {
@@ -1228,6 +1675,9 @@ impl Executor<'_> {
         for id in &callable.reads {
             if self.top_bindings.contains(id) {
                 outcome.effects.reads.insert((id.clone(), callable.owner));
+                if !self.initialized_bindings.contains(id) {
+                    outcome.effects.uninitialized_reads.insert(id.clone());
+                }
             }
         }
         for id in &callable.rebinds {
@@ -1235,6 +1685,11 @@ impl Executor<'_> {
                 outcome.effects.rebinds.insert((id.clone(), callable.owner));
             }
         }
+        // The visitor stores value-bearing member writes separately from call
+        // nodes. Make same-owner callback publication visible before nested
+        // opaque calls; if source order put a write afterward, this only adds
+        // a conservative callback possibility.
+        self.apply_member_value_writes(&callable.member_value_writes, &env, &env);
         for call in &callable.calls {
             self.execute_call(call, &env, &env, &mut outcome);
         }
@@ -1280,7 +1735,9 @@ impl Executor<'_> {
             outcome.complete = false;
             outcome.unknown_call = true;
             self.note_unknown_call(call);
+            self.invoke_possible_callbacks(&args, outcome);
         }
+        let mut invoked_unknown_callbacks = targets.is_empty();
         for target in targets {
             match target {
                 AbstractValue::ObjectAssign
@@ -1313,16 +1770,26 @@ impl Executor<'_> {
                 }
                 AbstractValue::Origin(ValueOrigin::Function(key)) if !call.is_new => {
                     let nested = self.invoke(key, args.clone(), &Context::new());
+                    self.apply_rebind_effects(&nested.effects.rebinds);
                     outcome.effects.reads.extend(nested.effects.reads);
                     outcome.effects.rebinds.extend(nested.effects.rebinds);
+                    outcome
+                        .effects
+                        .uninitialized_reads
+                        .extend(nested.effects.uninitialized_reads);
                     outcome.executed_owners.extend(nested.executed_owners);
                     outcome.unknown_call |= nested.unknown_call;
                     outcome.complete &= nested.complete;
                 }
                 AbstractValue::Closure(key, captured) if !call.is_new => {
                     let nested = self.invoke(key, args.clone(), &captured);
+                    self.apply_rebind_effects(&nested.effects.rebinds);
                     outcome.effects.reads.extend(nested.effects.reads);
                     outcome.effects.rebinds.extend(nested.effects.rebinds);
+                    outcome
+                        .effects
+                        .uninitialized_reads
+                        .extend(nested.effects.uninitialized_reads);
                     outcome.executed_owners.extend(nested.executed_owners);
                     outcome.unknown_call |= nested.unknown_call;
                     outcome.complete &= nested.complete;
@@ -1331,6 +1798,10 @@ impl Executor<'_> {
                     outcome.complete = false;
                     outcome.unknown_call = true;
                     self.note_unknown_call(call);
+                    if !invoked_unknown_callbacks {
+                        self.invoke_possible_callbacks(&args, outcome);
+                        invoked_unknown_callbacks = true;
+                    }
                 }
             }
         }
@@ -1362,10 +1833,24 @@ pub(crate) fn annotate_synchronous_calls(
             }
         }
     }
+    needed.extend(index.exported_bindings.iter().cloned());
+    for exported in &index.top_exported_values {
+        for expression in exported {
+            expression.bindings(&mut needed);
+        }
+    }
     let mut dependencies: BTreeMap<Id, BTreeSet<Id>> = BTreeMap::new();
     for assignments in &index.top_assignments {
         for (id, expression) in assignments {
             expression.bindings(dependencies.entry(id.clone()).or_default());
+        }
+    }
+    for writes in &index.top_member_value_writes {
+        for (receiver, _, expression) in writes {
+            if index.global_object_names.contains(receiver.0.as_ref()) || needed.contains(receiver)
+            {
+                expression.bindings(dependencies.entry(receiver.clone()).or_default());
+            }
         }
     }
     let mut pending: Vec<Id> = needed.iter().cloned().collect();
@@ -1388,15 +1873,29 @@ pub(crate) fn annotate_synchronous_calls(
         .intersection(&index.hoisted_function_owners)
         .copied()
         .collect();
+    let top_bindings: BTreeSet<_> = facts
+        .iter()
+        .flat_map(|fact| fact.declared.iter().cloned())
+        .collect();
+    let var_bindings: BTreeSet<_> = facts
+        .iter()
+        .flat_map(|fact| fact.var_declared.iter().cloned())
+        .collect();
+    let mut initial_values = Context::new();
+    let mut initialized_bindings = BTreeSet::new();
+    for (binding, key) in &index.hoisted_bindings {
+        initial_values.insert(
+            binding.clone(),
+            BTreeSet::from([AbstractValue::Origin(ValueOrigin::Function(*key))]),
+        );
+        initialized_bindings.insert(binding.clone());
+    }
     let mut executor = Executor {
         index: &index,
         facts,
         flow,
         shadowed,
-        top_bindings: facts
-            .iter()
-            .flat_map(|fact| fact.declared.iter().cloned())
-            .collect(),
+        top_bindings,
         binding_owner: facts
             .iter()
             .flat_map(|fact| fact.declared.iter().cloned().map(|id| (id, fact.ordinal)))
@@ -1412,6 +1911,19 @@ pub(crate) fn annotate_synchronous_calls(
             .values()
             .flat_map(|callable| callable.rebinds.iter().cloned())
             .collect(),
+        prefix_values: initial_values,
+        initialized_bindings,
+        var_bindings,
+        global_escaped_callbacks: Values::new(),
+        prefix_object_properties: BTreeMap::new(),
+        exported_runtime_values: index
+            .exported_hoisted_functions
+            .iter()
+            .copied()
+            .map(|key| AbstractValue::Origin(ValueOrigin::Function(key)))
+            .collect(),
+        export_reentry_enabled: export_reentry_policy == ExportReentryPolicy::Conservative,
+        prefix_revision: 0,
         active: BTreeSet::new(),
         cache: BTreeMap::new(),
     };
@@ -1438,6 +1950,13 @@ pub(crate) fn annotate_synchronous_calls(
             complete: true,
             ..Outcome::default()
         };
+        // Like callable writes above, top-level property writes are kept in a
+        // separate visitor lane. Applying all of this statement's writes
+        // before its flattened call list may expose a later write early, which
+        // is conservative and avoids missing a callback assigned before an
+        // opaque call in the same statement.
+        let member_writes = &index.top_member_value_writes[fact.ordinal.0];
+        executor.apply_member_value_writes(member_writes, &top_env, &top_captures);
         for call in calls {
             executor.execute_call(call, &top_env, &top_captures, &mut outcome);
         }
@@ -1470,7 +1989,28 @@ pub(crate) fn annotate_synchronous_calls(
                     .or_default()
                     .extend(values.clone());
             }
-            top_env.entry(id.clone()).or_default().extend(values);
+            top_env
+                .entry(id.clone())
+                .or_default()
+                .extend(values.clone());
+            if executor.top_bindings.contains(id) {
+                executor
+                    .prefix_values
+                    .entry(id.clone())
+                    .or_default()
+                    .extend(values);
+                executor.prefix_revision = executor.prefix_revision.wrapping_add(1);
+            }
+        }
+        executor.initialized_bindings.extend(
+            index.top_definite_initializers[fact.ordinal.0]
+                .iter()
+                .cloned(),
+        );
+        for expression in &index.top_exported_values[fact.ordinal.0] {
+            let values = executor.evaluate(expression, &top_env, &top_captures);
+            executor.exported_runtime_values.extend(values);
+            executor.prefix_revision = executor.prefix_revision.wrapping_add(1);
         }
     }
     for (fact, effect) in facts.iter_mut().zip(effects) {
