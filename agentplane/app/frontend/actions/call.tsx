@@ -15,14 +15,15 @@ import {
   type RenderedActionCall,
 } from "./rendering/index";
 
-/** The request's own verbose identifiers, folded behind one disclosure rather than shown
- * unconditionally: the UUID and timestamps nobody reads at a glance. */
+/** Who asked and when, on one summary line ("claude-ai · 2 minutes ago"), over the request's own
+ * verbose identifiers nobody reads at a glance: the UUID, the caller's namespace, and the later
+ * timestamps. */
 function RequestAuditDetails({ request }: { request: ActionRequestView }): JSX.Element {
   return (
     <Disclosure
       summary={
         <Text component="span" size="xs" c="dimmed">
-          Request audit details
+          {request.caller.name} · <TimeAgo value={request.created_at} />
         </Text>
       }
       keepMounted
@@ -32,8 +33,8 @@ function RequestAuditDetails({ request }: { request: ActionRequestView }): JSX.E
           <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
             Request <Code>{request.id}</Code>
           </Text>
-          <Text size="xs" c="dimmed">
-            Requested <TimeAgo value={request.created_at} />
+          <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
+            Requested by {serviceAccountKey(request.caller)}
           </Text>
           {request.decision && (
             <Text size="xs" c="dimmed">
@@ -123,11 +124,6 @@ export function ActionCall({
               {request.description}
             </Text>
           </ClampedBlock>
-        )}
-        {request.caller && (
-          <Text size="xs" c="dimmed">
-            requested by {serviceAccountKey(request.caller)}
-          </Text>
         )}
         <RequestAuditDetails request={request} />
       </Stack>

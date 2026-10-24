@@ -29,12 +29,15 @@ describe("ActionRequests", () => {
     expect(container.textContent).not.toContain("[object Object]");
   });
 
-  it("shows the caller and folds the request id behind its audit details", async () => {
+  it("summarizes who asked and when, and folds the full caller and request id behind it", async () => {
     const row = request("decision_pending", 1);
     const container = await renderLive(<ActionRequests />, [row]);
-    expect(container.textContent).toContain(`requested by ${row.caller!.namespace}/${row.caller!.name}`);
-    const control = button(container, "Request audit details");
-    expect(control?.getAttribute("aria-expanded")).toBe("false");
+    const control = button(container, row.caller.name);
+    expect(control.getAttribute("aria-expanded")).toBe("false");
+    const requested = control.querySelector("time");
+    if (!requested) throw new Error("missing the request time in the audit summary");
+    expect(Date.parse(requested.dateTime)).toBe(Date.parse(row.created_at));
+    expect(container.textContent).toContain(`Requested by ${row.caller.namespace}/${row.caller.name}`);
     expect(container.textContent).toContain(row.id);
     expect(button(container, "Approve").disabled).toBe(false);
   });

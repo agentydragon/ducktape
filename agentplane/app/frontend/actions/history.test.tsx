@@ -134,7 +134,7 @@ describe("ActionHistory", () => {
     const container = await renderHistory(states.map(request));
 
     for (const state of states) expect(container.textContent).toContain(stateLabel(state));
-    expect(container.textContent).toContain("requested by agentplane-test/test-agent");
+    expect(container.textContent).toContain("Requested by agentplane-test/test-agent");
     expect(container.textContent).toContain("Allowed");
     expect(container.textContent).toContain("Denied");
     expect(container.textContent).toContain(DECISION_NOTE);

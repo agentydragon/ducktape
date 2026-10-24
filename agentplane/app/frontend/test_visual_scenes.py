@@ -212,14 +212,15 @@ async def test_action_request_audit_details(view: VisualPage, app: AgentplaneFix
     await app.set_flag(Flag.PENDING_ACTIONS)
     await app.mount_app("/actions/70000000-0000-4000-8000-000000000006")
     page = view.page
-    audit_toggle = page.get_by_role("button", name="Request audit details", exact=True)
+    # The summary line names the caller and when it asked.
+    audit_toggle = page.get_by_role("button", name="ready-sandbox ·", exact=False)
     await expect(audit_toggle).to_have_count(1)
-    await expect(audit_toggle).to_be_visible()
+    await expect(audit_toggle.locator("time")).to_be_visible()
     await view.check(context="fixture ready")
     await audit_toggle.click()
     audit_item = page.locator(".agentplane-disclosure-item").filter(has=audit_toggle).first
     audit_body = audit_item.locator(".agentplane-disclosure-body")
-    await expect(audit_body.get_by_text("Requested", exact=False)).to_be_visible()
+    await expect(audit_body.get_by_text("Requested by agentplane-visual/ready-sandbox", exact=True)).to_be_visible()
     await expect(audit_body.get_by_text("70000000-0000-4000-8000-000000000006", exact=True)).to_be_visible()
     await _focus(page, audit_body)
     await page.mouse.move(0, 0)
