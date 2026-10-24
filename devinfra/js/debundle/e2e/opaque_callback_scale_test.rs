@@ -116,3 +116,36 @@ fn repeated_opaque_calls_do_not_grow_callback_capture_cross_products() {
     );
     assert_preserved_entry_output(&fixture, "7\n");
 }
+
+#[test]
+fn exported_aliases_share_one_callback_discovery_traversal() {
+    let mut source = String::from(
+        "import './peer.js';\n\
+         globalThis.host = () => 7;\n\
+         const state = 7;\n",
+    );
+    for index in 0..1024 {
+        writeln!(source, "function reader{index}() {{ return state; }}").unwrap();
+    }
+    source.push_str("const payload = {");
+    for index in 0..1024 {
+        write!(source, "reader{index},").unwrap();
+    }
+    source.push_str("};\n");
+    for index in 0..1024 {
+        writeln!(source, "export const alias{index} = payload;").unwrap();
+    }
+    for index in 0..256 {
+        writeln!(source, "const result{index} = host();").unwrap();
+    }
+    source.push_str("console.log(result255);\nexport { result255 };\n");
+    // An import cycle keeps export reentry possible. The provider's aliases
+    // all refer to the same object/callback graph.
+    let peer = [("static/peer", "import './app.js'; export {};\n")];
+    let fixture = run_fixture(
+        FixtureOpts::new(&source, vec![])
+            .with_unassigned_mode(unassigned_mode_inline())
+            .with_extra_chunks(&peer),
+    );
+    assert_preserved_entry_output(&fixture, "7\n");
+}

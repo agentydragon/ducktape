@@ -1338,7 +1338,7 @@ impl Executor<'_> {
         let mut callbacks = Values::new();
         let mut pending: Vec<_> = values.iter().cloned().collect();
         let mut visited_objects = BTreeSet::new();
-        let mut expanded_unknown = false;
+        let mut expanded_escaped = false;
         while let Some(value) = pending.pop() {
             match &value {
                 AbstractValue::Origin(ValueOrigin::Function(_)) | AbstractValue::Closure(_, _) => {
@@ -1367,15 +1367,12 @@ impl Executor<'_> {
                         );
                     }
                 }
-                AbstractValue::GlobalObject => {
-                    pending.extend(self.global_escaped_callbacks.iter().cloned());
-                }
-                AbstractValue::Unknown if !expanded_unknown => {
+                AbstractValue::GlobalObject | AbstractValue::Unknown if !expanded_escaped => {
                     // Unknown external data cannot expose an unescaped local
                     // callback. Preserve tracked escapes; exports are added
                     // separately at opaque call sites, and known object
                     // identities are expanded through their property maps.
-                    expanded_unknown = true;
+                    expanded_escaped = true;
                     pending.extend(
                         self.global_escaped_callbacks
                             .iter()
@@ -1475,21 +1472,24 @@ impl Executor<'_> {
         if !self.export_reentry_enabled {
             return Values::new();
         }
-        let mut callbacks = Values::new();
+        // Discover the whole export surface in one traversal. Exported aliases,
+        // unknown values, and shared objects must not each re-expand the same
+        // escaped callback/capture graph independently.
+        let mut values = Values::new();
         for binding in &self.index.exported_bindings {
-            if let Some(values) = self.prefix_values.get(binding) {
-                callbacks.extend(self.callback_values(values));
+            if let Some(exported) = self.prefix_values.get(binding) {
+                values.extend(exported.iter().cloned());
             }
         }
-        callbacks.extend(
+        values.extend(
             self.index
                 .exported_hoisted_functions
                 .iter()
                 .copied()
                 .map(|key| AbstractValue::Origin(ValueOrigin::Function(key))),
         );
-        callbacks.extend(self.callback_values(&self.exported_runtime_values));
-        callbacks
+        values.extend(self.exported_runtime_values.iter().cloned());
+        self.callback_values(&values)
     }
 
     fn invoke_possible_callbacks(
@@ -1501,9 +1501,8 @@ impl Executor<'_> {
         let mut callbacks = self.global_escaped_callbacks.clone();
         callbacks.extend(self.available_export_callbacks());
         if !no_sync_arguments {
-            for values in args {
-                callbacks.extend(self.callback_values(values));
-            }
+            let values = args.iter().flatten().cloned().collect();
+            callbacks.extend(self.callback_values(&values));
         }
         // Unknown host code may invoke any callback it received with another
         // currently available callback, so each formal gets the conservative
@@ -1576,10 +1575,9 @@ impl Executor<'_> {
         // An opaque callee can retain any callback passed to it and invoke it
         // during a later prefix event.
         let before = self.global_escaped_callbacks.len();
-        for values in args {
-            self.global_escaped_callbacks
-                .extend(self.callback_values(values));
-        }
+        let values = args.iter().flatten().cloned().collect();
+        self.global_escaped_callbacks
+            .extend(self.callback_values(&values));
         if self.global_escaped_callbacks.len() != before {
             self.prefix_revision = self.prefix_revision.wrapping_add(1);
         }

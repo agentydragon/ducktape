@@ -723,7 +723,9 @@ statements. Callback discovery visits each closure's capture snapshot once,
 including snapshots shared through several captured bindings. The executor
 interns immutable capture contexts bottom-up, so value-set and invocation-key
 comparisons use canonical identities rather than recursively comparing the
-capture DAG.
+capture DAG. Callback discovery batches all exports or all arguments into one
+traversal, so aliases share visited sets for objects, closures, and escaped
+values.
 
 The summary also records reads at the callback's source prefix. For each
 callback-read binding, the graph builds a source-order timeline of callback
