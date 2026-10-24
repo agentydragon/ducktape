@@ -354,7 +354,7 @@ def _view(thread: Thread, summary: FoldSummary, sandbox: str, sandbox_uid: str |
     return ThreadView(
         id=thread.id,
         sandbox=sandbox,
-        sandbox_uid=sandbox_uid,
+        sandbox_uid=None if sandbox_uid is None else UUID(sandbox_uid),
         harness=None if spec is None else Harness(runner_pb2.Harness.Name(spec.harness)),
         model=None if spec is None else spec.model,
         cwd=None if spec is None else spec.cwd,
