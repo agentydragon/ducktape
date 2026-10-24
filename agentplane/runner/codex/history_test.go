@@ -176,8 +176,9 @@ func TestIncompleteAndUnsupportedToolsRemainUnknown(t *testing.T) {
 func TestResumeSharesBoundedSnapshotAndReadsEarlierItemOwner(t *testing.T) {
 	adapter, host := newHistoryAdapter(map[string]harness.ObservedItem{"x": {ItemID: "x", TurnID: "owner", Kind: eventpb.ItemKind_ITEM_KIND_REASONING, Text: "kept"}},
 		`"result":{"data":[{"turnId":"owner","item":{"id":"x","type":"reasoning","summary":["kept"]}}]}`,
+		`"result":{"data":[]}`,
 		`"result":{"data":[]}`)
-	host.journal.turns = []string{"turn", "empty"}
+	host.journal.turns = []string{"turn", "zzz-empty"}
 	for range 2 {
 		report, err := adapter.Reconcile(context.Background(), "turn", true)
 		if err != nil {
@@ -185,8 +186,8 @@ func TestResumeSharesBoundedSnapshotAndReadsEarlierItemOwner(t *testing.T) {
 		}
 		assertDisposition(t, report, "x", eventpb.RecoveryDisposition_RECOVERY_DISPOSITION_RETAINED)
 	}
-	if len(host.requests) != 2 || *host.requests[0].TurnID != "owner" || *host.requests[1].TurnID != "turn" {
-		t.Fatalf("requests should cover owner and selected turn only, once: %v", host.requests)
+	if len(host.requests) != 3 || *host.requests[0].TurnID != "owner" || *host.requests[1].TurnID != "turn" || *host.requests[2].TurnID != "zzz-empty" {
+		t.Fatalf("requests should cover the owner and recovery window only, once: %v", host.requests)
 	}
 }
 
@@ -194,7 +195,8 @@ func TestLaterCompactionInvalidatesEarlierResumeTurn(t *testing.T) {
 	adapter, host := newHistoryAdapter(map[string]harness.ObservedItem{"x": {ItemID: "x", Kind: eventpb.ItemKind_ITEM_KIND_REASONING, Text: "kept"}},
 		`"result":{"data":[{"turnId":"later","item":{"id":"compact","type":"contextCompaction"}}]}`)
 	host.journal.turns = []string{"turn", "later"}
-	host.journal.observed["later"] = map[string]harness.ObservedItem{"compact": {ItemID: "compact", Kind: eventpb.ItemKind_ITEM_KIND_TOOL_CALL}}
+	// The process can die before Agentplane observes the later turn's compaction item.
+	host.journal.observed["later"] = nil
 	report, err := adapter.Reconcile(context.Background(), "turn", true)
 	if err != nil {
 		t.Fatal(err)

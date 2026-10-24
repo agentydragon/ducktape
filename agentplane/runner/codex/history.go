@@ -110,25 +110,30 @@ func (a *codexAdapter) Reconcile(ctx context.Context, turnID string, resumed boo
 
 // Read only turns selected by the runner's recovery window, plus owners of items that finish in a
 // later turn. One snapshot serves all turns in a resume, including any compaction barrier in that
-// window. Empty turns do not require RPCs. The stdout reader remains free to deliver these replies.
+// window. Later turns with no observed items still need a compaction check when validating earlier
+// items. The stdout reader remains free to deliver these replies.
 func (a *codexAdapter) readHistory(ctx context.Context, turns []string) *codexHistorySnapshot {
 	snapshot := &codexHistorySnapshot{items: make(map[string]protocol.ThreadItemEntry)}
 	owners := make(map[string]bool)
+	hasObserved := false
 	for _, turn := range turns {
 		observed, err := a.host.Journal().ObservedItems(ctx, turn)
 		if err != nil {
 			snapshot.err = err
 			return snapshot
 		}
-		if len(observed) == 0 {
-			continue
-		}
 		owners[turn] = true
+		if len(observed) != 0 {
+			hasObserved = true
+		}
 		for _, item := range observed {
 			if item.TurnID != "" {
 				owners[item.TurnID] = true
 			}
 		}
+	}
+	if !hasObserved {
+		return snapshot
 	}
 	for _, turn := range slices.Sorted(maps.Keys(owners)) {
 		if err := a.readTurnHistory(ctx, turn, snapshot.items); err != nil {

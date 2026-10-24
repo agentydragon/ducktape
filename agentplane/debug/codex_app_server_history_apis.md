@@ -137,7 +137,8 @@ The runner uses the public API as its Codex history source. `thread/start` and `
 return the history mode; no separate metadata read or private file/database access is needed.
 `thread/items/list(threadId, turnId)` reads only selected recovery turns and any original owning
 turn of an item that finishes later. It follows all pages within those turns with limit 100,
-shares the snapshot across a resume, and skips turns without observed items. It does not page
+shares the snapshot across a resume, and skips entirely unobserved windows. Later unobserved
+turns are still checked for compaction barriers when validating earlier items. It does not page
 through unrelated older turns. The runner checks the paginated contract and treats unsupported
 or incomplete reads as unknown. Read-only RPCs execute off the stdout reader and gate further
 input until reconciliation commits.

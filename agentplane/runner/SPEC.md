@@ -285,7 +285,9 @@ Codex reconciliation requires `paginated` history, checked from `thread/start` o
 It pages `thread/items/list` with a native `turnId`, at most 100 items per response. An ordinary
 interruption reads that turn; resume reads the most recent completed turn and later turns from the
 runner journal. An item that finishes in a later turn adds its original owning turn to the reads.
-Empty turns need no RPCs, and one history snapshot serves all turns of a resume. There is no private
+An entirely unobserved window needs no RPCs. When validating earlier items, later turns still
+need a scoped compaction check even if their items were not observed. One history snapshot serves
+all turns of a resume. There is no private
 Codex file/database reader or legacy-format fallback. Unsupported history, an incomplete/invalid
 page sequence, or a compaction marker in the inspected window produces `UNKNOWN`. Unsupported tools
 and command executions without a fully observed completed result also remain `UNKNOWN`; API

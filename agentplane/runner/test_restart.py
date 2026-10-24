@@ -219,7 +219,8 @@ def contend() -> Callable[[Path], Awaitable[None]]:
     return attempt
 
 
-async def test_competing_runner_cannot_take_state_or_dispatch_before_replacement(
+@pytest.mark.timeout(60)
+async def test_competing_runner_cannot_take_state_and_successor_leaves_uncertain_dispatch_pending(
     contend: Callable[[Path], Awaitable[None]],
     model: ScriptedModel,
     spec: runner_pb2.SessionSpec,
@@ -227,7 +228,7 @@ async def test_competing_runner_cannot_take_state_or_dispatch_before_replacement
     tmp_path: Path,
     driver: RunnerDriver,
 ) -> None:
-    """A retained-state owner fences a contender until its native child is gone."""
+    """A retained-state owner fences a contender; the successor does not replay an uncertain dispatch."""
     command_id = "fenced-replacement"
     first_runner = await start_runner(test_debug_checkpoint=("after-dispatch-planned", command_id))
     first = await driver.attach("writer-handoff-1", spec=spec)
@@ -249,12 +250,27 @@ async def test_competing_runner_cannot_take_state_or_dispatch_before_replacement
     # The checkpoint pauses command dispatch, not the independent native-output reader.
     assert lost.cursor > checkpoint.cursor
     assert lost.origin.source_id == checkpoint.origin.source_id
+    started = await replacement.until(events.is_kind("harness_started"))
+    assert started.event.harness_started.resumed
+    fresh_command_id = "fresh-after-fenced-dispatch"
+    fresh_text = "Reply with exactly: HANDOFF_FRESH_OK"
+    await replacement.submit_input(fresh_command_id, fresh_text)
     request = await model.request()
-    assert request.user_texts[-1] == "Reply with exactly: HANDOFF_REPLACEMENT_OK"
+    assert request.user_texts[-1] == fresh_text
+    assert "Reply with exactly: HANDOFF_REPLACEMENT_OK" not in request.user_texts
     assert model.request_count == 2
-    await model.reply(request, Text("HANDOFF_REPLACEMENT_OK"))
-    confirmed = await replacement.until(events.is_kind("harness_user_message_confirmed"))
-    assert confirmed.event.harness_user_message_confirmed.origin_command_ids == [command_id]
+    await model.reply(request, Text("HANDOFF_FRESH_OK"))
+    confirmed = await replacement.until(
+        lambda entry: (
+            events.kind(entry) == "harness_user_message_confirmed"
+            and fresh_command_id in entry.event.harness_user_message_confirmed.origin_command_ids
+        )
+    )
+    assert confirmed.event.harness_user_message_confirmed.origin_command_ids == [fresh_command_id]
+    assert not any(
+        command_id in entry.event.harness_user_message_confirmed.origin_command_ids
+        for entry in events.of_kind(replacement.seen, "harness_user_message_confirmed")
+    )
     await replacement.until(events.turn_completed)
     events.assert_contiguous([*first.seen, *replacement.seen])
 
@@ -427,7 +443,8 @@ async def test_runner_startup_keeps_unselected_sessions_dormant_and_resume_keeps
     await dormant.until(events.turn_completed)
 
 
-async def test_crash_after_runner_receipt_before_native_dispatch_retries_once(
+@pytest.mark.timeout(60)
+async def test_crash_after_dispatch_planned_does_not_retry_uncertain_command(
     start_runner: Callable[..., Awaitable[RunnerProcess]],
     model: ScriptedModel,
     spec: runner_pb2.SessionSpec,
@@ -436,20 +453,21 @@ async def test_crash_after_runner_receipt_before_native_dispatch_retries_once(
     """This is intentionally a real runner/harness process test, not a mocked Session method.
 
     The checkpoint is after the committed ``dispatch_planned`` record and before either native
-    adapter receives the command. Killing the runner there proves a fresh runner delivers the same
-    command once, with its original id, rather than dropping it or guessing a terminal result.
+    adapter receives the command. After process death the runner cannot tell whether dispatch
+    reached the harness, so it leaves that command unconfirmed and requires fresh input for progress.
     """
-    command_id = "retry-after-receipt"
+    command_id = "uncertain-after-dispatch-planned"
+    uncertain_text = "Reply with exactly: UNCERTAIN_PAYLOAD_MUST_NOT_BE_RETRIED"
     first_runner = await start_runner(test_debug_checkpoint=("after-dispatch-planned", command_id))
-    first = await driver.attach("restart-retry-1", spec=spec)
+    first = await driver.attach("restart-uncertain-dispatch", spec=spec)
     # Both native harnesses make a durable resume point only after one completed turn. This is the
     # normal target for a later command and keeps the crash test about command recovery, not a
     # harness's first-thread bootstrap contract.
-    await first.submit_input("seed-before-retry", "Reply with exactly: RETRY_SEED_OK")
+    await first.submit_input("seed-before-uncertain-dispatch", "Reply with exactly: UNCERTAIN_SEED_OK")
     seed_request = await model.request()
-    await model.reply(seed_request, Text("RETRY_SEED_OK"))
+    await model.reply(seed_request, Text("UNCERTAIN_SEED_OK"))
     await first.until(events.turn_completed)
-    await first.submit_input(command_id, "Reply with exactly: RETRIED_ONCE_OK")
+    await first.submit_input(command_id, uncertain_text)
     await first.until(events.is_kind("command_admitted"))
     debug = await first.until(events.is_kind("debug_checkpoint"))
     assert (debug.event.debug_checkpoint.name, debug.event.debug_checkpoint.command_id) == (
@@ -459,21 +477,37 @@ async def test_crash_after_runner_receipt_before_native_dispatch_retries_once(
     harness_pids = [entry.event.harness_started.pid for entry in events.of_kind(first.seen, "harness_started")]
     await first_runner.crash(harness_pids)
 
-    # The first process is dead; the successor sees the persisted checkpoint and issues the one
-    # native command. The upstream has seen no request at the first checkpoint.
+    # The first process is dead. The successor cannot safely reissue a command once its native
+    # dispatch was planned, so that payload remains unconfirmed.
     await start_runner()
-    second = await driver.attach("restart-retry-1", spec=spec, after_cursor=first.cursor)
+    second = await driver.attach("restart-uncertain-dispatch", spec=spec, after_cursor=first.cursor)
+    started = await second.until(events.is_kind("harness_started"))
+    assert started.event.harness_started.resumed
+    fresh_command_id = "fresh-after-uncertain-dispatch"
+    fresh_text = "Reply with exactly: FRESH_AFTER_UNCERTAIN_OK"
+    await second.submit_input(fresh_command_id, fresh_text)
     request = await model.request()
-    assert request.user_texts[-1] == "Reply with exactly: RETRIED_ONCE_OK"
+    assert request.user_texts[-1] == fresh_text
+    assert uncertain_text not in request.user_texts
     assert model.request_count == 2
-    await model.reply(request, Text("RETRIED_ONCE_OK"))
-    confirmed = await second.until(events.is_kind("harness_user_message_confirmed"))
-    assert confirmed.event.harness_user_message_confirmed.origin_command_ids == [command_id]
+    await model.reply(request, Text("FRESH_AFTER_UNCERTAIN_OK"))
+    confirmed = await second.until(
+        lambda entry: (
+            events.kind(entry) == "harness_user_message_confirmed"
+            and fresh_command_id in entry.event.harness_user_message_confirmed.origin_command_ids
+        )
+    )
+    assert confirmed.event.harness_user_message_confirmed.origin_command_ids == [fresh_command_id]
+    assert not any(
+        command_id in entry.event.harness_user_message_confirmed.origin_command_ids
+        for entry in events.of_kind(second.seen, "harness_user_message_confirmed")
+    )
     await second.until(events.turn_completed)
 
 
+@pytest.mark.timeout(60)
 @pytest.mark.parametrize("harness", [runner_pb2.HARNESS_CODEX], ids=["codex"])
-async def test_codex_acceptance_before_confirmation_crash_replays_input_with_original_provenance(
+async def test_codex_acceptance_before_confirmation_crash_confirms_native_turn_without_resending_input(
     harness: runner_pb2.Harness,
     model: ScriptedModel,
     spec: runner_pb2.SessionSpec,
@@ -482,9 +516,9 @@ async def test_codex_acceptance_before_confirmation_crash_replays_input_with_ori
 ) -> None:
     """Codex can persist a turn and tool result before the runner confirms its user message.
 
-    The runner's pending command is retried after restart, so Codex sees that user input twice.
-    The completed tool result remains native history and is not executed by thread resume itself;
-    the eventual confirmation still carries the original command id.
+    On restart the runner reconciles that native turn and confirms the original command without
+    resending the input. Fresh input then verifies the old user text and completed tool output each
+    appear once in the model context.
     """
     command_id = "codex-accepted-before-confirmation"
     target_text = "Reply with exactly: CODEX_ACCEPTED_BEFORE_CONFIRMATION_OK"
@@ -531,21 +565,6 @@ async def test_codex_acceptance_before_confirmation_crash_replays_input_with_ori
 
     await start_runner()
     second = await driver.attach("codex-accepted-before-confirmation", spec=spec, after_cursor=first.cursor)
-    started = await second.until(events.is_kind("harness_started"))
-    assert started.event.harness_started.resumed
-    retried = await model.request()
-    assert retried.user_texts[0:2] == ["Reply with exactly: ACCEPTANCE_SEED_OK", target_text]
-    assert retried.user_texts[-1] == target_text
-    assert retried.user_texts.count(target_text) == 2
-    assert "<turn_aborted>" in retried.user_texts[-2]
-    assert any(
-        result.call_id == "acceptance-side-effect" and result.contains("SIDE_EFFECT_OUTPUT")
-        for result in retried.tool_outputs
-    )
-    # Native resume retains the completed call/output without executing that old call again.
-    assert effect_file.read_text() == "ran\n"
-    await model.reply(retried, Text("CODEX_ACCEPTED_BEFORE_CONFIRMATION_OK"))
-
     confirmed = await second.until(
         lambda entry: (
             events.kind(entry) == "harness_user_message_confirmed"
@@ -555,7 +574,35 @@ async def test_codex_acceptance_before_confirmation_crash_replays_input_with_ori
     message = confirmed.event.harness_user_message_confirmed
     assert message.text == target_text
     assert message.origin_command_ids == [command_id]
-    assert message.turn_id != original_turn_id
+    assert message.turn_id == original_turn_id
+    started = next((entry for entry in events.of_kind(second.seen, "harness_started")), None)
+    if started is None:
+        started = await second.until(events.is_kind("harness_started"))
+    assert started.event.harness_started.resumed
+
+    fresh_command_id = "continue-after-native-acceptance"
+    fresh_text = "Reply with exactly: AFTER_ACCEPTANCE_RESUME_OK"
+    await second.submit_input(fresh_command_id, fresh_text)
+    resumed_request = await model.request()
+    assert resumed_request.user_texts.count(target_text) == 1
+    assert resumed_request.user_texts[-1] == fresh_text
+    (retained_output,) = [
+        result for result in resumed_request.tool_outputs if result.call_id == "acceptance-side-effect"
+    ]
+    assert retained_output.contains("SIDE_EFFECT_OUTPUT")
+    # Native resume retains the completed call/output without executing that old call again.
+    assert effect_file.read_text() == "ran\n"
+    await model.reply(resumed_request, Text("AFTER_ACCEPTANCE_RESUME_OK"))
+
+    fresh_confirmed = await second.until(
+        lambda entry: (
+            events.kind(entry) == "harness_user_message_confirmed"
+            and fresh_command_id in entry.event.harness_user_message_confirmed.origin_command_ids
+        )
+    )
+    fresh_message = fresh_confirmed.event.harness_user_message_confirmed
+    assert fresh_message.text == fresh_text
+    assert fresh_message.origin_command_ids == [fresh_command_id]
     await second.until(events.turn_completed)
     assert effect_file.read_text() == "ran\n"
 
@@ -709,6 +756,7 @@ async def test_a_reasoning_item_cut_off_by_a_harness_kill_is_reported_absent_and
     await second.until(events.turn_completed)
 
 
+@pytest.mark.timeout(60)
 @pytest.mark.parametrize("harness", [runner_pb2.HARNESS_CODEX], ids=["codex"])
 async def test_codex_failed_turn_recovery_uses_selected_paginated_history(
     driver: RunnerDriver,
@@ -758,20 +806,22 @@ async def test_codex_failed_turn_recovery_uses_selected_paginated_history(
     ]
     assert [summary for _, summaries in pre_crash_reasoning for summary in summaries] == reasoning_summaries
 
+    tool_started = await first.until(
+        lambda entry: (
+            entry.cursor > before_recovery_turn
+            and events.kind(entry) == "item_started"
+            and entry.event.item_started.kind == event_pb2.ITEM_KIND_TOOL_CALL
+            and entry.event.item_started.tool_name == "commandExecution"
+        )
+    )
+    tool_call_id = tool_started.event.item_started.item_id
+    await first.until(
+        lambda entry: events.kind(entry) == "item_completed" and entry.event.item_completed.item_id == tool_call_id
+    )
     active_turn = next(
         entry.event.turn_started.turn_id
         for entry in first.seen
         if entry.cursor > before_recovery_turn and events.kind(entry) == "turn_started"
-    )
-    (tool_call_id,) = [
-        entry.event.item_started.item_id
-        for entry in first.seen
-        if entry.cursor > before_recovery_turn
-        and events.kind(entry) == "item_started"
-        and entry.event.item_started.kind == event_pb2.ITEM_KIND_TOOL_CALL
-    ]
-    await first.until(
-        lambda entry: events.kind(entry) == "item_completed" and entry.event.item_completed.item_id == tool_call_id
     )
     reasoning_ids = [
         entry.event.item_started.item_id
@@ -856,6 +906,7 @@ async def test_codex_failed_turn_recovery_uses_selected_paginated_history(
     events.assert_contiguous([*first.seen, *reconnected.seen])
 
 
+@pytest.mark.timeout(60)
 @pytest.mark.parametrize("harness", [runner_pb2.HARNESS_CODEX], ids=["codex"])
 async def test_codex_normal_interrupt_reconciles_on_the_live_command_loop(
     driver: RunnerDriver,
@@ -883,12 +934,22 @@ async def test_codex_normal_interrupt_reconciles_on_the_live_command_loop(
         output.call_id == "call_interrupted_tool" and output.contains("INTERRUPTED_TOOL_OUTPUT")
         for output in tool_request.tool_outputs
     )
+    tool_started = await first.until(
+        lambda entry: (
+            events.kind(entry) == "item_started"
+            and entry.event.item_started.kind == event_pb2.ITEM_KIND_TOOL_CALL
+            and entry.event.item_started.tool_name == "commandExecution"
+        )
+    )
+    tool_call_id = tool_started.event.item_started.item_id
+    await first.until(
+        lambda entry: events.kind(entry) == "item_completed" and entry.event.item_completed.item_id == tool_call_id
+    )
     active_turn = next(
         entry.event.turn_started.turn_id
         for entry in first.seen
         if entry.cursor > before_interrupted_turn and events.kind(entry) == "turn_started"
     )
-    (tool_call_id,) = events.items(first.seen, event_pb2.ITEM_KIND_TOOL_CALL)
     await model.hold(tool_request)
 
     await first.interrupt_turn("interrupt-now", active_turn)

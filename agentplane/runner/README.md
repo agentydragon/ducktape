@@ -155,17 +155,19 @@ the app only folds that neutral report.
   of its message was written, and thinking that would otherwise be absent is unknown when a native
   line of the turn could not be parsed. Compacted or missing history and unfinished live tool outcomes
   remain unknown. The reader is tested against Claude Code 2.1.252.
-- `codex/history.go` reads model `response_item` records, not the app-server's reconstructed
-  turn-item projection, which can omit an unresolved call still sent to the model. In Codex
-  0.157.0, `core/src/tasks/mod.rs` flushes the interrupted-turn marker before the terminal
-  notification and then flushes that event; `core/src/context_manager/normalize.rs` supplies
-  `aborted` for a call with no output. The reader
-  reports this synthetic content as a revision without creating an execution result. A reasoning
-  item matches the saved `reasoning` record carrying its app-server id, and is absent without one.
-  Unmodeled tools, compacted history, and rollback remain unknown.
+- `codex/history.go` verifies paginated history and reads `thread/items/list` through the shared
+  app-server connection. It fetches only selected recovery turns and the original owning turns of
+  items that finish later, follows opaque cursors with limit 100, and shares one snapshot across
+  a resume. A turn without observations can still carry a compaction barrier for an earlier item;
+  an entirely empty recovery window needs no RPCs. Assistant text, visible reasoning summaries and
+  fully observed completed command output are compared by native item ID. Legacy/unsupported
+  history, incomplete page sequences, compaction barriers and uncertain tool context stay unknown.
+  There is no private Codex file/database reader or synthetic tool-output reconstruction. The
+  [protocol characterization](../debug/codex_app_server_history_apis.md) records what the pinned
+  0.157.0 API exposes and the real runner/model tests that support the comparison.
 
 Unreadable, malformed, or unsupported native evidence produces an explicit unknown report.
-These readers depend on the pinned native formats and must be checked with the app-level recovery
+These adapters depend on the pinned native protocols and must be checked with the app-level recovery
 matrix when upgrading a harness. The matrix covers interrupt, graceful shutdown/resume, and
 process-group kill/resume at three gates: streaming text, tool execution, and streaming after a
 completed tool. The mock reads tool results throughout each request, including older user messages.
