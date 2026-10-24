@@ -3,6 +3,7 @@ package sandboxcontroller
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -88,6 +89,7 @@ func newReconciler(t *testing.T, running bool, objects ...client.Object) (*Recon
 	tracker := clienttesting.NewObjectTracker(scheme, serializer.NewCodecFactory(scheme).UniversalDecoder())
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjectTracker(tracker).WithObjects(append(objects, sandbox)...).
 		WithStatusSubresource(&sandboxapi.Sandbox{}, &kubevirtv1.VirtualMachineInstance{}).
+		WithIndex(&corev1.Event{}, eventObjectUID, eventInvolvedUID).
 		WithInterceptorFuncs(interceptor.Funcs{Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
 			// The API server assigns a PVC UID on creation; the fake tracker does not.
 			if _, claim := obj.(*corev1.PersistentVolumeClaim); claim && obj.GetUID() == "" {
@@ -446,6 +448,46 @@ func TestUnschedulablePodConditionReachesSandboxReady(t *testing.T) {
 	}
 	if got := getReadyCondition(t, c); got.Status != metav1.ConditionFalse || got.Reason != "Unschedulable" || got.Message != "0/2 nodes are available: PVC is not bound" {
 		t.Errorf("Ready = %s/%s: %q, want the PodScheduled failure", got.Status, got.Reason, got.Message)
+	}
+}
+
+func TestStartingPodReportsWhatItsLatestEventSaysItWaitsOn(t *testing.T) {
+	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
+	reconcileOnce(t, r)
+	pod := getPod(t, c)
+	pod.Status.Phase = corev1.PodPending
+	if err := c.Status().Update(context.Background(), pod); err != nil {
+		t.Fatal(err)
+	}
+	event := func(name, reason, message string, at time.Time, about types.UID) *corev1.Event {
+		return &corev1.Event{
+			ObjectMeta:     metav1.ObjectMeta{Namespace: namespace, Name: name},
+			InvolvedObject: corev1.ObjectReference{Kind: "Pod", Namespace: namespace, Name: pod.Name, UID: about},
+			Reason:         reason, Message: message, LastTimestamp: metav1.NewTime(at),
+		}
+	}
+	for _, e := range []*corev1.Event{
+		event("scheduled", "Scheduled", "Successfully assigned", testNow.Add(-3*time.Minute), pod.UID),
+		event("pulling", "Pulling", `Pulling image "test-image:v1"`, testNow.Add(-2*time.Minute), pod.UID),
+		// About an earlier Pod of the same name: not this incarnation's.
+		event("earlier-pod", "Failed", "an earlier Pod's failure", testNow, "uid-earlier-pod"),
+	} {
+		if err := c.Create(context.Background(), e); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	reconcileOnce(t, r)
+	if got := getReadyCondition(t, c); got.Reason != "PullingImage" || !strings.Contains(got.Message, `Pulling image "test-image:v1"`) {
+		t.Errorf("Ready = %s: %q, want the image pull", got.Reason, got.Message)
+	}
+
+	if err := c.Create(context.Background(), event("mount", "FailedMount", "MountVolume.SetUp failed", testNow.Add(-time.Minute), pod.UID)); err != nil {
+		t.Fatal(err)
+	}
+	reconcileOnce(t, r)
+	if got := getReadyCondition(t, c); got.Reason != "Starting" || !strings.Contains(got.Message, "MountVolume.SetUp failed") {
+		t.Errorf("Ready = %s: %q, want Starting with the latest event", got.Reason, got.Message)
 	}
 }
 

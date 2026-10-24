@@ -161,7 +161,10 @@ class SandboxController(Construct):
                     resources=[custom_resource("coordination.k8s.io", "leases")],
                     verbs=["get", "list", "watch", "create", "update"],
                 ),
-                RolePolicyRule(resources=[custom_resource("", "events")], verbs=["create", "patch"]),
+                # Records its own Events, and watches those about Sandbox Pods for what a starting one waits on.
+                RolePolicyRule(
+                    resources=[custom_resource("", "events")], verbs=["get", "list", "watch", "create", "patch"]
+                ),
             ],
         )
         RoleBinding(

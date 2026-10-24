@@ -9,6 +9,7 @@ from pathlib import Path
 
 from agentplane.app.action_federation_settings import ActionFederationSettings
 from agentplane.app.presets import SandboxPreset, ThreadPreset
+from agentplane.app.sandbox_models import NewSandboxDefaults
 from agentplane.app.settings import AppSettingsConfig, TitleGenerationSettings
 from agentplane.runner.harness import Harness
 from cluster.cdk8s import agent_access_profiles
@@ -229,4 +230,6 @@ def config(
         for name in presets:
             cfg.sandbox_presets[name].inbox_tags = [group]
             cfg.sandbox_presets[name].policy_sets += [send_to(group)]
+    # A new staging Sandbox suspends after 15 idle minutes and wakes for a message (operator, 2026-10-24).
+    cfg.new_sandbox_defaults = NewSandboxDefaults(wake_on_send=True, idle_suspend_after_seconds=15 * 60)
     return cfg

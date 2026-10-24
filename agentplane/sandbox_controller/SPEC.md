@@ -133,12 +133,14 @@ A foreign same-name Service blocks new workload starts.
 
 `status.incarnation` names the Pod the runner runs in and its UID: the Sandbox's Pod, or its VMI's
 virt-launcher Pod. The `Running` condition is True while the Pod runs (`PodRunning`) or the VMI runs
-(`VMRunning`). Otherwise it is False, with reason `Stopped`, `Starting`, `Stopping`, `PodEnded`,
+(`VMRunning`). Otherwise it is False, with reason `Stopped`, `Starting`, `PullingImage`, `Stopping`, `PodEnded`,
 `VMEnded`, `SuspendPending`, `Quiescing`, `Deleting`,
 `TemplateNotFound`, `TemplateInvalid`, `StateVolumeConflict`, `VolumeLayoutMismatch`, `ServiceAccountConflict`,
 `PolicyBindingConflict`, `PodConflict` or `VMConflict` (a Pod or VM of the Sandbox's name that
 it does not control). `SuspendPending` holds a suspend while the runner's bootstrap is still running, so the
-suspend never interrupts it; a delete does not wait.
+suspend never interrupts it; a delete does not wait. While a scheduled Pod is Pending, the reason is
+`PullingImage` when its latest Event is an image pull, and the message carries that latest Event;
+when no Event can be read the message says only that the Pod is not running yet.
 
 `WorkloadReady` is True while the Sandbox runs and the incarnation Pod is Ready (`PodReady`).
 Otherwise it is False with `PodNotReady` when everything runs but the Pod is not Ready, and else
