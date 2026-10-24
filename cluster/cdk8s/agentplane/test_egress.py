@@ -277,11 +277,7 @@ def test_public_diagnostics_select_cluster_reader_and_share_haku_reads(
     )
     assert (
         set(haku) - set(selected)
-        == {
-            "haku-sandbox-write",
-            "coinbase-credentials",
-            agent_access_profiles.PLAID_DIAGNOSTICS_POLICY,
-        }
+        == {"haku-sandbox-write", "coinbase-credentials", agent_access_profiles.PLAID_DIAGNOSTICS_POLICY}
         - credential_grants
     )
     assert set(selected) - set(haku) == {"public-coder-node-read", "public-coder-cluster-metadata-read"} | (
