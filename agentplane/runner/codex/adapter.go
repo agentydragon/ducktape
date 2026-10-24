@@ -105,7 +105,7 @@ func (a *codexAdapter) Command() ([]string, error) {
 		{"include_environment_context", false},
 		{"web_search", "disabled"},
 		{"features.multi_agent", true},
-		{"features.view_image", false},
+		{"features.view_image", true},
 		{"features.unbounded_connection_retries", false},
 		// CLEANUP(added 2026-10-20): Remove once the pinned `agentplane_codex_cli_linux_x64` is >= 0.162,
 		//   where the feature is on by default. 0.157.0 never fetches a custom provider's catalog without it.

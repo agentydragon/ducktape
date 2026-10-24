@@ -227,6 +227,10 @@ When selecting file/image attachments. Review authorized bytes/storage/retention
 
 Depends on the upload contract and hosted config isolation when selected; prove native attachment semantics and retained authorized replay.
 
+### `CODEX_IMAGE_VIEW_ITEM` — project workspace image-view lifecycle
+
+When Agentplane needs accurate item history for Codex workspace viewing. Model the app-server `imageView` item explicitly: its `{id, path}` completion payload has no `status`, so generic projection does not mark it successful. Keep workspace viewing separate from composer uploads; UI preview additionally needs an authorized byte-transfer path.
+
 ### `HARNESS_MANUAL_COMPACTION` — user-triggered compaction from the frontend
 
 On requested native compaction controls. Preserve durable transcript history and distinguish request/admission/completion for supported harnesses.
