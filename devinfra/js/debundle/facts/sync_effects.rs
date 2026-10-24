@@ -16,6 +16,9 @@ enum AbstractValue {
     GlobalObject,
     Undefined,
     NonCallable,
+    /// Evaluating an expression throws before producing a value (for example,
+    /// a lexical binding read in its temporal dead zone).
+    Unavailable,
     Unknown,
 }
 
@@ -998,6 +1001,13 @@ type InvocationSignature = (
     Option<StatementOrdinal>,
 );
 
+type ActiveInvocation = (u32, Option<StatementOrdinal>);
+
+// Callable cycles can keep changing their argument/capture snapshots and thus
+// evade the state-specific memoization key. Bound recursive analysis separately
+// from that cache so a finite source program cannot consume the Rust stack.
+const MAX_SYNCHRONOUS_INVOCATION_DEPTH: usize = 64;
+
 struct Executor<'a> {
     index: &'a ExecutionIndex,
     facts: &'a [StatementFacts],
@@ -1021,7 +1031,8 @@ struct Executor<'a> {
     export_reentry_enabled: bool,
     fresh_mutation_callables: BTreeSet<u32>,
     prefix_revision: u64,
-    active: BTreeSet<InvocationSignature>,
+    invocation_depth: usize,
+    active: BTreeSet<ActiveInvocation>,
     cache: BTreeMap<InvocationSignature, Outcome>,
 }
 
@@ -1309,34 +1320,13 @@ impl Executor<'_> {
                     pending.extend(self.global_escaped_callbacks.iter().cloned());
                 }
                 AbstractValue::Unknown if !expanded_unknown => {
-                    // An unknown argument may be an opaque container holding
-                    // any callback value that has reached the current prefix.
-                    // Expanding these roots is deliberately conservative; it
-                    // prevents an untracked property/spread from hiding a
-                    // callback from the call-site summary.
+                    // Unknown external data cannot expose an unescaped local
+                    // callback. Preserve tracked escapes; exports are added
+                    // separately at opaque call sites, and known object
+                    // identities are expanded through their property maps.
                     expanded_unknown = true;
                     pending.extend(
-                        self.prefix_values
-                            .values()
-                            .flat_map(|values| values.iter().cloned())
-                            .filter(|value| !matches!(value, AbstractValue::Unknown)),
-                    );
-                    pending.extend(
                         self.global_escaped_callbacks
-                            .iter()
-                            .filter(|value| !matches!(value, AbstractValue::Unknown))
-                            .cloned(),
-                    );
-                    pending.extend(
-                        self.prefix_object_properties
-                            .values()
-                            .flat_map(|properties| properties.values())
-                            .flat_map(|values| values.iter())
-                            .filter(|value| !matches!(value, AbstractValue::Unknown))
-                            .cloned(),
-                    );
-                    pending.extend(
-                        self.exported_runtime_values
                             .iter()
                             .filter(|value| !matches!(value, AbstractValue::Unknown))
                             .cloned(),
@@ -1512,6 +1502,69 @@ impl Executor<'_> {
         }
     }
 
+    fn bounded_invocation_fallback(
+        &mut self,
+        owner: StatementOrdinal,
+        args: &[Values],
+        captured: &Context,
+    ) -> Outcome {
+        let effect_owner = self.current_top_owner.unwrap_or(owner);
+        let mut outcome = Outcome {
+            returns: unknown(),
+            complete: false,
+            unknown_call: true,
+            ..Outcome::default()
+        };
+        outcome.executed_owners.insert(owner);
+
+        // The recursive summary is no longer being expanded. Preserve reads
+        // from this callable and callbacks actually present in its arguments,
+        // captures, exports, or escaped globals. Do not turn ordinary
+        // recursion into a whole-chunk reachability root.
+        let mut possible_values: Values = args.iter().flatten().cloned().collect();
+        possible_values.extend(captured.values().flatten().cloned());
+        possible_values.extend(self.global_escaped_callbacks.iter().cloned());
+        possible_values.extend(self.available_export_callbacks());
+        let callbacks = self.callback_values(&possible_values);
+        let mut roots = BTreeSet::from([owner]);
+        for callback in &callbacks {
+            let key = match callback {
+                AbstractValue::Origin(ValueOrigin::Function(key))
+                | AbstractValue::Closure(key, _) => Some(*key),
+                _ => None,
+            };
+            if let Some(callback_owner) =
+                key.and_then(|key| self.index.callables.get(&key).map(|c| c.owner))
+            {
+                roots.insert(callback_owner);
+            }
+        }
+        let mut expanded = BTreeSet::new();
+        let mut owners = BTreeSet::new();
+        self.owner_read_closure.extend_reachable_owners(
+            roots.iter().copied(),
+            &mut expanded,
+            &mut owners,
+        );
+        self.extend_reachable_owners(roots.iter().copied());
+        if self.reachability.incomplete {
+            // Dynamic lexical scope defeats the normal binding-read closure.
+            owners.extend(self.all_owners());
+        }
+        for accessor_owner in owners {
+            self.promote_lazy_owner(accessor_owner, effect_owner, &mut outcome);
+        }
+
+        // The truncated body may have passed one of these callback values to
+        // opaque code. Retain only this proven escape set for later calls.
+        let before = self.global_escaped_callbacks.len();
+        self.global_escaped_callbacks.extend(callbacks);
+        if self.global_escaped_callbacks.len() != before {
+            self.prefix_revision = self.prefix_revision.wrapping_add(1);
+        }
+        outcome
+    }
+
     fn evaluate(&mut self, expr: &ValueExpr, env: &Context, captures: &Context) -> Values {
         match expr {
             ValueExpr::Binding(id) => {
@@ -1522,7 +1575,7 @@ impl Executor<'_> {
                             values.insert(if self.var_bindings.contains(id) {
                                 AbstractValue::Undefined
                             } else {
-                                AbstractValue::Unknown
+                                AbstractValue::Unavailable
                             });
                         }
                         values
@@ -1531,7 +1584,7 @@ impl Executor<'_> {
                     } else {
                         // Whole-chunk flow includes future initializers. A
                         // missing prefix value for a local binding is TDZ.
-                        unknown()
+                        BTreeSet::from([AbstractValue::Unavailable])
                     }
                 } else if let Some(values) = env.get(id) {
                     values.clone()
@@ -1554,24 +1607,40 @@ impl Executor<'_> {
             ValueExpr::Origin(origin) => BTreeSet::from([AbstractValue::Origin(*origin)]),
             ValueExpr::ObjectLiteral(key, properties) => {
                 let mut evaluated = BTreeMap::<Option<String>, Values>::new();
+                let mut may_throw = false;
+                let mut can_complete = true;
                 for (property, expression) in properties {
+                    let mut values = self.evaluate(expression, env, captures);
+                    if values.remove(&AbstractValue::Unavailable) {
+                        may_throw = true;
+                        can_complete &= !values.is_empty();
+                    }
                     evaluated
                         .entry(property.clone())
                         .or_default()
-                        .extend(self.evaluate(expression, env, captures));
+                        .extend(values);
                 }
-                let current = self.prefix_object_properties.entry(*key).or_default();
-                let mut changed = false;
-                for (property, values) in evaluated {
-                    let current_values = current.entry(property).or_default();
-                    let before = current_values.len();
-                    current_values.extend(values);
-                    changed |= current_values.len() != before;
+                if can_complete {
+                    let current = self.prefix_object_properties.entry(*key).or_default();
+                    let mut changed = false;
+                    for (property, values) in evaluated {
+                        let current_values = current.entry(property).or_default();
+                        let before = current_values.len();
+                        current_values.extend(values);
+                        changed |= current_values.len() != before;
+                    }
+                    if changed {
+                        self.prefix_revision = self.prefix_revision.wrapping_add(1);
+                    }
                 }
-                if changed {
-                    self.prefix_revision = self.prefix_revision.wrapping_add(1);
+                let mut result = Values::new();
+                if can_complete {
+                    result.insert(AbstractValue::Origin(ValueOrigin::Object(*key)));
                 }
-                BTreeSet::from([AbstractValue::Origin(ValueOrigin::Object(*key))])
+                if may_throw || !can_complete {
+                    result.insert(AbstractValue::Unavailable);
+                }
+                result
             }
             ValueExpr::Undefined => BTreeSet::from([AbstractValue::Undefined]),
             ValueExpr::NonCallable => BTreeSet::from([AbstractValue::NonCallable]),
@@ -1589,6 +1658,9 @@ impl Executor<'_> {
                         AbstractValue::GlobalObject => {
                             values.extend(self.global_escaped_callbacks.iter().cloned());
                             values.insert(AbstractValue::Unknown);
+                        }
+                        AbstractValue::Unavailable => {
+                            values.insert(AbstractValue::Unavailable);
                         }
                         AbstractValue::Origin(ValueOrigin::Object(object_id)) => {
                             if let Some(properties) = self.prefix_object_properties.get(&object_id)
@@ -1631,13 +1703,42 @@ impl Executor<'_> {
             }
             ValueExpr::Call(callee, args) => {
                 let targets = self.evaluate(callee, env, captures);
-                let args: Vec<Values> = args
+                if targets.len() == 1 && targets.contains(&AbstractValue::Unavailable) {
+                    return BTreeSet::from([AbstractValue::Unavailable]);
+                }
+                let mut args: Vec<Values> = args
                     .iter()
                     .map(|arg| self.evaluate(arg, env, captures))
                     .collect();
+                let args_may_throw = args
+                    .iter()
+                    .any(|values| values.contains(&AbstractValue::Unavailable));
+                if args
+                    .iter()
+                    .any(|values| values.len() == 1 && values.contains(&AbstractValue::Unavailable))
+                {
+                    return BTreeSet::from([AbstractValue::Unavailable]);
+                }
+                for values in &mut args {
+                    values.remove(&AbstractValue::Unavailable);
+                }
                 let mut returns = Values::new();
+                let no_targets = targets.is_empty();
+                let may_throw = args_may_throw
+                    || no_targets
+                    || targets.iter().any(|target| {
+                        matches!(
+                            target,
+                            AbstractValue::Unavailable
+                                | AbstractValue::Undefined
+                                | AbstractValue::NonCallable
+                        )
+                    });
                 for target in targets {
                     match target {
+                        AbstractValue::Unavailable
+                        | AbstractValue::Undefined
+                        | AbstractValue::NonCallable => {}
                         AbstractValue::Origin(ValueOrigin::Function(key)) => {
                             returns.extend(self.invoke(key, args.clone(), &Context::new()).returns);
                         }
@@ -1647,10 +1748,19 @@ impl Executor<'_> {
                         AbstractValue::ObjectAssign => {
                             returns.extend(args.first().cloned().unwrap_or_else(unknown));
                         }
+                        AbstractValue::Unknown => {
+                            returns.insert(AbstractValue::Unknown);
+                        }
                         _ => {
                             returns.insert(AbstractValue::Unknown);
                         }
                     }
+                }
+                if returns.is_empty() && may_throw {
+                    return BTreeSet::from([AbstractValue::Unavailable]);
+                }
+                if may_throw {
+                    returns.insert(AbstractValue::Unavailable);
                 }
                 returns
             }
@@ -1675,9 +1785,6 @@ impl Executor<'_> {
         if callable_opaque {
             self.note_unknown_execution(callable_owner);
         }
-        if self.cache.len() + self.active.len() >= 4096 {
-            return Outcome::default();
-        }
         let signature = (
             key,
             args.clone(),
@@ -1689,11 +1796,18 @@ impl Executor<'_> {
         if let Some(cached) = self.cache.get(&signature) {
             return cached.clone();
         }
-        if !self.active.insert(signature.clone()) {
-            return Outcome::default();
+        let active_invocation = (key, self.current_top_owner);
+        if self.active.contains(&active_invocation)
+            || self.invocation_depth >= MAX_SYNCHRONOUS_INVOCATION_DEPTH
+            || self.cache.len() + self.active.len() >= 4096
+        {
+            return self.bounded_invocation_fallback(callable_owner, &args, captured);
         }
+        self.active.insert(active_invocation);
+        self.invocation_depth += 1;
         let Some(callable) = self.index.callables.get(&key) else {
-            self.active.remove(&signature);
+            self.active.remove(&active_invocation);
+            self.invocation_depth -= 1;
             return Outcome::default();
         };
         let mut env = captured.clone();
@@ -1726,7 +1840,8 @@ impl Executor<'_> {
             // the body waits for the first iteration. Their effects are not
             // separated in the index, so retain the conservative path.
             outcome.complete = false;
-            self.active.remove(&signature);
+            self.active.remove(&active_invocation);
+            self.invocation_depth -= 1;
             self.cache.insert(signature, outcome.clone());
             return outcome;
         }
@@ -1767,7 +1882,8 @@ impl Executor<'_> {
         if !self.fresh_mutation_callables.contains(&key) {
             self.promote_property_writes(&writes, callable.owner, &mut outcome);
         }
-        self.active.remove(&signature);
+        self.active.remove(&active_invocation);
+        self.invocation_depth -= 1;
         self.cache.insert(signature, outcome.clone());
         outcome
     }
@@ -1787,11 +1903,23 @@ impl Executor<'_> {
             return;
         }
         let targets = self.evaluate(&call.callee, env, captures);
-        let args: Vec<Values> = call
+        if targets.len() == 1 && targets.contains(&AbstractValue::Unavailable) {
+            return;
+        }
+        let mut args: Vec<Values> = call
             .args
             .iter()
             .map(|arg| self.evaluate(arg, env, captures))
             .collect();
+        if args
+            .iter()
+            .any(|values| values.len() == 1 && values.contains(&AbstractValue::Unavailable))
+        {
+            return;
+        }
+        for values in &mut args {
+            values.remove(&AbstractValue::Unavailable);
+        }
         if targets.is_empty() {
             outcome.complete = false;
             outcome.unknown_call = true;
@@ -1801,6 +1929,9 @@ impl Executor<'_> {
         let mut invoked_unknown_callbacks = targets.is_empty();
         for target in targets {
             match target {
+                AbstractValue::Unavailable
+                | AbstractValue::Undefined
+                | AbstractValue::NonCallable => {}
                 AbstractValue::ObjectAssign
                     if !call.is_new
                         && call.plain_object_sources
@@ -1995,6 +2126,7 @@ pub(crate) fn annotate_synchronous_calls(
             !index.dynamic_scope_owners.is_empty(),
         ),
         prefix_revision: 0,
+        invocation_depth: 0,
         active: BTreeSet::new(),
         cache: BTreeMap::new(),
     };
@@ -2006,6 +2138,9 @@ pub(crate) fn annotate_synchronous_calls(
         .zip(index.top_calls.iter().zip(&index.top_assignments))
     {
         executor.current_top_owner = Some(fact.ordinal);
+        // Cache keys include this owner; previous statement snapshots cannot
+        // be reused and should not consume this statement's bounded budget.
+        executor.cache.clear();
         let fact_roots = executor.fact_roots(fact);
         if executor.reachability.unknown_call_seen {
             executor.extend_reachable_owners(fact_roots.iter().copied());
