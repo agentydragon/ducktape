@@ -13,7 +13,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
-from cluster.cdk8s import namespaces, piraeus_metrics
+from cluster.cdk8s import namespaces, node_scheduling, piraeus_metrics
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, oci_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -592,6 +592,29 @@ def cluster_chart(app: App) -> Chart:
                         "linstor.csi.linbit.com/storagePool": "hdd",
                         "linstor.csi.linbit.com/placementCount": "1",
                         "linstor.csi.linbit.com/allowRemoteVolumeAccess": "false",
+                    },
+                },
+                {
+                    # Two synchronous copies (DRBD's default protocol C) on distinct OVH SSD nodes,
+                    # attachable disklessly from any OVH node, so a single-writer app keeps Seaweed's
+                    # two-copy, run-anywhere behavior. Copies and attachments stay in hil-ovh, never
+                    # replicating over the home/OVH link (optiplex also has an `ssd` pool). LINSTOR
+                    # adds a diskless tiebreaker on a third node; losing quorum suspends I/O rather
+                    # than letting a partitioned copy diverge.
+                    "name": "piraeus-ssd-2",
+                    "reclaimPolicy": "Retain",
+                    "volumeBindingMode": "WaitForFirstConsumer",
+                    "allowVolumeExpansion": True,
+                    "parameters": {
+                        "linstor.csi.linbit.com/storagePool": "ssd",
+                        "linstor.csi.linbit.com/placementCount": "2",
+                        "linstor.csi.linbit.com/replicasOnSame": (
+                            f"{node_scheduling.ZONE_LABEL}={node_scheduling.HIL_OVH_ZONE}"
+                        ),
+                        "linstor.csi.linbit.com/allowRemoteVolumeAccess": (
+                            f"- fromSame:\n  - {node_scheduling.ZONE_LABEL}\n"
+                        ),
+                        "property.linstor.csi.linbit.com/DrbdOptions/auto-quorum": "suspend-io",
                     },
                 },
             ],

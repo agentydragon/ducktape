@@ -637,6 +637,15 @@ Review Grocy's backup destinations independently, preserving verified recovery
 outside each primary's failure set. Inventory direct S3 consumers as well as
 PVCs; object data and backups need an explicit retained or replacement service.
 
+Owner decisions, 2026-10-24: `cli-proxy-api-data` moves with its contents to the
+replicated `piraeus-ssd-2` class. GitHub API proxy capture, the Haku UI WALs and
+Matrix media restart on new empty claims; keep each old Seaweed claim unmounted
+(unpruned) as the backup until the owner releases it. The class still needs its
+own acceptance before any of these move: placement stays in `hil-ovh` and off
+`optiplex`, diskless attach from a worker, primary-node loss with quorum
+suspend-io, resync, expansion. Run the node-loss step only once no Seaweed
+evacuation is in flight.
+
 Pilot one app, verify copy/application/backup and controlled failover behavior,
 then migrate serially. Qualify the intended site, copy count, fencing, degraded
 availability, resync and capacity policy before changing defaults. Remove old

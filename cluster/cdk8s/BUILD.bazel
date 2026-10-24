@@ -1809,6 +1809,7 @@ py_library(
         ":helm",
         ":manifest_roots",
         ":namespaces",
+        ":node_scheduling",
         ":piraeus_metrics",
         "//cluster/cdk8s/monitoring:mimir",
         "//cluster/cdk8s/providers/flux:helmrelease",
