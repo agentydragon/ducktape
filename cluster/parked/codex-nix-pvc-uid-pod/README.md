@@ -80,8 +80,9 @@ Then added the SOPS-backed bootstrap identity and SSH-over-`kubectl exec` path:
 - verified copied identity mode/owner: `1000:1000 600`;
 - verified copied identity public key matches
   `ssh_keys/agent-box-codex-user.pub`;
-- verified second-stage SOPS decrypt from inside the pod by decrypting
-  `ssh_keys/agent-box-codex-forgejo.sops.key`;
+- historically verified second-stage SOPS decryption from inside the pod
+  using the Forgejo key that this change retires; that credential is no longer
+  present or available to new deployments;
 - verified private SSH transport:
   `ssh codex-pod.allegedly.works` via Home Manager's `ProxyCommand`
   reaches in-pod `sshd` over `kubectl exec`;
@@ -143,8 +144,9 @@ The next useful step is a Home Manager activation spike:
   `scripts/start-sshd.sh` before starting `sshd`;
 - confirm whether Home Manager sops-nix can install user secrets without a user
   systemd manager in this pod shape;
-- verify BuildBuddy, attic, Forgejo SSH, Codex config, and kubeconfig files land
-  in the expected paths.
+- verify BuildBuddy, attic, and Codex config files land in the expected paths;
+- provision fresh Forgejo or Kubernetes identities separately if those integrations
+  are needed, since the retired agent-box credentials cannot be reused.
 
 After that, turn the runtime into a small custom image:
 

@@ -71,12 +71,10 @@ class _ClientCredentials:
 
 _KUBECTL_SANDBOX = _ClientCredentials(name="claude-web-k8s", secret="kubectl-sandbox-client-credentials")
 _HAKU = _ClientCredentials(name="haku-k8s", secret="haku-client-credentials")
-_AGENT_BOX_CODEX = _ClientCredentials(name="agent-box-codex", secret="agent-box-codex-client-credentials")
 _HAKU_MAIL = _ClientCredentials(name="haku-mail", secret="haku-mail-client-credentials")
 _ALLOY_OTLP = _ClientCredentials(name="alloy-otlp", secret="alloy-otlp-client-credentials")
 _CLIENT_CREDENTIALS_BY_DIRECTORY = {
-    credential.directory: credential
-    for credential in (_KUBECTL_SANDBOX, _HAKU, _AGENT_BOX_CODEX, _HAKU_MAIL, _ALLOY_OTLP)
+    credential.directory: credential for credential in (_KUBECTL_SANDBOX, _HAKU, _HAKU_MAIL, _ALLOY_OTLP)
 }
 
 # Each entry mints (and for proxy consumers, exchanges) an Authentik client_credentials JWT and
@@ -106,21 +104,6 @@ ROTATIONS = Config(
             token_field="jwt",
             # This JWT remains available to the CLI/write_kubeconfig path. The parked
             # cloud-agent vault no longer has a consumer for a Flux-published copy.
-        ),
-        Rotation(
-            # Source JWT for the self-hosted Codex user on the agent-box VM. Issued by the shared
-            # kubectl-sandbox-client-credentials provider using the agent-box-codex Authentik
-            # service account, whose machine-principal mapping emits only the agent-box-codex
-            # k8s group.
-            name="agent-box-codex",
-            provider_slug="kubectl-sandbox-client-credentials",
-            scopes="openid profile email groups",
-            credential_mode="user_password",
-            expected_group="agent-box-codex",
-            expected_audiences=["kubectl-sandbox-client-credentials"],
-            credentials_dir=_AGENT_BOX_CODEX.directory,
-            sops_file=Path("secrets/agent-box-codex-k8s-jwt.yaml"),
-            token_field="jwt",
         ),
         Rotation(
             # JWT for haku's mailbox (Stalwart, cluster/k8s/haku/mailbox). The server's OIDC

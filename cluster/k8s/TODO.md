@@ -294,8 +294,8 @@ already shows replays, the marginal-link canary), ECC, thermal/power violations.
 
 ## agent-box follow-ups
 
-The agent-box VM and its `codex` user are live (see
-<../parked/agent-box/README.md>). Remaining work:
+The agent-box VM configuration is parked (see
+<../parked/agent-box/README.md>). Revisit these follow-ups only if resuming it:
 
 - [ ] **Enable the attic substituter** on agent-box: the Nix wiring is tombstoned
       in `cluster/parked/agent-box/nix/nixos.nix` +

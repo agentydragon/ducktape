@@ -19,10 +19,6 @@ in
       homeDirectory = "/home/codex";
       gitName = "codex";
       gitEmail = "codex@allegedly.works";
-      kubeconfigUser = "agent-box-codex";
-      forgejoKeySopsFile = ../../../../../ssh_keys/agent-box-codex-forgejo.sops.key;
-      forgejoTeaSopsFile = ../../../../../secrets/agent-box-codex-forgejo-tea-token.yaml;
-      kubeJwtSopsFile = ../../../../../secrets/agent-box-codex-k8s-jwt.yaml;
     })
     ../../../../../nix/home/codex # OpenAI Codex CLI + config
   ];

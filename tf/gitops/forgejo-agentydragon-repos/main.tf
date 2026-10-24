@@ -1,9 +1,8 @@
 # Forgejo repo access for agentydragon-owned source mirrors.
 #
-# Provisions the AI-agent service users (`agent-box-codex`,
-# `codex-pod`, …), attaches their SSH push keys, adopts the existing
-# `agentydragon/{ducktape,gaffer-private}` repos under Terraform, and grants Haku
-# read access. Provider wiring mirrors tf/gitops/forgejo-claude.
+# Provisions the `codex-pod` service user and its SSH push key, adopts the
+# existing `agentydragon/{ducktape,gaffer-private}` repos under Terraform, and
+# grants Haku read access. Provider wiring mirrors tf/gitops/forgejo-claude.
 #
 # CONVENTION — agents are READ-only and open PRs via AGit. No agent gets write on
 # the upstream repos, so none can advance `devel`/`main` (branch protection can't
@@ -30,39 +29,11 @@ provider "forgejo" {
 
 locals {
   forgejo_token_mint_users = {
-    agent-box-codex = {
-      username = forgejo_user.agent_box_codex.login
-      password = random_password.agent_box_codex.result
-    }
     codex-pod = {
       username = forgejo_user.codex_pod.login
       password = random_password.codex_pod.result
     }
   }
-}
-
-resource "random_password" "agent_box_codex" {
-  length  = 48
-  special = false
-}
-
-# The agent-box Codex agent authenticates to Forgejo over SSH (key below), so
-# the password is never delivered anywhere — it just satisfies the required field.
-resource "forgejo_user" "agent_box_codex" {
-  login                = "agent-box-codex"
-  email                = "agent-box-codex@allegedly.works"
-  password             = random_password.agent_box_codex.result
-  must_change_password = false
-  visibility           = "private"
-}
-
-# agent-box-codex's git push key (private half lives on agent-box as the codex
-# user's Forgejo identity, ssh_keys/agent-box-codex-forgejo). Inlined because
-# the tofu-controller runs only this module path, so file() cannot read repo-root.
-resource "forgejo_ssh_key" "agent_box_codex" {
-  user  = forgejo_user.agent_box_codex.login
-  key   = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILbs0SByOeeZOjlAdR/Oi/ijQJ2j+STf7E1F5oCQxEF3"
-  title = "agent-box-codex-forgejo"
 }
 
 # --- Repo adoption (existing repos; import, do not create) ---
@@ -102,21 +73,8 @@ import {
   id = "agentydragon/gaffer-private"
 }
 
-# --- agent-box-codex read collaboration (fork model) ---
-resource "forgejo_collaborator" "agent_box_codex_ducktape" {
-  repository_id = forgejo_repository.ducktape.id
-  user          = forgejo_user.agent_box_codex.login
-  permission    = "read"
-}
-
-resource "forgejo_collaborator" "agent_box_codex_gaffer" {
-  repository_id = forgejo_repository.gaffer_private.id
-  user          = forgejo_user.agent_box_codex.login
-  permission    = "read"
-}
-
 # --- codex-pod (in-cluster Nix-image codex agent) ---
-# Same shape as agent-box-codex: read-only + fork model, authenticating over SSH.
+# Read-only + fork model, authenticating over SSH.
 resource "random_password" "codex_pod" {
   length  = 48
   special = false
@@ -184,28 +142,3 @@ resource "forgejo_collaborator" "haku_gaffer_read" {
 # whitelist force-push. Protected branches reject `git push --force` even when
 # `agentydragon` is in `push_whitelist_usernames`, so the Forgejo mirrors leave
 # `ducktape/devel` and `gaffer-private/main` unprotected.
-
-moved {
-  from = random_password.codex
-  to   = random_password.agent_box_codex
-}
-
-moved {
-  from = forgejo_user.codex
-  to   = forgejo_user.agent_box_codex
-}
-
-moved {
-  from = forgejo_ssh_key.codex
-  to   = forgejo_ssh_key.agent_box_codex
-}
-
-moved {
-  from = forgejo_collaborator.codex_ducktape
-  to   = forgejo_collaborator.agent_box_codex_ducktape
-}
-
-moved {
-  from = forgejo_collaborator.codex_gaffer
-  to   = forgejo_collaborator.agent_box_codex_gaffer
-}

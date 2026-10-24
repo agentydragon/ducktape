@@ -23,9 +23,9 @@ in
     };
 
     # home-manager only writes ~/.ssh/config (and thus the settings block below) when
-    # programs.ssh is enabled. Full home.nix hosts set this explicitly; the slim
-    # agent-box codex config doesn't — so default it on here, or this module's
-    # settings block is silently dropped and git falls back to port 22 + the default
+    # programs.ssh is enabled. Full home.nix hosts set this explicitly; slim profiles
+    # may not — so default it on here, or this module's settings block is silently
+    # dropped and git falls back to port 22 + the default
     # key (Permission denied). mkDefault lets home.nix's explicit value still win.
     programs.ssh.enable = lib.mkDefault true;
     # Silence the home-manager "default values will be removed" warning: the only ssh

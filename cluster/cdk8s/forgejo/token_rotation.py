@@ -60,11 +60,6 @@ _CLAUDE_CREDENTIAL = _MountedCredential(
     mount_directory=Path("/var/run/secrets/forgejo/claude"),
     volume_name="claude-forgejo",
 )
-_AGENT_BOX_CODEX_CREDENTIAL = _MountedCredential(
-    secret=SecretRef(namespace=_NAMESPACE, name="forgejo-token-mint-agent-box-codex"),
-    mount_directory=Path("/var/run/secrets/forgejo/agent-box-codex"),
-    volume_name="agent-box-codex-forgejo",
-)
 
 
 # Forgejo API tokens for agent service accounts. Omitted `repositories` means full-account
@@ -100,15 +95,6 @@ _ROTATION_CREDENTIALS: tuple[tuple[_MountedCredential, Rotation], ...] = (
                 name="claude-forgejo-tea",
                 namespace="claude-sandbox",
             ),
-        ),
-    ),
-    (
-        _AGENT_BOX_CODEX_CREDENTIAL,
-        Rotation(
-            name="agent-box-codex",
-            credentials_dir=_AGENT_BOX_CODEX_CREDENTIAL.mount_directory,
-            sops_file=Path("secrets/agent-box-codex-forgejo-tea-token.yaml"),
-            token_prefix="forgejo-tea-agent-box-codex",
         ),
     ),
 )

@@ -1,8 +1,9 @@
 # agent-box — self-hosted agent VM
 
 A dedicated, SSH-accessible NixOS VM (`agent-box`) hosting agent users, each under
-its own scoped identity. The first user, `codex`, runs the OpenAI Codex CLI so a
-ChatGPT-Pro subscription can drive coding/cluster tasks online. Baseline UX:
+its own scoped identity. The first user, `codex`, runs the OpenAI Codex CLI. Its
+Forgejo and Authentik service accounts and their repository/Kubernetes access
+are retired by this configuration; this VM remains parked. Baseline UX:
 `ssh codex@agent-box.allegedly.works` (or `ssh agent-box.allegedly.works` from a
 host with the matchBlock), attach tmux, drive `codex`.
 
@@ -21,40 +22,26 @@ Two pre-generated ed25519 keypairs become age recipients via `ssh-to-age`:
   key and host-scoped secrets (attic).
 - **`agent-box-codex-user`** — the codex user's `~/.ssh/id_ed25519`, doubling as
   its age decryption identity (same trick as `.envrc`'s `SOPS_AGE_KEY`-from-ed25519).
-  Decrypts user-scoped secrets (BuildBuddy, the Forgejo bot key).
-
-Plus **`agent-box-codex-forgejo`** — the codex user's Forgejo git push key (SSH
-auth, no age role).
+  It remains for the parked VM's user-scoped secrets, including BuildBuddy and the
+  shared LiteLLM Codex key.
 
 Bootstrap chain (non-circular): cloud-init plants the host key → NixOS sops-nix
 decrypts `agent-box-codex-user.sops.key` (via host key) → plants
 `/home/codex/.ssh/id_ed25519` (tmpfiles pre-creates the dir codex-owned) →
-home-manager sops-nix (user=codex) decrypts BuildBuddy + the Forgejo key off that
-id.
+home-manager sops-nix (user=codex) decrypts its remaining user-scoped secrets off
+that id.
 
 You log in _as_ codex with your personal keys (in `authorizedKeys`); the
-`agent-box-codex-user` key is the bot's own identity for secrets + git.
+`agent-box-codex-user` key remains the codex user's identity for the separate
+parked VM secrets.
 
-## Cloning Forgejo repos as codex
+## Retired Forgejo and Kubernetes access
 
-The codex user clones the repos it collaborates on over SSH using the planted bot
-key — no netrc/HTTP credential involved:
-
-```bash
-git clone git@git.allegedly.works:agentydragon/ducktape.git
-git clone git@git.allegedly.works:agentydragon/gaffer-private.git
-```
-
-This relies on the `git.allegedly.works` matchBlock (port 2222 + the
-`agent-box-codex-forgejo` key) that `nix/home/modules/forgejo-ssh.nix` writes to
-`~/.ssh/config`. Forgejo is the working forge for codex (push topic branches, open
-PRs there); the Forgejo repos are not formal pull-mirrors of GitHub, so sync them
-from GitHub manually when needed. The VM's system toolset includes `tea` for
-Forgejo/Gitea issue, PR, release, and repo API workflows. Home Manager renders
-`~/.config/tea/config.yml` from the rotated SOPS file
-`secrets/agent-box-<user>-forgejo-tea-token.yaml`; smoke test with `tea whoami`.
-Those tokens have the full API privileges of their Forgejo service account, while
-repository access remains governed by the Terraform collaborator grants.
+The `agent-box-codex` Forgejo and Authentik accounts are retired by this
+configuration, along with their Forgejo SSH/API credentials and the
+Authentik-issued Kubernetes JWT. The parked home-manager config no longer
+installs Forgejo or Kubernetes credentials. The VM's host and user age identities
+remain for its separate configuration and secrets.
 
 ## First-boot secret ordering (known-ugly, works)
 
@@ -87,6 +74,5 @@ adding it back to Flux; see <../../docs/kubevirt_vm_image_artifacts.md>.
 
 - <nix/nixos.nix> — NixOS host config
 - <virtualmachine.yaml> — KubeVirt VM definition
-- <../../docs/agent_rbac.md> § "agent-box Codex" — cluster RBAC for the
-  codex user
+- <../../docs/agent_rbac.md> — current cluster RBAC for agent identities
 - Per-VM SSH beyond a few VMs: <../../docs/plans/vm_ssh_exposure.md>

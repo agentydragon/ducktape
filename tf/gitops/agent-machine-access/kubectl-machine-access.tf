@@ -6,8 +6,8 @@
 # scope mapping is an explicit principal-to-groups allowlist.
 #
 # Consumer: the authentik-jwt-rotation CronJob (cluster/cdk8s/authentik/jwt_rotation.py). It mints JWTs
-# for Claude Code Web, Haku, the agent-box Codex VM, and other explicitly
-# configured machine principals.
+# for Claude Code Web, Haku, and other explicitly configured machine
+# principals.
 
 ## Machine-client scope mapping for kubectl-sandbox-client-credentials.
 ## This provider is trusted by kube-apiserver, so keep the effective groups as
@@ -22,10 +22,6 @@ resource "authentik_property_mapping_provider_scope" "kubectl_machine_groups" {
         return {"groups": ["kubectl-sandbox-users"]}
     if username == "haku-k8s":
         return {"groups": ["haku"]}
-    # agent-box VM users map 1:1 to a same-named k8s group (group == username).
-    # Add a user by extending this set.
-    if username == "agent-box-codex":
-        return {"groups": [username]}
     return {"groups": []}
   EXPR
 }

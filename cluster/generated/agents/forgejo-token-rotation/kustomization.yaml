@@ -31,7 +31,3 @@ configMapGenerator:
               path: cluster/k8s/agents/claude-sandbox-secrets/claude-forgejo-tea.sops.yaml
               name: claude-forgejo-tea
               namespace: claude-sandbox
-          - name: agent-box-codex
-            credentials_dir: /var/run/secrets/forgejo/agent-box-codex
-            sops_file: secrets/agent-box-codex-forgejo-tea-token.yaml
-            token_prefix: forgejo-tea-agent-box-codex

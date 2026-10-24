@@ -136,15 +136,7 @@ This widens the original `haku-sandbox`-only perimeter (<../../haku/PLAN.md>) to
 diagnostics; the structural fences (read-only verbs, no secret material, mitmproxy egress) are
 unchanged. Haku's full enforcement inventory: <../../haku/docs/security.md>.
 
-### 5. agent-box Codex — diagnostics only
-
-The self-hosted Codex user on the `agent-box` VM authenticates as group
-`oidc-ksbx-groups:agent-box-codex`. Its access is intentionally smaller than
-Claude web or Haku: it is co-subjected only onto the secret-free
-`cluster-diagnostics-reader` binding. It does not receive a writable sandbox
-namespace or the separate `logs-configmaps-reader` class.
-
-### 6. claude-ai (OAuth Connections in agentplane-staging) — diagnostics, Coinbase key
+### 5. claude-ai (OAuth Connections in agentplane-staging) — diagnostics, Coinbase key
 
 The `claude-ai` ServiceAccount in `agentplane-staging` is the principal for Connections
 enrolled from the Claude.ai MCP connector (`cluster/cdk8s/agentplane/actions_staging_policies.py`);
@@ -524,8 +516,8 @@ CronJob in the `agents-infra` namespace — see <../cdk8s/authentik_jwt_rotation
 Machine JWTs from the `kubectl-sandbox-client-credentials` provider use a
 separate explicit Authentik allowlist for effective groups. The normal provider
 client-credentials principal maps to `kubectl-sandbox-users`; the `haku-k8s`
-service account maps to `haku`; the `agent-box-codex` service account maps to
-`agent-box-codex`; unknown machine principals receive no Kubernetes RBAC group.
+service account maps to `haku`; unknown machine principals receive no Kubernetes
+RBAC group.
 
 Laptops run their own admin kubeconfig (deployed by home-manager from
 `secrets/shared/kubeconfig.yaml`) with cluster-admin-level access; it's

@@ -142,9 +142,6 @@ spec:
                 - mountPath: /var/run/secrets/authentik/haku-k8s
                   name: haku-k8s-creds
                   readOnly: true
-                - mountPath: /var/run/secrets/authentik/agent-box-codex
-                  name: agent-box-codex-creds
-                  readOnly: true
                 - mountPath: /var/run/secrets/authentik/haku-mail
                   name: haku-mail-creds
                   readOnly: true
@@ -171,9 +168,6 @@ spec:
             - name: haku-k8s-creds
               secret:
                 secretName: haku-client-credentials
-            - name: agent-box-codex-creds
-              secret:
-                secretName: agent-box-codex-client-credentials
             - name: haku-mail-creds
               secret:
                 secretName: haku-mail-client-credentials

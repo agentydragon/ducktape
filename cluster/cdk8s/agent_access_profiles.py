@@ -65,12 +65,11 @@ HAKU_CONSOLE = Subject("Group", "haku:access-profile:haku")
 HAKU_SERVICE_ACCOUNT = Subject("ServiceAccount", "haku", "haku-sandbox")
 CLAUDE_AI = Subject("ServiceAccount", "claude-ai", "agentplane-staging")
 KUBECTL_USERS = Subject("Group", "oidc-ksbx-groups:kubectl-sandbox-users")
-AGENT_BOX = Subject("Group", "oidc-ksbx-groups:agent-box-codex")
 HAKU_IDENTITIES = (HAKU_OIDC, HAKU_CONSOLE, HAKU_SERVICE_ACCOUNT)
 STATIC_IDENTITIES = {"haku": HAKU_IDENTITIES, "claude-ai": (CLAUDE_AI,)}
 # These legacy subjects are deliberately not aliases for the Haku profile.
 NAMESPACE_READER_SUBJECTS = (*HAKU_IDENTITIES, KUBECTL_USERS, CLAUDE_AI)
-CLUSTER_DIAGNOSTIC_SUBJECTS = (KUBECTL_USERS, *HAKU_IDENTITIES, AGENT_BOX, CLAUDE_AI)
+CLUSTER_DIAGNOSTIC_SUBJECTS = (KUBECTL_USERS, *HAKU_IDENTITIES, CLAUDE_AI)
 
 
 def _namespace_read_grants() -> dict[str, RoleBindingGrant]:

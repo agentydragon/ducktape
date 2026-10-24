@@ -187,9 +187,6 @@ spec:
                 - mountPath: /var/run/secrets/forgejo/claude
                   name: claude-forgejo
                   readOnly: true
-                - mountPath: /var/run/secrets/forgejo/agent-box-codex
-                  name: agent-box-codex-forgejo
-                  readOnly: true
           imagePullSecrets:
             - name: forgejo-images-creds
           restartPolicy: OnFailure
@@ -212,9 +209,6 @@ spec:
             - name: claude-forgejo
               secret:
                 secretName: forgejo-token-mint-claude
-            - name: agent-box-codex-forgejo
-              secret:
-                secretName: forgejo-token-mint-agent-box-codex
       ttlSecondsAfterFinished: 86400
   schedule: 35 * * * *
   successfulJobsHistoryLimit: 3
