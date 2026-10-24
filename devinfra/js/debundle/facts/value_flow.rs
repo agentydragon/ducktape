@@ -1590,17 +1590,10 @@ impl FlowSolver {
         // Legacy convergence only counted value-map merges, not params metadata.
         if self.round_zero_had_fact_change {
             let functions = std::mem::take(&mut self.round_zero_new_parameters);
-            {
-                let watchers_by_dependency = &self.watchers;
-                let pending = &mut self.pending;
-                let scheduled_round = &mut self.scheduled_round;
-                for function in functions {
-                    if let Some(watchers) =
-                        watchers_by_dependency.get(&FlowDependency::Parameters(function))
-                    {
-                        for &watcher in watchers {
-                            schedule_event(pending, scheduled_round, watcher, 1);
-                        }
+            for function in functions {
+                if let Some(watchers) = self.watchers.get(&FlowDependency::Parameters(function)) {
+                    for &watcher in watchers {
+                        schedule_event(&mut self.pending, &mut self.scheduled_round, watcher, 1);
                     }
                 }
             }
@@ -1834,11 +1827,8 @@ impl FlowSolver {
         changed: BTreeSet<FlowDependency>,
     ) {
         // Preserve sweep timing: only later source-order events can run this round.
-        let watchers_by_dependency = &self.watchers;
-        let pending = &mut self.pending;
-        let scheduled_round = &mut self.scheduled_round;
         for dependency in changed {
-            let Some(watchers) = watchers_by_dependency.get(&dependency) else {
+            let Some(watchers) = self.watchers.get(&dependency) else {
                 continue;
             };
             for &watcher in watchers {
@@ -1852,7 +1842,12 @@ impl FlowSolver {
                 };
                 // Watcher visitation order is immaterial: the pending set keeps
                 // source-index order and schedule_event retains the earliest round.
-                schedule_event(pending, scheduled_round, watcher, next_round);
+                schedule_event(
+                    &mut self.pending,
+                    &mut self.scheduled_round,
+                    watcher,
+                    next_round,
+                );
             }
         }
     }
