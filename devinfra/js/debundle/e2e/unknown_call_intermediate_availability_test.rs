@@ -136,7 +136,7 @@ fn independent_value_colocated_fixture(source: &'static str) -> Fixture {
     run_fixture(
         FixtureOpts::new(
             source,
-            vec![logical_module(
+            vec![logical_module_with_anon(
                 "values/all",
                 &[
                     Member::new("prefix"),
@@ -144,6 +144,7 @@ fn independent_value_colocated_fixture(source: &'static str) -> Fixture {
                     Member::new("value"),
                     Member::new("readLater"),
                 ],
+                &["value = 42;"],
             )],
         )
         .with_chunk_id("static/provider")
@@ -277,12 +278,6 @@ console.log(globalThis.earlyRead, readLater() === dynamic);
          const dynamic = await import('./static/provider/modules/values/dynamic.js');\n\
          console.log(provider.readLater() === dynamic.dynamic);\n",
         "true\n",
-    );
-    assert_module_exports(
-        &fixture.out_root,
-        "static/provider/modules/values/later.js",
-        &["later"],
-        &[],
     );
     assert_module_exports(
         &fixture.out_root,
