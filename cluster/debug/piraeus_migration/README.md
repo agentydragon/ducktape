@@ -292,28 +292,25 @@ before a physical reset. Private per-cluster proofs are in
 
 ### ClickHouse replica 1 on 103656 — 2026-10-24 (in progress)
 
-Replica 1 has been rebuilt on `ovh-ns103656` with the existing 500Gi
-`piraeus-hdd-local` `data-piraeus-hdd` claim template; its target storage proof
-passed. The accepted application window verified the restored two-database, 26-object
-catalog and clean 106-row migration ledger (latest version 53), plus 17 writable
-tables with two active replicas and no lost parts. After a controlled stop and
-restart, native copy resumed on target Pod
-`24f8db2a-f9f5-41dc-b7fb-fe21f195f7d8`, using the same PVC UID
-`7719da4c-6a45-4fc8-a6e7-53b381265ec5`, PV UID
-`51c31c5f-2d77-494a-be75-62b36e7165a0` and CSI handle. The replica had 640
-queued tasks and 16 active fetches at the 08:26 UTC acceptance, so catch-up is
-still incomplete. Source replica 0 remains Ready with its original Pod UID on
+Replica 1 started on a fresh 500Gi `piraeus-hdd-local` claim on
+`ovh-ns103656`; its target storage proof passed. Its two-database, 26-object
+catalog was restored, and the accepted application window verified a clean
+106-row migration ledger (latest version 53), plus 17 writable tables with two
+active replicas and no lost parts. After a controlled stop and restart, native
+copy resumed with the same PVC, PV and CSI identity. At the 08:26 UTC acceptance,
+it had 640 queued tasks and 16 active fetches, so catch-up is still incomplete.
+Source replica 0 remains Ready with its original Pod UID on
 `ovh-ns103711`; client routing remains pinned there. The ClickHouse Flux
 Kustomization and native CHI are the remaining holds until full catch-up and
 final application gates pass. The former replica-1 Retain claim, PV and files
 are preserved.
 
 AIQuota and Langfuse are Ready under normal Flux management. Langfuse web is
-Ready on SSD using its existing placement policy. Both `103656` and `103711` are
-uncordoned; `102453` remains cordoned while Seaweed repair continues. Private
-proofs are under
+Ready on SSD control-plane `ovh-ns1001419` using its existing placement policy.
+Both `103656` and `103711` are uncordoned; `102453` remains cordoned while
+Seaweed repair continues. Private proofs are under
 `/tmp/piraeus-hdd-roll-20261023/last-hdd-102453/clickhouse-replica1/`, including
-`root-start-handoff-accepted.json` and `acceptedapp-window-complete.json`.
+`root-start-handoff-accepted.json` and `app-window-complete.json`.
 Refresh application gates before restoring normal ClickHouse routing or
 reconciliation.
 
