@@ -11,11 +11,7 @@ from __future__ import annotations
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import DeploymentStrategy, k8s
 from constructs import Construct
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpecDeletionPolicy,
-    KustomizationSpecHealthCheckExprs,
-    KustomizationSpecHealthChecks,
-)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs, KustomizationSpecHealthChecks
 from pydantic import AnyHttpUrl
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
@@ -301,9 +297,6 @@ def agentplane_testing(
         suspend=False,
         wait=None,
         timeout="10m",
-        # This one Kustomization owns the CNPG Cluster's PVCs; pruning on
-        # deletion would take the database with them.
-        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         health_checks=health_checks,
         health_check_exprs=[
             KustomizationSpecHealthCheckExprs(

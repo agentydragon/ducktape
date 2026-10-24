@@ -3822,7 +3822,6 @@ metadata:
   name: agentplane-testing
   namespace: ducktape-flux
 spec:
-  deletionPolicy: Orphan
   dependsOn:
     - name: agentplane-crds
       namespace: ducktape-flux
