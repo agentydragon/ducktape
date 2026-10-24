@@ -14,6 +14,7 @@ import (
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	"github.com/agentydragon/ducktape/agentplane/runner/harness"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
@@ -244,7 +245,7 @@ func TestOneEventCoalescesCommandReceiptsAtomically(t *testing.T) {
 	}
 	receipt, err := journal.Append(ctx, event, AppendOptions{
 		TerminalCommandIDs: []string{"input-a", "input-b"},
-		NativeCorrelation:  map[string]string{"message_id": "native-7"},
+		ReceiptMetadata:    CommandReceiptMetadata{HarnessMessageID: "native-7", TurnID: "turn-1"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -254,7 +255,7 @@ func TestOneEventCoalescesCommandReceiptsAtomically(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if command == nil || command.TerminalCursor == nil || *command.TerminalCursor != receipt.GetCursor() || command.NativeCorrelation["message_id"] != "native-7" {
+		if command == nil || command.TerminalCursor == nil || *command.TerminalCursor != receipt.GetCursor() || command.ReceiptMetadata.HarnessMessageID != "native-7" || command.ReceiptMetadata.TurnID != "turn-1" {
 			t.Fatalf("receipt for %s = %+v", id, command)
 		}
 	}
@@ -267,6 +268,103 @@ func TestOneEventCoalescesCommandReceiptsAtomically(t *testing.T) {
 	}
 	if journal.LastCursor() != before {
 		t.Fatalf("rejected receipt append published cursor %d; want %d", journal.LastCursor(), before)
+	}
+}
+
+func TestNativeRequestCorrelationSurvivesJournalReopen(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "journal.sqlite")
+	command := &commandpb.Command{
+		CommandId: "input-1",
+		Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "hello"}},
+	}
+	journal, err := OpenJournal(ctx, path, "test-source")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := journal.Admit(ctx, command, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := journal.DispatchPlanned(ctx, command.CommandId); err != nil {
+		t.Fatal(err)
+	}
+	if err := journal.RecordNativeCorrelation(ctx, command.CommandId, harness.NativeCorrelation{
+		Adapter: "codex", SchemaVersion: 1,
+		Payload: json.RawMessage(`{"turn_start":{"request_id":"agentplane-test-request"}}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := journal.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := OpenJournal(ctx, path, "test-source")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	pending, err := reopened.PendingCommandInfo(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 || pending[0].CommandID != command.CommandId || pending[0].SubmitText != "hello" || !pending[0].DispatchPlanned || pending[0].NativeCorrelation == nil || pending[0].NativeCorrelation.Adapter != "codex" || string(pending[0].NativeCorrelation.Payload) != `{"turn_start":{"request_id":"agentplane-test-request"}}` {
+		t.Fatalf("recovered native request correlation = %+v", pending)
+	}
+}
+
+func TestJournalMigratesLegacyNativeCorrelationMap(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "journal.sqlite")
+	command := &commandpb.Command{
+		CommandId: "input-legacy",
+		Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "hello"}},
+	}
+	journal, err := OpenJournal(ctx, path, "test-source")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := journal.Admit(ctx, command, ""); err != nil {
+		t.Fatal(err)
+	}
+	legacy := `{"codex.turn_start.request_id":"legacy-request","harness_message_id":"native-legacy","turn_id":"turn-legacy"}`
+	if _, err := journal.conn.ExecContext(ctx, "UPDATE command SET native_correlation = ? WHERE command_id = ?", legacy, command.CommandId); err != nil {
+		t.Fatal(err)
+	}
+	if err := journal.Close(); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("DROP TABLE " + journalMigrationTableName); err != nil {
+		_ = db.Close()
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := OpenJournal(ctx, path, "test-source")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	record, err := reopened.GetCommand(ctx, command.CommandId)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var oldFields map[string]string
+	if record == nil || json.Unmarshal(record.LegacyNativeCorrelation, &oldFields) != nil || oldFields["codex.turn_start.request_id"] != "legacy-request" || record.ReceiptMetadata.HarnessMessageID != "native-legacy" || record.ReceiptMetadata.TurnID != "turn-legacy" {
+		t.Fatalf("migrated legacy command data = %+v, old fields = %+v", record, oldFields)
+	}
+	var stored string
+	if err := reopened.conn.QueryRowContext(ctx, "SELECT native_correlation FROM command WHERE command_id = ?", command.CommandId).Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	var versioned commandJournalData
+	if err := json.Unmarshal([]byte(stored), &versioned); err != nil || versioned.Version != commandJournalDataVersion {
+		t.Fatalf("stored command data = %s, decode error = %v", stored, err)
 	}
 }
 

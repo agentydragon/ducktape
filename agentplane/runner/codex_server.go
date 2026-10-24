@@ -200,6 +200,7 @@ func (c *codexServer) readStdout(p *codexProcess) {
 			}); err != nil {
 				return err
 			}
+			s.wake()
 			s.deliverReplies()
 		}
 		return nil

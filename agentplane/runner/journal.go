@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -15,6 +16,7 @@ import (
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
+	"github.com/agentydragon/ducktape/agentplane/runner/harness"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	_ "modernc.org/sqlite"
@@ -50,17 +52,37 @@ type SealState struct {
 
 // CommandRecord is the journal's durable admission and dispatch receipt for a command.
 type CommandRecord struct {
-	Command           *commandpb.Command
-	AdmittedCursor    uint64
-	DispatchPlanned   bool
-	NativeCorrelation map[string]string
-	TerminalCursor    *uint64
+	Command                 *commandpb.Command
+	AdmittedCursor          uint64
+	DispatchPlanned         bool
+	NativeCorrelation       *harness.NativeCorrelation
+	LegacyNativeCorrelation json.RawMessage
+	ReceiptMetadata         CommandReceiptMetadata
+	TerminalCursor          *uint64
 }
 
 type AppendOptions struct {
 	Sources            []uint64
 	TerminalCommandIDs []string
-	NativeCorrelation  map[string]string
+	ReceiptMetadata    CommandReceiptMetadata
+}
+
+// CommandReceiptMetadata carries the typed terminal facts retained beside a command receipt.
+type CommandReceiptMetadata struct {
+	HarnessMessageID string `json:"harness_message_id,omitempty"`
+	TurnID           string `json:"turn_id,omitempty"`
+}
+
+const commandJournalDataVersion = 1
+
+// commandJournalData versions the command's adapter-specific correlation payload separately
+// from terminal receipt facts. LegacyNativeCorrelation is read-only compatibility for journals
+// written before adapter payloads had schemas.
+type commandJournalData struct {
+	Version                 int                        `json:"version"`
+	NativeCorrelation       *harness.NativeCorrelation `json:"native_correlation,omitempty"`
+	LegacyNativeCorrelation json.RawMessage            `json:"legacy_native_correlation,omitempty"`
+	ReceiptMetadata         CommandReceiptMetadata     `json:"receipt_metadata,omitempty"`
 }
 
 type Journal struct {
@@ -698,16 +720,19 @@ func (j *Journal) appendEntry(ctx context.Context, batch *journalBatch, event *e
 			return nil, storageError("read command receipt", err)
 		}
 		if !terminal.Valid {
-			correlation, err := decodeCorrelation(rawCorrelation)
+			data, _, err := decodeCommandJournalData(rawCorrelation)
 			if err != nil {
-				return nil, storageError("decode command correlation", err)
+				return nil, storageError("decode command journal data", err)
 			}
-			for key, value := range options.NativeCorrelation {
-				correlation[key] = value
+			if options.ReceiptMetadata.HarnessMessageID != "" {
+				data.ReceiptMetadata.HarnessMessageID = options.ReceiptMetadata.HarnessMessageID
 			}
-			encoded, err := json.Marshal(correlation)
+			if options.ReceiptMetadata.TurnID != "" {
+				data.ReceiptMetadata.TurnID = options.ReceiptMetadata.TurnID
+			}
+			encoded, err := encodeCommandJournalData(data)
 			if err != nil {
-				return nil, storageError("encode command correlation", err)
+				return nil, storageError("encode command journal data", err)
 			}
 			if _, err := j.conn.ExecContext(
 				ctx,
@@ -722,18 +747,46 @@ func (j *Journal) appendEntry(ctx context.Context, batch *journalBatch, event *e
 	return proto.Clone(entry).(*eventlogpb.EventEntry), nil
 }
 
-func decodeCorrelation(raw string) (map[string]string, error) {
-	correlation := map[string]string{}
-	if raw == "" {
-		return correlation, nil
+func decodeCommandJournalData(raw string) (commandJournalData, bool, error) {
+	data := commandJournalData{Version: commandJournalDataVersion}
+	if strings.TrimSpace(raw) == "" {
+		return data, false, nil
 	}
-	if err := json.Unmarshal([]byte(raw), &correlation); err != nil {
-		return nil, err
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(raw), &fields); err != nil {
+		return commandJournalData{}, false, err
 	}
-	if correlation == nil {
-		correlation = map[string]string{}
+	if version, ok := fields["version"]; ok {
+		if err := json.Unmarshal(version, &data.Version); err != nil {
+			return commandJournalData{}, false, fmt.Errorf("decode command journal data version: %w", err)
+		}
+		if data.Version != commandJournalDataVersion {
+			return commandJournalData{}, false, fmt.Errorf("unsupported command journal data version %d", data.Version)
+		}
+		if err := json.Unmarshal([]byte(raw), &data); err != nil {
+			return commandJournalData{}, false, err
+		}
+		return data, false, nil
 	}
-	return correlation, nil
+	var legacy map[string]string
+	if err := json.Unmarshal([]byte(raw), &legacy); err != nil {
+		return commandJournalData{}, false, fmt.Errorf("decode legacy command correlation: %w", err)
+	}
+	if len(legacy) == 0 {
+		return data, true, nil
+	}
+	data.LegacyNativeCorrelation = append(json.RawMessage(nil), []byte(raw)...)
+	data.ReceiptMetadata = CommandReceiptMetadata{
+		HarnessMessageID: legacy["harness_message_id"],
+		TurnID:           legacy["turn_id"],
+	}
+	return data, true, nil
+}
+
+func encodeCommandJournalData(data commandJournalData) (string, error) {
+	data.Version = commandJournalDataVersion
+	encoded, err := json.Marshal(data)
+	return string(encoded), err
 }
 
 func (j *Journal) Append(ctx context.Context, event *eventpb.Event, options AppendOptions) (*eventlogpb.EventEntry, error) {
@@ -809,7 +862,7 @@ func (j *Journal) Admit(ctx context.Context, command *commandpb.Command, expecte
 		}
 		if _, err := j.conn.ExecContext(
 			ctx,
-			"INSERT INTO command (command_id, payload, admitted_cursor, dispatch_planned, native_correlation, terminal_cursor) VALUES (?, ?, ?, 0, '{}', NULL)",
+			"INSERT INTO command (command_id, payload, admitted_cursor, dispatch_planned, native_correlation, terminal_cursor) VALUES (?, ?, ?, 0, '{\"version\":1}', NULL)",
 			commandCopy.GetCommandId(), payload, entry.GetCursor(),
 		); err != nil {
 			return storageError("insert command admission", err)
@@ -820,15 +873,14 @@ func (j *Journal) Admit(ctx context.Context, command *commandpb.Command, expecte
 	return result, newlyAdmitted, err
 }
 
-func (j *Journal) DispatchPlanned(ctx context.Context, commandID string, nativeCorrelation map[string]string) (bool, error) {
+func (j *Journal) DispatchPlanned(ctx context.Context, commandID string) (bool, error) {
 	planned := false
 	err := j.write(ctx, func(_ *journalBatch) error {
 		var terminal sql.NullInt64
-		var rawCorrelation string
 		err := j.conn.QueryRowContext(
 			ctx,
-			"SELECT terminal_cursor, native_correlation FROM command WHERE command_id = ?", commandID,
-		).Scan(&terminal, &rawCorrelation)
+			"SELECT terminal_cursor FROM command WHERE command_id = ?", commandID,
+		).Scan(&terminal)
 		if errors.Is(err, sql.ErrNoRows) {
 			return fmt.Errorf("%w %q", ErrUnknownCommand, commandID)
 		}
@@ -838,21 +890,10 @@ func (j *Journal) DispatchPlanned(ctx context.Context, commandID string, nativeC
 		if terminal.Valid {
 			return nil
 		}
-		correlation, err := decodeCorrelation(rawCorrelation)
-		if err != nil {
-			return storageError("decode command correlation", err)
-		}
-		for key, value := range nativeCorrelation {
-			correlation[key] = value
-		}
-		encoded, err := json.Marshal(correlation)
-		if err != nil {
-			return storageError("encode command correlation", err)
-		}
 		if _, err := j.conn.ExecContext(
 			ctx,
-			"UPDATE command SET dispatch_planned = 1, native_correlation = ? WHERE command_id = ? AND terminal_cursor IS NULL",
-			string(encoded), commandID,
+			"UPDATE command SET dispatch_planned = 1 WHERE command_id = ? AND terminal_cursor IS NULL",
+			commandID,
 		); err != nil {
 			return storageError("mark command dispatch planned", err)
 		}
@@ -860,6 +901,52 @@ func (j *Journal) DispatchPlanned(ctx context.Context, commandID string, nativeC
 		return nil
 	})
 	return planned, err
+}
+
+func (j *Journal) RecordNativeCorrelation(ctx context.Context, commandID string, nativeCorrelation harness.NativeCorrelation) error {
+	if nativeCorrelation.Adapter == "" || nativeCorrelation.SchemaVersion == 0 || !json.Valid(nativeCorrelation.Payload) {
+		return errors.New("native correlation requires an adapter, schema version, and valid JSON payload")
+	}
+	var payloadObject map[string]json.RawMessage
+	if err := json.Unmarshal(nativeCorrelation.Payload, &payloadObject); err != nil || payloadObject == nil {
+		return errors.New("native correlation payload must be a JSON object")
+	}
+	return j.write(ctx, func(_ *journalBatch) error {
+		var terminal sql.NullInt64
+		var rawCorrelation string
+		if err := j.conn.QueryRowContext(
+			ctx,
+			"SELECT terminal_cursor, native_correlation FROM command WHERE command_id = ?",
+			commandID,
+		).Scan(&terminal, &rawCorrelation); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return fmt.Errorf("%w %q", ErrUnknownCommand, commandID)
+			}
+			return storageError("read native request correlation", err)
+		}
+		if terminal.Valid {
+			return nil
+		}
+		data, _, err := decodeCommandJournalData(rawCorrelation)
+		if err != nil {
+			return storageError("decode command journal data", err)
+		}
+		correlationCopy := nativeCorrelation
+		correlationCopy.Payload = append(json.RawMessage(nil), nativeCorrelation.Payload...)
+		data.NativeCorrelation = &correlationCopy
+		encoded, err := encodeCommandJournalData(data)
+		if err != nil {
+			return err
+		}
+		if _, err := j.conn.ExecContext(
+			ctx,
+			"UPDATE command SET native_correlation = ? WHERE command_id = ? AND terminal_cursor IS NULL",
+			encoded, commandID,
+		); err != nil {
+			return storageError("record native request correlation", err)
+		}
+		return nil
+	})
 }
 
 func (j *Journal) GetCommand(ctx context.Context, commandID string) (*CommandRecord, error) {
@@ -890,11 +977,15 @@ func (j *Journal) GetCommand(ctx context.Context, commandID string) (*CommandRec
 	if err := proto.Unmarshal(payload, command); err != nil {
 		return nil, err
 	}
-	nativeCorrelation, err := decodeCorrelation(correlation)
+	data, _, err := decodeCommandJournalData(correlation)
 	if err != nil {
 		return nil, err
 	}
-	record := &CommandRecord{Command: command, AdmittedCursor: uint64(admitted), DispatchPlanned: dispatch, NativeCorrelation: nativeCorrelation}
+	record := &CommandRecord{
+		Command: command, AdmittedCursor: uint64(admitted), DispatchPlanned: dispatch,
+		NativeCorrelation: data.NativeCorrelation, LegacyNativeCorrelation: data.LegacyNativeCorrelation,
+		ReceiptMetadata: data.ReceiptMetadata,
+	}
 	if terminal.Valid {
 		value := uint64(terminal.Int64)
 		record.TerminalCursor = &value
@@ -929,6 +1020,58 @@ func (j *Journal) PendingCommands(ctx context.Context) ([]*commandpb.Command, er
 			return nil, err
 		}
 		commands = append(commands, command)
+	}
+	return commands, rows.Err()
+}
+
+func (j *Journal) PendingCommandInfo(ctx context.Context) ([]harness.PendingCommandInfo, error) {
+	if !j.ownsBatch(ctx) {
+		j.mu.Lock()
+		defer j.mu.Unlock()
+	}
+	if err := j.checkWritableLocked(); err != nil {
+		return nil, err
+	}
+	rows, err := j.conn.QueryContext(
+		ctx,
+		"SELECT payload, admitted_cursor, dispatch_planned, native_correlation FROM command WHERE terminal_cursor IS NULL ORDER BY admitted_cursor",
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	commands := []harness.PendingCommandInfo{}
+	for rows.Next() {
+		var payload []byte
+		var admittedCursor int64
+		var planned bool
+		var rawCorrelation string
+		if err := rows.Scan(&payload, &admittedCursor, &planned, &rawCorrelation); err != nil {
+			return nil, err
+		}
+		command := &commandpb.Command{}
+		if err := proto.Unmarshal(payload, command); err != nil {
+			return nil, err
+		}
+		data, _, err := decodeCommandJournalData(rawCorrelation)
+		if err != nil {
+			return nil, err
+		}
+		info := harness.PendingCommandInfo{
+			CommandID: command.GetCommandId(), AdmittedCursor: uint64(admittedCursor),
+			DispatchPlanned: planned, NativeCorrelation: data.NativeCorrelation,
+			LegacyNativeCorrelation: data.LegacyNativeCorrelation,
+		}
+		if input := command.GetSubmitInput(); input != nil {
+			info.SubmitText = input.GetText()
+		}
+		if model := command.GetChangeModel(); model != nil {
+			info.ChangeModelValue = model.GetModel()
+		}
+		if effort := command.GetChangeReasoningEffort(); effort != nil {
+			info.ChangeReasoningEffortValue = effort.GetEffort()
+		}
+		commands = append(commands, info)
 	}
 	return commands, rows.Err()
 }
