@@ -158,28 +158,16 @@ pub fn resolve_imported_purities(
     modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
     asserted_pure: &BTreeMap<ModuleKey, BTreeSet<String>>,
 ) -> BTreeMap<ModuleKey, BTreeMap<String, Arc<Purity>>> {
-    // Imported verdicts change across rounds; the module's own value flow
-    // and shadowing do not. Keep those structural facts for every rebuild.
-    let prepared: BTreeMap<_, _> = modules
-        .iter()
-        .map(|(key, facts)| (key.clone(), facts.prepare()))
+    // Only exported verdicts read by a named/default import can affect the
+    // returned maps or another module's fixpoint inputs. Namespace member
+    // calls are intentionally outside this oracle. Avoid value-flow analysis
+    // of modules whose bodies cannot contribute an inferred verdict.
+    let required: BTreeSet<_> = modules
+        .values()
+        .flat_map(|facts| facts.imports.values())
+        .map(|target| (target.module.clone(), target.export.clone()))
         .collect();
-    // The fixpoint state: the verdict for each *function* export. A
-    // `(module, export)` pair is in this map iff `export`'s local binding is a
-    // chunk-top function (so calling the import is meaningful); we seed those
-    // optimistically with `Pure`. Non-function exports never enter the map, so
-    // imports bound to them stay unresolved (`unknown_call`).
     let mut export_purity: BTreeMap<(ModuleKey, String), Arc<Purity>> = BTreeMap::new();
-    for (key, facts) in modules {
-        // Build once with no resolved imports to discover which exports are
-        // functions; their concrete verdict is refined by the loop below.
-        let graph = facts.build_graph(&prepared[key], &BTreeMap::new());
-        for (export_name, local) in &facts.exports {
-            if graph.function_purity(local).is_some() {
-                export_purity.insert((key.clone(), export_name.clone()), Arc::new(Purity::Pure));
-            }
-        }
-    }
 
     // Author-asserted axioms: pinned Pure, exempt from demotion below.
     let mut pinned: BTreeSet<(ModuleKey, String)> = BTreeSet::new();
@@ -203,6 +191,49 @@ pub fn resolve_imported_purities(
         }
     }
 
+    // Asserted exports need no inference, but their validation above must run
+    // even when no import consumes them. Keep structural facts only for the
+    // remaining providers; they do not change across fixpoint rounds.
+    let progress = std::env::var_os("DUCKTAPE_DEBUNDLE_PROGRESS").is_some();
+    let mut prepared = BTreeMap::new();
+    for (key, facts) in modules {
+        let inferred_exports: Vec<_> = facts
+            .exports
+            .iter()
+            .filter(|(export, _)| {
+                let slot = (key.clone(), (*export).clone());
+                required.contains(&slot) && !pinned.contains(&slot)
+            })
+            .collect();
+        if inferred_exports.is_empty() {
+            continue;
+        }
+        if progress {
+            eprintln!(
+                "[debundle progress] chunk={key} phase=prepare_cross_module_purity state=start"
+            );
+        }
+        let facts_prepared = facts.prepare();
+        // Discover function exports before optimistically seeding them. Other
+        // exports stay unresolved, unless explicitly asserted above.
+        let graph = facts.build_graph(&facts_prepared, &BTreeMap::new());
+        let mut has_function_exports = false;
+        for (export, local) in inferred_exports {
+            if graph.function_purity(local).is_some() {
+                export_purity.insert((key.clone(), export.clone()), Arc::new(Purity::Pure));
+                has_function_exports = true;
+            }
+        }
+        if has_function_exports {
+            prepared.insert(key, facts_prepared);
+        }
+        if progress {
+            eprintln!(
+                "[debundle progress] chunk={key} phase=prepare_cross_module_purity state=end"
+            );
+        }
+    }
+
     // Greatest-fixpoint: rebuild every module with the current cross-module
     // verdicts and demote any function export that is impure under them. A
     // verdict only moves Pure → NotPure, so this terminates. Modules whose
@@ -213,12 +244,14 @@ pub fn resolve_imported_purities(
     let mut last_inputs: BTreeMap<&ModuleKey, BTreeMap<String, Arc<Purity>>> = BTreeMap::new();
     loop {
         let mut changed = false;
-        for (key, facts) in modules {
+        for (key, facts_prepared) in &prepared {
+            let key = *key;
+            let facts = &modules[key];
             let imported = facts.imported_purities(&export_purity);
             if last_inputs.get(key) == Some(&imported) {
                 continue;
             }
-            let graph = facts.build_graph(&prepared[key], &imported);
+            let graph = facts.build_graph(facts_prepared, &imported);
             last_inputs.insert(key, imported);
             for (export_name, local) in &facts.exports {
                 let slot_key = (key.clone(), export_name.clone());

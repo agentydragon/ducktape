@@ -1237,6 +1237,13 @@ output, the Vite ecosystem, and most React/Vue/Angular SPAs.
   lives instead of at each call site. Same author-trust contract;
   dangling assertions (no such analyzed export) warn and are ignored.
 
+  Inferred export verdicts are observable only through named/default
+  imports. The oracle prepares a provider's value flow only when at least
+  one of those imports consumes an unasserted export. It still validates
+  all assertions, includes transitive import dependencies, and leaves
+  namespace member calls unresolved. This prunes unused inference without
+  changing the greatest fixpoint seen by any imported binding.
+
   `chunk_export_purity.<chunk>.pure_new_exports` is the analogous
   cross-module constructor contract. It projects onto each importing
   chunk's local binding for the named export, admitting only
