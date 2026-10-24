@@ -1,9 +1,23 @@
 import { type JSX, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
-import { Alert, Anchor, Badge, Button, Code, Group, Paper, SegmentedControl, Stack, Text } from "@mantine/core";
+import {
+  ActionIcon,
+  Alert,
+  Badge,
+  Button,
+  Code,
+  Group,
+  Paper,
+  SegmentedControl,
+  Stack,
+  Text,
+  Tooltip,
+} from "@mantine/core";
 
 import { Link, useLocation, useSearchParams } from "react-router";
 
 import { Disclosure, DisclosureBody } from "../disclosure";
+import { durationLabel } from "../format_time";
+import { IconArrowRight } from "../icons";
 import { RawSwitch } from "../raw_switch";
 import { TimeAgo } from "../time_ago";
 import { displayableError } from "../client";
@@ -24,6 +38,7 @@ import {
   renderPaneCollapsed,
 } from "./rendering/index";
 import { stateLabel } from "./requests";
+import type { DecisionView } from "./types";
 
 /** The stored result: its pretty rendering unless it has none or the action is switched to Raw, and
  * otherwise its stored JSON. */
@@ -59,6 +74,42 @@ function ExecutionResult({
   );
 }
 
+/** Who decided and how: an operator after how long a wait, or the policy that auto-approved. `named`
+ * when the status already names the decision, as it does until the request runs. */
+function DecisionSummary({
+  decision,
+  requestedAt,
+  named,
+}: {
+  decision: DecisionView;
+  requestedAt: string;
+  named: boolean;
+}): JSX.Element {
+  const verb = named
+    ? "Decided"
+    : decision.verdict === "deny"
+      ? "Denied"
+      : decision.operator === null
+        ? "Auto-approved"
+        : "Approved";
+  if (decision.operator === null) {
+    const policySet = decision.policy_evidence?.matched.policy_set;
+    return (
+      <>
+        {verb}
+        {policySet && (
+          <>
+            {" "}
+            via policy <Code>{policySet}</Code>
+          </>
+        )}
+      </>
+    );
+  }
+  const wait = durationLabel(Math.round((Date.parse(decision.decided_at) - Date.parse(requestedAt)) / 1000));
+  return <>{wait === "" ? verb : `${verb} after ${wait}`}</>;
+}
+
 /** A decided/terminal ActionRequest, kept as a durable receipt: the call as the operator saw it
  * when deciding, then the decision it is a record of and what came of it. */
 export function ActionHistoryCard({
@@ -72,7 +123,6 @@ export function ActionHistoryCard({
 }): JSX.Element {
   const location = useLocation();
   const decision = request.decision;
-  const policySet = decision?.policy_evidence?.matched.policy_set;
   const [raw, setRaw] = useState(false);
   const result = request.execution?.result;
   const executionError = request.execution?.error;
@@ -120,19 +170,18 @@ export function ActionHistoryCard({
         ? "gray"
         : "blue";
   const status = (
-    <>
-      <Badge color={color} data-testid="action-execution-state">
-        {outcomeLabel}
-      </Badge>
-      {decision && !decisionState && (
-        <Badge color="gray" variant="light">
-          {decisionLabel}
-        </Badge>
-      )}
-    </>
+    <Badge color={color} data-testid="action-execution-state">
+      {outcomeLabel}
+    </Badge>
   );
   const timestamp = (
     <Text size="xs" c="dimmed">
+      {decision && (
+        <>
+          <DecisionSummary decision={decision} requestedAt={request.created_at} named={decisionState} />
+          {" · "}
+        </>
+      )}
       {request.execution?.completed_at ? "Completed " : "Updated "}
       <TimeAgo value={request.execution?.completed_at ?? request.updated_at} />
     </Text>
@@ -164,11 +213,6 @@ export function ActionHistoryCard({
         >
           <Text size="sm">{decision.decision_note}</Text>
         </ClampedBlock>
-      )}
-      {policySet && (
-        <Text size="xs" c="dimmed">
-          Auto-approved via policy <Code>{policySet}</Code>
-        </Text>
       )}
       {(hasResult || hasExecutionError || !decisionState) && (
         <Stack gap="xs" data-testid="action-execution-outcome">
@@ -204,24 +248,25 @@ export function ActionHistoryCard({
             <Group gap="xs">
               {status}
               {pretty && <RawSwitch raw={raw} onChange={changeRaw} />}
+              <Tooltip label="View full details" withArrow>
+                <ActionIcon
+                  component={Link}
+                  to={`/actions/${request.id}`}
+                  state={{ returnTo: location }}
+                  variant="subtle"
+                  color="gray"
+                  aria-label={`View details for ${request.title}`}
+                >
+                  <IconArrowRight size={15} aria-hidden="true" />
+                </ActionIcon>
+              </Tooltip>
             </Group>
           </Group>
           <Text size="sm" style={{ overflowWrap: "anywhere" }}>
             {request.title}
           </Text>
           {!raw && summary !== undefined && summary !== null && <div>{summary}</div>}
-          <Group justify="space-between" gap="xs">
-            {timestamp}
-            <Anchor
-              component={Link}
-              to={`/actions/${request.id}`}
-              state={{ returnTo: location }}
-              size="xs"
-              aria-label={`View details for ${request.title}`}
-            >
-              View details
-            </Anchor>
-          </Group>
+          {timestamp}
           <Disclosure summary="Receipt details" open={receiptOpen} onOpenChange={setReceiptOpen} keepMounted>
             <DisclosureBody>{receipt}</DisclosureBody>
           </Disclosure>

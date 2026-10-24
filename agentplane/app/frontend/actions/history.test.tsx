@@ -147,12 +147,18 @@ describe("ActionHistory", () => {
     expect(container.textContent).toContain("Execution error");
   });
 
-  it("puts the execution outcome in the summary separately from its permission decision", async () => {
-    const container = await renderHistory([succeeded("test_sandbox", { ok: true })]);
+  it("shows one status, with the operator's decision and wait in the timestamp line", async () => {
+    const row = succeeded("test_sandbox", { ok: true });
+    const container = await renderHistory([
+      { ...row, decision: { ...row.decision!, decided_at: "2026-09-05T12:00:56Z" } },
+    ]);
     const state = container.querySelector('[data-testid="action-execution-state"]');
     expect(state?.textContent).toBe("succeeded");
     expect(state?.closest('[data-testid="action-execution-outcome"]')).toBeNull();
-    expect(container.textContent).toContain("Allowed");
+    expect(container.querySelector("time")?.parentElement?.textContent).toContain(
+      "Approved after 56 seconds · Completed"
+    );
+    expect(container.textContent).not.toContain("Allowed");
     const summary = [...container.querySelectorAll("button")].find((node) => node.textContent === "Receipt details");
     expect(summary?.getAttribute("aria-expanded")).toBe("false");
     expect(container.querySelector('a[href^="/actions/"]')).not.toBeNull();
@@ -167,10 +173,19 @@ describe("ActionHistory", () => {
     expect(summary?.getAttribute("aria-expanded")).toBe("true");
   });
 
-  it("shows a command failure in the summary while retaining its Allowed decision", async () => {
+  it("shows a command failure in the summary while retaining its decision", async () => {
     const container = await renderHistory([sshExec("succeeded", { exit_code: 7 })], [group("ssh", "mcp")]);
     expect(container.querySelector('[data-testid="action-execution-state"]')?.textContent).toBe("Command exited 7");
-    expect(container.textContent).toContain("Allowed");
+    expect(container.textContent).toContain("Approved · Completed");
+  });
+
+  it("names a request's decision once while it has not run", async () => {
+    const row = request("denied", 1);
+    const container = await renderHistory([
+      { ...row, decision: { ...row.decision!, decided_at: "2026-09-05T12:02:00Z" } },
+    ]);
+    expect(container.querySelector('[data-testid="action-execution-state"]')?.textContent).toBe("Denied");
+    expect(container.textContent).toContain("Decided after 2 minutes · Updated");
   });
 
   it("retains the exact arguments inside the receipt disclosure", async () => {
@@ -194,7 +209,8 @@ describe("ActionHistory", () => {
       ...base,
       decision: {
         ...base.decision!,
-        provider: "policy_engine",
+        provider: "action_policy_set",
+        operator: null,
         decision_note: null,
         policy_evidence: {
           bindings: [{ namespace: "agentplane-visual", name: "demo-a1b2-github-public", resource_version: "12345" }],
@@ -211,8 +227,7 @@ describe("ActionHistory", () => {
       },
     };
     const container = await renderHistory([row]);
-    expect(container.textContent).toContain("Auto-approved via policy");
-    expect(container.textContent).toContain("fixture-auto-allow");
+    expect(container.textContent).toContain("Auto-approved via policy fixture-auto-allow · Completed");
   });
 
   it("loads a bounded history page, follows invalidations, and pages on demand", async () => {
