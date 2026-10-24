@@ -6,7 +6,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -120,8 +119,8 @@ func TestOpenJournalReopensPythonSchemaAndKeepsStoredBytes(t *testing.T) {
 	if err := journal.conn.QueryRowContext(ctx, "SELECT MAX(version_id) FROM "+journalMigrationTableName).Scan(&version); err != nil {
 		t.Fatal(err)
 	}
-	if version != 3 {
-		t.Fatalf("Goose migration version = %d, want 3", version)
+	if version != 2 {
+		t.Fatalf("Goose migration version = %d, want 2", version)
 	}
 }
 
@@ -351,179 +350,164 @@ func TestNativeRequestSurvivesJournalReopenAndPartialSettlement(t *testing.T) {
 
 func TestJournalMigratesNativeRequests(t *testing.T) {
 	for _, test := range []struct {
-		name     string
-		legacy   string
-		storedV2 string
-		kind     harness.NativeRequestKind
+		name   string
+		legacy string
+		kind   harness.NativeRequestKind
 	}{
-		{name: "empty", legacy: `{}`, storedV2: `{"receipt_metadata":{}}`},
+		{name: "empty", legacy: `{}`},
 		{
-			name:     "receipt",
-			legacy:   `{"harness_message_id":"message-1","turn_id":"turn-1"}`,
-			storedV2: `{"receipt_metadata":{"harness_message_id":"message-1","turn_id":"turn-1"}}`,
+			name:   "receipt",
+			legacy: `{"harness_message_id":"message-1","turn_id":"turn-1"}`,
 		},
 		{
 			name: "claude-submit", kind: harness.ClaudeSubmit,
-			legacy:   `{"claude.submit.message_uuid":"message-1"}`,
-			storedV2: `{"receipt_metadata":{},"native_correlation":{"adapter":"claude","payload":{"submit":{"message_uuid":"message-1"}}}}`,
+			legacy: `{"claude.submit.message_uuid":"message-1"}`,
 		},
 		{
 			name: "claude-model", kind: harness.ClaudeModelChange,
-			legacy:   `{"claude.model.request_id":"request-1","claude.model.value":"test-model"}`,
-			storedV2: `{"receipt_metadata":{},"native_correlation":{"adapter":"claude","payload":{"model_change":{"request_id":"request-1","model":"test-model"}}}}`,
+			legacy: `{"claude.model.request_id":"request-1","claude.model.value":"test-model"}`,
 		},
 		{
 			name: "claude-effort", kind: harness.ClaudeEffortChange,
-			legacy:   `{"claude.effort.request_id":"request-1","claude.effort.value":"high"}`,
-			storedV2: `{"receipt_metadata":{},"native_correlation":{"adapter":"claude","payload":{"effort_change":{"request_id":"request-1","effort":"high"}}}}`,
+			legacy: `{"claude.effort.request_id":"request-1","claude.effort.value":"high"}`,
 		},
 		{
 			name: "codex-start", kind: harness.CodexTurnStart,
-			legacy:   `{"codex.turn_start.request_id":"request-1"}`,
-			storedV2: `{"receipt_metadata":{},"native_correlation":{"adapter":"codex","payload":{"turn_start":{"request_id":"request-1"}}}}`,
+			legacy: `{"codex.turn_start.request_id":"request-1"}`,
 		},
 		{
 			name: "codex-start-with-changes-and-receipt", kind: harness.CodexTurnStart,
-			legacy:   `{"codex.turn_start.request_id":"request-1","codex.turn_start.model_command_id":"model-1","codex.turn_start.model_value":"test-model","codex.turn_start.effort_command_id":"effort-1","codex.turn_start.effort_value":"high","harness_message_id":"message-1","turn_id":"turn-1"}`,
-			storedV2: `{"receipt_metadata":{"harness_message_id":"message-1","turn_id":"turn-1"},"native_correlation":{"adapter":"codex","payload":{"turn_start":{"request_id":"request-1","model_change":{"command_id":"model-1","value":"test-model"},"effort_change":{"command_id":"effort-1","value":"high"}}}}}`,
+			legacy: `{"codex.turn_start.request_id":"request-1","codex.turn_start.model_command_id":"model-1","codex.turn_start.model_value":"test-model","codex.turn_start.effort_command_id":"effort-1","codex.turn_start.effort_value":"high","harness_message_id":"message-1","turn_id":"turn-1"}`,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			for _, version := range []int64{1, 2} {
-				t.Run(fmt.Sprintf("version-%d", version), func(t *testing.T) {
-					ctx := context.Background()
-					path := filepath.Join(t.TempDir(), "journal.sqlite")
-					db, err := sql.Open("sqlite", path)
-					if err != nil {
+			ctx := context.Background()
+			path := filepath.Join(t.TempDir(), "journal.sqlite")
+			db, err := sql.Open("sqlite", path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+			files, err := fs.Sub(journalMigrationFiles, "journal_migrations")
+			if err != nil {
+				t.Fatal(err)
+			}
+			provider, err := goose.NewProvider(goose.DialectSQLite3, db, files,
+				goose.WithTableName(journalMigrationTableName), goose.WithDisableGlobalRegistry(true))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := provider.UpTo(ctx, 1); err != nil {
+				t.Fatal(err)
+			}
+			operation := &commandpb.Command{CommandId: "input-legacy", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "hello"}}}
+			if test.kind == harness.ClaudeModelChange {
+				operation.Operation = &commandpb.Command_ChangeModel{ChangeModel: &commandpb.ChangeModel{Model: "test-model"}}
+			}
+			if test.kind == harness.ClaudeEffortChange {
+				operation.Operation = &commandpb.Command_ChangeReasoningEffort{ChangeReasoningEffort: &commandpb.ChangeReasoningEffort{Effort: "high"}}
+			}
+			commands := []*commandpb.Command{operation}
+			if test.name == "codex-start-with-changes-and-receipt" {
+				commands = append(commands,
+					&commandpb.Command{CommandId: "model-1", Operation: &commandpb.Command_ChangeModel{ChangeModel: &commandpb.ChangeModel{Model: "test-model"}}},
+					&commandpb.Command{CommandId: "effort-1", Operation: &commandpb.Command_ChangeReasoningEffort{ChangeReasoningEffort: &commandpb.ChangeReasoningEffort{Effort: "high"}}})
+			}
+			var entryBytes [][]byte
+			for i, command := range commands {
+				payload, err := proto.Marshal(command)
+				if err != nil {
+					t.Fatal(err)
+				}
+				entry := &eventlogpb.EventEntry{
+					Cursor: uint64(i + 1), Origin: &eventlogpb.EventOrigin{SourceId: "test-source", Sequence: uint64(i + 1)},
+					Event: &eventpb.Event{Observation: &eventpb.Event_CommandAdmitted{CommandAdmitted: &eventpb.CommandAdmitted{Command: command}}},
+				}
+				encoded, err := proto.Marshal(entry)
+				if err != nil {
+					t.Fatal(err)
+				}
+				entryBytes = append(entryBytes, encoded)
+				if _, err := db.ExecContext(ctx, "INSERT INTO event_entry VALUES (?, ?)", i+1, encoded); err != nil {
+					t.Fatal(err)
+				}
+				correlation := "{}"
+				if i == 0 {
+					correlation = test.legacy
+				}
+				if _, err := db.ExecContext(ctx, "INSERT INTO command VALUES (?, ?, ?, 1, ?, NULL)", command.CommandId, payload, i+1, correlation); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var terminalCursor *uint64
+			if test.name == "receipt" || test.name == "codex-start-with-changes-and-receipt" {
+				cursor := uint64(len(entryBytes) + 1)
+				terminalCursor = &cursor
+				entry := &eventlogpb.EventEntry{
+					Cursor: cursor, Origin: &eventlogpb.EventOrigin{SourceId: "test-source", Sequence: cursor},
+					Event: &eventpb.Event{Observation: &eventpb.Event_HarnessUserMessageConfirmed{HarnessUserMessageConfirmed: &eventpb.HarnessUserMessageConfirmed{OriginCommandIds: []string{operation.CommandId}, HarnessMessageId: "message-1", TurnId: "turn-1", Text: "hello"}}},
+				}
+				encoded, err := proto.Marshal(entry)
+				if err != nil {
+					t.Fatal(err)
+				}
+				entryBytes = append(entryBytes, encoded)
+				if _, err := db.ExecContext(ctx, "INSERT INTO event_entry VALUES (?, ?)", cursor, encoded); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := db.ExecContext(ctx, "UPDATE command SET terminal_cursor = ? WHERE command_id = ?", cursor, operation.CommandId); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := db.ExecContext(ctx, "INSERT INTO checkpoint VALUES (1, 'test-source', ?, 0, '')", len(entryBytes)); err != nil {
+				t.Fatal(err)
+			}
+			for range 2 {
+				journal, err := OpenJournal(ctx, path, "test-source")
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer journal.Close()
+				requests, err := journal.PendingNativeRequests(ctx)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if test.kind == "" {
+					if len(requests) != 0 {
+						t.Fatalf("unexpected requests: %+v", requests)
+					}
+				} else {
+					if len(requests) != 1 || requests[0].Kind != test.kind || len(requests[0].Commands) != len(commands) {
+						t.Fatalf("migrated requests = %+v", requests)
+					}
+					for i, record := range requests[0].Commands {
+						if !proto.Equal(record.Command, commands[i]) || !record.DispatchPlanned {
+							t.Fatalf("migrated command = %+v", record)
+						}
+					}
+				}
+				mainRecord, err := journal.GetCommand(ctx, operation.CommandId)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if mainRecord == nil || (mainRecord.TerminalCursor == nil) != (terminalCursor == nil) {
+					t.Fatalf("lost command receipt: %+v", mainRecord)
+				}
+				if terminalCursor != nil && *mainRecord.TerminalCursor != *terminalCursor {
+					t.Fatalf("receipt cursor = %d, want %d", *mainRecord.TerminalCursor, *terminalCursor)
+				}
+				for i, original := range entryBytes {
+					var retained []byte
+					if err := journal.conn.QueryRowContext(ctx, "SELECT payload FROM event_entry WHERE cursor = ?", i+1).Scan(&retained); err != nil {
 						t.Fatal(err)
 					}
-					defer db.Close()
-					files, err := fs.Sub(journalMigrationFiles, "journal_migrations")
-					if err != nil {
-						t.Fatal(err)
+					if !bytes.Equal(retained, original) {
+						t.Fatal("migration rewrote event bytes")
 					}
-					provider, err := goose.NewProvider(goose.DialectSQLite3, db, files,
-						goose.WithTableName(journalMigrationTableName), goose.WithDisableGlobalRegistry(true))
-					if err != nil {
-						t.Fatal(err)
-					}
-					if _, err := provider.UpTo(ctx, version); err != nil {
-						t.Fatal(err)
-					}
-					operation := &commandpb.Command{CommandId: "input-legacy", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "hello"}}}
-					if test.kind == harness.ClaudeModelChange {
-						operation.Operation = &commandpb.Command_ChangeModel{ChangeModel: &commandpb.ChangeModel{Model: "test-model"}}
-					}
-					if test.kind == harness.ClaudeEffortChange {
-						operation.Operation = &commandpb.Command_ChangeReasoningEffort{ChangeReasoningEffort: &commandpb.ChangeReasoningEffort{Effort: "high"}}
-					}
-					commands := []*commandpb.Command{operation}
-					if test.name == "codex-start-with-changes-and-receipt" {
-						commands = append(commands,
-							&commandpb.Command{CommandId: "model-1", Operation: &commandpb.Command_ChangeModel{ChangeModel: &commandpb.ChangeModel{Model: "test-model"}}},
-							&commandpb.Command{CommandId: "effort-1", Operation: &commandpb.Command_ChangeReasoningEffort{ChangeReasoningEffort: &commandpb.ChangeReasoningEffort{Effort: "high"}}})
-					}
-					stored := test.legacy
-					if version == 2 {
-						stored = test.storedV2
-					}
-					var entryBytes [][]byte
-					for i, command := range commands {
-						payload, err := proto.Marshal(command)
-						if err != nil {
-							t.Fatal(err)
-						}
-						entry := &eventlogpb.EventEntry{
-							Cursor: uint64(i + 1), Origin: &eventlogpb.EventOrigin{SourceId: "test-source", Sequence: uint64(i + 1)},
-							Event: &eventpb.Event{Observation: &eventpb.Event_CommandAdmitted{CommandAdmitted: &eventpb.CommandAdmitted{Command: command}}},
-						}
-						encoded, err := proto.Marshal(entry)
-						if err != nil {
-							t.Fatal(err)
-						}
-						entryBytes = append(entryBytes, encoded)
-						if _, err := db.ExecContext(ctx, "INSERT INTO event_entry VALUES (?, ?)", i+1, encoded); err != nil {
-							t.Fatal(err)
-						}
-						correlation := "{}"
-						if i == 0 {
-							correlation = stored
-						}
-						if _, err := db.ExecContext(ctx, "INSERT INTO command VALUES (?, ?, ?, 1, ?, NULL)", command.CommandId, payload, i+1, correlation); err != nil {
-							t.Fatal(err)
-						}
-					}
-					var terminalCursor *uint64
-					if test.name == "receipt" || test.name == "codex-start-with-changes-and-receipt" {
-						cursor := uint64(len(entryBytes) + 1)
-						terminalCursor = &cursor
-						entry := &eventlogpb.EventEntry{
-							Cursor: cursor, Origin: &eventlogpb.EventOrigin{SourceId: "test-source", Sequence: cursor},
-							Event: &eventpb.Event{Observation: &eventpb.Event_HarnessUserMessageConfirmed{HarnessUserMessageConfirmed: &eventpb.HarnessUserMessageConfirmed{OriginCommandIds: []string{operation.CommandId}, HarnessMessageId: "message-1", TurnId: "turn-1", Text: "hello"}}},
-						}
-						encoded, err := proto.Marshal(entry)
-						if err != nil {
-							t.Fatal(err)
-						}
-						entryBytes = append(entryBytes, encoded)
-						if _, err := db.ExecContext(ctx, "INSERT INTO event_entry VALUES (?, ?)", cursor, encoded); err != nil {
-							t.Fatal(err)
-						}
-						if _, err := db.ExecContext(ctx, "UPDATE command SET terminal_cursor = ? WHERE command_id = ?", cursor, operation.CommandId); err != nil {
-							t.Fatal(err)
-						}
-					}
-					if _, err := db.ExecContext(ctx, "INSERT INTO checkpoint VALUES (1, 'test-source', ?, 0, '')", len(entryBytes)); err != nil {
-						t.Fatal(err)
-					}
-					for range 2 {
-						journal, err := OpenJournal(ctx, path, "test-source")
-						if err != nil {
-							t.Fatal(err)
-						}
-						defer journal.Close()
-						requests, err := journal.PendingNativeRequests(ctx)
-						if err != nil {
-							t.Fatal(err)
-						}
-						if test.kind == "" {
-							if len(requests) != 0 {
-								t.Fatalf("unexpected requests: %+v", requests)
-							}
-						} else {
-							if len(requests) != 1 || requests[0].Kind != test.kind || len(requests[0].Commands) != len(commands) {
-								t.Fatalf("migrated requests = %+v", requests)
-							}
-							for i, record := range requests[0].Commands {
-								if !proto.Equal(record.Command, commands[i]) || !record.DispatchPlanned {
-									t.Fatalf("migrated command = %+v", record)
-								}
-							}
-						}
-						mainRecord, err := journal.GetCommand(ctx, operation.CommandId)
-						if err != nil {
-							t.Fatal(err)
-						}
-						if mainRecord == nil || (mainRecord.TerminalCursor == nil) != (terminalCursor == nil) {
-							t.Fatalf("lost command receipt: %+v", mainRecord)
-						}
-						if terminalCursor != nil && *mainRecord.TerminalCursor != *terminalCursor {
-							t.Fatalf("receipt cursor = %d, want %d", *mainRecord.TerminalCursor, *terminalCursor)
-						}
-						for i, original := range entryBytes {
-							var retained []byte
-							if err := journal.conn.QueryRowContext(ctx, "SELECT payload FROM event_entry WHERE cursor = ?", i+1).Scan(&retained); err != nil {
-								t.Fatal(err)
-							}
-							if !bytes.Equal(retained, original) {
-								t.Fatal("migration rewrote event bytes")
-							}
-						}
-						if err := journal.Close(); err != nil {
-							t.Fatal(err)
-						}
-					}
-				})
+				}
+				if err := journal.Close(); err != nil {
+					t.Fatal(err)
+				}
 			}
 		})
 	}
