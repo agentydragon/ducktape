@@ -119,29 +119,34 @@ The other output-reader trims have merged: [#11913](https://github.com/agentydra
 (mailbox SMTP relation). Each uses its own cdk8s model, fixture, or live API;
 none consumes a universal rendered bundle.
 
-The remaining rows do not all need an output-reader trim:
+The Agentplane RBAC model checks moved to `//cluster/cdk8s:test_agent_rbac` in
+merged [#11957](https://github.com/agentydragon/ducktape/pull/11957). The
+remaining Agentplane assertions in `test_cluster_integration` are boundary checks
+on the Flux inputs: `test_agent_binding_delegation_dependencies_follow_namespace_owners`
+checks the generated delegation Kustomizations against the owning namespace graph,
+and `test_no_legacy_agent_diagnostic_rbac` rejects retired access resources. Keep
+these with the Flux graph through cutover.
 
-- `cluster/cdk8s/haku_ci` and the ClickHouse contract test read authored SOPS
-  Secrets. Keep those checks against the source Secret and the specific model
-  contract; their file ownership determines their eventual package location.
-- The Authentik checker reads the authored blueprint data embedded by cdk8s.
-  Keep its reference checks with that source data.
-- `test_generator_namespace` checks hand-written Kustomization declarations.
-  Keep it with those declarations; cdk8s-owned Kustomization generation belongs
-  in model tests.
-- The Agentplane RBAC checks in `test_cluster_integration` concern grant catalogs,
-  preset selection, reader scopes, permissions, and delegated Role construction.
-  Move them to Agentplane cdk8s tests; several already have in-memory coverage
-  there. Only checking each target namespace's owner and Flux dependency needs
-  the broader graph.
-- `test_flux_build` and the whole-graph portions of `test_cluster_integration`
-  intentionally validate the complete Flux source graph. Run those with the
-  owner of that graph. Split any discrete cdk8s-owned assertions into focused
-  model tests as they are identified; they do not need the whole graph.
+The focused follow-up trims are separate draft PRs:
 
-The only unresolved ownership question is which authored inputs under
-`cluster/k8s/` (including SOPS Secrets, Kustomizations, and Authentik blueprints)
-remain as source data in devel versus move with Flux delivery. That affects where
-those source-contract checks run; it does not block the output-reader trims above.
-The linked incident PRs are the available evidence; the checkout's Git history is
-shallow, so no further commit attribution was available.
+- [#11965](https://github.com/agentydragon/ducktape/pull/11965) compares the Loki
+  allowlist with `NAMESPACE_DIAGNOSTICS` in the cdk8s model test, removing its
+  generated-YAML reader from `test_cluster_integration`.
+- [#11967](https://github.com/agentydragon/ducktape/pull/11967) moves Authentik
+  blueprint reference checks to `cluster/cdk8s/authentik`, alongside the owned
+  blueprint inputs.
+- [#11966](https://github.com/agentydragon/ducktape/pull/11966) tests haku-ci's
+  TriggerAuthentication and ScaledJob from its cdk8s chart, while keeping the
+  authored Forgejo Secret contract in a focused target with that exact input.
+- [#11964](https://github.com/agentydragon/ducktape/pull/11964) checks the ClickHouse
+  source Role, store, and ExternalSecret in the Agentplane cdk8s model test, and
+  keeps the authored public-coder Secret contract on its exact source file.
+
+`test_generator_namespace` checks hand-written Kustomization declarations. Keep
+it with those declarations; cdk8s-owned Kustomization generation belongs in model
+tests. `test_flux_build` and the remaining whole-graph checks in
+`test_cluster_integration` validate the complete Flux source graph and stay with
+its owner. The authored Secret and blueprint contracts above read their specific
+source inputs; they do not depend on a CI render of the whole graph. Their future
+Git location remains an ownership decision for the Flux cutover.
+
