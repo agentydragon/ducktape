@@ -52,8 +52,7 @@ py_test(
     deps = [
         ":runner",
         "//util/bazel:runfiles",
-        "@pypi//pyyaml",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )
-
