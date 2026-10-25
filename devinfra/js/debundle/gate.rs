@@ -17,7 +17,7 @@ mod realizability;
 mod report_builders;
 mod validation;
 
-pub use chunk_factorization::ChunkFactorization;
+pub use chunk_factorization::{ChunkFactorization, ValidatedAssignment};
 pub use esm_import_order::EsmImportOrder;
 pub use factorization_inputs::FactorizationInputs;
 pub use realizability::{

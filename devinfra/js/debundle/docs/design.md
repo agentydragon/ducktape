@@ -3145,6 +3145,13 @@ Statement facts feed the owner graph (stored on `FactorizationInputs`), and the
 module dep graph is a quotient of that owner graph under the current spec
 assignment (stored on `ChunkFactorization`).
 
+`ChunkFactorization::validate_for_emission` returns a `ValidatedAssignment` only
+when atomic-unit, schedule, and cross-destination rebinding checks pass. Lowering
+requires this immutable borrow of the checked assignment. Rejection reports remain
+available to diagnostics without constructing an emission capability. This checks
+the assignment and shared import order; vendor consumer and final export checks
+still run on the emitted files.
+
 Both are keyed per-chunk; the chunk is contextual within the
 analysis, so binding keys collapse to just `name`.
 
