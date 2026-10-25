@@ -130,11 +130,11 @@ fn rejoining_restores_a_safe_home_and_keeps_an_unrelated_module() {
 #[test]
 fn rejoining_keeps_an_unsafe_home_split_and_refine_applies_accepted_groups() {
     let fixture = GraphFixture::rejected(
-        "const first = 1;\nconst middle = first + 1;\nconst last = middle + 1;\nconst spare = 4;\nconsole.log(last + spare);\n",
+        "const first = 1;\nconst middle = first + 1;\nconst last = middle + 1;\nconst spare = 4;\nconst extra = 5;\nconsole.log(last + spare + extra);\n",
         &[
             (
                 "home.yaml",
-                "members: [{selector: {binding: {name: first}}}, {selector: {binding: {name: last}}}, {selector: {binding: {name: spare}}}]\n",
+                "members: [{selector: {binding: {name: first}}}, {selector: {binding: {name: last}}}, {selector: {binding: {name: spare}}}, {selector: {binding: {name: extra}}}]\n",
             ),
             (
                 "middle.yaml",
@@ -159,8 +159,11 @@ fn rejoining_keeps_an_unsafe_home_split_and_refine_applies_accepted_groups() {
     assert_eq!(report["cycles"], serde_json::json!([]), "{report}");
     assert_eq!(report["cross_rebinds"], serde_json::json!([]), "{report}");
     let rejoining = &report["coarsening"]["original_home_rejoining"];
-    assert!(rejoining["attempted_contractions"].as_u64().unwrap() >= 2);
-    assert!(rejoining["accepted_contractions"].as_u64().unwrap() >= 1);
+    // One rejected whole-home check, then pair fallback across two safe
+    // contractions and a final pass. Do not retry the same rejected batch
+    // after each safe pair within the home.
+    assert_eq!(rejoining["attempted_contractions"], 7, "{report}");
+    assert_eq!(rejoining["accepted_contractions"], 2, "{report}");
     assert!(
         rejoining["unrestored_module_paths"]
             .as_array()
@@ -202,12 +205,12 @@ fn rejoining_keeps_an_unsafe_home_split_and_refine_applies_accepted_groups() {
         fs::read(fixture.modules.join("middle.yaml")).unwrap(),
         "unrelated module must not be edited"
     );
-    debundle_e2e_support::assert_node_output(&fixture.source_path(), "7\n", "");
+    debundle_e2e_support::assert_node_output(&fixture.source_path(), "12\n", "");
     let paths: Vec<&str> = split
         .iter()
         .map(|group| group["suggested_module_path"].as_str().unwrap())
         .collect();
-    assert_emitted_layout_and_output(&fixture, &paths, "7\n");
+    assert_emitted_layout_and_output(&fixture, &paths, "12\n");
 }
 
 #[test]
