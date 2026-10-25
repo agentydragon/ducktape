@@ -3,7 +3,7 @@
 use debundle_e2e_support::*;
 
 #[test]
-fn reassigned_superclass_does_not_get_heritage_shortcut() {
+fn reassigned_superclass_constructor_reads_are_promoted() {
     let source = r#"import { trigger } from './peer.js';
 let later = 0;
 class Original {}
