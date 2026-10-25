@@ -296,7 +296,7 @@ spec:
         resources:
           requests:
             storage: 2Gi
-        storageClassName: local-path-ovh
+        storageClassName: piraeus-hdd-local
 ---
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: HelmRepository
