@@ -1,5 +1,5 @@
 use crate::chunk_ast::{binding_ids, declaration_ids};
-use analysis::{AtomicUnitConflict, DepKind};
+use analysis::{AtomicGroupConflict, DepKind};
 use anyhow::Result;
 use artifact::{join_module_path, normalize_module_path};
 use std::collections::{BTreeSet, HashMap};
@@ -122,11 +122,11 @@ pub(super) fn assigned_module_for_ids(
         .next()
 }
 
-/// Per-cause guidance for the atomic-unit-conflict bail message —
+/// Per-cause guidance for the atomic-group-conflict bail message —
 /// gives the spec author vocabulary to search for (`cycle`,
 /// `side-effect`, `mutable`, `assignment`, `cross-destination`).
-pub(super) fn render_atomic_unit_cause_guidance(conflicts: &[AtomicUnitConflict]) -> String {
-    // `AtomicUnit::causes` is already a `BTreeSet<DepKind>` — gather
+pub(super) fn render_atomic_group_cause_guidance(conflicts: &[AtomicGroupConflict]) -> String {
+    // `AtomicGroup::causes` is already a `BTreeSet<DepKind>` — gather
     // per-conflict causes into one `BTreeSet` so iteration stays
     // `DepKind`-`Ord`-stable without a post-collection sort.
     let causes: BTreeSet<DepKind> = conflicts

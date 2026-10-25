@@ -40,7 +40,7 @@ pub(super) struct ChunkAstAnalysis {
     /// claiming any one binding from a destructure pulls the rest
     /// into the same module, because the materializer's
     /// `split_var_decl` moves a destructuring declarator as one
-    /// atomic unit.
+    /// atomic group.
     pub(super) destructure_siblings: BTreeMap<String, BTreeSet<String>>,
     /// Bindings that the source chunk's entry already exports (via
     /// `export { foo, bar }` re-exports of local bindings, or

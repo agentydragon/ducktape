@@ -1,8 +1,8 @@
-//! Structural atomic factor units: SCCs of the constraining-edge
+//! Structural atomic factor groups: SCCs of the constraining-edge
 //! subgraph `G_atomic` over an owner graph. Each SCC is one set of
 //! owners any valid factorization must keep co-located, because the
 //! bundle's original init order is otherwise unrealizable as ESM.
-//! [`crate::assignment_assembly::assemble_assignment`] consumes the units
+//! [`crate::assignment_assembly::assemble_assignment`] consumes the groups
 //! plus YAML claims and `unassigned_mode` to produce the final
 //! assignment. See `docs/design.md` §"Two classes of atom" + §"Factor
 //! assembly inside `debundle run`" for the architecture.
@@ -37,50 +37,50 @@ use crate::graph::{
     build_owner_graph_with,
 };
 
-/// One atomic factor unit: a set of owners that any valid
+/// One atomic factor group: a set of owners that any valid
 /// factorization must keep co-located, plus the `DepKind`s of the
-/// constraining edges *inside* the unit (everything except
+/// constraining edges *inside* the group (everything except
 /// `LazyUse` and `HoistedUse`) — used by [`crate::assignment_assembly`] to explain *why*
-/// a unit is forced together when its claims conflict.
+/// the group is forced together when its claims conflict.
 ///
 /// `causes` is a `BTreeSet<DepKind>` so iteration order is the
 /// `DepKind` `Ord` order — consumers that serialise the field can
 /// drop their own post-collection sort.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct AtomicUnit {
+pub struct AtomicGroup {
     pub members: BTreeSet<OwnerId>,
     pub causes: BTreeSet<DepKind>,
 }
 
-/// Owner graph plus its precomputed atomic units. Bundled so a single
+/// Owner graph plus its precomputed atomic groups. Bundled so a single
 /// chunk-level computation pays the Tarjan/SCC cost once and threads
 /// the result through `ChunkPlanBuilder::synthesize_mini_factors` →
 /// `ChunkFactorization::build_with` (gate crate) and atomic-DAG report emission.
 #[derive(Debug, Clone)]
-pub struct OwnerGraphAndUnits {
+pub struct OwnerGraphAndAtomicGroups {
     pub owner_graph: OwnerGraph,
-    pub atomic_units: Vec<AtomicUnit>,
+    pub atomic_groups: Vec<AtomicGroup>,
 }
 
 /// Build an owner graph from chunk facts under the per-chunk
-/// [`OwnerGraphOptions`] and immediately compute its atomic units.
-pub fn compute_owner_graph_and_units_with(
+/// [`OwnerGraphOptions`] and immediately compute its atomic groups.
+pub fn compute_owner_graph_and_atomic_groups_with(
     facts: &[StatementFacts],
     options: OwnerGraphOptions,
-) -> Result<OwnerGraphAndUnits, DuplicateTopLevelDeclaration> {
+) -> Result<OwnerGraphAndAtomicGroups, DuplicateTopLevelDeclaration> {
     let owner_graph = build_owner_graph_with(facts, options)?;
-    let atomic_units = compute_atomic_units(&owner_graph);
-    Ok(OwnerGraphAndUnits {
+    let atomic_groups = compute_atomic_groups(&owner_graph);
+    Ok(OwnerGraphAndAtomicGroups {
         owner_graph,
-        atomic_units,
+        atomic_groups,
     })
 }
 
-/// Compute atomic factor units for an owner graph. Returns one unit
+/// Compute atomic factor groups for an owner graph. Returns one group
 /// per SCC of the constraining-edge subgraph; singleton owners with
-/// no constraining edges get their own (empty-cause) unit so every
+/// no constraining edges get their own (empty-cause) group so every
 /// owner is covered exactly once.
-pub fn compute_atomic_units(owner_graph: &OwnerGraph) -> Vec<AtomicUnit> {
+pub fn compute_atomic_groups(owner_graph: &OwnerGraph) -> Vec<AtomicGroup> {
     let mut g_atomic = DiGraphMap::<OwnerId, ()>::new();
     for node in owner_graph.iter_nodes() {
         g_atomic.add_node(node.id);
@@ -105,16 +105,16 @@ pub fn compute_atomic_units(owner_graph: &OwnerGraph) -> Vec<AtomicUnit> {
         }
     }
     let sccs = tarjan_scc(&g_atomic);
-    let mut unit_of = vec![None::<usize>; owner_graph.num_nodes()];
-    let mut units: Vec<AtomicUnit> = sccs
+    let mut atomic_group_of = vec![None::<usize>; owner_graph.num_nodes()];
+    let mut atomic_groups: Vec<AtomicGroup> = sccs
         .into_iter()
         .enumerate()
         .map(|(idx, scc)| {
             let members: BTreeSet<OwnerId> = scc.into_iter().collect();
             for owner in &members {
-                unit_of[owner.0] = Some(idx);
+                atomic_group_of[owner.0] = Some(idx);
             }
-            AtomicUnit {
+            AtomicGroup {
                 members,
                 causes: BTreeSet::new(),
             }
@@ -126,12 +126,14 @@ pub fn compute_atomic_units(owner_graph: &OwnerGraph) -> Vec<AtomicUnit> {
         {
             continue;
         }
-        let (Some(from_unit), Some(to_unit)) = (unit_of[edge.from.0], unit_of[edge.to.0]) else {
+        let (Some(from_group), Some(to_group)) =
+            (atomic_group_of[edge.from.0], atomic_group_of[edge.to.0])
+        else {
             continue;
         };
-        if from_unit == to_unit {
-            units[from_unit].causes.insert(edge.reason.kind);
+        if from_group == to_group {
+            atomic_groups[from_group].causes.insert(edge.reason.kind);
         }
     }
-    units
+    atomic_groups
 }

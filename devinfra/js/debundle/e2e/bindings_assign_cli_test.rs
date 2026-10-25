@@ -172,7 +172,7 @@ fn assign_moves_atomic_source_match_group_in_one_batch() {
     );
     fixture.assert_rejected_unchanged(
         &["bindings", "assign", "Alpha:dest"],
-        &["splits one or more atomic units"],
+        &["splits one or more atomic groups"],
     );
     assert_eq!(
         fixture.json(&["bindings", "assign", "Alpha:dest", "Beta:dest"])["moves_applied"],

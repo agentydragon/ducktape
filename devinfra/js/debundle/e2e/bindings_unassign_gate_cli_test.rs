@@ -6,7 +6,7 @@ use debundle_e2e_support::GraphFixture;
 fn bindings_unassign_rejects_atom_split_in_both_modes_without_writes() {
     GraphFixture::atomic_pair().assert_rejected_unchanged(
         &["bindings", "unassign", "alpha"],
-        &["splits one or more atomic units"],
+        &["splits one or more atomic groups"],
     );
 }
 

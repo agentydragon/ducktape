@@ -13,7 +13,9 @@ use crate::imports::{
 use crate::plans::ModulePlan;
 use crate::rebind_fold::RebindFold;
 use crate::util::target_file_for_request;
-use analysis::{BindingKind, ModuleId, OwnerGraphAndUnits, OwnerId, top_level_id};
+use analysis::{
+    BindingKind, ModuleId, OwnerGraphAndAtomicGroups, OwnerId, top_level_id,
+};
 use anyhow::{Context, Result, bail};
 use js_ast::body_index_for_statement_ordinal;
 use selector_outcome::{
@@ -962,14 +964,14 @@ impl ChunkPlanBuilder {
         Ok(())
     }
 
-    /// Move anonymous owners into the catchall when their atomic unit already
+    /// Move anonymous owners into the catchall when their atomic group already
     /// belongs there, or when a catchall owner must run after them according
     /// to the source-order side-effect graph. Other anonymous statements may
     /// stay in the entry and run after peeled modules. Explicit claims win;
     /// the realizability gate rejects an order that cannot be represented.
     pub(super) fn route_unclaimed_anonymous_to_catchall(
         &mut self,
-        precomputed: &OwnerGraphAndUnits,
+        precomputed: &OwnerGraphAndAtomicGroups,
         body: &[ModuleItem],
     ) {
         let Some(index) = self.residual_plan_index else {
@@ -993,9 +995,9 @@ impl ChunkPlanBuilder {
                 catchall_owners.insert(node.id);
             }
         }
-        for unit in &precomputed.atomic_units {
+        for atomic_group in &precomputed.atomic_groups {
             let mut has_catchall_binding = false;
-            let all_members_fit = unit.members.iter().all(|&owner_id| {
+            let all_members_fit = atomic_group.members.iter().all(|&owner_id| {
                 let Some(node) = graph.node(owner_id) else {
                     return false;
                 };
@@ -1019,7 +1021,7 @@ impl ChunkPlanBuilder {
             if !has_catchall_binding || !all_members_fit {
                 continue;
             }
-            for &owner_id in &unit.members {
+            for &owner_id in &atomic_group.members {
                 let Some(node) = graph.node(owner_id) else {
                     continue;
                 };
@@ -1092,21 +1094,21 @@ impl ChunkPlanBuilder {
         }
     }
 
-    /// `MiniFactors` mode: every unclaimed atomic factor unit gets
+    /// `MiniFactors` mode: every unclaimed atomic factor group gets
     /// its own synthesized plan at `__auto/mini/NNNN`. Run after rebind folding
     /// so the residual sweep and fold decisions have already settled which
-    /// units are still unclaimed. Bindings
+    /// atomic groups are still unclaimed. Bindings
     /// previously parked at the residual plan are moved out into the
     /// synthesized plan; the residual plan's `bindings` map is
     /// pruned to match.
     pub(super) fn synthesize_mini_factors(
         &mut self,
-        precomputed: &OwnerGraphAndUnits,
+        precomputed: &OwnerGraphAndAtomicGroups,
         body: &[ModuleItem],
         target_dir: &str,
     ) -> Result<()> {
         let owner_graph = &precomputed.owner_graph;
-        let atomic_units = &precomputed.atomic_units;
+        let atomic_groups = &precomputed.atomic_groups;
         let mut owner_declared_names: HashMap<OwnerId, Vec<Id>> = HashMap::new();
         let mut owner_statement_ordinal: HashMap<OwnerId, usize> = HashMap::new();
         for node in owner_graph.iter_nodes() {
@@ -1118,14 +1120,14 @@ impl ChunkPlanBuilder {
         let residual_plan_index = self.residual_plan_index;
         let bindings_catalogue = &self.bindings_catalogue;
         let anonymous_ordinal_assignment = &self.anonymous_ordinal_assignment;
-        // A unit member counts as unclaimed iff every declared binding
+        // An atomic-group member counts as unclaimed iff every declared binding
         // has no owned destination in `bindings_catalogue` or is assigned to
         // the residual plan (if any); anonymous owners must similarly
         // be unassigned or routed via residual. If any member is
         // claimed by an explicit (non-residual) plan, the spec author
-        // already named the unit's destination — leave the existing
+        // already named the atomic group's destination — leave the existing
         // claim intact (and let downstream validation flag an
-        // atomic-unit conflict if the claims disagree).
+        // atomic group conflict if the claims disagree).
         let is_owner_unclaimed = |owner: OwnerId| -> bool {
             let names = owner_declared_names
                 .get(&owner)
@@ -1154,15 +1156,15 @@ impl ChunkPlanBuilder {
             true
         };
 
-        let mut unclaimed_units: Vec<&BTreeSet<OwnerId>> = atomic_units
+        let mut unclaimed_atomic_groups: Vec<&BTreeSet<OwnerId>> = atomic_groups
             .iter()
-            .filter(|unit| unit.members.iter().copied().all(is_owner_unclaimed))
-            .map(|unit| &unit.members)
+            .filter(|atomic_group| atomic_group.members.iter().copied().all(is_owner_unclaimed))
+            .map(|atomic_group| &atomic_group.members)
             .collect();
         // Stable iteration order: smallest OwnerId first.
-        unclaimed_units.sort_by_key(|members| members.iter().next().copied());
+        unclaimed_atomic_groups.sort_by_key(|members| members.iter().next().copied());
 
-        for (idx, members) in unclaimed_units.into_iter().enumerate() {
+        for (idx, members) in unclaimed_atomic_groups.into_iter().enumerate() {
             let synthetic_idx = self.module_plans.len();
             let synthetic_module_id = ModuleId(synthetic_idx);
             let target_path = format!("__auto/mini/{idx:04}");
@@ -1236,7 +1238,7 @@ impl ChunkPlanBuilder {
     /// from that plan's binding list so the residual doesn't
     /// double-claim them.
     ///
-    /// Folds are produced in atomic-unit iteration order; we do not
+    /// Folds are produced in atomic-group iteration order; we do not
     /// reorder them here. The mutations are idempotent in the sense
     /// that `module_plans[dest].bindings.entry(name).or_insert_with`
     /// preserves any existing entry under that name.

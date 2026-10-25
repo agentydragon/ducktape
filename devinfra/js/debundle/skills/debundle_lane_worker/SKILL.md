@@ -91,9 +91,9 @@ Use `references/module_shape.md` for seam, tiny-module, and layer-ownership
 decisions. Apply the target project's conventions to the source and graph
 before choosing a destination.
 
-You may expand the batch when the assigned peel would split an atomic unit or
+You may expand the batch when the assigned peel would split an atomic group or
 create a worse module shape. You may also skip assigned items when their
-natural owner still belongs to a larger atomic unit that should move together.
+natural owner still belongs to a larger atomic group that should move together.
 
 ## Failure Handling
 
@@ -102,7 +102,7 @@ natural owner still belongs to a larger atomic unit that should move together.
 - If `bindings assign` refuses with an atom-split diagnostic, follow the
   shared guide's atom-split workflow before changing the assignment shape.
 - If the gate rejects via `debundle run`, read the structured cycle/report
-  output (`cycles.json`, `atomic_unit_conflicts.json`) first. Use the
+  output (`cycles.json`, `atomic_group_conflicts.json`) first. Use the
   cut/evidence if present. For an unknown-call side-effect cycle, follow the
   shared workflow's initialization-contract guidance before changing the assignment;
   keep the source evidence and the exact asserted contract in the review.

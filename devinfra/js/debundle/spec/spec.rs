@@ -9,7 +9,7 @@
 //! A third per-chunk map, `unassigned_mode`, decides what happens to
 //! top-level statements that no `logical_modules` entry explicitly
 //! claims (catch-all to entry, catch-all to a separate file, or one
-//! synthetic mini-factor per atomic unit). See [`UnassignedMode`].
+//! synthetic mini-factor per atomic group). See [`UnassignedMode`].
 //!
 //! Pipeline stages run in a fixed canonical order; each stage is either
 //! always-on or gated by the contents of those maps / by the presence of a
@@ -288,7 +288,7 @@ pub struct OwnerGraphOptions {
     /// This is the React annotation idiom — `C.displayName = "…"`,
     /// `C.defaultProps = {…}` — which is otherwise an
     /// `assign_or_update` impurity that chains otherwise-unrelated
-    /// statements into one atomic unit.
+    /// statements into one atomic group.
     ///
     /// **Soundness precondition (author-audited):** all writes to `X`
     /// co-locate with `X`'s declaration, and a cross-module reader of
@@ -567,10 +567,10 @@ pub enum VendorLevel {
 
 /// What [`TransformSpec::unassigned_mode`] means for a chunk's
 /// top-level statements that the YAML doesn't explicitly claim for
-/// any logical module. The atomic-factor-unit primitive in
-/// `analysis::atomic_units` partitions the chunk's owners into
+/// any logical module. The atomic-group primitive in
+/// `analysis::atomic_groups` partitions the chunk's owners into
 /// minimal co-location groups; this enum decides what destination
-/// each *unclaimed* unit lands in.
+/// each *unclaimed* atomic group lands in.
 ///
 /// The three variants are mutually exclusive — every chunk picks
 /// exactly one destination policy. Subsuming the previous
@@ -599,7 +599,7 @@ pub enum UnassignedMode {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         target: Option<String>,
     },
-    /// One synthetic mini-factor per unclaimed atomic factor unit.
+    /// One synthetic mini-factor per unclaimed atomic factor group.
     /// The residual catch-all collapses to whatever truly cannot
     /// be peeled (typically empty for clean chunks). See
     /// `docs/design.md` §"Layered mental model" + §"Two classes of atom".

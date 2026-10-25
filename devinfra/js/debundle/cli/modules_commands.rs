@@ -78,7 +78,7 @@ enum ModulesNsCommand {
     /// existing selectors and metadata without synthesizing selectors, then
     /// resolves the entire scoped spec again and requires the complete owner
     /// assignment to match the requested assignment before running the normal
-    /// realizability and atomic-unit gates. Import/export scaffolding and
+    /// realizability and atomic-group gates. Import/export scaffolding and
     /// residual owners cannot be moved. Module comments and notes stay with
     /// their original YAML module.
     Refine(ModulesRefineArgs),
@@ -115,7 +115,7 @@ struct ModuleDecomposeArgs {
     #[arg(long, value_enum)]
     format: Option<OutputFormat>,
 
-    /// Use structural atomic units only, skipping same-module seed contractions.
+    /// Use structural atomic groups only, skipping same-module seed contractions.
     #[arg(long)]
     atomic: bool,
 
@@ -130,7 +130,7 @@ struct ModuleDecomposeArgs {
     coarsen_blocking_sccs: bool,
 
     /// First co-locate whole candidate groups joined by reported structural
-    /// atomic units, then run the normal blocking-SCC coarsening.
+    /// atomic groups, then run the normal blocking-SCC coarsening.
     #[arg(long, requires = "coarsen_blocking_sccs")]
     coarsen_atomic_conflicts: bool,
 
@@ -355,10 +355,10 @@ fn render_module_decomposition_text(report: &ModuleDecompositionReport, out: &mu
             ));
         }
     }
-    for conflict in &report.atomic_unit_conflicts {
+    for conflict in &report.atomic_group_conflicts {
         out.push_str(&format!(
-            "atomic unit {} spans candidate modules: {}\n",
-            conflict.unit_id,
+            "atomic group {} spans candidate modules: {}\n",
+            conflict.atomic_group_id,
             conflict
                 .candidate_modules
                 .iter()
@@ -384,8 +384,8 @@ fn render_module_decomposition_text(report: &ModuleDecompositionReport, out: &mu
         ));
         for merge in &coarsening.atomic_conflict_merges {
             out.push_str(&format!(
-                "  atomic units {}: merged {} into {}\n",
-                merge.unit_ids.join(", "),
+                "  atomic groups {}: merged {} into {}\n",
+                merge.atomic_group_ids.join(", "),
                 merge
                     .merged_candidate_paths
                     .iter()

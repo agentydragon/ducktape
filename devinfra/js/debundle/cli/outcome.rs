@@ -9,8 +9,8 @@
 //! alongside it. When the realizability gate refuses the edit, the
 //! verbs instead print a [`GateRejectionOutcome`] (`action:
 //! "rejected"`) carrying the canonical rejection projections — the
-//! same `BlockingSccEntry` / `AtomicUnitConflictReport` wire shapes
-//! `cycles.json` / `atomic_unit_conflicts.json` use — and exit
+//! same `BlockingSccEntry` / `AtomicGroupConflictReport` wire shapes
+//! `cycles.json` / `atomic_group_conflicts.json` use — and exit
 //! non-zero. See docs/cli.md § "Rejection diagnostics".
 
 use anyhow::Result;

@@ -27,7 +27,7 @@ pub use realizability::{
 };
 pub use validation::{
     BlockingSccEntry, CycleEdge, CycleReport, FactorizationReport,
-    render_atomic_unit_conflict_summary, render_cycle_summary, validate_factorization,
+    render_atomic_group_conflict_summary, render_cycle_summary, validate_factorization,
 };
 
 #[cfg(test)]

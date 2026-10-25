@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 
 use analysis::{DepKind, ModuleId, OwnerGraphReport};
 use report_fixtures::{
-    active_owner, atomic_edge, atomic_unit_for, claims, graph_of, owner_edge, promoted_owner_edge,
+    active_owner, atomic_edge, atomic_group_for, claims, graph_of, owner_edge, promoted_owner_edge,
     residual_owner, singleton_graph,
 };
 
@@ -253,15 +253,15 @@ fn seed_skips_unrealizable_spec_module_contraction_and_reports() {
 // These pin the module-level gate predicate that `check_merge_boolean`
 // routes through.
 
-/// A 3-owner atomic unit whose members form a constraining cycle
+/// A 3-owner atomic group whose members form a constraining cycle
 /// `a → b → c → a` exists precisely because its members MUST
 /// co-locate, and the module-level predicate accepts the contractions
 /// (all three owners project to the residual module, so every merge
 /// is a delta-free no-op). A class-level cycle check would reject
-/// them — the class graph is cyclic from construction — and the unit
+/// them — the class graph is cyclic from construction — and the group
 /// could not seed.
 #[test]
-fn seed_co_locates_constraining_cycle_atomic_unit() {
+fn seed_co_locates_constraining_cycle_atomic_group() {
     let a = residual_owner("owner:a", 1, &["BindingA"], 5);
     let b = residual_owner("owner:b", 2, &["BindingB"], 5);
     let c = residual_owner("owner:c", 3, &["BindingC"], 5);
@@ -270,18 +270,18 @@ fn seed_co_locates_constraining_cycle_atomic_unit() {
         owner_edge("edge:1", "owner:b", "owner:c", DepKind::EagerUse, true),
         owner_edge("edge:2", "owner:c", "owner:a", DepKind::EagerUse, true),
     ];
-    let unit = atomic_unit_for("atomic:0", &[&a, &b, &c]);
+    let atomic_group = atomic_group_for("atomic:0", &[&a, &b, &c]);
     let report = graph_of(
         vec![a.clone(), b.clone(), c.clone()],
         edges,
-        vec![unit],
+        vec![atomic_group],
         vec![],
     );
     let (q, rejected) =
         build_seed_quotient(&report, &report.atomic_graph.nodes, &[], 10_000).unwrap();
     assert!(
         rejected.is_empty(),
-        "atomic-unit contractions internal to the residual module are \
+        "atomic-group contractions internal to the residual module are \
          delta-free no-ops under the module-level predicate and must \
          not be rejected: {rejected:?}",
     );
@@ -356,10 +356,10 @@ fn post_seed_reports_each_unrealizable_scc_in_owner_id_order() {
         owner_edge("edge:2", "owner:a", "owner:b", DepKind::EagerUse, true),
         owner_edge("edge:3", "owner:b", "owner:a", DepKind::EagerUse, true),
     ];
-    let units = owners
+    let atomic_groups = owners
         .iter()
         .enumerate()
-        .map(|(i, owner)| atomic_unit_for(&format!("atomic:{i}"), &[owner]))
+        .map(|(i, owner)| atomic_group_for(&format!("atomic:{i}"), &[owner]))
         .collect();
     let spec: Vec<SpecModuleGroup> = owners
         .iter()
@@ -368,7 +368,7 @@ fn post_seed_reports_each_unrealizable_scc_in_owner_id_order() {
             owner_ids: vec![owner.id.clone()],
         })
         .collect();
-    let report = graph_of(owners.to_vec(), edges, units, vec![]);
+    let report = graph_of(owners.to_vec(), edges, atomic_groups, vec![]);
 
     let (_q, rejected) =
         build_seed_quotient(&report, &report.atomic_graph.nodes, &spec, 10_000).unwrap();
@@ -397,7 +397,7 @@ fn post_seed_reports_each_unrealizable_scc_in_owner_id_order() {
 // ---------- Greedy merge to convergence tests. ----------
 //
 // The greedy operates over a quotient whose initial assignment the
-// caller has chosen — typically the seed quotient (atomic units +
+// caller has chosen — typically the seed quotient (atomic groups +
 // spec modules pre-contracted) augmented with whatever classes the
 // renderer has marked as pre-existing active modules. The kernel
 // distinguishes "pre-existing module" classes from "residual orphan"
@@ -428,8 +428,8 @@ fn greedy_absorbs_tiny_named_helper_into_unique_consumer() {
             true,
         )],
         vec![
-            atomic_unit_for("atomic:0", &[&a]),
-            atomic_unit_for("atomic:1", &[&helper]),
+            atomic_group_for("atomic:0", &[&a]),
+            atomic_group_for("atomic:1", &[&helper]),
         ],
         vec![atomic_edge("atomic_edge:0", "atomic:0", "atomic:1")],
     );
@@ -503,9 +503,9 @@ fn greedy_merges_three_clusters_until_the_size_cap() {
             owner_edge("edge:ac", "owner:a", "owner:c", DepKind::EagerUse, true),
         ],
         vec![
-            atomic_unit_for("atomic:a", &[&a]),
-            atomic_unit_for("atomic:b", &[&b]),
-            atomic_unit_for("atomic:c", &[&c]),
+            atomic_group_for("atomic:a", &[&a]),
+            atomic_group_for("atomic:b", &[&b]),
+            atomic_group_for("atomic:c", &[&c]),
         ],
         vec![],
     );
@@ -561,8 +561,8 @@ fn greedy_resolves_realizability_cycle_by_merging() {
             owner_edge("edge:ba", "owner:b", "owner:a", DepKind::LazyUse, false),
         ],
         vec![
-            atomic_unit_for("atomic:a", &[&a]),
-            atomic_unit_for("atomic:b", &[&b]),
+            atomic_group_for("atomic:a", &[&a]),
+            atomic_group_for("atomic:b", &[&b]),
         ],
         vec![],
     );
@@ -614,9 +614,9 @@ fn merge_absorbs_residual_owner_with_only_intra_deps() {
             ),
         ],
         vec![
-            atomic_unit_for("atomic:a", &[&a]),
-            atomic_unit_for("atomic:b", &[&b]),
-            atomic_unit_for("atomic:helper", &[&helper]),
+            atomic_group_for("atomic:a", &[&a]),
+            atomic_group_for("atomic:b", &[&b]),
+            atomic_group_for("atomic:helper", &[&helper]),
         ],
         vec![],
     );
@@ -713,9 +713,9 @@ fn pass3_diagnostic_walk_never_commits_a_merge() {
         vec![foo.clone(), bar.clone(), helper.clone()],
         edges,
         vec![
-            atomic_unit_for("atomic:foo", &[&foo]),
-            atomic_unit_for("atomic:bar", &[&bar]),
-            atomic_unit_for("atomic:helper", &[&helper]),
+            atomic_group_for("atomic:foo", &[&foo]),
+            atomic_group_for("atomic:bar", &[&bar]),
+            atomic_group_for("atomic:helper", &[&helper]),
         ],
         vec![
             atomic_edge("atomic_edge:a", "atomic:bar", "atomic:foo"),
@@ -993,7 +993,7 @@ fn planner_and_materializer_agree_on_corpus() {
                 ],
             ),
             // Note: residual destinations — no spec modules. The
-            // planner's seed pass merges atomic units only; since
+            // planner's seed pass merges atomic groups only; since
             // each atomic is a singleton, no contractions happen and
             // no rejection fires. The materializer also sees the
             // SCC purely within residual (one module) and doesn't

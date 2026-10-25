@@ -757,7 +757,7 @@ fn atomic_mode_leaves_cross_module_structural_atoms_on_their_current_paths() {
     ]);
     assert_eq!(report["strategy"], "atomic", "{report}");
     assert_eq!(report["candidate_is_realizable"], false, "{report}");
-    let conflicts = report["atomic_unit_conflicts"].as_array().unwrap();
+    let conflicts = report["atomic_group_conflicts"].as_array().unwrap();
     assert!(!conflicts.is_empty(), "{report}");
     let modules = conflicts[0]["candidate_modules"].as_array().unwrap();
     assert!(modules.iter().any(|path| path == "state"), "{report}");
@@ -775,7 +775,7 @@ fn atomic_mode_leaves_cross_module_structural_atoms_on_their_current_paths() {
     ]);
     assert_eq!(coarsened["candidate_is_realizable"], false, "{coarsened}");
     assert_eq!(
-        coarsened["coarsening"]["stop_reason"], "atomic_unit_conflicts",
+        coarsened["coarsening"]["stop_reason"], "atomic_group_conflicts",
         "{coarsened}"
     );
     assert!(
@@ -801,7 +801,7 @@ fn atomic_mode_leaves_cross_module_structural_atoms_on_their_current_paths() {
     assert_eq!(merged["candidate_is_realizable"], true, "{merged}");
     assert_eq!(merged["coverage_complete"], true, "{merged}");
     assert!(
-        merged["atomic_unit_conflicts"]
+        merged["atomic_group_conflicts"]
             .as_array()
             .unwrap()
             .is_empty()
@@ -821,17 +821,20 @@ fn atomic_mode_leaves_cross_module_structural_atoms_on_their_current_paths() {
         serde_json::json!(["action", "state"]),
         "{merged}"
     );
-    let reported_units: std::collections::BTreeSet<_> = conflicts
+    let reported_atomic_group_ids: std::collections::BTreeSet<_> = conflicts
         .iter()
-        .map(|conflict| conflict["unit_id"].as_str().unwrap())
+        .map(|conflict| conflict["atomic_group_id"].as_str().unwrap())
         .collect();
-    let merged_units: std::collections::BTreeSet<_> = atomic_merge["unit_ids"]
+    let merged_atomic_group_ids: std::collections::BTreeSet<_> = atomic_merge["atomic_group_ids"]
         .as_array()
         .unwrap()
         .iter()
-        .map(|unit| unit.as_str().unwrap())
+        .map(|atomic_group_id| atomic_group_id.as_str().unwrap())
         .collect();
-    assert_eq!(merged_units, reported_units, "{merged}");
+    assert_eq!(
+        merged_atomic_group_ids, reported_atomic_group_ids,
+        "{merged}"
+    );
     let target = atomic_merge["suggested_module_path"].as_str().unwrap();
     let groups = merged["coarsening"]["groups"].as_array().unwrap();
     let group = groups
@@ -1054,7 +1057,7 @@ fn coarsens_only_gate_blocking_sccs_and_the_reported_assignment_runs() {
     assert_eq!(atomic["candidate_is_realizable"], false, "{atomic}");
     assert!(!atomic["cycles"].as_array().unwrap().is_empty(), "{atomic}");
     assert!(
-        atomic["atomic_unit_conflicts"]
+        atomic["atomic_group_conflicts"]
             .as_array()
             .unwrap()
             .is_empty(),

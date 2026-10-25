@@ -3187,7 +3187,7 @@ fn bundled_reentry_proof_requires_runtime_and_closed_synchronous_bundle() {
             fixture
                 .result
                 .stderr
-                .contains("atomic-factor-unit conflict"),
+                .contains("atomic-factor-group conflict"),
             "{}",
             fixture.result.stderr
         );

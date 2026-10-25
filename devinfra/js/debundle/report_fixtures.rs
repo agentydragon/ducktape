@@ -4,7 +4,7 @@
 //! [`ModuleKey`] (`"logical:N"`) and each module's canonical
 //! [`spec::ModulePath`] + residual flag live once in the module table
 //! (`OwnerGraphQuotientReport::nodes`, a list of [`ModuleEntry`]). Tests
-//! across several crates build that table — and the owner/edge/atomic-unit
+//! across several crates build that table — and the owner/edge/atomic-group
 //! report nodes around it — the same way, so the builders live here
 //! instead of being copy-pasted per test module.
 //!
@@ -16,7 +16,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use analysis::{
-    AtomicGraphReport, AtomicUnitEdgeReport, AtomicUnitReport, BindingReport, DepKind,
+    AtomicGraphReport, AtomicGroupEdgeReport, AtomicGroupReport, BindingReport, DepKind,
     EdgeRoleReport, LineRange, ModuleEntry, ModuleKey, OwnerGraphEdgeReport, OwnerGraphNodeReport,
     OwnerGraphQuotientReport, OwnerGraphReport, Purity, SourceLocation, StatementKind,
     StatementOrdinal,
@@ -186,9 +186,9 @@ pub fn promoted_owner_edge(
     }
 }
 
-/// Atomic unit aggregating the given owners (ids, members,
+/// Atomic group aggregating the given owners (ids, members,
 /// destinations, line range, ordinal span).
-pub fn atomic_unit_for(id: &str, owners: &[&OwnerGraphNodeReport]) -> AtomicUnitReport {
+pub fn atomic_group_for(id: &str, owners: &[&OwnerGraphNodeReport]) -> AtomicGroupReport {
     let mut owner_ids = Vec::new();
     let mut members = Vec::new();
     let mut destinations = BTreeMap::<ModuleKey, ModuleKey>::new();
@@ -205,7 +205,7 @@ pub fn atomic_unit_for(id: &str, owners: &[&OwnerGraphNodeReport]) -> AtomicUnit
         min_ordinal = min_ordinal.min(owner.statement_ordinal.0);
         max_ordinal = max_ordinal.max(owner.statement_ordinal.0);
     }
-    AtomicUnitReport {
+    AtomicGroupReport {
         id: id.to_string(),
         owner_ids,
         members,
@@ -218,10 +218,10 @@ pub fn atomic_unit_for(id: &str, owners: &[&OwnerGraphNodeReport]) -> AtomicUnit
     }
 }
 
-/// Constraining eager atomic-unit edge. The underlying owner-edge id
+/// Constraining eager atomic-group edge. The underlying owner-edge id
 /// is derived from `id` by substituting `atomic` → `edge`; use
 /// [`atomic_edge_for_owner_edge`] to spell it explicitly.
-pub fn atomic_edge(id: &str, source: &str, target: &str) -> AtomicUnitEdgeReport {
+pub fn atomic_edge(id: &str, source: &str, target: &str) -> AtomicGroupEdgeReport {
     atomic_edge_for_owner_edge(id, source, target, &id.replace("atomic", "edge"))
 }
 
@@ -232,8 +232,8 @@ pub fn atomic_edge_for_owner_edge(
     source: &str,
     target: &str,
     owner_edge_id: &str,
-) -> AtomicUnitEdgeReport {
-    AtomicUnitEdgeReport {
+) -> AtomicGroupEdgeReport {
+    AtomicGroupEdgeReport {
         id: id.to_string(),
         source: source.to_string(),
         target: target.to_string(),
@@ -248,8 +248,8 @@ pub fn atomic_edge_for_owner_edge(
 pub fn graph_of(
     nodes: Vec<OwnerGraphNodeReport>,
     edges: Vec<OwnerGraphEdgeReport>,
-    units: Vec<AtomicUnitReport>,
-    unit_edges: Vec<AtomicUnitEdgeReport>,
+    atomic_groups: Vec<AtomicGroupReport>,
+    atomic_group_edges: Vec<AtomicGroupEdgeReport>,
 ) -> OwnerGraphReport {
     let module_nodes = module_table(nodes.iter().map(|n| &n.destination));
     OwnerGraphReport {
@@ -263,22 +263,22 @@ pub fn graph_of(
             sccs: vec![],
         },
         atomic_graph: AtomicGraphReport {
-            nodes: units,
-            edges: unit_edges,
+            nodes: atomic_groups,
+            edges: atomic_group_edges,
         },
     }
 }
 
-/// An owner graph whose atomic units are one-per-owner, in owner order.
+/// An owner graph whose atomic groups are one-per-owner, in owner order.
 /// Atomic edges stay empty: tests exercising that distinct graph provide it explicitly.
 pub fn singleton_graph(
     owners: Vec<OwnerGraphNodeReport>,
     edges: Vec<OwnerGraphEdgeReport>,
 ) -> OwnerGraphReport {
-    let units = owners
+    let atomic_groups = owners
         .iter()
         .enumerate()
-        .map(|(i, owner)| atomic_unit_for(&format!("atomic:{i}"), &[owner]))
+        .map(|(i, owner)| atomic_group_for(&format!("atomic:{i}"), &[owner]))
         .collect();
-    graph_of(owners, edges, units, vec![])
+    graph_of(owners, edges, atomic_groups, vec![])
 }

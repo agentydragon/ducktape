@@ -8,7 +8,7 @@
 //!
 //! 1. **No cross-module init-order cycles** — `check_realizability` /
 //!    `validate_factorization` over the post-edit assignment.
-//! 2. **No atom-split** — every `AtomicUnit` (constraining-edge SCC of
+//! 2. **No atom-split** — every `AtomicGroup` (constraining-edge SCC of
 //!    the owner graph) maps to a single destination module under the
 //!    post-edit assignment. Splitting a member off into a different
 //!    module is unrealizable by construction (see
@@ -21,17 +21,17 @@
 //! `gate_post_edit_assignment` which is the single entry point
 //! responsible for verdict + diagnostic rendering. The function bails
 //! with a [`GateRejection`] error carrying the same
-//! `render_cycle_summary` / `render_atomic_unit_conflict_summary`
+//! `render_cycle_summary` / `render_atomic_group_conflict_summary`
 //! text the materializer emits when its own gate rejects, so authors
 //! see one consistent diagnostic regardless of whether the rejection
 //! came from `debundle run` or a CLI edit verb. The error also
 //! carries a machine-readable [`GateRejectionReport`] payload (the
-//! same `BlockingSccEntry` / `AtomicUnitConflictReport` projections
+//! same `BlockingSccEntry` / `AtomicGroupConflictReport` projections
 //! the pipeline writes to disk), which the CLI dispatchers serialize
 //! to stdout when a JSON format is selected.
 //!
 //! On rejection the gate also writes the same on-disk artifacts the
-//! pipeline writes — `cycles.json` / `atomic_unit_conflicts.json` as
+//! pipeline writes — `cycles.json` / `atomic_group_conflicts.json` as
 //! siblings of the supplied `owner_graph.json` (the location
 //! `debundle gate list/describe` reads by default) — so the
 //! documented `gate` follow-up queries work after an edit-gate or
@@ -45,12 +45,12 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use ::gate::{
-    BlockingSccEntry, render_atomic_unit_conflict_summary, render_cycle_summary,
+    BlockingSccEntry, render_atomic_group_conflict_summary, render_cycle_summary,
     validate_factorization,
 };
 use analysis::{
-    AtomicUnit, AtomicUnitConflict, AtomicUnitConflictReport, ConflictingClaim, ModuleAssignment,
-    ModuleId, OwnerGraph, OwnerGraphReport, OwnerId, compute_atomic_units,
+    AtomicGroup, AtomicGroupConflict, AtomicGroupConflictReport, ConflictingClaim,
+    ModuleAssignment, ModuleId, OwnerGraph, OwnerGraphReport, OwnerId, compute_atomic_groups,
 };
 use anonymous_resolution::{ResolvedSourceClaims, SourceClaimSet, resolve_source_claims};
 use anyhow::{Context, Result, bail};
@@ -190,15 +190,15 @@ pub struct ExpectedResolvedMember {
 
 /// Machine-readable projection of a realizability-gate rejection.
 /// Reuses the canonical wire shapes the pipeline writes on rejection
-/// (`cycles.json` → [`BlockingSccEntry`], `atomic_unit_conflicts.json`
-/// → [`AtomicUnitConflictReport`]) — there is no parallel schema.
+/// (`cycles.json` → [`BlockingSccEntry`], `atomic_group_conflicts.json`
+/// → [`AtomicGroupConflictReport`]) — there is no parallel schema.
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum GateRejectionReport {
-    /// The post-edit spec splits one or more atomic units across
+    /// The post-edit spec splits one or more atomic groups across
     /// destination modules.
     AtomSplit {
-        conflicts: Vec<AtomicUnitConflictReport>,
+        conflicts: Vec<AtomicGroupConflictReport>,
     },
     /// The post-edit module quotient carries blocking SCCs; each entry
     /// names the SCC's module paths and the binding-pair cut edges.
@@ -451,9 +451,9 @@ pub fn read_gate_claims(path: &Path) -> Result<ModuleClaims> {
 /// Reconstruct the `OwnerGraph` from `owner_graph_path`, build the
 /// `ModuleAssignment` implied by `post_spec`, and run BOTH realizability
 /// gates: the cross-module init-order check (cycles) AND the
-/// atom-split check (every `AtomicUnit`'s members must co-locate).
+/// atom-split check (every `AtomicGroup`'s members must co-locate).
 /// Returns `Ok(())` when both verdicts are clean. Prints the
-/// `render_cycle_summary` / `render_atomic_unit_conflict_summary`
+/// `render_cycle_summary` / `render_atomic_group_conflict_summary`
 /// blame report to stderr and returns an `anyhow::Error` when either
 /// rejects, so the CLI exit code is non-zero and the caller bails
 /// before writing.
@@ -638,22 +638,25 @@ fn gate_post_edit_assignment_with_expected(
     // surfaces the structural co-location violation first; an
     // atom-split commonly induces a cycle in the module quotient, and
     // the cycle diagnostic is less actionable for the author than
-    // "here is the atomic unit you split".
-    let atomic_units = compute_atomic_units(&owner_graph);
+    // "here is the atomic group you split".
+    let atomic_groups = compute_atomic_groups(&owner_graph);
     let atomic_conflicts =
-        detect_atomic_unit_conflicts(&atomic_units, &assignment, &owner_graph_report);
+        detect_atomic_group_conflicts(&atomic_groups, &assignment, &owner_graph_report);
     if !atomic_conflicts.is_empty() {
-        let conflicts =
-            AtomicUnitConflictReport::from_conflicts(&atomic_conflicts, &module_path, &owner_graph);
+        let conflicts = AtomicGroupConflictReport::from_conflicts(
+            &atomic_conflicts,
+            &module_path,
+            &owner_graph,
+        );
         write_rejection_artifact(
             owner_graph_path,
-            output_layout::ATOMIC_UNIT_CONFLICTS_REPORT,
+            output_layout::ATOMIC_GROUP_CONFLICTS_REPORT,
             &conflicts,
         )?;
         remove_rejection_artifact(owner_graph_path, output_layout::CYCLES_REPORT)?;
         let summary =
-            render_atomic_unit_conflict_summary(&atomic_conflicts, &module_path, &owner_graph);
-        eprintln!("error: post-edit spec splits one or more atomic units:\n{summary}");
+            render_atomic_group_conflict_summary(&atomic_conflicts, &module_path, &owner_graph);
+        eprintln!("error: post-edit spec splits one or more atomic groups:\n{summary}");
         return Err(GateRejection {
             report: GateRejectionReport::AtomSplit { conflicts },
             message: "realizability gate rejected the edit (atom-split)",
@@ -672,7 +675,7 @@ fn gate_post_edit_assignment_with_expected(
         )?;
         remove_rejection_artifact(
             owner_graph_path,
-            output_layout::ATOMIC_UNIT_CONFLICTS_REPORT,
+            output_layout::ATOMIC_GROUP_CONFLICTS_REPORT,
         )?;
         let summary = render_cycle_summary(&report.cycles);
         eprintln!("error: post-edit spec is unrealizable:\n{summary}");
@@ -687,14 +690,14 @@ fn gate_post_edit_assignment_with_expected(
     remove_rejection_artifact(owner_graph_path, output_layout::CYCLES_REPORT)?;
     remove_rejection_artifact(
         owner_graph_path,
-        output_layout::ATOMIC_UNIT_CONFLICTS_REPORT,
+        output_layout::ATOMIC_GROUP_CONFLICTS_REPORT,
     )?;
     Ok(())
 }
 
-/// Per-unit atom-split detection over the post-edit assignment.
+/// Per-group atom-split detection over the post-edit assignment.
 ///
-/// Mirrors `assignment_assembly::detect_unit_conflict` but operates on
+/// Mirrors `assignment_assembly::detect_atomic_group_conflict` but operates on
 /// `ModuleAssignment::of` rather than the explicit `claims` array
 /// `assemble_assignment` builds — the CLI gate's assignment already
 /// encodes "claim or fall back to residual" via
@@ -702,18 +705,18 @@ fn gate_post_edit_assignment_with_expected(
 /// (each member's `ModuleAssignment::of` value IS the effective claim).
 ///
 /// `report` supplies the wire-shape `declared_bindings` used to label
-/// each conflicting claim. The resulting `AtomicUnitConflict` mirrors
+/// each conflicting claim. The resulting `AtomicGroupConflict` mirrors
 /// the materializer's diagnostic shape exactly so spec authors see the
 /// same evidence regardless of whether the rejection came from
 /// `debundle run` or a CLI edit verb.
-fn detect_atomic_unit_conflicts(
-    units: &[AtomicUnit],
+fn detect_atomic_group_conflicts(
+    atomic_groups: &[AtomicGroup],
     assignment: &ModuleAssignment,
     report: &OwnerGraphReport,
-) -> Vec<AtomicUnitConflict> {
+) -> Vec<AtomicGroupConflict> {
     let mut conflicts = Vec::new();
-    for unit in units {
-        let resolved: Vec<(OwnerId, ModuleId)> = unit
+    for atomic_group in atomic_groups {
+        let resolved: Vec<(OwnerId, ModuleId)> = atomic_group
             .members
             .iter()
             .map(|o| (*o, assignment.of(*o)))
@@ -753,10 +756,10 @@ fn detect_atomic_unit_conflicts(
                 }
             })
             .collect();
-        conflicts.push(AtomicUnitConflict {
-            members: unit.members.iter().copied().collect(),
+        conflicts.push(AtomicGroupConflict {
+            members: atomic_group.members.iter().copied().collect(),
             claims,
-            causes: unit.causes.clone(),
+            causes: atomic_group.causes.clone(),
         });
     }
     conflicts

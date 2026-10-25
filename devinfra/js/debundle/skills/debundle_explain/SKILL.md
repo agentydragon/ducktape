@@ -32,7 +32,7 @@ it.
    and preserve correct extraction boundaries.
 3. **Close spec gaps.** If any code needed for the answer is missing or hard
    to read in the emitted tree, extend the spec to claim the complete relevant
-   atomic units in coherent, idiomatic modules. Give modules and bindings
+   atomic groups in coherent, idiomatic modules. Give modules and bindings
    descriptive names. Add factual module or binding `comment:` annotations
    where they clarify behavior, ownership, or a relationship a reader would
    otherwise have to rediscover. These comments emit into the generated code;

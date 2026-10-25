@@ -2,8 +2,8 @@ use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 
 use crate::report_builders::build_owner_graph_report;
-use analysis::assignment_assembly::{AtomicUnitConflict, assemble_assignment};
-use analysis::atomic_units::{AtomicUnit, OwnerGraphAndUnits};
+use analysis::assignment_assembly::{AtomicGroupConflict, assemble_assignment};
+use analysis::atomic_groups::{AtomicGroup, OwnerGraphAndAtomicGroups};
 use analysis::graph::{build_module_quotient, chunk_constraining_module_edges};
 use analysis::module_assignment::ModuleAssignment;
 use analysis::{ModuleId, ModuleQuotient, OwnerGraphReport, PlannedModule};
@@ -29,18 +29,18 @@ pub struct ChunkFactorization {
     /// owner graph. Stored separately from the IR so the IR stays
     /// immutable across validation/report construction.
     assignment: ModuleAssignment,
-    /// Atomic owner units computed from the owner graph's
+    /// Atomic groups computed from the owner graph's
     /// constraining-edge SCCs. Stored so report emission and
-    /// downstream diagnostics reuse the same atomic-unit grouping that
+    /// downstream diagnostics reuse the same atomic group grouping that
     /// factor assembly validated.
-    atomic_units: Vec<AtomicUnit>,
-    /// Atomic-factor-unit splits the spec demands but the
+    atomic_groups: Vec<AtomicGroup>,
+    /// Atomic-group conflicts the spec demands but the
     /// constraining-edge SCC analysis forbids — populated by
-    /// `assignment_assembly` when YAML claims split an atomic unit across
+    /// `assignment_assembly` when YAML claims split an atomic group across
     /// destination modules. Non-empty means the spec is unrealizable
     /// by construction; the materializer bails on these before
     /// emitting code.
-    assembly_conflicts: Vec<AtomicUnitConflict>,
+    assembly_conflicts: Vec<AtomicGroupConflict>,
     dep_graph: ModuleQuotient,
     /// SCC partition of `dep_graph` in `tarjan_scc` reverse-
     /// topological order. Precomputed at build time for
@@ -53,7 +53,7 @@ pub struct ChunkFactorization {
     import_order: EsmImportOrder,
 }
 
-/// An immutable assignment whose atomic-unit, schedule, and rebinding checks
+/// An immutable assignment whose atomic-group, schedule, and rebinding checks
 /// passed. The borrow prevents changing the assignment while lowering uses it.
 #[derive(Debug)]
 pub struct ValidatedAssignment<'a> {
@@ -80,8 +80,8 @@ impl ChunkFactorization {
         &self.assignment
     }
 
-    pub fn atomic_units(&self) -> &[AtomicUnit] {
-        &self.atomic_units
+    pub fn atomic_groups(&self) -> &[AtomicGroup] {
+        &self.atomic_groups
     }
 
     pub fn dep_graph(&self) -> &ModuleQuotient {
@@ -89,26 +89,26 @@ impl ChunkFactorization {
     }
 
     /// Build a factorization from a caller-computed owner graph +
-    /// atomic units (the materializer computes these once per chunk
+    /// atomic groups (the materializer computes these once per chunk
     /// for mini-factor synthesis), the binding catalogue, and the
     /// spec-derived logical modules. `bindings` should already have
     /// every `Owned` binding the spec assigned and every `Imported`
     /// binding the spec re-exports.
     pub fn build_with(
         chunk_id: String,
-        precomputed: OwnerGraphAndUnits,
+        precomputed: OwnerGraphAndAtomicGroups,
         bindings: HashMap<swc_ecma_ast::Id, analysis::BindingKind>,
         logical_modules: Vec<PlannedModule>,
         chunk_renames: HashMap<swc_ecma_ast::Id, swc_atoms::Atom>,
         default_destination: ModuleId,
     ) -> Self {
-        let OwnerGraphAndUnits {
+        let OwnerGraphAndAtomicGroups {
             owner_graph,
-            atomic_units,
+            atomic_groups,
         } = precomputed;
         let outcome = assemble_assignment(
             &owner_graph,
-            &atomic_units,
+            &atomic_groups,
             &bindings,
             &logical_modules,
             default_destination,
@@ -146,7 +146,7 @@ impl ChunkFactorization {
         Self {
             analysis,
             assignment,
-            atomic_units,
+            atomic_groups,
             assembly_conflicts,
             dep_graph,
             dep_graph_sccs,
@@ -171,13 +171,13 @@ impl ChunkFactorization {
     }
 
     /// Run SCC analysis over the dep graph. Spec authors consume the
-    /// resulting report to fix any cycles or atomic-unit conflicts.
+    /// resulting report to fix any cycles or atomic-group conflicts.
     pub fn validate(&self) -> FactorizationReport {
         let mut report =
             validate_factorization(self.analysis.owner_graph(), &self.assignment, &|id| {
                 self.analysis.module_path(id)
             });
-        report.atomic_unit_conflicts = self.assembly_conflicts.clone();
+        report.atomic_group_conflicts = self.assembly_conflicts.clone();
         report.linker_order = self
             .import_order
             .linker_order()
@@ -189,7 +189,7 @@ impl ChunkFactorization {
 
     pub fn validate_for_emission(&self) -> Result<ValidatedAssignment<'_>, FactorizationReport> {
         let report = self.validate();
-        if !report.atomic_unit_conflicts.is_empty()
+        if !report.atomic_group_conflicts.is_empty()
             || !report.cycles.is_empty()
             || !report.cross_rebinds.is_empty()
         {

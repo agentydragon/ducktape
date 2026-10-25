@@ -1,20 +1,20 @@
-//! Rebind-only atomic-unit folding.
+//! Rebind-only atomic-group folding.
 //!
-//! Background: see `docs/design.md` and `atomic_units.rs`. The
-//! structural-atomic-unit pass over the owner graph symmetrizes
+//! Background: see `docs/design.md` and `atomic_groups.rs`. The
+//! structural-atomic-group pass over the owner graph symmetrizes
 //! `LazyRebind`/`EagerRebind` edges because ESM imports are read-
 //! only — a peel that places the rebind's write site in one module
 //! and its declaration in another would emit code that throws
 //! `TypeError: Assignment to constant variable` the first time the
 //! assignment fires. Without folding, such a spec would surface as
-//! an `atomic_unit_conflict` and the materializer would bail.
+//! an `atomic_group_conflict` and the materializer would bail.
 //!
 //! The pass takes the post-seed binding→module assignment (the
 //! "assignment" after explicit requests + destructure pull + residual
-//! sweep have all run) plus the structural atomic units, and decides
+//! sweep have all run) plus the structural atomic groups, and decides
 //! which unclaimed cycle members should silently fold into the
 //! cycle's single explicit destination. The decision is pure: it
-//! only reads the owner graph + atomic-units + assignment + the
+//! only reads the owner graph + atomic groups + assignment + the
 //! residual plan index. It stays beside lowering because its input is
 //! the post-seed lowering assignment; mutation of the `ModulePlan`
 //! list happens at the caller (today: `ChunkPlanBuilder::apply_rebind_folds`).
@@ -25,7 +25,7 @@ use std::collections::HashMap;
 
 use swc_ecma_ast::Id;
 
-use analysis::atomic_units::OwnerGraphAndUnits;
+use analysis::atomic_groups::OwnerGraphAndAtomicGroups;
 use analysis::graph::DepKind;
 
 /// One rebind-fold decision: a binding that should be (re)routed
@@ -44,10 +44,10 @@ pub struct RebindFold {
     pub from_residual: bool,
 }
 
-/// Decide which atomic-unit members should fold into an explicit
+/// Decide which atomic-group members should fold into an explicit
 /// destination.
 ///
-/// Resolve rebind-only atomic-unit "soft" conflicts by extending the
+/// Resolve rebind-only atomic-group "soft" conflicts by extending the
 /// explicit claim's plan to cover any member of the cycle that has
 /// no explicit destination. When exactly one member of a rebind-only
 /// cycle carries an explicit (non-residual) claim and the rest are
@@ -71,17 +71,17 @@ pub struct RebindFold {
 /// the returned `Vec<RebindFold>` to its `ModulePlan` list and
 /// bindings catalogue.
 pub fn compute_rebind_folds(
-    precomputed: &OwnerGraphAndUnits,
+    precomputed: &OwnerGraphAndAtomicGroups,
     binding_assignment: &HashMap<Id, usize>,
     residual_plan_index: Option<usize>,
 ) -> Vec<RebindFold> {
     let owner_graph = &precomputed.owner_graph;
     let mut folds = Vec::new();
-    'unit: for unit in &precomputed.atomic_units {
-        if unit.causes.is_empty() {
+    'atomic_group: for atomic_group in &precomputed.atomic_groups {
+        if atomic_group.causes.is_empty() {
             continue;
         }
-        let rebind_only = unit.causes.iter().all(|cause| {
+        let rebind_only = atomic_group.causes.iter().all(|cause| {
             matches!(
                 cause,
                 DepKind::LazyRebind | DepKind::EagerRebind | DepKind::DeferredRebind
@@ -92,7 +92,7 @@ pub fn compute_rebind_folds(
         }
         let mut explicit_dest: Option<usize> = None;
         let mut owners_to_fold: Vec<analysis::graph::OwnerId> = Vec::new();
-        for &owner_id in &unit.members {
+        for &owner_id in &atomic_group.members {
             let Some(node) = owner_graph.node(owner_id) else {
                 continue;
             };
@@ -120,7 +120,7 @@ pub fn compute_rebind_folds(
             match owner_claim {
                 Some(idx) => match explicit_dest {
                     None => explicit_dest = Some(idx),
-                    Some(existing) if existing != idx => continue 'unit,
+                    Some(existing) if existing != idx => continue 'atomic_group,
                     _ => {}
                 },
                 None => owners_to_fold.push(owner_id),

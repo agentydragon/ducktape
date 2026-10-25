@@ -1029,7 +1029,7 @@ fn promote_at_init_calls(
             // lexically containing the write, which forces the write
             // site to co-locate with the declarer. Emitting
             // `EagerRebind` here would force the *caller* into the
-            // co-location unit too, rejecting realizable shapes
+            // co-location group too, rejecting realizable shapes
             // (`c.bump(1)` calling a co-located setter).
             for target_binding in closure_reads.iter().chain(closure_rebinds.iter()) {
                 if target_is_hoisted(target_binding) {

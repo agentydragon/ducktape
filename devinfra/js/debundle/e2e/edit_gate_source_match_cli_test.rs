@@ -23,7 +23,7 @@ fn source_match_siblings_cannot_be_split_in_either_yaml_order() {
     for yaml in [format!("{MEMBER}{MATCH}"), format!("{MATCH}{MEMBER}")] {
         atomic_fixture(&yaml).assert_rejected_unchanged(
             &["bindings", "unassign", "beta"],
-            &["splits one or more atomic units"],
+            &["splits one or more atomic groups"],
         );
     }
 }

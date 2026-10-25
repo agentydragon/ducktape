@@ -135,8 +135,8 @@ impl ContractRejected {
 #[derive(Debug, Clone, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SeedContractionRejected {
-    AtomicUnit {
-        unit_id: String,
+    AtomicGroup {
+        atomic_group_id: String,
         owner_ids: Vec<String>,
         rejected_pair: (String, String),
         cycle: CycleEvidence,
@@ -155,10 +155,10 @@ pub enum SeedContractionRejected {
     AtomicReachability {
         /// The atomic-DAG edge id whose contraction was refused.
         edge_id: String,
-        source_unit_id: String,
-        target_unit_id: String,
+        source_atomic_group_id: String,
+        target_atomic_group_id: String,
         /// `(source_owner_id, target_owner_id)` — the
-        /// representative owners (lowest `OwnerIdx` in each unit at
+        /// representative owners (lowest `OwnerIdx` in each group at
         /// rejection time) whose class-level contraction tripped
         /// the gate.
         rejected_pair: (String, String),
@@ -493,7 +493,7 @@ impl QuotientGraph {
 
     /// Build a quotient from a complete candidate owner assignment that
     /// already passes the shared realizability gate. The assignment is checked
-    /// here before any quotient state is returned, and structural atomic units
+    /// here before any quotient state is returned, and structural atomic groups
     /// plus residual entry declarations must remain whole.
     ///
     /// The assignment vector is indexed by `OwnerIdx`; `residual_module` must
@@ -533,35 +533,37 @@ impl QuotientGraph {
             .enumerate()
             .map(|(idx, node)| (node.id.as_str(), idx))
             .collect();
-        let mut owner_atomic_unit = vec![None::<usize>; report.nodes.len()];
-        for (unit_idx, unit) in report.atomic_graph.nodes.iter().enumerate() {
-            let mut unit_module = None;
-            for owner_id in &unit.owner_ids {
+        let mut owner_atomic_group = vec![None::<usize>; report.nodes.len()];
+        for (atomic_group_idx, atomic_group) in report.atomic_graph.nodes.iter().enumerate() {
+            let mut atomic_group_module = None;
+            for owner_id in &atomic_group.owner_ids {
                 let owner_idx = *owner_id_to_idx.get(owner_id.as_str()).with_context(|| {
                     format!(
-                        "atomic unit {} references unknown owner {owner_id}",
-                        unit.id
+                        "atomic group {} references unknown owner {owner_id}",
+                        atomic_group.id
                     )
                 })?;
                 anyhow::ensure!(
-                    owner_atomic_unit[owner_idx].replace(unit_idx).is_none(),
-                    "owner {owner_id} appears in more than one atomic unit"
+                    owner_atomic_group[owner_idx]
+                        .replace(atomic_group_idx)
+                        .is_none(),
+                    "owner {owner_id} appears in more than one atomic group"
                 );
                 let module = owner_modules[owner_idx];
-                if let Some(expected) = unit_module {
+                if let Some(expected) = atomic_group_module {
                     anyhow::ensure!(
                         expected == module,
-                        "candidate assignment splits structural atomic unit {}",
-                        unit.id
+                        "candidate assignment splits structural atomic group {}",
+                        atomic_group.id
                     );
                 } else {
-                    unit_module = Some(module);
+                    atomic_group_module = Some(module);
                 }
             }
         }
         anyhow::ensure!(
-            owner_atomic_unit.iter().all(Option::is_some),
-            "candidate graph has owners missing from the structural atomic units"
+            owner_atomic_group.iter().all(Option::is_some),
+            "candidate graph has owners missing from the structural atomic groups"
         );
 
         for (owner_idx, node) in report.nodes.iter().enumerate() {
@@ -1809,37 +1811,37 @@ fn rank_candidate(q: &QuotientGraph, a: ClassId, b: ClassId) -> [u8; 33] {
     key
 }
 
-/// Build the quotient after structural atomic-unit and same-module seed
+/// Build the quotient after structural atomic-group and same-module seed
 /// contractions, before atomic-DAG reachability or greedy cross-module
 /// proposals. Each accepted contraction has passed the shared
 /// realizability gate, and modules remain separate from one another.
 pub fn build_same_module_seed_quotient(
     report: &OwnerGraphReport,
-    atomic_units: &[analysis::AtomicUnitReport],
+    atomic_groups: &[analysis::AtomicGroupReport],
     spec_modules: &[SpecModuleGroup],
     cap_lines: usize,
 ) -> Result<(QuotientGraph, Vec<SeedContractionRejected>), analysis::UnresolvedOwnerEdgeEndpoint> {
     let mut q = QuotientGraph::from_report(report, cap_lines)?;
     let mut rejected = Vec::<SeedContractionRejected>::new();
 
-    // ---- Pass 1: atomic units. Canonical order: lowest OwnerIdx
-    //      member, then unit id.
-    let mut units: Vec<(&analysis::AtomicUnitReport, Option<OwnerIdx>)> = atomic_units
+    // ---- Pass 1: atomic groups. Canonical order: lowest OwnerIdx
+    //      member, then atomic group id.
+    let mut atomic_groups: Vec<(&analysis::AtomicGroupReport, Option<OwnerIdx>)> = atomic_groups
         .iter()
-        .map(|unit| {
+        .map(|atomic_group| {
             (
-                unit,
-                lowest_owner_idx(&q, unit.owner_ids.iter().map(String::as_str)),
+                atomic_group,
+                lowest_owner_idx(&q, atomic_group.owner_ids.iter().map(String::as_str)),
             )
         })
         .collect();
-    units.sort_by(|(a, ai), (b, bi)| ai.cmp(bi).then_with(|| a.id.cmp(&b.id)));
-    for (unit, _) in units {
-        let owner_idxs = resolve_owner_idxs(&q, &unit.owner_ids);
+    atomic_groups.sort_by(|(a, ai), (b, bi)| ai.cmp(bi).then_with(|| a.id.cmp(&b.id)));
+    for (atomic_group, _) in atomic_groups {
+        let owner_idxs = resolve_owner_idxs(&q, &atomic_group.owner_ids);
         for (rejected_pair, cycle) in contract_group(&mut q, &owner_idxs) {
-            rejected.push(SeedContractionRejected::AtomicUnit {
-                unit_id: unit.id.clone(),
-                owner_ids: unit.owner_ids.clone(),
+            rejected.push(SeedContractionRejected::AtomicGroup {
+                atomic_group_id: atomic_group.id.clone(),
+                owner_ids: atomic_group.owner_ids.clone(),
                 rejected_pair,
                 cycle,
             });
@@ -1876,27 +1878,27 @@ pub fn build_same_module_seed_quotient(
     Ok((q, rejected))
 }
 
-/// Apply the seeding protocol: atomic units first, then spec modules.
+/// Apply the seeding protocol: atomic groups first, then spec modules.
 /// Each forced contraction is gated by
 /// `merge_preserves_invariants`; rejected contractions push a
 /// `SeedContractionRejected` diagnostic into the returned vec and the
 /// kernel continues with the remaining contractions.
 ///
-/// Canonical order: atomic units by lowest `OwnerIdx` member (then
-/// unit id for ties); spec modules by module id lex. Within a group,
+/// Canonical order: atomic groups by lowest `OwnerIdx` member (then
+/// atomic group id for ties); spec modules by module id lex. Within a group,
 /// members merge into the lowest-`OwnerIdx` pivot in `OwnerIdx`
 /// order.
 pub fn build_seed_quotient(
     report: &OwnerGraphReport,
-    atomic_units: &[analysis::AtomicUnitReport],
+    atomic_groups: &[analysis::AtomicGroupReport],
     spec_modules: &[SpecModuleGroup],
     cap_lines: usize,
 ) -> Result<(QuotientGraph, Vec<SeedContractionRejected>), analysis::UnresolvedOwnerEdgeEndpoint> {
     let (mut q, mut rejected) =
-        build_same_module_seed_quotient(report, atomic_units, spec_modules, cap_lines)?;
+        build_same_module_seed_quotient(report, atomic_groups, spec_modules, cap_lines)?;
 
     // ---- Pass 3: atomic-DAG reachability. For each atomic-DAG
-    //      edge `u → v` whose target unit has any residual member,
+    //      edge `u → v` whose target atomic group has any residual member,
     //      contract `class(rep(u))` with `class(rep(v))` through
     //      the gated protocol; rejections fire at the per-edge
     //      granularity.
@@ -1919,25 +1921,26 @@ pub fn build_seed_quotient(
     //      edge produces at most one diagnostic). Diagnostics are
     //      emitted in canonical (atomic-DAG edge id lex) order on
     //      the final, fixed-point quotient state.
-    let atomic_edges_relevant: Vec<&analysis::AtomicUnitEdgeReport> = {
-        let unit_has_residual: std::collections::HashMap<&str, bool> = atomic_units
+    let atomic_edges_relevant: Vec<&analysis::AtomicGroupEdgeReport> = {
+        let atomic_group_has_residual: std::collections::HashMap<&str, bool> = atomic_groups
             .iter()
-            .map(|unit| {
+            .map(|atomic_group| {
                 (
-                    unit.id.as_str(),
-                    unit.destinations
+                    atomic_group.id.as_str(),
+                    atomic_group
+                        .destinations
                         .iter()
                         .any(|dest| report.is_residual(dest)),
                 )
             })
             .collect();
-        let mut edges: Vec<&analysis::AtomicUnitEdgeReport> = report
+        let mut edges: Vec<&analysis::AtomicGroupEdgeReport> = report
             .atomic_graph
             .edges
             .iter()
             .filter(|e| e.constrains_init_order && e.source != e.target)
             .filter(|e| {
-                unit_has_residual
+                atomic_group_has_residual
                     .get(e.target.as_str())
                     .copied()
                     .unwrap_or(false)
@@ -1946,17 +1949,22 @@ pub fn build_seed_quotient(
         edges.sort_by(|a, b| a.id.cmp(&b.id));
         edges
     };
-    let unit_owner_idxs: std::collections::HashMap<&str, Vec<OwnerIdx>> = atomic_units
+    let atomic_group_owner_idxs: std::collections::HashMap<&str, Vec<OwnerIdx>> = atomic_groups
         .iter()
-        .map(|unit| (unit.id.as_str(), resolve_owner_idxs(&q, &unit.owner_ids)))
+        .map(|atomic_group| {
+            (
+                atomic_group.id.as_str(),
+                resolve_owner_idxs(&q, &atomic_group.owner_ids),
+            )
+        })
         .collect();
     loop {
         let mut applied = 0usize;
         for edge in &atomic_edges_relevant {
-            let Some(source_owners) = unit_owner_idxs.get(edge.source.as_str()) else {
+            let Some(source_owners) = atomic_group_owner_idxs.get(edge.source.as_str()) else {
                 continue;
             };
-            let Some(target_owners) = unit_owner_idxs.get(edge.target.as_str()) else {
+            let Some(target_owners) = atomic_group_owner_idxs.get(edge.target.as_str()) else {
                 continue;
             };
             let (Some(&src_pivot), Some(&tgt_pivot)) =
@@ -1980,10 +1988,10 @@ pub fn build_seed_quotient(
     // Walk edges once more to record diagnostics for the pairs that
     // still cannot merge at fixed point.
     for edge in &atomic_edges_relevant {
-        let Some(source_owners) = unit_owner_idxs.get(edge.source.as_str()) else {
+        let Some(source_owners) = atomic_group_owner_idxs.get(edge.source.as_str()) else {
             continue;
         };
-        let Some(target_owners) = unit_owner_idxs.get(edge.target.as_str()) else {
+        let Some(target_owners) = atomic_group_owner_idxs.get(edge.target.as_str()) else {
             continue;
         };
         let (Some(&src_pivot), Some(&tgt_pivot)) = (source_owners.first(), target_owners.first())
@@ -2003,8 +2011,8 @@ pub fn build_seed_quotient(
         if let Err(rejection) = q.check_merge(cs, ct) {
             rejected.push(SeedContractionRejected::AtomicReachability {
                 edge_id: edge.id.clone(),
-                source_unit_id: edge.source.clone(),
-                target_unit_id: edge.target.clone(),
+                source_atomic_group_id: edge.source.clone(),
+                target_atomic_group_id: edge.target.clone(),
                 rejected_pair: owner_pair(&q, src_pivot, tgt_pivot),
                 cycle: rejection.into_cycle_evidence(),
             });

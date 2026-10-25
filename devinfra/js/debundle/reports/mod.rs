@@ -21,9 +21,9 @@ use crate::reports::schema::ModuleKey;
 ///
 /// The rendered/wire projections re-encode these two fields with their
 /// own id spelling and decorations, so they point here rather than
-/// re-describing the shape. [`crate::assignment_assembly::AtomicUnitConflict`]
+/// re-describing the shape. [`crate::assignment_assembly::AtomicGroupConflict`]
 /// is the atom-level sibling — same "unrealizable, here's why" framing
-/// but a different domain (owners in an atomic unit, not modules in an
+/// but a different domain (owners in an atomic group, not modules in an
 /// SCC), so it does not reuse this core.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct SccCore {
@@ -43,7 +43,7 @@ pub fn module_key(id: ModuleId) -> ModuleKey {
     ModuleKey(format!("logical:{idx}"))
 }
 
-pub fn atomic_unit_key(idx: usize) -> String {
+pub fn atomic_group_key(idx: usize) -> String {
     format!("atomic:{idx}")
 }
 

@@ -157,7 +157,7 @@ fn rejects_atom_split_without_changing_any_module_yaml() {
             "--batch",
             batch.path().join("refine.json").to_str().unwrap(),
         ],
-        &["splits one or more atomic units"],
+        &["splits one or more atomic groups"],
     );
 }
 

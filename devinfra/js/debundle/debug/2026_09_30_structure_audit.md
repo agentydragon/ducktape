@@ -37,7 +37,7 @@ flat list with a taxonomy that callers have to learn.
 The broad term `ChunkAnalysis` remains on two different types:
 
 - `chunk_analysis::ChunkAnalysisOutput` composes spec-independent statement
-  facts with the owner graph and structural atomic units.
+  facts with the owner graph and structural atomic groups.
 - `gate_chunk_analysis::ChunkAnalysis` holds owner-graph and logical-module
   lookup data used by gate operations.
 

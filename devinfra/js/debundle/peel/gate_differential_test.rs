@@ -28,7 +28,7 @@ use gate::{
     check_realizability_touching,
 };
 use report_fixtures::{
-    active_owner, atomic_unit_for, graph_of, owner_edge, promoted_owner_edge, residual_owner,
+    active_owner, atomic_group_for, graph_of, owner_edge, promoted_owner_edge, residual_owner,
 };
 
 use crate::quotient::testing::{greedy_step, module_group};
@@ -288,9 +288,9 @@ fn gate_matches_reference_on_clean_chain() {
             owner_edge("edge:1", "owner:h", "owner:b", DepKind::EagerUse, true),
         ],
         vec![
-            atomic_unit_for("atomic:0", &[&a]),
-            atomic_unit_for("atomic:1", &[&h]),
-            atomic_unit_for("atomic:2", &[&b]),
+            atomic_group_for("atomic:0", &[&a]),
+            atomic_group_for("atomic:1", &[&h]),
+            atomic_group_for("atomic:2", &[&b]),
         ],
         vec![],
     );
@@ -327,9 +327,9 @@ fn gate_accepts_residual_pile_cycle_merge() {
             owner_edge("edge:2", "owner:c", "owner:a", DepKind::EagerUse, true),
         ],
         vec![
-            atomic_unit_for("atomic:0", &[&a]),
-            atomic_unit_for("atomic:1", &[&b]),
-            atomic_unit_for("atomic:2", &[&c]),
+            atomic_group_for("atomic:0", &[&a]),
+            atomic_group_for("atomic:1", &[&b]),
+            atomic_group_for("atomic:2", &[&c]),
         ],
         vec![],
     );
@@ -360,9 +360,9 @@ fn gate_rejects_pass2_tdz_merge() {
             owner_edge("edge:1", "owner:r", "owner:h", DepKind::LazyUse, false),
         ],
         vec![
-            atomic_unit_for("atomic:0", &[&x]),
-            atomic_unit_for("atomic:1", &[&r]),
-            atomic_unit_for("atomic:2", &[&h]),
+            atomic_group_for("atomic:0", &[&x]),
+            atomic_group_for("atomic:1", &[&r]),
+            atomic_group_for("atomic:2", &[&h]),
         ],
         vec![],
     );
@@ -397,10 +397,10 @@ fn gate_rejects_module_granularity_pass1_cycle() {
             owner_edge("edge:1", "owner:r2", "owner:b", DepKind::EagerUse, true),
         ],
         vec![
-            atomic_unit_for("atomic:0", &[&a]),
-            atomic_unit_for("atomic:1", &[&r1]),
-            atomic_unit_for("atomic:2", &[&r2]),
-            atomic_unit_for("atomic:3", &[&b]),
+            atomic_group_for("atomic:0", &[&a]),
+            atomic_group_for("atomic:1", &[&r1]),
+            atomic_group_for("atomic:2", &[&r2]),
+            atomic_group_for("atomic:3", &[&b]),
         ],
         vec![],
     );
@@ -435,9 +435,9 @@ fn gate_rejects_promotion_created_cross_rebind() {
             true,
         )],
         vec![
-            atomic_unit_for("atomic:0", &[&a]),
-            atomic_unit_for("atomic:1", &[&h]),
-            atomic_unit_for("atomic:2", &[&r]),
+            atomic_group_for("atomic:0", &[&a]),
+            atomic_group_for("atomic:1", &[&h]),
+            atomic_group_for("atomic:2", &[&r]),
         ],
         vec![],
     );
@@ -483,8 +483,8 @@ impl Rng {
 
 /// Random small report: mixed residual/active owners, mixed
 /// `DepKind`s (including lazy back-edges and rebinds, and eager
-/// edges promoted at init), singleton atomic units plus the
-/// occasional multi-member unit, and spec module groups derived from
+/// edges promoted at init), singleton atomic groups plus the
+/// occasional multi-member atomic group, and spec module groups derived from
 /// the active destinations.
 fn random_report(rng: &mut Rng) -> (OwnerGraphReport, Vec<SpecModuleGroup>) {
     let owner_count = 4 + rng.below(5);
@@ -537,17 +537,17 @@ fn random_report(rng: &mut Rng) -> (OwnerGraphReport, Vec<SpecModuleGroup>) {
         }
     }
 
-    let mut units: Vec<_> = nodes
+    let mut atomic_groups: Vec<_> = nodes
         .iter()
         .enumerate()
-        .map(|(i, node)| atomic_unit_for(&format!("atomic:{i}"), &[node]))
+        .map(|(i, node)| atomic_group_for(&format!("atomic:{i}"), &[node]))
         .collect();
     if owner_count >= 2 && rng.chance(40) {
         let a = rng.below(owner_count);
         let b = rng.below(owner_count);
         if a != b {
-            units.push(atomic_unit_for(
-                &format!("atomic:{}", units.len()),
+            atomic_groups.push(atomic_group_for(
+                &format!("atomic:{}", atomic_groups.len()),
                 &[&nodes[a], &nodes[b]],
             ));
         }
@@ -569,7 +569,7 @@ fn random_report(rng: &mut Rng) -> (OwnerGraphReport, Vec<SpecModuleGroup>) {
         })
         .collect();
 
-    let report = graph_of(nodes, edges, units, vec![]);
+    let report = graph_of(nodes, edges, atomic_groups, vec![]);
     (report, spec)
 }
 

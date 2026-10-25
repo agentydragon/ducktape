@@ -4,7 +4,7 @@
 //! treats a call to an imported binding as `unknown_call` — it cannot see
 //! into the other module's body. On a real app bundle that is the dominant
 //! impurity (every `memo(fn)` / `forwardRef(fn)` factory wrap), and via the
-//! dataflow-aware S-chain it over-merges atomic factor units.
+//! dataflow-aware S-chain it over-merges atomic factor groups.
 //!
 //! This oracle closes that gap. Given every module's entry body plus its
 //! resolved imports and exports, it computes, per module, the purity verdict

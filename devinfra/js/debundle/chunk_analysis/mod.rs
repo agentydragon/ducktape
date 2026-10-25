@@ -8,7 +8,7 @@
 //!   side-effect summaries, purity classification, top-level-await
 //!   detection);
 //! - the owner graph derived from those facts;
-//! - the structural atomic units (owner-level SCCs of `G_atomic`),
+//! - the structural atomic groups (owner-level SCCs of `G_atomic`),
 //!   which any valid factorization must keep co-located.
 //!
 //! The composer also owns the side-effects that derive purely from
@@ -52,7 +52,9 @@ use swc_common::Span;
 use swc_ecma_ast::Module;
 
 use analysis::AnalysisInputs;
-use analysis::atomic_units::{OwnerGraphAndUnits, compute_owner_graph_and_units_with};
+use analysis::atomic_groups::{
+    OwnerGraphAndAtomicGroups, compute_owner_graph_and_atomic_groups_with,
+};
 use analysis::facts::{
     ChunkFactAnalysis, ExportReentryPolicy, StructuralChunkAnalysis, analyze_chunk_with_policy,
 };
@@ -60,25 +62,25 @@ use analysis::graph::OwnerGraphOptions;
 use analysis::purity::{RedundantPureMemberReason, RedundantPurityReason};
 
 /// Output of chunk analysis: per-chunk facts, owner graph, and atomic
-/// units that do not depend on the module assignment.
+/// groups that do not depend on the module assignment.
 #[derive(Debug, Clone)]
 pub struct ChunkAnalysisOutput {
     /// Per-statement static facts plus chunk-wide flags (top-level
     /// await detection, redundant purity / pure-member hints).
     pub fact_analysis: ChunkFactAnalysis,
-    /// Owner graph + structural atomic units derived from
+    /// Owner graph + structural atomic groups derived from
     /// `fact_analysis.facts`. Carries no assignment-dependent state; the
-    /// atomic units here are the *structural* class (per docs/design.md
+    /// atomic groups here are the *structural* class (per docs/design.md
     /// §"Two classes of atom") that any valid factorization must
     /// preserve.
-    pub owner_graph_and_units: OwnerGraphAndUnits,
+    pub owner_graph_and_atomic_groups: OwnerGraphAndAtomicGroups,
 }
 
 /// Run chunk analysis from a precomputed structural layer: analyze the
 /// chunk's facts, emit any redundant-purity-hint diagnostics, fail fast
 /// if the chunk has top-level `await` or fails the input-chunk
 /// admission scan, then derive the owner graph + structural atomic
-/// units. Selector resolution uses that same structural layer before
+/// groups. Selector resolution uses that same structural layer before
 /// semantic member annotations can be projected to concrete bindings,
 /// so materialization keeps one source-text walk and one final owner
 /// graph.
@@ -128,12 +130,12 @@ where
         owner_graph_options.admission_overrides,
         resolve_dynamic_import,
     )?;
-    let owner_graph_and_units =
-        compute_owner_graph_and_units_with(&fact_analysis.facts, owner_graph_options)
+    let owner_graph_and_atomic_groups =
+        compute_owner_graph_and_atomic_groups_with(&fact_analysis.facts, owner_graph_options)
             .with_context(|| format!("building owner graph for chunk {chunk_id}"))?;
     Ok(ChunkAnalysisOutput {
         fact_analysis,
-        owner_graph_and_units,
+        owner_graph_and_atomic_groups,
     })
 }
 

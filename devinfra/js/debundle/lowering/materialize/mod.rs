@@ -1,4 +1,4 @@
-//! Per-chunk materialization: take an `OwnerGraphAndUnits` + spec plan, run the
+//! Per-chunk materialization: take an `OwnerGraphAndAtomicGroups` + spec plan, run the
 //! chunk through `lower_chunk`, and emit a `MaterializedLogicalChunk` whose
 //! files/applied/report stay separate from the source bundle until the
 //! finalized emit-stage file set is constructed.
@@ -13,7 +13,7 @@ pub(super) use apply::{EmissionChunkOutputs, collect_materialized_logical_chunks
 use plan_builder::{ChunkPlan, ChunkPlanBuilder, ExplicitRequestContext};
 
 use super::io::write_chunk_report_json;
-use super::util::{render_atomic_unit_cause_guidance, target_file_for_request};
+use super::util::{render_atomic_group_cause_guidance, target_file_for_request};
 use crate::chunk_ast::{ChunkAstAnalysis, analyze_chunk_ast};
 use crate::chunk_renames::collect_chunk_renames;
 use crate::imports::{ArtifactSourceImportResolutionCache, VendorReimportOracle};
@@ -32,7 +32,7 @@ use crate::{
 };
 use analysis::facts::{ExportReentryPolicy, StructuralChunkAnalysis};
 use analysis::{
-    AnalysisAssumptions, AnalysisInputs, LocalEffectPolicy, ModuleId, OwnerGraphAndUnits,
+    AnalysisAssumptions, AnalysisInputs, LocalEffectPolicy, ModuleId, OwnerGraphAndAtomicGroups,
     OwnerGraphOptions, PlannedModule, top_level_id,
 };
 use anyhow::{Context, Result, bail};
@@ -43,12 +43,12 @@ use artifact::{
 };
 use chunk_analysis::{ChunkAnalysisOutput, DynamicImportTarget, compute_chunk_analysis};
 use gate::{
-    ChunkFactorization, ValidatedAssignment, render_atomic_unit_conflict_summary,
+    ChunkFactorization, ValidatedAssignment, render_atomic_group_conflict_summary,
     render_cycle_summary,
 };
 use js_ast::{ParsedJsModule, statement_ordinal_for_body_index};
 use output_layout::{
-    ATOMIC_UNIT_CONFLICTS_REPORT, CYCLES_REPORT, EXPORT_REENTRY_REPORT, OWNER_GRAPH_REPORT,
+    ATOMIC_GROUP_CONFLICTS_REPORT, CYCLES_REPORT, EXPORT_REENTRY_REPORT, OWNER_GRAPH_REPORT,
     SELECTOR_DIAGNOSTICS_REPORT,
 };
 use spec::{ChunkRenames, InitializerPurity, LogicalModule, MemberPurity, UnassignedMode};
@@ -524,7 +524,7 @@ pub(super) fn finish_logical_chunk(
         inputs
     };
     // Chunk analysis: hint-sensitive facts, owner graph, and structural
-    // atomic units. See `chunk_analysis/mod.rs` for the current implementation.
+    // atomic groups. See `chunk_analysis/mod.rs` for the current implementation.
     emit_debundle_progress(chunk_id, "compute_chunk_analysis", "start");
     let chunk_analysis = compute_chunk_analysis(
         chunk_id,
@@ -543,7 +543,7 @@ pub(super) fn finish_logical_chunk(
     emit_debundle_progress(chunk_id, "compute_chunk_analysis", "end");
     let ChunkAnalysisOutput {
         fact_analysis: analysis,
-        owner_graph_and_units: precomputed,
+        owner_graph_and_atomic_groups: precomputed,
     } = chunk_analysis;
     apply_rebind_folds_from_chunk_analysis(&mut builder, &precomputed);
     if matches!(chunk_unassigned_mode, UnassignedMode::MiniFactors) {
@@ -706,7 +706,7 @@ pub(super) fn finish_logical_chunk(
     })
 }
 
-/// Rebind-fold composer: fold rebind-only atomic units into their
+/// Rebind-fold composer: fold rebind-only atomic groups into their
 /// explicit destination. Bridges the pure
 /// `compute_rebind_folds` decision in `lowering/rebind_fold.rs` over the chunk's
 /// post-seed assignment (managed by `ChunkPlanBuilder`) into the
@@ -715,14 +715,14 @@ pub(super) fn finish_logical_chunk(
 /// This runs after the seed phases of assignment construction
 /// (explicit requests, destructure pull, residual sweep) and before
 /// `synthesize_mini_factors`. The decision step is spec-independent —
-/// it only inspects the chunk-analysis owner graph + atomic units, the
+/// it only inspects the chunk-analysis owner graph + atomic groups, the
 /// builder's binding→plan assignment, and the residual landing-site
 /// index — so it lives in the `analysis` crate; this thin composer
 /// owns the application of those decisions to the builder's
 /// `ModulePlan` list.
 fn apply_rebind_folds_from_chunk_analysis(
     builder: &mut ChunkPlanBuilder,
-    precomputed: &OwnerGraphAndUnits,
+    precomputed: &OwnerGraphAndAtomicGroups,
 ) {
     let folds = compute_rebind_folds(
         precomputed,
@@ -1033,7 +1033,7 @@ fn pattern_binds_name(pattern: &Pat, binding: &str) -> bool {
     }
 }
 
-/// Write per-chunk validation reports (owner graph, atomic-unit
+/// Write per-chunk validation reports (owner graph, atomic-group
 /// conflicts, cycles) and bail with a human-readable summary when
 /// the spec is unrealizable.
 ///
@@ -1052,7 +1052,7 @@ fn validate_and_emit_reports<'a>(
         Ok(assignment) => assignment.report(),
         Err(report) => report,
     };
-    let rejected = !factorization_report.atomic_unit_conflicts.is_empty()
+    let rejected = !factorization_report.atomic_group_conflicts.is_empty()
         || !factorization_report.cycles.is_empty();
     // Full mode writes the owner graph unconditionally; OnRejection
     // writes it only alongside rejection evidence (`gate describe`
@@ -1077,33 +1077,34 @@ fn validate_and_emit_reports<'a>(
             export_reentry_report,
         )?;
     }
-    if !factorization_report.atomic_unit_conflicts.is_empty() {
+    if !factorization_report.atomic_group_conflicts.is_empty() {
         if let Some(report_out_dir) = report_out_dir {
             // Project onto the wire shape: owners as `"owner:N"`,
             // modules as canonical `ModulePath` — the same entity
             // keys `owner_graph.json` uses, so the file joins
             // against the owner graph without string surgery.
-            let wire = ::analysis::AtomicUnitConflictReport::from_conflicts(
-                &factorization_report.atomic_unit_conflicts,
+            let wire = ::analysis::AtomicGroupConflictReport::from_conflicts(
+                &factorization_report.atomic_group_conflicts,
                 &|id| factorization.analysis().module_path(id),
                 factorization.analysis().owner_graph(),
             );
             write_chunk_report_json(
                 report_out_dir,
                 chunk_id,
-                ATOMIC_UNIT_CONFLICTS_REPORT,
+                ATOMIC_GROUP_CONFLICTS_REPORT,
                 &wire,
             )?;
         }
-        let summary = render_atomic_unit_conflict_summary(
-            &factorization_report.atomic_unit_conflicts,
+        let summary = render_atomic_group_conflict_summary(
+            &factorization_report.atomic_group_conflicts,
             &|id| factorization.analysis().module_path(id),
             factorization.analysis().owner_graph(),
         );
-        let causes = render_atomic_unit_cause_guidance(&factorization_report.atomic_unit_conflicts);
+        let causes =
+            render_atomic_group_cause_guidance(&factorization_report.atomic_group_conflicts);
         bail!(
-            "materialize_logical_modules: chunk {chunk_id} has {n} atomic-factor-unit conflict(s) — the spec assigns members of one atomic factor unit to different destination modules, forming a cycle in the module dep graph that the constraining-edge SCC analysis says is unrealizable. Atomic factor units come from `G_atomic` SCC over the owner graph (docs/design.md §\"Two classes of atom\"); every member must co-locate. {causes}Resolve by reconciling each unit's claims into a single destination. Full evidence written to reports/tree/{chunk_id}/atomic_unit_conflicts.json; owner graph written to reports/tree/{chunk_id}/owner_graph.json. Summary:\n{summary}",
-            n = factorization_report.atomic_unit_conflicts.len(),
+            "materialize_logical_modules: chunk {chunk_id} has {n} atomic-group conflict(s) — the spec assigns members of one atomic group to different destination modules, forming a cycle in the module dependency graph that the constraining-edge SCC analysis says is unrealizable. Atomic groups come from `G_atomic` SCCs over the owner graph (docs/design.md §\"Two classes of atom\"); every member must co-locate. {causes}Resolve by reconciling each group's claims into one destination. Full evidence written to reports/tree/{chunk_id}/atomic_group_conflicts.json; owner graph written to reports/tree/{chunk_id}/owner_graph.json. Summary:\n{summary}",
+            n = factorization_report.atomic_group_conflicts.len(),
         );
     }
     if !factorization_report.cycles.is_empty() {
@@ -1125,14 +1126,14 @@ fn validate_and_emit_reports<'a>(
     }
     // Defense-in-depth on the accept path: a cross-destination
     // rebinding write (clause 2) always co-locates with its target in
-    // one atomic factor unit, so a spec splitting them must have
-    // produced an `atomic_unit_conflicts` bail above. Reaching this
-    // point with a non-empty clause-2 verdict means the atomic-unit
+    // one atomic factor group, so a spec splitting them must have
+    // produced an `atomic_group_conflicts` bail above. Reaching this
+    // point with a non-empty clause-2 verdict means the atomic-group
     // glue and the realizability gate disagree — refuse to emit
     // rather than materialize a bundle that reassigns an ESM import.
     if !factorization_report.cross_rebinds.is_empty() {
         bail!(
-            "materialize_logical_modules: chunk {chunk_id} — realizability verdict carries {n} cross-destination rebind(s) but no atomic-unit conflict or blocking SCC was reported; this should be unreachable (rebinding writes co-locate with their target via atomic factor units). Rebinds:\n  {rebinds}",
+            "materialize_logical_modules: chunk {chunk_id} — realizability verdict carries {n} cross-destination rebind(s) but no atomic-group conflict or blocking SCC was reported; this should be unreachable (rebinding writes co-locate with their target via atomic factor groups). Rebinds:\n  {rebinds}",
             n = factorization_report.cross_rebinds.len(),
             rebinds = factorization_report.cross_rebinds.join("\n  "),
         );

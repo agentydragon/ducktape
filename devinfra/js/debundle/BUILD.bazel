@@ -439,7 +439,7 @@ rust_library(
     srcs = [
         "analysis_inputs.rs",
         "assignment_assembly.rs",
-        "atomic_units.rs",
+        "atomic_groups.rs",
         "cross_module_purity.rs",
         "facts/analyze.rs",
         "facts/at_init_fallback.rs",

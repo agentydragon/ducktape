@@ -9,7 +9,7 @@
 //! (via `OwnerGraph::from_report`), builds the post-edit `ModuleAssignment`
 //! by mapping each surviving spec module's bindings to a fresh
 //! `ModuleId`, and runs BOTH `validate_factorization` (cross-module
-//! cycles) AND atom-split detection (every `AtomicUnit`'s members
+//! cycles) AND atom-split detection (every `AtomicGroup`'s members
 //! must co-locate). Either rejection prints a diagnostic to stderr
 //! and exits non-zero without writing any file. `--no-verify` skips
 //! the gate; `--dry-run` runs the gate but doesn't write.

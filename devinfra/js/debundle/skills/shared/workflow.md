@@ -105,7 +105,7 @@ conventions take precedence over generic guidance.
   an assertion may narrow callback availability while retaining eager reads,
   mutation, and ordering. When the required audit cannot be established, keep
   the conservative constraints and change the module boundary.
-- Split atomic unit: expand one lane to cover the whole unit or redispatch as
+- Split atomic group: expand one lane to cover the whole group or redispatch as
   coordinated work.
 - Unclear destination: route to architect instead of creating a grab-bag.
 - Broad source understanding needed: route to intake instead of overloading a

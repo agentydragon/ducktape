@@ -1815,7 +1815,7 @@ mod tests {
     use analysis::{DepKind, OwnerGraphNodeReport};
     use peel::propose::propose;
     use report_fixtures::{
-        active_owner, atomic_edge, atomic_unit_for, claims, graph_of, no_claims, owner_edge,
+        active_owner, atomic_edge, atomic_group_for, claims, graph_of, no_claims, owner_edge,
         residual_owner,
     };
 
@@ -1912,8 +1912,8 @@ mod tests {
                 true,
             )],
             vec![
-                atomic_unit_for("atomic:0", &[&from]),
-                atomic_unit_for("atomic:1", &[&to]),
+                atomic_group_for("atomic:0", &[&from]),
+                atomic_group_for("atomic:1", &[&to]),
             ],
             vec![atomic_edge("atomic_edge:0", "atomic:0", "atomic:1")],
         );

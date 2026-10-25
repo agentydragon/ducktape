@@ -1,10 +1,10 @@
 //! `unassigned_mode: mini_factors` synthesizes one logical module
-//! per unclaimed atomic factor unit instead of funneling everything
+//! per unclaimed atomic factor group instead of funneling everything
 //! into the residual catch-all. Pin the contract:
 //!
 //! * Default mode (`catchall`): unclaimed bindings live together in
 //!   the residual module.
-//! * `mini_factors`: each unclaimed atomic unit becomes its own
+//! * `mini_factors`: each unclaimed atomic group becomes its own
 //!   synthetic `__auto/mini/{idx:04}` module; the residual catch-all
 //!   collapses to whatever truly couldn't be peeled (here: nothing).
 
@@ -33,14 +33,14 @@ fn catchall_keeps_unclaimed_bindings_in_residual() {
 }
 
 #[test]
-fn mini_factors_synthesizes_one_module_per_unclaimed_unit() {
+fn mini_factors_synthesizes_one_module_per_unclaimed_atomic_group() {
     let fixture = run_fixture(
         FixtureOpts::new(FIXTURE_SOURCE, vec![])
             .with_unassigned_mode(unassigned_mode_mini_factors()),
     );
     // Two top-level const bindings with no constraining edges
-    // between them form two separate atomic units. Under
-    // `mini_factors` each unit becomes its own synthetic module.
+    // between them form two separate atomic groups. Under
+    // `mini_factors` each atomic group becomes its own synthetic module.
     let mini_dir = fixture.out_root.join("static/app/modules/__auto/mini");
     assert!(
         mini_dir.exists(),

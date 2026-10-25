@@ -9,7 +9,7 @@ git, not in long-lived plans.
 The proposer is a renderer over `peel::quotient::QuotientGraph`:
 
 1. `build_seed_quotient` constructs the seed quotient from atomic
-   units, active spec modules, and atomic-DAG reachability closures.
+   groups, active spec modules, and atomic-DAG reachability closures.
    Each forced contraction is gated by `merge_preserves_invariants`.
 2. `greedy_merge_to_convergence` extends the quotient by merging
    classes that the gate still accepts. It can extend an existing
@@ -31,7 +31,7 @@ proposal.
 
 Current rejection kinds:
 
-- `atomic_unit`: an atomic unit could not be represented as one class.
+- `atomic_group`: an atomic group could not be represented as one quotient class.
 - `spec_module`: an active spec module's declared owners could not be
   represented as one class.
 - `atomic_reachability`: an atomic-DAG reachability closure edge would

@@ -132,7 +132,7 @@ fn atom_split_reports_both_destinations_and_writes_the_same_artifact() {
         .map(|c| c["module"].as_str().unwrap())
         .collect();
     assert!(modules.contains(&"dogfood/split") && modules.contains(&"home/atom"));
-    let artifact: Value = read_json(&fixture.graph.with_file_name("atomic_unit_conflicts.json"));
+    let artifact: Value = read_json(&fixture.graph.with_file_name("atomic_group_conflicts.json"));
     assert_eq!(artifact.as_array().unwrap().len(), 1);
 }
 

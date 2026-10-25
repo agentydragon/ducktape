@@ -1,11 +1,11 @@
 //! Assignment assembly: produces the authoritative per-owner
-//! [`ModuleAssignment`] from [`crate::atomic_units`]' SCCs + the spec's YAML
+//! [`ModuleAssignment`] from [`crate::atomic_groups`]' SCCs + the spec's YAML
 //! claims. When two or more distinct claims fall inside one atomic
-//! unit the spec is unrealizable; we surface an
-//! [`AtomicUnitConflict`] (members + each conflicting claim + the
-//! `DepKind` causes from the unit) so the materializer can reject
+//! group the spec is unrealizable; we surface an
+//! [`AtomicGroupConflict`] (members + each conflicting claim + the
+//! `DepKind` causes from the group) so the materializer can reject
 //! before emit. This pass deliberately does *not* extend a single-
-//! member claim to cover the rest of its unit — that promotion is
+//! member claim to cover the rest of the group — that promotion is
 //! an authoring decision surfaced by `debundle coverage`.
 //! See `docs/design.md` §"Assignment assembly inside `debundle run`".
 
@@ -15,13 +15,13 @@ use serde::Serialize;
 use swc_atoms::Atom;
 use swc_ecma_ast::Id;
 
-use crate::atomic_units::AtomicUnit;
+use crate::atomic_groups::AtomicGroup;
 use crate::graph::{DepKind, OwnerGraph, OwnerId};
 use crate::ids::{BindingKind, ModuleId, PlannedModule};
 use crate::module_assignment::ModuleAssignment;
 
 /// One owner's claimed destination inside a conflicting atomic
-/// unit. Listed inside an [`AtomicUnitConflict`].
+/// group. Listed inside an [`AtomicGroupConflict`].
 #[derive(Debug, Clone, Eq, PartialEq, Serialize)]
 pub struct ConflictingClaim {
     pub owner: OwnerId,
@@ -29,22 +29,22 @@ pub struct ConflictingClaim {
     pub module: ModuleId,
 }
 
-/// An atomic factor unit whose members the spec routes to two or
+/// An atomic factor group whose members the spec routes to two or
 /// more distinct destinations — unrealizable by construction.
 ///
 /// Atom-level (binding members claimed across distinct destinations),
 /// not SCC-level — the atom-level sibling of the module-quotient-SCC
 /// shape [`crate::reports::SccCore`]. Both carry the "unrealizable,
 /// here's why" framing, but this one's domain is owners in an atomic
-/// unit rather than modules in an SCC, so it does not reuse that core
+/// group rather than modules in an SCC, so it does not reuse that core
 /// and stays a separate type.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize)]
-pub struct AtomicUnitConflict {
+pub struct AtomicGroupConflict {
     /// Members sorted by `OwnerId`.
     pub members: Vec<OwnerId>,
     pub claims: Vec<ConflictingClaim>,
-    /// Constraining-edge kinds inside the unit (mirrors
-    /// [`AtomicUnit::causes`]). Lets the materializer's diagnostic
+    /// Constraining-edge kinds inside the group (mirrors
+    /// [`AtomicGroup::causes`]). Lets the materializer's diagnostic
     /// tell the author what kind of edge forced co-location (eager
     /// cycle, rebind, sequenced side-effect chain). `BTreeSet` so
     /// iteration is `DepKind`-`Ord`-stable for downstream rendering.
@@ -54,20 +54,20 @@ pub struct AtomicUnitConflict {
 #[derive(Debug, Clone)]
 pub struct AssemblyOutcome {
     pub assignment: ModuleAssignment,
-    pub conflicts: Vec<AtomicUnitConflict>,
+    pub conflicts: Vec<AtomicGroupConflict>,
 }
 
-/// Build the assignment + any unit-claim conflicts. The assignment is
-/// best-effort when conflicts exist (first-seen claim wins per unit)
+/// Build the assignment + any atomic-group claim conflicts. The assignment is
+/// best-effort when conflicts exist (first-seen claim wins per atomic group)
 /// so downstream owner-graph/report code keeps working — the
 /// conflict list is what surfaces the rejection to the user.
 ///
 /// `default_destination` is the residual logical module id that
 /// unclaimed owners fall back to (and the conflict detector reports as
-/// the effective destination of unclaimed unit members).
+/// the effective destination of unclaimed atomic-group members).
 pub fn assemble_assignment(
     owner_graph: &OwnerGraph,
-    atomic_units: &[AtomicUnit],
+    atomic_groups: &[AtomicGroup],
     bindings: &HashMap<Id, BindingKind>,
     logical_modules: &[PlannedModule],
     default_destination: ModuleId,
@@ -79,10 +79,10 @@ pub fn assemble_assignment(
             assignment.set(OwnerId(idx), *dest);
         }
     }
-    let mut conflicts = Vec::<AtomicUnitConflict>::new();
-    for unit in atomic_units {
+    let mut conflicts = Vec::<AtomicGroupConflict>::new();
+    for atomic_group in atomic_groups {
         if let Some(conflict) =
-            detect_unit_conflict(unit, &claims, owner_graph, default_destination)
+            detect_atomic_group_conflict(atomic_group, &claims, owner_graph, default_destination)
         {
             conflicts.push(conflict);
         }
@@ -126,16 +126,16 @@ fn compute_owner_claims(
     claims
 }
 
-fn detect_unit_conflict(
-    unit: &AtomicUnit,
+fn detect_atomic_group_conflict(
+    atomic_group: &AtomicGroup,
     claims: &[Option<ModuleId>],
     owner_graph: &OwnerGraph,
     default_destination: ModuleId,
-) -> Option<AtomicUnitConflict> {
+) -> Option<AtomicGroupConflict> {
     // Each member's effective destination: explicit claim or
     // residual fallback. Two or more distinct destinations is
     // unrealizable (covers the spec-claims-some-but-not-all case).
-    let resolved: Vec<(OwnerId, ModuleId)> = unit
+    let resolved: Vec<(OwnerId, ModuleId)> = atomic_group
         .members
         .iter()
         .map(|owner| (*owner, claims[owner.0].unwrap_or(default_destination)))
@@ -176,9 +176,9 @@ fn detect_unit_conflict(
         })
         .collect();
 
-    Some(AtomicUnitConflict {
-        members: unit.members.iter().copied().collect(),
+    Some(AtomicGroupConflict {
+        members: atomic_group.members.iter().copied().collect(),
         claims: claims_report,
-        causes: unit.causes.clone(),
+        causes: atomic_group.causes.clone(),
     })
 }

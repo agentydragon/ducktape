@@ -203,7 +203,7 @@ pub enum ReportEmission {
     /// Write reports only when the realizability gate rejects. Used by
     /// `debundle run --dry-run`: the accept path writes nothing (the
     /// no-output contract), but a rejection still materializes
-    /// `owner_graph.json` + `cycles.json` / `atomic_unit_conflicts.json`
+    /// `owner_graph.json` + `cycles.json` / `atomic_group_conflicts.json`
     /// so the documented `debundle gate list/describe` follow-up works.
     OnRejection(PathBuf),
 }

@@ -88,14 +88,14 @@ impl RejectedFixture {
         read_json(&self.report_root.join(&self.chunk_id).join("cycles.json"))
     }
 
-    /// `atomic_unit_conflicts.json`: one entry per atomic unit the spec splits, with its
+    /// `atomic_group_conflicts.json`: one entry per atomic group the spec splits, with its
     /// `claims` (owner, binding names, module) and `causes`.
-    pub fn atomic_unit_conflicts(&self) -> Vec<Value> {
+    pub fn atomic_group_conflicts(&self) -> Vec<Value> {
         read_json(
             &self
                 .report_root
                 .join(&self.chunk_id)
-                .join("atomic_unit_conflicts.json"),
+                .join("atomic_group_conflicts.json"),
         )
     }
 
@@ -182,10 +182,10 @@ pub fn expect_sequenced_cycle_rejection(opts: FixtureOpts<'_>, modules: &[&str])
     );
 }
 
-/// Runs `opts` and asserts the atomic-unit check rejected it: some conflict of
-/// `atomic_unit_conflicts.json` has claims in every one of `modules` and every one of `causes`.
+/// Runs `opts` and asserts the atomic-group check rejected it: some conflict of
+/// `atomic_group_conflicts.json` has claims in every one of `modules` and every one of `causes`.
 pub fn expect_atomic_conflict_rejection(opts: FixtureOpts<'_>, modules: &[&str], causes: &[&str]) {
-    let conflicts = run_rejection_fixture(opts).atomic_unit_conflicts();
+    let conflicts = run_rejection_fixture(opts).atomic_group_conflicts();
     assert!(
         conflicts.iter().any(|conflict| {
             let claims = conflict["claims"].as_array().expect("conflict claims");
@@ -200,7 +200,7 @@ pub fn expect_atomic_conflict_rejection(opts: FixtureOpts<'_>, modules: &[&str],
                     .any(|candidate| candidate.as_str() == Some(*cause))
             })
         }),
-        "no atomic-unit conflict claimed by {modules:?} with causes {causes:?}: {conflicts:#?}"
+        "no atomic-group conflict claimed by {modules:?} with causes {causes:?}: {conflicts:#?}"
     );
 }
 
@@ -235,7 +235,7 @@ pub fn run_rejection_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
 /// Like [`run_rejection_fixture`] but with `debundle run --dry-run`.
 /// Dry-run skips all emitted-JS and accept-path report writes but
 /// still materializes rejection evidence (`owner_graph.json` +
-/// `cycles.json` / `atomic_unit_conflicts.json`) under the standard
+/// `cycles.json` / `atomic_group_conflicts.json`) under the standard
 /// per-chunk report layout.
 pub fn run_dry_run_rejection_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
     run_rejection_fixture_with_args(opts, &["--dry-run"])

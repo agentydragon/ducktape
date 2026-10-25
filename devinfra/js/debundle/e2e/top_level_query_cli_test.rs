@@ -175,10 +175,10 @@ fn inspect_source_rejects_stale_graph_source_and_old_command() {
 fn atoms_summary_and_proposals_describe_the_real_graph() {
     let fixture = fixture();
     let atoms = fixture.json(&["atoms"]);
-    assert_eq!(atoms["units"].as_array().unwrap().len(), 2);
+    assert_eq!(atoms["atomic_groups"].as_array().unwrap().len(), 2);
     let summary = fixture.json(&["graph-summary"]);
     assert_eq!(summary["owner_count"], 2);
-    assert_eq!(summary["atomic_unit_count"], 2);
+    assert_eq!(summary["atomic_group_count"], 2);
     assert!(summary.get("proposal_count").is_none());
     assert!(summary.get("diagnostic_count").is_none());
     let proposals = fixture.json(&["modules", "propose", "--size-cap-lines", "10000"]);
@@ -191,7 +191,10 @@ fn describe_and_inspect_source_dispatch_bindings_and_module_ids() {
     for id in ["ZZ", "owner:0", "atomic:0"] {
         let report = fixture.json(&["describe", id]);
         assert_eq!(report["owner_ids"], json!(["owner:0"]), "{id}");
-        assert_eq!(report["atomic_units"][0]["id"], "atomic:0");
+        assert_eq!(report["atomic_groups"][0]["id"], "atomic:0");
+        if id == "atomic:0" {
+            assert_eq!(report["query"]["kind"], "atomic_group");
+        }
     }
     let graph = fixture.owner_graph();
     let destination = &graph.nodes[0].destination;
@@ -226,8 +229,8 @@ fn coverage_counts_anonymous_statement_claims() {
     );
     let row = &report["rows"][0];
     assert_eq!(row["path"], "features/state");
-    assert_eq!(row["status"], "complete_units");
-    assert_eq!(row["complete_unit_ids"], json!(["atomic:0"]));
+    assert_eq!(row["status"], "complete_atomic_groups");
+    assert_eq!(row["complete_atomic_group_ids"], json!(["atomic:0"]));
     assert_eq!(row["missing_anonymous_owner_ids"], json!([]));
 }
 
@@ -246,9 +249,9 @@ fn source_match_claims_combine_with_members() {
     assert_eq!(coverage["summary"]["complete_patch_sets"], 1);
     assert_eq!(coverage["summary"]["split_patch_sets"], 0);
     let row = &coverage["rows"][0];
-    assert_eq!(row["status"], "complete_units");
+    assert_eq!(row["status"], "complete_atomic_groups");
     assert_eq!(row["requested_binding_ids"], json!(["alpha", "beta"]));
-    assert_eq!(row["complete_unit_ids"], json!(["atomic:0"]));
+    assert_eq!(row["complete_atomic_group_ids"], json!(["atomic:0"]));
     assert_eq!(row["missing_binding_ids"], json!([]));
     assert_eq!(row["missing_owner_ids"], json!([]));
     let describe = fixture.json(&["describe", "features/state"]);
@@ -278,7 +281,7 @@ fn anonymous_only_module_path_dispatches_before_proposal_prefix() {
         assert_eq!(report["query"]["kind"], "module");
         assert_eq!(report["owner_ids"], json!(["owner:0"]));
         assert_eq!(
-            report["atomic_units"][0]["anonymous_statement_owner_ids"],
+            report["atomic_groups"][0]["anonymous_statement_owner_ids"],
             json!(["owner:0"])
         );
     }
@@ -364,7 +367,7 @@ const PATCHED_SOURCE: &str =
     "const ZZ = class PaymentError {};\nconst aa = ZZ;\nconst bb = 2;\nconst cc = ZZ;\n";
 
 /// `ZZ` carries a binding patch and is read at init by `aa` and `cc`; `bb` is
-/// claimed (and renamed) by a module. The residual units are `ZZ`, `aa`, `cc`.
+/// claimed (and renamed) by a module. The residual owners are `ZZ`, `aa`, `cc`.
 fn patched_fixture() -> GraphFixture {
     GraphFixture::new(
         PATCHED_SOURCE,
@@ -391,18 +394,18 @@ fn field_of_each<'a>(report: &'a Value, key: &str, field: &str) -> Vec<&'a str> 
         .collect()
 }
 
-fn unit_bindings(report: &Value) -> Vec<&str> {
-    report["units"]
+fn atomic_group_bindings(report: &Value) -> Vec<&str> {
+    report["atomic_groups"]
         .as_array()
         .unwrap()
         .iter()
-        .flat_map(|unit| unit["members"].as_array().unwrap())
+        .flat_map(|atomic_group| atomic_group["members"].as_array().unwrap())
         .map(|member| member["binding"].as_str().unwrap())
         .collect()
 }
 
 #[test]
-fn atoms_filters_residual_and_renamed_units_and_groups_them_by_destination() {
+fn atoms_filters_residual_and_renamed_atomic_groups_and_groups_them_by_destination() {
     let fixture = patched_fixture();
     let cases: [(&[&str], &[&str]); 4] = [
         (&[], &["ZZ", "aa", "bb", "cc"]),
@@ -413,16 +416,21 @@ fn atoms_filters_residual_and_renamed_units_and_groups_them_by_destination() {
     for (flags, expected) in cases {
         let args = [&["atoms"][..], flags].concat();
         let report = fixture.json(&args);
-        assert_eq!(unit_bindings(&report), expected, "{flags:?}");
-        assert!(report.get("groups").is_none(), "{flags:?}");
+        assert_eq!(atomic_group_bindings(&report), expected, "{flags:?}");
+        assert!(report.get("destination_groups").is_none(), "{flags:?}");
     }
 
     let report = fixture.json(&["atoms", "--by-destination"]);
-    let groups: BTreeMap<&str, &Value> = report["groups"]
+    let groups: BTreeMap<&str, &Value> = report["destination_groups"]
         .as_array()
         .unwrap()
         .iter()
-        .map(|group| (group["destination"].as_str().unwrap(), &group["unit_ids"]))
+        .map(|group| {
+            (
+                group["destination"].as_str().unwrap(),
+                &group["atomic_group_ids"],
+            )
+        })
         .collect();
     assert_eq!(groups.len(), 2);
     assert_eq!(groups["home/bb"], &json!(["atomic:2"]));
@@ -449,8 +457,8 @@ fn coverage_matches_proposals_to_patch_sets_only_on_request() {
 
     let plain = fixture.json(&["coverage"]);
     let patch_row = row(&plain, "binding_patches");
-    assert_eq!(patch_row["status"], "complete_units");
-    assert_eq!(patch_row["complete_unit_ids"], json!(["atomic:0"]));
+    assert_eq!(patch_row["status"], "complete_atomic_groups");
+    assert_eq!(patch_row["complete_atomic_group_ids"], json!(["atomic:0"]));
     assert!(patch_row.get("matching_proposal_ids").is_none());
 
     let proposed = fixture.json(&["coverage", "--include-proposals"]);
@@ -478,7 +486,7 @@ fn describe_joins_graph_and_spec_context_and_runs_the_proposer_only_on_request()
         ["owner:1", "owner:3"]
     );
     assert_eq!(report["binding_homes"][0]["source_kind"], "binding_patch");
-    assert_eq!(report["atomic_units"][0]["id"], "atomic:0");
+    assert_eq!(report["atomic_groups"][0]["id"], "atomic:0");
     assert!(report.get("factorize_proposals").is_none());
     assert!(report.get("factorize_diagnostics").is_none());
 
@@ -537,7 +545,7 @@ fn inspect_source_context_is_clamped_to_the_source_file() {
 #[test]
 fn modules_propose_limit_keeps_a_prefix_and_reports_the_total() {
     let fixture = patched_fixture();
-    // A one-line cap keeps the three residual units as separate proposals.
+    // A one-line cap keeps the three residual owners in separate proposals.
     let args = ["modules", "propose", "--size-cap-lines", "1"];
     let all = fixture.json(&args);
     assert_eq!(all["proposals"].as_array().unwrap().len(), 3);

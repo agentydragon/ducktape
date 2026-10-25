@@ -195,7 +195,7 @@ Warnings never stop a run.
 ## Read-only decomposition candidates
 
 Opt-in atomic-conflict coarsening joins whole candidate groups connected by
-native reported structural atomic units. It preserves the residual entry path
+native reported structural atomic groups. It preserves the residual entry path
 when a joined group contains that entry, then validates the complete assignment
 through the shared gate before blocking-SCC coarsening. Without the opt-in,
 structural conflicts stop coarsening and remain reported.

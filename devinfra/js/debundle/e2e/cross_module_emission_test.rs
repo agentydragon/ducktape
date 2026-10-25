@@ -77,7 +77,7 @@ fn folds_unclaimed_assigner_with_extracted_mutable_binding() {
     // assignment because imported ESM bindings are read-only in the
     // importing module.
     //
-    // Rebind-only atomic-unit folding extends the explicit `state`
+    // Rebind-only atomic-group folding extends the explicit `state`
     // destination to cover the unclaimed assigner `b`. That keeps the
     // assignment local to the module that owns `a`; the residual entry
     // imports and calls `b` instead of assigning an imported binding.

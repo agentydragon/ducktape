@@ -7,7 +7,7 @@ use std::fs;
 fn bindings_assign_rejects_atom_split_in_both_modes_without_writes() {
     GraphFixture::atomic_pair().assert_rejected_unchanged(
         &["bindings", "assign", "alpha:dogfood/split"],
-        &["splits one or more atomic units"],
+        &["splits one or more atomic groups"],
     );
 }
 

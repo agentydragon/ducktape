@@ -23,7 +23,7 @@
 //! through a single, gated contraction protocol. The proposal
 //! pipeline is:
 //!
-//!   1. `build_seed_quotient` — atomic-unit + spec-module +
+//!   1. `build_seed_quotient` — atomic-group + spec-module +
 //!      atomic-DAG-reachability contractions, each gated by
 //!      `merge_preserves_invariants`. Cycle-rejected contractions
 //!      surface as `SeedContractionRejected::AtomicReachability`
@@ -104,7 +104,7 @@ pub struct ModuleDecompositionReport {
     /// Existing modules that would split into two or more suggested parts.
     pub modules: Vec<ModuleDecomposition>,
     /// Structural atoms that the candidate would assign to multiple modules.
-    pub atomic_unit_conflicts: Vec<ModuleDecompositionAtomicConflict>,
+    pub atomic_group_conflicts: Vec<ModuleDecompositionAtomicConflict>,
     /// The exact cycle and rebinding result from the shared factorization gate.
     pub cycles: Vec<gate::CycleReport>,
     pub cross_rebinds: Vec<String>,
@@ -125,7 +125,7 @@ pub enum ModuleDecompositionCoarseningMode {
 #[serde(rename_all = "snake_case")]
 pub enum ModuleDecompositionCoarseningStopReason {
     Accepted,
-    AtomicUnitConflicts,
+    AtomicGroupConflicts,
     CrossModuleRebinds,
     NoProgress,
 }
@@ -153,7 +153,7 @@ pub struct ModuleDecompositionCoarsening {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ModuleDecompositionAtomicConflictMerge {
-    pub unit_ids: Vec<String>,
+    pub atomic_group_ids: Vec<String>,
     pub merged_candidate_paths: Vec<ModulePath>,
     pub suggested_module_path: ModulePath,
 }
@@ -266,7 +266,7 @@ pub enum ModuleDecompositionSelectorAnchorKind {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ModuleDecompositionAtomicConflict {
-    pub unit_id: String,
+    pub atomic_group_id: String,
     pub owner_ids: Vec<String>,
     pub candidate_modules: Vec<ModulePath>,
 }
@@ -371,7 +371,7 @@ pub struct ModuleProposal {
     /// when the graph closure itself is useful.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub landability_notes: Vec<String>,
-    /// Proposal verdict for this closed atomic-unit owner set.
+    /// Proposal verdict for this closed atomic-group owner set.
     /// `PeelableNow` when the cell has no outgoing edges into other
     /// residual cells; `BlockedResidualDependency` when it does
     /// (promoting it alone would route reads through
@@ -724,7 +724,7 @@ fn decompose_modules(
         occupied_paths.extend(existing_module_paths.iter().cloned());
         let atomic_conflict_merges = if decomposition.coarsen_atomic_conflicts {
             let merges = coarsen_atomic_conflicts(
-                &validation.atomic_unit_conflicts,
+                &validation.atomic_group_conflicts,
                 &residual_path,
                 &mut occupied_paths,
                 &mut candidate_owner_modules,
@@ -736,8 +736,8 @@ fn decompose_modules(
                     &residual_path,
                 )?;
                 anyhow::ensure!(
-                    validation.atomic_unit_conflicts.is_empty(),
-                    "native atomic-conflict coarsening left structural units split"
+                    validation.atomic_group_conflicts.is_empty(),
+                    "native atomic-conflict coarsening left structural atomic groups split"
                 );
             }
             merges
@@ -746,8 +746,8 @@ fn decompose_modules(
         };
         let mut rounds = Vec::new();
         let stop_reason = loop {
-            if !validation.atomic_unit_conflicts.is_empty() {
-                break ModuleDecompositionCoarseningStopReason::AtomicUnitConflicts;
+            if !validation.atomic_group_conflicts.is_empty() {
+                break ModuleDecompositionCoarseningStopReason::AtomicGroupConflicts;
             }
             if !validation.cross_rebinds.is_empty() {
                 break ModuleDecompositionCoarseningStopReason::CrossModuleRebinds;
@@ -855,7 +855,7 @@ fn decompose_modules(
             validate_decomposition_candidate(graph, &candidate_owner_modules, &residual_path)?;
         anyhow::ensure!(
             !accepted_baseline
-                || (validation.atomic_unit_conflicts.is_empty()
+                || (validation.atomic_group_conflicts.is_empty()
                     && validation.cycles.is_empty()
                     && validation.cross_rebinds.is_empty()),
             "shared gate rejected the assignment after original-home rejoining"
@@ -881,7 +881,7 @@ fn decompose_modules(
     let coverage_complete = covered_owner_ids.len() == graph.nodes.len()
         && candidate_owner_modules.len() == graph.nodes.len();
     let candidate_is_realizable = coverage_complete
-        && validation.atomic_unit_conflicts.is_empty()
+        && validation.atomic_group_conflicts.is_empty()
         && validation.cycles.is_empty()
         && validation.cross_rebinds.is_empty();
     let original_modules: BTreeSet<ModulePath> = owner_modules.into_iter().collect();
@@ -897,7 +897,7 @@ fn decompose_modules(
         assigned_owner_count: candidate_owner_modules.len(),
         unchanged_module_count,
         modules: refinements,
-        atomic_unit_conflicts: validation.atomic_unit_conflicts,
+        atomic_group_conflicts: validation.atomic_group_conflicts,
         cycles: validation.cycles,
         cross_rebinds: validation.cross_rebinds,
         coarsening,
@@ -1295,8 +1295,8 @@ fn coarsen_atomic_conflicts(
         let mut indices = conflict.candidate_modules.iter().map(|path| {
             path_indices.get(path).copied().with_context(|| {
                 format!(
-                    "atomic unit {} references absent candidate path {path}",
-                    conflict.unit_id
+                    "atomic group {} references absent candidate path {path}",
+                    conflict.atomic_group_id
                 )
             })
         });
@@ -1313,14 +1313,14 @@ fn coarsen_atomic_conflicts(
         let root = find_group_root(&mut parents, idx);
         paths_by_root.entry(root).or_default().push(path);
     }
-    let mut unit_ids_by_root = BTreeMap::<usize, BTreeSet<String>>::new();
+    let mut atomic_group_ids_by_root = BTreeMap::<usize, BTreeSet<String>>::new();
     for conflict in conflicts {
         let first_path = conflict.candidate_modules.first().expect("checked above");
         let root = find_group_root(&mut parents, path_indices[first_path]);
-        unit_ids_by_root
+        atomic_group_ids_by_root
             .entry(root)
             .or_default()
-            .insert(conflict.unit_id.clone());
+            .insert(conflict.atomic_group_id.clone());
     }
 
     let mut remaps = BTreeMap::<ModulePath, ModulePath>::new();
@@ -1338,9 +1338,9 @@ fn coarsen_atomic_conflicts(
             remaps.insert(path.clone(), suggested_module_path.clone());
         }
         merges.push(ModuleDecompositionAtomicConflictMerge {
-            unit_ids: unit_ids_by_root
+            atomic_group_ids: atomic_group_ids_by_root
                 .remove(&root)
-                .context("coarsened component lost its reported atomic units")?
+                .context("coarsened component lost its reported atomic groups")?
                 .into_iter()
                 .collect(),
             merged_candidate_paths,
@@ -1356,7 +1356,7 @@ fn coarsen_atomic_conflicts(
 }
 
 struct DecompositionValidation {
-    atomic_unit_conflicts: Vec<ModuleDecompositionAtomicConflict>,
+    atomic_group_conflicts: Vec<ModuleDecompositionAtomicConflict>,
     cycles: Vec<gate::CycleReport>,
     cross_rebinds: Vec<String>,
 }
@@ -1372,22 +1372,22 @@ fn validate_decomposition_candidate(
         .enumerate()
         .map(|(idx, node)| (node.id.as_str(), idx))
         .collect();
-    let mut atomic_unit_conflicts = Vec::new();
-    for unit in &graph.atomic_graph.nodes {
+    let mut atomic_group_conflicts = Vec::new();
+    for atomic_group in &graph.atomic_graph.nodes {
         let mut candidate_modules = BTreeSet::new();
-        for owner_id in &unit.owner_ids {
+        for owner_id in &atomic_group.owner_ids {
             let owner_idx = owner_index.get(owner_id.as_str()).with_context(|| {
                 format!(
-                    "atomic unit {} references unknown owner {owner_id}",
-                    unit.id
+                    "atomic group {} references unknown owner {owner_id}",
+                    atomic_group.id
                 )
             })?;
             candidate_modules.insert(candidate_owner_modules[*owner_idx].clone());
         }
         if candidate_modules.len() > 1 {
-            atomic_unit_conflicts.push(ModuleDecompositionAtomicConflict {
-                unit_id: unit.id.clone(),
-                owner_ids: unit.owner_ids.clone(),
+            atomic_group_conflicts.push(ModuleDecompositionAtomicConflict {
+                atomic_group_id: atomic_group.id.clone(),
+                owner_ids: atomic_group.owner_ids.clone(),
                 candidate_modules: candidate_modules.into_iter().collect(),
             });
         }
@@ -1405,7 +1405,7 @@ fn validate_decomposition_candidate(
             .unwrap_or_else(|| residual_path.clone())
     });
     Ok(DecompositionValidation {
-        atomic_unit_conflicts,
+        atomic_group_conflicts,
         cycles: gate_report.cycles,
         cross_rebinds: gate_report.cross_rebinds,
     })
@@ -1878,23 +1878,25 @@ fn atomic_module_groups(
         .enumerate()
         .map(|(idx, node)| (node.id.as_str(), idx))
         .collect();
-    let mut unit_by_owner = vec![None; graph.nodes.len()];
-    for (unit_idx, unit) in graph.atomic_graph.nodes.iter().enumerate() {
-        for owner_id in &unit.owner_ids {
+    let mut atomic_group_by_owner = vec![None; graph.nodes.len()];
+    for (atomic_group_idx, atomic_group) in graph.atomic_graph.nodes.iter().enumerate() {
+        for owner_id in &atomic_group.owner_ids {
             let owner_idx = owner_index.get(owner_id.as_str()).with_context(|| {
                 format!(
-                    "atomic unit {} references unknown owner {owner_id}",
-                    unit.id
+                    "atomic group {} references unknown owner {owner_id}",
+                    atomic_group.id
                 )
             })?;
-            if let Some(previous_unit) = unit_by_owner[*owner_idx].replace(unit_idx) {
+            if let Some(previous_atomic_group) =
+                atomic_group_by_owner[*owner_idx].replace(atomic_group_idx)
+            {
                 anyhow::bail!(
-                    "owner {owner_id} appears in atomic units {previous_unit} and {unit_idx}"
+                    "owner {owner_id} appears in atomic groups {previous_atomic_group} and {atomic_group_idx}"
                 );
             }
         }
     }
-    if let Some(owner_idx) = unit_by_owner.iter().position(Option::is_none) {
+    if let Some(owner_idx) = atomic_group_by_owner.iter().position(Option::is_none) {
         anyhow::bail!(
             "owner {} is absent from the atomic graph",
             graph.nodes[owner_idx].id
@@ -1903,8 +1905,8 @@ fn atomic_module_groups(
 
     let mut groups_by_module: BTreeMap<ModulePath, Vec<(Vec<usize>, bool)>> = BTreeMap::new();
     let mut preserved_by_module: BTreeMap<ModulePath, Vec<usize>> = BTreeMap::new();
-    for unit in &graph.atomic_graph.nodes {
-        let owner_indices = unit
+    for atomic_group in &graph.atomic_graph.nodes {
+        let owner_indices = atomic_group
             .owner_ids
             .iter()
             .map(|owner_id| {
@@ -1913,8 +1915,8 @@ fn atomic_module_groups(
                     .copied()
                     .with_context(|| {
                         format!(
-                            "atomic unit {} references unknown owner {owner_id}",
-                            unit.id
+                            "atomic group {} references unknown owner {owner_id}",
+                            atomic_group.id
                         )
                     })
             })
@@ -2822,20 +2824,20 @@ mod tests {
     use super::*;
     use analysis::{DepKind, StatementKind};
     use report_fixtures::{
-        active_owner, atomic_edge, atomic_unit_for, claims, graph_of, module_ref, no_claims, owner,
-        owner_edge, residual_owner,
+        active_owner, atomic_edge, atomic_group_for, claims, graph_of, module_ref, no_claims,
+        owner, owner_edge, residual_owner,
     };
 
     #[test]
-    fn residual_atomic_units_become_singleton_proposals() {
+    fn residual_atomic_groups_become_singleton_proposals() {
         let a = residual_owner("a", 1, &["a"], 10);
         let b = residual_owner("b", 2, &["b"], 10);
         let graph = graph_of(
             vec![a.clone(), b.clone()],
             vec![],
             vec![
-                atomic_unit_for("atomic:0", &[&a]),
-                atomic_unit_for("atomic:1", &[&b]),
+                atomic_group_for("atomic:0", &[&a]),
+                atomic_group_for("atomic:1", &[&b]),
             ],
             vec![],
         );
@@ -2882,8 +2884,8 @@ mod tests {
             vec![a.clone(), b.clone()],
             edges,
             vec![
-                atomic_unit_for("atomic:0", &[&a]),
-                atomic_unit_for("atomic:1", &[&b]),
+                atomic_group_for("atomic:0", &[&a]),
+                atomic_group_for("atomic:1", &[&b]),
             ],
             vec![],
         );
@@ -2942,8 +2944,8 @@ mod tests {
             vec![a.clone(), b.clone()],
             vec![owner_edge("e1", "a", "b", DepKind::EagerUse, true)],
             vec![
-                atomic_unit_for("atomic:0", &[&a]),
-                atomic_unit_for("atomic:1", &[&b]),
+                atomic_group_for("atomic:0", &[&a]),
+                atomic_group_for("atomic:1", &[&b]),
             ],
             vec![],
         );
@@ -2974,8 +2976,8 @@ mod tests {
             vec![a.clone(), b.clone()],
             vec![owner_edge("e1", "b", "a", DepKind::EagerUse, true)],
             vec![
-                atomic_unit_for("atomic:0", &[&b]),
-                atomic_unit_for("atomic:1", &[&a]),
+                atomic_group_for("atomic:0", &[&b]),
+                atomic_group_for("atomic:1", &[&a]),
             ],
             vec![atomic_edge("atomic_edge:0", "atomic:0", "atomic:1")],
         );
@@ -2998,8 +3000,8 @@ mod tests {
             vec![a.clone(), b.clone()],
             edges,
             vec![
-                atomic_unit_for("atomic:0", &[&a]),
-                atomic_unit_for("atomic:1", &[&b]),
+                atomic_group_for("atomic:0", &[&a]),
+                atomic_group_for("atomic:1", &[&b]),
             ],
             vec![atomic_edge("atomic_edge:0", "atomic:1", "atomic:0")],
         );
@@ -3059,10 +3061,10 @@ mod tests {
                 owner_edge("e3", "consumer", "baz", DepKind::EagerUse, true),
             ],
             vec![
-                atomic_unit_for("atomic:0", &[&foo]),
-                atomic_unit_for("atomic:1", &[&baz]),
-                atomic_unit_for("atomic:2", &[&bridge]),
-                atomic_unit_for("atomic:3", &[&consumer]),
+                atomic_group_for("atomic:0", &[&foo]),
+                atomic_group_for("atomic:1", &[&baz]),
+                atomic_group_for("atomic:2", &[&bridge]),
+                atomic_group_for("atomic:3", &[&consumer]),
             ],
             // Only the bridge -> foo reachability edge. No
             // consumer -> bridge atomic edge: pass-3 must not fold
@@ -3151,8 +3153,8 @@ mod tests {
                 owner_edge("e2", "b", "a", DepKind::EagerUse, true),
             ],
             vec![
-                atomic_unit_for("atomic:0", &[&a]),
-                atomic_unit_for("atomic:1", &[&b]),
+                atomic_group_for("atomic:0", &[&a]),
+                atomic_group_for("atomic:1", &[&b]),
             ],
             vec![],
         );
@@ -3191,8 +3193,8 @@ mod tests {
                 owner_edge("e2", "b", "a", DepKind::EagerUse, true),
             ],
             vec![
-                atomic_unit_for("atomic:0", &[&a]),
-                atomic_unit_for("atomic:1", &[&b]),
+                atomic_group_for("atomic:0", &[&a]),
+                atomic_group_for("atomic:1", &[&b]),
             ],
             vec![],
         );
@@ -3217,7 +3219,7 @@ mod tests {
         let mut graph = graph_of(
             vec![a.clone()],
             vec![],
-            vec![atomic_unit_for("atomic:0", &[&a])],
+            vec![atomic_group_for("atomic:0", &[&a])],
             vec![],
         );
         // Drop the owner's destination from the module table to
@@ -3244,7 +3246,7 @@ mod tests {
         let graph = graph_of(
             vec![import.clone()],
             vec![],
-            vec![atomic_unit_for("atomic:0", &[&import])],
+            vec![atomic_group_for("atomic:0", &[&import])],
             vec![],
         );
         let report = propose(&graph, &no_claims(), 10_000).unwrap();
@@ -3274,7 +3276,7 @@ mod tests {
         let graph = graph_of(
             vec![effect.clone()],
             vec![],
-            vec![atomic_unit_for("atomic:0", &[&effect])],
+            vec![atomic_group_for("atomic:0", &[&effect])],
             vec![],
         );
         let report = propose_with_context(
@@ -3305,8 +3307,8 @@ mod tests {
             vec![a.clone(), b.clone()],
             vec![owner_edge("e1", "a", "b", DepKind::EagerUse, true)],
             vec![
-                atomic_unit_for("atomic:0", &[&a]),
-                atomic_unit_for("atomic:1", &[&b]),
+                atomic_group_for("atomic:0", &[&a]),
+                atomic_group_for("atomic:1", &[&b]),
             ],
             vec![atomic_edge("atomic_edge:0", "atomic:0", "atomic:1")],
         );

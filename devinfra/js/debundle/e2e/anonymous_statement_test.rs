@@ -248,7 +248,7 @@ console.log("same");"#],
 // materializer can't emit them as part of any logical module —
 // it silently leaves them in residual.
 //
-// This blocks moving bindings whose atomic unit also contains anonymous
+// This blocks moving bindings whose atomic group also contains anonymous
 // statements (decorator applications on the class prototype, runtime init
 // calls, bundle preludes). This test pins the materialization-side fix.
 //

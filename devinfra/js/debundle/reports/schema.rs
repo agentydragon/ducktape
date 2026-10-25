@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use swc_atoms::Atom;
 
-use crate::assignment_assembly::AtomicUnitConflict;
+use crate::assignment_assembly::AtomicGroupConflict;
 use crate::ids::ModuleId;
 use crate::purity::Purity;
 use crate::{DepKind, StatementKind, StatementOrdinal};
@@ -33,7 +33,7 @@ impl SourceLocation {
 
 /// Accumulates the minimum start-line and maximum end-line across a
 /// collection of `SourceLocation`s. Used to compute the
-/// `source_line_range` field of `AtomicUnitReport` and similar.
+/// `source_line_range` field of `AtomicGroupReport` and similar.
 pub struct LineRange {
     start: usize,
     end: usize,
@@ -251,18 +251,18 @@ pub struct SequencedOwnerCause {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AtomicGraphReport {
-    pub nodes: Vec<AtomicUnitReport>,
-    pub edges: Vec<AtomicUnitEdgeReport>,
+    pub nodes: Vec<AtomicGroupReport>,
+    pub edges: Vec<AtomicGroupEdgeReport>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct AtomicUnitReport {
+pub struct AtomicGroupReport {
     pub id: String,
     pub owner_ids: Vec<String>,
     pub members: Vec<BindingReport>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub anonymous_statement_owner_ids: Vec<String>,
-    /// Distinct modules the unit's owners are assigned to, as interned
+    /// Distinct modules the group's owners are assigned to, as interned
     /// [`ModuleKey`]s. Resolve to paths/residual via the module table.
     pub destinations: Vec<ModuleKey>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -274,7 +274,7 @@ pub struct AtomicUnitReport {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct AtomicUnitEdgeReport {
+pub struct AtomicGroupEdgeReport {
     pub id: String,
     pub source: String,
     pub target: String,
@@ -283,15 +283,15 @@ pub struct AtomicUnitEdgeReport {
     pub constrains_init_order: bool,
 }
 
-/// Wire shape for `atomic_unit_conflicts.json` (one entry per
-/// conflicting atomic unit). Projects the in-memory
-/// [`AtomicUnitConflict`] onto the shared entity-key formats: owners
+/// Wire shape for `atomic_group_conflicts.json` (one entry per
+/// conflicting atomic group). Projects the in-memory
+/// [`AtomicGroupConflict`] onto the shared entity-key formats: owners
 /// as `"owner:N"` strings (joining `owner_graph.json`'s `nodes[].id`)
 /// and modules as canonical [`spec::ModulePath`]s (joining the module
 /// table's `path`). The raw `OwnerId` / `ModuleId` indices never hit
 /// the wire.
 #[derive(Debug, Clone, Serialize)]
-pub struct AtomicUnitConflictReport {
+pub struct AtomicGroupConflictReport {
     /// Members as `"owner:N"` keys, sorted by owner id.
     pub members: Vec<String>,
     pub claims: Vec<ConflictingClaimReport>,
@@ -300,7 +300,7 @@ pub struct AtomicUnitConflictReport {
     pub sequenced_owners: Vec<SequencedOwnerCause>,
 }
 
-/// One claim row in [`AtomicUnitConflictReport`].
+/// One claim row in [`AtomicGroupConflictReport`].
 #[derive(Debug, Clone, Serialize)]
 pub struct ConflictingClaimReport {
     /// Claiming owner as an `"owner:N"` key.
@@ -349,9 +349,9 @@ pub fn sequenced_edge_cause(
     })
 }
 
-impl AtomicUnitConflictReport {
+impl AtomicGroupConflictReport {
     pub fn from_conflicts(
-        conflicts: &[AtomicUnitConflict],
+        conflicts: &[AtomicGroupConflict],
         module_path: &dyn Fn(ModuleId) -> spec::ModulePath,
         owner_graph: &crate::OwnerGraph,
     ) -> Vec<Self> {
@@ -385,7 +385,7 @@ impl AtomicUnitConflictReport {
 /// This is the **one** encoding of module identity on the owner-graph
 /// wire. Everything that points at a module — an owner's
 /// `destination`, a quotient edge's endpoints, an SCC's members, an
-/// atomic unit's `destinations` — carries a `ModuleKey`, never a
+/// atomic group's `destinations` — carries a `ModuleKey`, never a
 /// path or a parallel label. The key resolves to a [`ModuleEntry`] in
 /// the module table (`OwnerGraphQuotientReport::nodes`), which is the
 /// sole place a module's `path` and `residual` flag are stored.

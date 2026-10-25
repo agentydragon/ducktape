@@ -223,7 +223,7 @@ multi-binding source match. Owners not listed retain their current module.
 For a multi-chunk tree, pass `--tree-config` and use destination paths prefixed
 by that chunk's module root. The command resolves the full post-edit selector
 set again, checks that every owner still resolves to the reviewed destination,
-then runs the shared atomic-unit and realizability gates. It refuses residual,
+then runs the shared atomic-group and realizability gates. It refuses residual,
 unclaimed, import, and export owners and does not synthesize selectors. Module
 comments and notes remain with their original files. See <cli.md> § Applying
 reviewed owner assignments (`modules refine`).

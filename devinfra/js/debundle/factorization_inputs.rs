@@ -104,7 +104,7 @@ impl FactorizationInputs {
 
     /// Canonical module identity for `id` — the [`spec::ModulePath`]
     /// every wire artifact (`owner_graph.json` module table,
-    /// `cycles.json`, `atomic_unit_conflicts.json`) and diagnostic
+    /// `cycles.json`, `atomic_group_conflicts.json`) and diagnostic
     /// uses to denote this module. Parses the in-process
     /// `PlannedModule.id` (`"<chunk_id>::<path>"`) down to the clean
     /// path; panics on an out-of-range id or unparseable identity —

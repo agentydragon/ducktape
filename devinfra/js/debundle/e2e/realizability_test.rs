@@ -365,8 +365,9 @@ export { A, B, readA, readB };
         "lazy-only quotient SCC should be reported as realizable: {graph:#?}",
     );
     assert!(
-        graph.atomic_graph.nodes.iter().any(|unit| {
-            unit.owner_ids
+        graph.atomic_graph.nodes.iter().any(|atomic_group| {
+            atomic_group
+                .owner_ids
                 .iter()
                 .all(|owner_id| graph.nodes.iter().any(|node| node.id == *owner_id))
         }),
@@ -394,7 +395,7 @@ export { A, B, readA, readB };
 }
 
 #[test]
-fn owner_graph_report_identifies_pair_only_residual_atomic_unit() {
+fn owner_graph_report_identifies_pair_only_residual_atomic_group() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"var A = B || "fallback";
 var B = A + "-b";
@@ -408,15 +409,15 @@ export { A, B, Existing };
 
     let graph = fixture.owner_graph();
     assert!(
-        graph.atomic_graph.nodes.iter().any(|unit| {
-            unit.owner_ids.len() == 2
-                && binding_names(&unit.members) == vec!["A".to_string(), "B".to_string()]
-                && unit
+        graph.atomic_graph.nodes.iter().any(|atomic_group| {
+            atomic_group.owner_ids.len() == 2
+                && binding_names(&atomic_group.members) == vec!["A".to_string(), "B".to_string()]
+                && atomic_group
                     .destinations
                     .iter()
                     .any(|destination| graph.is_residual(destination))
         }),
-        "atomic graph should collapse the residual A/B eager cycle into one unit: {graph:#?}",
+        "atomic graph should collapse the residual A/B eager cycle into one atomic group: {graph:#?}",
     );
 }
 
@@ -441,15 +442,15 @@ export { Leaf, Dep, Existing };
 
     let graph = fixture.owner_graph();
     assert!(
-        graph.atomic_graph.nodes.iter().any(|unit| {
-            unit.owner_ids.len() == 1
-                && unit.members
+        graph.atomic_graph.nodes.iter().any(|atomic_group| {
+            atomic_group.owner_ids.len() == 1
+                && atomic_group.members
                     == vec![BindingReport {
                         binding: "Leaf".into(),
                         export_name: "ReadableLeaf".into(),
                     }]
         }),
-        "Leaf's lazy-only residual read should not merge it into Dep's atomic unit: {graph:#?}",
+        "Leaf's lazy-only residual read should not merge it into Dep's atomic group: {graph:#?}",
     );
     assert!(
         graph.atomic_graph.edges.iter().all(|edge| {
@@ -480,15 +481,15 @@ export { a, b, existing };
 
     let graph = fixture.owner_graph();
     assert!(
-        graph.atomic_graph.nodes.iter().any(|unit| {
-            unit.owner_ids.len() == 2
-                && binding_names(&unit.members) == vec!["a".to_string(), "b".to_string()]
-                && unit
+        graph.atomic_graph.nodes.iter().any(|atomic_group| {
+            atomic_group.owner_ids.len() == 2
+                && binding_names(&atomic_group.members) == vec!["a".to_string(), "b".to_string()]
+                && atomic_group
                     .destinations
                     .iter()
                     .any(|destination| graph.is_residual(destination))
         }),
-        "written residual binding a should share an atomic unit with assigner b: {graph:#?}",
+        "written residual binding a should share an atomic group with assigner b: {graph:#?}",
     );
 }
 

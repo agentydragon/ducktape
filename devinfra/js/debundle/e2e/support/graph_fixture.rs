@@ -58,7 +58,7 @@ impl GraphFixture {
         }
     }
 
-    /// A real rebind forces these two declarations into one atomic unit.
+    /// A real rebind forces these two declarations into one atomic group.
     pub fn atomic_pair() -> Self {
         Self::new(
             "let alpha = 0;\nfunction beta() { alpha = 1; }\nconsole.log(alpha, typeof beta);\n",

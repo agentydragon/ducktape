@@ -1,4 +1,4 @@
-//! Focused atomic-unit, factor-assembly, purity and source-location tests.
+//! Focused atomic-group, factor-assembly, purity and source-location tests.
 //! Acceptance, rejection and runtime ordering are exercised through the CLI
 //! in e2e/realizability_test.rs and the at_init_* and lemma_* suites.
 
@@ -41,11 +41,11 @@ fn member_bindings(members: &[BindingReport]) -> Vec<String> {
         .collect()
 }
 
-// --- Lazy rebind atomic-unit constraints --------------------------------
+// --- Lazy rebind atomic-group constraints --------------------------------
 
-/// LazyRebind atomic-unit split: declarer and assigner of a
+/// LazyRebind atomic-group split: declarer and assigner of a
 /// mutable binding must materialize together. `assignment_assembly`
-/// records this as an `atomic_unit_conflicts` entry on the
+/// records this as an `atomic_group_conflicts` entry on the
 /// factorization; the materializer bails on any non-empty list.
 #[test]
 fn cross_destination_lazy_write_is_rejected() {
@@ -55,11 +55,11 @@ fn cross_destination_lazy_write_is_rejected() {
     );
     let report = factorization.validate();
     assert_eq!(
-        report.atomic_unit_conflicts.len(),
+        report.atomic_group_conflicts.len(),
         1,
-        "expected one atomic-unit conflict (A and B share a LazyRebind atomic unit but the spec splits them): {report:?}",
+        "expected one atomic-group conflict (A and B share a LazyRebind atomic group but the spec splits them): {report:?}",
     );
-    let conflict = &report.atomic_unit_conflicts[0];
+    let conflict = &report.atomic_group_conflicts[0];
     // Residual is now the synthesized logical module at index 1
     // (the explicit `mod_0` is at index 0).
     assert_eq!(
@@ -70,8 +70,8 @@ fn cross_destination_lazy_write_is_rejected() {
 
 /// Sorted distinct destination modules across a conflict's claims —
 /// the typed equivalent of the prior string-rendered
-/// `conflicting_modules` field on `AtomicUnitConflictReport`.
-fn distinct_claim_modules(conflict: &AtomicUnitConflict) -> Vec<ModuleId> {
+/// `conflicting_modules` field on `AtomicGroupConflictReport`.
+fn distinct_claim_modules(conflict: &AtomicGroupConflict) -> Vec<ModuleId> {
     let mut modules: Vec<ModuleId> = conflict
         .claims
         .iter()
@@ -92,7 +92,7 @@ fn same_destination_lazy_write_is_allowed() {
 
     let report = factorization.validate();
     assert!(
-        report.atomic_unit_conflicts.is_empty(),
+        report.atomic_group_conflicts.is_empty(),
         "same-destination rebinding writes should stay local to the emitted module: {report:?}",
     );
 }
@@ -121,7 +121,7 @@ fn factorization_from_facts(
 ) -> ChunkFactorization {
     ChunkFactorization::build_with(
         "test_chunk".to_string(),
-        compute_owner_graph_and_units_with(facts, OwnerGraphOptions::default())
+        compute_owner_graph_and_atomic_groups_with(facts, OwnerGraphOptions::default())
             .expect("chunk facts declare a binding twice"),
         bindings,
         logical_modules,
@@ -220,13 +220,13 @@ fn owner_graph_report_emits_atomic_graph() {
             .nodes
             .iter()
             .any(
-                |unit| member_bindings(&unit.members) == vec!["Leaf".to_string()]
-                    && unit
+                |atomic_group| member_bindings(&atomic_group.members) == vec!["Leaf".to_string()]
+                    && atomic_group
                         .destinations
                         .iter()
                         .any(|destination| report.is_residual(destination))
             ),
-        "Leaf should appear as a residual atomic unit: {:#?}",
+        "Leaf should appear as a residual atomic group: {:#?}",
         report.atomic_graph,
     );
     let json = serde_json::to_string(&report).expect("serialize OwnerGraphReport");
@@ -281,18 +281,20 @@ fn atomic_graph_collapses_constraining_eager_cycle() {
         factorization_with_residual_module("const A = B + 1; const B = A + 1;", &["A", "B"], &[]);
 
     let report = factorization.owner_graph_report();
-    let cycle_unit = report
+    let cycle_atomic_group = report
         .atomic_graph
         .nodes
         .iter()
-        .find(|unit| member_bindings(&unit.members) == vec!["A".to_string(), "B".to_string()])
-        .expect("A/B eager cycle should be one atomic unit");
-    assert_eq!(cycle_unit.owner_ids.len(), 2);
-    assert!(cycle_unit.causes.contains(&DepKind::EagerUse));
+        .find(|atomic_group| {
+            member_bindings(&atomic_group.members) == vec!["A".to_string(), "B".to_string()]
+        })
+        .expect("A/B eager cycle should be one atomic group");
+    assert_eq!(cycle_atomic_group.owner_ids.len(), 2);
+    assert!(cycle_atomic_group.causes.contains(&DepKind::EagerUse));
 }
 
 #[test]
-fn atomic_graph_preserves_direction_between_atomic_units() {
+fn atomic_graph_preserves_direction_between_atomic_groups() {
     let factorization = factorization_with_residual_module(
         "const Leaf = 1; const ResidualUse = Leaf + 1;",
         &["Leaf", "ResidualUse"],
@@ -488,84 +490,84 @@ fn validate_returns_empty_linker_order_for_cyclic_spec() {
     );
 }
 
-// --- Atomic units ---------------------------------------------------------
+// --- Atomic groups ---------------------------------------------------------
 
-fn atomic_units_for(source: &str) -> Vec<AtomicUnit> {
+fn atomic_groups_for(source: &str) -> Vec<AtomicGroup> {
     let module = parse(source);
     let facts = analyze_facts(&module);
     let owner_graph = build_owner_graph(&facts).unwrap();
-    compute_atomic_units(&owner_graph)
+    compute_atomic_groups(&owner_graph)
 }
 
-fn unit_sizes(units: &[AtomicUnit]) -> Vec<usize> {
-    let mut sizes: Vec<usize> = units.iter().map(|u| u.members.len()).collect();
+fn atomic_group_sizes(atomic_groups: &[AtomicGroup]) -> Vec<usize> {
+    let mut sizes: Vec<usize> = atomic_groups.iter().map(|u| u.members.len()).collect();
     sizes.sort_unstable();
     sizes
 }
 
-fn assert_partitions_all_owners(units: &[AtomicUnit], total_owners: usize) {
-    let summed: usize = units.iter().map(|u| u.members.len()).sum();
+fn assert_partitions_all_owners(atomic_groups: &[AtomicGroup], total_owners: usize) {
+    let summed: usize = atomic_groups.iter().map(|u| u.members.len()).sum();
     assert_eq!(
         summed, total_owners,
-        "atomic units must cover every owner exactly once; got units {units:?}",
+        "atomic groups must cover every owner exactly once; got atomic_groups {atomic_groups:?}",
     );
     let mut seen = BTreeSet::new();
-    for unit in units {
-        for owner in &unit.members {
+    for atomic_group in atomic_groups {
+        for owner in &atomic_group.members {
             assert!(
                 seen.insert(*owner),
-                "owner {owner:?} appears in more than one atomic unit",
+                "owner {owner:?} appears in more than one atomic group",
             );
         }
     }
 }
 
 #[test]
-fn atomic_units_singletons_for_independent_owners() {
-    // No edges → each owner is its own atomic unit.
-    let units = atomic_units_for("const A = 1; const B = 2; const C = 3;");
-    assert_partitions_all_owners(&units, 3);
-    assert_eq!(unit_sizes(&units), vec![1, 1, 1]);
+fn atomic_groups_singletons_for_independent_owners() {
+    // No edges → each owner is its own atomic group.
+    let atomic_groups = atomic_groups_for("const A = 1; const B = 2; const C = 3;");
+    assert_partitions_all_owners(&atomic_groups, 3);
+    assert_eq!(atomic_group_sizes(&atomic_groups), vec![1, 1, 1]);
 }
 
 #[test]
-fn atomic_units_eager_use_chain_stays_split() {
+fn atomic_groups_eager_use_chain_stays_split() {
     // A → B → C via EagerUse: directed-only edges, no cycle, so
-    // each owner remains its own unit.
-    let units = atomic_units_for("const C = 3; const B = C + 1; const A = B + 1;");
-    assert_partitions_all_owners(&units, 3);
-    assert_eq!(unit_sizes(&units), vec![1, 1, 1]);
+    // each owner remains its own atomic group.
+    let atomic_groups = atomic_groups_for("const C = 3; const B = C + 1; const A = B + 1;");
+    assert_partitions_all_owners(&atomic_groups, 3);
+    assert_eq!(atomic_group_sizes(&atomic_groups), vec![1, 1, 1]);
 }
 
 #[test]
-fn atomic_units_lazy_use_cycle_stays_split() {
+fn atomic_groups_lazy_use_cycle_stays_split() {
     // Two functions that reference each other lazily plus their
     // bindings — no constraining edges, so all four owners are
-    // independent units.
-    let units = atomic_units_for(
+    // independent atomic groups.
+    let atomic_groups = atomic_groups_for(
         "function helperA() { return B; } function helperB() { return A; } const A = 1; const B = 2;",
     );
-    assert_partitions_all_owners(&units, 4);
-    assert_eq!(unit_sizes(&units), vec![1, 1, 1, 1]);
+    assert_partitions_all_owners(&atomic_groups, 4);
+    assert_eq!(atomic_group_sizes(&atomic_groups), vec![1, 1, 1, 1]);
 }
 
 #[test]
-fn atomic_units_sequenced_chain_stays_split() {
+fn atomic_groups_sequenced_chain_stays_split() {
     // Three side-effecting top-level statements form a directed
     // Sequenced chain. A directed source-order edge alone is
     // satisfiable by linker order — no co-location forced — so
-    // every owner stays in its own atomic unit. Co-location
+    // every owner stays in its own atomic group. Co-location
     // would only kick in if some non-Sequenced edge ran in the
     // reverse direction.
-    let units = atomic_units_for(
+    let atomic_groups = atomic_groups_for(
         r#"const a1 = (globalThis.tag = "a1", 1); const b1 = (globalThis.tag = "b1", 2); const a2 = (globalThis.tag = "a2", 3);"#,
     );
-    assert_partitions_all_owners(&units, 3);
-    assert_eq!(unit_sizes(&units), vec![1, 1, 1]);
+    assert_partitions_all_owners(&atomic_groups, 3);
+    assert_eq!(atomic_group_sizes(&atomic_groups), vec![1, 1, 1]);
 }
 
 #[test]
-fn atomic_units_sequenced_plus_reverse_eager_merges() {
+fn atomic_groups_sequenced_plus_reverse_eager_merges() {
     // A Sequenced source-order edge in one direction plus an
     // EagerUse read in the reverse direction forms an SCC in
     // `G_atomic` and forces co-location.
@@ -578,23 +580,23 @@ fn atomic_units_sequenced_plus_reverse_eager_merges() {
     // shape that produces a real cycle:
     // `let A = 1; A = (globalThis.tag = "x", 2); A = (globalThis.tag = "y", 3);`
     // — top-level Sequenced + EagerRebind force {A, stmt_1, stmt_2}
-    // into one unit (Rebind bidirectional + Sequenced directed
+    // into one atomic group (Rebind bidirectional + Sequenced directed
     // form a cycle).
-    let units = atomic_units_for(
+    let atomic_groups = atomic_groups_for(
         r#"let A = 1; A = (globalThis.tag = "x", 2); A = (globalThis.tag = "y", 3);"#,
     );
-    assert_partitions_all_owners(&units, 3);
-    assert_eq!(unit_sizes(&units), vec![3]);
+    assert_partitions_all_owners(&atomic_groups, 3);
+    assert_eq!(atomic_group_sizes(&atomic_groups), vec![3]);
 }
 
 #[test]
-fn atomic_units_lazy_rebind_merges() {
+fn atomic_groups_lazy_rebind_merges() {
     // `let A = 0; function B() { A = 1; }` produces a LazyRebind
     // edge from B → A. LazyRebind is bidirectional in `G_atomic`,
-    // so A and B collapse into one unit.
-    let units = atomic_units_for("let A = 0; function B() { A = 1; }");
-    assert_partitions_all_owners(&units, 2);
-    assert_eq!(unit_sizes(&units), vec![2]);
+    // so A and B collapse into one atomic group.
+    let atomic_groups = atomic_groups_for("let A = 0; function B() { A = 1; }");
+    assert_partitions_all_owners(&atomic_groups, 2);
+    assert_eq!(atomic_group_sizes(&atomic_groups), vec![2]);
 }
 
 // --- Factor assembly -----------------------------------------------------
@@ -641,35 +643,35 @@ fn assignment_assembly_unclaimed_owners_default_to_residual() {
 }
 
 #[test]
-fn assignment_assembly_single_claim_with_unclaimed_unit_members_is_a_conflict() {
+fn assignment_assembly_single_claim_with_unclaimed_atomic_group_members_is_a_conflict() {
     // `const A = B + 1; const B = A + 1;` is one EagerUse cycle —
-    // a single atomic unit. Claiming A for mod_0 leaves B
-    // defaulting to residual entry, which splits the unit
+    // a single atomic group. Claiming A for mod_0 leaves B
+    // defaulting to residual entry, which splits the atomic group
     // across {mod_0, <residual_entry>} — unrealizable. The spec
     // author needs to either also assign B (or leave both
     // unassigned), or remove the constraining edge that fused
     // them in the first place. `debundle coverage` may flag the
-    // split unit as an advisory edit, but assignment_assembly refuses
+    // split the atomic group as an advisory edit, but assignment_assembly refuses
     // to silently move B for the user.
     let factorization =
         factorization_for("const A = B + 1; const B = A + 1;", &[("A", logical(0))]);
     let report = factorization.validate();
     assert_eq!(
-        report.atomic_unit_conflicts.len(),
+        report.atomic_group_conflicts.len(),
         1,
-        "expected the half-claimed EagerUse cycle to surface as an atomic-unit conflict: {report:?}",
+        "expected the half-claimed EagerUse cycle to surface as an atomic-group conflict: {report:?}",
     );
     // Residual is the synthesized logical module appended after
     // the explicit `mod_0`.
     assert_eq!(
-        distinct_claim_modules(&report.atomic_unit_conflicts[0]),
+        distinct_claim_modules(&report.atomic_group_conflicts[0]),
         vec![ModuleId(0), ModuleId(1)],
     );
 }
 
 #[test]
-fn assignment_assembly_concordant_claims_within_unit_are_fine() {
-    // Both members of the same atomic unit claimed for the same
+fn assignment_assembly_concordant_claims_within_atomic_group_are_fine() {
+    // Both members of the same atomic group claimed for the same
     // module — that's the spec author being explicit, not a
     // conflict.
     let factorization = factorization_for(
@@ -694,11 +696,11 @@ fn assignment_assembly_records_conflict_on_split_eager_use_cycle() {
     );
     let report = factorization.validate();
     assert_eq!(
-        report.atomic_unit_conflicts.len(),
+        report.atomic_group_conflicts.len(),
         1,
-        "expected the A↔B EagerUse cycle to surface as an atomic-unit conflict: {report:?}",
+        "expected the A↔B EagerUse cycle to surface as an atomic-group conflict: {report:?}",
     );
-    let conflict = &report.atomic_unit_conflicts[0];
+    let conflict = &report.atomic_group_conflicts[0];
     assert_eq!(
         distinct_claim_modules(conflict),
         vec![ModuleId(0), ModuleId(1)],
@@ -709,7 +711,7 @@ fn assignment_assembly_records_conflict_on_split_eager_use_cycle() {
 fn assignment_assembly_records_no_conflict_for_sequenced_only_chain() {
     // Three side-effect statements, source-ordered. Directed
     // Sequenced edges alone form a chain in `G_atomic`, not an
-    // SCC, so every owner is its own atomic unit and the spec
+    // SCC, so every owner is its own atomic group and the spec
     // can split them across modules without violating
     // co-location. The validator may still flag a module-level
     // cycle when the spec creates one through reverse claims,
@@ -721,7 +723,7 @@ fn assignment_assembly_records_no_conflict_for_sequenced_only_chain() {
     );
     let report = factorization.validate();
     assert!(
-        report.atomic_unit_conflicts.is_empty(),
+        report.atomic_group_conflicts.is_empty(),
         "Sequenced-only chains never force co-location: {report:?}",
     );
 }
@@ -729,7 +731,7 @@ fn assignment_assembly_records_no_conflict_for_sequenced_only_chain() {
 #[test]
 fn assignment_assembly_independent_owners_keep_independent_claims() {
     // Three eager-use chain: A → B → C, no cycle, three atomic
-    // units. Each owner's claim takes effect independently.
+    // atomic groups. Each owner's claim takes effect independently.
     let factorization = factorization_for(
         "const C = 3; const B = C + 1; const A = B + 1;",
         &[("A", logical(0)), ("B", logical(1)), ("C", logical(0))],

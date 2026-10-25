@@ -2072,13 +2072,13 @@ The per-chunk pipeline is two halves with sharply different
 dependencies:
 
 - **Chunk analysis** (spec-independent): parse → per-statement facts →
-  owner graph → structural atomic units. Pure function of
+  owner graph → structural atomic groups. Pure function of
   `(source bytes, analysis hints, OwnerGraphOptions)`. The composer
   is `chunk_analysis::compute_chunk_analysis`, returning a
   `chunk_analysis::ChunkAnalysisOutput` — distinct from the `gate`
   crate's `FactorizationInputs` — that bundles `ChunkFactAnalysis` (facts +
   top-level-await detection + redundant-hint warnings) with the
-  `OwnerGraphAndUnits` derived from those facts.
+  `OwnerGraphAndAtomicGroups` derived from those facts.
 - **Materialization** (spec-dependent): assemble the assignment from the
   spec's binding claims, run the realizability gate, lower to ESM. This is
   `lowering::materialize_logical_modules`; `spec_resolution` compiles claims
@@ -2111,10 +2111,10 @@ diagnostic paths. They differ only in _where_ the cycle appears
 requires. Both reject the same broad property: "some pair (or set)
 of bindings is forced to co-locate, and the spec splits them."
 
-| Atom class       | Where the cycle lives                                                 | Detector                                         | Diagnostic                                                                                                   |
-| ---------------- | --------------------------------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
-| **Structural**   | SCC of `G_atomic` on the **owner graph** — independent of any spec    | `compute_atomic_units`                           | `AtomicUnitConflict` — names the unit's owners + the modules the spec routes them to + the `DepKind` causes  |
-| **Spec-induced** | SCC of `I ∪ S` on the **module quotient** under the spec's assignment | `check_realizability` + `validate_factorization` | `CycleReport` — names the binding pair(s) on each cut edge, the source and target modules, and the edge kind |
+| Atom class       | Where the cycle lives                                                 | Detector                                         | Diagnostic                                                                                                    |
+| ---------------- | --------------------------------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| **Structural**   | SCC of `G_atomic` on the **owner graph** — independent of any spec    | `compute_atomic_groups`                          | `AtomicGroupConflict` — names the group's owners + the modules the spec routes them to + the `DepKind` causes |
+| **Spec-induced** | SCC of `I ∪ S` on the **module quotient** under the spec's assignment | `check_realizability` + `validate_factorization` | `CycleReport` — names the binding pair(s) on each cut edge, the source and target modules, and the edge kind  |
 
 `G_atomic` over owners is acyclic-by-quotient on the chunker's
 original output: bundlers can't emit JavaScript that TDZs at runtime
@@ -2126,7 +2126,7 @@ a rebind nested ≥2 closures deep or past an `await` — joins
 `G_atomic` bidirectionally like the other rebinds because ESM
 imports are read-only whenever the write fires, but it does NOT
 constrain init order: it is excluded from the constraining-edge
-subgraph the realizability gate and the I-graph use.) Any spec assignment that routes the unit's
+subgraph the realizability gate and the I-graph use.) Any spec assignment that routes the group's
 owners to different modules is invalid — `assemble_assignment`
 detects this before the materializer touches the quotient. **No
 information about the spec is required to identify a structural
@@ -2179,7 +2179,7 @@ compute structural atoms = SCC(G_atomic over owners)
 apply spec assignment + assemble_assignment
   ↓
   ├── if any structural atom is split across modules:
-  │   reject with AtomicUnitConflict (owner-level blame)
+  │   reject with AtomicGroupConflict (owner-level blame)
   ↓
 quotient owner graph by dest(owner) → I, R, S
   ↓
@@ -2216,8 +2216,8 @@ Five layers, bottom-up:
    mutation produces. Each
    edge records whether it constrains init/materialization order.
 2. **Atomic graph** — SCC condensation of the constraining-edge
-   subgraph of the owner graph; a DAG of atomic units
-   (`compute_atomic_units`). Each unit is the smallest set of
+   subgraph of the owner graph; a DAG of atomic groups
+   (`compute_atomic_groups`). Each group is the smallest set of
    owners a valid module assignment may not split. Surfaced in
    `owner_graph.json.atomic_graph`.
 3. **Spec assignment** — the author's current mapping of owners
@@ -2231,7 +2231,7 @@ Five layers, bottom-up:
    `atomic_graph`. **Not** emitted by `debundle run`; they are a
    read-only planner projection.
 
-When debugging planner output, start with the atomic unit. If an
+When debugging planner output, start with the atomic group. If an
 assignment would split a unit, the assignment is wrong regardless
 of how plausible the binding names look. If a proposal is too
 broad, inspect the atomic-DAG edges that close it and decide
@@ -2244,8 +2244,8 @@ The spec's explicit claims are resolved against the owner graph in
 `assignment_assembly.rs`. The rules are deliberately strict:
 
 - Two different logical modules may not claim owners from the same
-  atomic unit.
-- A module claim that only covers part of an atomic unit is a
+  atomic group.
+- A module claim that only covers part of an atomic group is a
   conflict, not an implicit request to move the rest.
 - Unclaimed owners default to the synthesized residual module.
 - The materializer consumes only the final explicit assignment; it
@@ -2253,7 +2253,7 @@ The spec's explicit claims are resolved against the owner graph in
 
 If the explicit assignment is inconsistent, `debundle run` rejects
 and emits diagnostic side outputs (`cycles.json` or
-`atomic_unit_conflicts.json` under `reports/tree/<chunk-id>/`).
+`atomic_group_conflicts.json` under `reports/tree/<chunk-id>/`).
 
 ## Spec explicitness and diagnostics
 
@@ -2289,13 +2289,13 @@ has its `owner` named in the spec or defaults to
 the residual module. Empty-`declared` (anonymous) statements
 default to the residual module unless explicitly claimed by a logical
 module's `anonymous_statements` shape selector. There is no
-implicit pulling: when an atomic unit or planner proposal includes
+implicit pulling: when an atomic group or planner proposal includes
 anonymous statements, the spec author copies their source into
 `anonymous_statements` (one entry per claimed statement); the
 materializer never silently co-moves an anonymous statement into a peeled module.
 When a chunk has no explicit logical modules, `inline_in_entry` keeps the
 whole statement sequence in the entry. In `catchall_file`, unclaimed named
-bindings land in the catchall. Anonymous owners in a catchall atomic unit and
+bindings land in the catchall. Anonymous owners in a catchall atomic group and
 anonymous predecessors required by its side-effect ordering edges also land
 there; other unclaimed anonymous statements can stay in the entry after peeled
 modules. This preserves valid splits where a later anonymous statement must
@@ -2317,7 +2317,7 @@ behalf of the spec author.
 Each materialized chunk has reports under `reports/tree/<chunk_id>/`.
 `owner_graph.json` carries the detailed owner graph, current module quotient,
 and embedded atomic DAG. Compact validation status is folded into
-`chunk.json`; `cycles.json` and `atomic_unit_conflicts.json` are emitted only
+`chunk.json`; `cycles.json` and `atomic_group_conflicts.json` are emitted only
 for rejection cases.
 
 When an output emitter materializes executable JavaScript, root reports live
@@ -2344,9 +2344,9 @@ use the owner graph and source bodies for drill-down.
 1. Spec author writes / edits a spec — possibly partial.
 2. Pipeline runs the validator. The report flags:
    - **Cycles** in the explicit-only assignment, if any.
-   - **Atomic-unit conflicts** when the spec splits an indivisible unit.
+   - **Atomic-group conflicts** when the spec splits an indivisible unit.
    - **Atomic DAG facts** in `owner_graph.json` for planning the next peel.
-3. Spec author resolves: first fix any validation cycles or atomic-unit
+3. Spec author resolves: first fix any validation cycles or atomic-group
    conflicts; then use `debundle modules propose`, `atoms`, `coverage`,
    `describe`, and `inspect-source --id` to choose explicit owner sets for new
    spec modules with good public names.
@@ -2362,7 +2362,7 @@ implicit transformation in the middle.
 The same owner graph drives the next-spec workflow. A pipeline that
 only reports whether the current spec passed forces spec authors into
 speculative edit/build/test loops. `debundle run` therefore emits the
-atomic-unit DAG in `owner_graph.json`, and the top-level read-only
+atomic-group DAG in `owner_graph.json`, and the top-level read-only
 queries (`debundle modules propose`, `atoms`, `coverage`, `describe`,
 `inspect-source --id`, `scc`, `cluster`, `graph-summary`) compute advisory
 views from that stable graph.
@@ -2672,7 +2672,7 @@ target-local effect on the class/prototype binding. That makes the
 anonymous statement a required companion of the class owner for
 materialization and factorize. The author still
 materializes it with `anonymous_statements:` because it has no binding
-name, but the atomic-unit closure that contains the class also covers
+name, but the atomic-group closure that contains the class also covers
 the anon owner, so a proposal containing the class also contains the
 anonymous owner (listed under `anonymous_statement_owner_ids`, or
 `extension_owner_ids` when it extends an existing module) and the
@@ -2876,7 +2876,7 @@ invariants:
    <../validation.rs>) — collapses owners by destination, aggregates edge
    reasons, and runs the realizability gate over the result; a rejection
    aborts the pipeline with the cycle evidence.
-3. **Diagnostics projections** — cycle evidence, atomic-unit conflicts,
+3. **Diagnostics projections** — cycle evidence, atomic-group conflicts,
    and atomic graph reports are projections of the same owner graph +
    quotient, not separate heuristic analyses.
 4. **Source-order emission** — each module's body in source order;
@@ -3341,7 +3341,7 @@ rosters live in the directories, not here):
 - <../validation.rs> — `validate_factorization`: renders the verdict as cycle
   reports.
 - <../lowering/> — main splitting transform.
-- <../atomic_units.rs> — owner-level hard colocation units.
+- <../atomic_groups.rs> — owner-level hard colocation groups.
 
 ## Conventions for updating this doc
 

@@ -4,9 +4,10 @@ use anyhow::{Context, Result, bail};
 use clap::{Args as ClapArgs, ValueEnum};
 use peel::propose::DEFAULT_SIZE_CAP_LINES;
 use peel::{
-    CommonArgs as PeelCommonArgs, ExplainArgs, GraphSummaryArgs, OutputFormat, PatchPlanArgs,
-    SelectionKind, SourceSelectionArgs, UnitsArgs, run_explain_report, run_graph_summary_report,
-    run_patch_plan_report, run_source_selection_report, run_units_report,
+    AtomicGroupsArgs, CommonArgs as PeelCommonArgs, ExplainArgs, GraphSummaryArgs, OutputFormat,
+    PatchPlanArgs, SelectionKind, SourceSelectionArgs, run_atomic_groups_report,
+    run_explain_report, run_graph_summary_report, run_patch_plan_report,
+    run_source_selection_report,
 };
 use selector_codemod::source_input::resolve_chunk_source_file;
 use serde::Serialize;
@@ -17,7 +18,7 @@ use std::path::PathBuf;
 
 /// Args for `debundle describe <id>`.
 ///
-/// `<id>` is dispatched on shape: `owner:NNN`, `atomic:NNN`,
+/// `<id>` is dispatched on shape: `owner:NNN`, `atomic:NNN` (an atomic group),
 /// `diagnostic:...`, `auto_partition_NNNN`/`extend:...`, a module path
 /// (resolves to `<modules>/<id>.yaml`), or otherwise a binding
 /// (minified or readable name).
@@ -173,7 +174,7 @@ fn dispatch_id_selection(id: &str, modules_root: &std::path::Path) -> Result<Sel
         return Ok(SelectionKind::Module(id.to_string()));
     }
     if id.starts_with("atomic:") {
-        return Ok(SelectionKind::Unit(id.to_string()));
+        return Ok(SelectionKind::AtomicGroup(id.to_string()));
     }
     if id.starts_with("diagnostic:") {
         return Ok(SelectionKind::Diagnostic(id.to_string()));
@@ -581,15 +582,19 @@ fn bound_report(
     }
 }
 
-fn render_units_text(report: &peel::UnitsReport, out: &mut String) {
-    out.push_str(&format!("{} atom(s)\n", report.units.len()));
-    for unit in &report.units {
-        let bindings: Vec<&str> = unit.members.iter().map(|m| m.binding.as_str()).collect();
+fn render_atomic_groups_text(report: &peel::AtomicGroupsReport, out: &mut String) {
+    out.push_str(&format!("{} atomic group(s)\n", report.atomic_groups.len()));
+    for atomic_group in &report.atomic_groups {
+        let bindings: Vec<&str> = atomic_group
+            .members
+            .iter()
+            .map(|member| member.binding.as_str())
+            .collect();
         out.push_str(&format!(
             "  {}  [{}]  size={}\n",
-            unit.id,
+            atomic_group.id,
             bindings.join(", "),
-            unit.size_lines_estimate
+            atomic_group.size_lines_estimate
         ));
     }
 }
@@ -617,11 +622,11 @@ fn render_graph_summary_text(report: &peel::GraphSummaryReport, out: &mut String
         .map(|count| count.to_string())
         .unwrap_or_else(|| "skipped".to_string());
     out.push_str(&format!(
-        "owners={} edges={} atoms={} residual={} proposals={} diagnostics={}\n",
+        "owners={} edges={} atomic_groups={} residual_atomic_groups={} proposals={} diagnostics={}\n",
         report.owner_count,
         report.owner_edge_count,
-        report.atomic_unit_count,
-        report.residual_atomic_unit_count,
+        report.atomic_group_count,
+        report.residual_atomic_group_count,
         proposal_count,
         diagnostic_count,
     ));
@@ -657,7 +662,10 @@ fn render_explain_text(report: &peel::ExplainReport, out: &mut String) {
             report.unknown_binding_ids.join(", ")
         ));
     }
-    out.push_str(&format!("  atomic_units: {}\n", report.atomic_units.len()));
+    out.push_str(&format!(
+        "  atomic groups: {}\n",
+        report.atomic_groups.len()
+    ));
     out.push_str(&format!(
         "  incoming_edges: {}, outgoing_edges: {}\n",
         report.incoming_edges.len(),
@@ -665,12 +673,12 @@ fn render_explain_text(report: &peel::ExplainReport, out: &mut String) {
     ));
 }
 
-pub(super) fn run_atoms(args: UnitsArgs) -> Result<()> {
-    let report = run_units_report(&args)?;
+pub(super) fn run_atoms(args: AtomicGroupsArgs) -> Result<()> {
+    let report = run_atomic_groups_report(&args)?;
     emit_report(
         args.format,
         &report,
-        render_units_text,
+        render_atomic_groups_text,
         "writing atoms output",
     )
 }

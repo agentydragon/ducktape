@@ -3,7 +3,7 @@
 The per-chunk JSON files debundle writes under `reports/tree/<chunk_id>/`
 are consumed by:
 
-- spec authors with `jq` poking at cycle / owner-graph / atomic-unit reports;
+- spec authors with `jq` poking at cycle / owner-graph / atomic-group reports;
 - CLI tooling (top-level `debundle modules propose` / `atoms` /
   `coverage` / `describe` / `inspect-source --id` / `scc` / `cluster` /
   `graph-summary`);
@@ -17,15 +17,39 @@ Every JSON file carries binding identities as `Atom`s (interned
 strings), **not** as SWC `Id = (Atom, SyntaxContext)`. The
 `SyntaxContext` half is dropped at serialization.
 
-| File                         | Field carrying binding identity                                                                                                  |
-| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `owner_graph.json`           | `nodes[].declared_bindings[].binding: Atom`, `edges[].binding: Option<Atom>`                                                     |
-| `cycles.json`                | `cut[].binding: Option<Atom>`, `cut[].from_binding: Option<Atom>` (evidence is recomputed on demand by `debundle gate describe`) |
-| `atomic_unit_conflicts.json` | `claims[].binding_names: Vec<Atom>`                                                                                              |
+| File                          | Field carrying binding identity                                                                                                  |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `owner_graph.json`            | `nodes[].declared_bindings[].binding: Atom`, `edges[].binding: Option<Atom>`                                                     |
+| `cycles.json`                 | `cut[].binding: Option<Atom>`, `cut[].from_binding: Option<Atom>` (evidence is recomputed on demand by `debundle gate describe`) |
+| `atomic_group_conflicts.json` | `claims[].binding_names: Vec<Atom>`                                                                                              |
 
 `Atom` serializes as a plain JSON string via `swc_atoms`'s own
 `Serialize` impl. That impl writes the **string content** — interned
 in memory, but the wire form is the string itself, which is portable.
+
+## Atomic graph reports
+
+`owner_graph.json.atomic_graph.nodes[]` contains atomic groups. Each node
+represents one SCC of the constraining-edge subgraph over owner nodes; its
+`owner_ids` and `members` identify the source-level owners in that group.
+An owner is a movable source unit, while an atomic group can contain one or
+more owners that the spec must keep in the same module. `atomic_graph.edges[]`
+connects group IDs and retains the direction of constraining edges between
+groups.
+
+The top-level `debundle atoms --format json` report uses `atomic_groups` for
+these nodes. With `--by-destination`, it also includes `destination_groups`,
+whose entries contain a destination path and the `atomic_group_ids` assigned
+there. `describe` reports selected groups under `atomic_groups` as well.
+`graph-summary` uses `atomic_group_count`, `residual_atomic_group_count`, and
+`largest_residual_atomic_groups`. `coverage` rows use
+`atomic_group_ids`, `complete_atomic_group_ids`, and `split_atomic_group_ids`,
+with statuses `complete_atomic_groups` or `split_atomic_groups` when the
+requested owners cover complete groups or split them.
+
+Conflicts during `run` are written to `atomic_group_conflicts.json`. The
+analysis and CLI report fields name the groups explicitly, so each row can be
+joined directly to `owner_graph.json.atomic_graph.nodes[].id`.
 
 ### Export-reentry diagnostics
 
@@ -96,12 +120,12 @@ replay and pre-filtering inner-scope reads don't pay for themselves. See
 
 ## Reader audiences
 
-| Consumer                                                                                                                     | Reads                                                           | Cross-process?          |
-| ---------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | ----------------------- |
-| Spec author with `jq`                                                                                                        | `owner_graph.json`, `cycles.json`, `atomic_unit_conflicts.json` | yes (Atom-only)         |
-| `debundle atoms` / `coverage` / `graph-summary` / `scc` / `cluster` / `describe` / `inspect-source --id` / `modules propose` | `owner_graph.json`, source bytes + spec                         | yes (Atom-only)         |
-| `debundle bindings assign` / `bindings rename` / `modules merge`                                                             | spec YAMLs + `owner_graph.json` (gate)                          | yes                     |
-| Materializer (`debundle run`)                                                                                                | spec + chunk bytes + everything in-process                      | N/A — always in-process |
+| Consumer                                                                                                                     | Reads                                                            | Cross-process?          |
+| ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- | ----------------------- |
+| Spec author with `jq`                                                                                                        | `owner_graph.json`, `cycles.json`, `atomic_group_conflicts.json` | yes (Atom-only)         |
+| `debundle atoms` / `coverage` / `graph-summary` / `scc` / `cluster` / `describe` / `inspect-source --id` / `modules propose` | `owner_graph.json`, source bytes + spec                          | yes (Atom-only)         |
+| `debundle bindings assign` / `bindings rename` / `modules merge`                                                             | spec YAMLs + `owner_graph.json` (gate)                           | yes                     |
+| Materializer (`debundle run`)                                                                                                | spec + chunk bytes + everything in-process                       | N/A — always in-process |
 
 ## Reconstruction recipe
 
@@ -179,14 +203,14 @@ which exists only in memory). Per-chunk files use the bare path (the
 chunk is implicit); tree-wide files qualify it with the chunk id as
 a `ModuleRef { chunk_id, path }` object.
 
-| File                         | Module-identity fields                                                                   |
-| ---------------------------- | ---------------------------------------------------------------------------------------- |
-| `cycles.json` (per chunk)    | `modules[]`, `cut[].from`, `cut[].to` — `ModulePath`                                     |
-| `atomic_unit_conflicts.json` | `claims[].module` — `ModulePath` (owners are `"owner:N"` strings)                        |
-| `modules.json` (per chunk)   | `final_module_contents[].path`, `requested_logical_modules[].target_path` — `ModulePath` |
-| tree `index.json` (per dir)  | `modules[]` — `ModuleRef`; per-file rows carry `module: ModuleRef`                       |
-| chunk summary `linker_order` | `ModulePath`                                                                             |
-| stderr rejection summaries   | every module named in cycle / atom-split / unmatched-claim blocks                        |
+| File                          | Module-identity fields                                                                   |
+| ----------------------------- | ---------------------------------------------------------------------------------------- |
+| `cycles.json` (per chunk)     | `modules[]`, `cut[].from`, `cut[].to` — `ModulePath`                                     |
+| `atomic_group_conflicts.json` | `claims[].module` — `ModulePath` (owners are `"owner:N"` strings)                        |
+| `modules.json` (per chunk)    | `final_module_contents[].path`, `requested_logical_modules[].target_path` — `ModulePath` |
+| tree `index.json` (per dir)   | `modules[]` — `ModuleRef`; per-file rows carry `module: ModuleRef`                       |
+| chunk summary `linker_order`  | `ModulePath`                                                                             |
+| stderr rejection summaries    | every module named in cycle / atom-split / unmatched-claim blocks                        |
 
 Cross-file join recipe (what `debundle gate describe` does): resolve
 each owner's `destination` key through the owner graph's module table

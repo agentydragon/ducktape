@@ -235,7 +235,7 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
         let mut cache = source_import_cache
             .lock()
             .expect("source_import_cache poisoned");
-        // Imports peeled with their atomic unit still use source-chunk URLs.
+        // Imports peeled with their atomic group still use source-chunk URLs.
         // Rebase those before adding imports already emitted for this target.
         for item in &mut body {
             if let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item {

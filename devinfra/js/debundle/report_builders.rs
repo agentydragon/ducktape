@@ -10,12 +10,12 @@ use swc_ecma_ast::Id;
 
 use analysis::graph::EdgeRole;
 use analysis::reports::schema::LineRange;
-use analysis::reports::{atomic_unit_key, module_id_from_key, module_key, owner_key};
+use analysis::reports::{atomic_group_key, module_id_from_key, module_key, owner_key};
 use analysis::{
-    AtomicGraphReport, AtomicUnit, AtomicUnitEdgeReport, AtomicUnitReport, BindingReport, DepKind,
-    EdgeRoleReport, ModuleEntry, ModuleId, ModuleKey, OwnerGraphEdgeReport, OwnerGraphNodeReport,
-    OwnerGraphQuotientReport, OwnerGraphReport, Purity, PurityCauseReport, QuotientEdgeReport,
-    QuotientSccReport,
+    AtomicGraphReport, AtomicGroup, AtomicGroupEdgeReport, AtomicGroupReport, BindingReport,
+    DepKind, EdgeRoleReport, ModuleEntry, ModuleId, ModuleKey,
+    OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphQuotientReport, OwnerGraphReport, Purity,
+    PurityCauseReport, QuotientEdgeReport, QuotientSccReport,
 };
 
 use crate::chunk_factorization::ChunkFactorization;
@@ -233,25 +233,25 @@ struct QuotientEdgeAccumulator {
     constrains_init_order: bool,
 }
 
-fn build_atomic_unit_report(
+fn build_atomic_group_report(
     factorization: &ChunkFactorization,
     idx: usize,
-    unit: &AtomicUnit,
-) -> AtomicUnitReport {
-    let mut owner_ids = Vec::with_capacity(unit.members.len());
+    atomic_group: &AtomicGroup,
+) -> AtomicGroupReport {
+    let mut owner_ids = Vec::with_capacity(atomic_group.members.len());
     let mut members = Vec::new();
     let mut anonymous_statement_owner_ids = Vec::new();
-    // Destinations dedup-by-key: tiny set per unit (rare to exceed
+    // Destinations dedup-by-key: tiny set per group (rare to exceed
     // a handful), so a Vec + linear-scan dedup is cheaper than a
-    // `BTreeMap` allocation per unit.
+    // `BTreeMap` allocation per group.
     let mut destinations: Vec<ModuleKey> = Vec::new();
-    // `unit.causes` is a `BTreeSet<DepKind>` — iteration is already
+    // `atomic_group.causes` is a `BTreeSet<DepKind>` — iteration is already
     // `DepKind`-`Ord`-stable so no post-collection sort is needed.
-    let causes: Vec<DepKind> = unit.causes.iter().copied().collect();
+    let causes: Vec<DepKind> = atomic_group.causes.iter().copied().collect();
     let mut line_range = LineRange::new();
     let mut min_ordinal = usize::MAX;
     let mut max_ordinal = 0usize;
-    for owner_id in &unit.members {
+    for owner_id in &atomic_group.members {
         owner_ids.push(owner_key(*owner_id));
         if let Some(node) = factorization.analysis().owner_graph().node(*owner_id) {
             if node.declared.is_empty() {
@@ -273,8 +273,8 @@ fn build_atomic_unit_report(
     members.dedup();
     anonymous_statement_owner_ids.sort();
     destinations.sort();
-    AtomicUnitReport {
-        id: atomic_unit_key(idx),
+    AtomicGroupReport {
+        id: atomic_group_key(idx),
         owner_ids,
         members,
         anonymous_statement_owner_ids,
@@ -288,32 +288,39 @@ fn build_atomic_unit_report(
 
 fn build_atomic_graph_report(factorization: &ChunkFactorization) -> AtomicGraphReport {
     let owner_graph = factorization.analysis().owner_graph();
-    let mut units = factorization.atomic_units().to_vec();
-    units.sort_by_key(|unit| unit.members.iter().copied().min().map(|owner| owner.0));
-    // `unit_by_owner` is lookup-only after construction — a `HashMap`
+    let mut atomic_groups = factorization.atomic_groups().to_vec();
+    atomic_groups.sort_by_key(|atomic_group| {
+        atomic_group
+            .members
+            .iter()
+            .copied()
+            .min()
+            .map(|owner| owner.0)
+    });
+    // `atomic_group_by_owner` is lookup-only after construction — a `HashMap`
     // is O(1) per get vs `BTreeMap`'s O(log n) and the per-edge loop
     // below hits it 2× per edge across ~26K edges on big chunks.
     let owner_count = owner_graph.num_nodes();
-    let mut unit_by_owner: Vec<Option<usize>> = vec![None; owner_count];
-    for (unit_idx, unit) in units.iter().enumerate() {
-        for owner in &unit.members {
-            if let Some(slot) = unit_by_owner.get_mut(owner.0) {
-                *slot = Some(unit_idx);
+    let mut atomic_group_by_owner: Vec<Option<usize>> = vec![None; owner_count];
+    for (atomic_group_idx, atomic_group) in atomic_groups.iter().enumerate() {
+        for owner in &atomic_group.members {
+            if let Some(slot) = atomic_group_by_owner.get_mut(owner.0) {
+                *slot = Some(atomic_group_idx);
             }
         }
     }
 
-    // Per-unit reports are independent; parallelise via rayon so the
-    // big-chunk case (thousands of units) saturates worker threads.
-    let nodes = units
+    // Per-group reports are independent; parallelise via rayon so the
+    // big-chunk case (thousands of groups) saturates worker threads.
+    let nodes = atomic_groups
         .par_iter()
         .enumerate()
-        .map(|(idx, unit)| build_atomic_unit_report(factorization, idx, unit))
+        .map(|(idx, atomic_group)| build_atomic_group_report(factorization, idx, atomic_group))
         .collect();
 
-    // Per-(from_unit, to_unit) accumulator: HashMap keyed by the
-    // unit-pair (cheaper than BTreeMap for the ~tens-of-thousands
-    // edges across thousands of units). Owner-edge IDs accumulate
+    // Per-(from_group, to_group) accumulator: HashMap keyed by the
+    // group pair (cheaper than BTreeMap for the ~tens-of-thousands
+    // edges across thousands of groups). Owner-edge IDs accumulate
     // into a Vec — dedup is unnecessary because each `OwnerEdgeId`
     // is unique per owner edge. Order is restored by a single final
     // sort.
@@ -322,16 +329,16 @@ fn build_atomic_graph_report(factorization: &ChunkFactorization) -> AtomicGraphR
         if matches!(edge.reason.kind, DepKind::LazyUse | DepKind::HoistedUse) {
             continue;
         }
-        let (Some(from_unit), Some(to_unit)) = (
-            unit_by_owner.get(edge.from.0).copied().flatten(),
-            unit_by_owner.get(edge.to.0).copied().flatten(),
+        let (Some(from_group), Some(to_group)) = (
+            atomic_group_by_owner.get(edge.from.0).copied().flatten(),
+            atomic_group_by_owner.get(edge.to.0).copied().flatten(),
         ) else {
             continue;
         };
-        if from_unit == to_unit {
+        if from_group == to_group {
             continue;
         }
-        let entry = accum.entry((from_unit, to_unit)).or_default();
+        let entry = accum.entry((from_group, to_group)).or_default();
         entry.kinds.insert(edge.reason.kind);
         entry.owner_edge_ids.push(edge.id.report_key());
         entry.constrains_init_order |= edge.reason.constrains_init_order();
@@ -344,10 +351,10 @@ fn build_atomic_graph_report(factorization: &ChunkFactorization) -> AtomicGraphR
     let edges = accum
         .into_iter()
         .enumerate()
-        .map(|(idx, ((from, to), entry))| AtomicUnitEdgeReport {
+        .map(|(idx, ((from, to), entry))| AtomicGroupEdgeReport {
             id: format!("atomic_edge:{idx}"),
-            source: atomic_unit_key(from),
-            target: atomic_unit_key(to),
+            source: atomic_group_key(from),
+            target: atomic_group_key(to),
             edge_kinds: entry.kinds.into_iter().collect(),
             owner_edge_ids: entry.owner_edge_ids,
             constrains_init_order: entry.constrains_init_order,

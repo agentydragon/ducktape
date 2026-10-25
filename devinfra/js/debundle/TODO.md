@@ -192,7 +192,7 @@ paths and owner ids belong in the consuming repo.
 - **Concise explain mode.** Proposal/diagnostic structures on
   `describe` are already opt-in (`--include-proposals`), but there is
   still no compact mode focused on: selected owner identity and source
-  span, atomic-unit membership, matching proposal (if any), immediate
+  span, atomic-group membership, matching proposal (if any), immediate
   constraining neighbors, and the exact reason the owner is not
   landable today.
 - **Source roots.** `inspect-source --id <id> --source-root ...` depends on the
@@ -200,7 +200,7 @@ paths and owner ids belong in the consuming repo.
   that target-specific root explicit instead of assuming repository root
   or working directory.
 - **Patch-plan naming.** `coverage` is useful for intersecting existing
-  module YAML with atomic-unit coverage, but it is not the only way to
+  module YAML with atomic-group coverage, but it is not the only way to
   discover readable work: `atoms --readable-only` and `modules propose`
   may show graph-valid work even when no whole patch section is ready.
   Docs and skill text should reserve "plan" for proposed edits that can be

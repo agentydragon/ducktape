@@ -31,7 +31,7 @@ not.
 
 ## Tiny Modules Are a Smell — Try to Fold Them
 
-A debundle over-splits when the chunker (or atomic-unit granularity) emits a
+A debundle over-splits when the chunker (or atomic-group granularity) emits a
 separate module for what a developer would have written inline in a larger
 file. Actively look for small modules and try to fold each into its true owner:
 its single real consumer, or a sibling that was clearly the same original

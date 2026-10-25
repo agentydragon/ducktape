@@ -90,7 +90,7 @@ pub struct TransformArgs {
     /// Run pipeline parse/facts/gate checks without writing emitted JS
     /// or accept-path reports. A gate rejection still writes
     /// `owner_graph.json` plus the rejection evidence (`cycles.json` /
-    /// `atomic_unit_conflicts.json`) under `reports/tree/<chunk>/`, so
+    /// `atomic_group_conflicts.json`) under `reports/tree/<chunk>/`, so
     /// `gate list` / `gate describe` work on the rejection just
     /// reported.
     #[arg(long)]

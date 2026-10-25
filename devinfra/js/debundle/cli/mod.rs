@@ -17,7 +17,7 @@ mod spec_commands;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use peel::{GraphSummaryArgs, OutputFormat, PatchPlanArgs, UnitsArgs, print_report};
+use peel::{AtomicGroupsArgs, GraphSummaryArgs, OutputFormat, PatchPlanArgs, print_report};
 use pipeline::{TransformArgs, TransformRunOptions, run_transform_cli};
 
 use crate::bindings_commands::BindingsNs;
@@ -53,11 +53,11 @@ pub struct DebundleArgs {
 enum DebundleCommand {
     /// Run the debundle transform pipeline from a flat or tree-shaped spec.
     ///
-    /// Parse + facts + owner_graph + atomic_units + realizability gate +
+    /// Parse + facts + owner_graph + atomic_groups + realizability gate +
     /// lower + emit. The gate is part of the pipeline contract: an
     /// unrealizable spec is rejected (there is no `run --no-verify` — fix
     /// the spec), and the rejection evidence (`cycles.json` /
-    /// `atomic_unit_conflicts.json`) is written under
+    /// `atomic_group_conflicts.json`) is written under
     /// `reports/tree/<chunk>/` next to `owner_graph.json`, where
     /// `debundle gate list` / `gate describe` read it.
     Run(TransformArgs),
@@ -65,18 +65,18 @@ enum DebundleCommand {
     Bindings(BindingsNs),
     /// Module-level spec verbs (list, merge, delete, propose, apply, comment).
     Modules(ModulesNs),
-    /// List structural atoms (owner-level SCCs of the constraining-edge
+    /// List atomic groups (owner-level SCCs of the constraining-edge
     /// graph; per docs/design.md § "Two classes of atom").
-    Atoms(UnitsArgs),
-    /// Report spec coverage against atoms: which atoms are claimed,
+    Atoms(AtomicGroupsArgs),
+    /// Report spec coverage against atomic groups: which groups are claimed,
     /// which fall through to residual.
     Coverage(PatchPlanArgs),
-    /// High-level graph counts (owners, edges, atoms,
+    /// High-level graph counts (owners, edges, atomic groups,
     /// residual-eligible bindings, …).
     #[command(name = "graph-summary")]
     GraphSummary(GraphSummaryArgs),
     /// Dereference any identifier (binding, module path, proposal,
-    /// atom, owner, diagnostic) with full graph + spec context.
+    /// atomic group, owner, diagnostic) with full graph + spec context.
     Describe(DescribeArgs),
     /// Inspect source by graph ID, binding, or numbered top-level item.
     #[command(name = "inspect-source")]

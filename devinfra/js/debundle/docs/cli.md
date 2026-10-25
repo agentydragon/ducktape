@@ -163,7 +163,7 @@ debundle run \
 ```
 
 If the spec is unrealizable, `debundle run` rejects and emits structured
-side outputs (`cycles.json`, `atomic_unit_conflicts.json`) under
+side outputs (`cycles.json`, `atomic_group_conflicts.json`) under
 `reports/tree/<chunk-id>/`. `debundle run --dry-run` runs pipeline
 parse/facts/gate checks without writing emitted JS or reports; a gate
 rejection still writes `owner_graph.json` plus the rejection evidence, so
@@ -467,7 +467,7 @@ debundle modules decompose --graph owner_graph.json --modules spec/modules \
 ```
 
 It keeps existing modules separate, covers every owner in the candidate, checks
-that structural atomic units stay together, and runs the shared realizability
+that structural atomic groups stay together, and runs the shared realizability
 gate over the complete candidate. `candidate_is_realizable: true` means that
 candidate passed those checks. A false result includes the gate's cycles or
 cross-module rebinds and any structural atom conflicts; the fragments remain
@@ -489,7 +489,7 @@ selectors when applying the reviewed split.
 
 For a faster, more fragmented baseline, pass `--atomic`. This mode skips
 same-module seed contractions and creates one candidate group per structural
-atomic unit. If a unit already spans existing module labels, its owners keep
+atomic group. If a unit already spans existing module labels, its owners keep
 those labels and the report remains false with that atom conflict listed. Both
 modes run the same full candidate gate; JSON's `strategy` field identifies the
 selected mode.
@@ -524,7 +524,7 @@ remains read-only, and the complete candidate still passes through the same
 structural and realizability gates. Without the option, graph-only
 decomposition behavior is unchanged.
 
-To ask for a coarser candidate when the atomic-unit assignment is blocked by gate
+To ask for a coarser candidate when the atomic-group assignment is blocked by gate
 cycles, add `--coarsen-blocking-sccs`:
 
 ```sh
@@ -535,7 +535,7 @@ debundle modules decompose --atomic --coarsen-blocking-sccs \
 This opt-in mode consumes only the blocking SCC module lists returned by the
 shared gate. It co-locates the candidate groups in each reported SCC, then runs
 the full structural and realizability checks again. It repeats while blocking
-SCCs remain, stopping when the complete candidate passes or when atomic-unit
+SCCs remain, stopping when the complete candidate passes or when atomic-group
 conflicts, cross-module rebinds, or lack of progress prevent another safe merge.
 If an SCC contains the residual entry, the merge keeps that entry path, so its
 top-level import and export declarations remain there.
@@ -550,8 +550,8 @@ does not edit YAML or choose descriptive module names; review `origin_module_pat
 and owner IDs before assigning the groups in a later spec change.
 
 When structural atoms span candidate module paths, SCC coarsening normally
-stops with `atomic_unit_conflicts`. Add `--coarsen-atomic-conflicts` to first
-co-locate the complete candidate groups named by each reported atomic unit:
+stops with `atomic_group_conflicts`. Add `--coarsen-atomic-conflicts` to first
+co-locate the complete candidate groups named by each reported atomic group:
 
 ```sh
 debundle modules decompose --atomic --coarsen-blocking-sccs \
@@ -653,7 +653,7 @@ owner rows, split/conflicting current claims, destination name or annotation
 collisions, and stale owner graphs. It then resolves every selector in the
 complete scoped post-edit spec and compares every graph owner—including
 unchanged and residual owners—to the requested complete assignment. Only after
-that identity check does the shared atomic-unit and realizability gate run.
+that identity check does the shared atomic-group and realizability gate run.
 There is no `--no-verify` mode. `--dry-run` performs the same checks without
 writing YAML; a rejected batch leaves every module document unchanged.
 
@@ -668,7 +668,7 @@ what's wrong:
 
 **Atom split** (refused by the realizability gate). Lists each split atom:
 which owners it covers, which modules its members would land in, and the
-`DepKind` causes from the unit (same data shape as `AtomicUnitConflict`).
+`DepKind` causes from the group (same data shape as `AtomicGroupConflict`).
 When a sequenced side-effect edge is involved, the existing conflict/cycle
 records also include each impure initializer owner, its binding name, source
 path and 1-based line/column, plus the `PurityRule`, optional detail, and any
@@ -688,9 +688,9 @@ Both diagnostic shapes go to stderr; the command exits non-zero. Under a
 JSON format a realizability-gate rejection additionally prints one
 structured object on stdout: `{verb, action: "rejected", rejection}`, where
 `rejection.kind` is `atom_split` (with `conflicts`, the canonical
-`AtomicUnitConflictReport` projection) or `unrealizable_cycles` (with
+`AtomicGroupConflictReport` projection) or `unrealizable_cycles` (with
 `blocking_sccs`, the canonical `BlockingSccEntry` projection). These are
-the **same wire shapes** `atomic_unit_conflicts.json` / `cycles.json` carry
+the **same wire shapes** `atomic_group_conflicts.json` / `cycles.json` carry
 — there is no parallel rejection schema.
 
 Edit-gate rejections (including `--dry-run` probes) also write those
@@ -741,7 +741,7 @@ Typical debundle outputs:
 - per-chunk reports under `reports/tree/<chunk-id>/`: `chunk.json`,
   `modules.json`, `owner_graph.json`, `export_reentry.json`,
   `selector_diagnostics.json` when any selector did not resolve or resolved
-  with a warning, plus `cycles.json` / `atomic_unit_conflicts.json` only when
+  with a warning, plus `cycles.json` / `atomic_group_conflicts.json` only when
   validation rejects. `export_reentry.json` is also kept on a dry-run
   rejection and omitted on an accepted dry run.
 - mirrored per-directory and per-file dependency reports under

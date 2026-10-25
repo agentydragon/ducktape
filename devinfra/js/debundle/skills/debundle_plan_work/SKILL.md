@@ -56,7 +56,7 @@ bazelisk --output_base=/tmp/debundle-cli-bazel \
   `debundle spec synthesize-selectors`.
 - Hold planned selector work to `references/docs/selectors.md` § The contract and
   the ladder: prefer lanes that land minimized selectors.
-- Use `coverage` and `atoms` when current YAML or atomic-unit closure is
+- Use `coverage` and `atoms` when current YAML or atomic-group closure is
   the question.
 - Use `describe` and `inspect-source --id` before recommending any assignment.
 - Keep planning reports distinct from edit batches. `modules refine` accepts
@@ -67,7 +67,7 @@ bazelisk --output_base=/tmp/debundle-cli-bazel \
 
 Prefer these commands over grepping generated output. The owner graph is
 the source of truth for cycle gates and residual dependencies; the embedded
-atomic DAG is the source of truth for indivisible move units. The proposal
+atomic DAG is the source of truth for sets of owners that must move together. The proposal
 queue is a heuristic projection from that DAG, not a serialized fact from
 `debundle run`.
 
