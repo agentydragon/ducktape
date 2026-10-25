@@ -28,7 +28,7 @@ from agentplane.app.notifications_operator_client import NotificationsOperatorCl
 from agentplane.app.oidc import OIDCSettings
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.sandbox_access import SandboxAccess
-from agentplane.app.settings import Settings, TraceSearchSettings
+from agentplane.app.settings import LangfuseSearchSettings, Settings, TraceSearchSettings
 from agentplane.app.shutdown import drain_of
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.model_test_data import TEST_MODELS, TEST_REASONING_EFFORTS
@@ -138,6 +138,7 @@ def test_rest_api_settings_do_not_require_electric(monkeypatch: pytest.MonkeyPat
     settings = Settings(_cli_parse_args=[])
     assert settings.electric_url is None
     assert settings.trace_search is None
+    assert settings.langfuse_search is None
 
 
 def test_trace_search_settings_load_from_the_deployment_config(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -156,6 +157,29 @@ def test_trace_search_settings_load_from_the_deployment_config(monkeypatch: pyte
         grafana_base_url=AnyHttpUrl("https://grafana.test.invalid"),
         tempo_datasource_uid="tempo",
         deployment_environment="agentplane-staging",
+    )
+
+
+def test_langfuse_search_settings_load_from_the_deployment_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    set_app_environment(monkeypatch, tmp_path)
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        "default_policy_sets: [test-basic]\n"
+        "langfuse_search:\n"
+        "  base_url: https://langfuse.test.invalid\n"
+        "  project_id: test-project\n"
+        "  sandbox_namespace_metadata_key: attributes.agentplane.namespace\n"
+        "  sandbox_service_account_metadata_key: attributes.agentplane.service_account\n"
+    )
+    monkeypatch.setenv("AGENTPLANE_CONFIG_FILE", str(config))
+
+    assert Settings(_cli_parse_args=[]).langfuse_search == LangfuseSearchSettings(
+        base_url=AnyHttpUrl("https://langfuse.test.invalid"),
+        project_id="test-project",
+        sandbox_namespace_metadata_key="attributes.agentplane.namespace",
+        sandbox_service_account_metadata_key="attributes.agentplane.service_account",
     )
 
 

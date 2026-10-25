@@ -10,7 +10,12 @@ from pydantic import AnyHttpUrl
 from agentplane.app.action_federation_settings import ActionFederationSettings
 from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.presets import SandboxPreset, ThreadPreset
-from agentplane.app.settings import AppSettingsConfig, TitleGenerationSettings, TraceSearchSettings
+from agentplane.app.settings import (
+    AppSettingsConfig,
+    LangfuseSearchSettings,
+    TitleGenerationSettings,
+    TraceSearchSettings,
+)
 from agentplane.runner.harness import Harness
 
 # The names of the objects other modules create. `settings()` below grants the public-coder
@@ -101,6 +106,7 @@ def settings(
     auto_title_on_first_message_default: bool = False,
     title_generation: TitleGenerationSettings | None = None,
     trace_search: TraceSearchSettings | None = None,
+    langfuse_search: LangfuseSearchSettings | None = None,
 ) -> AppSettingsConfig:
     optional_configuration: dict[str, object] = {}
     if auto_title_on_first_message_default:
@@ -109,6 +115,8 @@ def settings(
         optional_configuration["title_generation"] = title_generation
     if trace_search is not None:
         optional_configuration["trace_search"] = trace_search
+    if langfuse_search is not None:
+        optional_configuration["langfuse_search"] = langfuse_search
     return AppSettingsConfig(
         models=model_catalog(models),
         default_policy_sets=default_policy_sets,

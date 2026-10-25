@@ -42,6 +42,7 @@ import { hasVmConsole, sandboxReady, sandboxStatusDetail, sandboxSummary, sandbo
 import { SANDBOX_STATUS_MARKS } from "../status_mark";
 import { snapshotFresh } from "../threads/thread_status";
 import { beginSessionCreate, finishSessionCreate, withinSessionCreate } from "../tracing";
+import { langfuseSandboxTraceUrl } from "../langfuse_search";
 import { traceSearchUrl } from "../trace_search";
 import { useFrontendConfig } from "../frontend_config";
 import { TopbarActions, TopbarTitle } from "../topbar";
@@ -91,6 +92,7 @@ export function SandboxPage({
 }): JSX.Element {
   const frontendConfig = useFrontendConfig();
   const traceSearch = frontendConfig?.trace_search ?? null;
+  const langfuseSearch = frontendConfig?.langfuse_search ?? null;
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get("tab");
@@ -335,6 +337,19 @@ export function SandboxPage({
                   rel="noreferrer"
                 >
                   Find Sandbox traces in Grafana
+                </Menu.Item>
+              )}
+              {langfuseSearch && (
+                <Menu.Item
+                  component="a"
+                  href={langfuseSandboxTraceUrl(langfuseSearch, {
+                    namespace: sandbox.service_account.namespace,
+                    serviceAccount: sandbox.service_account.name,
+                  })}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Find Sandbox LLM traces in Langfuse
                 </Menu.Item>
               )}
               {/* The API refuses a running sandbox (inventory.py); the reason is shown beside the item. */}
