@@ -97,7 +97,6 @@ py_test(
     ],
 )
 
-
 py_test(
     name = "test_public_coder_clickhouse_reader_contract",
     srcs = ["test_public_coder_clickhouse_reader_contract.py"],
