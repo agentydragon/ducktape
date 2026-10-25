@@ -13,7 +13,9 @@ use analysis::{OwnerGraphReport, OwnerId, StatementKind};
 use anyhow::{Context, Result, bail};
 use selector_outcome::{Candidate, Outcome, SelectorOutcome, Severity};
 pub use selector_resolve::ModuleNeutralReferenceMeaning;
-use selector_resolve::{AnonymousStatement, EntityIndex, Member, MemberSelector, SpecModule};
+use selector_resolve::{
+    AnonymousStatement, EntityIndex, Member, MemberSelector, SourceMatchReferenceOrigin, SpecModule,
+};
 use source_match::ParsedSourceMatchSelector;
 use spec::{AnonymousStatementSelector, MemberSelectorSpec, SourceMatchClaim};
 use swc_common::{EqIgnoreSpan, SyntaxContext};
@@ -49,9 +51,18 @@ pub struct ResolvedSourceClaims {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ResolvedLocalMemberReference {
-    pub member: String,
+    pub source: ResolvedLocalMemberOrigin,
     pub referenced_by: String,
     pub module_neutral_meaning: ModuleNeutralReferenceMeaning,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ResolvedLocalMemberOrigin {
+    Member(String),
+    AnonymousStatement {
+        index: usize,
+        selector: AnonymousStatementSelector,
+    },
 }
 
 /// Resolve every module's claims together against each chunk source the
@@ -195,10 +206,34 @@ fn resolve_claim_sets(
                         let Ok(set) = &mut resolved[reference.source_module] else {
                             continue;
                         };
+                        let source = match reference.source {
+                            SourceMatchReferenceOrigin::Member(member) => {
+                                ResolvedLocalMemberOrigin::Member(member)
+                            }
+                            SourceMatchReferenceOrigin::AnonymousStatement(index) => {
+                                let selector = modules[reference.source_module]
+                                    .anonymous_statements
+                                    .iter()
+                                    .find(|statement| statement.index == index)
+                                    .with_context(|| {
+                                        format!(
+                                            "resolved anonymous source_match reference has no \
+                                             authored selector index {index} in module {}",
+                                            claim_sets[reference.source_module]
+                                                .module_path
+                                                .display()
+                                        )
+                                    })?
+                                    .selector
+                                    .selector()
+                                    .clone();
+                                ResolvedLocalMemberOrigin::AnonymousStatement { index, selector }
+                            }
+                        };
                         set.claims
                             .local_member_references
                             .insert(ResolvedLocalMemberReference {
-                                member: reference.source_member,
+                                source,
                                 referenced_by: reference.referenced_member,
                                 module_neutral_meaning: reference.module_neutral_meaning,
                             });

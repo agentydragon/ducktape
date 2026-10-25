@@ -558,7 +558,7 @@ annotations:
     let relations = cohesive["selector_anchor_relations"].as_array().unwrap();
     assert!(relations.iter().any(|relation| {
         relation["kind"] == "source_match_reference"
-            && relation["member"] == "Widget"
+            && relation["source"] == json!({"kind": "member", "name": "Widget"})
             && relation["referenced_by"] == "applyDecorators"
     }));
     let mut cohesive_paths = BTreeMap::new();

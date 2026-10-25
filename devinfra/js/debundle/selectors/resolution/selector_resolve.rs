@@ -173,13 +173,22 @@ pub struct Resolution {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ResolvedMemberReference {
     pub source_module: usize,
-    pub source_member: String,
+    pub source: SourceMatchReferenceOrigin,
     pub referenced_module: usize,
     pub referenced_member: String,
     /// How the canonical free-name classifier resolves this identifier when
     /// it has no same-module export to prefer. Anchor planners must preserve
     /// local co-location only for names that are ambiguous in that view.
     pub module_neutral_meaning: ModuleNeutralReferenceMeaning,
+}
+
+/// The resolved source entity whose `source_match` template makes a local
+/// member reference. Anonymous indices are the authored selector indices in
+/// that module, not positions in a filtered outcomes list.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum SourceMatchReferenceOrigin {
+    Member(String),
+    AnonymousStatement(usize),
 }
 
 /// The module-neutral meaning of a reference that currently resolves to a
@@ -1475,14 +1484,28 @@ impl<'c, 'm> Resolve<'c, 'm> {
                 };
                 referenced.push((name.clone(), *module_index, target));
             }
-            let source_members = targets
+            let source_origins = targets
                 .iter()
-                .filter_map(|target| self.members.get(target))
-                .filter(|(module_index, _)| *module_index == entity.module_index)
-                .map(|(module_index, member_index)| {
-                    modules[*module_index].members[*member_index]
-                        .export_name
-                        .clone()
+                .filter_map(|target| {
+                    if let Some((module_index, member_index)) = self.members.get(target)
+                        && *module_index == entity.module_index
+                    {
+                        return Some(SourceMatchReferenceOrigin::Member(
+                            modules[*module_index].members[*member_index]
+                                .export_name
+                                .clone(),
+                        ));
+                    }
+                    self.anonymous
+                        .iter()
+                        .find(|(anonymous_target, module_index, _)| {
+                            anonymous_target == target && *module_index == entity.module_index
+                        })
+                        .map(|(_, module_index, position)| {
+                            SourceMatchReferenceOrigin::AnonymousStatement(
+                                modules[*module_index].anonymous_statements[*position].index,
+                            )
+                        })
                 })
                 .collect::<Vec<_>>();
             for (name, referenced_module, target) in &referenced {
@@ -1509,17 +1532,13 @@ impl<'c, 'm> Resolve<'c, 'm> {
                         }
                     };
                 self.member_references
-                    .extend(
-                        source_members
-                            .iter()
-                            .map(|source_member| ResolvedMemberReference {
-                                source_module: entity.module_index,
-                                source_member: source_member.clone(),
-                                referenced_module: *target_module,
-                                referenced_member: referenced_member.clone(),
-                                module_neutral_meaning,
-                            }),
-                    );
+                    .extend(source_origins.iter().map(|source| ResolvedMemberReference {
+                        source_module: entity.module_index,
+                        source: source.clone(),
+                        referenced_module: *target_module,
+                        referenced_member: referenced_member.clone(),
+                        module_neutral_meaning,
+                    }));
             }
             // Rows without repeats, telling rows apart by their places and
             // their column values.
