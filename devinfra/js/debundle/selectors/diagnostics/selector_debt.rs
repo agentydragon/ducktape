@@ -14,10 +14,6 @@
 //! - **repeated `source_match` bodies** — identical structural selector
 //!   text reused across members / anonymous statements / canonical
 //!   `source_matches[]` claims.
-//! - **drifted minified bindings** (with `--against <other spec>`) —
-//!   members whose readable `name:` is stable across two spec versions
-//!   but whose `selector.binding.name` changed. A name-only selector
-//!   that has *already* required updating is proven rebuild-fragile.
 //!
 //! By default this reads only the on-disk modules tree (same walk as
 //! `spec stats` / `modules list`). With [`SourceAwareSelectorDebtConfig`],
@@ -163,16 +159,6 @@ pub struct SourceAwareBindingGroupSuggestion {
     pub candidate_yaml: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub struct DriftedBinding {
-    pub module: String,
-    pub export_name: String,
-    /// `selector.binding.name` in the `--against` spec.
-    pub previous_binding: String,
-    /// `selector.binding.name` in the current spec.
-    pub current_binding: String,
-}
-
 /// Spec-wide totals. These count the whole spec; the lists in
 /// [`SelectorDebtReport`] may be filtered (`--min-score`) or truncated
 /// (`--limit`) by the CLI, so the summary is not derivable from the
@@ -185,7 +171,6 @@ pub struct SelectorDebtSummary {
     /// Every `source_match` occurrence (repeated or not).
     pub source_match_total: usize,
     pub repeated_source_match_groups: usize,
-    pub drifted_binding_total: usize,
     /// Source-aware structural selectors checked against a chunk source.
     /// Zero when source-aware mode was not requested.
     pub source_aware_checked: usize,
@@ -211,8 +196,6 @@ pub struct SelectorDebtReport {
     /// `source_match` bodies that appear two or more times, sorted by
     /// occurrence count (descending).
     pub repeated_source_match: Vec<RepeatedSourceMatch>,
-    /// Populated only when `--against` is supplied.
-    pub drifted_bindings: Vec<DriftedBinding>,
     /// Populated only when source-aware mode is supplied.
     pub source_aware_near_ambiguous: Vec<SourceAwareStructuralSelector>,
     /// Populated only when source-aware mode is supplied.
@@ -304,44 +287,14 @@ pub fn populate_name_only_module_groups(
         group_name_only_by_module_depth(&report.name_only, module_prefix_depth);
 }
 
-/// (module path, readable export name) -> minified `selector.binding.name`.
-/// Only members that carry both a readable `name:` and a name-only
-/// binding selector can be tracked across spec versions, so only those
-/// land in the map.
-type DriftMap = BTreeMap<(String, String), String>;
-
-fn collect_drift_map(modules_root: &Path) -> Result<DriftMap> {
-    let mut map = DriftMap::new();
-    for file in collect_module_files(modules_root)
-        .with_context(|| format!("walking {}", modules_root.display()))?
-    {
-        let module_path = module_path_from_file(&file, modules_root);
-        let module = read_module_file(&file)?;
-        for member in &module.members {
-            let (Some(export_name), Some(binding)) = (&member.name, &member.selector.binding)
-            else {
-                continue;
-            };
-            map.insert(
-                (module_path.clone(), export_name.clone()),
-                binding.name.clone(),
-            );
-        }
-    }
-    Ok(map)
-}
-
 pub fn compute_selector_debt_with_source(
     modules_root: &Path,
-    against: Option<&Path>,
     source_aware: Option<&SourceAwareSelectorDebtConfig<'_>>,
 ) -> Result<SelectorDebtReport> {
     if source_aware.is_some() {
-        return js_ast::with_swc_globals(|| {
-            compute_selector_debt_impl(modules_root, against, source_aware)
-        });
+        return js_ast::with_swc_globals(|| compute_selector_debt_impl(modules_root, source_aware));
     }
-    compute_selector_debt_impl(modules_root, against, source_aware)
+    compute_selector_debt_impl(modules_root, source_aware)
 }
 
 /// Index one `source_match` occurrence by its normalized body and, when the
@@ -367,7 +320,6 @@ fn record_occurrence(
 
 fn compute_selector_debt_impl(
     modules_root: &Path,
-    against: Option<&Path>,
     source_aware: Option<&SourceAwareSelectorDebtConfig<'_>>,
 ) -> Result<SelectorDebtReport> {
     let files = collect_module_files(modules_root)
@@ -377,7 +329,6 @@ fn compute_selector_debt_impl(
     // normalized body -> every occurrence of it.
     let mut by_normalized: BTreeMap<String, Vec<SourceMatchOccurrence>> = BTreeMap::new();
     let mut source_match_total = 0usize;
-    let mut current_drift: DriftMap = DriftMap::new();
     let runtime_module = source_aware
         .map(|config| {
             let source = std::fs::read_to_string(config.source_file)
@@ -405,12 +356,6 @@ fn compute_selector_debt_impl(
                 .with_context(|| format!("module {module_path}: member selector"))?
             {
                 MemberSelectorSpec::Binding(binding) => {
-                    if let Some(export_name) = &member.name {
-                        current_drift.insert(
-                            (module_path.clone(), export_name.clone()),
-                            binding.name.clone(),
-                        );
-                    }
                     name_only.push(NameOnlySelector {
                         module: module_path.clone(),
                         minified_score: minified_score(&binding.name),
@@ -562,30 +507,6 @@ fn compute_selector_debt_impl(
             .then_with(|| a.exact_body_indices.cmp(&b.exact_body_indices))
     });
 
-    let drifted_bindings = match against {
-        None => Vec::new(),
-        Some(against_root) => {
-            let against_drift = collect_drift_map(against_root)?;
-            let mut drifted: Vec<DriftedBinding> = current_drift
-                .iter()
-                .filter_map(|((module, export_name), current_binding)| {
-                    let previous = against_drift.get(&(module.clone(), export_name.clone()))?;
-                    (previous != current_binding).then(|| DriftedBinding {
-                        module: module.clone(),
-                        export_name: export_name.clone(),
-                        previous_binding: previous.clone(),
-                        current_binding: current_binding.clone(),
-                    })
-                })
-                .collect();
-            drifted.sort_by(|a, b| {
-                a.module
-                    .cmp(&b.module)
-                    .then_with(|| a.export_name.cmp(&b.export_name))
-            });
-            drifted
-        }
-    };
     let source_aware_binding_group_suggestions =
         collect_binding_group_suggestions(binding_group_suggestion_candidates);
     let source_aware_binding_group_suggested_selectors = source_aware_binding_group_suggestions
@@ -601,7 +522,6 @@ fn compute_selector_debt_impl(
             .count(),
         source_match_total,
         repeated_source_match_groups: repeated_source_match.len(),
-        drifted_binding_total: drifted_bindings.len(),
         source_aware_checked,
         source_aware_unique,
         source_aware_near_ambiguous: source_aware_near_ambiguous.len(),
@@ -613,7 +533,6 @@ fn compute_selector_debt_impl(
     Ok(SelectorDebtReport {
         name_only,
         repeated_source_match,
-        drifted_bindings,
         source_aware_near_ambiguous,
         source_aware_repeated_exact,
         source_aware_binding_group_suggestions,
@@ -935,12 +854,11 @@ fn collect_source_aware_debt(
 pub fn render_selector_debt_text(report: &SelectorDebtReport, out: &mut String) {
     let s = &report.summary;
     out.push_str(&format!(
-        "name-only selectors: {} ({} fragile)  source_match: {} ({} repeated group(s))  drifted: {}  source-aware near-ambiguous: {}/{} unique checked  source-aware repeated exact: {}  source-aware source_matches suggestions: {} selector(s) in {} group(s)\n",
+        "name-only selectors: {} ({} fragile)  source_match: {} ({} repeated group(s))  source-aware near-ambiguous: {}/{} unique checked  source-aware repeated exact: {}  source-aware source_matches suggestions: {} selector(s) in {} group(s)\n",
         s.name_only_total,
         s.name_only_fragile,
         s.source_match_total,
         s.repeated_source_match_groups,
-        s.drifted_binding_total,
         s.source_aware_near_ambiguous,
         s.source_aware_unique,
         s.source_aware_repeated_exact,
@@ -988,16 +906,6 @@ pub fn render_selector_debt_text(report: &SelectorDebtReport, out: &mut String) 
                     occurrence.site, occurrence.module,
                 ));
             }
-        }
-    }
-
-    if !report.drifted_bindings.is_empty() {
-        out.push_str("drifted minified bindings:\n");
-        for drift in &report.drifted_bindings {
-            out.push_str(&format!(
-                "  {} ({})  {} -> {}\n",
-                drift.export_name, drift.module, drift.previous_binding, drift.current_binding,
-            ));
         }
     }
 
@@ -1073,11 +981,8 @@ mod tests {
     use std::fs;
     use tempfile::TempDir;
 
-    fn compute_selector_debt(
-        modules_root: &Path,
-        against: Option<&Path>,
-    ) -> Result<SelectorDebtReport> {
-        compute_selector_debt_with_source(modules_root, against, None)
+    fn compute_selector_debt(modules_root: &Path) -> Result<SelectorDebtReport> {
+        compute_selector_debt_with_source(modules_root, None)
     }
 
     fn write(root: &Path, rel: &str, body: &str) {
@@ -1113,7 +1018,7 @@ mod tests {
             "ui/widgets.yaml",
             "members:\n  - name: WidgetRegistry\n    selector: { binding: { name: registry } }\n  - selector: { binding: { name: a } }\n",
         );
-        let report = compute_selector_debt(root, None).unwrap();
+        let report = compute_selector_debt(root).unwrap();
         assert_eq!(report.summary.name_only_total, 2);
         assert_eq!(report.summary.name_only_fragile, 1);
         // `a` (score 100) ranks before `registry` (score 0).
@@ -1151,7 +1056,7 @@ mod tests {
             "members:\n  - name: Startup\n    selector: { binding: { name: c } }\n",
         );
 
-        let mut report = compute_selector_debt(root, None).unwrap();
+        let mut report = compute_selector_debt(root).unwrap();
         report
             .name_only
             .retain(|entry| entry.minified_score >= FRAGILE_THRESHOLD);
@@ -1186,7 +1091,7 @@ mod tests {
             "members:\n  - name: PanelEntry\n    selector: { binding: { name: a } }\n",
         );
 
-        let json = serde_json::to_string(&compute_selector_debt(root, None).unwrap()).unwrap();
+        let json = serde_json::to_string(&compute_selector_debt(root).unwrap()).unwrap();
 
         assert!(!json.contains("name_only_module_groups"));
     }
@@ -1213,7 +1118,7 @@ mod tests {
             "c.yaml",
             "anonymous_statements:\n  - match: 'register(z);'\n",
         );
-        let report = compute_selector_debt(root, None).unwrap();
+        let report = compute_selector_debt(root).unwrap();
         assert_eq!(report.summary.source_match_total, 3);
         assert_eq!(report.repeated_source_match.len(), 1);
         let group = &report.repeated_source_match[0];
@@ -1221,44 +1126,6 @@ mod tests {
         assert_eq!(group.occurrences.len(), 2);
         assert_eq!(group.occurrences[0].site, SelectorSite::SourceMatch);
         assert_eq!(group.occurrences[1].site, SelectorSite::AnonymousStatement);
-    }
-
-    #[test]
-    fn drift_detected_only_when_minified_binding_changes_under_stable_name() {
-        let dir = TempDir::new().unwrap();
-        let current = dir.path().join("current");
-        let against = dir.path().join("against");
-        // `Foo`'s minified binding moved XOe -> XPq; `Bar` is unchanged.
-        write(
-            &current,
-            "m.yaml",
-            "members:\n  - name: Foo\n    selector: { binding: { name: XPq } }\n  - name: Bar\n    selector: { binding: { name: YY } }\n",
-        );
-        write(
-            &against,
-            "m.yaml",
-            "members:\n  - name: Foo\n    selector: { binding: { name: XOe } }\n  - name: Bar\n    selector: { binding: { name: YY } }\n",
-        );
-        let report = compute_selector_debt(&current, Some(&against)).unwrap();
-        assert_eq!(report.summary.drifted_binding_total, 1);
-        let drift = &report.drifted_bindings[0];
-        assert_eq!(drift.export_name, "Foo");
-        assert_eq!(drift.previous_binding, "XOe");
-        assert_eq!(drift.current_binding, "XPq");
-    }
-
-    #[test]
-    fn drift_section_empty_without_against() {
-        let dir = TempDir::new().unwrap();
-        let root = dir.path();
-        write(
-            root,
-            "m.yaml",
-            "members:\n  - name: Foo\n    selector: { binding: { name: XOe } }\n",
-        );
-        let report = compute_selector_debt(root, None).unwrap();
-        assert!(report.drifted_bindings.is_empty());
-        assert_eq!(report.summary.drifted_binding_total, 0);
     }
 
     #[test]
@@ -1282,7 +1149,7 @@ mod tests {
             near_match_limit: 3,
         };
 
-        let report = compute_selector_debt_with_source(root, None, Some(&config)).unwrap();
+        let report = compute_selector_debt_with_source(root, Some(&config)).unwrap();
 
         assert_eq!(report.summary.source_aware_checked, 1);
         assert_eq!(report.summary.source_aware_unique, 1);
@@ -1318,7 +1185,7 @@ mod tests {
             near_match_limit: 3,
         };
 
-        let report = compute_selector_debt_with_source(root, None, Some(&config)).unwrap();
+        let report = compute_selector_debt_with_source(root, Some(&config)).unwrap();
 
         assert_eq!(report.summary.source_aware_checked, 1);
         assert_eq!(report.summary.source_aware_unique, 0);
@@ -1346,7 +1213,7 @@ mod tests {
             near_match_limit: 3,
         };
 
-        let report = compute_selector_debt_with_source(root, None, Some(&config)).unwrap();
+        let report = compute_selector_debt_with_source(root, Some(&config)).unwrap();
 
         assert_eq!(report.summary.source_match_total, 2);
         assert_eq!(report.summary.repeated_source_match_groups, 1);
@@ -1398,7 +1265,7 @@ const stableName = 1;
             near_match_limit: 3,
         };
 
-        let report = compute_selector_debt_with_source(root, None, Some(&config)).unwrap();
+        let report = compute_selector_debt_with_source(root, Some(&config)).unwrap();
 
         assert_eq!(report.summary.source_match_total, 2);
         assert_eq!(report.summary.source_aware_checked, 2);
@@ -1501,7 +1368,7 @@ const stableName = 1;
             near_match_limit: 3,
         };
 
-        let report = compute_selector_debt_with_source(root, None, Some(&config)).unwrap();
+        let report = compute_selector_debt_with_source(root, Some(&config)).unwrap();
 
         assert_eq!(report.summary.source_aware_binding_group_suggestions, 0);
         assert!(report.source_aware_binding_group_suggestions.is_empty());
@@ -1531,7 +1398,7 @@ const stableName = 1;
             near_match_limit: 3,
         };
 
-        let report = compute_selector_debt_with_source(root, None, Some(&config)).unwrap();
+        let report = compute_selector_debt_with_source(root, Some(&config)).unwrap();
 
         assert_eq!(report.summary.source_aware_binding_group_suggestions, 0,);
         assert!(report.source_aware_binding_group_suggestions.is_empty());
@@ -1551,8 +1418,8 @@ const stableName = 1;
             "b/c.yaml",
             "anonymous_statements:\n  - match: 'foo();'\n",
         );
-        let j1 = serde_json::to_string(&compute_selector_debt(root, None).unwrap()).unwrap();
-        let j2 = serde_json::to_string(&compute_selector_debt(root, None).unwrap()).unwrap();
+        let j1 = serde_json::to_string(&compute_selector_debt(root).unwrap()).unwrap();
+        let j2 = serde_json::to_string(&compute_selector_debt(root).unwrap()).unwrap();
         assert_eq!(j1, j2);
     }
 }

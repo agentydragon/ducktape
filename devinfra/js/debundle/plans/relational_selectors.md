@@ -9,8 +9,8 @@ a **relation** to something else in the program.
 Relational selectors resolve in the one joint solve described in
 <../docs/selector_resolution.md>; this plan is the remaining **language** work:
 which relations and template forms the selector surface can express. Build a
-form only when it unlocks synthesis, stabilization, repair, or porting, and test
-it on generic synthetic fixtures.
+form only when it unlocks single-input synthesis, stabilization, or repair, and
+test it on generic synthetic fixtures.
 
 Notation: `@Name` means "the entity another spec member pins as `Name`".
 

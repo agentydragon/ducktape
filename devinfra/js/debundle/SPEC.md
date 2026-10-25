@@ -4,6 +4,20 @@ What `debundle` guarantees when it places spec entities in a bundle chunk. How t
 write selectors: <docs/selectors.md>. How it is implemented:
 `docs/selector_resolution.md`.
 
+## Input and spec scope
+
+One run or validation resolves one exact spec against one configured input
+program. The program may contain multiple chunks; each entity is resolved only
+against the chunk named by its spec tree. The matcher does not consult another
+spec or another source snapshot. Structural matching follows the rules below:
+tree equality with the documented holes and consistent lexical alpha-renaming.
+
+Authoring tools may inspect that same spec and source, then report selector
+diagnostics or propose structural candidates. Those reports do not establish
+semantic intent and do not change the spec unless an author explicitly applies
+an edit. A new upstream snapshot needs its own reviewed spec and exact validation
+against that snapshot.
+
 ## Entities
 
 An **entity** is one thing a spec places in a chunk: a module member, a

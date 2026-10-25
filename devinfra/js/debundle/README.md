@@ -4,10 +4,19 @@
 minified JavaScript bundles to readable, source-like modular code with equivalent
 behavior.
 
-The versioned spec records recovered names, module boundaries, structural source
-matches, and audited contracts; it is the source of truth for the reconstruction.
-As upstream bundles change, rerun and adapt the spec so the recovered understanding
-carries forward across releases.
+Each versioned spec records recovered names, module boundaries, structural source
+matches, and audited contracts for one captured input program. A run resolves one
+exact spec against that program's configured chunks. Structural selectors match
+only by the documented AST, hole, and alpha-renaming rules; the engine does not
+compare specs or infer edits across upstream versions.
+
+When upstream publishes a new bundle snapshot, use the
+[`debundle_stabilize` workflow](skills/debundle_stabilize/SKILL.md) and the
+authoring commands below against that snapshot. A prior spec can be a human-edited
+starting point, but the new source and draft spec are validated as one pair.
+Review each mismatch and each synthesized selector for the intended behavior;
+apply only justified candidates, rerun full validation and the project gate, and
+report the remaining mismatches.
 
 The tool resolves bindings, analyzes value flow and initialization effects, checks
 the requested module boundaries against behavioral constraints under the declared

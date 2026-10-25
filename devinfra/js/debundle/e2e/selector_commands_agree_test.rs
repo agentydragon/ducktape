@@ -1171,7 +1171,6 @@ fn selector_debt_ndjson_preserves_json_payloads_and_section_order() {
         ("name_only", "name_only"),
         ("repeated_source_match", "repeated_source_match"),
         ("name_only_module_groups", "name_only_module_group"),
-        ("drifted_bindings", "drifted_binding"),
         ("source_aware_near_ambiguous", "source_aware_near_ambiguous"),
         ("source_aware_repeated_exact", "source_aware_repeated_exact"),
         (

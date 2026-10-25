@@ -43,9 +43,7 @@ enum SpecNsCommand {
     /// `--group-module-depth` is set; **repeated source_match** bodies
     /// copied verbatim (whitespace-insensitive) across source-backed
     /// binding claims and anonymous statements — the copies a contextual
-    /// selector should replace; and, with `--against`, **drifted
-    /// bindings** — members whose readable `name:` is stable but whose
-    /// `selector.binding.name` changed between the two spec versions.
+    /// selector should replace.
     ///
     /// Opt in to source-aware checks with `--source-file` or
     /// `--source-root --chunk`: adds **near-ambiguous** rows (structural
@@ -124,12 +122,6 @@ struct SelectorDebtArgs {
     /// Modules tree root.
     #[arg(long = "modules", env = "DEBUNDLE_MODULES")]
     pub modules_root: PathBuf,
-
-    /// Second modules tree to diff minified bindings against. Surfaces
-    /// members whose readable `name:` is stable but whose
-    /// `selector.binding.name` changed between the two specs.
-    #[arg(long = "against")]
-    pub against: Option<PathBuf>,
 
     /// Only list name-only selectors whose minified score is at least
     /// this (0..=100). The summary still counts the whole spec.
@@ -381,11 +373,7 @@ fn run_selector_debt_cmd(args: SelectorDebtArgs) -> Result<()> {
             near_match_min_score: args.near_match_min_score,
             near_match_limit: args.near_match_limit,
         });
-    let mut report = compute_selector_debt_with_source(
-        &args.modules_root,
-        args.against.as_deref(),
-        source_aware.as_ref(),
-    )?;
+    let mut report = compute_selector_debt_with_source(&args.modules_root, source_aware.as_ref())?;
     // `--min-score` filters the listed rows; the summary keeps the
     // spec-wide totals so the denominator stays visible.
     if args.min_score > 0 {
@@ -400,7 +388,6 @@ fn run_selector_debt_cmd(args: SelectorDebtArgs) -> Result<()> {
         report.name_only.truncate(args.limit);
         report.name_only_module_groups.truncate(args.limit);
         report.repeated_source_match.truncate(args.limit);
-        report.drifted_bindings.truncate(args.limit);
         report.source_aware_near_ambiguous.truncate(args.limit);
         report.source_aware_repeated_exact.truncate(args.limit);
         report
@@ -426,9 +413,6 @@ fn emit_selector_debt_ndjson(report: &SelectorDebtReport) -> Result<()> {
     }
     for row in &report.name_only_module_groups {
         print_section("name_only_module_group", row)?;
-    }
-    for row in &report.drifted_bindings {
-        print_section("drifted_binding", row)?;
     }
     for row in &report.source_aware_near_ambiguous {
         print_section("source_aware_near_ambiguous", row)?;

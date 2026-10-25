@@ -48,6 +48,13 @@ owners with the same destination yields a module dep graph; the
 validator checks that this quotient graph admits an ESM evaluation
 order observationally equivalent to the input.
 
+Each invocation uses one exact spec and one configured input program (possibly
+with several chunks). Selector resolution stays within the spec's declared
+chunk and uses only the structural matching rules in <../SPEC.md>. It does not
+compare versioned specs or infer migrations between source snapshots. When a
+snapshot changes, authors review diagnostics and candidate selectors against the
+new input, then validate the resulting spec against that input.
+
 ## Shared `var` declaration sites
 
 A module-scoped `var` has one binding cell and can have several declaration

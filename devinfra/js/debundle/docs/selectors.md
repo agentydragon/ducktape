@@ -218,7 +218,7 @@ the anchor; a note for a pattern it covers is stale.
 
 ## Bulk conversion loop
 
-For broad old-spec conversion passes, use an automation-first loop:
+For broad selector-maintenance passes, use a single-source loop:
 
 1. Inventory the debt:
 
@@ -235,10 +235,10 @@ For broad old-spec conversion passes, use an automation-first loop:
    `--limit`, so they are suitable for choosing high-yield, reviewable peels.
    The report ranks name-only selectors by how minified the bound name looks,
    groups `source_match` bodies copied verbatim across claims (the copies a
-   contextual selector should replace), and with
-   `--against <prior-spec-modules>` flags members whose readable `name:` held
-   while their `selector.binding.name` drifted between two spec versions. It reads only the
-   modules tree, so it is a cheap pre-pass.
+   contextual selector should replace). With `--source-file` (or
+   `--source-root` and `--chunk`), it also checks structural selectors and
+   source-backed binding groups against that one chunk. The command reads one
+   modules tree and does not compare specs or source snapshots.
 
 2. Pick a large but coherent bucket: usually one module, a module-prefix family,
    or an explicit item list produced from the debt JSON. Prefer hundreds of

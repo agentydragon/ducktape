@@ -23,10 +23,11 @@ and `anonymous_statements[].source_match`.
 ## Judgment and acceptance
 
 `debundle spec validate` proves that a selector resolves to its intended target
-on the current chunk. It cannot prove that the same selector will survive a
+on the exact current chunk. It cannot prove that the same selector will survive a
 future rebuild. Choose anchors tied to the entity's purpose, then use the
 current-source proof as a gate. A unique selector pinned on incidental syntax
-is still fragile.
+is still fragile. The tools resolve one spec against one input program at a time;
+they do not compare specs or infer cross-version edits.
 
 `spec synthesize-selectors` is a first-pass converter and a way to compact a
 hand-picked anchor. Its exact-AST relaxation fallback can prove an
@@ -42,8 +43,15 @@ selectors for the choice criteria.
 Run both `spec selector-debt` views: the default census for minified name pins,
 and the source-aware pass (`--source-file <chunk>`) for near-ambiguous
 structural selectors, repeated exact bodies, and grouped-selector suggestions.
-With `--against <prior-spec-modules>`, prioritize names proven to have drifted
-across a re-pin. Revisit `note:` debt when new matcher capabilities land.
+Use one module tree and its matching source snapshot for each run. Revisit
+`note:` debt when new matcher capabilities land.
+
+When the upstream snapshot changes, identify that exact new input and make a
+reviewed draft spec for it; copying an earlier spec is a manual starting point.
+Run validation and selector diagnostics against the new source alone. Use
+`synthesize-selectors` as a candidate generator, inspect each retained anchor
+for the intended entity, and apply only justified edits. Rerun full validation
+and the target gate, then report unresolved mismatches.
 
 A selector already using `source_match` may still rest on an incidental anchor.
 Read the source and use `match-selector`'s over-pin slack to prioritize review;

@@ -11,8 +11,8 @@ plans and evidence live here:
 - <docs/selector_resolution.md> — how selectors resolve, and the measured reason
   the architecture is shaped that way.
 - <plans/relational_selectors.md> — the remaining selector-language work.
-- <plans/automated_spec_workflows.md> — automation-first CLI/workflow design,
-  including porting a spec to the next bundle version.
+- <plans/automated_spec_workflows.md> — single-input selector authoring and
+  diagnostic workflows.
 - <plans/factor_vocabulary_rename.md> — internal naming and wire-format decisions.
 - <plans/module_proposals.md> — proposal metadata and granularity follow-ups.
 - <plans/purity_analysis.md> — purity annotation and redundant-hint follow-ups.
@@ -31,11 +31,12 @@ Safety evidence outranks speculative deletion counts. Source inspection is not
 an end-to-end reproduction; performance candidates require fresh opt profiles.
 The sections below hold details, not competing priority queues.
 
-1. **Strict spec automation.** Keep next-version porting the product target.
-   Prioritize correct edits and explicit skipped-candidate reasons. Whole-document YAML reserialization, unrelated
-   formatting changes and dropping comments are acceptable: text preservation
-   is not a requirement. Keep gate-before-write, atomic writes and dry-run
-   reporting, not the input's textual layout.
+1. **Single-input spec assistance.** Keep selector synthesis and repair
+   diagnostics scoped to one configured input program and one exact spec.
+   Prioritize correct edits and explicit skipped-candidate reasons. Proposed
+   selector edits are proved by the shared structural resolver; diagnostics
+   remain suggestions, and the author decides what to apply. Keep
+   gate-before-write, atomic writes and dry-run reporting.
 2. **Public browser smoke.** Build <plans/excalidraw_live_smoke.md> and cover
    bundled vendor singleton/importmap behavior. Node probes already run;
    browser loading is the missing contract, not a missing vendor schema.
@@ -43,7 +44,7 @@ The sections below hold details, not competing priority queues.
    and alpha-binding snapshots before ownership redesign, indexes or undo logs.
    Preserve ordering/hygiene and the independent Node differential oracle.
    Anonymous uniqueness uses coarse semantic-token buckets with exact equality;
-   profile real workloads before adding more fingerprint machinery.
+   profile real workloads before adding indexes or other machinery.
 4. **Remaining selector authoring gaps.** Follow the selector diagnostics above
    and minimizer work below. Keep near-miss ranking heuristics distinct from
    boolean backtracking.
@@ -51,20 +52,12 @@ The sections below hold details, not competing priority queues.
    when they simplify real callers. Prefer deleting redundant setup over deleting
    behavioral assertions or adding test frameworks.
 
-### Porting to the next bundle version
-
-Each spec is for one version's bundles; a new version's spec starts as a copy of
-the previous one. Make repairing that copy cheap:
-<plans/automated_spec_workflows.md> § Flow 3, with the held-out
-`debundle_stabilize` evaluation built on it.
-
 ### Automation product flows over the solver
 
-Design and milestones: <plans/automated_spec_workflows.md> — patch-plan bulk
-codemods that explain every skipped candidate and prove through the one
-resolve, repair from the keep-going report, the inventory/plan/apply/validate
-CLI model, and new-app bootstrap. Every flow is held to the interactive budget
-in <docs/selector_resolution.md> § Interactive budget.
+Design and milestones: <plans/automated_spec_workflows.md> — single-input
+selector synthesis, diagnostics and reviewed edits. Every candidate is scoped
+to one exact source/spec pair and held to the interactive budget in
+<docs/selector_resolution.md> § Interactive budget.
 
 1. **Selector diagnostics.** Sharper first-mismatch reasons for `no_match`'s
    `nearest_unclaimed`: the first unmatched item of a multi-declaration range,
@@ -138,30 +131,6 @@ rebuilds, codegen cache), and materialize-stage performance work lives in
 --candidates N` returning one candidate does not say whether only one anchor
    exists or the menu is not enumerated for that shape (seen on an empty
    `class X extends Y {}`). Distinguish the two in the JSON.
-
-## Anonymous selector indexing in graph dumps
-
-Today `anonymous_statements:` selectors resolve purely by AST-shape match
-against the chunk's top-level statements (`match` / `source_match`); the
-spec format has no owner field for them, so nothing leans on
-author-provided owner hints. That keeps the format honest, but every edit
-gate / coverage check touching anonymous statements has to re-parse source.
-
-If that source resolution ever becomes too expensive, extend
-`owner_graph.json` with enough machine data to resolve anonymous selectors
-from the dump itself — a canonical emitted-JS string or AST fingerprint per
-anonymous owner, keyed by owner id and statement ordinal — so CLI tools can
-match `anonymous_statements[].match` against graph-owned statements without
-reading source files. This is conditional on hitting that cost; not yet
-observed.
-
-## Multi-chunk bump aids
-
-Only when a multi-chunk bump needs them:
-
-- A selector that no longer matches in its chunk but matches in another gets a
-  hint naming that chunk.
-- A cross-chunk `same_as` relation for mirrored module trees.
 
 ## Purity classifier
 

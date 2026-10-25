@@ -1,39 +1,34 @@
 # Automated Debundle Spec Workflows
 
-Open product flows for spec automation: workflow contract, CLI shape and
-milestones. Dispatch order is <../TODO.md>.
+Open work for single-input spec authoring assistance. Dispatch order is
+<../TODO.md>.
 
 ## Goal
 
-Make debundle specs cheap to create, stabilize, and port to the next minified
-bundle version. A spec describes one version's set of bundles; a new upstream
-version gets its own spec, copied from the previous version's and repaired. No
-spec has to resolve against two versions, but porting to an adjacent version
-(`1.5.123` → `1.5.124`) should take little work. The target user is an agent operating on a large real-world bundle:
-the agent should spend most of its time reviewing ranked patch plans and
-blockers, not hand-authoring fragile selectors one binding at a time.
+Make specs easier to author and maintain against one exact input program. Each
+validation or run resolves one exact spec against that program's configured
+chunks. A user may copy a prior spec as an editing starting point, but tools do
+not compare specs or source snapshots, infer version-to-version matches, or
+generate migrations. The target user is an agent operating on a large
+real-world bundle: the agent should spend time reviewing selector diagnostics
+and candidate edits, not hand-authoring fragile selectors one binding at a time.
 
 Selector automation has two non-negotiable success criteria:
 
 1. The produced spec must work for the current chunk and resolve the intended
    binding, group, or anonymous statement with a uniqueness proof.
-2. The produced selectors must be likely to keep working when the spec is
-   copied to the next version of the minified chunks. A selector that copies an entire current function
-   body, object literal, class body, or nested expression is often just an exact
-   snapshot of today's code; it can be over-narrow even when it is unique. The
-   tooling should prefer the loosest readable selector that still proves
-   uniqueness, using holes and stable anchors instead of pinning incidental
-   implementation detail.
+2. Structural candidates use only the declared matching contract: exact syntax
+   modulo supported holes and consistent lexical alpha-renaming. Authors review
+   whether retained literals, keys, and structure express the intended entity;
+   selector tools do not infer semantic identity from another input snapshot.
 
-This plan covers three product flows:
+This plan covers two authoring flows:
 
-1. Given one or more minified JavaScript chunks, produce a minimal spec that
+1. Given one input program's minified JavaScript chunks, produce a minimal spec that
    emits readable, reviewable logical modules.
 2. Given an existing partially unstable spec, replace fragile selectors with
-   stable structural selectors in large batches.
-3. Given a version's spec and chunks and the next version's chunks, produce the
-   next version's spec (a copy of the previous one) and present the remaining
-   repair work as structured diagnostics.
+   structural selectors in large batches, with each candidate resolved only
+   against the same program and spec being edited.
 
 Keep all examples and fixtures generic. Do not copy private downstream bundle
 source into Ducktape tests.
@@ -87,8 +82,9 @@ the edit model is clear.
 ### Source Inventory
 
 The shared per-chunk index is `selectors/authoring/shape_index.rs`
-(per-statement features from `selectors/authoring/selector_candidate_index.rs`). Repair, port and bulk-planning tooling query it
-rather than adding per-command AST walks that drift semantically.
+(per-statement features from `selectors/authoring/selector_candidate_index.rs`).
+Single-input repair and bulk-planning tools query it rather than adding
+per-command AST walks that drift semantically.
 
 ### Selector Candidates
 
@@ -162,7 +158,7 @@ orthogonal:
 
 - `debundle spec inventory --modules ... --source-root ... --format ndjson`
   emits source/spec facts: bindings, anonymous statements, current selectors,
-  debt buckets, grouping opportunities, source fingerprints, and stable anchors.
+  debt buckets, grouping opportunities, and stable anchors.
 - `debundle spec plan selectors --targets <targets.json> --source-root ...`
   emits a patch plan that creates or replaces selectors for explicit bindings,
   groups, anonymous statements, or statement ranges.
@@ -171,12 +167,9 @@ orthogonal:
 - `debundle spec plan repair --diagnostics <report.json> --source-root ...`
   emits a patch plan for the unresolved, ambiguous, duplicate-claim, or invalid
   outcomes of `spec validate --format json`.
-- `debundle spec plan port --modules <copy> --from-source-root <old> --to-source-root <new>`
-  emits a patch plan repairing a copied spec against the next version's chunks,
-  plus residual semantic tasks.
 - `debundle spec apply-plan --plan <plan.json> --modules ...`
-  applies a reviewed plan after validation, refusing stale plans whose inputs
-  no longer match. YAML text preservation is not required.
+  applies a reviewed plan only after resolving and validating it against the
+  same exact source/spec inputs. YAML text preservation is not required.
 - Existing focused commands such as `selector-debt` and `synthesize-selectors` can
   remain as aliases or transitional frontends, but new work should converge on
   the inventory/plan/apply/validate model.
@@ -187,7 +180,7 @@ verbs when overloading an existing command would make the mode hard to explain.
 ## Flow 1: New Chunks to Readable Spec
 
 The bootstrap flow should combine existing debundle planning with selector
-synthesis:
+synthesis for one configured input program:
 
 1. Run module/factor proposals and naming passes to identify candidate logical
    modules and export names.
@@ -203,7 +196,7 @@ with a large name-only debt pile.
 
 ## Flow 2: Stabilize an Existing Spec
 
-The stabilization flow is the current large-spec migration case:
+The stabilization flow maintains one spec against its configured input:
 
 1. Inventory debt with `selector-debt` and bucket by mechanical rewrite class.
 2. Apply broad buckets first: class declarations, function declarations,
@@ -219,23 +212,6 @@ The stabilization flow is the current large-spec migration case:
 The output should be large reviewable PRs grouped by rewrite class, not tiny
 hand-authored module-by-module edits.
 
-## Flow 3: Port a Spec to the Next Bundle Version
-
-Copy the previous version's spec into the new version's spec directory and
-validate the copy against the new chunks: every non-`ok` outcome is the repair
-list, and a stable spec keeps it short. For each entity on it, resolve the old
-spec against the old chunks to get the entity's source there, search the new
-chunks with it (§ Repair And Porting Search) and propose a repaired selector;
-what no search explains is a residual report of semantic drift.
-`nearest_unclaimed` on `no_match` outcomes is the starting point that needs no
-old chunks, and `selector-debt --against <old spec>` flags members whose
-minified binding drifted.
-
-The measure is the work an adjacent-version port takes: outcomes to repair on
-the copy, and how many the tooling repairs unaided. A held-out evaluation of
-`debundle_stabilize` uses it: stabilize against one version, copy the spec to
-the next, and count what needs repair.
-
 ## Repair Workflow
 
 For a selector that does not match anything:
@@ -246,7 +222,9 @@ For a selector that does not match anything:
 2. Starting from `nearest_unclaimed`, try mechanical relaxations: replace
    volatile subtrees with holes, shrink or expand the statement window, use
    literal/regex anchors, or group bindings.
-3. Emit a candidate patch only if the repaired selector is unique.
+3. Emit a candidate patch only if the structural resolver proves it unique
+   against this input. Candidate reports do not assert semantic intent; the
+   author reviews and explicitly applies the justified subset.
 
 For an ambiguous selector, `differentiators` (<../SPEC.md> § Outcomes) already
 names each listed candidate's differentiating anchor when the list is not
@@ -262,10 +240,9 @@ collapse, cross-module-group support, or a real ownership conflict.
 ## Performance Plan
 
 The resolve already parses each chunk once, prepares each selector once and
-prunes candidates through an index (<../docs/selector_resolution.md>). Open:
-memoize selector resolution across invocations, keyed by chunk hash, normalized
-selector, target and Ducktape version. Update `perf/` notes from real profiles
-before major matcher rewrites.
+prunes candidates through an index (<../docs/selector_resolution.md>). Update
+`perf/` notes from real profiles before major matcher rewrites. Any future
+optimization remains scoped to one invocation's exact input and spec.
 
 ### Scale Model
 
@@ -283,15 +260,15 @@ explicitly offline) is <../docs/selector_resolution.md> § Interactive budget.
 
 Expected warmed runtime budgets on downstream-scale inputs:
 
-| Operation                                                   |       Target |  Hard concern |
-| ----------------------------------------------------------- | -----------: | ------------: |
-| Build source inventory for one large chunk                  |         1-3s |          >10s |
-| Emit selector debt/inventory report for the current spec    |         <10s |          >60s |
-| Classify name-only function/class/declarator rewrite bucket |          <5s |          >30s |
-| Plan a broad mechanical stabilization bucket                |         <10s |          >60s |
-| Minimize one ordinary selector context                      |     10-100ms |           >1s |
-| Validate selectors in keep-going mode after a batch         |         <10s |          >60s |
-| Deep nearest-candidate repair search                        | offline mode | no silent run |
+| Operation                                                   |   Target | Hard concern |
+| ----------------------------------------------------------- | -------: | -----------: |
+| Build source inventory for one large chunk                  |     1-3s |         >10s |
+| Emit selector debt/inventory report for the current spec    |     <10s |         >60s |
+| Classify name-only function/class/declarator rewrite bucket |      <5s |         >30s |
+| Plan a broad mechanical stabilization bucket                |     <10s |         >60s |
+| Minimize one ordinary selector context                      | 10-100ms |          >1s |
+| Validate selectors in keep-going mode after a batch         |     <10s |         >60s |
+| Source-aware diagnostic suggestions                         |     <10s |         >60s |
 
 If a command cannot meet the interactive budget, it should stream progress,
 write resumable intermediate plans, and label itself as offline/profile mode.
@@ -304,8 +281,8 @@ Stabilizing an existing spec should operate by buckets:
   `O(S + B)` to classify, then one uniqueness proof per candidate;
 - literal-initialized constants via literal initializer index:
   `O(B)` index build plus `O(1)` lookup per candidate value;
-- repeated selector bodies via normalized body hash:
-  `O(S * L)` normalization and `O(S log S)` or hash grouping;
+- repeated selector bodies via normalized body text:
+  `O(S * L)` normalization and `O(S log S)` grouping;
 - repeated declarator-context selectors into binding groups:
   group by resolved statement id and declarator set, then emit one edit per
   group;
@@ -317,34 +294,12 @@ The critical rule is to dedupe before expensive matching. A spec with 8.5k
 fragile selectors should not do 8.5k independent parse/prepare scans if many
 selectors share context or rewrite class.
 
-### Repair And Porting Search
-
-No-match and version-port repair should use top-k retrieval rather than scanning
-every statement:
-
-1. Extract anchors and fingerprints from the failing selector or the entity's
-   source in the previous version.
-2. Retrieve candidate statement ids from high-value anchors first: stable
-   string literals, object keys, property names, declaration kind, arity, and
-   structural fingerprint prefix.
-3. Score candidates by weighted anchor overlap and AST edit distance on the
-   small retrieved set.
-4. Run selector synthesis/minimization only for the top candidates.
-
-Expected cost per failed selector should be near `O(sum selective postings +
-K log K + K * diff_cost)`, with `K` capped. A full `O(N * diff_cost)` nearest
-candidate scan is acceptable only as an explicit deep diagnostic mode.
-
-### Patch Application And Caching
+### Patch Application
 
 Patch planning and application should be deterministic:
 
-- include input hashes for source chunks, modules files, selector bodies, and
-  Ducktape version in patch-plan metadata;
-- refuse apply when the input hash no longer matches, unless the caller asks to
-  rebase/recompute the plan;
-- cache inventory and prepared selector data by chunk hash and Ducktape
-  version within a process, and leave room for a future on-disk cache;
+- re-resolve each reviewed edit against the exact source/spec inputs before
+  writing; refuse edits whose selector proof or target has changed;
 - stream NDJSON plan rows as soon as they are known so long runs remain useful
   and interruptible.
 
@@ -356,11 +311,7 @@ Patch planning and application should be deterministic:
 - `plan repair` consumes the `spec validate --format json` report and emits or
   applies patch plans for mechanically proven cases.
 
-### Milestone 4: Version-Port Workflow
-
-§ Flow 3.
-
-### Milestone 5: New-App Bootstrap
+### Milestone 4: New-App Bootstrap
 
 - Feed module proposals, naming output, and selector synthesis into an initial
   spec generator.
@@ -380,5 +331,3 @@ Patch planning and application should be deterministic:
   not repeated reparsing or avoidable quadratic scans.
 - New downstream debundle specs start with structural selectors and an explicit
   debt report.
-- Porting a spec to an adjacent upstream version is mostly mechanical: most
-  selectors resolve unchanged on the copy and the tooling proposes the rest.

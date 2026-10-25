@@ -10,6 +10,12 @@ the validator enforces) before working on the splitting pipeline.
 - Invest in tools and side-output analyses that make spec authoring cheap; the
   pipeline emits machine-readable artifacts for suggesting owner/module splits and
   renames.
+- Treat each spec as the exact contract for one configured input program. Do not
+  add cross-version reasoning, multi-spec comparison, or automatic promotion or
+  migration commands. For a new upstream snapshot, use the authoring workflow in
+  <README.md>: inspect that source, review diagnostics and candidate selectors,
+  apply only justified edits, validate the exact source/spec pair, and report
+  remaining mismatches.
 - Heuristics produce diagnostics and candidate sets only; the spec author decides.
 - When a new bundle shape exposes a missing capability, extend the debundler,
   reproducing the failure minimally first. When debundle tooling blocks a task,
