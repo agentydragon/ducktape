@@ -5,11 +5,7 @@
 Read <docs/design.md> (problem, correct emit strategies, the realizability theorem
 the validator enforces) before working on the splitting pipeline.
 
-## Mission
-
-Recover a minified bundle into what reads like a hand-written modular codebase; each
-upstream release is re-peeled from a versioned spec. **The spec is the source of
-truth** for where symbols belong and what they are called.
+## Spec authoring
 
 - Invest in tools and side-output analyses that make spec authoring cheap; the
   pipeline emits machine-readable artifacts for suggesting owner/module splits and

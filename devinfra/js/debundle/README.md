@@ -1,8 +1,18 @@
 # Debundle
 
-`debundle` restructures a JavaScript bundle: it reads a transform spec, emits a
-decomposed module tree, and writes analysis artifacts that drive later module
-extraction and naming work.
+`debundle` is a reverse-engineering tool for maintaining a repeatable mapping from
+minified JavaScript bundles to readable, source-like modular code with equivalent
+behavior.
+
+The versioned spec records recovered names, module boundaries, structural source
+matches, and audited contracts; it is the source of truth for the reconstruction.
+As upstream bundles change, rerun and adapt the spec so the recovered understanding
+carries forward across releases.
+
+The tool resolves bindings, analyzes value flow and initialization effects, checks
+the requested module boundaries against behavioral constraints under the declared
+runtime and library assumptions, and emits readable modules and diagnostic
+artifacts.
 
 ## Where behavior lives
 
