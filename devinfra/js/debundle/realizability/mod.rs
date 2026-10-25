@@ -35,6 +35,7 @@ use std::sync::OnceLock;
 
 use petgraph::algo::tarjan_scc;
 use petgraph::graphmap::DiGraphMap;
+use rustc_hash::FxHashMap;
 
 use analysis::OwnerId;
 use analysis::graph::{OwnerEdgeId, OwnerGraph, chunk_constraining_module_edges};
@@ -256,9 +257,30 @@ pub fn check_realizability(
         }
     }
     let i_sccs = tarjan_scc(&i_graph);
+
+    // Assign each module to its Tarjan component once, then identify
+    // constraining edges internal to those components in one edge pass.
+    // The candidate filter below used to rescan every canonical edge for
+    // each I-SCC, making this O(number of SCCs × number of edges).
+    let mut i_scc_by_module = FxHashMap::default();
+    for (scc_index, scc) in i_sccs.iter().enumerate() {
+        for &module in scc {
+            i_scc_by_module.insert(module, scc_index);
+        }
+    }
+    let mut i_scc_has_constraining_edge = vec![false; i_sccs.len()];
+    for &(from, to) in canonical.edges.keys() {
+        let from_scc = i_scc_by_module[&from];
+        let to_scc = i_scc_by_module[&to];
+        if from_scc == to_scc {
+            i_scc_has_constraining_edge[from_scc] = true;
+        }
+    }
+
     let candidate_sccs: Vec<BTreeSet<ModuleId>> = i_sccs
         .into_iter()
-        .filter_map(|scc| {
+        .enumerate()
+        .filter_map(|(scc_index, scc)| {
             if scc.len() < 2 {
                 return None;
             }
@@ -269,11 +291,7 @@ pub fn check_realizability(
             // Skip SCCs that carry no constraining edge between
             // members — pure-lazy I-cycles never TDZ regardless of
             // entry's import order.
-            let has_constraining = canonical
-                .edges
-                .keys()
-                .any(|(from, to)| modules.contains(from) && modules.contains(to));
-            if !has_constraining {
+            if !i_scc_has_constraining_edge[scc_index] {
                 return None;
             }
             Some(modules)
