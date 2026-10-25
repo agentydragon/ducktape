@@ -180,6 +180,16 @@ reports include it on rejection, while accepted dry runs remain silent. The
 typed wire schema and blocker fields are described in
 <docs/wire_format.md#export-reentry-diagnostics>.
 
+## Partial vendor-swap ownership
+
+The vendor strip pass assigns top-level items to swapped packages through
+source reads and rebinds (including nested function bodies), plus writes to
+referenced local values. Inferred possible call targets do not assign package
+ownership: a function passed to a different invocation of the same helper is
+not thereby part of this package. The strip pass rejects non-shareable items
+also needed by residual exports and checks retained bindings and observable
+writes before removing swapped items.
+
 ## Audited callback-factory exports
 
 `chunk_export_purity.<defining chunk>.callback_factory_exports` lists named

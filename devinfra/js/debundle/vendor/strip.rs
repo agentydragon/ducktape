@@ -962,8 +962,11 @@ fn item_analysis_from_fact(item: &ModuleItem, fact: &StatementFacts) -> ItemAnal
     reads.extend(fact.reads.lazy.iter().cloned());
     reads.extend(fact.rebinds.eager.iter().cloned());
     reads.extend(fact.rebinds.lazy.iter().cloned());
-    reads.extend(fact.calls.eager.iter().cloned());
-    reads.extend(fact.calls.lazy.iter().cloned());
+    // Package ownership follows lexical dependencies. The source read set
+    // already includes call expressions, their arguments, and nested bodies.
+    // Inferred call targets describe possible runtime behavior; a callback
+    // passed to another invocation of the same helper must not make this
+    // package own that unrelated callback's implementation.
     for id in &fact.declared {
         reads.remove(id);
     }

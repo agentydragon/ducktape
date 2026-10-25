@@ -2543,6 +2543,14 @@ still rejected, because per-member usage is not analyzed.
 
 ### Deliberate split-brain bypasses in the strip pass
 
+Vendor package ownership follows source reads and rebinds, including those
+inside callback bodies, plus the items that mutate a referenced local value.
+The general effect analyzer also infers possible call targets, but those
+targets are not ownership edges: a target supplied to another call of the
+same helper does not belong to this package. The strip pass still checks
+retained reads, local mutation writers, and observable writes before dropping
+an item.
+
 The strip pass bails on "split-brain" items — top-level items
 reachable both from the residual chunk's exports and from a swapped
 package's bodies, where stripping would leave the residual and the
