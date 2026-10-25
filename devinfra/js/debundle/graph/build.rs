@@ -560,6 +560,11 @@ fn promote_at_init_calls(
     // future declaration and a future writer. Emit each temporal ordering
     // constraint only once within this pass.
     let mut temporal_sequence_pairs = BTreeSet::<(OwnerId, OwnerId)>::new();
+    let mut existing_order_pairs: BTreeSet<(OwnerId, OwnerId)> = raw_edges
+        .iter()
+        .filter(|(_, _, reason)| reason.constrains_init_order())
+        .map(|(from, to, _)| (*from, *to))
+        .collect();
     let mut direct_eager_bindings: BTreeSet<(OwnerId, OwnerId, Id)> = raw_edges
         .iter()
         .filter_map(|(from, to, reason)| {
@@ -574,21 +579,30 @@ fn promote_at_init_calls(
         })
         .collect();
 
-    // Preserve each callback-observed binding's writer order and place each
-    // reader against only its nearest preceding/following writer. Do not add
-    // reader-to-reader edges: independent observations of an unchanged cell
-    // need no relative order and can otherwise form false cycles. Ordinary
-    // eager readers of these same bindings join the same constraints so a
-    // callback's new ordering does not expose a sibling top-level read.
-    for (binding, callback_readers) in &callback_readers_by_binding {
-        let Some(writers) = writers_by_binding.get(binding) else {
+    // Preserve each observed binding's writer order and place each reader
+    // against only its nearest preceding/following writer. Ordinary eager
+    // readers need this timeline even when no callback reads the binding:
+    // a pure initializer may otherwise move across a later assignment.
+    // Do not add reader-to-reader edges: independent observations of an
+    // unchanged cell need no relative order and can form false cycles.
+    for (binding, writers) in &writers_by_binding {
+        let mut readers: BTreeSet<OwnerId> = callback_readers_by_binding
+            .get(binding)
+            .into_iter()
+            .flat_map(|readers| readers.iter().copied())
+            .collect();
+        if let Some(eager_readers) = eager_readers_by_binding.get(binding) {
+            readers.extend(eager_readers.iter().copied());
+        }
+        if readers.is_empty() {
             continue;
-        };
+        }
         let writer_events: Vec<_> = writers.iter().copied().collect();
         for pair in writer_events.windows(2) {
             let earlier = pair[0];
             let later = pair[1];
-            if temporal_sequence_pairs.insert((later, earlier)) {
+            if existing_order_pairs.insert((later, earlier)) {
+                temporal_sequence_pairs.insert((later, earlier));
                 raw_edges.push((
                     later,
                     earlier,
@@ -597,14 +611,11 @@ fn promote_at_init_calls(
             }
         }
 
-        let mut readers: BTreeSet<OwnerId> = callback_readers.iter().copied().collect();
-        if let Some(eager_readers) = eager_readers_by_binding.get(binding) {
-            readers.extend(eager_readers.iter().copied());
-        }
         for reader in readers {
             if let Some(&previous_writer) = writers.range(..reader).next_back()
-                && temporal_sequence_pairs.insert((reader, previous_writer))
+                && existing_order_pairs.insert((reader, previous_writer))
             {
+                temporal_sequence_pairs.insert((reader, previous_writer));
                 raw_edges.push((
                     reader,
                     previous_writer,
@@ -617,8 +628,9 @@ fn promote_at_init_calls(
                     std::ops::Bound::Unbounded,
                 ))
                 .next()
-                && temporal_sequence_pairs.insert((next_writer, reader))
+                && existing_order_pairs.insert((next_writer, reader))
             {
+                temporal_sequence_pairs.insert((next_writer, reader));
                 raw_edges.push((
                     next_writer,
                     reader,

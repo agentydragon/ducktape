@@ -256,12 +256,12 @@ fn move_overlay_matches_applied_verdict_on_cycle_rebind_and_chain_moves() {
             0,
             1,
         ),
-        // `b` leaves the chain `a -> b -> c` for a fresh module, so its
+        // `b` leaves the initialized chain `a -> b -> c` for a fresh module, so its
         // current edges are masked.
         (
             "chain",
-            "const a = b + 1; const b = c + 1; const c = 1;",
-            &[(0, 1), (1, 2), (2, 3)][..],
+            "const c = 1; const b = c + 1; const a = b + 1;",
+            &[(0, 3), (1, 2), (2, 1)][..],
             1,
             4,
             0,

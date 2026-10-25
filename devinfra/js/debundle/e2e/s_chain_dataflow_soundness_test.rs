@@ -47,6 +47,142 @@ fn assert_sequenced_edge(graph: &OwnerGraphReport, later: &str, earlier: &str) {
     );
 }
 
+fn assert_eager_edge(graph: &OwnerGraphReport, reader: &str, declaration: &str) {
+    assert!(
+        graph.edges.iter().any(|edge| {
+            edge.edge_kind == DepKind::EagerUse
+                && edge.source == reader
+                && edge.target == declaration
+        }),
+        "expected EagerUse edge {reader} -> {declaration}; edges: {:#?}",
+        graph.edges,
+    );
+}
+
+#[test]
+fn ordinary_eager_read_stays_before_later_binding_write() {
+    let source = r#"let value = 0;
+const snapshot = value;
+value = 42;
+console.log(snapshot, value);
+export { snapshot, value };
+"#;
+    let mut colocated = FixtureOpts::new(
+        source,
+        vec![logical_module_with_anon(
+            "runtime/all",
+            &[Member::new("value"), Member::new("snapshot")],
+            &["value = 42;", "console.log(snapshot, value);"],
+        )],
+    )
+    .with_unassigned_mode(unassigned_mode_inline());
+    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    let fixture = run_fixture(colocated);
+    assert_preserved_entry_output(&fixture, "0 42\n");
+    let graph = fixture.owner_graph();
+    assert_eager_edge(
+        &graph,
+        owner_for_ordinal(&graph, 1),
+        owner_for_ordinal(&graph, 0),
+    );
+    assert_sequenced_edge(
+        &graph,
+        owner_for_ordinal(&graph, 2),
+        owner_for_ordinal(&graph, 1),
+    );
+
+    let mut split = FixtureOpts::new(
+        source,
+        vec![
+            logical_module_with_anon("values/value", &[Member::new("value")], &["value = 42;"]),
+            logical_module("values/snapshot", &[Member::new("snapshot")]),
+        ],
+    );
+    split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    expect_atomic_conflict_rejection(split, &["values/value", "values/snapshot"], &[]);
+}
+
+#[test]
+fn ordinary_eager_read_stays_between_var_initializer_and_reassignment() {
+    let source = r#"var value = 0;
+const snapshot = value;
+value = 42;
+console.log(snapshot, value);
+export { snapshot, value };
+"#;
+    let mut colocated = FixtureOpts::new(
+        source,
+        vec![logical_module_with_anon(
+            "runtime/all",
+            &[Member::new("value"), Member::new("snapshot")],
+            &["value = 42;", "console.log(snapshot, value);"],
+        )],
+    )
+    .with_unassigned_mode(unassigned_mode_inline());
+    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    let fixture = run_fixture(colocated);
+    assert_preserved_entry_output(&fixture, "0 42\n");
+    let graph = fixture.owner_graph();
+    assert_eager_edge(
+        &graph,
+        owner_for_ordinal(&graph, 1),
+        owner_for_ordinal(&graph, 0),
+    );
+    assert_sequenced_edge(
+        &graph,
+        owner_for_ordinal(&graph, 2),
+        owner_for_ordinal(&graph, 1),
+    );
+
+    let mut split = FixtureOpts::new(
+        source,
+        vec![
+            logical_module_with_anon("values/value", &[Member::new("value")], &["value = 42;"]),
+            logical_module("values/snapshot", &[Member::new("snapshot")]),
+        ],
+    );
+    split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    expect_atomic_conflict_rejection(split, &["values/value", "values/snapshot"], &[]);
+}
+
+#[test]
+fn ordinary_eager_read_of_undefined_var_stays_before_first_assignment() {
+    let source = r#"var value;
+const snapshot = value;
+value = 42;
+console.log(snapshot === undefined, value);
+export { snapshot, value };
+"#;
+    let mut colocated = FixtureOpts::new(
+        source,
+        vec![logical_module_with_anon(
+            "runtime/all",
+            &[Member::new("value"), Member::new("snapshot")],
+            &["value = 42;", "console.log(snapshot === undefined, value);"],
+        )],
+    )
+    .with_unassigned_mode(unassigned_mode_inline());
+    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    let fixture = run_fixture(colocated);
+    assert_preserved_entry_output(&fixture, "true 42\n");
+    let graph = fixture.owner_graph();
+    assert_sequenced_edge(
+        &graph,
+        owner_for_ordinal(&graph, 2),
+        owner_for_ordinal(&graph, 1),
+    );
+
+    let mut split = FixtureOpts::new(
+        source,
+        vec![
+            logical_module_with_anon("values/value", &[Member::new("value")], &["value = 42;"]),
+            logical_module("values/snapshot", &[Member::new("snapshot")]),
+        ],
+    );
+    split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    expect_atomic_conflict_rejection(split, &["values/value", "values/snapshot"], &[]);
+}
+
 /// WAR: `limit`'s write of `globalThis.flag` must be sequenced after
 /// `snapshot`'s read of it, even though the last *writer* of the cell
 /// is the earlier statement.

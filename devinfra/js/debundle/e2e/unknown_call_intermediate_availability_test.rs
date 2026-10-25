@@ -3,6 +3,43 @@
 use debundle_e2e_support::*;
 
 #[test]
+fn superclass_static_initializer_observes_early_value() {
+    let source = r#"let later = 0;
+class Core { static snapshot = later; }
+class Derived extends Core {}
+later = 42;
+console.log(Derived.snapshot, later);
+export { Derived, later };
+"#;
+    let mut colocated = FixtureOpts::new(
+        source,
+        vec![logical_module_with_anon(
+            "runtime/all",
+            &[
+                Member::new("Core"),
+                Member::new("Derived"),
+                Member::new("later"),
+            ],
+            &["later = 42;", "console.log(Derived.snapshot, later);"],
+        )],
+    )
+    .with_unassigned_mode(unassigned_mode_inline());
+    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    assert_preserved_entry_output(&run_fixture(colocated), "0 42\n");
+
+    let mut split = FixtureOpts::new(
+        source,
+        vec![
+            logical_module("runtime/core", &[Member::new("Core")]),
+            logical_module("runtime/derived", &[Member::new("Derived")]),
+            logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
+        ],
+    );
+    split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    expect_atomic_conflict_rejection(split, &["runtime/core", "values/later"], &[]);
+}
+
+#[test]
 fn unused_constructor_and_getter_are_not_executed_by_subclass_heritage() {
     let source = r#"import { trigger } from './peer.js';
 class Calendar { get day() { return later; } }

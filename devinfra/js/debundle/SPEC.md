@@ -228,6 +228,9 @@ bodies and dynamic scope retain conservative whole-body effects. Opaque-call
 reachability follows those same synchronous prefixes, so a value first read
 after a definite `await` does not expose its callback body through that path
 during chunk initialization.
+Ordinary eager reads and synchronous callback reads stay between the known
+preceding and following writes of the binding, including `var` initializers
+and later assignments, even when the eager reader's owner is pure.
 
 Opaque calls holding a class or instance may invoke its constructor, field
 initializers, methods, and accessors. Their synchronous read closure stops at a
