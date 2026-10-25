@@ -135,6 +135,8 @@ debundle_e2e_test(name = "object_plain_data_calls_test")
 
 debundle_e2e_test(name = "metadata_decorator_timing_test")
 
+debundle_e2e_test(name = "three_argument_metadata_test")
+
 debundle_e2e_test(name = "proxy_constructor_purity_test")
 
 debundle_e2e_test(name = "url_rebase_test")
