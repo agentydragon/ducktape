@@ -1,18 +1,19 @@
-use std::collections::{BTreeSet, HashMap};
+use std::collections::HashMap;
 use std::path::Path;
 
 use anyhow::{Result, bail};
 
 use artifact::{
     ArtifactChunkRecord, ArtifactCounts, ArtifactManifest, ChunkDecompositionOutput, ChunkId,
-    ChunksReport, DecompositionMetrics, EmissionFiles, PackageManifest, RootLogicalModulesSummary,
+    ChunksReport, DecompositionMetrics, PackageManifest, RootLogicalModulesSummary,
     SelectedModuleLowering, materialize_artifact_scripts, write_json,
 };
 use identifier_rename_queue::compute_identifier_rename_queue;
 use output_layout::DebundleOutputLayout;
+use reconstruction::ValidatedPlan;
 
 pub struct WriteTreeInput<'a> {
-    pub files: &'a EmissionFiles,
+    pub plan: &'a ValidatedPlan,
     pub out_dir: &'a Path,
     pub lowerings: &'a [SelectedModuleLowering],
     pub counts: &'a ArtifactCounts,
@@ -21,10 +22,6 @@ pub struct WriteTreeInput<'a> {
     pub chunk_records: &'a [ArtifactChunkRecord],
     pub module_count: usize,
     pub decomposition_by_chunk: &'a HashMap<ChunkId, ChunkDecompositionOutput>,
-    /// Chunks excluded from the emission set (fully vendor-swapped):
-    /// their files are not written and they contribute nothing to the
-    /// rename queue.
-    pub excluded_chunk_ids: &'a BTreeSet<ChunkId>,
 }
 
 pub fn write_js_tree(input: &WriteTreeInput) -> Result<()> {
@@ -35,11 +32,11 @@ pub fn write_js_tree(input: &WriteTreeInput) -> Result<()> {
     layout.prepare()?;
 
     let materialized = materialize_artifact_scripts(
-        input.files,
+        input.plan.files(),
         &layout.app_root(),
         &layout.tree_root(),
         input.decomposition_by_chunk,
-        input.excluded_chunk_ids,
+        input.plan.excluded_chunk_ids(),
     )?;
 
     let decomposition_metrics = if input.lowerings.is_empty() {
@@ -53,10 +50,9 @@ pub fn write_js_tree(input: &WriteTreeInput) -> Result<()> {
 
     write_common_emission_reports(
         &layout,
-        input.files,
+        input.plan,
         input.chunk_records,
         input.decomposition_by_chunk,
-        input.excluded_chunk_ids,
     )?;
     let manifest = ArtifactManifest {
         counts: input.counts.clone(),
@@ -78,11 +74,12 @@ pub fn write_js_tree(input: &WriteTreeInput) -> Result<()> {
 /// output.
 pub fn write_common_emission_reports(
     layout: &DebundleOutputLayout,
-    files: &EmissionFiles,
+    plan: &ValidatedPlan,
     chunk_records: &[ArtifactChunkRecord],
     decomposition_by_chunk: &HashMap<ChunkId, ChunkDecompositionOutput>,
-    excluded_chunk_ids: &BTreeSet<ChunkId>,
 ) -> Result<()> {
+    let files = plan.files();
+    let excluded_chunk_ids = plan.excluded_chunk_ids();
     let queue = compute_identifier_rename_queue(files, decomposition_by_chunk, excluded_chunk_ids)?;
     write_json(layout.rename_queue_report(), &queue)?;
     write_json(

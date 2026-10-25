@@ -233,6 +233,21 @@ rust_test(
 )
 
 rust_library(
+    name = "reconstruction",
+    srcs = ["reconstruction.rs"],
+    crate_root = "reconstruction.rs",
+    edition = "2024",
+    deps = [
+        ":artifact",
+        ":spec",
+        ":validate_emitted_exports",
+        ":vendor",
+        "@crates//:anyhow",
+        "@crates//:serde",
+    ],
+)
+
+rust_library(
     name = "write_tree",
     srcs = ["artifacts/write_tree.rs"],
     crate_root = "artifacts/write_tree.rs",
@@ -241,6 +256,7 @@ rust_library(
         ":artifact",
         ":identifier_rename_queue",
         ":output_layout",
+        ":reconstruction",
         "@crates//:anyhow",
     ],
 )
@@ -382,6 +398,7 @@ rust_library(
     deps = [
         ":artifact",
         ":output_layout",
+        ":reconstruction",
         ":spec",
         ":write_tree",
         "@crates//:anyhow",
@@ -823,6 +840,7 @@ rust_library(
         ":js_ast",
         ":output_layout",
         ":program_analysis",
+        ":reconstruction",
         ":selector_outcome",
         ":selector_resolve",
         ":source_match",
@@ -919,10 +937,10 @@ rust_library(
         ":prepare_chunks",
         ":prune_dead_imports",
         ":prune_module_exports",
+        ":reconstruction",
         ":spec",
         ":spec_modules",
         ":spec_tree",
-        ":validate_emitted_exports",
         ":vendor",
         ":write_tree",
         "@crates//:anyhow",

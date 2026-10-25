@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashMap};
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::{cell::RefCell, rc::Rc};
@@ -9,11 +9,12 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 use artifact::{
-    ArtifactChunkRecord, ChunkBundle, ChunkDecompositionOutput, ChunkId, EmissionFiles,
-    OutputMetrics, chunk_id_for_js_path, get_chunk_entry_path, materialize_artifact_scripts,
+    ArtifactChunkRecord, ChunkBundle, ChunkDecompositionOutput, ChunkId, OutputMetrics,
+    chunk_id_for_js_path, get_chunk_entry_path, materialize_artifact_scripts,
     module_path_from_path, normalize_module_path, path_from_module_path, write_json,
 };
 use output_layout::DebundleOutputLayout;
+use reconstruction::ValidatedPlan;
 use spec::EmitBrowserHarnessConfig;
 use write_tree::write_common_emission_reports;
 
@@ -58,18 +59,19 @@ struct HtmlEntries {
 }
 
 /// `chunk_records` carries the emission set only (the caller drops
-/// records of excluded chunks); `excluded_chunk_ids` lists chunks
+/// records of excluded chunks); the validated plan identifies chunks
 /// excluded from emission (fully vendor-swapped) — their files are not
 /// written, they contribute nothing to the rename queue, and an HTML
 /// entry/preload referencing one is rejected the same as a chunk the
 /// snapshot manifest never contained.
 pub fn emit_browser_harness(
-    files: &EmissionFiles,
+    plan: &ValidatedPlan,
     options: &EmitBrowserHarnessConfig,
     chunk_records: &[ArtifactChunkRecord],
     decomposition_by_chunk: &HashMap<ChunkId, ChunkDecompositionOutput>,
-    excluded_chunk_ids: &BTreeSet<ChunkId>,
 ) -> Result<()> {
+    let files = plan.files();
+    let excluded_chunk_ids = plan.excluded_chunk_ids();
     let artifact = files.files();
     let asset_summary_raw = fs::read_to_string(&options.asset_summary_path)
         .with_context(|| format!("reading {}", options.asset_summary_path.display()))?;
@@ -133,13 +135,7 @@ pub fn emit_browser_harness(
 
     fs::write(app_root.join("index.html"), index_html)?;
     fs::write(app_root.join("bootstrap.js"), bootstrap)?;
-    write_common_emission_reports(
-        &layout,
-        files,
-        chunk_records,
-        decomposition_by_chunk,
-        excluded_chunk_ids,
-    )?;
+    write_common_emission_reports(&layout, plan, chunk_records, decomposition_by_chunk)?;
     let runtime = HarnessRuntimeReport {
         app_root: format!("../{}", output_layout::APP_DIR),
         copied_assets,

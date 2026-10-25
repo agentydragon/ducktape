@@ -18,6 +18,14 @@ semantic intent and do not change the spec unless an author explicitly applies
 an edit. A new upstream snapshot needs its own reviewed spec and exact validation
 against that snapshot.
 
+## Accepted output
+
+Unresolved claims prevent acceptance. A run may write diagnostic reports for a
+rejected spec, but writes the reconstructed JS tree, browser harness, and vendor
+assets only after final program validation. Final checks inspect the exact
+reconstructed syntax, including synthesized imports and exports and vendor
+replacement. Emission consumes an immutable validated plan.
+
 ## Entities
 
 An **entity** is one thing a spec places in a chunk: a module member, a
