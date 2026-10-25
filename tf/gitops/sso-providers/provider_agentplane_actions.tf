@@ -41,13 +41,6 @@ resource "authentik_policy_binding" "agentplane_actions_access" {
   order  = 0
 }
 
-# Resolve the existing managed user by primary key, NEVER by display name or a
-# newly provisioned identity. The provider's CoreUsersRetrieve response exposes
-# uid and uuid; no token exchange, guessed UUID, or local hash derivation needed.
-data "authentik_user" "agentplane_operator" {
-  pk = tonumber(authentik_user.agentydragon.id)
-}
-
 locals {
   agentplane_actions_issuer = "https://auth.allegedly.works/application/o/${authentik_application.agentplane_actions.slug}/"
 }

@@ -74,9 +74,9 @@ resource "kubernetes_secret_v1" "gitlab_spike_oidc" {
         }
       }
     })
-    subject  = data.authentik_user.agentplane_operator.uid
-    username = data.authentik_user.agentplane_operator.username
-    email    = data.authentik_user.agentplane_operator.email
-    name     = data.authentik_user.agentplane_operator.name
+    subject  = data.authentik_user.agentydragon.uid
+    username = data.authentik_user.agentydragon.username
+    email    = data.authentik_user.agentydragon.email
+    name     = data.authentik_user.agentydragon.name
   }
 }
