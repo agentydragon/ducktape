@@ -22,12 +22,9 @@ the replicated-class and Seaweed-reduction work, and the separate Wyrm2/NixOS ph
 
 ## Retire OVH local-path
 
-The OVH local-path classes are gone; two records remain:
-
-- `haku-sandbox/haku-anki-collection`: drop its declaration from haku-state
-  `k8s/haku-anki/`, then delete its PV on the wiped `ovh-ns103711`.
-- The Released OptiPlex Piraeus PV for
-  `home-assistant/volsync-dst-optiplex-migration-ha-piraeus-restore-cache`.
+The OVH local-path classes are gone. One record remains: the Released
+OptiPlex Piraeus PV for
+`home-assistant/volsync-dst-optiplex-migration-ha-piraeus-restore-cache`.
 
 Parked manifests under `cluster/parked/` still name OVH local-path classes;
 repoint them to Piraeus on revival.
