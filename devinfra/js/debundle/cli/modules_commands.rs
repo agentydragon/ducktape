@@ -7,8 +7,9 @@ use crate::module_apply::{ModulesApplyArgs, run_modules_apply};
 use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, Subcommand};
 use peel::propose::{
-    DEFAULT_SIZE_CAP_LINES, ModuleDecompositionReport, ModuleDecompositionStrategy,
-    ProposalOptions, decompose_modules_from_files_with_strategy,
+    DEFAULT_SIZE_CAP_LINES, ModuleDecompositionCoarseningMode, ModuleDecompositionOptions,
+    ModuleDecompositionReport, ModuleDecompositionStrategy, ProposalOptions,
+    decompose_modules_from_files_with_options,
 };
 use peel::{CommonArgs, OutputFormat, PlanWorkArgs, run_plan_work_report};
 use std::path::PathBuf;
@@ -106,6 +107,11 @@ struct ModuleDecomposeArgs {
     /// Top-level import and export declarations stay in the entry module.
     #[arg(long, requires = "atomic")]
     include_residual: bool,
+
+    /// With `--atomic`, merge only module groups named by blocking SCCs from
+    /// the shared gate, revalidating the complete candidate after each round.
+    #[arg(long, requires = "atomic")]
+    coarsen_blocking_sccs: bool,
 }
 
 /// Args for `debundle modules list`.
@@ -285,6 +291,40 @@ fn render_module_decomposition_text(report: &ModuleDecompositionReport, out: &mu
             report.cross_rebinds.len()
         ));
     }
+    if let Some(coarsening) = &report.coarsening {
+        out.push_str(&format!(
+            "SCC coarsening stopped: {:?}; rounds={}\n",
+            coarsening.stop_reason,
+            coarsening.rounds.len()
+        ));
+        for (round_idx, round) in coarsening.rounds.iter().enumerate() {
+            out.push_str(&format!(
+                "  round {}: merged {} blocking SCC(s) into {}\n",
+                round_idx + 1,
+                round.blocking_sccs.len(),
+                round
+                    .suggested_merge_paths
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            ));
+        }
+        for group in &coarsening.groups {
+            out.push_str(&format!(
+                "  final {}  origins={} owners={} bindings={}\n",
+                group.suggested_module_path,
+                group
+                    .origin_module_paths
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                group.owner_ids.join(", "),
+                group.binding_ids.join(", "),
+            ));
+        }
+    }
 }
 
 fn run_module_decompose(args: ModuleDecomposeArgs) -> Result<()> {
@@ -292,7 +332,7 @@ fn run_module_decompose(args: ModuleDecomposeArgs) -> Result<()> {
         !args.include_residual || args.atomic,
         "--include-residual requires --atomic"
     );
-    let report = decompose_modules_from_files_with_strategy(
+    let report = decompose_modules_from_files_with_options(
         &ProposalOptions {
             owner_graph_path: args.common.owner_graph_path,
             modules_root: args.common.modules_root,
@@ -300,14 +340,21 @@ fn run_module_decompose(args: ModuleDecomposeArgs) -> Result<()> {
             source_root: None,
             size_cap_lines: DEFAULT_SIZE_CAP_LINES,
         },
-        if args.atomic {
-            if args.include_residual {
-                ModuleDecompositionStrategy::AtomicIncludingResidual
+        ModuleDecompositionOptions {
+            strategy: if args.atomic {
+                if args.include_residual {
+                    ModuleDecompositionStrategy::AtomicIncludingResidual
+                } else {
+                    ModuleDecompositionStrategy::Atomic
+                }
             } else {
-                ModuleDecompositionStrategy::Atomic
-            }
-        } else {
-            ModuleDecompositionStrategy::Seed
+                ModuleDecompositionStrategy::Seed
+            },
+            coarsening: if args.coarsen_blocking_sccs {
+                ModuleDecompositionCoarseningMode::MergeBlockingSccs
+            } else {
+                ModuleDecompositionCoarseningMode::None
+            },
         },
     )?;
     emit_report(
