@@ -1824,3 +1824,194 @@ fn altered_retained_object_cannot_hide_an_early_accessor_read() {
         &[],
     );
 }
+
+#[test]
+fn namespace_factory_ignores_adjacent_fresh_error_metadata_writes() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import { api } from './peer.js';\n\
+             function helper(result, message, first, second) {\n\
+               globalThis.fixtureValue = 1;\n\
+               Object.keys(globalThis);\n\
+               Object.getOwnPropertyDescriptor(globalThis, 'Error');\n\
+               return (result = Error(message), result.name = 'factory', result.error = first, result.suppressed = second, result);\n\
+             }\n\
+             const wrapped = api.make(() => later);\n\
+             const later = 42;\n\
+             const error = helper(null, 'message', 1, 2);\n\
+             console.log(wrapped.invoke(), error.name, error.error, error.suppressed);\n",
+            modules(),
+        )
+        .with_extra_chunks(&[(
+            "static/peer",
+            "export const api = { make(callback) { return { invoke: () => callback() }; } };\n",
+        )])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+            .with_callback_factory_members("api", &["make"])
+            .build()]),
+    );
+    assert_preserved_entry_output(&fixture, "42 factory 1 2\n");
+}
+
+#[test]
+fn fresh_error_metadata_proof_keeps_namespace_mutation_conservative() {
+    let peers = [(
+        "static/peer",
+        "export const api = { make(callback) { return { invoke: () => callback() }; } };\n",
+    )];
+    let contracts = [ChunkExportPurityBuilder::new("static/peer")
+        .with_callback_factory_members("api", &["make"])
+        .build()];
+    for (helper, setup, has_global_alias) in [
+        (
+            "function helper(result, first) { result.make = first; return (result = Error('x'), result.make = first, result); }",
+            None,
+            false,
+        ),
+        (
+            "function helper(result, first) { function Error() { return api; } return (result = Error('x'), result.make = first, result); }",
+            None,
+            false,
+        ),
+        (
+            "function helper(result, first) { return (result = Error('x', { cause: api }).cause, result.make = first, result); }",
+            None,
+            false,
+        ),
+        (
+            "function helper(result, first) { function replace() { result = api; } return (result = Error('x'), replace(), result.make = first, result); }",
+            None,
+            false,
+        ),
+        (
+            "function helper(result, first) { return (result = lookup(), result.make = first, result); } function lookup() { return api; }",
+            None,
+            false,
+        ),
+        (
+            "function helper(result, first) { return (result = Error('x'), result.make = first, result); } globalThis.Error = function() { return api; };",
+            Some("globalThis.Error = function() { return api; };"),
+            false,
+        ),
+        (
+            "function helper(result, first) { return (result = Error('x'), result.make = first, result); } globalThis['Error'] = function() { return api; };",
+            Some("globalThis['Error'] = function() { return api; };"),
+            false,
+        ),
+        (
+            "function helper(result, first) { return (result = Error('x'), result.make = first, result); } Reflect.set(globalThis, 'Error', function() { return api; });",
+            Some("Reflect.set(globalThis, 'Error', function() { return api; });"),
+            false,
+        ),
+        (
+            "function helper(result, first) { return (result = Error('x'), result.make = first, result); } Object.defineProperty(globalThis, 'Error', { value: function() { return api; } });",
+            Some(
+                "Object.defineProperty(globalThis, 'Error', { value: function() { return api; } });",
+            ),
+            false,
+        ),
+        (
+            "function helper(result, first) { return (result = Error('x'), result.make = first, result); } const globalAlias = globalThis; globalAlias.Error = function() { return api; };",
+            Some("globalAlias.Error = function() { return api; };"),
+            true,
+        ),
+        (
+            "function helper(result, first) { return (result = Error('x'), result.make = first, result); } Error = function() { return api; };",
+            Some("Error = function() { return api; };"),
+            false,
+        ),
+    ] {
+        let source = format!(
+            "import {{ api }} from './peer.js';\n{helper}\n\
+             function eager(callback) {{ const value = callback(); return {{ invoke: () => value }}; }}\n\
+             helper(api, eager);\n\
+             let later = 0;\nconst wrapped = api.make(() => later);\n\
+             later = 42;\nconsole.log(wrapped.invoke());\n"
+        );
+        let mut callback_members = vec![
+            Member::new("wrapped"),
+            Member::new("helper"),
+            Member::new("eager"),
+        ];
+        if has_global_alias {
+            callback_members.push(Member::new("globalAlias"));
+        }
+        let mut callback_statements = vec!["helper(api, eager);"];
+        if let Some(setup) = setup {
+            callback_statements.push(setup);
+        }
+        expect_atomic_conflict_rejection(
+            FixtureOpts::new(
+                &source,
+                vec![
+                    logical_module_with_anon(
+                        "callbacks/wrapped",
+                        &callback_members,
+                        &callback_statements,
+                    ),
+                    logical_module_with_anon(
+                        "values/later",
+                        &[Member::new("later")],
+                        &["later = 42;"],
+                    ),
+                ],
+            )
+            .with_extra_chunks(&peers)
+            .with_chunk_export_purity(&contracts),
+            &["callbacks/wrapped", "values/later"],
+            &[],
+        );
+        let fixture = run_fixture(
+            FixtureOpts::new(&source, vec![])
+                .with_extra_chunks(&peers)
+                .with_chunk_export_purity(&contracts),
+        );
+        assert_preserved_entry_output(&fixture, "0\n");
+    }
+}
+
+#[test]
+fn fresh_error_metadata_proof_requires_every_write_to_be_adjacent() {
+    let peers = [(
+        "static/peer",
+        "export const api = { make(callback) { return { invoke: () => callback() }; } };\n",
+    )];
+    let contracts = [ChunkExportPurityBuilder::new("static/peer")
+        .with_callback_factory_members("api", &["make"])
+        .build()];
+    for body in [
+        "result.name = 'before'; return (result = Error(message), result.name = 'factory', result);",
+        "return (result = Error(message), noop(), result.name = 'factory', result);",
+        "return (result = Error(message), result.name = 'factory', result.name += 'suffix', result);",
+        "return (result = Error(message), result.stack = 'factory', result);",
+        "return (result = Error(message), result.__proto__ = null, result);",
+        "return (result = Error(message), result.name = unknownValue, result);",
+    ] {
+        let source = format!(
+            "import {{ api }} from './peer.js';\n\
+             function noop() {{}}\n\
+             function helper(result, message) {{ {body} }}\n\
+             const wrapped = api.make(() => later);\n\
+             const later = 42;\nconsole.log(wrapped.invoke());\n"
+        );
+        expect_atomic_conflict_rejection(
+            FixtureOpts::new(&source, modules())
+                .with_extra_chunks(&peers)
+                .with_chunk_export_purity(&contracts),
+            &["callbacks/wrapped", "values/later"],
+            &[],
+        );
+        let fixture = run_fixture(
+            FixtureOpts::new(
+                &source,
+                vec![logical_module(
+                    "callbacks/wrapped",
+                    &[Member::new("wrapped"), Member::new("later")],
+                )],
+            )
+            .with_extra_chunks(&peers)
+            .with_chunk_export_purity(&contracts),
+        );
+        assert_preserved_entry_output(&fixture, "42\n");
+    }
+}

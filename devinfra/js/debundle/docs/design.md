@@ -1584,6 +1584,21 @@ member names`, it projects onto each importing chunk's local binding
   patch intrinsics would need the affected whitelist entries
   disabled for soundness.)
 
+The [ECMA-262 Error constructor](https://tc39.es/ecma262/#sec-error-message)
+allocates a fresh ordinary error object. Adjacent writes to a direct global
+`Error(...)` result within one sequence
+expression cannot mutate an imported factory namespace under A11. The execution
+index retains this temporal proof only for simple static writes to the same local
+receiver, with inert values or declared local reads, excluding `__proto__` and
+`stack`. Any intervening expression ends the proof. Every matching write in that
+owner and callable must have a proof; earlier writes through an incoming parameter
+remain conservative. Argument evaluation, reads, calls, RHS namespace publication,
+and general alias propagation retain their ordinary effects. Shadowed `Error`,
+dynamic scope, visible intrinsic reassignment, writes to a global object's `Error` or unknown
+computed property, and `Object`/`Reflect` mutator calls targeting that intrinsic
+disable the proof. Simple local aliases of those roots are included. Hidden mutation paths
+and external prototype pollution remain the author's A11 obligation.
+
 A1–A5 are statically checkable per chunk, each enforced to the
 strength stated on its bullet above (A1/A3/A5 by the `chunk_admission`
 scan, A2 by the TLA scan, A4 at parse). The admission scan is on by

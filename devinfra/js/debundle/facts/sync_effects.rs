@@ -1496,6 +1496,58 @@ fn is_callback_forwarder(expr: &Expr, callback: &Id) -> bool {
         && matches!(&call.callee, Callee::Expr(callee) if matches!(callee.unwrap_parens(), Expr::Ident(ident) if ident.to_id() == *callback)))
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum ErrorIntrinsicRoot {
+    GlobalObject,
+    Error,
+}
+
+fn error_intrinsic_root(
+    value: &ValueExpr,
+    roots: &BTreeMap<Id, ErrorIntrinsicRoot>,
+    globals: &BTreeSet<&str>,
+) -> Option<ErrorIntrinsicRoot> {
+    match value {
+        ValueExpr::Binding(id) if id.0.as_ref() == "Error" => Some(ErrorIntrinsicRoot::Error),
+        ValueExpr::Binding(id) if globals.contains(id.0.as_ref()) => {
+            Some(ErrorIntrinsicRoot::GlobalObject)
+        }
+        ValueExpr::Binding(id) => roots.get(id).copied(),
+        ValueExpr::Member(base, property, _) => match error_intrinsic_root(base, roots, globals)? {
+            ErrorIntrinsicRoot::Error => Some(ErrorIntrinsicRoot::Error),
+            ErrorIntrinsicRoot::GlobalObject
+                if property.as_ref().is_none_or(|name| name == "Error") =>
+            {
+                Some(ErrorIntrinsicRoot::Error)
+            }
+            ErrorIntrinsicRoot::GlobalObject => None,
+        },
+        _ => None,
+    }
+}
+
+fn intrinsic_write_target(member: &MemberExpr) -> ValueExpr {
+    ValueExpr::Member(
+        Box::new(ValueExpr::from_expr(&member.obj)),
+        static_prop(&member.prop),
+        matches!(member.prop, MemberProp::Ident(_)),
+    )
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct FreshErrorWriteSite {
+    owner: StatementOrdinal,
+    callable: Option<u32>,
+    receiver: Id,
+    property: String,
+}
+
+struct FreshErrorWriteClaim {
+    site: FreshErrorWriteSite,
+    callee: Id,
+    local_read: Option<Id>,
+}
+
 struct ExecutionIndex {
     owner: StatementOrdinal,
     current: Option<u32>,
@@ -1515,6 +1567,8 @@ struct ExecutionIndex {
     plain_data_objects: BTreeSet<u32>,
     map_entry_arrays: BTreeSet<u32>,
     reassigned_map: bool,
+    fresh_error_claims: Vec<FreshErrorWriteClaim>,
+    intrinsic_mutation_receivers: Vec<ValueExpr>,
     setter_owners: BTreeMap<Option<String>, BTreeSet<StatementOrdinal>>,
     hoisted_nested_functions: BTreeSet<u32>,
     owner_callable_prefix_reads: Vec<Option<BTreeSet<Id>>>,
@@ -1566,6 +1620,8 @@ impl Default for ExecutionIndex {
             plain_data_objects: BTreeSet::new(),
             map_entry_arrays: BTreeSet::new(),
             reassigned_map: false,
+            fresh_error_claims: Vec::new(),
+            intrinsic_mutation_receivers: Vec::new(),
             setter_owners: BTreeMap::new(),
             hoisted_nested_functions: BTreeSet::new(),
             owner_callable_prefix_reads: Vec::new(),
@@ -1599,7 +1655,11 @@ impl Default for ExecutionIndex {
 }
 
 impl ExecutionIndex {
-    fn collect(body: &[TopLevelItemView<'_>], hints: &AnalysisHints) -> Self {
+    fn collect(
+        body: &[TopLevelItemView<'_>],
+        hints: &AnalysisHints,
+        flow: Option<&ChunkValueFlow>,
+    ) -> Self {
         let mut index = Self {
             top_calls: vec![Vec::new(); body.len()],
             owner_callable_prefix_reads: vec![None; body.len()],
@@ -1694,6 +1754,91 @@ impl ExecutionIndex {
             index.class_values.clone(),
             &namespace_assignments,
         );
+        let mut claim_counts = BTreeMap::<FreshErrorWriteSite, usize>::new();
+        if !index.fresh_error_claims.is_empty()
+            && !index.callback_factory_members.is_empty()
+            && flow.is_some()
+        {
+            // A11 supplies the standard Error allocation/prototype behavior. Reject
+            // visible replacement of that intrinsic, including writes through local
+            // aliases of a known global object. This is not a general effect proof.
+            let mut intrinsic_roots = BTreeMap::new();
+            loop {
+                let mut changed = false;
+                for (id, value) in &namespace_assignments {
+                    if let Some(root) =
+                        error_intrinsic_root(value, &intrinsic_roots, &index.global_object_names)
+                    {
+                        let combined = intrinsic_roots
+                            .get(id)
+                            .copied()
+                            .map_or(root, |previous| previous.max(root));
+                        if intrinsic_roots.get(id) != Some(&combined) {
+                            intrinsic_roots.insert((*id).clone(), combined);
+                            changed = true;
+                        }
+                    }
+                }
+                if !changed {
+                    break;
+                }
+            }
+            let intrinsic_mutated = namespace_assignments
+                .iter()
+                .any(|(id, _)| id.0.as_ref() == "Error")
+                || index.intrinsic_mutation_receivers.iter().any(|receiver| {
+                    error_intrinsic_root(receiver, &intrinsic_roots, &index.global_object_names)
+                        .is_some()
+                });
+            if !intrinsic_mutated
+                && index.dynamic_scope_owners.is_empty()
+                && let Some(flow) = flow
+            {
+                for claim in &index.fresh_error_claims {
+                    if !flow.is_declared(&claim.callee)
+                        && claim
+                            .local_read
+                            .as_ref()
+                            .is_none_or(|id| flow.is_declared(id))
+                    {
+                        *claim_counts.entry(claim.site.clone()).or_default() += 1;
+                    }
+                }
+            }
+            let mut write_counts = BTreeMap::<FreshErrorWriteSite, usize>::new();
+            let mut count_writes = |owner, callable, writes: &[CallbackResultWrite]| {
+                for write in writes {
+                    if let (ValueExpr::Binding(receiver), Some(property)) =
+                        (&write.receiver, &write.property)
+                    {
+                        *write_counts
+                            .entry(FreshErrorWriteSite {
+                                owner,
+                                callable,
+                                receiver: receiver.clone(),
+                                property: property.clone(),
+                            })
+                            .or_default() += 1;
+                    }
+                }
+            };
+            for (owner, writes) in index.top_callback_result_writes.iter().enumerate() {
+                count_writes(StatementOrdinal(owner), None, writes);
+            }
+            for (key, callable) in &index.callables {
+                count_writes(callable.owner, Some(*key), &callable.callback_result_writes);
+            }
+            claim_counts.retain(|site, count| write_counts.get(site) == Some(count));
+        }
+        let certified = |owner, callable, receiver: &Id, property: &str| {
+            claim_counts.contains_key(&FreshErrorWriteSite {
+                owner,
+                callable,
+                receiver: receiver.clone(),
+                property: property.to_owned(),
+            })
+        };
+        let certified_callback_write = |owner, callable, write: &CallbackResultWrite| matches!((&write.receiver, &write.property), (ValueExpr::Binding(receiver), Some(property)) if certified(owner, callable, receiver, property));
         // A namespace member is an audited target only while its binding is
         // unchanged. Any local write could replace a member with an eager
         // callback invoker before the apparent factory call.
@@ -1711,15 +1856,22 @@ impl ExecutionIndex {
                 .iter()
                 .enumerate()
                 .filter(|(owner, _)| !writes.contains(&StatementOrdinal(*owner)))
-                .flat_map(|(_, writes)| writes)
-                .any(|(receiver, property)| {
+                .flat_map(|(owner, writes)| {
+                    writes
+                        .iter()
+                        .map(move |write| (StatementOrdinal(owner), write))
+                })
+                .any(|(owner, (receiver, property))| {
                     receiver.as_ref().is_some_and(|receiver| {
-                        (receiver == id
-                            && property
-                                .as_ref()
-                                .is_none_or(|property| members.contains(property)))
-                            || aliases.contains(receiver)
-                            || receiver_aliases.contains(receiver)
+                        !property
+                            .as_ref()
+                            .is_some_and(|property| certified(owner, None, receiver, property))
+                            && ((receiver == id
+                                && property
+                                    .as_ref()
+                                    .is_none_or(|property| members.contains(property)))
+                                || aliases.contains(receiver)
+                                || receiver_aliases.contains(receiver))
                     })
                 });
             let top_dynamic_write = index
@@ -1732,18 +1884,24 @@ impl ExecutionIndex {
                 .iter()
                 .enumerate()
                 .filter(|(owner, _)| !writes.contains(&StatementOrdinal(*owner)))
-                .flat_map(|(_, writes)| writes)
-                .any(|write| {
-                    is_mutation_receiver(&write.receiver)
+                .flat_map(|(owner, writes)| {
+                    writes
+                        .iter()
+                        .map(move |write| (StatementOrdinal(owner), write))
+                })
+                .any(|(owner, write)| {
+                    (is_mutation_receiver(&write.receiver)
+                        && !certified_callback_write(owner, None, write))
                         || write
                             .value
                             .may_publish_namespace(id, &aliases, &namespace_value_facts)
                 });
-            let callable_write = index.callables.values().any(|callable| {
+            let callable_write = index.callables.iter().any(|(key, callable)| {
                 callable.member_writes.iter().any(|(receiver, property)| {
-                    (receiver == id && members.contains(property))
-                        || aliases.contains(receiver)
-                        || receiver_aliases.contains(receiver)
+                    !certified(callable.owner, Some(*key), receiver, property)
+                        && ((receiver == id && members.contains(property))
+                            || aliases.contains(receiver)
+                            || receiver_aliases.contains(receiver))
                 }) || callable
                     .dynamic_property_receivers
                     .iter()
@@ -1757,7 +1915,8 @@ impl ExecutionIndex {
                         value.may_publish_namespace(id, &aliases, &namespace_value_facts)
                     })
                     || callable.callback_result_writes.iter().any(|write| {
-                        is_mutation_receiver(&write.receiver)
+                        (is_mutation_receiver(&write.receiver)
+                            && !certified_callback_write(callable.owner, Some(*key), write))
                             || write.value.may_publish_namespace(
                                 id,
                                 &aliases,
@@ -2493,12 +2652,67 @@ impl Visit for ExecutionIndex {
         }
     }
 
+    fn visit_seq_expr(&mut self, sequence: &SeqExpr) {
+        let mut fresh: Option<(Id, Id)> = None;
+        for expression in &sequence.exprs {
+            let mut continues = false;
+            if let Expr::Assign(assignment) = expression.unwrap_parens()
+                && assignment.op == AssignOp::Assign
+            {
+                if let AssignTarget::Simple(SimpleAssignTarget::Ident(receiver)) = &assignment.left
+                    && let Expr::Call(call) = assignment.right.unwrap_parens()
+                    && let Callee::Expr(callee) = &call.callee
+                    && let Expr::Ident(callee) = callee.unwrap_parens()
+                    && callee.sym == "Error"
+                {
+                    fresh = Some((receiver.id.to_id(), callee.to_id()));
+                    continues = true;
+                } else if let Some((receiver, callee)) = &fresh
+                    && let AssignTarget::Simple(SimpleAssignTarget::Member(member)) =
+                        &assignment.left
+                    && matches!(member.obj.unwrap_parens(), Expr::Ident(id) if id.to_id() == *receiver)
+                    && let Some(property) = static_prop(&member.prop)
+                    && property != "__proto__"
+                    && property != "stack"
+                {
+                    let local_read = match assignment.right.unwrap_parens() {
+                        Expr::Ident(id) => Some(id.to_id()),
+                        _ => None,
+                    };
+                    if local_read.is_some() || value_without_user_code(&assignment.right) {
+                        if !self.past_await {
+                            self.fresh_error_claims.push(FreshErrorWriteClaim {
+                                site: FreshErrorWriteSite {
+                                    owner: self.owner,
+                                    callable: self.current,
+                                    receiver: receiver.clone(),
+                                    property,
+                                },
+                                callee: callee.clone(),
+                                local_read,
+                            });
+                        }
+                        continues = true;
+                    }
+                }
+            }
+            if !continues {
+                fresh = None;
+            }
+            expression.visit_with(self);
+        }
+    }
+
     fn visit_assign_expr(&mut self, assignment: &AssignExpr) {
         if matches!(&assignment.left,
             AssignTarget::Simple(SimpleAssignTarget::Ident(binding))
                 if binding.id.sym == "Map")
         {
             self.reassigned_map = true;
+        }
+        if let AssignTarget::Simple(SimpleAssignTarget::Member(member)) = &assignment.left {
+            self.intrinsic_mutation_receivers
+                .push(intrinsic_write_target(member));
         }
         let before_assignment = self.past_await;
         assignment.visit_children_with(self);
@@ -2621,12 +2835,19 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_update_expr(&mut self, expression: &UpdateExpr) {
+        if matches!(expression.arg.unwrap_parens(), Expr::Ident(id) if id.sym == "Error") {
+            self.intrinsic_mutation_receivers
+                .push(ValueExpr::from_expr(&expression.arg));
+        }
+
         if matches!(expression.arg.unwrap_parens(), Expr::Ident(ident) if ident.sym == "Map") {
             self.reassigned_map = true;
         }
         expression.visit_children_with(self);
         self.record_implicit_coercion(&expression.arg, expression.span);
         if let Expr::Member(member) = expression.arg.unwrap_parens() {
+            self.intrinsic_mutation_receivers
+                .push(intrinsic_write_target(member));
             self.mark_dynamic_property_effect(Some(&member.obj));
         }
         self.mark_opaque();
@@ -2643,6 +2864,8 @@ impl Visit for ExecutionIndex {
         if expression.op == UnaryOp::Delete
             && let Expr::Member(member) = expression.arg.unwrap_parens()
         {
+            self.intrinsic_mutation_receivers
+                .push(intrinsic_write_target(member));
             self.mark_dynamic_property_effect(Some(&member.obj));
         }
     }
@@ -2671,6 +2894,44 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_call_expr(&mut self, call: &CallExpr) {
+        if let Callee::Expr(callee) = &call.callee
+            && let Expr::Member(member) = callee.unwrap_parens()
+            && matches!(member.obj.unwrap_parens(), Expr::Ident(id) if id.sym == "Object" || id.sym == "Reflect")
+            && static_prop(&member.prop).as_deref().is_none_or(|method| {
+                matches!(
+                    method,
+                    "set"
+                        | "defineProperty"
+                        | "defineProperties"
+                        | "assign"
+                        | "setPrototypeOf"
+                        | "deleteProperty"
+                )
+            })
+            && let Some(argument) = call.args.first()
+        {
+            let receiver = ValueExpr::from_expr(&argument.expr);
+            let method = static_prop(&member.prop);
+            let target = if matches!(
+                method.as_deref(),
+                Some("set" | "defineProperty" | "deleteProperty")
+            ) {
+                let property =
+                    call.args
+                        .get(1)
+                        .and_then(|argument| match argument.expr.unwrap_parens() {
+                            Expr::Lit(Lit::Str(value)) => {
+                                Some(value.value.to_string_lossy().into_owned())
+                            }
+                            _ => None,
+                        });
+                ValueExpr::Member(Box::new(receiver), property, false)
+            } else {
+                receiver
+            };
+            self.intrinsic_mutation_receivers.push(target);
+        }
+
         let callback_argument = self.inline_factory_callback_argument(call);
         let is_factory_member_callee = self.literal_depth > 0
             && self.factory_callback_depth > 0
@@ -4766,7 +5027,7 @@ pub(crate) fn infer_returned_callback_factories(
     body: &[TopLevelItemView<'_>],
     exported_locals: &BTreeSet<String>,
 ) -> BTreeSet<String> {
-    let index = ExecutionIndex::collect(body, &AnalysisHints::default());
+    let index = ExecutionIndex::collect(body, &AnalysisHints::default(), None);
     if !index.dynamic_scope_owners.is_empty() {
         return BTreeSet::new();
     }
@@ -4803,7 +5064,7 @@ pub(crate) fn annotate_synchronous_calls(
     export_reentry_policy: ExportReentryPolicy,
     facts: &mut [StatementFacts],
 ) {
-    let index = ExecutionIndex::collect(body, hints);
+    let index = ExecutionIndex::collect(body, hints, Some(flow));
     // Every top-level call is executed by `top_calls`, regardless of whether
     // its result is retained. Keep an initializer's value only if a later
     // call may read it, directly or through another initializer/function.

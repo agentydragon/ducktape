@@ -312,6 +312,16 @@ audited factory call with one inline callback also retain the contract. Their
 values must run no user code; prototype writes and intervening statements end
 the proof. Rejecting the producing namespace's factory contract also removes
 this proof from its results.
+
+Under intrinsic integrity (A11), a sequence expression assigning a direct global
+`Error(...)` result to a local binding can retain the namespace contract through
+immediately following static property assignments to that binding. Values must
+be inert or declared local reads; `__proto__`, `stack`, and intervening
+expressions end the proof. Every matching write in that owner and callable must
+be proved. Calls, argument evaluation, and namespace publication through assigned
+values retain their ordinary checks. Shadowed or visibly replaced `Error` and
+dynamic scope remain conservative; see [design details](docs/design.md#conditions-on-the-input-chunk-assumptions-a1a11).
+
 Within a literal traversed inside an admitted inline callback, a direct static
 namespace member used as a call callee is analyzed as the callee expression,
 not as a captured namespace value. Call arguments and effects remain analyzed;
