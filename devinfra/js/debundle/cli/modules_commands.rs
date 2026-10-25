@@ -139,12 +139,16 @@ struct ModuleDecomposeArgs {
     #[arg(long, requires = "coarsen_blocking_sccs")]
     rejoin_original_modules: bool,
 
+    /// Limit speculative pair checks per original home across all rejoining
+    /// passes. Whole-home checks remain available; zero skips pair fallback.
+    #[arg(long, requires = "rejoin_original_modules")]
+    rejoin_pair_attempt_limit: Option<usize>,
+
     /// Source root used to resolve existing source-backed and relational claims.
     #[arg(long = "source-root", env = "DEBUNDLE_SOURCE_ROOT")]
     source_root: Option<PathBuf>,
 
-    /// Keep local intrinsic_alias members and source_match captures with their
-    /// resolved in-module referenced members.
+    /// Preserve local intrinsic_alias anchors and ambiguous source_match references.
     #[arg(long, requires = "source_root")]
     preserve_selector_anchors: bool,
 }
@@ -434,7 +438,7 @@ fn render_module_decomposition_text(report: &ModuleDecompositionReport, out: &mu
         }
         if let Some(rejoining) = &coarsening.original_home_rejoining {
             out.push_str(&format!(
-                "original-home rejoining stopped: {:?}; restored={}/{} groups={} largest_group_owners={} largest_group_origins={} contractions={}/{}\n",
+                "original-home rejoining stopped: {:?}; restored={}/{} groups={} largest_group_owners={} largest_group_origins={} contractions={}/{} budget_limited_homes={}\n",
                 rejoining.stop_reason,
                 rejoining.fully_restored_module_count,
                 rejoining.original_module_count,
@@ -443,6 +447,7 @@ fn render_module_decomposition_text(report: &ModuleDecompositionReport, out: &mu
                 rejoining.largest_group_origin_module_count,
                 rejoining.accepted_contractions,
                 rejoining.attempted_contractions,
+                rejoining.budget_limited_home_count,
             ));
         }
     }
@@ -478,6 +483,7 @@ fn run_module_decompose(args: ModuleDecomposeArgs) -> Result<()> {
             },
             preserve_selector_anchors: args.preserve_selector_anchors,
             rejoin_original_modules: args.rejoin_original_modules,
+            rejoin_pair_attempt_limit: args.rejoin_pair_attempt_limit,
             coarsen_atomic_conflicts: args.coarsen_atomic_conflicts,
         },
     )?;

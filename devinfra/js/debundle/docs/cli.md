@@ -474,6 +474,14 @@ different original homes remain intact. The final complete partition is checked
 again by the shared gate. A fully rejoined home gets its original path; other
 groups keep deterministic temporary paths.
 
+For a bounded authoring pass, add `--rejoin-pair-attempt-limit N`. This requires
+`--rejoin-original-modules` and limits speculative partial pair checks per
+original home across all passes. A zero limit still tries each whole-home
+contraction, including two-fragment homes. The default has no limit. The report
+lists `budget_limited_home_count` and `budget_limited_home_paths`; a
+`pair_attempt_limit_reached` stop reason means some homes still have untried
+pairs. A limited proposal still passes the same complete final gate.
+
 The `coarsening.original_home_rejoining` report lists fully restored and
 `unrestored_module_paths`, attempted and accepted contractions, final group
 count, and largest group size and origin count. An unrestored home may be split
