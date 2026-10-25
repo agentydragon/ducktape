@@ -277,4 +277,3 @@ def test_no_legacy_agent_diagnostic_rbac(agent_permission_resources: list[K8sRes
 
 if __name__ == "__main__":
     pytest_bazel.main()
-

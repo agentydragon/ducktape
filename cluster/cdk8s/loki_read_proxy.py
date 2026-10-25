@@ -252,4 +252,3 @@ def loki_read_proxy(
             "(auth_enabled:false) directly."
         ),
     )
-
