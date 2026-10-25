@@ -372,28 +372,6 @@ pub fn propose_from_graph(
     )
 }
 
-/// Build a seed-only decomposition candidate. It preserves current module
-/// labels unless a module has multiple same-module seed classes, and it does
-/// not run atomic-DAG reachability or greedy cross-module merges.
-pub fn decompose_modules_from_files(
-    options: &ProposalOptions,
-) -> Result<ModuleDecompositionReport> {
-    decompose_modules_from_files_with_strategy(options, ModuleDecompositionStrategy::Seed)
-}
-
-pub fn decompose_modules_from_files_with_strategy(
-    options: &ProposalOptions,
-    strategy: ModuleDecompositionStrategy,
-) -> Result<ModuleDecompositionReport> {
-    decompose_modules_from_files_with_options(
-        options,
-        ModuleDecompositionOptions {
-            strategy,
-            coarsening: ModuleDecompositionCoarseningMode::None,
-        },
-    )
-}
-
 #[derive(Debug, Clone, Copy)]
 pub struct ModuleDecompositionOptions {
     pub strategy: ModuleDecompositionStrategy,
@@ -410,28 +388,6 @@ pub fn decompose_modules_from_files_with_options(
     )
     .with_context(|| format!("parsing {}", options.owner_graph_path.display()))?;
     decompose_modules_from_graph_with_options(&graph, options, decomposition)
-}
-
-pub fn decompose_modules_from_graph(
-    graph: &OwnerGraphReport,
-    options: &ProposalOptions,
-) -> Result<ModuleDecompositionReport> {
-    decompose_modules_from_graph_with_strategy(graph, options, ModuleDecompositionStrategy::Seed)
-}
-
-pub fn decompose_modules_from_graph_with_strategy(
-    graph: &OwnerGraphReport,
-    options: &ProposalOptions,
-    strategy: ModuleDecompositionStrategy,
-) -> Result<ModuleDecompositionReport> {
-    decompose_modules_from_graph_with_options(
-        graph,
-        options,
-        ModuleDecompositionOptions {
-            strategy,
-            coarsening: ModuleDecompositionCoarseningMode::None,
-        },
-    )
 }
 
 pub fn decompose_modules_from_graph_with_options(
