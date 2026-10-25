@@ -474,11 +474,11 @@ To retain as many original semantic homes as the accepted partition permits,
 add `--rejoin-original-modules` to the SCC coarsening command. This requires
 `--coarsen-blocking-sccs` and starts only after its complete candidate passes
 the shared gate. It contracts whole candidate groups when every owner in both
-groups came from the same original module, checking each contraction through
-the quotient's incremental realizability gate. Groups that already combine
-different original homes remain intact. The final complete partition is checked
-again by the shared gate. A fully rejoined home gets its original path; other
-groups keep deterministic temporary paths.
+groups came from the same original module. Each proposed contraction passes the
+full shared realizability gate on its hypothetical complete partition. Groups
+that already combine different original homes remain intact. The final complete
+partition passes that gate again. A fully rejoined home gets its original path;
+other groups keep deterministic temporary paths.
 
 For a bounded authoring pass, add `--rejoin-pair-attempt-limit N`. This requires
 `--rejoin-original-modules` and limits speculative partial pair checks per
@@ -493,9 +493,8 @@ requires `--rejoin-original-modules` and limits complete stable-order passes
 over pure original homes. Zero skips rejoining; one runs at most one pass. The
 report gives `whole_home_pass_count` and `whole_home_pass_limit`; when the cap
 stops a productive pass while pure homes remain split, the stop reason is
-`whole_home_pass_limit_reached`. The default remains exhaustive, and every
-accepted contraction plus the final complete partition still goes through the
-shared realizability gate.
+`whole_home_pass_limit_reached`. The default remains exhaustive; limits never
+bypass either gate check.
 
 The `coarsening.original_home_rejoining` report lists fully restored and
 `unrestored_module_paths`, attempted and accepted contractions, final group

@@ -174,17 +174,17 @@ Opt-in original-home rejoining starts only from a complete atomic/SCC candidate
 accepted by the shared realizability gate. It contracts whole candidate groups
 only when every owner in both groups has the same original module home; an
 existing mixed-home coarsened group is never split or joined to a pure group.
-Each contraction passes the quotient's incremental gate, and the final complete
-partition passes the shared gate again. The command reports a proposal and
-does not edit the spec. An optional per-home pair-attempt limit bounds partial
-fallback checks across all passes while preserving whole-home checks; the
-report identifies homes left with untried pairs. An optional whole-home pass
-limit bounds complete stable-order passes across original homes; zero skips
-rejoining and one permits at most one pass. If the limit stops a productive pass
-while pure homes remain split, the report says `whole_home_pass_limit_reached`
-and includes the actual `whole_home_pass_count`. The default remains exhaustive.
-Every preserving contraction still passes the incremental gate, and the final
-complete partition still passes the shared gate.
+Each proposed contraction passes the full shared realizability gate on its
+hypothetical complete partition, and the final partition passes that gate again.
+The command reports a proposal and does not edit the spec. An optional per-home
+pair-attempt limit bounds partial fallback checks across all passes while
+preserving whole-home checks; the report identifies homes left with untried
+pairs. An optional whole-home pass limit bounds complete stable-order passes
+across original homes; zero skips rejoining and one permits at most one pass.
+If the limit stops a productive pass while pure homes remain split, the report
+says `whole_home_pass_limit_reached` and includes the actual
+`whole_home_pass_count`. The default remains exhaustive;
+limits never bypass either gate check.
 
 With `--preserve-selector-anchors --source-root`, decomposition resolves
 authored selectors against their source chunks through the joint selector
