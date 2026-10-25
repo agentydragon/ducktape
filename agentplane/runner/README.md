@@ -202,7 +202,7 @@ still waits for the reply, only to dispatch normal commands one at a time; it ge
 the batch recording it and its translation commits.
 
 Keep `journal.sqlite` and any recovery journal together on the surviving state volume. The checked-in
-staging/testing templates mount `/state` from `local-path-ovh-hdd` PVCs. Network filesystems
+staging/testing templates mount `/state` from `piraeus-hdd-local` PVCs. Network filesystems
 and deleting the only state volume are not supported recovery paths. That node-local `ReadWriteOnce`
 mount is the required ownership assumption; RWO alone does not prevent two processes on its node
 from opening it. Session metadata and native resume files remain beside the database.

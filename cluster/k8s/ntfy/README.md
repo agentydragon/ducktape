@@ -6,7 +6,7 @@ Alertmanager and Flux notifications.
 ## Storage and configuration
 
 - ntfy-db is a two-instance CloudNativePG PostgreSQL cluster on
-  local-path-ovh-hdd in hil-ovh. CNPG generates the `ntfy-db-app` connection
+  `piraeus-ssd-local` in hil-ovh. CNPG generates the `ntfy-db-app` connection
   Secret; ntfy stores its message cache and authentication/authorization state
   in PostgreSQL. Attachments and web-push are not enabled.
 - cdk8s deploys one ntfy pod. ntfy is not horizontally scaled yet; the two

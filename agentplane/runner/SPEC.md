@@ -239,7 +239,7 @@ harness's outcome. Tool names and argument shapes are the harness's own.
   replacement cannot append Events or dispatch native work in that interval. This fences the
   native harness process group, including a normal tool child; a process that deliberately escapes
   that group and closes inherited descriptors is outside the runner's containment contract. The
-  supported state mount is the checked-in node-local `local-path-ovh-hdd` PVC. A remote or otherwise
+  supported state mount is the checked-in node-local `piraeus-hdd-local` PVC. A remote or otherwise
   unreliable locking filesystem is unsupported rather than a substitute cross-host fencing authority.
 - A command admission and its public Event commit atomically. A terminal outcome and its public
   Event also commit atomically, including every origin of a coalesced user message. Recovery

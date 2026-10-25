@@ -17,42 +17,20 @@ Seaweed is still re-replicating the HDD volumes left single-copy by the
 `ovh-ns102453` reimage onto that node's new server; confirm every HDD volume is
 back to two copies before the next HDD maintenance.
 
-Remaining: retire the OVH local-path layer, close the operational gaps below,
+Remaining: finish retiring the OVH local-path layer, close the operational gaps below,
 the replicated-class and Seaweed-reduction work, and the separate Wyrm2/NixOS phase.
 
 ## Retire OVH local-path
 
-No live data remains on OVH local-path (inventory 2026-10-25); every live claim
-is a pre-created Piraeus claim. What remains is defaults that would allocate on
-a missing path if a claim were recreated. Map `local-path-ovh` and `-hdd` to
-`piraeus-hdd-local` and `-ssd` to `piraeus-ssd-local`, matching the live claims.
+The OVH local-path classes are gone; two records remain:
 
-StatefulSet claim templates are immutable: change the source, orphan-delete the
-StatefulSet so its owner recreates it, and check that Pod UIDs, PVC names and PV
-identities are unchanged.
+- `haku-sandbox/haku-anki-collection`: drop its declaration from haku-state
+  `k8s/haku-anki/`, then delete its PV on the wiped `ovh-ns103711`.
+- The Released OptiPlex Piraeus PV for
+  `home-assistant/volsync-dst-optiplex-migration-ha-piraeus-restore-cache`.
 
-- Seaweed master persistence (`seaweedfs/cluster.py`).
-- Langfuse and OCI-cache Valkey (`langfuse/app.py`, `oci_cache/zot.py`). Forgejo
-  Valkey's source is already Piraeus; only its live StatefulSet lags.
-- Loki writers, Mimir ingesters and Alertmanager (`monitoring/{loki,mimir,stack}.py`).
-
-Then remove leftovers:
-
-- The operator-generated Services and ServiceMonitor left by the removed
-  Seaweed `ssd` and legacy HDD volume groups (live only; no source).
-- `haku-sandbox/haku-anki-collection`, Bound to the wiped `ovh-ns103711`:
-  confirm its owner no longer declares it, then delete the record.
-- The Pending `public-coder-agent` Restic cache claim; the parked backup's
-  `cache_storage_class_name` (`public_coder/backup.py`) and the parked app's
-  claims move to Piraeus on revival.
-- The Released OptiPlex Piraeus PV
-  `volsync-dst-optiplex-migration-ha-piraeus-restore-cache`.
-- The OVH `local-path-*` StorageClasses, their descheduler entries and the
-  nodePathMap entries in `local_path_provisioner.py`, once nothing references
-  them. `local-path-proxmox` and `local-path-home-ssd` stay for the Wyrm2 phase.
-
-Done when no OVH workload template can allocate local-path storage, the classes
-are gone, and no retained record points at an erased disk.
+Parked manifests under `cluster/parked/` still name OVH local-path classes;
+repoint them to Piraeus on revival.
 
 ## Operational gaps
 

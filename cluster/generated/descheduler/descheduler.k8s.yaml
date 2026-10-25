@@ -41,10 +41,6 @@ spec:
                     PodsWithPVC:
                       protectedStorageClasses:
                         - name: local-path-home-ssd
-                        - name: local-path-ovh
-                        - name: local-path-ovh-hdd
-                        - name: local-path-ovh-hdd-retain
-                        - name: local-path-ovh-ssd
                         - name: local-path-proxmox
                         - name: lvm-proxmox-hdd
                         - name: lvm-proxmox-hdd-block
