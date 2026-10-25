@@ -2593,6 +2593,12 @@ The pipeline (`pipeline.rs`) is a fixed composition over three layers:
   exclusion, not an artifact removal; wrappers / facades / manifests
   are emission outputs.
 
+Preparation returns `SourceProgram`, which owns prepared chunks and their
+matching indexes. Resolution and vendor planning borrow it immutably. Lowering
+consumes its source bundle; a pass-through run instead converts it directly to
+`EmissionFiles`, reusing the indexes without rebuilding them. The mutable indexed
+file container is private to these phase types.
+
 The emission boundary is `EmissionFiles`: lowering finalizes lowered and
 pass-through chunk files into this owned output set; cross-chunk import
 naturalization, vendor emission rewrites, dead-import/export pruning and

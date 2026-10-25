@@ -8,7 +8,7 @@ use analysis::ChunkId;
 use artifact::{
     ArtifactChunkRecord, ArtifactCounts, CANONICAL_CHUNK_ENTRY_FILE, ChunkAnalysisReport,
     ChunkArtifact, ChunkBundle, ChunkMetadata, FileMetadata, FileRole, JsChunk, JsFile, JsFileBody,
-    LoadedJsChunks,
+    LoadedJsChunks, SourceProgram,
 };
 use js_ast::{ParsedJsModule, parse_js_module_consuming};
 use program_analysis::{analyze_program_shallow, build_chunk_manifest_from_analysis};
@@ -19,8 +19,8 @@ const CANONICALIZE_HEADER_LINES: &[&str] = &[
     "// Executable chunk entry.",
 ];
 
-pub struct PrepareJsChunksResult {
-    pub artifact: ChunkBundle,
+pub struct SourcePreparation {
+    pub program: SourceProgram,
     pub counts: ArtifactCounts,
     pub chunk_records: Vec<ArtifactChunkRecord>,
 }
@@ -28,7 +28,7 @@ pub struct PrepareJsChunksResult {
 pub fn prepare_js_chunks(
     spec: &TransformSpec,
     loaded: LoadedJsChunks,
-) -> Result<PrepareJsChunksResult> {
+) -> Result<SourcePreparation> {
     let LoadedJsChunks {
         chunks,
         chunk_table,
@@ -142,8 +142,8 @@ pub fn prepare_js_chunks(
         .map(|chunk| chunk.analysis.clone())
         .collect();
     let (counts, chunk_records) = build_prepare_output(&manifests);
-    Ok(PrepareJsChunksResult {
-        artifact,
+    Ok(SourcePreparation {
+        program: SourceProgram::new(artifact)?,
         counts,
         chunk_records,
     })
@@ -297,8 +297,9 @@ mod tests {
             ).unwrap();
             let loaded = artifact::load_js_chunks(root.path(), &list).unwrap();
             let prepared = prepare_js_chunks(&spec, loaded).unwrap();
-            for chunk in &prepared.artifact.chunks {
-                let name = prepared.artifact.chunk_table.name(chunk.chunk_id);
+            let artifact = prepared.program.artifact();
+            for chunk in &artifact.chunks {
+                let name = artifact.chunk_table.name(chunk.chunk_id);
                 let has_ast = chunk
                     .js
                     .get_file(CANONICAL_CHUNK_ENTRY_FILE)

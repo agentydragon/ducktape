@@ -15,7 +15,10 @@ use js_ast::{ParsedJsModule, emit_js_module_with_comments};
 use output_layout::{CHUNK_REPORT, report_path_for_directory, report_path_for_file};
 
 mod emission_files;
-pub use emission_files::{EmissionFiles, IndexedArtifact};
+mod indexed_files;
+mod source_program;
+pub use emission_files::EmissionFiles;
+pub use source_program::SourceProgram;
 
 pub const CANONICAL_CHUNK_ENTRY_FILE: &str = "entry.js";
 
@@ -2016,15 +2019,15 @@ mod tests {
             chunks: Vec::new(),
             chunk_table: ChunkTable::default(),
         };
-        let (indexed, ()) = IndexedArtifact::new(empty())
+        let (files, ()) = EmissionFiles::new(empty())
             .unwrap()
-            .update_file_bodies(|_, _| Ok(()))
+            .rewrite_bodies(|_, _| Ok(()))
             .unwrap();
-        assert!(indexed.artifact().chunks.is_empty());
+        assert!(files.files().chunks.is_empty());
 
-        let err = IndexedArtifact::new(empty())
+        let err = EmissionFiles::new(empty())
             .unwrap()
-            .update_file_bodies(|artifact, _| {
+            .rewrite_bodies(|artifact, _| {
                 artifact.chunk_table.intern("unexpected".to_string());
                 Ok(())
             });

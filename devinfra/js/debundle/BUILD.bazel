@@ -207,6 +207,8 @@ rust_library(
     srcs = [
         "artifacts/artifact.rs",
         "artifacts/emission_files.rs",
+        "artifacts/indexed_files.rs",
+        "artifacts/source_program.rs",
     ],
     crate_root = "artifacts/artifact.rs",
     edition = "2024",

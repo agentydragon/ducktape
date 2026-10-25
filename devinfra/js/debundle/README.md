@@ -31,9 +31,10 @@ the shared resolver and gate rather than their own acceptance rules.
 | Plan/apply vendor substitution and finalize emitted files      | `vendor/`, `pipeline.rs`, `artifacts/emission_files.rs`  |
 | Propose moves or safe module refinements; inspect or edit spec | `peel/`, `cli/`                                          |
 
-`pipeline.rs` composes these stages. Prepared/source indexes and finalized
-`EmissionFiles` belong to different phases: never pass one phase's data into another
-because both contain JavaScript files.
+`pipeline.rs` composes these stages. Preparation returns a `SourceProgram` with
+its matching syntax and path indexes; finalized `EmissionFiles` own output files
+and their output indexes. These are different phase types even when a pass-through
+program reuses the prepared indexes.
 
 Docs: splitting correctness and implementation entry points <docs/design.md>
 (§ File references); selector semantics <SPEC.md>, <docs/selector_resolution.md>;

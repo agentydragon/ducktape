@@ -6,7 +6,6 @@ use anyhow::{Context, Result, bail};
 use clap::Args as ClapArgs;
 use serde::Serialize;
 
-use artifact::IndexedArtifact;
 use artifact::load_js_chunks;
 use artifact::write_json;
 use artifact::{ChunkDecompositionOutput, ChunkId};
@@ -186,7 +185,7 @@ pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Re
     let chunk_records = prepare_result.chunk_records;
     let mut vendor_report = VendorSwapsReport::default();
 
-    let indexed = IndexedArtifact::new(prepare_result.artifact)?;
+    let source_program = prepare_result.program;
 
     // Single post-prepare vendor resolution pass: validates every mark,
     // resolves boundary mappings, swap targets, and partial-swap symbol
@@ -196,8 +195,8 @@ pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Re
     // spec mid-pipeline.
     let swap_cfg = &spec.swap_vendor_chunks;
     let vendor_plan = build_vendor_resolution_plan(
-        indexed.artifact(),
-        indexed.indexes(),
+        source_program.artifact(),
+        source_program.indexes(),
         &spec.vendor,
         &VendorPlanOptions {
             package_roots: &cli.package_roots,
@@ -237,7 +236,7 @@ pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Re
         let report_out_dir = spec.materialize_logical_modules.report_out_dir.clone();
         let report_out_dir = options.report_dir_override.clone().or(report_out_dir);
         let materialize_result = materialize_logical_modules(
-            indexed.into_artifact(),
+            source_program.into_artifact(),
             MaterializeSpecInputs {
                 execution_runtime: spec.execution_runtime,
                 logical_modules: &spec.logical_modules,
@@ -273,7 +272,7 @@ pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Re
         decomposition_by_chunk = outputs.decomposition_by_chunk;
         outputs.files
     } else {
-        artifact::EmissionFiles::from_prepared(indexed)
+        artifact::EmissionFiles::from_prepared(source_program)
     };
 
     // Cross-chunk import naturalization runs first, before the following
