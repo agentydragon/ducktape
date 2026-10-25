@@ -458,6 +458,14 @@ fn namespace_factory_ignores_self_initialized_unrelated_object() {
 }
 
 #[test]
+fn namespace_factory_tracks_namespace_seed_in_self_initializer() {
+    assert_namespace_factory_publication_rejected(
+        "var state = state || api;\n\
+         globalThis.exposed = state;\n",
+    );
+}
+
+#[test]
 fn namespace_factory_defers_member_reads_inside_callback_result_literals() {
     let fixture = run_fixture(
         FixtureOpts::new(

@@ -278,7 +278,9 @@ values, returns, and call arguments. An unrelated call or constructor result
 with no such path is not treated as a namespace alias solely because its
 runtime value is unknown; the author audit asserts that values used by admitted
 callbacks cannot alias or replace listed members. Unknown syntax remains
-conservative at publication and call-argument sinks. For call-argument checks,
+conservative at publication and call-argument sinks. Binding cycles alone do
+not establish namespace provenance; namespace and
+unknown-value inputs to a cycle remain conservative. For call-argument checks,
 the analyzer follows namespace values in the supplied argument expressions
 and excludes the callee expression, which is not passed as an argument. A
 value from an unknown call or constructor used as a static or dynamic write
