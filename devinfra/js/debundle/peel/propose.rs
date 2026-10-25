@@ -120,7 +120,7 @@ pub enum ModuleDecompositionCoarseningMode {
     MergeBlockingSccs,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ModuleDecompositionCoarseningStopReason {
     Accepted,
@@ -136,6 +136,31 @@ pub struct ModuleDecompositionCoarsening {
     /// Final ownership under the names checked by the last full gate run.
     /// These names are suggestions, and can combine distinct source homes.
     pub groups: Vec<ModuleDecompositionCoarsenedGroup>,
+    /// Present only when the caller asked to safely rejoin fragments from
+    /// their original semantic homes after SCC coarsening.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub original_home_rejoining: Option<ModuleDecompositionHomeRejoining>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ModuleDecompositionHomeRejoining {
+    pub stop_reason: ModuleDecompositionHomeRejoiningStopReason,
+    pub attempted_contractions: usize,
+    pub accepted_contractions: usize,
+    pub original_module_count: usize,
+    pub fully_restored_module_count: usize,
+    pub fully_restored_module_paths: Vec<ModulePath>,
+    pub still_split_module_paths: Vec<ModulePath>,
+    pub final_group_count: usize,
+    pub largest_group_owner_count: usize,
+    pub largest_group_origin_module_count: usize,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModuleDecompositionHomeRejoiningStopReason {
+    CandidateNotRealizable,
+    Converged,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -399,6 +424,7 @@ pub struct ModuleDecompositionOptions {
     pub strategy: ModuleDecompositionStrategy,
     pub coarsening: ModuleDecompositionCoarseningMode,
     pub preserve_selector_anchors: bool,
+    pub rejoin_original_modules: bool,
 }
 
 pub fn decompose_modules_from_files_with_options(
@@ -628,7 +654,7 @@ fn decompose_modules(
     if decomposition.coarsening == ModuleDecompositionCoarseningMode::MergeBlockingSccs {
         let mut occupied_paths: BTreeSet<ModulePath> =
             candidate_owner_modules.iter().cloned().collect();
-        occupied_paths.extend(existing_module_paths);
+        occupied_paths.extend(existing_module_paths.iter().cloned());
         let mut rounds = Vec::new();
         let stop_reason = loop {
             if !validation.atomic_unit_conflicts.is_empty() {
@@ -700,7 +726,48 @@ fn decompose_modules(
             stop_reason,
             rounds,
             groups: coarsened_groups(graph, &owner_modules, &candidate_owner_modules),
+            original_home_rejoining: None,
         });
+    }
+
+    if decomposition.rejoin_original_modules {
+        anyhow::ensure!(
+            decomposition.coarsening == ModuleDecompositionCoarseningMode::MergeBlockingSccs,
+            "rejoining original modules requires SCC coarsening"
+        );
+        let coarsening_report = coarsening
+            .as_mut()
+            .context("SCC coarsening report is missing")?;
+        let accepted_baseline =
+            coarsening_report.stop_reason == ModuleDecompositionCoarseningStopReason::Accepted;
+        let home_rejoining = if accepted_baseline {
+            rejoin_original_home_fragments(
+                graph,
+                &owner_modules,
+                &residual_path,
+                &mut candidate_owner_modules,
+            )?
+        } else {
+            summarize_home_rejoining(
+                ModuleDecompositionHomeRejoiningStopReason::CandidateNotRealizable,
+                &owner_modules,
+                &candidate_owner_modules,
+                0,
+                0,
+            )
+        };
+        validation =
+            validate_decomposition_candidate(graph, &candidate_owner_modules, &residual_path)?;
+        anyhow::ensure!(
+            !accepted_baseline
+                || (validation.atomic_unit_conflicts.is_empty()
+                    && validation.cycles.is_empty()
+                    && validation.cross_rebinds.is_empty()),
+            "shared gate rejected the partition after original-home rejoining"
+        );
+        coarsening_report.groups =
+            coarsened_groups(graph, &owner_modules, &candidate_owner_modules);
+        coarsening_report.original_home_rejoining = Some(home_rejoining);
     }
 
     let covered_owner_ids: BTreeSet<&str> =
@@ -1036,6 +1103,26 @@ fn validate_decomposition_candidate(
 
     let owner_graph = OwnerGraph::from_report(graph)
         .context("reconstructing the owner graph for decomposition validation")?;
+    let (assignments, paths_by_module_id) =
+        candidate_partition_assignments(candidate_owner_modules, residual_path)?;
+    let partition = Partition::from_assignments(assignments, ModuleId::logical(0));
+    let gate_report = gate::validate_factorization(&owner_graph, &partition, &|module_id| {
+        paths_by_module_id
+            .get(&module_id)
+            .cloned()
+            .unwrap_or_else(|| residual_path.clone())
+    });
+    Ok(DecompositionValidation {
+        atomic_unit_conflicts,
+        cycles: gate_report.cycles,
+        cross_rebinds: gate_report.cross_rebinds,
+    })
+}
+
+fn candidate_partition_assignments(
+    candidate_owner_modules: &[ModulePath],
+    residual_path: &ModulePath,
+) -> Result<(Vec<ModuleId>, BTreeMap<ModuleId, ModulePath>)> {
     let mut paths: BTreeSet<ModulePath> = candidate_owner_modules.iter().cloned().collect();
     paths.insert(residual_path.clone());
     let mut module_ids = BTreeMap::from([(residual_path.clone(), ModuleId::logical(0))]);
@@ -1059,18 +1146,185 @@ fn validate_decomposition_candidate(
                 .with_context(|| format!("candidate module {path} has no gate identity"))
         })
         .collect::<Result<Vec<_>>>()?;
-    let partition = Partition::from_assignments(assignments, ModuleId::logical(0));
-    let gate_report = gate::validate_factorization(&owner_graph, &partition, &|module_id| {
-        paths_by_module_id
-            .get(&module_id)
-            .cloned()
-            .unwrap_or_else(|| residual_path.clone())
-    });
-    Ok(DecompositionValidation {
-        atomic_unit_conflicts,
-        cycles: gate_report.cycles,
-        cross_rebinds: gate_report.cross_rebinds,
-    })
+    Ok((assignments, paths_by_module_id))
+}
+
+fn rejoin_original_home_fragments(
+    graph: &OwnerGraphReport,
+    original_owner_modules: &[ModulePath],
+    residual_path: &ModulePath,
+    candidate_owner_modules: &mut [ModulePath],
+) -> Result<ModuleDecompositionHomeRejoining> {
+    let (assignments, _) = candidate_partition_assignments(candidate_owner_modules, residual_path)?;
+    // Decomposition has no size ceiling: an original home can be larger than
+    // the proposer's default cap. The shared incremental gate still checks
+    // every contraction against the complete candidate partition.
+    let mut quotient = QuotientGraph::from_report_with_realizable_partition(
+        graph,
+        usize::MAX,
+        &assignments,
+        ModuleId::logical(0),
+    )?;
+
+    let mut owners_by_candidate = BTreeMap::<ModulePath, Vec<usize>>::new();
+    let mut home_owner_counts = BTreeMap::<ModulePath, usize>::new();
+    for (owner_idx, (candidate, home)) in candidate_owner_modules
+        .iter()
+        .zip(original_owner_modules)
+        .enumerate()
+    {
+        owners_by_candidate
+            .entry(candidate.clone())
+            .or_default()
+            .push(owner_idx);
+        *home_owner_counts.entry(home.clone()).or_default() += 1;
+    }
+    // A coarsened group spanning multiple original homes is already a gate
+    // accepted indivisible class. Never contract it with a pure home fragment.
+    let mut pure_home_representatives = BTreeMap::<ModulePath, Vec<OwnerIdx>>::new();
+    for owners in owners_by_candidate.values() {
+        let home = &original_owner_modules[owners[0]];
+        if owners
+            .iter()
+            .all(|&owner_idx| &original_owner_modules[owner_idx] == home)
+        {
+            pure_home_representatives
+                .entry(home.clone())
+                .or_default()
+                .push(OwnerIdx(owners[0]));
+        }
+    }
+
+    let mut attempted = 0;
+    let mut accepted = 0;
+    // Stable path and owner order makes the result deterministic. Exhaust each
+    // home before moving to the next; another home's contraction may make an
+    // earlier rejected pair admissible, so repeat whole-home passes only when
+    // some contraction was accepted during the previous pass.
+    loop {
+        let mut pass_progress = false;
+        for representatives in pure_home_representatives.values() {
+            loop {
+                let classes: Vec<ClassId> = representatives
+                    .iter()
+                    .map(|&owner| quotient.class_of(owner))
+                    .collect::<BTreeSet<_>>()
+                    .into_iter()
+                    .collect();
+                let mut home_progress = false;
+                'pairs: for (left_idx, &left) in classes.iter().enumerate() {
+                    for &right in classes.iter().skip(left_idx + 1) {
+                        attempted += 1;
+                        if quotient.contract_if_preserving(left, right) {
+                            accepted += 1;
+                            home_progress = true;
+                            pass_progress = true;
+                            break 'pairs;
+                        }
+                    }
+                }
+                if !home_progress {
+                    break;
+                }
+            }
+        }
+        if !pass_progress {
+            break;
+        }
+    }
+
+    let mut final_paths = BTreeMap::<ClassId, ModulePath>::new();
+    let mut used_paths = BTreeSet::new();
+    for class in quotient.iter_classes() {
+        let members: Vec<usize> = quotient.class_members(class).map(|owner| owner.0).collect();
+        let homes: BTreeSet<&ModulePath> = members
+            .iter()
+            .map(|&owner_idx| &original_owner_modules[owner_idx])
+            .collect();
+        let candidate_paths: BTreeSet<&ModulePath> = members
+            .iter()
+            .map(|&owner_idx| &candidate_owner_modules[owner_idx])
+            .collect();
+        let restored_home = homes.iter().next().filter(|home| {
+            homes.len() == 1 && home_owner_counts.get(*home) == Some(&members.len())
+        });
+        let path = if let Some(home) = restored_home {
+            (**home).clone()
+        } else if candidate_paths.iter().any(|path| *path == residual_path) {
+            residual_path.clone()
+        } else {
+            (**candidate_paths
+                .iter()
+                .next()
+                .expect("nonempty quotient class"))
+            .clone()
+        };
+        anyhow::ensure!(
+            used_paths.insert(path.clone()),
+            "original-home rejoining produced duplicate candidate path {path}"
+        );
+        final_paths.insert(class, path);
+    }
+    for (owner_idx, path) in candidate_owner_modules.iter_mut().enumerate() {
+        *path = final_paths
+            .get(&quotient.class_of(OwnerIdx(owner_idx)))
+            .expect("every owner belongs to a live quotient class")
+            .clone();
+    }
+    Ok(summarize_home_rejoining(
+        ModuleDecompositionHomeRejoiningStopReason::Converged,
+        original_owner_modules,
+        candidate_owner_modules,
+        attempted,
+        accepted,
+    ))
+}
+
+fn summarize_home_rejoining(
+    stop_reason: ModuleDecompositionHomeRejoiningStopReason,
+    original_owner_modules: &[ModulePath],
+    candidate_owner_modules: &[ModulePath],
+    attempted_contractions: usize,
+    accepted_contractions: usize,
+) -> ModuleDecompositionHomeRejoining {
+    let mut groups = BTreeMap::<&ModulePath, (usize, BTreeSet<&ModulePath>)>::new();
+    let mut homes = BTreeMap::<&ModulePath, BTreeSet<&ModulePath>>::new();
+    for (home, candidate) in original_owner_modules.iter().zip(candidate_owner_modules) {
+        let group = groups.entry(candidate).or_default();
+        group.0 += 1;
+        group.1.insert(home);
+        homes.entry(home).or_default().insert(candidate);
+    }
+    let (fully_restored_module_paths, still_split_module_paths): (Vec<_>, Vec<_>) =
+        homes.into_iter().partition(|(home, candidates)| {
+            candidates.len() == 1
+                && candidates.contains(home)
+                && groups.get(home).is_some_and(|group| group.1.len() == 1)
+        });
+    let fully_restored_module_paths: Vec<ModulePath> = fully_restored_module_paths
+        .into_iter()
+        .map(|(home, _)| home.clone())
+        .collect();
+    let still_split_module_paths: Vec<ModulePath> = still_split_module_paths
+        .into_iter()
+        .map(|(home, _)| home.clone())
+        .collect();
+    ModuleDecompositionHomeRejoining {
+        stop_reason,
+        attempted_contractions,
+        accepted_contractions,
+        original_module_count: fully_restored_module_paths.len() + still_split_module_paths.len(),
+        fully_restored_module_count: fully_restored_module_paths.len(),
+        fully_restored_module_paths,
+        still_split_module_paths,
+        final_group_count: groups.len(),
+        largest_group_owner_count: groups.values().map(|group| group.0).max().unwrap_or(0),
+        largest_group_origin_module_count: groups
+            .values()
+            .map(|group| group.1.len())
+            .max()
+            .unwrap_or(0),
+    }
 }
 
 fn coarsened_groups(

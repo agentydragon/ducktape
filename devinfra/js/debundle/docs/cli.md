@@ -429,6 +429,24 @@ that groups sharing a suggested path belong to one semantic feature. The mode
 does not edit YAML or choose descriptive module names; review `origin_module_paths`
 and owner IDs before assigning the groups in a later spec change.
 
+To retain as many original semantic homes as the accepted partition permits,
+add `--rejoin-original-modules` to the SCC coarsening command. This requires
+`--coarsen-blocking-sccs` and starts only after its complete candidate passes
+the shared gate. It contracts whole candidate groups when every owner in both
+groups came from the same original module, checking each contraction through
+the quotient's incremental realizability gate. Groups that already combine
+different original homes remain intact. The final complete partition is checked
+again by the shared gate. A fully rejoined home gets its original path; other
+groups keep deterministic temporary paths.
+
+The `coarsening.original_home_rejoining` report lists restored and remaining
+homes, attempted and accepted contractions, final group count, and largest
+group size and origin count. A remaining home may be split across groups or
+partly absorbed into a mixed-origin SCC group. The option has no module-size
+cap, so an existing large home can rejoin. It remains read-only: review the
+reported final `coarsening.groups` before applying assignments with
+`modules refine`.
+
 To include residual ownership in that baseline, add `--include-residual`:
 
 ```sh
