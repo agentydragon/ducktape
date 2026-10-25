@@ -274,18 +274,20 @@ analyzed chunk's synchronous initialization. In particular, provider or other
 namespace members and callback/ref/hook inputs must not expose an alias that
 can replace a listed factory member. Direct static identifier-property
 namespace call results are treated as independent only under this explicit
-author assertion. Computed, chained, unrelated, and unknown call results remain
-conservative when assigned, returned, or used as dynamic-write receivers. For
-call-argument checks, the checker follows namespace values in the supplied
-argument expressions and excludes the callee expression, which is not passed
-as an argument; an unrelated call result is not assumed to be the namespace
-solely because it appears as an argument. Unknown expression shapes remain
-conservative. The analyzer tracks dynamic-write receiver values and rejects
-receivers whose checked value flow reaches the namespace, including direct
-member-rooted writes, local aliases, and unknown call results. A receiver with
-no syntactic path to the namespace is accepted only under the audited
-non-aliasing assertion; the checker does not prove that arbitrary callback
-parameters cannot alias the namespace.
+author assertion. The checker propagates explicit namespace provenance through
+assignments, local aliases, property values, returns, and call arguments. An
+unrelated call or constructor result with no such path is not treated as a
+namespace alias solely because its runtime value is unknown; the author audit
+asserts that values used by admitted callbacks cannot alias or replace listed
+members. Unknown syntax remains conservative when it reaches a publication or
+call-argument sink. A value from an unknown call or constructor used as an
+actual static or dynamic write receiver remains a possible namespace alias,
+including through local aliases and member projections, and disables the
+contract. For call-argument checks, the checker follows namespace values in
+the supplied argument expressions and excludes the callee expression, which
+is not passed as an argument. The checker does not prove that arbitrary
+callback parameters or unrelated call results are disjoint from the
+namespace; that non-aliasing guarantee is part of the author audit.
 Within a literal traversed inside an admitted inline callback, a direct static
 namespace member used as a call callee is analyzed as a callee, not as a
 captured namespace value. Its arguments and effects remain analyzed; computed

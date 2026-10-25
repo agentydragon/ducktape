@@ -268,30 +268,76 @@ impl ValueExpr {
         }
     }
 
-    /// Whether this value may be the namespace itself or an alias to it.
-    /// Direct static identifier-property namespace call results are allowed
-    /// only under the audited callback-factory identity contract; all other
-    /// unknown call results stay conservative.
-    fn may_expose_namespace(&self, id: &Id) -> bool {
+    /// Whether this value has an explicit namespace path through its syntax or
+    /// a binding already proven to carry that path. Unrelated call/constructor
+    /// results are covered by the namespace contract's author audit, while
+    /// their use as mutation receivers is handled separately below.
+    fn carries_namespace(&self, id: &Id, aliases: &BTreeSet<Id>) -> bool {
         match self {
-            Self::Binding(binding) => binding == id,
+            Self::Binding(binding) => binding == id || aliases.contains(binding),
             Self::ObjectLiteral(_, properties) => properties
                 .iter()
-                .any(|(_, value)| value.may_expose_namespace(id)),
+                .any(|(_, value)| value.carries_namespace(id, aliases)),
             Self::Primitive(_) => false,
-            Self::Alternatives(options) => {
-                options.iter().any(|value| value.may_expose_namespace(id))
+            Self::Alternatives(options) => options
+                .iter()
+                .any(|value| value.carries_namespace(id, aliases)),
+            Self::Member(object, _, _) => {
+                matches!(object.as_ref(), Self::Call(callee, _)
+                    if Self::is_direct_namespace_member_callee(callee, id))
+                    || object.carries_namespace(id, aliases)
             }
-            Self::Member(object, _, _) => object.may_expose_namespace(id),
             Self::Call(callee, args) => {
-                args.iter().any(|value| value.may_expose_namespace(id))
-                    || !matches!(callee.as_ref(), Self::Member(object, Some(_), true)
-                        if matches!(object.as_ref(), Self::Binding(namespace) if namespace == id))
+                args.iter()
+                    .any(|value| value.carries_namespace(id, aliases))
+                    || (!Self::is_direct_namespace_member_callee(callee, id)
+                        && callee.carries_namespace(id, aliases))
             }
-            // Constructor calls can return a caller-visible object explicitly.
-            // Keep their result opaque for namespace alias/escape checks.
-            Self::New(_, _) => true,
+            Self::New(callee, args) => {
+                args.iter()
+                    .any(|value| value.carries_namespace(id, aliases))
+                    || callee.carries_namespace(id, aliases)
+            }
+            // Unknown syntax is not evidence that a value aliases the
+            // namespace. Sinks still handle unknown receivers and
+            // publications conservatively below.
+            Self::Unknown => false,
+            Self::Origin(_) | Self::Undefined | Self::NonCallable => false,
+        }
+    }
+
+    fn is_direct_namespace_member_callee(callee: &Self, id: &Id) -> bool {
+        matches!(callee, Self::Member(object, Some(_), true)
+            if matches!(object.as_ref(), Self::Binding(namespace) if namespace == id))
+    }
+
+    /// Whether a value being published may expose the namespace. This keeps
+    /// unknown syntax conservative at actual sinks without treating every
+    /// unknown assignment as an alias of the namespace.
+    fn may_publish_namespace(&self, id: &Id, aliases: &BTreeSet<Id>) -> bool {
+        match self {
             Self::Unknown => true,
+            Self::ObjectLiteral(_, properties) => properties
+                .iter()
+                .any(|(_, value)| value.may_publish_namespace(id, aliases)),
+            Self::Alternatives(options) => options
+                .iter()
+                .any(|value| value.may_publish_namespace(id, aliases)),
+            Self::Member(object, _, _) => {
+                object.carries_namespace(id, aliases) || object.may_publish_namespace(id, aliases)
+            }
+            Self::Call(callee, args) => {
+                args.iter()
+                    .any(|value| value.may_publish_namespace(id, aliases))
+                    || (!Self::is_direct_namespace_member_callee(callee, id)
+                        && callee.may_publish_namespace(id, aliases))
+            }
+            Self::New(callee, args) => {
+                args.iter()
+                    .any(|value| value.may_publish_namespace(id, aliases))
+                    || callee.may_publish_namespace(id, aliases)
+            }
+            Self::Binding(binding) => binding == id || aliases.contains(binding),
             Self::Origin(_) | Self::Undefined | Self::NonCallable => false,
         }
     }
@@ -300,41 +346,119 @@ impl ValueExpr {
     /// value inputs. A call's callee is not a value passed to the call; its
     /// arguments are. This narrower check is used for call arguments, while
     /// assignment/receiver checks keep unknown call results conservative.
-    fn directly_exposes_namespace(&self, id: &Id) -> bool {
+    fn directly_exposes_namespace(&self, id: &Id, aliases: &BTreeSet<Id>) -> bool {
         match self {
-            Self::Binding(binding) => binding == id,
+            Self::Binding(binding) => binding == id || aliases.contains(binding),
             Self::ObjectLiteral(_, properties) => properties
                 .iter()
-                .any(|(_, value)| value.directly_exposes_namespace(id)),
+                .any(|(_, value)| value.directly_exposes_namespace(id, aliases)),
             Self::Primitive(_) => false,
             Self::Alternatives(options) => options
                 .iter()
-                .any(|value| value.directly_exposes_namespace(id)),
-            Self::Member(object, _, _) => object.directly_exposes_namespace(id),
+                .any(|value| value.directly_exposes_namespace(id, aliases)),
+            Self::Member(object, _, _) => object.directly_exposes_namespace(id, aliases),
             Self::Call(_, args) => args
                 .iter()
-                .any(|value| value.directly_exposes_namespace(id)),
+                .any(|value| value.directly_exposes_namespace(id, aliases)),
             Self::New(_, args) => args
                 .iter()
-                .any(|value| value.directly_exposes_namespace(id)),
+                .any(|value| value.directly_exposes_namespace(id, aliases)),
             Self::Unknown => true,
+            Self::Origin(_) | Self::Undefined | Self::NonCallable => false,
+        }
+    }
+
+    /// Whether this value could be the namespace object used as a property
+    /// write receiver. Unknown call and constructor results remain possible
+    /// receivers here, even though merely storing or returning those unrelated
+    /// results does not establish namespace provenance.
+    fn may_be_namespace_mutation_receiver(
+        &self,
+        id: &Id,
+        aliases: &BTreeSet<Id>,
+        receiver_aliases: &BTreeSet<Id>,
+    ) -> bool {
+        match self {
+            Self::Binding(binding) => {
+                binding == id || aliases.contains(binding) || receiver_aliases.contains(binding)
+            }
+            Self::ObjectLiteral(_, properties) => properties
+                .iter()
+                .any(|(_, value)| value.carries_namespace(id, aliases)),
+            Self::Alternatives(options) => options.iter().any(|value| {
+                value.may_be_namespace_mutation_receiver(id, aliases, receiver_aliases)
+            }),
+            Self::Member(object, _, _) => {
+                matches!(object.as_ref(), Self::Call(callee, _)
+                    if Self::is_direct_namespace_member_callee(callee, id))
+                    || matches!(object.as_ref(), Self::Unknown | Self::New(_, _))
+                    || object.may_be_namespace_mutation_receiver(id, aliases, receiver_aliases)
+            }
+            Self::Call(callee, args) => {
+                args.iter()
+                    .any(|value| value.carries_namespace(id, aliases))
+                    || !Self::is_direct_namespace_member_callee(callee, id)
+            }
+            Self::New(_, _) | Self::Unknown => true,
             Self::Origin(_) | Self::Undefined | Self::NonCallable => false,
         }
     }
 
     /// A callback result may contain one-hop namespace member reads as
     /// ordinary data-property values. That exception applies only to the
-    /// direct returned object graph; assigning an alias locally or passing it
-    /// elsewhere still uses `may_expose_namespace` above.
-    fn may_expose_namespace_in_factory_result(&self, id: &Id) -> bool {
+    /// direct returned object graph; aliases and other unknown shapes remain
+    /// subject to the ordinary publication check.
+    fn may_publish_namespace_in_factory_result(&self, id: &Id, aliases: &BTreeSet<Id>) -> bool {
         match self {
             Self::ObjectLiteral(_, properties) => properties.iter().any(|(name, value)| {
                 let direct_member_value = name.is_some()
                     && matches!(value, Self::Member(object, Some(_), true)
                         if matches!(object.as_ref(), Self::Binding(namespace) if namespace == id));
-                !direct_member_value && value.may_expose_namespace_in_factory_result(id)
+                !direct_member_value && value.may_publish_namespace_in_factory_result(id, aliases)
             }),
-            _ => self.may_expose_namespace(id),
+            _ => self.may_publish_namespace(id, aliases),
+        }
+    }
+}
+
+fn infer_namespace_aliases(namespace: &Id, assignments: &[&(Id, ValueExpr)]) -> BTreeSet<Id> {
+    let mut aliases = BTreeSet::new();
+    loop {
+        let mut changed = false;
+        for assignment in assignments {
+            let (target, value) = *assignment;
+            if target != namespace
+                && value.carries_namespace(namespace, &aliases)
+                && aliases.insert(target.clone())
+            {
+                changed = true;
+            }
+        }
+        if !changed {
+            return aliases;
+        }
+    }
+}
+
+fn infer_mutation_receiver_aliases(
+    namespace: &Id,
+    assignments: &[&(Id, ValueExpr)],
+    aliases: &BTreeSet<Id>,
+) -> BTreeSet<Id> {
+    let mut receiver_aliases = BTreeSet::new();
+    loop {
+        let mut changed = false;
+        for assignment in assignments {
+            let (target, value) = *assignment;
+            if target != namespace
+                && value.may_be_namespace_mutation_receiver(namespace, aliases, &receiver_aliases)
+                && receiver_aliases.insert(target.clone())
+            {
+                changed = true;
+            }
+        }
+        if !changed {
+            return receiver_aliases;
         }
     }
 }
@@ -463,6 +587,7 @@ struct Callable {
     literal_captures: BTreeSet<Id>,
     literal_exposures: BTreeSet<Id>,
     escaped_bindings: BTreeSet<Id>,
+    namespace_escape_values: Vec<ValueExpr>,
     member_writes: Vec<(Id, String)>,
     member_value_writes: Vec<(Id, Option<String>, ValueExpr)>,
     callback_result_writes: Vec<CallbackResultWrite>,
@@ -671,6 +796,7 @@ impl Default for Callable {
             literal_captures: BTreeSet::new(),
             literal_exposures: BTreeSet::new(),
             escaped_bindings: BTreeSet::new(),
+            namespace_escape_values: Vec::new(),
             member_writes: Vec::new(),
             member_value_writes: Vec::new(),
             callback_result_writes: Vec::new(),
@@ -739,6 +865,7 @@ struct ExecutionIndex {
     unindexed_accessor_owners: BTreeSet<StatementOrdinal>,
     top_calls: Vec<Vec<Call>>,
     top_property_writes: Vec<Vec<(Option<Id>, Option<String>)>>,
+    top_dynamic_property_receivers: Vec<Vec<ValueExpr>>,
     top_assignments: Vec<Vec<(Id, ValueExpr)>>,
     top_definite_initializers: Vec<BTreeSet<Id>>,
     top_member_value_writes: Vec<Vec<(Id, Option<String>, ValueExpr)>>,
@@ -786,6 +913,7 @@ impl Default for ExecutionIndex {
             unindexed_accessor_owners: BTreeSet::new(),
             top_calls: Vec::new(),
             top_property_writes: Vec::new(),
+            top_dynamic_property_receivers: Vec::new(),
             top_assignments: Vec::new(),
             top_definite_initializers: Vec::new(),
             top_member_value_writes: Vec::new(),
@@ -815,6 +943,7 @@ impl ExecutionIndex {
             top_calls: vec![Vec::new(); body.len()],
             owner_callable_prefix_reads: vec![None; body.len()],
             top_property_writes: vec![Vec::new(); body.len()],
+            top_dynamic_property_receivers: vec![Vec::new(); body.len()],
             top_assignments: vec![Vec::new(); body.len()],
             top_definite_initializers: vec![BTreeSet::new(); body.len()],
             top_member_value_writes: vec![Vec::new(); body.len()],
@@ -883,69 +1012,110 @@ impl ExecutionIndex {
                 reads.extend(callable.reads.iter().cloned());
             }
         }
+        let namespace_assignments = index
+            .top_assignments
+            .iter()
+            .flatten()
+            .chain(
+                index
+                    .callables
+                    .values()
+                    .flat_map(|callable| callable.local_assignments.iter()),
+            )
+            .collect::<Vec<_>>();
         // A namespace member is an audited target only while its binding is
         // unchanged. Any local write could replace a member with an eager
         // callback invoker before the apparent factory call.
         index.callback_factory_members.retain(|id, members| {
+            let aliases = infer_namespace_aliases(id, &namespace_assignments);
+            let receiver_aliases =
+                infer_mutation_receiver_aliases(id, &namespace_assignments, &aliases);
+            let is_namespace_or_alias = |binding: &Id| binding == id || aliases.contains(binding);
+            let is_mutation_receiver = |receiver: &ValueExpr| {
+                receiver.may_be_namespace_mutation_receiver(id, &aliases, &receiver_aliases)
+            };
             let top_member_write =
                 index
                     .top_property_writes
                     .iter()
                     .flatten()
                     .any(|(receiver, property)| {
-                        receiver.as_ref() == Some(id)
-                            && property
-                                .as_ref()
-                                .is_none_or(|property| members.contains(property))
+                        receiver.as_ref().is_some_and(|receiver| {
+                            (receiver == id
+                                && property
+                                    .as_ref()
+                                    .is_none_or(|property| members.contains(property)))
+                                || aliases.contains(receiver)
+                                || receiver_aliases.contains(receiver)
+                        })
+                    });
+            let top_dynamic_write = index
+                .top_dynamic_property_receivers
+                .iter()
+                .flatten()
+                .any(is_mutation_receiver);
+            let top_callback_result_write =
+                index
+                    .top_callback_result_writes
+                    .iter()
+                    .flatten()
+                    .any(|write| {
+                        is_mutation_receiver(&write.receiver)
+                            || write.value.may_publish_namespace(id, &aliases)
                     });
             let callable_write = index.callables.values().any(|callable| {
-                callable
-                    .member_writes
+                callable.member_writes.iter().any(|(receiver, property)| {
+                    (receiver == id && members.contains(property))
+                        || aliases.contains(receiver)
+                        || receiver_aliases.contains(receiver)
+                }) || callable
+                    .dynamic_property_receivers
                     .iter()
-                    .any(|(receiver, property)| receiver == id && members.contains(property))
+                    .any(is_mutation_receiver)
+                    || callable.literal_exposures.iter().any(is_namespace_or_alias)
+                    || callable.escaped_bindings.iter().any(is_namespace_or_alias)
                     || callable
-                        .dynamic_property_receivers
+                        .namespace_escape_values
                         .iter()
-                        .any(|receiver| receiver.may_expose_namespace(id))
-                    || callable.literal_exposures.contains(id)
-                    || callable.escaped_bindings.contains(id)
+                        .any(|value| value.may_publish_namespace(id, &aliases))
                     || callable
-                        .local_assignments
+                        .member_value_writes
                         .iter()
-                        .any(|(_, value)| value.may_expose_namespace(id))
+                        .any(|(_, _, value)| value.may_publish_namespace(id, &aliases))
+                    || callable.callback_result_writes.iter().any(|write| {
+                        is_mutation_receiver(&write.receiver)
+                            || write.value.may_publish_namespace(id, &aliases)
+                    })
                     || callable
                         .returns
                         .iter()
-                        .any(|value| value.may_expose_namespace_in_factory_result(id))
+                        .any(|value| value.may_publish_namespace_in_factory_result(id, &aliases))
                     || callable.calls.iter().any(|call| {
                         call.args
                             .iter()
-                            .any(|value| value.directly_exposes_namespace(id))
+                            .any(|value| value.directly_exposes_namespace(id, &aliases))
                     })
             });
-            let top_assignment = index
-                .top_assignments
-                .iter()
-                .flatten()
-                .any(|(_, value)| value.may_expose_namespace(id));
             let top_member_value = index
                 .top_member_value_writes
                 .iter()
                 .flatten()
-                .any(|(_, _, value)| value.may_expose_namespace(id));
+                .any(|(_, _, value)| value.may_publish_namespace(id, &aliases));
             let top_call_argument = index.top_calls.iter().flatten().any(|call| {
                 call.args
                     .iter()
-                    .any(|value| value.directly_exposes_namespace(id))
+                    .any(|value| value.directly_exposes_namespace(id, &aliases))
             });
             let exported_value = index
                 .top_exported_values
                 .iter()
                 .flatten()
-                .any(|value| value.may_expose_namespace(id));
+                .any(|value| value.may_publish_namespace(id, &aliases))
+                || index.exported_bindings.iter().any(is_namespace_or_alias);
             !(top_member_write
+                || top_dynamic_write
+                || top_callback_result_write
                 || callable_write
-                || top_assignment
                 || top_member_value
                 || top_call_argument
                 || exported_value)
@@ -1108,6 +1278,10 @@ impl ExecutionIndex {
                 .push(receiver.map_or(ValueExpr::Unknown, ValueExpr::from_expr));
         } else {
             self.top_property_writes[self.owner.0].push((None, None));
+            if let Some(receiver) = receiver {
+                self.top_dynamic_property_receivers[self.owner.0]
+                    .push(ValueExpr::from_expr(receiver));
+            }
         }
     }
 
@@ -1119,14 +1293,12 @@ impl ExecutionIndex {
         let exposed = self
             .callback_factory_members
             .keys()
-            .filter(|id| value.may_expose_namespace(id))
+            .filter(|id| value.carries_namespace(id, &BTreeSet::new()))
             .cloned()
             .collect::<Vec<_>>();
-        self.callables
-            .get_mut(&key)
-            .unwrap()
-            .escaped_bindings
-            .extend(exposed);
+        let callable = self.callables.get_mut(&key).unwrap();
+        callable.escaped_bindings.extend(exposed);
+        callable.namespace_escape_values.push(value);
     }
 
     fn is_factory_member_data_value(&self, key: &PropName, expression: &Expr) -> bool {

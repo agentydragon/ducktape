@@ -1018,22 +1018,36 @@ through the analyzed chunk's synchronous initialization. That includes
 checking that provider or other namespace members and callback/ref/hook inputs
 cannot expose an alias that replaces a listed factory member. Direct static
 identifier-property namespace call results are treated as independent only
-under this explicit author assertion. Computed, chained, unrelated, and unknown
-call results remain conservative when assigned, returned, or used as
-dynamic-write receivers. For call-argument checks, the checker follows
-namespace values in the supplied argument expressions and excludes the callee
-expression, which is not passed as an argument; an unrelated call result is not
-assumed to be the namespace solely because it appears as an argument. Unknown
-expression shapes remain conservative. Unary, update, and non-logical binary
-expressions have primitive results on successful evaluation; their operand
-expressions remain in value flow so nested calls and unavailable reads are
-still analyzed. Conditional expressions and `&&`, `||`, and `??` retain both
-possible result values because they can return an object or callback. The
-checker tracks dynamic-write receiver values and rejects receivers whose
-checked value flow reaches the namespace, including direct member-rooted
-writes, local aliases, and unknown call results. Receivers with no syntactic
-path to the namespace rely on the author's audited non-aliasing assertion; this
-is a trusted contract, not a proof that arbitrary callback parameters are
+under this explicit author assertion. The checker propagates explicit
+namespace provenance through assignments, local aliases, property values,
+returns, and call arguments. An unrelated call or constructor result with no
+such path is not treated as a namespace alias solely because its runtime value
+is unknown; the author audit asserts that values used by admitted callbacks
+cannot alias or replace listed members. Unsupported syntax and unsupported
+destructuring results remain possible namespace values, and that uncertainty
+follows a local binding to later publication or call-argument sinks. For a
+recognized local class, publication checks aggregate the retained static
+fields or instance fields for the class value or allocation. A member
+projection checks the whole receiver conservatively, so an unrelated sibling
+field can also make the receiver a possible namespace carrier. Constructors,
+inheritance, decorators, accessors, and unsupported class surfaces remain
+opaque. Method bodies keep their existing independent return and effect
+analysis. For call-argument checks, the checker follows namespace values in
+the supplied argument expressions and excludes the callee expression, which
+is not passed as an argument. A value from an unknown call or constructor
+used as a static or dynamic write receiver remains a possible namespace alias,
+including through local aliases and member projections, and disables the
+contract. The checker does not prove that arbitrary callback parameters or
+unrelated call results are disjoint from the namespace; that non-aliasing
+guarantee is part of the author audit. Computed, chained, and unknown member
+results remain conservative when used as write receivers. Unary, update, and
+non-logical binary expressions have primitive results on successful
+evaluation; their operand expressions remain in value flow so nested calls
+and unavailable reads are still analyzed. Conditional expressions and
+`&&`, `||`, and `??` retain both possible result values because they can
+return an object or callback. Receivers with no syntactic path to the
+namespace rely on the author's audited non-aliasing assertion; this is a
+trusted contract, not a proof that arbitrary callback parameters are
 disjoint from the namespace.
 Inside a literal traversed within an admitted inline callback, a direct static
 namespace member used as a call callee is not treated as a captured namespace
