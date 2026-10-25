@@ -126,8 +126,11 @@ def collect_browser_signals(page: Page) -> BrowserSignals:
         )
         next_response_id += 1
 
+    def on_page_error(error) -> None:
+        signals.page_errors.append(error.stack or error.message)
+
     page.on("console", on_console)
-    page.on("pageerror", lambda error: signals.page_errors.append(str(error)))
+    page.on("pageerror", on_page_error)
     page.on("request", on_request)
     page.on("requestfailed", on_request_failed)
     page.on("requestfinished", on_request_finished)
