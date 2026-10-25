@@ -33,18 +33,11 @@ spec:
     gitlab:
       gitaly:
         affinity:
-          nodeAffinity:
-            key: kubernetes.io/hostname
-            values:
-              - ovh-ns103656
-              - ovh-ns103711
-              - ovh-ns102453
           podAntiAffinity:
             topologyKey: kubernetes.io/hostname
         antiAffinity: hard
         cgroups:
           enabled: false
-        nodeAffinity: hard
         persistence:
           accessMode: ReadWriteOnce
           enabled: true

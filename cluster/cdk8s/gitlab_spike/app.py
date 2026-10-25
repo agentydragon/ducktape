@@ -30,7 +30,6 @@ OUTPUT_DIR = f"{GENERATED_ROOT}/gitlab-spike/app"
 HOSTNAME = "gitlab-spike.allegedly.works"
 REGISTRY_HOSTNAME = "registry-gitlab-spike.allegedly.works"
 CHART_VERSION = "10.5.1"  # GitLab 19.5.1, published 2026-10-21 in charts.gitlab.io.
-GITALY_WORKERS = ("ovh-ns103656", "ovh-ns103711", "ovh-ns102453")
 
 GITLAB_DB = cnpg.PostgresRef.generated(name="gitlab-db", namespace=NAMESPACE)
 PRAEFECT_PASSWORD = SecretRef(namespace=NAMESPACE, name="praefect-db-credentials")
@@ -202,11 +201,7 @@ def _values() -> dict[str, object]:
                     "size": "50Gi",
                 },
                 "antiAffinity": "hard",
-                "nodeAffinity": "hard",
-                "affinity": {
-                    "podAntiAffinity": {"topologyKey": "kubernetes.io/hostname"},
-                    "nodeAffinity": {"key": "kubernetes.io/hostname", "values": list(GITALY_WORKERS)},
-                },
+                "affinity": {"podAntiAffinity": {"topologyKey": "kubernetes.io/hostname"}},
                 # The chart's cgroup init container needs a writable host cgroup mount. Local
                 # Gitaly process isolation stays off until Talos policy and mount support are proven.
                 "cgroups": {"enabled": False},
