@@ -494,6 +494,15 @@ debundle_e2e_test(
     ],
 )
 
+debundle_e2e_test(
+    name = "modules_refine_cli_test",
+    deps = [
+        "@crates//:serde_json",
+        "@crates//:serde_yaml",
+        "@crates//:tempfile",
+    ],
+)
+
 debundle_e2e_test(name = "bindings_assign_gate_cli_test")
 
 debundle_e2e_test(name = "bindings_unassign_gate_cli_test")

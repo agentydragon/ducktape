@@ -176,6 +176,40 @@ and the destinations each member would land in.
 
 The gate refuses; nothing on disk has changed.
 
+## Workflow: applying a reviewed owner partition
+
+When `modules decompose` reports a useful owner partition, replace its
+temporary part labels with semantic module names and apply the complete
+assignment through `modules refine`. For each owner that changes destination,
+include one row in a JSON batch:
+
+```json
+[
+  { "owner_id": "owner:12", "module": "runtime/state" },
+  { "owner_id": "owner:19", "module": "runtime/effects" }
+]
+```
+
+Then preview and apply the same reviewed file:
+
+```bash
+debundle modules refine --batch reviewed-owners.json --dry-run \
+  --graph owner_graph.json --modules spec/modules --source-root source
+debundle modules refine --batch reviewed-owners.json \
+  --graph owner_graph.json --modules spec/modules --source-root source
+```
+
+This command moves existing selector entries for each owner as a unit. It
+preserves their authored selectors and metadata, including all names in a
+multi-binding source match. Owners not listed retain their current module.
+For a multi-chunk tree, pass `--tree-config` and use destination paths prefixed
+by that chunk's module root. The command resolves the full post-edit selector
+set again, checks that every owner still resolves to the reviewed destination,
+then runs the shared atomic-unit and realizability gates. It refuses residual,
+unclaimed, import, and export owners and does not synthesize selectors. Module
+comments and notes remain with their original files. See <cli.md> § Applying
+reviewed owner assignments (`modules refine`).
+
 ## Peel heuristics: patterns that should move together
 
 These patterns surface repeatedly when peeling minified bundles. Each

@@ -37,6 +37,9 @@ pub struct ResolvedSourceClaims {
     /// The resolved source binding for each non-name-pin member's readable name.
     pub member_bindings: BTreeMap<String, String>,
     pub anonymous_owners: BTreeSet<OwnerId>,
+    /// The owner selected by each anonymous source selector. The key keeps
+    /// authored selector entries addressable when a CLI edit moves claims.
+    pub anonymous_selector_owners: BTreeMap<AnonymousStatementSelector, OwnerId>,
 }
 
 /// Resolve every module's claims together against each chunk source the
@@ -234,7 +237,7 @@ fn claim_entity(
         set.warnings.push(source.outcome.render_line());
     }
     match entity {
-        EntityIndex::AnonymousStatement(_) => {
+        EntityIndex::AnonymousStatement(index) => {
             let ordinal = js_ast::statement_ordinal_for_body_index(&source.module.body, place);
             let owner = anonymous_owner_by_source_ordinal
                 .get(&(source.source_path.clone(), ordinal))
@@ -249,6 +252,14 @@ fn claim_entity(
                     )
                 })?;
             set.claims.anonymous_owners.insert(owner);
+            let selector = module
+                .anonymous_statements
+                .get(index)
+                .context("resolved anonymous selector index is missing")?
+                .selector
+                .selector()
+                .clone();
+            set.claims.anonymous_selector_owners.insert(selector, owner);
         }
         EntityIndex::Member(index) => {
             let Outcome::Resolved {
