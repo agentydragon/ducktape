@@ -458,3 +458,13 @@ its swapped-package ownership path and its residual liveness path. Ownership
 traces distinguish dependencies of stripped exports from dependent items absorbed
 into the package island. These explain the stripper's conservative classification;
 they do not assert that every reported dependency executes synchronously.
+
+## Native collection callback effects
+
+Bounded synchronous analysis can execute a known callback for direct one-callback
+`forEach`, `filter`, and `map` calls over a retained untainted dense ordinary
+array. It passes actual retained element capabilities and preserves callback
+reads, writes, coercions, and publication. Fresh results retain element aliases;
+iteration and spread do not invoke stored functions. Unsupported sources,
+mutation, intrinsic changes, and invocation limits retain conservative effects.
+See [the proof and fallback conditions](https://github.com/agentydragon/ducktape/blob/devel/devinfra/js/debundle/docs/purity_soundness.md#retained-dense-array-iteration-effects).

@@ -156,6 +156,65 @@ stored in the resulting Set and called by a later consumer. Shadowed `Set`,
 spreads, holes, getters, proxies, function-valued or unknown properties, and
 mutated or escaped tables remain conservative.
 
+## Retained dense-array iteration effects
+
+The synchronous-effects executor models direct static `forEach`, `filter`, and
+`map` calls with one callback and no spread or `thisArg`. This is an effect
+model, not a purity admission: each known synchronous callback executes in the
+existing bounded abstract invocation engine with the retained element value,
+a primitive index, and the source array. Its ordinary reads, writes, calls,
+coercions, and publication effects remain observable. Empty arrays do not
+invoke the callback. `filter` conservatively retains every element; its
+subsequent indexes remain unknown primitives.
+
+The source must resolve at the current prefix to one untainted dense ordinary
+array. Elements must be primitives, retained ordinary data objects, or tracked
+function values. Every iteration recertifies the source and element identities;
+mutation, unsupported member access, implicit `arguments`, unsupported callback
+parameters, or budget exhaustion uses conservative whole effects. Array
+identity, element containment, publication, and property writes use the same
+object-origin and taint lanes as other values. Results from repeated evaluations
+of one call site join monotonically, including missing slots. Complete call
+spans distinguish nested calls with the same start position.
+
+Under A11 intrinsic integrity, standard Array iteration reads own dense slots;
+array spread over a proven result consumes its values without invoking stored
+functions. Visible Array/Object/global intrinsic mutation, constructor capability
+mutation/publication, custom iterators, species, methods, getters, holes, proxies,
+and ambiguous sources prevent this proof. Callback effects can themselves
+invalidate it. This follows the standard algorithms for
+[forEach](https://tc39.es/ecma262/multipage/indexed-collections.html#sec-array.prototype.foreach),
+[filter](https://tc39.es/ecma262/multipage/indexed-collections.html#sec-array.prototype.filter),
+and [map](https://tc39.es/ecma262/multipage/indexed-collections.html#sec-array.prototype.map).
+
+Within a certified iteration callback, a complete set of simple member
+assignments can preserve a separate fresh ordinary data receiver. Every key and
+right-hand value must be a retained primitive read with literal, identifier, or
+static member-chain syntax. The callback has no other mutations or calls beyond
+ordinary member reads; receiver state is checked again after those reads. Source
+arrays and their reachable entries are excluded. Field updates still join into
+the ordinary property/containment maps. Under intact Object prototypes, even the
+inherited `__proto__` setter ignores a primitive right-hand value. Unknown keys,
+object values, custom prototypes, setters, mutation, and coercive expressions
+retain the setter/effect fallback.
+
+Capabilities exposed through exports become untrusted when execution can reenter
+the module, using the existing export-reentry policy. Retained untagged-template
+conversions, membership protocols (`in` and `instanceof`), and destructuring
+source reads preserve possible mutation before a later array call. Tagged-template
+substitutions are evaluated without untagged-template string conversion.
+Unsupported local parameter patterns and implicit `arguments` preserve actual
+input taint and raw callback effects. These guards prevent stale source slots or
+newly installed setters from being mistaken for ordinary data.
+
+An exact single-spread object literal `{ ...source }` can retain a fresh copy
+identity when its source is one untainted verified ordinary object containing
+only static own data properties. The copy retains each field value and its
+aliases, never the source root as the copy root. An uncertified evaluation
+monotonically invalidates that copy site. Unsupported object spreads preserve
+possible getter effects during the callback invocation, even when no result is
+consumed. General object spread and accessor execution stay conservative.
+
 ## Callback storage through mapped `Object.fromEntries`
 
 Synchronous callback analysis has a separate, narrow storage proof for

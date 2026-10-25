@@ -581,3 +581,5 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(name = "initializer_placement_test")
+
+debundle_e2e_test(name = "intrinsic_array_iteration_test")

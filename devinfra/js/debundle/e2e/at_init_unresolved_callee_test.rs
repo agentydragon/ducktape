@@ -157,6 +157,94 @@ export { later, tools, byId };
 }
 
 #[test]
+fn fresh_descriptor_for_each_does_not_invoke_stored_executor() {
+    let source = r#"let later = 0;
+const nodeIds = { tool: "tool-id" };
+const descriptors = [{ id: nodeIds.tool, name: "tool", executor: () => later }];
+const lookup = {};
+descriptors.forEach((data) => { lookup[data.id] = data.name; });
+later = 42;
+console.log(lookup["tool-id"], descriptors[0].executor());
+export { lookup };
+"#;
+    let colocated = run_fixture(FixtureOpts::new(
+        source,
+        vec![logical_module_with_anon(
+            "all",
+            &[
+                Member::new("later"),
+                Member::new("nodeIds"),
+                Member::new("descriptors"),
+                Member::new("lookup"),
+            ],
+            &[
+                "descriptors.forEach((data) => { lookup[data.id] = data.name; });",
+                "later = 42;",
+            ],
+        )],
+    ));
+    assert_preserved_entry_output(&colocated, "tool 42\n");
+
+    let split = run_fixture(FixtureOpts::new(
+        source,
+        vec![
+            logical_module_with_anon(
+                "registry",
+                &[
+                    Member::new("nodeIds"),
+                    Member::new("descriptors"),
+                    Member::new("lookup"),
+                ],
+                &["descriptors.forEach((data) => { lookup[data.id] = data.name; });"],
+            ),
+            logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
+        ],
+    ));
+    assert_preserved_entry_output(&split, "tool 42\n");
+}
+
+#[test]
+fn fresh_descriptor_filter_map_spread_does_not_invoke_stored_executor() {
+    let source = r#"let later = 0;
+const descriptors = [{ id: "tool-id", name: "tool", executor: () => later }];
+globalThis.savedExecutor = descriptors[0].executor;
+const ids = [...descriptors.filter((data) => data.id).map((data) => data.id)];
+later = 42;
+console.log(ids[0], descriptors[0].executor());
+export { ids };
+"#;
+    let colocated = run_fixture(FixtureOpts::new(
+        source,
+        vec![logical_module_with_anon(
+            "all",
+            &[
+                Member::new("later"),
+                Member::new("descriptors"),
+                Member::new("ids"),
+            ],
+            &[
+                "globalThis.savedExecutor = descriptors[0].executor;",
+                "later = 42;",
+            ],
+        )],
+    ));
+    assert_preserved_entry_output(&colocated, "tool-id 42\n");
+
+    let split = run_fixture(FixtureOpts::new(
+        source,
+        vec![
+            logical_module_with_anon(
+                "registry",
+                &[Member::new("descriptors"), Member::new("ids")],
+                &["globalThis.savedExecutor = descriptors[0].executor;"],
+            ),
+            logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
+        ],
+    ));
+    assert_preserved_entry_output(&split, "tool-id 42\n");
+}
+
+#[test]
 fn global_event_listener_callback_is_not_promoted_as_at_init() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"const later = "ready";
