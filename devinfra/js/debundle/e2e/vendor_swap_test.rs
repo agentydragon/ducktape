@@ -3184,10 +3184,7 @@ fn bundled_reentry_proof_requires_runtime_and_closed_synchronous_bundle() {
         let fixture = browser_bundled_reentry_fixture(bundle, runtime);
         assert!(!fixture.result.status.success());
         assert!(
-            fixture
-                .result
-                .stderr
-                .contains("atomic-factor-group conflict"),
+            fixture.result.stderr.contains("atomic-group conflict"),
             "{}",
             fixture.result.stderr
         );
