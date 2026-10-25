@@ -6,8 +6,8 @@ use std::collections::BTreeMap;
 
 use analysis::{DepKind, ModuleId, OwnerGraphReport};
 use report_fixtures::{
-    active_owner, atomic_edge, atomic_unit_for, claims, graph_of, owner_edge, residual_owner,
-    singleton_graph,
+    active_owner, atomic_edge, atomic_unit_for, claims, graph_of, owner_edge, promoted_owner_edge,
+    residual_owner, singleton_graph,
 };
 
 use crate::propose::{ModuleProposal, propose};
@@ -27,6 +27,70 @@ fn spec_module(module_id: &str, owners: &[&str]) -> SpecModuleGroup {
 }
 
 // ---------- Tests. ----------
+
+/// Moving a residual owner into an active module changes import order for the
+/// separate `ui/m5`–`ui/m6` I-SCC, exposing a TDZ there.
+#[test]
+fn original_home_merge_rejects_remote_tdz() {
+    let report = singleton_graph(
+        vec![
+            active_owner("owner:0", 1, &["B0"], 5, "ui/m5"),
+            active_owner("owner:1", 2, &["B1"], 5, "ui/m5"),
+            residual_owner("owner:2", 3, &["B2"], 5),
+            residual_owner("owner:3", 4, &["B3"], 5),
+            active_owner("owner:4", 5, &["B4"], 5, "ui/m6"),
+            active_owner("owner:5", 6, &["B5"], 5, "ui/m4"),
+            residual_owner("owner:6", 7, &["B6"], 5),
+            active_owner("owner:7", 8, &["B7"], 5, "ui/m0"),
+        ],
+        vec![
+            owner_edge("edge:0", "owner:0", "owner:1", DepKind::Sequenced, true),
+            owner_edge("edge:1", "owner:0", "owner:4", DepKind::LazyUse, false),
+            owner_edge("edge:2", "owner:1", "owner:0", DepKind::LazyUse, false),
+            owner_edge("edge:3", "owner:1", "owner:4", DepKind::LazyUse, false),
+            promoted_owner_edge(
+                "edge:4",
+                "owner:1",
+                "owner:5",
+                DepKind::EagerUse,
+                true,
+                "owner:4",
+            ),
+            owner_edge("edge:5", "owner:2", "owner:3", DepKind::LazyUse, false),
+            owner_edge("edge:6", "owner:3", "owner:1", DepKind::EagerUse, true),
+            owner_edge("edge:7", "owner:3", "owner:2", DepKind::LazyUse, false),
+            owner_edge("edge:8", "owner:4", "owner:1", DepKind::EagerUse, true),
+            owner_edge("edge:9", "owner:6", "owner:1", DepKind::LazyUse, false),
+            owner_edge("edge:10", "owner:6", "owner:5", DepKind::Sequenced, true),
+            owner_edge("edge:11", "owner:7", "owner:0", DepKind::EagerUse, true),
+        ],
+    );
+    let spec = [
+        spec_module("ui/m0", &["owner:7"]),
+        spec_module("ui/m4", &["owner:5"]),
+        spec_module("ui/m5", &["owner:0", "owner:1"]),
+        spec_module("ui/m6", &["owner:4"]),
+    ];
+    let (mut q, _) =
+        build_seed_quotient(&report, &report.atomic_graph.nodes, &spec, 10_000).unwrap();
+    assert!(q.realizability_verdict().is_realizable());
+    let left = q.class_of(q.owner_idx_of("owner:3").unwrap());
+    let right = q.class_of(q.owner_idx_of("owner:7").unwrap());
+    assert!(q.merge_preserves_invariants(left, right));
+    let mut post = q.realizability_partition().clone();
+    let target = post.of(analysis::OwnerId(7));
+    post.set(analysis::OwnerId(3), target);
+    let post_verdict = gate::check_realizability(q.owner_graph(), &post);
+    assert_eq!(post_verdict.unrealizable_sccs.len(), 1);
+    assert!(
+        !post_verdict.unrealizable_sccs[0]
+            .core
+            .modules
+            .contains(&target)
+    );
+    assert!(!q.contract_if_preserving(left, right));
+    assert!(q.realizability_verdict().is_realizable());
+}
 
 #[test]
 fn group_contraction_commits_one_final_entry_partition_and_honors_cap() {
