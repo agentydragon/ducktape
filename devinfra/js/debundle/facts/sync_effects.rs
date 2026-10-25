@@ -4923,7 +4923,9 @@ impl Executor<'_> {
         }
         if self.exported_owners.contains(&fact.ordinal)
             || !(fact.purity.is_pure()
-                && (fact.declares_direct_function || matches!(fact.kind, StatementKind::ClassDecl)))
+                && (fact.declares_direct_function
+                    || matches!(fact.kind, StatementKind::ClassDecl)
+                    || self.closed_callback_factory_result(fact)))
         {
             roots.insert(fact.ordinal);
         }
@@ -4932,6 +4934,37 @@ impl Executor<'_> {
                 .owners_for_bindings(fact.reads.eager.iter().chain(fact.rebinds.eager.iter())),
         );
         roots
+    }
+
+    /// A validated factory retains the inline callback only in its fresh
+    /// returned graph. Creating that graph does not publish the callback;
+    /// later calls, writes, and exports still flow through the value model.
+    fn closed_callback_factory_result(&self, fact: &StatementFacts) -> bool {
+        if !matches!(fact.kind, StatementKind::VarDecl)
+            || fact.declared.len() != 1
+            || self.index.opaque_top.contains(&fact.ordinal)
+        {
+            return false;
+        }
+        let [(binding, ValueExpr::Call(callee, args, site))] =
+            self.index.top_assignments[fact.ordinal.0].as_slice()
+        else {
+            return false;
+        };
+        let [call] = self.index.top_calls[fact.ordinal.0].as_slice() else {
+            return false;
+        };
+        matches!(callee.as_ref(), ValueExpr::Binding(factory)
+            if self.index.callback_factory_imports.contains(factory))
+            && matches!(
+                args.as_slice(),
+                [ValueExpr::Origin(ValueOrigin::Function(_))]
+            )
+            && fact.declared.contains(binding)
+            && self.index.top_definite_initializers[fact.ordinal.0].contains(binding)
+            && call.kind == CallKind::Call
+            && !call.has_spread
+            && CallSite::from(call.span) == *site
     }
 
     fn extend_reachable_owners(

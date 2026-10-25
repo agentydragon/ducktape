@@ -48,6 +48,93 @@ console.log(later);
 }
 
 #[test]
+fn unpublished_imported_callback_factory_result_stays_deferred() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"import { observe } from './peer.js';
+const prefix = new globalThis.Error();
+const wrapped = observe(() => later);
+const dynamic = ((object) => {
+  object[(object.key = 0)] = "value";
+  return 1;
+})({});
+const later = dynamic;
+console.log(later);
+console.log(wrapped());
+"#,
+            vec![
+                logical_module(
+                    "values/dynamic",
+                    &[Member::new("dynamic"), Member::new("prefix")],
+                ),
+                logical_module(
+                    "values/later",
+                    &[Member::new("later"), Member::new("wrapped")],
+                ),
+            ],
+        )
+        .with_extra_chunks(&[(
+            "static/peer",
+            "export function observe(callback) { return (...args) => callback(...args); }\n",
+        )])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+            .with_callback_factories(&["observe"])
+            .build()]),
+    );
+
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/values/dynamic.js",
+        &["dynamic"],
+        &["later"],
+    );
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/values/later.js",
+        &["later", "wrapped"],
+        &["dynamic"],
+    );
+    assert_preserved_entry_output(&fixture, "1\n1\n");
+}
+
+#[test]
+fn published_imported_callback_factory_result_keeps_later_read() {
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            r#"import { observe } from './peer.js';
+const prefix = new globalThis.Error();
+const wrapped = observe(() => later);
+globalThis.saved = wrapped;
+const dynamic = ((object) => {
+  object[(object.key = 0)] = "value";
+  return 1;
+})({});
+const later = dynamic;
+"#,
+            vec![
+                logical_module(
+                    "values/dynamic",
+                    &[Member::new("dynamic"), Member::new("prefix")],
+                ),
+                logical_module(
+                    "values/later",
+                    &[Member::new("later"), Member::new("wrapped")],
+                ),
+            ],
+        )
+        .with_extra_chunks(&[(
+            "static/peer",
+            "export function observe(callback) { return (...args) => callback(...args); }\n",
+        )])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+            .with_callback_factories(&["observe"])
+            .build()]),
+        &["values/dynamic", "values/later"],
+        &[],
+    );
+}
+
+#[test]
 fn earlier_unknown_call_does_not_promote_unescaped_local_reader() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"const prefix = new globalThis.Error();
