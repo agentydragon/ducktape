@@ -1,9 +1,11 @@
 //! `modules` command arguments, dispatch, and report presentation. Merge and
 //! delete planning/persistence live in `module`, separate from CLI rendering.
+use crate::binding::{OwnerAssignment, run_owner_refine};
 use crate::comment::{ModuleCommentArgs, run_module_comment_cmd};
 use crate::emit_report;
 use crate::module::{DeleteArgs, MergeArgs, run_delete, run_merge};
 use crate::module_apply::{ModulesApplyArgs, run_modules_apply};
+use crate::outcome::{emit_gate_rejection_json, print_outcome_json};
 use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, Subcommand};
 use peel::propose::{
@@ -13,6 +15,7 @@ use peel::propose::{
 };
 use peel::{CommonArgs, OutputFormat, PlanWorkArgs, run_plan_work_report};
 use std::path::PathBuf;
+use std::{fs, io::Read};
 
 /// Args for `debundle modules ...`. Aggregates the existing
 /// comment-edit verb (in `cli::comment`) with the new
@@ -68,6 +71,17 @@ enum ModulesNsCommand {
     Propose(PlanWorkArgs),
     /// Claim reviewed residual proposal bindings using proven structural selectors.
     Apply(ModulesApplyArgs),
+    /// Move reviewed existing owner claims as one validated batch.
+    ///
+    /// The JSON batch contains `{ "owner_id": "...", "module": "..." }`
+    /// rows. Omitted owners keep their current module. This command moves
+    /// existing selectors and metadata without synthesizing selectors, then
+    /// resolves the entire scoped spec again and requires the complete owner
+    /// partition to match the requested assignment before running the normal
+    /// realizability and atomic-unit gates. Import/export scaffolding and
+    /// residual owners cannot be moved. Module comments and notes stay with
+    /// their original YAML module.
+    Refine(ModulesRefineArgs),
     /// Report a read-only, gate-checked refinement of existing module groups.
     ///
     /// The planner keeps each current module separate from the others and
@@ -112,6 +126,37 @@ struct ModuleDecomposeArgs {
     /// the shared gate, revalidating the complete candidate after each round.
     #[arg(long, requires = "atomic")]
     coarsen_blocking_sccs: bool,
+}
+
+#[derive(Debug, ClapArgs)]
+struct ModulesRefineArgs {
+    /// JSON array of reviewed owner IDs and destination module paths; `-` reads stdin.
+    #[arg(long)]
+    batch: String,
+
+    /// Modules tree root.
+    #[arg(long = "modules", env = "DEBUNDLE_MODULES")]
+    modules_root: PathBuf,
+
+    /// Current owner graph used to resolve selectors and check the complete result.
+    #[arg(long = "graph", env = "DEBUNDLE_GRAPH")]
+    graph: PathBuf,
+
+    /// Root for the chunk source used by existing selectors.
+    #[arg(long = "source-root", env = "DEBUNDLE_SOURCE_ROOT")]
+    source_root: PathBuf,
+
+    /// Tree config that scopes this graph-backed edit to its chunk's module roots.
+    #[arg(long = "tree-config", env = "DEBUNDLE_TREE_CONFIG")]
+    tree_config: Option<PathBuf>,
+
+    /// Validate the complete edit without writing module YAML.
+    #[arg(long)]
+    dry_run: bool,
+
+    /// Output format. Default text on tty, JSON on pipe.
+    #[arg(long, value_enum)]
+    format: Option<OutputFormat>,
 }
 
 /// Args for `debundle modules list`.
@@ -365,6 +410,43 @@ fn run_module_decompose(args: ModuleDecomposeArgs) -> Result<()> {
     )
 }
 
+fn run_modules_refine(args: ModulesRefineArgs) -> Result<()> {
+    let text = if args.batch == "-" {
+        let mut text = String::new();
+        std::io::stdin().read_to_string(&mut text)?;
+        text
+    } else {
+        fs::read_to_string(&args.batch).with_context(|| format!("reading {}", args.batch))?
+    };
+    let assignments: Vec<OwnerAssignment> =
+        serde_json::from_str(&text).context("parsing modules refine batch")?;
+    let outcome = match run_owner_refine(
+        &args.modules_root,
+        &args.graph,
+        &args.source_root,
+        args.tree_config.as_deref(),
+        assignments,
+        args.dry_run,
+    ) {
+        Ok(outcome) => outcome,
+        Err(err) => {
+            emit_gate_rejection_json("refine", args.format, &err);
+            return Err(err);
+        }
+    };
+    match OutputFormat::resolve(args.format) {
+        OutputFormat::Text => println!(
+            "{}: {} owner(s), {} file(s) written, {} file(s) deleted",
+            outcome.outcome.action,
+            outcome.owners_reassigned,
+            outcome.outcome.files_written.len(),
+            outcome.outcome.files_deleted.len(),
+        ),
+        format => print_outcome_json(&outcome, format)?,
+    }
+    Ok(())
+}
+
 // --- Text renderers -------------------------------------------------
 //
 // Each query command needs a text rendering for tty output. v1 keeps
@@ -417,6 +499,7 @@ pub(super) fn run(args: ModulesNs) -> Result<()> {
         }
         ModulesNsCommand::Decompose(args) => run_module_decompose(args),
         ModulesNsCommand::Apply(args) => run_modules_apply(args),
+        ModulesNsCommand::Refine(args) => run_modules_refine(args),
         ModulesNsCommand::List(args) => run_modules_list(args),
     }
 }

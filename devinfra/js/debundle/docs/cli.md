@@ -35,7 +35,7 @@ both are set.
 | `--graph <path>`       | `DEBUNDLE_GRAPH`       | `owner_graph.json` for the chunk being inspected or edited. The graph path implies the chunk; multi-chunk callers point at different graphs per invocation. |
 | `--modules <dir>`      | `DEBUNDLE_MODULES`     | Per-module YAML tree root (the directory under `spec/modules/`).                                                                                            |
 | `--source-root <dir>`  | `DEBUNDLE_SOURCE_ROOT` | Upstream snapshot root containing the original chunk bytes.                                                                                                 |
-| `--tree-config <file>` | `DEBUNDLE_TREE_CONFIG` | For `modules propose`, `modules decompose`, and `modules apply`, scope an app-level modules tree to the chunk named by `--graph`.                           |
+| `--tree-config <file>` | `DEBUNDLE_TREE_CONFIG` | For graph-backed `modules` edits and queries, scope an app-level modules tree to the chunk named by `--graph`.                                              |
 
 `debundle run --out-root` reads `DEBUNDLE_OUT`. `debundle run
 --tree-source-root` (the spec-tree compile root for source-relative paths in
@@ -426,6 +426,39 @@ as conflicts. The complete candidate still goes through the shared gate; an
 atomic split is not assumed to be realizable. The suggested
 `decomposition/residual/part-N` paths are temporary names that authors should
 replace after reviewing the source.
+
+### Applying reviewed owner assignments (`modules refine`)
+
+Use `modules refine` to apply a reviewed owner-to-module batch to claims already
+present in the scoped module tree:
+
+```sh
+debundle modules refine --batch reviewed-owners.json \
+  --graph owner_graph.json --modules spec/modules --source-root source
+```
+
+The batch is a JSON array of `{ "owner_id": "...", "module": "..." }`
+rows. `module` names a destination path; with `--tree-config`, include the
+selected chunk root in that path. Owners omitted from the batch keep their
+current assignment. Each row moves every existing selector that resolves to
+that owner, including `members:`, grouped `source_matches[].bindings[]`, and
+`anonymous_statements:` entries. It preserves selector text, binding names,
+annotations, source-match notes, and anonymous-statement comments and notes.
+Module-level `comment:` and `note:` fields stay with their original module.
+
+The command accepts only already-claimed, non-residual owners. Residual,
+unclaimed, import, and export owners cannot be assigned. It rejects duplicate
+owner rows, split/conflicting current claims, destination name or annotation
+collisions, and stale owner graphs. It then resolves every selector in the
+complete scoped post-edit spec and compares every graph owner—including
+unchanged and residual owners—to the requested complete partition. Only after
+that identity check does the shared atomic-unit and realizability gate run.
+There is no `--no-verify` mode. `--dry-run` performs the same checks without
+writing YAML; a rejected batch leaves every module document unchanged.
+
+The primitive does not create selectors or choose semantic module names. It
+applies the reviewed owner map as written; inspect the resulting modules and
+run the project extraction gate after an accepted edit.
 
 ### `--batch` JSON format
 

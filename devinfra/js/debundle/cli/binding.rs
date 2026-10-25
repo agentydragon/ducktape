@@ -19,17 +19,23 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use analysis::{OwnerGraphReport, OwnerId, StatementKind};
+use anonymous_resolution::resolve_source_claims;
 use anyhow::{Context, Result, anyhow, bail};
 use serde::Deserialize;
 
 use spec::{
-    BindingAnnotation, LogicalModule, Member, ModulePath, SourceMatchBinding,
-    SourceMatchBindingDetail, SourceMatchClaim, is_residual_module_path,
+    AnonymousStatement, BindingAnnotation, LogicalModule, Member, MemberSelectorSpec, ModulePath,
+    SourceMatchBinding, SourceMatchBindingDetail, SourceMatchClaim, is_residual_module_path,
 };
 use spec_modules::{collect_module_files, module_path_from_file, read_module_file};
+use spec_tree::ModuleTreeScope;
 use yaml_edit::write_yaml_atomic;
 
-use crate::edit_gate::{Gate, post_edit_spec_from_docs};
+use crate::edit_gate::{
+    Gate, OwnerModuleAssignments, gate_post_edit_partition_with_expected_owner_modules,
+    owner_module_assignments, post_edit_spec_from_docs, source_claim_sets_from_post_spec,
+};
 use crate::outcome::{GateOutcome, MutationOutcome};
 
 /// A chunk-top binding's public identity: the minified hygiene name
@@ -839,6 +845,615 @@ pub fn run_bindings_assign(
         },
         moves_applied: plan.len(),
     })
+}
+
+/// One reviewed owner reassignment. Owners not listed keep their current
+/// destination. This command deliberately accepts only owners already claimed
+/// by the scoped module tree; it does not synthesize selectors for residuals.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OwnerAssignment {
+    pub owner_id: String,
+    pub module: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct OwnerRefineOutcome {
+    #[serde(flatten)]
+    pub outcome: MutationOutcome,
+    pub owners_reassigned: usize,
+}
+
+#[derive(Debug, Clone)]
+enum OwnerClaimSlot {
+    Member(usize),
+    SourceMatch(usize, usize),
+    Anonymous(usize),
+}
+
+#[derive(Debug, Clone)]
+struct OwnerClaimLocation {
+    owner_id: String,
+    /// Exact key used by the in-memory document map and filesystem path.
+    physical_module: String,
+    /// Canonical logical module identity used by the complete owner map.
+    logical_module: String,
+    slot: OwnerClaimSlot,
+}
+
+#[derive(Debug, Clone)]
+struct PlannedOwnerMove {
+    owner_id: String,
+    source_module: String,
+    destination: String,
+    slot: OwnerClaimSlot,
+}
+
+/// Move complete existing owner claims as one checked edit. Selector locations
+/// come from the canonical joint resolver; names, selector text, annotations,
+/// and anonymous-statement metadata are preserved from the original YAML.
+pub fn run_owner_refine(
+    modules_root: &Path,
+    owner_graph_path: &Path,
+    source_root: &Path,
+    tree_config: Option<&Path>,
+    assignments: Vec<OwnerAssignment>,
+    dry_run: bool,
+) -> Result<OwnerRefineOutcome> {
+    if assignments.is_empty() {
+        bail!("owner assignment batch is empty");
+    }
+
+    let owner_graph = crate::load_owner_graph_report(owner_graph_path)?;
+    let scope = tree_config
+        .map(|path| ModuleTreeScope::from_config(path, &owner_graph.chunk_id))
+        .transpose()?;
+    let mut original_docs = load_module_docs(modules_root)?;
+    if let Some(scope) = &scope {
+        original_docs.retain(|module, _| scope.contains(Path::new(module)));
+    }
+    let mut docs = original_docs.clone();
+    let initial_spec = post_edit_spec_from_docs(&original_docs, &BTreeSet::new())?;
+    let claim_sets = source_claim_sets_from_post_spec(&initial_spec);
+    let resolved = resolve_source_claims(
+        &owner_graph,
+        owner_graph_path,
+        modules_root,
+        Some(source_root),
+        &claim_sets,
+    )?;
+    let current_owner_modules = owner_module_assignments(
+        &owner_graph,
+        modules_root,
+        &initial_spec,
+        &resolved,
+        scope.as_ref(),
+    )?;
+    check_graph_owner_destinations(&owner_graph, &current_owner_modules, scope.as_ref())?;
+
+    let mut owner_by_binding = BTreeMap::<String, OwnerId>::new();
+    let mut owner_index_by_id = BTreeMap::<String, OwnerId>::new();
+    for (index, node) in owner_graph.nodes.iter().enumerate() {
+        let owner = OwnerId(index);
+        owner_index_by_id.insert(node.id.clone(), owner);
+        for binding in &node.declared_bindings {
+            owner_by_binding
+                .entry(binding.binding.to_string())
+                .or_insert(owner);
+        }
+    }
+
+    let locations = owner_claim_locations(
+        &owner_graph,
+        modules_root,
+        &original_docs,
+        &initial_spec,
+        &resolved,
+        &owner_by_binding,
+        scope.as_ref(),
+    )?;
+    let mut locations_by_owner = BTreeMap::<String, Vec<OwnerClaimLocation>>::new();
+    for location in locations {
+        let expected_module = current_owner_modules
+            .get(&location.owner_id)
+            .and_then(Option::as_ref)
+            .with_context(|| {
+                format!(
+                    "owner {:?} has a module claim location but resolves to residual",
+                    location.owner_id
+                )
+            })?;
+        anyhow::ensure!(
+            expected_module.as_str() == location.logical_module,
+            "owner {:?} selector is stored in {}, but the complete spec resolves it to {}",
+            location.owner_id,
+            location.logical_module,
+            expected_module
+        );
+        locations_by_owner
+            .entry(location.owner_id.clone())
+            .or_default()
+            .push(location);
+    }
+
+    let mut requested_destinations = BTreeMap::<String, String>::new();
+    for assignment in assignments {
+        anyhow::ensure!(
+            owner_index_by_id.contains_key(&assignment.owner_id),
+            "owner ID {:?} is absent from owner_graph.json",
+            assignment.owner_id
+        );
+        anyhow::ensure!(
+            !requested_destinations.contains_key(&assignment.owner_id),
+            "owner assignment batch repeats {:?}",
+            assignment.owner_id
+        );
+        let owner = owner_index_by_id[&assignment.owner_id];
+        let node = &owner_graph.nodes[owner.0];
+        anyhow::ensure!(
+            !matches!(
+                node.statement_kind,
+                StatementKind::Import | StatementKind::Export
+            ),
+            "owner {:?} is import/export scaffolding and cannot be moved by modules refine",
+            assignment.owner_id
+        );
+        let current_module = current_owner_modules
+            .get(&assignment.owner_id)
+            .and_then(Option::as_ref)
+            .with_context(|| {
+                format!(
+                    "owner {:?} is currently unclaimed/residual; modules refine moves existing claims only",
+                    assignment.owner_id
+                )
+            })?;
+        anyhow::ensure!(
+            !is_residual_module_path(current_module.as_str()),
+            "owner {:?} is claimed from a residual module and cannot be moved",
+            assignment.owner_id
+        );
+        let destination = if let Some(scope) = &scope {
+            scope.canonical_destination(&assignment.module)?
+        } else {
+            canonical_module_path(&assignment.module)?
+        };
+        anyhow::ensure!(
+            !is_residual_module_path(&destination),
+            "destination {:?} is a reserved residual path",
+            destination
+        );
+        requested_destinations.insert(assignment.owner_id, destination);
+    }
+
+    let mut expected_owner_modules = current_owner_modules.clone();
+    let mut planned_moves = Vec::new();
+    let mut source_modules = BTreeSet::new();
+    let mut owners_reassigned = 0;
+    let existing_destinations = physical_modules_by_logical_destination(&docs, scope.as_ref())?;
+    for (owner_id, destination) in &requested_destinations {
+        let source_logical_module = current_owner_modules[owner_id]
+            .as_ref()
+            .expect("requested owners were checked as claimed")
+            .as_str()
+            .to_string();
+        if destination == &source_logical_module {
+            continue;
+        }
+        owners_reassigned += 1;
+        expected_owner_modules.insert(owner_id.clone(), Some(destination.clone()));
+        let owner_locations = locations_by_owner.get(owner_id).with_context(|| {
+            format!("owner {owner_id:?} has no movable member or anonymous selector in the spec")
+        })?;
+        let mut physical_sources = BTreeSet::new();
+        for location in owner_locations {
+            anyhow::ensure!(
+                location.logical_module == source_logical_module,
+                "owner {owner_id:?} has claims in more than one source module"
+            );
+            physical_sources.insert(location.physical_module.clone());
+        }
+        anyhow::ensure!(
+            physical_sources.len() == 1,
+            "owner {owner_id:?} resolves to multiple physical module files with the same logical identity"
+        );
+        let source_module = physical_sources
+            .into_iter()
+            .next()
+            .expect("movable owner has at least one location");
+        let destination_module = match existing_destinations.get(destination) {
+            Some(paths) if paths.len() == 1 => paths[0].clone(),
+            Some(paths) => anyhow::bail!(
+                "logical destination {destination:?} matches multiple module files: {}",
+                paths.join(", ")
+            ),
+            None => destination.clone(),
+        };
+        for location in owner_locations {
+            source_modules.insert(source_module.clone());
+            planned_moves.push(PlannedOwnerMove {
+                owner_id: owner_id.clone(),
+                source_module: source_module.clone(),
+                destination: destination_module.clone(),
+                slot: location.slot.clone(),
+            });
+        }
+    }
+
+    let moved_members = planned_moves
+        .iter()
+        .filter_map(|movement| match movement.slot {
+            OwnerClaimSlot::Member(index) => Some((movement.source_module.clone(), index)),
+            _ => None,
+        });
+    let mut pulled_members = take_members(&mut docs, moved_members);
+    let moved_source_match_bindings =
+        planned_moves
+            .iter()
+            .filter_map(|movement| match movement.slot {
+                OwnerClaimSlot::SourceMatch(claim, binding) => {
+                    Some((movement.source_module.clone(), claim, binding))
+                }
+                _ => None,
+            });
+    let mut pulled_source_match_bindings =
+        take_source_match_bindings(&mut docs, moved_source_match_bindings);
+    let moved_anonymous = planned_moves
+        .iter()
+        .filter_map(|movement| match movement.slot {
+            OwnerClaimSlot::Anonymous(index) => Some((movement.source_module.clone(), index)),
+            _ => None,
+        });
+    let mut pulled_anonymous = take_anonymous_statements(&mut docs, moved_anonymous);
+
+    let mut destination_claims = BTreeMap::<(String, String, usize), usize>::new();
+    let mut moved_names_by_destination = BTreeMap::<String, BTreeSet<String>>::new();
+    for movement in &planned_moves {
+        match movement.slot {
+            OwnerClaimSlot::Member(index) => {
+                let member = pulled_members
+                    .remove(&(movement.source_module.clone(), index))
+                    .expect("planned member was extracted");
+                let name = member_effective_name(&member).with_context(|| {
+                    format!("owner {:?} member has no binding name", movement.owner_id)
+                })?;
+                moved_names_by_destination
+                    .entry(movement.destination.clone())
+                    .or_default()
+                    .insert(name.clone());
+                let annotation = docs
+                    .get_mut(&movement.source_module)
+                    .expect("source module remains loaded")
+                    .1
+                    .annotations
+                    .remove(&name);
+                let destination =
+                    ensure_owner_destination(&mut docs, modules_root, &movement.destination);
+                destination.members.push(member);
+                insert_annotation(destination, &name, annotation)?;
+            }
+            OwnerClaimSlot::SourceMatch(claim_index, binding_index) => {
+                let mut claim = pulled_source_match_bindings
+                    .remove(&(movement.source_module.clone(), claim_index, binding_index))
+                    .expect("planned source-match binding was extracted");
+                anyhow::ensure!(
+                    claim.bindings.len() == 1,
+                    "source-match split did not isolate one binding"
+                );
+                let binding = &claim.bindings[0];
+                let name =
+                    BindingName::new(binding.local().to_string(), source_match_readable(binding));
+                let effective_name = binding_effective_name(&name).to_string();
+                moved_names_by_destination
+                    .entry(movement.destination.clone())
+                    .or_default()
+                    .insert(effective_name.clone());
+                let annotation = docs
+                    .get_mut(&movement.source_module)
+                    .expect("source module remains loaded")
+                    .1
+                    .annotations
+                    .remove(&effective_name);
+                let destination =
+                    ensure_owner_destination(&mut docs, modules_root, &movement.destination);
+                let key = (
+                    movement.destination.clone(),
+                    movement.source_module.clone(),
+                    claim_index,
+                );
+                if let Some(index) = destination_claims.get(&key) {
+                    destination.source_matches[*index]
+                        .bindings
+                        .append(&mut claim.bindings);
+                } else {
+                    let index = destination.source_matches.len();
+                    destination.source_matches.push(claim);
+                    destination_claims.insert(key, index);
+                }
+                insert_annotation(destination, &effective_name, annotation)?;
+            }
+            OwnerClaimSlot::Anonymous(index) => {
+                let statement = pulled_anonymous
+                    .remove(&(movement.source_module.clone(), index))
+                    .expect("planned anonymous selector was extracted");
+                ensure_owner_destination(&mut docs, modules_root, &movement.destination)
+                    .anonymous_statements
+                    .push(statement);
+            }
+        }
+    }
+
+    for (destination, moved_names) in &moved_names_by_destination {
+        let (_, module) = docs
+            .get(destination)
+            .with_context(|| format!("destination module {destination:?} is missing"))?;
+        let mut counts = BTreeMap::<String, usize>::new();
+        for binding in binding_matches_in_doc(
+            &modules_root.join(format!("{destination}.yaml")),
+            destination,
+            module,
+        ) {
+            *counts
+                .entry(binding_effective_name(&binding.name).to_string())
+                .or_default() += 1;
+        }
+        for name in moved_names {
+            let count = counts.get(name).copied().unwrap_or_default();
+            anyhow::ensure!(
+                count == 1,
+                "moving a claim named {name:?} into {destination} would create a binding-name collision ({count} entries)"
+            );
+        }
+    }
+
+    let to_delete = drained_source_modules(&docs, &source_modules);
+    let post_spec = post_edit_spec_from_docs(&docs, &to_delete)?;
+    gate_post_edit_partition_with_expected_owner_modules(
+        owner_graph_path,
+        modules_root,
+        Some(source_root),
+        &post_spec,
+        &expected_owner_modules,
+        scope.as_ref(),
+    )?;
+
+    let (files_written, files_deleted) =
+        apply_doc_changes(&original_docs, &docs, &to_delete, dry_run)?;
+    let action = if owners_reassigned == 0 {
+        "unchanged"
+    } else if dry_run {
+        "dry-run"
+    } else {
+        "applied"
+    };
+    Ok(OwnerRefineOutcome {
+        outcome: MutationOutcome {
+            verb: "refine",
+            action,
+            gate: GateOutcome::Passed,
+            files_written,
+            files_deleted,
+        },
+        owners_reassigned,
+    })
+}
+
+fn owner_claim_locations(
+    owner_graph: &OwnerGraphReport,
+    modules_root: &Path,
+    docs: &ModuleDocs,
+    post_spec: &crate::edit_gate::PostEditSpec,
+    resolved: &[anonymous_resolution::ResolvedSourceClaims],
+    owner_by_binding: &BTreeMap<String, OwnerId>,
+    scope: Option<&ModuleTreeScope>,
+) -> Result<Vec<OwnerClaimLocation>> {
+    anyhow::ensure!(
+        post_spec.modules.len() == resolved.len(),
+        "resolved selector results do not match the current module list"
+    );
+    let mut locations = Vec::new();
+    for (module, resolved) in post_spec.modules.iter().zip(resolved) {
+        let module_path = module_path_from_file(&module.path, modules_root);
+        let logical_module = logical_module_path(&module_path, scope)?;
+        let (_, doc) = docs.get(&module_path).with_context(|| {
+            format!(
+                "module {} is absent from the scoped spec",
+                module.path.display()
+            )
+        })?;
+        for (member_index, member) in doc.members.iter().enumerate() {
+            let binding = match member.selector.selected()? {
+                MemberSelectorSpec::Binding(binding) => binding.name,
+                _ => {
+                    let export_name = member.name.as_deref().with_context(|| {
+                        format!("non-binding member in {module_path} requires a readable name")
+                    })?;
+                    resolved
+                        .member_bindings
+                        .get(export_name)
+                        .cloned()
+                        .with_context(|| {
+                            format!(
+                                "member {export_name:?} in {module_path} has no resolved binding"
+                            )
+                        })?
+                }
+            };
+            let owner = owner_by_binding.get(&binding).with_context(|| {
+                format!("member binding {binding:?} in {module_path} is absent from owner graph")
+            })?;
+            locations.push(OwnerClaimLocation {
+                owner_id: owner_graph.nodes[owner.0].id.clone(),
+                physical_module: module_path.clone(),
+                logical_module: logical_module.clone(),
+                slot: OwnerClaimSlot::Member(member_index),
+            });
+        }
+        for (claim_index, claim) in doc.source_matches.iter().enumerate() {
+            for (binding_index, binding) in claim.bindings.iter().enumerate() {
+                let resolved_binding = resolved
+                    .member_bindings
+                    .get(binding.name())
+                    .with_context(|| {
+                        format!(
+                            "source_matches[{claim_index}] binding {:?} in {module_path} did not resolve",
+                            binding.local()
+                        )
+                    })?;
+                // `local` is the selector-local name used by the source
+                // pattern. Under alpha-equivalent matching, the actual source
+                // declaration can have a different name; the canonical
+                // resolver's outcome is the authoritative binding identity.
+                let owner = owner_by_binding.get(resolved_binding).with_context(|| {
+                    format!(
+                        "source-match binding {:?} resolved as {:?} in {module_path} is absent from owner graph",
+                        binding.local(), resolved_binding
+                    )
+                })?;
+                locations.push(OwnerClaimLocation {
+                    owner_id: owner_graph.nodes[owner.0].id.clone(),
+                    physical_module: module_path.clone(),
+                    logical_module: logical_module.clone(),
+                    slot: OwnerClaimSlot::SourceMatch(claim_index, binding_index),
+                });
+            }
+        }
+        let mut selectors = BTreeSet::new();
+        for (statement_index, statement) in doc.anonymous_statements.iter().enumerate() {
+            let selector = statement.selector()?;
+            anyhow::ensure!(
+                selectors.insert(selector.clone()),
+                "module {module_path} repeats an anonymous selector, so its metadata cannot be assigned unambiguously"
+            );
+            let owner = resolved
+                .anonymous_selector_owners
+                .get(&selector)
+                .with_context(|| {
+                    format!(
+                        "anonymous_statements[{statement_index}] in {module_path} did not resolve to an owner"
+                    )
+                })?;
+            locations.push(OwnerClaimLocation {
+                owner_id: owner_graph
+                    .nodes
+                    .get(owner.0)
+                    .with_context(|| format!("anonymous owner index {} is absent", owner.0))?
+                    .id
+                    .clone(),
+                physical_module: module_path.clone(),
+                logical_module: logical_module.clone(),
+                slot: OwnerClaimSlot::Anonymous(statement_index),
+            });
+        }
+    }
+    Ok(locations)
+}
+
+fn logical_module_path(raw_path: &str, scope: Option<&ModuleTreeScope>) -> Result<String> {
+    if let Some(scope) = scope {
+        scope.canonical_destination(raw_path)
+    } else {
+        canonical_module_path(raw_path)
+    }
+}
+
+fn physical_modules_by_logical_destination(
+    docs: &ModuleDocs,
+    scope: Option<&ModuleTreeScope>,
+) -> Result<BTreeMap<String, Vec<String>>> {
+    let mut by_logical = BTreeMap::<String, Vec<String>>::new();
+    for physical in docs.keys() {
+        by_logical
+            .entry(logical_module_path(physical, scope)?)
+            .or_default()
+            .push(physical.clone());
+    }
+    Ok(by_logical)
+}
+
+fn check_graph_owner_destinations(
+    owner_graph: &OwnerGraphReport,
+    spec_owner_modules: &OwnerModuleAssignments,
+    scope: Option<&ModuleTreeScope>,
+) -> Result<()> {
+    for node in &owner_graph.nodes {
+        let graph_destination = owner_graph
+            .module(&node.destination)
+            .with_context(|| format!("owner {:?} has an unknown graph destination", node.id))?;
+        let expected = if graph_destination.residual {
+            None
+        } else {
+            Some(graph_destination.path.as_str().to_string())
+        };
+        let actual = spec_owner_modules
+            .get(&node.id)
+            .with_context(|| {
+                format!(
+                    "owner {:?} is absent from the current spec mapping",
+                    node.id
+                )
+            })?
+            .as_ref()
+            .map(|path| {
+                let logical = if let Some(scope) = scope {
+                    scope.logical_destination(path)?
+                } else {
+                    path.as_str()
+                };
+                ModulePath::parse(logical, "")
+                    .map(|path| path.as_str().to_string())
+                    .map_err(|err| anyhow!("invalid logical module path in owner spec: {err}"))
+            })
+            .transpose()?;
+        anyhow::ensure!(
+            actual == expected,
+            "owner graph is stale for {:?}: graph destination {:?}, current spec destination {:?}",
+            node.id,
+            expected,
+            actual
+        );
+    }
+    Ok(())
+}
+
+fn take_anonymous_statements(
+    docs: &mut ModuleDocs,
+    identities: impl IntoIterator<Item = (String, usize)>,
+) -> BTreeMap<(String, usize), AnonymousStatement> {
+    let mut by_module: BTreeMap<String, BTreeSet<usize>> = BTreeMap::new();
+    for (module, index) in identities {
+        by_module.entry(module).or_default().insert(index);
+    }
+    let mut taken = BTreeMap::new();
+    for (module, indices) in by_module {
+        let (_, doc) = docs.get_mut(&module).expect("resolved module is loaded");
+        for (index, statement) in std::mem::take(&mut doc.anonymous_statements)
+            .into_iter()
+            .enumerate()
+        {
+            if indices.contains(&index) {
+                taken.insert((module.clone(), index), statement);
+            } else {
+                doc.anonymous_statements.push(statement);
+            }
+        }
+    }
+    taken
+}
+
+fn ensure_owner_destination<'a>(
+    docs: &'a mut ModuleDocs,
+    modules_root: &Path,
+    destination: &str,
+) -> &'a mut LogicalModule {
+    &mut docs
+        .entry(destination.to_string())
+        .or_insert_with(|| {
+            (
+                modules_root.join(format!("{destination}.yaml")),
+                LogicalModule::default(),
+            )
+        })
+        .1
 }
 
 #[derive(Debug, Clone)]
