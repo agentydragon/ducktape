@@ -826,7 +826,7 @@ impl QuotientGraph {
                         .copied()
                         .filter(|module| *module != ModuleId(0))
                 })
-                .unwrap_or_else(|| ModuleId(self.next_module_idx))
+                .unwrap_or(ModuleId(self.next_module_idx))
         };
         let moved: Vec<OwnerId> = classes
             .iter()
@@ -1217,7 +1217,7 @@ impl QuotientGraph {
                     .copied()
                     .filter(|m| *m != residual_module)
             })
-            .unwrap_or_else(|| ModuleId(self.next_module_idx))
+            .unwrap_or(ModuleId(self.next_module_idx))
     }
 
     /// Compute the `ModuleAssignmentDelta::MoveOwners` deltas needed to
