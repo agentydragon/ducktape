@@ -280,10 +280,16 @@ unrelated call or constructor result with no such path is not treated as a
 namespace alias solely because its runtime value is unknown; the author audit
 asserts that values used by admitted callbacks cannot alias or replace listed
 members. Unknown syntax remains conservative when it reaches a publication or
-call-argument sink. A value from an unknown call or constructor used as an
-actual static or dynamic write receiver remains a possible namespace alias,
-including through local aliases and member projections, and disables the
-contract. For call-argument checks, the checker follows namespace values in
+call-argument sink; unsupported destructuring results stay possible namespace
+values through later local aliases. Recognized local class values and
+allocations are checked against their retained aggregate static or instance
+fields. A member projection checks the whole receiver, which may conservatively
+taint an unrelated sibling property. Constructors, inheritance, decorators,
+accessors, and unsupported class surfaces remain opaque; method bodies keep
+their existing return and effect checks. A value from an unknown call or
+constructor used as an actual static or dynamic write receiver remains a
+possible namespace alias, including through local aliases and member
+projections, and disables the contract. For call-argument checks, the checker follows namespace values in
 the supplied argument expressions and excludes the callee expression, which
 is not passed as an argument. The checker does not prove that arbitrary
 callback parameters or unrelated call results are disjoint from the

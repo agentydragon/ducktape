@@ -567,6 +567,134 @@ fn namespace_factory_keeps_unrelated_constructor_write_receivers_conservative() 
 }
 
 #[test]
+fn namespace_factory_tracks_namespace_stored_in_local_class_field() {
+    assert_namespace_factory_publication_rejected(
+        "class Holder { alias = api; }\n\
+         const holder = new Holder();\n\
+         globalThis.exposed = holder.alias;\n",
+    );
+}
+
+fn assert_namespace_factory_publication_rejected(prefix: &str) {
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            &format!(
+                "import {{ api }} from './peer.js';\n{prefix}\
+                 const wrapped = api.make(() => later);\n\
+                 const later = 42;\nconsole.log(wrapped.invoke());\n"
+            ),
+            vec![
+                logical_module("callbacks/wrapped", &[Member::new("wrapped")]),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        )
+        .with_extra_chunks(&[(
+            "static/peer",
+            "export const api = { make(callback) { return { invoke: () => callback() }; } };\n",
+        )])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+            .with_callback_factory_members("api", &["make"])
+            .build()]),
+        &["callbacks/wrapped", "values/later"],
+        &["eager_use", "sequenced"],
+    );
+}
+
+#[test]
+fn namespace_factory_tracks_class_static_private_constructor_and_inherited_carriers() {
+    for prefix in [
+        "class Holder { static alias = api; }\n\
+         globalThis.exposed = Holder.alias;\n",
+        "class Holder { #alias = api; read() { return this.#alias; } }\n\
+         globalThis.exposed = new Holder().read();\n",
+        "class Holder { read() { return api; } }\n\
+         globalThis.exposed = new Holder().read();\n",
+        "class Holder { constructor() { this.alias = api; } }\n\
+         globalThis.exposed = new Holder().alias;\n",
+        "class Holder { constructor() { return { alias: api }; } }\n\
+         globalThis.exposed = new Holder().alias;\n",
+        "class Base { alias = api; }\n\
+         class Holder extends Base {}\n\
+         globalThis.exposed = new Holder().alias;\n",
+        "class Holder { alias = api; }\n\
+         class Empty {}\n\
+         let Factory = Holder;\n\
+         Factory = Empty;\n\
+         globalThis.exposed = new Factory().alias;\n",
+        "class Holder { alias = api; }\n\
+         class Empty {}\n\
+         const choose = true;\n\
+         let Factory = choose ? Holder : Empty;\n\
+         globalThis.exposed = new Factory().alias;\n",
+        "class Holder { payload = { alias: api }; }\n\
+         globalThis.exposed = new Holder().payload.alias;\n",
+        "class Holder { static value = Holder.value; }\n\
+         globalThis.exposed = Holder.value;\n",
+    ] {
+        assert_namespace_factory_publication_rejected(prefix);
+    }
+}
+
+#[test]
+fn namespace_factory_tracks_namespace_from_object_destructuring() {
+    assert_namespace_factory_publication_rejected(
+        "const { alias } = { alias: api };\n\
+         globalThis.exposed = alias;\n",
+    );
+}
+
+#[test]
+fn namespace_factory_keeps_unknown_destructuring_conservative() {
+    assert_namespace_factory_publication_rejected(
+        "const { alias } = globalThis.untrusted?.namespace;\n\
+         globalThis.exposed = alias;\n",
+    );
+}
+
+#[test]
+fn namespace_factory_keeps_unknown_binding_conservative() {
+    assert_namespace_factory_publication_rejected(
+        "const alias = globalThis.untrusted?.namespace;\n\
+         globalThis.exposed = alias;\n",
+    );
+}
+
+#[test]
+fn namespace_factory_keeps_array_destructuring_conservative() {
+    assert_namespace_factory_publication_rejected(
+        "const [alias] = [api];\n\
+         globalThis.exposed = alias;\n",
+    );
+}
+
+#[test]
+fn namespace_factory_class_field_alias_observes_api_mutation_at_runtime() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import { api } from './peer.js';\n\
+             class Holder { alias = api; }\n\
+             globalThis.exposed = new Holder().alias;\n\
+             globalThis.exposed.make = callback => {\n\
+                 globalThis.changed = true;\n\
+                 return { invoke: callback };\n\
+             };\n\
+             const wrapped = api.make(() => later);\n\
+             const later = 42;\n\
+             console.log(globalThis.changed, wrapped.invoke());\n",
+            vec![],
+        )
+        .with_extra_chunks(&[(
+            "static/peer",
+            "export const api = { make(callback) { return { invoke: () => callback() }; } };\n",
+        )])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+            .with_callback_factory_members("api", &["make"])
+            .build()]),
+    );
+    assert_preserved_entry_output(&fixture, "true 42\n");
+}
+
+#[test]
 fn namespace_factory_keeps_computed_member_callees_conservative_in_literals() {
     expect_atomic_conflict_rejection(
         FixtureOpts::new(
