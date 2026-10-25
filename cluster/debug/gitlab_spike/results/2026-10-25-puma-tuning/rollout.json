@@ -1,0 +1,517 @@
+{
+  "helm_conditions": [
+    {
+      "lastTransitionTime": "2026-10-25T22:34:55Z",
+      "message": "Running 'upgrade' action with timeout of 30m0s",
+      "observedGeneration": 5,
+      "reason": "Progressing",
+      "status": "True",
+      "type": "Reconciling"
+    },
+    {
+      "lastTransitionTime": "2026-10-25T22:34:55Z",
+      "message": "Running 'upgrade' action with timeout of 30m0s",
+      "observedGeneration": 5,
+      "reason": "Progressing",
+      "status": "Unknown",
+      "type": "Ready"
+    },
+    {
+      "lastTransitionTime": "2026-10-25T22:34:36Z",
+      "message": "Helm upgrade failed for release gitlab-spike/gitlab-spike with chart gitlab@10.5.1: failed early due to stalled resources: [Deployment/gitlab-spike/gitlab-spike-webservice-default status: 'Failed']",
+      "observedGeneration": 5,
+      "reason": "UpgradeFailed",
+      "status": "False",
+      "type": "Released"
+    },
+    {
+      "lastTransitionTime": "2026-10-25T22:34:43Z",
+      "message": "Helm rollback to previous release gitlab-spike/gitlab-spike.v6 with chart gitlab@10.5.1 succeeded",
+      "observedGeneration": 5,
+      "reason": "RollbackSucceeded",
+      "status": "True",
+      "type": "Remediated"
+    }
+  ],
+  "helm_history": [
+    {
+      "action": "rollback",
+      "apiVersion": "v2",
+      "appVersion": "v19.5.1",
+      "chartName": "gitlab",
+      "chartVersion": "10.5.1",
+      "configDigest": "sha256:29e464c6d24bfa7450052ec8a5fce9b4725a1aa86c530a3d6b3ac15205442a3a",
+      "digest": "sha256:3a36ecc3a58a47766ae5342cde5f76acbc1232a47fe6e9e85a57e878b66a528b",
+      "firstDeployed": "2026-10-25T06:53:32Z",
+      "lastDeployed": "2026-10-25T22:34:37Z",
+      "name": "gitlab-spike",
+      "namespace": "gitlab-spike",
+      "status": "deployed",
+      "version": 8
+    },
+    {
+      "action": "upgrade",
+      "apiVersion": "v2",
+      "appVersion": "v19.5.1",
+      "chartName": "gitlab",
+      "chartVersion": "10.5.1",
+      "configDigest": "sha256:bad8a492fea986775784c13a34b3a3ef8e8e2fbac707342ac067b0403baec718",
+      "digest": "sha256:8dcefe7953426b2d504788b4cb919f66dce517e856228c6d1080a3b5a3e28bdc",
+      "firstDeployed": "2026-10-25T06:53:32Z",
+      "lastDeployed": "2026-10-25T22:23:47Z",
+      "name": "gitlab-spike",
+      "namespace": "gitlab-spike",
+      "status": "failed",
+      "version": 7
+    },
+    {
+      "action": "rollback",
+      "apiVersion": "v2",
+      "appVersion": "v19.5.1",
+      "chartName": "gitlab",
+      "chartVersion": "10.5.1",
+      "configDigest": "sha256:29e464c6d24bfa7450052ec8a5fce9b4725a1aa86c530a3d6b3ac15205442a3a",
+      "digest": "sha256:61df727e4e2ca0c30b51f54923ee800946400a7570a1d6d31d8186f9c0da9802",
+      "firstDeployed": "2026-10-25T06:53:32Z",
+      "lastDeployed": "2026-10-25T21:00:00Z",
+      "name": "gitlab-spike",
+      "namespace": "gitlab-spike",
+      "status": "superseded",
+      "version": 6
+    },
+    {
+      "apiVersion": "v2",
+      "appVersion": "v19.5.1",
+      "chartName": "gitlab",
+      "chartVersion": "10.5.1",
+      "configDigest": "sha256:d1c1734b3a2319058cbeb7d3aebc81dac029581d9f95a8e373d020741fdf4ca1",
+      "digest": "sha256:ec22c83fc717e316e1c4c7c33f0d2c1babb2c16d6269ca4345293d24d4c699ac",
+      "firstDeployed": "2026-10-25T06:53:32Z",
+      "lastDeployed": "2026-10-25T20:43:24Z",
+      "name": "gitlab-spike",
+      "namespace": "gitlab-spike",
+      "status": "failed",
+      "version": 3
+    }
+  ],
+  "first_pod_events": [
+    {
+      "reason": "Scheduled",
+      "message": "Successfully assigned gitlab-spike/gitlab-spike-webservice-default-6cd7fd8955-clkf4 to ovh-ns103656",
+      "count": null,
+      "firstTimestamp": null,
+      "lastTimestamp": null,
+      "eventTime": "2026-10-25T22:24:33.581255Z",
+      "series": null
+    },
+    {
+      "reason": "Pulled",
+      "message": "Container image \"registry.gitlab.com/gitlab-org/build/cng/certificates:v19.5.1\" already present on machine and can be accessed by the pod",
+      "count": 1,
+      "firstTimestamp": "2026-10-25T22:24:35Z",
+      "lastTimestamp": "2026-10-25T22:24:35Z",
+      "eventTime": null,
+      "series": null
+    },
+    {
+      "reason": "Created",
+      "message": "Container created",
+      "count": 1,
+      "firstTimestamp": "2026-10-25T22:24:35Z",
+      "lastTimestamp": "2026-10-25T22:24:35Z",
+      "eventTime": null,
+      "series": null
+    },
+    {
+      "reason": "Started",
+      "message": "Container started",
+      "count": 1,
+      "firstTimestamp": "2026-10-25T22:24:35Z",
+      "lastTimestamp": "2026-10-25T22:24:35Z",
+      "eventTime": null,
+      "series": null
+    },
+    {
+      "reason": "Pulled",
+      "message": "Container image \"registry.gitlab.com/gitlab-org/build/cng/gitlab-base:v19.5.1\" already present on machine and can be accessed by the pod",
+      "count": 1,
+      "firstTimestamp": "2026-10-25T22:24:37Z",
+      "lastTimestamp": "2026-10-25T22:24:37Z",
+      "eventTime": null,
+      "series": null
+    },
+    {
+      "reason": "Created",
+      "message": "Container created",
+      "count": 1,
+      "firstTimestamp": "2026-10-25T22:24:37Z",
+      "lastTimestamp": "2026-10-25T22:24:37Z",
+      "eventTime": null,
+      "series": null
+    },
+    {
+      "reason": "Started",
+      "message": "Container started",
+      "count": 1,
+      "firstTimestamp": "2026-10-25T22:24:37Z",
+      "lastTimestamp": "2026-10-25T22:24:37Z",
+      "eventTime": null,
+      "series": null
+    },
+    {
+      "reason": "Pulled",
+      "message": "Container image \"registry.gitlab.com/gitlab-org/build/cng/gitlab-webservice-ee:v19.5.1\" already present on machine and can be accessed by the pod",
+      "count": 1,
+      "firstTimestamp": "2026-10-25T22:24:38Z",
+      "lastTimestamp": "2026-10-25T22:24:38Z",
+      "eventTime": null,
+      "series": null
+    },
+    {
+      "reason": "Created",
+      "message": "Container created",
+      "count": 1,
+      "firstTimestamp": "2026-10-25T22:24:38Z",
+      "lastTimestamp": "2026-10-25T22:24:38Z",
+      "eventTime": null,
+      "series": null
+    },
+    {
+      "reason": "Started",
+      "message": "Container started",
+      "count": 1,
+      "firstTimestamp": "2026-10-25T22:24:39Z",
+      "lastTimestamp": "2026-10-25T22:24:39Z",
+      "eventTime": null,
+      "series": null
+    },
+    {
+      "reason": "Pulled",
+      "message": "Container image \"registry.gitlab.com/gitlab-org/build/cng/gitlab-webservice-ee:v19.5.1\" already present on machine and can be accessed by the pod",
+      "count": 4,
+      "firstTimestamp": "2026-10-25T22:24:48Z",
+      "lastTimestamp": "2026-10-25T22:34:04Z",
+      "eventTime": null,
+      "series": null
+    },
+    {
+      "reason": "Created",
+      "message": "Container created",
+      "count": 4,
+      "firstTimestamp": "2026-10-25T22:24:49Z",
+      "lastTimestamp": "2026-10-25T22:34:04Z",
+      "eventTime": null,
+      "series": null
+    },
+    {
+      "reason": "Started",
+      "message": "Container started",
+      "count": 3,
+      "firstTimestamp": "2026-10-25T22:24:49Z",
+      "lastTimestamp": "2026-10-25T22:31:05Z",
+      "eventTime": null,
+      "series": null
+    },
+    {
+      "reason": "Pulled",
+      "message": "Container image \"registry.gitlab.com/gitlab-org/build/cng/gitlab-workhorse-ee:v19.5.1\" already present on machine and can be accessed by the pod",
+      "count": 1,
+      "firstTimestamp": "2026-10-25T22:24:49Z",
+      "lastTimestamp": "2026-10-25T22:24:49Z",
+      "eventTime": null,
+      "series": null
+    },
+    {
+      "reason": "Created",
+      "message": "Container created",
+      "count": 1,
+      "firstTimestamp": "2026-10-25T22:24:50Z",
+      "lastTimestamp": "2026-10-25T22:24:50Z",
+      "eventTime": null,
+      "series": null
+    },
+    {
+      "reason": "Started",
+      "message": "Container started",
+      "count": 1,
+      "firstTimestamp": "2026-10-25T22:24:50Z",
+      "lastTimestamp": "2026-10-25T22:24:50Z",
+      "eventTime": null,
+      "series": null
+    },
+    {
+      "reason": "Unhealthy",
+      "message": "Readiness probe failed: Get \"http://10.244.1.160:8080/-/readiness\": dial tcp 10.244.1.160:8080: connect: connection refused",
+      "count": 67,
+      "firstTimestamp": "2026-10-25T22:24:51Z",
+      "lastTimestamp": "2026-10-25T22:29:54Z",
+      "eventTime": null,
+      "series": null
+    },
+    {
+      "reason": "Unhealthy",
+      "message": "Readiness probe failed: /scripts/healthcheck: connect: Connection refused\n/scripts/healthcheck: line 6: /dev/tcp/127.0.0.1/8181: Connection refused\n",
+      "count": 2,
+      "firstTimestamp": "2026-10-25T22:24:51Z",
+      "lastTimestamp": "2026-10-25T22:24:52Z",
+      "eventTime": null,
+      "series": null
+    },
+    {
+      "reason": "Unhealthy",
+      "message": "Liveness probe failed: Get \"http://10.244.1.160:8080/-/liveness\": dial tcp 10.244.1.160:8080: connect: connection refused",
+      "count": 1,
+      "firstTimestamp": "2026-10-25T22:25:34Z",
+      "lastTimestamp": "2026-10-25T22:25:34Z",
+      "eventTime": null,
+      "series": null
+    },
+    {
+      "reason": "Killing",
+      "message": "Container webservice failed liveness probe, will be restarted",
+      "count": 3,
+      "firstTimestamp": "2026-10-25T22:27:34Z",
+      "lastTimestamp": "2026-10-25T22:33:34Z",
+      "eventTime": null,
+      "series": null
+    },
+    {
+      "reason": "Killing",
+      "message": "Stopping container gitlab-workhorse",
+      "count": 1,
+      "firstTimestamp": "2026-10-25T22:34:40Z",
+      "lastTimestamp": "2026-10-25T22:34:40Z",
+      "eventTime": null,
+      "series": null
+    },
+    {
+      "reason": "Unhealthy",
+      "message": "Readiness probe errored and resulted in unknown state: rpc error: code = Canceled desc = context canceled",
+      "count": 2,
+      "firstTimestamp": "2026-10-25T22:34:43Z",
+      "lastTimestamp": "2026-10-25T22:34:53Z",
+      "eventTime": null,
+      "series": null
+    }
+  ],
+  "pods_during_retry": [
+    {
+      "name": "gitlab-spike-webservice-default-6cd7fd8955-7zbqq",
+      "node": "ovh-ns103656",
+      "created": "2026-10-25T22:35:31Z",
+      "conditions": [
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-10-25T22:35:34Z",
+          "observedGeneration": 1,
+          "status": "True",
+          "type": "PodReadyToStartContainers"
+        },
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-10-25T22:35:47Z",
+          "observedGeneration": 1,
+          "status": "True",
+          "type": "Initialized"
+        },
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-10-25T22:35:31Z",
+          "message": "containers with unready status: [webservice]",
+          "observedGeneration": 1,
+          "reason": "ContainersNotReady",
+          "status": "False",
+          "type": "Ready"
+        },
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-10-25T22:35:31Z",
+          "message": "containers with unready status: [webservice]",
+          "observedGeneration": 1,
+          "reason": "ContainersNotReady",
+          "status": "False",
+          "type": "ContainersReady"
+        },
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-10-25T22:35:31Z",
+          "observedGeneration": 1,
+          "status": "True",
+          "type": "PodScheduled"
+        }
+      ],
+      "containers": [
+        {
+          "name": "gitlab-workhorse",
+          "ready": true,
+          "restartCount": 0,
+          "state": {
+            "running": {
+              "startedAt": "2026-10-25T22:35:50Z"
+            }
+          },
+          "lastState": {}
+        },
+        {
+          "name": "webservice",
+          "ready": false,
+          "restartCount": 1,
+          "state": {
+            "running": {
+              "startedAt": "2026-10-25T22:39:03Z"
+            }
+          },
+          "lastState": {
+            "terminated": {
+              "containerID": "containerd://a306370efb62737284fd5dc3905800aed13702dac7a8d745266cf120a1303128",
+              "exitCode": 137,
+              "finishedAt": "2026-10-25T22:39:02Z",
+              "reason": "Error",
+              "startedAt": "2026-10-25T22:35:49Z"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "gitlab-spike-webservice-default-7f4b7cdb44-777w2",
+      "node": "ovh-ns103711",
+      "created": "2026-10-25T07:07:01Z",
+      "conditions": [
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-10-25T07:07:03Z",
+          "observedGeneration": 1,
+          "status": "True",
+          "type": "PodReadyToStartContainers"
+        },
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-10-25T07:07:26Z",
+          "observedGeneration": 1,
+          "status": "True",
+          "type": "Initialized"
+        },
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-10-25T07:09:10Z",
+          "observedGeneration": 1,
+          "status": "True",
+          "type": "Ready"
+        },
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-10-25T07:09:10Z",
+          "observedGeneration": 1,
+          "status": "True",
+          "type": "ContainersReady"
+        },
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-10-25T07:07:01Z",
+          "observedGeneration": 1,
+          "status": "True",
+          "type": "PodScheduled"
+        }
+      ],
+      "containers": [
+        {
+          "name": "gitlab-workhorse",
+          "ready": true,
+          "restartCount": 0,
+          "state": {
+            "running": {
+              "startedAt": "2026-10-25T07:08:11Z"
+            }
+          },
+          "lastState": {}
+        },
+        {
+          "name": "webservice",
+          "ready": true,
+          "restartCount": 0,
+          "state": {
+            "running": {
+              "startedAt": "2026-10-25T07:07:26Z"
+            }
+          },
+          "lastState": {}
+        }
+      ]
+    },
+    {
+      "name": "gitlab-spike-webservice-default-7f4b7cdb44-dgkld",
+      "node": "ovh-ns102453",
+      "created": "2026-10-25T06:58:51Z",
+      "conditions": [
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-10-25T06:58:54Z",
+          "observedGeneration": 1,
+          "status": "True",
+          "type": "PodReadyToStartContainers"
+        },
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-10-25T06:59:08Z",
+          "observedGeneration": 1,
+          "status": "True",
+          "type": "Initialized"
+        },
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-10-25T07:07:01Z",
+          "observedGeneration": 1,
+          "status": "True",
+          "type": "Ready"
+        },
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-10-25T07:07:01Z",
+          "observedGeneration": 1,
+          "status": "True",
+          "type": "ContainersReady"
+        },
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-10-25T06:58:51Z",
+          "observedGeneration": 1,
+          "status": "True",
+          "type": "PodScheduled"
+        }
+      ],
+      "containers": [
+        {
+          "name": "gitlab-workhorse",
+          "ready": true,
+          "restartCount": 0,
+          "state": {
+            "running": {
+              "startedAt": "2026-10-25T06:59:09Z"
+            }
+          },
+          "lastState": {}
+        },
+        {
+          "name": "webservice",
+          "ready": true,
+          "restartCount": 2,
+          "state": {
+            "running": {
+              "startedAt": "2026-10-25T07:05:22Z"
+            }
+          },
+          "lastState": {
+            "terminated": {
+              "containerID": "containerd://6e3df3227d4ea9f83a09fcf451387680f0e7a86441cee9642a7c42e8251dc9b8",
+              "exitCode": 137,
+              "finishedAt": "2026-10-25T07:05:21Z",
+              "reason": "Error",
+              "startedAt": "2026-10-25T07:02:22Z"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

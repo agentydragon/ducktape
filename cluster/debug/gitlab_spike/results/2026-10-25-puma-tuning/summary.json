@@ -1,0 +1,31 @@
+{
+  "before": {
+    "samples": 1,
+    "namespace_gib_median": 11.75735855102539,
+    "namespace_gib_range": [11.75735855102539, 11.75735855102539],
+    "components_gib_median": {
+      "PostgreSQL": 1.0092201232910156,
+      "Valkey": 0.05715179443359375,
+      "gitaly": 0.4204978942871094,
+      "gitlab-exporter": 0.03809356689453125,
+      "gitlab-shell": 0.016918182373046875,
+      "praefect": 0.2196807861328125,
+      "registry": 0.038715362548828125,
+      "sidekiq": 3.2002716064453125,
+      "toolbox": 0.14352798461914062,
+      "webservice": 6.61328125
+    },
+    "component_replicas": {
+      "PostgreSQL": [3],
+      "Valkey": [2],
+      "gitaly": [3],
+      "gitlab-exporter": [1],
+      "gitlab-shell": [2],
+      "praefect": [3],
+      "registry": [2],
+      "sidekiq": [2],
+      "toolbox": [1],
+      "webservice": [2]
+    }
+  }
+}
