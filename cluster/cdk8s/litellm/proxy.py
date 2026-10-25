@@ -82,8 +82,9 @@ _HTTP = Port(name="http", number=4000)
 _NAMESPACE = "litellm"
 # The proxy's admin key: its env and its ServiceMonitor's scrape bearer.
 _MASTER_KEY = SecretRef(namespace=_NAMESPACE, name="litellm-master-key").key("api-key")
-# Langfuse's project keys.
-_LANGFUSE = SecretRef(namespace=_NAMESPACE, name="langfuse-secrets")
+_LANGFUSE_OTEL_HEADERS = SecretRef(
+    namespace=_NAMESPACE, name="litellm-langfuse-otel-headers"
+).key("OTEL_EXPORTER_OTLP_HEADERS")
 _LANGFUSE_OTEL_HOST = "http://langfuse-web.langfuse.svc.cluster.local:3000"
 _LANGFUSE_OTLP_TRACES_ENDPOINT = f"{_LANGFUSE_OTEL_HOST}/api/public/otel/v1/traces"
 _CONFIG_DIR = "/etc/litellm"
@@ -122,7 +123,6 @@ class ProxySpec:
     replicas: int
     env: tuple[_EnvEntry, ...]
     startup_failure_threshold: int
-    command: tuple[str, ...] | None = None
     resources: ContainerResources | None = None
     image_pull_policy: ImagePullPolicy | None = None
     image_pull_secret_name: str | None = None
@@ -163,8 +163,7 @@ def _base_env(*entries: _EnvEntry) -> tuple[_EnvEntry, ...]:
 def _langfuse_env(*entries: _EnvEntry) -> tuple[_EnvEntry, ...]:
     return (
         *_base_env(*entries),
-        _SecretEnv("LANGFUSE_PUBLIC_KEY", _LANGFUSE.key("LANGFUSE_INIT_PROJECT_PUBLIC_KEY")),
-        _SecretEnv("LANGFUSE_SECRET_KEY", _LANGFUSE.key("LANGFUSE_INIT_PROJECT_SECRET_KEY")),
+        _SecretEnv("OTEL_EXPORTER_OTLP_HEADERS", _LANGFUSE_OTEL_HEADERS),
     )
 
 
@@ -176,7 +175,6 @@ def proxy_specs() -> tuple[ProxySpec, ...]:
             config=configs["litellm"],
             image_name="git.allegedly.works/ducktape-ci/tana-litellm-proxy",
             replicas=2,
-            command=("python", "-m", "tana.litellm_proxy.entrypoint"),
             env=_langfuse_env(
                 # Use the generic OTel callback with one explicit Langfuse OTLP
                 # destination. LiteLLM's langfuse_otel preset appends Langfuse to
@@ -347,7 +345,6 @@ class LiteLLMProxy(Construct):
         deployment.add_container(
             name="litellm",
             image=f"{self.spec.image_name}:{_PLACEHOLDER_TAG}",
-            command=list(self.spec.command) if self.spec.command is not None else None,
             args=["--config", f"{_CONFIG_DIR}/config.yaml"],
             ports=[ref.port.container_port()],
             env_variables=self._env_variables(),
@@ -491,6 +488,7 @@ def litellm(
     artifact: ArtifactGeneratorSpecArtifacts,
     cnpg: Kustomization,
     external_secrets_operator: Kustomization,
+    langfuse: Kustomization,
     monitoring_crds: Kustomization,
     seaweedfs_operator: Kustomization,
 ) -> Kustomization:
@@ -502,6 +500,6 @@ def litellm(
         decryption=SOPS_DECRYPTION,
         timeout="10m",
         depends_on=flux_kustomization_depends_on_many(
-            cnpg, external_secrets_operator, monitoring_crds, seaweedfs_operator
+            cnpg, external_secrets_operator, langfuse, monitoring_crds, seaweedfs_operator
         ),
     )

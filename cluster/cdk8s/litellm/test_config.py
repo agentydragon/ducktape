@@ -58,7 +58,7 @@ def test_langfuse_otel_v2_uses_one_explicit_otlp_exporter() -> None:
     assert env["OTEL_EXPORTER"] == "otlp_http"
     assert env["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"].endswith("/api/public/otel/v1/traces")
     assert env["OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"] == "span_only"
-    assert spec.command == ("python", "-m", "tana.litellm_proxy.entrypoint")
+    assert "OTEL_EXPORTER_OTLP_HEADERS" in env
     assert config["litellm_settings"]["callbacks"] == ["otel", "prometheus"]
     assert config["callback_settings"]["otel"]["mapper_names"] == ["langfuse"]
 

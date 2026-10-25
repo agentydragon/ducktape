@@ -11,7 +11,11 @@ from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ServiceAccount
-from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
+from external_secrets_crds.io.external_secrets import (
+    ExternalSecretSpecTargetCreationPolicy,
+    ExternalSecretSpecTargetTemplate,
+    ExternalSecretSpecTargetTemplateEngineVersion,
+)
 
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.flux import kustomize_kustomization
@@ -60,6 +64,47 @@ def _chart(app: App) -> Chart:
         "external-creds-reader",
         metadata=ApiObjectMetadata(name="external-creds-reader", namespace=_NAMESPACE),
         automount_token=False,
+    )
+    langfuse_store = single_secret_store(
+        chart,
+        "litellm-langfuse-otel",
+        reader=reader,
+        source_namespace="langfuse",
+        source_secret="langfuse-secrets",
+        consumer_namespace=_NAMESPACE,
+    )
+    ExternalSecret(
+        chart,
+        "langfuse-otel-headers",
+        metadata=ApiObjectMetadata(
+            name="litellm-langfuse-otel-headers",
+            namespace=_NAMESPACE,
+            annotations={"description": "Langfuse OTLP headers derived from its project keys for LiteLLM."},
+        ),
+        refresh_interval="1h",
+        secret_store_ref=SecretStoreRef.cluster(langfuse_store),
+        data=[
+            remote_data(
+                "langfuse-secrets",
+                "LANGFUSE_INIT_PROJECT_PUBLIC_KEY",
+                secret_key="public_key",
+            ),
+            remote_data(
+                "langfuse-secrets",
+                "LANGFUSE_INIT_PROJECT_SECRET_KEY",
+                secret_key="secret_key",
+            ),
+        ],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        template=ExternalSecretSpecTargetTemplate(
+            engine_version=ExternalSecretSpecTargetTemplateEngineVersion.V2,
+            data={
+                "OTEL_EXPORTER_OTLP_HEADERS": (
+                    'Authorization=Basic {{ printf "%s:%s" .public_key .secret_key | b64enc }},'
+                    "x-langfuse-ingestion-version=4"
+                ),
+            },
+        ),
     )
     # Anthropic API key for LiteLLM's anthropic-api/ant-messages/* exposed models. Its dedicated
     # SecretStore can read only ducktape-flux/llm-anthropic-haku.

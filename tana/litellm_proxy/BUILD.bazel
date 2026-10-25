@@ -100,12 +100,6 @@ py_library(
 )
 
 py_library(
-    name = "entrypoint",
-    srcs = ["entrypoint.py"],
-    deps = [":__init__"],
-)
-
-py_library(
     name = "model_registry",
     srcs = ["model_registry.py"],
     visibility = ["//visibility:public"],
@@ -183,7 +177,6 @@ py_console_script_binary(
     deps = [
         ":__init__",
         ":custom_handler",
-        ":entrypoint",
         ":provider",
     ] + LITELLM_PROXY_RUNTIME_DEPS,
 )
