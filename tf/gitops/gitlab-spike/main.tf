@@ -91,11 +91,11 @@ resource "gitlab_project" "acceptance" {
 }
 
 resource "gitlab_branch_protection" "acceptance_main" {
-  project            = gitlab_project.acceptance.id
-  branch             = "main"
-  allowed_to_push    = [{ access_level = "maintainer" }]
-  allowed_to_merge   = [{ access_level = "maintainer" }]
-  allow_force_push   = false
+  project          = gitlab_project.acceptance.id
+  branch           = "main"
+  allowed_to_push  = [{ access_level = "maintainer" }]
+  allowed_to_merge = [{ access_level = "maintainer" }]
+  allow_force_push = false
 }
 
 resource "gitlab_deploy_key" "acceptance" {
