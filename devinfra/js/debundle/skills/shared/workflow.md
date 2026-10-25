@@ -18,7 +18,7 @@ verification gates.
 - Integrator: lands worker branches through a validated merge train.
 - Planner/namer skills: `debundle_plan_work` handles read-only
   `debundle` graph/source queries (`describe`, `inspect-source --id`, `atoms`,
-  `coverage`, `modules propose`, `scc`, `cluster`, `graph-summary`);
+  `coverage`, `modules propose`, `modules decompose`, `scc`, `cluster`, `graph-summary`);
   `debundle_mint_names` handles naming-only edits.
 
 ## Adapter Contract
@@ -48,14 +48,19 @@ tooling rather than hand-maintaining exact long bodies across many modules.
 
 1. Refresh debundle outputs, root/chunk reports, directory reports, and
    owner graph.
-2. Run `debundle modules propose` and `graph-summary` for aggregate
-   graph metrics. Use `graph-summary --include-proposals` only when
-   proposal and diagnostic counts are needed.
+2. Use `graph-summary` for orientation. Choose `modules propose` for residual
+   extraction or `modules decompose --atomic` for existing-module layout work.
+   Use `graph-summary --include-proposals` when proposal counts are needed.
 3. For selector cleanup, run `selector-debt` with module grouping. Route
    repeated synthesis gaps to Ducktape tooling rather than asking workers to
    maintain exact generated bodies.
-4. Ask intake for dispatchable seeds. `landable_today: true` is graph
-   readiness; workers still prove selectors and run the edit gate.
+4. Route proposal rows to intake for dispatchable seeds. `landable_today: true`
+   is graph readiness; workers still prove selectors and run the edit gate.
+   For decomposition, review the complete candidate, source-backed selector
+   anchors, semantic destinations, and any coarsening/rejoining results.
+   Hand a reviewed owner map directly to a lane worker for `modules refine`;
+   residual groups need the separate fresh-claim workflow. Planning remains
+   read-only; optional search limits retain the full candidate gate.
 5. Dispatch independent lane workers and any architect/naming/doc cleanup work.
 6. Integrate green worker branches in batches.
 7. Rerun gate, regen, and adapter smoke tests as required.
@@ -89,22 +94,17 @@ conventions take precedence over generic guidance.
   definition and defining chunk. Unknown imported calls are conservatively
   effectful; do not infer purity from a familiar name or annotate just to make
   the cycle disappear.
-- Use a purity annotation only when source or API behavior establishes the
-  required contract. Choose the narrowest supported form: `purity: pure` for a
-  local bound function, `purity: pure_new` only for construction, or
-  `chunk_export_purity.<defining chunk>.pure_exports` for a named cross-chunk
-  export. Use `pure_members` for a specific static member call on an imported
-  namespace, and `fluent_exports` only when the whole transitive fluent
-  surface meets its broader contract. These are author-trusted assertions,
-  not body verification; argument expressions are still analyzed, and an
-  export's initializer is not declared pure by a call-purity annotation. See
-  `references/purity_annotations.md` for the cycle-recovery decision steps and
-  examples; the full contracts are in `devinfra/js/debundle/docs/design.md`
-  § A9 and `devinfra/js/debundle/docs/purity_soundness.md`.
-- After annotating, rerun the same gate and confirm the reported side-effect
-  edge is gone and the intended assignment becomes realizable. If the call
-  can have observable effects during module initialization, change the
-  assignment boundary instead of asserting purity.
+- Classify the actual blocker before choosing an author assertion: effect
+  purity, callback retention or synchronous reentry, runtime loading, metadata
+  mutation, and global publication have different contracts. Follow
+  `references/purity_annotations.md` for the decision route and bundled
+  `references/SPEC.md` for callback, runtime, metadata, and publication audits.
+  A cycle alone establishes none of these premises.
+- After a justified annotation, rerun source validation, the same extraction
+  gate, and the adapter's runtime smoke. Inspect the remaining constraints;
+  an assertion may narrow callback availability while retaining eager reads,
+  mutation, and ordering. When the required audit cannot be established, keep
+  the conservative constraints and change the module boundary.
 - Split atomic unit: expand one lane to cover the whole unit or redispatch as
   coordinated work.
 - Unclear destination: route to architect instead of creating a grab-bag.

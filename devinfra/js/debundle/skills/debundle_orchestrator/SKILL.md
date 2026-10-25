@@ -29,6 +29,11 @@ Read other bundled references as needed:
 
 - Use `debundle_plan_work` to refresh planner evidence.
 - Send `modules propose` output to `debundle_intake` for seeds.
+- For existing-module reorganization, ask the planner for a source-backed
+  `modules decompose` candidate, including selector anchors and optional
+  coarsening/rejoining as needed. Route the reviewed semantic owner map
+  directly to a lane worker for `modules refine`; intake consumes proposals,
+  not decomposition reports.
 - For selector-stabilization rounds, start with
   `debundle spec selector-debt --group-module-depth N --format json` and
   dispatch broad, coherent buckets to lane workers. Prefer buckets that can be

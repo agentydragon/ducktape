@@ -6,10 +6,11 @@ the clap doc-comments themselves — `debundle <command> --help` — and the
 code wins wherever prose and binary disagree. Future CLI ideas live in
 `TODO.md`.
 
-The CLI is one binary (`bazel run @ducktape_debundle_bin//file:debundle` or
-built locally as `bazel-bin/devinfra/js/debundle/debundle`). All commands
-share the same JSON-on-stdout / structured-diagnostic-on-stderr convention
-as the rest of ducktape.
+The source-built CLI target is `@ducktape//devinfra/js/debundle:debundle` in
+consuming repositories, or `//devinfra/js/debundle:debundle` inside Ducktape.
+Prefer the project's CLI wrapper when provided: it supplies the matching
+graph, modules tree, and source root. All commands share the same
+JSON-on-stdout / structured-diagnostic-on-stderr convention.
 
 ## Find a workflow
 
@@ -20,6 +21,8 @@ as the rest of ducktape.
 - Edit assignments or claim proposals: [Batch atomicity](#batch-atomicity-bindings-assign),
   [Claiming fresh proposals](#claiming-fresh-proposals-modules-apply), and
   <spec_editing.md>.
+- Reorganize existing modules: [Plan a partition](#refining-existing-modules-modules-decompose),
+  then [apply reviewed owner assignments](#applying-reviewed-owner-assignments-modules-refine).
 - Diagnose a rejected edit: [Rejection diagnostics](#rejection-diagnostics)
   and [Gate queries](#gate-queries).
 
@@ -348,7 +351,112 @@ uses the same metadata-preserving predicate; `--empty` only tests structural
 emptiness. Explicit `modules delete <path>` may remove a comment/note-only module
 without `--force`, because it owns no code and the author named it for deletion.
 
-### Refining existing modules (`modules decompose`)
+### `bindings assign --batch` JSON format
+
+A top-level JSON array of move objects (`sym` and `module` required;
+omitting `readable` preserves the current readable name):
+
+```json
+[
+  { "sym": "XOe", "module": "runtime/plugins", "readable": "PluginSettingsAccessor" },
+  { "sym": "YOe", "module": "runtime/plugins" }
+]
+```
+
+`--batch` also accepts `modules propose --format json` output, or a
+top-level array of proposal objects selected from `.proposals`, when every
+selected binding is already claimed in YAML and each row is a direct move:
+
+- `landable_today: true`
+- non-empty `binding_ids`
+- no `merge_into`
+- no `anonymous_statement_owner_ids`
+
+For fresh residual bindings, use `modules apply` below. Existing-claim proposal
+rows move each `binding_ids[]` entry to `proposed_module_id` or
+`extends_module_id`. Proposal rows carry no `readable`; rename with a move
+array. The rest are rejected:
+
+- `merge_into` rows combine existing source modules: use `modules merge` or
+  manual YAML.
+- Rows with `anonymous_statement_owner_ids` need `anonymous_statements:`
+  edits, which `bindings assign` does not perform.
+- Rows with `status: blocked_residual_dependency` (`landable_today: false`)
+  read other residual cells (`other_residual_cells_referenced`), so promoting
+  one alone would trip the realizability gate: assign it together with the
+  cells it references, or co-locate the owners manually first.
+
+## Claiming fresh proposals (`modules apply`)
+
+For an app-level spec with several chunks, pass the same `--tree-config`
+to `modules propose` and `modules apply`. The config's `module_roots` maps
+the graph's chunk ID to its authored YAML subtrees. `modules apply` checks
+only those subtrees against the chunk graph and preserves each configured
+root's exact filesystem spelling; it normalizes only the logical module
+suffix. A destination outside the mapped roots is rejected. Single-chunk
+specs can omit the flag when `--modules` already names that chunk's tree.
+
+`landable_today` means the proposed owner set has no outgoing residual-cell
+dependency and its anonymous owners are addressable. It does not guarantee a
+structural selector can be synthesized or that the final edit passes the gate.
+`modules apply` claims reviewed residual bindings with proven `source_matches:`
+selectors. It requires `--graph`, `--modules`, and `--source-root` (or their
+environment variables), and accepts a JSON batch of this shape:
+
+Bindings from one multi-declarator statement are synthesized as one shared
+selector. References between selected declarators use their requested readable
+names in that selector.
+
+```json
+[
+  {
+    "proposal_id": "auto_partition_0007",
+    "owner_ids": ["owner-id-from-the-reviewed-row"],
+    "module": "services/provider",
+    "readable_names": { "a": "Provider" }
+  }
+]
+```
+
+Copy `proposal_id` from `proposed_module_id` and `owner_ids` from the same
+current `modules propose --format json` row. Choose the destination and a
+readable name for every residual binding in that row. For extension rows the
+destination must equal `extends_module_id`. Use the same `--size-cap-lines`
+value as `modules propose` if it was overridden. The command rejects stale
+owner sets, merges, anonymous-owner rows, unprovable or name-pinned selectors,
+and failed post-edit gates before writing any YAML. `--dry-run --format json`
+reports each selector in `selector_reviews`, including its source-match claim
+or relational selector, provenance, and rebuild-anchor review warning. It
+reports planned files without writing the spec. Uniqueness is proved against
+the current source snapshot; review the retained literals and property names
+before applying. Omit a proposal from the batch to leave it in residual.
+
+Optional `selectors` entries choose a reviewed selector for a binding; bindings
+without an entry use synthesis. A `source_match` entry uses the normal
+`source_matches:` claim shape and must name exactly one binding. A `relational`
+entry uses the normal `members[].selector` shape (for example `cross_ref` or
+`reads_member`); name pins are rejected. Each chosen selector must resolve to
+the requested source binding, not merely to some unique declaration:
+
+```json
+{
+  "proposal_id": "auto_partition_0007",
+  "owner_ids": ["owner-id-from-the-reviewed-row"],
+  "module": "services/provider",
+  "readable_names": { "a": "Provider" },
+  "selectors": {
+    "a": {
+      "kind": "source_match",
+      "selector": {
+        "match": "const Provider = { value: 4 };",
+        "bindings": [{ "local": "Provider", "name": "Provider" }]
+      }
+    }
+  }
+}
+```
+
+## Refining existing modules (`modules decompose`)
 
 `modules decompose` reports a read-only candidate that splits existing logical
 modules into the surviving gated same-module seed fragments:
@@ -520,7 +628,7 @@ atomic split is not assumed to be realizable. The suggested
 `decomposition/residual/part-N` paths are temporary names that authors should
 replace after reviewing the source.
 
-### Applying reviewed owner assignments (`modules refine`)
+## Applying reviewed owner assignments (`modules refine`)
 
 Use `modules refine` to apply a reviewed owner-to-module batch to claims already
 present in the scoped module tree:
@@ -552,111 +660,6 @@ writing YAML; a rejected batch leaves every module document unchanged.
 The primitive does not create selectors or choose semantic module names. It
 applies the reviewed owner map as written; inspect the resulting modules and
 run the project extraction gate after an accepted edit.
-
-### `--batch` JSON format
-
-A top-level JSON array of move objects (`sym` and `module` required;
-omitting `readable` preserves the current readable name):
-
-```json
-[
-  { "sym": "XOe", "module": "runtime/plugins", "readable": "PluginSettingsAccessor" },
-  { "sym": "YOe", "module": "runtime/plugins" }
-]
-```
-
-`--batch` also accepts `modules propose --format json` output, or a
-top-level array of proposal objects selected from `.proposals`, when every
-selected binding is already claimed in YAML and each row is a direct move:
-
-- `landable_today: true`
-- non-empty `binding_ids`
-- no `merge_into`
-- no `anonymous_statement_owner_ids`
-
-For fresh residual bindings, use `modules apply` below. Existing-claim proposal
-rows move each `binding_ids[]` entry to `proposed_module_id` or
-`extends_module_id`. Proposal rows carry no `readable`; rename with a move
-array. The rest are rejected:
-
-- `merge_into` rows combine existing source modules: use `modules merge` or
-  manual YAML.
-- Rows with `anonymous_statement_owner_ids` need `anonymous_statements:`
-  edits, which `bindings assign` does not perform.
-- Rows with `status: blocked_residual_dependency` (`landable_today: false`)
-  read other residual cells (`other_residual_cells_referenced`), so promoting
-  one alone would trip the realizability gate: assign it together with the
-  cells it references, or co-locate the owners manually first.
-
-### Claiming fresh proposals (`modules apply`)
-
-For an app-level spec with several chunks, pass the same `--tree-config`
-to `modules propose` and `modules apply`. The config's `module_roots` maps
-the graph's chunk ID to its authored YAML subtrees. `modules apply` checks
-only those subtrees against the chunk graph and preserves each configured
-root's exact filesystem spelling; it normalizes only the logical module
-suffix. A destination outside the mapped roots is rejected. Single-chunk
-specs can omit the flag when `--modules` already names that chunk's tree.
-
-`landable_today` means the proposed owner set has no outgoing residual-cell
-dependency and its anonymous owners are addressable. It does not guarantee a
-structural selector can be synthesized or that the final edit passes the gate.
-`modules apply` claims reviewed residual bindings with proven `source_matches:`
-selectors. It requires `--graph`, `--modules`, and `--source-root` (or their
-environment variables), and accepts a JSON batch of this shape:
-
-Bindings from one multi-declarator statement are synthesized as one shared
-selector. References between selected declarators use their requested readable
-names in that selector.
-
-```json
-[
-  {
-    "proposal_id": "auto_partition_0007",
-    "owner_ids": ["owner-id-from-the-reviewed-row"],
-    "module": "services/provider",
-    "readable_names": { "a": "Provider" }
-  }
-]
-```
-
-Copy `proposal_id` from `proposed_module_id` and `owner_ids` from the same
-current `modules propose --format json` row. Choose the destination and a
-readable name for every residual binding in that row. For extension rows the
-destination must equal `extends_module_id`. Use the same `--size-cap-lines`
-value as `modules propose` if it was overridden. The command rejects stale
-owner sets, merges, anonymous-owner rows, unprovable or name-pinned selectors,
-and failed post-edit gates before writing any YAML. `--dry-run --format json`
-reports each selector in `selector_reviews`, including its source-match claim
-or relational selector, provenance, and rebuild-anchor review warning. It
-reports planned files without writing the spec. Uniqueness is proved against
-the current source snapshot; review the retained literals and property names
-before applying. Omit a proposal from the batch to leave it in residual.
-
-Optional `selectors` entries choose a reviewed selector for a binding; bindings
-without an entry use synthesis. A `source_match` entry uses the normal
-`source_matches:` claim shape and must name exactly one binding. A `relational`
-entry uses the normal `members[].selector` shape (for example `cross_ref` or
-`reads_member`); name pins are rejected. Each chosen selector must resolve to
-the requested source binding, not merely to some unique declaration:
-
-```json
-{
-  "proposal_id": "auto_partition_0007",
-  "owner_ids": ["owner-id-from-the-reviewed-row"],
-  "module": "services/provider",
-  "readable_names": { "a": "Provider" },
-  "selectors": {
-    "a": {
-      "kind": "source_match",
-      "selector": {
-        "match": "const Provider = { value: 4 };",
-        "bindings": [{ "local": "Provider", "name": "Provider" }]
-      }
-    }
-  }
-}
-```
 
 ## Rejection diagnostics
 

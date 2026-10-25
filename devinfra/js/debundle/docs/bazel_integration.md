@@ -35,7 +35,7 @@ uses `@ducktape//devinfra/js/debundle:debundle`; consumers can select a
 different binary at repo or command-line scope with:
 
 ```sh
-bazel build //path/to:debundle \
+bazelisk build //path/to:debundle \
   --@ducktape//devinfra/js/debundle:debundler=@my_debundle_bin//file
 ```
 
@@ -78,6 +78,10 @@ PERF_RECORD_FREQ=49 \
   devinfra/js/debundle/perf_wrapper.sh --output-dir /tmp/debundle-profile -- \
   <debundler> run <debundle args...>
 ```
+
+A rejected gate can still produce a complete profile. The wrapper generates
+diagnostic reports after the recorded run and preserves its nonzero exit
+status; inspect the artifacts even when the command fails.
 
 Save important runs under the consuming repo's `debug/perf/` directory with the
 captured command, stdout/stderr and profiler artifacts.

@@ -1,6 +1,6 @@
 ---
 name: debundle_plan_work
-description: Plan and inspect generic JS debundle spec work using read-only `debundle` queries. Use when an agent needs to turn owner_graph.json plus a modules tree into dispatchable module extraction work, query atomic-DAG and coverage status, inspect graph/source context, or decide what debundle spec edits should be made. Generic to any debundle target.
+description: Plan JS debundle extraction or existing-module reorganization using read-only graph and source queries. Use for residual proposals, gate-checked decomposition, atomic coverage, selector anchors, and reviewed owner-partition handoffs. Generic to any debundle target; this skill does not edit the spec.
 ---
 
 # Debundle Plan Work
@@ -37,8 +37,17 @@ bazelisk --output_base=/tmp/debundle-cli-bazel \
 
 ## Planning Loop
 
-- Start with `graph-summary` for orientation, then `modules propose`
-  for dispatchable candidate work.
+- Start with `graph-summary` and choose the planning task:
+  - For fresh residual extraction, use `modules propose` and send reviewed
+    proposal rows to intake for semantic naming and selector proof.
+  - For existing-module reorganization, use `modules decompose --atomic`.
+    Add `--preserve-selector-anchors --source-root` when module-local selector
+    relationships must survive the split. Inspect the complete candidate's
+    coverage, verdict, conflicts, and resolved names before assigning work.
+    The CLI guide's "Refining existing modules" section describes optional
+    atomic/SCC coarsening, original-home rejoining, and search budgets.
+    Suggested paths are temporary: choose semantic destinations and hand the
+    reviewed owner map to a lane worker for `modules refine`.
 - For selector-stabilization planning, run
   `debundle spec selector-debt --group-module-depth N --min-score 70 --format json`
   before proposing worker lanes. Use the grouped rows to choose large,
@@ -50,9 +59,11 @@ bazelisk --output_base=/tmp/debundle-cli-bazel \
 - Use `coverage` and `atoms` when current YAML or atomic-unit closure is
   the question.
 - Use `describe` and `inspect-source --id` before recommending any assignment.
-- Treat `modules propose` output as planning evidence. Fresh binding rows use
-  `modules apply` after semantic naming and selector proof; existing claims
-  use `bindings assign`. See `references/docs/cli.md` § Claiming fresh proposals.
+- Keep planning reports distinct from edit batches. `modules refine` accepts
+  reviewed owner-to-module rows for existing non-residual claims; it cannot
+  apply residual groups from `--include-residual` or synthesize selectors.
+  Fresh residual claims use `modules apply`; focused binding moves use
+  `bindings assign`. See `references/docs/cli.md` for each batch format.
 
 Prefer these commands over grepping generated output. The owner graph is
 the source of truth for cycle gates and residual dependencies; the embedded

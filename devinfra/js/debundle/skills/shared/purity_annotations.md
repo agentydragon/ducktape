@@ -1,60 +1,68 @@
-# Purity annotations during cycle recovery
+# Initialization contracts during cycle recovery
 
-Use an annotation only after a cycle report points to a specific unknown call
-and source inspection establishes that the call is safe during module
-initialization. The classifier is conservative about imported calls because
-it cannot inspect every vendor implementation; a cycle by itself is not
-evidence that a call is pure.
+A cycle report identifies ordering constraints, not permission to annotate a
+call. Establish the source and runtime premises for the exact contract before
+changing the spec.
 
-## Trace the call first
+## Trace the blocker
 
-1. Refresh the graph and read the exact cycle/cut evidence. Record the
-   initializer owner, source location, purity rule, and called binding.
-2. Follow imported aliases to the defining chunk and export. Check the actual
-   implementation and its module-initialization behavior.
-3. Separate work performed by the eager initializer from work inside a lazy
-   function body. For example, a memoizing factory may be safe if it returns a
-   wrapper without invoking the component argument; a call that invokes a
-   callback or mutates observable state is not pure.
+1. Refresh the graph and read the exact cycle/cut evidence. Record the owner,
+   source location, constraint kind, and called binding.
+2. Follow aliases and imports to the defining implementation. Separate eager
+   effects, retained callback invocation, and reads before the first `await`.
+   Include helpers, provider branches, property accessors, and publication paths.
+3. For export-reentry constraints, inspect `export_reentry.json` beside the
+   per-chunk owner graph. Verify the loader and dependency closure before
+   selecting a runtime contract.
 
-## Choose the narrowest contract
+## Choose the contract for the established fact
 
-- `purity: pure` asserts that calls to one local bound function have no
-  observable side effects.
-- `purity: pure_new` applies only to `new BoundClass(...)`; it does not make
-  ordinary calls to that binding pure. On a selected class in the defining
-  chunk, the contract follows its exports to importing chunks. Prefer a
+The full callback, runtime, metadata, and publication contracts are in the
+bundled `references/SPEC.md`. Read the named section before selecting its
+assertion.
+
+| Established fact                                                                                               | Contract and audit reference                                                                                                                                                                                                                                                                                    |
+| -------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The app uses native browser ESM loading with no synchronous host namespace access during evaluation            | `execution_runtime: native_browser_esm`. The analyzer also checks the static closure, cycles, suspension, and relevant vendor replacements. See SPEC § Runtime loading contract.                                                                                                                                |
+| A provider stores a callback in a fresh returned graph without synchronous invocation or publication elsewhere | `callback_factory_exports`, `callback_factory_members`, or the narrower `inline_callback_factory_exports` under `chunk_export_purity.<provider>`. Audit the admitted input/result shapes and all provider paths. See SPEC § Audited callback factories.                                                         |
+| A call cannot synchronously invoke foreign callbacks or access importer-owned cells                            | `no_reentry_exports`, `no_reentry_members`, or `no_reentry_record_members` under `chunk_export_purity.<provider>`. Check argument shapes, stable callable identity, and namespace independence where required. Provider-private effects may remain; results stay opaque. See SPEC § Audited callback factories. |
+| A decorator helper only mutates inert target metadata and cannot invoke target methods or reenter foreign code | Select the metadata-specific `effect:` matching the helper and argument shape. A target-local mutation assertion alone does not establish callback timing. See SPEC § Local-effect decorator annotations.                                                                                                       |
+| A browser-global slot stores a callback that no consumer can use during synchronous initialization             | `chunk_analysis_options.<chunk>.deferred_global_publications`. Audit the host property descriptor and all consumers, as well as the checked source shape. See SPEC § Audited callback factories.                                                                                                                |
+| An initializer, call, or construction has no observable effects                                                | Use the purity scope below. Purity does not establish callback deferral.                                                                                                                                                                                                                                        |
+
+These callback, no-reentry, metadata, and global-publication contracts retain
+actual eager reads, mutation, and ordering. Source inference also recognizes
+supported private callback containers and checked local constructor results;
+inspect SPEC § Synchronous analysis limits before
+adding an assertion for behavior the analyzer already proves.
+
+## Purity scope
+
+- `initializer_purity: pure` applies to one selected simple top-level variable
+  initializer. Audit the entire expression, including synchronous callbacks:
+  it must have no observable effects and cannot throw. It does not certify
+  later calls or construction of the resulting value. Eager reads and
+  callback dependencies remain. Imports, functions, classes, destructuring,
+  missing initializers, and ambiguous initialized sites are unsupported.
+- `purity: pure` asserts call purity for one local bound function.
+- `purity: pure_new` asserts purity only for `new BoundClass(...)`. A selected
+  defining class's assertion follows its exports to importers. Prefer a
   structural `source_match` for a minified class.
-- `chunk_export_purity.<defining chunk>.pure_exports` asserts call purity for
-  named exports imported from another chunk:
+- `chunk_export_purity.<provider>.pure_exports` and `pure_new_exports` assert
+  call or construction purity for named imports from that provider.
+- Member-level `pure_members` covers listed static calls through a binding.
+  `fluent_exports` asserts the broader transitive derived-value contract;
+  audit that complete surface before selecting it.
 
-  ```yaml
-  chunk_export_purity:
-    static/vendor-X:
-      pure_exports: [memo]
-  ```
+These are author-trusted assertions. The classifier does not verify the body.
+Arguments retain their normal checks; call purity does not certify an export's
+initializer or remove independently observed callback dependencies.
 
-- `chunk_export_purity.<defining chunk>.pure_new_exports` asserts purity
-  only for `new` on named imported exports, after their arguments are
-  classified normally:
+## Validate the decision
 
-  ```yaml
-  chunk_export_purity:
-    static/vendor-X:
-      pure_new_exports: [Provider]
-  ```
-
-- `pure_members` covers selected static member calls through an imported
-  namespace. `fluent_exports` covers a much broader transitive chain of
-  derived values; use it only when the whole fluent surface has the required
-  contract.
-
-Every form is an author-trusted assertion, not body verification. Arguments
-are still analyzed normally. A call-purity annotation does not make the
-export's initializer pure, and an impure call argument remains impure.
-If observable effects can occur during the eager call, move the assignment
-boundary or keep the owner in the residual instead of annotating it.
-
-After annotating, rerun the same gate. Confirm that the reported side-effect
-edge is gone and that the intended assignment becomes realizable; include the
-source evidence and asserted contract in the review.
+Record the inspected source, audited provider/runtime premises, and exact
+assertion. Rerun source validation, the extraction gate, and the adapter's
+runtime smoke. Confirm the intended partition passes and inspect the retained
+constraints. A successful source match alone does not prove runtime behavior.
+If the premise cannot be established, retain the conservative constraints and
+choose a different module boundary.

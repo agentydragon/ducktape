@@ -1,6 +1,6 @@
 ---
 name: debundle_lane_worker
-description: Apply one scoped debundle module-assignment or reorganization task in a worktree. Use for confirming atomic-DAG unit coverage, reading binding context, choosing honest module boundaries, editing debundle YAML (directly or via `debundle bindings assign` / `bindings rename` / `modules merge`), running the adapter-provided gate and regen commands, and committing one reviewable worker branch.
+description: Apply one scoped debundle extraction, owner-partition refinement, or reorganization task in a worktree. Use for reviewing source and atomic coverage, choosing module boundaries, applying validated spec edits, running adapter gates and regeneration, and committing one reviewable worker branch.
 ---
 
 # Debundle Lane Worker
@@ -45,13 +45,22 @@ The orchestrator or project adapter provides:
    implementation details.
 4. Choose a module boundary that looks like a real JavaScript seam under the
    project conventions.
-5. Apply the assignment using the shared guide's CLI workflows. Prefer
-   `modules apply` for fresh residual binding proposals; use `bindings assign`
-   for existing claims, and `bindings rename` / `modules merge` for their
-   respective edits. See `references/docs/cli.md` § Claiming fresh proposals.
+5. Apply the assignment using the shared guide's CLI workflows. Use
+   `modules apply` for fresh residual binding proposals, `modules refine` for
+   reviewed owner partitions of existing non-residual claims, `bindings assign`
+   for focused binding moves, and `bindings rename` / `modules merge` for their
+   respective edits.
    In an app-level multi-chunk spec, pass `--tree-config` to both `modules
 propose` and `modules apply` so each sees only the graph chunk's mapped
    YAML roots.
+
+   For `modules refine`, review the `{owner_id, module}` batch against current
+   source and graph evidence. Run `--dry-run`, then apply the same reviewed
+   batch; both resolve the complete scoped spec and check the full requested
+   partition. Preserve selector text and metadata through the CLI. Residual,
+   unclaimed, import, and export owners are not accepted. Use `--tree-config`
+   for a multi-chunk spec and include the selected chunk root in destinations.
+   See `references/docs/cli.md` § Applying reviewed owner assignments.
 
    For `modules apply`, first run `--dry-run --format json` and inspect each
    `selector_reviews` selector against the intended binding and source. Review
@@ -95,7 +104,7 @@ natural owner still belongs to a larger atomic unit that should move together.
 - If the gate rejects via `debundle run`, read the structured cycle/report
   output (`cycles.json`, `atomic_unit_conflicts.json`) first. Use the
   cut/evidence if present. For an unknown-call side-effect cycle, follow the
-  shared workflow's purity-annotation guidance before changing the assignment;
+  shared workflow's initialization-contract guidance before changing the assignment;
   keep the source evidence and the exact asserted contract in the review.
 - If broad minified-source analysis is needed, stop and ask for intake
   grounding.

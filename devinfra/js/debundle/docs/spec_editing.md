@@ -3,6 +3,21 @@
 Proposing, moving, merging, and renaming modules and bindings; peel heuristics;
 `comment:` fields. Operational base: `cli.md`.
 
+## Workflow: reorganizing existing modules
+
+Use `modules decompose --atomic` to plan a complete partition of existing
+module owners. Review semantic destinations, selector anchors, and the full
+candidate verdict; optional coarsening and original-home rejoining are
+described in [the decomposition guide](cli.md#refining-existing-modules-modules-decompose).
+
+Apply a reviewed `{owner_id, module}` map of already-claimed non-residual
+owners with `modules refine --dry-run`, then `modules refine`. Both resolve
+the full scoped spec and validate the requested partition before any write.
+The [owner-assignment guide](cli.md#applying-reviewed-owner-assignments-modules-refine)
+defines batch fields, multi-chunk paths, and excluded owner kinds. Residual
+extraction uses the proposal workflow below; focused binding moves use
+`bindings assign`.
+
 ## Workflow: proposing new modules
 
 Use the proposer to surface what's currently extractable:

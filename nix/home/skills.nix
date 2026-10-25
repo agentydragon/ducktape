@@ -2,7 +2,7 @@
 #
 # Returns a function: { prefix, mode ? "recursive" } -> home.file entries that deploy skills to
 # ~/{prefix}/skills/.
-# Skills are consumed from a CI-built `.skill` archive (skills-tar flake input).
+# skills-tar is the directory assembled from pinned per-skill release archives.
 # Skill contents are controlled by skill_package(srcs=...) in each skill's BUILD.bazel.
 #
 # Usage:

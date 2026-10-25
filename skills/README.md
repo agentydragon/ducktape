@@ -15,6 +15,20 @@ Each skill is its own `.skill` zip built by the `skill_package` macro (`defs.bzl
   same artifacts at `share/claude-hooks/skills/`; `devinfra/claude/web_setup.sh`
   symlinks each into `~/.claude/skills/`, preserving Anthropic's defaults.
 
+### Refreshing managed skills
+
+Skill source, released archives, artifact pins, and installed files are separate
+states. To deploy a change, let CI publish the registered skill archives and
+`sync-pins` update `nix/artifact-pins.json`, then apply the host's normal
+[Nix configuration](../nix/README.md#usage). NixOS hosts with inline
+home-manager use their system activation; standalone profiles use
+home-manager. Preserve the managed links in agent homes.
+
+Compare the resolved installed directory with the pinned archive, including
+bundled references as well as `SKILL.md`: reference-only changes also require
+a deployment. Start a fresh agent session after activation so discovery uses
+the installed skill descriptions and files.
+
 ## Registry
 
 `skills_registry.json` (hand-written) decides what is built and released. Each
@@ -33,7 +47,7 @@ build event stream. Consumers: `.github/workflows/release.yml`,
 2. `skills/<name>/BUILD.bazel` with `skill_package(name, srcs)`.
 3. Add a `skills_registry.json` entry to ship it.
 4. After CI releases `skill-<name>`, `sync-pins` seeds its pin in
-   `nix/artifact-pins.json` (unless `nix: false`); then `home-manager switch`. Nix
+   `nix/artifact-pins.json` (unless `nix: false`); then activate the host's Nix config. Nix
    assembly skips registered skills without a pin, so the first release can precede
    the pin.
 
