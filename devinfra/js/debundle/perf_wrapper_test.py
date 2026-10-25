@@ -9,24 +9,26 @@ import pytest_bazel
 
 
 @pytest.mark.parametrize("status", [0, 7, 124])
-def test_postprocessing_preserves_status_and_partial_output(tmp_path: Path, status: int) -> None:
+@pytest.mark.parametrize("record_status", [0, 23])
+def test_postprocessing_preserves_status_and_partial_output(tmp_path: Path, status: int, record_status: int) -> None:
     perf = tmp_path / "perf"
     perf.write_text(
         "#!/usr/bin/env bash\n"
-        'if [[ "$1" == record ]]; then exit 0; fi\n'
+        f'if [[ "$1" == record ]]; then exit {record_status}; fi\n'
         "echo partial-report\n"
         "echo diagnostic >&2\n"
         f"exit {status}\n"
     )
     perf.chmod(0o755)
     output = tmp_path / "profile"
-    subprocess.run(
+    result = subprocess.run(
         ["bash", str(Path(__file__).with_name("perf_wrapper.sh")), "--output-dir", str(output), "--", "true"],
         env={**os.environ, "PATH": f"{tmp_path}:{os.environ['PATH']}"},
-        check=True,
+        check=False,
         capture_output=True,
         text=True,
     )
+    assert result.returncode == record_status
     report = output / "perf_report_flat_symbols.txt"
     failure = report.with_suffix(".txt.failed.txt")
     if status:
