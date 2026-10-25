@@ -434,6 +434,38 @@ fn namespace_factories_compose_without_eager_callback_reads() {
 }
 
 #[test]
+fn namespace_factory_ignores_self_initialized_unrelated_object() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import { api } from './peer.js';\n\
+             var state = state || { value: 0 };\n\
+             const wrapped = api.make(() => later);\n\
+             const later = 42;\nconsole.log(wrapped.invoke(), state.value);\n",
+            vec![
+                logical_module(
+                    "callbacks/wrapped",
+                    &[Member::new("state"), Member::new("wrapped")],
+                ),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        )
+        .with_extra_chunks(&[("static/peer", NAMESPACE_FACTORY)])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+            .with_callback_factory_members("api", &["make"])
+            .build()]),
+    );
+    assert_preserved_entry_output(&fixture, "42 0\n");
+}
+
+#[test]
+fn namespace_factory_tracks_namespace_seed_in_self_initializer() {
+    assert_namespace_factory_publication_rejected(
+        "var state = state || api;\n\
+         globalThis.exposed = state;\n",
+    );
+}
+
+#[test]
 fn namespace_factory_defers_member_reads_inside_callback_result_literals() {
     let fixture = run_fixture(
         FixtureOpts::new(

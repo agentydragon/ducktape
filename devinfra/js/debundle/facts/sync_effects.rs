@@ -443,7 +443,10 @@ impl ValueExpr {
                     true
                 } else if let Some(value) = facts.bindings.get(binding) {
                     if !visiting_bindings.insert(binding.clone()) {
-                        true
+                        // A binding cycle contributes no namespace provenance
+                        // without a namespace or unknown-value seed. The
+                        // enclosing traversal still checks every alternative.
+                        false
                     } else {
                         let result = value.may_publish_namespace_inner(
                             id,
