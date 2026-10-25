@@ -6,7 +6,9 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 
 use analysis::OwnerId;
-use analysis::graph::{EndpointView, OwnerEdge, OwnerEdgeId, OwnerGraph, project_endpoints};
+use analysis::graph::{
+    ChunkConstrainingEdgeSet, EndpointView, OwnerEdge, OwnerEdgeId, OwnerGraph, project_endpoints,
+};
 use analysis::ids::ModuleId;
 use analysis::partition::Partition;
 use analysis::reports::SccCore;
@@ -729,6 +731,47 @@ impl IncrementalQuotient {
         self.reject_entry_dependencies(&mut verdict, None, None);
 
         verdict
+    }
+
+    /// Project the effective quotient into the same typed canonical shape as
+    /// `chunk_constraining_module_edges`, without revisiting owner edges.
+    /// `evidence_edges` preserves the canonical first-sequenced-edge rule:
+    /// OwnerGraph iterates in OwnerEdgeId order, and the bucket keeps ids in
+    /// that same order.
+    pub(super) fn canonical_with_overlay(
+        &self,
+        overlay: &QuotientOverlay,
+    ) -> ChunkConstrainingEdgeSet {
+        let (i_successors, constraining_pairs) = self.effective_simulator_inputs(Some(overlay));
+        let edges = constraining_pairs
+            .into_iter()
+            .map(|pair| {
+                (
+                    pair,
+                    self.constraining_bucket_with_overlay(pair, overlay)
+                        .evidence_edges(),
+                )
+            })
+            .collect();
+        ChunkConstrainingEdgeSet {
+            edges,
+            i_successors,
+        }
+    }
+
+    pub(super) fn cross_rebinds_with_overlay(
+        &self,
+        overlay: &QuotientOverlay,
+    ) -> Vec<CrossRebindEdge> {
+        let mut rebinds: Vec<_> = self
+            .cross_rebinds
+            .iter()
+            .filter(|(edge_id, _)| !overlay.cross_rebind_removed.contains(edge_id))
+            .map(|(_, rebind)| rebind.clone())
+            .collect();
+        rebinds.extend(overlay.cross_rebind_added.values().cloned());
+        rebinds.sort_by_key(|rebind| rebind.owner_edge);
+        rebinds
     }
 
     pub(super) fn verdict_touching(&self, module: ModuleId) -> RealizabilityVerdict {
