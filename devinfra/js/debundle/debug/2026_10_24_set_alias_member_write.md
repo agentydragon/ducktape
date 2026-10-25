@@ -7,9 +7,8 @@ property, `alias = lookup`, and `alias.key = () => later` replaces it. A later
 before `later` initializes. The original prints `ReferenceError`.
 
 On the unchanged Set iterable branch, the debundler accepted the requested
-split and the emitted entry printed `undefined` (RBE invocation
-`cd06ca5c-29d2-4824-bf80-86b75dcfcdf6`). The failed-before test checks the
-original and emitted entries under the same Node runtime. The PlainData guard
+split and the emitted entry printed `undefined`. The failed-before test checks
+the original and emitted entries under the same Node runtime. The PlainData guard
 already disqualified `lookup` after the alias write; this was a separate
 prefix-execution problem.
 
