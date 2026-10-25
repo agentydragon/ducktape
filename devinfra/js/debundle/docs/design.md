@@ -1069,6 +1069,12 @@ return an object or callback. Receivers with no syntactic path to the
 namespace rely on the author's audited non-aliasing assertion; this is a
 trusted contract, not a proof that arbitrary callback parameters are
 disjoint from the namespace.
+The fresh-result guarantee also permits adjacent static property writes after
+a direct audited factory call with one inline callback. The receiver must stay
+private and the assigned value must run no user code; prototype writes and
+intervening statements end the proof. Namespace admission is recomputed after
+each removal, so a result from a rejected namespace factory cannot justify
+another namespace's admission. Other result writes keep the receiver fallback.
 Inside a literal traversed within an admitted inline callback, a direct static
 namespace member used as a call callee is not treated as a captured namespace
 value. The call's arguments and effects still flow through normal analysis;

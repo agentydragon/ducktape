@@ -307,6 +307,11 @@ The allocation and assignment values must run no user code, and the instance
 must remain private throughout that run. Unsupported constructors, fields,
 receivers, dynamic scope, and intervening statements retain the conservative
 write checks.
+Adjacent static property writes to the fresh ordinary result of a direct
+audited factory call with one inline callback also retain the contract. Their
+values must run no user code; prototype writes and intervening statements end
+the proof. Rejecting the producing namespace's factory contract also removes
+this proof from its results.
 Within a literal traversed inside an admitted inline callback, a direct static
 namespace member used as a call callee is analyzed as the callee expression,
 not as a captured namespace value. Call arguments and effects remain analyzed;

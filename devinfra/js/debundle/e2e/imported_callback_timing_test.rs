@@ -744,34 +744,40 @@ fn namespace_factory_ignores_member_callees_in_callback_result_literals() {
 
 #[test]
 fn audited_export_factory_result_allows_an_adjacent_metadata_write() {
-    let fixture = run_fixture(
-        FixtureOpts::new(
-            "import { api, outer } from './peer.js';\n\
+    for contract in [
+        ChunkExportPurityBuilder::new("static/peer").with_callback_factories(&["outer"]),
+        ChunkExportPurityBuilder::new("static/peer").with_inline_callback_factories(&["outer"]),
+    ] {
+        let fixture = run_fixture(
+            FixtureOpts::new(
+                "import { api, outer } from './peer.js';\n\
              const result = outer(() => 0);\n\
              result.label = 'factory';\n\
              const wrapped = api.make(() => later);\n\
              const later = 42;\n\
              console.log(result.label, wrapped.invoke());\n",
-            vec![
-                logical_module_with_anon(
-                    "callbacks/wrapped",
-                    &[Member::new("result"), Member::new("wrapped")],
-                    &["result.label = 'factory';"],
-                ),
-                logical_module("values/later", &[Member::new("later")]),
-            ],
-        )
-        .with_extra_chunks(&[(
-            "static/peer",
-            "export const api = { make(callback) { return { invoke: () => callback() }; } };\n\
-             export function outer(callback) { return { invoke: () => callback() }; }\n",
-        )])
-        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-            .with_callback_factories(&["outer"])
-            .with_callback_factory_members("api", &["make"])
-            .build()]),
-    );
-    assert_preserved_entry_output(&fixture, "factory 42\n");
+                vec![
+                    logical_module_with_anon(
+                        "callbacks/wrapped",
+                        &[Member::new("result"), Member::new("wrapped")],
+                        &["result.label = 'factory';"],
+                    ),
+                    logical_module("values/later", &[Member::new("later")]),
+                ],
+            )
+            .with_extra_chunks(&[(
+                "static/peer",
+                "export const api = { make(callback) { return { invoke: () => callback() }; } };\n\
+             export function outer(callback) {\n\
+                 function wrapped() { return callback(); }\n\
+                 wrapped.kind = 'factory';\nreturn wrapped;\n}\n",
+            )])
+            .with_chunk_export_purity(&[contract
+                .with_callback_factory_members("api", &["make"])
+                .build()]),
+        );
+        assert_preserved_entry_output(&fixture, "factory 42\n");
+    }
 }
 
 #[test]
@@ -867,6 +873,8 @@ fn an_opaque_mutation_between_factory_result_and_metadata_write_stays_conservati
 #[test]
 fn a_replaced_factory_returning_another_namespace_stays_conservative() {
     const SOURCE: &str = "import { api, other } from './peer.js';\n\
+        import { getNamespace } from './host.js';\n\
+        other.make = getNamespace;\n\
         const result = other.make(() => 0);\n\
         result.label = 'factory';\n\
         result.make = callback => callback();\n\
@@ -874,12 +882,17 @@ fn a_replaced_factory_returning_another_namespace_stays_conservative() {
         const wrapped = api.make(() => later);\n\
         later = 42;\n\
         console.log(result.label, wrapped, later);\n";
-    let peers = [(
-        "static/peer",
-        "export const api = { make(callback) { return { invoke: () => callback() }; } };\n\
-         export const other = { make(callback) { return { invoke: () => callback() }; } };\n\
-         other.make = callback => api;\n",
-    )];
+    let peers = [
+        (
+            "static/peer",
+            "export const api = { make(callback) { return { invoke: () => callback() }; } };\n\
+         export const other = { make(callback) { return { invoke: () => callback() }; } };\n",
+        ),
+        (
+            "static/host",
+            "import { api } from './peer.js';\nexport function getNamespace() { return api; }\n",
+        ),
+    ];
     let contracts = [ChunkExportPurityBuilder::new("static/peer")
         .with_callback_factory_members("api", &["make"])
         .with_callback_factory_members("other", &["make"])
@@ -900,6 +913,7 @@ fn a_replaced_factory_returning_another_namespace_stays_conservative() {
                     "callbacks/wrapped",
                     &[Member::new("result"), Member::new("wrapped")],
                     &[
+                        "other.make = getNamespace;",
                         "result.label = 'factory';",
                         "result.make = callback => callback();",
                     ],
