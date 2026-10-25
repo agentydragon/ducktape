@@ -12,10 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from util.bazel.runfiles import get_required_path
 
-_BLUEPRINTS_DIR_ANCHOR = (
-    "_main/cluster/k8s/authentik/app/blueprints/"
-    "embedded-outpost.yaml"
-)
+_BLUEPRINTS_DIR_ANCHOR = "_main/cluster/k8s/authentik/app/blueprints/embedded-outpost.yaml"
 
 
 class _BlueprintLoader(yaml.SafeLoader):
@@ -225,4 +222,3 @@ def test_outpost_provider_references_resolve(blueprints_dir: Path) -> None:
 
 if __name__ == "__main__":
     pytest_bazel.main()
-

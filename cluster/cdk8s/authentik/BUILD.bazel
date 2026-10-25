@@ -152,11 +152,10 @@ py_test(
     srcs = ["test_blueprint_contracts.py"],
     data = ["//cluster/k8s:authentik_blueprints"],
     deps = [
-        "@pypi//pydantic",
-        "@pypi//pyyaml",
         "//util/bazel:runfiles",
+        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )
-

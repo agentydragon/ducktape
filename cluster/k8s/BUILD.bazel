@@ -72,5 +72,3 @@ filegroup(
     srcs = glob(["authentik/app/blueprints/*.yaml"]),
     visibility = ["//cluster/cdk8s/authentik:__pkg__"],
 )
-
-
