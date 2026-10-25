@@ -243,7 +243,7 @@ def _item_packets(emitter: _Emitter, index: int, item: Item) -> dict[str, Any]:
     return done
 
 
-def response_stream(items: list[Item], *, model: str) -> EventStream:
+def response_stream(items: list[Item], *, model: str, usage: dict[str, Any] | None = None) -> EventStream:
     envelope = {"id": f"resp_test_{next(_ids)}", "object": "response", "created_at": 0, "model": model, "output": []}
     emitter = _Emitter()
     emitter.emit({"type": "response.created", "response": {**envelope, "status": "in_progress"}})
@@ -252,7 +252,12 @@ def response_stream(items: list[Item], *, model: str) -> EventStream:
     emitter.emit(
         {
             "type": "response.completed",
-            "response": {**envelope, "status": "completed", "output": output, "usage": _USAGE},
+            "response": {
+                **envelope,
+                "status": "completed",
+                "output": output,
+                "usage": _USAGE if usage is None else usage,
+            },
         }
     )
     # Responses SSE terminates at response.completed.  Unlike Chat Completions, its wire

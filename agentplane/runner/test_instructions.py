@@ -5,13 +5,17 @@ from __future__ import annotations
 import json
 
 import grpc
+import pytest
 import pytest_bazel
 
+from agentplane.native.codex.testing import responses_sse
+from agentplane.native.codex.testing.responses import OpenAIResponses
 from agentplane.proto import runner_pb2
 from agentplane.runner.testing import events, launches
 from agentplane.runner.testing.driver import RunnerDriver, refusal
 from agentplane.runner.testing.process import RunningRunner
 from agentplane.testing.scripted_model import ScriptedModel, Text
+from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -86,8 +90,8 @@ async def test_instructions_reach_the_model_on_every_turn_and_after_a_resume(
     await first.drain_until_end()
 
     # A resume starts a fresh harness process, and the two carry the instructions there by different
-    # routes: Claude Code re-sends them in its handshake, Codex replays the developer message its
-    # thread stored when it was created. The runner SPEC has what that difference costs.
+    # routes: Claude Code re-sends them in its handshake; Codex replays its developer message
+    # and restores the configuration that a later compaction uses to rebuild it.
     second = await driver.attach(
         "instructions-1", spec=with_instructions(spec, INSTRUCTIONS), after_cursor=first.cursor
     )
@@ -99,6 +103,73 @@ async def test_instructions_reach_the_model_on_every_turn_and_after_a_resume(
     assert INSTRUCTIONS in request.system_text
     await model.reply(request, Text("RESUMED_OK"))
     await second.until(events.turn_completed)
+
+
+@pytest.mark.parametrize("harness", [runner_pb2.HARNESS_CODEX], ids=["codex"])
+@pytest.mark.parametrize("lifecycle", ["same-process", "runner-restart", "quiesce-resume"])
+async def test_standing_instructions_survive_compaction_after_runner_restart(
+    runner: RunningRunner,
+    driver: RunnerDriver,
+    model: ScriptedModel,
+    endpoint: object,
+    spec: runner_pb2.SessionSpec,
+    lifecycle: str,
+) -> None:
+    assert isinstance(endpoint, OpenAIResponses)
+    evidence = undeclared_outputs_dir() / lifecycle
+    evidence.mkdir()
+    session = await driver.attach("restart-compaction", spec=with_instructions(spec, INSTRUCTIONS))
+    await session.submit_input("seed", "Reply with exactly: SEED_OK")
+    seed_request = await model.request()
+    assert INSTRUCTIONS in seed_request.system_text
+    await model.reply(seed_request, Text("SEED_OK"))
+    await session.until(events.turn_completed)
+
+    if lifecycle != "same-process":
+        if lifecycle == "quiesce-resume":
+            await driver.quiesce()
+            runner.gateway.control.incarnation_uid = "resumed-test-incarnation"
+        await runner.restart()
+        await session.until(events.is_kind("harness_exited"))
+        await session.drain_until_end()
+        session = await driver.attach("restart-compaction", after_cursor=session.cursor)
+
+    await session.submit_input("before-compact", "Reply with exactly: BEFORE_COMPACT_OK")
+    async with await endpoint.await_next_request() as exchange:
+        request = exchange.request
+        (evidence / "before-compaction.json").write_text(request.model_dump_json(indent=2))
+        assert INSTRUCTIONS in "\n".join(message.text for message in request.messages("developer"))
+        # Model-reported usage crosses the context limit; the next turn must compact.
+        await exchange.send(
+            *responses_sse.response_stream(
+                [responses_sse.Message("BEFORE_COMPACT_OK")],
+                model=model.model,
+                usage={"input_tokens": 1_000_000, "output_tokens": 5, "total_tokens": 1_000_005},
+            ).events
+        )
+    await session.until(events.turn_completed)
+
+    await session.submit_input("after-compact", "Reply with exactly: AFTER_COMPACT_OK")
+    async with await endpoint.await_next_request() as exchange:
+        (evidence / "summarization-request.json").write_text(exchange.request.model_dump_json(indent=2))
+        await exchange.send(
+            *responses_sse.response_stream(
+                [responses_sse.Message("SUMMARY_CHECKPOINT_MARKER")], model=model.model
+            ).events
+        )
+    async with await endpoint.await_next_request() as exchange:
+        request = exchange.request
+        (evidence / "continuation-request.json").write_text(request.model_dump_json(indent=2))
+        # Establish that this is the actual continuation after summary replacement.
+        assert any("SUMMARY_CHECKPOINT_MARKER" in message.text for message in request.messages("user"))
+        assert not any("BEFORE_COMPACT_OK" in message.text for message in request.messages("assistant"))
+        developer = "\n".join(message.text for message in request.messages("developer"))
+        assert launches.PLATFORM_INSTRUCTIONS in developer
+        assert INSTRUCTIONS in developer
+        await exchange.send(
+            *responses_sse.response_stream([responses_sse.Message("AFTER_COMPACT_OK")], model=model.model).events
+        )
+    await session.until(events.turn_completed)
 
 
 if __name__ == "__main__":

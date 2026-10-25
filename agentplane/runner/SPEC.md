@@ -324,27 +324,19 @@ cross-turn ownership, mode and cursor failures, compaction barriers, and stdout/
 
 ## Standing instructions across a resume
 
-Both harnesses put the session's instructions in front of the model on every turn, a resumed
-conversation included, but by different routes, and the difference decides what a client could ever
-do with a changed value.
+The runner supplies the Session's stored standing instructions at every native start or cold resume,
+so they remain model-visible after later compaction. Reopening a Session still requires the same
+spec; the runner does not expose instruction editing.
 
-- **Claude Code** takes them as `appendSystemPrompt` in the `initialize` control request, which the
-  runner sends at _every_ harness start. The text lands in the system prompt block after the
-  harness's own prompt, separated by a blank line, and the value in the spec is what each launch
-  sends. A different value would take effect at the next start.
-- **Codex** takes them as `developerInstructions` on `thread/start`, which the runner sends only for
-  a _fresh_ thread. The app-server stores them as a `developer` message at the head of the thread's
-  history, and a resumed thread replays that message out of its rollout, so they survive a resume
-  the runner never restates. What a resume cannot do is change them, and the wire looks like it can:
-  `thread/resume` takes a `developerInstructions` override, the app-server accepts it without an
-  error or a warning, and the model still sees only the message the thread was started with — never
-  the new text, and never both. The measurement is the resume row of the
-  [roster](../native/docs/protocol_roster.md).
+- **Claude Code:** `appendSystemPrompt` in each `initialize` request.
+- **Codex:** `developerInstructions` in both `thread/start` and `thread/resume`. Resume initially
+  replays the stored developer message, but compaction regenerates that message from the resumed
+  configuration. Replaying the old message on the first resumed turn does not establish that the
+  configuration needed by a later compaction was restored.
 
-So the protocol's "instructions are fixed for the session's life" is not a stylistic choice: it is
-the strongest promise both harnesses can keep. Editing a live session's standing instructions is
-buildable on Claude Code and is not buildable on Codex without starting a new thread, which is a new
-session and a new transcript.
+The Runner integration test covers automatic compaction in the same process, after a Runner
+restart, and after quiesce/resume under a new incarnation. The Sandbox suspend/resume system test
+also checks the continuation request after compaction following actual Pod replacement.
 
 ## What the harnesses do not promise
 

@@ -15,6 +15,7 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 
 from agentplane.app.sandbox_models import SandboxView
 from agentplane.app.testing.client import Client
+from agentplane.native.codex.testing import responses_sse
 from agentplane.proto import event_log_pb2, runner_pb2
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_resource import OperatingMode
@@ -27,6 +28,7 @@ from agentplane.system_tests.conftest import (
     wait_until_running,
 )
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
+from agentplane.testing.codex_model import CodexModel
 from agentplane.testing.scripted_model import Text
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -140,12 +142,14 @@ class _ResumeRun:
         assert self.view.pod is not None
         return self.view.pod.name
 
-    async def open(self, harness: runner_pb2.Harness, *, cwd: str) -> Agent:
+    async def open(self, harness: runner_pb2.Harness, *, cwd: str, instructions: str = "") -> Agent:
         """A Thread on the first model the deployment offers `harness`, with no native process yet."""
         harness_name = runner_pb2.Harness.Name(harness)
         offered = (await self.client.models()).harnesses[Harness(harness_name)]
         assert offered, f"the deployment offers no model for {harness_name}"
-        agent = await Agent.open(self.client, sandbox=self.view.name, harness=harness, model=offered[0], cwd=cwd)
+        agent = await Agent.open(
+            self.client, sandbox=self.view.name, harness=harness, model=offered[0], cwd=cwd, instructions=instructions
+        )
         snapshot = await self.client.runner_status(self.view.name)
         self.initial_boot_id = snapshot.runner_boot_id
         reserved = next(row for row in snapshot.sessions if row.session_id == str(agent.thread_id))
@@ -305,6 +309,63 @@ async def test_two_harness_threads_keep_their_context_after_sandbox_suspend_resu
             assert not [other for other in markers.values() if other != markers[harness] and other in context]
             await models[harness].reply(request, Text(markers[harness]))
         await run.continued(harness, recall.result())
+    run.passed = True
+    run.save()
+
+
+@pytest.mark.scripted_model
+async def test_codex_standing_instructions_after_suspend_and_compact(
+    client: Client, sandbox: Sandboxes, scripted: ScriptedUpstream
+) -> None:
+    standing = "SESSION_STANDING_ORDER: consult Agentplane before declaring access unavailable."
+    run = await _ResumeRun.start(client, sandbox, template=POD_TEMPLATE)
+    agent = await run.open(runner_pb2.HARNESS_CODEX, cwd=WORKING_DIRECTORY, instructions=standing)
+    model = scripted.model(run.pod_name, runner_pb2.HARNESS_CODEX)
+    assert isinstance(model, CodexModel)
+    async with asyncio.TaskGroup() as turns:
+        seed = turns.create_task(agent.run("Remember SEEDED_CONTEXT_MARKER and reply ACK."))
+        seed_request = await model.request()
+        assert standing in seed_request.system_text
+        assert "# Agentplane environment" in seed_request.system_text
+        await model.reply(seed_request, Text("ACK"))
+    await run.seeded(runner_pb2.HARNESS_CODEX, seed.result())
+    await run.suspend_and_resume()
+
+    model = scripted.model(run.pod_name, runner_pb2.HARNESS_CODEX)
+    assert isinstance(model, CodexModel)
+    async with asyncio.TaskGroup() as turns:
+        recall = turns.create_task(agent.run(RECALL_PROMPT))
+        async with await model.endpoint.await_next_request() as exchange:
+            developer = "\n".join(message.text for message in exchange.request.messages("developer"))
+            assert standing in developer
+            assert "# Agentplane environment" in developer
+            await exchange.send(
+                *responses_sse.response_stream(
+                    [responses_sse.Message("SEEDED_CONTEXT_MARKER")],
+                    model=exchange.request.model,
+                    usage={"input_tokens": 1_000_000, "output_tokens": 5, "total_tokens": 1_000_005},
+                ).events
+            )
+    await run.continued(runner_pb2.HARNESS_CODEX, recall.result())
+
+    async with asyncio.TaskGroup() as turns:
+        turns.create_task(agent.run("Continue after checkpoint and reply CONTINUED_OK."))
+        async with await model.endpoint.await_next_request() as exchange:
+            await exchange.send(
+                *responses_sse.response_stream(
+                    [responses_sse.Message("SUMMARY_CHECKPOINT_MARKER")], model=exchange.request.model
+                ).events
+            )
+        async with await model.endpoint.await_next_request() as exchange:
+            request = exchange.request
+            assert any("SUMMARY_CHECKPOINT_MARKER" in message.text for message in request.messages("user"))
+            developer = "\n".join(message.text for message in request.messages("developer"))
+            assert "# Agentplane environment" in developer
+            assert standing in developer
+            await exchange.send(
+                *responses_sse.response_stream([responses_sse.Message("CONTINUED_OK")], model=request.model).events
+            )
+    run.checks.append("standing_instructions_retained_after_suspend_resume_and_auto_compaction")
     run.passed = True
     run.save()
 

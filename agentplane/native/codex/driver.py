@@ -38,8 +38,8 @@ def thread_start(
     """`config` adds per-thread `config.toml` keys; app-server layers them over its own configuration.
 
     `base_instructions` replaces the harness's base prompt only when supplied.
-    `instructions` becomes the thread's developer instructions, which the app-server keeps with the
-    thread, so a `thread/resume` does not restate them. Empty sends no key for them. `dynamic_tools`
+    `instructions` becomes the thread's developer instructions. A cold resume must restate them
+    to preserve them through subsequent compaction. Empty sends no key for them. `dynamic_tools`
     declares the driver's own tools; it requires `initialize(experimental_api=True)` first.
     """
     return wire.ThreadStartRequest(

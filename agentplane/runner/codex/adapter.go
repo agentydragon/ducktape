@@ -91,10 +91,14 @@ func (a *codexAdapter) Handshake(ctx context.Context) (string, error) {
 			return "", err
 		}
 		excludeTurns := true
+		// Codex replays the old developer message on resume but rebuilds it from
+		// this configuration at the next compaction.
+		instructions := snapshot.Instructions
 		response, _, err = a.request(ctx, requestID, map[string]any{
 			"method": method, "id": requestID,
 			"params": protocol.ThreadResumeParams{
 				ThreadID: threadID, ExcludeTurns: &excludeTurns, Config: threadEnvironment(snapshot.Environment),
+				DeveloperInstructions: &instructions,
 			},
 		})
 		if err != nil {
