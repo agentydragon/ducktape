@@ -83,6 +83,30 @@ const later = 42;
 console.log(globalThis.observed, collection.size);
 "#;
 
+const ALIAS_MUTATION_SOURCE: &str = r#"globalThis.consume = function (values) {
+  for (const callback of values) {
+    try { callback(); } catch (error) { return error.name; }
+  }
+};
+const lookup = { key: "token" }, alias = lookup;
+alias.key = () => later;
+const collection = new Set([lookup.key]);
+console.log(globalThis.consume(collection));
+const later = 42;
+"#;
+
+const OPAQUE_ALIAS_MUTATION_SOURCE: &str = r#"globalThis.consume = function (values) {
+  for (const callback of values) {
+    try { callback(); } catch (error) { return error.name; }
+  }
+};
+const lookup = { key: "token" }, alias = Reflect.apply((value) => value, null, [lookup]);
+alias.key = () => later;
+const collection = new Set([lookup.key]);
+console.log(globalThis.consume(collection));
+const later = 42;
+"#;
+
 fn split_opts(source: &'static str, collection: LogicalModuleEntry) -> FixtureOpts<'static> {
     FixtureOpts::new(
         source,
@@ -264,5 +288,45 @@ fn proxy_member_callback_blocks_split() {
             &["globalThis.saved = () => later;"],
         ),
         "ReferenceError 1\n",
+    );
+}
+
+#[test]
+fn aliased_member_mutation_retains_callback() {
+    assert_real_callback_keeps_split_rejected(
+        ALIAS_MUTATION_SOURCE,
+        logical_module_with_anon(
+            "values/collection",
+            &[
+                Member::new("lookup"),
+                Member::new("alias"),
+                Member::new("collection"),
+            ],
+            &[
+                "globalThis.consume = function (values) { for (const callback of values) { try { callback(); } catch (error) { return error.name; } } };",
+                "alias.key = () => later;",
+            ],
+        ),
+        "ReferenceError\n",
+    );
+}
+
+#[test]
+fn opaque_alias_member_mutation_retains_callback() {
+    assert_real_callback_keeps_split_rejected(
+        OPAQUE_ALIAS_MUTATION_SOURCE,
+        logical_module_with_anon(
+            "values/collection",
+            &[
+                Member::new("lookup"),
+                Member::new("alias"),
+                Member::new("collection"),
+            ],
+            &[
+                "globalThis.consume = function (values) { for (const callback of values) { try { callback(); } catch (error) { return error.name; } } };",
+                "alias.key = () => later;",
+            ],
+        ),
+        "ReferenceError\n",
     );
 }
