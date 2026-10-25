@@ -267,10 +267,13 @@ impl MemberSelectorProgramBuilder {
         candidate_rows: Vec<ProjectedGroupRow>,
     ) {
         let mut variables = Vec::new();
+        // Selector-local names can recur in separate claims of one module;
+        // export names distinguish those claims while grouping one claim's
+        // targets into a single ownership class.
         let injectivity_class = format!(
             "{logical_module}|source_matches.projected|{}",
             exports_by_target
-                .keys()
+                .values()
                 .cloned()
                 .collect::<Vec<_>>()
                 .join(",")

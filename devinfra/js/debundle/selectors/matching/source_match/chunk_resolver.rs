@@ -1088,6 +1088,34 @@ impl ChunkResolver<'_> {
         let [first, ..] = needles else {
             bail!("logical_module {request_id}: source_matches[] parsed to zero statements");
         };
+        // A sole declared claim keeps the member matcher's contextual
+        // declarator projection. Its fixed-window path also preserves the
+        // existing candidate set; a STMT_LIST hole needs group alignment.
+        if exports_by_target.len() == 1
+            && !needles
+                .iter()
+                .any(|item| module_item_list_hole_name(item).is_some())
+        {
+            let target = exports_by_target
+                .keys()
+                .next()
+                .expect("single target was checked");
+            let member = parsed.with_target_binding(Some(target.clone()));
+            return Ok(self
+                .member_candidates(request_id, &member)?
+                .into_iter()
+                .map(|matched| MemberBindingGroupMatch {
+                    bindings: BTreeMap::from([(
+                        target.clone(),
+                        MatchedBinding {
+                            body_idx: matched.body_idx,
+                            binding: matched.binding,
+                        },
+                    )]),
+                    free_bindings: matched.free_bindings,
+                })
+                .collect());
+        }
         if needles.len() == 1 && selector_single_var_declarator(first).is_some() {
             return group_matches_single_declarator(
                 self,
