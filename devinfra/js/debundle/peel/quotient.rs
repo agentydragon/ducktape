@@ -752,9 +752,35 @@ impl QuotientGraph {
         if !self.check_merge_boolean(c1, c2) {
             return false;
         }
+        let (winner, loser) = (c1.min(c2), c1.max(c2));
+        let (post_module, deltas) = self.compute_merge_deltas(winner, loser);
+        if !self.full_gate_accepts_move(
+            deltas.into_iter().flat_map(|delta| match delta {
+                PartitionDelta::MoveOwners { owners, .. } => owners,
+            }),
+            post_module,
+        ) {
+            return false;
+        }
         self.merge_classes_unchecked(c1, c2)
             .expect("the boolean gate already rejected identical/dead classes");
         true
+    }
+
+    /// A contraction can change global ESM import order and expose a TDZ in
+    /// an I-SCC that does not contain the merged module. The touching gate is
+    /// a fast rejection filter; original-home rejoining must also check the
+    /// complete proposed partition before committing each accepted move.
+    fn full_gate_accepts_move(
+        &self,
+        moved: impl IntoIterator<Item = OwnerId>,
+        to: ModuleId,
+    ) -> bool {
+        let mut partition = self.realizability_index.partition().clone();
+        for owner in moved {
+            partition.set(owner, to);
+        }
+        gate::check_realizability(&self.owner_graph, &partition).is_realizable()
     }
 
     /// Try a complete multi-class contraction as one shared-gate move. The
@@ -820,6 +846,9 @@ impl QuotientGraph {
                 post_module,
             )
         {
+            return false;
+        }
+        if !self.full_gate_accepts_move(moved.iter().copied(), post_module) {
             return false;
         }
 
