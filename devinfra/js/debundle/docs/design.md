@@ -579,16 +579,15 @@ asymmetric `(eager forward, lazy back)` I-cycles that the
 
 Original-home rejoining begins with a fully realizable partition and must
 preserve that property after every contraction. Its pair and whole-home
-commit paths use the touching verdict as a fast rejection filter, then run
+commit paths retain their structural and size checks, then run
 `RealizabilityIndex::verdict_after_moving_owners` over the complete post-move
 quotient. The index patches its maintained canonical I-graph, constraining
 edge evidence, and cross-rebinds with the proposed incident-edge overlay;
 the pure reference and this overlay use the same full SCC and ESM simulator
-gate body. A merge can change
-global ESM import order and expose a TDZ in an I-SCC outside the merged
-module, which a touching verdict cannot see. General seed/greedy contractions
-can start from an unrealizable partition while repairing it, and the final
-proposal verdict checks their result.
+gate body. A merge can change global ESM import order and expose a TDZ in an
+I-SCC outside the merged module, which a touching verdict cannot see. General
+seed/greedy contractions can start from an unrealizable partition while
+repairing it; the final proposal verdict checks their result.
 
 #### Cost and the tier ladder
 
