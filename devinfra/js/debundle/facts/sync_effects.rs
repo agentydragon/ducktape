@@ -396,6 +396,7 @@ struct CallbackResultWrite {
 #[derive(Debug, Clone)]
 struct Callable {
     owner: StatementOrdinal,
+    created_after_parent_await: bool,
     params: Vec<Parameter>,
     reads: BTreeSet<Id>,
     rebinds: BTreeSet<Id>,
@@ -603,6 +604,7 @@ impl Default for Callable {
     fn default() -> Self {
         Self {
             owner: StatementOrdinal(0),
+            created_after_parent_await: false,
             params: Vec::new(),
             reads: BTreeSet::new(),
             rebinds: BTreeSet::new(),
@@ -674,6 +676,7 @@ struct ExecutionIndex {
     safe_class_target: Option<Id>,
     plain_data_objects: BTreeSet<u32>,
     setter_owners: BTreeMap<Option<String>, BTreeSet<StatementOrdinal>>,
+    hoisted_nested_functions: BTreeSet<u32>,
     owner_callable_prefix_reads: Vec<Option<BTreeSet<Id>>>,
     unindexed_accessor_owners: BTreeSet<StatementOrdinal>,
     top_calls: Vec<Vec<Call>>,
@@ -718,6 +721,7 @@ impl Default for ExecutionIndex {
             safe_class_target: None,
             plain_data_objects: BTreeSet::new(),
             setter_owners: BTreeMap::new(),
+            hoisted_nested_functions: BTreeSet::new(),
             owner_callable_prefix_reads: Vec::new(),
             unindexed_accessor_owners: BTreeSet::new(),
             top_calls: Vec::new(),
@@ -813,9 +817,11 @@ impl ExecutionIndex {
         // including a nested function installed as the setter. Union each
         // retained synchronous prefix instead of using whole lazy bodies.
         for callable in index.callables.values() {
-            index.owner_callable_prefix_reads[callable.owner.0]
-                .get_or_insert_with(BTreeSet::new)
-                .extend(callable.reads.iter().cloned());
+            let reads = index.owner_callable_prefix_reads[callable.owner.0]
+                .get_or_insert_with(BTreeSet::new);
+            if !callable.created_after_parent_await {
+                reads.extend(callable.reads.iter().cloned());
+            }
         }
         // A namespace member is an audited target only while its binding is
         // unchanged. Any local write could replace a member with an eager
@@ -956,6 +962,11 @@ impl ExecutionIndex {
     }
 
     fn with_callable(&mut self, key: u32, params: Vec<Parameter>, visit: impl FnOnce(&mut Self)) {
+        let created_after_parent_await = self
+            .current
+            .and_then(|parent| self.callables.get(&parent))
+            .is_some_and(|parent| parent.created_after_parent_await)
+            || (self.past_await && !self.hoisted_nested_functions.contains(&key));
         let saved_current = self.current.replace(key);
         let saved_await = std::mem::replace(&mut self.past_await, false);
         let saved_may_skip = std::mem::replace(&mut self.may_skip_await_depth, 0);
@@ -963,6 +974,7 @@ impl ExecutionIndex {
         let opaque_params = params.iter().any(|param| param.binding.is_none());
         self.callables.entry(key).or_insert_with(|| Callable {
             owner: self.owner,
+            created_after_parent_await,
             params,
             opaque: opaque_params,
             ..Callable::default()
@@ -1268,6 +1280,10 @@ impl Visit for ExecutionIndex {
 
     fn visit_fn_decl(&mut self, declaration: &FnDecl) {
         if let Some(key) = self.current {
+            // Declarations are instantiated when the enclosing activation
+            // begins, even if their source text follows an await.
+            self.hoisted_nested_functions
+                .insert(declaration.function.span.lo.0);
             let callable = self.callables.get_mut(&key).unwrap();
             callable.local_functions.insert(declaration.ident.to_id());
             callable.local_assignments.push((

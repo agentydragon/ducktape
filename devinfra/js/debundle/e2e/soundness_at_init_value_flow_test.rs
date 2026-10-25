@@ -1549,3 +1549,40 @@ export { box, later };
         &[],
     );
 }
+
+#[test]
+fn nested_setter_created_after_parent_await_can_split() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const box = {};
+async function install() {
+  await 0;
+  const setter = () => later;
+  Object.defineProperty(box, "value", { set: setter });
+}
+install();
+globalThis.hostCall = () => {};
+globalThis.hostCall();
+box.value = 1;
+const later = 7;
+console.log(later);
+export { box, later };
+"#,
+            vec![
+                logical_module_with_anon(
+                    "value/box",
+                    &[Member::new("box"), Member::new("install")],
+                    &[
+                        "install();",
+                        "globalThis.hostCall = () => {};",
+                        "globalThis.hostCall();",
+                        "box.value = 1;",
+                    ],
+                ),
+                logical_module("value/later", &[Member::new("later")]),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&fixture, "7\n");
+}
