@@ -1382,6 +1382,7 @@ fn rejoin_original_home_fragments(
     loop {
         let mut pass_progress = false;
         for representatives in pure_home_representatives.values() {
+            let mut attempted_whole_home = false;
             loop {
                 let classes: Vec<ClassId> = representatives
                     .iter()
@@ -1389,10 +1390,11 @@ fn rejoin_original_home_fragments(
                     .collect::<BTreeSet<_>>()
                     .into_iter()
                     .collect();
-                // A whole home commonly has many harmless fragments. Validate
-                // its complete target partition in one index overlay before
-                // trying pairs; a rejected batch leaves the quotient untouched.
-                if classes.len() > 2 {
+                // A rejected whole-home target is unchanged by this home's
+                // pairwise contractions. Retry only on another whole-home
+                // pass, after other homes may have changed the gate.
+                if classes.len() > 2 && !attempted_whole_home {
+                    attempted_whole_home = true;
                     attempted += 1;
                     if quotient.contract_group_if_preserving(&classes) {
                         accepted += classes.len() - 1;
