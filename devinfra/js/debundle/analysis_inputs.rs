@@ -1,10 +1,7 @@
-//! Spec-derived guidance for the analysis layer.
+//! Explicit author contracts, imported summaries, and analysis policy.
 //!
-//! `AnalysisHints` bundles the spec-shaped data the analyzer needs from
-//! upstream (declared purity, declared-pure constructors, declared-pure
-//! members, known local-effect helpers, local-effect policy). It lives
-//! outside `facts/` so the module path matches the data shape: hints are
-//! spec inputs to the facts pass, not facts themselves.
+//! These are inputs to fact extraction, not inferred facts. Imported summaries
+//! can themselves depend on author contracts in their defining chunks.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -35,7 +32,7 @@ pub enum LocalEffectPolicy {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct AnalysisHints {
+pub struct AnalysisAssumptions {
     /// Exact author-certified browser-global slots whose stored capabilities
     /// cannot be consumed before this chunk finishes synchronous init.
     pub deferred_global_publications: BTreeMap<BuiltinGlobalRoot, BTreeSet<String>>,
@@ -59,17 +56,11 @@ pub struct AnalysisHints {
     /// callbacks as synchronously reachable fallback roots.
     pub no_sync_callback_members: BTreeMap<String, BTreeSet<String>>,
     pub known_effects: BTreeMap<String, KnownEffect>,
-    pub local_effect_policy: LocalEffectPolicy,
     /// Author-trusted chunk-level opt-in that lets conservative-but-present
     /// syntactic dataflow summaries drive S-chain emission instead of
     /// falling back to opaque barriers. Set from
     /// `OwnerGraphOptions::trusted_dataflow_summaries`.
     pub trusted_dataflow_summaries: bool,
-    /// Cross-module purity verdicts for this chunk's imported function
-    /// bindings, keyed by local binding name. Produced by the program-level
-    /// oracle (`crate::cross_module_purity`); empty in strictly per-chunk
-    /// paths, where imported callees stay `unknown_call`.
-    pub imported_purities: BTreeMap<String, std::sync::Arc<Purity>>,
     /// Imported callback factories with the return-only callback-flow contract.
     /// Independent of call purity; used only for checked fresh-callback calls.
     pub callback_factories: BTreeSet<String>,
@@ -98,4 +89,17 @@ pub struct AnalysisHints {
     /// calls on them AND on values derived from them are pure. See
     /// `ChunkCodeGraph::fluent_bindings`.
     pub fluent_bindings: BTreeSet<String>,
+}
+
+/// Inputs to semantic analysis. Author assertions stay separate from imported
+/// call summaries and the caller-selected local-effect policy.
+#[derive(Debug, Clone, Default)]
+pub struct AnalysisInputs {
+    pub assumptions: AnalysisAssumptions,
+    pub local_effect_policy: LocalEffectPolicy,
+    /// Cross-module purity verdicts for this chunk's imported function
+    /// bindings, keyed by local binding name. Produced by the program-level
+    /// oracle (`crate::cross_module_purity`); empty in strictly per-chunk
+    /// paths, where imported callees stay `unknown_call`.
+    pub imported_purities: BTreeMap<String, std::sync::Arc<Purity>>,
 }

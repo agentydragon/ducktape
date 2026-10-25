@@ -1,7 +1,7 @@
 //! Program-level cross-module purity pass: resolve every chunk's imports
 //! against the artifact and run the purity fixpoint
 //! (`analysis::cross_module_purity`). Output feeds each chunk's
-//! `AnalysisHints::imported_purities` so the per-chunk classifier can see
+//! `AnalysisInputs::imported_purities` so the per-chunk classifier can see
 //! through calls to imported functions instead of bailing `unknown_call`.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -57,13 +57,13 @@ struct ReparsedEntry {
 
 /// Output of the program-level purity pass, keyed by chunk name.
 pub(super) struct CrossModulePurities {
-    /// Per-chunk imported-binding verdicts (`AnalysisHints::imported_purities`).
+    /// Per-chunk imported-binding verdicts (`AnalysisInputs::imported_purities`).
     pub(super) bindings: BTreeMap<String, BTreeMap<String, Arc<Purity>>>,
     /// Per-chunk pure-member sets for imported namespace-like bindings,
-    /// merged into `AnalysisHints::declared_pure_members`.
+    /// merged into `AnalysisAssumptions::declared_pure_members`.
     pub(super) members: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
     /// Per-chunk fluent-trusted import binding names (deep-purity roots),
-    /// merged into `AnalysisHints::fluent_bindings`.
+    /// merged into `AnalysisAssumptions::fluent_bindings`.
     pub(super) fluent: BTreeMap<String, BTreeSet<String>>,
     /// Per-chunk local names whose imported exports have an asserted pure
     /// construction contract (`chunk_export_purity.pure_new_exports`).

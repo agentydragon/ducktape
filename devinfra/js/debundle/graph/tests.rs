@@ -9,7 +9,7 @@ mod chunk_constraining_module_edges_tests {
     use crate::graph::*;
     use crate::ids::ModuleId;
     use crate::module_assignment::ModuleAssignment;
-    use crate::{AnalysisHints, OwnerGraph, OwnerId, facts::analyze_chunk};
+    use crate::{AnalysisInputs, OwnerGraph, OwnerId, facts::analyze_chunk};
 
     fn module_id(index: usize) -> ModuleId {
         ModuleId(index)
@@ -17,7 +17,7 @@ mod chunk_constraining_module_edges_tests {
 
     fn parse_facts(source: &str) -> Vec<crate::StatementFacts> {
         let module = raw_js_test_support::parse(source);
-        analyze_chunk(&module, &AnalysisHints::default(), None, |_| None).facts
+        analyze_chunk(&module, &AnalysisInputs::default(), None, |_| None).facts
     }
 
     fn parse_and_build(source: &str) -> OwnerGraph {

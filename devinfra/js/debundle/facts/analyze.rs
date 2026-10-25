@@ -63,7 +63,7 @@ impl Visit for TopLevelAwaitFinder {
 
 /// Compute the policy-independent layer of the chunk analysis: item
 /// views, shadowed globals, per-statement static facts, and the
-/// top-level-await scan. None of these depend on `AnalysisHints`
+/// top-level-await scan. None of these depend on `AnalysisInputs`
 /// (declared-pure hints, known effects, or local-effect policy).
 ///
 /// The policy-dependent half — [`ChunkCodeGraph::build_full`],
@@ -190,7 +190,7 @@ where
 }
 
 /// Compute the policy-dependent half of the chunk analysis from the
-/// pre-computed structural layer and a set of `AnalysisHints`. Builds
+/// pre-computed structural layer and a set of `AnalysisInputs`. Builds
 /// the chunk code graph (hint-gated purity propagation), the
 /// local-effect context (gated by `hints.local_effect_policy`), the
 /// per-statement purity classification, and the redundant-hint
@@ -198,7 +198,7 @@ where
 /// full [`ChunkFactAnalysis`].
 pub fn analyze_chunk_with_policy<F>(
     structural: StructuralChunkAnalysis<'_>,
-    hints: &AnalysisHints,
+    hints: &AnalysisInputs,
     export_reentry_policy: ExportReentryPolicy,
     source_path: Option<&str>,
     line_range_for_span: F,
@@ -224,7 +224,7 @@ enum SynchronousCallAnalysis {
 
 fn analyze_chunk_with_policy_and_sync<F>(
     structural: StructuralChunkAnalysis<'_>,
-    hints: &AnalysisHints,
+    hints: &AnalysisInputs,
     export_reentry_policy: ExportReentryPolicy,
     source_path: Option<&str>,
     mut line_range_for_span: F,
@@ -257,11 +257,11 @@ where
         ChunkCodeGraph::build_full_with_prepared_plain_data(
             &body,
             &shadowed,
-            &hints.declared_pure,
-            &hints.declared_pure_new,
-            &hints.declared_pure_members,
+            &hints.assumptions.declared_pure,
+            &hints.assumptions.declared_pure_new,
+            &hints.assumptions.declared_pure_members,
             &hints.imported_purities,
-            &hints.fluent_bindings,
+            &hints.assumptions.fluent_bindings,
             &set_iterable_proof,
             &plain_data_bindings,
             Some(&mut locate),
@@ -270,15 +270,15 @@ where
     let local_effect_context = local_effects::LocalEffectContext::for_body(
         &body,
         hints.local_effect_policy,
-        &hints.known_effects,
+        &hints.assumptions.known_effects,
         &value_flow,
         &per_statement,
         &imported_bindings,
     );
     let redundant_purity_hints =
-        detect_redundant_purity_hints(&body, &shadowed, &hints.declared_pure);
+        detect_redundant_purity_hints(&body, &shadowed, &hints.assumptions.declared_pure);
     let redundant_pure_member_hints =
-        detect_redundant_pure_member_hints(&hints.declared_pure_members);
+        detect_redundant_pure_member_hints(&hints.assumptions.declared_pure_members);
     let mut seen_vars = BTreeSet::new();
     let mut shared_vars = BTreeSet::new();
     for stmt in &per_statement {
@@ -351,9 +351,9 @@ where
 /// builds no owner graph and never reads `StatementFacts::synchronous_calls`.
 /// Keep value-flow call augmentation; it is part of vendor reachability.
 pub fn analyze_vendor_prune_chunk(module: &Module) -> ChunkFactAnalysis {
-    let hints = AnalysisHints {
+    let hints = AnalysisInputs {
         local_effect_policy: LocalEffectPolicy::VendorPrune,
-        ..AnalysisHints::default()
+        ..AnalysisInputs::default()
     };
     let structural = analyze_chunk_structural(module, None, |_| None);
     analyze_chunk_with_policy_and_sync(
@@ -381,7 +381,7 @@ pub fn analyze_vendor_prune_chunk(module: &Module) -> ChunkFactAnalysis {
 /// just teaches the analyzer the same view.
 pub fn analyze_chunk<F>(
     module: &Module,
-    hints: &AnalysisHints,
+    hints: &AnalysisInputs,
     source_path: Option<&str>,
     mut line_range_for_span: F,
 ) -> ChunkFactAnalysis
@@ -407,7 +407,7 @@ fn assemble_statement_facts(
     item: &ModuleItem,
     structural: StructuralStatementFacts,
     shadowed: &BTreeSet<&'static str>,
-    hints: &AnalysisHints,
+    hints: &AnalysisInputs,
     graph: &ChunkCodeGraph,
     local_effect_context: &local_effects::LocalEffectContext,
     shared_vars: &BTreeSet<Id>,
@@ -458,7 +458,7 @@ fn assemble_statement_facts(
     // calls are exempt: Pure guarantees no observable writes and no
     // global-prop reads, and binding-cell ordering is enforced by
     // binding edges + rebind co-location rather than the S-chain.
-    let trusted_summary = hints.trusted_dataflow_summaries && cell_writes_summarizable;
+    let trusted_summary = hints.assumptions.trusted_dataflow_summaries && cell_writes_summarizable;
     let dataflow_summarizable = trusted_summary
         || dataflow_summarizable && !has_opaque_at_init_call(item, shadowed, hints, graph);
     // Ordinary eager reads (including `pureWrap(B)`) always remain in

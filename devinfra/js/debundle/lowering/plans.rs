@@ -3,7 +3,7 @@
 //! synthesis lives on `ChunkPlanBuilder::synthesize_mini_factors`.
 
 use crate::exports::{reject_duplicate_export_names, reject_duplicate_member_bindings};
-use analysis::{AnalysisHints, KnownEffect};
+use analysis::{AnalysisAssumptions, KnownEffect};
 use anyhow::{Result, bail};
 use selector_resolve::MemberSelector;
 use spec::{InitializerPurity, LogicalModule, MemberEffect, MemberPurity, UnassignedMode};
@@ -88,19 +88,19 @@ impl MemberRequest {
     /// Whether this member's ownership is intentionally unknown until chunk
     /// analysis facts are available and the global selector solver runs.
     ///
-    /// Plain binding selectors keep their binding spelling for hints and
+    /// Plain binding selectors keep their binding spelling for assumptions and
     /// duplicate diagnostics, but ownership is read back from the solver.
     pub(super) fn resolves_after_chunk_analysis(&self) -> bool {
         !self.selector.is_import_specifier()
     }
 
-    /// Extend `hints` with this member's spec-level trust assertions
+    /// Extend `assumptions` with this member's spec-level trust assertions
     /// (purity, pure_members, effect). Spec annotations carried on any
     /// member form (logical-module member, chunk_renames member)
     /// propagate the same way — they are semantic trust assertions,
     /// not ownership claims; binding patches routed through
     /// chunk_renames still do not force proposer grouping.
-    pub(super) fn has_analysis_hints(&self) -> bool {
+    pub(super) fn has_analysis_assumptions(&self) -> bool {
         self.purity != MemberPurity::Default
             || self.initializer_purity != InitializerPurity::Default
             || self.effect != MemberEffect::Default
@@ -108,32 +108,40 @@ impl MemberRequest {
             || !self.no_sync_callback_members.is_empty()
     }
 
-    pub(super) fn collect_hints_for_binding(&self, hints: &mut AnalysisHints, binding: &str) {
+    pub(super) fn collect_assumptions_for_binding(
+        &self,
+        assumptions: &mut AnalysisAssumptions,
+        binding: &str,
+    ) {
         if self.initializer_purity == InitializerPurity::Pure {
-            hints.declared_pure_initializers.insert(binding.to_string());
+            assumptions
+                .declared_pure_initializers
+                .insert(binding.to_string());
         }
         if self.purity == MemberPurity::Pure {
-            hints.declared_pure.insert(binding.to_string());
+            assumptions.declared_pure.insert(binding.to_string());
         }
         if self.purity == MemberPurity::PureNew {
-            hints.declared_pure_new.insert(binding.to_string());
+            assumptions.declared_pure_new.insert(binding.to_string());
         }
         if !self.pure_members.is_empty() {
-            hints
+            assumptions
                 .declared_pure_members
                 .entry(binding.to_string())
                 .or_default()
                 .extend(self.pure_members.iter().cloned());
         }
         if !self.no_sync_callback_members.is_empty() {
-            hints
+            assumptions
                 .no_sync_callback_members
                 .entry(binding.to_string())
                 .or_default()
                 .extend(self.no_sync_callback_members.iter().cloned());
         }
         if let Some(effect) = known_effect_from_member_effect(self.effect) {
-            hints.known_effects.insert(binding.to_string(), effect);
+            assumptions
+                .known_effects
+                .insert(binding.to_string(), effect);
         }
     }
 }

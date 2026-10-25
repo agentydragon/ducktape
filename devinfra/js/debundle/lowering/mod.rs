@@ -321,7 +321,7 @@ pub fn materialize_logical_modules(
     // Program-level pass over the selected chunks' retained static-import
     // closure: cross-module purity verdicts for each chunk's imported
     // function bindings, consumed per chunk via
-    // `AnalysisHints::imported_purities`.
+    // `AnalysisInputs::imported_purities`.
     // Fully-swapped vendor chunks stay opaque — they are excluded from
     // the emission set and their bodies are replaced by the upstream
     // package, so they must not contribute purity facts.

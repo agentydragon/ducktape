@@ -19,7 +19,7 @@ use std::collections::BTreeMap;
 use analysis::facts::analyze_chunk;
 use analysis::graph::build_owner_graph_with;
 use analysis::ids::ModuleId;
-use analysis::{AnalysisHints, ModuleAssignment, OwnerGraph};
+use analysis::{AnalysisInputs, ModuleAssignment, OwnerGraph};
 use debundle_e2e_support::*;
 use gate::simulated_evaluation_post_order;
 
@@ -118,7 +118,7 @@ const SWEEP: &[SweepCase] = &[
 /// `realizability::tests::parse_and_build`).
 fn parse_and_build(source: &str) -> OwnerGraph {
     let module = raw_js_test_support::parse(source);
-    let facts = analyze_chunk(&module, &AnalysisHints::default(), None, |_| None).facts;
+    let facts = analyze_chunk(&module, &AnalysisInputs::default(), None, |_| None).facts;
     build_owner_graph_with(&facts, Default::default()).unwrap()
 }
 

@@ -16,7 +16,7 @@
 //! `gate` crate; the spec-independent per-chunk chunk-analysis
 //! composer lives in the `chunk_analysis` crate. Both build on this core.
 
-pub mod analysis_hints;
+pub mod analysis_inputs;
 pub mod assignment_assembly;
 pub mod atomic_units;
 pub mod cross_module_purity;
@@ -27,7 +27,7 @@ pub mod module_assignment;
 pub mod purity;
 pub mod reports;
 
-pub use analysis_hints::{AnalysisHints, KnownEffect, LocalEffectPolicy};
+pub use analysis_inputs::{AnalysisAssumptions, AnalysisInputs, KnownEffect, LocalEffectPolicy};
 pub use assignment_assembly::{
     AssemblyOutcome, AtomicUnitConflict, ConflictingClaim, assemble_assignment,
 };

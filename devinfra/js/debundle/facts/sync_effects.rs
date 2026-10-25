@@ -2686,7 +2686,7 @@ impl Default for ExecutionIndex {
 impl ExecutionIndex {
     fn collect(
         body: &[TopLevelItemView<'_>],
-        hints: &AnalysisHints,
+        hints: &AnalysisInputs,
         flow: Option<&ChunkValueFlow>,
         plain_array_bindings: &BTreeSet<String>,
     ) -> Self {
@@ -2702,18 +2702,20 @@ impl ExecutionIndex {
             top_exported_values: vec![Vec::new(); body.len()],
             top_metadata_decorations: body
                 .iter()
-                .map(|item| metadata_decorate_call(item.as_module_item(), &hints.known_effects))
+                .map(|item| {
+                    metadata_decorate_call(item.as_module_item(), &hints.assumptions.known_effects)
+                })
                 .collect(),
             deferred_global_candidates: vec![None; body.len()],
-            discarded_sync_iifes: if hints.deferred_global_publications.is_empty() {
+            discarded_sync_iifes: if hints.assumptions.deferred_global_publications.is_empty() {
                 Vec::new()
             } else {
                 vec![None; body.len()]
             },
-            deferred_global_requested: !hints.deferred_global_publications.is_empty(),
+            deferred_global_requested: !hints.assumptions.deferred_global_publications.is_empty(),
             global_object_names: super::global_object::unshadowed_global_object_aliases(body),
             plain_array_bindings: plain_array_bindings.clone(),
-            no_sync_callback_members: hints.no_sync_callback_members.clone(),
+            no_sync_callback_members: hints.assumptions.no_sync_callback_members.clone(),
             ..Self::default()
         };
         let mut fresh_steps = Vec::with_capacity(body.len());
@@ -2722,22 +2724,32 @@ impl ExecutionIndex {
             max_source_position = max_source_position.max(item.as_module_item().span().hi.0);
             // Seed all candidate roots before visiting any item, including imports
             // textually after a use. Other imported aliases remain an author audit.
-            if (!hints.namespace_independent_members.is_empty()
-                || !hints.no_reentry_members.is_empty()
-                || !hints.no_reentry_record_members.is_empty())
+            if (!hints.assumptions.namespace_independent_members.is_empty()
+                || !hints.assumptions.no_reentry_members.is_empty()
+                || !hints.assumptions.no_reentry_record_members.is_empty())
                 && let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item.as_module_item()
             {
                 for specifier in &import.specifiers {
                     let local = specifier.local();
                     let name = local.sym.as_ref();
-                    if hints.callback_factory_members.contains_key(name)
-                        || hints.no_reentry_members.contains_key(name)
-                        || hints.no_reentry_record_members.contains_key(name)
-                        || hints.namespace_independent_members.contains_key(name)
+                    if hints
+                        .assumptions
+                        .callback_factory_members
+                        .contains_key(name)
+                        || hints.assumptions.no_reentry_members.contains_key(name)
+                        || hints
+                            .assumptions
+                            .no_reentry_record_members
+                            .contains_key(name)
+                        || hints
+                            .assumptions
+                            .namespace_independent_members
+                            .contains_key(name)
                     {
                         index.namespace_privacy.members.insert(
                             local.to_id(),
                             hints
+                                .assumptions
                                 .namespace_independent_members
                                 .get(name)
                                 .cloned()
@@ -2787,26 +2799,48 @@ impl ExecutionIndex {
                 for specifier in &import.specifiers {
                     let local = specifier.local();
                     index.imported_bindings.insert(local.to_id());
-                    if hints.callback_factories.contains(local.sym.as_ref()) {
+                    if hints
+                        .assumptions
+                        .callback_factories
+                        .contains(local.sym.as_ref())
+                    {
                         index.callback_factory_imports.insert(local.to_id());
                     }
-                    if hints.inline_callback_factories.contains(local.sym.as_ref()) {
+                    if hints
+                        .assumptions
+                        .inline_callback_factories
+                        .contains(local.sym.as_ref())
+                    {
                         index.inline_callback_factory_imports.insert(local.to_id());
                     }
-                    if hints.no_reentry_exports.contains(local.sym.as_ref()) {
+                    if hints
+                        .assumptions
+                        .no_reentry_exports
+                        .contains(local.sym.as_ref())
+                    {
                         index.no_reentry_exports.insert(local.to_id());
                     }
-                    if let Some(members) = hints.callback_factory_members.get(local.sym.as_ref()) {
+                    if let Some(members) = hints
+                        .assumptions
+                        .callback_factory_members
+                        .get(local.sym.as_ref())
+                    {
                         index
                             .callback_factory_members
                             .insert(local.to_id(), members.clone());
                     }
-                    if let Some(members) = hints.no_reentry_members.get(local.sym.as_ref()) {
+                    if let Some(members) =
+                        hints.assumptions.no_reentry_members.get(local.sym.as_ref())
+                    {
                         index
                             .no_reentry_members
                             .insert(local.to_id(), members.clone());
                     }
-                    if let Some(members) = hints.no_reentry_record_members.get(local.sym.as_ref()) {
+                    if let Some(members) = hints
+                        .assumptions
+                        .no_reentry_record_members
+                        .get(local.sym.as_ref())
+                    {
                         index
                             .no_reentry_record_members
                             .insert(local.to_id(), members.clone());
@@ -3216,6 +3250,7 @@ impl ExecutionIndex {
                 .position(|candidate| {
                     candidate.as_ref().is_some_and(|candidate| {
                         hints
+                            .assumptions
                             .deferred_global_publications
                             .get(&candidate.root)
                             .is_some_and(|slots| slots.contains(&candidate.property))
@@ -3224,6 +3259,7 @@ impl ExecutionIndex {
                 .map(StatementOrdinal)
                 .unwrap_or(StatementOrdinal(0));
             let protected: BTreeSet<String> = hints
+                .assumptions
                 .deferred_global_publications
                 .values()
                 .flat_map(|slots| slots.iter().cloned())
@@ -3239,6 +3275,7 @@ impl ExecutionIndex {
                     };
                     index.global_object_names.contains(name)
                         && hints
+                            .assumptions
                             .deferred_global_publications
                             .get(&candidate.root)
                             .is_some_and(|slots| slots.contains(&candidate.property))
@@ -3297,6 +3334,7 @@ impl ExecutionIndex {
                     };
                     if !index.global_object_names.contains(root_name)
                         || !hints
+                            .assumptions
                             .deferred_global_publications
                             .get(&candidate.root)
                             .is_some_and(|slots| slots.contains(&candidate.property))
@@ -8686,7 +8724,7 @@ pub(crate) fn infer_returned_callback_factories(
     body: &[TopLevelItemView<'_>],
     exported_locals: &BTreeSet<String>,
 ) -> BTreeSet<String> {
-    let index = ExecutionIndex::collect(body, &AnalysisHints::default(), None, &BTreeSet::new());
+    let index = ExecutionIndex::collect(body, &AnalysisInputs::default(), None, &BTreeSet::new());
     if !index.dynamic_scope_owners.is_empty() {
         return BTreeSet::new();
     }
@@ -8753,7 +8791,7 @@ pub(crate) fn annotate_synchronous_calls(
     flow: &ChunkValueFlow,
     proofs: SynchronousCallProofs<'_>,
     shadowed: &BTreeSet<&'static str>,
-    hints: &AnalysisHints,
+    hints: &AnalysisInputs,
     export_reentry_policy: ExportReentryPolicy,
     facts: &mut [StatementFacts],
 ) {

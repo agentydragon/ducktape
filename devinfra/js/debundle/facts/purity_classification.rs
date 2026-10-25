@@ -4,7 +4,7 @@ pub(crate) fn item_purity(
     item: &ModuleItem,
     kind: StatementKind,
     shadowed: &BTreeSet<&'static str>,
-    hints: &AnalysisHints,
+    hints: &AnalysisInputs,
     graph: &ChunkCodeGraph,
     has_local_effect: bool,
 ) -> Purity {
@@ -21,7 +21,7 @@ pub(crate) fn item_purity(
                     &default_expr.expr,
                     shadowed,
                     &BTreeSet::new(),
-                    &hints.declared_pure,
+                    &hints.assumptions.declared_pure,
                     graph,
                 )
             }
@@ -31,7 +31,7 @@ pub(crate) fn item_purity(
                         c,
                         shadowed,
                         &BTreeSet::new(),
-                        &hints.declared_pure,
+                        &hints.assumptions.declared_pure,
                         graph,
                     ) =>
                 {
@@ -52,7 +52,7 @@ pub(crate) fn item_purity(
                     var,
                     shadowed,
                     &BTreeSet::new(),
-                    &hints.declared_pure,
+                    &hints.assumptions.declared_pure,
                     graph,
                 )
             })
@@ -63,7 +63,7 @@ pub(crate) fn item_purity(
                     c,
                     shadowed,
                     &BTreeSet::new(),
-                    &hints.declared_pure,
+                    &hints.assumptions.declared_pure,
                     graph,
                 ) =>
             {
@@ -77,7 +77,7 @@ pub(crate) fn item_purity(
                 &expr.expr,
                 shadowed,
                 &BTreeSet::new(),
-                &hints.declared_pure,
+                &hints.assumptions.declared_pure,
                 graph,
             ),
             // Bare blocks, control flow, loops, etc. — soundness-first.
@@ -89,7 +89,7 @@ pub(crate) fn item_purity(
 /// Whether this exact top-level item is the simple initialized declarator
 /// carrying the initializer-only trust assertion. It deliberately does not
 /// feed any call or constructor purity rule.
-pub(crate) fn has_trusted_initializer_purity(item: &ModuleItem, hints: &AnalysisHints) -> bool {
+pub(crate) fn has_trusted_initializer_purity(item: &ModuleItem, hints: &AnalysisInputs) -> bool {
     let Some(var) = var_decl_of_item(item) else {
         return false;
     };
@@ -102,6 +102,7 @@ pub(crate) fn has_trusted_initializer_purity(item: &ModuleItem, hints: &Analysis
     };
     declarator.init.is_some()
         && hints
+            .assumptions
             .declared_pure_initializers
             .contains(binding.id.sym.as_ref())
 }

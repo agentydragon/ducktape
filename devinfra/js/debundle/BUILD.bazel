@@ -415,7 +415,7 @@ rust_library(
 rust_library(
     name = "analysis",
     srcs = [
-        "analysis_hints.rs",
+        "analysis_inputs.rs",
         "assignment_assembly.rs",
         "atomic_units.rs",
         "cross_module_purity.rs",

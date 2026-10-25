@@ -10,7 +10,7 @@ use analysis::facts::analyze_chunk;
 use analysis::graph::{EdgeRole, build_owner_graph_with};
 use analysis::ids::ModuleId;
 use analysis::module_assignment::ModuleAssignment;
-use analysis::{AnalysisHints, DepKind, OwnerGraph};
+use analysis::{AnalysisInputs, DepKind, OwnerGraph};
 use petgraph::visit::IntoNeighbors;
 use report_fixtures::{
     active_owner, owner_edge, promoted_owner_edge, residual_owner, singleton_graph,
@@ -22,7 +22,7 @@ fn module_id(index: usize) -> ModuleId {
 
 fn parse_and_build(source: &str) -> OwnerGraph {
     let module = raw_js_test_support::parse(source);
-    let facts = analyze_chunk(&module, &AnalysisHints::default(), None, |_| None).facts;
+    let facts = analyze_chunk(&module, &AnalysisInputs::default(), None, |_| None).facts;
     build_owner_graph_with(&facts, Default::default()).unwrap()
 }
 

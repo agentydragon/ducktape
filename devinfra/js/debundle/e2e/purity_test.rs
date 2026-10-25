@@ -477,7 +477,7 @@ export { A, B, D, wrap };
 }
 
 #[test]
-fn canonical_source_match_purity_annotation_contributes_to_analysis_hints() {
+fn canonical_source_match_purity_annotation_contributes_to_analysis_inputs() {
     // `dispatcher` calls through a registry lookup, which inference cannot
     // prove pure, so the `purity` on its source_match member is the only
     // thing that drops the `S` edges of the interleaved call sites. The

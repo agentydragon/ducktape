@@ -43,13 +43,9 @@ Reviewable slices:
 
 - PR #12054: immutable `ValidatedAssignment` required by lowering; focused existing
   gate/lowering/execution tests and hosted CI passed.
-- PR #12055: `SourceProgram` separates prepared source/index ownership from
-  `EmissionFiles`; four existing preparation/emission/vendor tests passed.
-- PR #12056: single-spec contract and deterministic authoring workflow; removes
-  unused cross-spec selector-debt comparison. Two existing resolver/debt tests and
-  required hooks passed; hosted CI pending.
-- Assignment vocabulary and the single `ModuleId` handle are in progress in
-  independent branches. No acceptance-rule change has been introduced.
+- PR #12058: the single `ModuleId` handle replaces its redundant nested index.
+- Source-unit/dependency-graph vocabulary, atomic-group vocabulary, and explicit
+  analysis assumptions are in progress in independent branches.
 
 - [ ] **A. Baseline and consumer inventory.** Enumerate public/private pipelines,
       report readers, CLI wrappers, specs, Bazel interfaces, and packaged skills.
@@ -68,8 +64,12 @@ Reviewable slices:
       identity, source position, movement unit, and destination. Replace residual
       sentinels and implicit anonymous-unit classification with explicit types. Done
       when definitions and live consumers agree, without aliases or abandoned readers.
+      `ModuleAssignment` is now the canonical placement type; the remaining identity
+      and graph changes must preserve its distinction from source facts.
 - [ ] **C. Source preparation and exact resolution.** Give parsing, structural
-      indexes, and resolution clear ownership. Extract resolution from lowering.
+      indexes, and resolution clear ownership. `SourceProgram` now owns prepared
+      source and indexes separately from mutable `EmissionFiles`. Extract resolution
+      from lowering.
       Commands share successful matches and remaining mismatches. Done when commands
       agree and incomplete resolution cannot appear as complete acceptance.
 - [ ] **D. Semantic analysis.** Consolidate value flow, callback timing, effects,

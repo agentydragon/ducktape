@@ -3,13 +3,13 @@ use super::*;
 pub(crate) fn collect_local_effects(
     item: &ModuleItem,
     shadowed: &BTreeSet<&'static str>,
-    hints: &AnalysisHints,
+    hints: &AnalysisInputs,
     graph: &ChunkCodeGraph,
     local_effect_context: &local_effects::LocalEffectContext,
 ) -> BTreeSet<Id> {
     let mut out = BTreeSet::new();
     if let Some(target) =
-        recognized_local_effect_target(item, &hints.known_effects, local_effect_context)
+        recognized_local_effect_target(item, &hints.assumptions.known_effects, local_effect_context)
     {
         out.insert(target);
     }
@@ -22,7 +22,7 @@ pub(crate) fn collect_local_effects(
             out.extend(local_effect_context.local_property_write_targets(
                 item,
                 shadowed,
-                &hints.declared_pure,
+                &hints.assumptions.declared_pure,
                 graph,
             ));
         }

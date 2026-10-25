@@ -413,7 +413,7 @@ fn split_comma_list_assigns_per_declarator_source_ranges() {
         let (module, cm) = parse_with_source_map(source);
         let analysis = analyze_chunk(
             &module,
-            &AnalysisHints::default(),
+            &AnalysisInputs::default(),
             Some("test.js"),
             |span| {
                 (span != swc_common::DUMMY_SP).then(|| {

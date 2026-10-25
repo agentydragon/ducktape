@@ -263,7 +263,7 @@ pub enum StatementKind {
 
 /// Policy-independent per-statement facts: everything the analyzer
 /// can compute about a top-level statement from the module text alone,
-/// without consulting `AnalysisHints`. Produced by
+/// without consulting `AnalysisInputs`. Produced by
 /// [`analyze_chunk_structural`] and consumed by
 /// [`analyze_chunk_with_policy`] to assemble the full
 /// [`StatementFacts`]. See the doc comment on
@@ -307,7 +307,7 @@ pub(crate) struct ConstructorFacts {
 /// The policy-independent half of [`analyze_chunk`]'s output: the
 /// top-level item view, the shadowed-globals set, the top-level-await
 /// scan, and the per-statement static facts that depend only on the
-/// module text (not on `AnalysisHints`).
+/// module text (not on `AnalysisInputs`).
 ///
 /// Owns its top-level item view by lifetime-tying to the source
 /// module, so the policy-dependent pass can re-traverse the same views
