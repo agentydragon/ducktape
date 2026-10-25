@@ -843,7 +843,8 @@ superclass, decorators, static initializers, computed method keys, or setter.
 Instance fields may be empty or initialize a deferred function. The constructor
 may only assign identifiers, literals, or properties read from fresh plain data
 objects to static `this` properties, including comma sequences and simple
-nullish/equality expressions; a write or opaque exposure invalidates the
+nullish/equality expressions and Boolean negation of these values. Negation
+still checks its operand; getters and calls retain their effects. A write or opaque exposure invalidates the
 plain-data proof. At `new`, the pass invokes the indexed constructor and retains
 its argument graph and class methods on the instance value, so later member
 calls and publication can still expose stored callbacks. Reflective access to
