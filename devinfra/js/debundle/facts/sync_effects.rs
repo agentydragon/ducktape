@@ -2214,6 +2214,14 @@ impl Visit for ExecutionIndex {
                         && static_property_name(&pair.key).as_deref() != Some("__proto__")
                 }
                 Prop::Shorthand(id) => id.sym.as_ref() != "__proto__",
+                // Ordinary method syntax installs an own data property. Its
+                // body is only stored here, so parameter property reads by a
+                // local constructor cannot invoke it. Keep computed keys and
+                // the special prototype name outside this narrow proof.
+                Prop::Method(method) => {
+                    !matches!(method.key, PropName::Computed(_))
+                        && static_property_name(&method.key).is_some_and(|name| name != "__proto__")
+                }
                 _ => false,
             },
         }) {
