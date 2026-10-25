@@ -4931,11 +4931,16 @@ impl Executor<'_> {
         roots: impl IntoIterator<Item = StatementOrdinal>,
     ) -> bool {
         let before = self.reachability.owners.len();
-        let reached = self.owner_read_closure.extend_reachable_owners(
+        // A reachable callback can read only its synchronous prefix while the
+        // chunk is initializing. In particular, a binding used after a
+        // definite await cannot make the body of its future value executable
+        // during an opaque call at this prefix.
+        let reached = FactsOwnerReadClosure::extend_synchronous_owners(
+            &self.synchronous_owner_adjacency,
             roots,
             &mut self.reachability.expanded,
-            &mut self.reachability.owners,
         );
+        self.reachability.owners.extend(reached.iter().copied());
         let changed = self.reachability.owners.len() != before;
         if changed {
             self.reachability.revision = self.reachability.revision.wrapping_add(1);

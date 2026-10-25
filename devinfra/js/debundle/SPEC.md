@@ -217,7 +217,10 @@ writes before removing swapped items.
 Recursion and analysis limits preserve the first-await boundary where retained
 callback read coverage is complete. Possible synchronous reads and writes remain
 constraints, including for private callbacks that have not escaped. Unsupported
-bodies and dynamic scope retain conservative whole-body effects.
+bodies and dynamic scope retain conservative whole-body effects. Opaque-call
+reachability follows those same synchronous prefixes, so a value first read
+after a definite `await` does not expose its callback body through that path
+during chunk initialization.
 
 Opaque calls holding a class or instance may invoke its constructor, field
 initializers, methods, and accessors. Their synchronous read closure stops at a
