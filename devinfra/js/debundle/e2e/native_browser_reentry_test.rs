@@ -278,6 +278,7 @@ fn confined_local_global_alias_is_not_a_publication() {
 fn local_global_alias_must_not_escape_its_one_shot_iife() {
     for setup in [
         "(function repeat() { const host = globalThis; globalThis.saved = repeat; void host.Error; })();",
+        "(function() { const host = globalThis; try { globalThis.saved = arguments.callee; } catch (error) {} void host.Error; })();",
         "(function() { const host = globalThis; globalThis.saved = () => host.inspectState(); })();",
         "(function() { const host = globalThis; host.Array.of(host); })();",
         "(function() { const host = globalThis; void host.inspectState; })();",
