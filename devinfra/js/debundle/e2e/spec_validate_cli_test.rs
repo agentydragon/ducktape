@@ -334,7 +334,7 @@ sideEffect("shared");
 }
 
 #[test]
-fn validate_source_only_reports_multi_statement_anonymous_selector_as_invalid() {
+fn validate_source_only_rejects_multi_statement_exact_anonymous_selector() {
     let fixture = SourceOnlyValidateFixture::new(
         r#"setup();
 start();
@@ -342,10 +342,9 @@ start();
         &[(
             "effects/startup.yaml",
             r#"anonymous_statements:
-  - source_match:
-      match: |
-        setup();
-        start();
+  - match: |
+      setup();
+      start();
 "#,
         )],
     );
