@@ -153,6 +153,29 @@ fn atomic_mode_leaves_cross_module_structural_atoms_on_their_current_paths() {
     let modules = conflicts[0]["candidate_modules"].as_array().unwrap();
     assert!(modules.iter().any(|path| path == "state"), "{report}");
     assert!(modules.iter().any(|path| path == "action"), "{report}");
+
+    let coarsened = fixture.json(&[
+        "modules",
+        "decompose",
+        "--atomic",
+        "--coarsen-blocking-sccs",
+        "--graph",
+        fixture.graph.to_str().unwrap(),
+        "--modules",
+        fixture.modules.to_str().unwrap(),
+    ]);
+    assert_eq!(coarsened["candidate_is_realizable"], false, "{coarsened}");
+    assert_eq!(
+        coarsened["coarsening"]["stop_reason"], "atomic_unit_conflicts",
+        "{coarsened}"
+    );
+    assert!(
+        coarsened["coarsening"]["rounds"]
+            .as_array()
+            .unwrap()
+            .is_empty(),
+        "an atomic conflict must stop before coarsening: {coarsened}"
+    );
 }
 
 #[test]
@@ -250,4 +273,135 @@ fn reports_unfixed_cross_module_cycles_instead_of_calling_them_safe() {
     assert_eq!(report["candidate_is_realizable"], false, "{report}");
     assert_eq!(report["coverage_complete"], true, "{report}");
     assert!(!report["cycles"].as_array().unwrap().is_empty(), "{report}");
+}
+
+#[test]
+fn coarsens_only_gate_blocking_sccs_and_the_reported_partition_runs() {
+    let fixture = GraphFixture::rejected(
+        "const seed_value = \"alpha\";\nconst cross_value = seed_value + \"-beta\";\nfunction lazy_back() { return cross_value; }\nconsole.log(cross_value, lazy_back());\n",
+        &[(
+            "dependent.yaml",
+            "members: [{selector: {binding: {name: cross_value}}}]\n",
+        )],
+    );
+    let before = fs::read(fixture.modules.join("dependent.yaml")).unwrap();
+    let atomic = fixture.json(&[
+        "modules",
+        "decompose",
+        "--atomic",
+        "--graph",
+        fixture.graph.to_str().unwrap(),
+        "--modules",
+        fixture.modules.to_str().unwrap(),
+    ]);
+    assert_eq!(atomic["candidate_is_realizable"], false, "{atomic}");
+    assert!(!atomic["cycles"].as_array().unwrap().is_empty(), "{atomic}");
+    assert!(
+        atomic["atomic_unit_conflicts"]
+            .as_array()
+            .unwrap()
+            .is_empty(),
+        "the red control must isolate a timing SCC: {atomic}"
+    );
+
+    let report = fixture.json(&[
+        "modules",
+        "decompose",
+        "--atomic",
+        "--coarsen-blocking-sccs",
+        "--graph",
+        fixture.graph.to_str().unwrap(),
+        "--modules",
+        fixture.modules.to_str().unwrap(),
+    ]);
+    assert_eq!(report["candidate_is_realizable"], true, "{report}");
+    assert_eq!(report["cycles"], serde_json::json!([]), "{report}");
+    assert_eq!(report["coarsening"]["stop_reason"], "accepted", "{report}");
+    assert_eq!(report["coarsening"]["rounds"].as_array().unwrap().len(), 1);
+    let entry_path = fixture
+        .owner_graph()
+        .quotient
+        .nodes
+        .iter()
+        .find(|module| module.residual)
+        .expect("the fixture has an entry module")
+        .path
+        .to_string();
+    let group = report["coarsening"]["groups"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|group| group["suggested_module_path"] == entry_path)
+        .expect("an SCC containing the entry must keep its path");
+    assert_eq!(group["suggested_module_path"], entry_path);
+    assert_eq!(
+        group["origin_module_paths"],
+        serde_json::json!([entry_path, "dependent"])
+    );
+    assert_eq!(
+        before,
+        fs::read(fixture.modules.join("dependent.yaml")).unwrap()
+    );
+
+    debundle_e2e_support::assert_node_output(&fixture.source_path(), "alpha-beta alpha-beta\n", "");
+    // The report co-locates cross_value with the original entry group. The
+    // corresponding spec assignment is to leave the binding unclaimed.
+    fs::remove_file(fixture.modules.join("dependent.yaml")).unwrap();
+    fixture.assert_runs("alpha-beta alpha-beta\n");
+}
+
+#[test]
+fn coarsening_an_entry_scc_keeps_import_and_export_owners_at_the_entry_path() {
+    let fixture = GraphFixture::rejected(
+        "import './dependency.js';\nconst seed_value = \"alpha\";\nconst cross_value = seed_value + \"-beta\";\nfunction lazy_back() { return cross_value; }\nexport { seed_value, lazy_back };\n",
+        &[(
+            "dependent.yaml",
+            "members: [{selector: {binding: {name: cross_value}}}]\n",
+        )],
+    );
+    let report = fixture.json(&[
+        "modules",
+        "decompose",
+        "--atomic",
+        "--coarsen-blocking-sccs",
+        "--graph",
+        fixture.graph.to_str().unwrap(),
+        "--modules",
+        fixture.modules.to_str().unwrap(),
+    ]);
+    assert_eq!(report["candidate_is_realizable"], true, "{report}");
+    assert_eq!(report["coarsening"]["stop_reason"], "accepted", "{report}");
+    let graph = fixture.owner_graph();
+    let entry_path = graph
+        .quotient
+        .nodes
+        .iter()
+        .find(|module| module.residual)
+        .expect("the fixture has an entry module")
+        .path
+        .to_string();
+    let entry = report["coarsening"]["groups"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|group| group["suggested_module_path"] == entry_path)
+        .expect("the SCC merge should retain the entry path");
+    let entry_owners = entry["owner_ids"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(Value::as_str)
+        .collect::<std::collections::BTreeSet<_>>();
+    for owner in graph.nodes.iter().filter(|owner| {
+        matches!(
+            owner.statement_kind.to_string().as_str(),
+            "import" | "export"
+        )
+    }) {
+        assert!(
+            entry_owners.contains(owner.id.as_str()),
+            "entry declaration {} moved from {entry_path}: {report}",
+            owner.id
+        );
+    }
 }

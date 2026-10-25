@@ -386,6 +386,31 @@ those labels and the report remains false with that atom conflict listed. Both
 modes run the same full candidate gate; JSON's `strategy` field identifies the
 selected mode.
 
+To ask for a coarser candidate when the atomic partition is blocked by gate
+cycles, add `--coarsen-blocking-sccs`:
+
+```sh
+debundle modules decompose --atomic --coarsen-blocking-sccs \
+  --graph owner_graph.json --modules spec/modules --format json
+```
+
+This opt-in mode consumes only the blocking SCC module lists returned by the
+shared gate. It co-locates the candidate groups in each reported SCC, then runs
+the full structural and realizability checks again. It repeats while blocking
+SCCs remain, stopping when the complete candidate passes or when atomic-unit
+conflicts, cross-module rebinds, or lack of progress prevent another safe merge.
+If an SCC contains the residual entry, the merge keeps that entry path, so its
+top-level import and export declarations remain there.
+
+The JSON `modules` rows still describe the initial atomic fragments. The
+`coarsening` object reports each consumed SCC, the final candidate groups, the
+original module paths represented by each group, and the stopping reason. The
+top-level coverage, cycle, rebind, and `candidate_is_realizable` fields describe
+the final candidate. A passing result is a gate-accepted partition, not a claim
+that groups sharing a suggested path belong to one semantic feature. The mode
+does not edit YAML or choose descriptive module names; review `origin_module_paths`
+and owner IDs before assigning the groups in a later spec change.
+
 To include residual ownership in that baseline, add `--include-residual`:
 
 ```sh
