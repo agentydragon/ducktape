@@ -48,24 +48,24 @@ the CR was applied. The provider result and GitLab API/UI state are the evidence
 
 1. **Provision:** after reconciliation, save the CR metadata and conditions, the controller
    runner logs for that run, and the GitLab API response showing the exact managed group,
-   project, and membership. Redact all token fields. Confirm that the only repository in the
-   project is the disposable `spike/acceptance` project.
+   project, and membership. The only configured membership is the OIDC human account from
+   `gitlab_user.agentydragon`, with Owner access to group `spike`; it is not a service account or
+   a project-only membership. Redact all token fields. Confirm the only project in the group is
+   the disposable `spike/acceptance` project.
 2. **No-op:** wait for a completed tofu-controller run after configuration is unchanged.
    Record the plan summary (`0 to add, 0 to change, 0 to destroy`) and confirm that the same
    managed resources remain present in GitLab. A CR `Ready` condition alone is not a no-op
    proof.
-3. **Drift:** remove only the Terraform-managed service user's membership from
-   `spike/acceptance` through the GitLab UI/API. Leave the project, its owner, and all project
-   data untouched. Capture the absent membership before the controller run. Then let
-   tofu-controller refresh and reconcile; record the plan and the restored membership and
-   access level from GitLab. This step is deliberately reversible and confined to the spike.
-4. **Revoke:** remove that membership resource from the reviewed
-   `tf/gitops/gitlab-spike` configuration and let tofu-controller apply the resulting destroy.
-   Verify the membership is absent and the project/repository still exists and remains
-   readable by its owner. Re-add the declaration in a later reviewed change if the spike is
-   continuing. Never delete the project or repository as a revoke test.
+3. **Drift:** unavailable with the current configuration. It has no disposable service-account
+   membership to drift; the only membership is the intended OIDC human's Owner access to the
+   entire private group. Do not remove or alter that membership for this test. Add an explicit,
+   separately reviewed low-privilege service-account membership before claiming membership drift
+   coverage.
+4. **Revoke:** unavailable until that disposable service-account membership exists. Do not remove
+   `gitlab_group_membership.agentydragon` or revoke the human Owner's group access as a substitute.
+   Never delete the project or repository as a revoke test.
 
-For each step, retain the exact source commit, CR generation and conditions, plan/run ID, UTC
+For each completed step, retain the exact source commit, CR generation and conditions, plan/run ID, UTC
 timestamps, redacted GitLab API result, and a before/after resource inventory. Stop if the
 controller proposes deleting the project, repository, or user. Check the generated readable
 plan ConfigMap only if the module enables it and its provider marks every credential-bearing
@@ -330,12 +330,31 @@ ordinals 0, 1, and 2, but verify the live Pod and metadata rather than assuming 
 harness requires the supplied Pod name and storage name to match exactly.
 
 The failure policy is a generated, dormant CiliumNetworkPolicy named
-gitlab-spike-fault-isolation. It selects only Gitaly Pods labeled
-app=gitaly, release=gitlab-spike, and gitlab-spike.ducktape.io/fault=isolated, and denies all
-ingress and egress. The script validates this policy, the three-ready-replica StatefulSet,
-the exact Praefect primary, and the healthy baseline before changing one Pod label. It removes
-that label on exit, including interrupt and ordinary error paths; it never deletes PVCs, drains
-nodes, or scales a StatefulSet.
+`gitlab-spike-fault-isolation`. It selects only Gitaly Pods labeled `app=gitaly`,
+`release=gitlab-spike`, and `gitlab-spike.ducktape.io/fault=isolated`, and denies all ingress
+and egress. The script validates this policy, the three-ready-replica StatefulSet, the exact
+Praefect primary, the healthy baseline, and successful read-only TCP connections from the
+Toolbox pod to the primary and one healthy peer's `grpc-gitaly` ports. It also requires ready
+Kubernetes CiliumEndpoint records and read access to each Pod's node-local Cilium agent status
+before touching the label. Immediately before adding the label it fetches the Pod again and sends
+a JSON Patch that tests both the captured Pod UID and that read's `resourceVersion`; a
+replacement or concurrent Pod update makes the patch fail without changing labels.
+
+After labeling, the script waits up to 30 seconds for the Kubernetes CiliumEndpoint to retain the
+captured Pod UID and for `cilium-dbg endpoint get` on that Pod's node-local agent to report the
+isolated identity label, `ready` state, and realized ingress plus egress policy enforcement. It
+then requires a new primary TCP connect to time out while a new connection to the healthy peer
+still succeeds, before any Git push is attempted. Both probes use the Toolbox's Ruby socket
+library and make no application writes. A missing status field or agent tool, an endpoint that is
+not ready, a reachable primary port, an unreachable healthy peer, or any probe failure other
+than the expected primary TCP timeout aborts the proof and restores the label. The
+[Cilium Endpoint CRD](https://docs.cilium.io/en/stable/network/kubernetes/ciliumendpoint/)
+mirrors the endpoint status from `cilium-dbg endpoint get`; Cilium's [endpoint lifecycle
+documentation](https://docs.cilium.io/en/stable/security/policy/lifecycle/) defines `ready` as
+successfully regenerated endpoint networking configuration. The gate still needs live
+validation against the deployed Cilium version before the primary-failure proof is considered
+available. The script removes the label on ordinary exit, interrupt, and termination; it never
+deletes PVCs, drains nodes, or scales a StatefulSet.
 
 The failure proof is opt-in. Prepare a rollback window and use the project-scoped Developer
 credential in Secret gitlab-spike-proof (username and token); do not use the benchmark PAT,
@@ -361,17 +380,19 @@ ALLOW_GITLAB_SPIKE_FAILURE=YES BENCH_TARGET=spike/acceptance \
 unset GIT_AUTH_USER GIT_AUTH_TOKEN
 ```
 
-The script proves the isolation label selects only the target primary, then pushes one new commit
-to a unique branch through GitLab while that Pod cannot receive or send traffic. It retries the
-same commit and branch for up to three minutes, recording each attempt and the elapsed time to
-the first acknowledgement. It then checks the exact branch SHA is readable through GitLab during
-the fault, runs client Git fsck, and polls Praefect metadata for a different primary. After
-removing the label it polls for all three replicas to reach the repository generation, checks
-that the recovered replica checksums agree, verifies the old refs are unchanged and the
-acknowledged branch still points to its exact SHA, then clones and runs fsck again. If no push is
-acknowledged within the retry window or a check fails, the run is a failed proof; it does not
-claim acknowledged write durability. Review the captured metadata and checksum outputs as well
-as the summary.
+Once the Cilium status, isolated-primary timeout, and healthy-peer positive-control gates pass,
+the script confirms the isolation selector matches only the target primary and pushes one new
+commit to a unique branch through GitLab. It
+retries the same commit and branch for up to three minutes, recording each attempt and the elapsed
+time to the first acknowledgement. It then checks the exact branch SHA is readable through
+GitLab during the fault, runs client Git fsck, and polls Praefect metadata for a different primary.
+After removing the label it polls for all three replicas to reach the repository generation,
+checks that the recovered replica checksums agree, verifies the old refs are unchanged and the
+acknowledged branch still points to its exact SHA, then clones and runs fsck again. If an
+enforcement precondition fails, the script aborts before pushing. If no push is acknowledged
+within the retry window or a check fails, the run is a failed proof; it does not claim
+acknowledged write durability. Review the captured metadata, endpoint status, probe results, and
+checksum outputs as well as the summary.
 
 One acknowledged push in one isolated repository is evidence for that run only. It does not
 establish a general RPO of zero or characterize failures outside this exact primary-isolation

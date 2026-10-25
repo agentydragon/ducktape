@@ -59,24 +59,22 @@ original_fault_label=
 restore_fault_label() {
   [[ $fault_touched == 1 ]] || return 0
   local current_json current_uid current_fault
-  if ! current_json=$(kubectl -n "$namespace" get pod "$GITALY_PRIMARY_POD" -o json 2>/dev/null); then
-    echo "primary pod disappeared; its replacement must remain unlabelled: $GITALY_PRIMARY_POD" >&2
-    fault_touched=0
-    return 0
+  if ! current_json=$(capture_resource pod "$GITALY_PRIMARY_POD" 2>/dev/null); then
+    echo "could not verify whether the primary or its replacement still has the isolation label: $GITALY_PRIMARY_POD" >&2
+    return 1
   fi
   current_uid=$(printf '%s\n' "$current_json" | jq -r '.metadata.uid')
   if [[ $current_uid != "$primary_uid" ]]; then
-    echo 'primary pod was replaced during the exercise; refusing to alter the replacement Pod' >&2
+    echo 'primary pod was replaced during the exercise; leaving the replacement untouched and requiring manual label inspection' >&2
     fault_touched=0
     return 1
   fi
   current_fault=$(printf '%s\n' "$current_json" | jq -r --arg key "$fault_key" '.metadata.labels[$key] // empty')
   if [[ $current_fault == isolated ]]; then
-    if [[ -n $original_fault_label ]]; then
-      kubectl -n "$namespace" label pod "$GITALY_PRIMARY_POD" "$fault_key=$original_fault_label" --overwrite
-    else
-      kubectl -n "$namespace" label pod "$GITALY_PRIMARY_POD" "$fault_key-"
-    fi
+    guarded_fault_label_change "$original_fault_label" isolated "$evidence_dir/unisolate-primary.json" || return 1
+  elif [[ $current_fault != "$original_fault_label" ]]; then
+    echo "primary fault label changed unexpectedly to '$current_fault'; refusing to overwrite it" >&2
+    return 1
   fi
   fault_touched=0
 }
@@ -85,7 +83,7 @@ on_exit() {
   local status=$?
   trap - EXIT INT TERM
   if ! restore_fault_label; then
-    echo "MANUAL RECOVERY: inspect $namespace/$GITALY_PRIMARY_POD and remove $fault_key=isolated if present" >&2
+    echo "MANUAL RECOVERY: inspect $namespace/$GITALY_PRIMARY_POD; remove $fault_key=isolated only if its UID matches the recorded primary UID ($primary_uid), and verify a replacement Pod is unlabelled" >&2
     status=1
   fi
   rm -rf "$scratch"
@@ -99,6 +97,226 @@ capture_resource() {
   local resource=$1 name=$2
   timeout --kill-after=1s 20s kubectl --request-timeout=20s \
     -n "$namespace" get "$resource" "$name" -o json
+}
+
+guarded_fault_label_change() {
+  local desired_value=$1 expected_value=$2 evidence_file=$3 require_ready=${4:-no}
+  local attempt current_json current_uid current_fault current_resource_version patch label_path patched_json patch_stderr
+
+  label_path=$(jq -nr --arg key "$fault_key" '"/metadata/labels/" + ($key | gsub("~"; "~0") | gsub("/"; "~1"))')
+  for attempt in 1 2 3; do
+    current_json=$(capture_resource pod "$GITALY_PRIMARY_POD") || return 1
+    current_uid=$(printf '%s\n' "$current_json" | jq -r '.metadata.uid')
+    if [[ $current_uid != "$primary_uid" ]]; then
+      echo 'primary pod identity changed before the guarded label patch; refusing to touch the replacement' >&2
+      return 1
+    fi
+    current_fault=$(printf '%s\n' "$current_json" | jq -r --arg key "$fault_key" '.metadata.labels[$key] // empty')
+    if [[ $current_fault == "$desired_value" ]]; then
+      printf '%s\n' "$current_json" | jq -S '{metadata:{name:.metadata.name,namespace:.metadata.namespace,uid:.metadata.uid,resourceVersion:.metadata.resourceVersion,labels:.metadata.labels}}' >"$evidence_file"
+      return 0
+    fi
+    if [[ $current_fault != "$expected_value" ]]; then
+      echo "primary fault label changed unexpectedly to '$current_fault'; expected '$expected_value'" >&2
+      return 1
+    fi
+    current_resource_version=$(printf '%s\n' "$current_json" | jq -r '.metadata.resourceVersion // empty')
+    if [[ -z $current_resource_version ]]; then
+      echo 'primary Pod has no resourceVersion; refusing an unguarded fault-label patch' >&2
+      return 1
+    fi
+    if [[ $require_ready == yes ]]; then
+      printf '%s\n' "$current_json" | jq -e --arg name "$GITALY_PRIMARY_POD" --arg uid "$primary_uid" --arg sts "$statefulset" '
+        .metadata.name == $name and .metadata.uid == $uid and .metadata.deletionTimestamp == null and
+        .status.phase == "Running" and (.status.containerStatuses | length) > 0 and
+        all(.status.containerStatuses[]; .ready == true) and
+        any(.metadata.ownerReferences[]?; .controller == true and .kind == "StatefulSet" and .name == $sts)
+      ' >/dev/null || {
+        echo 'primary Pod is no longer ready and owned by the spike Gitaly StatefulSet before isolation' >&2
+        return 1
+      }
+    fi
+
+    patch=$(jq -cn --arg uid "$primary_uid" --arg rv "$current_resource_version" --arg path "$label_path" \
+      --arg desired "$desired_value" '
+        [
+          {op:"test",path:"/metadata/uid",value:$uid},
+          {op:"test",path:"/metadata/resourceVersion",value:$rv},
+          (if $desired == "" then
+             {op:"remove",path:$path}
+           else
+             {op:"add",path:$path,value:$desired}
+           end)
+        ]')
+    patch_stderr="${evidence_file}.stderr"
+    if patched_json=$(kubectl --request-timeout=20s -n "$namespace" patch pod "$GITALY_PRIMARY_POD" \
+      --type=json --patch "$patch" -o json 2>"$patch_stderr"); then
+      printf '%s\n' "$patched_json" | jq -S '{metadata:{name:.metadata.name,namespace:.metadata.namespace,uid:.metadata.uid,resourceVersion:.metadata.resourceVersion,labels:.metadata.labels}}' >"$evidence_file"
+      printf '%s\n' "$patched_json" | jq -e --arg uid "$primary_uid" --arg key "$fault_key" --arg value "$desired_value" '
+        .metadata.uid == $uid and (.metadata.labels[$key] // "") == $value
+      ' >/dev/null || {
+        echo 'guarded fault-label patch response did not confirm the expected Pod identity and label' >&2
+        return 1
+      }
+      return 0
+    fi
+    if ((attempt < 3)); then
+      sleep 1
+    fi
+  done
+
+  cat "$patch_stderr" >&2
+  echo 'guarded fault-label patch failed after three resourceVersion-checked attempts' >&2
+  return 1
+}
+
+gitaly_tcp_probe() {
+  local host=$1 port=$2 result_file=$3 status
+  if timeout --kill-after=1s 12s kubectl --request-timeout=10s -n "$namespace" \
+    exec "$TOOLBOX_POD" -c toolbox -- ruby -rtimeout -rsocket -e '
+      host, port = ARGV
+      begin
+        socket = Timeout.timeout(3) { TCPSocket.new(host, Integer(port)) }
+        socket.close
+        puts "cilium_probe=connected"
+        exit 0
+      rescue Timeout::Error, Errno::ETIMEDOUT
+        puts "cilium_probe=timeout"
+        exit 42
+      rescue StandardError => error
+        warn "cilium_probe_error=#{error.class}: #{error.message}"
+        exit 1
+      end
+    ' -- "$host" "$port" >"$result_file" 2>&1; then
+    status=0
+  else
+    status=$?
+  fi
+  printf 'kubectl_exec_exit_status=%s\n' "$status" >>"$result_file"
+  return "$status"
+}
+
+cilium_agent_endpoint_status() {
+  local pod_json=$1 node_name pod_name pod_ip agent_pods agent_pod endpoint_map endpoint_id endpoint_json
+  node_name=$(printf '%s\n' "$pod_json" | jq -er '.spec.nodeName | select(type == "string" and length > 0)') || return 1
+  pod_name=$(printf '%s\n' "$pod_json" | jq -er '.metadata.name') || return 1
+  pod_ip=$(printf '%s\n' "$pod_json" | jq -er '.status.podIP | select(type == "string" and length > 0)') || return 1
+
+  agent_pods=$(timeout --kill-after=1s 15s kubectl --request-timeout=15s -n kube-system \
+    get pods -l k8s-app=cilium --field-selector "spec.nodeName=$node_name" -o json) || return 1
+  agent_pod=$(printf '%s\n' "$agent_pods" | jq -er '
+    [.items[] | select(
+      .status.phase == "Running" and
+      any(.spec.containers[]?; .name == "cilium-agent") and
+      any(.status.containerStatuses[]?; .name == "cilium-agent" and .ready == true)
+    )]
+    | if length == 1 then .[0].metadata.name else error("expected one ready Cilium agent on the endpoint node") end
+  ') || return 1
+
+  endpoint_map=$(timeout --kill-after=1s 20s kubectl --request-timeout=20s -n kube-system \
+    exec "$agent_pod" -c cilium-agent -- cilium-dbg endpoint list \
+    --output 'jsonpath={range [*]}{.id}{"\t"}{.status.networking.addressing[0].ipv4}{"\n"}{end}' \
+    | awk -F '\t' -v address="$pod_ip" '$2 == address { print $1 }') || return 1
+  local -a endpoint_ids=()
+  mapfile -t endpoint_ids <<<"$endpoint_map"
+  if ((${#endpoint_ids[@]} != 1)) || [[ -z ${endpoint_ids[0]:-} ]]; then
+    echo "Cilium agent on $node_name did not return exactly one endpoint for $namespace/$pod_name at $pod_ip" >&2
+    return 1
+  fi
+  endpoint_id=${endpoint_ids[0]}
+
+  endpoint_json=$(timeout --kill-after=1s 20s kubectl --request-timeout=20s -n kube-system \
+    exec "$agent_pod" -c cilium-agent -- cilium-dbg endpoint get "$endpoint_id" --output json) || return 1
+  printf '%s\n' "$endpoint_json" | jq -ce --arg ns "$namespace" --arg pod "$pod_name" --arg ip "$pod_ip" '
+    if length != 1 then error("expected exactly one Cilium endpoint from endpoint get") else .[0] end |
+    select(
+      .status["external-identifiers"]["k8s-namespace"] == $ns and
+      .status["external-identifiers"]["k8s-pod-name"] == $pod and
+      any(.status.networking.addressing[]?; .ipv4 == $ip)
+    )
+  '
+}
+
+wait_for_cilium_isolation() {
+  local deadline current_pod_json endpoint_json cilium_endpoint_json probe_status policy_enabled current_peer_json peer_endpoint_json
+  deadline=$(($(date -u +%s) + 30))
+  while (($(date -u +%s) < deadline)); do
+    current_pod_json=$(capture_resource pod "$GITALY_PRIMARY_POD") || return 1
+    printf '%s\n' "$current_pod_json" | jq -e --arg uid "$primary_uid" '
+      .metadata.uid == $uid and .status.phase == "Running"
+    ' >/dev/null || {
+      echo 'primary Pod was replaced or stopped running while waiting for Cilium isolation' >&2
+      return 1
+    }
+
+    if cilium_endpoint_json=$(capture_resource ciliumendpoints.cilium.io "$GITALY_PRIMARY_POD" 2>/dev/null) \
+      && endpoint_json=$(cilium_agent_endpoint_status "$current_pod_json" 2>/dev/null) \
+      && printf '%s\n' "$cilium_endpoint_json" | jq -e --arg uid "$primary_uid" --arg key "$fault_key" '
+        any(.metadata.ownerReferences[]?; .kind == "Pod" and .uid == $uid) and
+        .metadata.labels.app == "gitaly" and .metadata.labels.release == "gitlab-spike" and
+        .metadata.labels[$key] == "isolated" and .status.state == "ready"
+      ' >/dev/null \
+      && printf '%s\n' "$endpoint_json" | jq -e --arg key "$fault_key" '
+        any(.status.identity.labels[]?; . == "k8s:app=gitaly") and
+        any(.status.identity.labels[]?; . == "k8s:release=gitlab-spike") and
+        any(.status.identity.labels[]?; . == ("k8s:" + $key + "=isolated")) and
+        .status.state == "ready" and .status.policy.realized["policy-enabled"] == "both"
+      ' >/dev/null; then
+      current_pod_json=$(capture_resource pod "$GITALY_PRIMARY_POD") || return 1
+      printf '%s\n' "$current_pod_json" | jq -e --arg uid "$primary_uid" '
+        .metadata.uid == $uid and .status.phase == "Running"
+      ' >/dev/null || {
+        echo 'primary Pod was replaced or stopped running while validating Cilium enforcement' >&2
+        return 1
+      }
+      printf '%s\n' "$endpoint_json" | jq -S '{id,externalIdentifiers:.status["external-identifiers"],networking:.status.networking.addressing,status:{state:.status.state,identity:.status.identity,policy:.status.policy,health:.status.health}}' \
+        >"$evidence_dir/cilium-endpoint-isolated.json"
+      printf '%s\n' "$cilium_endpoint_json" | jq -S '{metadata:{name:.metadata.name,namespace:.metadata.namespace,ownerReferences:.metadata.ownerReferences,labels:.metadata.labels},status:{state:.status.state,identity:.status.identity,networking:.status.networking}}' \
+        >"$evidence_dir/kubernetes-cilium-endpoint-isolated.json"
+      policy_enabled=$(printf '%s\n' "$endpoint_json" | jq -r '.status.policy.realized["policy-enabled"]')
+      if gitaly_tcp_probe "$gitaly_primary_ip" "$gitaly_grpc_port" "$evidence_dir/gitaly-probe-during-fault.txt"; then
+        echo 'Gitaly TCP connect still succeeds after the Cilium agent reports both-direction policy enforcement' >&2
+        return 1
+      else
+        probe_status=$?
+      fi
+      if [[ $probe_status != 42 ]] || ! grep -qx 'cilium_probe=timeout' "$evidence_dir/gitaly-probe-during-fault.txt"; then
+        echo 'Gitaly read-only probe failed for a reason other than a TCP timeout; refusing to treat it as Cilium enforcement' >&2
+        return 1
+      fi
+
+      current_peer_json=$(capture_resource pod "$healthy_peer_pod") || return 1
+      printf '%s\n' "$current_peer_json" | jq -e --arg uid "$healthy_peer_uid" --arg key "$fault_key" '
+        .metadata.uid == $uid and .metadata.deletionTimestamp == null and .status.phase == "Running" and
+        (.status.containerStatuses | length) > 0 and all(.status.containerStatuses[]; .ready == true) and
+        (.metadata.labels[$key] // "") != "isolated"
+      ' >/dev/null || {
+        echo 'healthy Gitaly peer changed identity or stopped being ready during the isolation probe' >&2
+        return 1
+      }
+      peer_endpoint_json=$(cilium_agent_endpoint_status "$current_peer_json") || {
+        echo 'could not inspect the healthy Gitaly peer endpoint on its Cilium agent' >&2
+        return 1
+      }
+      printf '%s\n' "$peer_endpoint_json" | jq -e '.status.state == "ready"' >/dev/null || {
+        echo 'healthy Gitaly peer endpoint is not ready during the isolation probe' >&2
+        return 1
+      }
+      if ! gitaly_tcp_probe "$healthy_peer_ip" "$healthy_peer_grpc_port" "$evidence_dir/gitaly-peer-probe-during-fault.txt" \
+        || ! grep -qx 'cilium_probe=connected' "$evidence_dir/gitaly-peer-probe-during-fault.txt"; then
+        echo 'healthy Gitaly peer read-only positive-control probe did not connect during primary isolation' >&2
+        return 1
+      fi
+      printf '%s\n' "$peer_endpoint_json" | jq -S '{id,externalIdentifiers:.status["external-identifiers"],networking:.status.networking.addressing,status:{state:.status.state,identity:.status.identity,policy:.status.policy,health:.status.health}}' \
+        >"$evidence_dir/cilium-endpoint-peer-during-fault.json"
+      printf 'endpoint_state=ready\npolicy_enabled=%s\nprimary_probe=timeout\nhealthy_peer_probe=connected\n' "$policy_enabled" \
+        >"$evidence_dir/cilium-isolation-proof.txt"
+      return 0
+    fi
+    sleep 2
+  done
+  echo 'Cilium agent endpoint did not report the isolated identity, ready state and realized ingress plus egress enforcement within 30 seconds' >&2
+  return 1
 }
 
 praefect_check() {
@@ -188,7 +406,7 @@ assert_replica_checksums_match() {
     table_row == 1 { table_row = 2; next }
     table_row == 2 {
       fields = NF
-      if (trim($1) == "acceptance") {
+      if (trim($1) == "Acceptance") {
         rows++
         if (fields < 4) mismatch = 1
         for (i = 2; i <= fields; i++) {
@@ -272,6 +490,30 @@ printf '%s\n' "$primary_json" | jq -e --arg name "$GITALY_PRIMARY_POD" --arg sts
 }
 primary_uid=$(printf '%s\n' "$primary_json" | jq -r '.metadata.uid')
 original_fault_label=$(printf '%s\n' "$primary_json" | jq -r --arg key "$fault_key" '.metadata.labels[$key] // empty')
+gitaly_primary_ip=$(printf '%s\n' "$primary_json" | jq -er '.status.podIP | select(type == "string" and length > 0)')
+gitaly_grpc_port=$(printf '%s\n' "$primary_json" | jq -er '
+  [.spec.containers[] | select(.name == "gitaly") | .ports[]? | select(.name == "grpc-gitaly") | .containerPort]
+  | if length == 1 and (.[0] | type == "number" and . > 0 and . <= 65535) then .[0] else error("expected one valid grpc-gitaly container port") end
+')
+healthy_peer_json=$(kubectl -n "$namespace" get pods -l app=gitaly,release=gitlab-spike -o json | jq -cer \
+  --arg primary_uid "$primary_uid" --arg sts "$statefulset" --arg key "$fault_key" '
+    [.items[] | select(
+      .metadata.uid != $primary_uid and .metadata.deletionTimestamp == null and
+      .metadata.labels.app == "gitaly" and .metadata.labels.release == "gitlab-spike" and
+      (.metadata.labels[$key] // "") != "isolated" and .status.phase == "Running" and
+      (.status.containerStatuses | length) > 0 and all(.status.containerStatuses[]; .ready == true) and
+      any(.metadata.ownerReferences[]?; .controller == true and .kind == "StatefulSet" and .name == $sts)
+    )]
+    | sort_by(.metadata.name)
+    | if length > 0 then .[0] else error("no ready unisolated Gitaly peer exists") end
+  ')
+healthy_peer_pod=$(printf '%s\n' "$healthy_peer_json" | jq -er '.metadata.name')
+healthy_peer_uid=$(printf '%s\n' "$healthy_peer_json" | jq -er '.metadata.uid')
+healthy_peer_ip=$(printf '%s\n' "$healthy_peer_json" | jq -er '.status.podIP | select(type == "string" and length > 0)')
+healthy_peer_grpc_port=$(printf '%s\n' "$healthy_peer_json" | jq -er '
+  [.spec.containers[] | select(.name == "gitaly") | .ports[]? | select(.name == "grpc-gitaly") | .containerPort]
+  | if length == 1 and (.[0] | type == "number" and . > 0 and . <= 65535) then .[0] else error("expected one valid grpc-gitaly container port") end
+')
 
 for pod_spec in "$PRAEFECT_POD:praefect" "$TOOLBOX_POD:toolbox"; do
   pod=${pod_spec%%:*}
@@ -308,9 +550,10 @@ if [[ $initially_isolated != 0 ]]; then
 fi
 
 context=$(kubectl config current-context)
-printf 'started_at_utc=%s\ncontext=%s\nnamespace=%s\nstatefulset=%s\nprimary_pod=%s\nprimary_storage=%s\npraefect_pod=%s\ntoolbox_pod=%s\nproject=spike/acceptance\nproject_id=%s\nrelative_path=%s\nremote=%s\n' \
+printf 'started_at_utc=%s\ncontext=%s\nnamespace=%s\nstatefulset=%s\nprimary_pod=%s\nprimary_storage=%s\nhealthy_peer_pod=%s\nhealthy_peer_uid=%s\npraefect_pod=%s\ntoolbox_pod=%s\nproject=spike/acceptance\nproject_id=%s\nrelative_path=%s\nremote=%s\n' \
   "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$context" "$namespace" "$statefulset" \
-  "$GITALY_PRIMARY_POD" "$PRAEFECT_PRIMARY_STORAGE" "$PRAEFECT_POD" "$TOOLBOX_POD" \
+  "$GITALY_PRIMARY_POD" "$PRAEFECT_PRIMARY_STORAGE" "$healthy_peer_pod" "$healthy_peer_uid" \
+  "$PRAEFECT_POD" "$TOOLBOX_POD" \
   "$GITLAB_PROJECT_ID" "$PRAEFECT_RELATIVE_PATH" "$GIT_REMOTE_URL" >"$evidence_dir/metadata.txt"
 printf '%s\n' "$sts_json" | jq -S '{metadata:{name:.metadata.name,namespace:.metadata.namespace,labels:.metadata.labels},spec:{replicas:.spec.replicas,selector:.spec.selector},status:{readyReplicas:.status.readyReplicas}}' \
   >"$evidence_dir/statefulset-before.json"
@@ -327,6 +570,51 @@ fi
 assert_all_replicas_current "$evidence_dir/praefect-metadata-before.txt"
 replica_checksums >"$evidence_dir/replica-checksums-before.txt" 2>&1
 assert_replica_checksums_match "$evidence_dir/replica-checksums-before.txt"
+baseline_cilium_endpoint=$(capture_resource ciliumendpoints.cilium.io "$GITALY_PRIMARY_POD")
+printf '%s\n' "$baseline_cilium_endpoint" | jq -e --arg uid "$primary_uid" '
+  any(.metadata.ownerReferences[]?; .kind == "Pod" and .uid == $uid) and .status.state == "ready"
+' >/dev/null || {
+  echo 'refusing injection: the primary has no ready CiliumEndpoint status for its current Pod UID' >&2
+  exit 2
+}
+baseline_agent_endpoint=$(cilium_agent_endpoint_status "$primary_json") || {
+  echo 'refusing injection: cannot inspect the primary endpoint through its node-local Cilium agent' >&2
+  exit 2
+}
+printf '%s\n' "$baseline_agent_endpoint" | jq -e '
+  any(.status.identity.labels[]?; . == "k8s:app=gitaly") and
+  any(.status.identity.labels[]?; . == "k8s:release=gitlab-spike") and .status.state == "ready"
+' >/dev/null || {
+  echo 'refusing injection: node-local Cilium agent endpoint does not match the current Gitaly pod identity and ready state' >&2
+  exit 2
+}
+baseline_peer_endpoint=$(cilium_agent_endpoint_status "$healthy_peer_json") || {
+  echo 'refusing injection: cannot inspect the healthy peer endpoint through its node-local Cilium agent' >&2
+  exit 2
+}
+printf '%s\n' "$baseline_peer_endpoint" | jq -e '
+  any(.status.identity.labels[]?; . == "k8s:app=gitaly") and
+  any(.status.identity.labels[]?; . == "k8s:release=gitlab-spike") and .status.state == "ready"
+' >/dev/null || {
+  echo 'refusing injection: healthy peer endpoint is not ready with the expected Gitaly identity' >&2
+  exit 2
+}
+printf '%s\n' "$baseline_cilium_endpoint" | jq -S '{metadata:{name:.metadata.name,namespace:.metadata.namespace,labels:.metadata.labels,ownerReferences:.metadata.ownerReferences},status:{state:.status.state,identity:.status.identity,networking:.status.networking}}' \
+  >"$evidence_dir/kubernetes-cilium-endpoint-before.json"
+printf '%s\n' "$baseline_agent_endpoint" | jq -S '{id,externalIdentifiers:.status["external-identifiers"],networking:.status.networking.addressing,status:{state:.status.state,identity:.status.identity,policy:.status.policy,health:.status.health}}' \
+  >"$evidence_dir/cilium-endpoint-before.json"
+printf '%s\n' "$baseline_peer_endpoint" | jq -S '{id,externalIdentifiers:.status["external-identifiers"],networking:.status.networking.addressing,status:{state:.status.state,identity:.status.identity,policy:.status.policy,health:.status.health}}' \
+  >"$evidence_dir/cilium-endpoint-peer-before.json"
+if ! gitaly_tcp_probe "$gitaly_primary_ip" "$gitaly_grpc_port" "$evidence_dir/gitaly-probe-before.txt" \
+  || ! grep -qx 'cilium_probe=connected' "$evidence_dir/gitaly-probe-before.txt"; then
+  echo 'refusing injection: the read-only toolbox-to-primary Gitaly TCP probe did not succeed at baseline' >&2
+  exit 2
+fi
+if ! gitaly_tcp_probe "$healthy_peer_ip" "$healthy_peer_grpc_port" "$evidence_dir/gitaly-peer-probe-before.txt" \
+  || ! grep -qx 'cilium_probe=connected' "$evidence_dir/gitaly-peer-probe-before.txt"; then
+  echo 'refusing injection: the read-only toolbox-to-peer Gitaly TCP positive-control probe did not succeed at baseline' >&2
+  exit 2
+fi
 
 auth=$(printf '%s:%s' "$GIT_AUTH_USER" "$GIT_AUTH_TOKEN" | base64 | tr -d '\n')
 export GIT_CONFIG_COUNT=1
@@ -347,20 +635,20 @@ git -C "$scratch/repo" config user.email 'gitlab-spike-failure@invalid.example'
 printf 'Praefect primary failure acknowledgement proof %s\n' "$timestamp" \
   >"$scratch/repo/.gitlab-spike-failure-proof-$timestamp.txt"
 git -C "$scratch/repo" add ".gitlab-spike-failure-proof-$timestamp.txt"
-git -C "$scratch/repo" commit --quiet -m "test: record spike primary failure proof $timestamp"
+git -C "$scratch/repo" commit --quiet -m "test: record spike primary failure proof $timestamp [skip ci]"
 acknowledged_sha=$(git -C "$scratch/repo" rev-parse HEAD)
 printf 'branch=%s\ncommit=%s\n' "$branch" "$acknowledged_sha" >"$evidence_dir/write.txt"
 
 fault_touched=1
-kubectl -n "$namespace" label pod "$GITALY_PRIMARY_POD" "$fault_key=isolated" --overwrite \
-  | tee "$evidence_dir/isolate-primary.txt"
+guarded_fault_label_change isolated "$original_fault_label" "$evidence_dir/isolate-primary.json" yes
 kubectl -n "$namespace" get pods \
   -l "app=gitaly,release=gitlab-spike,$fault_key=isolated" -o json \
   >"$evidence_dir/isolated-pods.json"
-printf '%s\n' "$(jq -r '.items | length' "$evidence_dir/isolated-pods.json")" | grep -qx 1
-jq -e --arg pod "$GITALY_PRIMARY_POD" '.items[0].metadata.name == $pod' \
+jq -e --arg pod "$GITALY_PRIMARY_POD" --arg uid "$primary_uid" \
+  '(.items | length) == 1 and .items[0].metadata.name == $pod and .items[0].metadata.uid == $uid' \
   "$evidence_dir/isolated-pods.json" >/dev/null
 kubectl -n "$namespace" get pods -o wide >"$evidence_dir/pods-during-fault.txt"
+wait_for_cilium_isolation
 
 set +e
 push_started=$(date -u +%Y-%m-%dT%H:%M:%SZ)
