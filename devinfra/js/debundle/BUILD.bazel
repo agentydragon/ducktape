@@ -467,6 +467,7 @@ rust_library(
         ":js_ast",
         ":spec",
         "@crates//:petgraph",
+        "@crates//:roaring",
         "@crates//:serde",
         "@crates//:serde_json",
         "@crates//:strum",
