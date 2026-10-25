@@ -101,12 +101,13 @@ none opens a manifest. The container E2E secret path is staged from its
 
 ## Follow-up trim order
 
-The one tree-comparison test in `cluster/cdk8s:test_generate_manifests` should
-stay until cutover. It preserves the three checks for generated-but-uncommitted
-files, content mismatches, and committed files the generator no longer writes.
-[#11929](https://github.com/agentydragon/ducktape/pull/11929) was closed unmerged
-because it removed the checks that tie cdk8s output to the files Flux consumes.
-Reassess the comparison during cutover.
+The one tree-comparison test in `cluster/cdk8s:test_generate_manifests` stays
+until cutover. Merged [#11947](https://github.com/agentydragon/ducktape/pull/11947)
+consolidated the three manifest parity checks into one test while retaining
+diagnostics for generated files missing from the committed tree, content
+mismatches, and committed files the generator no longer writes. This relation
+ties cdk8s output to the files Flux consumes. Reassess the comparison during
+cutover.
 
 The other output-reader trims have merged: [#11913](https://github.com/agentydragon/ducktape/pull/11913)
 (Ollama catalog), [#11920](https://github.com/agentydragon/ducktape/pull/11920)
