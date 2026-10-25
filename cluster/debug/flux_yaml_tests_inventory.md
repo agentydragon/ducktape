@@ -134,7 +134,7 @@ The focused follow-up trims were sent as separate PRs:
 - Merged [#11966](https://github.com/agentydragon/ducktape/pull/11966) tests haku-ci's TriggerAuthentication and ScaledJob from its cdk8s chart, while keeping the authored Forgejo Secret contract in a focused target with that exact input.
 - [#11967](https://github.com/agentydragon/ducktape/pull/11967) moves Authentik blueprint reference checks to `cluster/cdk8s/authentik`, alongside the owned blueprint inputs. It was initially stacked on #11964 for that PR's focused ClickHouse Secret runfile fix. #11964 has merged, and #11967's branch has been updated against `devel`; the PR remains open for CI and review.
 
-checks hand-written Kustomization declarations. Keep
+`test_generator_namespace` checks hand-written Kustomization declarations. Keep
 it with those declarations; cdk8s-owned Kustomization generation belongs in model
 tests. `test_flux_build` and the remaining whole-graph checks in
 `test_cluster_integration` validate the complete Flux source graph and stay with
