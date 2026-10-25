@@ -75,6 +75,9 @@ pub struct AnalysisHints {
     /// Static members of imported namespace bindings with an audited
     /// return-only callback contract, independent of member-call purity.
     pub callback_factory_members: BTreeMap<String, BTreeSet<String>>,
+    /// Stable lookups running no caller/importer/host code, whose capabilities cannot expose their namespace
+    /// or replace audited factories except through supplied caller inputs.
+    pub namespace_independent_members: BTreeMap<String, BTreeSet<String>>,
     /// Local binding names of this chunk that import an author-asserted
     /// fluent export (`chunk_export_purity.<chunk>.fluent_exports`,
     /// projected by `crate::cross_module_purity` onto importer locals).

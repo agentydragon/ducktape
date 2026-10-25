@@ -1785,6 +1785,45 @@ struct DestructuringMemberWrite {
     source: ValueExpr,
 }
 
+/// A sufficient source-privacy proof, independent of execution/value-flow facts.
+/// Every configured root belongs to one potentially aliasing namespace family.
+#[derive(Default)]
+struct NamespacePrivacy {
+    members: BTreeMap<Id, BTreeSet<String>>,
+    import_sites: BTreeSet<u32>,
+    allowed_read: Option<u32>,
+    optional_members: BTreeSet<u32>,
+    target_depth: usize,
+    invalid: bool,
+}
+
+impl NamespacePrivacy {
+    fn record_ident(&mut self, ident: &Ident) {
+        if self.members.contains_key(&ident.to_id())
+            && !self.import_sites.contains(&ident.span.lo.0)
+            && self.allowed_read != Some(ident.span.lo.0)
+        {
+            self.invalid = true;
+        }
+    }
+
+    fn read_receiver(&self, member: &MemberExpr) -> Option<u32> {
+        if self.target_depth == 0
+            && !self.optional_members.contains(&member.span.lo.0)
+            && let Expr::Ident(receiver) = member.obj.unwrap_parens()
+            && let MemberProp::Ident(property) = &member.prop
+            && self
+                .members
+                .get(&receiver.to_id())
+                .is_some_and(|members| members.contains(property.sym.as_ref()))
+        {
+            Some(receiver.span.lo.0)
+        } else {
+            None
+        }
+    }
+}
+
 struct ExecutionIndex {
     owner: StatementOrdinal,
     current: Option<u32>,
@@ -1804,6 +1843,7 @@ struct ExecutionIndex {
     plain_data_objects: BTreeSet<u32>,
     map_entry_arrays: BTreeSet<u32>,
     reassigned_map: bool,
+    namespace_privacy: NamespacePrivacy,
     fresh_error_claims: Vec<FreshErrorWriteClaim>,
     intrinsic_mutation_receivers: Vec<ValueExpr>,
     destructuring_source: Option<ValueExpr>,
@@ -1859,6 +1899,7 @@ impl Default for ExecutionIndex {
             plain_data_objects: BTreeSet::new(),
             map_entry_arrays: BTreeSet::new(),
             reassigned_map: false,
+            namespace_privacy: NamespacePrivacy::default(),
             fresh_error_claims: Vec::new(),
             intrinsic_mutation_receivers: Vec::new(),
             destructuring_source: None,
@@ -1921,6 +1962,29 @@ impl ExecutionIndex {
         };
         let mut fresh_steps = Vec::with_capacity(body.len());
         for item in body {
+            // Seed all candidate roots before visiting any item, including imports
+            // textually after a use. Other imported aliases remain an author audit.
+            if !hints.namespace_independent_members.is_empty()
+                && let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item.as_module_item()
+            {
+                for specifier in &import.specifiers {
+                    let local = specifier.local();
+                    let name = local.sym.as_ref();
+                    if hints.callback_factory_members.contains_key(name)
+                        || hints.namespace_independent_members.contains_key(name)
+                    {
+                        index.namespace_privacy.members.insert(
+                            local.to_id(),
+                            hints
+                                .namespace_independent_members
+                                .get(name)
+                                .cloned()
+                                .unwrap_or_default(),
+                        );
+                        index.namespace_privacy.import_sites.insert(local.span.lo.0);
+                    }
+                }
+            }
             let declaration = match item.as_module_item() {
                 ModuleItem::Stmt(Stmt::Decl(Decl::Class(declaration))) => Some(declaration),
                 ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => {
@@ -2090,7 +2154,15 @@ impl ExecutionIndex {
         // A namespace member is an audited target only while its binding is
         // unchanged. Any local write could replace a member with an eager
         // callback invoker before the apparent factory call.
+        // Total source privacy proves that this family cannot reach any unrelated
+        // Unknown/This slot. It grants no execution or callback timing effects.
+        let private_namespace_family = !index.namespace_privacy.members.is_empty()
+            && !index.namespace_privacy.invalid
+            && index.dynamic_scope_owners.is_empty();
         let keep_namespace = |id: &Id, members: &BTreeSet<String>, writes: &BTreeSet<_>| {
+            if private_namespace_family {
+                return true;
+            }
             let aliases =
                 infer_namespace_aliases(id, &namespace_assignments, &namespace_value_facts);
             let receiver_aliases = infer_mutation_receiver_aliases(
@@ -2227,6 +2299,16 @@ impl ExecutionIndex {
                 || top_call_argument
                 || exported_value)
         };
+        let namespace_family: Vec<_> = index.namespace_privacy.members.keys().cloned().collect();
+        let family_factory_members: BTreeSet<_> = if namespace_family.is_empty() {
+            BTreeSet::new()
+        } else {
+            index
+                .callback_factory_members
+                .values()
+                .flat_map(|members| members.iter().cloned())
+                .collect()
+        };
         let factory_imports = index
             .callback_factory_imports
             .union(&index.inline_callback_factory_imports)
@@ -2247,9 +2329,17 @@ impl ExecutionIndex {
             } else {
                 BTreeSet::new()
             };
-            index
-                .callback_factory_members
-                .retain(|id, members| keep_namespace(id, members, &fresh_writes));
+            index.callback_factory_members.retain(|id, members| {
+                if namespace_family.is_empty() {
+                    keep_namespace(id, members, &fresh_writes)
+                } else {
+                    // Import names do not establish distinct object identities.
+                    // Fallback must also certify every potentially aliasing root.
+                    namespace_family
+                        .iter()
+                        .all(|root| keep_namespace(root, &family_factory_members, &fresh_writes))
+                }
+            });
             if index.callback_factory_members.len() == factory_members.len() {
                 break;
             }
@@ -2523,7 +2613,15 @@ impl ExecutionIndex {
 }
 
 impl Visit for ExecutionIndex {
-    fn visit_named_export(&mut self, _export: &NamedExport) {
+    fn visit_named_export(&mut self, export: &NamedExport) {
+        for specifier in &export.specifiers {
+            if let ExportSpecifier::Named(named) = specifier
+                && let ModuleExportName::Ident(ident) = &named.orig
+                && self.namespace_privacy.members.contains_key(&ident.to_id())
+            {
+                self.namespace_privacy.invalid = true;
+            }
+        }
         // Linkage is captured by collect_export_roots. Specifiers do not run
         // at module initialization or expose a class in a closed module.
     }
@@ -2875,6 +2973,7 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_ident(&mut self, ident: &Ident) {
+        self.namespace_privacy.record_ident(ident);
         let id = ident.to_id();
         if self.class_ids.contains(&id) && self.safe_class_target.as_ref() != Some(&id) {
             self.other_class_uses.insert(id);
@@ -2893,7 +2992,17 @@ impl Visit for ExecutionIndex {
         }
     }
 
-    fn visit_binding_ident(&mut self, _binding: &BindingIdent) {}
+    fn visit_member_expr(&mut self, member: &MemberExpr) {
+        let previous = self.namespace_privacy.allowed_read;
+        self.namespace_privacy.allowed_read = self.namespace_privacy.read_receiver(member);
+        member.obj.visit_with(self);
+        self.namespace_privacy.allowed_read = previous;
+        member.prop.visit_with(self);
+    }
+
+    fn visit_binding_ident(&mut self, binding: &BindingIdent) {
+        self.namespace_privacy.record_ident(&binding.id);
+    }
 
     fn visit_var_declarator(&mut self, declarator: &VarDeclarator) {
         declarator.visit_children_with(self);
@@ -3001,7 +3110,9 @@ impl Visit for ExecutionIndex {
             source.clone(),
             ValueExpr::from_expr(&assignment.right),
         ]));
+        self.namespace_privacy.target_depth += 1;
         assignment.left.visit_with(self);
+        self.namespace_privacy.target_depth -= 1;
         self.destructuring_source = Some(source);
         assignment.right.visit_with(self);
     }
@@ -3011,7 +3122,9 @@ impl Visit for ExecutionIndex {
         if matches!(head, ForHead::Pat(_)) {
             self.destructuring_source = Some(ValueExpr::Unknown);
         }
+        self.namespace_privacy.target_depth += 1;
         head.visit_children_with(self);
+        self.namespace_privacy.target_depth -= 1;
         self.destructuring_source = previous_source;
     }
 
@@ -3031,7 +3144,9 @@ impl Visit for ExecutionIndex {
         if matches!(assignment.left, AssignTarget::Pat(_)) {
             self.destructuring_source = Some(ValueExpr::from_expr(&assignment.right));
         }
+        self.namespace_privacy.target_depth += 1;
         assignment.left.visit_with(self);
+        self.namespace_privacy.target_depth -= 1;
         self.destructuring_source = previous_source;
         assignment.right.visit_with(self);
         if matches!(
@@ -3161,7 +3276,9 @@ impl Visit for ExecutionIndex {
         if matches!(expression.arg.unwrap_parens(), Expr::Ident(ident) if ident.sym == "Map") {
             self.reassigned_map = true;
         }
+        self.namespace_privacy.target_depth += 1;
         expression.visit_children_with(self);
+        self.namespace_privacy.target_depth -= 1;
         self.record_implicit_coercion(&expression.arg, expression.span);
         if let Expr::Member(member) = expression.arg.unwrap_parens() {
             self.intrinsic_mutation_receivers
@@ -3172,7 +3289,10 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_unary_expr(&mut self, expression: &UnaryExpr) {
+        let target = usize::from(expression.op == UnaryOp::Delete);
+        self.namespace_privacy.target_depth += target;
         expression.visit_children_with(self);
+        self.namespace_privacy.target_depth -= target;
         if matches!(
             expression.op,
             UnaryOp::Plus | UnaryOp::Minus | UnaryOp::Tilde
@@ -3314,6 +3434,22 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_opt_chain_expr(&mut self, chain: &OptChainExpr) {
+        // Only the optional operation's own lookup is unsupported. Namespace
+        // reads in its argument callbacks still receive their ordinary context.
+        let member = match chain.base.as_ref() {
+            OptChainBase::Member(member) => Some(member),
+            OptChainBase::Call(call) => match call.callee.unwrap_parens() {
+                Expr::Member(member) => Some(member),
+                _ => None,
+            },
+        };
+        if !self.namespace_privacy.members.is_empty()
+            && let Some(member) = member
+        {
+            self.namespace_privacy
+                .optional_members
+                .insert(member.span.lo.0);
+        }
         let before = self.past_await;
         chain.visit_children_with(self);
         self.past_await = before;

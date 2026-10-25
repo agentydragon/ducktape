@@ -910,6 +910,14 @@ impl ChunkExportPurityBuilder {
         self
     }
 
+    pub fn with_namespace_independent_members(mut self, export: &str, members: &[&str]) -> Self {
+        self.purity.namespace_independent_members.insert(
+            export.to_string(),
+            members.iter().map(|s| (*s).to_string()).collect(),
+        );
+        self
+    }
+
     pub fn build(self) -> (&'static str, spec::ChunkExportPurity) {
         (self.chunk, self.purity)
     }

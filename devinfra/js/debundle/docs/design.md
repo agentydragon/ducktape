@@ -1016,6 +1016,43 @@ synchronous owner adjacency and retained prefix reads, with the source closure
 cached per class. Uncovered owners retain raw lazy reads and all raw lazy
 rebinds; incomplete reachability uses the original whole-body closure.
 
+### Namespace capability privacy
+
+`namespace_independent_members` is a per-member author capability summary,
+separate from purity and callback timing. A listed lookup is stable, runs no
+caller/importer/host code, and cannot expose the namespace or a capability that
+replaces audited factories. Ordinary own data properties and explicitly audited
+inert forwarding accessors are possible implementations; primitive return values
+alone do not establish this property. The value and its reachable operations,
+properties, prototypes, constructors, accessors, closures, and returned callbacks
+must preserve that guarantee. This includes calls and tags with the namespace as
+implicit receiver. Only independently supplied argument/receiver capabilities can
+be propagated as inputs; that implicit receiver is excluded from the exception.
+
+The author identifies all imported exports that could alias the same namespace
+family, and A14's provider/runtime input audit excludes preexisting external
+aliases and rewrite capabilities. The existing ExecutionIndex visitor classifies
+all configured roots together, using resolved identifiers. Each occurrence must
+be the object of a direct, static, listed member read. Assignment targets,
+including patterns and loop heads, updates, deletes, whole-value uses, exports,
+computed/optional lookups, missing member summaries, and dynamic scope defeat
+this sufficient proof. Import declarations are linkage rather than uses.
+Declarations and assignment targets require explicit handling because the
+execution visitor ordinarily skips binding identifiers and named exports.
+
+Under those preconditions no namespace capability can reach an unrelated local
+unknown value, receiver, getter, or class surface: the explicit roots are consumed
+only by audited independent lookups, and external routes are covered by A14.
+Namespace admission can therefore omit its general provenance guards for this
+family. If any precondition fails, the existing provenance proof must certify every
+configured family root against the union of audited factory members. Import
+names do not prove distinct object identities. With no independent-member
+summaries, namespace admission retains its existing behavior. This does not change the ValueExpr lattice or claim that arbitrary `this`
+values are disjoint. All member-result operations, callback arguments, exports,
+reentry, and effect ordering still run through ordinary analysis. Factory timing
+requires its separate existing contract; privacy cannot defer an early invocation
+of a retained callback result.
+
 Nested audited factories retain the original callback through each returned
 graph. Invoking or publishing a result before the captured lexical cells are
 initialized reactivates the ordinary callback-read analysis. Namespace member

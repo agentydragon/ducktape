@@ -278,6 +278,30 @@ Calls with a named callback, a retained factory result, spread arguments, or
 `new` use conservative callback timing. This contract is independent of purity
 and does not grant the broader `callback_factory_exports` composition rule.
 
+`chunk_export_purity.<chunk>.namespace_independent_members` maps namespace
+exports to individually audited static member names. Each lookup must be stable,
+run no caller/importer/host code, and expose no capability to obtain the namespace
+or replace an audited factory. An ordinary own data property or an explicitly
+audited inert forwarding accessor can satisfy this; a primitive result alone
+cannot. The guarantee covers the member value's reachable operations, properties,
+prototypes, constructors, accessors, and returned callbacks, including implicit
+namespace receivers in member calls and tags. Independently supplied argument or
+receiver capabilities may propagate normally; the implicit namespace receiver is
+not such an exception. Hidden closure capabilities to rewrite factories are
+forbidden. This summary grants neither purity nor callback deferral.
+
+The author must identify every imported export that can alias the namespace
+family and retain the provider/runtime input audit below. The checker groups all
+configured family roots together. Only when every runtime occurrence is the
+receiver of a direct static lookup of a listed member may namespace admission
+ignore unrelated unknown values and `this`. Whole namespace uses, writes,
+updates, deletes, assignment/destructuring/loop targets, computed or optional
+lookups, namespace exports, dynamic scope, or incomplete member lists retain the
+ordinary conservative proof. Member results may be called, chained, constructed,
+or used as superclasses with their ordinary execution effects. Callback deferral
+still requires `callback_factory_members`; export/reentry and early callback
+invocation checks remain active. See the [source-privacy proof](https://github.com/agentydragon/ducktape/blob/devel/devinfra/js/debundle/docs/design.md#namespace-capability-privacy).
+
 Explicit member writes nested in object or array destructuring, including nested,
 default, rest, and loop-head targets, retain the same conservative namespace
 mutation checks as ordinary member assignments.

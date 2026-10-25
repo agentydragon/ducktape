@@ -10,8 +10,9 @@ use std::sync::Arc;
 use analysis::cross_module_purity::{
     ModulePurityFacts, ResolvedImport, resolve_asserted_callback_factory_members,
     resolve_asserted_fluent_bindings, resolve_asserted_inline_callback_factories,
-    resolve_asserted_member_purities, resolve_asserted_pure_new_bindings,
-    resolve_imported_callback_factories, resolve_imported_purities,
+    resolve_asserted_member_purities, resolve_asserted_namespace_independent_members,
+    resolve_asserted_pure_new_bindings, resolve_imported_callback_factories,
+    resolve_imported_purities,
 };
 use analysis::purity::Purity;
 use anyhow::{Context, Result};
@@ -71,6 +72,7 @@ pub(super) struct CrossModulePurities {
     pub(super) callback_factories: BTreeMap<String, BTreeSet<String>>,
     pub(super) inline_callback_factories: BTreeMap<String, BTreeSet<String>>,
     pub(super) callback_factory_members: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
+    pub(super) namespace_independent_members: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
 }
 
 /// Static-import chunk closure for program-level purity analysis.
@@ -342,6 +344,17 @@ pub(super) fn collect_cross_module_imported_purities(
             .filter(|(chunk, _)| modules.contains_key(*chunk))
             .map(|(chunk, assertion)| (chunk.clone(), assertion.callback_factory_members.clone()))
             .collect();
+    let asserted_namespace_independent_members = chunk_export_purity
+        .iter()
+        .filter(|(_, assertion)| !assertion.namespace_independent_members.is_empty())
+        .filter(|(chunk, _)| modules.contains_key(*chunk))
+        .map(|(chunk, assertion)| {
+            (
+                chunk.clone(),
+                assertion.namespace_independent_members.clone(),
+            )
+        })
+        .collect();
     let mut asserted_pure_new: BTreeMap<String, BTreeSet<String>> = chunk_export_purity
         .iter()
         .filter(|(_, assertion)| !assertion.pure_new_exports.is_empty())
@@ -376,6 +389,10 @@ pub(super) fn collect_cross_module_imported_purities(
         inline_callback_factories: resolve_asserted_inline_callback_factories(
             &modules,
             &asserted_inline_callback_factories,
+        ),
+        namespace_independent_members: resolve_asserted_namespace_independent_members(
+            &modules,
+            &asserted_namespace_independent_members,
         ),
         callback_factory_members: resolve_asserted_callback_factory_members(
             &modules,

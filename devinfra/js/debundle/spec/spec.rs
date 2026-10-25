@@ -191,6 +191,10 @@ pub struct ChunkExportPurity {
     /// the same return-only callback contract as `callback_factory_exports`.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub callback_factory_members: BTreeMap<String, BTreeSet<String>>,
+    /// Stable lookups running no caller/importer/host code, whose capabilities cannot expose their namespace
+    /// or replace audited factories except through supplied caller inputs.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub namespace_independent_members: BTreeMap<String, BTreeSet<String>>,
 }
 
 /// Per-chunk owner-graph build options. Each field defaults to the
