@@ -10,8 +10,8 @@ exact spec against that program's configured chunks. Structural selectors match
 only by the documented AST, hole, and alpha-renaming rules; the engine does not
 compare specs or infer edits across upstream versions.
 
-When upstream publishes a new bundle snapshot, use the
-[`debundle_stabilize` workflow](skills/debundle_stabilize/SKILL.md) and the
+When upstream publishes a new bundle snapshot, use the installed
+`debundle_stabilize` skill and the
 authoring commands below against that snapshot. A prior spec can be a human-edited
 starting point, but the new source and draft spec are validated as one pair.
 Review each mismatch and each synthesized selector for the intended behavior;
