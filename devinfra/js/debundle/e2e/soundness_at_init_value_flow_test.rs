@@ -67,6 +67,39 @@ export { Command, factory, command, later };
 }
 
 #[test]
+fn local_constructor_reads_absent_plain_config_data_without_invoking_callback() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"class Command {
+  constructor(config) {
+    this.execute = config.execute;
+    this.weight = config.weight ?? 0;
+  }
+}
+function factory(config) { return new Command(config); }
+const command = factory({ execute: () => later });
+const later = 7;
+console.log(command.execute(), command.weight);
+export { Command, factory, command, later };
+"#,
+            vec![
+                logical_module(
+                    "command",
+                    &[
+                        Member::new("Command"),
+                        Member::new("factory"),
+                        Member::new("command"),
+                    ],
+                ),
+                logical_module("value", &[Member::new("later")]),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&fixture, "7 0\n");
+}
+
+#[test]
 fn local_constructor_callback_field_remains_a_consumer() {
     let source = r#"let later = 0;
 class Holder {

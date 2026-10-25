@@ -48,6 +48,207 @@ console.log(later);
 }
 
 #[test]
+fn unpublished_local_constructor_result_stays_deferred() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"class Holder {
+  constructor(record, policy) {
+    this.record = record;
+    this.policy = policy;
+    this.weight = record.weight ?? 0;
+  }
+  run() { return this.record.execute(); }
+}
+class Policy { allowed() { return true; } }
+function create(record) { return new Holder(record, new Policy()); }
+const prefix = new globalThis.Error();
+const command = create({ execute: () => later });
+const dynamic = ((object) => {
+  object[(object.key = 0)] = "value";
+  return 1;
+})({});
+const later = 42;
+console.log(later);
+console.log(command.run(), command.weight);
+"#,
+        vec![
+            logical_module(
+                "values/dynamic",
+                &[
+                    Member::new("dynamic"),
+                    Member::new("prefix"),
+                    Member::new("command"),
+                    Member::new("create"),
+                    Member::new("Holder"),
+                    Member::new("Policy"),
+                ],
+            ),
+            logical_module("values/later", &[Member::new("later")]),
+        ],
+    ));
+
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/values/dynamic.js",
+        &["command"],
+        &["later"],
+    );
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/values/later.js",
+        &["later"],
+        &["dynamic"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/values/dynamic.js",
+        &["class Holder", "class Policy", "function create"],
+        &[],
+    );
+    assert_preserved_entry_output(&fixture, "42\n42 0\n");
+}
+
+#[test]
+fn published_local_constructor_result_keeps_deferred_read() {
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            r#"class Holder {
+  constructor(record) { this.record = record; }
+  run() { return this.record.execute(); }
+}
+function create(record) { return new Holder(record); }
+const prefix = new globalThis.Error();
+const command = create({ execute: () => later });
+globalThis.saved = command;
+const dynamic = ((object) => {
+  object[(object.key = 0)] = "value";
+  return 1;
+})({});
+const later = dynamic;
+"#,
+            vec![
+                logical_module(
+                    "values/dynamic",
+                    &[Member::new("prefix"), Member::new("dynamic")],
+                ),
+                logical_module(
+                    "values/later",
+                    &[
+                        Member::new("Holder"),
+                        Member::new("create"),
+                        Member::new("command"),
+                        Member::new("later"),
+                    ],
+                ),
+            ],
+        ),
+        &["values/dynamic", "values/later"],
+        &[],
+    );
+}
+
+#[test]
+fn called_local_constructor_result_keeps_deferred_read() {
+    let source = r#"let later = 0;
+class Holder {
+  constructor(record) { this.record = record; }
+  run() { return this.record.execute(); }
+}
+function create(record) { return new Holder(record); }
+const command = create({ execute: () => later });
+const early = command.run();
+const dynamic = ((object) => {
+  object[(object.key = 0)] = "value";
+  return 1;
+})({});
+later = 42;
+console.log(early, later);
+"#;
+    let colocated = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module_with_anon(
+                "all",
+                &[
+                    Member::new("Holder"),
+                    Member::new("create"),
+                    Member::new("command"),
+                    Member::new("early"),
+                    Member::new("dynamic"),
+                    Member::new("later"),
+                ],
+                &["later = 42;", "console.log(early, later);"],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&colocated, "0 42\n");
+
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module(
+                    "values/dynamic",
+                    &[
+                        Member::new("Holder"),
+                        Member::new("create"),
+                        Member::new("command"),
+                        Member::new("early"),
+                        Member::new("dynamic"),
+                    ],
+                ),
+                logical_module_with_anon(
+                    "values/later",
+                    &[Member::new("later")],
+                    &["later = 42;", "console.log(early, later);"],
+                ),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+        &["values/dynamic", "values/later"],
+        &[],
+    );
+}
+
+#[test]
+fn visible_object_prototype_getter_keeps_constructor_result_conservative() {
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            r#"let later = 0;
+Object.defineProperty(Object.prototype, "weight", {
+  get() { return later; }, configurable: true,
+});
+class Holder {
+  constructor(record) { this.record = record; this.weight = record.weight ?? 0; }
+  run() { return this.record.execute(); }
+}
+function create(record) { return new Holder(record); }
+const command = create({ execute: () => later });
+const dynamic = ((object) => {
+  object[(object.key = 0)] = "value";
+  return 1;
+})({});
+later = 42;
+"#,
+            vec![
+                logical_module(
+                    "values/dynamic",
+                    &[
+                        Member::new("Holder"),
+                        Member::new("create"),
+                        Member::new("command"),
+                        Member::new("dynamic"),
+                    ],
+                ),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        ),
+        &["values/dynamic", "values/later"],
+        &[],
+    );
+}
+
+#[test]
 fn unpublished_local_factory_result_stays_deferred() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"function retain(read, write) {
