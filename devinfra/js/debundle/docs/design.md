@@ -1052,6 +1052,10 @@ Primitive operator results and the synthetic `in` protocol call with a
 literal key and direct global-object RHS do not themselves publish the global
 object as a value. The operator and operand effects still execute and
 participate in ordinary reentry analysis.
+An earlier anonymous, zero-argument synchronous function IIFE with a
+discarded result can use a confined local alias to the global object before
+the certified publication. Its alias and derived values cannot leave that
+invocation, access the certified slot, or reach an uncertain call.
 
 **Audited callback-factory exports.**
 `chunk_export_purity.<defining chunk>.callback_factory_exports` and
