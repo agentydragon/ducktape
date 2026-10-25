@@ -134,6 +134,11 @@ struct ModuleDecomposeArgs {
     #[arg(long, requires = "coarsen_blocking_sccs")]
     coarsen_atomic_conflicts: bool,
 
+    /// Rejoin accepted atomic fragments from the same original module when
+    /// each incremental contraction still passes the shared gate.
+    #[arg(long, requires = "coarsen_blocking_sccs")]
+    rejoin_original_modules: bool,
+
     /// Source root used to resolve existing source-backed and relational claims.
     #[arg(long = "source-root", env = "DEBUNDLE_SOURCE_ROOT")]
     source_root: Option<PathBuf>,
@@ -426,6 +431,19 @@ fn render_module_decomposition_text(report: &ModuleDecompositionReport, out: &mu
                 ));
             }
         }
+        if let Some(rejoining) = &coarsening.original_home_rejoining {
+            out.push_str(&format!(
+                "original-home rejoining stopped: {:?}; restored={}/{} groups={} largest_group_owners={} largest_group_origins={} contractions={}/{}\n",
+                rejoining.stop_reason,
+                rejoining.fully_restored_module_count,
+                rejoining.original_module_count,
+                rejoining.final_group_count,
+                rejoining.largest_group_owner_count,
+                rejoining.largest_group_origin_module_count,
+                rejoining.accepted_contractions,
+                rejoining.attempted_contractions,
+            ));
+        }
     }
 }
 
@@ -459,6 +477,7 @@ fn run_module_decompose(args: ModuleDecomposeArgs) -> Result<()> {
             },
             preserve_selector_anchors: args.preserve_selector_anchors,
             coarsen_atomic_conflicts: args.coarsen_atomic_conflicts,
+            rejoin_original_modules: args.rejoin_original_modules,
         },
     )?;
     emit_report(
