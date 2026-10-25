@@ -100,6 +100,58 @@ export { entries, registry, early, later };
 }
 
 #[test]
+fn direct_chained_call_does_not_match_the_from_entries_constructor_site() {
+    let source = r#"let invocations = 0;
+let later = 0;
+const entries = [{ name: "read", run: () => { invocations++; return later; } }];
+const early = Object.fromEntries(entries.map(entry => [entry.name, entry])).read.run();
+later = 42;
+console.log(early, invocations, later);
+export { entries, early, later, invocations };
+"#;
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module(
+                    "values/registry",
+                    &[
+                        Member::new("entries"),
+                        Member::new("early"),
+                        Member::new("invocations"),
+                    ],
+                ),
+                logical_module_with_anon(
+                    "values/later",
+                    &[Member::new("later")],
+                    &["later = 42;", "console.log(early, invocations, later);"],
+                ),
+            ],
+        ),
+        &["values/registry", "values/later"],
+        &[],
+    );
+    let colocated = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module_with_anon(
+                "values/all",
+                &[
+                    Member::new("entries"),
+                    Member::new("early"),
+                    Member::new("later"),
+                    Member::new("invocations"),
+                ],
+                &["later = 42;", "console.log(early, invocations, later);"],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&colocated, "0 1 42\n");
+    assert_all_emitted_js_checks(&colocated);
+}
+
+#[test]
 fn returned_value_callback_remains_visible_to_an_opaque_consumer() {
     let source = r#"let invocations = 0;
 let later = 0;

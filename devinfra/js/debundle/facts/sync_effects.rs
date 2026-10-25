@@ -11,6 +11,21 @@ use swc_common::SyntaxContext;
 type Values = BTreeSet<AbstractValue>;
 type Context = BTreeMap<Id, Values>;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct CallSite {
+    start: u32,
+    end: u32,
+}
+
+impl From<Span> for CallSite {
+    fn from(span: Span) -> Self {
+        Self {
+            start: span.lo.0,
+            end: span.hi.0,
+        }
+    }
+}
+
 /// Contexts are interned bottom-up by the executor. Structural equality of
 /// captures becomes identity equality, so comparing value sets and cache keys
 /// never recursively compares a shared capture DAG along every path.
@@ -70,7 +85,7 @@ enum AbstractValue {
 struct FromEntriesMappedProof {
     source: ValueExpr,
     key: String,
-    map_call_span: u32,
+    map_call_site: CallSite,
     object_intrinsic: Id,
 }
 
@@ -82,7 +97,7 @@ enum ValueExpr {
     Undefined,
     NonCallable,
     Member(Box<Self>, Option<String>, bool),
-    Call(Box<Self>, Vec<Self>, u32),
+    Call(Box<Self>, Vec<Self>, CallSite),
     New(Box<Self>, Vec<Self>),
     /// An operator result is primitive on successful evaluation. This is a
     /// value-kind fact, not a purity claim: keep operands so calls and
@@ -215,7 +230,7 @@ fn from_entries_mapped_proof(
     Some(FromEntriesMappedProof {
         source: ValueExpr::Binding(source.to_id()),
         key: key_property.sym.to_string(),
-        map_call_span: map_call.span.lo.0,
+        map_call_site: map_call.span.into(),
         object_intrinsic: match from_entries.obj.unwrap_parens() {
             Expr::Ident(object) => object.to_id(),
             _ => unreachable!("checked Object.fromEntries receiver"),
@@ -577,7 +592,7 @@ impl ValueExpr {
                             .iter()
                             .map(|arg| Self::from_expr(&arg.expr))
                             .collect(),
-                        call.span.lo.0,
+                        call.span.into(),
                     ),
                     Callee::Import(_) | Callee::Super(_) => Self::Unknown,
                 }
@@ -2013,8 +2028,8 @@ struct ExecutionIndex {
     map_entry_arrays: BTreeSet<u32>,
     dense_array_literals: BTreeMap<u32, usize>,
     primitive_data_properties: BTreeSet<(u32, String)>,
-    from_entries_map_calls: BTreeMap<u32, FromEntriesMappedProof>,
-    mapped_array_map_calls: BTreeMap<u32, FromEntriesMappedProof>,
+    from_entries_map_calls: BTreeMap<CallSite, FromEntriesMappedProof>,
+    mapped_array_map_calls: BTreeMap<CallSite, FromEntriesMappedProof>,
     plain_array_bindings: BTreeSet<String>,
     mutated_intrinsic_roots: IntrinsicRoots,
     reassigned_map: bool,
@@ -3669,8 +3684,8 @@ impl Visit for ExecutionIndex {
         }
         if let Some(proof) = from_entries_mapped_proof(call, &self.plain_array_bindings) {
             self.mapped_array_map_calls
-                .insert(proof.map_call_span, proof.clone());
-            self.from_entries_map_calls.insert(call.span.lo.0, proof);
+                .insert(proof.map_call_site, proof.clone());
+            self.from_entries_map_calls.insert(call.span.into(), proof);
         }
         if let Callee::Expr(callee) = &call.callee {
             self.record_call(Call {
@@ -3923,15 +3938,15 @@ impl Executor<'_> {
 
     fn proven_from_entries_callbacks(
         &mut self,
-        call_span: u32,
+        call_site: CallSite,
         env: &Context,
         captures: &Context,
     ) -> Option<Values> {
         let proof = self
             .index
             .from_entries_map_calls
-            .get(&call_span)
-            .or_else(|| self.index.mapped_array_map_calls.get(&call_span))?
+            .get(&call_site)
+            .or_else(|| self.index.mapped_array_map_calls.get(&call_site))?
             .clone();
         let array_intrinsic = ("Array".into(), SyntaxContext::empty());
         if !self.index.dynamic_scope_owners.is_empty()
@@ -4024,15 +4039,15 @@ impl Executor<'_> {
 
     fn callbacks_in_from_entries_source(
         &mut self,
-        call_span: u32,
+        call_site: CallSite,
         env: &Context,
         captures: &Context,
     ) -> Option<Values> {
         let proof = self
             .index
             .from_entries_map_calls
-            .get(&call_span)
-            .or_else(|| self.index.mapped_array_map_calls.get(&call_span))?
+            .get(&call_site)
+            .or_else(|| self.index.mapped_array_map_calls.get(&call_site))?
             .clone();
         let source_values = self.evaluate(&proof.source, env, captures);
         Some(self.callback_values(&source_values))
@@ -5723,12 +5738,12 @@ impl Executor<'_> {
         }
         let from_entries_source_callbacks = if call.kind == CallKind::Call {
             if self
-                .proven_from_entries_callbacks(call.span.lo.0, env, captures)
+                .proven_from_entries_callbacks(call.span.into(), env, captures)
                 .is_some()
             {
                 return;
             }
-            self.callbacks_in_from_entries_source(call.span.lo.0, env, captures)
+            self.callbacks_in_from_entries_source(call.span.into(), env, captures)
         } else {
             None
         };
