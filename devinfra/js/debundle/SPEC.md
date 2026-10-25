@@ -245,8 +245,19 @@ effects, and a single return value modeled as a plain data record. Its values
 may be parameters, local or inline functions, primitives, or nested records
 of the same shape. Arguments must be inline functions or primitives. The call
 and its eager dependencies still run normally; any later export, write, or
-invocation of the result restores its callback reachability. Other local
-factories, including constructor calls, retain conservative roots.
+invocation of the result restores its callback reachability.
+
+A direct local wrapper call may also retain callbacks in a fresh checked class
+instance without publishing them. The wrapper must have one return containing
+only checked local `new` allocations, simple parameters, no other calls or
+effects, and a unique stable identity. Inputs must be fresh plain-data records,
+inline functions, or primitives. Nested allocations must be inert; constructor
+property reads must resolve to own data or safe missing properties under A11.
+The initializer, wrapper, and class owners still contribute actual synchronous
+effects and ordering. Their execution alone does not expose deferred methods or
+make them available as host accessors. Later invocation or publication of the
+result restores those capabilities. Unsupported constructor paths retain
+conservative reachability.
 
 At-init callback analysis also records possible implicit primitive conversions
 from arithmetic, relational and loose-equality operators, the left operand of
