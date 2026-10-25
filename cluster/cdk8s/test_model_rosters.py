@@ -19,6 +19,7 @@ from model_catalog.catalog import (
     GEMINI_EMBEDDING_ROUTES,
     GEMINI_ROUTES,
     GPT6_1_SOL_RESPONSES,
+    GPT6_RESPONSES_ROUTES,
     HIDDEN_ALIASES,
     OLLAMA_CHAT_ROUTES,
     OLLAMA_EMBEDDING_ROUTE,
@@ -56,11 +57,12 @@ def test_staging_picker_does_not_widen_its_key() -> None:
 
 def test_gpt_6_1_sol_is_available_to_agentplane_codex() -> None:
     route = GPT6_1_SOL_RESPONSES
+    expected_codex_efforts = ("low", "medium", "high", "xhigh", "max")
 
     assert route.id == "chatgpt-sub/oai-responses/gpt-6.1-sol"
     assert route in STAGING_APP_MODELS.codex
     assert route in KEY_MODEL_LANES["gpt6_oai_lane_models"].allowed
-    assert route.reasoning_efforts == ("low", "medium", "high", "xhigh", "max")
+    assert all(candidate.reasoning_efforts == expected_codex_efforts for candidate in GPT6_RESPONSES_ROUTES)
     assert model_entry(route)["model_info"] == {
         "mode": "responses",
         "supports_function_calling": True,

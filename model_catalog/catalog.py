@@ -245,7 +245,10 @@ class RouteAlias:
 
 
 _ANTHROPIC_EFFORTS = ("low", "medium", "high", "max")
-_CODEX_EFFORTS = ("minimal", "low", "medium", "high", "xhigh")
+# CLIProxyAPI's Codex model-registry snapshot declares these five API reasoning
+# levels for GPT-6 Astra, Luna, Sol, and 6.1 Sol:
+# https://raw.githubusercontent.com/router-for-me/models/63c1ae7e1d6dfb0224b0f8fb9e3e072f458589ce/models.json
+_CODEX_EFFORTS = ("low", "medium", "high", "xhigh", "max")
 _ANTIGRAVITY_GEMINI_EFFORTS = ("minimal", "low", "medium", "high")
 
 # ChatGPT/Codex-subscription models behind CLIProxyAPI, exposed on both wire surfaces
@@ -622,9 +625,7 @@ CHATGPT_MESSAGES_ROUTES = (GPT6_ASTRA_MESSAGES, GPT6_SOL_MESSAGES, GPT6_LUNA_MES
 GPT6_ASTRA_RESPONSES = Route(GPT_6_ASTRA, CHATGPT_RESPONSES, publish_limits=True, reasoning_efforts=_CODEX_EFFORTS)
 GPT6_LUNA_RESPONSES = Route(GPT_6_LUNA, CHATGPT_RESPONSES, publish_limits=True, reasoning_efforts=_CODEX_EFFORTS)
 GPT6_SOL_RESPONSES = Route(GPT_6_SOL, CHATGPT_RESPONSES, publish_limits=True, reasoning_efforts=_CODEX_EFFORTS)
-GPT6_1_SOL_RESPONSES = Route(
-    GPT_6_1_SOL, CHATGPT_RESPONSES, publish_limits=True, reasoning_efforts=("low", "medium", "high", "xhigh", "max")
-)
+GPT6_1_SOL_RESPONSES = Route(GPT_6_1_SOL, CHATGPT_RESPONSES, publish_limits=True, reasoning_efforts=_CODEX_EFFORTS)
 GPT6_RESPONSES_ROUTES = (GPT6_ASTRA_RESPONSES, GPT6_LUNA_RESPONSES, GPT6_SOL_RESPONSES, GPT6_1_SOL_RESPONSES)
 CHATGPT_RESPONSES_ROUTES = (GPT6_ASTRA_RESPONSES, GPT6_SOL_RESPONSES, GPT6_LUNA_RESPONSES, GPT6_1_SOL_RESPONSES)
 ANTHROPIC_SUBSCRIPTION = Upstream(Provider.ANTHROPIC_MAX20, "anthropic", "messages", supports_function_calling=True)

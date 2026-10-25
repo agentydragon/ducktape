@@ -2846,27 +2846,27 @@ data:
         - model: chatgpt-sub/oai-responses/gpt-6-astra
           display_name: GPT-6 Astra — ChatGPT
           reasoning_efforts:
-            - minimal
             - low
             - medium
             - high
             - xhigh
+            - max
         - model: chatgpt-sub/oai-responses/gpt-6-luna
           display_name: GPT-6 Luna — ChatGPT
           reasoning_efforts:
-            - minimal
             - low
             - medium
             - high
             - xhigh
+            - max
         - model: chatgpt-sub/oai-responses/gpt-6-sol
           display_name: GPT-6 Sol — ChatGPT
           reasoning_efforts:
-            - minimal
             - low
             - medium
             - high
             - xhigh
+            - max
         - model: chatgpt-sub/oai-responses/gpt-6.1-sol
           display_name: GPT-6.1 Sol — ChatGPT
           reasoning_efforts:
