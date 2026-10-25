@@ -979,6 +979,19 @@ Purity annotations alone do not assert that callback arguments are deferred.
 Property writes inside collection callbacks retain the conservative accessor
 fallback when receiver integrity is unproved.
 
+**Audited direct imports without reentry.**
+`chunk_export_purity.<defining chunk>.no_reentry_exports` projects onto
+resolved direct import bindings. When a direct call has only checked primitive
+arguments and no spread, an author-audited stable export cannot execute
+caller/importer/host callbacks or access importer-owned lexical state before
+returning. The evaluator skips opaque callback promotion for that call only.
+The call can still have provider-private effects; its existing purity and
+ordering classification is unchanged, and it produces an `Unknown` result.
+Importer argument effects and provider module
+initialization stay in the ordinary model. Aliases, construction, and uncertain
+arguments retain the conservative fallback; the author must audit exported
+identity changes and every reachable provider path.
+
 **Audited namespace calls without reentry.**
 `chunk_export_purity.<defining chunk>.no_reentry_members` is an author assertion
 about synchronous call timing for checked primitive arguments. The separate

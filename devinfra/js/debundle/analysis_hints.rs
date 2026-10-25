@@ -75,6 +75,9 @@ pub struct AnalysisHints {
     /// Static members of imported namespace bindings with an audited
     /// return-only callback contract, independent of member-call purity.
     pub callback_factory_members: BTreeMap<String, BTreeSet<String>>,
+    /// Direct imported function calls with audited no-reentry timing for
+    /// checked primitive arguments. Does not imply purity or known return.
+    pub no_reentry_exports: BTreeSet<String>,
     /// Imported namespace members whose audited direct calls cannot reenter
     /// caller/importer/host code for primitive arguments. No purity claim.
     pub no_reentry_members: BTreeMap<String, BTreeSet<String>>,

@@ -488,6 +488,9 @@ pub(super) fn finish_logical_chunk(
         {
             hints.no_reentry_record_members.extend(members.clone());
         }
+        if let Some(bindings) = cross_module_purities.no_reentry_exports.get(chunk_id) {
+            hints.no_reentry_exports.extend(bindings.iter().cloned());
+        }
         if owner_graph_options.local_property_effects {
             hints.local_effect_policy = LocalEffectPolicy::LocalPropertyWrites;
         }

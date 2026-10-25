@@ -296,6 +296,20 @@ Calls with a named callback, a retained factory result, spread arguments, or
 `new` use conservative callback timing. This contract is independent of purity
 and does not grant the broader `callback_factory_exports` composition rule.
 
+`chunk_export_purity.<defining chunk>.no_reentry_exports` asserts that direct
+calls of listed named imports cannot synchronously invoke caller-, importer-,
+or host-provided callbacks or read importer-owned lexical state. The author
+must audit all provider paths and preserve the exported callable's identity
+through synchronous initialization; a provider-side rebind or mutable wrapper
+that can change its behavior is outside the assertion. Provider-private effects
+remain possible, and the result stays opaque. Only a direct imported binding
+call with no spread or `new` and primitive literals, `void` of a primitive
+literal, or templates without substitutions as arguments is admitted; zero
+arguments are allowed. Argument expressions are still visited normally.
+Aliases, uncertain arguments, and result use retain ordinary reentry checks.
+The defining module still initializes in its usual order. This contract is
+independent of `pure_exports` and callback-factory assertions.
+
 `chunk_export_purity.<defining chunk>.no_reentry_members` asserts a narrower
 call-timing fact for listed static namespace members: with admitted primitive
 arguments, the call does not synchronously invoke caller-, importer-, or

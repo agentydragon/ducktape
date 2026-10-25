@@ -11,9 +11,9 @@ use analysis::cross_module_purity::{
     ModulePurityFacts, ResolvedImport, resolve_asserted_callback_factory_members,
     resolve_asserted_fluent_bindings, resolve_asserted_inline_callback_factories,
     resolve_asserted_member_purities, resolve_asserted_namespace_independent_members,
-    resolve_asserted_no_reentry_members, resolve_asserted_no_reentry_record_members,
-    resolve_asserted_pure_new_bindings, resolve_imported_callback_factories,
-    resolve_imported_purities,
+    resolve_asserted_no_reentry_bindings, resolve_asserted_no_reentry_members,
+    resolve_asserted_no_reentry_record_members, resolve_asserted_pure_new_bindings,
+    resolve_imported_callback_factories, resolve_imported_purities,
 };
 use analysis::purity::Purity;
 use anyhow::{Context, Result};
@@ -73,6 +73,7 @@ pub(super) struct CrossModulePurities {
     pub(super) callback_factories: BTreeMap<String, BTreeSet<String>>,
     pub(super) inline_callback_factories: BTreeMap<String, BTreeSet<String>>,
     pub(super) callback_factory_members: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
+    pub(super) no_reentry_exports: BTreeMap<String, BTreeSet<String>>,
     pub(super) no_reentry_members: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
     pub(super) no_reentry_record_members: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
     pub(super) namespace_independent_members: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
@@ -359,6 +360,12 @@ pub(super) fn collect_cross_module_imported_purities(
         .filter(|(chunk, _)| modules.contains_key(*chunk))
         .map(|(chunk, assertion)| (chunk.clone(), assertion.no_reentry_record_members.clone()))
         .collect();
+    let asserted_no_reentry_exports = chunk_export_purity
+        .iter()
+        .filter(|(_, assertion)| !assertion.no_reentry_exports.is_empty())
+        .filter(|(chunk, _)| modules.contains_key(*chunk))
+        .map(|(chunk, assertion)| (chunk.clone(), assertion.no_reentry_exports.clone()))
+        .collect();
     let asserted_namespace_independent_members = chunk_export_purity
         .iter()
         .filter(|(_, assertion)| !assertion.namespace_independent_members.is_empty())
@@ -420,6 +427,10 @@ pub(super) fn collect_cross_module_imported_purities(
         no_reentry_record_members: resolve_asserted_no_reentry_record_members(
             &modules,
             &asserted_no_reentry_record_members,
+        ),
+        no_reentry_exports: resolve_asserted_no_reentry_bindings(
+            &modules,
+            &asserted_no_reentry_exports,
         ),
     }
 }

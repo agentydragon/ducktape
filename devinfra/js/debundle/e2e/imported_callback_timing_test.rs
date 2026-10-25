@@ -11,6 +11,187 @@ export { wrapped, later };
 "#;
 
 #[test]
+fn direct_imported_no_reentry_call_with_published_callback() {
+    let source = "import { makeSlot as localMakeSlot } from './peer.js';\n\
+                  let later = 0;\n\
+                  const callback = () => later;\n\
+                  globalThis.saved = callback;\n\
+                  const slot = localMakeSlot();\n\
+                  later = 42;\n\
+                  console.log(slot.kind, globalThis.saved());\n";
+    let peer = [(
+        "static/peer",
+        "export function makeSlot() { return { kind: 'slot' }; }\n",
+    )];
+    let purity = [ChunkExportPurityBuilder::new("static/peer")
+        .with_no_reentry_exports(&["makeSlot"])
+        .build()];
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon(
+                    "callbacks/slot",
+                    &[Member::new("callback"), Member::new("slot")],
+                    &["globalThis.saved = callback;"],
+                ),
+                logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
+            ],
+        )
+        .with_extra_chunks(&peer)
+        .with_chunk_export_purity(&purity),
+    );
+    assert_preserved_entry_output(&fixture, "slot 42\n");
+}
+
+fn assert_direct_export_reentry_control(
+    source: &str,
+    peer_source: &str,
+    members: &[&'static str],
+    statements: &[&str],
+    output: &str,
+    asserted: bool,
+) {
+    let peer = [("static/peer", peer_source)];
+    let purity = [ChunkExportPurityBuilder::new("static/peer")
+        .with_no_reentry_exports(if asserted { &["makeSlot"] } else { &[] })
+        .build()];
+    let mut all_members = members
+        .iter()
+        .map(|name| Member::new(name))
+        .collect::<Vec<_>>();
+    all_members.push(Member::new("later"));
+    let mut all_statements = statements.to_vec();
+    all_statements.push("later = 42;");
+    let colocated = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module_with_anon(
+                "all",
+                &all_members,
+                &all_statements,
+            )],
+        )
+        .with_extra_chunks(&peer)
+        .with_chunk_export_purity(&purity),
+    );
+    assert_preserved_entry_output(&colocated, output);
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon(
+                    "callbacks/slot",
+                    &members
+                        .iter()
+                        .map(|name| Member::new(name))
+                        .collect::<Vec<_>>(),
+                    statements,
+                ),
+                logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
+            ],
+        )
+        .with_extra_chunks(&peer)
+        .with_chunk_export_purity(&purity),
+        &["callbacks/slot", "values/later"],
+        &[],
+    );
+}
+
+#[test]
+fn direct_export_without_assertion_can_invoke_published_callback() {
+    assert_direct_export_reentry_control(
+        "import { makeSlot as localMakeSlot } from './peer.js';\n\
+         let later = 0;\nconst callback = () => later;\n\
+         globalThis.saved = callback;\n\
+         const slot = localMakeSlot();\n\
+         later = 42;\nconsole.log(globalThis.observed, slot.kind, globalThis.saved());\n",
+        "export function makeSlot() { globalThis.observed = globalThis.saved(); return { kind: 'slot' }; }\n",
+        &["callback", "slot"],
+        &["globalThis.saved = callback;"],
+        "0 slot 42\n",
+        false,
+    );
+}
+
+#[test]
+fn direct_export_no_reentry_keeps_uncertain_arguments_and_aliases_opaque() {
+    for (setup, call, members, observed) in [
+        (
+            "const option = { get value() { return globalThis.saved(); } };\n",
+            "localMakeSlot(option)",
+            vec!["callback", "option", "slot"],
+            "",
+        ),
+        (
+            "const alias = localMakeSlot;\n",
+            "alias()",
+            vec!["callback", "alias", "slot"],
+            "",
+        ),
+        (
+            "const touch = () => { globalThis.observed = globalThis.saved(); };\n",
+            "localMakeSlot(void touch())",
+            vec!["callback", "touch", "slot"],
+            "0 ",
+        ),
+    ] {
+        let source = format!(
+            "import {{ makeSlot as localMakeSlot }} from './peer.js';\n\
+             let later = 0;\nconst callback = () => later;\n\
+             globalThis.saved = callback;\n{setup}\
+             const slot = {call};\n\
+             later = 42;\nconsole.log({}slot.kind, globalThis.saved());\n",
+            if observed.is_empty() {
+                ""
+            } else {
+                "globalThis.observed, "
+            }
+        );
+        assert_direct_export_reentry_control(
+            &source,
+            "export function makeSlot() { return { kind: 'slot' }; }\n",
+            &members,
+            &["globalThis.saved = callback;"],
+            &format!("{observed}slot 42\n"),
+            true,
+        );
+    }
+}
+
+#[test]
+fn direct_export_no_reentry_does_not_defer_result_invocation_or_construction() {
+    assert_direct_export_reentry_control(
+        "import { makeSlot as localMakeSlot } from './peer.js';\n\
+         let later = 0;\nconst callback = () => later;\n\
+         globalThis.saved = callback;\n\
+         const slot = localMakeSlot();\n\
+         globalThis.observed = slot.invoke();\n\
+         later = 42;\nconsole.log(globalThis.observed, globalThis.saved());\n",
+        "export function makeSlot() { return { invoke() { return globalThis.saved(); } }; }\n",
+        &["callback", "slot"],
+        &[
+            "globalThis.saved = callback;",
+            "globalThis.observed = slot.invoke();",
+        ],
+        "0 42\n",
+        true,
+    );
+    assert_direct_export_reentry_control(
+        "import { makeSlot as localMakeSlot } from './peer.js';\n\
+         let later = 0;\nconst callback = () => later;\n\
+         globalThis.saved = callback;\n\
+         const slot = new localMakeSlot();\n\
+         later = 42;\nconsole.log(slot.kind, globalThis.saved());\n",
+        "export function makeSlot() { return { kind: 'slot' }; }\n",
+        &["callback", "slot"],
+        &["globalThis.saved = callback;"],
+        "slot 42\n",
+        true,
+    );
+}
+
+#[test]
 fn primitive_namespace_call_does_not_reenter_published_callback_when_asserted() {
     let source = "import { api } from './peer.js';\n\
                   let later = 0;\n\
