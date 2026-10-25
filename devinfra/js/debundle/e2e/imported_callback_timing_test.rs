@@ -590,6 +590,105 @@ fn namespace_factories_compose_without_eager_callback_reads() {
 }
 
 #[test]
+fn namespace_factory_ignores_local_subclass_prototype_argument() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import { api } from './peer.js';\n\
+             class LocalBase {}\n\
+             class LocalChild extends LocalBase {}\n\
+             function observe(value) { void value; }\n\
+             observe(LocalChild.prototype);\n\
+             const wrapped = api.make(() => later);\n\
+             const later = 42;\nconsole.log(wrapped.invoke());\n",
+            vec![
+                logical_module_with_anon(
+                    "callbacks/wrapped",
+                    &[
+                        Member::new("wrapped"),
+                        Member::new("LocalBase"),
+                        Member::new("LocalChild"),
+                        Member::new("observe"),
+                    ],
+                    &["observe(LocalChild.prototype);"],
+                ),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        )
+        .with_extra_chunks(&[("static/peer", NAMESPACE_FACTORY)])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+            .with_callback_factory_members("api", &["make"])
+            .build()]),
+    );
+    assert_preserved_entry_output(&fixture, "42\n");
+}
+
+#[test]
+fn namespace_factory_retains_inherited_static_namespace_alias() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import { api } from './peer.js';\n\
+             class LocalBase { static shared = api; }\n\
+             class LocalChild extends LocalBase {}\n\
+             let later = 0;\n\
+             LocalChild.shared.make = callback => callback();\n\
+             const wrapped = api.make(() => later);\n\
+             later = 42;\nconsole.log(wrapped);\n",
+            vec![logical_module_with_anon(
+                "app",
+                &[
+                    Member::new("LocalBase"),
+                    Member::new("LocalChild"),
+                    Member::new("wrapped"),
+                    Member::new("later"),
+                ],
+                &[
+                    "LocalChild.shared.make = callback => callback();",
+                    "later = 42;",
+                ],
+            )],
+        )
+        .with_extra_chunks(&[("static/peer", NAMESPACE_FACTORY)])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+            .with_callback_factory_members("api", &["make"])
+            .build()]),
+    );
+    assert_preserved_entry_output(&fixture, "0\n");
+}
+
+#[test]
+fn namespace_factory_rejects_split_inherited_static_namespace_alias() {
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            "import { api } from './peer.js';\n\
+             class LocalBase { static shared = api; }\n\
+             class LocalChild extends LocalBase {}\n\
+             let later = 0;\n\
+             LocalChild.shared.make = callback => callback();\n\
+             const wrapped = api.make(() => later);\n\
+             later = 42;\nconsole.log(wrapped);\n",
+            vec![
+                logical_module_with_anon(
+                    "callbacks/wrapped",
+                    &[
+                        Member::new("LocalBase"),
+                        Member::new("LocalChild"),
+                        Member::new("wrapped"),
+                    ],
+                    &["LocalChild.shared.make = callback => callback();"],
+                ),
+                logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
+            ],
+        )
+        .with_extra_chunks(&[("static/peer", NAMESPACE_FACTORY)])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+            .with_callback_factory_members("api", &["make"])
+            .build()]),
+        &["callbacks/wrapped", "values/later"],
+        &["eager_use", "sequenced"],
+    );
+}
+
+#[test]
 fn namespace_factory_ignores_self_initialized_unrelated_object() {
     let fixture = run_fixture(
         FixtureOpts::new(

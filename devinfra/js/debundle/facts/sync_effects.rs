@@ -123,6 +123,7 @@ fn map_entry_array_span(new_expr: &NewExpr) -> Option<u32> {
 struct ClassValueFacts {
     instance_fields: BTreeMap<String, ValueExpr>,
     static_fields: BTreeMap<String, ValueExpr>,
+    super_class: Option<ValueExpr>,
     opaque_instance: bool,
     opaque_static: bool,
     allocation_without_user_code: bool,
@@ -843,7 +844,26 @@ impl NamespaceValueFacts {
                 ClassSurface::Constructor => (class.opaque_static, &class.static_fields),
                 ClassSurface::Instance => (class.opaque_instance, &class.instance_fields),
             };
+            let inherited_static_may_publish = if surface == ClassSurface::Constructor && !opaque {
+                class.super_class.as_ref().is_some_and(|super_class| {
+                    let Some((base_span, ClassSurface::Constructor)) =
+                        self.resolve_class(super_class, &mut BTreeSet::new())
+                    else {
+                        return true;
+                    };
+                    self.class_may_publish(
+                        &ValueExpr::Origin(ValueOrigin::Class(base_span)),
+                        id,
+                        aliases,
+                        visiting_bindings,
+                        visiting_classes,
+                    )
+                })
+            } else {
+                false
+            };
             opaque
+                || inherited_static_may_publish
                 || fields.values().any(|field| {
                     field.may_publish_namespace_inner(
                         id,
@@ -872,10 +892,14 @@ fn add_class_field(facts: &mut ClassValueFacts, is_static: bool, name: String, v
 
 fn collect_class_value_facts(class: &Class) -> ClassValueFacts {
     let mut facts = ClassValueFacts {
+        super_class: class.super_class.as_deref().map(ValueExpr::from_expr),
         allocation_without_user_code: class.super_class.is_none() && class.decorators.is_empty(),
         ..ClassValueFacts::default()
     };
-    if class.super_class.is_some() || !class.decorators.is_empty() {
+    if class.super_class.is_some() {
+        facts.opaque_instance = true;
+    }
+    if !class.decorators.is_empty() {
         facts.opaque_instance = true;
         facts.opaque_static = true;
     }

@@ -307,6 +307,11 @@ The allocation and assignment values must run no user code, and the instance
 must remain private throughout that run. Unsupported constructors, fields,
 receivers, dynamic scope, and intervening statements retain the conservative
 write checks.
+Class publication tracking also follows retained static fields through a
+uniquely resolved local class superclass on the constructor surface. Unknown,
+imported, reassigned, or non-class bases and cycles remain conservative;
+instance inheritance, static accessors, decorators, and unsupported class
+surfaces remain opaque.
 Adjacent static property writes to the fresh ordinary result of a direct
 audited factory call with one inline callback also retain the contract. Their
 values must run no user code; prototype writes and intervening statements end

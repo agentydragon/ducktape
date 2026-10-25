@@ -1038,10 +1038,13 @@ follows a local binding to later publication or call-argument sinks. For a
 recognized local class, publication checks aggregate the retained static
 fields or instance fields for the class value or allocation. A member
 projection checks the whole receiver conservatively, so an unrelated sibling
-field can also make the receiver a possible namespace carrier. Constructors,
-inheritance, decorators, accessors, and unsupported class surfaces remain
-opaque. Method bodies keep their existing independent return and effect
-analysis. For call-argument checks, the checker follows namespace values in
+field can also make the receiver a possible namespace carrier. On the
+constructor surface, retained static fields are followed through a uniquely
+resolved local class superclass. Unknown, imported, reassigned, or non-class
+bases and superclass cycles remain conservative. Instance inheritance, static
+accessors, decorators, and unsupported class surfaces remain opaque. Method
+bodies keep their existing independent return and effect analysis. For
+call-argument checks, the checker follows namespace values in
 the supplied argument expressions and excludes the callee expression, which
 is not passed as an argument. A value from an unknown call or constructor
 used as a static or dynamic write receiver remains a possible namespace alias,
