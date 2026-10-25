@@ -94,7 +94,8 @@ def chart(app: App) -> Chart:
             RolePolicyRule(
                 resources=[ApiResource.CONFIG_MAPS, ApiResource.SERVICES, ApiResource.DEPLOYMENTS],
                 verbs=["get", "list", "watch", "create", "update", "patch", "delete"],
-            )
+            ),
+            RolePolicyRule(resources=[ApiResource.REPLICA_SETS], verbs=["get", "list", "watch"]),
         ],
     )
     role.bind(reconciler)
