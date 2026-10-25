@@ -76,6 +76,8 @@ pub(crate) use purity_classification::*;
 pub(crate) use set_iterables::{SetIterableProof, primitive_literal_property_keys};
 pub(crate) use statement_facts::ConstructorFacts;
 pub(crate) use sync_effects::infer_returned_callback_factories;
+#[cfg(test)]
+pub(crate) use sync_effects::stable_ts_enum_named_data_members;
 pub(crate) use value_flow::{CandidateObjectIndex, ChunkValueFlow, ValueOrigin};
 
 // Public API: importable at `facts::<item>` exactly as before the split.

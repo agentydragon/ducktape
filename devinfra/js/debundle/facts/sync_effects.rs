@@ -4925,6 +4925,8 @@ struct Executor<'a> {
     flow: &'a ChunkValueFlow,
     set_iterable_proof: &'a SetIterableProof,
     shadowed: &'a BTreeSet<&'static str>,
+    /// Stable own primitive fields, admitted using canonical rebind facts.
+    enum_data_members: BTreeMap<Id, BTreeSet<String>>,
     top_bindings: BTreeSet<Id>,
     binding_owner: BTreeMap<Id, StatementOrdinal>,
     owner_read_closure: FactsOwnerReadClosure,
@@ -4983,6 +4985,20 @@ struct ValidatedMetadataDecoration {
 }
 
 impl Executor<'_> {
+    fn closed_enum_member_read(&self, value: &ValueExpr) -> bool {
+        let ValueExpr::Member(receiver, Some(property), _) = value else {
+            return false;
+        };
+        let ValueExpr::Binding(binding) = receiver.as_ref() else {
+            return false;
+        };
+        self.initialized_bindings.contains(binding)
+            && self
+                .enum_data_members
+                .get(binding)
+                .is_some_and(|keys| keys.contains(property))
+    }
+
     fn ordinary_object_prototype_intact(&self) -> bool {
         self.index.dynamic_scope_owners.is_empty()
             && !self
@@ -6015,7 +6031,16 @@ impl Executor<'_> {
         else {
             return None;
         };
-        let [call] = self.index.top_calls[fact.ordinal.0].as_slice() else {
+        // Proven enum own-field reads are retained in the normal top-level
+        // executor and eager facts, but cannot invoke a getter or callback.
+        let calls: Vec<_> = self.index.top_calls[fact.ordinal.0]
+            .iter()
+            .filter(|call| {
+                call.kind != CallKind::LocalMemberRead
+                    || !self.closed_enum_member_read(&call.callee)
+            })
+            .collect();
+        let [call] = calls.as_slice() else {
             return None;
         };
         let ValueExpr::Binding(factory) = callee.as_ref() else {
@@ -6115,11 +6140,20 @@ impl Executor<'_> {
     fn closed_constructor_input(&self, value: &ValueExpr) -> bool {
         match value {
             ValueExpr::ObjectLiteral(key, properties) => {
+                if let Some(elements) = self.index.array_elements.get(key) {
+                    return self.index.dense_array_literals.contains_key(key)
+                        && elements.iter().all(|element| {
+                            element.as_ref().is_some_and(|element| {
+                                !element.spread && self.closed_constructor_input(&element.value)
+                            })
+                        });
+                }
                 self.index.plain_data_objects.contains(key)
                     && properties
                         .iter()
                         .all(|(name, value)| name.is_some() && self.closed_constructor_input(value))
             }
+            ValueExpr::Member(..) => self.closed_enum_member_read(value),
             ValueExpr::Primitive(operands) => operands
                 .iter()
                 .all(|operand| matches!(operand, ValueExpr::NonCallable | ValueExpr::Undefined)),
@@ -8227,6 +8261,11 @@ impl Executor<'_> {
             return;
         }
         if call.kind == CallKind::LocalMemberRead {
+            if !self.private_constructor_result_owners.is_empty()
+                && self.closed_enum_member_read(&call.callee)
+            {
+                return;
+            }
             let ValueExpr::Member(receiver, property, _) = &call.callee else {
                 unreachable!()
             };
@@ -8680,6 +8719,35 @@ pub(crate) struct SynchronousCallProofs<'a> {
     pub(crate) graph: &'a ChunkCodeGraph,
 }
 
+/// Finalize enum own-key candidates with the already collected binding-write
+/// facts. The recognized initializer may contain its own `X || (X = {})`
+/// write; any other eager or deferred rebind can change the exact key set.
+pub(crate) fn stable_ts_enum_named_data_members(
+    graph: &ChunkCodeGraph,
+    facts: &[StatementFacts],
+) -> BTreeMap<Id, BTreeSet<String>> {
+    let candidates = graph.ts_enum_named_data_candidates();
+    if candidates.is_empty() {
+        return BTreeMap::new();
+    }
+    let mut unstable = BTreeSet::new();
+    for fact in facts {
+        for binding in fact.rebinds.eager.iter().chain(&fact.rebinds.lazy) {
+            if candidates
+                .get(binding)
+                .is_some_and(|candidate| candidate.initializer_owner != fact.ordinal)
+            {
+                unstable.insert(binding.clone());
+            }
+        }
+    }
+    candidates
+        .iter()
+        .filter(|(binding, _)| !unstable.contains(*binding))
+        .map(|(binding, candidate)| (binding.clone(), candidate.own_primitive_keys.clone()))
+        .collect()
+}
+
 pub(crate) fn annotate_synchronous_calls(
     body: &[TopLevelItemView<'_>],
     flow: &ChunkValueFlow,
@@ -8836,12 +8904,14 @@ pub(crate) fn annotate_synchronous_calls(
         );
         initialized_bindings.insert(binding.clone());
     }
+    let enum_data_members = stable_ts_enum_named_data_members(proofs.graph, facts);
     let mut executor = Executor {
         index: &index,
         facts,
         flow,
         set_iterable_proof: proofs.set_iterable,
         shadowed,
+        enum_data_members,
         top_bindings,
         binding_owner: facts
             .iter()
