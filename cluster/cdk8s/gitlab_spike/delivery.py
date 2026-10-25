@@ -76,7 +76,8 @@ def chart(app: App) -> Chart:
         chart,
         "receiver",
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
-        type=ReceiverSpecType.GENERIC,
+        type=ReceiverSpecType.GITLAB,
+        events=["Push Hook", "Pipeline Hook"],
         secret_ref=ReceiverSpecSecretRef(name="gitlab-spike-webhook"),
         resources=[
             ReceiverResource.git_repository(source.name),

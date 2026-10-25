@@ -15,9 +15,7 @@ test-and-build:
     - go test -count=1 ./...
     - mkdir -p out
     - CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags=-buildid= -o out/app .
-    - CGO_ENABLED=0 go build -trimpath -ldflags=-buildid= -o out/flux-notify ./cmd/flux-notify
     - test -x out/app
-    - test -x out/flux-notify
   artifacts:
     paths:
       - out/
@@ -58,8 +56,6 @@ publish-oci:
     - crane delete "$staging_image" >/dev/null 2>&1 || echo 'temporary staging tag cleanup unsupported; policy ignores it'
     - printf 'image=%s\n' "$image" | tee out/published-image.txt
     - crane digest "$image"
-    - test -n "${FLUX_WEBHOOK_URL:-}" || { echo 'FLUX_WEBHOOK_URL project variable is required' >&2; exit 1; }
-    - ./out/flux-notify
     - rm -rf "$DOCKER_CONFIG" oci-root app-layer.tar
   after_script:
     - rm -rf "${DOCKER_CONFIG:-$CI_PROJECT_DIR/.docker}" "$CI_PROJECT_DIR/oci-root" "$CI_PROJECT_DIR/app-layer.tar"

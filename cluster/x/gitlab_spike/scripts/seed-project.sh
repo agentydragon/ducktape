@@ -51,10 +51,8 @@ cp "$seed_dir/demo-seed.k8s.yaml" "$seed_dir/kustomization.yaml" "$scratch/proje
 mkdir -p "$scratch/project/k8s/image-pins"
 cp "$harness_dir/seed/k8s/image-pins/kustomization.yaml" "$scratch/project/k8s/image-pins/"
 cp "$harness_dir/.gitlab-ci.yml" "$harness_dir/go.mod" "$harness_dir/main.go" "$harness_dir/main_test.go" "$scratch/project/"
-mkdir -p "$scratch/project/cmd"
-cp -R "$harness_dir/cmd/flux-notify" "$scratch/project/cmd/"
 
-git -C "$scratch/project" add -- .gitlab-ci.yml go.mod main.go main_test.go cmd k8s
+git -C "$scratch/project" add -- .gitlab-ci.yml go.mod main.go main_test.go k8s
 if git -C "$scratch/project" diff --cached --quiet; then
   echo 'spike acceptance project already has the current harness seed'
   exit 0

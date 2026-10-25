@@ -18,7 +18,8 @@ has been collected**.
 The provisioner creates a low-privilege, non-admin `spike-benchmark` user's personal access
 token in Secret `gitlab-spike-benchmark-token` (key `token`) for the existing 20-operation
 benchmark. The account has no group membership or group-creation rights. Provisioning protects
-`main` and marks the `FLUX_WEBHOOK_URL` project variable masked and protected. The pipeline
+`main` and configures a GitLab project webhook for push and pipeline events, authenticated
+by the Flux Receiver's secret token. The pipeline
 uses GitLab's predefined `CI_REGISTRY_USER` and `CI_REGISTRY_PASSWORD` values. Do not put
 credentials in this directory or in evidence files.
 
@@ -131,8 +132,9 @@ document the selected CLI version and flags.
 1. Run a pipeline on `spike/acceptance`. Save the pipeline URL/ID, commit SHA, test output,
    build log, pushed tag, and registry digest. The `publish` job runs only for protected
    `main` and pushes `CI_REGISTRY_IMAGE:devel-<UTC YYYYMMDDHHMMSS>-<7-char commit SHA>`; this
-   matches the generated ImagePolicy's selector. It also sends the masked webhook and records
-   the Flux Receiver HTTP status through `out/flux-notify`.
+   matches the generated ImagePolicy's selector. GitLab's native pipeline webhook notifies
+   Flux after publishing completes; retain its successful delivery status from the project's
+   webhook history. Push events also notify Flux when Git source changes.
 2. Confirm the tag is visible in the GitLab project's Container Registry and can be pulled
    using Secret `gitlab-spike-registry`. Do not record credentials.
 3. Confirm the GitLab `GitRepository` source can read this private repository, image

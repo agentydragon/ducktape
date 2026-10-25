@@ -67,6 +67,9 @@ metadata:
   name: gitlab-spike
   namespace: flux-system
 spec:
+  events:
+    - Push Hook
+    - Pipeline Hook
   resources:
     - apiVersion: source.toolkit.fluxcd.io/v1
       kind: GitRepository
@@ -79,7 +82,7 @@ spec:
       name: gitlab-spike
   secretRef:
     name: gitlab-spike-webhook
-  type: generic
+  type: gitlab
 ---
 apiVersion: v1
 kind: ServiceAccount

@@ -194,20 +194,12 @@ resource "gitlab_project_hook" "flux_receiver" {
   project                 = gitlab_project.acceptance.id
   url                     = local.flux_receiver_url
   name                    = "Flux GitOps receiver"
-  description             = "Notify the GitLab spike Flux receiver when source changes"
+  description             = "Notify Flux when Git source or pipeline status changes"
+  token                   = random_password.flux_webhook.result
   push_events             = true
+  pipeline_events         = true
   tag_push_events         = false
   enable_ssl_verification = true
-}
-
-resource "gitlab_project_variable" "flux_receiver_url" {
-  project     = gitlab_project.acceptance.id
-  key         = "FLUX_WEBHOOK_URL"
-  value       = local.flux_receiver_url
-  description = "Secret URL for notifying the Flux receiver after an image push"
-  masked      = true
-  protected   = true
-  raw         = true
 }
 
 resource "kubernetes_secret_v1" "flux_git" {
