@@ -2245,6 +2245,7 @@ fn confined_prepublication_alias(
         || callable.opaque
         || !callable.params.is_empty()
         || !callable.returns.is_empty()
+        || callable.reads.iter().any(|id| id.0 == "arguments")
         || callable.bare_reads.contains(alias)
         || callable.rebinds.contains(alias)
         || index.callables.iter().any(|(other_key, other)| {
