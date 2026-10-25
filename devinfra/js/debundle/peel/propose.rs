@@ -86,8 +86,8 @@ pub struct ProposalOptions {
 #[derive(Debug, Clone, Serialize)]
 pub struct ModuleDecompositionReport {
     pub strategy: ModuleDecompositionStrategy,
-    /// True only when the candidate also keeps each resolved
-    /// `intrinsic_alias.referenced_by` owner with its local member owner.
+    /// True only when the candidate also keeps resolved local selector
+    /// anchors with the members that reference them.
     #[serde(skip_serializing_if = "is_false")]
     pub preserve_selector_anchors: bool,
     /// Resolved local anchor relationships when the opt-in mode is enabled.
@@ -241,11 +241,19 @@ pub struct ModuleDecompositionFragment {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ModuleDecompositionSelectorAnchor {
+    pub kind: ModuleDecompositionSelectorAnchorKind,
     pub module_path: ModulePath,
     pub member: String,
     pub referenced_by: String,
     pub member_owner_ids: Vec<String>,
     pub anchor_owner_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModuleDecompositionSelectorAnchorKind {
+    IntrinsicAlias,
+    SourceMatchReference,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -975,72 +983,99 @@ fn resolve_selector_anchor_relations(
     for module in modules {
         let claims = &module.claims;
         let resolved = &module.resolved;
+        let resolver = SelectorAnchorResolver {
+            graph,
+            owner_modules,
+            owner_indices_by_binding: &owner_indices_by_binding,
+            claims,
+            resolved,
+        };
         for (member, selector) in &claims.member_selectors {
             let MemberSelectorSpec::IntrinsicAlias(alias) = selector else {
                 continue;
             };
-            let member_binding = resolved
-                .member_bindings
-                .get(member)
-                .with_context(|| format!("intrinsic_alias member {member:?} did not resolve"))?;
-            let anchor_binding = binding_for_member(claims, resolved, &alias.referenced_by)
-                .with_context(|| {
-                    format!(
-                        "intrinsic_alias {member:?} anchor {:?} did not resolve",
-                        alias.referenced_by
-                    )
-                })?;
-            let member_owner_indices = owner_indices_by_binding
-                .get(member_binding)
-                .with_context(|| {
-                    format!(
-                        "intrinsic_alias member {member:?} binding {member_binding:?} has no owner"
-                    )
-                })?
-                .clone();
-            let anchor_owner_indices = owner_indices_by_binding
-                .get(anchor_binding)
-                .with_context(|| {
-                    format!(
-                        "intrinsic_alias anchor {:?} binding {anchor_binding:?} has no owner",
-                        alias.referenced_by
-                    )
-                })?
-                .clone();
-            let relation_modules = member_owner_indices
-                .iter()
-                .chain(&anchor_owner_indices)
-                .map(|&owner_index| owner_modules[owner_index].clone())
-                .collect::<BTreeSet<_>>();
-            anyhow::ensure!(
-                relation_modules.len() == 1,
-                "intrinsic_alias member {member:?} and anchor {:?} resolve to different modules: {}",
-                alias.referenced_by,
-                relation_modules
-                    .iter()
-                    .map(ToString::to_string)
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            );
-            let module_path = relation_modules
-                .into_iter()
-                .next()
-                .context("intrinsic_alias relation has no owner module")?;
-            relations.push(SelectorAnchorConstraint {
-                module_path: module_path.clone(),
-                member_owner_indices: member_owner_indices.clone(),
-                anchor_owner_indices: anchor_owner_indices.clone(),
-                report: ModuleDecompositionSelectorAnchor {
-                    module_path,
-                    member: member.clone(),
-                    referenced_by: alias.referenced_by.clone(),
-                    member_owner_ids: owner_ids(graph, &member_owner_indices),
-                    anchor_owner_ids: owner_ids(graph, &anchor_owner_indices),
-                },
-            });
+            relations.push(resolver.constraint(
+                member,
+                &alias.referenced_by,
+                ModuleDecompositionSelectorAnchorKind::IntrinsicAlias,
+            )?);
+        }
+        for (member, referenced_by) in &resolved.local_member_references {
+            relations.push(resolver.constraint(
+                member,
+                referenced_by,
+                ModuleDecompositionSelectorAnchorKind::SourceMatchReference,
+            )?);
         }
     }
     Ok(relations)
+}
+
+struct SelectorAnchorResolver<'a> {
+    graph: &'a OwnerGraphReport,
+    owner_modules: &'a [ModulePath],
+    owner_indices_by_binding: &'a BTreeMap<String, Vec<usize>>,
+    claims: &'a ModuleClaims,
+    resolved: &'a ResolvedSourceClaims,
+}
+
+impl SelectorAnchorResolver<'_> {
+    fn constraint(
+        &self,
+        member: &str,
+        referenced_by: &str,
+        kind: ModuleDecompositionSelectorAnchorKind,
+    ) -> Result<SelectorAnchorConstraint> {
+        let member_binding = binding_for_member(self.claims, self.resolved, member)
+            .with_context(|| format!("selector anchor member {member:?} did not resolve"))?;
+        let anchor_binding = binding_for_member(self.claims, self.resolved, referenced_by)
+            .with_context(|| {
+                format!("selector anchor {member:?} reference {referenced_by:?} did not resolve")
+            })?;
+        let member_owner_indices = self
+            .owner_indices_by_binding
+            .get(member_binding)
+            .with_context(|| format!("selector anchor member {member:?} binding has no owner"))?
+            .clone();
+        let anchor_owner_indices = self
+            .owner_indices_by_binding
+            .get(anchor_binding)
+            .with_context(|| {
+                format!("selector anchor reference {referenced_by:?} binding has no owner")
+            })?
+            .clone();
+        let relation_modules = member_owner_indices
+            .iter()
+            .chain(&anchor_owner_indices)
+            .map(|&owner_index| self.owner_modules[owner_index].clone())
+            .collect::<BTreeSet<_>>();
+        anyhow::ensure!(
+            relation_modules.len() == 1,
+            "selector anchor member {member:?} and reference {referenced_by:?} resolve to different modules: {}",
+            relation_modules
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        let module_path = relation_modules
+            .into_iter()
+            .next()
+            .context("selector anchor relation has no owner module")?;
+        Ok(SelectorAnchorConstraint {
+            module_path: module_path.clone(),
+            member_owner_indices: member_owner_indices.clone(),
+            anchor_owner_indices: anchor_owner_indices.clone(),
+            report: ModuleDecompositionSelectorAnchor {
+                kind,
+                module_path,
+                member: member.to_string(),
+                referenced_by: referenced_by.to_string(),
+                member_owner_ids: owner_ids(self.graph, &member_owner_indices),
+                anchor_owner_ids: owner_ids(self.graph, &anchor_owner_indices),
+            },
+        })
+    }
 }
 
 fn binding_for_member<'a>(
@@ -1108,7 +1143,7 @@ fn cohere_selector_anchor_groups(
                 .map(|owner_index| {
                     group_by_owner.get(owner_index).copied().with_context(|| {
                         format!(
-                            "intrinsic_alias member {} owner {} is absent from decomposition groups",
+                            "selector anchor member {} owner {} is absent from decomposition groups",
                             relation.report.member, owner_index
                         )
                     })
@@ -1120,7 +1155,7 @@ fn cohere_selector_anchor_groups(
                 .map(|owner_index| {
                     group_by_owner.get(owner_index).copied().with_context(|| {
                         format!(
-                            "intrinsic_alias anchor {} owner {} is absent from decomposition groups",
+                            "selector anchor reference {} owner {} is absent from decomposition groups",
                             relation.report.referenced_by, owner_index
                         )
                     })

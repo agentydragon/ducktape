@@ -93,7 +93,7 @@ enum ModulesNsCommand {
     /// `--include-residual` to split residual body atoms while keeping top-level
     /// imports and exports in the entry module. `--preserve-selector-anchors`
     /// resolves current claims using `--source-root` and keeps local
-    /// `intrinsic_alias.referenced_by` pairs together.
+    /// intrinsic aliases and source_match member references together.
     Decompose(ModuleDecomposeArgs),
     /// List all modules in the spec with summary stats.
     ///
@@ -153,7 +153,8 @@ struct ModuleDecomposeArgs {
     #[arg(long = "source-root", env = "DEBUNDLE_SOURCE_ROOT")]
     source_root: Option<PathBuf>,
 
-    /// Keep each local intrinsic_alias member with its resolved referenced_by anchor.
+    /// Keep local intrinsic_alias members and source_match captures with their
+    /// resolved in-module referenced members.
     #[arg(long, requires = "source_root")]
     preserve_selector_anchors: bool,
 }
@@ -327,7 +328,7 @@ fn render_module_decomposition_text(report: &ModuleDecompositionReport, out: &mu
             .as_ref()
             .map_or(0, Vec::len);
         out.push_str(&format!(
-            "selector anchor cohesion: enabled ({relation_count} local intrinsic_alias relation(s))\n"
+            "selector anchor cohesion: enabled ({relation_count} local selector-anchor relation(s))\n"
         ));
     }
     out.push_str(if report.candidate_is_realizable {

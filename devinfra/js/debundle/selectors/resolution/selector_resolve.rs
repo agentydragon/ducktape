@@ -164,6 +164,18 @@ pub struct Resolution {
     /// What each matched template's free identifiers mean,
     /// for templates that have any.
     pub templates: Vec<TemplateIdentifiers>,
+    /// Same-module member references made by projected `source_match`
+    /// templates. Authoring tools use these typed relationships to preserve
+    /// the local readable-name resolution when proposing module moves.
+    pub member_references: Vec<ResolvedMemberReference>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ResolvedMemberReference {
+    pub source_module: usize,
+    pub source_member: String,
+    pub referenced_module: usize,
+    pub referenced_member: String,
 }
 
 #[derive(Debug, Clone)]
@@ -747,6 +759,9 @@ pub struct Projection {
     /// Anonymous statement targets, by module and position in it.
     anonymous: Vec<(SelectorTargetId, usize, usize)>,
     projected: Vec<Projected>,
+    /// SourceMatch member references that resolved to another member in the
+    /// same original module, after canonical identifier classification.
+    member_references: Vec<ResolvedMemberReference>,
     /// Each name pin's places: the declarations of its name, of its kind.
     pin_places: BTreeMap<SelectorTargetId, BTreeSet<Place>>,
     templates: Vec<TemplateIdentifiers>,
@@ -913,6 +928,7 @@ struct Resolve<'c, 'm> {
     members: BTreeMap<SelectorTargetId, (usize, usize)>,
     anonymous: Vec<(SelectorTargetId, usize, usize)>,
     projected: Vec<Projected>,
+    member_references: Vec<ResolvedMemberReference>,
     templates: Vec<TemplateIdentifiers>,
 }
 
@@ -930,6 +946,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
             members: BTreeMap::new(),
             anonymous: Vec::new(),
             projected: Vec::new(),
+            member_references: Vec::new(),
             templates: Vec::new(),
         }
     }
@@ -1024,6 +1041,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
             members: self.members,
             anonymous: self.anonymous,
             projected: self.projected,
+            member_references: self.member_references,
             pin_places,
             templates: self.templates,
         })
@@ -1441,6 +1459,43 @@ impl<'c, 'm> Resolve<'c, 'm> {
                 };
                 referenced.push((name.clone(), *module_index, target));
             }
+            let source_members = targets
+                .iter()
+                .filter_map(|target| self.members.get(target))
+                .filter(|(module_index, _)| *module_index == entity.module_index)
+                .map(|(module_index, member_index)| {
+                    modules[*module_index].members[*member_index]
+                        .export_name
+                        .clone()
+                })
+                .collect::<Vec<_>>();
+            for (_, referenced_module, target) in &referenced {
+                if *referenced_module != entity.module_index {
+                    continue;
+                }
+                let Some((target_module, target_member)) =
+                    target.and_then(|target| self.members.get(&target))
+                else {
+                    continue;
+                };
+                if *target_module != entity.module_index {
+                    continue;
+                }
+                let referenced_member = modules[*target_module].members[*target_member]
+                    .export_name
+                    .clone();
+                self.member_references
+                    .extend(
+                        source_members
+                            .iter()
+                            .map(|source_member| ResolvedMemberReference {
+                                source_module: entity.module_index,
+                                source_member: source_member.clone(),
+                                referenced_module: *target_module,
+                                referenced_member: referenced_member.clone(),
+                            }),
+                    );
+            }
             // Rows without repeats, telling rows apart by their places and
             // their column values.
             let key = |at: usize| {
@@ -1688,6 +1743,7 @@ impl Projection {
             mut outcomes,
             members,
             anonymous,
+            member_references,
             pin_places,
             templates,
             ..
@@ -1755,6 +1811,7 @@ impl Projection {
         Ok(Resolution {
             outcomes,
             templates,
+            member_references,
         })
     }
 
