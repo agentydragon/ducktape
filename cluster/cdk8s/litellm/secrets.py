@@ -84,16 +84,8 @@ def _chart(app: App) -> Chart:
         refresh_interval="1h",
         secret_store_ref=SecretStoreRef.cluster(langfuse_store),
         data=[
-            remote_data(
-                "langfuse-secrets",
-                "LANGFUSE_INIT_PROJECT_PUBLIC_KEY",
-                secret_key="public_key",
-            ),
-            remote_data(
-                "langfuse-secrets",
-                "LANGFUSE_INIT_PROJECT_SECRET_KEY",
-                secret_key="secret_key",
-            ),
+            remote_data("langfuse-secrets", "LANGFUSE_INIT_PROJECT_PUBLIC_KEY", secret_key="public_key"),
+            remote_data("langfuse-secrets", "LANGFUSE_INIT_PROJECT_SECRET_KEY", secret_key="secret_key"),
         ],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         template=ExternalSecretSpecTargetTemplate(
@@ -102,7 +94,7 @@ def _chart(app: App) -> Chart:
                 "OTEL_EXPORTER_OTLP_HEADERS": (
                     'Authorization=Basic {{ printf "%s:%s" .public_key .secret_key | b64enc }},'
                     "x-langfuse-ingestion-version=4"
-                ),
+                )
             },
         ),
     )

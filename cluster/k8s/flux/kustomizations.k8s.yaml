@@ -3524,6 +3524,8 @@ spec:
       namespace: ducktape-flux
     - name: external-secrets-operator
       namespace: ducktape-flux
+    - name: langfuse
+      namespace: ducktape-flux
     - name: monitoring-crds
       namespace: ducktape-flux
     - name: seaweedfs-operator

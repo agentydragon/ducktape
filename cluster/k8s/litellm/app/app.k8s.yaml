@@ -856,10 +856,6 @@ spec:
         - args:
             - --config
             - /etc/litellm/config.yaml
-          command:
-            - python
-            - -m
-            - tana.litellm_proxy.entrypoint
           env:
             - name: HOST
               value: 0.0.0.0
@@ -924,16 +920,11 @@ spec:
                 secretKeyRef:
                   key: token
                   name: rugged-local-llm-bearer-token
-            - name: LANGFUSE_PUBLIC_KEY
+            - name: OTEL_EXPORTER_OTLP_HEADERS
               valueFrom:
                 secretKeyRef:
-                  key: LANGFUSE_INIT_PROJECT_PUBLIC_KEY
-                  name: langfuse-secrets
-            - name: LANGFUSE_SECRET_KEY
-              valueFrom:
-                secretKeyRef:
-                  key: LANGFUSE_INIT_PROJECT_SECRET_KEY
-                  name: langfuse-secrets
+                  key: OTEL_EXPORTER_OTLP_HEADERS
+                  name: litellm-langfuse-otel-headers
           image: git.allegedly.works/ducktape-ci/tana-litellm-proxy:unset
           imagePullPolicy: Always
           livenessProbe:

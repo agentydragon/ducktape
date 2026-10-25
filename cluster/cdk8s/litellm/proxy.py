@@ -82,9 +82,9 @@ _HTTP = Port(name="http", number=4000)
 _NAMESPACE = "litellm"
 # The proxy's admin key: its env and its ServiceMonitor's scrape bearer.
 _MASTER_KEY = SecretRef(namespace=_NAMESPACE, name="litellm-master-key").key("api-key")
-_LANGFUSE_OTEL_HEADERS = SecretRef(
-    namespace=_NAMESPACE, name="litellm-langfuse-otel-headers"
-).key("OTEL_EXPORTER_OTLP_HEADERS")
+_LANGFUSE_OTEL_HEADERS = SecretRef(namespace=_NAMESPACE, name="litellm-langfuse-otel-headers").key(
+    "OTEL_EXPORTER_OTLP_HEADERS"
+)
 _LANGFUSE_OTEL_HOST = "http://langfuse-web.langfuse.svc.cluster.local:3000"
 _LANGFUSE_OTLP_TRACES_ENDPOINT = f"{_LANGFUSE_OTEL_HOST}/api/public/otel/v1/traces"
 _CONFIG_DIR = "/etc/litellm"
@@ -161,10 +161,7 @@ def _base_env(*entries: _EnvEntry) -> tuple[_EnvEntry, ...]:
 
 
 def _langfuse_env(*entries: _EnvEntry) -> tuple[_EnvEntry, ...]:
-    return (
-        *_base_env(*entries),
-        _SecretEnv("OTEL_EXPORTER_OTLP_HEADERS", _LANGFUSE_OTEL_HEADERS),
-    )
+    return (*_base_env(*entries), _SecretEnv("OTEL_EXPORTER_OTLP_HEADERS", _LANGFUSE_OTEL_HEADERS))
 
 
 def proxy_specs() -> tuple[ProxySpec, ...]:
