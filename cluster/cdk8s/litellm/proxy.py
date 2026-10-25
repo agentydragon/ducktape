@@ -82,11 +82,7 @@ _HTTP = Port(name="http", number=4000)
 _NAMESPACE = "litellm"
 # The proxy's admin key: its env and its ServiceMonitor's scrape bearer.
 _MASTER_KEY = SecretRef(namespace=_NAMESPACE, name="litellm-master-key").key("api-key")
-_LANGFUSE_OTEL_HEADERS = SecretRef(namespace=_NAMESPACE, name="litellm-langfuse-otel-headers").key(
-    "OTEL_EXPORTER_OTLP_HEADERS"
-)
-_LANGFUSE_OTEL_HOST = "http://langfuse-web.langfuse.svc.cluster.local:3000"
-_LANGFUSE_OTLP_TRACES_ENDPOINT = f"{_LANGFUSE_OTEL_HOST}/api/public/otel/v1/traces"
+_LANGFUSE_OTEL_CONFIG = SecretRef(namespace=_NAMESPACE, name="litellm-langfuse-otel-config")
 _CONFIG_DIR = "/etc/litellm"
 _RUGGED_LOCAL_LLM_PORT = Port(name="http", number=RUGGED_LOCAL_LLM_PORT)
 
@@ -161,7 +157,15 @@ def _base_env(*entries: _EnvEntry) -> tuple[_EnvEntry, ...]:
 
 
 def _langfuse_env(*entries: _EnvEntry) -> tuple[_EnvEntry, ...]:
-    return (*_base_env(*entries), _SecretEnv("OTEL_EXPORTER_OTLP_HEADERS", _LANGFUSE_OTEL_HEADERS, optional=True))
+    return (
+        *_base_env(*entries),
+        _SecretEnv(
+            "OTEL_EXPORTER_OTLP_ENDPOINT", _LANGFUSE_OTEL_CONFIG.key("OTEL_EXPORTER_OTLP_ENDPOINT"), optional=True
+        ),
+        _SecretEnv(
+            "OTEL_EXPORTER_OTLP_HEADERS", _LANGFUSE_OTEL_CONFIG.key("OTEL_EXPORTER_OTLP_HEADERS"), optional=True
+        ),
+    )
 
 
 def proxy_specs() -> tuple[ProxySpec, ...]:
@@ -173,13 +177,11 @@ def proxy_specs() -> tuple[ProxySpec, ...]:
             image_name="git.allegedly.works/ducktape-ci/tana-litellm-proxy",
             replicas=2,
             env=_langfuse_env(
-                # Use the generic OTel callback with one explicit Langfuse OTLP
-                # destination. LiteLLM's langfuse_otel preset appends Langfuse to
-                # the default console exporter, which writes captured prompts to stdout.
+                # Use the generic OTel callback. The optional Secret supplies an endpoint
+                # and headers together: an endpoint selects OTLP; if it is absent, LiteLLM
+                # keeps its console exporter so the proxy can start without Langfuse.
                 _LiteralEnv("LITELLM_OTEL_V2", "true"),
                 # Duplicate console-to-Loki trace export: https://github.com/agentydragon/ducktape/issues/11937
-                _LiteralEnv("OTEL_EXPORTER", "otlp_http"),
-                _LiteralEnv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", _LANGFUSE_OTLP_TRACES_ENDPOINT),
                 _LiteralEnv("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "span_only"),
                 _SecretEnv("LITELLM_MASTER_KEY", _MASTER_KEY),
                 _SecretEnv("DATABASE_URL", database.DATABASE.app_secret.key("uri")),
@@ -321,7 +323,7 @@ class LiteLLMProxy(Construct):
                 name=self.spec.name,
                 namespace=self.spec.namespace,
                 labels=ref.pods.selector,
-                annotations={"secret.reloader.stakater.com/reload": "litellm-langfuse-otel-headers"},
+                annotations={"secret.reloader.stakater.com/reload": "litellm-langfuse-otel-config"},
             ),
             pod_metadata=ApiObjectMetadata(labels=ref.pods.selector),
             replicas=self.spec.replicas,

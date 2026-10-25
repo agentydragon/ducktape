@@ -67,7 +67,7 @@ def _chart(app: App) -> Chart:
     )
     langfuse_store = single_secret_store(
         chart,
-        "litellm-langfuse-otel",
+        "litellm-langfuse-otel-config",
         reader=reader,
         source_namespace="langfuse",
         source_secret="langfuse-secrets",
@@ -75,11 +75,11 @@ def _chart(app: App) -> Chart:
     )
     ExternalSecret(
         chart,
-        "langfuse-otel-headers",
+        "langfuse-otel-config",
         metadata=ApiObjectMetadata(
-            name="litellm-langfuse-otel-headers",
+            name="litellm-langfuse-otel-config",
             namespace=_NAMESPACE,
-            annotations={"description": "Langfuse OTLP headers derived from its project keys for LiteLLM."},
+            annotations={"description": "Langfuse OTLP endpoint and headers for LiteLLM."},
         ),
         refresh_interval="1h",
         secret_store_ref=SecretStoreRef.cluster(langfuse_store),
@@ -91,10 +91,11 @@ def _chart(app: App) -> Chart:
         template=ExternalSecretSpecTargetTemplate(
             engine_version=ExternalSecretSpecTargetTemplateEngineVersion.V2,
             data={
+                "OTEL_EXPORTER_OTLP_ENDPOINT": "http://langfuse-web.langfuse.svc.cluster.local:3000/api/public/otel",
                 "OTEL_EXPORTER_OTLP_HEADERS": (
                     'Authorization=Basic {{ printf "%s:%s" .public_key .secret_key | b64enc }},'
                     "x-langfuse-ingestion-version=4"
-                )
+                ),
             },
         ),
     )

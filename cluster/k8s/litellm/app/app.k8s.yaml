@@ -820,7 +820,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    secret.reloader.stakater.com/reload: litellm-langfuse-otel-headers
+    secret.reloader.stakater.com/reload: litellm-langfuse-otel-config
   labels:
     app.kubernetes.io/name: litellm
   name: litellm
@@ -865,10 +865,6 @@ spec:
               value: "4000"
             - name: LITELLM_OTEL_V2
               value: "true"
-            - name: OTEL_EXPORTER
-              value: otlp_http
-            - name: OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
-              value: http://langfuse-web.langfuse.svc.cluster.local:3000/api/public/otel/v1/traces
             - name: OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT
               value: span_only
             - name: LITELLM_MASTER_KEY
@@ -922,11 +918,17 @@ spec:
                 secretKeyRef:
                   key: token
                   name: rugged-local-llm-bearer-token
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  key: OTEL_EXPORTER_OTLP_ENDPOINT
+                  name: litellm-langfuse-otel-config
+                  optional: true
             - name: OTEL_EXPORTER_OTLP_HEADERS
               valueFrom:
                 secretKeyRef:
                   key: OTEL_EXPORTER_OTLP_HEADERS
-                  name: litellm-langfuse-otel-headers
+                  name: litellm-langfuse-otel-config
                   optional: true
           image: git.allegedly.works/ducktape-ci/tana-litellm-proxy:unset
           imagePullPolicy: Always
