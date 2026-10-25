@@ -190,6 +190,7 @@ ts_library(
         "//agentplane/app/frontend:format_time",
         "//agentplane/app/frontend:frontend_config",
         "//agentplane/app/frontend:icons",
+        "//agentplane/app/frontend:langfuse_search",
         "//agentplane/app/frontend:live",
         "//agentplane/app/frontend:notification_status",
         "//agentplane/app/frontend:sandbox_status",

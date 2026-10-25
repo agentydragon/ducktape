@@ -205,6 +205,14 @@ Sandbox links match `span.sandbox.name`; Session and Thread links match `span.se
 spans do not carry a Sandbox UID, so a Sandbox name reused after deletion can match traces from both
 Sandbox instances.
 
+Its optional `langfuse_search` field is null unless the app configures a Langfuse base URL, project ID,
+and metadata keys for the Sandbox namespace and ServiceAccount. When configured, Sandbox and active
+Thread ellipsis menus link to the project's last-24-hour traces filtered by those two metadata values. The Thread
+menu link is explicitly Sandbox-scoped because current Langfuse attribution has no Session ID; these
+links do not isolate individual Sessions. The configured metadata keys must match the LiteLLM
+attribution settings; traces appear after that producer-side attribution is deployed. A same-name
+Sandbox replacement can match older traces.
+
 The app copies no runner events and folds none. Each runner pushes its Sessions' events to the
 History Service's ingress, and the History Service folds them under per-Session leases
 ([History Service](../history_service/README.md)); the app reads both through the History Service.

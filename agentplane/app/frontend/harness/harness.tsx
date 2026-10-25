@@ -2457,6 +2457,12 @@ routes.push(
         tempo_datasource_uid: "tempo-test",
         deployment_environment: "agentplane-visual-test",
       },
+      langfuse_search: {
+        base_url: "https://langfuse.test.invalid",
+        project_id: "langfuse-visual-test",
+        sandbox_namespace_metadata_key: "attributes.agentplane.namespace",
+        sandbox_service_account_metadata_key: "attributes.agentplane.service_account",
+      },
     }),
   ],
   [

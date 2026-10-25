@@ -6,7 +6,14 @@ import { createRoot } from "react-dom/client";
 import { Link, MemoryRouter, Route, Routes } from "react-router";
 import { afterAll, afterEach, expect, it, vi, type Mock } from "vitest";
 
-import { api, type RunnerStatusView, type SandboxView, type ThreadView, type TraceSearchSettings } from "../client";
+import {
+  api,
+  type LangfuseSearchSettings,
+  type RunnerStatusView,
+  type SandboxView,
+  type ThreadView,
+  type TraceSearchSettings,
+} from "../client";
 import type * as LiveModule from "../live";
 import type { Live, SandboxSnapshot } from "../live";
 import { SandboxRoute } from "../app";
@@ -103,6 +110,13 @@ const TRACE_SEARCH_SETTINGS: TraceSearchSettings = {
   deployment_environment: "agentplane-test",
 };
 let traceSearchSettings: TraceSearchSettings | null = TRACE_SEARCH_SETTINGS;
+const LANGFUSE_SEARCH_SETTINGS: LangfuseSearchSettings = {
+  base_url: "https://langfuse.test.invalid",
+  project_id: "test-project",
+  sandbox_namespace_metadata_key: "attributes.agentplane.namespace",
+  sandbox_service_account_metadata_key: "attributes.agentplane.service_account",
+};
+let langfuseSearchSettings: LangfuseSearchSettings | null = LANGFUSE_SEARCH_SETTINGS;
 afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
@@ -118,6 +132,7 @@ afterEach(async () => {
   (live.snapshot.sandbox as SandboxView).binding = null;
   presetDefaults = { ...DEFAULT_PRESET_DEFAULTS };
   traceSearchSettings = TRACE_SEARCH_SETTINGS;
+  langfuseSearchSettings = LANGFUSE_SEARCH_SETTINGS;
 });
 afterAll(() => vi.unstubAllGlobals());
 
@@ -198,7 +213,9 @@ async function render(
       return Promise.resolve(Response.json({ policy_sets: [] }));
     }
     if (path === "/frontend-config") {
-      return Promise.resolve(Response.json({ trace_search: traceSearchSettings }));
+      return Promise.resolve(
+        Response.json({ trace_search: traceSearchSettings, langfuse_search: langfuseSearchSettings })
+      );
     }
     if (path === "/presets") {
       return Promise.resolve(
@@ -964,6 +981,12 @@ it("links the Sandbox and its Sessions to their scoped Grafana trace searches", 
   const sandboxLink = menuItem("Find Sandbox traces in Grafana");
   expect(sandboxLink).toBeInstanceOf(HTMLAnchorElement);
   expect(new URL((sandboxLink as HTMLAnchorElement).href).searchParams.get("panes")).toContain("span.sandbox.name");
+  const langfuseLink = menuItem("Find Sandbox LLM traces in Langfuse");
+  expect(langfuseLink).toBeInstanceOf(HTMLAnchorElement);
+  expect(new URL((langfuseLink as HTMLAnchorElement).href).searchParams.get("filter")).toBe(
+    "metadata;stringObject;attributes.agentplane.namespace;=;agentplane-test," +
+      "metadata;stringObject;attributes.agentplane.service_account;=;startup-test"
+  );
   await act(async () => sandboxMenuButton.click());
 
   const sessionMenuButton = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
@@ -1003,6 +1026,23 @@ it("hides trace links when the app leaves trace search unconfigured", async () =
       node.textContent?.includes("Find Session traces in Grafana")
     )
   ).toBe(false);
+});
+
+it("hides Langfuse links independently when Langfuse search is unconfigured", async () => {
+  langfuseSearchSettings = null;
+  live.snapshot.threads = [thread({ id: "existing-session" })];
+  await render(async () => Response.json([]));
+  await act(async () => Promise.resolve());
+
+  const sandboxMenuButton = container.querySelector<HTMLButtonElement>('[aria-label="More Sandbox actions"]');
+  if (!sandboxMenuButton) throw new Error("Missing Sandbox actions menu");
+  await act(async () => sandboxMenuButton.click());
+  expect(
+    [...document.querySelectorAll('[role="menuitem"]')].some((node) =>
+      node.textContent?.includes("Find Sandbox LLM traces in Langfuse")
+    )
+  ).toBe(false);
+  await act(async () => sandboxMenuButton.click());
 });
 
 it("does not state a Session's status while Thread updates are not being heard", async () => {
