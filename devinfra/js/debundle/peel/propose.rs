@@ -132,6 +132,10 @@ pub enum ModuleDecompositionCoarseningStopReason {
 #[derive(Debug, Clone, Serialize)]
 pub struct ModuleDecompositionCoarsening {
     pub stop_reason: ModuleDecompositionCoarseningStopReason,
+    /// Whole candidate-group merges required by reported structural atoms.
+    /// Empty unless the caller opted in to coarsening atomic conflicts.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub atomic_conflict_merges: Vec<ModuleDecompositionAtomicConflictMerge>,
     pub rounds: Vec<ModuleDecompositionCoarseningRound>,
     /// Final ownership under the names checked by the last full gate run.
     /// These names are suggestions, and can combine distinct source homes.
@@ -140,6 +144,13 @@ pub struct ModuleDecompositionCoarsening {
     /// their original semantic homes after SCC coarsening.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub original_home_rejoining: Option<ModuleDecompositionHomeRejoining>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ModuleDecompositionAtomicConflictMerge {
+    pub unit_ids: Vec<String>,
+    pub merged_candidate_paths: Vec<ModulePath>,
+    pub suggested_module_path: ModulePath,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -433,6 +444,7 @@ pub struct ModuleDecompositionOptions {
     pub coarsening: ModuleDecompositionCoarseningMode,
     pub preserve_selector_anchors: bool,
     pub rejoin_original_modules: bool,
+    pub coarsen_atomic_conflicts: bool,
 }
 
 pub fn decompose_modules_from_files_with_options(
@@ -659,10 +671,37 @@ fn decompose_modules(
     let mut validation =
         validate_decomposition_candidate(graph, &candidate_owner_modules, &residual_path)?;
     let mut coarsening = None;
+    anyhow::ensure!(
+        !decomposition.coarsen_atomic_conflicts
+            || decomposition.coarsening == ModuleDecompositionCoarseningMode::MergeBlockingSccs,
+        "coarsening atomic conflicts requires SCC coarsening"
+    );
     if decomposition.coarsening == ModuleDecompositionCoarseningMode::MergeBlockingSccs {
         let mut occupied_paths: BTreeSet<ModulePath> =
             candidate_owner_modules.iter().cloned().collect();
         occupied_paths.extend(existing_module_paths.iter().cloned());
+        let atomic_conflict_merges = if decomposition.coarsen_atomic_conflicts {
+            let merges = coarsen_atomic_conflicts(
+                &validation.atomic_unit_conflicts,
+                &residual_path,
+                &mut occupied_paths,
+                &mut candidate_owner_modules,
+            )?;
+            if !merges.is_empty() {
+                validation = validate_decomposition_candidate(
+                    graph,
+                    &candidate_owner_modules,
+                    &residual_path,
+                )?;
+                anyhow::ensure!(
+                    validation.atomic_unit_conflicts.is_empty(),
+                    "native atomic-conflict coarsening left structural units split"
+                );
+            }
+            merges
+        } else {
+            Vec::new()
+        };
         let mut rounds = Vec::new();
         let stop_reason = loop {
             if !validation.atomic_unit_conflicts.is_empty() {
@@ -732,6 +771,7 @@ fn decompose_modules(
         };
         coarsening = Some(ModuleDecompositionCoarsening {
             stop_reason,
+            atomic_conflict_merges,
             rounds,
             groups: coarsened_groups(graph, &owner_modules, &candidate_owner_modules),
             original_home_rejoining: None,
@@ -1096,6 +1136,91 @@ fn union_groups(parents: &mut [usize], left: usize, right: usize) {
         };
         parents[upper] = lower;
     }
+}
+
+fn coarsen_atomic_conflicts(
+    conflicts: &[ModuleDecompositionAtomicConflict],
+    residual_path: &ModulePath,
+    occupied_paths: &mut BTreeSet<ModulePath>,
+    candidate_owner_modules: &mut [ModulePath],
+) -> Result<Vec<ModuleDecompositionAtomicConflictMerge>> {
+    if conflicts.is_empty() {
+        return Ok(Vec::new());
+    }
+    let paths: Vec<ModulePath> = candidate_owner_modules
+        .iter()
+        .cloned()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    let path_indices: BTreeMap<ModulePath, usize> = paths
+        .iter()
+        .enumerate()
+        .map(|(idx, path)| (path.clone(), idx))
+        .collect();
+    let mut parents: Vec<usize> = (0..paths.len()).collect();
+    for conflict in conflicts {
+        let mut indices = conflict.candidate_modules.iter().map(|path| {
+            path_indices.get(path).copied().with_context(|| {
+                format!(
+                    "atomic unit {} references absent candidate path {path}",
+                    conflict.unit_id
+                )
+            })
+        });
+        let first = indices
+            .next()
+            .context("reported atomic conflict has no candidate paths")??;
+        for index in indices {
+            union_groups(&mut parents, first, index?);
+        }
+    }
+
+    let mut paths_by_root = BTreeMap::<usize, Vec<ModulePath>>::new();
+    for (idx, path) in paths.into_iter().enumerate() {
+        let root = find_group_root(&mut parents, idx);
+        paths_by_root.entry(root).or_default().push(path);
+    }
+    let mut unit_ids_by_root = BTreeMap::<usize, BTreeSet<String>>::new();
+    for conflict in conflicts {
+        let first_path = conflict.candidate_modules.first().expect("checked above");
+        let root = find_group_root(&mut parents, path_indices[first_path]);
+        unit_ids_by_root
+            .entry(root)
+            .or_default()
+            .insert(conflict.unit_id.clone());
+    }
+
+    let mut remaps = BTreeMap::<ModulePath, ModulePath>::new();
+    let mut merges = Vec::new();
+    for (root, merged_candidate_paths) in paths_by_root {
+        if merged_candidate_paths.len() < 2 {
+            continue;
+        }
+        let suggested_module_path = if merged_candidate_paths.contains(residual_path) {
+            residual_path.clone()
+        } else {
+            next_fragment_path(&merged_candidate_paths[0], occupied_paths)
+        };
+        for path in &merged_candidate_paths {
+            remaps.insert(path.clone(), suggested_module_path.clone());
+        }
+        merges.push(ModuleDecompositionAtomicConflictMerge {
+            unit_ids: unit_ids_by_root
+                .remove(&root)
+                .context("coarsened component lost its reported atomic units")?
+                .into_iter()
+                .collect(),
+            merged_candidate_paths,
+            suggested_module_path,
+        });
+    }
+    for path in candidate_owner_modules {
+        if let Some(target) = remaps.get(path) {
+            *path = target.clone();
+        }
+    }
+    Ok(merges)
 }
 
 struct DecompositionValidation {

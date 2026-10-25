@@ -326,7 +326,7 @@ fn proposes_a_realizable_refinement_without_changing_the_spec() {
 #[test]
 fn atomic_mode_leaves_cross_module_structural_atoms_on_their_current_paths() {
     let fixture = GraphFixture::rejected(
-        "let count = 0;\nfunction bump() { count += 1; }\nconsole.log(count, typeof bump);\n",
+        "let count = 0;\nfunction bump() { count += 1; }\nconst outside = 7;\nconsole.log(count, typeof bump, outside);\n",
         &[
             (
                 "state.yaml",
@@ -336,8 +336,21 @@ fn atomic_mode_leaves_cross_module_structural_atoms_on_their_current_paths() {
                 "action.yaml",
                 "members: [{selector: {binding: {name: bump}}}]\n",
             ),
+            (
+                "outside.yaml",
+                "members: [{selector: {binding: {name: outside}}}]\n",
+            ),
         ],
     );
+    let outside_before = fs::read(fixture.modules.join("outside.yaml")).unwrap();
+    let missing_scc_mode = fixture.command(&[
+        "modules",
+        "decompose",
+        "--atomic",
+        "--coarsen-atomic-conflicts",
+    ]);
+    assert_eq!(missing_scc_mode.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&missing_scc_mode.stderr).contains("--coarsen-blocking-sccs"));
     let report = fixture.json(&[
         "modules",
         "decompose",
@@ -377,6 +390,154 @@ fn atomic_mode_leaves_cross_module_structural_atoms_on_their_current_paths() {
             .is_empty(),
         "an atomic conflict must stop before coarsening: {coarsened}"
     );
+
+    let merged = fixture.json(&[
+        "modules",
+        "decompose",
+        "--atomic",
+        "--coarsen-blocking-sccs",
+        "--coarsen-atomic-conflicts",
+        "--rejoin-original-modules",
+        "--graph",
+        fixture.graph.to_str().unwrap(),
+        "--modules",
+        fixture.modules.to_str().unwrap(),
+    ]);
+    assert_eq!(merged["candidate_is_realizable"], true, "{merged}");
+    assert_eq!(merged["coverage_complete"], true, "{merged}");
+    assert!(
+        merged["atomic_unit_conflicts"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(merged["coarsening"]["stop_reason"], "accepted");
+    assert_eq!(
+        merged["coarsening"]["original_home_rejoining"]["stop_reason"],
+        "converged"
+    );
+    let atomic_merges = merged["coarsening"]["atomic_conflict_merges"]
+        .as_array()
+        .unwrap();
+    assert_eq!(atomic_merges.len(), 1, "{merged}");
+    let atomic_merge = &atomic_merges[0];
+    assert_eq!(
+        atomic_merge["merged_candidate_paths"],
+        serde_json::json!(["action", "state"]),
+        "{merged}"
+    );
+    let reported_units: std::collections::BTreeSet<_> = conflicts
+        .iter()
+        .map(|conflict| conflict["unit_id"].as_str().unwrap())
+        .collect();
+    let merged_units: std::collections::BTreeSet<_> = atomic_merge["unit_ids"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|unit| unit.as_str().unwrap())
+        .collect();
+    assert_eq!(merged_units, reported_units, "{merged}");
+    let target = atomic_merge["suggested_module_path"].as_str().unwrap();
+    let groups = merged["coarsening"]["groups"].as_array().unwrap();
+    let group = groups
+        .iter()
+        .find(|group| group["suggested_module_path"] == target)
+        .expect("merged candidate group");
+    assert_eq!(
+        group["origin_module_paths"],
+        serde_json::json!(["action", "state"])
+    );
+    assert_eq!(group["binding_ids"], serde_json::json!(["bump", "count"]));
+    assert!(
+        groups
+            .iter()
+            .any(|group| group["suggested_module_path"] == "outside"
+                && group["binding_ids"] == serde_json::json!(["outside"])),
+        "unrelated module must retain its path: {merged}"
+    );
+
+    let batch_dir = tempfile::tempdir().unwrap();
+    let batch_path = batch_dir.path().join("batch.json");
+    let assignments: Vec<_> = group["owner_ids"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|owner| serde_json::json!({"owner_id": owner, "module": target}))
+        .collect();
+    fs::write(&batch_path, serde_json::to_vec(&assignments).unwrap()).unwrap();
+    fixture.assert_success(&["modules", "refine", "--batch", batch_path.to_str().unwrap()]);
+    assert_eq!(
+        outside_before,
+        fs::read(fixture.modules.join("outside.yaml")).unwrap()
+    );
+    debundle_e2e_support::assert_node_output(&fixture.source_path(), "0 function 7\n", "");
+    assert_emitted_layout_and_output(&fixture, &[target, "outside"], "0 function 7\n");
+}
+
+#[test]
+fn coarsening_atomic_conflicts_keeps_residual_import_and_export_declarations() {
+    let fixture = GraphFixture::rejected(
+        "import './dependency.js';\nlet count = 0;\nfunction bump() { count += 1; }\nexport { count, bump };\n",
+        &[
+            (
+                "state.yaml",
+                "members: [{selector: {binding: {name: count}}}]\n",
+            ),
+            (
+                "action.yaml",
+                "members: [{selector: {binding: {name: bump}}}]\n",
+            ),
+        ],
+    );
+    let report = fixture.json(&[
+        "modules",
+        "decompose",
+        "--atomic",
+        "--include-residual",
+        "--coarsen-blocking-sccs",
+        "--coarsen-atomic-conflicts",
+        "--graph",
+        fixture.graph.to_str().unwrap(),
+        "--modules",
+        fixture.modules.to_str().unwrap(),
+    ]);
+    assert_eq!(report["candidate_is_realizable"], true, "{report}");
+    assert!(
+        !report["coarsening"]["atomic_conflict_merges"]
+            .as_array()
+            .unwrap()
+            .is_empty(),
+        "the option must resolve a real structural conflict: {report}"
+    );
+    let graph = fixture.owner_graph();
+    let entry_path = graph
+        .quotient
+        .nodes
+        .iter()
+        .find(|module| module.residual)
+        .unwrap()
+        .path
+        .to_string();
+    let entry = report["coarsening"]["groups"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|group| group["suggested_module_path"] == entry_path)
+        .expect("entry group remains present");
+    let entry_owners: std::collections::BTreeSet<_> = entry["owner_ids"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|owner| owner.as_str().unwrap())
+        .collect();
+    for owner in graph.nodes.iter().filter(|owner| {
+        matches!(
+            owner.statement_kind.to_string().as_str(),
+            "import" | "export"
+        )
+    }) {
+        assert!(entry_owners.contains(owner.id.as_str()), "{report}");
+    }
 }
 
 #[test]

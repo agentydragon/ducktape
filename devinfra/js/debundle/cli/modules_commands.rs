@@ -129,6 +129,11 @@ struct ModuleDecomposeArgs {
     #[arg(long, requires = "atomic")]
     coarsen_blocking_sccs: bool,
 
+    /// First co-locate whole candidate groups joined by reported structural
+    /// atomic units, then run the normal blocking-SCC coarsening.
+    #[arg(long, requires = "coarsen_blocking_sccs")]
+    coarsen_atomic_conflicts: bool,
+
     /// Rejoin accepted atomic fragments from the same original module when
     /// each incremental contraction still passes the shared gate.
     #[arg(long, requires = "coarsen_blocking_sccs")]
@@ -367,6 +372,19 @@ fn render_module_decomposition_text(report: &ModuleDecompositionReport, out: &mu
             coarsening.stop_reason,
             coarsening.rounds.len()
         ));
+        for merge in &coarsening.atomic_conflict_merges {
+            out.push_str(&format!(
+                "  atomic units {}: merged {} into {}\n",
+                merge.unit_ids.join(", "),
+                merge
+                    .merged_candidate_paths
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                merge.suggested_module_path,
+            ));
+        }
         for (round_idx, round) in coarsening.rounds.iter().enumerate() {
             out.push_str(&format!(
                 "  round {}: merged {} blocking SCC(s) into {}\n",
@@ -440,6 +458,7 @@ fn run_module_decompose(args: ModuleDecomposeArgs) -> Result<()> {
             },
             preserve_selector_anchors: args.preserve_selector_anchors,
             rejoin_original_modules: args.rejoin_original_modules,
+            coarsen_atomic_conflicts: args.coarsen_atomic_conflicts,
         },
     )?;
     emit_report(
