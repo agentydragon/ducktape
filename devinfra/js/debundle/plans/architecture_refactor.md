@@ -39,11 +39,31 @@ SWC remains the syntax representation. Types live with their owning subsystem.
 
 ## Remaining stages
 
+Reviewable slices:
+
+- PR #12054: immutable `ValidatedAssignment` required by lowering; focused existing
+  gate/lowering/execution tests and hosted CI passed.
+- PR #12055: `SourceProgram` separates prepared source/index ownership from
+  `EmissionFiles`; four existing preparation/emission/vendor tests passed.
+- PR #12056: single-spec contract and deterministic authoring workflow; removes
+  unused cross-spec selector-debt comparison. Two existing resolver/debt tests and
+  required hooks passed; hosted CI pending.
+- Assignment vocabulary and the single `ModuleId` handle are in progress in
+  independent branches. No acceptance-rule change has been introduced.
+
 - [ ] **A. Baseline and consumer inventory.** Enumerate public/private pipelines,
       report readers, CLI wrappers, specs, Bazel interfaces, and packaged skills.
       Record success, rejection, and unverified cases separately, with source/spec/tool
       revisions and performance evidence. Done when every changed interface has an
       identified reader and downstream outcomes have a recorded control.
+      Public devel control `f7bf0e0d836528c6cbcbc30f5625059bb30f47e8`:
+      `//devinfra/js/debundle/...` passed all 174 tests in invocation
+      `335cb393-858c-42a3-a527-0ac76d6ea662` (cached results); the executable built in
+      `40ed35e6-a7b9-4170-94ed-28dd986b4e72`. The dependent web pipeline and all six
+      existing regeneration/browser/runtime controls passed with this source override
+      in `ba724e3b-4a6b-42f9-a937-6402ac7fbab2`. Extraction was cached: fresh optimized
+      profiling remains outstanding. Other registered captures without current control
+      evidence remain unverified; historical rejections are not new regressions.
 - [ ] **B. Names and identity.** Adopt one concept per PR. Distinguish binding
       identity, source position, movement unit, and destination. Replace residual
       sentinels and implicit anonymous-unit classification with explicit types. Done
