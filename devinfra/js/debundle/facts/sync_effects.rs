@@ -130,14 +130,57 @@ struct ClassValueFacts {
 }
 
 enum FreshValueStep {
-    Allocate { binding: Id, constructor: Id },
-    Factory { binding: Id, callee: ValueExpr },
-    Write { receiver: Id, property: String },
+    Allocate {
+        binding: Id,
+        constructor: Id,
+    },
+    Factory {
+        binding: Id,
+        callee: ValueExpr,
+    },
+    Literal {
+        binding: Id,
+        span: u32,
+        own_fields: BTreeSet<String>,
+    },
+    Write {
+        receiver: Id,
+        property: String,
+    },
 }
 
 enum FreshValue {
     Instance(u32),
     Factory,
+    Literal(BTreeSet<String>),
+}
+
+fn fresh_literal_own_fields(object: &ObjectLit) -> Option<BTreeSet<String>> {
+    let mut fields = BTreeSet::new();
+    for property in &object.props {
+        let (name, value) = match property {
+            PropOrSpread::Prop(property) => match property.as_ref() {
+                Prop::KeyValue(pair) if !matches!(pair.key, PropName::Computed(_)) => {
+                    (object_data_property_name(&pair.key)?, pair.value.as_ref())
+                }
+                Prop::Shorthand(ident) => {
+                    if ident.sym == "__proto__" || !fields.insert(ident.sym.to_string()) {
+                        return None;
+                    }
+                    continue;
+                }
+                _ => return None,
+            },
+            PropOrSpread::Spread(_) => return None,
+        };
+        if name == "__proto__"
+            || !matches!(value.unwrap_parens(), Expr::Ident(_)) && !value_without_user_code(value)
+            || !fields.insert(name)
+        {
+            return None;
+        }
+    }
+    Some(fields)
 }
 
 fn primitive_constant(expression: &Expr) -> bool {
@@ -186,6 +229,15 @@ fn fresh_value_step(item: &ModuleItem) -> Option<FreshValueStep> {
                 return None;
             };
             let initializer = declaration.init.as_deref()?.unwrap_parens();
+            if let Expr::Object(object) = initializer {
+                return fresh_literal_own_fields(object).map(|own_fields| {
+                    FreshValueStep::Literal {
+                        binding: binding.id.to_id(),
+                        span: object.span.lo.0,
+                        own_fields,
+                    }
+                });
+            }
             if let Expr::Call(call) = initializer {
                 let [argument] = call.args.as_slice() else {
                     return None;
@@ -288,6 +340,13 @@ fn fresh_value_writes(
                 };
                 active = is_factory.then(|| (binding.clone(), FreshValue::Factory));
             }
+            Some(FreshValueStep::Literal {
+                binding,
+                span: _,
+                own_fields,
+            }) => {
+                active = Some((binding.clone(), FreshValue::Literal(own_fields.clone())));
+            }
             Some(FreshValueStep::Write { receiver, property })
                 if active.as_ref().is_some_and(|(binding, value)| {
                     binding == receiver
@@ -296,6 +355,7 @@ fn fresh_value_writes(
                                 facts.classes[key].instance_fields.contains_key(property)
                             }
                             FreshValue::Factory => property != "prototype",
+                            FreshValue::Literal(own_fields) => own_fields.contains(property),
                         }
                 }) =>
             {
@@ -316,6 +376,7 @@ enum ClassSurface {
 #[derive(Debug, Clone, Default)]
 struct NamespaceValueFacts {
     classes: BTreeMap<u32, ClassValueFacts>,
+    verified_data_objects: BTreeSet<u32>,
     /// A binding is resolved only when the retained syntax has exactly one
     /// assignment for it. Reassignments and alternatives remain opaque.
     bindings: BTreeMap<Id, ValueExpr>,
@@ -535,6 +596,57 @@ impl ValueExpr {
         )
     }
 
+    /// Equality with the namespace differs from publishing an object that
+    /// contains it. A fresh literal is not the namespace, while a read of one
+    /// of its ordinary own data properties can recover the namespace.
+    fn may_equal_namespace(
+        &self,
+        id: &Id,
+        aliases: &BTreeSet<Id>,
+        facts: &NamespaceValueFacts,
+        visiting: &mut BTreeSet<Id>,
+    ) -> bool {
+        match self {
+            Self::ObjectLiteral(_, _) | Self::Origin(ValueOrigin::Function(_)) => false,
+            // Class metadata may contain a namespace path, including a
+            // self-referential static initializer. Keep the existing
+            // conservative class-surface fallback.
+            Self::Origin(ValueOrigin::Class(_)) => self.may_publish_namespace(id, aliases, facts),
+            Self::Binding(binding) => {
+                if binding == id
+                    || aliases.contains(binding)
+                    || facts.unstable_class_bindings.contains(binding)
+                {
+                    return true;
+                }
+                if !visiting.insert(binding.clone()) {
+                    return false;
+                }
+                let possible = facts
+                    .binding_assignments
+                    .get(binding)
+                    .is_some_and(|values| {
+                        values
+                            .iter()
+                            .any(|value| value.may_equal_namespace(id, aliases, facts, visiting))
+                    });
+                visiting.remove(binding);
+                possible
+            }
+            Self::Alternatives(values) => values
+                .iter()
+                .any(|value| value.may_equal_namespace(id, aliases, facts, visiting)),
+            Self::Member(object, Some(property), true) => {
+                if let Some(value) = facts.own_data_member(object, property, id, aliases) {
+                    value.may_equal_namespace(id, aliases, facts, visiting)
+                } else {
+                    self.may_publish_namespace(id, aliases, facts)
+                }
+            }
+            _ => self.may_publish_namespace(id, aliases, facts),
+        }
+    }
+
     fn may_publish_namespace_inner(
         &self,
         id: &Id,
@@ -564,13 +676,19 @@ impl ValueExpr {
                     visiting_classes,
                 )
             }),
-            Self::Member(object, _, _) => object.may_publish_namespace_inner(
-                id,
-                aliases,
-                facts,
-                visiting_bindings,
-                visiting_classes,
-            ),
+            Self::Member(object, property, is_static) => {
+                let projected = property
+                    .as_deref()
+                    .filter(|_| *is_static)
+                    .and_then(|property| facts.own_data_member(object, property, id, aliases));
+                projected.unwrap_or(object).may_publish_namespace_inner(
+                    id,
+                    aliases,
+                    facts,
+                    visiting_bindings,
+                    visiting_classes,
+                )
+            }
             Self::Call(callee, args) => {
                 args.iter().any(|value| {
                     value.may_publish_namespace_inner(
@@ -623,20 +741,22 @@ impl ValueExpr {
                     || facts.unstable_class_bindings.contains(binding)
                 {
                     true
-                } else if let Some(value) = facts.bindings.get(binding) {
+                } else if let Some(values) = facts.binding_assignments.get(binding) {
                     if !visiting_bindings.insert(binding.clone()) {
                         // A binding cycle contributes no namespace provenance
                         // without a namespace or unknown-value seed. The
                         // enclosing traversal still checks every alternative.
                         false
                     } else {
-                        let result = value.may_publish_namespace_inner(
-                            id,
-                            aliases,
-                            facts,
-                            visiting_bindings,
-                            visiting_classes,
-                        );
+                        let result = values.iter().any(|value| {
+                            value.may_publish_namespace_inner(
+                                id,
+                                aliases,
+                                facts,
+                                visiting_bindings,
+                                visiting_classes,
+                            )
+                        });
                         visiting_bindings.remove(binding);
                         result
                     }
@@ -660,6 +780,7 @@ impl ValueExpr {
         id: &Id,
         aliases: &BTreeSet<Id>,
         receiver_aliases: &BTreeSet<Id>,
+        facts: &NamespaceValueFacts,
     ) -> bool {
         match self {
             Self::Binding(binding) => {
@@ -670,13 +791,35 @@ impl ValueExpr {
                 .iter()
                 .any(|(_, value)| value.carries_namespace(id, aliases)),
             Self::Alternatives(options) => options.iter().any(|value| {
-                value.may_be_namespace_mutation_receiver(id, aliases, receiver_aliases)
+                value.may_be_namespace_mutation_receiver(id, aliases, receiver_aliases, facts)
             }),
-            Self::Member(object, _, _) => {
+            Self::Member(object, property, is_static) => {
+                if let Some(value) = property
+                    .as_deref()
+                    .filter(|_| *is_static)
+                    .and_then(|property| facts.own_data_member(object, property, id, aliases))
+                {
+                    return value.may_be_namespace_mutation_receiver(
+                        id,
+                        aliases,
+                        receiver_aliases,
+                        facts,
+                    );
+                }
+                if facts.unique_literal(object).is_some() {
+                    // A getter, computed key, spread, or prototype setter can
+                    // return the namespace even when the literal is fresh.
+                    return true;
+                }
                 matches!(object.as_ref(), Self::Call(callee, _)
                     if Self::is_direct_namespace_member_callee(callee, id))
                     || matches!(object.as_ref(), Self::Unknown | Self::New(_, _))
-                    || object.may_be_namespace_mutation_receiver(id, aliases, receiver_aliases)
+                    || object.may_be_namespace_mutation_receiver(
+                        id,
+                        aliases,
+                        receiver_aliases,
+                        facts,
+                    )
             }
             Self::Call(callee, args) => {
                 args.iter()
@@ -722,7 +865,7 @@ fn infer_namespace_aliases(
         for assignment in assignments {
             let (target, value) = *assignment;
             if target != namespace
-                && value.may_publish_namespace(namespace, &aliases, facts)
+                && value.may_equal_namespace(namespace, &aliases, facts, &mut BTreeSet::new())
                 && aliases.insert(target.clone())
             {
                 changed = true;
@@ -737,6 +880,7 @@ fn infer_namespace_aliases(
 impl NamespaceValueFacts {
     fn from_assignments(
         classes: BTreeMap<u32, ClassValueFacts>,
+        verified_data_objects: BTreeSet<u32>,
         assignments: &[&(Id, ValueExpr)],
     ) -> Self {
         let mut values = BTreeMap::<Id, Vec<ValueExpr>>::new();
@@ -748,6 +892,7 @@ impl NamespaceValueFacts {
         }
         let mut facts = Self {
             classes,
+            verified_data_objects,
             bindings: values
                 .iter()
                 .filter(|(_, values)| values.len() == 1)
@@ -771,6 +916,44 @@ impl NamespaceValueFacts {
             })
             .collect();
         facts
+    }
+
+    fn own_data_member<'a>(
+        &'a self,
+        object: &'a ValueExpr,
+        property: &str,
+        id: &Id,
+        aliases: &BTreeSet<Id>,
+    ) -> Option<&'a ValueExpr> {
+        let ValueExpr::ObjectLiteral(span, properties) = self.unique_literal(object)? else {
+            return None;
+        };
+        if !self.verified_data_objects.contains(span) {
+            return None;
+        }
+        // A container with no explicit namespace path keeps the prior
+        // conservative receiver rule. Its field might gain an accessor or
+        // other value through a call without publishing this namespace.
+        if !properties
+            .iter()
+            .any(|(_, value)| value.carries_namespace(id, aliases))
+        {
+            return None;
+        }
+        let mut values = properties
+            .iter()
+            .filter(|(name, _)| name.as_deref() == Some(property))
+            .map(|(_, value)| value);
+        let value = values.next()?;
+        values.next().is_none().then_some(value)
+    }
+
+    fn unique_literal<'a>(&'a self, object: &'a ValueExpr) -> Option<&'a ValueExpr> {
+        let object = match object {
+            ValueExpr::Binding(binding) => self.bindings.get(binding)?,
+            value => value,
+        };
+        matches!(object, ValueExpr::ObjectLiteral(_, _)).then_some(object)
     }
 
     fn may_be_local_class_value(&self, value: &ValueExpr, visiting: &mut BTreeSet<Id>) -> bool {
@@ -1123,6 +1306,7 @@ fn infer_mutation_receiver_aliases(
     namespace: &Id,
     assignments: &[&(Id, ValueExpr)],
     aliases: &BTreeSet<Id>,
+    facts: &NamespaceValueFacts,
 ) -> BTreeSet<Id> {
     let mut receiver_aliases = BTreeSet::new();
     loop {
@@ -1130,7 +1314,12 @@ fn infer_mutation_receiver_aliases(
         for assignment in assignments {
             let (target, value) = *assignment;
             if target != namespace
-                && value.may_be_namespace_mutation_receiver(namespace, aliases, &receiver_aliases)
+                && value.may_be_namespace_mutation_receiver(
+                    namespace,
+                    aliases,
+                    &receiver_aliases,
+                    facts,
+                )
                 && receiver_aliases.insert(target.clone())
             {
                 changed = true;
@@ -1776,6 +1965,13 @@ impl ExecutionIndex {
             .collect::<Vec<_>>();
         let namespace_value_facts = NamespaceValueFacts::from_assignments(
             index.class_values.clone(),
+            fresh_steps
+                .iter()
+                .filter_map(|step| match step {
+                    Some(FreshValueStep::Literal { span, .. }) => Some(*span),
+                    _ => None,
+                })
+                .collect(),
             &namespace_assignments,
         );
         let mut claim_counts = BTreeMap::<FreshErrorWriteSite, usize>::new();
@@ -1869,11 +2065,20 @@ impl ExecutionIndex {
         let keep_namespace = |id: &Id, members: &BTreeSet<String>, writes: &BTreeSet<_>| {
             let aliases =
                 infer_namespace_aliases(id, &namespace_assignments, &namespace_value_facts);
-            let receiver_aliases =
-                infer_mutation_receiver_aliases(id, &namespace_assignments, &aliases);
+            let receiver_aliases = infer_mutation_receiver_aliases(
+                id,
+                &namespace_assignments,
+                &aliases,
+                &namespace_value_facts,
+            );
             let is_namespace_or_alias = |binding: &Id| binding == id || aliases.contains(binding);
             let is_mutation_receiver = |receiver: &ValueExpr| {
-                receiver.may_be_namespace_mutation_receiver(id, &aliases, &receiver_aliases)
+                receiver.may_be_namespace_mutation_receiver(
+                    id,
+                    &aliases,
+                    &receiver_aliases,
+                    &namespace_value_facts,
+                )
             };
             let top_member_write = index
                 .top_property_writes

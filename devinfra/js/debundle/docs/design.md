@@ -1063,6 +1063,17 @@ statement, unsupported class surface, or dynamic scope ends the proof and
 keeps the ordinary conservative write checks. Array iterator member values
 use A11's intrinsic integrity assumption.
 
+A fresh top-level object literal that visibly contains the namespace and has
+verified static own data properties has an identity distinct from namespace
+values stored in those properties. The
+retained value of a one-hop property read supplies namespace provenance; the
+container still publishes any namespace value it contains when passed to a
+sink. Adjacent writes to existing own data properties use the private
+fresh-value proof. Accessors, computed keys, spreads, `__proto__`, and
+unsupported projections keep the conservative receiver checks. Literals with
+no explicit namespace path also keep those checks, because a later accessor
+could return the namespace.
+
 Unary, update, and
 non-logical binary expressions have primitive results on successful
 evaluation; their operand expressions remain in value flow so nested calls

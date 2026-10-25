@@ -307,6 +307,16 @@ The allocation and assignment values must run no user code, and the instance
 must remain private throughout that run. Unsupported constructors, fields,
 receivers, dynamic scope, and intervening statements retain the conservative
 write checks.
+For a fresh top-level object literal that visibly contains the namespace and
+has static ordinary own data properties,
+the checker distinguishes the container's identity from namespace values held
+in its properties. A read of a verified own property follows that property's
+retained value; storing a namespace in the container still counts as
+publication at a sink. An adjacent write to an existing own data property may
+use the same private fresh-value proof when its value runs no user code.
+Getters, setters, computed keys, spreads, `__proto__`, unknown receivers, and
+unsupported property reads retain conservative namespace checks. Literals
+without an explicit namespace path keep the conservative receiver rule.
 Class publication tracking also follows retained static fields through a
 uniquely resolved local class superclass on the constructor surface. Unknown,
 imported, reassigned, or non-class bases and cycles remain conservative;

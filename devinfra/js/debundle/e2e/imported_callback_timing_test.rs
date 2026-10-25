@@ -1570,6 +1570,192 @@ fn namespace_factory_allows_audited_method_results_and_unrelated_callback_receiv
 }
 
 #[test]
+fn namespace_factory_keeps_fresh_container_identity_separate_from_contents() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import { api } from './peer.js';\n\
+             const holder = { api, metadata: 0 };\n\
+             holder.metadata = 1;\n\
+             const wrapped = api.make(() => later);\n\
+             const later = 42;\n\
+             console.log(holder.metadata, wrapped.invoke());\n",
+            vec![
+                logical_module_with_anon(
+                    "callbacks/wrapped",
+                    &[Member::new("holder"), Member::new("wrapped")],
+                    &["holder.metadata = 1;"],
+                ),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        )
+        .with_extra_chunks(&[(
+            "static/peer",
+            "export const api = { make(callback) { return { invoke: () => callback() }; } };\n",
+        )])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+            .with_callback_factory_members("api", &["make"])
+            .build()]),
+    );
+    assert_preserved_entry_output(&fixture, "1 42\n");
+}
+
+#[test]
+fn namespace_inside_fresh_container_can_still_replace_a_factory_member() {
+    let source = "import { api } from './peer.js';\n\
+                  let later = 0;\n\
+                  const holder = { api, metadata: 0 };\n\
+                  holder.api.make = callback => { globalThis.observed = callback(); return { invoke: () => callback() }; };\n\
+                  const wrapped = api.make(() => later);\n\
+                  later = 42;\n\
+                  console.log(globalThis.observed, wrapped.invoke());\n";
+    let peer = [(
+        "static/peer",
+        "export const api = { make(callback) { return { invoke: () => callback() }; } };\n",
+    )];
+    let purity = [ChunkExportPurityBuilder::new("static/peer")
+        .with_callback_factory_members("api", &["make"])
+        .build()];
+    let write = "holder.api.make = callback => { globalThis.observed = callback(); return { invoke: () => callback() }; };";
+    let colocated = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module_with_anon(
+                "all",
+                &[
+                    Member::new("holder"),
+                    Member::new("wrapped"),
+                    Member::new("later"),
+                ],
+                &[write, "later = 42;"],
+            )],
+        )
+        .with_extra_chunks(&peer)
+        .with_chunk_export_purity(&purity),
+    );
+    assert_preserved_entry_output(&colocated, "0 42\n");
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon(
+                    "callbacks/wrapped",
+                    &[Member::new("holder"), Member::new("wrapped")],
+                    &[write],
+                ),
+                logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
+            ],
+        )
+        .with_extra_chunks(&peer)
+        .with_chunk_export_purity(&purity),
+        &["callbacks/wrapped", "values/later"],
+        &["eager_use", "sequenced"],
+    );
+}
+
+#[test]
+fn namespace_container_publication_and_uncertain_receivers_remain_conservative() {
+    for (setup, side_effects, expected) in [
+        (
+            "const holder = { api }; globalThis.published = holder;",
+            vec!["globalThis.published = holder;"],
+            "undefined 42\n",
+        ),
+        (
+            "let holder = { metadata: 0 }; holder = api; holder.make = callback => { globalThis.observed = callback(); return { invoke: () => callback() }; };",
+            vec![
+                "holder = api;",
+                "holder.make = callback => { globalThis.observed = callback(); return { invoke: () => callback() }; };",
+            ],
+            "0 42\n",
+        ),
+        (
+            "const holder = { get member() { return api; } }; holder.member.make = callback => { globalThis.observed = callback(); return { invoke: () => callback() }; };",
+            vec![
+                "holder.member.make = callback => { globalThis.observed = callback(); return { invoke: () => callback() }; };",
+            ],
+            "0 42\n",
+        ),
+        (
+            "const holder = { member: 0 }; Object.defineProperty(holder, 'member', { get: () => api }); holder.member.make = callback => { globalThis.observed = callback(); return { invoke: () => callback() }; };",
+            vec![
+                "Object.defineProperty(holder, 'member', { get: () => api });",
+                "holder.member.make = callback => { globalThis.observed = callback(); return { invoke: () => callback() }; };",
+            ],
+            "0 42\n",
+        ),
+        (
+            "const holder = new Proxy({ member: api }, {}); holder.member.make = callback => { globalThis.observed = callback(); return { invoke: () => callback() }; };",
+            vec![
+                "holder.member.make = callback => { globalThis.observed = callback(); return { invoke: () => callback() }; };",
+            ],
+            "0 42\n",
+        ),
+        (
+            "const holder = { __proto__: api }; holder.__proto__.make = callback => { globalThis.observed = callback(); return { invoke: () => callback() }; };",
+            vec![
+                "holder.__proto__.make = callback => { globalThis.observed = callback(); return { invoke: () => callback() }; };",
+            ],
+            "0 42\n",
+        ),
+    ] {
+        let source = format!(
+            "import {{ api }} from './peer.js';\nlet later = 0;\n{setup}\n\
+             const wrapped = api.make(() => later);\n\
+             later = 42;\nconsole.log(globalThis.observed, wrapped.invoke());\n"
+        );
+        let peer = [(
+            "static/peer",
+            "export const api = { make(callback) { return { invoke: () => callback() }; } };\n",
+        )];
+        let purity = [ChunkExportPurityBuilder::new("static/peer")
+            .with_callback_factory_members("api", &["make"])
+            .build()];
+        let colocated = run_fixture(
+            FixtureOpts::new(
+                &source,
+                vec![logical_module_with_anon(
+                    "all",
+                    &[
+                        Member::new("holder"),
+                        Member::new("wrapped"),
+                        Member::new("later"),
+                    ],
+                    &side_effects
+                        .iter()
+                        .copied()
+                        .chain(["later = 42;"])
+                        .collect::<Vec<_>>(),
+                )],
+            )
+            .with_extra_chunks(&peer)
+            .with_chunk_export_purity(&purity),
+        );
+        assert_preserved_entry_output(&colocated, expected);
+        expect_atomic_conflict_rejection(
+            FixtureOpts::new(
+                &source,
+                vec![
+                    logical_module_with_anon(
+                        "callbacks/wrapped",
+                        &[Member::new("holder"), Member::new("wrapped")],
+                        &side_effects,
+                    ),
+                    logical_module_with_anon(
+                        "values/later",
+                        &[Member::new("later")],
+                        &["later = 42;"],
+                    ),
+                ],
+            )
+            .with_extra_chunks(&peer)
+            .with_chunk_export_purity(&purity),
+            &["callbacks/wrapped", "values/later"],
+            &["eager_use", "sequenced"],
+        );
+    }
+}
+
+#[test]
 fn namespace_factory_contract_stays_conservative_when_callback_returns_namespace() {
     expect_atomic_conflict_rejection(
         FixtureOpts::new(
