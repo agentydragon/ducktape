@@ -1446,3 +1446,106 @@ export { box, command };
         &[],
     );
 }
+
+#[test]
+fn async_setter_read_before_first_await_still_blocks_split() {
+    expect_property_write_reentry_conflict(
+        r#"const box = {};
+Object.defineProperty(box, "value", { set: async function setter() { const observed = later; await 0; return observed; } });
+box.value = 1;
+const later = 7;
+export { box, later };
+"#,
+        &[
+            "Object.defineProperty(box, \"value\", { set: async function setter() { const observed = later; await 0; return observed; } });",
+        ],
+    );
+}
+
+#[test]
+fn async_setter_read_after_first_await_can_split() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const box = {};
+Object.defineProperty(box, "value", { set: async function setter() { await 0; return later; } });
+box.value = 1;
+const later = 7;
+console.log(later);
+export { box, later };
+"#,
+            vec![
+                logical_module_with_anon(
+                    "value/box",
+                    &[Member::new("box")],
+                    &[
+                        "Object.defineProperty(box, \"value\", { set: async function setter() { await 0; return later; } });",
+                        "box.value = 1;",
+                    ],
+                ),
+                logical_module("value/later", &[Member::new("later")]),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&fixture, "7\n");
+}
+
+#[test]
+fn nested_setter_created_before_await_still_blocks_split() {
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            r#"const box = {};
+async function install() {
+  const setter = () => later;
+  Object.defineProperty(box, "value", { set: setter });
+  await 0;
+}
+install();
+box.value = 1;
+const later = 7;
+export { box, later };
+"#,
+            vec![
+                logical_module_with_anon(
+                    "value/box",
+                    &[Member::new("box"), Member::new("install")],
+                    &["install();", "box.value = 1;"],
+                ),
+                logical_module("value/later", &[Member::new("later")]),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+        &["value/box", "value/later"],
+        &[],
+    );
+}
+
+#[test]
+fn hoisted_nested_setter_declared_after_await_still_blocks_split() {
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            r#"const box = {};
+async function install() {
+  Object.defineProperty(box, "value", { set: setter });
+  await 0;
+  function setter() { return later; }
+}
+install();
+box.value = 1;
+const later = 7;
+export { box, later };
+"#,
+            vec![
+                logical_module_with_anon(
+                    "value/box",
+                    &[Member::new("box"), Member::new("install")],
+                    &["install();", "box.value = 1;"],
+                ),
+                logical_module("value/later", &[Member::new("later")]),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+        &["value/box", "value/later"],
+        &[],
+    );
+}

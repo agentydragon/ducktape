@@ -674,6 +674,8 @@ struct ExecutionIndex {
     safe_class_target: Option<Id>,
     plain_data_objects: BTreeSet<u32>,
     setter_owners: BTreeMap<Option<String>, BTreeSet<StatementOrdinal>>,
+    owner_callable_prefix_reads: Vec<Option<BTreeSet<Id>>>,
+    unindexed_accessor_owners: BTreeSet<StatementOrdinal>,
     top_calls: Vec<Vec<Call>>,
     top_property_writes: Vec<Vec<(Option<Id>, Option<String>)>>,
     top_assignments: Vec<Vec<(Id, ValueExpr)>>,
@@ -716,6 +718,8 @@ impl Default for ExecutionIndex {
             safe_class_target: None,
             plain_data_objects: BTreeSet::new(),
             setter_owners: BTreeMap::new(),
+            owner_callable_prefix_reads: Vec::new(),
+            unindexed_accessor_owners: BTreeSet::new(),
             top_calls: Vec::new(),
             top_property_writes: Vec::new(),
             top_assignments: Vec::new(),
@@ -745,6 +749,7 @@ impl ExecutionIndex {
     fn collect(body: &[TopLevelItemView<'_>], hints: &AnalysisHints) -> Self {
         let mut index = Self {
             top_calls: vec![Vec::new(); body.len()],
+            owner_callable_prefix_reads: vec![None; body.len()],
             top_property_writes: vec![Vec::new(); body.len()],
             top_assignments: vec![Vec::new(); body.len()],
             top_definite_initializers: vec![BTreeSet::new(); body.len()],
@@ -803,6 +808,14 @@ impl ExecutionIndex {
                 }
             }
             item.as_module_item().visit_with(&mut index);
+        }
+        // An accessor fallback may run any callable owned by this item,
+        // including a nested function installed as the setter. Union each
+        // retained synchronous prefix instead of using whole lazy bodies.
+        for callable in index.callables.values() {
+            index.owner_callable_prefix_reads[callable.owner.0]
+                .get_or_insert_with(BTreeSet::new)
+                .extend(callable.reads.iter().cloned());
         }
         // A namespace member is an audited target only while its binding is
         // unchanged. Any local write could replace a member with an eager
@@ -1195,11 +1208,19 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_setter_prop(&mut self, setter: &SetterProp) {
+        // Object-literal setters are not represented by a `Function` node in
+        // SWC, so their bodies lack a per-Callable prefix summary.
+        self.unindexed_accessor_owners.insert(self.owner);
         self.setter_owners
             .entry(static_property_name(&setter.key))
             .or_default()
             .insert(self.owner);
         setter.visit_children_with(self);
+    }
+
+    fn visit_getter_prop(&mut self, getter: &GetterProp) {
+        self.unindexed_accessor_owners.insert(self.owner);
+        getter.visit_children_with(self);
     }
 
     fn visit_object_lit(&mut self, object: &ObjectLit) {
@@ -1862,7 +1883,20 @@ impl Executor<'_> {
         outcome: &mut Outcome,
     ) {
         let fact = &self.facts[owner.0];
-        self.promote_lazy_effects(&fact.reads.lazy, &fact.rebinds.lazy, effect_owner, outcome);
+        let prefix_reads = self.index.owner_callable_prefix_reads[owner.0].as_ref();
+        let reads = prefix_reads
+            .filter(|reads| {
+                // Without complete coverage, retain the original whole-body
+                // fallback rather than dropping a possible setter read.
+                !self.reachability.incomplete
+                    && !self.index.dynamic_scope_owners.contains(&owner)
+                    && !self.index.unindexed_accessor_owners.contains(&owner)
+                    && fact.reads.first_order_lazy.is_subset(reads)
+            })
+            .unwrap_or(&fact.reads.lazy);
+        // The per-Callable rebind index does not yet cover every update and
+        // destructuring target. Keep the complete raw set until it does.
+        self.promote_lazy_effects(reads, &fact.rebinds.lazy, effect_owner, outcome);
     }
 
     fn promote_lazy_effects(
