@@ -577,6 +577,15 @@ asymmetric `(eager forward, lazy back)` I-cycles that the
    through the index's tier ladder (below). `realizability_verdict()` reads the
    index's maintained verdict.
 
+Original-home rejoining begins with a fully realizable partition and must
+preserve that property after every contraction. Its pair and whole-home
+commit paths use the touching verdict as a fast rejection filter, then run
+`check_realizability` on the complete post-move partition. A merge can change
+global ESM import order and expose a TDZ in an I-SCC outside the merged
+module, which a touching verdict cannot see. General seed/greedy contractions
+can start from an unrealizable partition while repairing it, and the final
+proposal verdict checks their result.
+
 #### Cost and the tier ladder
 
 A from-scratch `check_realizability` call is `O(|V| + |E|)`; asking it per
