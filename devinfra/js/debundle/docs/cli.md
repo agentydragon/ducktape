@@ -429,6 +429,25 @@ that groups sharing a suggested path belong to one semantic feature. The mode
 does not edit YAML or choose descriptive module names; review `origin_module_paths`
 and owner IDs before assigning the groups in a later spec change.
 
+When structural atoms span candidate module paths, SCC coarsening normally
+stops with `atomic_unit_conflicts`. Add `--coarsen-atomic-conflicts` to first
+co-locate the complete candidate groups named by each reported atomic unit:
+
+```sh
+debundle modules decompose --atomic --coarsen-blocking-sccs \
+  --coarsen-atomic-conflicts --graph owner_graph.json --modules spec/modules \
+  --format json
+```
+
+Overlapping atomic conflicts are joined transitively. A merge containing the
+residual entry keeps its entry path, including import and export declarations.
+The complete candidate goes through the shared gate before SCC coarsening and
+again after each SCC round. The JSON `coarsening.atomic_conflict_merges` rows
+give the native unit IDs, previous candidate paths, and new path; final
+ownership is in `coarsening.groups`. This flag requires
+`--coarsen-blocking-sccs`. Without it, reported structural conflicts stop
+coarsening as before.
+
 To include residual ownership in that baseline, add `--include-residual`:
 
 ```sh
