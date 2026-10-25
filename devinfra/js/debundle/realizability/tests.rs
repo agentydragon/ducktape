@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::incremental_quotient::{
     ConstrainingBucket, OverlayGraphView, constraining_bucket_is_empty_after_overlay,
@@ -11,6 +11,7 @@ use analysis::graph::{EdgeRole, build_owner_graph_with};
 use analysis::ids::{LogicalModuleIndex, ModuleId};
 use analysis::partition::Partition;
 use analysis::{AnalysisHints, OwnerGraph};
+use petgraph::visit::IntoNeighbors;
 
 fn module_id(index: usize) -> ModuleId {
     ModuleId(LogicalModuleIndex(index))
@@ -20,6 +21,48 @@ fn parse_and_build(source: &str) -> OwnerGraph {
     let module = raw_js_test_support::parse(source);
     let facts = analyze_chunk(&module, &AnalysisHints::default(), None, |_| None).facts;
     build_owner_graph_with(&facts, Default::default()).unwrap()
+}
+
+#[test]
+fn large_module_import_neighbors_match_the_shared_emitter_order() {
+    use super::esm_simulator::EsmIGraph;
+    use crate::esm_import_order::EsmImportOrder;
+
+    let residual = module_id(0);
+    let importer = module_id(1);
+    let targets: BTreeSet<ModuleId> = (2..=97).map(module_id).collect();
+    let nodes: BTreeSet<ModuleId> = targets
+        .iter()
+        .copied()
+        .chain([residual, importer])
+        .collect();
+    let i_successors = BTreeMap::from([
+        (importer, targets.clone()),
+        (module_id(95), BTreeSet::from([module_id(4)])),
+        (module_id(4), BTreeSet::from([module_id(75)])),
+    ]);
+    // Linker positions intentionally differ from ModuleId order. The other
+    // targets have no position and must remain in stable ID order.
+    let constraining_pairs = BTreeSet::from([
+        (importer, module_id(95)),
+        (module_id(95), module_id(4)),
+        (module_id(4), module_id(75)),
+    ]);
+    let import_order = EsmImportOrder::build(&constraining_pairs, &i_successors, &nodes);
+    let graph = EsmIGraph {
+        i_successors: &i_successors,
+        residual,
+        nodes: &nodes,
+        import_order: &import_order,
+    };
+    let mut emitted_imports: Vec<_> = targets.iter().copied().map(|target| (target, ())).collect();
+    import_order.sort_module_imports(&mut emitted_imports);
+    let expected: Vec<_> = emitted_imports
+        .into_iter()
+        .rev()
+        .map(|(target, ())| target)
+        .collect();
+    assert_eq!((&graph).neighbors(importer).collect::<Vec<_>>(), expected);
 }
 
 /// Two top-level constants in different modules, with one reading
