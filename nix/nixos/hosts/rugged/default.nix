@@ -147,6 +147,7 @@ in
     priority = 100;
   };
   boot.kernel.sysctl."vm.swappiness" = 10;
+  systemd.oomd.enableUserSlices = true;
 
   # Add Plasma as a parallel Wayland session for tablet/OSK testing while
   # keeping the existing GNOME session and GDM display manager intact.
