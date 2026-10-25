@@ -4425,11 +4425,15 @@ impl Executor<'_> {
         )
     }
 
-    /// Under A11, an ordinary object literal has no inherited user getter
-    /// for a missing name. Keep standard Object.prototype names and any
-    /// visible intrinsic mutation on the conservative member-read path.
+    /// A certified private constructor may read a missing field on its fresh
+    /// plain-data input. Keep this precision within that constructor call:
+    /// other paths can join a fresh object with a live imported or published
+    /// value, and their ordinary member-read fallback must remain conservative.
+    /// A11 also excludes an inherited user getter unless a visible mutation
+    /// has invalidated the ordinary Object.prototype assumption.
     fn absent_plain_data_property(&self, object: u32, property: &str) -> bool {
-        if Self::standard_object_prototype_property(property)
+        if self.private_constructor_result_owners.is_empty()
+            || Self::standard_object_prototype_property(property)
             || !self.index.plain_data_objects.contains(&object)
             || self.tainted_objects.contains(&object)
             || !self.ordinary_object_prototype_intact()
