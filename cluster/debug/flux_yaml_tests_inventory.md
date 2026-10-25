@@ -149,4 +149,3 @@ tests. `test_flux_build` and the remaining whole-graph checks in
 its owner. The authored Secret and blueprint contracts above read their specific
 source inputs; they do not depend on a CI render of the whole graph. Their future
 Git location remains an ownership decision for the Flux cutover.
-
