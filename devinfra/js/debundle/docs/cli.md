@@ -448,6 +448,16 @@ ownership is in `coarsening.groups`. This flag requires
 `--coarsen-blocking-sccs`. Without it, reported structural conflicts stop
 coarsening as before.
 
+With `--preserve-selector-anchors --source-root`, the final `coarsening` report
+also includes `naming_collisions`. Each row names a suggested destination and
+readable export name that distinct original modules would both claim there,
+with each resolved source binding and its graph owner IDs. It covers direct
+members and `source_matches` after the joint selector resolution, and reports
+all such collisions in the final coarsened groups. An empty array means this
+particular name check found none; the read-only planner does not rename members
+or certify that a later spec edit passes every source-level check. Graph-only
+decomposition omits this field.
+
 To include residual ownership in that baseline, add `--include-residual`:
 
 ```sh

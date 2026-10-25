@@ -140,6 +140,10 @@ pub struct ModuleDecompositionCoarsening {
     /// Final ownership under the names checked by the last full gate run.
     /// These names are suggestions, and can combine distinct source homes.
     pub groups: Vec<ModuleDecompositionCoarsenedGroup>,
+    /// Source-resolved readable export names that would collide if a final
+    /// group were materialized. Only available with selector-anchor resolution.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub naming_collisions: Option<Vec<ModuleDecompositionNamingCollision>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -163,6 +167,20 @@ pub struct ModuleDecompositionCoarsenedGroup {
     pub origin_module_paths: Vec<ModulePath>,
     pub owner_ids: Vec<String>,
     pub binding_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ModuleDecompositionNamingCollision {
+    pub suggested_module_path: ModulePath,
+    pub readable_name: String,
+    pub claims: Vec<ModuleDecompositionNamedClaim>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ModuleDecompositionNamedClaim {
+    pub original_module_path: ModulePath,
+    pub binding_id: String,
+    pub owner_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -577,8 +595,13 @@ fn decompose_modules(
         }
     };
 
-    let selector_anchor_relations = if decomposition.preserve_selector_anchors {
-        let relations = resolve_selector_anchor_relations(graph, options, &owner_modules)?;
+    let resolved_modules = if decomposition.preserve_selector_anchors {
+        Some(resolve_decomposition_claims(graph, options)?)
+    } else {
+        None
+    };
+    let selector_anchor_relations = if let Some(resolved_modules) = &resolved_modules {
+        let relations = resolve_selector_anchor_relations(graph, &owner_modules, resolved_modules)?;
         let included_modules = module_owners.keys().cloned().collect();
         cohere_selector_anchor_groups(&mut module_groups, &relations, &included_modules)?;
         Some(
@@ -740,7 +763,19 @@ fn decompose_modules(
             atomic_conflict_merges,
             rounds,
             groups: coarsened_groups(graph, &owner_modules, &candidate_owner_modules),
+            naming_collisions: None,
         });
+    }
+
+    if let (Some(coarsening_report), Some(resolved_modules)) =
+        (coarsening.as_mut(), resolved_modules.as_ref())
+    {
+        coarsening_report.naming_collisions = Some(coarsened_naming_collisions(
+            graph,
+            &owner_modules,
+            &candidate_owner_modules,
+            resolved_modules,
+        )?);
     }
 
     let covered_owner_ids: BTreeSet<&str> =
@@ -782,11 +817,15 @@ struct SelectorAnchorConstraint {
     report: ModuleDecompositionSelectorAnchor,
 }
 
-fn resolve_selector_anchor_relations(
+struct ResolvedDecompositionModule {
+    claims: ModuleClaims,
+    resolved: ResolvedSourceClaims,
+}
+
+fn resolve_decomposition_claims(
     graph: &OwnerGraphReport,
     options: &ProposalOptions,
-    owner_modules: &[ModulePath],
-) -> Result<Vec<SelectorAnchorConstraint>> {
+) -> Result<Vec<ResolvedDecompositionModule>> {
     let source_root = options
         .source_root
         .as_deref()
@@ -826,6 +865,18 @@ fn resolve_selector_anchor_relations(
         &claim_sets,
     )?;
 
+    Ok(modules
+        .into_iter()
+        .zip(resolved)
+        .map(|((_, claims), resolved)| ResolvedDecompositionModule { claims, resolved })
+        .collect())
+}
+
+fn resolve_selector_anchor_relations(
+    graph: &OwnerGraphReport,
+    owner_modules: &[ModulePath],
+    modules: &[ResolvedDecompositionModule],
+) -> Result<Vec<SelectorAnchorConstraint>> {
     let mut owner_indices_by_binding = BTreeMap::<String, Vec<usize>>::new();
     for (owner_index, node) in graph.nodes.iter().enumerate() {
         for binding in &node.declared_bindings {
@@ -839,7 +890,9 @@ fn resolve_selector_anchor_relations(
     }
 
     let mut relations = Vec::new();
-    for ((_, claims), resolved) in modules.iter().zip(&resolved) {
+    for module in modules {
+        let claims = &module.claims;
+        let resolved = &module.resolved;
         for (member, selector) in &claims.member_selectors {
             let MemberSelectorSpec::IntrinsicAlias(alias) = selector else {
                 continue;
@@ -1233,6 +1286,92 @@ fn coarsened_groups(
             }
         })
         .collect()
+}
+
+fn coarsened_naming_collisions(
+    graph: &OwnerGraphReport,
+    original_owner_modules: &[ModulePath],
+    candidate_owner_modules: &[ModulePath],
+    modules: &[ResolvedDecompositionModule],
+) -> Result<Vec<ModuleDecompositionNamingCollision>> {
+    let mut owners_by_binding = BTreeMap::<String, Vec<usize>>::new();
+    for (owner_idx, owner) in graph.nodes.iter().enumerate() {
+        for binding in &owner.declared_bindings {
+            owners_by_binding
+                .entry(binding.binding.to_string())
+                .or_default()
+                .push(owner_idx);
+        }
+    }
+
+    // Enumerate names from the canonical authored claims, then use the same
+    // resolved binding lookup as selector-anchor cohesion. A claim can have
+    // multiple owner sites, but it is one prospective export per destination.
+    let mut by_name =
+        BTreeMap::<(ModulePath, String), BTreeMap<(ModulePath, String), BTreeSet<String>>>::new();
+    for module in modules {
+        let readable_names = module
+            .claims
+            .member_selectors
+            .iter()
+            .map(|(name, _)| name.clone())
+            .chain(module.claims.source_matches.iter().flat_map(|claim| {
+                claim
+                    .bindings
+                    .iter()
+                    .map(|binding| binding.name().to_string())
+            }))
+            .collect::<BTreeSet<_>>();
+        for readable_name in readable_names {
+            let binding_id =
+                binding_for_member(&module.claims, &module.resolved, &readable_name)
+                    .with_context(|| format!("member {readable_name:?} has no resolved binding"))?;
+            let owner_indices = owners_by_binding.get(binding_id).with_context(|| {
+                format!(
+                    "resolved member {readable_name:?} binding {binding_id:?} has no graph owner"
+                )
+            })?;
+            for &owner_idx in owner_indices {
+                by_name
+                    .entry((
+                        candidate_owner_modules[owner_idx].clone(),
+                        readable_name.clone(),
+                    ))
+                    .or_default()
+                    .entry((
+                        original_owner_modules[owner_idx].clone(),
+                        binding_id.to_string(),
+                    ))
+                    .or_default()
+                    .insert(graph.nodes[owner_idx].id.clone());
+            }
+        }
+    }
+
+    Ok(by_name
+        .into_iter()
+        .filter_map(|((suggested_module_path, readable_name), claims)| {
+            let homes = claims.keys().map(|(path, _)| path).collect::<BTreeSet<_>>();
+            let bindings = claims
+                .keys()
+                .map(|(_, binding)| binding)
+                .collect::<BTreeSet<_>>();
+            (homes.len() > 1 && bindings.len() > 1).then(|| ModuleDecompositionNamingCollision {
+                suggested_module_path,
+                readable_name,
+                claims: claims
+                    .into_iter()
+                    .map(|((original_module_path, binding_id), owner_ids)| {
+                        ModuleDecompositionNamedClaim {
+                            original_module_path,
+                            binding_id,
+                            owner_ids: owner_ids.into_iter().collect(),
+                        }
+                    })
+                    .collect(),
+            })
+        })
+        .collect())
 }
 
 type AtomicModuleGroups = BTreeMap<ModulePath, Vec<(Vec<usize>, bool)>>;
