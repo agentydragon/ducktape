@@ -34,9 +34,10 @@ The resolve is two halves, so `run` can do the first per chunk in parallel:
 
 1. **Entities.** A member carries a name pin, a `source_match` template or a
    relational selector. `source_matches[].bindings[]` entries sharing one
-   template form one group entity; an anonymous statement is an entity of its
-   own. Each entity is scoped to its chunk, and a module is scoped to the
-   chunk its tree names; several trees may name one chunk.
+   template form one group entity even when only one binding remains; an
+   anonymous statement is an entity of its own. Each entity is scoped to its
+   chunk, and a module is scoped to the chunk its tree names; several trees
+   may name one chunk.
 2. **Candidates.** The shape matcher (`ChunkResolver`) lists every place a
    template matches, and each place maps to its owner (a post-split top-level
    statement) and binding through the chunk's structural analysis. A template
@@ -118,10 +119,11 @@ A chunk's `Resolution` lists its outcomes in a fixed order: entities the matcher
 failed on (`invalid`), then entities rejected once their template references
 narrowed their places (§ Template references: `no_match`, `too_broad`,
 `conflict`, `invalid`), each set as anonymous statements, then `source_matches[]`
-groups, then single `source_match` members, in module order; then name pins
-with no place, then the other anonymous statements, then the other members
+groups (including one-binding groups), then standalone `source_match` members,
+in module order; then name pins with no place, then the other anonymous
+statements, then the other members
 (name pins and relational selectors, then `source_matches[]` groups, then
-single `source_match` members, each in module order).
+standalone `source_match` members, each in module order).
 
 `run` records outcomes in two passes over the chunks, each in chunk-id order:
 first the claims it makes itself (duplicate claims, in request order), then,
