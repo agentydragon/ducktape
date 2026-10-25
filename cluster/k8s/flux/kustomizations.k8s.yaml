@@ -2409,32 +2409,12 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: gitlab-spike-namespace
-  namespace: ducktape-flux
-spec:
-  deletionPolicy: Orphan
-  dependsOn:
-    - name: external-secrets-operator
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/generated/gitlab-spike/namespace
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: gitlab-spike-namespace
-    namespace: ducktape-flux
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: gitlab-spike-dependencies
   namespace: ducktape-flux
 spec:
   deletionPolicy: Orphan
   dependsOn:
-    - name: gitlab-spike-namespace
+    - name: external-secrets-operator
       namespace: ducktape-flux
     - name: cnpg
       namespace: ducktape-flux
@@ -2530,60 +2510,27 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: gitlab-spike-runner
+  name: gitlab-spike-integrations
   namespace: ducktape-flux
 spec:
   dependsOn:
     - name: gitlab-spike-gitops
       namespace: ducktape-flux
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: gitlab-spike-runner
+      namespace: gitlab-spike-ci
   interval: 10m
-  path: ./cluster/generated/gitlab-spike/runner
+  path: ./cluster/generated/gitlab-spike/integrations
   prune: true
   retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact
-    name: gitlab-spike-runner
+    name: gitlab-spike-integrations
     namespace: ducktape-flux
   timeout: 10m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: gitlab-spike-delivery
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: gitlab-spike-gitops
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/generated/gitlab-spike/delivery
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: gitlab-spike-delivery
-    namespace: ducktape-flux
   wait: false
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: gitlab-spike-benchmark
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: gitlab-spike-gitops
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/generated/gitlab-spike/benchmark
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: gitlab-spike-benchmark
-    namespace: ducktape-flux
-  wait: true
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization

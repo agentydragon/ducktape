@@ -70,8 +70,7 @@ class CnpgBackup(Construct):
     takes `Cadence.WEEKLY` base backups, trading longer WAL replay on restore for fewer copies.
     `ref.namespace` must be in `seaweedfs.cluster.TENANTS`, and the Flux Kustomization applying
     this must depend on the SeaweedFS operator's. `secret_name` keeps the name of a credentials
-    Secret the store already reads (`s3.PrivateBucket`). `bucket_name` separates multiple CNPG
-    clusters in one namespace; otherwise they would own the same Bucket and IAM identity."""
+    Secret the store already reads (`s3.PrivateBucket`)."""
 
     def __init__(
         self,
@@ -82,10 +81,9 @@ class CnpgBackup(Construct):
         retention: str,
         cadence: Cadence = Cadence.DAILY,
         secret_name: str | None = None,
-        bucket_name: str | None = None,
     ) -> None:
         super().__init__(scope, id)
-        bucket = bucket_name or f"{ref.namespace}-db-backups"
+        bucket = f"{ref.namespace}-db-backups"
         storage = s3.PrivateBucket(
             self,
             "storage",

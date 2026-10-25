@@ -17,12 +17,10 @@ from cilium_crds.io.cilium import (
 
 from cluster.cdk8s import pod_policy
 from cluster.cdk8s.gitlab_spike import app
-from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 NAME = "gitlab-spike-benchmark"
-OUTPUT_DIR = f"{GENERATED_ROOT}/gitlab-spike/benchmark"
 _FORGEJO_NAME = "forgejo-spike-benchmark"
 _SCRIPTS = "gitlab-spike-benchmark-scripts"
 # The v0.13 Dockerfile installs git, curl and jq; both scripts use this exact client image.

@@ -1071,17 +1071,16 @@ def generate_manifests(root: Path) -> None:
         monitoring_crds_kustomization,
         valkey_kustomization,
     )
-    gitlab_spike_namespace_artifact = artifact("gitlab-spike-namespace", gitlab_spike_bootstrap.NAMESPACE_DIR)
-    gitlab_spike_namespace_kustomization = gitlab_spike_flux.namespace(
-        flux_chart,
-        write_directory(root, gitlab_spike_namespace_artifact, gitlab_spike_bootstrap.namespace_chart),
-        external_secrets_operator_kustomization,
-    )
     gitlab_spike_dependencies_artifact = artifact("gitlab-spike-dependencies", gitlab_spike_dependencies.OUTPUT_DIR)
     gitlab_spike_dependencies_kustomization = gitlab_spike_flux.dependencies(
         flux_chart,
-        write_directory(root, gitlab_spike_dependencies_artifact, gitlab_spike_dependencies.chart),
-        gitlab_spike_namespace_kustomization,
+        write_directory(
+            root,
+            gitlab_spike_dependencies_artifact,
+            gitlab_spike_bootstrap.namespace_chart,
+            gitlab_spike_dependencies.chart,
+        ),
+        external_secrets_operator_kustomization,
         cnpg_kustomization,
         seaweedfs_operator_kustomization,
         valkey_kustomization,
@@ -1113,22 +1112,18 @@ def generate_manifests(root: Path) -> None:
         tofu_controller_kustomization,
         forgejo_kustomization,
     )
-    gitlab_spike_runner_artifact = artifact(gitlab_spike_runner.NAME, gitlab_spike_runner.OUTPUT_DIR)
-    gitlab_spike_flux.runner(
-        flux_chart,
-        write_directory(root, gitlab_spike_runner_artifact, gitlab_spike_runner.chart),
-        gitlab_spike_gitops_kustomization,
+    gitlab_spike_integrations_artifact = artifact(
+        gitlab_spike_flux.INTEGRATIONS_NAME, gitlab_spike_flux.INTEGRATIONS_DIR
     )
-    gitlab_spike_delivery_artifact = artifact(gitlab_spike_delivery.NAME, gitlab_spike_delivery.OUTPUT_DIR)
-    gitlab_spike_flux.delivery(
+    gitlab_spike_flux.integrations(
         flux_chart,
-        write_directory(root, gitlab_spike_delivery_artifact, gitlab_spike_delivery.chart),
-        gitlab_spike_gitops_kustomization,
-    )
-    gitlab_spike_benchmark_artifact = artifact(gitlab_spike_benchmark.NAME, gitlab_spike_benchmark.OUTPUT_DIR)
-    gitlab_spike_flux.benchmark(
-        flux_chart,
-        write_directory(root, gitlab_spike_benchmark_artifact, gitlab_spike_benchmark.chart),
+        write_directory(
+            root,
+            gitlab_spike_integrations_artifact,
+            gitlab_spike_runner.chart,
+            gitlab_spike_delivery.chart,
+            gitlab_spike_benchmark.chart,
+        ),
         gitlab_spike_gitops_kustomization,
     )
     matrix_app_artifact = artifact("matrix-app", matrix.OUTPUT_DIR)
@@ -1821,14 +1816,11 @@ def generate_manifests(root: Path) -> None:
             external_secrets_config_artifact,
             external_secrets_operator_artifact,
             forgejo_artifact,
-            gitlab_spike_namespace_artifact,
             gitlab_spike_dependencies_artifact,
             gitlab_spike_app_artifact,
             gitlab_spike_bootstrap_artifact,
             gitlab_spike_gitops_artifact,
-            gitlab_spike_runner_artifact,
-            gitlab_spike_delivery_artifact,
-            gitlab_spike_benchmark_artifact,
+            gitlab_spike_integrations_artifact,
             forgejo_images_artifact,
             gateway_artifact,
             kyverno_artifact,

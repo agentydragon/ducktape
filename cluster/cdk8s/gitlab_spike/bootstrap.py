@@ -28,7 +28,6 @@ from util.bazel.runfiles import get_required_path, own_repo_rlocation
 NAMESPACE = "gitlab-spike"
 NAME = "gitlab-spike-bootstrap"
 OUTPUT_DIR = f"{GENERATED_ROOT}/gitlab-spike/bootstrap"
-NAMESPACE_DIR = f"{GENERATED_ROOT}/gitlab-spike/namespace"
 
 
 def namespace_chart(app: App) -> Chart:

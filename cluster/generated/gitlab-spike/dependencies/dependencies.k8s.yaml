@@ -1,3 +1,153 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    goldilocks.fairwinds.com/vpa-update-mode: "off"
+    pod-security.kubernetes.io/enforce: baseline
+  name: gitlab-spike
+spec: {}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    goldilocks.fairwinds.com/vpa-update-mode: "off"
+    pod-security.kubernetes.io/enforce: baseline
+  name: gitlab-spike-ci
+spec: {}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    goldilocks.fairwinds.com/vpa-update-mode: "off"
+    pod-security.kubernetes.io/enforce: baseline
+  name: gitlab-spike-demo
+spec: {}
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: gitlab-root-password
+  namespace: gitlab-spike
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: gitlab-root-password
+  namespace: gitlab-spike
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: gitlab-root-password
+  refreshPolicy: CreatedOnce
+  target:
+    name: gitlab-root-password
+    template:
+      data:
+        password: "{{ .password }}"
+      type: Opaque
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: gitlab-bootstrap-token
+  namespace: gitlab-spike
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: gitlab-bootstrap-token
+  namespace: gitlab-spike
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: gitlab-bootstrap-token
+  refreshPolicy: CreatedOnce
+  target:
+    name: gitlab-bootstrap-token
+    template:
+      data:
+        token: "{{ .password }}"
+      type: Opaque
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gitlab-spike-bootstrap
+  namespace: gitlab-spike
+data:
+  main.rb: |
+    # This token is owned by ESO, consumed by tofu-controller, and never logged.
+    token = File.read('/opt/spike-token/token').strip
+    raise 'Empty bootstrap token' if token.empty?
+
+    root = User.find_by_username!('root')
+    access = root.personal_access_tokens.find_or_initialize_by(name: 'gitlab-spike-tofu')
+    access.scopes = ['api']
+    access.expires_at = 90.days.from_now.to_date
+    access.set_token(token)
+    access.save!
+immutable: false
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: praefect-db-credentials-generator
+  namespace: gitlab-spike
+spec:
+  allowRepeat: true
+  digits: 8
+  length: 40
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: praefect-db-credentials
+  namespace: gitlab-spike
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: praefect-db-credentials-generator
+  refreshInterval: 8760h
+  target:
+    name: praefect-db-credentials
+    template:
+      data:
+        DATABASE_URL: postgresql://praefect:{{ .password }}@gitlab-db-rw.gitlab-spike.svc:5432/praefect
+        dbname: praefect
+        host: gitlab-db-rw.gitlab-spike.svc
+        password: "{{ .password }}"
+        port: "5432"
+        username: praefect
+      metadata:
+        labels:
+          cnpg.io/reload: "true"
+      type: kubernetes.io/basic-auth
+---
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
@@ -19,6 +169,12 @@ spec:
       owner: gitlabhq_production
   imageName: ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie
   instances: 3
+  managed:
+    roles:
+      - login: true
+        name: praefect
+        passwordSecret:
+          name: praefect-db-credentials
   monitoring:
     enablePodMonitor: true
   plugins:
@@ -32,7 +188,7 @@ spec:
         enabled: false
   storage:
     resizeInUseVolumes: false
-    size: 20Gi
+    size: 25Gi
     storageClass: piraeus-ssd-local
 ---
 apiVersion: seaweed.seaweedfs.com/v1
@@ -126,131 +282,16 @@ spec:
   schedule: 0 33 1 * * *
 ---
 apiVersion: postgresql.cnpg.io/v1
-kind: Cluster
+kind: Database
 metadata:
-  name: praefect-db
+  name: praefect
   namespace: gitlab-spike
 spec:
-  affinity:
-    nodeSelector:
-      topology.kubernetes.io/zone: hil-ovh
-    podAntiAffinityType: required
-    tolerations:
-      - effect: NoSchedule
-        key: node-role.kubernetes.io/control-plane
-        operator: Exists
-    topologyKey: kubernetes.io/hostname
-  bootstrap:
-    initdb:
-      database: praefect
-      owner: praefect
-  imageName: ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie
-  instances: 3
-  monitoring:
-    enablePodMonitor: true
-  plugins:
-    - isWALArchiver: true
-      name: barman-cloud.cloudnative-pg.io
-      parameters:
-        barmanObjectName: praefect-db
-  probes:
-    liveness:
-      isolationCheck:
-        enabled: false
-  storage:
-    resizeInUseVolumes: false
-    size: 5Gi
-    storageClass: piraeus-ssd-local
----
-apiVersion: seaweed.seaweedfs.com/v1
-kind: Bucket
-metadata:
-  annotations:
-    description: Private CNPG physical backups and WAL archive for gitlab-spike/praefect-db.
-  name: gitlab-spike-praefect-db-backups
-  namespace: gitlab-spike
-spec:
-  access:
-    - actions:
-        - Read
-        - Write
-        - List
-        - Tagging
-      user: gitlab-spike-praefect-db-backups
-  adoptExisting: true
-  clusterRef:
-    name: seaweedfs
-    namespace: seaweedfs
-  name: gitlab-spike-praefect-db-backups
-  reclaimPolicy: Retain
----
-apiVersion: seaweed.seaweedfs.com/v1
-kind: S3Identity
-metadata:
-  annotations:
-    description: Private CNPG physical backups and WAL archive for gitlab-spike/praefect-db.
-  name: gitlab-spike-praefect-db-backups
-  namespace: gitlab-spike
-spec:
-  reclaimPolicy: Retain
-  seaweedRef:
-    name: seaweedfs
-    namespace: seaweedfs
----
-apiVersion: seaweed.seaweedfs.com/v1
-kind: S3Credentials
-metadata:
-  name: gitlab-spike-praefect-db-backups
-  namespace: gitlab-spike
-spec:
-  identityRef:
-    name: gitlab-spike-praefect-db-backups
-  reclaimPolicy: Retain
-  seaweedRef:
-    name: seaweedfs
-    namespace: seaweedfs
-  secretRef:
-    accessKeyField: AWS_ACCESS_KEY_ID
-    name: gitlab-spike-praefect-db-backups-s3-credentials
-    secretKeyField: AWS_SECRET_ACCESS_KEY
----
-apiVersion: barmancloud.cnpg.io/v1
-kind: ObjectStore
-metadata:
-  annotations:
-    description: SeaweedFS S3 destination for gitlab-spike/praefect-db base backups and WAL.
-  name: praefect-db
-  namespace: gitlab-spike
-spec:
-  configuration:
-    data:
-      compression: gzip
-    destinationPath: s3://gitlab-spike-praefect-db-backups/
-    endpointURL: http://seaweedfs-s3.seaweedfs.svc:8333
-    s3Credentials:
-      accessKeyId:
-        key: AWS_ACCESS_KEY_ID
-        name: gitlab-spike-praefect-db-backups-s3-credentials
-      secretAccessKey:
-        key: AWS_SECRET_ACCESS_KEY
-        name: gitlab-spike-praefect-db-backups-s3-credentials
-    wal:
-      compression: gzip
-  retentionPolicy: 30d
----
-apiVersion: postgresql.cnpg.io/v1
-kind: ScheduledBackup
-metadata:
-  name: praefect-db
-  namespace: gitlab-spike
-spec:
-  backupOwnerReference: self
   cluster:
-    name: praefect-db
-  method: plugin
-  pluginConfiguration:
-    name: barman-cloud.cloudnative-pg.io
-  schedule: 0 54 1 * * *
+    name: gitlab-db
+  databaseReclaimPolicy: retain
+  name: praefect
+  owner: praefect
 ---
 apiVersion: postgresql.cnpg.io/v1
 kind: Database

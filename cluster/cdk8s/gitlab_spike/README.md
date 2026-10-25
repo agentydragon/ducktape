@@ -9,7 +9,7 @@ outputs live under `cluster/generated/gitlab-spike/`.
 - SSH: `gitlab-spike.allegedly.works:2223`
 - Provisioned project: `spike/acceptance`
 
-The Flux order is namespace/ESO credentials → databases, Valkey and S3 → GitLab →
+The five Flux stages are prerequisites (namespaces, ESO credentials, databases, Valkey and S3) → GitLab →
 bootstrap API token → `tf/gitops/gitlab-spike` → Runner, delivery and benchmark resources.
 Authentik provisioning is part of `tf/gitops/sso-providers`. Terraform creates the human
 account and links its current Authentik UID before login; automatic account creation is off.
@@ -20,7 +20,8 @@ Provider constraints in `tf/gitops/gitlab-spike/versions.tf.json` are generated 
 `BUILD.bazel`: run `bb run //tf/gitops/gitlab-spike:gen-tf-versions` after changing them.
 
 Praefect manages three separate Gitaly PVCs with one local HDD copy each on distinct OVH
-workers. PostgreSQL and Praefect metadata use separate CNPG clusters and backup buckets.
+workers. GitLab and Praefect use separate databases and login roles in one three-instance
+CNPG cluster, with 25 GiB SSD storage per instance and one coordinated CNPG backup stream.
 Gitaly cgroup isolation is disabled pending validation of the writable cgroup mount on Talos.
 The experimental Praefect chart and beta Kubernetes topology remain evaluation constraints.
 

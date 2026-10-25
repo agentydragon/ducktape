@@ -33,7 +33,7 @@ CHART_VERSION = "10.5.1"  # GitLab 19.5.1, published 2026-10-21 in charts.gitlab
 GITALY_WORKERS = ("ovh-ns103656", "ovh-ns103711", "ovh-ns102453")
 
 GITLAB_DB = cnpg.PostgresRef.generated(name="gitlab-db", namespace=NAMESPACE)
-PRAEFECT_DB = cnpg.PostgresRef.generated(name="praefect-db", namespace=NAMESPACE)
+PRAEFECT_PASSWORD = SecretRef(namespace=NAMESPACE, name="praefect-db-credentials")
 GITLAB_DATABASE = "gitlabhq_production"
 PRAEFECT_DATABASE = "praefect"
 VALKEY = "gitlab-valkey"
@@ -174,10 +174,10 @@ def _values() -> dict[str, object]:
                 "enabled": True,
                 "replaceInternalGitaly": True,
                 "virtualStorages": [{"name": "default", "gitalyReplicas": 3, "defaultReplicationFactor": 3}],
-                "dbSecret": {"secret": PRAEFECT_DB.app_secret.name, "key": "password"},
+                "dbSecret": {"secret": PRAEFECT_PASSWORD.name, "key": "password"},
                 "psql": {
-                    "host": PRAEFECT_DB.rw.host,
-                    "port": PRAEFECT_DB.rw.port.number,
+                    "host": GITLAB_DB.rw.host,
+                    "port": GITLAB_DB.rw.port.number,
                     "user": PRAEFECT_DATABASE,
                     "dbName": PRAEFECT_DATABASE,
                     "sslMode": "disable",

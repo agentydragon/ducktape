@@ -153,11 +153,11 @@ spec:
       praefect:
         dbSecret:
           key: password
-          secret: praefect-db-app
+          secret: praefect-db-credentials
         enabled: true
         psql:
           dbName: praefect
-          host: praefect-db-rw.gitlab-spike.svc
+          host: gitlab-db-rw.gitlab-spike.svc
           port: 5432
           sslMode: disable
           user: praefect

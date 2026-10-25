@@ -112,22 +112,24 @@ unset GIT_AUTH_USER GIT_AUTH_TOKEN
 
 The script refuses any other project URL, requires both explicit spike guards, copies only
 the generated demo seed and sample CI/app sources, and pushes a normal fast-forward commit to
-`main`. Its local clone and authentication header are removed on exit. The pipeline runs Go
-tests and a static build, then creates an OCI image under a non-policy-matching staging tag.
-It applies the runtime entrypoint and UID/GID before publishing the final selector-matching
-tag with upstream `crane append` and `crane mutate`. This avoids Flux observing a partially
-configured image and exercises a real OCI registry push without a Docker daemon, privileged
-Docker-in-Docker, a builder daemon, or base-image downloads.
+`main`. Its local clone and authentication header are removed on exit. CI runs Go tests in the
+pinned official ko builder image. On protected `main`, `ko build` compiles the app and pushes
+the final selector-matching tag directly, without a Docker daemon, privileged
+Docker-in-Docker, or a staging tag. Jobs run as nonprivileged UID 1000 with Go caches under
+`$CI_PROJECT_DIR`; the app image uses ko's static runtime base and UID/GID 65532, matching the
+generated demo Deployment.
 
-The sample pins Go to `golang:1.27.3` and crane to
-`gcr.io/go-containerregistry/crane/debug:v0.22.1` by release tag. Crane creates an OCI empty
-base, adds the compiled binary as a layer, sets `/app` as entrypoint and UID/GID 65532, then
-pushes the result. Version tags are review pins rather than immutable digests; resolve and
-record approved image digests before treating this as a production build recipe. Go's
-[official release history](https://go.dev/doc/devel/release) lists 1.27.3; the
-[go-containerregistry v0.22.1 release](https://github.com/google/go-containerregistry/releases/tag/v0.22.1)
-and [crane command documentation](https://github.com/google/go-containerregistry/tree/v0.22.1/cmd/crane/doc)
-document the selected CLI version and flags.
+The builder is pinned to the published GHCR image digest
+`ghcr.io/ko-build/ko@sha256:8cc63fb82d48708a20ec5055adc41b12bdfb5709f82a49c1b12f25e259760e7f`.
+That image contains Go 1.26.6; the fixture declares Go 1.26.0 in `go.mod`, and
+`GOTOOLCHAIN=local` prevents a toolchain download. CI logs `ko version` and `go version` so
+the toolchain and builder version are recorded with each run.
+
+`ko`'s default runtime base is `cgr.dev/chainguard/static`, so the job needs HTTPS egress to
+`cgr.dev` and `9236a389bd48b984df91adc1bc924620.r2.cloudflarestorage.com` for redirected image
+blobs. The runner also fetches the pinned builder image from `ghcr.io`. See `ko`'s
+[build reference](https://ko.build/reference/ko_build/), [base-image configuration](https://ko.build/configuration/),
+and Chainguard's [registry network requirements](https://edu.chainguard.dev/chainguard/containers/registry/network-requirements/).
 
 1. Run a pipeline on `spike/acceptance`. Save the pipeline URL/ID, commit SHA, test output,
    build log, pushed tag, and registry digest. The `publish` job runs only for protected
@@ -148,7 +150,7 @@ document the selected CLI version and flags.
 
 This is an OCI image assembly path, not a Dockerfile or general-purpose container build
 service. A production application that needs Dockerfile semantics still needs a separately
-reviewed rootless builder or approved build service. The runner and crane image path have not
+reviewed rootless builder or approved build service. The runner and ko build path have not
 been exercised.
 
 ## Repeated 20-operation application benchmark
@@ -389,7 +391,7 @@ documented as beta. That limits the meaning of a green spike result. See GitLab'
 This path is **not yet rehearsed**. A configuration or successful backup job is not restore
 proof. Rehearse only on this existing disposable spike while it contains synthetic fixtures;
 this runbook does not provision a second restore target or authorize restoring production data.
-Before restore, preserve the backup archive, Rails secrets, matching CNPG recovery points, and a
+Before restore, preserve the backup archive, Rails secrets, a matching CNPG recovery point, and a
 complete integrity baseline for the seeded project. Quiesce GitLab writes and CI, pause the
 spike's Terraform reconciliation, and suspend the owning Flux reconciliation so bootstrap or
 operators cannot rewrite state during restore. Resume them only after restore validation.
@@ -405,10 +407,10 @@ operators cannot rewrite state during restore. Resume them only after restore va
    ```
 
 2. Record the exact GitLab chart/app version and backup ID. Keep a separate encrypted copy of
-   the Rails secrets and the CNPG backups for both the GitLab Rails database and the Praefect
-   metadata database. Verify the CNPG backups are complete and retain their timestamps and
-   object-store locations. The chart's `backup-utility` is not a substitute for backing up the
-   separate Praefect database.
+   the Rails secrets and the shared CNPG cluster backup, which contains both the GitLab Rails
+   and Praefect metadata databases. Verify the CNPG backup is complete and retain its timestamp
+   and object-store location. The chart's `backup-utility` is not a substitute for backing up
+   the Praefect metadata database.
 3. Do not use a standalone snapshot of a single Gitaly PVC as a Praefect backup. GitLab warns
    that Praefect does not support snapshot backup and recovery because database metadata can
    diverge from repository disks. Preserve a coordinated Praefect database plus repository
@@ -416,13 +418,13 @@ operators cannot rewrite state during restore. Resume them only after restore va
    [Praefect recovery guidance](https://docs.gitlab.com/administration/gitaly/praefect/) and
    [what to back up](https://docs.gitlab.com/administration/backup_restore/backup_gitlab/).
 4. On the same spike, after capturing the baseline and stopping writes, follow the established
-   CNPG restore procedure for the matching GitLab Rails and Praefect databases. Do not improvise
+   CNPG restore procedure for the shared cluster containing both Rails and Praefect databases. Do not improvise
    an in-place CNPG data-directory replacement. Then follow GitLab's chart restore procedure:
    stop Sidekiq, Webservice, and Prometheus database clients; run
    `backup-utility --restore -t <backup_ID>`; restart those deployments at their recorded
    replica counts; and run GitLab's custom instance setup if the source was not a Helm
-   installation. These are separate Rails and Praefect recovery steps and require an operator
-   to verify the exact GitLab/CNPG restore procedure before execution.
+   installation. The shared CNPG recovery point restores both databases together; the subsequent GitLab
+   archive restore still requires an operator to verify the exact GitLab/CNPG procedure.
 5. Verify the seeded project's branch/tag refs, GitLab API access, Praefect `check` and
    per-replica checksums, LFS object fetch, artifact download, upload read, and registry pull
    by digest. Record gaps and restore time. A failed or partial restore is a failed gate.

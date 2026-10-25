@@ -6,13 +6,11 @@ from cilium_crds.io.cilium import CiliumNetworkPolicySpecEndpointSelector
 
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.helm import helm_release, https_helm_repository
-from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 NAME = "gitlab-spike-runner"
 NAMESPACE = "gitlab-spike-ci"
-OUTPUT_DIR = f"{GENERATED_ROOT}/gitlab-spike/runner"
 
 
 def chart(app: App) -> Chart:
@@ -34,14 +32,14 @@ def chart(app: App) -> Chart:
             metadata=ApiObjectMetadata(name=f"{NAME}-{name}", namespace=NAMESPACE),
             endpoint_selector=CiliumNetworkPolicySpecEndpointSelector(match_labels=selector),
             egress=[
-                cilium.dns_egress(),
+                cilium.dns_egress(resolves=["*"]),
                 EgressRule.to_endpoints({"k8s:io.kubernetes.pod.namespace": "gitlab-spike"}, 8181, 5000),
-                cilium.egress_via_gateway(
-                    "gitlab-spike.allegedly.works",
-                    "registry-gitlab-spike.allegedly.works",
-                    "flux-webhook.allegedly.works",
+                cilium.egress_via_gateway("gitlab-spike.allegedly.works", "registry-gitlab-spike.allegedly.works"),
+                *(
+                    [EgressRule.to_entities(Entity.KUBE_APISERVER, ports=[443, 6443])]
+                    if api_access
+                    else [EgressRule.to_fqdns("cgr.dev", "9236a389bd48b984df91adc1bc924620.r2.cloudflarestorage.com")]
                 ),
-                *([EgressRule.to_entities(Entity.KUBE_APISERVER, ports=[443, 6443])] if api_access else []),
             ],
         )
     helm_release(

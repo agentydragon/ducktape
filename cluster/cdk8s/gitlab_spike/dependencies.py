@@ -8,6 +8,11 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import Cpu, k8s
+from cnpg_cluster_crds.io.cnpg.postgresql import (
+    ClusterSpecManaged,
+    ClusterSpecManagedRoles,
+    ClusterSpecManagedRolesPasswordSecret,
+)
 from cnpg_database_crds.io.cnpg.postgresql import (
     DatabaseSpecCluster,
     DatabaseSpecDatabaseReclaimPolicy,
@@ -22,6 +27,7 @@ from external_secrets_crds.io.external_secrets import (
 
 from cluster.cdk8s import cnpg, cnpg_backup
 from cluster.cdk8s.external_secrets.kubernetes_store import secret_store
+from cluster.cdk8s.external_secrets.minted_secret import mint_db_role_secret
 from cluster.cdk8s.gitlab_spike import app
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.providers.cnpg.database import Database
@@ -37,23 +43,47 @@ _SECRET_READER = "gitlab-s3-secret-reader"
 
 
 def _databases(chart: Chart) -> None:
-    for id, ref, database, backup_bucket in [
-        ("gitlab", app.GITLAB_DB, app.GITLAB_DATABASE, None),
-        ("praefect", app.PRAEFECT_DB, app.PRAEFECT_DATABASE, "gitlab-spike-praefect-db-backups"),
-    ]:
-        cnpg.cluster(
-            chart,
-            f"{id}-cluster",
-            ref=ref,
-            profile=cnpg.OVH_PIRAEUS_SSD,
-            size="20Gi" if id == "gitlab" else "5Gi",
-            resize_in_use_volumes=False,
-            instances=3,
-            image_name="ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie",
-            initdb=cnpg.same_owner_initdb(database),
-            wal_archive=True,
-        )
-        cnpg_backup.CnpgBackup(chart, f"{id}-backup", ref=ref, retention="30d", bucket_name=backup_bucket)
+    mint_db_role_secret(
+        chart,
+        "praefect-password",
+        name=app.PRAEFECT_PASSWORD.name,
+        namespace=app.NAMESPACE,
+        role=app.PRAEFECT_DATABASE,
+        host=app.GITLAB_DB.rw.host,
+        port=app.GITLAB_DB.rw.port.number,
+        database=app.PRAEFECT_DATABASE,
+    )
+    cnpg.cluster(
+        chart,
+        "gitlab-cluster",
+        ref=app.GITLAB_DB,
+        profile=cnpg.OVH_PIRAEUS_SSD,
+        size="25Gi",
+        resize_in_use_volumes=False,
+        instances=3,
+        image_name="ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie",
+        initdb=cnpg.same_owner_initdb(app.GITLAB_DATABASE),
+        managed=ClusterSpecManaged(
+            roles=[
+                ClusterSpecManagedRoles(
+                    name=app.PRAEFECT_DATABASE,
+                    login=True,
+                    password_secret=ClusterSpecManagedRolesPasswordSecret(name=app.PRAEFECT_PASSWORD.name),
+                )
+            ]
+        ),
+        wal_archive=True,
+    )
+    cnpg_backup.CnpgBackup(chart, "gitlab-backup", ref=app.GITLAB_DB, retention="30d")
+    Database(
+        chart,
+        "praefect-database",
+        metadata=ApiObjectMetadata(name="praefect", namespace=app.NAMESPACE),
+        cluster=DatabaseSpecCluster(name=app.GITLAB_DB.name),
+        name=app.PRAEFECT_DATABASE,
+        owner=app.PRAEFECT_DATABASE,
+        database_reclaim_policy=DatabaseSpecDatabaseReclaimPolicy.RETAIN,
+    )
     # Adopt the bootstrap-created database so CNPG installs and keeps these extensions.
     # Retain prevents deleting the Database CR from deleting GitLab's data.
     Database(

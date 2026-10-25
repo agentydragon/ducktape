@@ -4,6 +4,7 @@ from cdk8s import App, Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecDeletionPolicy,
     KustomizationSpecHealthCheckExprs,
+    KustomizationSpecHealthChecks,
 )
 from pydantic import BaseModel
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
@@ -11,11 +12,14 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 from cluster.cdk8s import terraform
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import CNPG_DATABASE_READY
+from cluster.cdk8s.gitlab_spike import runner
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 GITOPS_NAME = "gitlab-spike-gitops"
 GITOPS_DIR = f"{GENERATED_ROOT}/gitlab-spike/gitops"
+INTEGRATIONS_NAME = "gitlab-spike-integrations"
+INTEGRATIONS_DIR = f"{GENERATED_ROOT}/gitlab-spike/integrations"
 
 
 class SshKey(BaseModel):
@@ -44,20 +48,10 @@ def gitops_chart(app: App, *, module: ArtifactGeneratorSpecArtifacts) -> Chart:
     return chart
 
 
-def namespace(chart: Chart, directory: RenderedDirectory, external_secrets: Kustomization) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        "gitlab-spike-namespace",
-        directory,
-        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-        depends_on=flux_kustomization_depends_on_many(external_secrets),
-    )
-
-
 def dependencies(
     chart: Chart,
     directory: RenderedDirectory,
-    namespace: Kustomization,
+    external_secrets: Kustomization,
     cnpg: Kustomization,
     seaweedfs: Kustomization,
     valkey: Kustomization,
@@ -69,7 +63,7 @@ def dependencies(
         directory,
         timeout="20m",
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-        depends_on=flux_kustomization_depends_on_many(namespace, cnpg, seaweedfs, valkey, piraeus),
+        depends_on=flux_kustomization_depends_on_many(external_secrets, cnpg, seaweedfs, valkey, piraeus),
         health_check_exprs=[
             KustomizationSpecHealthCheckExprs(
                 api_version="postgresql.cnpg.io/v1", kind="Database", current=CNPG_DATABASE_READY
@@ -114,24 +108,21 @@ def gitops(
     )
 
 
-def runner(chart: Chart, directory: RenderedDirectory, gitops: Kustomization) -> Kustomization:
-    return flux_kustomization(
-        chart, "gitlab-spike-runner", directory, timeout="10m", depends_on=flux_kustomization_depends_on_many(gitops)
-    )
-
-
-def delivery(chart: Chart, directory: RenderedDirectory, gitops: Kustomization) -> Kustomization:
+def integrations(chart: Chart, directory: RenderedDirectory, gitops: Kustomization) -> Kustomization:
     return flux_kustomization(
         chart,
-        "gitlab-spike-delivery",
+        INTEGRATIONS_NAME,
         directory,
-        # The initial demo commit and first CI image are submitted by the proof harness.
+        timeout="10m",
+        # The source and demo cannot become ready before the manual seed and first image.
         wait=False,
+        health_checks=[
+            KustomizationSpecHealthChecks(
+                api_version="helm.toolkit.fluxcd.io/v2",
+                kind="HelmRelease",
+                name=runner.NAME,
+                namespace=runner.NAMESPACE,
+            )
+        ],
         depends_on=flux_kustomization_depends_on_many(gitops),
-    )
-
-
-def benchmark(chart: Chart, directory: RenderedDirectory, gitops: Kustomization) -> Kustomization:
-    return flux_kustomization(
-        chart, "gitlab-spike-benchmark", directory, depends_on=flux_kustomization_depends_on_many(gitops)
     )

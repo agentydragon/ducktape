@@ -98,11 +98,6 @@ spec:
       name: forgejo
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/generated/gitlab-spike/namespace/**"
-          to: "@artifact/cluster/generated/gitlab-spike/namespace/"
-      name: gitlab-spike-namespace
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/generated/gitlab-spike/dependencies/**"
           to: "@artifact/cluster/generated/gitlab-spike/dependencies/"
       name: gitlab-spike-dependencies
@@ -123,19 +118,9 @@ spec:
       name: gitlab-spike-gitops
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/generated/gitlab-spike/runner/**"
-          to: "@artifact/cluster/generated/gitlab-spike/runner/"
-      name: gitlab-spike-runner
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/generated/gitlab-spike/delivery/**"
-          to: "@artifact/cluster/generated/gitlab-spike/delivery/"
-      name: gitlab-spike-delivery
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/generated/gitlab-spike/benchmark/**"
-          to: "@artifact/cluster/generated/gitlab-spike/benchmark/"
-      name: gitlab-spike-benchmark
+        - from: "@repo/cluster/generated/gitlab-spike/integrations/**"
+          to: "@artifact/cluster/generated/gitlab-spike/integrations/"
+      name: gitlab-spike-integrations
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/forgejo-images/**"

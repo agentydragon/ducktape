@@ -21,14 +21,12 @@ from flux_receiver_crds.io.fluxcd.toolkit.notification import ReceiverSpecSecret
 
 from cluster.cdk8s.flux import flux_kustomization
 from cluster.cdk8s.image_automation import newest_ci_tag_policy
-from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.providers.flux.git_repository import GitRepository
 from cluster.cdk8s.providers.flux.image_repository import ImageRepository
 from cluster.cdk8s.providers.flux.image_update_automation import ImageUpdateAutomation
 from cluster.cdk8s.providers.flux.notification import Receiver, ReceiverResource
 
 NAME = "gitlab-spike-delivery"
-OUTPUT_DIR = f"{GENERATED_ROOT}/gitlab-spike/delivery"
 _NAME = "gitlab-spike"
 _NAMESPACE = "flux-system"
 _DEMO_NAMESPACE = "gitlab-spike-demo"
