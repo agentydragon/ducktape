@@ -97,10 +97,27 @@ def main_proxy_config() -> dict:
         "model_list": [model_entry(route) for route in SERVED_ROUTES],
         "litellm_settings": {
             "drop_params": True,
-            "callbacks": ["langfuse_otel", "prometheus"],
+            # Duplicate console-to-Loki trace export: https://github.com/agentydragon/ducktape/issues/11937
+            "callbacks": ["otel", "prometheus"],
             "custom_provider_map": [
                 {"provider": "tana", "custom_handler": "tana.litellm_proxy.custom_handler.tana_handler"}
             ],
+        },
+        "callback_settings": {
+            "otel": {
+                "mapper_names": ["langfuse"],
+                "baggage_metadata_keys": [
+                    "user_api_key_org_id",
+                    "user_api_key_user_id",
+                    "user_api_key_alias",
+                    "user_api_key_end_user_id",
+                    "requester_ip_address",
+                    "spend_logs_metadata.agentplane.namespace",
+                    "spend_logs_metadata.agentplane.service_account",
+                    "spend_logs_metadata.agentplane.pod_name",
+                    "spend_logs_metadata.agentplane.pod_uid",
+                ],
+            }
         },
         "router_settings": {
             # Codex 0.153+ bundles metadata for this exact slug (272k base / 872k

@@ -1,9 +1,10 @@
 /**
- * The thread history's rows. Consecutive tool calls and reasoning steps fold into one run, and
- * consecutive mundane lifecycle observations (turn started, harness started, an ordinary turn
- * completion, ...) fold into one group, so neither a long chain of intermediate steps nor routine
- * housekeeping buries the entities around it. Any other entity (an assistant's answer, confirmed
- * input, a lifecycle observation worth its own line) stands alone and ends whichever it interrupts.
+ * The thread history's rows. Consecutive tool calls and reasoning steps fold into one run; adjacent
+ * reasoning steps inside a run also stay together as a nested group. Consecutive mundane lifecycle
+ * observations (turn started, harness started, an ordinary turn completion, ...) fold into one
+ * group, so neither a long chain of intermediate steps nor routine housekeeping buries the entities
+ * around it. Any other entity (an assistant's answer, confirmed input, a lifecycle observation worth
+ * its own line) stands alone and ends whichever it interrupts.
  */
 import { fromJson, type JsonValue } from "@bufbuild/protobuf";
 
@@ -14,9 +15,13 @@ import type { ThreadEntity } from "./thread_sync";
  * stream into a run or group. */
 export type HistoryRow =
   | { kind: "entity"; entities: [ThreadEntity] }
-  | { kind: "run"; entities: [ThreadEntity, ...ThreadEntity[]] }
+  | { kind: "run"; entities: [ThreadEntity, ...ThreadEntity[]]; contents: RunContent[] }
   | { kind: "setup"; entities: [ThreadEntity, ...ThreadEntity[]] }
   | { kind: "lifecycle_group"; entities: [ThreadEntity, ...ThreadEntity[]] };
+
+/** Ordered content of a run: ordinary tool items and consecutive reasoning items kept together. */
+export type RunContent =
+  { kind: "item"; entity: ThreadEntity } | { kind: "reasoning_group"; entities: [ThreadEntity, ...ThreadEntity[]] };
 
 const SETUP_OBSERVATIONS = new Set(["setup_started", "setup_output", "setup_finished", "setup_interrupted"]);
 
@@ -113,6 +118,16 @@ function itemKind(entity: ThreadEntity): ItemKind | null {
 function runStep(entity: ThreadEntity): boolean {
   const kind = itemKind(entity);
   return kind === ItemKind.TOOL_CALL || kind === ItemKind.REASONING;
+}
+
+function appendRunContent(contents: RunContent[], entity: ThreadEntity): void {
+  if (itemKind(entity) !== ItemKind.REASONING) {
+    contents.push({ kind: "item", entity });
+    return;
+  }
+  const last = contents.at(-1);
+  if (last?.kind === "reasoning_group") last.entities.push(entity);
+  else contents.push({ kind: "reasoning_group", entities: [entity] });
 }
 
 // An interrupt is usually the operator's own doing, so an interrupted turn reads as ordinary. What is
@@ -212,8 +227,14 @@ export function historyRows(segments: readonly ThreadEntity[]): HistoryRow[] {
       if (last?.kind === "setup") last.entities.push(entity);
       else rows.push({ kind: "setup", entities: [entity] });
     } else if (runStep(entity)) {
-      if (last?.kind === "run") last.entities.push(entity);
-      else rows.push({ kind: "run", entities: [entity] });
+      if (last?.kind === "run") {
+        last.entities.push(entity);
+        appendRunContent(last.contents, entity);
+      } else {
+        const contents: RunContent[] = [];
+        appendRunContent(contents, entity);
+        rows.push({ kind: "run", entities: [entity], contents });
+      }
     } else if (groupableLifecycle(entity)) {
       if (last?.kind === "lifecycle_group") last.entities.push(entity);
       else rows.push({ kind: "lifecycle_group", entities: [entity] });

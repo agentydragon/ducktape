@@ -411,6 +411,7 @@ spec:
               - flux-system
               - forgejo
               - gatus
+              - gitlab-spike
               - haku-console
               - haku-mailbox
               - home-assistant
@@ -441,6 +442,7 @@ spec:
               - flux-system
               - forgejo
               - gatus
+              - gitlab-spike
               - haku-console
               - haku-mailbox
               - home-assistant
@@ -471,6 +473,7 @@ spec:
               - flux-system
               - forgejo
               - gatus
+              - gitlab-spike
               - haku-console
               - haku-mailbox
               - home-assistant

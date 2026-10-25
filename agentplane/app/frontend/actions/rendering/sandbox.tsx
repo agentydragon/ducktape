@@ -211,8 +211,10 @@ export const sandboxExecPresentation: ActionPresentation = {
 
 export const sandboxCreatePresentation: ActionPresentation = {
   label: sandboxCreateLabel,
-  pane: { opened: sandboxCreateArguments },
+  pane: { collapsed: sandboxCreateArguments, opened: sandboxCreateArguments },
   details: { arguments: sandboxCreateArguments, nativeResult: sandboxInfoResult },
+  offersCardDecisionButtons: argumentsMatch(create),
+  compactCardExpands: expandsForRejectedArguments(create),
 };
 
 export const sandboxGetPresentation: ActionPresentation = {

@@ -145,6 +145,9 @@ class AgentplaneFixture:
             "([preview, body]) => window.agentplaneVisual.standardHistory(preview, body)", [long_preview, long_body]
         )
 
+    async def consecutive_reasoning_history(self) -> None:
+        await self.page.evaluate("() => window.agentplaneVisual.consecutiveReasoningHistory()")
+
     async def show_action_preview(self, group: str, name: str, arguments: dict[str, object]) -> None:
         await self.page.evaluate(
             "([action, args]) => window.agentplaneVisual.showActionPreview(action, args)",

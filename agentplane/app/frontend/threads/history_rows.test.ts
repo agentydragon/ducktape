@@ -38,14 +38,23 @@ describe("historyRows", () => {
     const segments = [
       testItem(1, ItemKind.TOOL_CALL),
       testItem(2, ItemKind.REASONING),
-      testItem(3, ItemKind.TOOL_CALL),
-      testItem(4, ItemKind.ASSISTANT_TEXT),
-      testItem(5, ItemKind.REASONING),
+      testItem(3, ItemKind.REASONING),
+      testItem(4, ItemKind.TOOL_CALL),
+      testItem(5, ItemKind.ASSISTANT_TEXT),
+      testItem(6, ItemKind.REASONING),
     ];
     expect(historyRows(segments)).toEqual([
-      { kind: "run", entities: segments.slice(0, 3) },
-      { kind: "entity", entities: [segments[3]] },
-      { kind: "run", entities: [segments[4]] },
+      {
+        kind: "run",
+        entities: segments.slice(0, 4),
+        contents: [
+          { kind: "item", entity: segments[0] },
+          { kind: "reasoning_group", entities: segments.slice(1, 3) },
+          { kind: "item", entity: segments[3] },
+        ],
+      },
+      { kind: "entity", entities: [segments[4]] },
+      { kind: "run", entities: [segments[5]], contents: [{ kind: "reasoning_group", entities: [segments[5]] }] },
     ]);
   });
 

@@ -11,6 +11,10 @@ const calendarNodeArguments = z.strictObject({
   date: z.string().optional(),
 });
 
+export function offersCardDecisionButtonsCalendarNode(args: unknown): boolean {
+  return calendarNodeArguments.safeParse(args).success;
+}
+
 function CalendarNodeArguments({ args }: { args: z.infer<typeof calendarNodeArguments> }): JSX.Element {
   return (
     <Text size="sm" style={{ overflowWrap: "anywhere" }}>
@@ -46,6 +50,7 @@ export const calendarNodePresentation: ActionPresentation = {
   label: calendarNodeLabel,
   pane: { collapsed: calendarNodeArgumentsPreview },
   details: { arguments: calendarNodeArgumentsPreview },
+  offersCardDecisionButtons: offersCardDecisionButtonsCalendarNode,
   compactCardExpands: expandsForRejectedArguments(calendarNodeArguments),
 };
 

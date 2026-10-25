@@ -8,7 +8,7 @@ Go workload-auth resolver, removes it, and forwards the request to LiteLLM with 
 server-held virtual key.
 
 The forwarded byte body, status, error body, and streamed chunks are not translated. Verified
-identity is attached only through LiteLLM's documented `x-litellm-spend-logs-metadata` JSON header
+identity is attached through LiteLLM's documented `x-litellm-spend-logs-metadata` JSON header
 (the deployed `tana-litellm-proxy` image, `tana/litellm_proxy/BUILD.bazel`, layered on the
 `litellm_upstream` pin in `MODULE.bazel`). That version consumes the header
 (`_get_spend_logs_metadata_from_request_headers`) in its common request setup used by both native
@@ -23,6 +23,30 @@ object is:
   "agentplane.pod_uid": "..."
 }
 ```
+
+`attribution` maps literal output keys to one of four verified Kubernetes principal fields:
+`namespace`, `service_account`, `pod_name`, or `pod_uid`. The default sends the four
+`agentplane.*` JSON members in `x-litellm-spend-logs-metadata`. Staging also configures
+four `litellm.metadata.spend_logs_metadata.agentplane.*` W3C baggage members, which
+LiteLLM places on its normal request span before the upstream call. For example, a custom
+JSON field can be configured as:
+
+```yaml
+attribution:
+  json_headers:
+    - name: x-litellm-spend-logs-metadata
+      fields:
+        - key: agentplane.pod_name
+          source: pod_name
+  baggage:
+    - key: litellm.metadata.spend_logs_metadata.agentplane.pod_name
+      source: pod_name
+```
+
+Keys are literal, including dots and case. The ingress removes caller copies of configured
+JSON headers and all caller baggage, then constructs the configured values from its
+authenticated principal. It preserves trace context headers so the request stays linked
+to its caller's trace.
 
 Incoming LiteLLM metadata/customer/agent headers and Agentplane/Sandbox/Pod/Agent/Thread identity
 headers are removed before this object is stamped. Request bodies remain provider-native and are

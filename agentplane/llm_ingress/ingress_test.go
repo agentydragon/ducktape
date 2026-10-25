@@ -23,6 +23,8 @@ import (
 	"testing"
 	"time"
 
+	"go.opentelemetry.io/otel/baggage"
+
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"github.com/bazelbuild/rules_go/go/runfiles"
@@ -88,6 +90,9 @@ func newIngressTestServer(t *testing.T, reviews auth.TokenReviews, backendURL st
 
 func newConfiguredIngressTestServer(t *testing.T, reviews auth.TokenReviews, c config, options ...auth.Option) *httptest.Server {
 	t.Helper()
+	if len(c.Attribution.JSONHeaders) == 0 && len(c.Attribution.Baggage) == 0 {
+		c.Attribution = defaultAttribution()
+	}
 	resolver, err := auth.NewResolver(reviews, testAudience, []string{testNamespace}, options...)
 	if err != nil {
 		t.Fatal(err)
@@ -534,6 +539,7 @@ func TestHopByHopAndCredentialHeadersAreFilteredByCopyHelpers(t *testing.T) {
 		"X-Litellm-Api-Key":             {"forged"},
 		"X-Litellm-Spend-Logs-Metadata": {`{"forged":true}`},
 		"X-Agentplane-Pod-Uid":          {"forged"},
+		"Baggage":                       {"litellm.metadata.spend_logs_metadata.agentplane.namespace=forged,ordinary=untrusted"},
 		"Content-Length":                {"8"},
 		"X-Ordinary":                    {"kept"},
 	}
@@ -541,7 +547,17 @@ func TestHopByHopAndCredentialHeadersAreFilteredByCopyHelpers(t *testing.T) {
 		Account: auth.Account{Namespace: testNamespace, Name: "sandbox-a"},
 		PodName: "sandbox-a", PodUID: "pod-a-uid",
 	}
-	forwarded := forwardedRequestHeaders(headers, principal, testBackendKey)
+	attribution := defaultAttribution()
+	attribution.Baggage = []attributionField{
+		{Key: "litellm.metadata.spend_logs_metadata.agentplane.namespace", Source: verifiedNamespace},
+		{Key: "litellm.metadata.spend_logs_metadata.agentplane.service_account", Source: verifiedServiceAccount},
+		{Key: "litellm.metadata.spend_logs_metadata.agentplane.pod_name", Source: verifiedPodName},
+		{Key: "litellm.metadata.spend_logs_metadata.agentplane.pod_uid", Source: verifiedPodUID},
+	}
+	forwarded, err := forwardedRequestHeaders(headers, principal, testBackendKey, attribution)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, name := range []string{
 		"Connection", "Keep-Alive", "x-drop", "X-Api-Key", "X-Litellm-Api-Key",
 		"X-Agentplane-Pod-Uid", "Content-Length",
@@ -552,6 +568,48 @@ func TestHopByHopAndCredentialHeadersAreFilteredByCopyHelpers(t *testing.T) {
 	}
 	if forwarded.Get("Authorization") != "Bearer "+testBackendKey || forwarded.Get("X-Ordinary") != "kept" {
 		t.Fatalf("request headers were not rebuilt safely: %v", forwarded)
+	}
+	if got := forwarded.Get("Baggage"); strings.Contains(got, "forged") || strings.Contains(got, "ordinary") ||
+		!strings.Contains(got, "litellm.metadata.spend_logs_metadata.agentplane.namespace="+testNamespace) {
+		t.Fatalf("baggage was not rebuilt from verified identity: %q", got)
+	}
+	parsedBaggage, err := baggage.Parse(forwarded.Get("Baggage"))
+	if err != nil || len(parsedBaggage.Members()) != 4 ||
+		parsedBaggage.Member("litellm.metadata.spend_logs_metadata.agentplane.pod_uid").Value() != principal.PodUID {
+		t.Fatalf("forwarded baggage cannot be extracted as four verified claims: %v, err=%v", parsedBaggage, err)
+	}
+	for _, test := range []struct {
+		name              string
+		attribution       attributionConfig
+		wantSpendMetadata bool
+		wantBaggage       bool
+	}{
+		{name: "spend only", attribution: defaultAttribution(), wantSpendMetadata: true},
+		{name: "baggage only", attribution: attributionConfig{Baggage: attribution.Baggage}, wantBaggage: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			only, err := forwardedRequestHeaders(headers, principal, testBackendKey, test.attribution)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if (only.Get("X-Litellm-Spend-Logs-Metadata") != "") != test.wantSpendMetadata ||
+				(only.Get("Baggage") != "") != test.wantBaggage {
+				t.Fatalf("unexpected attribution headers: %v", only)
+			}
+		})
+	}
+	custom := attributionConfig{
+		JSONHeaders: []attributionJSONHeader{{Name: "X-Custom-Verified", Fields: []attributionField{{Key: "Pod.Name", Source: verifiedPodName}}}},
+		Baggage:     []attributionField{{Key: "custom.PodUid", Source: verifiedPodUID}},
+	}
+	headers.Set("X-Custom-Verified", `{"Pod.Name":"forged"}`)
+	customForwarded, err := forwardedRequestHeaders(headers, principal, testBackendKey, custom)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if customForwarded.Get("X-Litellm-Spend-Logs-Metadata") != "" || customForwarded.Get("X-Custom-Verified") != `{"Pod.Name":"sandbox-a"}` ||
+		customForwarded.Get("Baggage") != "custom.PodUid=pod-a-uid" {
+		t.Fatalf("custom attribution did not preserve key spelling and verified sources: %v", customForwarded)
 	}
 	var metadata map[string]string
 	if err := json.Unmarshal([]byte(forwarded.Get("X-Litellm-Spend-Logs-Metadata")), &metadata); err != nil ||

@@ -56,6 +56,10 @@ debundle_e2e_test(name = "native_browser_reentry_test")
 
 debundle_e2e_test(name = "empty_collection_timing_test")
 
+debundle_e2e_test(name = "map_entry_callbacks_test")
+
+debundle_e2e_test(name = "from_entries_callback_storage_test")
+
 debundle_e2e_test(
     name = "export_reentry_report_test",
     deps = ["@crates//:serde_json"],
@@ -67,7 +71,10 @@ debundle_e2e_test(name = "unknown_call_callback_storage_test")
 
 debundle_e2e_test(name = "set_iterable_reentry_test")
 
-debundle_e2e_test(name = "imported_callback_timing_test")
+debundle_e2e_test(
+    name = "imported_callback_timing_test",
+    deps = ["//devinfra/js/debundle:analysis"],
+)
 
 debundle_e2e_test(name = "class_callback_reachability_test")
 
@@ -129,6 +136,8 @@ debundle_e2e_test(name = "naturalize_cross_scope_params_test")
 debundle_e2e_test(name = "object_plain_data_calls_test")
 
 debundle_e2e_test(name = "metadata_decorator_timing_test")
+
+debundle_e2e_test(name = "three_argument_metadata_test")
 
 debundle_e2e_test(name = "proxy_constructor_purity_test")
 
@@ -572,3 +581,5 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(name = "initializer_placement_test")
+
+debundle_e2e_test(name = "intrinsic_array_iteration_test")

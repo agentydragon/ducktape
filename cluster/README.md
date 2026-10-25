@@ -79,11 +79,10 @@ Helm values.
 | --------------------- | ---------------------- | --------- | ---------------------------------------------------------------------------------------------- |
 | `seaweedfs-ovh`       | SeaweedFS CSI          | `hil-ovh` | **Default for app data**; not node-pinned; POSIX/S3 (HDD)                                      |
 | `seaweedfs-ovh-ssd`   | SeaweedFS CSI          | `hil-ovh` | NVMe SeaweedFS (`diskType: ssd`), Forgejo git hot tier                                         |
+| `piraeus-ssd-local`   | Piraeus (LINSTOR)      | `hil-ovh` | One copy on the consuming node's SSD pool; replicated apps and node-pinned SSD data            |
+| `piraeus-hdd-local`   | Piraeus (LINSTOR)      | `hil-ovh` | One copy on the consuming node's HDD pool; SeaweedFS `hdd` volume servers, bulk data           |
 | `local-path-proxmox`  | local-path-provisioner | `proxmox` | Proxmox-single CNPG DBs; node-pinned Proxmox app data                                          |
-| `local-path-ovh-hdd`  | local-path-provisioner | `hil-ovh` | KS-5 HDD: SeaweedFS `hdd` volume servers, OVH-HA CNPG DBs, node-pinned bulk data               |
-| `local-path-ovh-ssd`  | local-path-provisioner | `hil-ovh` | Legacy retained PVs and SeaweedFS claim templates; new SSD data uses Piraeus                   |
 | `local-path-home-ssd` | local-path-provisioner | `home`    | OptiPlex NVMe: LAN/hardware-pinned home state (Home Assistant); VolSync copies it to SeaweedFS |
-| `local-path-ovh`      | local-path-provisioner | `hil-ovh` | Deprecated alias of `local-path-ovh-hdd`                                                       |
 | `lvm-proxmox-ssd`     | OpenEBS LVM CSI        | `proxmox` | NVMe thin; nodes with VG `openebs-proxmox-ssd`                                                 |
 | `lvm-proxmox-hdd`     | OpenEBS LVM CSI        | `proxmox` | HDD thin; nodes with VG `openebs-proxmox-hdd`                                                  |
 

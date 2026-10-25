@@ -1104,6 +1104,27 @@ data:
       - agentplane-staging
     log_llm_requests: true
     models: []
+    attribution:
+      json_headers:
+        - name: x-litellm-spend-logs-metadata
+          fields:
+            - key: agentplane.namespace
+              source: namespace
+            - key: agentplane.service_account
+              source: service_account
+            - key: agentplane.pod_name
+              source: pod_name
+            - key: agentplane.pod_uid
+              source: pod_uid
+      baggage:
+        - key: litellm.metadata.spend_logs_metadata.agentplane.namespace
+          source: namespace
+        - key: litellm.metadata.spend_logs_metadata.agentplane.service_account
+          source: service_account
+        - key: litellm.metadata.spend_logs_metadata.agentplane.pod_name
+          source: pod_name
+        - key: litellm.metadata.spend_logs_metadata.agentplane.pod_uid
+          source: pod_uid
     codex_model_catalog_file: /etc/agentplane-llm-ingress-codex/codex_models.json
 immutable: false
 ---
@@ -3124,6 +3145,16 @@ data:
       scope: openid
       mode: exchange
       token_endpoint: https://auth.allegedly.works/application/o/token/
+    frontend_config:
+      trace_search:
+        grafana_base_url: https://grafana.allegedly.works/
+        tempo_datasource_uid: f99d1a97-7e72-4887-9277-0b105a5ccf44
+        deployment_environment: agentplane-staging
+      langfuse_search:
+        base_url: https://langfuse.allegedly.works/
+        project_id: langfuse-litellm-project
+        sandbox_namespace_metadata_key: attributes.litellm.metadata.spend_logs_metadata.agentplane.namespace
+        sandbox_service_account_metadata_key: attributes.litellm.metadata.spend_logs_metadata.agentplane.service_account
 immutable: false
 ---
 apiVersion: v1

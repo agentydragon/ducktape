@@ -20,6 +20,7 @@ from cluster.cdk8s import (
     claude_sandbox_secrets,
     cnpg_operator,
     crossplane,
+    crossplane_dns_records,
     crossplane_forgejo_agentydragon,
     descheduler,
     dns_automation,
@@ -148,6 +149,16 @@ from cluster.cdk8s.github_secrets_sync import (
     gitops_module as github_secrets_sync_gitops_module,
     secrets as github_secrets_sync_secrets,
 )
+from cluster.cdk8s.gitlab_spike import (
+    app as gitlab_spike_app,
+    benchmark as gitlab_spike_benchmark,
+    bootstrap as gitlab_spike_bootstrap,
+    delivery as gitlab_spike_delivery,
+    demo as gitlab_spike_demo,
+    dependencies as gitlab_spike_dependencies,
+    flux as gitlab_spike_flux,
+    runner as gitlab_spike_runner,
+)
 from cluster.cdk8s.grafana import app as grafana_app
 from cluster.cdk8s.grocy import (
     app as grocy_app,
@@ -253,6 +264,7 @@ from util.bazel.workspace import get_build_workspace_directory
 def generate_manifests(root: Path) -> None:
     """Write every converted directory's generated manifests under ``root``."""
     write_generated_readme(root)
+    gitlab_spike_demo.write_manifests(root)
     mesh = nebula_mesh.load(get_required_path("_main/nebula-mesh.json"))
     agentplane_staging_resource_chart = agentplane_generation.write_environment_manifests(
         root, staging.LAYOUT, staging.chart
@@ -791,14 +803,19 @@ def generate_manifests(root: Path) -> None:
         flux_chart, kyverno_kustomization, tofu_controller_kustomization
     )
     dns_automation_artifact = artifact("dns-automation", dns_automation.OUTPUT_DIR)
-    dns_records_module = terraform.gitops_module(dns_automation.TF_MODULE)
-    dns_automation.dns_automation(
+    dns_automation_kustomization = dns_automation.dns_automation(
         flux_chart,
-        write_directory(
-            root, dns_automation_artifact, functools.partial(dns_automation.chart, module=dns_records_module)
-        ),
+        write_directory(root, dns_automation_artifact, dns_automation.chart),
         tofu_controller_kustomization,
         external_secrets_operator_kustomization,
+    )
+    crossplane_dns_records_artifact = artifact(crossplane_dns_records.NAME, crossplane_dns_records.OUTPUT_DIR)
+    crossplane_dns_records.resources(
+        flux_chart,
+        write_directory(root, crossplane_dns_records_artifact, crossplane_dns_records.chart),
+        crossplane_opentofu_provider_kustomization,
+        tofu_state_db_kustomization,
+        dns_automation_kustomization,
     )
     external_dns_artifact = artifact("external-dns", external_dns.OUTPUT_DIR)
     external_dns_kustomization = external_dns.external_dns(
@@ -877,7 +894,7 @@ def generate_manifests(root: Path) -> None:
     agent_machine_access_module = terraform.gitops_module(agent_machine_access.NAME)
     gatus_sso_module = terraform.gitops_module(gatus_sso.NAME)
     alloy_otlp_bearer_token_module = terraform.gitops_module(alloy_otlp_bearer_token.NAME)
-    authentik_tf.authentik_tf(
+    authentik_tf_kustomization = authentik_tf.authentik_tf(
         flux_chart,
         write_directory(
             root,
@@ -1059,6 +1076,61 @@ def generate_manifests(root: Path) -> None:
         seaweedfs_operator_kustomization,
         monitoring_crds_kustomization,
         valkey_kustomization,
+    )
+    gitlab_spike_dependencies_artifact = artifact("gitlab-spike-dependencies", gitlab_spike_dependencies.OUTPUT_DIR)
+    gitlab_spike_dependencies_kustomization = gitlab_spike_flux.dependencies(
+        flux_chart,
+        write_directory(
+            root,
+            gitlab_spike_dependencies_artifact,
+            gitlab_spike_bootstrap.namespace_chart,
+            gitlab_spike_dependencies.chart,
+        ),
+        external_secrets_operator_kustomization,
+        cnpg_kustomization,
+        seaweedfs_operator_kustomization,
+        valkey_kustomization,
+        piraeus_cluster_kustomization,
+    )
+    gitlab_spike_app_artifact = artifact(gitlab_spike_app.NAME, gitlab_spike_app.OUTPUT_DIR)
+    gitlab_spike_app_kustomization = gitlab_spike_flux.app(
+        flux_chart,
+        write_directory(root, gitlab_spike_app_artifact, gitlab_spike_app.chart),
+        gitlab_spike_dependencies_kustomization,
+        authentik_tf_kustomization,
+    )
+    gitlab_spike_bootstrap_artifact = artifact(gitlab_spike_bootstrap.NAME, gitlab_spike_bootstrap.OUTPUT_DIR)
+    gitlab_spike_bootstrap_kustomization = gitlab_spike_flux.bootstrap(
+        flux_chart,
+        write_directory(root, gitlab_spike_bootstrap_artifact, gitlab_spike_bootstrap.chart),
+        gitlab_spike_app_kustomization,
+    )
+    gitlab_spike_module = terraform.gitops_module("gitlab-spike")
+    gitlab_spike_gitops_artifact = artifact(gitlab_spike_flux.GITOPS_NAME, gitlab_spike_flux.GITOPS_DIR)
+    gitlab_spike_gitops_kustomization = gitlab_spike_flux.gitops(
+        flux_chart,
+        write_directory(
+            root,
+            gitlab_spike_gitops_artifact,
+            functools.partial(gitlab_spike_flux.gitops_chart, module=gitlab_spike_module),
+        ),
+        gitlab_spike_bootstrap_kustomization,
+        tofu_controller_kustomization,
+        forgejo_kustomization,
+    )
+    gitlab_spike_integrations_artifact = artifact(
+        gitlab_spike_flux.INTEGRATIONS_NAME, gitlab_spike_flux.INTEGRATIONS_DIR
+    )
+    gitlab_spike_flux.integrations(
+        flux_chart,
+        write_directory(
+            root,
+            gitlab_spike_integrations_artifact,
+            gitlab_spike_runner.chart,
+            gitlab_spike_delivery.chart,
+            gitlab_spike_benchmark.chart,
+        ),
+        gitlab_spike_gitops_kustomization,
     )
     matrix_app_artifact = artifact("matrix-app", matrix.OUTPUT_DIR)
     matrix_kustomization = matrix.matrix(
@@ -1746,10 +1818,16 @@ def generate_manifests(root: Path) -> None:
             crossplane_artifact,
             crossplane_litellm_provider_artifact,
             crossplane_opentofu_provider_artifact,
+            crossplane_dns_records_artifact,
             crossplane_forgejo_agentydragon_artifact,
             external_secrets_config_artifact,
             external_secrets_operator_artifact,
             forgejo_artifact,
+            gitlab_spike_dependencies_artifact,
+            gitlab_spike_app_artifact,
+            gitlab_spike_bootstrap_artifact,
+            gitlab_spike_gitops_artifact,
+            gitlab_spike_integrations_artifact,
             forgejo_images_artifact,
             gateway_artifact,
             kyverno_artifact,
@@ -1883,7 +1961,6 @@ def generate_manifests(root: Path) -> None:
             vpa_artifact,
             website_artifact,
             home_switch_module,
-            dns_records_module,
             sso_providers_module,
             agent_machine_access_module,
             gatus_sso_module,
@@ -1898,6 +1975,7 @@ def generate_manifests(root: Path) -> None:
             forgejo_agentydragon_repos_module,
             finance_agent_module,
             forgejo_images_module,
+            gitlab_spike_module,
             litellm_keys_module,
             litellm_buildbuddy_sync_module,
         ],

@@ -644,7 +644,7 @@
   },
   "timepicker": {},
   "timezone": "browser",
-  "title": "Cluster storage I/O",
+  "title": "Storage I/O",
   "uid": "cluster-storage-io",
   "version": 1,
   "weekStart": ""

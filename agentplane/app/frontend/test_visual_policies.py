@@ -32,6 +32,7 @@ CLOSED_CARD_SHOWS_EVERYTHING = frozenset(
         ("kubernetes_admin", "pods_get"),
         ("kubernetes_admin", "pods_log"),
         ("kubernetes_admin", "events_list"),
+        ("sandbox", "create"),
         ("sandbox", "get"),
         ("sandbox", "dispose"),
         ("sandbox", "list"),
@@ -552,8 +553,10 @@ async def test_compact_action_summaries(
         ("sandbox", "get"),
         ("sandbox", "dispose"),
         ("sandbox", "list"),
+        ("sandbox", "create"),
     }:
         await expect(section.get_by_role("button", name=f"Approve {title}")).to_be_visible()
+        await expect(section.get_by_role("button", name=f"Deny {title}")).to_be_visible()
     await view.capture(target=section)
 
 
@@ -658,7 +661,7 @@ async def test_action_argument_fallbacks_use_json_view(
 
 
 @DESKTOP_AND_MOBILE
-async def test_compact_pr_with_description_requires_review(
+async def test_compact_pr_with_description_offers_card_decisions(
     view: VisualPage, app: AgentplaneFixture, capture_name: str
 ) -> None:
     await app.show_action_preview(
@@ -670,7 +673,7 @@ async def test_compact_pr_with_description_requires_review(
             "title": "Update docs",
             "head": "docs",
             "base": "devel",
-            "body": "Important PR description that must be read before approval.\n"
+            "body": "Important PR description visible on the compact card.\n"
             "Second paragraph explains the rollout and its verification.\n"
             "Final paragraph lists the remaining review questions.",
         },
@@ -680,17 +683,55 @@ async def test_compact_pr_with_description_requires_review(
     await _open_phone_navigation(view.page)
     collapsed_summary = section.locator(".agentplane-actions-sidebar-collapsed-preview")
     await expect(
-        collapsed_summary.get_by_text("Important PR description that must be read before approval.", exact=False)
+        collapsed_summary.get_by_text("Important PR description visible on the compact card.", exact=False)
     ).to_be_visible()
-    await expect(section.get_by_role("button", name="Approve review create pull request")).to_have_count(0)
+    await expect(section.get_by_role("button", name="Approve review create pull request")).to_be_visible()
+    await expect(section.get_by_role("button", name="Deny review create pull request")).to_be_visible()
     await view.capture(f"{capture_name}-collapsed", target=section)
     await section.get_by_role("button", name="Expand review create pull request").click()
     await expect(
-        section.get_by_text("Important PR description that must be read before approval.", exact=False)
+        section.get_by_text("Important PR description visible on the compact card.", exact=False)
     ).to_be_visible()
-    await expect(section.get_by_role("button", name="Approve review create pull request")).to_have_count(0)
+    await expect(section.get_by_role("button", name="Approve review create pull request")).to_be_visible()
+    await expect(section.get_by_role("button", name="Deny review create pull request")).to_be_visible()
     await expect(section.get_by_role("link", name="View details for review create pull request")).to_be_visible()
     await view.capture(target=section)
+
+
+@DESKTOP_AND_MOBILE
+async def test_compact_pull_request_search_offers_card_decisions(
+    view: VisualPage, app: AgentplaneFixture, capture_name: str
+) -> None:
+    await app.show_action_preview(
+        "github",
+        "search_pull_requests",
+        {
+            "owner": "example",
+            "repo": "repo",
+            "query": "is:open label:bug",
+            "page": 2,
+            "perPage": 10,
+            "sort": "updated",
+            "order": "desc",
+            "fields": ["number", "title", "state", "html_url"],
+        },
+    )
+    await app.mount_thread(IDLE_THREAD)
+    section = view.page.locator(".agentplane-actions-sidebar")
+    await _open_phone_navigation(view.page)
+    collapsed_summary = section.locator(".agentplane-actions-sidebar-collapsed-preview")
+    await expect(collapsed_summary).to_contain_text("is:open label:bug")
+    await expect(collapsed_summary).to_contain_text("example")
+    await expect(collapsed_summary).to_contain_text("repo")
+    await expect(collapsed_summary).not_to_contain_text("Page 2")
+    await expect(collapsed_summary).not_to_contain_text("results per page")
+    await expect(collapsed_summary).not_to_contain_text("Sort by")
+    await expect(collapsed_summary).not_to_contain_text("Order:")
+    await expect(collapsed_summary).not_to_contain_text("Fields:")
+    await expect(section.get_by_role("button", name="Approve review search pull requests")).to_be_visible()
+    await expect(section.get_by_role("button", name="Deny review search pull requests")).to_be_visible()
+    await expect(section.get_by_role("button", name="Expand review search pull requests")).to_have_count(0)
+    await view.capture(f"{capture_name}-collapsed", target=section)
 
 
 @DESKTOP_AND_MOBILE
@@ -951,8 +992,19 @@ async def test_action_history_receipt(view: VisualPage, app: AgentplaneFixture) 
 async def test_gmail_draft_history_keeps_request_and_result_together(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.set_flag(Flag.GMAIL_DRAFT_HISTORY)
     await app.mount_app("/actions")
-    await _open_history_receipts(view.page)
     page = view.page
+    card = page.locator('[data-action-receipt="70000000-0000-4000-8000-000000000010"]')
+    overview = card.locator(".agentplane-action-history-compact-overview")
+    await expect(overview).to_be_visible()
+    await expect(overview.get_by_text("The release is ready.", exact=False)).to_have_count(0)
+    await expect(card.get_by_role("button", name="Receipt details", exact=True)).to_have_attribute(
+        "aria-expanded", "false"
+    )
+    await _in_viewport(card)
+    await view.check(context="Gmail draft compact history card")
+    await view.capture("gmail_draft_history_compact", target=card)
+
+    await _open_history_receipts(page)
     await expect(page.get_by_text("prepare the release email", exact=True)).to_be_visible()
     await expect(page.get_by_role("link", name="Release notes", exact=True)).to_be_visible()
     await expect(page.get_by_text("Please review it before sending.", exact=True)).to_be_visible()

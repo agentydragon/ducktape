@@ -9,6 +9,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use petgraph::algo::tarjan_scc;
 use petgraph::graphmap::DiGraphMap;
+use roaring::RoaringBitmap;
 use swc_ecma_ast::Id;
 
 use super::StatementFacts;
@@ -28,6 +29,66 @@ pub(crate) struct FactsOwnerReadClosure {
 }
 
 impl FactsOwnerReadClosure {
+    /// Build a second adjacency for synchronous callback fallback. The caller
+    /// supplies retained callable-prefix reads where coverage is complete;
+    /// other owners keep their whole lazy read set. A lexical read remains an
+    /// edge even when its target's body is deferred.
+    pub(crate) fn synchronous_adjacency(
+        &self,
+        facts: &[StatementFacts],
+        prefix_reads: &[Option<&BTreeSet<Id>>],
+    ) -> Vec<Vec<StatementOrdinal>> {
+        let mut adjacency = vec![Vec::new(); facts.len()];
+        for fact in facts {
+            let owner = fact.ordinal;
+            for binding in &fact.declared {
+                if let Some(&representative) = self.binding_owner.get(binding)
+                    && representative != owner
+                {
+                    adjacency[owner.0].push(representative);
+                    adjacency[representative.0].push(owner);
+                }
+            }
+            let lazy = prefix_reads[owner.0].unwrap_or(&fact.reads.lazy);
+            for id in fact.reads.eager.iter().chain(lazy) {
+                if let Some(&target) = self.binding_owner.get(id) {
+                    adjacency[owner.0].push(target);
+                }
+            }
+        }
+        for neighbors in &mut adjacency {
+            neighbors.sort_unstable();
+            neighbors.dedup();
+        }
+        adjacency
+    }
+
+    /// Grow a persistent fallback cache using only synchronous read edges.
+    /// Each reached owner is expanded at most once as callback roots grow.
+    pub(crate) fn extend_synchronous_owners(
+        adjacency: &[Vec<StatementOrdinal>],
+        roots: impl IntoIterator<Item = StatementOrdinal>,
+        expanded: &mut BTreeSet<StatementOrdinal>,
+    ) -> Vec<StatementOrdinal> {
+        let mut pending = VecDeque::new();
+        let mut reached = Vec::new();
+        for root in roots {
+            if root.0 < adjacency.len() && expanded.insert(root) {
+                reached.push(root);
+                pending.push_back(root);
+            }
+        }
+        while let Some(owner) = pending.pop_front() {
+            for &target in &adjacency[owner.0] {
+                if expanded.insert(target) {
+                    reached.push(target);
+                    pending.push_back(target);
+                }
+            }
+        }
+        reached
+    }
+
     pub(crate) fn new(facts: &[StatementFacts]) -> Self {
         let mut declaration_sites = BTreeMap::<Id, Vec<StatementOrdinal>>::new();
         for stmt in facts {
@@ -80,23 +141,37 @@ impl FactsOwnerReadClosure {
             }
         }
 
-        let mut expanded_lazy_reads: Vec<BTreeSet<Id>> = vec![BTreeSet::new(); sccs.len()];
-        let mut expanded_lazy_rebinds: Vec<BTreeSet<Id>> = vec![BTreeSet::new(); sccs.len()];
+        // The same transitive IDs can occur on many outgoing SCC edges. Merge
+        // their compact indices here, then materialize the ordered ID sets
+        // once for the existing closure query API.
+        let binding_ids: Vec<Id> = binding_owner.keys().cloned().collect();
+        let binding_indices: BTreeMap<Id, u32> = binding_ids
+            .iter()
+            .enumerate()
+            .map(|(index, id)| {
+                (
+                    id.clone(),
+                    u32::try_from(index).expect("chunk binding count exceeds bitmap capacity"),
+                )
+            })
+            .collect();
+        let mut read_bits = vec![RoaringBitmap::new(); sccs.len()];
+        let mut rebind_bits = vec![RoaringBitmap::new(); sccs.len()];
         for (scc_idx, scc) in sccs.iter().enumerate() {
-            let mut reads = BTreeSet::new();
-            let mut rebinds = BTreeSet::new();
+            let mut reads = RoaringBitmap::new();
+            let mut rebinds = RoaringBitmap::new();
             for owner in scc {
                 let Some(stmt) = stmt_by_owner.get(owner) else {
                     continue;
                 };
                 for id in &stmt.reads.lazy {
-                    if binding_owner.contains_key(id) {
-                        reads.insert(id.clone());
+                    if let Some(&index) = binding_indices.get(id) {
+                        reads.insert(index);
                     }
                 }
                 for id in &stmt.rebinds.lazy {
-                    if binding_owner.contains_key(id) {
-                        rebinds.insert(id.clone());
+                    if let Some(&index) = binding_indices.get(id) {
+                        rebinds.insert(index);
                     }
                 }
             }
@@ -108,13 +183,20 @@ impl FactsOwnerReadClosure {
                     if target_scc == scc_idx {
                         continue;
                     }
-                    reads.extend(expanded_lazy_reads[target_scc].iter().cloned());
-                    rebinds.extend(expanded_lazy_rebinds[target_scc].iter().cloned());
+                    reads |= &read_bits[target_scc];
+                    rebinds |= &rebind_bits[target_scc];
                 }
             }
-            expanded_lazy_reads[scc_idx] = reads;
-            expanded_lazy_rebinds[scc_idx] = rebinds;
+            read_bits[scc_idx] = reads;
+            rebind_bits[scc_idx] = rebinds;
         }
+        let materialize = |bits: RoaringBitmap| {
+            bits.iter()
+                .map(|index| binding_ids[index as usize].clone())
+                .collect::<BTreeSet<_>>()
+        };
+        let expanded_lazy_reads = read_bits.into_iter().map(materialize).collect();
+        let expanded_lazy_rebinds = rebind_bits.into_iter().map(materialize).collect();
 
         Self {
             binding_owner,

@@ -65,9 +65,15 @@ export const updatePullRequestCollapsed: ArgumentsPreview = definePreview(
 );
 export const updatePullRequestPane: ArgumentsPreview = definePreview(zUpdatePullRequestArguments, UpdatePullRequest);
 
+export function offersCardDecisionButtonsUpdatePullRequest(args: unknown): boolean {
+  const parsed = zUpdatePullRequestArguments.safeParse(args);
+  return parsed.success && (parsed.data.state !== undefined || pullRequestUpdateChanges(parsed.data).length > 0);
+}
+
 export const updatePullRequestPresentation: ActionPresentation = {
   fallbackLabel: "Update GitHub pull request",
   label: updatePullRequestLabel,
   pane: { collapsed: updatePullRequestCollapsed, opened: updatePullRequestPane },
   details: { arguments: updatePullRequestPane },
+  offersCardDecisionButtons: offersCardDecisionButtonsUpdatePullRequest,
 };

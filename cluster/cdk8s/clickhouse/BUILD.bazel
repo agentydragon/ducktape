@@ -14,7 +14,6 @@ py_library(
         "//cluster/cdk8s/grafana:__pkg__",
         "//cluster/cdk8s/langfuse:__pkg__",
         "//cluster/cdk8s/public_coder:__pkg__",
-        "//cluster/validation:__pkg__",
     ],
     deps = [
         "//cluster/cdk8s:secret_ref",
@@ -95,5 +94,22 @@ py_test(
         "//:conftest",
         "@pypi//cdk8s",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_public_coder_clickhouse_reader_contract",
+    srcs = ["test_public_coder_clickhouse_reader_contract.py"],
+    # Importing the cdk8s modules starts jsii's Node runtime.
+    data = [
+        "//cluster/k8s:clickhouse/cluster/public-coder-credentials.sops.yaml",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":client",
+        "//util/bazel:runfiles",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )

@@ -1,0 +1,23 @@
+load("@rules_tf//tf:def.bzl", "tf_module", "tf_providers_versions")
+
+tf_providers_versions(
+    name = "providers",
+    providers = {
+        "forgejo": "svalabs/forgejo:~>1.5",
+        "gitlab": "gitlabhq/gitlab:~>19.4.0",
+        "kubernetes": "hashicorp/kubernetes:~>3.0",
+        "random": "hashicorp/random:~>3.9.0",
+    },
+    tf_version = ">= 1.0",
+)
+
+tf_module(
+    name = "gitlab-spike",
+    providers = [
+        "forgejo",
+        "gitlab",
+        "kubernetes",
+        "random",
+    ],
+    providers_versions = ":providers",
+)

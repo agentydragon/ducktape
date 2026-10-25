@@ -67,6 +67,195 @@ export { Command, factory, command, later };
 }
 
 #[test]
+fn local_constructor_callback_field_remains_a_consumer() {
+    let source = r#"let later = 0;
+class Holder {
+  constructor(callback) { this.value = callback; }
+}
+const holder = new Holder(() => later);
+globalThis.observed = holder.value();
+later = 42;
+console.log(globalThis.observed, later);
+"#;
+    let colocated = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module_with_anon(
+                "all",
+                &[
+                    Member::new("Holder"),
+                    Member::new("holder"),
+                    Member::new("later"),
+                ],
+                &[
+                    "globalThis.observed = holder.value();",
+                    "later = 42;",
+                    "console.log(globalThis.observed, later);",
+                ],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&colocated, "0 42\n");
+
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module("command", &[Member::new("Holder"), Member::new("holder")]),
+                logical_module_with_anon(
+                    "consumer",
+                    &[],
+                    &["globalThis.observed = holder.value();"],
+                ),
+                logical_module_with_anon(
+                    "value",
+                    &[Member::new("later")],
+                    &["later = 42;", "console.log(globalThis.observed, later);"],
+                ),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+        &["consumer", "value"],
+        &[],
+    );
+}
+
+#[test]
+fn local_constructor_reads_fresh_config_with_an_ordinary_method() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"class Command {
+  constructor(config) {
+    this.execute = config.execute;
+    this.isAllowed = config.isAllowed;
+    this.weight = config.weight ?? 0;
+    this.focus = config.focus === !0;
+  }
+}
+function factory(config) { return new Command(config); }
+const command = factory({ isAllowed() { return true; }, execute: () => later });
+const later = 7;
+console.log(command.isAllowed(), command.weight, command.focus, command.execute());
+export { Command, factory, command, later };
+"#,
+            vec![
+                logical_module(
+                    "command",
+                    &[
+                        Member::new("Command"),
+                        Member::new("factory"),
+                        Member::new("command"),
+                    ],
+                ),
+                logical_module("value", &[Member::new("later")]),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&fixture, "true 0 false 7\n");
+}
+
+#[test]
+fn local_constructor_keeps_non_data_config_shapes_conservative() {
+    let template = r#"class Command {
+  constructor(config) {
+    this.execute = config.execute;
+    this.weight = config.weight ?? 0;
+  }
+}
+function factory(config) { return new Command(config); }
+const command = factory(CONFIG);
+const later = 7;
+export { Command, factory, command, later };
+"#;
+    for config in [
+        r#"{ ["isAllowed"]() { return true; }, execute: () => later }"#,
+        r#"{ ...{}, isAllowed() { return true; }, execute: () => later }"#,
+        r#"{ get weight() { return 0; }, isAllowed() { return true; }, execute: () => later }"#,
+        r#"{ set unused(value) {}, isAllowed() { return true; }, execute: () => later }"#,
+        r#"new Proxy({ isAllowed() { return true; }, execute: () => later }, {})"#,
+    ] {
+        let source = template.replace("CONFIG", config);
+        expect_atomic_conflict_rejection(
+            FixtureOpts::new(
+                &source,
+                vec![
+                    logical_module("command", &[Member::new("command")]),
+                    logical_module("value", &[Member::new("later")]),
+                ],
+            ),
+            &["command", "value"],
+            &[],
+        );
+    }
+}
+
+#[test]
+fn local_constructor_method_config_keeps_actual_early_reads() {
+    let template = r#"let later = 0;
+class Command {
+  constructor(config) { CONSTRUCTOR_BODY }
+}
+function factory(config) { return new Command(config); }
+const command = factory(CONFIG);
+later = 7;
+console.log(globalThis.observed, command.execute());
+export { Command, factory, command, later };
+"#;
+    for (constructor_body, config) in [
+        (
+            "globalThis.observed = config.execute(); this.execute = config.execute;",
+            "{ isAllowed() { return true; }, execute: () => later }",
+        ),
+        (
+            "this.execute = config.execute; this.weight = config.weight ?? 0;",
+            "{ isAllowed() { return true; }, get weight() { globalThis.observed = later; return 0; }, execute: () => later }",
+        ),
+    ] {
+        let source = template
+            .replace("CONSTRUCTOR_BODY", constructor_body)
+            .replace("CONFIG", config);
+        let colocated = run_fixture(
+            FixtureOpts::new(
+                &source,
+                vec![logical_module_with_anon(
+                    "all",
+                    &[
+                        Member::new("Command"),
+                        Member::new("factory"),
+                        Member::new("command"),
+                        Member::new("later"),
+                    ],
+                    &["later = 7;"],
+                )],
+            )
+            .with_unassigned_mode(unassigned_mode_inline()),
+        );
+        assert_preserved_entry_output(&colocated, "0 7\n");
+        expect_atomic_conflict_rejection(
+            FixtureOpts::new(
+                &source,
+                vec![
+                    logical_module(
+                        "command",
+                        &[
+                            Member::new("Command"),
+                            Member::new("factory"),
+                            Member::new("command"),
+                        ],
+                    ),
+                    logical_module_with_anon("value", &[Member::new("later")], &["later = 7;"]),
+                ],
+            )
+            .with_unassigned_mode(unassigned_mode_inline()),
+            &["command", "value"],
+            &[],
+        );
+    }
+}
+
+#[test]
 fn local_constructor_sequence_and_lazy_fields_keep_callbacks_deferred() {
     let fixture = run_fixture(
         FixtureOpts::new(
@@ -1585,4 +1774,291 @@ export { box, later };
         .with_unassigned_mode(unassigned_mode_inline()),
     );
     assert_preserved_entry_output(&fixture, "7\n");
+}
+
+const CLASS_MEMBER_PEER_CHUNKS: &[(&str, &str)] = &[(
+    "static/peer",
+    r#"export function inspect(Reader) {
+  const instance = new Reader();
+  void instance.read();
+  return "ok";
+}
+"#,
+)];
+
+const CLASS_MEMBER_PRE_AWAIT_SOURCE: &str = r#"import { inspect } from "./peer.js";
+let later = 0;
+class Reader { async read() { globalThis.observed = later; await 0; return later; } }
+const result = inspect(Reader);
+later = 7;
+console.log(result, later, globalThis.observed);
+export { Reader, result, later };
+"#;
+
+fn opaque_class_member_opts(source: &'static str, assign_later: bool) -> FixtureOpts<'static> {
+    let later = if assign_later {
+        logical_module_with_anon("value/later", &[Member::new("later")], &["later = 7;"])
+    } else {
+        logical_module("value/later", &[Member::new("later")])
+    };
+    FixtureOpts::new(
+        source,
+        vec![
+            logical_module(
+                "value/reader",
+                &[Member::new("Reader"), Member::new("result")],
+            ),
+            later,
+        ],
+    )
+    .with_chunk_id("static/provider")
+    .with_extra_chunks(CLASS_MEMBER_PEER_CHUNKS)
+    .with_unassigned_mode(unassigned_mode_inline())
+}
+
+#[test]
+fn opaque_class_member_skips_post_await_read() {
+    let fixture = run_fixture(opaque_class_member_opts(
+        r#"import { inspect } from "./peer.js";
+class Reader { async read() { await 0; return later; } }
+const result = inspect(Reader);
+const later = 7;
+console.log(result, later);
+export { Reader, result, later };
+"#,
+        false,
+    ));
+    assert_preserved_entry_output(&fixture, "ok 7\n");
+}
+
+#[test]
+fn opaque_class_member_keeps_pre_await_read() {
+    expect_atomic_conflict_rejection(
+        opaque_class_member_opts(CLASS_MEMBER_PRE_AWAIT_SOURCE, true),
+        &["value/reader", "value/later"],
+        &[],
+    );
+}
+
+#[test]
+fn opaque_class_member_pre_await_read_runs_when_colocated() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            CLASS_MEMBER_PRE_AWAIT_SOURCE,
+            vec![logical_module_with_anon(
+                "value/all",
+                &[
+                    Member::new("Reader"),
+                    Member::new("result"),
+                    Member::new("later"),
+                ],
+                &["later = 7;"],
+            )],
+        )
+        .with_chunk_id("static/provider")
+        .with_extra_chunks(CLASS_MEMBER_PEER_CHUNKS)
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&fixture, "ok 7 0\n");
+}
+
+#[test]
+fn opaque_class_member_keeps_instance_field_read() {
+    expect_atomic_conflict_rejection(
+        opaque_class_member_opts(
+            r#"import { inspect } from "./peer.js";
+let later = 0;
+class Reader {
+  value = (globalThis.observed = later);
+  async read() { await 0; return this.value; }
+}
+const result = inspect(Reader);
+later = 7;
+console.log(result, later, globalThis.observed);
+export { Reader, result, later };
+"#,
+            true,
+        ),
+        &["value/reader", "value/later"],
+        &[],
+    );
+}
+
+#[test]
+fn opaque_class_member_keeps_getter_before_await() {
+    expect_atomic_conflict_rejection(
+        opaque_class_member_opts(
+            r#"import { inspect } from "./peer.js";
+let later = 0;
+class Reader {
+  get value() { return (globalThis.observed = later); }
+  async read() { const value = this.value; await 0; return value; }
+}
+const result = inspect(Reader);
+later = 7;
+console.log(result, later, globalThis.observed);
+export { Reader, result, later };
+"#,
+            true,
+        ),
+        &["value/reader", "value/later"],
+        &[],
+    );
+}
+
+#[test]
+fn bounded_local_callback_fallback_ignores_post_await_read() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"async function load(count) {
+  if (count > 0) return load(count - 1);
+  await 0;
+  return later;
+}
+const pending = load(100);
+const later = 42;
+console.log(later);
+"#,
+        vec![
+            logical_module(
+                "callbacks/pending",
+                &[Member::new("load"), Member::new("pending")],
+            ),
+            logical_module("values/later", &[Member::new("later")]),
+        ],
+    ));
+    assert_preserved_entry_output(&fixture, "42\n");
+}
+
+#[test]
+fn bounded_local_callback_fallback_keeps_pre_await_read() {
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            r#"let later = 0;
+async function load(count) {
+  globalThis.seen = later;
+  if (count > 0) return load(count - 1);
+  await 0;
+}
+const pending = load(100);
+later = 42;
+console.log(globalThis.seen, later);
+"#,
+            vec![
+                logical_module(
+                    "callbacks/pending",
+                    &[Member::new("load"), Member::new("pending")],
+                ),
+                logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
+            ],
+        ),
+        &["callbacks/pending", "values/later"],
+        &[],
+    );
+}
+
+#[test]
+fn bounded_unknown_callback_fallback_ignores_post_await_read() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const anchor = {};
+function bounce(n) { if (n) return bounce(n - 1); }
+async function deferred() { await 0; return later; }
+globalThis.registeredBounce = bounce;
+globalThis.registeredDeferred = deferred;
+globalThis.flush = () => {};
+globalThis.flush();
+const later = 7;
+console.log(later);
+export { anchor, bounce, deferred, later };
+"#,
+            vec![
+                logical_module_with_anon(
+                    "value/anchor",
+                    &[
+                        Member::new("anchor"),
+                        Member::new("bounce"),
+                        Member::new("deferred"),
+                    ],
+                    &[
+                        "globalThis.registeredBounce = bounce;",
+                        "globalThis.registeredDeferred = deferred;",
+                        "globalThis.flush = () => {};",
+                        "globalThis.flush();",
+                    ],
+                ),
+                logical_module("value/later", &[Member::new("later")]),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&fixture, "7\n");
+}
+
+#[test]
+fn bounded_unknown_callback_fallback_keeps_pre_await_read() {
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            r#"function bounce(n) { if (n) return bounce(n - 1); }
+async function immediate() { const value = later; await 0; return value; }
+globalThis.registeredBounce = bounce;
+globalThis.registeredImmediate = immediate;
+globalThis.flush = () => {};
+globalThis.flush();
+const later = 7;
+export { bounce, immediate, later };
+"#,
+            vec![
+                logical_module_with_anon(
+                    "value/callbacks",
+                    &[Member::new("bounce"), Member::new("immediate")],
+                    &[
+                        "globalThis.registeredBounce = bounce;",
+                        "globalThis.registeredImmediate = immediate;",
+                        "globalThis.flush = () => {};",
+                        "globalThis.flush();",
+                    ],
+                ),
+                logical_module("value/later", &[Member::new("later")]),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+        &["value/callbacks", "value/later"],
+        &[],
+    );
+}
+
+#[test]
+fn bounded_unknown_callback_fallback_keeps_nested_callback_created_before_await() {
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            r#"function bounce(n) { if (n) return bounce(n - 1); }
+async function publish() {
+  globalThis.registeredNested = () => later;
+  await 0;
+}
+globalThis.registeredBounce = bounce;
+publish();
+globalThis.flush = () => {};
+globalThis.flush();
+const later = 7;
+export { bounce, publish, later };
+"#,
+            vec![
+                logical_module_with_anon(
+                    "value/callbacks",
+                    &[Member::new("bounce"), Member::new("publish")],
+                    &[
+                        "globalThis.registeredBounce = bounce;",
+                        "publish();",
+                        "globalThis.flush = () => {};",
+                        "globalThis.flush();",
+                    ],
+                ),
+                logical_module("value/later", &[Member::new("later")]),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+        &["value/callbacks", "value/later"],
+        &[],
+    );
 }

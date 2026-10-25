@@ -15,6 +15,7 @@ import {
 } from "react";
 
 import { ItemKind } from "../../../proto/event_pb";
+import { Markdown } from "../../../../util/frontend/markdown";
 import {
   displayableError,
   getThread,
@@ -22,8 +23,10 @@ import {
   models,
   modelsForHarness,
   resumeSandbox,
+  type LangfuseSearchSettings,
   type ModelOption,
   type SandboxView,
+  type TraceSearchSettings,
   type ThreadView,
 } from "../client";
 import { decimalBigInt, useThreadSync, type ThreadEntity, type ThreadWindow } from "./thread_sync";
@@ -35,11 +38,13 @@ import {
   summarizeSetup,
   setupProgress,
   type HistoryRow,
+  type RunContent,
 } from "./history_rows";
 import { useRequiredSandboxesLive, useRequiredThreadsLive } from "../live";
 import { useOptionalStreamStatus } from "../stream_status";
 import { RetainedDisclosure, RetainedDisclosureProvider, useRetainedDisclosure } from "./retained_disclosures";
 import { EntityCard, itemStatus, pendingSentMessage } from "./thread_cards";
+import { StepLine } from "./step_line";
 import {
   PendingInputMessages,
   ProjectedControlCommand,
@@ -60,6 +65,9 @@ import { TimeAgo } from "../time_ago";
 import { NotificationStatus } from "../notification_status";
 import { TopbarActions, TopbarTitle } from "../topbar";
 import { finishSessionCreate, withinSessionCreate } from "../tracing";
+import { langfuseSandboxTraceUrl } from "../langfuse_search";
+import { traceSearchUrl } from "../trace_search";
+import { useFrontendConfig } from "../frontend_config";
 import { installThreadFavicon } from "./thread_favicon";
 import {
   appDocumentTitle,
@@ -75,44 +83,143 @@ type ReadingAnchor = { key: string; offset: number; target?: HTMLElement };
 // hold. Its rect reads as zeros, so a correction toward it is the same step on every resize and never arrives.
 const isHidden = (target: HTMLElement): boolean => target.isConnected && target.getClientRects().length === 0;
 
-/** A run of tool calls and reasoning steps, folded behind its summary until opened. */
+/** A group of history rows, with the disclosure frame shared by runs and lifecycle groups. */
 function CollapsibleRows({
   id,
   summary,
-  threadId,
-  entities,
-  live,
   steps,
+  children,
 }: {
   id: string;
   summary: ReactNode;
-  threadId: string;
-  entities: ThreadEntity[];
-  live: (entity: ThreadEntity) => boolean;
   /** Whether the rows are one-line steps, packed together, rather than cards. */
   steps: boolean;
+  children: ReactNode;
 }): JSX.Element {
   const [open] = useRetainedDisclosure(id);
   return (
     <DisclosureCard open={open}>
       <RetainedDisclosure id={id} summary={summary}>
         <Stack gap={steps ? 0 : "xs"} className={steps ? "agentplane-run-steps" : undefined}>
-          {entities.map((entity) => (
-            <EntityCard key={entity.entityId} threadId={threadId} entity={entity} live={live(entity)} />
-          ))}
+          {children}
         </Stack>
       </RetainedDisclosure>
     </DisclosureCard>
   );
 }
 
-function RunView({
+function EntityCards({
   threadId,
   entities,
   live,
 }: {
   threadId: string;
   entities: ThreadEntity[];
+  live: (entity: ThreadEntity) => boolean;
+}): JSX.Element {
+  return (
+    <>
+      {entities.map((entity) => (
+        <EntityCard key={entity.entityId} threadId={threadId} entity={entity} live={live(entity)} />
+      ))}
+    </>
+  );
+}
+
+function ReasoningSummaryPart({
+  entityId,
+  reference,
+  onText,
+}: {
+  entityId: string;
+  reference: NonNullable<ThreadEntity["textRef"]>;
+  onText: (entityId: string, text: string) => void;
+}): null {
+  const { body } = useThreadSync().usePayload(reference);
+  useEffect(() => onText(entityId, body ?? ""), [body, entityId, onText]);
+  return null;
+}
+
+function ReasoningGroup({
+  threadId,
+  entities,
+  live,
+}: {
+  threadId: string;
+  entities: [ThreadEntity, ...ThreadEntity[]];
+  live: (entity: ThreadEntity) => boolean;
+}): JSX.Element {
+  const first = entities[0];
+  const id = `${first.projectionEpoch}:${first.entityKind}:${first.entityId}:reasoning-group`;
+  const [open, setOpen] = useRetainedDisclosure(id);
+  const [texts, setTexts] = useState<ReadonlyMap<string, string>>(() => new Map());
+  const onText = useCallback((entityId: string, text: string) => {
+    setTexts((previous) => {
+      if (previous.get(entityId) === text) return previous;
+      const next = new Map(previous);
+      next.set(entityId, text);
+      return next;
+    });
+  }, []);
+  const summary = entities.map((entity) => texts.get(entity.entityId) ?? "").join("");
+
+  return (
+    <DisclosureCard open={open}>
+      <StepLine
+        title="Reasoning"
+        preview={
+          <>
+            <Markdown source={summary} singleLine size="sm" />
+            {entities.map(
+              (entity) =>
+                entity.textRef && (
+                  <ReasoningSummaryPart
+                    key={entity.entityId}
+                    entityId={entity.entityId}
+                    reference={entity.textRef}
+                    onText={onText}
+                  />
+                )
+            )}
+          </>
+        }
+        expandable
+        open={open}
+        onOpenChange={setOpen}
+      >
+        <Stack gap={0} className="agentplane-run-steps">
+          <EntityCards threadId={threadId} entities={entities} live={live} />
+        </Stack>
+      </StepLine>
+    </DisclosureCard>
+  );
+}
+
+function RunContentView({
+  content,
+  threadId,
+  live,
+}: {
+  content: RunContent;
+  threadId: string;
+  live: (entity: ThreadEntity) => boolean;
+}): JSX.Element {
+  if (content.kind === "item")
+    return <EntityCard threadId={threadId} entity={content.entity} live={live(content.entity)} />;
+  if (content.entities.length === 1)
+    return <EntityCard threadId={threadId} entity={content.entities[0]} live={live(content.entities[0])} />;
+  return <ReasoningGroup threadId={threadId} entities={content.entities} live={live} />;
+}
+
+function RunView({
+  threadId,
+  entities,
+  contents,
+  live,
+}: {
+  threadId: string;
+  entities: ThreadEntity[];
+  contents: RunContent[];
   live: (entity: ThreadEntity) => boolean;
 }): JSX.Element {
   const first = entities[0];
@@ -127,11 +234,17 @@ function RunView({
           {itemStatus(entities, entities.some(live))}
         </Flex>
       }
-      threadId={threadId}
-      entities={entities}
-      live={live}
       steps
-    />
+    >
+      {contents.map((content) => (
+        <RunContentView
+          key={content.kind === "item" ? content.entity.entityId : content.entities[0].entityId}
+          content={content}
+          threadId={threadId}
+          live={live}
+        />
+      ))}
+    </CollapsibleRows>
   );
 }
 
@@ -158,11 +271,10 @@ function LifecycleGroupView({
           {summarizeLifecycleGroup(entities)}
         </Text>
       }
-      threadId={threadId}
-      entities={entities}
-      live={live}
       steps={false}
-    />
+    >
+      <EntityCards threadId={threadId} entities={entities} live={live} />
+    </CollapsibleRows>
   );
 }
 
@@ -191,11 +303,10 @@ function SetupView({
           ))}
         </Box>
       }
-      threadId={threadId}
-      entities={entities}
-      live={live}
       steps={false}
-    />
+    >
+      <EntityCards threadId={threadId} entities={entities} live={live} />
+    </CollapsibleRows>
   );
 }
 
@@ -245,7 +356,7 @@ export function HistoryRowView({
     );
   }
   return row.kind === "run" ? (
-    <RunView threadId={threadId} entities={row.entities} live={live} />
+    <RunView threadId={threadId} entities={row.entities} contents={row.contents} live={live} />
   ) : (
     <LifecycleGroupView threadId={threadId} entities={row.entities} live={live} />
   );
@@ -1058,6 +1169,9 @@ function ProjectedSessionBody({
   composerPlaceholder,
   onResumeSandbox,
   onStatusChange,
+  traceSearch,
+  langfuseSearch,
+  sandbox,
 }: {
   threadId: string;
   entities: ThreadEntity[];
@@ -1069,6 +1183,9 @@ function ProjectedSessionBody({
   composerPlaceholder: string;
   onResumeSandbox: () => void;
   onStatusChange: (status: ThreadTabTitleStatus) => void;
+  traceSearch: TraceSearchSettings | null;
+  langfuseSearch: LangfuseSearchSettings | null;
+  sandbox?: SandboxView;
 }): JSX.Element {
   const [draft, setDraft] = useState("");
   const [clock, setClock] = useState(() => Date.now());
@@ -1323,6 +1440,29 @@ function ProjectedSessionBody({
                 <Menu.Item leftSection={<IconHistory size={15} />} onClick={() => openDebug()}>
                   Debug history
                 </Menu.Item>
+                {traceSearch && (
+                  <Menu.Item
+                    component="a"
+                    href={traceSearchUrl(traceSearch, { kind: "session", id: thread.id })}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Find Session traces in Grafana
+                  </Menu.Item>
+                )}
+                {langfuseSearch && sandbox && (
+                  <Menu.Item
+                    component="a"
+                    href={langfuseSandboxTraceUrl(langfuseSearch, {
+                      namespace: sandbox.service_account.namespace,
+                      serviceAccount: sandbox.service_account.name,
+                    })}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Sandbox LLM traces in Langfuse
+                  </Menu.Item>
+                )}
                 <Menu.Divider />
               </Menu.Dropdown>
             </Menu>
@@ -1371,6 +1511,9 @@ function SyncedThread({
   composerPlaceholder,
   onResumeSandbox,
   onStatusChange,
+  traceSearch,
+  langfuseSearch,
+  sandbox,
 }: {
   threadId: string;
   thread: ThreadView;
@@ -1380,6 +1523,9 @@ function SyncedThread({
   composerPlaceholder: string;
   onResumeSandbox: () => void;
   onStatusChange: (status: ThreadTabTitleStatus) => void;
+  traceSearch: TraceSearchSettings | null;
+  langfuseSearch: LangfuseSearchSettings | null;
+  sandbox?: SandboxView;
 }): JSX.Element {
   const { window: shown, error } = useThreadSync().useThread();
   // A stopped window is not following the thread at all, and its alert says so.
@@ -1413,6 +1559,9 @@ function SyncedThread({
         composerPlaceholder={composerPlaceholder}
         onResumeSandbox={onResumeSandbox}
         onStatusChange={onStatusChange}
+        traceSearch={traceSearch}
+        langfuseSearch={langfuseSearch}
+        sandbox={sandbox}
       />
     </>
   );
@@ -1466,6 +1615,9 @@ export function ProjectedSession({
     snapshotFresh(threadsLive)
   );
   const [error, setError] = useState<string | null>(null);
+  const frontendConfig = useFrontendConfig();
+  const traceSearch = frontendConfig?.trace_search ?? null;
+  const langfuseSearch = frontendConfig?.langfuse_search ?? null;
   const environment = useRequiredSandboxesLive();
   const inventoryFresh = environment.stream.standing === "current" && environment.health?.fresh === true;
   const sandbox = environment.snapshot?.sandboxes.find((candidate) => candidate.name === thread?.sandbox);
@@ -1555,6 +1707,9 @@ export function ProjectedSession({
                 }
               }}
               onStatusChange={setTabStatus}
+              traceSearch={traceSearch}
+              langfuseSearch={langfuseSearch}
+              sandbox={sandbox}
             />
           </sync.Thread>
         )}

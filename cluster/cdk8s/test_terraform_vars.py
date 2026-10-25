@@ -1,4 +1,4 @@
-"""Each Terraform CR's variables model against its module's variables.tf, by top-level name.
+"""Each OpenTofu root's variables model against its module's variables.tf, by top-level name.
 
 tofu only warns on a tfvars value the module does not declare: a variable renamed on one
 side fails at plan time in the cluster when it is required, and silently falls back to its
@@ -12,7 +12,7 @@ import pytest
 import pytest_bazel
 from pydantic import BaseModel
 
-from cluster.cdk8s.dns_automation import DnsRecordsVars
+from cluster.cdk8s.crossplane_dns_records import DnsRecordsVars
 from cluster.cdk8s.forgejo_registry.chart import ForgejoImagesVars
 from cluster.cdk8s.monitoring.home_switch import HomeSwitchVars
 from util.bazel.runfiles import get_required_path

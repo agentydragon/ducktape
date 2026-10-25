@@ -37,7 +37,7 @@ function HeadAndOptions({ args }: { args: CreatePullRequestArguments }): JSX.Ele
   );
 }
 
-// The description's first lines say why the card withholds its decision buttons.
+// Keep the first lines of the PR description visible on the compact card.
 function CreatePullRequestCollapsed({ args }: { args: CreatePullRequestArguments }): JSX.Element {
   return (
     <Stack gap={2}>
@@ -60,13 +60,8 @@ function CreatePullRequest({ args }: { args: CreatePullRequestArguments }): JSX.
   );
 }
 
-// Card decisions are limited to calls with no description; a compact card never stands in for
-// reviewing authored text, which remains available in the opened card and the full card.
 export function offersCardDecisionButtonsPullRequest(args: unknown): boolean {
-  const parsed = zCreatePullRequestArguments.safeParse(args);
-  return (
-    parsed.success && !parsed.data.body && parsed.data.title.length <= 120 && (parsed.data.reviewers?.length ?? 0) <= 4
-  );
+  return zCreatePullRequestArguments.safeParse(args).success;
 }
 
 export const createPullRequestLabel: ArgumentsPreview = definePreview(

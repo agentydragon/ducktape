@@ -35,7 +35,6 @@ import {
   renderDetailsArguments,
   renderDetailsResult,
   renderNativeDetailsResult,
-  renderPaneCollapsed,
 } from "./rendering/index";
 import { stateLabel } from "./requests";
 import type { DecisionView } from "./types";
@@ -192,7 +191,6 @@ export function ActionHistoryCard({
     renderDetailsArguments(request.action, request.arguments) !== undefined ||
     combinedCall !== undefined;
   const actionLabel = renderActionLabel(request.action, request.arguments);
-  const summary = renderPaneCollapsed(request.action, request.arguments);
   const receipt = (
     <Stack className="agentplane-action-operation-host" data-operation-density="detail" gap="sm">
       <ActionCall
@@ -235,38 +233,39 @@ export function ActionHistoryCard({
     <Paper withBorder p="md" data-action-receipt={request.id}>
       {compact ? (
         <Stack gap="xs">
-          <Group justify="space-between" align="flex-start" gap="xs">
-            <div>
-              {actionLabel === undefined ? (
-                <Text fw={600}>
-                  {request.action.group} / {request.action.name}
-                </Text>
-              ) : (
-                actionLabel
-              )}
-            </div>
-            <Group gap="xs">
-              {status}
-              {pretty && <RawSwitch raw={raw} onChange={changeRaw} />}
-              <Tooltip label="View full details" withArrow>
-                <ActionIcon
-                  component={Link}
-                  to={`/actions/${request.id}`}
-                  state={{ returnTo: location }}
-                  variant="subtle"
-                  color="gray"
-                  aria-label={`View details for ${request.title}`}
-                >
-                  <IconArrowRight size={15} aria-hidden="true" />
-                </ActionIcon>
-              </Tooltip>
+          <Stack className="agentplane-action-history-compact-overview" gap="xs">
+            <Group justify="space-between" align="flex-start" gap="xs">
+              <div>
+                {actionLabel === undefined ? (
+                  <Text fw={600}>
+                    {request.action.group} / {request.action.name}
+                  </Text>
+                ) : (
+                  actionLabel
+                )}
+              </div>
+              <Group gap="xs">
+                {status}
+                {pretty && <RawSwitch raw={raw} onChange={changeRaw} />}
+                <Tooltip label="View full details" withArrow>
+                  <ActionIcon
+                    component={Link}
+                    to={`/actions/${request.id}`}
+                    state={{ returnTo: location }}
+                    variant="subtle"
+                    color="gray"
+                    aria-label={`View details for ${request.title}`}
+                  >
+                    <IconArrowRight size={15} aria-hidden="true" />
+                  </ActionIcon>
+                </Tooltip>
+              </Group>
             </Group>
-          </Group>
-          <Text size="sm" style={{ overflowWrap: "anywhere" }}>
-            {request.title}
-          </Text>
-          {!raw && summary !== undefined && summary !== null && <div>{summary}</div>}
-          {timestamp}
+            <Text size="sm" style={{ overflowWrap: "anywhere" }}>
+              {request.title}
+            </Text>
+            {timestamp}
+          </Stack>
           <Disclosure summary="Receipt details" open={receiptOpen} onOpenChange={setReceiptOpen} keepMounted>
             <DisclosureBody>{receipt}</DisclosureBody>
           </Disclosure>

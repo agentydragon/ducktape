@@ -282,6 +282,7 @@ spec:
         spanStartTimeShift: -1h
     name: Tempo
     type: tempo
+    uid: f99d1a97-7e72-4887-9277-0b105a5ccf44
     url: http://tempo.monitoring.svc.cluster.local:3200
   instanceSelector:
     matchLabels:
@@ -316,6 +317,7 @@ spec:
   configMapRef:
     key: flux-cluster.json
     name: flux-cluster-dashboard
+  folder: Cluster & Platform
   instanceSelector:
     matchLabels:
       dashboards: grafana
@@ -334,6 +336,7 @@ spec:
       inputName: DS_LOKI
     - datasourceName: Mimir
       inputName: DS_PROMETHEUS
+  folder: Network
   instanceSelector:
     matchLabels:
       dashboards: grafana
@@ -350,6 +353,7 @@ spec:
   datasources:
     - datasourceName: Mimir
       inputName: DS_PROMETHEUS
+  folder: Nodes & Hardware
   instanceSelector:
     matchLabels:
       dashboards: grafana
@@ -368,6 +372,7 @@ spec:
       inputName: DS_MIMIR
     - datasourceName: Loki
       inputName: DS_LOKI
+  folder: Storage
   instanceSelector:
     matchLabels:
       dashboards: grafana
@@ -384,6 +389,7 @@ spec:
   datasources:
     - datasourceName: Mimir
       inputName: DS_MIMIR
+  folder: Storage
   instanceSelector:
     matchLabels:
       dashboards: grafana
@@ -400,6 +406,7 @@ spec:
   datasources:
     - datasourceName: Mimir
       inputName: DS_MIMIR
+  folder: Storage
   instanceSelector:
     matchLabels:
       dashboards: grafana
@@ -416,6 +423,7 @@ spec:
   datasources:
     - datasourceName: Mimir
       inputName: DS_MIMIR
+  folder: Storage
   instanceSelector:
     matchLabels:
       dashboards: grafana
@@ -432,6 +440,7 @@ spec:
   datasources:
     - datasourceName: Mimir
       inputName: DS_MIMIR
+  folder: Storage
   instanceSelector:
     matchLabels:
       dashboards: grafana
@@ -448,6 +457,7 @@ spec:
   datasources:
     - datasourceName: Mimir
       inputName: DS_MIMIR
+  folder: Storage
   instanceSelector:
     matchLabels:
       dashboards: grafana
@@ -464,7 +474,7 @@ spec:
   datasources:
     - datasourceName: Loki
       inputName: DS_LOKI
-  folder: Home network
+  folder: Network
   instanceSelector:
     matchLabels:
       dashboards: grafana
@@ -478,6 +488,7 @@ spec:
   datasources:
     - datasourceName: Mimir
       inputName: datasource
+  folder: Cluster & Platform
   grafanaCom:
     id: 20842
     revision: 3
@@ -494,6 +505,7 @@ spec:
   datasources:
     - datasourceName: Mimir
       inputName: DS_PROMETHEUS
+  folder: Cluster & Platform
   grafanaCom:
     id: 14837
     revision: 2
@@ -510,6 +522,7 @@ spec:
   datasources:
     - datasourceName: Mimir
       inputName: DS_PROMETHEUS
+  folder: Cluster & Platform
   grafanaCom:
     id: 20417
     revision: 3
@@ -526,6 +539,7 @@ spec:
   datasources:
     - datasourceName: Mimir
       inputName: DS_PROMETHEUS
+  folder: Network
   grafanaCom:
     id: 16611
     revision: 1
@@ -542,6 +556,7 @@ spec:
   datasources:
     - datasourceName: Mimir
       inputName: DS_PROMETHEUS
+  folder: Cluster & Platform
   grafanaCom:
     id: 3070
     revision: 3
@@ -558,6 +573,7 @@ spec:
   datasources:
     - datasourceName: Mimir
       inputName: DS_PROMETHEUS
+  folder: Nodes & Hardware
   grafanaCom:
     id: 12239
     revision: 2
@@ -574,6 +590,7 @@ spec:
   datasources:
     - datasourceName: Mimir
       inputName: ds_prometheus
+  folder: Nodes & Hardware
   grafanaCom:
     id: 1860
     revision: 45

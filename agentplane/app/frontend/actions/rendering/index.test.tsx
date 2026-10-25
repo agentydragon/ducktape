@@ -778,6 +778,62 @@ const cardDecisionButtonCases: Array<{
   },
   {
     group: "github",
+    name: "update_pull_request",
+    args: {
+      owner: "example",
+      repo: "service",
+      pullNumber: 42,
+      title: "Update documentation",
+      body: "Explain deployment checks and rollback steps.",
+      state: "closed",
+      base: "devel",
+      draft: true,
+      maintainer_can_modify: false,
+      reviewers: ["reviewer"],
+    },
+    visible: [
+      "Close example/service#42",
+      "replace description",
+      "change base to devel",
+      "mark as draft",
+      "disallow maintainer edits",
+      "review from reviewer",
+      "New title: Update documentation",
+      "Explain deployment checks and rollback steps.",
+    ],
+  },
+  {
+    group: "github",
+    name: "push_files",
+    args: {
+      owner: "example",
+      repo: "service",
+      branch: "docs",
+      message: "docs: update guide",
+      files: [{ path: "docs/guide.md", content: "Reviewable documentation content." }],
+    },
+    visible: ["Push 1 file to docs in example/service", "docs: update guide", "docs/guide.md"],
+  },
+  {
+    group: "github",
+    name: "delete_file",
+    args: {
+      owner: "example",
+      repo: "service",
+      path: "docs/old-guide.md",
+      message: "docs: remove old guide",
+      branch: "docs",
+    },
+    visible: ["Delete docs/old-guide.md in example/service", "docs", "docs: remove old guide"],
+  },
+  {
+    group: "github",
+    name: "create_branch",
+    args: { owner: "example", repo: "service", branch: "docs", from_branch: "devel" },
+    visible: ["Create branch docs from devel in example/service"],
+  },
+  {
+    group: "github",
     name: "create_pull_request",
     args: {
       owner: "example",
@@ -861,31 +917,31 @@ describe("card decision buttons capability", () => {
     expect(actionOffersCardDecisionButtons(search, { q: "label:inbox", includeSpamTrash: true })).toBe(false);
   });
 
-  it("requires full review for PR descriptions, hidden defaults, and unknown actions", () => {
-    const pr = cardDecisionButtonCases.find((candidate) => candidate.group === "github");
+  it("offers card decisions for complete PR calls and rejects unknown actions", () => {
+    const pr = cardDecisionButtonCases.find((candidate) => candidate.name === "create_pull_request");
     if (pr === undefined) throw new Error("missing pull request fixture");
     expect(
       actionOffersCardDecisionButtons({ group: pr.group, name: pr.name }, { ...pr.args, body: "important text" })
-    ).toBe(false);
+    ).toBe(true);
     expect(
       actionOffersCardDecisionButtons({ group: pr.group, name: pr.name }, { ...pr.args, title: "x".repeat(121) })
-    ).toBe(false);
+    ).toBe(true);
     expect(
       actionOffersCardDecisionButtons(
         { group: pr.group, name: pr.name },
         { ...pr.args, reviewers: Array(5).fill("reviewer") }
       )
-    ).toBe(false);
+    ).toBe(true);
     expect(actionOffersCardDecisionButtons(SSH_EXEC, SSH_EXEC_ARGUMENTS)).toBe(false);
     expect(actionOffersCardDecisionButtons({ group: "__proto__", name: "constructor" }, {})).toBe(false);
   });
 
-  it("still renders a long PR description for review while withholding the card decision buttons", async () => {
-    const pr = cardDecisionButtonCases.find((candidate) => candidate.group === "github");
+  it("renders a long PR description while offering card decision buttons", async () => {
+    const pr = cardDecisionButtonCases.find((candidate) => candidate.name === "create_pull_request");
     if (pr === undefined) throw new Error("missing pull request fixture");
     const args = { ...pr.args, body: "important text" };
 
-    expect(actionOffersCardDecisionButtons({ group: pr.group, name: pr.name }, args)).toBe(false);
+    expect(actionOffersCardDecisionButtons({ group: pr.group, name: pr.name }, args)).toBe(true);
     const container = await mount(renderPaneOpened({ group: pr.group, name: pr.name }, args));
     expect(container.textContent).toContain("important text");
   });
@@ -901,19 +957,33 @@ describe("sandbox rendering", () => {
   };
   const result = (value: unknown): unknown => value;
 
-  it.each([
-    ["create", { name: "new-sandbox", template: "python" }, "Create sandbox", "Template: python"],
-    [
-      "exec",
-      { name: "script-sandbox", script: 'echo "$HOME"', timeout_seconds: 60, max_output_bytes: 0, cwd: "/workspace" },
-      "Run command in sandbox script-sandbox",
-      "Working directory /workspace · Timeout 60 s · Output limit 0 bytes per stream",
-    ],
-  ])("renders %s without authorizing compact decisions", async (name, args, label, body) => {
-    expect((await mount(renderActionLabel(action(name), args))).textContent).toContain(label);
-    expect((await mount(renderPaneOpened(action(name), args))).textContent).toContain(body);
-    expect(actionOffersCardDecisionButtons(action(name), args)).toBe(false);
-    const recorded = await mount(renderDetailsArguments(action(name), { ...args, hidden: true }));
+  it("renders create and authorizes compact decisions only for schema-valid arguments", async () => {
+    const args = { name: "new-sandbox", template: "python" };
+    expect((await mount(renderActionLabel(action("create"), args))).textContent).toContain("Create sandbox");
+    expect((await mount(renderPaneOpened(action("create"), args))).textContent).toContain("Template: python");
+    expect((await mount(renderPaneCollapsed(action("create"), args))).textContent).toContain("Template: python");
+    expect(actionOffersCardDecisionButtons(action("create"), args)).toBe(true);
+    expect(actionOffersCardDecisionButtons(action("create"), { ...args, hidden: true })).toBe(false);
+    const recorded = await mount(renderDetailsArguments(action("create"), { ...args, hidden: true }));
+    expect(recorded.textContent).toContain("Details shown as recorded data");
+  });
+
+  it("renders exec without authorizing compact decisions", async () => {
+    const args = {
+      name: "script-sandbox",
+      script: 'echo "$HOME"',
+      timeout_seconds: 60,
+      max_output_bytes: 0,
+      cwd: "/workspace",
+    };
+    expect((await mount(renderActionLabel(action("exec"), args))).textContent).toContain(
+      "Run command in sandbox script-sandbox"
+    );
+    expect((await mount(renderPaneOpened(action("exec"), args))).textContent).toContain(
+      "Working directory /workspace · Timeout 60 s · Output limit 0 bytes per stream"
+    );
+    expect(actionOffersCardDecisionButtons(action("exec"), args)).toBe(false);
+    const recorded = await mount(renderDetailsArguments(action("exec"), { ...args, hidden: true }));
     expect(recorded.textContent).toContain("Details shown as recorded data");
   });
 

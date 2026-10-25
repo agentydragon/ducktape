@@ -181,11 +181,25 @@ pub struct ChunkExportPurity {
     /// still have observable effects and remains ordered as an impure call.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub callback_factory_exports: BTreeSet<String>,
+    /// Export names with the callback-factory contract restricted to exactly
+    /// one non-spread inline function or arrow argument. Retained results of
+    /// other factories are not admitted as inputs.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub inline_callback_factory_exports: BTreeSet<String>,
     /// Audited callback factories reached through static members of an
     /// exported namespace. Independent of `pure_members`; each member has
     /// the same return-only callback contract as `callback_factory_exports`.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub callback_factory_members: BTreeMap<String, BTreeSet<String>>,
+    /// Static members of an imported namespace whose calls cannot synchronously
+    /// invoke caller, importer, or host callbacks or read importer-owned cells.
+    /// This asserts call timing only, not purity or the shape of the result.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub no_reentry_members: BTreeMap<String, BTreeSet<String>>,
+    /// Stable lookups running no caller/importer/host code, whose capabilities cannot expose their namespace
+    /// or replace audited factories except through supplied caller inputs.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub namespace_independent_members: BTreeMap<String, BTreeSet<String>>,
 }
 
 /// Per-chunk owner-graph build options. Each field defaults to the
@@ -1687,6 +1701,12 @@ pub enum MemberEffect {
     /// supplied decorator neither invoke target behavior nor publish callbacks
     /// or synchronously reenter other caller/host/export callbacks. See SPEC.md.
     TypescriptMetadataDecorateHelper,
+    /// Like `typescript_metadata_decorate_helper`, additionally admits an
+    /// audited one-hop static member of an imported decorator provider.
+    TypescriptMetadataDecorateHelperWithMemberDecorators,
+    /// The same metadata-only contract for standalone three-argument property
+    /// applications. The helper determines its descriptor without a kind argument.
+    TypescriptMetadataDecorateHelperThreeArgs,
 }
 
 #[cfg(test)]

@@ -7,10 +7,18 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from pydantic import AnyHttpUrl
+
 from agentplane.app.action_federation_settings import ActionFederationSettings
 from agentplane.app.presets import SandboxPreset, ThreadPreset
 from agentplane.app.sandbox_models import NewSandboxDefaults
-from agentplane.app.settings import AppSettingsConfig, TitleGenerationSettings
+from agentplane.app.settings import (
+    AppSettingsConfig,
+    FrontendConfig,
+    LangfuseSearchSettings,
+    TitleGenerationSettings,
+    TraceSearchSettings,
+)
 from agentplane.runner.harness import Harness
 from cluster.cdk8s import agent_access_profiles
 from cluster.cdk8s.agentplane.actions_staging_policies import (
@@ -47,6 +55,7 @@ from cluster.cdk8s.agentplane.egress_staging_credentials import (
     HAKU_MAILBOX_POLICY,
 )
 from cluster.cdk8s.model_selections import HarnessRoutes
+from cluster.cdk8s.monitoring.grafana_instance import GRAFANA_BASE_URL, TEMPO_DATASOURCE_UID
 from model_catalog.catalog import GPT6_LUNA_RESPONSES, OLLAMA_QWEN_IQ4XS_256K
 from util.urls import HttpEndpointUrl
 
@@ -121,6 +130,21 @@ def config(
         default_policy_sets=set(DEFAULT_POLICIES),
         auto_title_on_first_message_default=auto_title_on_first_message_default,
         title_generation=title_generation,
+        frontend_config=FrontendConfig(
+            trace_search=TraceSearchSettings(
+                grafana_base_url=AnyHttpUrl(GRAFANA_BASE_URL),
+                tempo_datasource_uid=TEMPO_DATASOURCE_UID,
+                deployment_environment=namespace,
+            ),
+            langfuse_search=LangfuseSearchSettings(
+                base_url=AnyHttpUrl("https://langfuse.allegedly.works"),
+                project_id="langfuse-litellm-project",
+                sandbox_namespace_metadata_key="attributes.litellm.metadata.spend_logs_metadata.agentplane.namespace",
+                sandbox_service_account_metadata_key=(
+                    "attributes.litellm.metadata.spend_logs_metadata.agentplane.service_account"
+                ),
+            ),
+        ),
     )
     # The "haku" and "finance-agent" launch presets name staging's own credentials (haku:
     # forgejo-haku, haku-mailbox; finance-agent: forgejo-finance-agent, plaid-pgweb). Preset order

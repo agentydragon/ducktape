@@ -43,7 +43,7 @@ from cdk8s_plus_34 import (
     k8s,
 )
 from constructs import Construct
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy, KustomizationSpecHealthChecks
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
@@ -82,8 +82,7 @@ _HTTP = Port(name="http", number=4000)
 _NAMESPACE = "litellm"
 # The proxy's admin key: its env and its ServiceMonitor's scrape bearer.
 _MASTER_KEY = SecretRef(namespace=_NAMESPACE, name="litellm-master-key").key("api-key")
-# Langfuse's project keys.
-_LANGFUSE = SecretRef(namespace=_NAMESPACE, name="langfuse-secrets")
+_LANGFUSE_OTEL_CONFIG = SecretRef(namespace=_NAMESPACE, name="litellm-langfuse-otel-config")
 _CONFIG_DIR = "/etc/litellm"
 _RUGGED_LOCAL_LLM_PORT = Port(name="http", number=RUGGED_LOCAL_LLM_PORT)
 
@@ -160,9 +159,12 @@ def _base_env(*entries: _EnvEntry) -> tuple[_EnvEntry, ...]:
 def _langfuse_env(*entries: _EnvEntry) -> tuple[_EnvEntry, ...]:
     return (
         *_base_env(*entries),
-        _LiteralEnv("LANGFUSE_OTEL_HOST", "http://langfuse-web.langfuse.svc.cluster.local:3000"),
-        _SecretEnv("LANGFUSE_PUBLIC_KEY", _LANGFUSE.key("LANGFUSE_INIT_PROJECT_PUBLIC_KEY")),
-        _SecretEnv("LANGFUSE_SECRET_KEY", _LANGFUSE.key("LANGFUSE_INIT_PROJECT_SECRET_KEY")),
+        _SecretEnv(
+            "OTEL_EXPORTER_OTLP_ENDPOINT", _LANGFUSE_OTEL_CONFIG.key("OTEL_EXPORTER_OTLP_ENDPOINT"), optional=True
+        ),
+        _SecretEnv(
+            "OTEL_EXPORTER_OTLP_HEADERS", _LANGFUSE_OTEL_CONFIG.key("OTEL_EXPORTER_OTLP_HEADERS"), optional=True
+        ),
     )
 
 
@@ -175,10 +177,11 @@ def proxy_specs() -> tuple[ProxySpec, ...]:
             image_name="git.allegedly.works/ducktape-ci/tana-litellm-proxy",
             replicas=2,
             env=_langfuse_env(
-                # The Langfuse OTel callback needs v2 plus span content to populate
-                # the /v1/responses root observation. Keep Langfuse as the exporter;
-                # a console exporter would write captured prompts into pod logs.
+                # Use the generic OTel callback. The optional Secret supplies an endpoint
+                # and headers together: an endpoint selects OTLP; if it is absent, LiteLLM
+                # keeps its console exporter so the proxy can start without Langfuse.
                 _LiteralEnv("LITELLM_OTEL_V2", "true"),
+                # Duplicate console-to-Loki trace export: https://github.com/agentydragon/ducktape/issues/11937
                 _LiteralEnv("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "span_only"),
                 _SecretEnv("LITELLM_MASTER_KEY", _MASTER_KEY),
                 _SecretEnv("DATABASE_URL", database.DATABASE.app_secret.key("uri")),
@@ -316,7 +319,12 @@ class LiteLLMProxy(Construct):
         deployment = Deployment(
             self,
             "deployment",
-            metadata=ApiObjectMetadata(name=self.spec.name, namespace=self.spec.namespace, labels=ref.pods.selector),
+            metadata=ApiObjectMetadata(
+                name=self.spec.name,
+                namespace=self.spec.namespace,
+                labels=ref.pods.selector,
+                annotations={"secret.reloader.stakater.com/reload": "litellm-langfuse-otel-config"},
+            ),
             pod_metadata=ApiObjectMetadata(labels=ref.pods.selector),
             replicas=self.spec.replicas,
             strategy=self.spec.strategy,
@@ -494,6 +502,18 @@ def litellm(
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         decryption=SOPS_DECRYPTION,
         timeout="10m",
+        wait=None,
+        health_checks=[
+            KustomizationSpecHealthChecks(
+                api_version="postgresql.cnpg.io/v1", kind="Cluster", name=database.DATABASE.name, namespace=_NAMESPACE
+            ),
+            KustomizationSpecHealthChecks(
+                api_version="apps/v1", kind="Deployment", name="litellm", namespace=_NAMESPACE
+            ),
+            KustomizationSpecHealthChecks(
+                api_version="gateway.networking.k8s.io/v1", kind="HTTPRoute", name="litellm", namespace=_NAMESPACE
+            ),
+        ],
         depends_on=flux_kustomization_depends_on_many(
             cnpg, external_secrets_operator, monitoring_crds, seaweedfs_operator
         ),

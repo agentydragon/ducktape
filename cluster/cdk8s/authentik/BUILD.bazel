@@ -1,6 +1,6 @@
 # gazelle:ignore
 
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
     name = "db",
@@ -55,7 +55,7 @@ py_library(
 py_library(
     name = "app",
     srcs = ["app.py"],
-    data = ["//cluster/k8s:authentik_blueprints"],
+    data = ["//cluster/k8s/authentik/app/blueprints:authentik_blueprints"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":db",
@@ -144,5 +144,18 @@ py_library(
         "//cluster/cdk8s/monitoring:alloy_otlp_bearer_token",
         "//cluster/cdk8s/providers/flux:kustomization",
         "@pypi//cdk8s",
+    ],
+)
+
+py_test(
+    name = "test_blueprint_contracts",
+    srcs = ["test_blueprint_contracts.py"],
+    data = ["//cluster/k8s/authentik/app/blueprints:authentik_blueprints"],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )

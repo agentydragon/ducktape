@@ -1,0 +1,1034 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    goldilocks.fairwinds.com/vpa-update-mode: "off"
+    pod-security.kubernetes.io/enforce: baseline
+  name: gitlab-spike
+spec: {}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    goldilocks.fairwinds.com/vpa-update-mode: "off"
+    pod-security.kubernetes.io/enforce: baseline
+  name: gitlab-spike-ci
+spec: {}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    goldilocks.fairwinds.com/vpa-update-mode: "off"
+    pod-security.kubernetes.io/enforce: baseline
+  name: gitlab-spike-demo
+spec: {}
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: gitlab-root-password
+  namespace: gitlab-spike
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: gitlab-root-password
+  namespace: gitlab-spike
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: gitlab-root-password
+  refreshPolicy: CreatedOnce
+  target:
+    name: gitlab-root-password
+    template:
+      data:
+        password: "{{ .password }}"
+      type: Opaque
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: gitlab-bootstrap-token
+  namespace: gitlab-spike
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: gitlab-bootstrap-token
+  namespace: gitlab-spike
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: gitlab-bootstrap-token
+  refreshPolicy: CreatedOnce
+  target:
+    name: gitlab-bootstrap-token
+    template:
+      data:
+        token: "{{ .password }}"
+      type: Opaque
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gitlab-spike-bootstrap
+  namespace: gitlab-spike
+data:
+  main.rb: |
+    # This token is owned by ESO, consumed by tofu-controller, and never logged.
+    token = File.read('/opt/spike-token/token').strip
+    raise 'Empty bootstrap token' if token.empty?
+
+    root = User.find_by_username!('root')
+    access = root.personal_access_tokens.find_or_initialize_by(name: 'gitlab-spike-tofu')
+    access.scopes = ['api']
+    access.expires_at = 90.days.from_now.to_date
+    access.set_token(token)
+    access.save!
+immutable: false
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: praefect-db-credentials-generator
+  namespace: gitlab-spike
+spec:
+  allowRepeat: true
+  digits: 8
+  length: 40
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: praefect-db-credentials
+  namespace: gitlab-spike
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: praefect-db-credentials-generator
+  refreshInterval: 8760h
+  target:
+    name: praefect-db-credentials
+    template:
+      data:
+        DATABASE_URL: postgresql://praefect:{{ .password }}@gitlab-db-rw.gitlab-spike.svc:5432/praefect
+        dbname: praefect
+        host: gitlab-db-rw.gitlab-spike.svc
+        password: "{{ .password }}"
+        port: "5432"
+        username: praefect
+      metadata:
+        labels:
+          cnpg.io/reload: "true"
+      type: kubernetes.io/basic-auth
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: gitlab-db
+  namespace: gitlab-spike
+spec:
+  affinity:
+    nodeSelector:
+      topology.kubernetes.io/zone: hil-ovh
+    podAntiAffinityType: required
+    tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/control-plane
+        operator: Exists
+    topologyKey: kubernetes.io/hostname
+  bootstrap:
+    initdb:
+      database: gitlabhq_production
+      owner: gitlabhq_production
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie
+  instances: 3
+  managed:
+    roles:
+      - login: true
+        name: praefect
+        passwordSecret:
+          name: praefect-db-credentials
+  monitoring:
+    enablePodMonitor: true
+  plugins:
+    - isWALArchiver: true
+      name: barman-cloud.cloudnative-pg.io
+      parameters:
+        barmanObjectName: gitlab-db
+  probes:
+    liveness:
+      isolationCheck:
+        enabled: false
+  storage:
+    resizeInUseVolumes: false
+    size: 25Gi
+    storageClass: piraeus-ssd-local
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  annotations:
+    description: Private CNPG physical backups and WAL archive for gitlab-spike/gitlab-db.
+  name: gitlab-spike-db-backups
+  namespace: gitlab-spike
+spec:
+  access:
+    - actions:
+        - Read
+        - Write
+        - List
+        - Tagging
+      user: gitlab-spike-db-backups
+  adoptExisting: true
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  name: gitlab-spike-db-backups
+  reclaimPolicy: Retain
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Identity
+metadata:
+  annotations:
+    description: Private CNPG physical backups and WAL archive for gitlab-spike/gitlab-db.
+  name: gitlab-spike-db-backups
+  namespace: gitlab-spike
+spec:
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Credentials
+metadata:
+  name: gitlab-spike-db-backups
+  namespace: gitlab-spike
+spec:
+  identityRef:
+    name: gitlab-spike-db-backups
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  secretRef:
+    accessKeyField: AWS_ACCESS_KEY_ID
+    name: gitlab-spike-db-backups-s3-credentials
+    secretKeyField: AWS_SECRET_ACCESS_KEY
+---
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  annotations:
+    description: SeaweedFS S3 destination for gitlab-spike/gitlab-db base backups and WAL.
+  name: gitlab-db
+  namespace: gitlab-spike
+spec:
+  configuration:
+    data:
+      compression: gzip
+    destinationPath: s3://gitlab-spike-db-backups/
+    endpointURL: http://seaweedfs-s3.seaweedfs.svc:8333
+    s3Credentials:
+      accessKeyId:
+        key: AWS_ACCESS_KEY_ID
+        name: gitlab-spike-db-backups-s3-credentials
+      secretAccessKey:
+        key: AWS_SECRET_ACCESS_KEY
+        name: gitlab-spike-db-backups-s3-credentials
+    wal:
+      compression: gzip
+  retentionPolicy: 30d
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: gitlab-db
+  namespace: gitlab-spike
+spec:
+  backupOwnerReference: self
+  cluster:
+    name: gitlab-db
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
+  schedule: 0 33 1 * * *
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: praefect
+  namespace: gitlab-spike
+spec:
+  cluster:
+    name: gitlab-db
+  databaseReclaimPolicy: retain
+  name: praefect
+  owner: praefect
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: gitlab-extensions
+  namespace: gitlab-spike
+spec:
+  cluster:
+    name: gitlab-db
+  databaseReclaimPolicy: retain
+  extensions:
+    - ensure: present
+      name: amcheck
+    - ensure: present
+      name: pg_trgm
+    - ensure: present
+      name: btree_gist
+  name: gitlabhq_production
+  owner: gitlabhq_production
+---
+apiVersion: redis.redis.opstreelabs.in/v1beta2
+kind: RedisReplication
+metadata:
+  annotations:
+    description: GitLab cache, sessions, and Sidekiq queues on the OVH workers.
+  name: gitlab-valkey
+  namespace: gitlab-spike
+spec:
+  affinity:
+    nodeAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - preference:
+            matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+          weight: 100
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                  - hil-ovh
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              app: gitlab-valkey
+          topologyKey: kubernetes.io/hostname
+  clusterSize: 2
+  kubernetesConfig:
+    image: valkey/valkey:9-alpine
+    imagePullPolicy: IfNotPresent
+    resources:
+      limits:
+        cpu: "2"
+        memory: 2Gi
+      requests:
+        cpu: 50m
+        memory: 512Mi
+  redisConfig:
+    maxMemoryPercentOfLimit: 75
+  storage:
+    volumeClaimTemplate:
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 5Gi
+        storageClassName: piraeus-hdd-local
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  annotations:
+    description: GitLab spike lfs objects; retained when its Kubernetes owner is removed.
+  name: gitlab-spike-lfs
+  namespace: gitlab-spike
+spec:
+  access:
+    - actions:
+        - Read
+        - Write
+        - List
+        - Tagging
+      user: gitlab-spike-lfs
+    - actions:
+        - Read
+        - Write
+        - List
+        - Tagging
+      user: gitlab-spike-backups
+  adoptExisting: true
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  name: gitlab-spike-lfs
+  reclaimPolicy: Retain
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Identity
+metadata:
+  annotations:
+    description: GitLab spike lfs objects; retained when its Kubernetes owner is removed.
+  name: gitlab-spike-lfs
+  namespace: gitlab-spike
+spec:
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Credentials
+metadata:
+  name: gitlab-spike-lfs
+  namespace: gitlab-spike
+spec:
+  identityRef:
+    name: gitlab-spike-lfs
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  secretRef:
+    accessKeyField: AWS_ACCESS_KEY_ID
+    name: gitlab-spike-lfs-s3-credentials
+    secretKeyField: AWS_SECRET_ACCESS_KEY
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  annotations:
+    description: GitLab spike artifacts objects; retained when its Kubernetes owner is removed.
+  name: gitlab-spike-artifacts
+  namespace: gitlab-spike
+spec:
+  access:
+    - actions:
+        - Read
+        - Write
+        - List
+        - Tagging
+      user: gitlab-spike-artifacts
+    - actions:
+        - Read
+        - Write
+        - List
+        - Tagging
+      user: gitlab-spike-backups
+  adoptExisting: true
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  name: gitlab-spike-artifacts
+  reclaimPolicy: Retain
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Identity
+metadata:
+  annotations:
+    description: GitLab spike artifacts objects; retained when its Kubernetes owner is removed.
+  name: gitlab-spike-artifacts
+  namespace: gitlab-spike
+spec:
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Credentials
+metadata:
+  name: gitlab-spike-artifacts
+  namespace: gitlab-spike
+spec:
+  identityRef:
+    name: gitlab-spike-artifacts
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  secretRef:
+    accessKeyField: AWS_ACCESS_KEY_ID
+    name: gitlab-spike-artifacts-s3-credentials
+    secretKeyField: AWS_SECRET_ACCESS_KEY
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  annotations:
+    description: GitLab spike uploads objects; retained when its Kubernetes owner is removed.
+  name: gitlab-spike-uploads
+  namespace: gitlab-spike
+spec:
+  access:
+    - actions:
+        - Read
+        - Write
+        - List
+        - Tagging
+      user: gitlab-spike-uploads
+    - actions:
+        - Read
+        - Write
+        - List
+        - Tagging
+      user: gitlab-spike-backups
+  adoptExisting: true
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  name: gitlab-spike-uploads
+  reclaimPolicy: Retain
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Identity
+metadata:
+  annotations:
+    description: GitLab spike uploads objects; retained when its Kubernetes owner is removed.
+  name: gitlab-spike-uploads
+  namespace: gitlab-spike
+spec:
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Credentials
+metadata:
+  name: gitlab-spike-uploads
+  namespace: gitlab-spike
+spec:
+  identityRef:
+    name: gitlab-spike-uploads
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  secretRef:
+    accessKeyField: AWS_ACCESS_KEY_ID
+    name: gitlab-spike-uploads-s3-credentials
+    secretKeyField: AWS_SECRET_ACCESS_KEY
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  annotations:
+    description: GitLab spike packages objects; retained when its Kubernetes owner is removed.
+  name: gitlab-spike-packages
+  namespace: gitlab-spike
+spec:
+  access:
+    - actions:
+        - Read
+        - Write
+        - List
+        - Tagging
+      user: gitlab-spike-packages
+    - actions:
+        - Read
+        - Write
+        - List
+        - Tagging
+      user: gitlab-spike-backups
+  adoptExisting: true
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  name: gitlab-spike-packages
+  reclaimPolicy: Retain
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Identity
+metadata:
+  annotations:
+    description: GitLab spike packages objects; retained when its Kubernetes owner is removed.
+  name: gitlab-spike-packages
+  namespace: gitlab-spike
+spec:
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Credentials
+metadata:
+  name: gitlab-spike-packages
+  namespace: gitlab-spike
+spec:
+  identityRef:
+    name: gitlab-spike-packages
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  secretRef:
+    accessKeyField: AWS_ACCESS_KEY_ID
+    name: gitlab-spike-packages-s3-credentials
+    secretKeyField: AWS_SECRET_ACCESS_KEY
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  annotations:
+    description: GitLab spike registry objects; retained when its Kubernetes owner is removed.
+  name: gitlab-spike-registry
+  namespace: gitlab-spike
+spec:
+  access:
+    - actions:
+        - Read
+        - Write
+        - List
+        - Tagging
+      user: gitlab-spike-registry
+    - actions:
+        - Read
+        - Write
+        - List
+        - Tagging
+      user: gitlab-spike-backups
+  adoptExisting: true
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  name: gitlab-spike-registry
+  reclaimPolicy: Retain
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Identity
+metadata:
+  annotations:
+    description: GitLab spike registry objects; retained when its Kubernetes owner is removed.
+  name: gitlab-spike-registry
+  namespace: gitlab-spike
+spec:
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Credentials
+metadata:
+  name: gitlab-spike-registry
+  namespace: gitlab-spike
+spec:
+  identityRef:
+    name: gitlab-spike-registry
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  secretRef:
+    accessKeyField: AWS_ACCESS_KEY_ID
+    name: gitlab-spike-registry-s3-credentials
+    secretKeyField: AWS_SECRET_ACCESS_KEY
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  annotations:
+    description: Full GitLab backup archives; retained when its Kubernetes owner is removed.
+  name: gitlab-spike-backups
+  namespace: gitlab-spike
+spec:
+  access:
+    - actions:
+        - Read
+        - Write
+        - List
+        - Tagging
+      user: gitlab-spike-backups
+  adoptExisting: true
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  name: gitlab-spike-backups
+  reclaimPolicy: Retain
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Identity
+metadata:
+  annotations:
+    description: Full GitLab backup archives; retained when its Kubernetes owner is removed.
+  name: gitlab-spike-backups
+  namespace: gitlab-spike
+spec:
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Credentials
+metadata:
+  name: gitlab-spike-backups
+  namespace: gitlab-spike
+spec:
+  identityRef:
+    name: gitlab-spike-backups
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  secretRef:
+    accessKeyField: AWS_ACCESS_KEY_ID
+    name: gitlab-spike-backups-s3-credentials
+    secretKeyField: AWS_SECRET_ACCESS_KEY
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  annotations:
+    description: Temporary GitLab restore objects; retained when its Kubernetes owner is removed.
+  name: gitlab-spike-backup-tmp
+  namespace: gitlab-spike
+spec:
+  access:
+    - actions:
+        - Read
+        - Write
+        - List
+        - Tagging
+      user: gitlab-spike-backup-tmp
+    - actions:
+        - Read
+        - Write
+        - List
+        - Tagging
+      user: gitlab-spike-backups
+  adoptExisting: true
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  name: gitlab-spike-backup-tmp
+  reclaimPolicy: Retain
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Identity
+metadata:
+  annotations:
+    description: Temporary GitLab restore objects; retained when its Kubernetes owner is removed.
+  name: gitlab-spike-backup-tmp
+  namespace: gitlab-spike
+spec:
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Credentials
+metadata:
+  name: gitlab-spike-backup-tmp
+  namespace: gitlab-spike
+spec:
+  identityRef:
+    name: gitlab-spike-backup-tmp
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  secretRef:
+    accessKeyField: AWS_ACCESS_KEY_ID
+    name: gitlab-spike-backup-tmp-s3-credentials
+    secretKeyField: AWS_SECRET_ACCESS_KEY
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gitlab-s3-secret-reader
+  namespace: gitlab-spike
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: gitlab-s3-secret-reader
+  namespace: gitlab-spike
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - gitlab-spike-lfs-s3-credentials
+      - gitlab-spike-artifacts-s3-credentials
+      - gitlab-spike-uploads-s3-credentials
+      - gitlab-spike-packages-s3-credentials
+      - gitlab-spike-registry-s3-credentials
+      - gitlab-spike-backups-s3-credentials
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: gitlab-s3-secret-reader
+  namespace: gitlab-spike
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: gitlab-s3-secret-reader
+subjects:
+  - kind: ServiceAccount
+    name: gitlab-s3-secret-reader
+    namespace: gitlab-spike
+---
+apiVersion: external-secrets.io/v1
+kind: SecretStore
+metadata:
+  name: gitlab-s3-credentials
+  namespace: gitlab-spike
+spec:
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: gitlab-s3-secret-reader
+          namespace: gitlab-spike
+      remoteNamespace: gitlab-spike
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: gitlab-spike-lfs-connection
+  namespace: gitlab-spike
+spec:
+  data:
+    - remoteRef:
+        key: gitlab-spike-lfs-s3-credentials
+        property: AWS_ACCESS_KEY_ID
+      secretKey: access_key
+    - remoteRef:
+        key: gitlab-spike-lfs-s3-credentials
+        property: AWS_SECRET_ACCESS_KEY
+      secretKey: secret_key
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: SecretStore
+    name: gitlab-s3-credentials
+  target:
+    creationPolicy: Owner
+    name: gitlab-spike-lfs-connection
+    template:
+      data:
+        connection: |
+          provider: AWS
+          region: us-east-1
+          aws_access_key_id: '{{ .access_key }}'
+          aws_secret_access_key: '{{ .secret_key }}'
+          endpoint: http://seaweedfs-s3.seaweedfs.svc:8333
+          path_style: true
+          aws_signature_version: 4
+      engineVersion: v2
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: gitlab-spike-artifacts-connection
+  namespace: gitlab-spike
+spec:
+  data:
+    - remoteRef:
+        key: gitlab-spike-artifacts-s3-credentials
+        property: AWS_ACCESS_KEY_ID
+      secretKey: access_key
+    - remoteRef:
+        key: gitlab-spike-artifacts-s3-credentials
+        property: AWS_SECRET_ACCESS_KEY
+      secretKey: secret_key
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: SecretStore
+    name: gitlab-s3-credentials
+  target:
+    creationPolicy: Owner
+    name: gitlab-spike-artifacts-connection
+    template:
+      data:
+        connection: |
+          provider: AWS
+          region: us-east-1
+          aws_access_key_id: '{{ .access_key }}'
+          aws_secret_access_key: '{{ .secret_key }}'
+          endpoint: http://seaweedfs-s3.seaweedfs.svc:8333
+          path_style: true
+          aws_signature_version: 4
+      engineVersion: v2
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: gitlab-spike-uploads-connection
+  namespace: gitlab-spike
+spec:
+  data:
+    - remoteRef:
+        key: gitlab-spike-uploads-s3-credentials
+        property: AWS_ACCESS_KEY_ID
+      secretKey: access_key
+    - remoteRef:
+        key: gitlab-spike-uploads-s3-credentials
+        property: AWS_SECRET_ACCESS_KEY
+      secretKey: secret_key
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: SecretStore
+    name: gitlab-s3-credentials
+  target:
+    creationPolicy: Owner
+    name: gitlab-spike-uploads-connection
+    template:
+      data:
+        connection: |
+          provider: AWS
+          region: us-east-1
+          aws_access_key_id: '{{ .access_key }}'
+          aws_secret_access_key: '{{ .secret_key }}'
+          endpoint: http://seaweedfs-s3.seaweedfs.svc:8333
+          path_style: true
+          aws_signature_version: 4
+      engineVersion: v2
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: gitlab-spike-packages-connection
+  namespace: gitlab-spike
+spec:
+  data:
+    - remoteRef:
+        key: gitlab-spike-packages-s3-credentials
+        property: AWS_ACCESS_KEY_ID
+      secretKey: access_key
+    - remoteRef:
+        key: gitlab-spike-packages-s3-credentials
+        property: AWS_SECRET_ACCESS_KEY
+      secretKey: secret_key
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: SecretStore
+    name: gitlab-s3-credentials
+  target:
+    creationPolicy: Owner
+    name: gitlab-spike-packages-connection
+    template:
+      data:
+        connection: |
+          provider: AWS
+          region: us-east-1
+          aws_access_key_id: '{{ .access_key }}'
+          aws_secret_access_key: '{{ .secret_key }}'
+          endpoint: http://seaweedfs-s3.seaweedfs.svc:8333
+          path_style: true
+          aws_signature_version: 4
+      engineVersion: v2
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: gitlab-spike-registry-connection
+  namespace: gitlab-spike
+spec:
+  data:
+    - remoteRef:
+        key: gitlab-spike-registry-s3-credentials
+        property: AWS_ACCESS_KEY_ID
+      secretKey: access_key
+    - remoteRef:
+        key: gitlab-spike-registry-s3-credentials
+        property: AWS_SECRET_ACCESS_KEY
+      secretKey: secret_key
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: SecretStore
+    name: gitlab-s3-credentials
+  target:
+    creationPolicy: Owner
+    name: gitlab-spike-registry-connection
+    template:
+      data:
+        config: |
+          s3_v2:
+            accesskey: '{{ .access_key }}'
+            secretkey: '{{ .secret_key }}'
+            region: us-east-1
+            regionendpoint: http://seaweedfs-s3.seaweedfs.svc:8333
+            bucket: gitlab-spike-registry
+            pathstyle: true
+            checksum_disabled: true
+          redirect:
+            disable: true
+      engineVersion: v2
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: gitlab-spike-backups-s3cfg
+  namespace: gitlab-spike
+spec:
+  data:
+    - remoteRef:
+        key: gitlab-spike-backups-s3-credentials
+        property: AWS_ACCESS_KEY_ID
+      secretKey: access_key
+    - remoteRef:
+        key: gitlab-spike-backups-s3-credentials
+        property: AWS_SECRET_ACCESS_KEY
+      secretKey: secret_key
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: SecretStore
+    name: gitlab-s3-credentials
+  target:
+    creationPolicy: Owner
+    name: gitlab-spike-backups-s3cfg
+    template:
+      data:
+        config: |
+          [default]
+          access_key = {{ .access_key }}
+          secret_key = {{ .secret_key }}
+          bucket_location = us-east-1
+          host_base = seaweedfs-s3.seaweedfs.svc:8333
+          host_bucket = seaweedfs-s3.seaweedfs.svc:8333
+          use_https = False
+          signature_v2 = False
+          multipart_chunk_size_mb = 128
+          preserve_attrs = False
+      engineVersion: v2

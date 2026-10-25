@@ -269,6 +269,7 @@ extract_stack_slices() {
     --time "${late_start},${late_end}"
 }
 
+record_status=0
 "${perf_cmd}" record \
   -F "${record_frequency}" \
   -e cycles:u \
@@ -276,7 +277,7 @@ extract_stack_slices() {
   -o "${profile_dir}/perf.data" \
   -- "$@" \
   >"${profile_dir}/stdout.txt" \
-  2>"${profile_dir}/perf_record_stderr.txt"
+  2>"${profile_dir}/perf_record_stderr.txt" || record_status=$?
 
 run_perf_output "${profile_dir}/perf_header.txt" \
   report "${perf_report_symbolizer_args[@]}" \
@@ -304,3 +305,7 @@ run_perf_output "${profile_dir}/perf_report_no_children.txt" \
 
 run_perf_output "${profile_dir}/perf_script_stacks.txt" \
   script --input "${profile_dir}/perf.data"
+
+# A rejected gate can still have a complete profile. Keep its failure visible
+# after generating the reports needed to diagnose it.
+exit "${record_status}"

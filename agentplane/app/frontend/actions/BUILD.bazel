@@ -28,9 +28,13 @@ ts_library(
     name = "github_action_schemas",
     srcs = [
         "schemas/github/create_branch.ts",
+        "schemas/github/create_or_update_file.ts",
         "schemas/github/create_pull_request.ts",
+        "schemas/github/delete_file.ts",
         "schemas/github/push_files.ts",
+        "schemas/github/search_pull_requests.ts",
         "schemas/github/update_pull_request.ts",
+        "schemas/github/update_pull_request_branch.ts",
     ],
     tsconfig = TSCONFIG,
     deps = ["//:node_modules/zod"],

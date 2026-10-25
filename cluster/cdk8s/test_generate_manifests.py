@@ -74,27 +74,30 @@ def checkout() -> Path:
     return get_required_path(f"_main/{GENERATED_ROOT}").parents[1]
 
 
-def test_every_generated_file_is_committed(generated: Path, checkout: Path) -> None:
-    missing = sorted(relative for relative in _files(generated) if not (checkout / relative).is_file())
-    assert not missing, f"Generated but not committed ({_REGENERATE}):\n" + "\n".join(missing)
-
-
-def test_generated_files_match_committed(generated: Path, checkout: Path) -> None:
+def test_generated_tree_matches_committed_snapshot(generated: Path, checkout: Path) -> None:
+    generated_files = _files(generated)
+    committed_files = _files(checkout / GENERATED_ROOT)
+    missing = sorted(relative for relative in generated_files if not (checkout / relative).is_file())
     stale = sorted(
         relative
-        for relative in _files(generated)
+        for relative in generated_files
         if (checkout / relative).is_file() and (generated / relative).read_text() != (checkout / relative).read_text()
     )
-    assert not stale, f"Stale ({_REGENERATE}):\n" + "\n".join(stale)
+    committed = {f"{GENERATED_ROOT}/{relative}" for relative in committed_files}
+    extra = sorted(committed - generated_files)
 
+    failures = []
+    if missing:
+        failures.append(f"Generated but not committed ({_REGENERATE}):\n" + "\n".join(missing))
+    if stale:
+        failures.append(f"Stale ({_REGENERATE}):\n" + "\n".join(stale))
+    if extra:
+        failures.append(
+            f"Committed under {GENERATED_ROOT} but not written by the generator; delete it, or keep a "
+            "directory holding a hand-written file whole under the hand-written root:\n" + "\n".join(extra)
+        )
 
-def test_generated_root_holds_only_generated_files(generated: Path, checkout: Path) -> None:
-    committed = {f"{GENERATED_ROOT}/{relative}" for relative in _files(checkout / GENERATED_ROOT)}
-    extra = sorted(committed - _files(generated))
-    assert not extra, (
-        f"Committed under {GENERATED_ROOT} but not written by the generator; delete it, or keep a "
-        "directory holding a hand-written file whole under the hand-written root:\n" + "\n".join(extra)
-    )
+    assert not failures, "\n\n".join(failures)
 
 
 def test_piraeus_storage_is_confined_to_prepared_nodes(

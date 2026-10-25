@@ -138,15 +138,8 @@ in
   # Keep node-exporter non-root and grant it only read access to energy_uj.
   ducktape.raplMetrics.enable = true;
 
-  # Prefer compressed RAM over the disk swapfile for interactive use. The
-  # existing disk swap remains available as a lower-priority fallback.
-  zramSwap = {
-    enable = true;
-    algorithm = "zstd";
-    memoryPercent = 50;
-    priority = 100;
-  };
-  boot.kernel.sysctl."vm.swappiness" = 10;
+  zramSwap.enable = true;
+  systemd.oomd.enableUserSlices = true;
 
   # Add Plasma as a parallel Wayland session for tablet/OSK testing while
   # keeping the existing GNOME session and GDM display manager intact.

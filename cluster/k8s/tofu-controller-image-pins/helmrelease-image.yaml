@@ -15,4 +15,4 @@ spec:
     runner:
       image:
         repository: ghcr.io/agentydragon/tf-runner # {"$imagepolicy": "flux-system:tf-runner:name"}
-        tag: devel-20261022105251-4645370 # {"$imagepolicy": "flux-system:tf-runner:tag"}
+        tag: devel-20261025064215-7895b69 # {"$imagepolicy": "flux-system:tf-runner:tag"}

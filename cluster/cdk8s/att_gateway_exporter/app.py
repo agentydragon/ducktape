@@ -203,7 +203,7 @@ def chart(app: App) -> Chart:
         "dashboard",
         metadata=ApiObjectMetadata(name=NAME, namespace=_NAMESPACE),
         instance_selector=GrafanaDashboardSpecInstanceSelector(match_labels={"dashboards": "grafana"}),
-        folder="Home network",
+        folder="Network",
         config_map_ref=DASHBOARD.config_map_ref(),
     )
     return chart

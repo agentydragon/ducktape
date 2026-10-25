@@ -6,7 +6,7 @@ from typing import ClassVar
 from pydantic import Field, SecretStr
 from pydantic_settings import SettingsConfigDict
 
-from agentplane.llm_ingress.models import ModelConfig
+from agentplane.llm_ingress.models import AttributionConfig, ModelConfig, default_attribution
 from agentplane.log_levels import LogLevels
 from util.urls import HttpEndpointUrl
 from util.yaml_file_settings import YamlFileSettings
@@ -35,6 +35,11 @@ class Settings(YamlFileSettings):
     models: list[ModelConfig] = Field(
         default_factory=list, description="Per-route client configuration exposed to authenticated workloads."
     )
+    attribution: AttributionConfig = Field(
+        default_factory=default_attribution,
+        description="Literal JSON-header and W3C baggage keys mapped to verified Kubernetes principal fields.",
+    )
+
     codex_model_catalog_file: Path | None = Field(
         default=None,
         description=(

@@ -353,6 +353,44 @@ pub fn resolve_imported_callback_factories(
         .collect()
 }
 
+/// Resolve author-asserted inline-only callback factories through the same
+/// import identities as the broader callback-factory contract. No local
+/// wrapper inference grants this narrower assertion implicitly.
+pub fn resolve_asserted_inline_callback_factories(
+    modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
+    asserted: &BTreeMap<ModuleKey, BTreeSet<String>>,
+) -> BTreeMap<ModuleKey, BTreeSet<String>> {
+    let mut factories = BTreeSet::new();
+    for (module, exports) in asserted {
+        for export in exports {
+            if modules
+                .get(module)
+                .is_some_and(|facts| facts.exports.contains_key(export))
+            {
+                factories.insert((module.clone(), export.clone()));
+            } else {
+                eprintln!(
+                    "cross_module_purity: dangling inline_callback_factory_exports assertion {module}:{export} — no such analyzed module export; ignoring"
+                );
+            }
+        }
+    }
+    modules
+        .iter()
+        .map(|(module, facts)| {
+            let bindings = facts
+                .imports
+                .iter()
+                .filter(|(_, target)| {
+                    factories.contains(&(target.module.clone(), target.export.clone()))
+                })
+                .map(|(local, _)| local.clone())
+                .collect();
+            (module.clone(), bindings)
+        })
+        .collect()
+}
+
 /// Project author-asserted pure members of exported namespace-like objects
 /// (`chunk_export_purity.<chunk>.pure_members`) onto each importing module's
 /// local binding names. Pure axiom projection — no fixpoint: for every import
@@ -372,6 +410,20 @@ pub fn resolve_asserted_callback_factory_members(
     asserted_members: &BTreeMap<ModuleKey, BTreeMap<String, BTreeSet<String>>>,
 ) -> BTreeMap<ModuleKey, BTreeMap<String, BTreeSet<String>>> {
     resolve_asserted_members(modules, asserted_members, "callback_factory_members")
+}
+
+pub fn resolve_asserted_no_reentry_members(
+    modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
+    asserted_members: &BTreeMap<ModuleKey, BTreeMap<String, BTreeSet<String>>>,
+) -> BTreeMap<ModuleKey, BTreeMap<String, BTreeSet<String>>> {
+    resolve_asserted_members(modules, asserted_members, "no_reentry_members")
+}
+
+pub fn resolve_asserted_namespace_independent_members(
+    modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
+    asserted_members: &BTreeMap<ModuleKey, BTreeMap<String, BTreeSet<String>>>,
+) -> BTreeMap<ModuleKey, BTreeMap<String, BTreeSet<String>>> {
+    resolve_asserted_members(modules, asserted_members, "namespace_independent_members")
 }
 
 fn resolve_asserted_members(

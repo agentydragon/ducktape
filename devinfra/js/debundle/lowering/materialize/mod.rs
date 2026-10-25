@@ -462,8 +462,25 @@ pub(super) fn finish_logical_chunk(
                 .callback_factories
                 .extend(callback_factories.iter().cloned());
         }
+        if let Some(factories) = cross_module_purities
+            .inline_callback_factories
+            .get(chunk_id)
+        {
+            hints
+                .inline_callback_factories
+                .extend(factories.iter().cloned());
+        }
+        if let Some(members) = cross_module_purities
+            .namespace_independent_members
+            .get(chunk_id)
+        {
+            hints.namespace_independent_members.extend(members.clone());
+        }
         if let Some(members) = cross_module_purities.callback_factory_members.get(chunk_id) {
             hints.callback_factory_members.extend(members.clone());
+        }
+        if let Some(members) = cross_module_purities.no_reentry_members.get(chunk_id) {
+            hints.no_reentry_members.extend(members.clone());
         }
         if owner_graph_options.local_property_effects {
             hints.local_effect_policy = LocalEffectPolicy::LocalPropertyWrites;

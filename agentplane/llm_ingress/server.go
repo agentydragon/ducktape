@@ -18,6 +18,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"go.opentelemetry.io/otel/baggage"
 )
 
 var (
@@ -37,15 +38,16 @@ var (
 )
 
 type ingressHandler struct {
-	resolver *auth.Resolver
-	backend  *http.Client
-	baseURL  *url.URL
-	key      string
-	models   map[string]modelConfig
-	codex    *codexCatalog
-	logBody  bool
-	logger   *slog.Logger
-	pool     chan struct{}
+	resolver    *auth.Resolver
+	backend     *http.Client
+	baseURL     *url.URL
+	key         string
+	models      map[string]modelConfig
+	attribution attributionConfig
+	codex       *codexCatalog
+	logBody     bool
+	logger      *slog.Logger
+	pool        chan struct{}
 }
 
 func newIngressHandler(c config, resolver *auth.Resolver, logger *slog.Logger) (*ingressHandler, error) {
@@ -88,15 +90,16 @@ func newIngressHandler(c config, resolver *auth.Resolver, logger *slog.Logger) (
 		}
 	}
 	return &ingressHandler{
-		resolver: resolver,
-		backend:  backend,
-		baseURL:  baseURL,
-		key:      c.LiteLLMKey,
-		models:   models,
-		codex:    codex,
-		logBody:  c.LogLLMRequests,
-		logger:   logger,
-		pool:     make(chan struct{}, 100),
+		resolver:    resolver,
+		backend:     backend,
+		baseURL:     baseURL,
+		key:         c.LiteLLMKey,
+		models:      models,
+		attribution: c.Attribution,
+		codex:       codex,
+		logBody:     c.LogLLMRequests,
+		logger:      logger,
+		pool:        make(chan struct{}, 100),
 	}, nil
 }
 
@@ -240,7 +243,11 @@ func (h *ingressHandler) forward(writer http.ResponseWriter, incoming *http.Requ
 		writeJSONError(writer, http.StatusBadGateway, "LiteLLM backend unavailable", "")
 		return
 	}
-	outgoing.Header = forwardedRequestHeaders(incoming.Header, principal, h.key)
+	outgoing.Header, err = forwardedRequestHeaders(incoming.Header, principal, h.key, h.attribution)
+	if err != nil {
+		writeJSONError(writer, http.StatusInternalServerError, "Could not attach verified attribution", "")
+		return
+	}
 	response, err := h.backend.Do(outgoing)
 	if err != nil {
 		if incoming.Context().Err() == nil {
@@ -295,8 +302,17 @@ func (h *ingressHandler) forward(writer http.ResponseWriter, incoming *http.Requ
 	}
 }
 
-func forwardedRequestHeaders(headers http.Header, principal auth.Principal, key string) http.Header {
+func forwardedRequestHeaders(
+	headers http.Header,
+	principal auth.Principal,
+	key string,
+	attribution attributionConfig,
+) (http.Header, error) {
 	connectionTokens := connectionHeaderTokens(headers)
+	configuredHeaders := make(map[string]struct{}, len(attribution.JSONHeaders))
+	for _, header := range attribution.JSONHeaders {
+		configuredHeaders[strings.ToLower(header.Name)] = struct{}{}
+	}
 	forwarded := make(http.Header)
 	for name, values := range headers {
 		lower := strings.ToLower(name)
@@ -309,7 +325,10 @@ func forwardedRequestHeaders(headers http.Header, principal auth.Principal, key 
 		if _, found := credentialHeaders[lower]; found {
 			continue
 		}
-		if _, found := untrustedMetadataHeaders[lower]; found || lower == "host" || lower == "content-length" {
+		if _, found := configuredHeaders[lower]; found {
+			continue
+		}
+		if _, found := untrustedMetadataHeaders[lower]; found || lower == "host" || lower == "content-length" || lower == "baggage" {
 			continue
 		}
 		if hasIdentityHeaderPrefix(lower) {
@@ -318,14 +337,47 @@ func forwardedRequestHeaders(headers http.Header, principal auth.Principal, key 
 		forwarded[name] = append([]string(nil), values...)
 	}
 	forwarded.Set("Authorization", "Bearer "+key)
-	metadata, _ := json.Marshal(map[string]string{
-		"agentplane.namespace":       principal.Account.Namespace,
-		"agentplane.service_account": principal.Account.Name,
-		"agentplane.pod_name":        principal.PodName,
-		"agentplane.pod_uid":         principal.PodUID,
-	})
-	forwarded.Set("x-litellm-spend-logs-metadata", string(metadata))
-	return forwarded
+	claims := map[verifiedClaim]string{
+		verifiedNamespace:      principal.Account.Namespace,
+		verifiedServiceAccount: principal.Account.Name,
+		verifiedPodName:        principal.PodName,
+		verifiedPodUID:         principal.PodUID,
+	}
+	for _, header := range attribution.JSONHeaders {
+		members := make(map[string]string, len(header.Fields))
+		for _, field := range header.Fields {
+			members[field.Key] = claims[field.Source]
+		}
+		metadata, err := json.Marshal(members)
+		if err != nil {
+			return nil, err
+		}
+		forwarded.Set(header.Name, string(metadata))
+	}
+	if len(attribution.Baggage) > 0 {
+		value, err := agentplaneIdentityBaggage(attribution.Baggage, claims)
+		if err != nil {
+			return nil, err
+		}
+		forwarded.Set("baggage", value)
+	}
+	return forwarded, nil
+}
+
+func agentplaneIdentityBaggage(fields []attributionField, claims map[verifiedClaim]string) (string, error) {
+	// Baggage is derived only from the authenticated Kubernetes principal.
+	outgoing := baggage.Baggage{}
+	for _, field := range fields {
+		member, err := baggage.NewMemberRaw(field.Key, claims[field.Source])
+		if err != nil {
+			return "", err
+		}
+		outgoing, err = outgoing.SetMember(member)
+		if err != nil {
+			return "", err
+		}
+	}
+	return outgoing.String(), nil
 }
 
 func copyResponseHeaders(destination, source http.Header) {

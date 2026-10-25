@@ -1,0 +1,12 @@
+# The cluster-wide validators build this directory's Kustomization and inspect its files.
+filegroup(
+    name = "manifests",
+    srcs = glob(
+        ["**"],
+        exclude = ["BUILD.bazel"],
+    ),
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/validation:__pkg__",
+    ],
+)

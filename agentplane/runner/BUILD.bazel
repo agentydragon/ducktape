@@ -323,14 +323,18 @@ py_test(
     deps = [
         ":conftest",
         "//:conftest",
+        "//agentplane/native/codex/testing:responses",
+        "//agentplane/native/codex/testing:responses_sse",
         "//agentplane/proto:runner_pb2",
         "//agentplane/runner/testing:driver",
         "//agentplane/runner/testing:events",
         "//agentplane/runner/testing:launches",
         "//agentplane/runner/testing:process",
         "//agentplane/testing:scripted_model",
+        "//util/testing:undeclared_outputs",
         "@pypi//grpcio",
         "@pypi//protobuf",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

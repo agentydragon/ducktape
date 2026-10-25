@@ -1,4 +1,4 @@
-"""Developer instructions belong to the thread, not to the resume that reloads it."""
+"""A cold resume initially replays the developer message stored in the thread history."""
 
 from __future__ import annotations
 
@@ -15,16 +15,13 @@ RESUMED_WITH = "STANDING_ORDER_BETA: the operator's name is Rook."
 RESUMED_BASE = "You are a terse test assistant resumed with a replaced policy."
 
 
-async def test_a_resume_cannot_replace_the_threads_developer_instructions(
+async def test_resume_replays_original_developer_message_before_compaction(
     codex: CodexHarness, openai_responses: OpenAIResponses
 ) -> None:
-    """`thread/resume` takes a `developerInstructions` override, accepts it, and the model never
-    sees it: the thread's own developer message replays out of the rollout instead, and the
-    app-server says nothing about the discarded value. `baseInstructions` on the very same request
-    does take effect, so the resume's overrides are live and this one is inert on its own.
-
-    The consequence for the runner: a Codex session's standing instructions are fixed once the
-    thread exists, which is why `SessionSpec.instructions` is fixed for the session's life.
+    """The first ordinary turn after resume replays the original developer message, even when
+    `developerInstructions` overrides the resumed configuration. Later compaction rebuilds that
+    message from the override; this probe does not exercise compaction. `baseInstructions` changes
+    the base policy immediately.
     """
     async with codex.start(openai_responses, persist=True, instructions=STARTED_WITH) as first:
         turn = await first.start_turn("Reply: SEED_OK")
@@ -47,17 +44,14 @@ async def test_a_resume_cannot_replace_the_threads_developer_instructions(
         turn = await second.start_turn("Reply: NEXT_OK")
         async with await openai_responses.await_next_request() as exchange:
             request = exchange.request
-            # The sibling override on the same resume did land, so an inert `developerInstructions` is
-            # not a resume that ignored everything.
+            # The base override changes the request immediately.
             assert request.instructions == RESUMED_BASE
             # One developer message, the thread's own — neither replaced nor joined by the new text.
             assert [message.text for message in request.messages("developer")] == [STARTED_WITH]
             stream = responses_sse.response_stream([responses_sse.Message("NEXT_OK")], model=MODEL)
             await exchange.send(*stream.events)
         assert (await turn.completed()).params.turn.status is wire.TurnStatus.COMPLETED
-        # Nothing on the wire reports the discarded override, so a client cannot tell it was
-        # dropped: the app-server's "override was provided and ignored" notices are for a thread
-        # already loaded, which a resume onto a fresh process never is.
+        # No warning says that the instruction override waits until context is rebuilt.
         warnings = [frame["params"]["message"] for frame in second.native_frames() if frame.get("method") == "warning"]
         assert not [message for message in warnings if "nstructions" in message]
 

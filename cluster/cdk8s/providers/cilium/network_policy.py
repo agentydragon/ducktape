@@ -29,6 +29,7 @@ from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecEgressToPortsRulesDns,
     CiliumNetworkPolicySpecEndpointSelector,
     CiliumNetworkPolicySpecIngress,
+    CiliumNetworkPolicySpecIngressDeny,
     CiliumNetworkPolicySpecIngressFromEndpoints,
     CiliumNetworkPolicySpecIngressFromEntities,
     CiliumNetworkPolicySpecIngressToPorts,
@@ -246,6 +247,7 @@ class NetworkPolicy(_CiliumNetworkPolicy):
         metadata: ApiObjectMetadata,
         endpoint_selector: dict[str, str] | CiliumNetworkPolicySpecEndpointSelector,
         ingress: Sequence[CiliumNetworkPolicySpecIngress] | None = None,
+        ingress_deny: Sequence[CiliumNetworkPolicySpecIngressDeny] | None = None,
         egress: Sequence[CiliumNetworkPolicySpecEgress] | None = None,
         egress_deny: Sequence[CiliumNetworkPolicySpecEgressDeny] | None = None,
     ) -> None:
@@ -263,6 +265,7 @@ class NetworkPolicy(_CiliumNetworkPolicy):
             spec=CiliumNetworkPolicySpec(
                 endpoint_selector=endpoint_selector,
                 ingress=list(ingress) if ingress is not None else None,
+                ingress_deny=list(ingress_deny) if ingress_deny is not None else None,
                 egress=list(egress) if egress is not None else None,
                 egress_deny=list(egress_deny) if egress_deny is not None else None,
             ),

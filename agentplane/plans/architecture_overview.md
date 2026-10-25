@@ -229,7 +229,7 @@ than with the live ones:
 - the apiserver's watch cache holds every object of a kind in memory;
 - every service watching Sandboxes caches and relists all of them; a label selector keeps retired
   ones out of a watcher's cache, not out of the apiserver's;
-- each keeps its node-local state PVC (`local-path-ovh-hdd` in the checked-in templates).
+- each keeps its node-local state PVC (`piraeus-hdd-local` in the checked-in templates).
 
 Agentplane's own apiserver (D3) takes the first and the quota off the cluster's control plane. The
 watchers and the PVCs cost the same, and kine is slower than etcd at large lists (not measured

@@ -624,6 +624,7 @@ py_library(
         "//agentplane/runner:harness",
         "//cluster/cdk8s:agent_access_profiles",
         "//cluster/cdk8s:model_selections",
+        "//cluster/cdk8s/monitoring:grafana_instance",
         "//model_catalog:catalog",
     ],
 )
@@ -912,6 +913,7 @@ py_test(
         ":egress_credentials",
         ":egress_staging_credentials",
         "//:conftest",
+        "//cluster/cdk8s/clickhouse:client",
         "@pypi//cdk8s",
         "@pypi//pytest_bazel",
     ],

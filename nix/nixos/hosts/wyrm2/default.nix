@@ -59,6 +59,9 @@ in
 
   ducktape.homeWifi.enable = true;
 
+  zramSwap.enable = true;
+  systemd.oomd.enableUserSlices = true;
+
   # Idle Bazel servers on this shared box stack up: Bazel's 3h default kept 10 of them,
   # ~22 GiB RSS, on 2026-10-24. Measured 2026-10-24 on devel 7976adcd, cold server and
   # fresh output base, warm shared repo caches: `bazel build --nobuild //...` took

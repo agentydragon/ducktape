@@ -212,6 +212,31 @@ not thereby part of this package. The strip pass rejects non-shareable items
 also needed by residual exports and checks retained bindings and observable
 writes before removing swapped items.
 
+## Synchronous analysis limits
+
+Recursion and analysis limits preserve the first-await boundary where retained
+callback read coverage is complete. Possible synchronous reads and writes remain
+constraints, including for private callbacks that have not escaped. Unsupported
+bodies and dynamic scope retain conservative whole-body effects.
+
+Opaque calls holding a class or instance may invoke its constructor, field
+initializers, methods, and accessors. Their synchronous read closure stops at a
+definite `await` where retained callable coverage is complete; uncovered owners
+and incomplete reachability retain whole-body effects and rebinds.
+
+At-init callback analysis also records possible implicit primitive conversions
+from arithmetic, relational and loose-equality operators, the left operand of
+`in`, numeric unary operators, updates and non-logical compound assignments.
+If retained value flow proves an operand primitive, the conversion adds no
+callback effect. An object or unknown operand uses the conservative synchronous
+callback path, covering custom `[Symbol.toPrimitive]`, `valueOf` and `toString`
+methods without assuming which conversion method runs. Strict equality,
+short-circuit operators, `typeof`, logical negation and `instanceof` do not
+create a ToPrimitive effect. Callback effects reachable through an operand's
+retained lazy closure are included as well, covering an accessor that returns
+another conversion callable. This is callback-effect analysis; it does not
+classify the enclosing operator as pure.
+
 ## Audited callback factories
 
 `chunk_export_purity.<defining chunk>.callback_factory_exports` lists named
@@ -226,9 +251,13 @@ argument shapes remain conservative. The provider must not invoke that callback 
 caller-, host-, or export-provided callback synchronously, or publish the
 callback outside the returned fresh ordinary callable/plain-object graph. The
 consumer may later reach or invoke the captured callback through that result.
+An invocation includes synchronous reads by the callback and by callbacks it
+returns synchronously. Reads after an unconditional `await` remain deferred;
+unsupported callback bodies retain conservative whole-body effects.
 The provider must not synchronously read or write importer-owned state through
 another route, including imported lexical cells or caller-owned objects; effects
 confined to provider-private state are allowed.
+
 The author must audit every provider and type branch, helper, callback-bearing
 property access on both input and result, and prototype integrity; neither
 graph may contain proxies or accessors at the call. This assertion describes
@@ -237,6 +266,60 @@ assert that the factory call is pure or effect-free. Writes through the result
 that can install opaque values, accessors, or a new prototype conservatively
 restore callback effects; known primitive metadata writes retain deferral.
 
+`chunk_export_purity.<defining chunk>.inline_callback_factory_exports` is a
+narrower named-export contract. It applies only to calls with exactly one
+non-spread syntactic inline function or arrow callback. The provider must
+return a fresh ordinary callable containing that callback, without invoking
+it or any caller-, host-, or export-provided callback synchronously or
+publishing it elsewhere. Its other synchronous behavior must satisfy the
+same importer-state restriction above. The author audits provider and helper
+paths reachable for this admitted input shape; other overloads are unclaimed.
+Calls with a named callback, a retained factory result, spread arguments, or
+`new` use conservative callback timing. This contract is independent of purity
+and does not grant the broader `callback_factory_exports` composition rule.
+
+`chunk_export_purity.<defining chunk>.no_reentry_members` asserts a narrower
+call-timing fact for listed static namespace members: with admitted primitive
+arguments, the call does not synchronously invoke caller-, importer-, or
+host-provided callbacks or read importer-owned lexical state. Provider-private
+effects remain possible. It neither asserts purity nor describes the return
+value; the return stays opaque. The same member must also satisfy
+`namespace_independent_members` so its lookup cannot itself execute foreign
+code, and the namespace identity and mutation checks must pass. The checked
+call shape is a direct `namespace.member(...)` with no spread or `new` and only
+primitive literals, `void` of a primitive literal, or a template with no
+interpolations as arguments; zero arguments are allowed. Argument expressions
+are still visited normally. Uncertain objects, callbacks, aliases, optional or
+computed lookups, and changed namespace members retain ordinary reentry.
+
+`chunk_export_purity.<chunk>.namespace_independent_members` maps namespace
+exports to individually audited static member names. Each lookup must be stable,
+run no caller/importer/host code, and expose no capability to obtain the namespace
+or replace an audited factory. An ordinary own data property or an explicitly
+audited inert forwarding accessor can satisfy this; a primitive result alone
+cannot. The guarantee covers the member value's reachable operations, properties,
+prototypes, constructors, accessors, and returned callbacks, including implicit
+namespace receivers in member calls and tags. Independently supplied argument or
+receiver capabilities may propagate normally; the implicit namespace receiver is
+not such an exception. Hidden closure capabilities to rewrite factories are
+forbidden. This summary grants neither purity nor callback deferral.
+
+The author must identify every imported export that can alias the namespace
+family and retain the provider/runtime input audit below. The checker groups all
+configured family roots together. Only when every runtime occurrence is the
+receiver of a direct static lookup of a listed member may namespace admission
+ignore unrelated unknown values and `this`. Whole namespace uses, writes,
+updates, deletes, assignment/destructuring/loop targets, computed or optional
+lookups, namespace exports, dynamic scope, or incomplete member lists retain the
+ordinary conservative proof. Member results may be called, chained, constructed,
+or used as superclasses with their ordinary execution effects. Callback deferral
+still requires `callback_factory_members`; export/reentry and early callback
+invocation checks remain active. See the [source-privacy proof](https://github.com/agentydragon/ducktape/blob/devel/devinfra/js/debundle/docs/design.md#namespace-capability-privacy).
+
+Explicit member writes nested in object or array destructuring, including nested,
+default, rest, and loop-head targets, retain the same conservative namespace
+mutation checks as ordinary member assignments.
+
 For a namespace-member contract, the author must also audit the provider and all
 caller/runtime paths that supply values used by admitted callbacks. The listed
 factory members must keep their audited identities and behavior throughout the
@@ -244,19 +327,63 @@ analyzed chunk's synchronous initialization. In particular, provider or other
 namespace members, callback/ref/hook inputs, and values returned through those
 paths must not expose an alias that can replace a listed factory member.
 Direct static identifier-property namespace call results are treated as
-independent only under this explicit author assertion. Computed, chained,
-unrelated, and unknown call results remain conservative when assigned, returned,
-or used as dynamic-write receivers. For call-argument checks, the analyzer
-follows namespace values in the supplied argument expressions and excludes the
-callee expression, which is not passed as an argument; an unrelated call result
-is not assumed to be the namespace solely because it appears as an argument.
-Unknown expression shapes remain conservative. The analyzer tracks
-dynamic-write receiver values and rejects receivers whose checked value flow
-reaches the namespace through direct member-rooted writes, local aliases, or
-unknown call results. Receivers with no syntactic path to the namespace are
-accepted only under the audited non-aliasing assertion; this is a trusted
-contract, not an automatic proof that arbitrary callback parameters cannot
-alias the namespace.
+independent only under this explicit author assertion. The analyzer propagates
+explicit namespace provenance through assignments, local aliases, property
+values, returns, and call arguments. An unrelated call or constructor result
+with no such path is not treated as a namespace alias solely because its
+runtime value is unknown; the author audit asserts that values used by admitted
+callbacks cannot alias or replace listed members. Unknown syntax remains
+conservative at publication and call-argument sinks. Binding cycles alone do
+not establish namespace provenance; namespace and
+unknown-value inputs to a cycle remain conservative. A static identifier-property
+optional read directly from an identifier retains the receiver's namespace
+provenance and the possible undefined result. Optional calls, computed optional
+reads and chained receivers remain conservative; this value-flow rule does not
+assert purity or remove accessor effects.
+For call-argument checks,
+the analyzer follows namespace values in the supplied argument expressions
+and excludes the callee expression, which is not passed as an argument. A
+value from an unknown call or constructor used as a static or dynamic write
+receiver remains a possible namespace alias, including through local aliases
+and member projections, and disables the contract. The checker does not prove
+that arbitrary callback parameters or unrelated call results are disjoint
+from the namespace; that non-aliasing guarantee is part of the author audit.
+Under intrinsic integrity, adjacent writes to declared own data fields of a
+checked fresh base-class instance do not invalidate a namespace contract.
+The allocation and assignment values must run no user code, and the instance
+must remain private throughout that run. Unsupported constructors, fields,
+receivers, dynamic scope, and intervening statements retain the conservative
+write checks.
+For a fresh top-level object literal that visibly contains the namespace and
+has static ordinary own data properties,
+the checker distinguishes the container's identity from namespace values held
+in its properties. A read of a verified own property follows that property's
+retained value; storing a namespace in the container still counts as
+publication at a sink. An adjacent write to an existing own data property may
+use the same private fresh-value proof when its value runs no user code.
+Getters, setters, computed keys, spreads, `__proto__`, unknown receivers, and
+unsupported property reads retain conservative namespace checks. Literals
+without an explicit namespace path keep the conservative receiver rule.
+Class publication tracking also follows retained static fields through a
+uniquely resolved local class superclass on the constructor surface. Unknown,
+imported, reassigned, or non-class bases and cycles remain conservative;
+instance inheritance, static accessors, decorators, and unsupported class
+surfaces remain opaque.
+Adjacent static property writes to the fresh ordinary result of a direct
+audited factory call with one inline callback also retain the contract. Their
+values must run no user code; prototype writes and intervening statements end
+the proof. Rejecting the producing namespace's factory contract also removes
+this proof from its results.
+
+Under intrinsic integrity (A11), a sequence expression assigning a direct global
+`Error(...)` result to a local binding can retain the namespace contract through
+immediately following static property assignments to that binding. Values must
+be inert or declared local reads; `__proto__`, `stack`, and intervening
+expressions end the proof. Every matching write in that owner and callable must
+be proved. Calls, argument evaluation, and namespace publication through assigned
+values retain their ordinary checks. Shadowed or visibly replaced `Error` and
+dynamic scope remain conservative; see [design details](https://github.com/agentydragon/ducktape/blob/devel/devinfra/js/debundle/docs/design.md#conditions-on-the-input-chunk-assumptions-a1a11).
+
 Within a literal traversed inside an admitted inline callback, a direct static
 namespace member used as a call callee is analyzed as the callee expression,
 not as a captured namespace value. Call arguments and effects remain analyzed;
@@ -300,6 +427,30 @@ keep conservative timing. Eager argument reads,
 the helper's and local decorators' syntactic lazy read/rebind dependency closure,
 and target-local mutation/co-location edges remain. This is not purity.
 
+`effect: typescript_metadata_decorate_helper_with_member_decorators` adds one
+static member lookup (`provider.decorator`) to the admitted decorator array.
+The provider root must be an imported binding without any direct member write
+or rebind in the analyzed chunk. The author additionally certifies that each
+admitted provider lookup is an ordinary, stable own data property throughout
+synchronous initialization: no getter, proxy, alias mutation, or hidden
+callback reentry can replace or observe it. The selected member must itself
+be a metadata-only decorator under the contract above. This assertion covers
+all supported applications of the helper, not just a single call. Computed
+keys, chained members, spreads, and local providers remain conservative.
+The existing bare-identifier helper effect does not acquire member support.
+
+`effect: typescript_metadata_decorate_helper_three_args` explicitly asserts
+the same metadata-only behavior for
+`helper([bare identifiers], LocalClass.prototype, literalStringKey)`.
+The helper determines the descriptor without a fourth kind argument. All
+helper branches and supplied decorators must satisfy the contract above;
+reading and restoring an ordinary own descriptor must preserve its behavior.
+For a subclass target, inherited metadata must also be ordinary inert data:
+copying it may neither invoke accessors nor mutate the base class's metadata.
+Stable initialized identities, dependency closures and target co-location
+checks still apply. Extra arguments and unsupported decorator/key expressions
+remain conservative. Earlier effects retain their existing accepted shapes.
+
 ## Vendor split-brain evidence
 
 A partial vendor swap rejected for shared retained implementation reports both
@@ -307,3 +458,13 @@ its swapped-package ownership path and its residual liveness path. Ownership
 traces distinguish dependencies of stripped exports from dependent items absorbed
 into the package island. These explain the stripper's conservative classification;
 they do not assert that every reported dependency executes synchronously.
+
+## Native collection callback effects
+
+Bounded synchronous analysis can execute a known callback for direct one-callback
+`forEach`, `filter`, and `map` calls over a retained untainted dense ordinary
+array. It passes actual retained element capabilities and preserves callback
+reads, writes, coercions, and publication. Fresh results retain element aliases;
+iteration and spread do not invoke stored functions. Unsupported sources,
+mutation, intrinsic changes, and invocation limits retain conservative effects.
+See [the proof and fallback conditions](https://github.com/agentydragon/ducktape/blob/devel/devinfra/js/debundle/docs/purity_soundness.md#retained-dense-array-iteration-effects).

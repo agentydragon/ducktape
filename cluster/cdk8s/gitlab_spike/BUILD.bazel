@@ -1,0 +1,169 @@
+# gazelle:resolve py flux_gitrepository_crds //cluster/cdk8s/providers/flux:gitrepository
+# gazelle:resolve py flux_imagerepository_crds //cluster/cdk8s/providers/flux:imagerepository
+# gazelle:resolve py flux_imageupdateautomation_crds //cluster/cdk8s/providers/flux:imageupdateautomation
+# gazelle:resolve py flux_receiver_crds //cluster/cdk8s/providers/flux:receiver
+# gazelle:resolve py cilium_envoyconfig_crds //cluster/cdk8s/providers/cilium:ciliumenvoyconfig
+
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(default_visibility = ["//cluster/cdk8s:__subpackages__"])
+
+filegroup(
+    name = "bootstrap_scripts",
+    srcs = [
+        "bootstrap.rb",
+        "bootstrap.sh",
+    ],
+)
+
+filegroup(
+    name = "runner_config",
+    srcs = ["runner.toml"],
+)
+
+py_library(
+    name = "app",
+    srcs = ["app.py"],
+    deps = [
+        "//cluster/cdk8s:cnpg",
+        "//cluster/cdk8s:gateway",
+        "//cluster/cdk8s:helm",
+        "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s:secret_ref",
+        "//cluster/cdk8s:service_ref",
+        "//cluster/cdk8s/providers/cilium:ciliumenvoyconfig",
+        "//cluster/cdk8s/providers/flux:helmrelease",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "bootstrap",
+    srcs = ["bootstrap.py"],
+    data = [":bootstrap_scripts"],
+    deps = [
+        "//cluster/cdk8s:api_resource",
+        "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:namespaces",
+        "//cluster/cdk8s:pod_policy",
+        "//cluster/cdk8s/external_secrets:minted_secret",
+        "//util/bazel:runfiles",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
+    name = "delivery",
+    srcs = ["delivery.py"],
+    deps = [
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:image_automation",
+        "//cluster/cdk8s/providers/flux:git_repository",
+        "//cluster/cdk8s/providers/flux:gitrepository",
+        "//cluster/cdk8s/providers/flux:image_repository",
+        "//cluster/cdk8s/providers/flux:image_update_automation",
+        "//cluster/cdk8s/providers/flux:imagerepository",
+        "//cluster/cdk8s/providers/flux:imageupdateautomation",
+        "//cluster/cdk8s/providers/flux:kustomization",
+        "//cluster/cdk8s/providers/flux:notification",
+        "//cluster/cdk8s/providers/flux:receiver",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
+    name = "dependencies",
+    srcs = ["dependencies.py"],
+    deps = [
+        ":app",
+        "//cluster/cdk8s:cnpg",
+        "//cluster/cdk8s:cnpg_backup",
+        "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:valkey",
+        "//cluster/cdk8s/external_secrets:kubernetes_store",
+        "//cluster/cdk8s/external_secrets:minted_secret",
+        "//cluster/cdk8s/providers/cnpg:cluster",
+        "//cluster/cdk8s/providers/cnpg:cnpg_database",
+        "//cluster/cdk8s/providers/cnpg:database",
+        "//cluster/cdk8s/providers/external_secrets:external_secret",
+        "//cluster/cdk8s/providers/external_secrets:externalsecret",
+        "//cluster/cdk8s/seaweedfs:s3",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
+    name = "flux",
+    srcs = ["flux.py"],
+    data = [
+        "//ssh_keys:atlas-forgejo.pub",
+        "//ssh_keys:iguana-forgejo.pub",
+        "//ssh_keys:rugged-forgejo.pub",
+        "//ssh_keys:wyrm2-forgejo.pub",
+    ],
+    deps = [
+        ":runner",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:terraform",
+        "//cluster/cdk8s/providers/flux:kustomization",
+        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
+        "//util/bazel:runfiles",
+        "@pypi//cdk8s",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "runner",
+    srcs = ["runner.py"],
+    data = [":runner_config"],
+    deps = [
+        "//cluster/cdk8s:cilium",
+        "//cluster/cdk8s:helm",
+        "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
+        "//cluster/cdk8s/providers/cilium:network_policy",
+        "//util/bazel:runfiles",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
+    name = "demo",
+    srcs = ["demo.py"],
+    deps = [
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:pod_policy",
+        "//cluster/cdk8s:probes",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
+    name = "benchmark",
+    srcs = ["benchmark.py"],
+    data = [
+        "//cluster:debug/gitlab_gitaly_storage_bench/gitlab-bench.sh",
+        "//cluster/debug/piraeus_migration/benchmarks:forgejo-bench.sh",
+    ],
+    deps = [
+        ":app",
+        "//cluster/cdk8s:pod_policy",
+        "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
+        "//cluster/cdk8s/providers/cilium:network_policy",
+        "//util/bazel:runfiles",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)

@@ -27,6 +27,7 @@ from agentplane.action_service.operator_oidc_settings import OperatorOidcSetting
 from agentplane.action_service.sandbox.actions import SandboxAction
 from agentplane.action_service.sandbox.binding import PodExecutorBinding
 from agentplane.app.action_federation_settings import ExchangeFederationSettings
+from agentplane.llm_ingress.models import AttributionConfig, AttributionField, AttributionJsonHeader, VerifiedClaim
 from agentplane.sandboxes.kubernetes_grants import KubernetesGrant
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import (
@@ -333,6 +334,34 @@ ENV = Environment(
         models=model_configs(STAGING_APP_MODELS),
         codex_routes=STAGING_APP_MODELS.codex,
         log_llm_requests=True,
+        attribution=AttributionConfig(
+            json_headers=[
+                AttributionJsonHeader(
+                    name="x-litellm-spend-logs-metadata",
+                    fields=[
+                        AttributionField(key="agentplane.namespace", source=VerifiedClaim.NAMESPACE),
+                        AttributionField(key="agentplane.service_account", source=VerifiedClaim.SERVICE_ACCOUNT),
+                        AttributionField(key="agentplane.pod_name", source=VerifiedClaim.POD_NAME),
+                        AttributionField(key="agentplane.pod_uid", source=VerifiedClaim.POD_UID),
+                    ],
+                )
+            ],
+            baggage=[
+                AttributionField(
+                    key="litellm.metadata.spend_logs_metadata.agentplane.namespace", source=VerifiedClaim.NAMESPACE
+                ),
+                AttributionField(
+                    key="litellm.metadata.spend_logs_metadata.agentplane.service_account",
+                    source=VerifiedClaim.SERVICE_ACCOUNT,
+                ),
+                AttributionField(
+                    key="litellm.metadata.spend_logs_metadata.agentplane.pod_name", source=VerifiedClaim.POD_NAME
+                ),
+                AttributionField(
+                    key="litellm.metadata.spend_logs_metadata.agentplane.pod_uid", source=VerifiedClaim.POD_UID
+                ),
+            ],
+        ),
     ),
     egress=EgressProps(
         ca_secret_name=public_coder_egress.CA_BUNDLE_NAME,

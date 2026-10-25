@@ -67,6 +67,8 @@ pub struct StatementFacts {
     /// imported object is legal, but rebinding the imported binding
     /// cell is not.
     pub rebinds: PositionBucketed<BTreeSet<Id>>,
+    /// Direct member writes on binding roots, across eager and lazy syntax.
+    pub(crate) member_write_roots: BTreeSet<Id>,
     /// Target-local mutations produced by recognized trusted helper
     /// calls. Each binding is the class/prototype owner that must
     /// co-locate with the mutating statement.
@@ -279,6 +281,7 @@ pub struct StructuralStatementFacts {
     pub var_initializers: BTreeSet<Id>,
     pub reads: PositionBucketed<BTreeSet<Id>>,
     pub rebinds: PositionBucketed<BTreeSet<Id>>,
+    pub(crate) member_write_roots: BTreeSet<Id>,
     pub calls: PositionBucketed<BTreeSet<Id>>,
     pub(crate) constructor: Option<ConstructorFacts>,
     pub at_init_unresolved_sources: BTreeSet<Id>,
@@ -311,6 +314,7 @@ pub(crate) struct ConstructorFacts {
 /// without re-running the multi-declarator split.
 pub struct StructuralChunkAnalysis<'a> {
     pub body: Vec<TopLevelItemView<'a>>,
+    pub(crate) imported_bindings: BTreeSet<Id>,
     pub(crate) value_flow: super::ChunkValueFlow,
     pub(crate) set_iterable_proof: super::SetIterableProof,
     pub(crate) plain_data_bindings: Vec<String>,

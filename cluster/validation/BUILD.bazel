@@ -111,16 +111,6 @@ py_library(
 )
 
 py_library(
-    name = "authentik_blueprints",
-    testonly = True,
-    srcs = ["authentik_blueprints.py"],
-    deps = [
-        "@pypi//pydantic",
-        "@pypi//pyyaml",
-    ],
-)
-
-py_library(
     name = "checks",
     testonly = True,
     srcs = ["checks.py"],
@@ -288,15 +278,16 @@ py_test(
         "//agentplane/crds:manifests",
         "//cluster:generated_manifests",
         "//cluster/k8s:cluster_all_files",
-        "//cluster/k8s:flux_bootstrap_files",
-        "//cluster/k8s:flux_system_files",
+        "//cluster/k8s/agentplane-staging:manifests",
+        "//cluster/k8s/authentik/app/blueprints:authentik_blueprints",
         "//cluster/k8s/cli-proxy-api:manifests",
+        "//cluster/k8s/flux/flux-system:flux_bootstrap_files",
+        "//cluster/k8s/flux/flux-system:flux_system_files",
         "//cluster/k8s/home-assistant/app:manifests",
         "//cluster/k8s/litellm/app:manifests",
         "@multitool//tools/kustomize",
     ],
     deps = [
-        ":agent_rbac",
         ":checks",
         ":cluster",
         ":conftest",
@@ -318,26 +309,6 @@ py_test(
 )
 
 py_test(
-    name = "test_public_coder_clickhouse_reader_contract",
-    srcs = ["test_public_coder_clickhouse_reader_contract.py"],
-    # Importing the cdk8s modules starts jsii's Node runtime.
-    data = [
-        "//cluster/k8s:clickhouse/cluster/public-coder-credentials.sops.yaml",
-        "//cluster/k8s:kustomization.yaml",
-        "@nodejs_linux_amd64//:bin/node",
-    ],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
-    deps = [
-        ":conftest",
-        "//:conftest",
-        "//cluster/cdk8s/clickhouse:client",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-    ],
-)
-
-py_test(
     name = "test_rotations_config",
     srcs = ["test_rotations_config.py"],
     data = [
@@ -351,18 +322,6 @@ py_test(
         "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
-    ],
-)
-
-py_test(
-    name = "test_authentik_blueprint_contracts",
-    srcs = ["test_authentik_blueprint_contracts.py"],
-    data = ["//cluster/k8s:authentik_blueprint_contract_files"],
-    deps = [
-        ":authentik_blueprints",
-        "//util/bazel:runfiles",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -388,14 +347,15 @@ py_test(
     size = "medium",
     srcs = ["test_flux_build.py"],
     # validate_flux_build needs the whole tree the root kustomization references.
-    # cluster_all_files' glob stops at sub-package boundaries, so the cluster/k8s
-    # sub-packages contribute their manifests via :manifests filegroups. :flux
-    # carries the flux CLI as runfiles.
+    # cluster_all_files' glob stops at package boundaries, so each local package
+    # supplies its Kustomize inputs through a filegroup. :flux carries the CLI.
     data = [
         "//cluster:generated_manifests",
         "//cluster/k8s:cluster_all_files",
-        "//cluster/k8s:flux_system_files",
+        "//cluster/k8s/agentplane-staging:manifests",
+        "//cluster/k8s/authentik/app/blueprints:authentik_blueprints",
         "//cluster/k8s/cli-proxy-api:manifests",
+        "//cluster/k8s/flux/flux-system:flux_system_files",
         "//cluster/k8s/home-assistant/app:manifests",
         "//cluster/k8s/litellm/app:manifests",
     ],
@@ -422,8 +382,8 @@ py_test(
     name = "test_generator_namespace",
     srcs = ["test_generator_namespace.py"],
     data = [
-        "//cluster:generated_manifests",
         "//cluster/k8s:cluster_all_files",
+        "//cluster/k8s/agentplane-staging:manifests",
     ],
     deps = [
         "//cluster/cdk8s:manifest_roots",
@@ -431,23 +391,5 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
-    ],
-)
-
-py_library(
-    name = "agent_rbac",
-    testonly = True,
-    srcs = ["agent_rbac.py"],
-    deps = [":k8s"],
-)
-
-py_test(
-    name = "test_agent_rbac",
-    srcs = ["test_agent_rbac.py"],
-    deps = [
-        ":agent_rbac",
-        ":k8s",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

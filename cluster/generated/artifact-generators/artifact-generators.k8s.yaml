@@ -78,6 +78,11 @@ spec:
       name: crossplane-provider-opentofu
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/generated/crossplane-dns-records/**"
+          to: "@artifact/cluster/generated/crossplane-dns-records/"
+      name: crossplane-dns-records
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/generated/crossplane-forgejo-agentydragon/**"
           to: "@artifact/cluster/generated/crossplane-forgejo-agentydragon/"
       name: crossplane-forgejo-agentydragon
@@ -96,6 +101,31 @@ spec:
         - from: "@repo/cluster/k8s/forgejo/**"
           to: "@artifact/cluster/k8s/forgejo/"
       name: forgejo
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/cluster/generated/gitlab-spike/dependencies/**"
+          to: "@artifact/cluster/generated/gitlab-spike/dependencies/"
+      name: gitlab-spike-dependencies
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/cluster/generated/gitlab-spike/app/**"
+          to: "@artifact/cluster/generated/gitlab-spike/app/"
+      name: gitlab-spike
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/cluster/generated/gitlab-spike/bootstrap/**"
+          to: "@artifact/cluster/generated/gitlab-spike/bootstrap/"
+      name: gitlab-spike-bootstrap
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/cluster/generated/gitlab-spike/gitops/**"
+          to: "@artifact/cluster/generated/gitlab-spike/gitops/"
+      name: gitlab-spike-gitops
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/cluster/generated/gitlab-spike/integrations/**"
+          to: "@artifact/cluster/generated/gitlab-spike/integrations/"
+      name: gitlab-spike-integrations
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/forgejo-images/**"
@@ -805,11 +835,6 @@ spec:
       name: tf-gitops-home-switch
       originRevision: "@repo"
     - copy:
-        - from: "@repo/tf/gitops/dns-records/**"
-          to: "@artifact/tf/gitops/dns-records/"
-      name: tf-gitops-dns-records
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/tf/gitops/sso-providers/**"
           to: "@artifact/tf/gitops/sso-providers/"
       name: tf-gitops-sso-providers
@@ -878,6 +903,11 @@ spec:
         - from: "@repo/tf/gitops/forgejo-images/**"
           to: "@artifact/tf/gitops/forgejo-images/"
       name: tf-gitops-forgejo-images
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/tf/gitops/gitlab-spike/**"
+          to: "@artifact/tf/gitops/gitlab-spike/"
+      name: tf-gitops-gitlab-spike
       originRevision: "@repo"
     - copy:
         - from: "@repo/tf/gitops/litellm-keys/**"

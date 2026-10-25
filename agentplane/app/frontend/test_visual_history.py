@@ -541,6 +541,30 @@ async def test_reasoning_inside_tool_run(view: VisualPage, app: AgentplaneFixtur
 
 @DESKTOP_AND_MOBILE
 @pytest.mark.parametrize("color_scheme", ["light", "dark"])
+async def test_consecutive_reasoning_group_inside_tool_run(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.consecutive_reasoning_history()
+    await app.mount_thread(IDLE_THREAD)
+    await view.check(context="fixture ready")
+    page = view.page
+    await _open_run(page)
+    steps = page.locator(".agentplane-run-steps").first
+    reasoning_group = steps.locator(":scope > .agentplane-collapsible-card").nth(1)
+    summary = reasoning_group.locator(".agentplane-disclosure-summary").first
+    await expect(summary).to_have_attribute("aria-expanded", "false")
+    await expect(reasoning_group.locator(".agentplane-step-title")).to_have_text("Reasoning")
+    await expect(reasoning_group.locator(".agentplane-step-preview .agentplane-markdown--single-line")).to_be_attached()
+    await view.capture(target=page.locator("#app"))
+
+    await summary.click()
+    await expect(summary).to_have_attribute("aria-expanded", "true")
+    await expect(reasoning_group.locator(".agentplane-disclosure-panel .agentplane-step-title")).to_have_text(
+        ["Reasoning", "Reasoning", "Reasoning"]
+    )
+    await view.capture(name=f"{view.capture_name}_reasoning_items", target=page.locator("#app"))
+
+
+@DESKTOP_AND_MOBILE
+@pytest.mark.parametrize("color_scheme", ["light", "dark"])
 async def test_reasoning_heading_sticks_at_history_bottom(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.standalone_reasoning(long_body=True)
     await app.mount_thread(IDLE_THREAD)

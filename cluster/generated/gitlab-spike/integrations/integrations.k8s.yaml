@@ -1,0 +1,741 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gitlab-spike-job
+  namespace: gitlab-spike-ci
+automountServiceAccountToken: false
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: gitlab-spike-runner-manager
+  namespace: gitlab-spike-ci
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: gitlab-spike
+      toPorts:
+        - ports:
+            - port: "8181"
+              protocol: TCP
+            - port: "5000"
+              protocol: TCP
+    - toEntities:
+        - remote-node
+        - host
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+          serverNames:
+            - gitlab-spike.allegedly.works
+            - registry-gitlab-spike.allegedly.works
+    - toEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+            - port: "6443"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app: gitlab-spike-runner
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: gitlab-spike-runner-jobs
+  namespace: gitlab-spike-ci
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: gitlab-spike
+      toPorts:
+        - ports:
+            - port: "8181"
+              protocol: TCP
+            - port: "5000"
+              protocol: TCP
+    - toEntities:
+        - remote-node
+        - host
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+          serverNames:
+            - gitlab-spike.allegedly.works
+            - registry-gitlab-spike.allegedly.works
+    - toFQDNs:
+        - matchName: cgr.dev
+        - matchName: 9236a389bd48b984df91adc1bc924620.r2.cloudflarestorage.com
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+          serverNames:
+            - cgr.dev
+            - 9236a389bd48b984df91adc1bc924620.r2.cloudflarestorage.com
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: gitlab-spike-job
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: gitlab-spike-runner
+  namespace: gitlab-spike-ci
+spec:
+  interval: 24h
+  url: https://charts.gitlab.io
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: gitlab-spike-runner
+  namespace: gitlab-spike-ci
+spec:
+  chart:
+    spec:
+      chart: gitlab-runner
+      sourceRef:
+        kind: HelmRepository
+        name: gitlab-spike-runner
+        namespace: gitlab-spike-ci
+      version: 0.94.1
+  interval: 15m
+  timeout: 10m
+  values:
+    checkInterval: 5
+    concurrent: 2
+    gitlabUrl: http://gitlab-spike-webservice-default.gitlab-spike.svc:8181
+    nodeSelector:
+      topology.kubernetes.io/zone: hil-ovh
+    rbac:
+      clusterWideAccess: false
+      create: true
+    resources:
+      limits:
+        memory: 512Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+    runners:
+      config: |
+        [[runners]]
+          executor = "kubernetes"
+          environment = ["HOME=/tmp"]
+          clone_url = "http://gitlab-spike-webservice-default.gitlab-spike.svc:8181"
+          [runners.kubernetes]
+            namespace = "gitlab-spike-ci"
+            image = "alpine:3.23.3"
+            privileged = false
+            service_account = "gitlab-spike-job"
+            automount_service_account_token = false
+            cpu_request = "250m"
+            cpu_limit = "2"
+            memory_request = "256Mi"
+            memory_limit = "2Gi"
+            helper_cpu_request = "100m"
+            helper_memory_request = "128Mi"
+            helper_memory_limit = "512Mi"
+            poll_timeout = 180
+            [runners.kubernetes.node_selector]
+              "topology.kubernetes.io/zone" = "hil-ovh"
+            [runners.kubernetes.pod_labels]
+              "app.kubernetes.io/name" = "gitlab-spike-job"
+            [runners.kubernetes.pod_security_context]
+              run_as_non_root = true
+              run_as_user = 1000
+              fs_group = 1000
+            [runners.kubernetes.build_container_security_context]
+              allow_privilege_escalation = false
+              [runners.kubernetes.build_container_security_context.capabilities]
+                drop = ["ALL"]
+            [runners.kubernetes.helper_container_security_context]
+              allow_privilege_escalation = false
+              [runners.kubernetes.helper_container_security_context.capabilities]
+                drop = ["ALL"]
+      secret: gitlab-spike-runner
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+          - ALL
+      readOnlyRootFilesystem: false
+      runAsNonRoot: true
+    serviceAccount:
+      create: true
+      name: gitlab-spike-runner
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: gitlab-spike
+  namespace: flux-system
+spec:
+  interval: 1m
+  ref:
+    branch: main
+  secretRef:
+    name: gitlab-spike-git
+  url: http://gitlab-spike-webservice-default.gitlab-spike.svc:8181/spike/acceptance.git
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: gitlab-spike
+  namespace: flux-system
+spec:
+  image: registry-gitlab-spike.allegedly.works/spike/acceptance
+  interval: 1m
+  secretRef:
+    name: gitlab-spike-registry
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: gitlab-spike
+  namespace: flux-system
+spec:
+  filterTags:
+    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+  imageRepositoryRef:
+    name: gitlab-spike
+  policy:
+    alphabetical:
+      order: asc
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageUpdateAutomation
+metadata:
+  name: gitlab-spike
+  namespace: flux-system
+spec:
+  git:
+    checkout:
+      ref:
+        branch: main
+    commit:
+      author:
+        email: spike-flux@invalid.example
+        name: spike-flux
+      messageTemplate: "chore: update spike image [skip ci]"
+    push:
+      branch: main
+  interval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: gitlab-spike
+  update:
+    path: ./k8s
+    strategy: Setters
+---
+apiVersion: notification.toolkit.fluxcd.io/v1
+kind: Receiver
+metadata:
+  name: gitlab-spike
+  namespace: flux-system
+spec:
+  events:
+    - Push Hook
+    - Pipeline Hook
+  resources:
+    - apiVersion: source.toolkit.fluxcd.io/v1
+      kind: GitRepository
+      name: gitlab-spike
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      kind: ImageRepository
+      name: gitlab-spike
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      kind: ImageUpdateAutomation
+      name: gitlab-spike
+  secretRef:
+    name: gitlab-spike-webhook
+  type: gitlab
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gitlab-spike
+  namespace: ducktape-flux
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: gitlab-spike
+  namespace: gitlab-spike-demo
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - ""
+    resources:
+      - services
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - apps
+    resources:
+      - deployments
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: rolebindingc8efa7efb4c808043ff2e208fc03dfaf1eecd0a9d7
+  namespace: gitlab-spike-demo
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: gitlab-spike
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: gitlab-spike
+    namespace: ducktape-flux
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: gitlab-spike-demo
+  namespace: ducktape-flux
+spec:
+  interval: 1m
+  path: ./k8s
+  prune: true
+  retryInterval: 1m
+  serviceAccountName: gitlab-spike
+  sourceRef:
+    kind: GitRepository
+    name: gitlab-spike
+    namespace: flux-system
+  targetNamespace: gitlab-spike-demo
+  timeout: 5m
+  wait: true
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: gitlab-spike-fault-isolation
+  namespace: gitlab-spike
+spec:
+  egressDeny:
+    - toEntities:
+        - all
+  endpointSelector:
+    matchLabels:
+      app: gitaly
+      gitlab-spike.ducktape.io/fault: isolated
+      release: gitlab-spike
+  ingressDeny:
+    - fromEntities:
+        - all
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gitlab-spike-benchmark-scripts
+  namespace: gitlab-spike
+data:
+  forgejo-bench.sh: |
+    #!/bin/sh
+    set -eu
+
+    auth="$(printf '%s:%s' "$FORGEJO_USERNAME" "$FORGEJO_PASSWORD" | base64 | tr -d '\n')"
+    repo="storage-bench-${TARGET_NAME}-$(date +%s)-$$"
+    api="$FORGEJO_URL/api/v1"
+    work=/tmp/forgejo-storage-bench
+
+    request() {
+      curl --fail-with-body --silent --show-error \
+        -H "Authorization: Basic $auth" \
+        -H 'Content-Type: application/json' "$@"
+    }
+
+    timed_request() {
+      operation="$1"
+      shift
+      result="$(curl --silent --show-error --output /tmp/response.json \
+        --write-out '%{http_code},%{time_total}' \
+        -H "Authorization: Basic $auth" \
+        -H 'Content-Type: application/json' "$@")"
+      status="${result%%,*}"
+      seconds="${result#*,}"
+      printf '%s,%s,%s,%s\n' "$TARGET_NAME" "$operation" "$status" "$seconds"
+      case "$status" in
+        2*) ;;
+        *)
+          cat /tmp/response.json >&2
+          return 1
+          ;;
+      esac
+    }
+
+    cleanup() {
+      request -X DELETE "$api/repos/$FORGEJO_USERNAME/$repo" >/dev/null 2>&1 || true
+      rm -rf "$work"
+    }
+    trap cleanup EXIT
+    cleanup
+
+    request -X POST "$api/user/repos" \
+      --data "{\"name\":\"$repo\",\"private\":true,\"auto_init\":true,\"default_branch\":\"main\"}" \
+      >/dev/null
+
+    seed="$(printf seed | base64 | tr -d '\n')"
+    request -X POST "$api/repos/$FORGEJO_USERNAME/$repo/contents/seed.txt" \
+      --data "{\"content\":\"$seed\",\"message\":\"seed benchmark\"}" >/dev/null
+
+    printf 'target,operation,http_status,seconds\n'
+
+    request "$api/version" >/dev/null
+    request "$api/repos/$FORGEJO_USERNAME/$repo/contents/seed.txt" >/dev/null
+
+    i=1
+    while [ "$i" -le 20 ]; do
+      timed_request version "$api/version"
+      i=$((i + 1))
+    done
+
+    i=1
+    while [ "$i" -le 20 ]; do
+      timed_request contents_read "$api/repos/$FORGEJO_USERNAME/$repo/contents/seed.txt"
+      i=$((i + 1))
+    done
+
+    i=1
+    while [ "$i" -le 20 ]; do
+      content="$(printf 'contents write %s\n' "$i" | base64 | tr -d '\n')"
+      timed_request contents_write -X POST \
+        "$api/repos/$FORGEJO_USERNAME/$repo/contents/api-write-$i.txt" \
+        --data "{\"content\":\"$content\",\"message\":\"API write $i\"}"
+      i=$((i + 1))
+    done
+
+    rm -rf "$work"
+    git -c http.extraHeader="Authorization: Basic $auth" clone --quiet \
+      "$FORGEJO_URL/$FORGEJO_USERNAME/$repo.git" "$work"
+    git -C "$work" config user.name 'Ceph benchmark'
+    git -C "$work" config user.email bench@invalid.example
+
+    i=1
+    while [ "$i" -le 20 ]; do
+      printf 'git push %s\n' "$i" >"$work/git-write-$i.txt"
+      git -C "$work" add "git-write-$i.txt"
+      git -C "$work" commit --quiet -m "Git write $i"
+      start="$(awk '{print $1}' /proc/uptime)"
+      git -c http.extraHeader="Authorization: Basic $auth" -C "$work" push --quiet origin HEAD:main
+      end="$(awk '{print $1}' /proc/uptime)"
+      seconds="$(awk -v start="$start" -v end="$end" 'BEGIN { printf "%.2f", end-start }')"
+      printf '%s,git_push,200,%s\n' "$TARGET_NAME" "$seconds"
+      i=$((i + 1))
+    done
+  gitlab-bench.sh: |
+    #!/bin/sh
+    # GitLab app-path git bench, mirroring the Forgejo bench (forgejo-bench.sh):
+    # 20x each of API version / contents-read / contents-write, plus 20 tiny git pushes.
+    # Auth: PRIVATE-TOKEN header (API) + oauth2:<token> (git over HTTP).
+    set -eu
+
+    api="$GITLAB_URL/api/v4"
+    tok="$GITLAB_TOKEN"
+    proj="storage-bench-${TARGET_NAME}-$(date +%s)-$$"
+    work=/tmp/gitlab-storage-bench
+
+    req() {
+      curl --fail-with-body -sS -H "PRIVATE-TOKEN: $tok" -H 'Content-Type: application/json' "$@"
+    }
+    timed() {
+      op="$1"
+      shift
+      res="$(curl -sS -o /tmp/resp.json -w '%{http_code},%{time_total}' \
+        -H "PRIVATE-TOKEN: $tok" -H 'Content-Type: application/json' "$@")"
+      status="${res%%,*}"
+      secs="${res#*,}"
+      printf '%s,%s,%s,%s\n' "$TARGET_NAME" "$op" "$status" "$secs"
+      case "$status" in 2*) ;; *)
+        cat /tmp/resp.json >&2
+        return 1
+        ;;
+      esac
+    }
+
+    cleanup() {
+      [ -n "${pid:-}" ] && req -X DELETE "$api/projects/$pid" >/dev/null 2>&1 || true
+      rm -rf "$work"
+    }
+    trap cleanup EXIT
+
+    # Create project with an initial commit so a default branch + README exist.
+    create="$(req -X POST "$api/projects" \
+      --data "{\"name\":\"$proj\",\"visibility\":\"private\",\"initialize_with_readme\":true}")"
+    pid="$(printf '%s' "$create" | jq -r '.id')"
+    branch="$(printf '%s' "$create" | jq -r '.default_branch // "main"')"
+    path="$(printf '%s' "$create" | jq -r '.path_with_namespace')"
+    # Build the clone URL from the in-cluster endpoint (the API's http_url_to_repo carries
+    # the external hostname, which does not resolve in-cluster), with oauth2 token auth.
+    pushurl="$(printf '%s' "$GITLAB_URL" | sed "s#://#://oauth2:${tok}@#")/${path}.git"
+
+    # Wait for the repo to be importable (initialize_with_readme is async).
+    i=0
+    while [ "$i" -lt 30 ]; do
+      code="$(curl -sS -o /dev/null -w '%{http_code}' -H "PRIVATE-TOKEN: $tok" \
+        "$api/projects/$pid/repository/files/README%2Emd?ref=$branch")"
+      [ "$code" = "200" ] && break
+      i=$((i + 1))
+      sleep 1
+    done
+
+    # Warm each path once.
+    req "$api/version" >/dev/null
+    req "$api/projects/$pid/repository/files/README%2Emd?ref=$branch" >/dev/null
+
+    printf 'target,operation,http_status,seconds\n'
+
+    i=1
+    while [ "$i" -le 20 ]; do
+      timed version "$api/version"
+      i=$((i + 1))
+    done
+
+    i=1
+    while [ "$i" -le 20 ]; do
+      timed contents_read "$api/projects/$pid/repository/files/README%2Emd?ref=$branch"
+      i=$((i + 1))
+    done
+
+    i=1
+    while [ "$i" -le 20 ]; do
+      timed contents_write -X POST "$api/projects/$pid/repository/files/api-write-$i%2Etxt" \
+        --data "{\"branch\":\"$branch\",\"content\":\"contents write $i\",\"commit_message\":\"API write $i\"}"
+      i=$((i + 1))
+    done
+
+    rm -rf "$work"
+    git clone --quiet "$pushurl" "$work"
+    git -C "$work" config user.name 'Gitlab benchmark'
+    git -C "$work" config user.email bench@invalid.example
+
+    i=1
+    while [ "$i" -le 20 ]; do
+      printf 'git push %s\n' "$i" >"$work/git-write-$i.txt"
+      git -C "$work" add "git-write-$i.txt"
+      git -C "$work" commit --quiet -m "Git write $i"
+      start="$(awk '{print $1}' /proc/uptime)"
+      git -C "$work" push --quiet origin "HEAD:$branch"
+      end="$(awk '{print $1}' /proc/uptime)"
+      secs="$(awk -v s="$start" -v e="$end" 'BEGIN { printf "%.2f", e-s }')"
+      printf '%s,git_push,200,%s\n' "$TARGET_NAME" "$secs"
+      i=$((i + 1))
+    done
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: gitlab-spike-benchmark
+  namespace: gitlab-spike
+spec:
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 1800
+      backoffLimit: 0
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: gitlab-spike-benchmark
+        spec:
+          automountServiceAccountToken: false
+          containers:
+            - command:
+                - /bin/sh
+                - /scripts/gitlab-bench.sh
+              env:
+                - name: TARGET_NAME
+                  value: gitlab-spike
+                - name: GITLAB_URL
+                  value: http://gitlab-spike-webservice-default.gitlab-spike.svc:8181
+                - name: HOME
+                  value: /tmp
+                - name: GITLAB_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      key: token
+                      name: gitlab-spike-benchmark-token
+              image: nicolaka/netshoot:v0.13@sha256:a20c2531bf35436ed3766cd6cfe89d352b050ccc4d7005ce6400adf97503da1b
+              imagePullPolicy: IfNotPresent
+              name: benchmark
+              resources:
+                limits:
+                  memory: 1Gi
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                readOnlyRootFilesystem: true
+              volumeMounts:
+                - mountPath: /scripts
+                  name: scripts
+                  readOnly: true
+                - mountPath: /tmp
+                  name: tmp
+              workingDir: /tmp
+          nodeSelector:
+            kubernetes.io/hostname: ovh-ns102453
+          restartPolicy: Never
+          securityContext:
+            fsGroup: 1000
+            runAsGroup: 1000
+            runAsNonRoot: true
+            runAsUser: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          volumes:
+            - configMap:
+                name: gitlab-spike-benchmark-scripts
+              name: scripts
+            - emptyDir: {}
+              name: tmp
+  schedule: 0 0 1 1 *
+  successfulJobsHistoryLimit: 1
+  suspend: true
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: forgejo-spike-benchmark
+  namespace: gitlab-spike
+spec:
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 1800
+      backoffLimit: 0
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: forgejo-spike-benchmark
+        spec:
+          automountServiceAccountToken: false
+          containers:
+            - command:
+                - /bin/sh
+                - /scripts/forgejo-bench.sh
+              env:
+                - name: TARGET_NAME
+                  value: forgejo-current
+                - name: FORGEJO_URL
+                  value: http://forgejo-http.forgejo:3000
+                - name: HOME
+                  value: /tmp
+                - name: FORGEJO_USERNAME
+                  valueFrom:
+                    secretKeyRef:
+                      key: username
+                      name: forgejo-spike-benchmark
+                - name: FORGEJO_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      key: password
+                      name: forgejo-spike-benchmark
+              image: nicolaka/netshoot:v0.13@sha256:a20c2531bf35436ed3766cd6cfe89d352b050ccc4d7005ce6400adf97503da1b
+              imagePullPolicy: IfNotPresent
+              name: benchmark
+              resources:
+                limits:
+                  memory: 1Gi
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                readOnlyRootFilesystem: true
+              volumeMounts:
+                - mountPath: /scripts
+                  name: scripts
+                  readOnly: true
+                - mountPath: /tmp
+                  name: tmp
+              workingDir: /tmp
+          nodeSelector:
+            kubernetes.io/hostname: ovh-ns102453
+          restartPolicy: Never
+          securityContext:
+            fsGroup: 1000
+            runAsGroup: 1000
+            runAsNonRoot: true
+            runAsUser: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          volumes:
+            - configMap:
+                name: gitlab-spike-benchmark-scripts
+              name: scripts
+            - emptyDir: {}
+              name: tmp
+  schedule: 0 0 1 1 *
+  successfulJobsHistoryLimit: 1
+  suspend: true

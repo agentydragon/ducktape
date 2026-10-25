@@ -4,14 +4,53 @@ import (
 	"errors"
 	"net/url"
 	"os"
+	"regexp"
+	"strings"
 
 	"github.com/spf13/viper"
+	"go.opentelemetry.io/otel/baggage"
 )
 
 const (
 	settingPrefix = "AGENTPLANE_LLM_INGRESS_"
 	configFileEnv = settingPrefix + "CONFIG_FILE"
 )
+
+type verifiedClaim string
+
+const (
+	verifiedNamespace      verifiedClaim = "namespace"
+	verifiedServiceAccount verifiedClaim = "service_account"
+	verifiedPodName        verifiedClaim = "pod_name"
+	verifiedPodUID         verifiedClaim = "pod_uid"
+)
+
+type attributionField struct {
+	Key    string        `mapstructure:"key"`
+	Source verifiedClaim `mapstructure:"source"`
+}
+
+type attributionJSONHeader struct {
+	Name   string             `mapstructure:"name"`
+	Fields []attributionField `mapstructure:"fields"`
+}
+
+type attributionConfig struct {
+	JSONHeaders []attributionJSONHeader `mapstructure:"json_headers"`
+	Baggage     []attributionField      `mapstructure:"baggage"`
+}
+
+func defaultAttribution() attributionConfig {
+	return attributionConfig{JSONHeaders: []attributionJSONHeader{{
+		Name: "x-litellm-spend-logs-metadata",
+		Fields: []attributionField{
+			{Key: "agentplane.namespace", Source: verifiedNamespace},
+			{Key: "agentplane.service_account", Source: verifiedServiceAccount},
+			{Key: "agentplane.pod_name", Source: verifiedPodName},
+			{Key: "agentplane.pod_uid", Source: verifiedPodUID},
+		},
+	}}}
+}
 
 type modelConfig struct {
 	Model                    string `json:"model" mapstructure:"model"`
@@ -23,6 +62,7 @@ type config struct {
 	TokenAudience                   string            `mapstructure:"token_audience"`
 	LogLLMRequests                  bool              `mapstructure:"log_llm_requests"`
 	Models                          []modelConfig     `mapstructure:"models"`
+	Attribution                     attributionConfig `mapstructure:"attribution"`
 	CodexModelCatalogFile           string            `mapstructure:"codex_model_catalog_file"`
 	LiteLLMURL                      string            `mapstructure:"litellm_url"`
 	LiteLLMKey                      string            `mapstructure:"litellm_key"`
@@ -33,7 +73,11 @@ type config struct {
 }
 
 func defaultConfig() config {
-	return config{Host: "0.0.0.0", Port: 8080, LogLevels: map[string]string{}}
+	return config{
+		Host:      "0.0.0.0",
+		Port:      8080,
+		LogLevels: map[string]string{},
+	}
 }
 
 func loadConfig() (config, error) {
@@ -55,6 +99,9 @@ func loadConfig() (config, error) {
 	}
 	if err := settings.UnmarshalExact(&c); err != nil {
 		return config{}, errors.New("invalid ingress settings")
+	}
+	if !settings.InConfig("attribution") {
+		c.Attribution = defaultAttribution()
 	}
 	if err := validateConfig(&c); err != nil {
 		return config{}, err
@@ -82,6 +129,9 @@ func validateConfig(c *config) error {
 	if c.LiteLLMKey == "" {
 		return errors.New("litellm_key is required")
 	}
+	if err := validateAttribution(c.Attribution); err != nil {
+		return err
+	}
 	if c.Host == "" || c.Port < 0 || c.Port > 65535 {
 		return errors.New("host must be non-empty and port must be between 0 and 65535")
 	}
@@ -96,6 +146,58 @@ func validateConfig(c *config) error {
 		default:
 			return errors.New("log_levels values must be DEBUG, INFO, WARNING, or ERROR")
 		}
+	}
+	return nil
+}
+
+var httpTokenPattern = regexp.MustCompile("^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
+
+func validateAttribution(a attributionConfig) error {
+	if len(a.JSONHeaders) == 0 && len(a.Baggage) == 0 {
+		return errors.New("attribution must configure at least one output")
+	}
+	seenHeaders := make(map[string]struct{}, len(a.JSONHeaders))
+	for _, header := range a.JSONHeaders {
+		lower := strings.ToLower(header.Name)
+		if !httpTokenPattern.MatchString(header.Name) || !strings.HasPrefix(lower, "x-") ||
+			lower == "x-api-key" || lower == "x-litellm-api-key" ||
+			lower == "x-real-ip" || lower == "x-http-method-override" ||
+			lower == "x-litellm-agent-id" || lower == "x-litellm-customer-id" ||
+			strings.HasPrefix(lower, "x-forwarded-") || strings.HasPrefix(lower, "x-original-") ||
+			len(header.Fields) == 0 {
+			return errors.New("attribution has invalid JSON header")
+		}
+		if _, duplicate := seenHeaders[lower]; duplicate {
+			return errors.New("attribution has duplicate JSON header")
+		}
+		seenHeaders[lower] = struct{}{}
+		if err := validateAttributionFields(header.Fields, false); err != nil {
+			return err
+		}
+	}
+	return validateAttributionFields(a.Baggage, true)
+}
+
+func validateAttributionFields(fields []attributionField, isBaggage bool) error {
+	seen := make(map[string]struct{}, len(fields))
+	for _, field := range fields {
+		if field.Key == "" {
+			return errors.New("attribution output key must be non-empty")
+		}
+		if isBaggage {
+			if _, err := baggage.NewMemberRaw(field.Key, "test"); err != nil {
+				return errors.New("attribution baggage key is invalid")
+			}
+		}
+		switch field.Source {
+		case verifiedNamespace, verifiedServiceAccount, verifiedPodName, verifiedPodUID:
+		default:
+			return errors.New("attribution source is unsupported")
+		}
+		if _, duplicate := seen[field.Key]; duplicate {
+			return errors.New("attribution has duplicate output key")
+		}
+		seen[field.Key] = struct{}{}
 	}
 	return nil
 }

@@ -175,7 +175,7 @@ spec:
   configMapRef:
     key: dashboard.json
     name: att-gateway-exporter-dashboard
-  folder: Home network
+  folder: Network
   instanceSelector:
     matchLabels:
       dashboards: grafana

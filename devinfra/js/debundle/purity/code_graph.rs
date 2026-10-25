@@ -353,6 +353,10 @@ impl ChunkCodeGraph {
         self.plain_array_bindings.contains(name)
     }
 
+    pub(crate) fn plain_array_bindings(&self) -> &BTreeSet<String> {
+        &self.plain_array_bindings
+    }
+
     pub(crate) fn has_proven_set_iterable(&self, span: Span) -> bool {
         self.set_iterable_proof.contains_constructor(span)
     }

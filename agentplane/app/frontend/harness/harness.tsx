@@ -1526,6 +1526,28 @@ function standardRows(
   return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
 }
 
+/** A tool run with a consecutive group of empty reasoning summaries between its calls. */
+function consecutiveReasoningRows(threadId: string): Record<string, unknown>[] {
+  const rows = [
+    viewState(70, null),
+    item(10, "reasoning-group-tool-before", ItemKind.TOOL_CALL, null, {
+      threadId,
+      tool: "Bash",
+      arguments: JSON.stringify({ command: "agentplane actions submit sandbox/exec" }),
+    }),
+    item(20, "reasoning-group-empty-1", ItemKind.REASONING, "", { threadId }),
+    item(30, "reasoning-group-empty-2", ItemKind.REASONING, "", { threadId }),
+    item(40, "reasoning-group-empty-3", ItemKind.REASONING, "", { threadId }),
+    item(50, "reasoning-group-tool-after", ItemKind.TOOL_CALL, null, {
+      threadId,
+      tool: "Bash",
+      arguments: JSON.stringify({ command: "agentplane actions submit kubernetes_admin/pods_log" }),
+    }),
+    item(60, "reasoning-group-answer", ItemKind.ASSISTANT_TEXT, "The log check is complete.", { threadId }),
+  ];
+  return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
+}
+
 function failedRows(threadId: string, afterContent: boolean): Record<string, unknown>[] {
   const error = "Test model request failed: HTTP 429. Quota exhausted for this fixture.";
   const event = toJson(
@@ -2426,6 +2448,23 @@ function pendingActions(): ActionRequestView[] {
 // Only what a page still asks for: the sandboxes, their bindings and their threads arrive on the
 // live streams above.
 routes.push(
+  [
+    "GET",
+    /^\/frontend-config$/,
+    () => ({
+      trace_search: {
+        grafana_base_url: "https://grafana.test.invalid",
+        tempo_datasource_uid: "tempo-test",
+        deployment_environment: "agentplane-visual-test",
+      },
+      langfuse_search: {
+        base_url: "https://langfuse.test.invalid",
+        project_id: "langfuse-visual-test",
+        sandbox_namespace_metadata_key: "attributes.agentplane.namespace",
+        sandbox_service_account_metadata_key: "attributes.agentplane.service_account",
+      },
+    }),
+  ],
   [
     "GET",
     /^\/threads\/form$/,
@@ -3388,6 +3427,9 @@ const visualHarness = {
   },
   standardHistory(longPreview: boolean, longBody: boolean): void {
     threadEntityRows = (id) => (id === THREADS[2].id ? statesRows(id) : standardRows(id, longPreview, longBody));
+  },
+  consecutiveReasoningHistory(): void {
+    threadEntityRows = consecutiveReasoningRows;
   },
   commandProgress(): void {
     threadEntityRows = commandProgressRows;

@@ -192,6 +192,7 @@ tf.download(
         "external": "hashicorp/external:2.4.2",
         "forgejo": "svalabs/forgejo:1.6.0",
         "github": "integrations/github:6.13.0",
+        "gitlab": "gitlabhq/gitlab:19.4.0",
         "helm": "hashicorp/helm:3.3.0",
         "http": "hashicorp/http:3.6.2",
         "kubernetes": "hashicorp/kubernetes:3.2.1",

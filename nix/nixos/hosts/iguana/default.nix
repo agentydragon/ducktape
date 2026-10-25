@@ -42,6 +42,9 @@ in
 
   ducktape.homeWifi.enable = true;
 
+  zramSwap.enable = true;
+  systemd.oomd.enableUserSlices = true;
+
   ducktape.attic-substituter = {
     enable = true;
     sopsFile = ../../../../secrets/hosts/iguana-attic.yaml;

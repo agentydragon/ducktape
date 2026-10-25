@@ -1,0 +1,57 @@
+apiVersion: opentofu.upbound.io/v1beta1
+kind: ProviderConfig
+metadata:
+  name: crossplane-dns-records
+spec:
+  backendFile: |
+    conn_str = "postgres://tfstate@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate?sslmode=disable"
+    schema_name = "dns_records"
+  configuration: |
+    terraform {
+      backend "pg" {}
+    }
+---
+apiVersion: opentofu.upbound.io/v1beta1
+kind: Workspace
+metadata:
+  annotations:
+    crossplane.io/external-name: default
+  name: dns-records
+spec:
+  deletionPolicy: Orphan
+  forProvider:
+    env:
+      - name: PGPASSWORD
+        secretKeyRef:
+          key: password
+          name: tofu-state-db-credentials
+          namespace: flux-system
+      - name: AWS_ACCESS_KEY_ID
+        secretKeyRef:
+          key: AWS_ACCESS_KEY_ID
+          name: aws-route53-credentials
+          namespace: flux-system
+      - name: AWS_REGION
+        secretKeyRef:
+          key: AWS_REGION
+          name: aws-route53-credentials
+          namespace: flux-system
+      - name: AWS_SECRET_ACCESS_KEY
+        secretKeyRef:
+          key: AWS_SECRET_ACCESS_KEY
+          name: aws-route53-credentials
+          namespace: flux-system
+    module: git::https://github.com/agentydragon/ducktape.git//tf/gitops/dns-records?ref=devel
+    planArgs:
+      - -lock-timeout=5m
+    remotePullPolicy: Always
+    source: Remote
+    vars:
+      - key: route53_zone_id
+        value: Z02901943N8ZFQFOD9P5I
+  managementPolicies:
+    - Observe
+    - Create
+    - Update
+  providerConfigRef:
+    name: crossplane-dns-records

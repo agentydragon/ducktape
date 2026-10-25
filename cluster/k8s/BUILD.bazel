@@ -1,31 +1,4 @@
 filegroup(
-    name = "source_watcher_crd_bundle",
-    srcs = ["flux/flux-system/gotk-components.yaml"],
-    visibility = ["//cluster/cdk8s/providers/source_watcher:__pkg__"],
-)
-
-filegroup(
-    name = "flux_bootstrap_files",
-    srcs = [
-        "flux/flux-system/gotk-components.yaml",
-        "flux/flux-system/gotk-sync.yaml",
-    ],
-    visibility = [
-        "//cluster/terraform/main:__pkg__",
-        "//cluster/validation:__pkg__",
-    ],
-)
-
-# Whole flux-system overlay (kustomization.yaml + the GitHub App Secret it
-# references), which cluster_all_files excludes. cluster/validation's flux-build
-# test needs it because the central Flux root includes flux-system/ as a resource.
-filegroup(
-    name = "flux_system_files",
-    srcs = glob(["flux/flux-system/**"]),
-    visibility = ["//cluster/validation:__pkg__"],
-)
-
-filegroup(
     name = "cluster_yaml_files",
     srcs = glob(
         ["**/*.yaml"],
@@ -43,10 +16,9 @@ filegroup(
     visibility = ["//cluster:__subpackages__"],
 )
 
-# Focused validation targets inline these direct-file inputs in their data lists.
+# Focused tests inline these direct-file inputs in their data lists.
 exports_files(
     [
-        "clickhouse/cluster/public-coder-credentials.sops.yaml",
         "haku/forgejo-tea/haku-forgejo-tea.sops.yaml",
         "haku/mailbox/nginx.conf",
         "kustomization.yaml",
@@ -59,28 +31,13 @@ exports_files(
     ],
 )
 
-# The live Ollama smoke enumerates the committed staging app catalog without importing its generator.
-filegroup(
-    name = "agentplane_staging_manifest",
-    srcs = ["agentplane-staging/agentplane-staging.k8s.yaml"],
-    visibility = ["//agentplane/system_tests:__pkg__"],
-)
-
-# //cluster/cdk8s/authentik:app lists every one in the `authentik-sso-blueprints` ConfigMap.
-filegroup(
-    name = "authentik_blueprints",
-    srcs = glob(["authentik/app/blueprints/*.yaml"]),
+exports_files(
+    ["clickhouse/cluster/public-coder-credentials.sops.yaml"],
     visibility = [
-        "//cluster/cdk8s/authentik:__pkg__",
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/clickhouse:__pkg__",
+        "//cluster/cdk8s/haku:__pkg__",
+        "//cluster/cdk8s/haku_ci:__pkg__",
         "//cluster/validation:__pkg__",
     ],
-)
-
-filegroup(
-    name = "authentik_blueprint_contract_files",
-    srcs = [
-        "kustomization.yaml",
-        ":authentik_blueprints",
-    ],
-    visibility = ["//cluster/validation:__pkg__"],
 )

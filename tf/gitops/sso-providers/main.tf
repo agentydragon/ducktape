@@ -78,6 +78,11 @@ resource "authentik_user" "agentydragon" {
   password = data.kubernetes_secret.authentik_user_password.data["USER_PASSWORD"]
 }
 
+# Read the managed user's server-assigned UID and UUID for OIDC identity linking.
+data "authentik_user" "agentydragon" {
+  pk = tonumber(authentik_user.agentydragon.id)
+}
+
 # Google OAuth-only user. Email is SOPS-encrypted — sourced from
 # authentik-auragon-google-email secret so it stays out of plaintext git.
 # Matches via user_matching_mode = "email_link" on authentik_source_oauth.google.

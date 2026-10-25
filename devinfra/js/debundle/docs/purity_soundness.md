@@ -156,6 +156,112 @@ stored in the resulting Set and called by a later consumer. Shadowed `Set`,
 spreads, holes, getters, proxies, function-valued or unknown properties, and
 mutated or escaped tables remain conservative.
 
+## Retained dense-array iteration effects
+
+The synchronous-effects executor models direct static `forEach`, `filter`, and
+`map` calls with one callback and no spread or `thisArg`. This is an effect
+model, not a purity admission: each known synchronous callback executes in the
+existing bounded abstract invocation engine with the retained element value,
+a primitive index, and the source array. Its ordinary reads, writes, calls,
+coercions, and publication effects remain observable. Empty arrays do not
+invoke the callback. `filter` conservatively retains every element; its
+subsequent indexes remain unknown primitives.
+
+The source must resolve at the current prefix to one untainted dense ordinary
+array. Elements must be primitives, retained ordinary data objects, or tracked
+function values. Every iteration recertifies the source and element identities;
+mutation, unsupported member access, implicit `arguments`, unsupported callback
+parameters, or budget exhaustion uses conservative whole effects. Array
+identity, element containment, publication, and property writes use the same
+object-origin and taint lanes as other values. Results from repeated evaluations
+of one call site join monotonically, including missing slots. Complete call
+spans distinguish nested calls with the same start position.
+
+Under A11 intrinsic integrity, standard Array iteration reads own dense slots;
+array spread over a proven result consumes its values without invoking stored
+functions. Visible Array/Object/global intrinsic mutation, constructor capability
+mutation/publication, custom iterators, species, methods, getters, holes, proxies,
+and ambiguous sources prevent this proof. Callback effects can themselves
+invalidate it. This follows the standard algorithms for
+[forEach](https://tc39.es/ecma262/multipage/indexed-collections.html#sec-array.prototype.foreach),
+[filter](https://tc39.es/ecma262/multipage/indexed-collections.html#sec-array.prototype.filter),
+and [map](https://tc39.es/ecma262/multipage/indexed-collections.html#sec-array.prototype.map).
+
+Within a certified iteration callback, a complete set of simple member
+assignments can preserve a separate fresh ordinary data receiver. Every key and
+right-hand value must be a retained primitive read with literal, identifier, or
+static member-chain syntax. The callback has no other mutations or calls beyond
+ordinary member reads; receiver state is checked again after those reads. Source
+arrays and their reachable entries are excluded. Field updates still join into
+the ordinary property/containment maps. Under intact Object prototypes, even the
+inherited `__proto__` setter ignores a primitive right-hand value. Unknown keys,
+object values, custom prototypes, setters, mutation, and coercive expressions
+retain the setter/effect fallback.
+
+Capabilities exposed through exports become untrusted when execution can reenter
+the module, using the existing export-reentry policy. Retained untagged-template
+conversions, membership protocols (`in` and `instanceof`), and destructuring
+source reads preserve possible mutation before a later array call. Tagged-template
+substitutions are evaluated without untagged-template string conversion.
+Unsupported local parameter patterns and implicit `arguments` preserve actual
+input taint and raw callback effects. These guards prevent stale source slots or
+newly installed setters from being mistaken for ordinary data.
+
+Protocol fallbacks preserve the escaped capability pool, including nested
+returned callbacks. Their read and taint closure reuses coverage-checked
+synchronous owner summaries: reads after a definite `await` cannot affect the
+current prefix, while nested callable prefixes and generator bodies remain
+conservative. Incomplete reachability, dynamic scope, or uncovered callable and
+accessor facts retain whole lazy reads. All lazy rebinds remain retained because
+write coverage is incomplete.
+
+An exact single-spread object literal `{ ...source }` can retain a fresh copy
+identity when its source is one untainted verified ordinary object containing
+only static own data properties. The copy retains each field value and its
+aliases, never the source root as the copy root. An uncertified evaluation
+monotonically invalidates that copy site. Unsupported object spreads preserve
+possible getter effects during the callback invocation, even when no result is
+consumed. General object spread and accessor execution stay conservative.
+
+## Callback storage through mapped `Object.fromEntries`
+
+Synchronous callback analysis has a separate, narrow storage proof for
+`Object.fromEntries(entries.map(entry => [entry.key, entry]))`. It is not a
+purity-whitelist entry. The call is skipped as a callback effect only when the
+source is a chunk-top `const` binding admitted by the existing plain-array
+proof and, at the current prefix, resolves to one fresh dense array of fresh
+ordinary data objects. Each selected key must be exactly one own static data
+property with a primitive literal initializer. The source and entries must not
+have been written, escaped to opaque code, or otherwise tainted before
+construction.
+
+The mapper must be a single-identifier, non-async arrow returning exactly a
+dense two-element array containing `entry.key` and `entry`, in that order.
+`Object.fromEntries` and the `Array` machinery must be the unshadowed standard
+intrinsics, with no visible intrinsic mutation or dynamic scope. Holes,
+spreads, accessors, computed fields, non-literal keys, aliases that fail the
+plain-array proof, and other call shapes stay on the conservative effect path.
+The argument expression is still evaluated normally. When the proof applies,
+callbacks reachable through the source objects are retained on the abstract
+result rather than invoked or globally published; later member calls and opaque
+consumers continue through ordinary callback-effect analysis.
+The abstract result conservatively retains the source array identity as a
+route to its entry aliases. Since Object.fromEntries stores the mapped entry
+objects by reference, later writes through the result can taint the original
+entry graph and disable another construction proof.
+
+This relies on the standard Array iterator and `Array.prototype.map` reading
+the dense own data elements and storing each mapper result without invoking
+its contents, followed by `Object.fromEntries` applying `ToPropertyKey` only
+to the primitive selected field and storing the paired object value. The
+prefix taint checks reject prior source/property writes and opaque calls;
+visible writes through aliases and `Object`/`Reflect` mutation helpers also
+disable the proof. A11 supplies integrity for unmodified built-in prototypes
+and intrinsics outside the analyzed chunk. The paired CLI controls live in
+`from_entries_callback_storage_test`: construction alone preserves output,
+while an early consumer, opaque consumer, mutated key, or changed array species
+keeps the callback effects visible.
+
 ## `PURE_STATIC_PROPS` — disposal symbols
 
 `Symbol.dispose` and `Symbol.asyncDispose` are well-known Symbol values, just
@@ -274,18 +380,26 @@ analyzed chunk's synchronous initialization. In particular, provider or other
 namespace members and callback/ref/hook inputs must not expose an alias that
 can replace a listed factory member. Direct static identifier-property
 namespace call results are treated as independent only under this explicit
-author assertion. Computed, chained, unrelated, and unknown call results remain
-conservative when assigned, returned, or used as dynamic-write receivers. For
-call-argument checks, the checker follows namespace values in the supplied
-argument expressions and excludes the callee expression, which is not passed
-as an argument; an unrelated call result is not assumed to be the namespace
-solely because it appears as an argument. Unknown expression shapes remain
-conservative. The analyzer tracks dynamic-write receiver values and rejects
-receivers whose checked value flow reaches the namespace, including direct
-member-rooted writes, local aliases, and unknown call results. A receiver with
-no syntactic path to the namespace is accepted only under the audited
-non-aliasing assertion; the checker does not prove that arbitrary callback
-parameters cannot alias the namespace.
+author assertion. The checker propagates explicit namespace provenance through
+assignments, local aliases, property values, returns, and call arguments. An
+unrelated call or constructor result with no such path is not treated as a
+namespace alias solely because its runtime value is unknown; the author audit
+asserts that values used by admitted callbacks cannot alias or replace listed
+members. Unknown syntax remains conservative when it reaches a publication or
+call-argument sink; unsupported destructuring results stay possible namespace
+values through later local aliases. Recognized local class values and
+allocations are checked against their retained aggregate static or instance
+fields. A member projection checks the whole receiver, which may conservatively
+taint an unrelated sibling property. Constructors, inheritance, decorators,
+accessors, and unsupported class surfaces remain opaque; method bodies keep
+their existing return and effect checks. A value from an unknown call or
+constructor used as an actual static or dynamic write receiver remains a
+possible namespace alias, including through local aliases and member
+projections, and disables the contract. For call-argument checks, the checker follows namespace values in
+the supplied argument expressions and excludes the callee expression, which
+is not passed as an argument. The checker does not prove that arbitrary
+callback parameters or unrelated call results are disjoint from the
+namespace; that non-aliasing guarantee is part of the author audit.
 Within a literal traversed inside an admitted inline callback, a direct static
 namespace member used as a call callee is analyzed as a callee, not as a
 captured namespace value. Its arguments and effects remain analyzed; computed

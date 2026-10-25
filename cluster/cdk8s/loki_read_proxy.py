@@ -32,10 +32,9 @@ SERVICE = ServiceRef(
 
 # Namespaces an *anonymous* request may query. A request carrying a Kubernetes bearer token
 # ignores this list: its namespaces are authorized by the token's RBAC instead.
-# cluster/validation:test_cluster_integration asserts every Namespace with
-# rbac.ducktape.io/agent-readable-logs=true is included here, so the GitOps label and Loki
-# policy cannot drift. csi-proxmox and cpap-sync are separately reviewed Haku-only
-# exceptions retained from the original proxy policy.
+# //cluster/cdk8s:test_agent_rbac asserts that every namespace classified for log reads in
+# cluster/cdk8s/namespace_access.py is included here. csi-proxmox and cpap-sync remain
+# separately reviewed Haku-only exceptions from the original proxy policy.
 NAMESPACE_ALLOWLIST = (
     # keep-sorted start
     "activitywatch",

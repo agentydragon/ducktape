@@ -25,7 +25,7 @@ tf_module(
     data = [
         "//:nebula-mesh.json",
         "//cluster:generated/talos-cloud-controller-manager/helmrelease.k8s.yaml",
-        "//cluster/k8s:flux_bootstrap_files",
+        "//cluster/k8s/flux/flux-system:flux_bootstrap_files",
     ],
     providers = [
         "proxmox",

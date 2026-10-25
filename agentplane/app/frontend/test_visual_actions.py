@@ -136,6 +136,20 @@ EXAMPLES = (
     ),
     ActionExample(
         "github",
+        "delete_file",
+        {
+            "owner": "example",
+            "repo": "service",
+            "path": "docs/old-guide.md",
+            "message": "docs: remove old deployment guide",
+            "branch": "docs",
+        },
+        {"commit": {"sha": "0123456789abcdef0123456789abcdef01234567"}, "content": None},
+        "0123456789abcdef",
+        compact_card_expands=False,
+    ),
+    ActionExample(
+        "github",
         "update_pull_request",
         {
             "owner": "example",
@@ -146,6 +160,29 @@ EXAMPLES = (
         },
         {"id": "4200", "html_url": "https://github.com/example/service/pull/42"},
         "pull/42",
+    ),
+    ActionExample(
+        "github",
+        "update_pull_request_branch",
+        {"owner": "example", "repo": "service", "pullNumber": 42, "expectedHeadSha": "0123456789abcdef"},
+        {"status": "updated"},
+        "updated",
+        compact_card_expands=False,
+    ),
+    ActionExample(
+        "github",
+        "create_or_update_file",
+        {
+            "owner": "example",
+            "repo": "service",
+            "path": "docs/deployment.md",
+            "content": "# Deployment checks\n\nWait for readiness before shifting traffic.\n",
+            "message": "docs: document deployment checks",
+            "branch": "docs",
+            "allow_symlink_write": False,
+        },
+        {"commit": {"sha": "0123456789abcdef0123456789abcdef01234567"}},
+        "0123456789abcdef",
     ),
     ActionExample(
         "github",
@@ -171,6 +208,33 @@ EXAMPLES = (
         },
         {"number": 42, "html_url": "https://github.com/example/service/pull/42"},
         "42",
+    ),
+    ActionExample(
+        "github",
+        "search_pull_requests",
+        {
+            "owner": "example",
+            "repo": "service",
+            "query": "is:open label:bug",
+            "page": 2,
+            "perPage": 10,
+            "sort": "updated",
+            "order": "desc",
+            "fields": ["number", "title", "state", "html_url"],
+        },
+        {
+            "total_count": 1,
+            "items": [
+                {
+                    "number": 42,
+                    "title": "Handle deployment checks",
+                    "state": "open",
+                    "html_url": "https://github.com/example/service/pull/42",
+                }
+            ],
+        },
+        "Handle deployment checks",
+        compact_card_expands=False,
     ),
     ActionExample(
         "gmail",
@@ -241,7 +305,14 @@ EXAMPLES = (
         },
         "ready for review",
     ),
-    ActionExample("sandbox", "create", {"name": "review-sandbox", "template": "python"}, SANDBOX, "Running"),
+    ActionExample(
+        "sandbox",
+        "create",
+        {"name": "review-sandbox", "template": "python"},
+        SANDBOX,
+        "Running",
+        compact_card_expands=False,
+    ),
     ActionExample("sandbox", "get", {"name": "review-sandbox"}, SANDBOX, "Running", compact_card_expands=False),
     ActionExample(
         "sandbox",

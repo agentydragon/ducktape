@@ -1,8 +1,29 @@
 # gazelle:ignore
 
+load("//devinfra/oci:defs.bzl", "oci_image_py")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = ["//cluster/cdk8s:__pkg__"])
+
+oci_image_py(
+    name = "upstream_test_image",
+    testonly = True,
+    image = "@litellm_upstream_linux_amd64",
+    tag = "litellm-upstream:attribution-test",
+)
+
+py_test(
+    name = "test_attribution_export",
+    srcs = ["test_attribution_export.py"],
+    data = ["attribution_export_smoke.py"],
+    requires_docker = True,
+    deps = [
+        ":upstream_test_image",
+        "//util:oci",
+        "//util/testing:undeclared_outputs",
+        "@pypi//pytest_bazel",
+    ],
+)
 
 py_library(
     name = "config",
@@ -162,6 +183,7 @@ py_test(
         "//:conftest",
         "//model_catalog:catalog",
         "@pypi//pytest_bazel",
+        "@pypi_tana_litellm_proxy//litellm",
     ],
 )
 

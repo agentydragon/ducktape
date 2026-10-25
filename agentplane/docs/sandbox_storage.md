@@ -61,7 +61,7 @@ spec:
     layout:
       type: DirectoryTree
     claim:
-      storageClassName: local-path-ovh-hdd
+      storageClassName: piraeus-hdd-local
       volumeMode: Filesystem
       accessModes: [ReadWriteOnce]
       resources:
@@ -96,7 +96,7 @@ spec:
       type: RawDiskImage
       filesystem: ext4
     claim:
-      storageClassName: local-path-ovh-hdd
+      storageClassName: piraeus-hdd-local
       volumeMode: Filesystem
       accessModes: [ReadWriteOnce]
       resources:

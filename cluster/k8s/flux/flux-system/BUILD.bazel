@@ -1,0 +1,24 @@
+filegroup(
+    name = "source_watcher_crd_bundle",
+    srcs = ["gotk-components.yaml"],
+    visibility = ["//cluster/cdk8s/providers/source_watcher:__pkg__"],
+)
+
+filegroup(
+    name = "flux_bootstrap_files",
+    srcs = [
+        "gotk-components.yaml",
+        "gotk-sync.yaml",
+    ],
+    visibility = [
+        "//cluster/terraform/main:__pkg__",
+        "//cluster/validation:__pkg__",
+    ],
+)
+
+# The central Flux root includes this complete overlay, which cluster_all_files excludes.
+filegroup(
+    name = "flux_system_files",
+    srcs = glob(["**"]),
+    visibility = ["//cluster/validation:__pkg__"],
+)

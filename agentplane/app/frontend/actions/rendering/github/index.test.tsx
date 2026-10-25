@@ -13,9 +13,11 @@ import {
 } from "../index";
 
 const PUSH_FILES = { group: "github", name: "push_files" };
+const DELETE_FILE = { group: "github", name: "delete_file" };
 const UPDATE_PULL_REQUEST = { group: "github", name: "update_pull_request" };
 const CREATE_BRANCH = { group: "github", name: "create_branch" };
 const CREATE_PULL_REQUEST = { group: "github", name: "create_pull_request" };
+const SEARCH_PULL_REQUESTS = { group: "github", name: "search_pull_requests" };
 
 const REPOSITORY = { owner: "test-owner", repo: "test-repo" };
 
@@ -89,8 +91,34 @@ describe("GitHub push_files", () => {
     expect(fonts).toEqual([true, true, false]);
   });
 
-  it("requires full review", () => {
-    expect(actionOffersCardDecisionButtons(PUSH_FILES, args)).toBe(false);
+  it("offers card decisions for valid arguments and rejects unknown arguments", () => {
+    expect(actionOffersCardDecisionButtons(PUSH_FILES, args)).toBe(true);
+    expect(actionOffersCardDecisionButtons(PUSH_FILES, { ...args, force: true })).toBe(false);
+  });
+});
+
+describe("GitHub delete_file", () => {
+  const args = {
+    ...REPOSITORY,
+    path: "docs/test-notes.md",
+    message: "docs: remove obsolete notes",
+    branch: "test-branch",
+  };
+
+  it("shows the repository, path, branch, and commit message on the compact card", async () => {
+    const label = await mount(renderActionLabel(DELETE_FILE, args));
+    const collapsed = await mount(renderPaneCollapsed(DELETE_FILE, args));
+
+    expect(shownText(label)).toBe("Delete docs/test-notes.md in test-owner/test-repo");
+    expect(shownText(collapsed)).toContain("test-branch");
+    expect(shownText(collapsed)).toContain("docs: remove obsolete notes");
+    expect(actionCompactCardExpands(DELETE_FILE, args)).toBe(false);
+    expect(actionOffersCardDecisionButtons(DELETE_FILE, args)).toBe(true);
+  });
+
+  it("keeps unknown arguments out of the decision-capable compact card", () => {
+    expect(actionOffersCardDecisionButtons(DELETE_FILE, { ...args, sha: "unexpected" })).toBe(false);
+    expect(actionCompactCardExpands(DELETE_FILE, { ...args, sha: "unexpected" })).toBe(true);
   });
 });
 
@@ -128,8 +156,11 @@ describe("GitHub update_pull_request", () => {
     expect(shownText(collapsed)).toBe("");
   });
 
-  it("requires full review", () => {
-    expect(actionOffersCardDecisionButtons(UPDATE_PULL_REQUEST, { ...base, state: "closed" })).toBe(false);
+  it("offers card decisions for changes and rejects unknown or empty calls", () => {
+    expect(actionOffersCardDecisionButtons(UPDATE_PULL_REQUEST, { ...base, state: "closed" })).toBe(true);
+    expect(actionOffersCardDecisionButtons(UPDATE_PULL_REQUEST, { ...base, body: "Updated description." })).toBe(true);
+    expect(actionOffersCardDecisionButtons(UPDATE_PULL_REQUEST, { ...base, invisible: "must review" })).toBe(false);
+    expect(actionOffersCardDecisionButtons(UPDATE_PULL_REQUEST, base)).toBe(false);
   });
 });
 
@@ -190,5 +221,52 @@ describe("GitHub create_pull_request", () => {
     expect((await mount(renderPaneCollapsed(CREATE_PULL_REQUEST, withBody))).textContent).toContain(
       "Test description."
     );
+    expect(actionOffersCardDecisionButtons(CREATE_PULL_REQUEST, withBody)).toBe(true);
+  });
+});
+
+describe("GitHub search_pull_requests", () => {
+  const args = {
+    owner: "test-owner",
+    repo: "test-repo",
+    query: "is:open label:bug",
+    page: 2,
+    perPage: 10,
+    sort: "updated",
+    order: "desc",
+    fields: ["number", "title", "state", "html_url"],
+  };
+
+  it("shows only query and scope on the compact card, with options in details", async () => {
+    const label = await mount(renderActionLabel(SEARCH_PULL_REQUESTS, args));
+    const collapsed = await mount(renderPaneCollapsed(SEARCH_PULL_REQUESTS, args));
+    const opened = await mount(renderPaneOpened(SEARCH_PULL_REQUESTS, args));
+    const details = await mount(renderDetailsArguments(SEARCH_PULL_REQUESTS, args));
+
+    expect(shownText(label)).toBe("Search GitHub pull requests");
+    expect(shownText(collapsed)).toContain("is:open label:bug");
+    expect(shownText(collapsed)).toContain("Owner filter: test-owner");
+    expect(shownText(collapsed)).toContain("Repository filter: test-repo");
+    for (const compact of [shownText(collapsed), shownText(opened)]) {
+      expect(compact).not.toContain("Page 2");
+      expect(compact).not.toContain("results per page");
+      expect(compact).not.toContain("Sort by");
+      expect(compact).not.toContain("Order:");
+      expect(compact).not.toContain("Fields:");
+    }
+    expect(shownText(details)).toContain("Page 2");
+    expect(shownText(details)).toContain("10 results per page");
+    expect(shownText(details)).toContain("Sort by updated");
+    expect(shownText(details)).toContain("Order: desc");
+    expect(shownText(details)).toContain("Fields: number, title, state, html_url");
+    expect(actionCompactCardExpands(SEARCH_PULL_REQUESTS, args)).toBe(false);
+    expect(actionOffersCardDecisionButtons(SEARCH_PULL_REQUESTS, args)).toBe(true);
+  });
+
+  it("rejects unknown or invalid search arguments from compact-card decisions", () => {
+    expect(actionOffersCardDecisionButtons(SEARCH_PULL_REQUESTS, { ...args, repositoryId: 123 })).toBe(false);
+    expect(actionOffersCardDecisionButtons(SEARCH_PULL_REQUESTS, { ...args, page: 0 })).toBe(false);
+    expect(actionOffersCardDecisionButtons(SEARCH_PULL_REQUESTS, { ...args, perPage: 101 })).toBe(false);
+    expect(actionCompactCardExpands(SEARCH_PULL_REQUESTS, { ...args, repositoryId: 123 })).toBe(true);
   });
 });

@@ -1,0 +1,9 @@
+# Authentik app construction reads these as data for its generated ConfigMap.
+filegroup(
+    name = "authentik_blueprints",
+    srcs = glob(["*.yaml"]),
+    visibility = [
+        "//cluster/cdk8s/authentik:__pkg__",
+        "//cluster/validation:__pkg__",
+    ],
+)

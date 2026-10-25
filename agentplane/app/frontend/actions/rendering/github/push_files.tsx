@@ -117,9 +117,14 @@ export const pushFilesLabel: ArgumentsPreview = definePreview(zPushFilesArgument
 export const pushFilesCollapsed: ArgumentsPreview = definePreview(zPushFilesArguments, PushFilesCollapsed);
 export const pushFilesPane: ArgumentsPreview = definePreview(zPushFilesArguments, PushFiles);
 
+export function offersCardDecisionButtonsPushFiles(args: unknown): boolean {
+  return zPushFilesArguments.safeParse(args).success;
+}
+
 export const pushFilesPresentation: ActionPresentation = {
   fallbackLabel: "Push files to GitHub",
   label: pushFilesLabel,
   pane: { collapsed: pushFilesCollapsed, opened: pushFilesPane },
   details: { arguments: pushFilesPane },
+  offersCardDecisionButtons: offersCardDecisionButtonsPushFiles,
 };

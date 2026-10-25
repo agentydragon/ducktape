@@ -4,6 +4,8 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 
 exports_files([".tflint.hcl"])
 
+exports_files(["debug/gitlab_gitaly_storage_bench/gitlab-bench.sh"])
+
 # Single generated files for focused consumers (the Terraform bootstrap's talos-ccm
 # HelmRelease, direct-file validation contracts).
 exports_files(

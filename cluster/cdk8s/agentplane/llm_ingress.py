@@ -126,6 +126,7 @@ class LlmIngress(Construct):
                 "allowed_service_account_namespaces": [env.namespace],
                 "log_llm_requests": env.llm_ingress.log_llm_requests,
                 "models": [item.model_dump(mode="json") for item in env.llm_ingress.models],
+                "attribution": env.llm_ingress.attribution.model_dump(mode="json"),
                 **({} if catalog_map is None else {"codex_model_catalog_file": str(_CODEX_CATALOG_PATH)}),
             },
             path="/etc/agentplane-llm-ingress/settings.yaml",

@@ -24,6 +24,10 @@ const draftArguments = z.strictObject({
 
 type DraftArguments = z.infer<typeof draftArguments>;
 
+export function offersCardDecisionButtonsDraftsCreate(args: unknown): boolean {
+  return draftArguments.safeParse(args).success;
+}
+
 function recipients(args: DraftArguments): string {
   return args.to.join(", ");
 }
@@ -302,6 +306,7 @@ export const gmailDraftPresentation: ActionPresentation = {
   call: gmailDraftCall,
   pane: { collapsed: gmailDraftCollapsed, opened: gmailDraftOpened },
   details: { arguments: gmailDraftDetails, result: gmailDraftResult },
+  offersCardDecisionButtons: offersCardDecisionButtonsDraftsCreate,
 };
 
 export const gmailThreadSearchPresentation: ActionPresentation = {
