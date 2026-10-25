@@ -10,7 +10,7 @@ from pydantic import AnyHttpUrl
 from agentplane.app.action_federation_settings import ActionFederationSettings
 from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.presets import SandboxPreset, ThreadPreset
-from agentplane.app.settings import AppSettingsConfig, TitleGenerationSettings
+from agentplane.app.settings import AppSettingsConfig, TitleGenerationSettings, TraceSearchSettings
 from agentplane.runner.harness import Harness
 
 # The names of the objects other modules create. `settings()` below grants the public-coder
@@ -100,12 +100,15 @@ def settings(
     default_policy_sets: Set[str],
     auto_title_on_first_message_default: bool = False,
     title_generation: TitleGenerationSettings | None = None,
+    trace_search: TraceSearchSettings | None = None,
 ) -> AppSettingsConfig:
-    title_configuration: dict[str, object] = {}
+    optional_configuration: dict[str, object] = {}
     if auto_title_on_first_message_default:
-        title_configuration["auto_title_on_first_message_default"] = True
+        optional_configuration["auto_title_on_first_message_default"] = True
     if title_generation is not None:
-        title_configuration["title_generation"] = title_generation
+        optional_configuration["title_generation"] = title_generation
+    if trace_search is not None:
+        optional_configuration["trace_search"] = trace_search
     return AppSettingsConfig(
         models=model_catalog(models),
         default_policy_sets=default_policy_sets,
@@ -150,5 +153,5 @@ def settings(
         # Asked for each sandbox's recent decisions; the page shows the rules alone when it does not answer.
         egress_admin_url=AnyHttpUrl(egress.admin(namespace).url),
         action_federation=action_federation,
-        **title_configuration,
+        **optional_configuration,
     )

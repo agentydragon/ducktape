@@ -3124,6 +3124,10 @@ data:
       scope: openid
       mode: exchange
       token_endpoint: https://auth.allegedly.works/application/o/token/
+    trace_search:
+      grafana_base_url: https://grafana.allegedly.works/
+      tempo_datasource_uid: f99d1a97-7e72-4887-9277-0b105a5ccf44
+      deployment_environment: agentplane-staging
 immutable: false
 ---
 apiVersion: v1

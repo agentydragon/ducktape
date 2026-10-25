@@ -42,6 +42,7 @@ import { hasVmConsole, sandboxReady, sandboxStatusDetail, sandboxSummary, sandbo
 import { SANDBOX_STATUS_MARKS } from "../status_mark";
 import { snapshotFresh } from "../threads/thread_status";
 import { beginSessionCreate, finishSessionCreate, withinSessionCreate } from "../tracing";
+import { traceSearchUrl, useTraceSearchSettings } from "../trace_search";
 import { TopbarActions, TopbarTitle } from "../topbar";
 import type { SessionSpec } from "../../../proto/runner_pb";
 
@@ -87,6 +88,7 @@ export function SandboxPage({
   onOpenThread: (threadId: string) => void;
   onBack: () => void;
 }): JSX.Element {
+  const traceSearch = useTraceSearchSettings();
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get("tab");
@@ -323,6 +325,16 @@ export function SandboxPage({
               <Menu.Item hiddenFrom="sm" onClick={() => setNotificationsOpen(true)}>
                 Notifications
               </Menu.Item>
+              {traceSearch && (
+                <Menu.Item
+                  component="a"
+                  href={traceSearchUrl(traceSearch, { kind: "sandbox", id: name })}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Find Sandbox traces in Grafana
+                </Menu.Item>
+              )}
               {/* The API refuses a running sandbox (inventory.py); the reason is shown beside the item. */}
               <Menu.Item
                 color="red"
@@ -469,6 +481,7 @@ export function SandboxPage({
               <SessionsTable
                 threads={visibleThreads}
                 sandbox={sandbox}
+                traceSearch={traceSearch}
                 fresh={snapshotFresh(live)}
                 onOpen={(sessionId) => void openThread(sessionId)}
                 onArchive={(threadId, action) => void threadAct(threadId, action)}

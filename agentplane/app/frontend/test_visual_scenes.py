@@ -96,6 +96,10 @@ async def test_session_auto_title_control(view: VisualPage, app: AgentplaneFixtu
     await expect(view.page.get_by_role("button", name="Auto-title")).to_be_visible()
     await view.check(context="fixture ready")
     await view.capture()
+    assert view.capture_name is not None
+    await view.page.get_by_role("button", name="More", exact=True).click()
+    await expect(view.page.get_by_role("menuitem", name="Find Session traces in Grafana")).to_be_visible()
+    await view.capture(name=f"{view.capture_name}_thread_trace_menu")
 
 
 async def test_threads(view: VisualPage, app: AgentplaneFixture) -> None:
@@ -262,8 +266,15 @@ async def test_sandbox(view: VisualPage, app: AgentplaneFixture) -> None:
     await expect(page.get_by_role("table")).to_be_visible()
     await view.check(context="fixture ready")
     await view.capture(target=page.locator("#app"))
-
     assert view.capture_name is not None
+    await page.get_by_role("button", name="More Sandbox actions").click()
+    await expect(page.get_by_role("menuitem", name="Find Sandbox traces in Grafana")).to_be_visible()
+    await view.capture(name=f"{view.capture_name}_sandbox_trace_menu")
+    await page.get_by_role("button", name="More Sandbox actions").click()
+    await page.get_by_role("button", name="More actions for ready-session").click()
+    await expect(page.get_by_role("menuitem", name="Find Session traces in Grafana")).to_be_visible()
+    await view.capture(name=f"{view.capture_name}_session_trace_menu")
+
     await page.get_by_role("button", name="New session").click()
     await expect(page.get_by_role("combobox", name="Model")).not_to_have_value("")
     await expect(page.get_by_role("button", name="Start session")).to_be_enabled()

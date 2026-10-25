@@ -29,6 +29,7 @@ from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
 from agentplane.app.sandbox_access import SandboxAccess
 from agentplane.app.sandbox_models import NewSandboxDefaults
+from agentplane.app.settings import TraceSearchSettings
 from agentplane.app.testing.dispatcher import served_dispatcher
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.model_test_data import TEST_MODELS
@@ -272,6 +273,21 @@ async def test_the_form_offers_the_namespace_policy_sets_and_the_configured_defa
             "test-packages",
         ],
         "new_sandbox_defaults": served_defaults,
+    }
+
+
+async def test_trace_search_settings_are_optional_and_served_to_the_frontend(
+    client: httpx.AsyncClient, app: FastAPI
+) -> None:
+    assert (await client.get("/trace-search")).json() is None
+
+    app.state.services.trace_search = TraceSearchSettings(
+        grafana_base_url="https://grafana.test.invalid", tempo_datasource_uid="tempo", deployment_environment="test"
+    )
+    assert (await client.get("/trace-search")).json() == {
+        "grafana_base_url": "https://grafana.test.invalid/",
+        "tempo_datasource_uid": "tempo",
+        "deployment_environment": "test",
     }
 
 

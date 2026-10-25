@@ -282,6 +282,7 @@ spec:
         spanStartTimeShift: -1h
     name: Tempo
     type: tempo
+    uid: f99d1a97-7e72-4887-9277-0b105a5ccf44
     url: http://tempo.monitoring.svc.cluster.local:3200
   instanceSelector:
     matchLabels:

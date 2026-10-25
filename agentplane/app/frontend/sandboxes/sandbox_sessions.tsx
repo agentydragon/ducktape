@@ -2,7 +2,8 @@ import { ActionIcon, Button, Group, Menu, Stack, Table, Text } from "@mantine/co
 import { IconDotsVertical } from "../icons";
 import type { JSX } from "react";
 
-import { harnessLabel, type SandboxView, type ThreadView } from "../client";
+import { harnessLabel, type SandboxView, type ThreadView, type TraceSearchSettings } from "../client";
+import { traceSearchUrl } from "../trace_search";
 import { TimeAgo } from "../time_ago";
 import { archiveBlockReason, threadStatusFromSnapshot } from "../threads/thread_status";
 import { ThreadStatusIndicator } from "../threads/thread_status_indicator";
@@ -31,12 +32,14 @@ function setupNote(state: string | null | undefined): { text: string; failed: bo
 export function SessionsTable({
   threads,
   sandbox,
+  traceSearch,
   fresh,
   onOpen,
   onArchive,
 }: {
   threads: ThreadView[];
   sandbox: SandboxView | null;
+  traceSearch: TraceSearchSettings | null;
   /** Whether the snapshot's Thread states are being kept current. */
   fresh: boolean;
   onOpen: (sessionId: string) => void;
@@ -104,6 +107,16 @@ export function SessionsTable({
                       </ActionIcon>
                     </Menu.Target>
                     <Menu.Dropdown>
+                      {traceSearch && (
+                        <Menu.Item
+                          component="a"
+                          href={traceSearchUrl(traceSearch, { kind: "session", id: thread.id })}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Find Session traces in Grafana
+                        </Menu.Item>
+                      )}
                       {thread.archived ? (
                         <Menu.Item onClick={() => onArchive(thread.id, "unarchive")}>Unarchive</Menu.Item>
                       ) : (

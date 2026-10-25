@@ -66,6 +66,7 @@ export type SessionOpening = {
 export type Harness = components["schemas"]["Harness"];
 export type ModelOption = components["schemas"]["ModelOption"];
 export type ModelCatalog = components["schemas"]["ModelCatalog"];
+export type TraceSearchSettings = components["schemas"]["TraceSearchSettings"];
 
 /** An empty model list disables new-session selection, not the native harness. */
 export function harnessOptions(catalog: ModelCatalog | null): { value: Harness; label: string; disabled: boolean }[] {

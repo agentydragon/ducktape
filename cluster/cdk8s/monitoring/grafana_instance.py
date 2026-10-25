@@ -46,6 +46,9 @@ from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 _NAME = "grafana"
 _NAMESPACE = "monitoring"
 HOSTNAME = "grafana.allegedly.works"
+GRAFANA_BASE_URL = f"https://{HOSTNAME}"
+# Adopt Tempo's existing Grafana identity so saved references continue to resolve.
+TEMPO_DATASOURCE_UID = "f99d1a97-7e72-4887-9277-0b105a5ccf44"
 # Adopt the existing Grafana UID, originally derived from the Loki CR's metadata.uid.
 # Keep this identity stable: changing it makes the operator delete the old datasource.
 # The existing CR cannot gain immutable spec.uid; use the supported legacy datasource.uid.
@@ -142,7 +145,7 @@ def _grafana(chart: Chart) -> None:
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE, labels=_INSTANCE_LABELS),
         client=GrafanaSpecClient(use_kube_auth=True),
         config={
-            "server": {"root_url": f"https://{HOSTNAME}"},
+            "server": {"root_url": GRAFANA_BASE_URL},
             "security": {
                 # Expanded at runtime from GF_SECURITY_ADMIN_{USER,PASSWORD} env vars below.
                 # init-time only: Grafana writes the admin user to PostgreSQL on first boot.
@@ -279,6 +282,7 @@ def _datasources(chart: Chart) -> None:
         "tempo",
         GrafanaDatasourceSpecDatasource(
             name="Tempo",
+            uid=TEMPO_DATASOURCE_UID,
             type="tempo",
             access="proxy",
             url="http://tempo.monitoring.svc.cluster.local:3200",

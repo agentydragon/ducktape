@@ -59,6 +59,7 @@ from agentplane.app.sandbox_models import (
     sandbox_is_ready,
     sandbox_view,
 )
+from agentplane.app.settings import TraceSearchSettings
 from agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown
 from agentplane.app.system_status import ComponentStatus, SystemStatusChecker
 from agentplane.app.threads import bridge as runner_bridge
@@ -154,6 +155,7 @@ class AppServices:
     connection_http: UpstreamProxy | None
     auto_title_on_first_message_default: bool = False
     titles: ThreadTitles | None = None
+    trace_search: TraceSearchSettings | None = None
     oauth: OAuth | None = field(init=False)
     drain: Drain = field(default_factory=Drain)
 
@@ -212,11 +214,18 @@ async def list_models(catalog: Models) -> ModelCatalog:
 
 
 preset_router = APIRouter(prefix="/presets", tags=["presets"])
+trace_search_router = APIRouter(tags=["trace search"])
 
 
 @preset_router.get("")
 async def list_presets(services: Services) -> list[SandboxPresetView]:
     return services.presets.views()
+
+
+@trace_search_router.get("/trace-search")
+async def trace_search_settings(services: Services) -> TraceSearchSettings | None:
+    """An optional Grafana target for Tempo links in sandbox and Thread menus."""
+    return services.trace_search
 
 
 @router.get("")
@@ -1135,6 +1144,7 @@ def create_app(
     system_status: SystemStatusChecker,
     auto_title_on_first_message_default: bool = False,
     titles: ThreadTitles | None = None,
+    trace_search: TraceSearchSettings | None = None,
 ) -> FastAPI:
     """The whole HTTP surface, guarded. Each of `oidc` and `reviewer` enables one way to authenticate,
     and an app given neither answers 401 to everything but /healthz."""
@@ -1205,6 +1215,7 @@ def create_app(
         connection_http=connection_http,
         auto_title_on_first_message_default=auto_title_on_first_message_default,
         titles=titles,
+        trace_search=trace_search,
     )
     app.state.services = services
     # Every operator route needs a caller. The provider callback has its single-use state/code
@@ -1213,6 +1224,7 @@ def create_app(
         router,
         models,
         preset_router,
+        trace_search_router,
         runner_bridge.router,
         threads,
         operator_router,

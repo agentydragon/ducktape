@@ -28,7 +28,7 @@ from agentplane.app.notifications_operator_client import NotificationsOperatorCl
 from agentplane.app.oidc import OIDCSettings
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.sandbox_access import SandboxAccess
-from agentplane.app.settings import Settings
+from agentplane.app.settings import Settings, TraceSearchSettings
 from agentplane.app.shutdown import drain_of
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.model_test_data import TEST_MODELS, TEST_REASONING_EFFORTS
@@ -135,7 +135,28 @@ def test_the_two_settings_models_read_environment_and_config_without_colliding(
 def test_rest_api_settings_do_not_require_electric(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     set_app_environment(monkeypatch, tmp_path)
     monkeypatch.delenv("AGENTPLANE_ELECTRIC_URL")
-    assert Settings(_cli_parse_args=[]).electric_url is None
+    settings = Settings(_cli_parse_args=[])
+    assert settings.electric_url is None
+    assert settings.trace_search is None
+
+
+def test_trace_search_settings_load_from_the_deployment_config(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    set_app_environment(monkeypatch, tmp_path)
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        "default_policy_sets: [test-basic]\n"
+        "trace_search:\n"
+        "  grafana_base_url: https://grafana.test.invalid\n"
+        "  tempo_datasource_uid: tempo\n"
+        "  deployment_environment: agentplane-staging\n"
+    )
+    monkeypatch.setenv("AGENTPLANE_CONFIG_FILE", str(config))
+
+    assert Settings(_cli_parse_args=[]).trace_search == TraceSearchSettings(
+        grafana_base_url="https://grafana.test.invalid",
+        tempo_datasource_uid="tempo",
+        deployment_environment="agentplane-staging",
+    )
 
 
 @pytest.mark.parametrize("default_policy_sets", [None, [], ["test-basic"]])

@@ -21,6 +21,7 @@ import {
   models,
   resumeSandbox,
   type SandboxView,
+  type TraceSearchSettings,
   type ThreadView,
 } from "../client";
 import { historyRows, rowKey } from "./history_rows";
@@ -110,6 +111,12 @@ let inventoryDrops = false;
 let sharedFeed: "active" | "ended" | "failed" = "active";
 let sharedThread: Partial<ThreadView> = {};
 let eventSourceUrls: string[] = [];
+const TRACE_SEARCH_SETTINGS: TraceSearchSettings = {
+  grafana_base_url: "https://grafana.test.invalid",
+  tempo_datasource_uid: "tempo-test",
+  deployment_environment: "agentplane-test",
+};
+let traceSearchSettings: TraceSearchSettings | null = TRACE_SEARCH_SETTINGS;
 // The Dispatcher watches the page opened, which a test answers itself.
 let dispatchWatches: ServedWatch[] = [];
 let threadRows: ThreadView[] | null = null;
@@ -128,12 +135,16 @@ beforeEach(() => {
   sharedFeed = "active";
   sharedThread = {};
   eventSourceUrls = [];
+  traceSearchSettings = TRACE_SEARCH_SETTINGS;
   dispatchWatches = stubWatchFetch().served;
   threadRows = null;
-  vi.spyOn(api, "GET").mockResolvedValue({
-    data: { auto_title_on_first_message_default: false, title_generation_available: false },
-    response: Response.json({ auto_title_on_first_message_default: false, title_generation_available: false }),
-  } as never);
+  vi.spyOn(api, "GET").mockImplementation((async (path: string) => {
+    const data =
+      path === "/trace-search"
+        ? traceSearchSettings
+        : { auto_title_on_first_message_default: false, title_generation_available: false };
+    return { data, response: Response.json(data) };
+  }) as never);
   vi.mocked(getThread).mockResolvedValue(THREAD);
   vi.mocked(models).mockResolvedValue({
     models: [{ model: "test-model", display_name: "Test Model", reasoning_efforts: TEST_REASONING_EFFORTS }],
@@ -215,6 +226,31 @@ async function render(state: ThreadState = threadState()): Promise<HTMLDivElemen
   container.append(topbarTitle, topbarActions);
   return container;
 }
+
+it("offers a Grafana trace link from the thread menu when configured", async () => {
+  const container = await render();
+  const menuButton = container.querySelector<HTMLButtonElement>('button[aria-label="More"]');
+  if (!menuButton) throw new Error("Missing thread actions menu");
+  await act(async () => menuButton.click());
+  const link = [...document.querySelectorAll('[role="menuitem"]')].find((node) =>
+    node.textContent?.includes("Find Session traces in Grafana")
+  );
+  expect(link).toBeInstanceOf(HTMLAnchorElement);
+  expect(new URL((link as HTMLAnchorElement).href).searchParams.get("panes")).toContain("span.session.id");
+});
+
+it("hides the Grafana trace link from the thread menu when unconfigured", async () => {
+  traceSearchSettings = null;
+  const container = await render();
+  const menuButton = container.querySelector<HTMLButtonElement>('button[aria-label="More"]');
+  if (!menuButton) throw new Error("Missing thread actions menu");
+  await act(async () => menuButton.click());
+  expect(
+    [...document.querySelectorAll('[role="menuitem"]')].some((node) =>
+      node.textContent?.includes("Find Session traces in Grafana")
+    )
+  ).toBe(false);
+});
 
 function TestLiveProviders({ children }: { children: JSX.Element }): JSX.Element {
   return (

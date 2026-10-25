@@ -197,6 +197,7 @@ ts_library(
         "//agentplane/app/frontend:tab_metadata",
         "//agentplane/app/frontend:time_ago",
         "//agentplane/app/frontend:topbar",
+        "//agentplane/app/frontend:trace_search",
         "//agentplane/app/frontend:tracing",
         "//agentplane/proto:command_pb",
         "//agentplane/proto:event_pb",

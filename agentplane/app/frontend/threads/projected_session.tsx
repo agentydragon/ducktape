@@ -25,6 +25,7 @@ import {
   resumeSandbox,
   type ModelOption,
   type SandboxView,
+  type TraceSearchSettings,
   type ThreadView,
 } from "../client";
 import { decimalBigInt, useThreadSync, type ThreadEntity, type ThreadWindow } from "./thread_sync";
@@ -63,6 +64,7 @@ import { TimeAgo } from "../time_ago";
 import { NotificationStatus } from "../notification_status";
 import { TopbarActions, TopbarTitle } from "../topbar";
 import { finishSessionCreate, withinSessionCreate } from "../tracing";
+import { traceSearchUrl, useTraceSearchSettings } from "../trace_search";
 import { installThreadFavicon } from "./thread_favicon";
 import {
   appDocumentTitle,
@@ -1164,6 +1166,7 @@ function ProjectedSessionBody({
   composerPlaceholder,
   onResumeSandbox,
   onStatusChange,
+  traceSearch,
 }: {
   threadId: string;
   entities: ThreadEntity[];
@@ -1175,6 +1178,7 @@ function ProjectedSessionBody({
   composerPlaceholder: string;
   onResumeSandbox: () => void;
   onStatusChange: (status: ThreadTabTitleStatus) => void;
+  traceSearch: TraceSearchSettings | null;
 }): JSX.Element {
   const [draft, setDraft] = useState("");
   const [clock, setClock] = useState(() => Date.now());
@@ -1429,6 +1433,16 @@ function ProjectedSessionBody({
                 <Menu.Item leftSection={<IconHistory size={15} />} onClick={() => openDebug()}>
                   Debug history
                 </Menu.Item>
+                {traceSearch && (
+                  <Menu.Item
+                    component="a"
+                    href={traceSearchUrl(traceSearch, { kind: "session", id: thread.id })}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Find Session traces in Grafana
+                  </Menu.Item>
+                )}
                 <Menu.Divider />
               </Menu.Dropdown>
             </Menu>
@@ -1477,6 +1491,7 @@ function SyncedThread({
   composerPlaceholder,
   onResumeSandbox,
   onStatusChange,
+  traceSearch,
 }: {
   threadId: string;
   thread: ThreadView;
@@ -1486,6 +1501,7 @@ function SyncedThread({
   composerPlaceholder: string;
   onResumeSandbox: () => void;
   onStatusChange: (status: ThreadTabTitleStatus) => void;
+  traceSearch: TraceSearchSettings | null;
 }): JSX.Element {
   const { window: shown, error } = useThreadSync().useThread();
   // A stopped window is not following the thread at all, and its alert says so.
@@ -1519,6 +1535,7 @@ function SyncedThread({
         composerPlaceholder={composerPlaceholder}
         onResumeSandbox={onResumeSandbox}
         onStatusChange={onStatusChange}
+        traceSearch={traceSearch}
       />
     </>
   );
@@ -1572,6 +1589,7 @@ export function ProjectedSession({
     snapshotFresh(threadsLive)
   );
   const [error, setError] = useState<string | null>(null);
+  const traceSearch = useTraceSearchSettings();
   const environment = useRequiredSandboxesLive();
   const inventoryFresh = environment.stream.standing === "current" && environment.health?.fresh === true;
   const sandbox = environment.snapshot?.sandboxes.find((candidate) => candidate.name === thread?.sandbox);
@@ -1661,6 +1679,7 @@ export function ProjectedSession({
                 }
               }}
               onStatusChange={setTabStatus}
+              traceSearch={traceSearch}
             />
           </sync.Thread>
         )}

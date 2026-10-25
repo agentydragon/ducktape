@@ -49,6 +49,26 @@ ts_library(
     deps = [":client"],
 )
 
+ts_library(
+    name = "trace_search",
+    srcs = ["trace_search.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "trace_search_test",
+    srcs = ["trace_search.test.ts"],
+    deps = [
+        ":trace_search",
+        "//:node_modules/vitest",
+    ],
+)
+
 # Shared Tabler imports and their ambient subpath types. Feature targets depend on this
 # facade rather than importing the untyped package subpaths themselves.
 ts_library(

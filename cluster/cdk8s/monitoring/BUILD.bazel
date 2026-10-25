@@ -194,6 +194,7 @@ py_library(
     data = [":dashboards"],
     visibility = [
         "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/agentplane:__pkg__",
         "//cluster/cdk8s/gatus:__pkg__",
     ],
     deps = [

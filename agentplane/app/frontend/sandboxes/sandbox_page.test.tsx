@@ -6,7 +6,7 @@ import { createRoot } from "react-dom/client";
 import { Link, MemoryRouter, Route, Routes } from "react-router";
 import { afterAll, afterEach, expect, it, vi, type Mock } from "vitest";
 
-import { api, type RunnerStatusView, type SandboxView, type ThreadView } from "../client";
+import { api, type RunnerStatusView, type SandboxView, type ThreadView, type TraceSearchSettings } from "../client";
 import type * as LiveModule from "../live";
 import type { Live, SandboxSnapshot } from "../live";
 import { SandboxRoute } from "../app";
@@ -97,6 +97,12 @@ const DEFAULT_PRESET_DEFAULTS = {
   reasoning_effort: "low",
 };
 let presetDefaults = { ...DEFAULT_PRESET_DEFAULTS } as Record<string, unknown>;
+const TRACE_SEARCH_SETTINGS: TraceSearchSettings = {
+  grafana_base_url: "https://grafana.test.invalid",
+  tempo_datasource_uid: "tempo-test",
+  deployment_environment: "agentplane-test",
+};
+let traceSearchSettings: TraceSearchSettings | null = TRACE_SEARCH_SETTINGS;
 afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
@@ -111,6 +117,7 @@ afterEach(async () => {
   rerender = async () => {};
   (live.snapshot.sandbox as SandboxView).binding = null;
   presetDefaults = { ...DEFAULT_PRESET_DEFAULTS };
+  traceSearchSettings = TRACE_SEARCH_SETTINGS;
 });
 afterAll(() => vi.unstubAllGlobals());
 
@@ -189,6 +196,9 @@ async function render(
     }
     if (path === "/sandboxes/form") {
       return Promise.resolve(Response.json({ policy_sets: [] }));
+    }
+    if (path === "/trace-search") {
+      return Promise.resolve(Response.json(traceSearchSettings));
     }
     if (path === "/presets") {
       return Promise.resolve(
@@ -941,6 +951,58 @@ it("offers Delete in the actions menu only for a suspended Sandbox", async () =>
   expect(deleteItem().disabled).toBe(false);
   await act(async () => deleteItem().click());
   expect(document.body.textContent).toContain("Delete startup-test?");
+});
+
+it("links the Sandbox and its Sessions to their scoped Grafana trace searches", async () => {
+  live.snapshot.threads = [thread({ id: "existing-session" })];
+  await render(async () => Response.json([]));
+  await act(async () => Promise.resolve());
+
+  const sandboxMenuButton = container.querySelector<HTMLButtonElement>('[aria-label="More Sandbox actions"]');
+  if (!sandboxMenuButton) throw new Error("Missing Sandbox actions menu");
+  await act(async () => sandboxMenuButton.click());
+  const sandboxLink = menuItem("Find Sandbox traces in Grafana");
+  expect(sandboxLink).toBeInstanceOf(HTMLAnchorElement);
+  expect(new URL((sandboxLink as HTMLAnchorElement).href).searchParams.get("panes")).toContain("span.sandbox.name");
+  await act(async () => sandboxMenuButton.click());
+
+  const sessionMenuButton = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+    (node) => node.getAttribute("aria-label") === "More actions for existing-session"
+  );
+  if (!sessionMenuButton) throw new Error("Missing Session actions menu");
+  await act(async () => sessionMenuButton.click());
+  const sessionLink = menuItem("Find Session traces in Grafana");
+  expect(sessionLink).toBeInstanceOf(HTMLAnchorElement);
+  expect((sessionLink as HTMLAnchorElement).target).toBe("_blank");
+  expect(new URL((sessionLink as HTMLAnchorElement).href).searchParams.get("panes")).toContain("span.session.id");
+});
+
+it("hides trace links when the app leaves trace search unconfigured", async () => {
+  traceSearchSettings = null;
+  live.snapshot.threads = [thread({ id: "existing-session" })];
+  await render(async () => Response.json([]));
+  await act(async () => Promise.resolve());
+
+  const sandboxMenuButton = container.querySelector<HTMLButtonElement>('[aria-label="More Sandbox actions"]');
+  if (!sandboxMenuButton) throw new Error("Missing Sandbox actions menu");
+  await act(async () => sandboxMenuButton.click());
+  expect(
+    [...document.querySelectorAll('[role="menuitem"]')].some((node) =>
+      node.textContent?.includes("Find Sandbox traces in Grafana")
+    )
+  ).toBe(false);
+  await act(async () => sandboxMenuButton.click());
+
+  const sessionMenuButton = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+    (node) => node.getAttribute("aria-label") === "More actions for existing-session"
+  );
+  if (!sessionMenuButton) throw new Error("Missing Session actions menu");
+  await act(async () => sessionMenuButton.click());
+  expect(
+    [...document.querySelectorAll('[role="menuitem"]')].some((node) =>
+      node.textContent?.includes("Find Session traces in Grafana")
+    )
+  ).toBe(false);
 });
 
 it("does not state a Session's status while Thread updates are not being heard", async () => {
