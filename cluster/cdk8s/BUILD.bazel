@@ -1929,6 +1929,7 @@ py_test(
         ":agent_shared_rbac",
         ":ducktape_flux",
         ":namespace_access",
+        ":loki_read_proxy",
         "//cluster/cdk8s/agentplane:staging",
         "//cluster/cdk8s/clickhouse:installation",
         "//cluster/cdk8s/haku:charts",
@@ -1942,3 +1943,4 @@ py_test(
         "@pypi//pyyaml",
     ],
 )
+
