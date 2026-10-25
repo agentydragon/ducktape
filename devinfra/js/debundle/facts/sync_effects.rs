@@ -1743,6 +1743,7 @@ struct Callable {
     created_after_parent_await: bool,
     params: Vec<Parameter>,
     reads: BTreeSet<Id>,
+    bare_reads: BTreeSet<Id>,
     rebinds: BTreeSet<Id>,
     calls: Vec<Call>,
     local_assignments: Vec<(Id, ValueExpr)>,
@@ -1960,6 +1961,7 @@ impl Default for Callable {
             created_after_parent_await: false,
             params: Vec::new(),
             reads: BTreeSet::new(),
+            bare_reads: BTreeSet::new(),
             rebinds: BTreeSet::new(),
             calls: Vec::new(),
             local_assignments: Vec::new(),
@@ -2204,6 +2206,135 @@ fn call_exposes_global_receiver(
         .any(|value| exposes_global_receiver(value, names))
 }
 
+fn uses_any_binding(value: &ValueExpr, ids: &BTreeSet<Id>) -> bool {
+    let mut bindings = BTreeSet::new();
+    value.bindings(&mut bindings);
+    !bindings.is_disjoint(ids)
+}
+
+fn same_property_or_fresh(value: &ValueExpr, alias: &Id, property: &str) -> bool {
+    match value {
+        ValueExpr::Member(receiver, Some(read), _)
+            if read == property
+                && matches!(receiver.as_ref(), ValueExpr::Binding(id) if id == alias) =>
+        {
+            true
+        }
+        ValueExpr::ObjectLiteral(_, properties) => properties.is_empty(),
+        ValueExpr::Alternatives(options) => options
+            .iter()
+            .all(|value| same_property_or_fresh(value, alias, property)),
+        ValueExpr::NonCallable | ValueExpr::Undefined | ValueExpr::Primitive(_) => true,
+        _ => false,
+    }
+}
+
+fn confined_prepublication_alias(
+    index: &ExecutionIndex,
+    key: u32,
+    alias: &Id,
+    first_publication: StatementOrdinal,
+    protected: &BTreeSet<String>,
+) -> bool {
+    let Some(callable) = index.callables.get(&key) else {
+        return false;
+    };
+    let owner = callable.owner;
+    if owner >= first_publication
+        || index.discarded_sync_iifes[owner.0] != Some(key)
+        || callable.opaque
+        || !callable.params.is_empty()
+        || !callable.returns.is_empty()
+        || callable.bare_reads.contains(alias)
+        || callable.rebinds.contains(alias)
+        || index.callables.iter().any(|(other_key, other)| {
+            other.owner == owner && *other_key != key
+                || other.owner != owner && other.reads.contains(alias)
+        })
+        || callable
+            .local_assignments
+            .iter()
+            .filter(|(id, _)| id == alias)
+            .count()
+            != 1
+    {
+        return false;
+    }
+    let forbidden = |property: &str| {
+        protected.contains(property)
+            || matches!(
+                property,
+                "__proto__"
+                    | "prototype"
+                    | "constructor"
+                    | "globalThis"
+                    | "window"
+                    | "self"
+                    | "frames"
+                    | "top"
+                    | "__defineSetter__"
+                    | "__defineGetter__"
+            )
+    };
+    if index.callable_member_reads.get(&key).is_some_and(|reads| {
+        reads.iter().any(|(receiver, property)| {
+            matches!(receiver, ValueExpr::Binding(id) if id == alias)
+                && property.as_deref().is_none_or(&forbidden)
+        })
+    }) {
+        return false;
+    }
+    let mut derived = BTreeSet::from([alias.clone()]);
+    loop {
+        let before = derived.len();
+        for (id, value) in &callable.local_assignments {
+            if uses_any_binding(value, &derived) {
+                derived.insert(id.clone());
+            }
+        }
+        if derived.len() == before {
+            break;
+        }
+    }
+    for call in &callable.calls {
+        if call.kind == CallKind::Call && uses_any_binding(&call.callee, &derived)
+            || matches!(call.kind, CallKind::Call | CallKind::New)
+                && call.args.iter().any(|arg| uses_any_binding(arg, &derived))
+        {
+            return false;
+        }
+        if call.kind == CallKind::New
+            && uses_any_binding(&call.callee, &derived)
+            && !matches!(&call.callee,
+                ValueExpr::Member(receiver, Some(property), _)
+                    if property == "Error"
+                        && matches!(receiver.as_ref(), ValueExpr::Binding(id) if id == alias)
+                        && call.args.is_empty())
+        {
+            return false;
+        }
+    }
+    callable.callback_result_writes.iter().all(|write| {
+        if let ValueExpr::Binding(id) = &write.receiver
+            && id == alias
+        {
+            let Some(property) = write.property.as_deref() else {
+                return false;
+            };
+            !forbidden(property) && same_property_or_fresh(&write.value, alias, property)
+        } else if uses_any_binding(&write.receiver, &derived) {
+            // A derived receiver may be an alias, but this entire invocation
+            // finishes before publication. Only primitive writes can survive.
+            matches!(
+                write.value,
+                ValueExpr::NonCallable | ValueExpr::Undefined | ValueExpr::Primitive(_)
+            )
+        } else {
+            !uses_any_binding(&write.value, &derived)
+        }
+    })
+}
+
 fn deferred_global_assignment(expression: &Expr) -> Option<DeferredGlobalPublication> {
     let Expr::Assign(assignment) = expression.unwrap_parens() else {
         return None;
@@ -2267,6 +2398,34 @@ fn deferred_global_publication(item: &ModuleItem) -> Option<DeferredGlobalPublic
         .filter(|publication| publication.root == BuiltinGlobalRoot::GlobalThis)
 }
 
+fn discarded_synchronous_iife(item: &ModuleItem) -> Option<u32> {
+    let ModuleItem::Stmt(Stmt::Expr(statement)) = item else {
+        return None;
+    };
+    let value = match statement.expr.unwrap_parens() {
+        Expr::Unary(unary) if matches!(unary.op, UnaryOp::Bang | UnaryOp::Void) => {
+            unary.arg.unwrap_parens()
+        }
+        value => value,
+    };
+    let Expr::Call(call) = value else {
+        return None;
+    };
+    let Callee::Expr(callee) = &call.callee else {
+        return None;
+    };
+    let Expr::Fn(function) = callee.unwrap_parens() else {
+        return None;
+    };
+    (function.ident.is_none()
+        && call.args.is_empty()
+        && !function.function.is_async
+        && !function.function.is_generator
+        && function.function.decorators.is_empty()
+        && function.function.params.is_empty())
+    .then_some(function.function.span.lo.0)
+}
+
 struct DestructuringMemberWrite {
     receiver: ValueExpr,
     /// The whole source (including defaults) over-approximates the target value.
@@ -2315,6 +2474,7 @@ impl NamespacePrivacy {
 struct ExecutionIndex {
     owner: StatementOrdinal,
     current: Option<u32>,
+    allowed_local_member_receiver: Option<u32>,
     past_await: bool,
     may_skip_await_depth: u32,
     conditional_depth: u32,
@@ -2364,6 +2524,7 @@ struct ExecutionIndex {
     top_exported_values: Vec<Vec<ValueExpr>>,
     top_metadata_decorations: Vec<Option<MetadataDecorateCall>>,
     deferred_global_candidates: Vec<Option<DeferredGlobalPublication>>,
+    discarded_sync_iifes: Vec<Option<u32>>,
     deferred_global_certificates: BTreeSet<StatementOrdinal>,
     deferred_global_requested: bool,
     global_slot_mentions: BTreeMap<String, usize>,
@@ -2393,6 +2554,7 @@ impl Default for ExecutionIndex {
         Self {
             owner: StatementOrdinal(0),
             current: None,
+            allowed_local_member_receiver: None,
             past_await: false,
             may_skip_await_depth: 0,
             conditional_depth: 0,
@@ -2442,6 +2604,7 @@ impl Default for ExecutionIndex {
             top_exported_values: Vec::new(),
             top_metadata_decorations: Vec::new(),
             deferred_global_candidates: Vec::new(),
+            discarded_sync_iifes: Vec::new(),
             deferred_global_certificates: BTreeSet::new(),
             deferred_global_requested: false,
             global_slot_mentions: BTreeMap::new(),
@@ -2490,6 +2653,11 @@ impl ExecutionIndex {
                 .map(|item| metadata_decorate_call(item.as_module_item(), &hints.known_effects))
                 .collect(),
             deferred_global_candidates: vec![None; body.len()],
+            discarded_sync_iifes: if hints.deferred_global_publications.is_empty() {
+                Vec::new()
+            } else {
+                vec![None; body.len()]
+            },
             deferred_global_requested: !hints.deferred_global_publications.is_empty(),
             global_object_names: super::global_object::unshadowed_global_object_aliases(body),
             plain_array_bindings: plain_array_bindings.clone(),
@@ -2549,6 +2717,8 @@ impl ExecutionIndex {
             if index.deferred_global_requested {
                 index.deferred_global_candidates[ordinal] =
                     deferred_global_publication(item.as_module_item());
+                index.discarded_sync_iifes[ordinal] =
+                    discarded_synchronous_iife(item.as_module_item());
             }
             index.owner = StatementOrdinal(ordinal);
             index.past_await = false;
@@ -2934,6 +3104,24 @@ impl ExecutionIndex {
             }
         }
         if index.deferred_global_requested {
+            let first_publication = index
+                .deferred_global_candidates
+                .iter()
+                .position(|candidate| {
+                    candidate.as_ref().is_some_and(|candidate| {
+                        hints
+                            .deferred_global_publications
+                            .get(&candidate.root)
+                            .is_some_and(|slots| slots.contains(&candidate.property))
+                    })
+                })
+                .map(StatementOrdinal)
+                .unwrap_or(StatementOrdinal(0));
+            let protected: BTreeSet<String> = hints
+                .deferred_global_publications
+                .values()
+                .flat_map(|slots| slots.iter().cloned())
+                .collect();
             let certified_root_ids: BTreeSet<Id> = index
                 .deferred_global_candidates
                 .iter()
@@ -2968,9 +3156,16 @@ impl ExecutionIndex {
                         &certified_root_ids,
                     )
                 })
-                || index.callables.values().any(|callable| {
-                    callable.local_assignments.iter().any(|(_, value)| {
+                || index.callables.iter().any(|(key, callable)| {
+                    callable.local_assignments.iter().any(|(id, value)| {
                         exposes_global_receiver(value, &index.global_object_names)
+                            && !confined_prepublication_alias(
+                                &index,
+                                *key,
+                                id,
+                                first_publication,
+                                &protected,
+                            )
                     }) || callable
                         .returns
                         .iter()
@@ -3803,6 +3998,12 @@ impl Visit for ExecutionIndex {
         {
             let callable = self.callables.get_mut(&key).unwrap();
             callable.reads.insert(ident.to_id());
+            if self.deferred_global_requested
+                && self.discarded_sync_iifes[self.owner.0] == Some(key)
+                && self.allowed_local_member_receiver != Some(ident.span.lo.0)
+            {
+                callable.bare_reads.insert(ident.to_id());
+            }
             if self.literal_depth > 0 {
                 callable.literal_captures.insert(ident.to_id());
                 if self.factory_member_value_depth == 0 {
@@ -3832,7 +4033,19 @@ impl Visit for ExecutionIndex {
         }
         let previous = self.namespace_privacy.allowed_read;
         self.namespace_privacy.allowed_read = self.namespace_privacy.read_receiver(member);
+        let previous_local_receiver = self.allowed_local_member_receiver;
+        if self.deferred_global_requested
+            && self
+                .current
+                .is_some_and(|key| self.discarded_sync_iifes[self.owner.0] == Some(key))
+        {
+            self.allowed_local_member_receiver = match (member.obj.unwrap_parens(), &member.prop) {
+                (Expr::Ident(id), MemberProp::Ident(_)) => Some(id.span.lo.0),
+                _ => None,
+            };
+        }
         member.obj.visit_with(self);
+        self.allowed_local_member_receiver = previous_local_receiver;
         self.namespace_privacy.allowed_read = previous;
         member.prop.visit_with(self);
         if !self.member_write_sites.contains(&member.span.into())

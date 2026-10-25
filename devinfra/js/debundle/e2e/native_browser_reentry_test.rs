@@ -240,6 +240,72 @@ console.log(later);
 }
 
 #[test]
+fn confined_local_global_alias_is_not_a_publication() {
+    for setup in [
+        "(function() { const host = globalThis; const stack = new host.Error().stack; void stack; })();",
+        "!function() { const host = globalThis; const stack = new host.Error().stack; host._debug = host._debug || {}; host._debug[stack] = 'id'; }();",
+    ] {
+        let write = "globalThis.inspectState = () => later;";
+        let source = format!(
+            "{setup}\n{write}\nconst startup = new globalThis.Error();\nconst later = 42;\nconsole.log(later);\n"
+        );
+        let mut colocated = FixtureOpts::new(
+            &source,
+            vec![logical_module_with_anon(
+                "state/all",
+                &[Member::new("startup"), Member::new("later")],
+                &[setup, write],
+            )],
+        );
+        colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+        assert_preserved_entry_output(&run_fixture(colocated), "42\n");
+
+        let mut split = FixtureOpts::new(
+            &source,
+            vec![
+                logical_module_with_anon("debug/exposure", &[], &[setup, write]),
+                logical_module("startup", &[Member::new("startup")]),
+                logical_module("state/later", &[Member::new("later")]),
+            ],
+        );
+        split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+        split.deferred_global_publications = &[("globalThis", "inspectState")];
+        assert_preserved_entry_output(&run_fixture(split), "42\n");
+    }
+}
+
+#[test]
+fn local_global_alias_must_not_escape_its_one_shot_iife() {
+    for setup in [
+        "(function repeat() { const host = globalThis; globalThis.saved = repeat; void host.Error; })();",
+        "(function() { const host = globalThis; globalThis.saved = () => host.inspectState(); })();",
+        "(function() { const host = globalThis; host.Array.of(host); })();",
+        "(function() { const host = globalThis; void host.inspectState; })();",
+        "(function() { const host = globalThis; void host['inspect' + 'State']; })();",
+        "(() => { const host = globalThis; void host.Error; })();",
+    ] {
+        let source = format!(
+            "{setup}\nglobalThis.inspectState = () => later;\nconst startup = new globalThis.Error();\nconst later = 42;\nconsole.log(later);\n"
+        );
+        let mut opts = FixtureOpts::new(
+            &source,
+            vec![
+                logical_module_with_anon(
+                    "debug/exposure",
+                    &[],
+                    &[setup, "globalThis.inspectState = () => later;"],
+                ),
+                logical_module("startup", &[Member::new("startup")]),
+                logical_module("state/later", &[Member::new("later")]),
+            ],
+        );
+        opts.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+        opts.deferred_global_publications = &[("globalThis", "inspectState")];
+        expect_atomic_conflict_rejection(opts, &["startup", "state/later"], &[]);
+    }
+}
+
+#[test]
 fn deferred_global_certificate_does_not_cover_another_slot_or_cross_root_read() {
     let source = r#"globalThis.otherState = () => later;
 const startup = new globalThis.Error();
