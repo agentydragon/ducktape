@@ -81,6 +81,14 @@ fn original_home_merge_rejects_remote_tdz() {
     let target = post.of(analysis::OwnerId(7));
     post.set(analysis::OwnerId(3), target);
     let post_verdict = gate::check_realizability(q.owner_graph(), &post);
+    let index = gate::RealizabilityIndex::from_partition(
+        q.owner_graph(),
+        q.realizability_partition().clone(),
+    );
+    assert_eq!(
+        index.verdict_after_moving_owners(q.owner_graph(), &[analysis::OwnerId(3)], target),
+        post_verdict,
+    );
     assert_eq!(post_verdict.unrealizable_sccs.len(), 1);
     assert!(
         !post_verdict.unrealizable_sccs[0]

@@ -754,12 +754,13 @@ impl QuotientGraph {
         }
         let (winner, loser) = (c1.min(c2), c1.max(c2));
         let (post_module, deltas) = self.compute_merge_deltas(winner, loser);
-        if !self.full_gate_accepts_move(
-            deltas.into_iter().flat_map(|delta| match delta {
+        let moved: Vec<OwnerId> = deltas
+            .into_iter()
+            .flat_map(|delta| match delta {
                 PartitionDelta::MoveOwners { owners, .. } => owners,
-            }),
-            post_module,
-        ) {
+            })
+            .collect();
+        if !self.full_gate_accepts_move(&moved, post_module) {
             return false;
         }
         self.merge_classes_unchecked(c1, c2)
@@ -771,16 +772,10 @@ impl QuotientGraph {
     /// an I-SCC that does not contain the merged module. The touching gate is
     /// a fast rejection filter; original-home rejoining must also check the
     /// complete proposed partition before committing each accepted move.
-    fn full_gate_accepts_move(
-        &self,
-        moved: impl IntoIterator<Item = OwnerId>,
-        to: ModuleId,
-    ) -> bool {
-        let mut partition = self.realizability_index.partition().clone();
-        for owner in moved {
-            partition.set(owner, to);
-        }
-        gate::check_realizability(&self.owner_graph, &partition).is_realizable()
+    fn full_gate_accepts_move(&self, moved: &[OwnerId], to: ModuleId) -> bool {
+        self.realizability_index
+            .verdict_after_moving_owners(&self.owner_graph, moved, to)
+            .is_realizable()
     }
 
     /// Try a complete multi-class contraction as one shared-gate move. The
@@ -848,7 +843,7 @@ impl QuotientGraph {
         {
             return false;
         }
-        if !self.full_gate_accepts_move(moved.iter().copied(), post_module) {
+        if !self.full_gate_accepts_move(&moved, post_module) {
             return false;
         }
 

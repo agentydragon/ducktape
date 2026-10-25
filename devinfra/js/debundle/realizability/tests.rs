@@ -10,8 +10,11 @@ use analysis::facts::analyze_chunk;
 use analysis::graph::{EdgeRole, build_owner_graph_with};
 use analysis::ids::{LogicalModuleIndex, ModuleId};
 use analysis::partition::Partition;
-use analysis::{AnalysisHints, OwnerGraph};
+use analysis::{AnalysisHints, DepKind, OwnerGraph};
 use petgraph::visit::IntoNeighbors;
+use report_fixtures::{
+    active_owner, owner_edge, promoted_owner_edge, residual_owner, singleton_graph,
+};
 
 fn module_id(index: usize) -> ModuleId {
     ModuleId(LogicalModuleIndex(index))
@@ -21,6 +24,118 @@ fn parse_and_build(source: &str) -> OwnerGraph {
     let module = raw_js_test_support::parse(source);
     let facts = analyze_chunk(&module, &AnalysisHints::default(), None, |_| None).facts;
     build_owner_graph_with(&facts, Default::default()).unwrap()
+}
+
+/// The hypothetical full gate must reproduce the pure canonical projection
+/// and complete verdict, including diagnoses in I-SCCs remote from the moved
+/// owners. Every graph here is a typed owner-graph report fixture; no source
+/// parser or alternate SCC/simulator implementation participates.
+#[test]
+fn full_overlay_verdict_matches_pure_gate_across_typed_moves() {
+    let names = [
+        "owner:0", "owner:1", "owner:2", "owner:3", "owner:4", "owner:5", "owner:6", "owner:7",
+    ];
+    let kinds = [
+        DepKind::EagerUse,
+        DepKind::LazyUse,
+        DepKind::HoistedUse,
+        DepKind::Sequenced,
+        DepKind::LocalEffect,
+        DepKind::CoDeclaration,
+        DepKind::EagerRebind,
+        DepKind::LazyRebind,
+        DepKind::DeferredRebind,
+    ];
+    for seed in 0..32usize {
+        let nodes = names
+            .iter()
+            .enumerate()
+            .map(|(i, name)| {
+                if i % 3 == 0 {
+                    residual_owner(name, i + 1, &["Value"], 5)
+                } else {
+                    active_owner(name, i + 1, &["Value"], 5, "ui/m")
+                }
+            })
+            .collect();
+        let mut edges = Vec::new();
+        for i in 0..28usize {
+            let from = (i * 11 + seed * 3) % names.len();
+            let to = (i * 7 + seed + 1) % names.len();
+            let kind = kinds[(i + seed * 5) % kinds.len()];
+            let constrains = matches!(
+                kind,
+                DepKind::EagerUse
+                    | DepKind::Sequenced
+                    | DepKind::LocalEffect
+                    | DepKind::CoDeclaration
+            );
+            let id = format!("edge:{seed}:{i}");
+            edges.push(if i % 5 == 0 {
+                promoted_owner_edge(
+                    &id,
+                    names[from],
+                    names[to],
+                    kind,
+                    constrains,
+                    names[(from + 2) % names.len()],
+                )
+            } else {
+                owner_edge(&id, names[from], names[to], kind, constrains)
+            });
+        }
+        // Multiple sequenced owner edges on one module pair must select the
+        // first OwnerEdgeId while retaining all non-sequenced evidence.
+        edges.push(owner_edge(
+            "edge:sequenced:first",
+            names[0],
+            names[1],
+            DepKind::Sequenced,
+            true,
+        ));
+        edges.push(owner_edge(
+            "edge:sequenced:second",
+            names[0],
+            names[1],
+            DepKind::Sequenced,
+            true,
+        ));
+        let graph = OwnerGraph::from_report(&singleton_graph(nodes, edges)).unwrap();
+        let assignments = (0..names.len())
+            .map(|i| module_id((i * 3 + seed) % 5))
+            .collect();
+        let partition = Partition::from_assignments(assignments, module_id(0));
+        let mut index = RealizabilityIndex::from_partition(&graph, partition);
+        for step in 0..12usize {
+            let first = (step * 5 + seed) % names.len();
+            let owners = if step % 3 == 0 {
+                vec![OwnerId(first), OwnerId((first + 3) % names.len())]
+            } else {
+                vec![OwnerId(first)]
+            };
+            let to = module_id((step + seed * 2) % 5);
+            let overlay = index
+                .quotient
+                .overlay_for_move(&graph, index.partition(), &owners, to);
+            let mut post = index.partition().clone();
+            for &owner in &owners {
+                post.set(owner, to);
+            }
+            assert_eq!(
+                index.quotient.canonical_with_overlay(&overlay),
+                chunk_constraining_module_edges(&graph, &post),
+                "canonical projection diverged: seed={seed} step={step}",
+            );
+            assert_eq!(
+                index.verdict_after_moving_owners(&graph, &owners, to),
+                check_realizability(&graph, &post),
+                "full verdict diverged: seed={seed} step={step}",
+            );
+            if step % 2 == 0 {
+                index.apply(&graph, PartitionDelta::MoveOwners { owners, to });
+            }
+        }
+    }
 }
 
 #[test]
