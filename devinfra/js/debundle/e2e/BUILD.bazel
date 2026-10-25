@@ -476,6 +476,13 @@ debundle_e2e_test(
 debundle_e2e_test(name = "modules_gate_cli_test")
 
 debundle_e2e_test(
+    name = "module_decomposition_cli_test",
+    deps = [
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
     name = "modules_apply_cli_test",
     deps = [
         "@crates//:serde_json",
