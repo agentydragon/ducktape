@@ -682,3 +682,74 @@ annotations:
     ]);
     fixture.assert_runs("widget\n");
 }
+
+#[test]
+fn source_match_claim_with_raw_sibling_references_survives_split() {
+    let fixture = GraphFixture::new(
+        "const prefix = 0, a = () => b(), b = () => c(), c = () => \"ready\", tail = 1;\nconsole.log(a());\n",
+        &[(
+            "home.yaml",
+            r#"source_matches:
+  - match: |
+      const DECLARATORS_BEFORE = null,
+        Factory = () => b(),
+        Loader = () => c(),
+        Value = () => "ready",
+        DECLARATORS_BETWEEN = null,
+        Tail = 1;
+    bindings:
+      - Factory
+      - Loader
+      - Value
+"#,
+        )],
+    );
+    fixture.assert_runs("ready\n");
+    let batch = write_batch(json!([{
+        "owner_id": owner_for_binding(&fixture, "b"),
+        "module": "parts/loader",
+    }]));
+    fixture.assert_success(&[
+        "modules",
+        "refine",
+        "--batch",
+        batch.path().join("refine.json").to_str().unwrap(),
+    ]);
+    fixture.assert_runs("ready\n");
+}
+
+#[test]
+fn source_match_claim_with_declared_sibling_references_survives_split() {
+    let fixture = GraphFixture::new(
+        "const prefix = 0, a = () => b(), b = () => c(), c = () => \"ready\", tail = 1;\nconsole.log(a());\n",
+        &[(
+            "home.yaml",
+            r#"source_matches:
+  - match: |
+      const DECLARATORS_BEFORE = null,
+        Factory = () => Loader(),
+        Loader = () => Value(),
+        Value = () => "ready",
+        DECLARATORS_BETWEEN = null,
+        Tail = 1;
+    bindings:
+      - Factory
+      - Loader
+      - Value
+"#,
+        )],
+    );
+    fixture.assert_runs("ready\n");
+
+    let batch = write_batch(json!([{
+        "owner_id": owner_for_binding(&fixture, "b"),
+        "module": "parts/loader",
+    }]));
+    fixture.assert_success(&[
+        "modules",
+        "refine",
+        "--batch",
+        batch.path().join("refine.json").to_str().unwrap(),
+    ]);
+    fixture.assert_runs("ready\n");
+}
