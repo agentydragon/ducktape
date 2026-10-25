@@ -851,3 +851,194 @@ console.log(dynamic);
     ));
     assert_preserved_entry_output(&fixture, "laterundefined\n");
 }
+
+#[test]
+fn fresh_class_field_write_after_opaque_call_cannot_invoke_setter() {
+    let source = r#"import { prepare } from './peer.js';
+class Reader { read() { return later; } }
+const reader = new Reader();
+class Cache { value = 0; }
+const marker = prepare();
+const cache = new Cache();
+cache.value = 1;
+const later = 42;
+console.log(cache.value, reader.read(), later);
+export { Reader, reader, Cache, cache, marker, later };
+"#;
+    let peers = [("static/peer", "export function prepare() { return {}; }")];
+    let mut fixture = FixtureOpts::new(
+        source,
+        vec![
+            logical_module_with_anon(
+                "values/cache",
+                &[
+                    Member::new("Cache"),
+                    Member::new("cache"),
+                    Member::new("marker"),
+                    Member::new("Reader"),
+                    Member::new("reader"),
+                ],
+                &["cache.value = 1;"],
+            ),
+            logical_module("values/later", &[Member::new("later")]),
+        ],
+    )
+    .with_extra_chunks(&peers)
+    .with_unassigned_mode(unassigned_mode_inline());
+    fixture.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    let fixture = run_fixture(fixture);
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/values/cache.js",
+        &["cache", "reader"],
+        &["later"],
+    );
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/values/later.js",
+        &["later"],
+        &["cache"],
+    );
+    assert_preserved_entry_output(&fixture, "1 42 42\n");
+}
+
+#[test]
+fn fresh_class_instance_without_following_field_write_keeps_method_deferred() {
+    let source = r#"import { prepare } from './peer.js';
+class Reader { read() { return later; } }
+const reader = new Reader();
+class Cache { value = 0; }
+const marker = prepare();
+const cache = new Cache();
+const later = 42;
+console.log(cache.value, reader.read(), later);
+export { Reader, reader, Cache, cache, marker, later };
+"#;
+    let peers = [("static/peer", "export function prepare() { return {}; }")];
+    let mut fixture = FixtureOpts::new(
+        source,
+        vec![
+            logical_module(
+                "values/cache",
+                &[
+                    Member::new("Cache"),
+                    Member::new("cache"),
+                    Member::new("marker"),
+                    Member::new("Reader"),
+                    Member::new("reader"),
+                ],
+            ),
+            logical_module("values/later", &[Member::new("later")]),
+        ],
+    )
+    .with_extra_chunks(&peers)
+    .with_unassigned_mode(unassigned_mode_inline());
+    fixture.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    assert_preserved_entry_output(&run_fixture(fixture), "0 42 42\n");
+}
+
+#[test]
+fn replaced_own_field_descriptor_can_invoke_a_setter() {
+    let source = r#"import { prepare } from './peer.js';
+let later = 0;
+let observed = -1;
+class Cache { value = 0; }
+const marker = prepare();
+const cache = new Cache();
+Object.defineProperty(cache, 'value', {
+  set(value) { observed = later; }, configurable: true,
+});
+cache.value = 1;
+later = 42;
+console.log(observed, later);
+export { Cache, cache, marker, later, observed };
+"#;
+    let peers = [("static/peer", "export function prepare() { return {}; }")];
+    let mut colocated = FixtureOpts::new(source, vec![])
+        .with_extra_chunks(&peers)
+        .with_unassigned_mode(unassigned_mode_inline());
+    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    assert_preserved_entry_output(&run_fixture(colocated), "0 42\n");
+
+    let mut split = FixtureOpts::new(
+        source,
+        vec![
+            logical_module_with_anon(
+                "values/cache",
+                &[
+                    Member::new("Cache"),
+                    Member::new("cache"),
+                    Member::new("marker"),
+                    Member::new("observed"),
+                ],
+                &[
+                    "Object.defineProperty(cache, 'value', { set(value) { observed = later; }, configurable: true });",
+                    "cache.value = 1;",
+                ],
+            ),
+            logical_module_with_anon(
+                "values/later",
+                &[Member::new("later")],
+                &["later = 42;"],
+            ),
+        ],
+    )
+    .with_extra_chunks(&peers)
+    .with_unassigned_mode(unassigned_mode_inline());
+    split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    expect_atomic_conflict_rejection(split, &["values/cache", "values/later"], &[]);
+}
+
+#[test]
+fn deleted_class_field_exposes_inherited_setter() {
+    let source = r#"import { prepare } from './peer.js';
+let later = 0;
+let observed = -1;
+class Cache { value = 0; }
+Object.defineProperty(Cache.prototype, 'value', {
+  set(value) { observed = later; }, configurable: true,
+});
+const marker = prepare();
+const cache = new Cache();
+delete cache.value;
+cache.value = 1;
+later = 42;
+console.log(observed, later);
+export { Cache, cache, marker, later, observed };
+"#;
+    let peers = [("static/peer", "export function prepare() { return {}; }")];
+    let mut colocated = FixtureOpts::new(source, vec![])
+        .with_extra_chunks(&peers)
+        .with_unassigned_mode(unassigned_mode_inline());
+    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    assert_preserved_entry_output(&run_fixture(colocated), "0 42\n");
+
+    let mut split = FixtureOpts::new(
+        source,
+        vec![
+            logical_module_with_anon(
+                "values/cache",
+                &[
+                    Member::new("Cache"),
+                    Member::new("cache"),
+                    Member::new("marker"),
+                    Member::new("observed"),
+                ],
+                &[
+                    "Object.defineProperty(Cache.prototype, 'value', { set(value) { observed = later; }, configurable: true });",
+                    "delete cache.value;",
+                    "cache.value = 1;",
+                ],
+            ),
+            logical_module_with_anon(
+                "values/later",
+                &[Member::new("later")],
+                &["later = 42;"],
+            ),
+        ],
+    )
+    .with_extra_chunks(&peers)
+    .with_unassigned_mode(unassigned_mode_inline());
+    split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    expect_atomic_conflict_rejection(split, &["values/cache", "values/later"], &[]);
+}

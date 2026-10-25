@@ -849,6 +849,12 @@ actual top-level caller as their promotion owner, and memoized invocations
 include that caller and the reachability revision. A static data-property
 write to a proved fresh local function retains the same A11 fast path. This
 keeps unrelated returned closures deferred when no setter can be reached.
+The adjacent fresh-value proof also identifies a top-level write to an
+initialized own data field of a constructorless local class instance. That
+write cannot invoke an inherited setter, even after an earlier unknown call.
+Its assignment and execution-order effects remain. Callable-body writes and
+writes after deletion, descriptor replacement, or an intervening statement
+still use the accessor fallback.
 
 A closed inline mutation IIFE can also prove its receiver fresh at that call,
 independently of whether the returned object escapes later. The shared enum-IIFE
