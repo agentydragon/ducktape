@@ -294,3 +294,72 @@ export { entries, registry, later, observed, SpeciesArray };
     assert_preserved_entry_output(&colocated, "0\n");
     assert_all_emitted_js_checks(&colocated);
 }
+
+#[test]
+fn mutations_through_from_entries_result_reach_source_entries() {
+    let source = r#"let later = 0;
+let observed = -1;
+const entries = [{ name: "read", value: 0 }];
+const firstRegistry = Object.fromEntries(entries.map(entry => [entry.name, entry]));
+function mutate(result) {
+  result.read.name = { toString() { observed = later; return "read"; } };
+}
+mutate(firstRegistry);
+const secondRegistry = Object.fromEntries(entries.map(entry => [entry.name, entry]));
+later = 42;
+console.log(observed, secondRegistry.read.value);
+export { entries, firstRegistry, secondRegistry, later, observed, mutate };
+"#;
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon(
+                    "values/registry",
+                    &[
+                        Member::new("entries"),
+                        Member::new("firstRegistry"),
+                        Member::new("secondRegistry"),
+                        Member::new("observed"),
+                        Member::new("mutate"),
+                    ],
+                    &["mutate(firstRegistry);"],
+                ),
+                logical_module_with_anon(
+                    "values/later",
+                    &[Member::new("later")],
+                    &[
+                        "later = 42;",
+                        "console.log(observed, secondRegistry.read.value);",
+                    ],
+                ),
+            ],
+        ),
+        &["values/registry", "values/later"],
+        &[],
+    );
+    let colocated = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module_with_anon(
+                "values/all",
+                &[
+                    Member::new("entries"),
+                    Member::new("firstRegistry"),
+                    Member::new("secondRegistry"),
+                    Member::new("later"),
+                    Member::new("observed"),
+                    Member::new("mutate"),
+                ],
+                &[
+                    "mutate(firstRegistry);",
+                    "later = 42;",
+                    "console.log(observed, secondRegistry.read.value);",
+                ],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&colocated, "0 0\n");
+    assert_all_emitted_js_checks(&colocated);
+}

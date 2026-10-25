@@ -178,6 +178,10 @@ The argument expression is still evaluated normally. When the proof applies,
 callbacks reachable through the source objects are retained on the abstract
 result rather than invoked or globally published; later member calls and opaque
 consumers continue through ordinary callback-effect analysis.
+The abstract result conservatively retains the source array identity as a
+route to its entry aliases. Since Object.fromEntries stores the mapped entry
+objects by reference, later writes through the result can taint the original
+entry graph and disable another construction proof.
 
 This relies on the standard Array iterator and `Array.prototype.map` reading
 the dense own data elements and storing each mapper result without invoking

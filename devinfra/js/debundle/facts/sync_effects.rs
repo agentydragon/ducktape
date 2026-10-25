@@ -4014,7 +4014,12 @@ impl Executor<'_> {
         if actual_entries != &expected_entries {
             return None;
         }
-        Some(self.callback_values(&source_values))
+        let mut retained_values = self.callback_values(&source_values);
+        // Conservatively retain the source array as a route to its aliased
+        // entry objects, so later writes through the returned registry can
+        // taint the original entry graph.
+        retained_values.extend(source_values);
+        Some(retained_values)
     }
 
     fn callbacks_in_from_entries_source(
