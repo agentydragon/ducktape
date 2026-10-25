@@ -66,6 +66,70 @@ fn metadata_only_applications_keep_methods_deferred_and_metadata_visible() {
 }
 
 #[test]
+fn unpublished_metadata_target_stays_deferred_after_opaque_call() {
+    let source = source_with_opaque_write();
+    let mut claimed = modules(MemberEffect::TypescriptMetadataDecorateHelper);
+    claimed.push(logical_module(
+        "values/dynamic",
+        &[Member::new("dynamic"), Member::new("prefix")],
+    ));
+    let fixture = run_fixture(
+        FixtureOpts::new(&source, claimed).with_extra_chunks(&[("static/peer", PROVIDER)]),
+    );
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/controllers/controller.js",
+        &["Controller"],
+        &["later"],
+    );
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/values/dynamic.js",
+        &["dynamic"],
+        &["later"],
+    );
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/values/later.js",
+        &["later"],
+        &["dynamic"],
+    );
+    assert_preserved_entry_output(&fixture, "42 read,record\n");
+}
+
+#[test]
+fn published_metadata_target_keeps_early_method_read() {
+    let source = source_with_opaque_write().replace(
+        "const prefix = new globalThis.Error();",
+        "globalThis.saved = Controller;\nconst prefix = new globalThis.Error();",
+    );
+    let mut claimed = modules(MemberEffect::TypescriptMetadataDecorateHelper);
+    claimed.push(logical_module(
+        "values/dynamic",
+        &[Member::new("dynamic"), Member::new("prefix")],
+    ));
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(&source, claimed).with_extra_chunks(&[("static/peer", PROVIDER)]),
+        &["values/dynamic", "values/later"],
+        &[],
+    );
+}
+
+fn source_with_opaque_write() -> String {
+    SOURCE
+        .replace(
+            "const later = 42;",
+            r#"const prefix = new globalThis.Error();
+const dynamic = ((object) => {
+  object[(object.key = 0)] = "value";
+  return 42;
+})({});
+const later = dynamic;"#,
+        )
+        .replace("export { Controller, later };\n", "")
+}
+
+#[test]
 fn target_local_mutation_alone_does_not_assert_callback_timing() {
     let peers = [("static/peer", PROVIDER)];
     expect_atomic_conflict_rejection(
