@@ -5006,7 +5006,8 @@ impl Executor<'_> {
                 || !(fact.purity.is_pure()
                     && (fact.declares_direct_function
                         || matches!(fact.kind, StatementKind::ClassDecl)
-                        || self.closed_callback_factory_result(fact))))
+                        || self.closed_callback_factory_result(fact)
+                        || self.closed_local_record_factory_result(fact))))
         {
             roots.insert(fact.ordinal);
         }
@@ -5060,6 +5061,111 @@ impl Executor<'_> {
             && call.kind == CallKind::Call
             && !call.has_spread
             && CallSite::from(call.span) == *site
+    }
+
+    /// A return-only local function can put its arguments into a fresh
+    /// ordinary record without publishing or calling them. The initializer
+    /// still runs normally; only its result owner's speculative root is
+    /// omitted until a later read, call, write, or export exposes that value.
+    fn closed_local_record_factory_result(&self, fact: &StatementFacts) -> bool {
+        if !matches!(fact.kind, StatementKind::VarDecl)
+            || !fact.purity.is_pure()
+            || fact.declared.len() != 1
+            || self.reachability.incomplete
+            || !self.index.dynamic_scope_owners.is_empty()
+            || self.index.opaque_top.contains(&fact.ordinal)
+            || !self.index.top_property_writes[fact.ordinal.0].is_empty()
+            || !self.index.top_member_value_writes[fact.ordinal.0].is_empty()
+            || !self.index.top_callback_result_writes[fact.ordinal.0].is_empty()
+            || !self.index.top_exported_values[fact.ordinal.0].is_empty()
+        {
+            return false;
+        }
+        let [(binding, ValueExpr::Call(callee, args, site))] =
+            self.index.top_assignments[fact.ordinal.0].as_slice()
+        else {
+            return false;
+        };
+        let [call] = self.index.top_calls[fact.ordinal.0].as_slice() else {
+            return false;
+        };
+        let ValueExpr::Binding(factory) = callee.as_ref() else {
+            return false;
+        };
+        let Some(&key) = self.index.hoisted_bindings.get(factory) else {
+            return false;
+        };
+        if !fact.declared.contains(binding)
+            || !self.index.top_definite_initializers[fact.ordinal.0].contains(binding)
+            || self
+                .flow
+                .values_of_binding(factory)
+                .iter()
+                .ne([ValueOrigin::Function(key)])
+            || call.kind != CallKind::Call
+            || call.has_spread
+            || CallSite::from(call.span) != *site
+            || !args.iter().all(|arg| {
+                matches!(
+                    arg,
+                    ValueExpr::Origin(ValueOrigin::Function(_)) | ValueExpr::NonCallable
+                )
+            })
+        {
+            return false;
+        }
+        let Some(callable) = self.index.callables.get(&key) else {
+            return false;
+        };
+        if callable.opaque
+            || callable.generator
+            || self.index.async_callables.contains(&key)
+            || callable.may_fall_through
+            || !callable.calls.is_empty()
+            || !callable.rebinds.is_empty()
+            || !callable.member_writes.is_empty()
+            || !callable.member_value_writes.is_empty()
+            || !callable.callback_result_writes.is_empty()
+            || callable.dynamic_property_effect
+            || !callable.escaped_bindings.is_empty()
+            || !callable.namespace_escape_values.is_empty()
+            || callable
+                .params
+                .iter()
+                .any(|param| param.binding.is_none() || param.default.is_some())
+            || callable.local_assignments.iter().any(|(id, value)| {
+                !callable.local_functions.contains(id)
+                    || !matches!(value, ValueExpr::Origin(ValueOrigin::Function(_)))
+            })
+            || callable.returns.len() != 1
+            || !matches!(callable.returns[0], ValueExpr::ObjectLiteral(..))
+        {
+            return false;
+        }
+        let allowed: BTreeSet<_> = callable
+            .params
+            .iter()
+            .filter_map(|param| param.binding.clone())
+            .chain(callable.local_functions.iter().cloned())
+            .collect();
+        callable.reads.is_subset(&allowed)
+            && self.closed_local_record_value(&callable.returns[0], &allowed)
+    }
+
+    fn closed_local_record_value(&self, value: &ValueExpr, allowed: &BTreeSet<Id>) -> bool {
+        match value {
+            ValueExpr::ObjectLiteral(key, properties) => {
+                self.index.plain_data_objects.contains(key)
+                    && properties.iter().all(|(name, value)| {
+                        name.is_some() && self.closed_local_record_value(value, allowed)
+                    })
+            }
+            ValueExpr::Binding(id) => allowed.contains(id),
+            ValueExpr::Origin(ValueOrigin::Function(_))
+            | ValueExpr::NonCallable
+            | ValueExpr::Undefined => true,
+            _ => false,
+        }
     }
 
     fn inert_class_heritage_binding<'a>(&'a self, fact: &StatementFacts) -> Option<&'a Id> {
