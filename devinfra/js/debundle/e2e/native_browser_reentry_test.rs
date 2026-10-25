@@ -275,6 +275,293 @@ fn confined_local_global_alias_is_not_a_publication() {
 }
 
 #[test]
+fn private_frozen_namespace_does_not_publish_its_callback() {
+    let facade = "const facade = Object.freeze(Object.defineProperty({__proto__: null, callback: () => later}, Symbol.toStringTag, {value: 'Module'}));";
+    let source = format!(
+        "{facade}\nconst startup = new globalThis.Error();\nconst later = 42;\nconsole.log(facade.callback(), later);\n"
+    );
+    let mut colocated = FixtureOpts::new(
+        &source,
+        vec![logical_module(
+            "state/all",
+            &[
+                Member::new("facade"),
+                Member::new("startup"),
+                Member::new("later"),
+            ],
+        )],
+    );
+    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    assert_preserved_entry_output(&run_fixture(colocated), "42 42\n");
+
+    let mut split = FixtureOpts::new(
+        &source,
+        vec![
+            logical_module("state/facade", &[Member::new("facade")]),
+            logical_module("startup", &[Member::new("startup")]),
+            logical_module("state/later", &[Member::new("later")]),
+        ],
+    );
+    split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    assert_preserved_entry_output(&run_fixture(split), "42 42\n");
+}
+
+#[test]
+fn consuming_a_frozen_namespace_still_invokes_its_callback() {
+    let facade = "const facade = Object.freeze(Object.defineProperty({__proto__: null, callback: () => later}, Symbol.toStringTag, {value: 'Module'}));";
+    let source = format!(
+        "let later = 0;\n{facade}\nconst startup = facade.callback();\nlater = 42;\nconsole.log(startup, later);\n"
+    );
+    let mut colocated = FixtureOpts::new(
+        &source,
+        vec![logical_module_with_anon(
+            "state/all",
+            &[
+                Member::new("facade"),
+                Member::new("startup"),
+                Member::new("later"),
+            ],
+            &["later = 42;"],
+        )],
+    );
+    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    assert_preserved_entry_output(&run_fixture(colocated), "0 42\n");
+
+    let mut split = FixtureOpts::new(
+        &source,
+        vec![
+            logical_module("state/facade", &[Member::new("facade")]),
+            logical_module("startup", &[Member::new("startup")]),
+            logical_module_with_anon("state/later", &[Member::new("later")], &["later = 42;"]),
+        ],
+    );
+    split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    expect_atomic_conflict_rejection(split, &["startup", "state/later"], &[]);
+}
+
+#[test]
+fn opaque_consumer_of_frozen_namespace_keeps_stored_callback() {
+    let consumer =
+        "globalThis.consume = value => { globalThis.observed = value.callback(); return 1; };";
+    let facade = "const facade = Object.freeze(Object.defineProperty({__proto__: null, callback: () => later}, Symbol.toStringTag, {value: 'Module'}));";
+    let source = format!(
+        "let later = 0;\n{consumer}\n{facade}\nconst startup = globalThis.consume(facade);\nlater = 42;\nconsole.log(globalThis.observed, later);\n"
+    );
+    let mut colocated = FixtureOpts::new(
+        &source,
+        vec![logical_module_with_anon(
+            "state/all",
+            &[
+                Member::new("facade"),
+                Member::new("startup"),
+                Member::new("later"),
+            ],
+            &[consumer, "later = 42;"],
+        )],
+    );
+    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    assert_preserved_entry_output(&run_fixture(colocated), "0 42\n");
+
+    let mut split = FixtureOpts::new(
+        &source,
+        vec![
+            logical_module_with_anon("state/facade", &[Member::new("facade")], &[consumer]),
+            logical_module("startup", &[Member::new("startup")]),
+            logical_module_with_anon("state/later", &[Member::new("later")], &["later = 42;"]),
+        ],
+    );
+    split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    expect_atomic_conflict_rejection(split, &["startup", "state/later"], &[]);
+}
+
+#[test]
+fn unsupported_frozen_namespace_shapes_keep_callback_reentry() {
+    for (setup, facade) in [
+        (
+            "const source = {get callback() { globalThis.observed = later; return () => later; }};",
+            "const facade = Object.freeze(Object.defineProperty({__proto__: null, ...source}, Symbol.toStringTag, {value: 'Module'}));",
+        ),
+        (
+            "const source = new Proxy({callback: () => later}, {defineProperty(target, key, descriptor) { globalThis.observed = later; return Reflect.defineProperty(target, key, descriptor); }});",
+            "const facade = Object.freeze(Object.defineProperty(source, Symbol.toStringTag, {value: 'Module'}));",
+        ),
+    ] {
+        let source = format!(
+            "let later = 0;\n{setup}\n{facade}\nconst startup = new globalThis.Error();\nlater = 42;\nconsole.log(globalThis.observed, later);\n"
+        );
+        let mut colocated = FixtureOpts::new(
+            &source,
+            vec![logical_module_with_anon(
+                "state/all",
+                &[
+                    Member::new("source"),
+                    Member::new("facade"),
+                    Member::new("startup"),
+                    Member::new("later"),
+                ],
+                &["later = 42;"],
+            )],
+        );
+        colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+        assert_preserved_entry_output(&run_fixture(colocated), "0 42\n");
+
+        let mut split = FixtureOpts::new(
+            &source,
+            vec![
+                logical_module(
+                    "state/facade",
+                    &[Member::new("source"), Member::new("facade")],
+                ),
+                logical_module("startup", &[Member::new("startup")]),
+                logical_module_with_anon("state/later", &[Member::new("later")], &["later = 42;"]),
+            ],
+        );
+        split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+        expect_atomic_conflict_rejection(split, &["state/facade", "state/later"], &[]);
+    }
+}
+
+#[test]
+fn changed_frozen_namespace_intrinsic_keeps_early_callback_effects() {
+    let source = "let later = 0;
+const Object = {defineProperty(value) { return value; }, freeze(value) { globalThis.observed = value.callback(); return value; }};
+const facade = Object.freeze(Object.defineProperty({__proto__: null, callback: () => later}, Symbol.toStringTag, {value: 'Module'}));
+const startup = new globalThis.Error();
+later = 42;
+console.log(globalThis.observed, later);
+";
+    let mut colocated = FixtureOpts::new(
+        source,
+        vec![logical_module_with_anon(
+            "state/all",
+            &[
+                Member::new("Object"),
+                Member::new("facade"),
+                Member::new("startup"),
+                Member::new("later"),
+            ],
+            &["later = 42;"],
+        )],
+    );
+    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    assert_preserved_entry_output(&run_fixture(colocated), "0 42\n");
+
+    let mut split = FixtureOpts::new(
+        source,
+        vec![
+            logical_module(
+                "state/facade",
+                &[Member::new("Object"), Member::new("facade")],
+            ),
+            logical_module("startup", &[Member::new("startup")]),
+            logical_module_with_anon("state/later", &[Member::new("later")], &["later = 42;"]),
+        ],
+    );
+    split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    expect_atomic_conflict_rejection(split, &["state/facade", "state/later"], &[]);
+}
+
+#[test]
+fn replaced_frozen_namespace_intrinsics_keep_early_reads() {
+    let facade = "const facade = Object.freeze(Object.defineProperty({__proto__: null, callback: () => later}, Symbol.toStringTag, {value: 'Module'}));";
+    for (saved, mutate, restore) in [
+        (
+            "const saved = Object.freeze;",
+            "Object.freeze = value => { globalThis.observed = value.callback(); return saved(value); };",
+            "Object.freeze = saved;",
+        ),
+        (
+            "const saved = Object.defineProperty;",
+            "Object.defineProperty = (value, key, descriptor) => { globalThis.observed = value.callback(); return saved(value, key, descriptor); };",
+            "Object.defineProperty = saved;",
+        ),
+        (
+            "const saved = globalThis.Symbol;",
+            "globalThis.Symbol = new Proxy(saved, {get(target, key) { if (key === 'toStringTag') globalThis.observed = later; return Reflect.get(target, key); }});",
+            "globalThis.Symbol = saved;",
+        ),
+    ] {
+        let source = format!(
+            "let later = 0;\n{saved}\n{mutate}\n{facade}\n{restore}\nconst startup = new globalThis.Error();\nlater = 42;\nconsole.log(globalThis.observed, later);\n"
+        );
+        let mut colocated = FixtureOpts::new(
+            &source,
+            vec![logical_module_with_anon(
+                "state/all",
+                &[
+                    Member::new("saved"),
+                    Member::new("facade"),
+                    Member::new("startup"),
+                    Member::new("later"),
+                ],
+                &[mutate, restore, "later = 42;"],
+            )],
+        );
+        colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+        assert_preserved_entry_output(&run_fixture(colocated), "0 42\n");
+
+        let mut split = FixtureOpts::new(
+            &source,
+            vec![
+                logical_module_with_anon(
+                    "state/facade",
+                    &[Member::new("saved"), Member::new("facade")],
+                    &[mutate, restore],
+                ),
+                logical_module("startup", &[Member::new("startup")]),
+                logical_module_with_anon("state/later", &[Member::new("later")], &["later = 42;"]),
+            ],
+        );
+        split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+        expect_atomic_conflict_rejection(split, &["state/facade", "state/later"], &[]);
+    }
+}
+
+#[test]
+fn aliased_symbol_replacement_keeps_early_read() {
+    let mutate = "root.Symbol = new Proxy(saved, {get(target, key) { if (key === 'toStringTag') globalThis.observed = later; return Reflect.get(target, key); }});";
+    let restore = "root.Symbol = saved;";
+    let source = format!(
+        "let later = 0;\nconst root = globalThis;\nconst saved = root.Symbol;\n{mutate}\nconst facade = Object.freeze(Object.defineProperty({{__proto__: null, callback: () => later}}, Symbol.toStringTag, {{value: 'Module'}}));\n{restore}\nconst startup = new globalThis.Error();\nlater = 42;\nconsole.log(globalThis.observed, later);\n"
+    );
+    let mut colocated = FixtureOpts::new(
+        &source,
+        vec![logical_module_with_anon(
+            "state/all",
+            &[
+                Member::new("root"),
+                Member::new("saved"),
+                Member::new("facade"),
+                Member::new("startup"),
+                Member::new("later"),
+            ],
+            &[mutate, restore, "later = 42;"],
+        )],
+    );
+    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    assert_preserved_entry_output(&run_fixture(colocated), "0 42\n");
+
+    let mut split = FixtureOpts::new(
+        &source,
+        vec![
+            logical_module_with_anon(
+                "state/facade",
+                &[
+                    Member::new("root"),
+                    Member::new("saved"),
+                    Member::new("facade"),
+                ],
+                &[mutate, restore],
+            ),
+            logical_module("startup", &[Member::new("startup")]),
+            logical_module_with_anon("state/later", &[Member::new("later")], &["later = 42;"]),
+        ],
+    );
+    split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    expect_atomic_conflict_rejection(split, &["state/facade", "state/later"], &[]);
+}
+
+#[test]
 fn local_global_alias_must_not_escape_its_one_shot_iife() {
     for setup in [
         "(function repeat() { const host = globalThis; globalThis.saved = repeat; void host.Error; })();",

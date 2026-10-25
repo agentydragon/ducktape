@@ -573,6 +573,16 @@ they do not assert that every reported dependency executes synchronously.
 
 ## Native collection callback effects
 
+An unexported `const` facade built by the exact nested
+`Object.freeze(Object.defineProperty({__proto__: null, ...ownData},
+Symbol.toStringTag, {value: primitive}))` shape retains its stored values
+without invoking them. The `Object` and `Symbol` intrinsics must be intact;
+keys and descriptor fields must be static own data, with no spread, accessor,
+computed key, or intervening call. The analyzer keeps the facade's object
+identity and property values, so a later call or publication still exposes its
+stored callbacks. The proof changes only construction-time callback reachability;
+ordinary eager dependencies, effects, and ordering remain.
+
 Bounded synchronous analysis can execute a known callback for direct one-callback
 `forEach`, `filter`, and `map` calls over a retained untainted dense ordinary
 array. It passes actual retained element capabilities and preserves callback
