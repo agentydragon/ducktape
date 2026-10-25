@@ -505,11 +505,42 @@ fn function_body_reads_are_lazy() {
     assert_eq!(facts.len(), 2);
     // f() declares "f"; its body reference to X is lazy.
     assert_eq!(facts[0].declared, BTreeSet::from([test_id("f")]));
+    assert!(!facts[0].reads.eager.contains(&test_id("f")));
     assert!(!facts[0].reads.eager.contains(&test_id("X")));
     assert_eq!(facts[0].kind, StatementKind::FnDecl);
     // Y declares "Y"; init is `1` (no reads).
     assert_eq!(facts[1].declared, BTreeSet::from([test_id("Y")]));
     assert!(facts[1].reads.eager.is_empty());
+}
+
+#[test]
+fn function_name_declarations_do_not_read_their_own_binding() {
+    for source in [
+        "function recurse(value = seed) { return recurse(value); }",
+        "export function recurse(value = seed) { return recurse(value); }",
+        "export default function recurse(value = seed) { return recurse(value); }",
+    ] {
+        let facts = analyze_facts(&parse(source));
+        assert_eq!(facts.len(), 1, "{source}");
+        assert!(facts[0].declares_direct_function, "{source}");
+        assert_eq!(facts[0].declared, BTreeSet::from([test_id("recurse")]));
+        assert!(
+            !facts[0].reads.eager.contains(&test_id("recurse")),
+            "{source}"
+        );
+        assert!(!facts[0].reads.eager.contains(&test_id("seed")), "{source}");
+        assert!(
+            facts[0].reads.lazy.contains(&test_id("recurse")),
+            "{source}"
+        );
+        assert!(facts[0].reads.lazy.contains(&test_id("seed")), "{source}");
+    }
+
+    let facts = analyze_facts(&parse(
+        "const outer = function recurse() { return recurse(); };",
+    ));
+    assert!(!facts[0].reads.eager.contains(&test_id("recurse")));
+    assert!(facts[0].reads.lazy.contains(&test_id("recurse")));
 }
 
 #[test]
