@@ -872,8 +872,11 @@ calls and publication can still expose stored callbacks. Writes to static
 `this` properties in this checked constructor are writes to a fresh instance;
 they do not publish their values through an earlier opaque call. A same-name
 prototype getter rejects this path because assignment would throw. Reflective access to
-an instance invalidates later construction of that class. Other constructor
-and member calls remain unknown and take the conservative path. Generator calls
+an instance invalidates later construction of that class. A direct zero-argument
+`new` of a constructorless, fieldless class only allocates an instance, so an
+escaped class identity does not make that allocation run a method or accessor.
+Unknown or reassigned callee alternatives retain the opaque call path. Other
+constructor and member calls remain unknown and take the conservative path. Generator calls
 also take that path because their parameter defaults execute at call time
 while their bodies wait for iteration; spread arguments may likewise execute
 iterator code before the callee runs.
