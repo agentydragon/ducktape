@@ -106,6 +106,7 @@ TENANTS = {
     "flux-system",  # seaweedfs/pr_visuals_bucket.py
     "forgejo",  # forgejo/app.py, forgejo/db.py
     "gatus",  # gatus/app.py
+    "gitlab-spike",  # gitlab_spike/dependencies.py
     "haku-console",  # haku/database.py
     "haku-mailbox",  # haku/mailbox.py
     "home-assistant",  # home_assistant/backup.py

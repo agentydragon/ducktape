@@ -98,6 +98,46 @@ spec:
       name: forgejo
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/generated/gitlab-spike/namespace/**"
+          to: "@artifact/cluster/generated/gitlab-spike/namespace/"
+      name: gitlab-spike-namespace
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/cluster/generated/gitlab-spike/dependencies/**"
+          to: "@artifact/cluster/generated/gitlab-spike/dependencies/"
+      name: gitlab-spike-dependencies
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/cluster/generated/gitlab-spike/app/**"
+          to: "@artifact/cluster/generated/gitlab-spike/app/"
+      name: gitlab-spike
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/cluster/generated/gitlab-spike/bootstrap/**"
+          to: "@artifact/cluster/generated/gitlab-spike/bootstrap/"
+      name: gitlab-spike-bootstrap
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/cluster/generated/gitlab-spike/gitops/**"
+          to: "@artifact/cluster/generated/gitlab-spike/gitops/"
+      name: gitlab-spike-gitops
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/cluster/generated/gitlab-spike/runner/**"
+          to: "@artifact/cluster/generated/gitlab-spike/runner/"
+      name: gitlab-spike-runner
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/cluster/generated/gitlab-spike/delivery/**"
+          to: "@artifact/cluster/generated/gitlab-spike/delivery/"
+      name: gitlab-spike-delivery
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/cluster/generated/gitlab-spike/benchmark/**"
+          to: "@artifact/cluster/generated/gitlab-spike/benchmark/"
+      name: gitlab-spike-benchmark
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/k8s/forgejo-images/**"
           to: "@artifact/cluster/k8s/forgejo-images/"
       name: forgejo-images
@@ -878,6 +918,11 @@ spec:
         - from: "@repo/tf/gitops/forgejo-images/**"
           to: "@artifact/tf/gitops/forgejo-images/"
       name: tf-gitops-forgejo-images
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/tf/gitops/gitlab-spike/**"
+          to: "@artifact/tf/gitops/gitlab-spike/"
+      name: tf-gitops-gitlab-spike
       originRevision: "@repo"
     - copy:
         - from: "@repo/tf/gitops/litellm-keys/**"

@@ -175,7 +175,8 @@ class PrivateBucket(Construct):
     """Bucket `name` in `tenant`, read-write for the S3Identity of the same name beside it, where the
     S3Credentials' `identityRef` resolves. The operator writes that identity's key pair into Secret
     `<name>-s3-credentials`, or `secret_name` where a live consumer already reads another name, under
-    `key_fields` (None: the operator's `accessKey`/`secretKey`). A `tenant` outside the SeaweedFS
+    `key_fields` (None: the operator's `accessKey`/`secretKey`). Additional identities can be
+    granted read/write access for a backup process that spans several private buckets. A `tenant` outside the SeaweedFS
     namespace must be in `cluster.TENANTS`. Everything Retains.
 
     A live Secret keeps its name and `key_fields`: under a new name or keys the operator finds no key
@@ -192,6 +193,7 @@ class PrivateBucket(Construct):
         description: str,
         secret_name: str | None = None,
         key_fields: SecretKeyFields | None = AWS_ENV_KEY_FIELDS,
+        additional_read_write_identities: Sequence[str] = (),
     ) -> None:
         super().__init__(scope, id)
         secret = SecretRef(namespace=tenant, name=secret_name or f"{name}-s3-credentials")
@@ -200,7 +202,7 @@ class PrivateBucket(Construct):
             "bucket",
             name=name,
             namespace=tenant,
-            access=[BucketAccess.read_write(name)],
+            access=[BucketAccess.read_write(identity) for identity in (name, *additional_read_write_identities)],
             adopt_existing=adopt_existing,
             description=description,
         )

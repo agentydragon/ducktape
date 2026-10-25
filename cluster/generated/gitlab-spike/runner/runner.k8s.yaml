@@ -1,0 +1,183 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gitlab-spike-job
+  namespace: gitlab-spike-ci
+automountServiceAccountToken: false
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: gitlab-spike-runner-manager
+  namespace: gitlab-spike-ci
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: gitlab-spike
+      toPorts:
+        - ports:
+            - port: "8181"
+              protocol: TCP
+            - port: "5000"
+              protocol: TCP
+    - toEntities:
+        - remote-node
+        - host
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+          serverNames:
+            - gitlab-spike.allegedly.works
+            - registry-gitlab-spike.allegedly.works
+            - flux-webhook.allegedly.works
+    - toEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+            - port: "6443"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app: gitlab-spike-runner
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: gitlab-spike-runner-jobs
+  namespace: gitlab-spike-ci
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: gitlab-spike
+      toPorts:
+        - ports:
+            - port: "8181"
+              protocol: TCP
+            - port: "5000"
+              protocol: TCP
+    - toEntities:
+        - remote-node
+        - host
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+          serverNames:
+            - gitlab-spike.allegedly.works
+            - registry-gitlab-spike.allegedly.works
+            - flux-webhook.allegedly.works
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: gitlab-spike-job
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: gitlab-spike-runner
+  namespace: gitlab-spike-ci
+spec:
+  interval: 24h
+  url: https://charts.gitlab.io
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: gitlab-spike-runner
+  namespace: gitlab-spike-ci
+spec:
+  chart:
+    spec:
+      chart: gitlab-runner
+      sourceRef:
+        kind: HelmRepository
+        name: gitlab-spike-runner
+        namespace: gitlab-spike-ci
+      version: 0.94.1
+  interval: 15m
+  timeout: 10m
+  values:
+    checkInterval: 5
+    concurrent: 2
+    gitlabUrl: http://gitlab-spike-webservice-default.gitlab-spike.svc:8181
+    nodeSelector:
+      topology.kubernetes.io/zone: hil-ovh
+    rbac:
+      clusterWideAccess: false
+      create: true
+    resources:
+      limits:
+        memory: 512Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+    runners:
+      config: |
+        [[runners]]
+          executor = "kubernetes"
+          clone_url = "http://gitlab-spike-webservice-default.gitlab-spike.svc:8181"
+          [runners.kubernetes]
+            namespace = "gitlab-spike-ci"
+            image = "alpine:3.23.3"
+            privileged = false
+            service_account = "gitlab-spike-job"
+            automount_service_account_token = false
+            cpu_request = "250m"
+            cpu_limit = "2"
+            memory_request = "256Mi"
+            memory_limit = "2Gi"
+            helper_cpu_request = "100m"
+            helper_memory_request = "128Mi"
+            helper_memory_limit = "512Mi"
+            poll_timeout = 180
+            [runners.kubernetes.node_selector]
+              "topology.kubernetes.io/zone" = "hil-ovh"
+            [runners.kubernetes.pod_labels]
+              "app.kubernetes.io/name" = "gitlab-spike-job"
+            [runners.kubernetes.pod_security_context]
+              run_as_non_root = true
+              run_as_user = 1000
+              fs_group = 1000
+            [runners.kubernetes.build_container_security_context]
+              allow_privilege_escalation = false
+              [runners.kubernetes.build_container_security_context.capabilities]
+                drop = ["ALL"]
+            [runners.kubernetes.helper_container_security_context]
+              allow_privilege_escalation = false
+              [runners.kubernetes.helper_container_security_context.capabilities]
+                drop = ["ALL"]
+      secret: gitlab-spike-runner
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+          - ALL
+      readOnlyRootFilesystem: false
+      runAsNonRoot: true
+    serviceAccount:
+      create: true
+      name: gitlab-spike-runner

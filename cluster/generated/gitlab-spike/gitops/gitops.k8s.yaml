@@ -1,0 +1,44 @@
+apiVersion: infra.contrib.fluxcd.io/v1alpha2
+kind: Terraform
+metadata:
+  name: gitlab-spike
+  namespace: flux-system
+spec:
+  approvePlan: auto
+  backendConfig:
+    customConfiguration: |
+      backend "pg" {
+        conn_str    = "postgres://tfstate@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate?sslmode=disable"
+        schema_name = "gitlab_spike"
+      }
+  interval: 15m
+  path: ./tf/gitops/gitlab-spike
+  refreshBeforeApply: true
+  runnerPodTemplate:
+    spec:
+      env:
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: tofu-state-db-credentials
+      resources:
+        requests:
+          cpu: 250m
+          memory: 512Mi
+  serviceAccountName: tf-runner
+  sourceRef:
+    kind: ExternalArtifact
+    name: tf-gitops-gitlab-spike
+    namespace: ducktape-flux
+  vars:
+    - name: human_ssh_keys
+      value:
+        atlas:
+          key: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIG6/fkFmt/yOWY0s+PHulmGoTh8kll0WHoL8NXWluTn/ agentydragon@atlas-forgejo
+        iguana:
+          key: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMZZ91cQfULMM/rcBcYGaJ4HSiGeD8/G140ElIToYvIV agentydragon@iguana-forgejo
+        rugged:
+          key: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILlk0/g/0s5plFxzC8V/G8IHlTmlX+0ZYqIPr5+Tglcp agentydragon@rugged-forgejo
+        wyrm2:
+          key: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKp26ICwuhnkiPNqhFjly2k/iW5vs7n5Rq27imnrpK/e agentydragon@wyrm2-forgejo

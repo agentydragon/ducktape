@@ -1,0 +1,122 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gitlab-spike-bootstrap
+  namespace: gitlab-spike
+automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: gitlab-spike-bootstrap
+  namespace: gitlab-spike
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - pods/exec
+    verbs:
+      - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: rolebindingc87ffd17ec61ca2f892d31c866bd93e693ea18c866
+  namespace: gitlab-spike
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: gitlab-spike-bootstrap
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: gitlab-spike-bootstrap
+    namespace: gitlab-spike
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gitlab-spike-bootstrap-script
+  namespace: gitlab-spike
+data:
+  bootstrap.sh: |
+    #!/bin/sh
+    set -eu
+    kubectl -n gitlab-spike wait --for=condition=Ready pod -l app=toolbox,release=gitlab-spike --timeout=600s
+    pod=$(kubectl -n gitlab-spike get pods -l app=toolbox,release=gitlab-spike -o jsonpath='{.items[0].metadata.name}')
+    kubectl -n gitlab-spike exec "$pod" -c toolbox -- gitlab-rails runner /opt/spike-bootstrap/main.rb
+immutable: false
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/force: enabled
+  name: gitlab-spike-bootstrap-v1
+  namespace: gitlab-spike
+spec:
+  activeDeadlineSeconds: 900
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        cdk8s.io/metadata.addr: gitlab-spike-bootstrap-job-c8aa62ed
+    spec:
+      automountServiceAccountToken: true
+      containers:
+        - command:
+            - /bin/sh
+            - /scripts/bootstrap.sh
+          env:
+            - name: HOME
+              value: /tmp
+          image: registry.gitlab.com/gitlab-org/build/cng/kubectl:v19.5.1
+          imagePullPolicy: Always
+          name: bootstrap
+          resources:
+            limits:
+              memory: 256Mi
+            requests:
+              cpu: 100m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+          volumeMounts:
+            - mountPath: /scripts
+              name: configmap-gitlab-spike-bootstrap-script
+            - mountPath: /tmp
+              name: tmp
+      dnsPolicy: ClusterFirst
+      hostNetwork: false
+      restartPolicy: OnFailure
+      securityContext:
+        fsGroupChangePolicy: Always
+        runAsGroup: 65532
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: gitlab-spike-bootstrap
+      setHostnameAsFQDN: false
+      shareProcessNamespace: false
+      terminationGracePeriodSeconds: 30
+      volumes:
+        - configMap:
+            name: gitlab-spike-bootstrap-script
+          name: configmap-gitlab-spike-bootstrap-script
+        - emptyDir: {}
+          name: tmp

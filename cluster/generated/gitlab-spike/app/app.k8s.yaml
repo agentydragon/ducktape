@@ -1,0 +1,281 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: gitlab-spike
+  namespace: gitlab-spike
+spec:
+  interval: 24h
+  url: https://charts.gitlab.io
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: gitlab-spike
+  namespace: gitlab-spike
+spec:
+  chart:
+    spec:
+      chart: gitlab
+      sourceRef:
+        kind: HelmRepository
+        name: gitlab-spike
+        namespace: gitlab-spike
+      version: 10.5.1
+  install:
+    remediation:
+      retries: -1
+  interval: 15m
+  timeout: 30m
+  upgrade:
+    remediation:
+      retries: 3
+  values:
+    gitlab:
+      gitaly:
+        affinity:
+          nodeAffinity:
+            key: kubernetes.io/hostname
+            values:
+              - ovh-ns103656
+              - ovh-ns103711
+              - ovh-ns102453
+          podAntiAffinity:
+            topologyKey: kubernetes.io/hostname
+        antiAffinity: hard
+        cgroups:
+          enabled: false
+        nodeAffinity: hard
+        persistence:
+          accessMode: ReadWriteOnce
+          enabled: true
+          size: 50Gi
+          storageClass: piraeus-hdd-local
+      praefect:
+        affinity:
+          podAntiAffinity:
+            topologyKey: kubernetes.io/hostname
+        antiAffinity: hard
+        replicas: 3
+      toolbox:
+        backups:
+          objectStorage:
+            backend: s3
+            config:
+              key: config
+              secret: gitlab-spike-backups-s3cfg
+        extraVolumeMounts: |
+          - name: spike-bootstrap
+            mountPath: /opt/spike-bootstrap
+            readOnly: true
+          - name: spike-token
+            mountPath: /opt/spike-token
+            readOnly: true
+        extraVolumes: |
+          - name: spike-bootstrap
+            configMap:
+              name: gitlab-spike-bootstrap
+          - name: spike-token
+            secret:
+              secretName: gitlab-bootstrap-token
+      webservice:
+        maxReplicas: 2
+        minReplicas: 2
+    gitlab-runner:
+      install: false
+    global:
+      affinity:
+        nodeAffinity:
+          key: topology.kubernetes.io/zone
+          values:
+            - hil-ovh
+      appConfig:
+        artifacts:
+          bucket: gitlab-spike-artifacts
+          connection:
+            key: connection
+            secret: gitlab-spike-artifacts-connection
+          enabled: true
+        backups:
+          bucket: gitlab-spike-backups
+          objectStorage:
+            backend: s3
+          tmpBucket: gitlab-spike-backup-tmp
+        initialDefaults:
+          signupEnabled: false
+        lfs:
+          bucket: gitlab-spike-lfs
+          connection:
+            key: connection
+            secret: gitlab-spike-lfs-connection
+          enabled: true
+        object_store:
+          enabled: false
+        omniauth:
+          allowSingleSignOn: false
+          blockAutoCreatedUsers: true
+          enabled: true
+          providers:
+            - key: provider
+              secret: gitlab-spike-oidc
+        packages:
+          bucket: gitlab-spike-packages
+          connection:
+            key: connection
+            secret: gitlab-spike-packages-connection
+          enabled: true
+        uploads:
+          bucket: gitlab-spike-uploads
+          connection:
+            key: connection
+            secret: gitlab-spike-uploads-connection
+          enabled: true
+      gatewayApi:
+        configureCertmanager: false
+        configureEnvoy: false
+        enabled: false
+        installEnvoy: false
+      hosts:
+        domain: allegedly.works
+        gitlab:
+          name: gitlab-spike.allegedly.works
+        registry:
+          name: registry-gitlab-spike.allegedly.works
+        ssh: gitlab-spike.allegedly.works
+      ingress:
+        configureCertmanager: false
+        enabled: false
+      initialRootPassword:
+        key: password
+        secret: gitlab-root-password
+      kas:
+        enabled: false
+      nodeAffinity: hard
+      praefect:
+        dbSecret:
+          key: password
+          secret: praefect-db-app
+        enabled: true
+        psql:
+          dbName: praefect
+          host: praefect-db-rw.gitlab-spike.svc
+          port: 5432
+          sslMode: disable
+          user: praefect
+        replaceInternalGitaly: true
+        virtualStorages:
+          - defaultReplicationFactor: 3
+            gitalyReplicas: 3
+            name: default
+      psql:
+        database: gitlabhq_production
+        host: gitlab-db-rw.gitlab-spike.svc
+        password:
+          key: password
+          secret: gitlab-db-app
+        port: 5432
+        username: gitlabhq_production
+      redis:
+        auth:
+          enabled: false
+        host: gitlab-valkey-master.gitlab-spike.svc
+        port: 6379
+      registry:
+        bucket: gitlab-spike-registry
+      shell:
+        port: 2223
+    installCertmanager: false
+    prometheus:
+      install: false
+    registry:
+      storage:
+        key: config
+        secret: gitlab-spike-registry-connection
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: gitlab-spike
+  namespace: gitlab-spike
+spec:
+  hostnames:
+    - gitlab-spike.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  rules:
+    - backendRefs:
+        - name: gitlab-spike-webservice-default
+          port: 8181
+      filters:
+        - responseHeaderModifier:
+            set:
+              - name: Strict-Transport-Security
+                value: max-age=31536000
+          type: ResponseHeaderModifier
+      timeouts:
+        backendRequest: 900s
+        request: 900s
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: gitlab-spike-registry
+  namespace: gitlab-spike
+spec:
+  hostnames:
+    - registry-gitlab-spike.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  rules:
+    - backendRefs:
+        - name: gitlab-spike-registry
+          port: 5000
+      filters:
+        - responseHeaderModifier:
+            set:
+              - name: Strict-Transport-Security
+                value: max-age=31536000
+          type: ResponseHeaderModifier
+      timeouts:
+        backendRequest: 900s
+        request: 900s
+---
+apiVersion: cilium.io/v2
+kind: CiliumEnvoyConfig
+metadata:
+  annotations:
+    cec.cilium.io/use-original-source-address: "false"
+  name: gitlab-spike-gitlab-shell
+  namespace: gitlab-spike
+spec:
+  backendServices:
+    - name: gitlab-spike-gitlab-shell
+      namespace: gitlab-spike
+      number:
+        - "2223"
+  nodeSelector:
+    matchLabels:
+      topology.kubernetes.io/region: hil
+  resources:
+    - "@type": type.googleapis.com/envoy.config.listener.v3.Listener
+      address:
+        socketAddress:
+          address: 0.0.0.0
+          portValue: 2223
+      filterChains:
+        - filters:
+            - name: envoy.filters.network.tcp_proxy
+              typedConfig:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy
+                cluster: gitlab-spike:gitlab-spike-gitlab-shell:2223
+                idleTimeout: 3600s
+                statPrefix: gitlab-spike-gitlab-shell
+      name: gitlab-spike-gitlab-shell
+    - "@type": type.googleapis.com/envoy.config.cluster.v3.Cluster
+      edsClusterConfig:
+        serviceName: gitlab-spike/gitlab-spike-gitlab-shell:2223
+      name: gitlab-spike:gitlab-spike-gitlab-shell:2223
+      outlierDetection:
+        splitExternalLocalOriginErrors: true
+      type: EDS

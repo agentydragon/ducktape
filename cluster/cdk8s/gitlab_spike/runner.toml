@@ -1,0 +1,33 @@
+[[runners]]
+  executor = "kubernetes"
+  clone_url = "http://gitlab-spike-webservice-default.gitlab-spike.svc:8181"
+  [runners.kubernetes]
+    namespace = "gitlab-spike-ci"
+    image = "alpine:3.23.3"
+    privileged = false
+    service_account = "gitlab-spike-job"
+    automount_service_account_token = false
+    cpu_request = "250m"
+    cpu_limit = "2"
+    memory_request = "256Mi"
+    memory_limit = "2Gi"
+    helper_cpu_request = "100m"
+    helper_memory_request = "128Mi"
+    helper_memory_limit = "512Mi"
+    poll_timeout = 180
+    [runners.kubernetes.node_selector]
+      "topology.kubernetes.io/zone" = "hil-ovh"
+    [runners.kubernetes.pod_labels]
+      "app.kubernetes.io/name" = "gitlab-spike-job"
+    [runners.kubernetes.pod_security_context]
+      run_as_non_root = true
+      run_as_user = 1000
+      fs_group = 1000
+    [runners.kubernetes.build_container_security_context]
+      allow_privilege_escalation = false
+      [runners.kubernetes.build_container_security_context.capabilities]
+        drop = ["ALL"]
+    [runners.kubernetes.helper_container_security_context]
+      allow_privilege_escalation = false
+      [runners.kubernetes.helper_container_security_context.capabilities]
+        drop = ["ALL"]
