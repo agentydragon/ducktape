@@ -3145,6 +3145,16 @@ data:
       scope: openid
       mode: exchange
       token_endpoint: https://auth.allegedly.works/application/o/token/
+    frontend_config:
+      trace_search:
+        grafana_base_url: https://grafana.allegedly.works/
+        tempo_datasource_uid: f99d1a97-7e72-4887-9277-0b105a5ccf44
+        deployment_environment: agentplane-staging
+      langfuse_search:
+        base_url: https://langfuse.allegedly.works/
+        project_id: langfuse-litellm-project
+        sandbox_namespace_metadata_key: attributes.litellm.metadata.spend_logs_metadata.agentplane.namespace
+        sandbox_service_account_metadata_key: attributes.litellm.metadata.spend_logs_metadata.agentplane.service_account
 immutable: false
 ---
 apiVersion: v1
