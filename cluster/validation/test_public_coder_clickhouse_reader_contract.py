@@ -7,25 +7,23 @@ Secret and address.
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any, cast
 
-import pytest
 import pytest_bazel
 import yaml
 
 from cluster.cdk8s.clickhouse import client
+from util.bazel.runfiles import get_required_path
 
 
-@pytest.fixture
-def source_secret(k8s_dir: Path) -> dict[str, Any]:
-    return cast(
-        dict[str, Any], yaml.safe_load((k8s_dir / "clickhouse/cluster/public-coder-credentials.sops.yaml").read_text())
-    )
-
-
-def test_public_coder_clickhouse_reader_contract(source_secret: dict[str, Any]) -> None:
+def test_public_coder_clickhouse_reader_contract() -> None:
     """The canonical credential stays in ClickHouse for Agentplane's exact-secret reader."""
+    source_secret = cast(
+        dict[str, Any],
+        yaml.safe_load(
+            get_required_path("_main/cluster/k8s/clickhouse/cluster/public-coder-credentials.sops.yaml").read_text()
+        ),
+    )
     metadata = source_secret["metadata"]
     assert metadata["name"] == client.PUBLIC_CODER_CREDENTIALS
     assert metadata["namespace"] == client.NAMESPACE

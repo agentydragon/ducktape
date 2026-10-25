@@ -912,6 +912,7 @@ py_test(
         ":egress_credentials",
         ":egress_staging_credentials",
         "//:conftest",
+        "//cluster/cdk8s/clickhouse:client",
         "@pypi//cdk8s",
         "@pypi//pytest_bazel",
     ],
