@@ -46,6 +46,26 @@ Prototype pollution — replacing `Set.prototype.add` or
 citation describes the standard built-in, and the analyzer cannot detect it
 because the pollution may live outside the analyzed chunk.
 
+## Empty intrinsic collection construction
+
+Synchronous callback analysis excludes an exact `new Map()`, `new Set()`,
+`new WeakMap()` or `new WeakSet()` when the callee is the undeclared,
+unshadowed global identifier and there are no arguments. Under A11 intrinsic
+integrity, each constructor allocates its empty internal collection and
+returns before looking up an adder or invoking iterator/user code. See the
+[Map](https://tc39.es/ecma262/multipage/keyed-collections.html#sec-map-iterable),
+[Set](https://tc39.es/ecma262/multipage/keyed-collections.html#sec-set-iterable),
+[WeakMap](https://tc39.es/ecma262/multipage/keyed-collections.html#sec-weakmap-iterable)
+and [WeakSet](https://tc39.es/ecma262/multipage/keyed-collections.html#sec-weakset-iterable)
+constructor algorithms.
+
+This does not certify subsequent collection operations. A shadowed or dynamic
+callee, subclass construction, arguments and spreads keep ordinary callback
+analysis. In particular, a nonempty iterable argument may invoke its iterator
+or expose callbacks. The CLI cases in `empty_collection_timing_test` cover
+all four empty constructors and real callback reentry through a shadowed
+constructor and a supplied iterator.
+
 ## Native `Proxy` construction
 
 `new Proxy(target, handler)` is admitted only when the global `Proxy` name is

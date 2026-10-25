@@ -3086,10 +3086,15 @@ impl Executor<'_> {
         {
             return;
         }
+        // Empty intrinsic collections return before consulting an adder or
+        // iterator. This proves only their construction has no callbacks;
+        // later operations and any constructor arguments remain conservative.
         if call.is_new
-            && matches!(&call.callee, ValueExpr::Binding(id) if id.0.as_ref() == "WeakMap" && !self.flow.is_declared(id))
-            && !self.shadowed.contains("WeakMap")
             && call.args.is_empty()
+            && matches!(&call.callee, ValueExpr::Binding(id)
+                if matches!(id.0.as_ref(), "Map" | "Set" | "WeakMap" | "WeakSet")
+                    && !self.flow.is_declared(id)
+                    && !self.shadowed.contains(id.0.as_ref()))
         {
             return;
         }
