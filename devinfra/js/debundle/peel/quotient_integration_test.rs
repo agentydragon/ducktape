@@ -4,7 +4,7 @@
 
 use std::collections::BTreeMap;
 
-use analysis::{DepKind, OwnerGraphReport};
+use analysis::{DepKind, ModuleId, OwnerGraphReport};
 use report_fixtures::{
     active_owner, atomic_edge, atomic_unit_for, claims, graph_of, owner_edge, residual_owner,
     singleton_graph,
@@ -27,6 +27,61 @@ fn spec_module(module_id: &str, owners: &[&str]) -> SpecModuleGroup {
 }
 
 // ---------- Tests. ----------
+
+#[test]
+fn group_contraction_commits_one_final_entry_partition_and_honors_cap() {
+    let report = singleton_graph(
+        vec![
+            active_owner("owner:a", 1, &["A"], 5, "home"),
+            active_owner("owner:b", 2, &["B"], 5, "home"),
+            residual_owner("owner:entry", 3, &["Entry"], 5),
+            active_owner("owner:outside", 4, &["Outside"], 5, "outside"),
+        ],
+        vec![],
+    );
+    let assignments = [
+        ModuleId::logical(1),
+        ModuleId::logical(2),
+        ModuleId::logical(0),
+        ModuleId::logical(3),
+    ];
+    let mut q = QuotientGraph::from_report_with_realizable_partition(
+        &report,
+        14,
+        &assignments,
+        ModuleId::logical(0),
+    )
+    .unwrap();
+    let classes = [ClassId(0), ClassId(1), ClassId(2)];
+    assert!(!q.contract_group_if_preserving(&classes));
+    assert_eq!(
+        q.realizability_partition().of(analysis::OwnerId(0)),
+        assignments[0]
+    );
+    assert_eq!(q.class_of(OwnerIdx(0)), ClassId(0));
+
+    let mut q = QuotientGraph::from_report_with_realizable_partition(
+        &report,
+        15,
+        &assignments,
+        ModuleId::logical(0),
+    )
+    .unwrap();
+    assert!(q.contract_group_if_preserving(&classes));
+    for owner in 0..3 {
+        assert_eq!(q.class_of(OwnerIdx(owner)), ClassId(0));
+        assert_eq!(
+            q.realizability_partition().of(analysis::OwnerId(owner)),
+            ModuleId::logical(0)
+        );
+    }
+    assert_eq!(q.class_of(OwnerIdx(3)), ClassId(3));
+    assert_eq!(
+        q.realizability_partition().of(analysis::OwnerId(3)),
+        assignments[3]
+    );
+    assert!(q.realizability_verdict().is_realizable());
+}
 
 #[test]
 fn seed_skips_unrealizable_spec_module_contraction_and_reports() {
