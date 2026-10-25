@@ -2511,8 +2511,16 @@ fn selector_fact_store(program: &SelectorProgram, chunk: &Chunk<'_>) -> Selector
             .reads
             .eager
             .iter()
-            .filter(|binding| !is_hoisted(binding))
-            .map(|binding| (binding, DepKind::EagerUse))
+            .map(|binding| {
+                (
+                    binding,
+                    if is_hoisted(binding) {
+                        DepKind::HoistedUse
+                    } else {
+                        DepKind::EagerUse
+                    },
+                )
+            })
             .chain(
                 statement
                     .reads

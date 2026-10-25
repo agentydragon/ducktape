@@ -322,7 +322,7 @@ The micro owner graph is a directed, labeled graph `G = (V, E)`:
 - **Read edges:** `O -> O_b` for every binding `b` read by owner
   `O`, where `O_b` is the owner that declares `b` (the import
   declaration, for an imported binding). The edge carries
-  `binding`, `edge_kind` (`eager_use` or `lazy_use`), and the source
+  `binding`, `edge_kind` (`eager_use`, `hoisted_use` or `lazy_use`), and the source
   statement ordinal.
 - **Rebind edges:** `eager_rebind`, `lazy_rebind` or `deferred_rebind`
   from an owner that assigns a binding to the owner that declares it.
@@ -559,7 +559,7 @@ only.
 The peel proposer's kernel (`QuotientGraph` in `peel/quotient.rs`) decides
 every merge with the same primitive as the materializer. It must not
 reimplement the gate over a JSON `OwnerGraphReport` projection: a
-constraining-only projection drops `LazyUse` edges and becomes blind to
+constraining-only projection drops `LazyUse` and `HoistedUse` edges and becomes blind to
 asymmetric `(eager forward, lazy back)` I-cycles that the
 `EsmEvaluationSimulator` pass catches.
 
@@ -2110,7 +2110,7 @@ Five layers, bottom-up:
 
 1. **Owner graph** — fine-grained program facts (`graph/`).
    One vertex per top-level owner; edges record `EagerUse`,
-   `LazyUse`, `EagerRebind`, `LazyRebind`, `DeferredRebind`,
+   `LazyUse`, `HoistedUse`, `EagerRebind`, `LazyRebind`, `DeferredRebind`,
    `CoDeclaration`, `Sequenced`, and the local-effect edges that target-local
    mutation produces. Each
    edge records whether it constrains init/materialization order.
@@ -2355,7 +2355,7 @@ A destination assignment is **valid** iff:
 1. Every cross-destination read edge in `Q` is importable.
 2. No cross-destination rebinding write edge remains in `Q`.
 3. The I-graph of `Q` passes the two-pass gate ("Lemma 2: entry-side import
-   ordering"): its constraining-edge subgraph — `Q` with every `LazyUse`
+   ordering"): its constraining-edge subgraph — `Q` with every `LazyUse` and `HoistedUse`
    cross edge dropped — has no multi-module SCC (Pass 1), and in every
    multi-module SCC of the full I-graph that contains a constraining edge the
    ESM evaluation simulator evaluates each constraining edge's target before
