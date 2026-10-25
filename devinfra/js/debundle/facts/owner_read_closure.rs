@@ -28,6 +28,66 @@ pub(crate) struct FactsOwnerReadClosure {
 }
 
 impl FactsOwnerReadClosure {
+    /// Build a second adjacency for synchronous callback fallback. The caller
+    /// supplies retained callable-prefix reads where coverage is complete;
+    /// other owners keep their whole lazy read set. A lexical read remains an
+    /// edge even when its target's body is deferred.
+    pub(crate) fn synchronous_adjacency(
+        &self,
+        facts: &[StatementFacts],
+        prefix_reads: &[Option<&BTreeSet<Id>>],
+    ) -> Vec<Vec<StatementOrdinal>> {
+        let mut adjacency = vec![Vec::new(); facts.len()];
+        for fact in facts {
+            let owner = fact.ordinal;
+            for binding in &fact.declared {
+                if let Some(&representative) = self.binding_owner.get(binding)
+                    && representative != owner
+                {
+                    adjacency[owner.0].push(representative);
+                    adjacency[representative.0].push(owner);
+                }
+            }
+            let lazy = prefix_reads[owner.0].unwrap_or(&fact.reads.lazy);
+            for id in fact.reads.eager.iter().chain(lazy) {
+                if let Some(&target) = self.binding_owner.get(id) {
+                    adjacency[owner.0].push(target);
+                }
+            }
+        }
+        for neighbors in &mut adjacency {
+            neighbors.sort_unstable();
+            neighbors.dedup();
+        }
+        adjacency
+    }
+
+    /// Grow a persistent fallback cache using only synchronous read edges.
+    /// Each reached owner is expanded at most once as callback roots grow.
+    pub(crate) fn extend_synchronous_owners(
+        adjacency: &[Vec<StatementOrdinal>],
+        roots: impl IntoIterator<Item = StatementOrdinal>,
+        expanded: &mut BTreeSet<StatementOrdinal>,
+    ) -> Vec<StatementOrdinal> {
+        let mut pending = VecDeque::new();
+        let mut reached = Vec::new();
+        for root in roots {
+            if root.0 < adjacency.len() && expanded.insert(root) {
+                reached.push(root);
+                pending.push_back(root);
+            }
+        }
+        while let Some(owner) = pending.pop_front() {
+            for &target in &adjacency[owner.0] {
+                if expanded.insert(target) {
+                    reached.push(target);
+                    pending.push_back(target);
+                }
+            }
+        }
+        reached
+    }
+
     pub(crate) fn new(facts: &[StatementFacts]) -> Self {
         let mut declaration_sites = BTreeMap::<Id, Vec<StatementOrdinal>>::new();
         for stmt in facts {

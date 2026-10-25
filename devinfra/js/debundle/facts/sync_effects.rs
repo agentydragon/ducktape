@@ -1760,11 +1760,12 @@ struct ReachabilityState {
 }
 
 /// Callback roots retained by a fallback stay escaped for the rest of the
-/// chunk. Cache their static read closure once; initialization timing is still
+/// chunk. Cache their synchronous read closure once; initialization timing is
 /// checked against the current prefix when the summary is applied.
 #[derive(Default)]
 struct CallbackFallbackSummary {
     expanded: BTreeSet<StatementOrdinal>,
+    incomplete_expanded: bool,
     reads: BTreeSet<Id>,
     rebinds: BTreeSet<Id>,
     read_additions: Vec<Id>,
@@ -1804,6 +1805,8 @@ struct Executor<'a> {
     top_bindings: BTreeSet<Id>,
     binding_owner: BTreeMap<Id, StatementOrdinal>,
     owner_read_closure: FactsOwnerReadClosure,
+    synchronous_owner_adjacency: Vec<Vec<StatementOrdinal>>,
+    synchronous_owner_reads: Vec<Option<&'a BTreeSet<Id>>>,
     exported_owners: BTreeSet<StatementOrdinal>,
     prior_reachability_roots: Option<BTreeSet<StatementOrdinal>>,
     current_top_owner: Option<StatementOrdinal>,
@@ -2763,28 +2766,31 @@ impl Executor<'_> {
             }
         }
         self.extend_reachable_owners(roots.iter().copied().chain([owner]));
-        let mut owners = BTreeSet::new();
-        let mut reached = self.owner_read_closure.extend_reachable_owners(
+        let mut reached = FactsOwnerReadClosure::extend_synchronous_owners(
+            &self.synchronous_owner_adjacency,
             roots.iter().copied(),
             &mut self.callback_fallback.expanded,
-            &mut owners,
         );
         if self.reachability.incomplete {
             // Dynamic lexical scope defeats the normal binding-read closure.
-            for fact in self.facts {
-                if self.callback_fallback.expanded.insert(fact.ordinal) {
+            // Revisit even previously expanded owners: their cached prefix
+            // effects may have omitted reads that eval or with can reach.
+            if !self.callback_fallback.incomplete_expanded {
+                self.callback_fallback.incomplete_expanded = true;
+                for fact in self.facts {
+                    self.callback_fallback.expanded.insert(fact.ordinal);
                     reached.push(fact.ordinal);
                 }
             }
         }
         for reached_owner in reached {
             let fact = &self.facts[reached_owner.0];
-            for id in fact
-                .reads
-                .lazy
-                .iter()
-                .filter(|id| self.top_bindings.contains(*id))
-            {
+            let reads = if self.reachability.incomplete {
+                &fact.reads.lazy
+            } else {
+                self.synchronous_owner_reads[reached_owner.0].unwrap_or(&fact.reads.lazy)
+            };
+            for id in reads.iter().filter(|id| self.top_bindings.contains(*id)) {
                 if self.callback_fallback.reads.insert(id.clone()) {
                     self.callback_fallback.read_additions.push(id.clone());
                 }
@@ -3636,6 +3642,20 @@ pub(crate) fn annotate_synchronous_calls(
         }
     }
     let owner_read_closure = FactsOwnerReadClosure::new(facts);
+    let prefix_reads: Vec<_> = facts
+        .iter()
+        .map(|fact| {
+            index.owner_callable_prefix_reads[fact.ordinal.0]
+                .as_ref()
+                .filter(|reads| {
+                    !index.dynamic_scope_owners.contains(&fact.ordinal)
+                        && !index.unindexed_accessor_owners.contains(&fact.ordinal)
+                        && fact.reads.first_order_lazy.is_subset(reads)
+                })
+        })
+        .collect();
+    let synchronous_owner_adjacency =
+        owner_read_closure.synchronous_adjacency(facts, &prefix_reads);
     let mut exported_owners = BTreeSet::new();
     if export_reentry_policy == ExportReentryPolicy::Conservative {
         exported_owners.extend(index.exported_declaration_owners.iter().copied());
@@ -3674,6 +3694,8 @@ pub(crate) fn annotate_synchronous_calls(
             .flat_map(|fact| fact.declared.iter().cloned().map(|id| (id, fact.ordinal)))
             .collect(),
         owner_read_closure,
+        synchronous_owner_adjacency,
+        synchronous_owner_reads: prefix_reads,
         exported_owners,
         prior_reachability_roots: Some(initial_export_roots),
         current_top_owner: None,

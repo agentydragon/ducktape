@@ -737,9 +737,11 @@ the bound, on reentry into an active callback, or when the callback pool would
 create a large argument-value cross product, an opaque call summarizes its
 callback pool together;
 recursive or unknown targets, unsupported syntax, and mutable captures fall
-back conservatively. Fallback read closures grow incrementally, promoting each
-reachable owner's lazy reads and rebinds once. Callbacks retained by a fallback
-remain escaped, so their static read closure grows incrementally across source
+back conservatively. Fallback read closures grow incrementally. For owners
+covered by retained callable facts, they follow and promote only reads that can
+occur before a definite `await`; unsupported owners retain their whole lazy
+read set. Rebinds remain conservative. Callbacks retained by a fallback remain
+escaped, so their synchronous read closure grows incrementally across source
 statements. The directly truncated callable uses the shared SCC summary without
 escaping its private roots. Applying either summary rechecks initialization at
 the active source prefix; per-statement outcomes are reset at the next prefix.

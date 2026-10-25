@@ -1586,3 +1586,110 @@ export { box, later };
     );
     assert_preserved_entry_output(&fixture, "7\n");
 }
+
+#[test]
+fn bounded_unknown_callback_fallback_ignores_post_await_read() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const anchor = {};
+function bounce(n) { if (n) return bounce(n - 1); }
+async function deferred() { await 0; return later; }
+globalThis.registeredBounce = bounce;
+globalThis.registeredDeferred = deferred;
+globalThis.flush = () => {};
+globalThis.flush();
+const later = 7;
+console.log(later);
+export { anchor, bounce, deferred, later };
+"#,
+            vec![
+                logical_module_with_anon(
+                    "value/anchor",
+                    &[
+                        Member::new("anchor"),
+                        Member::new("bounce"),
+                        Member::new("deferred"),
+                    ],
+                    &[
+                        "globalThis.registeredBounce = bounce;",
+                        "globalThis.registeredDeferred = deferred;",
+                        "globalThis.flush = () => {};",
+                        "globalThis.flush();",
+                    ],
+                ),
+                logical_module("value/later", &[Member::new("later")]),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&fixture, "7\n");
+}
+
+#[test]
+fn bounded_unknown_callback_fallback_keeps_pre_await_read() {
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            r#"function bounce(n) { if (n) return bounce(n - 1); }
+async function immediate() { const value = later; await 0; return value; }
+globalThis.registeredBounce = bounce;
+globalThis.registeredImmediate = immediate;
+globalThis.flush = () => {};
+globalThis.flush();
+const later = 7;
+export { bounce, immediate, later };
+"#,
+            vec![
+                logical_module_with_anon(
+                    "value/callbacks",
+                    &[Member::new("bounce"), Member::new("immediate")],
+                    &[
+                        "globalThis.registeredBounce = bounce;",
+                        "globalThis.registeredImmediate = immediate;",
+                        "globalThis.flush = () => {};",
+                        "globalThis.flush();",
+                    ],
+                ),
+                logical_module("value/later", &[Member::new("later")]),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+        &["value/callbacks", "value/later"],
+        &[],
+    );
+}
+
+#[test]
+fn bounded_unknown_callback_fallback_keeps_nested_callback_created_before_await() {
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            r#"function bounce(n) { if (n) return bounce(n - 1); }
+async function publish() {
+  globalThis.registeredNested = () => later;
+  await 0;
+}
+globalThis.registeredBounce = bounce;
+publish();
+globalThis.flush = () => {};
+globalThis.flush();
+const later = 7;
+export { bounce, publish, later };
+"#,
+            vec![
+                logical_module_with_anon(
+                    "value/callbacks",
+                    &[Member::new("bounce"), Member::new("publish")],
+                    &[
+                        "globalThis.registeredBounce = bounce;",
+                        "publish();",
+                        "globalThis.flush = () => {};",
+                        "globalThis.flush();",
+                    ],
+                ),
+                logical_module("value/later", &[Member::new("later")]),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+        &["value/callbacks", "value/later"],
+        &[],
+    );
+}
