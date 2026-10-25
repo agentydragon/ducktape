@@ -80,7 +80,6 @@ _KEEPER = ServiceRef(
 _METRICS = Port(name="metrics", number=9363)
 _INTERSERVER_PORT = 9009
 _CLICKHOUSE_UID = 101  # the images' `clickhouse` user
-_STORAGE_CLASS = "local-path-ovh-hdd-retain"
 _PIRAEUS_HDD_STORAGE_CLASS = "piraeus-hdd-local"
 _PIRAEUS_SSD_STORAGE_CLASS = "piraeus-ssd-local"
 _CLICKHOUSE_PIRAEUS_103711_POD_TEMPLATE = "clickhouse-piraeus-103711"
@@ -115,7 +114,7 @@ def _one_per_host(labels: dict[str, str]) -> dict[str, object]:
     }
 
 
-def _claim_spec(storage: str, storage_class: str = _STORAGE_CLASS) -> dict[str, object]:
+def _claim_spec(storage: str, storage_class: str) -> dict[str, object]:
     return {
         "accessModes": ["ReadWriteOnce"],
         "storageClassName": storage_class,
@@ -291,7 +290,6 @@ def clickhouse_chart(app: App) -> Chart:
         description="Read-only access to typed AIQuota history; never mounted by a sandbox.",
     )
     pod_template = "clickhouse"
-    data_claim = "data"
     ClickHouseInstallation(
         chart,
         "installation",
@@ -394,7 +392,7 @@ def clickhouse_chart(app: App) -> Chart:
                 # ClickHouse to recognize its own member in the distributed-DDL host list.
                 replicas_use_fqdn="yes",
                 templates=ClickHouseInstallationSpecDefaultsTemplates(
-                    pod_template=pod_template, data_volume_claim_template=data_claim
+                    pod_template=pod_template, data_volume_claim_template=_CLICKHOUSE_PIRAEUS_HDD_CLAIM
                 ),
             ),
             templates=ClickHouseInstallationSpecTemplates(
@@ -411,17 +409,12 @@ def clickhouse_chart(app: App) -> Chart:
                 ],
                 volume_claim_templates=[
                     ClickHouseInstallationSpecTemplatesVolumeClaimTemplates(
-                        name=data_claim,
+                        name=_CLICKHOUSE_PIRAEUS_HDD_CLAIM,
                         reclaim_policy=ClickHouseInstallationSpecTemplatesVolumeClaimTemplatesReclaimPolicy.RETAIN,
                         # Raw responses are retained for one year; the generous HDD
                         # volume leaves headroom for MergeTree parts and future tenants.
-                        spec=_claim_spec("500Gi"),
-                    ),
-                    ClickHouseInstallationSpecTemplatesVolumeClaimTemplates(
-                        name=_CLICKHOUSE_PIRAEUS_HDD_CLAIM,
-                        reclaim_policy=ClickHouseInstallationSpecTemplatesVolumeClaimTemplatesReclaimPolicy.RETAIN,
                         spec=_claim_spec("500Gi", storage_class=_PIRAEUS_HDD_STORAGE_CLASS),
-                    ),
+                    )
                 ],
             ),
         ),
@@ -438,11 +431,8 @@ def clickhouse_chart(app: App) -> Chart:
 
 def keeper_chart(app: App) -> Chart:
     chart = Chart(app, "keeper", disable_resource_name_hashes=True)
-    pod_template = "keeper"
-    data_claim = "keeper-data"
-    control_plane_data_claim = "keeper-data-control-plane"
-    ssd_pod_template = "keeper-ssd"
-    ssd_data_claim = "keeper-data-ssd"
+    pod_template = "keeper-ssd"
+    data_claim = "keeper-data-ssd"
     ClickHouseKeeperInstallation(
         chart,
         "installation",
@@ -456,22 +446,20 @@ def keeper_chart(app: App) -> Chart:
                             replicas=[
                                 ClickHouseKeeperInstallationSpecConfigurationClustersLayoutReplicas(
                                     name="0",
-                                    # Stage a cold copy of replica 0's existing Raft data into this claim
-                                    # before allowing the operator to replace its current pod.
                                     templates=ClickHouseKeeperInstallationSpecConfigurationClustersLayoutReplicasTemplates(
-                                        pod_template=ssd_pod_template, data_volume_claim_template=ssd_data_claim
+                                        pod_template=pod_template, data_volume_claim_template=data_claim
                                     ),
                                 ),
                                 ClickHouseKeeperInstallationSpecConfigurationClustersLayoutReplicas(
                                     name="1",
                                     templates=ClickHouseKeeperInstallationSpecConfigurationClustersLayoutReplicasTemplates(
-                                        pod_template=ssd_pod_template, data_volume_claim_template=ssd_data_claim
+                                        pod_template=pod_template, data_volume_claim_template=data_claim
                                     ),
                                 ),
                                 ClickHouseKeeperInstallationSpecConfigurationClustersLayoutReplicas(
                                     name="2",
                                     templates=ClickHouseKeeperInstallationSpecConfigurationClustersLayoutReplicasTemplates(
-                                        pod_template=ssd_pod_template, data_volume_claim_template=ssd_data_claim
+                                        pod_template=pod_template, data_volume_claim_template=data_claim
                                     ),
                                 ),
                             ]
@@ -491,21 +479,10 @@ def keeper_chart(app: App) -> Chart:
                 )
             ),
             templates=ClickHouseKeeperInstallationSpecTemplates(
-                pod_templates=[
-                    _keeper_pod_template(pod_template, _HDD_NODE_SELECTOR),
-                    _keeper_pod_template(ssd_pod_template, _SSD_NODE_SELECTOR),
-                ],
+                pod_templates=[_keeper_pod_template(pod_template, _SSD_NODE_SELECTOR)],
                 volume_claim_templates=[
                     ClickHouseKeeperInstallationSpecTemplatesVolumeClaimTemplates(
-                        name=claim,
-                        reclaim_policy=ClickHouseKeeperInstallationSpecTemplatesVolumeClaimTemplatesReclaimPolicy.RETAIN,
-                        spec=_claim_spec("2Gi"),
-                    )
-                    for claim in (data_claim, control_plane_data_claim)
-                ]
-                + [
-                    ClickHouseKeeperInstallationSpecTemplatesVolumeClaimTemplates(
-                        name=ssd_data_claim,
+                        name=data_claim,
                         reclaim_policy=ClickHouseKeeperInstallationSpecTemplatesVolumeClaimTemplatesReclaimPolicy.RETAIN,
                         spec=_claim_spec("2Gi", storage_class=_PIRAEUS_SSD_STORAGE_CLASS),
                     )

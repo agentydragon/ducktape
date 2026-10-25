@@ -40,8 +40,6 @@ Then remove leftovers:
 
 - The operator-generated Services and ServiceMonitor left by the removed
   Seaweed `ssd` and legacy HDD volume groups (live only; no source).
-- ClickHouse's unused `data`, `keeper-data` and `keeper-data-control-plane`
-  templates (`clickhouse/installation.py`); no replica references them.
 - `haku-sandbox/haku-anki-collection`, Bound to the wiped `ovh-ns103711`:
   confirm its owner no longer declares it, then delete the record.
 - The Pending `public-coder-agent` Restic cache claim; the parked backup's
