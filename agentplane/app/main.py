@@ -205,7 +205,7 @@ async def async_main(settings: Settings) -> None:
             dispatcher_http=dispatcher_http,
             presets=PresetCatalog(sandboxes=settings.sandbox_presets, threads=settings.thread_presets),
             new_sandbox_defaults=settings.new_sandbox_defaults,
-            trace_search=settings.trace_search,
+            frontend_config=settings.frontend_config,
             event_logs=event_logs,
             content=content,
             database_updates=database_updates,

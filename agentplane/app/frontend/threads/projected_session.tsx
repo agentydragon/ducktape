@@ -23,6 +23,7 @@ import {
   models,
   modelsForHarness,
   resumeSandbox,
+  type LangfuseSearchSettings,
   type ModelOption,
   type SandboxView,
   type TraceSearchSettings,
@@ -64,6 +65,7 @@ import { TimeAgo } from "../time_ago";
 import { NotificationStatus } from "../notification_status";
 import { TopbarActions, TopbarTitle } from "../topbar";
 import { finishSessionCreate, withinSessionCreate } from "../tracing";
+import { langfuseSandboxTraceUrl } from "../langfuse_search";
 import { traceSearchUrl } from "../trace_search";
 import { useFrontendConfig } from "../frontend_config";
 import { installThreadFavicon } from "./thread_favicon";
@@ -1168,6 +1170,8 @@ function ProjectedSessionBody({
   onResumeSandbox,
   onStatusChange,
   traceSearch,
+  langfuseSearch,
+  sandbox,
 }: {
   threadId: string;
   entities: ThreadEntity[];
@@ -1180,6 +1184,8 @@ function ProjectedSessionBody({
   onResumeSandbox: () => void;
   onStatusChange: (status: ThreadTabTitleStatus) => void;
   traceSearch: TraceSearchSettings | null;
+  langfuseSearch: LangfuseSearchSettings | null;
+  sandbox?: SandboxView;
 }): JSX.Element {
   const [draft, setDraft] = useState("");
   const [clock, setClock] = useState(() => Date.now());
@@ -1444,6 +1450,19 @@ function ProjectedSessionBody({
                     Find Session traces in Grafana
                   </Menu.Item>
                 )}
+                {langfuseSearch && sandbox && (
+                  <Menu.Item
+                    component="a"
+                    href={langfuseSandboxTraceUrl(langfuseSearch, {
+                      namespace: sandbox.service_account.namespace,
+                      serviceAccount: sandbox.service_account.name,
+                    })}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Sandbox LLM traces in Langfuse
+                  </Menu.Item>
+                )}
                 <Menu.Divider />
               </Menu.Dropdown>
             </Menu>
@@ -1493,6 +1512,8 @@ function SyncedThread({
   onResumeSandbox,
   onStatusChange,
   traceSearch,
+  langfuseSearch,
+  sandbox,
 }: {
   threadId: string;
   thread: ThreadView;
@@ -1503,6 +1524,8 @@ function SyncedThread({
   onResumeSandbox: () => void;
   onStatusChange: (status: ThreadTabTitleStatus) => void;
   traceSearch: TraceSearchSettings | null;
+  langfuseSearch: LangfuseSearchSettings | null;
+  sandbox?: SandboxView;
 }): JSX.Element {
   const { window: shown, error } = useThreadSync().useThread();
   // A stopped window is not following the thread at all, and its alert says so.
@@ -1537,6 +1560,8 @@ function SyncedThread({
         onResumeSandbox={onResumeSandbox}
         onStatusChange={onStatusChange}
         traceSearch={traceSearch}
+        langfuseSearch={langfuseSearch}
+        sandbox={sandbox}
       />
     </>
   );
@@ -1592,6 +1617,7 @@ export function ProjectedSession({
   const [error, setError] = useState<string | null>(null);
   const frontendConfig = useFrontendConfig();
   const traceSearch = frontendConfig?.trace_search ?? null;
+  const langfuseSearch = frontendConfig?.langfuse_search ?? null;
   const environment = useRequiredSandboxesLive();
   const inventoryFresh = environment.stream.standing === "current" && environment.health?.fresh === true;
   const sandbox = environment.snapshot?.sandboxes.find((candidate) => candidate.name === thread?.sandbox);
@@ -1682,6 +1708,8 @@ export function ProjectedSession({
               }}
               onStatusChange={setTabStatus}
               traceSearch={traceSearch}
+              langfuseSearch={langfuseSearch}
+              sandbox={sandbox}
             />
           </sync.Thread>
         )}

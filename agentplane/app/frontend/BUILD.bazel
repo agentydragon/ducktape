@@ -76,6 +76,22 @@ agentplane_vitest_test(
     ],
 )
 
+ts_library(
+    name = "langfuse_search",
+    srcs = ["langfuse_search.ts"],
+    tsconfig = TSCONFIG,
+    deps = [":client"],
+)
+
+agentplane_vitest_test(
+    name = "langfuse_search_test",
+    srcs = ["langfuse_search.test.ts"],
+    deps = [
+        ":langfuse_search",
+        "//:node_modules/vitest",
+    ],
+)
+
 # Shared Tabler imports and their ambient subpath types. Feature targets depend on this
 # facade rather than importing the untyped package subpaths themselves.
 ts_library(

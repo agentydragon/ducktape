@@ -197,13 +197,24 @@ Both paths store only the generated title and automation state in the app databa
 mounts it read-only and sends it as a Bearer token. The app's NetworkPolicy admits the configured
 backend host and port. Leaving `title_generation` unset disables the checkbox and action.
 
-`GET /frontend-config` returns browser-safe settings in a typed `FrontendConfig` object. Its
-`trace_search` field is null unless the app configures a Grafana base URL, Tempo datasource UID, and
-deployment environment. When configured, Sandbox, Session, and active Thread ellipsis menus link to
-Grafana Explore with a Tempo TraceQL search scoped to `resource.deployment.environment.name`.
-Sandbox links match `span.sandbox.name`; Session and Thread links match `span.session.id`. Current
-spans do not carry a Sandbox UID, so a Sandbox name reused after deletion can match traces from both
-Sandbox instances.
+The app ConfigMap groups browser-safe links under one optional `frontend_config` key.
+`GET /frontend-config` returns that same typed object directly, with only the explicitly whitelisted
+settings below; when the deployment does not supply the object, both fields are null.
+
+`frontend_config.trace_search` is null unless the app configures a Grafana base URL, Tempo datasource
+UID, and deployment environment. When configured, Sandbox, Session, and active Thread ellipsis menus
+link to Grafana Explore with a Tempo TraceQL search scoped to
+`resource.deployment.environment.name`. Sandbox links match `span.sandbox.name`; Session and Thread
+links match `span.session.id`. Current spans do not carry a Sandbox UID, so a Sandbox name reused
+after deletion can match traces from both Sandbox instances.
+
+`frontend_config.langfuse_search` is null unless the app configures a Langfuse base URL, project ID,
+and metadata keys for the Sandbox namespace and ServiceAccount. When configured, Sandbox and active
+Thread ellipsis menus link to the project's last-24-hour traces filtered by those two metadata values.
+The Thread menu link is explicitly Sandbox-scoped because current Langfuse attribution has no Session
+ID; these links do not isolate individual Sessions. The configured metadata keys must match the
+LiteLLM attribution settings; traces appear after that producer-side attribution is deployed. A
+same-name Sandbox replacement can match older traces.
 
 The app copies no runner events and folds none. Each runner pushes its Sessions' events to the
 History Service's ingress, and the History Service folds them under per-Session leases
