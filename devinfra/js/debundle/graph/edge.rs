@@ -63,6 +63,9 @@ impl EdgeRole {
 /// - `LazyUse` contributes to the imports graph `I`, but does not
 ///   constrain realizability inside an SCC because the read fires
 ///   after module evaluation.
+/// - `HoistedUse` retains a direct eager read's import topology when its
+///   function declaration is already initialized during module instantiation.
+///   The read imposes no evaluation-order constraint on that binding.
 /// - `EagerRebind` / `LazyRebind` describe rebinding writes. A
 ///   cross-destination write is rejected outright because ESM imports
 ///   are read-only in the importing module; same-destination writes
@@ -101,6 +104,14 @@ impl EdgeReason {
     pub(crate) fn lazy_use(so: StatementOrdinal, b: Id) -> Self {
         Self {
             kind: DepKind::LazyUse,
+            statement_ordinal: so,
+            binding: Some(b),
+            role: EdgeRole::Direct,
+        }
+    }
+    pub(crate) fn hoisted_use(so: StatementOrdinal, b: Id) -> Self {
+        Self {
+            kind: DepKind::HoistedUse,
             statement_ordinal: so,
             binding: Some(b),
             role: EdgeRole::Direct,
@@ -205,7 +216,7 @@ impl EdgeReason {
     pub fn is_sequenced(&self) -> bool {
         self.kind == DepKind::Sequenced
     }
-    /// Every kind except `LazyUse` and `DeferredRebind` constrains
+    /// Every kind except `LazyUse`, `HoistedUse` and `DeferredRebind` constrains
     /// realizability. `DeferredRebind` writes never fire at module
     /// init (the write site is nested ≥2 closures deep or past an
     /// await), so they impose no init-order constraint — but they
@@ -213,7 +224,10 @@ impl EdgeReason {
     /// `G_atomic` co-location, because ESM imports are read-only at
     /// ANY time, not just during init.
     pub fn constrains_init_order(&self) -> bool {
-        !matches!(self.kind, DepKind::LazyUse | DepKind::DeferredRebind)
+        !matches!(
+            self.kind,
+            DepKind::LazyUse | DepKind::HoistedUse | DepKind::DeferredRebind
+        )
     }
 }
 
@@ -240,6 +254,8 @@ pub enum DepKind {
     EagerUse,
     #[strum(message = "lazy")]
     LazyUse,
+    #[strum(message = "hoisted read")]
+    HoistedUse,
     #[strum(message = "at-init rebind")]
     EagerRebind,
     #[strum(message = "lazy rebind")]
