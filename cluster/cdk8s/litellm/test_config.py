@@ -60,8 +60,8 @@ def test_langfuse_otel_v2_uses_otlp_when_secret_exists_and_console_without_it() 
     assert env["OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"] == "span_only"
     assert "OTEL_EXPORTER_OTLP_HEADERS" in env
     secret_env = {entry.name: entry for entry in spec.env if getattr(entry, "optional", False)}
-    assert secret_env["OTEL_EXPORTER_OTLP_ENDPOINT"].optional
-    assert secret_env["OTEL_EXPORTER_OTLP_HEADERS"].optional
+    assert getattr(secret_env["OTEL_EXPORTER_OTLP_ENDPOINT"], "optional", False)
+    assert getattr(secret_env["OTEL_EXPORTER_OTLP_HEADERS"], "optional", False)
     assert config["litellm_settings"]["callbacks"] == ["otel", "prometheus"]
     assert config["callback_settings"]["otel"]["mapper_names"] == ["langfuse"]
 
