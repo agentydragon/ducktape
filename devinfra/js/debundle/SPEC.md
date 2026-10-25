@@ -320,7 +320,7 @@ be inert or declared local reads; `__proto__`, `stack`, and intervening
 expressions end the proof. Every matching write in that owner and callable must
 be proved. Calls, argument evaluation, and namespace publication through assigned
 values retain their ordinary checks. Shadowed or visibly replaced `Error` and
-dynamic scope remain conservative; see [design details](docs/design.md#conditions-on-the-input-chunk-assumptions-a1a11).
+dynamic scope remain conservative; see [design details](https://github.com/agentydragon/ducktape/blob/devel/devinfra/js/debundle/docs/design.md#conditions-on-the-input-chunk-assumptions-a1a11).
 
 Within a literal traversed inside an admitted inline callback, a direct static
 namespace member used as a call callee is analyzed as the callee expression,
