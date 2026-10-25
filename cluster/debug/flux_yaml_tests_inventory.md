@@ -127,14 +127,15 @@ checks the generated delegation Kustomizations against the owning namespace grap
 and `test_no_legacy_agent_diagnostic_rbac` rejects retired access resources. Keep
 these with the Flux graph through cutover.
 
-The focused follow-up trims are separate draft PRs:
+The focused follow-up trims are separate PRs:
 
 - [#11965](https://github.com/agentydragon/ducktape/pull/11965) compares the Loki
   allowlist with `NAMESPACE_DIAGNOSTICS` in the cdk8s model test, removing its
   generated-YAML reader from `test_cluster_integration`.
 - [#11967](https://github.com/agentydragon/ducktape/pull/11967) moves Authentik
   blueprint reference checks to `cluster/cdk8s/authentik`, alongside the owned
-  blueprint inputs.
+  blueprint inputs. It is stacked on #11964 so its CI includes that PR’s focused
+  ClickHouse Secret runfile fix.
 - [#11966](https://github.com/agentydragon/ducktape/pull/11966) tests haku-ci's
   TriggerAuthentication and ScaledJob from its cdk8s chart, while keeping the
   authored Forgejo Secret contract in a focused target with that exact input.
