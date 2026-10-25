@@ -185,6 +185,81 @@ pub(crate) fn collect_plain_data_bindings(
         .collect()
 }
 
+/// A candidate enum own-key fact. Final binding stability is checked against
+/// the canonical statement-fact rebinds outside `initializer_owner`.
+#[derive(Clone, Debug)]
+pub(crate) struct TsEnumNamedDataCandidate {
+    pub(crate) initializer_owner: crate::StatementOrdinal,
+    pub(crate) own_primitive_keys: BTreeSet<String>,
+}
+
+/// Exact named primitive fields installed by one TS enum initializer.
+/// PlainData supplies the chunk-wide no-member-write/no-escape guarantee.
+/// Multiple declarations, including destructuring declarations, are excluded.
+pub(crate) fn collect_ts_enum_named_data_candidates(
+    body: &[TopLevelItemView<'_>],
+    plain_data_bindings: &[String],
+) -> BTreeMap<Id, TsEnumNamedDataCandidate> {
+    struct Declaration<'a> {
+        initializer: Option<&'a Expr>,
+        kind: VarDeclKind,
+        direct: bool,
+        owner: usize,
+    }
+    let plain: BTreeSet<&str> = plain_data_bindings.iter().map(String::as_str).collect();
+    let mut declarations: BTreeMap<Id, Vec<Declaration<'_>>> = BTreeMap::new();
+    for (owner, item) in body.iter().enumerate() {
+        let declaration = match item.as_module_item() {
+            ModuleItem::Stmt(Stmt::Decl(Decl::Var(declaration))) => Some(declaration.as_ref()),
+            ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => {
+                if let Decl::Var(declaration) = &export.decl {
+                    Some(declaration.as_ref())
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
+        let Some(declaration) = declaration else {
+            continue;
+        };
+        for declarator in &declaration.decls {
+            for binding in binding_targets::binding_names(&declarator.name) {
+                declarations.entry(binding).or_default().push(Declaration {
+                    initializer: declarator.init.as_deref(),
+                    kind: declaration.kind,
+                    direct: matches!(&declarator.name, Pat::Ident(_)),
+                    owner,
+                });
+            }
+        }
+    }
+    declarations
+        .into_iter()
+        .filter_map(|(binding, declarations)| {
+            let [declaration] = declarations.as_slice() else {
+                return None;
+            };
+            if declaration.kind != VarDeclKind::Var
+                || !declaration.direct
+                || !plain.contains(binding.0.as_ref())
+            {
+                return None;
+            }
+            let init = declaration.initializer?;
+            ts_enum_iife_named_data_keys(init, binding.0.as_ref()).map(|keys| {
+                (
+                    binding,
+                    TsEnumNamedDataCandidate {
+                        initializer_owner: crate::StatementOrdinal(declaration.owner),
+                        own_primitive_keys: keys,
+                    },
+                )
+            })
+        })
+        .collect()
+}
+
 const SAFE_PLAIN_ARRAY_METHODS: &[&str] = &["filter", "flatMap", "forEach", "map", "slice"];
 const ARRAY_PRODUCING_METHODS: &[&str] = &["filter", "flatMap", "map", "slice"];
 

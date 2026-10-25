@@ -3,6 +3,180 @@
 use debundle_e2e_support::*;
 
 #[test]
+fn unpublished_constructor_result_with_enum_array_stays_deferred() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"var Flags = ((values) => ((values[(values.FIRST = 1)] = "FIRST"), (values[(values.SECOND = 2)] = "SECOND"), values))(Flags || {});
+class Holder {
+  constructor(record, policy, callback) {
+    this.record = record;
+    this.policy = policy;
+    this.callback = callback;
+    this.weight = record.weight ?? 0;
+  }
+  run() { return this.record.execute() + this.callback(); }
+}
+class Policy { allowed() { return true; } }
+function create(record) { return new Holder(record, new Policy(), () => later); }
+const prefix = new globalThis.Error();
+const command = create({ constraints: [Flags.FIRST, Flags.SECOND], execute: () => later });
+const dynamic = ((object) => {
+  object[(object.key = 0)] = "value";
+  return 1;
+})({});
+const later = 42;
+console.log(later);
+console.log(command.run(), command.weight, command.record.constraints.length);
+"#,
+        vec![
+            logical_module(
+                "values/dynamic",
+                &[
+                    Member::new("Flags"),
+                    Member::new("dynamic"),
+                    Member::new("prefix"),
+                    Member::new("command"),
+                    Member::new("create"),
+                    Member::new("Holder"),
+                    Member::new("Policy"),
+                ],
+            ),
+            logical_module("values/later", &[Member::new("later")]),
+        ],
+    ));
+
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/values/dynamic.js",
+        &["command"],
+        &["later"],
+    );
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/values/later.js",
+        &["later"],
+        &["dynamic"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/values/dynamic.js",
+        &["class Holder", "class Policy", "function create"],
+        &[],
+    );
+    assert_preserved_entry_output(&fixture, "42\n84 0 2\n");
+}
+
+#[test]
+fn enum_array_constructor_rejects_mutation_escape_and_non_dense_inputs() {
+    for (case, enum_change, constraints, after_command) in [
+        (
+            "getter",
+            "Object.defineProperty(Flags, 'FIRST', { get() { return 1; } });",
+            "[Flags.FIRST]",
+            "",
+        ),
+        (
+            "proxy",
+            "Flags = new Proxy(Flags, { get() { return 1; } });",
+            "[Flags.FIRST]",
+            "",
+        ),
+        (
+            "alias_getter",
+            "const alias = Flags; Object.defineProperty(alias, 'FIRST', { get() { return 1; } });",
+            "[Flags.FIRST]",
+            "",
+        ),
+        ("unknown_key", "", "[Flags.MISSING]", ""),
+        (
+            "inherited_getter",
+            "Object.defineProperty(Object.prototype, 'MISSING', { get() { return 1; } });",
+            "[Flags.MISSING]",
+            "",
+        ),
+        ("read_before_init", "", "[Flags.FIRST]", ""),
+        (
+            "enum_escape",
+            "globalThis.savedFlags = Flags;",
+            "[Flags.FIRST]",
+            "",
+        ),
+        (
+            "result_escape",
+            "",
+            "[Flags.FIRST]",
+            "globalThis.savedCommand = command;",
+        ),
+        ("array_hole", "", "[, Flags.FIRST]", ""),
+        ("array_spread", "", "[...[], Flags.FIRST]", ""),
+    ] {
+        let initializer = "var Flags = ((values) => ((values[(values.FIRST = 1)] = \"FIRST\"), values))(Flags || {});";
+        let source = r#"EARLY_ENUM_DECL
+ENUM_CHANGE
+class Holder {
+  constructor(record) { this.record = record; }
+  run() { return this.record.execute(); }
+}
+function create(record) { return new Holder(record); }
+const prefix = new globalThis.Error();
+const command = create({ constraints: ARRAY_VALUE, execute: () => later });
+AFTER_COMMAND
+LATE_ENUM_DECL
+const dynamic = ((object) => {
+  object[(object.key = 0)] = "value";
+  return 1;
+})({});
+const later = dynamic;
+"#
+        .replace(
+            "EARLY_ENUM_DECL",
+            if case == "read_before_init" {
+                ""
+            } else {
+                initializer
+            },
+        )
+        .replace("ENUM_CHANGE", enum_change)
+        .replace("ARRAY_VALUE", constraints)
+        .replace("AFTER_COMMAND", after_command)
+        .replace(
+            "LATE_ENUM_DECL",
+            if case == "read_before_init" {
+                initializer
+            } else {
+                ""
+            },
+        );
+        eprintln!("checking {case}");
+        expect_atomic_conflict_rejection(
+            FixtureOpts::new(
+                &source,
+                vec![
+                    logical_module(
+                        "values/dynamic",
+                        &[
+                            Member::new("Flags"),
+                            Member::new("prefix"),
+                            Member::new("dynamic"),
+                        ],
+                    ),
+                    logical_module(
+                        "values/later",
+                        &[
+                            Member::new("Holder"),
+                            Member::new("create"),
+                            Member::new("command"),
+                            Member::new("later"),
+                        ],
+                    ),
+                ],
+            ),
+            &["values/dynamic", "values/later"],
+            &[],
+        );
+    }
+}
+
+#[test]
 fn unescaped_function_declaration_does_not_root_its_lazy_read() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"const prefix = new globalThis.Error();
@@ -850,4 +1024,195 @@ console.log(dynamic);
         )],
     ));
     assert_preserved_entry_output(&fixture, "laterundefined\n");
+}
+
+#[test]
+fn fresh_class_field_write_after_opaque_call_cannot_invoke_setter() {
+    let source = r#"import { prepare } from './peer.js';
+class Reader { read() { return later; } }
+const reader = new Reader();
+class Cache { value = 0; }
+const marker = prepare();
+const cache = new Cache();
+cache.value = 1;
+const later = 42;
+console.log(cache.value, reader.read(), later);
+export { Reader, reader, Cache, cache, marker, later };
+"#;
+    let peers = [("static/peer", "export function prepare() { return {}; }")];
+    let mut fixture = FixtureOpts::new(
+        source,
+        vec![
+            logical_module_with_anon(
+                "values/cache",
+                &[
+                    Member::new("Cache"),
+                    Member::new("cache"),
+                    Member::new("marker"),
+                    Member::new("Reader"),
+                    Member::new("reader"),
+                ],
+                &["cache.value = 1;"],
+            ),
+            logical_module("values/later", &[Member::new("later")]),
+        ],
+    )
+    .with_extra_chunks(&peers)
+    .with_unassigned_mode(unassigned_mode_inline());
+    fixture.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    let fixture = run_fixture(fixture);
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/values/cache.js",
+        &["cache", "reader"],
+        &["later"],
+    );
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/values/later.js",
+        &["later"],
+        &["cache"],
+    );
+    assert_preserved_entry_output(&fixture, "1 42 42\n");
+}
+
+#[test]
+fn fresh_class_instance_without_following_field_write_keeps_method_deferred() {
+    let source = r#"import { prepare } from './peer.js';
+class Reader { read() { return later; } }
+const reader = new Reader();
+class Cache { value = 0; }
+const marker = prepare();
+const cache = new Cache();
+const later = 42;
+console.log(cache.value, reader.read(), later);
+export { Reader, reader, Cache, cache, marker, later };
+"#;
+    let peers = [("static/peer", "export function prepare() { return {}; }")];
+    let mut fixture = FixtureOpts::new(
+        source,
+        vec![
+            logical_module(
+                "values/cache",
+                &[
+                    Member::new("Cache"),
+                    Member::new("cache"),
+                    Member::new("marker"),
+                    Member::new("Reader"),
+                    Member::new("reader"),
+                ],
+            ),
+            logical_module("values/later", &[Member::new("later")]),
+        ],
+    )
+    .with_extra_chunks(&peers)
+    .with_unassigned_mode(unassigned_mode_inline());
+    fixture.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    assert_preserved_entry_output(&run_fixture(fixture), "0 42 42\n");
+}
+
+#[test]
+fn replaced_own_field_descriptor_can_invoke_a_setter() {
+    let source = r#"import { prepare } from './peer.js';
+let later = 0;
+let observed = -1;
+class Cache { value = 0; }
+const marker = prepare();
+const cache = new Cache();
+Object.defineProperty(cache, 'value', {
+  set(value) { observed = later; }, configurable: true,
+});
+cache.value = 1;
+later = 42;
+console.log(observed, later);
+export { Cache, cache, marker, later, observed };
+"#;
+    let peers = [("static/peer", "export function prepare() { return {}; }")];
+    let mut colocated = FixtureOpts::new(source, vec![])
+        .with_extra_chunks(&peers)
+        .with_unassigned_mode(unassigned_mode_inline());
+    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    assert_preserved_entry_output(&run_fixture(colocated), "0 42\n");
+
+    let mut split = FixtureOpts::new(
+        source,
+        vec![
+            logical_module_with_anon(
+                "values/cache",
+                &[
+                    Member::new("Cache"),
+                    Member::new("cache"),
+                    Member::new("marker"),
+                    Member::new("observed"),
+                ],
+                &[
+                    "Object.defineProperty(cache, 'value', { set(value) { observed = later; }, configurable: true });",
+                    "cache.value = 1;",
+                ],
+            ),
+            logical_module_with_anon(
+                "values/later",
+                &[Member::new("later")],
+                &["later = 42;"],
+            ),
+        ],
+    )
+    .with_extra_chunks(&peers)
+    .with_unassigned_mode(unassigned_mode_inline());
+    split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    expect_atomic_conflict_rejection(split, &["values/cache", "values/later"], &[]);
+}
+
+#[test]
+fn deleted_class_field_exposes_inherited_setter() {
+    let source = r#"import { prepare } from './peer.js';
+let later = 0;
+let observed = -1;
+class Cache { value = 0; }
+Object.defineProperty(Cache.prototype, 'value', {
+  set(value) { observed = later; }, configurable: true,
+});
+const marker = prepare();
+const cache = new Cache();
+delete cache.value;
+cache.value = 1;
+later = 42;
+console.log(observed, later);
+export { Cache, cache, marker, later, observed };
+"#;
+    let peers = [("static/peer", "export function prepare() { return {}; }")];
+    let mut colocated = FixtureOpts::new(source, vec![])
+        .with_extra_chunks(&peers)
+        .with_unassigned_mode(unassigned_mode_inline());
+    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    assert_preserved_entry_output(&run_fixture(colocated), "0 42\n");
+
+    let mut split = FixtureOpts::new(
+        source,
+        vec![
+            logical_module_with_anon(
+                "values/cache",
+                &[
+                    Member::new("Cache"),
+                    Member::new("cache"),
+                    Member::new("marker"),
+                    Member::new("observed"),
+                ],
+                &[
+                    "Object.defineProperty(Cache.prototype, 'value', { set(value) { observed = later; }, configurable: true });",
+                    "delete cache.value;",
+                    "cache.value = 1;",
+                ],
+            ),
+            logical_module_with_anon(
+                "values/later",
+                &[Member::new("later")],
+                &["later = 42;"],
+            ),
+        ],
+    )
+    .with_extra_chunks(&peers)
+    .with_unassigned_mode(unassigned_mode_inline());
+    split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    expect_atomic_conflict_rejection(split, &["values/cache", "values/later"], &[]);
 }

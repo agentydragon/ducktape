@@ -849,6 +849,12 @@ actual top-level caller as their promotion owner, and memoized invocations
 include that caller and the reachability revision. A static data-property
 write to a proved fresh local function retains the same A11 fast path. This
 keeps unrelated returned closures deferred when no setter can be reached.
+The adjacent fresh-value proof also identifies a top-level write to an
+initialized own data field of a constructorless local class instance. That
+write cannot invoke an inherited setter, even after an earlier unknown call.
+Its assignment and execution-order effects remain. Callable-body writes and
+writes after deletion, descriptor replacement, or an intervening statement
+still use the accessor fallback.
 
 A closed inline mutation IIFE can also prove its receiver fresh at that call,
 independently of whether the returned object escapes later. The shared enum-IIFE
@@ -907,7 +913,14 @@ an unpublished checked instance graph. A source certificate requires one
 returned `new` expression; all nested `new` expressions must use inert local
 classes, and the wrapper's indexed calls must be exactly those allocations.
 The wrapper accepts only simple parameters bound to inline functions, primitive
-values, or fresh plain-data records. The same constructor eligibility checks
+values, or fresh plain-data records. A record may contain a dense fresh array
+of the same inputs. An exact named member read from a single-initializer TS
+enum IIFE is admitted only after initialization when its binding is stable
+PlainData and that member is an own primitive data property. The ordinary
+prototype guard also applies. Array holes and spreads, enum mutation or
+escape, and unknown member keys retain conservative reachability. Admitted
+member reads still contribute their ordinary eager dependencies and execution
+effects. The same constructor eligibility checks
 used by actual execution validate each class, and constructor property reads
 must resolve to own data or a safe missing property under A11. The analyzer
 executes the wrapper and constructors normally and keeps their synchronous

@@ -32,6 +32,53 @@ fn fn_purity(src: &str, name: &str) -> Option<bool> {
 }
 
 #[test]
+fn enum_named_data_fact_requires_stable_single_initializer() {
+    let initializer =
+        "var Flags = ((values) => ((values[(values.FIRST = 1)] = 'FIRST'), values))(Flags || {});";
+    for (suffix, admitted) in [
+        ("", true),
+        ("Flags = { FIRST: 1 };", false),
+        ("function replace() { Flags = { FIRST: () => 1 }; }", false),
+        ("[Flags] = [{ FIRST: () => 1 }];", false),
+        ("({ Flags } = { Flags: { FIRST: () => 1 } });", false),
+        ("for (Flags of [{ FIRST: () => 1 }]) {}", false),
+        ("Flags++;", false),
+        ("var { Flags } = { Flags: { FIRST: () => 1 } };", false),
+        (
+            "Object.defineProperty(Flags, 'FIRST', { get() { return 1; } });",
+            false,
+        ),
+        ("Flags = new Proxy(Flags, {});", false),
+        ("globalThis.savedFlags = Flags;", false),
+    ] {
+        let module = parse(&format!("{initializer}\n{suffix}"));
+        let body = top_level_item_views(&module.body);
+        let shadowed = compute_shadowed_globals(&body);
+        let graph = ChunkCodeGraph::build(&body, &shadowed, &BTreeSet::new());
+        let facts = analyze_facts(&module);
+        assert_eq!(
+            crate::facts::stable_ts_enum_named_data_members(&graph, &facts)
+                .get(&test_id("Flags"))
+                .is_some_and(|keys| keys.contains("FIRST")),
+            admitted,
+            "incorrect enum own-field fact after {suffix:?}"
+        );
+    }
+    let module =
+        parse("var Flags = ((values) => ((values.FIRST = 1), values))(Flags || (Flags = {}));");
+    let body = top_level_item_views(&module.body);
+    let shadowed = compute_shadowed_globals(&body);
+    let graph = ChunkCodeGraph::build(&body, &shadowed, &BTreeSet::new());
+    let facts = analyze_facts(&module);
+    assert!(
+        crate::facts::stable_ts_enum_named_data_members(&graph, &facts)
+            .get(&test_id("Flags"))
+            .is_some_and(|keys| keys.contains("FIRST")),
+        "the recognized initializer self-write must remain admitted"
+    );
+}
+
+#[test]
 fn fn_purity_mutual_recursion_converges_pure() {
     // `even` and `odd` only reference each other inside their
     // bodies. Optimistic init (Pure) holds through the

@@ -42,6 +42,8 @@ pub struct ChunkCodeGraph {
     /// `X.forEach(cb)` as if those built-ins might invoke functions
     /// held inside `X`; the callback body is still modeled separately.
     plain_array_bindings: BTreeSet<String>,
+    /// Candidate own primitive fields of single-init TS enum objects.
+    ts_enum_named_data_candidates: BTreeMap<Id, TsEnumNamedDataCandidate>,
     /// Exact Set-constructor spans with a structurally checked fresh-array
     /// iterable. The same proof is consumed by synchronous effect analysis.
     set_iterable_proof: SetIterableProof,
@@ -248,6 +250,16 @@ impl ChunkCodeGraph {
         }
         let (primitive_const_bindings, symbol_const_bindings) =
             collect_const_value_classes(body, shadowed);
+        let ts_enum_named_data_candidates =
+            collect_ts_enum_named_data_candidates(body, plain_data_bindings)
+                .into_iter()
+                .filter(|(binding, _)| {
+                    matches!(
+                        bindings.get(binding.0.as_ref()),
+                        Some(ChunkBinding::PlainData)
+                    )
+                })
+                .collect();
         let mut graph = ChunkCodeGraph {
             bindings,
             pure_new_constructors: declared_pure_new.clone(),
@@ -255,6 +267,7 @@ impl ChunkCodeGraph {
             primitive_const_bindings,
             symbol_const_bindings,
             plain_array_bindings: collect_plain_array_bindings(body, shadowed),
+            ts_enum_named_data_candidates,
             set_iterable_proof: set_iterable_proof.clone(),
             imported_purities: imported_purities.clone(),
             fluent_bindings: collect_fluent_const_bindings(body, fluent_bindings),
@@ -362,6 +375,10 @@ impl ChunkCodeGraph {
 
     pub(crate) fn plain_array_bindings(&self) -> &BTreeSet<String> {
         &self.plain_array_bindings
+    }
+
+    pub(crate) fn ts_enum_named_data_candidates(&self) -> &BTreeMap<Id, TsEnumNamedDataCandidate> {
+        &self.ts_enum_named_data_candidates
     }
 
     pub(crate) fn has_proven_set_iterable(&self, span: Span) -> bool {

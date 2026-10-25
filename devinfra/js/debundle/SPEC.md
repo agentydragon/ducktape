@@ -271,7 +271,11 @@ A direct local wrapper call may also retain callbacks in a fresh checked class
 instance without publishing them. The wrapper must have one return containing
 only checked local `new` allocations, simple parameters, no other calls or
 effects, and a unique stable identity. Inputs must be fresh plain-data records,
-inline functions, or primitives. Nested allocations must be inert; constructor
+inline functions, or primitives. A fresh record may contain a dense fresh array
+of these inputs or initialized, exact own primitive members of a stable,
+single-initializer TS enum object. Enum reads retain their eager dependencies;
+mutation, escape, holes, spreads, and unknown keys retain conservative
+reachability. Nested allocations must be inert; constructor
 property reads must resolve to own data or safe missing properties under A11.
 The initializer, wrapper, and class owners still contribute actual synchronous
 effects and ordering. Their execution alone does not expose deferred methods or
@@ -437,6 +441,10 @@ The allocation and assignment values must run no user code, and the instance
 must remain private throughout that run. Unsupported constructors, fields,
 receivers, dynamic scope, and intervening statements retain the conservative
 write checks.
+For that exact top-level own-field write, the same proof excludes a setter
+effect from unknown-call reachability. The assignment remains an actual
+top-level effect; nested callable writes and later receiver mutations retain
+their usual accessor checks.
 For a fresh top-level object literal that visibly contains the namespace and
 has static ordinary own data properties,
 the checker distinguishes the container's identity from namespace values held
