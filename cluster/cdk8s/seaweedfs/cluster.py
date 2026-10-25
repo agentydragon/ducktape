@@ -3,8 +3,7 @@ replication-repair `AdminScript`, the PodDisruptionBudgets the operator CRD has 
 field for, and the `tenants` grant letting the `TENANTS` namespaces' S3 objects reference it.
 
 Replication "001" (1 copy on a different node, same rack) survives a single node loss.
-Volume server PVCs use `local-path-ovh-*` on existing nodes and Piraeus classes on converted
-nodes. The SSD and HDD Piraeus groups keep their Seaweed placement domains. S3 runs as a
+Volume server PVCs use Piraeus strict-local classes, one volume-topology group per node. S3 runs as a
 standalone deployment (`spec.s3`, not `filer.s3`); the filer stays because S3 needs it for metadata.
 Every component is pinned to OVH nodes: the operator default would let pods land anywhere.
 
@@ -313,9 +312,7 @@ def seaweed(scope: Construct) -> Seaweed:
             # self-contained (no inheritance from a base spec.volume; topology-only deployment
             # needs the operator's nil-safe BaseVolumeSpec fallback, added in 1.0.20).
             volume_topology={
-                # The legacy hdd group stays out of this map: its last StatefulSet was
-                # deleted when 102453 was reimaged (2026-10-24), and re-adding it would
-                # recreate local-path servers. -disk=hdd matches the flat servers' default disk type ("" == hdd, verified
+                # -disk=hdd matches the flat servers' default disk type ("" == hdd, verified
                 # in seaweedfs 4.29 ToDiskType).
                 #
                 # The rack label is logical, not physical: OVH racks these boxes across THREE
@@ -376,21 +373,8 @@ def seaweed(scope: Construct) -> Seaweed:
                     },
                     anti_affinity_labels={"app.kubernetes.io/instance": NAME, **_component_labels("volume")},
                 ),
-                # The usual 3-server OVH NVMe group serves Forgejo git via the
-                # seaweedfs-ovh-ssd StorageClass (diskType=ssd -> -disk=ssd).
-                #
-                # Keep the evacuated legacy StatefulSet and retained claim template for
-                # rollback, with no running local-path volume servers. The Piraeus groups
-                # below provide independent SSD volume servers.
-                "ssd": _volume_topology(
-                    rack="hil-ovh-h108b01",
-                    storage="250Gi",
-                    storage_class="local-path-ovh-ssd",
-                    disk="ssd",
-                    replicas=0,
-                    max_volume_counts=200,
-                ),
-                # Same Seaweed disk/DC/rack as ssd; only the Kubernetes claim template differs.
+                # The OVH NVMe groups serve Forgejo git via the seaweedfs-ovh-ssd
+                # StorageClass (diskType=ssd -> -disk=ssd).
                 # metricsPort also makes the operator create this group's ServiceMonitor.
                 "ssd-piraeus": _volume_topology(
                     rack="hil-ovh-h108b01",
@@ -400,8 +384,7 @@ def seaweed(scope: Construct) -> Seaweed:
                     replicas=1,
                     max_volume_counts=200,
                     node_selector={_HOSTNAME: "ovh-ns1001419"},
-                    # Match every Seaweed volume group without rolling the legacy ssd template.
-                    # Required anti-affinity also protects this pod when peers are scheduled.
+                    # Keep this server separate from every other Seaweed volume server on its node.
                     anti_affinity_labels={"app.kubernetes.io/instance": NAME, **_component_labels("volume")},
                 ),
                 "ssd-piraeus-104952": _volume_topology(

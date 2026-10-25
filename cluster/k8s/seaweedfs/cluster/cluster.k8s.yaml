@@ -213,38 +213,6 @@ spec:
         - effect: NoSchedule
           key: node-role.kubernetes.io/control-plane
           operator: Exists
-    ssd:
-      affinity:
-        podAntiAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            - labelSelector:
-                matchLabels:
-                  app.kubernetes.io/instance: seaweedfs
-                  seaweedfs/topology: ssd
-              topologyKey: kubernetes.io/hostname
-      dataCenter: hil
-      env:
-        - name: GOMEMLIMIT
-          value: 1400MiB
-      extraArgs:
-        - -disk=ssd
-      limits:
-        memory: 1536Mi
-      maxVolumeCounts: 200
-      metricsPort: 9325
-      minFreeSpacePercent: 10
-      priorityClassName: stateful-infra
-      rack: hil-ovh-h108b01
-      replicas: 0
-      requests:
-        cpu: 100m
-        memory: 512Mi
-        storage: 250Gi
-      storageClassName: local-path-ovh-ssd
-      tolerations:
-        - effect: NoSchedule
-          key: node-role.kubernetes.io/control-plane
-          operator: Exists
     ssd-piraeus:
       affinity:
         podAntiAffinity:
