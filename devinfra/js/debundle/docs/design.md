@@ -2587,14 +2587,23 @@ still rejected, because per-member usage is not analyzed.
 
 The residual strip analyzes its post-rewrite module with the shared
 structural, value-flow, purity, and `VendorPrune` local-effect facts.
-Value-flow call augmentation is required for its island reachability;
+Source reads, rebinds and local mutation writers determine island reachability;
+inferred possible call targets do not assign package ownership.
 `StatementFacts::effects()` supplies its observable binding and global-cell
 writes. The strip does not build an owner graph or consume
 `synchronous_calls`, so this analysis entry point omits only synchronous
 call-effect annotation. The split-brain and swap-privacy gates still use the
-same augmented calls, local effects, and cell-write summaries.
+same source dependencies, local effects, and cell-write summaries.
 
 ### Deliberate split-brain bypasses in the strip pass
+
+Vendor package ownership follows source reads and rebinds, including those
+inside callback bodies, plus the items that mutate a referenced local value.
+The general effect analyzer also infers possible call targets, but those
+targets are not ownership edges: a target supplied to another call of the
+same helper does not belong to this package. The strip pass still checks
+retained reads, local mutation writers, and observable writes before dropping
+an item.
 
 The strip pass bails on "split-brain" items — top-level items
 reachable both from the residual chunk's exports and from a swapped
