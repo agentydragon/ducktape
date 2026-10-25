@@ -16,6 +16,12 @@ const later = 42;
 console.log(unique.size, later);
 "#;
 
+const STATIC_MEMBER_SOURCE: &str = r#"globalThis.saved = () => later;
+const lookup = { key: "token", other: 7 }, unique = new Set([lookup.key]);
+const later = 42;
+console.log(unique.size, later);
+"#;
+
 const CUSTOM_ITERATOR_SOURCE: &str = r#"const values = ["a"];
 globalThis.saved = () => later;
 values[Symbol.iterator] = function () { let done = false; return { next() { if (done) return { done: true }; done = true; try { globalThis.saved(); } catch (error) { return { value: error.name, done: false }; } return { value: "a", done: false }; } }; };
@@ -43,6 +49,38 @@ const CAPTURED_FUNCTION_SET_SOURCE: &str = r#"globalThis.consume = function (val
 const collection = new Set([() => later]);
 console.log(globalThis.consume(collection));
 const later = 42;
+"#;
+
+const FUNCTION_MEMBER_SOURCE: &str = r#"globalThis.consume = function (values) {
+  for (const callback of values) {
+    try { callback(); } catch (error) { return error.name; }
+  }
+};
+const lookup = { key: () => later }, collection = new Set([lookup.key]);
+console.log(globalThis.consume(collection));
+const later = 42;
+"#;
+
+const DUPLICATE_MEMBER_SOURCE: &str = r#"globalThis.consume = function (values) {
+  for (const callback of values) {
+    try { callback(); } catch (error) { return error.name; }
+  }
+};
+const lookup = { key: "token", key: () => later }, collection = new Set([lookup.key]);
+console.log(globalThis.consume(collection));
+const later = 42;
+"#;
+
+const GETTER_MEMBER_SOURCE: &str = r#"globalThis.saved = () => later;
+const lookup = { get key() { try { globalThis.saved(); } catch (error) { globalThis.observed = error.name; } return "token"; } }, collection = new Set([lookup.key]);
+const later = 42;
+console.log(globalThis.observed, collection.size);
+"#;
+
+const PROXY_MEMBER_SOURCE: &str = r#"globalThis.saved = () => later;
+const lookup = new Proxy({ key: "token" }, { get(target, key) { try { globalThis.saved(); } catch (error) { globalThis.observed = error.name; } return target[key]; } }), collection = new Set([lookup.key]);
+const later = 42;
+console.log(globalThis.observed, collection.size);
 "#;
 
 const ALIAS_MUTATION_SOURCE: &str = r#"globalThis.consume = function (values) {
@@ -133,6 +171,19 @@ fn inline_array_literal_does_not_fabricate_set_reentry() {
 }
 
 #[test]
+fn primitive_static_member_does_not_fabricate_set_reentry() {
+    assert_split_runs(
+        STATIC_MEMBER_SOURCE,
+        logical_module_with_anon(
+            "values/collection",
+            &[Member::new("lookup"), Member::new("unique")],
+            &["globalThis.saved = () => later;"],
+        ),
+        "1 42\n",
+    );
+}
+
+#[test]
 fn custom_array_iterator_callback_still_blocks_split() {
     assert_real_callback_keeps_split_rejected(
         CUSTOM_ITERATOR_SOURCE,
@@ -181,6 +232,62 @@ fn set_retaining_callback_still_blocks_split() {
             ],
         ),
         "ReferenceError\n",
+    );
+}
+
+#[test]
+fn function_valued_member_retained_by_escaped_set_blocks_split() {
+    assert_real_callback_keeps_split_rejected(
+        FUNCTION_MEMBER_SOURCE,
+        logical_module_with_anon(
+            "values/collection",
+            &[Member::new("lookup"), Member::new("collection")],
+            &[
+                "globalThis.consume = function (values) { for (const callback of values) { try { callback(); } catch (error) { return error.name; } } };",
+            ],
+        ),
+        "ReferenceError\n",
+    );
+}
+
+#[test]
+fn later_duplicate_function_property_blocks_split() {
+    assert_real_callback_keeps_split_rejected(
+        DUPLICATE_MEMBER_SOURCE,
+        logical_module_with_anon(
+            "values/collection",
+            &[Member::new("lookup"), Member::new("collection")],
+            &[
+                "globalThis.consume = function (values) { for (const callback of values) { try { callback(); } catch (error) { return error.name; } } };",
+            ],
+        ),
+        "ReferenceError\n",
+    );
+}
+
+#[test]
+fn getter_member_callback_blocks_split() {
+    assert_real_callback_keeps_split_rejected(
+        GETTER_MEMBER_SOURCE,
+        logical_module_with_anon(
+            "values/collection",
+            &[Member::new("lookup"), Member::new("collection")],
+            &["globalThis.saved = () => later;"],
+        ),
+        "ReferenceError 1\n",
+    );
+}
+
+#[test]
+fn proxy_member_callback_blocks_split() {
+    assert_real_callback_keeps_split_rejected(
+        PROXY_MEMBER_SOURCE,
+        logical_module_with_anon(
+            "values/collection",
+            &[Member::new("lookup"), Member::new("collection")],
+            &["globalThis.saved = () => later;"],
+        ),
+        "ReferenceError 1\n",
     );
 }
 

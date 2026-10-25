@@ -168,11 +168,15 @@ where
         .collect();
     apply_global_escape_taint(&body, &global_object_names, &mut per_statement);
     let value_flow = ChunkValueFlow::analyze(&body);
-    let set_iterable_proof = SetIterableProof::analyze(&body, &shadowed, &value_flow);
+    let plain_data_bindings =
+        crate::purity::collect_plain_data_bindings(&body, &shadowed, &value_flow);
+    let set_iterable_proof =
+        SetIterableProof::analyze(&body, &shadowed, &value_flow, &plain_data_bindings);
     StructuralChunkAnalysis {
         body,
         value_flow,
         set_iterable_proof,
+        plain_data_bindings,
         shadowed,
         per_statement,
         top_level_await,
@@ -227,6 +231,7 @@ where
         body,
         value_flow,
         set_iterable_proof,
+        plain_data_bindings,
         shadowed,
         per_statement,
         top_level_await,
@@ -242,16 +247,16 @@ where
                 start_column: Some(start_column),
             })
         };
-        ChunkCodeGraph::build_full_with_locations_and_flow(
+        ChunkCodeGraph::build_full_with_prepared_plain_data(
             &body,
-            &value_flow,
-            &set_iterable_proof,
             &shadowed,
             &hints.declared_pure,
             &hints.declared_pure_new,
             &hints.declared_pure_members,
             &hints.imported_purities,
             &hints.fluent_bindings,
+            &set_iterable_proof,
+            &plain_data_bindings,
             Some(&mut locate),
         )
     };
