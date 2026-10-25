@@ -76,11 +76,6 @@ spec:
     gitlab-runner:
       install: false
     global:
-      affinity:
-        nodeAffinity:
-          key: topology.kubernetes.io/zone
-          values:
-            - hil-ovh
       appConfig:
         artifacts:
           bucket: gitlab-spike-artifacts
@@ -142,7 +137,8 @@ spec:
         secret: gitlab-root-password
       kas:
         enabled: false
-      nodeAffinity: hard
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
       praefect:
         dbSecret:
           key: password
