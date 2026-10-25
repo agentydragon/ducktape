@@ -1,7 +1,7 @@
 //! Read-only module decomposition from gated same-module seed fragments.
 
 use debundle_e2e_support::GraphFixture;
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::fs;
 use std::process::Command;
 
@@ -40,6 +40,201 @@ fn assert_emitted_layout_and_output(
         );
     }
     debundle_e2e_support::assert_node_output(&app.join("entry.js"), expected_output, "");
+}
+
+fn apply_decomposition(fixture: &GraphFixture, report: &Value) {
+    let assignments = report["modules"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|module| {
+            module["fragments"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .flat_map(|fragment| {
+                    fragment["owner_ids"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|owner_id| {
+                            json!({
+                                "owner_id": owner_id,
+                                "module": fragment["suggested_module_path"],
+                            })
+                        })
+                })
+        })
+        .collect::<Vec<_>>();
+    let batch = tempfile::NamedTempFile::new().unwrap();
+    fs::write(batch.path(), serde_json::to_vec(&assignments).unwrap()).unwrap();
+    fixture.assert_success(&[
+        "modules",
+        "refine",
+        "--batch",
+        batch.path().to_str().unwrap(),
+    ]);
+}
+
+fn decomposition_path<'a>(report: &'a Value, owner_id: &Value) -> &'a str {
+    report["modules"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|module| module["fragments"].as_array().unwrap())
+        .find(|fragment| fragment["owner_ids"].as_array().unwrap().contains(owner_id))
+        .unwrap_or_else(|| panic!("owner {owner_id} missing from decomposition {report}"))
+        ["suggested_module_path"]
+        .as_str()
+        .unwrap()
+}
+
+fn owner_id_for_binding(fixture: &GraphFixture, binding: &str) -> String {
+    fixture
+        .owner_graph()
+        .nodes
+        .into_iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|declared| declared.binding.as_str() == binding)
+        })
+        .unwrap_or_else(|| panic!("missing owner for binding {binding:?}"))
+        .id
+}
+
+fn owner_id_for_line(fixture: &GraphFixture, line: usize) -> String {
+    fixture
+        .owner_graph()
+        .nodes
+        .into_iter()
+        .find(|node| {
+            node.source_location
+                .as_ref()
+                .is_some_and(|location| location.start_line == line)
+        })
+        .unwrap_or_else(|| panic!("missing owner on source line {line}"))
+        .id
+}
+
+fn assert_owner_module(fixture: &GraphFixture, owner_id: &str, expected: &str) {
+    assert_eq!(owner_module_path(fixture, owner_id), expected);
+}
+
+fn owner_module_path(fixture: &GraphFixture, owner_id: &str) -> String {
+    let graph = fixture.owner_graph();
+    let owner = graph.nodes.iter().find(|node| node.id == owner_id).unwrap();
+    graph.module(&owner.destination).unwrap().path.to_string()
+}
+
+fn ambiguous_decorator_fixture(with_duplicate_provider: bool) -> GraphFixture {
+    let provider = if with_duplicate_provider {
+        vec![(
+            "other.yaml",
+            "members: [{name: applyDecorators, selector: {binding: {name: decorateB}}}]\n",
+        )]
+    } else {
+        vec![("other.yaml", "members: []\n")]
+    };
+    let mut modules = vec![(
+        "home.yaml",
+        r#"members:
+  - {name: applyDecorators, selector: {binding: {name: decorateA}}}
+  - {name: Widget, selector: {binding: {name: Widget}}}
+anonymous_statements:
+  - {match: 'Array.isArray([]);'}
+  - source_match:
+      match: 'applyDecorators([], Widget.prototype, "ready");'
+"#,
+    )];
+    modules.extend(provider);
+    GraphFixture::new(
+        r#"function decorateA(_decorators, target, key) { target[key] = "A"; }
+function decorateB(_decorators, target, key) { target[key] = "B"; }
+class Widget {}
+Array.isArray([]);
+decorateA([], Widget.prototype, "ready");
+console.log(new Widget().ready);
+"#,
+        &modules,
+    )
+}
+
+#[test]
+fn decomposition_coheres_anonymous_call_with_ambiguous_local_helper() {
+    let fixture = ambiguous_decorator_fixture(true);
+    let anonymous_owner = owner_id_for_line(&fixture, 5);
+    assert_owner_module(&fixture, &anonymous_owner, "home");
+    debundle_e2e_support::assert_node_output(&fixture.source_path(), "A\n", "");
+
+    let source_path = fixture.source_path();
+    let source_root = source_path.parent().unwrap().to_str().unwrap();
+    let report = fixture.json(&[
+        "modules",
+        "decompose",
+        "--atomic",
+        "--preserve-selector-anchors",
+        "--source-root",
+        source_root,
+    ]);
+    assert_eq!(report["candidate_is_realizable"], true, "{report}");
+    let relations = report["selector_anchor_relations"].as_array().unwrap();
+    let relation = relations
+        .iter()
+        .find(|relation| relation["kind"] == "source_match_reference")
+        .expect("anonymous source_match reference should retain its local helper origin");
+    assert_eq!(
+        relation["source"],
+        json!({"kind": "anonymous_statement", "index": 1})
+    );
+    assert_eq!(relation["referenced_by"], "applyDecorators");
+
+    let helper_owner = owner_id_for_binding(&fixture, "decorateA");
+    let duplicate_owner = owner_id_for_binding(&fixture, "decorateB");
+    assert_eq!(relation["source_owner_ids"][0], anonymous_owner);
+    assert_eq!(relation["anchor_owner_ids"][0], helper_owner);
+    assert_eq!(
+        decomposition_path(&report, &json!(anonymous_owner)),
+        decomposition_path(&report, &json!(helper_owner))
+    );
+    assert_ne!(
+        decomposition_path(&report, &json!(helper_owner)),
+        owner_module_path(&fixture, &duplicate_owner),
+        "the unchanged duplicate provider keeps its original module"
+    );
+
+    apply_decomposition(&fixture, &report);
+    fixture.assert_runs("A\n");
+}
+
+#[test]
+fn decomposition_keeps_unique_anonymous_reference_separately_movable() {
+    let fixture = ambiguous_decorator_fixture(false);
+    let anonymous_owner = owner_id_for_line(&fixture, 5);
+    assert_owner_module(&fixture, &anonymous_owner, "home");
+    debundle_e2e_support::assert_node_output(&fixture.source_path(), "A\n", "");
+
+    let source_path = fixture.source_path();
+    let source_root = source_path.parent().unwrap().to_str().unwrap();
+    let report = fixture.json(&[
+        "modules",
+        "decompose",
+        "--atomic",
+        "--preserve-selector-anchors",
+        "--source-root",
+        source_root,
+    ]);
+    assert_eq!(report["candidate_is_realizable"], true, "{report}");
+    assert_eq!(report["selector_anchor_relations"], json!([]));
+    let helper_owner = owner_id_for_binding(&fixture, "decorateA");
+    assert_ne!(
+        decomposition_path(&report, &json!(anonymous_owner)),
+        decomposition_path(&report, &json!(helper_owner)),
+        "a module-neutral unique reference remains free to move"
+    );
+
+    apply_decomposition(&fixture, &report);
+    fixture.assert_runs("A\n");
 }
 
 #[test]

@@ -180,6 +180,17 @@ does not edit the spec. An optional per-home pair-attempt limit bounds partial
 fallback checks across all passes while preserving whole-home checks; the
 report identifies homes left with untried pairs. The default remains exhaustive.
 
+With `--preserve-selector-anchors --source-root`, decomposition resolves
+authored selectors against their source chunks through the joint selector
+resolver. It reports local `intrinsic_alias` and module-neutral ambiguous
+source-match references in `selector_anchor_relations`, including named-member
+and anonymous-statement sources. Each relation carries a tagged `source`, the
+referenced member, and both owner-id sets. Anonymous sources use their authored
+`anonymous_statements[]` index; the resolver maps that selector to its stable
+owner before coalescing the candidate groups. A module-neutral unique reference
+does not force co-location. The option is read-only and the complete candidate
+still passes the shared structural and realizability gates.
+
 ## Readable names and the chunk public surface
 
 `name:` on a member and the name assigned to `source_matches[].bindings[]`

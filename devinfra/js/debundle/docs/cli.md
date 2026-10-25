@@ -402,13 +402,19 @@ debundle modules decompose --atomic --preserve-selector-anchors \
 
 This option requires `--source-root` and resolves current claims through the
 normal joint selector resolver. It coalesces each member with its local
-`intrinsic_alias` anchor and each source-match capture with local members whose
-free names are ambiguous under module-neutral lookup. The JSON report sets
-`preserve_selector_anchors` and lists each relationship, with a `kind`, in
-`selector_anchor_relations`. Other references retain their normal resolver
-behavior. The command remains read-only, and the complete
-candidate still passes through the same structural and realizability gates.
-Without the option, graph-only decomposition behavior is unchanged.
+`intrinsic_alias` anchor and each source-match capture (a named member or an
+anonymous statement selector) with local members whose free names are ambiguous
+under module-neutral lookup. The JSON report sets `preserve_selector_anchors`
+and lists each relationship in `selector_anchor_relations`. Each relation has
+`kind`, `module_path`, `source`, `referenced_by`, `source_owner_ids`, and
+`anchor_owner_ids`. `source` is tagged as either
+`{"kind":"member","name":"Widget"}` or
+`{"kind":"anonymous_statement","index":1}`; the latter index is the
+authored `anonymous_statements[]` selector index. References with one
+module-neutral target retain their normal resolver behavior. The command
+remains read-only, and the complete candidate still passes through the same
+structural and realizability gates. Without the option, graph-only
+decomposition behavior is unchanged.
 
 To ask for a coarser candidate when the atomic partition is blocked by gate
 cycles, add `--coarsen-blocking-sccs`:
