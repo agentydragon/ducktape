@@ -644,6 +644,15 @@ fn namespace_factory_tracks_namespace_from_object_destructuring() {
 }
 
 #[test]
+fn namespace_factory_tracks_default_from_object_assignment_destructuring() {
+    assert_namespace_factory_publication_rejected(
+        "let alias;\n\
+         ({ alias = api } = {});\n\
+         globalThis.exposed = alias;\n",
+    );
+}
+
+#[test]
 fn namespace_factory_keeps_unknown_destructuring_conservative() {
     assert_namespace_factory_publication_rejected(
         "const { alias } = globalThis.untrusted?.namespace;\n\

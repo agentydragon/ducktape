@@ -466,19 +466,6 @@ impl ValueExpr {
         }
     }
 
-    /// A call's callee is an input to the call only when it explicitly carries
-    /// the namespace itself. For audited one-hop namespace member calls the
-    /// member identity is trusted by the annotation; explicit arguments and
-    /// callback results still pass through the ordinary publication check.
-    fn directly_exposes_namespace(
-        &self,
-        id: &Id,
-        aliases: &BTreeSet<Id>,
-        facts: &NamespaceValueFacts,
-    ) -> bool {
-        self.may_publish_namespace(id, aliases, facts)
-    }
-
     /// Whether this value could be the namespace object used as a property
     /// write receiver. Unknown call and constructor results remain possible
     /// receivers here, even though merely storing or returning those unrelated
@@ -866,14 +853,24 @@ fn collect_assign_target_assignments(
                             });
                         collect_pattern_assignments(&property.value, &projected, assignments);
                     }
-                    ObjectPatProp::Assign(property) => assignments.push((
-                        property.key.id.to_id(),
-                        ValueExpr::Member(
+                    ObjectPatProp::Assign(property) => {
+                        let projected = ValueExpr::Member(
                             Box::new(value.clone()),
                             Some(property.key.id.sym.to_string()),
                             false,
-                        ),
-                    )),
+                        );
+                        let projected =
+                            property
+                                .value
+                                .as_deref()
+                                .map_or(projected.clone(), |default| {
+                                    ValueExpr::Alternatives(vec![
+                                        projected,
+                                        ValueExpr::from_expr(default),
+                                    ])
+                                });
+                        assignments.push((property.key.id.to_id(), projected));
+                    }
                     ObjectPatProp::Rest(rest) => {
                         collect_pattern_assignments(&rest.arg, &ValueExpr::Unknown, assignments);
                     }
@@ -1557,7 +1554,7 @@ impl ExecutionIndex {
                     })
                     || callable.calls.iter().any(|call| {
                         call.args.iter().any(|value| {
-                            value.directly_exposes_namespace(id, &aliases, &namespace_value_facts)
+                            value.may_publish_namespace(id, &aliases, &namespace_value_facts)
                         })
                     })
             });
@@ -1570,9 +1567,9 @@ impl ExecutionIndex {
                         value.may_publish_namespace(id, &aliases, &namespace_value_facts)
                     });
             let top_call_argument = index.top_calls.iter().flatten().any(|call| {
-                call.args.iter().any(|value| {
-                    value.directly_exposes_namespace(id, &aliases, &namespace_value_facts)
-                })
+                call.args
+                    .iter()
+                    .any(|value| value.may_publish_namespace(id, &aliases, &namespace_value_facts))
             });
             let exported_value = index
                 .top_exported_values
