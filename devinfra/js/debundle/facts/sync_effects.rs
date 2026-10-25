@@ -4321,6 +4321,11 @@ struct Executor<'a> {
     cache: BTreeMap<InvocationSignature, Outcome>,
 }
 
+#[derive(Clone, Copy)]
+struct ValidatedMetadataDecoration {
+    target_owner: StatementOrdinal,
+}
+
 impl Executor<'_> {
     fn ordinary_data_properties(
         &self,
@@ -4755,19 +4760,17 @@ impl Executor<'_> {
         Some(self.callback_values(&source_values))
     }
 
-    fn summarize_metadata_decoration(
+    fn validated_metadata_decoration(
         &mut self,
         application: &MetadataDecorateCall,
         env: &Context,
         captures: &Context,
-        owner: StatementOrdinal,
-        outcome: &mut Outcome,
-    ) -> bool {
+    ) -> Option<ValidatedMetadataDecoration> {
         if !self.index.dynamic_scope_owners.is_empty()
             || !self.initialized_bindings.contains(&application.helper)
             || !self.initialized_bindings.contains(&application.target)
         {
-            return false;
+            return None;
         }
         let helper = self.evaluate(
             &ValueExpr::Binding(application.helper.clone()),
@@ -4780,24 +4783,36 @@ impl Executor<'_> {
             captures,
         );
         if helper.len() != 1 || target.len() != 1 {
-            return false;
+            return None;
         }
         let helper_key = match helper.first() {
             Some(AbstractValue::Origin(ValueOrigin::Function(key))) => *key,
             Some(AbstractValue::Closure(key, captured)) if captured.values.is_empty() => *key,
-            _ => return false,
+            _ => return None,
         };
         let Some(AbstractValue::Origin(ValueOrigin::Class(target_key))) = target.first() else {
-            return false;
+            return None;
         };
         if application.stable_origins(self.flow) != Some((helper_key, *target_key)) {
-            return false;
+            return None;
         }
         if application.member_decorators.iter().any(|root| {
             !self.index.imported_bindings.contains(root) || self.changed_member_roots.contains(root)
         }) {
-            return false;
+            return None;
         }
+        Some(ValidatedMetadataDecoration {
+            target_owner: *self.binding_owner.get(&application.target)?,
+        })
+    }
+
+    fn summarize_metadata_decoration(
+        &mut self,
+        application: &MetadataDecorateCall,
+        _validated: ValidatedMetadataDecoration,
+        owner: StatementOrdinal,
+        outcome: &mut Outcome,
+    ) {
         // The author certifies the helper's dispatch and every decorator's
         // metadata-only behavior, not purity. Preserve all static dependencies
         // of their bodies without manufacturing calls into the target methods.
@@ -4814,7 +4829,6 @@ impl Executor<'_> {
             }
         }
         self.apply_rebind_effects(&outcome.effects.rebinds);
-        true
     }
 
     fn all_owners(&self) -> impl Iterator<Item = StatementOrdinal> + '_ {
@@ -4907,18 +4921,28 @@ impl Executor<'_> {
         roots
     }
 
-    fn fact_roots(&self, fact: &StatementFacts) -> BTreeSet<StatementOrdinal> {
+    fn fact_roots(
+        &self,
+        fact: &StatementFacts,
+        metadata_target: Option<StatementOrdinal>,
+    ) -> BTreeSet<StatementOrdinal> {
         let mut roots = BTreeSet::new();
         // Export lists link bindings; evaluating one does not expose a value
         // whose declaration has not run yet.
         if self.index.linkage_owners.contains(&fact.ordinal) {
             return roots;
         }
-        if self.exported_owners.contains(&fact.ordinal)
-            || !(fact.purity.is_pure()
-                && (fact.declares_direct_function
-                    || matches!(fact.kind, StatementKind::ClassDecl)
-                    || self.closed_callback_factory_result(fact)))
+        // The full metadata timing proof covers this whole statement. Its
+        // local mutation still contributes graph edges, but the call does not
+        // publish an executable capability through the target or its result.
+        // Rooting the statement would traverse its eager target read in the
+        // synchronous owner closure and undo the target filter below.
+        if metadata_target.is_none()
+            && (self.exported_owners.contains(&fact.ordinal)
+                || !(fact.purity.is_pure()
+                    && (fact.declares_direct_function
+                        || matches!(fact.kind, StatementKind::ClassDecl)
+                        || self.closed_callback_factory_result(fact))))
         {
             roots.insert(fact.ordinal);
         }
@@ -4929,13 +4953,16 @@ impl Executor<'_> {
         // still enter reachability through their own executor paths.
         let inert_heritage = self.inert_class_heritage_binding(fact);
         roots.extend(
-            self.owner_read_closure.owners_for_bindings(
-                fact.reads
-                    .eager
-                    .iter()
-                    .filter(|id| Some(*id) != inert_heritage)
-                    .chain(fact.rebinds.eager.iter()),
-            ),
+            self.owner_read_closure
+                .owners_for_bindings(
+                    fact.reads
+                        .eager
+                        .iter()
+                        .filter(|id| Some(*id) != inert_heritage)
+                        .chain(fact.rebinds.eager.iter()),
+                )
+                .into_iter()
+                .filter(|owner| Some(*owner) != metadata_target),
         );
         roots
     }
@@ -7548,7 +7575,24 @@ pub(crate) fn annotate_synchronous_calls(
         executor.fallback_outcome = Outcome::default();
         executor.fallback_callback_sizes = None;
         executor.fallback_local_owners.clear();
-        let fact_roots = executor.fact_roots(fact);
+        // A recognized metadata statement is a whole call expression. Its
+        // eligibility proof is stable across this statement's preparatory
+        // lanes, so use the same proof for reachability and call execution.
+        let metadata_application = index.top_metadata_decorations[fact.ordinal.0].as_ref();
+        let prevalidated_metadata = metadata_application
+            .filter(|_| {
+                !index.opaque_top.contains(&fact.ordinal)
+                    && index.top_assignments[fact.ordinal.0].is_empty()
+                    && index.top_member_value_writes[fact.ordinal.0].is_empty()
+                    && index.top_callback_result_writes[fact.ordinal.0].is_empty()
+            })
+            .and_then(|application| {
+                executor.validated_metadata_decoration(application, &top_env, &top_captures)
+            });
+        let fact_roots = executor.fact_roots(
+            fact,
+            prevalidated_metadata.map(|validated| validated.target_owner),
+        );
         if executor.reachability.unknown_call_seen {
             executor.extend_reachable_owners(fact_roots.iter().copied());
         } else if let Some(roots) = &mut executor.prior_reachability_roots {
@@ -7609,18 +7653,19 @@ pub(crate) fn annotate_synchronous_calls(
             &mut outcome,
             &BTreeSet::new(),
         );
-        let metadata_only = index.top_metadata_decorations[fact.ordinal.0]
-            .as_ref()
-            .is_some_and(|application| {
-                executor.summarize_metadata_decoration(
-                    application,
-                    &top_env,
-                    &top_captures,
-                    fact.ordinal,
-                    &mut outcome,
-                )
-            });
-        if !metadata_only {
+        let validated_metadata = prevalidated_metadata.or_else(|| {
+            metadata_application.and_then(|application| {
+                executor.validated_metadata_decoration(application, &top_env, &top_captures)
+            })
+        });
+        if let (Some(application), Some(validated)) = (metadata_application, validated_metadata) {
+            executor.summarize_metadata_decoration(
+                application,
+                validated,
+                fact.ordinal,
+                &mut outcome,
+            );
+        } else {
             for call in calls {
                 executor.execute_call(call, &top_env, &top_captures, &mut outcome);
             }
