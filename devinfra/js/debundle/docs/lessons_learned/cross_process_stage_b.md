@@ -107,7 +107,7 @@ doesn't justify it.
 ## What we kept
 
 The composer pattern survived: `compute_chunk_analysis` is a
-clean function that runs parse → facts → owner-graph → atomic-groups
+clean function that runs parse → facts → owner-graph → atomic-units
 behind one named call. Its value is **structural readability** —
 the materializer reads more cleanly when chunk analysis is a single
 function call rather than four inline stages — not cross-process

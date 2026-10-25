@@ -10,7 +10,7 @@ repeated the scan even when it already held the relevant sequencing edge.
 A neutral CLI reproduction declares independent pairs of mutable bindings,
 with one deferred writer per pair. The spec intentionally assigns the two
 bindings to different modules. Unrelated deferred reader functions add lazy
-edges without joining the independent atomic groups. With 8,192 conflicts and
+edges without joining the independent atomic units. With 8,192 conflicts and
 128 readers, 84% of sampled CPU was in `sequenced_owner_causes`. The 12,288-pair
 case exceeded 60 seconds after main analysis completed on `c3dd94118c`.
 
