@@ -43,6 +43,169 @@ fn assert_emitted_layout_and_output(
 }
 
 #[test]
+fn rejoining_restores_a_safe_home_and_keeps_an_unrelated_module() {
+    let fixture = GraphFixture::new(
+        "const alpha = 1;\nconst beta = 2;\nconst outside = 3;\nconsole.log(alpha + beta + outside);\n",
+        &[
+            (
+                "home.yaml",
+                "members: [{selector: {binding: {name: alpha}}}, {selector: {binding: {name: beta}}}]\n",
+            ),
+            (
+                "outside.yaml",
+                "members: [{selector: {binding: {name: outside}}}]\n",
+            ),
+        ],
+    );
+    let home_before = fs::read(fixture.modules.join("home.yaml")).unwrap();
+    let outside_before = fs::read(fixture.modules.join("outside.yaml")).unwrap();
+    let missing_coarsening = fixture.command(&[
+        "modules",
+        "decompose",
+        "--atomic",
+        "--rejoin-original-modules",
+    ]);
+    assert_eq!(missing_coarsening.status.code(), Some(2));
+    assert!(
+        String::from_utf8_lossy(&missing_coarsening.stderr).contains("--coarsen-blocking-sccs")
+    );
+    let args = [
+        "modules",
+        "decompose",
+        "--atomic",
+        "--coarsen-blocking-sccs",
+        "--rejoin-original-modules",
+        "--graph",
+        fixture.graph.to_str().unwrap(),
+        "--modules",
+        fixture.modules.to_str().unwrap(),
+    ];
+    let report = fixture.json(&args);
+    assert_eq!(
+        report,
+        fixture.json(&args),
+        "rejoining must be deterministic"
+    );
+    assert_eq!(report["coverage_complete"], true, "{report}");
+    assert_eq!(report["candidate_is_realizable"], true, "{report}");
+    assert_eq!(report["coarsening"]["stop_reason"], "accepted");
+    let rejoining = &report["coarsening"]["original_home_rejoining"];
+    assert_eq!(rejoining["stop_reason"], "converged", "{report}");
+    assert!(rejoining["accepted_contractions"].as_u64().unwrap() >= 1);
+    assert!(
+        rejoining["fully_restored_module_paths"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("home")),
+        "{report}"
+    );
+    let groups = report["coarsening"]["groups"].as_array().unwrap();
+    let home = groups
+        .iter()
+        .find(|group| group["suggested_module_path"] == "home")
+        .expect("restored original home");
+    assert_eq!(home["origin_module_paths"], serde_json::json!(["home"]));
+    assert_eq!(home["binding_ids"], serde_json::json!(["alpha", "beta"]));
+    let outside = groups
+        .iter()
+        .find(|group| group["suggested_module_path"] == "outside")
+        .expect("unrelated module remains at its path");
+    assert_eq!(outside["binding_ids"], serde_json::json!(["outside"]));
+    assert_eq!(
+        home_before,
+        fs::read(fixture.modules.join("home.yaml")).unwrap()
+    );
+    assert_eq!(
+        outside_before,
+        fs::read(fixture.modules.join("outside.yaml")).unwrap()
+    );
+    debundle_e2e_support::assert_node_output(&fixture.source_path(), "6\n", "");
+    assert_emitted_layout_and_output(&fixture, &["home", "outside"], "6\n");
+}
+
+#[test]
+fn rejoining_keeps_an_unsafe_home_split_and_refine_applies_accepted_groups() {
+    let fixture = GraphFixture::rejected(
+        "const first = 1;\nconst middle = first + 1;\nconst last = middle + 1;\nconsole.log(last);\n",
+        &[
+            (
+                "home.yaml",
+                "members: [{selector: {binding: {name: first}}}, {selector: {binding: {name: last}}}]\n",
+            ),
+            (
+                "middle.yaml",
+                "members: [{selector: {binding: {name: middle}}}]\n",
+            ),
+        ],
+    );
+    let middle_before = fs::read(fixture.modules.join("middle.yaml")).unwrap();
+    let report = fixture.json(&[
+        "modules",
+        "decompose",
+        "--atomic",
+        "--coarsen-blocking-sccs",
+        "--rejoin-original-modules",
+        "--graph",
+        fixture.graph.to_str().unwrap(),
+        "--modules",
+        fixture.modules.to_str().unwrap(),
+    ]);
+    assert_eq!(report["coverage_complete"], true, "{report}");
+    assert_eq!(report["candidate_is_realizable"], true, "{report}");
+    assert_eq!(report["cycles"], serde_json::json!([]), "{report}");
+    assert_eq!(report["cross_rebinds"], serde_json::json!([]), "{report}");
+    let rejoining = &report["coarsening"]["original_home_rejoining"];
+    assert!(rejoining["attempted_contractions"].as_u64().unwrap() >= 1);
+    assert!(
+        rejoining["still_split_module_paths"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("home")),
+        "{report}"
+    );
+    let groups = report["coarsening"]["groups"].as_array().unwrap();
+    let split: Vec<_> = groups
+        .iter()
+        .filter(|group| group["origin_module_paths"] == serde_json::json!(["home"]))
+        .collect();
+    assert_eq!(split.len(), 2, "{report}");
+    assert!(
+        groups
+            .iter()
+            .any(|group| group["suggested_module_path"] == "middle"
+                && group["binding_ids"] == serde_json::json!(["middle"])),
+        "{report}"
+    );
+
+    let assignments: Vec<_> = split
+        .iter()
+        .flat_map(|group| {
+            group["owner_ids"].as_array().unwrap().iter().map(|owner| {
+                serde_json::json!({
+                    "owner_id": owner,
+                    "module": group["suggested_module_path"],
+                })
+            })
+        })
+        .collect();
+    let batch_dir = tempfile::tempdir().unwrap();
+    let batch_path = batch_dir.path().join("batch.json");
+    fs::write(&batch_path, serde_json::to_vec(&assignments).unwrap()).unwrap();
+    fixture.assert_success(&["modules", "refine", "--batch", batch_path.to_str().unwrap()]);
+    assert_eq!(
+        middle_before,
+        fs::read(fixture.modules.join("middle.yaml")).unwrap(),
+        "unrelated module must not be edited"
+    );
+    debundle_e2e_support::assert_node_output(&fixture.source_path(), "3\n", "");
+    let paths: Vec<&str> = split
+        .iter()
+        .map(|group| group["suggested_module_path"].as_str().unwrap())
+        .collect();
+    assert_emitted_layout_and_output(&fixture, &paths, "3\n");
+}
+
+#[test]
 fn proposes_a_realizable_refinement_without_changing_the_spec() {
     let fixture = GraphFixture::rejected(
         "const first = 1;\nconst middle = first + 1;\nconst last = middle + 1;\nconsole.log(last);\n",
@@ -558,6 +721,7 @@ fn coarsening_an_entry_scc_keeps_import_and_export_owners_at_the_entry_path() {
         "decompose",
         "--atomic",
         "--coarsen-blocking-sccs",
+        "--rejoin-original-modules",
         "--graph",
         fixture.graph.to_str().unwrap(),
         "--modules",
@@ -565,6 +729,11 @@ fn coarsening_an_entry_scc_keeps_import_and_export_owners_at_the_entry_path() {
     ]);
     assert_eq!(report["candidate_is_realizable"], true, "{report}");
     assert_eq!(report["coarsening"]["stop_reason"], "accepted", "{report}");
+    assert_eq!(report["coarsening"]["rounds"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        report["coarsening"]["original_home_rejoining"]["stop_reason"], "converged",
+        "{report}"
+    );
     let graph = fixture.owner_graph();
     let entry_path = graph
         .quotient
@@ -580,6 +749,11 @@ fn coarsening_an_entry_scc_keeps_import_and_export_owners_at_the_entry_path() {
         .iter()
         .find(|group| group["suggested_module_path"] == entry_path)
         .expect("the SCC merge should retain the entry path");
+    assert_eq!(
+        entry["origin_module_paths"],
+        serde_json::json!([entry_path.clone(), "dependent"]),
+        "a mixed-origin SCC group must not be broken by rejoining: {report}"
+    );
     let entry_owners = entry["owner_ids"]
         .as_array()
         .unwrap()

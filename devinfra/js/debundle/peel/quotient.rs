@@ -65,7 +65,10 @@
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 
-use analysis::{DepKind, ModuleId, OwnerGraph, OwnerGraphReport, OwnerId, Partition};
+use analysis::{
+    DepKind, ModuleId, OwnerGraph, OwnerGraphReport, OwnerId, Partition, StatementKind,
+};
+use anyhow::Context;
 use gate::{LadderDecision, PartitionDelta, RealizabilityIndex, RealizabilityVerdict};
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde::Serialize;
@@ -205,6 +208,9 @@ struct ClassData {
     /// merge of two pre-existing-module classes produces a class
     /// that is itself pre-existing).
     is_pre_existing_module: bool,
+    /// Explicitly assigned to the candidate's entry module. This also
+    /// covers coarsened entry groups that contain non-residual owners.
+    is_entry_module: bool,
 }
 
 /// The quotient graph: owners partitioned into classes, with the
@@ -327,7 +333,8 @@ fn project_classes(
             data.is_pre_existing_module,
             data.members.iter(),
             gate_residual_owners,
-        ) {
+        ) || data.is_entry_module
+        {
             residual_module
         } else {
             let m = ModuleId::logical(next_module_idx);
@@ -419,6 +426,7 @@ impl QuotientGraph {
                 members,
                 lines: node.line_count(),
                 is_pre_existing_module: false,
+                is_entry_module: false,
             });
             owner_to_class.push(ClassId(i));
             // The realizability gate's ESM simulator DFS starts at the
@@ -481,6 +489,141 @@ impl QuotientGraph {
         };
         q.rebuild_class_adjacency();
         Ok(q)
+    }
+
+    /// Build a quotient from a complete candidate owner partition that
+    /// already passes the shared realizability gate. The partition is checked
+    /// here before any quotient state is returned, and structural atomic units
+    /// plus residual entry declarations must remain whole.
+    ///
+    /// The assignment vector is indexed by `OwnerIdx`; `residual_module` must
+    /// be the candidate's entry module. Non-residual groups are marked as
+    /// anchored modules so residual-only owners deliberately assigned to a
+    /// non-entry fragment stay in that fragment.
+    pub fn from_report_with_realizable_partition(
+        report: &OwnerGraphReport,
+        cap_lines: usize,
+        owner_modules: &[ModuleId],
+        residual_module: ModuleId,
+    ) -> anyhow::Result<Self> {
+        anyhow::ensure!(
+            owner_modules.len() == report.nodes.len(),
+            "candidate partition assigns {} owners, but graph has {}",
+            owner_modules.len(),
+            report.nodes.len()
+        );
+        anyhow::ensure!(
+            residual_module == ModuleId::logical(0),
+            "candidate residual module must use the entry module identity"
+        );
+
+        let owner_graph = OwnerGraph::from_report(report)
+            .context("reconstructing owner graph for candidate partition")?;
+        let partition = Partition::from_assignments(owner_modules.to_vec(), residual_module);
+        let verdict = gate::check_realizability(&owner_graph, &partition);
+        anyhow::ensure!(
+            verdict.is_realizable(),
+            "candidate partition is not realizable under the shared gate"
+        );
+
+        let owner_id_to_idx: FxHashMap<&str, usize> = report
+            .nodes
+            .iter()
+            .enumerate()
+            .map(|(idx, node)| (node.id.as_str(), idx))
+            .collect();
+        let mut owner_atomic_unit = vec![None::<usize>; report.nodes.len()];
+        for (unit_idx, unit) in report.atomic_graph.nodes.iter().enumerate() {
+            let mut unit_module = None;
+            for owner_id in &unit.owner_ids {
+                let owner_idx = *owner_id_to_idx.get(owner_id.as_str()).with_context(|| {
+                    format!(
+                        "atomic unit {} references unknown owner {owner_id}",
+                        unit.id
+                    )
+                })?;
+                anyhow::ensure!(
+                    owner_atomic_unit[owner_idx].replace(unit_idx).is_none(),
+                    "owner {owner_id} appears in more than one atomic unit"
+                );
+                let module = owner_modules[owner_idx];
+                if let Some(expected) = unit_module {
+                    anyhow::ensure!(
+                        expected == module,
+                        "candidate partition splits structural atomic unit {}",
+                        unit.id
+                    );
+                } else {
+                    unit_module = Some(module);
+                }
+            }
+        }
+        anyhow::ensure!(
+            owner_atomic_unit.iter().all(Option::is_some),
+            "candidate graph has owners missing from the structural atomic units"
+        );
+
+        for (owner_idx, node) in report.nodes.iter().enumerate() {
+            if report.is_residual(&node.destination)
+                && matches!(
+                    node.statement_kind,
+                    StatementKind::Import | StatementKind::Export
+                )
+            {
+                anyhow::ensure!(
+                    owner_modules[owner_idx] == residual_module,
+                    "residual import/export owner {} must stay in the entry module",
+                    node.id
+                );
+            }
+        }
+
+        let mut owners_by_module: BTreeMap<ModuleId, Vec<OwnerIdx>> = BTreeMap::new();
+        for (owner_idx, &module) in owner_modules.iter().enumerate() {
+            owners_by_module
+                .entry(module)
+                .or_default()
+                .push(OwnerIdx(owner_idx));
+        }
+
+        let mut quotient = Self::from_report(report, cap_lines)
+            .context("building quotient for realizable candidate partition")?;
+        let mut class_module_id = BTreeMap::new();
+        for (module, members) in owners_by_module {
+            let survivor = members[0];
+            let class_id = ClassId(survivor.0);
+            let mut class_members = BTreeSet::new();
+            let mut lines = 0usize;
+            for &member in &members {
+                class_members.insert(member);
+                lines = lines.saturating_add(report.nodes[member.0].line_count());
+                quotient.owner_to_class[member.0] = class_id;
+            }
+            quotient.classes[class_id.0] = ClassData {
+                members: class_members,
+                lines,
+                is_pre_existing_module: module != residual_module,
+                is_entry_module: module == residual_module,
+            };
+            for member in members.iter().skip(1) {
+                quotient.classes[member.0].members.clear();
+                quotient.classes[member.0].lines = 0;
+                quotient.classes[member.0].is_pre_existing_module = false;
+                quotient.classes[member.0].is_entry_module = false;
+            }
+            class_module_id.insert(class_id, module);
+        }
+        quotient.realizability_index =
+            RealizabilityIndex::from_partition(&quotient.owner_graph, partition);
+        quotient.class_module_id = class_module_id;
+        quotient.next_module_idx = owner_modules
+            .iter()
+            .map(|module| module.0.0)
+            .max()
+            .unwrap_or(0)
+            .saturating_add(1);
+        quotient.rebuild_class_adjacency();
+        Ok(quotient)
     }
 
     /// The class an owner currently belongs to.
@@ -601,6 +744,19 @@ impl QuotientGraph {
         self.merge_classes_unchecked(c1, c2)
     }
 
+    /// Apply a merge only when the shared invariant gate accepts it. This is
+    /// the non-diagnostic path for deterministic coarsening passes that need
+    /// to consider many candidate pairs; callers that need rejection evidence
+    /// should use `contract` and `would_be_cycles_after_contract`.
+    pub(crate) fn contract_if_preserving(&mut self, c1: ClassId, c2: ClassId) -> bool {
+        if !self.check_merge_boolean(c1, c2) {
+            return false;
+        }
+        self.merge_classes_unchecked(c1, c2)
+            .expect("the boolean gate already rejected identical/dead classes");
+        true
+    }
+
     /// Merge two classes without consulting the realizability /
     /// cap gates. The lower of the two `ClassId`s
     /// survives; the higher is emptied. Returns the survivor.
@@ -626,8 +782,10 @@ impl QuotientGraph {
         let loser_members = std::mem::take(&mut self.classes[loser.0].members);
         let loser_lines = self.classes[loser.0].lines;
         let loser_pre_existing = self.classes[loser.0].is_pre_existing_module;
+        let loser_entry_module = self.classes[loser.0].is_entry_module;
         self.classes[loser.0].lines = 0;
         self.classes[loser.0].is_pre_existing_module = false;
+        self.classes[loser.0].is_entry_module = false;
         for member in &loser_members {
             self.owner_to_class[member.0] = winner;
         }
@@ -635,6 +793,9 @@ impl QuotientGraph {
         self.classes[winner.0].lines = self.classes[winner.0].lines.saturating_add(loser_lines);
         if loser_pre_existing {
             self.classes[winner.0].is_pre_existing_module = true;
+        }
+        if loser_entry_module {
+            self.classes[winner.0].is_entry_module = true;
         }
         self.update_class_adjacency_after_merge(winner, loser);
         // Apply the realizability-index deltas: the kernel mutation
@@ -931,7 +1092,9 @@ impl QuotientGraph {
             winner_data.is_pre_existing_module || loser_data.is_pre_existing_module,
             winner_data.members.iter().chain(&loser_data.members),
             &self.gate_residual_owners,
-        ) {
+        ) || winner_data.is_entry_module
+            || loser_data.is_entry_module
+        {
             return residual_module;
         }
         [winner, loser]
@@ -1093,6 +1256,7 @@ impl QuotientGraph {
             return;
         }
         self.classes[c.0].is_pre_existing_module = true;
+        self.classes[c.0].is_entry_module = false;
         // Promotion shifts the class's ModuleId from residual to a
         // fresh non-residual idx iff it was previously residual-mapped.
         let residual_module = ModuleId::logical(0);
