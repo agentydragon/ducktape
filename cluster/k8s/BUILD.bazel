@@ -16,16 +16,26 @@ filegroup(
     visibility = ["//cluster:__subpackages__"],
 )
 
-# Focused validation targets inline these direct-file inputs in their data lists.
+# Focused tests inline these direct-file inputs in their data lists.
 exports_files(
     [
-        "clickhouse/cluster/public-coder-credentials.sops.yaml",
         "haku/forgejo-tea/haku-forgejo-tea.sops.yaml",
         "haku/mailbox/nginx.conf",
         "kustomization.yaml",
     ],
     visibility = [
         "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/haku:__pkg__",
+        "//cluster/cdk8s/haku_ci:__pkg__",
+        "//cluster/validation:__pkg__",
+    ],
+)
+
+exports_files(
+    ["clickhouse/cluster/public-coder-credentials.sops.yaml"],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/clickhouse:__pkg__",
         "//cluster/cdk8s/haku:__pkg__",
         "//cluster/cdk8s/haku_ci:__pkg__",
         "//cluster/validation:__pkg__",
