@@ -56,7 +56,61 @@
 //! in entry's import list, so ESM DFS visits `mod_logger`
 //! first and the emitted entry runs cleanly.
 
+use analysis::DepKind;
 use debundle_e2e_support::*;
+
+#[test]
+fn hoisted_factory_import_retains_runtime_evaluation_topology() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"function factory() { return { value: 1 }; }
+const command = factory();
+const list = [command.value];
+function readList() { return list; }
+console.log(list[0]);
+export { factory, command, list, readList };
+"#,
+        vec![
+            logical_module(
+                "factory",
+                &[Member::new("factory"), Member::new("readList")],
+            ),
+            logical_module("command", &[Member::new("command")]),
+            logical_module("list", &[Member::new("list")]),
+        ],
+    ));
+    assert_entry_output(&fixture, "1\n");
+    let graph = fixture.owner_graph();
+    let command_owner = owner_for_binding(&graph, "command");
+    let factory_owner = owner_for_binding(&graph, "factory");
+    assert!(graph.edges.iter().any(|edge| {
+        edge.source == command_owner
+            && edge.target == factory_owner
+            && edge.edge_kind == DepKind::HoistedUse
+            && !edge.constrains_init_order
+    }));
+}
+
+#[test]
+fn hoisted_function_value_retains_runtime_evaluation_topology() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"function factory() { return 1; }
+const command = { run: factory };
+const list = [command.run()];
+function readList() { return list; }
+console.log(list[0]);
+export { factory, command, list, readList };
+"#,
+        vec![
+            logical_module(
+                "factory",
+                &[Member::new("factory"), Member::new("readList")],
+            ),
+            logical_module("command", &[Member::new("command")]),
+            logical_module("list", &[Member::new("list")]),
+        ],
+    ));
+    assert_entry_output(&fixture, "1\n");
+}
 
 #[test]
 fn cross_peeled_at_init_read_executes_under_node() {

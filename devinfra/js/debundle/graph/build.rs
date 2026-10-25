@@ -125,10 +125,9 @@ pub fn build_owner_graph_with(
     // `FunctionDeclaration` to its hoisted closure before any module
     // body runs. So `const x = f()` where `f` is a chunk-declared
     // FnDecl is safe regardless of which module owns `f` — there is
-    // no init-order constraint to record, and emitting an `EagerUse`
-    // edge would manufacture a cross-module constraint no realizable
-    // trace demands. Same rule as the FnDecl exclusion in
-    // `promote_at_init_calls`. Other declaration kinds retain eager
+    // no init-order constraint to record. Retain the import as `HoistedUse`:
+    // entering the function's module can still change ESM traversal and expose
+    // a TDZ on another binding. Other declaration kinds retain eager
     // constraints: lexical declarations have a TDZ, while var initializers
     // change an already-hoisted cell whose value reads must observe in order.
     let target_is_hoisted = |id: &Id| -> bool {
@@ -154,14 +153,15 @@ pub fn build_owner_graph_with(
     for stmt in facts {
         let from = OwnerId(stmt.ordinal.0);
         for binding in &stmt.reads.eager {
-            if target_is_hoisted(binding) {
-                continue;
-            }
             push_binding_edge(
                 &mut raw_edges,
                 from,
                 binding,
-                EdgeReason::eager_use,
+                if target_is_hoisted(binding) {
+                    EdgeReason::hoisted_use
+                } else {
+                    EdgeReason::eager_use
+                },
                 stmt.ordinal,
             );
         }

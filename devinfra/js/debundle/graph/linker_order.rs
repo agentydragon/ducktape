@@ -26,7 +26,7 @@ use super::quotient::{EndpointView, partition_endpoints};
 ///   * Keep cross-module at-init promoted edges (see
 ///     [`EndpointView::Gate`]) — the emitter's phantom side-effect
 ///     importer also keeps them, so the gate must too.
-///   * Every remaining cross-module edge, `LazyUse` included, joins
+///   * Every remaining cross-module edge, `LazyUse` and `HoistedUse` included, joins
 ///     `i_successors`: the simulator's Pass-2 DFS needs lazy
 ///     back-edges to find asymmetric (constraining forward, lazy back)
 ///     I-cycles that Lemma 2's source-import reversal must rescue.
@@ -36,6 +36,8 @@ use super::quotient::{EndpointView, partition_endpoints};
 ///     a phantom side-effect import. Pure `LazyUse` edges are
 ///     function-body reads resolved at call time after every module
 ///     has loaded, so they never constrain init order.
+///     `HoistedUse` reads target function declarations initialized during
+///     instantiation; they retain import topology without an init constraint.
 ///
 /// Sequenced edges are deduped per `(from, to)` pair in `edges`:
 /// multiple sequenced reasons between the same module pair represent

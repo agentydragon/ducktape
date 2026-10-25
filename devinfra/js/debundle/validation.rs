@@ -66,7 +66,8 @@ pub struct CycleReport {
     /// fix a cycle. Non-empty for every blocking SCC.
     pub cut: Vec<CycleEdge>,
     /// Populated only for [`SccRejection::EsmEvaluationTdz`]
-    /// rejections: the lazy cross-module read edges between SCC
+    /// rejections: the nonconstraining cross-module reads (`LazyUse` and
+    /// `HoistedUse`) between SCC
     /// members. For this rejection class the constraining subgraph
     /// alone is acyclic — these are the back-edges that close the
     /// I-cycle the ESM evaluation simulator walked, listed so the
@@ -150,7 +151,7 @@ pub struct CycleEdge {
     /// authors triaging which edges to break) tell at a glance
     /// which reasons are actually realizability-constraining
     /// (`eager_use` and `sequenced`) vs.
-    /// inert-but-graph-present (`lazy_use`).
+    /// inert-but-graph-present (`lazy_use` and `hoisted_use`).
     pub kind: DepKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sequenced_owner: Option<SequencedOwnerCause>,
@@ -256,7 +257,7 @@ pub fn render_cycle_summary(cycles: &[CycleReport]) -> String {
 
         if !cycle.lazy_closure.is_empty() {
             out.push_str(
-                "  Constraining subgraph alone is acyclic; the I-cycle closes through lazy read(s) below, and the ESM evaluation simulator proved the at-init pair(s) above evaluate under TDZ (docs/design.md \"Lemma 2\"):\n",
+                "  Constraining subgraph alone is acyclic; the I-cycle closes through nonconstraining imports below, and the ESM evaluation simulator proved the at-init pair(s) above evaluate under TDZ (docs/design.md \"Lemma 2\"):\n",
             );
             let mut lazy_groups: HashMap<BindingPairKey<'_>, usize> = HashMap::new();
             for edge in &cycle.lazy_closure {
@@ -400,7 +401,7 @@ pub fn validate_factorization(
                         module_path,
                         &from_binding_by_ordinal,
                     ),
-                    lazy_closure_edges(
+                    nonconstraining_closure_edges(
                         owner_graph,
                         partition,
                         &diagnosis.core.modules,
@@ -494,11 +495,11 @@ fn cycle_edges_for(
     out
 }
 
-/// Lazy cross-module read edges between members of `modules`, gate
+/// Nonconstraining cross-module read edges between members of `modules`, gate
 /// view. For a [`SccRejection::EsmEvaluationTdz`] rejection the
 /// constraining subgraph alone is acyclic — these are the back-edges
 /// closing the I-cycle the ESM evaluation simulator walked.
-fn lazy_closure_edges(
+fn nonconstraining_closure_edges(
     owner_graph: &OwnerGraph,
     partition: &Partition,
     modules: &BTreeSet<ModuleId>,
@@ -506,7 +507,7 @@ fn lazy_closure_edges(
     from_binding_by_ordinal: &HashMap<StatementOrdinal, Atom>,
 ) -> Vec<CycleEdge> {
     let lazy_edge_ids = owner_graph.iter_edges().filter_map(|edge| {
-        if edge.reason.kind != DepKind::LazyUse
+        if !matches!(edge.reason.kind, DepKind::LazyUse | DepKind::HoistedUse)
             || owner_graph.node(edge.from).is_none()
             || owner_graph.node(edge.to).is_none()
         {

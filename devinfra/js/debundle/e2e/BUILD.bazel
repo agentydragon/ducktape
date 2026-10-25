@@ -227,7 +227,10 @@ debundle_e2e_test(name = "reserved_word_mint_test")
 
 debundle_e2e_test(name = "runtime_tdz_on_imported_class_test")
 
-debundle_e2e_test(name = "accepted_spec_runs_under_node_test")
+debundle_e2e_test(
+    name = "accepted_spec_runs_under_node_test",
+    deps = ["//devinfra/js/debundle:analysis"],
+)
 
 debundle_e2e_test(
     name = "gate_rejection_scopes_to_bad_scc_test",

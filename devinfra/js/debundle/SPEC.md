@@ -228,6 +228,15 @@ pruning can delete original edges. Bundles with external requests, raw package
 swaps and full package swaps retain conservative export reentry. Boundary
 renames and suppressed chunks add no dependency edges.
 
+## Hoisted function imports
+
+A direct eager read of a function declaration retains a `hoisted_use` owner
+edge. The function binding is initialized during ESM instantiation, so this
+edge does not constrain evaluation order or atomic co-location. It still
+participates in the imports graph: entering the function's module can change
+the traversal order and expose a TDZ on another binding. The gate must model
+that import even when reading the function itself is safe.
+
 ## Export-reentry diagnostics
 
 Materialization reports the selected export-reentry policy and its observed

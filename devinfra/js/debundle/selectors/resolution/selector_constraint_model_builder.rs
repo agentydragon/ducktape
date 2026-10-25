@@ -1300,7 +1300,7 @@ impl FactDomains {
                 .filter_map(|(owner, kind)| (kind == "var_decl").then_some(*owner))
                 .collect::<BTreeSet<_>>();
             for (owner, binding, edge_kind) in &self.raw_owner_references_binding {
-                if edge_kind != "eager_use"
+                if (edge_kind != "eager_use" && edge_kind != "hoisted_use")
                     || !var_decl_owners.contains(owner)
                     || !owners_with_declarations.contains(owner)
                 {

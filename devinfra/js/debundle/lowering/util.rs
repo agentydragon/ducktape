@@ -160,7 +160,7 @@ pub(super) fn render_atomic_unit_cause_guidance(conflicts: &[AtomicUnitConflict]
                 "Shared var declaration: all source statements that declare the same `var` \
                  binding must materialize in one module. "
             }
-            DepKind::LazyUse => continue,
+            DepKind::LazyUse | DepKind::HoistedUse => continue,
         });
     }
     out
