@@ -35,7 +35,7 @@ both are set.
 | `--graph <path>`       | `DEBUNDLE_GRAPH`       | `owner_graph.json` for the chunk being inspected or edited. The graph path implies the chunk; multi-chunk callers point at different graphs per invocation. |
 | `--modules <dir>`      | `DEBUNDLE_MODULES`     | Per-module YAML tree root (the directory under `spec/modules/`).                                                                                            |
 | `--source-root <dir>`  | `DEBUNDLE_SOURCE_ROOT` | Upstream snapshot root containing the original chunk bytes.                                                                                                 |
-| `--tree-config <file>` | `DEBUNDLE_TREE_CONFIG` | For `modules propose` and `modules apply`, scope an app-level modules tree to the chunk named by `--graph`.                                                 |
+| `--tree-config <file>` | `DEBUNDLE_TREE_CONFIG` | For `modules propose`, `modules decompose`, and `modules apply`, scope an app-level modules tree to the chunk named by `--graph`.                           |
 
 `debundle run --out-root` reads `DEBUNDLE_OUT`. `debundle run
 --tree-source-root` (the spec-tree compile root for source-relative paths in
@@ -347,6 +347,36 @@ and drain sweep. Automatic cleanup preserves module-level `comment:` and
 uses the same metadata-preserving predicate; `--empty` only tests structural
 emptiness. Explicit `modules delete <path>` may remove a comment/note-only module
 without `--force`, because it owns no code and the author named it for deletion.
+
+### Refining existing modules (`modules decompose`)
+
+`modules decompose` reports a read-only candidate that splits existing logical
+modules into the surviving gated same-module seed fragments:
+
+```sh
+debundle modules decompose --graph owner_graph.json --modules spec/modules \
+  --format json
+```
+
+It keeps existing modules separate, covers every owner in the candidate, checks
+that structural atomic units stay together, and runs the shared realizability
+gate over the complete candidate. `candidate_is_realizable: true` means that
+candidate passed those checks. A false result includes the gate's cycles or
+cross-module rebinds and any structural atom conflicts; the fragments remain
+diagnostic suggestions and do not form an accepted partition. Residual owners
+keep their current destination and are not split into suggestions, so a
+candidate can remain invalid when its conflict involves residual ownership.
+
+The command does not modify YAML. Review the reported owner and binding IDs,
+choose semantic module names for each suggested part, and assign the complete
+set of fragments together. Suggested `part-N` paths are temporary review aids,
+not names inferred from the source. This is a conservative seed refinement,
+not a minimum partition: its canonical pivot order can leave mutually compatible
+owners in separate fragments. Unlike `modules propose`, decomposition has no
+module-size cap and does not run the greedy cross-module proposer.
+Some fragments may include owners without binding IDs, such as anonymous
+statements; inspect those owners and move them with their `anonymous_statements:`
+selectors when applying the reviewed split.
 
 ### `--batch` JSON format
 

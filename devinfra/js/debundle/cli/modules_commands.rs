@@ -6,7 +6,11 @@ use crate::module::{DeleteArgs, MergeArgs, run_delete, run_merge};
 use crate::module_apply::{ModulesApplyArgs, run_modules_apply};
 use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, Subcommand};
-use peel::{OutputFormat, PlanWorkArgs, run_plan_work_report};
+use peel::propose::{
+    DEFAULT_SIZE_CAP_LINES, ModuleDecompositionReport, ProposalOptions,
+    decompose_modules_from_files,
+};
+use peel::{CommonArgs, OutputFormat, PlanWorkArgs, run_plan_work_report};
 use std::path::PathBuf;
 
 /// Args for `debundle modules ...`. Aggregates the existing
@@ -63,11 +67,33 @@ enum ModulesNsCommand {
     Propose(PlanWorkArgs),
     /// Claim reviewed residual proposal bindings using proven structural selectors.
     Apply(ModulesApplyArgs),
+    /// Report a read-only, gate-checked refinement of existing module groups.
+    ///
+    /// The planner keeps each current module separate from the others and
+    /// groups its owners by the gated atomic/same-module seed classes. It
+    /// validates the complete candidate against the structural atoms and
+    /// shared realizability gate. Suggested paths are review aids; the command
+    /// does not edit the spec.
+    Decompose(ModuleDecomposeArgs),
     /// List all modules in the spec with summary stats.
     ///
     /// Per-row: `member_count`, `anonymous_statement_count`, `residual`
     /// flag, `has_comment`.
     List(ModulesListArgs),
+}
+
+#[derive(Debug, ClapArgs)]
+struct ModuleDecomposeArgs {
+    #[command(flatten)]
+    common: CommonArgs,
+
+    /// Tree config for chunk-scoped module claims in a multi-chunk spec.
+    #[arg(long = "tree-config")]
+    tree_config: Option<PathBuf>,
+
+    /// Output format. Default `text` on tty, `json` on pipe.
+    #[arg(long, value_enum)]
+    format: Option<OutputFormat>,
 }
 
 /// Args for `debundle modules list`.
@@ -195,6 +221,70 @@ fn render_modules_list_text(report: &ModulesListReport, out: &mut String, with_a
     }
 }
 
+fn render_module_decomposition_text(report: &ModuleDecompositionReport, out: &mut String) {
+    out.push_str(if report.candidate_is_realizable {
+        "candidate is realizable\n"
+    } else {
+        "candidate is not realizable\n"
+    });
+    out.push_str(&format!(
+        "coverage: {}/{} owners; unchanged modules={}\n",
+        report.assigned_owner_count, report.owner_count, report.unchanged_module_count
+    ));
+    for module in &report.modules {
+        out.push_str(&format!(
+            "{} → {} part(s)\n",
+            module.module_id,
+            module.fragments.len()
+        ));
+        for fragment in &module.fragments {
+            out.push_str(&format!(
+                "  {}  owners={} bindings={}\n",
+                fragment.suggested_module_path,
+                fragment.owner_ids.join(", "),
+                fragment.binding_ids.join(", "),
+            ));
+        }
+    }
+    for conflict in &report.atomic_unit_conflicts {
+        out.push_str(&format!(
+            "atomic unit {} spans candidate modules: {}\n",
+            conflict.unit_id,
+            conflict
+                .candidate_modules
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", "),
+        ));
+    }
+    if !report.cycles.is_empty() {
+        out.push_str(&format!("gate cycles: {}\n", report.cycles.len()));
+    }
+    if !report.cross_rebinds.is_empty() {
+        out.push_str(&format!(
+            "cross-module rebinds: {}\n",
+            report.cross_rebinds.len()
+        ));
+    }
+}
+
+fn run_module_decompose(args: ModuleDecomposeArgs) -> Result<()> {
+    let report = decompose_modules_from_files(&ProposalOptions {
+        owner_graph_path: args.common.owner_graph_path,
+        modules_root: args.common.modules_root,
+        tree_config: args.tree_config,
+        source_root: None,
+        size_cap_lines: DEFAULT_SIZE_CAP_LINES,
+    })?;
+    emit_report(
+        args.format,
+        &report,
+        render_module_decomposition_text,
+        "writing module decomposition output",
+    )
+}
+
 // --- Text renderers -------------------------------------------------
 //
 // Each query command needs a text rendering for tty output. v1 keeps
@@ -245,6 +335,7 @@ pub(super) fn run(args: ModulesNs) -> Result<()> {
                 "writing propose output",
             )
         }
+        ModulesNsCommand::Decompose(args) => run_module_decompose(args),
         ModulesNsCommand::Apply(args) => run_modules_apply(args),
         ModulesNsCommand::List(args) => run_modules_list(args),
     }

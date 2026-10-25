@@ -10,16 +10,16 @@ extraction and naming work.
 propose, or edit that spec. Commands that resolve selectors or validate edits reuse
 the shared resolver and gate rather than their own acceptance rules.
 
-| Responsibility                                                | Start here                                               |
-| ------------------------------------------------------------- | -------------------------------------------------------- |
-| Load and prepare source; retain ASTs and manifest indexes     | `prepare_chunks.rs`, `program_analysis.rs`, `artifacts/` |
-| Read flat/tree specs and authoring module documents           | `spec/`                                                  |
-| Match, jointly resolve, synthesize, and diagnose selectors    | `selectors/{matching,resolution,authoring,diagnostics}/` |
-| Analyze statement effects, dependencies, and structural atoms | `facts/`, `purity/`, `graph/`, `chunk_analysis/`         |
-| Assemble assignments and validate realizability               | `factor_assembly.rs`, `gate.rs`, `realizability/`        |
-| Lower accepted assignments to entry and logical-module files  | `lowering/`                                              |
-| Plan/apply vendor substitution and finalize emitted files     | `vendor/`, `pipeline.rs`, `artifacts/emission_files.rs`  |
-| Propose author-reviewed moves; inspect or edit the spec       | `peel/`, `cli/`                                          |
+| Responsibility                                                 | Start here                                               |
+| -------------------------------------------------------------- | -------------------------------------------------------- |
+| Load and prepare source; retain ASTs and manifest indexes      | `prepare_chunks.rs`, `program_analysis.rs`, `artifacts/` |
+| Read flat/tree specs and authoring module documents            | `spec/`                                                  |
+| Match, jointly resolve, synthesize, and diagnose selectors     | `selectors/{matching,resolution,authoring,diagnostics}/` |
+| Analyze statement effects, dependencies, and structural atoms  | `facts/`, `purity/`, `graph/`, `chunk_analysis/`         |
+| Assemble assignments and validate realizability                | `factor_assembly.rs`, `gate.rs`, `realizability/`        |
+| Lower accepted assignments to entry and logical-module files   | `lowering/`                                              |
+| Plan/apply vendor substitution and finalize emitted files      | `vendor/`, `pipeline.rs`, `artifacts/emission_files.rs`  |
+| Propose moves or safe module refinements; inspect or edit spec | `peel/`, `cli/`                                          |
 
 `pipeline.rs` composes these stages. Prepared/source indexes and finalized
 `EmissionFiles` belong to different phases: never pass one phase's data into another

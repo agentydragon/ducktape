@@ -1533,17 +1533,11 @@ fn rank_candidate(q: &QuotientGraph, a: ClassId, b: ClassId) -> [u8; 33] {
     key
 }
 
-/// Apply the seeding protocol: atomic units first, then spec modules.
-/// Each forced contraction is gated by
-/// `merge_preserves_invariants`; rejected contractions push a
-/// `SeedContractionRejected` diagnostic into the returned vec and the
-/// kernel continues with the remaining contractions.
-///
-/// Canonical order: atomic units by lowest `OwnerIdx` member (then
-/// unit id for ties); spec modules by module id lex. Within a group,
-/// members merge into the lowest-`OwnerIdx` pivot in `OwnerIdx`
-/// order.
-pub fn build_seed_quotient(
+/// Build the quotient after structural atomic-unit and same-module seed
+/// contractions, before atomic-DAG reachability or greedy cross-module
+/// proposals. Each accepted contraction has passed the shared
+/// realizability gate, and modules remain separate from one another.
+pub fn build_same_module_seed_quotient(
     report: &OwnerGraphReport,
     atomic_units: &[analysis::AtomicUnitReport],
     spec_modules: &[SpecModuleGroup],
@@ -1602,6 +1596,28 @@ pub fn build_seed_quotient(
             q.set_class_pre_existing_module(c);
         }
     }
+
+    Ok((q, rejected))
+}
+
+/// Apply the seeding protocol: atomic units first, then spec modules.
+/// Each forced contraction is gated by
+/// `merge_preserves_invariants`; rejected contractions push a
+/// `SeedContractionRejected` diagnostic into the returned vec and the
+/// kernel continues with the remaining contractions.
+///
+/// Canonical order: atomic units by lowest `OwnerIdx` member (then
+/// unit id for ties); spec modules by module id lex. Within a group,
+/// members merge into the lowest-`OwnerIdx` pivot in `OwnerIdx`
+/// order.
+pub fn build_seed_quotient(
+    report: &OwnerGraphReport,
+    atomic_units: &[analysis::AtomicUnitReport],
+    spec_modules: &[SpecModuleGroup],
+    cap_lines: usize,
+) -> Result<(QuotientGraph, Vec<SeedContractionRejected>), analysis::UnresolvedOwnerEdgeEndpoint> {
+    let (mut q, mut rejected) =
+        build_same_module_seed_quotient(report, atomic_units, spec_modules, cap_lines)?;
 
     // ---- Pass 3: atomic-DAG reachability. For each atomic-DAG
     //      edge `u → v` whose target unit has any residual member,
