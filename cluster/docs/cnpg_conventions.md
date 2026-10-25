@@ -14,11 +14,11 @@ postgres deployments.
 
 Only these CNPG cluster profiles are permitted:
 
-| Profile             | Instances | Pin                                      | Storage                                                     | Anti-affinity                      |
-| ------------------- | --------- | ---------------------------------------- | ----------------------------------------------------------- | ---------------------------------- |
-| **OVH-HA**          | 2         | `topology.kubernetes.io/zone: hil-ovh`   | New HDD: `local-path-ovh-hdd`; new SSD: `piraeus-ssd-local` | required, `kubernetes.io/hostname` |
-| **Proxmox-single**  | 1         | `topology.kubernetes.io/region: proxmox` | `local-path-proxmox`                                        | n/a                                |
-| **Optiplex-single** | 1         | `kubernetes.io/hostname: optiplex`       | `piraeus-ssd-local`                                         | n/a                                |
+| Profile             | Instances | Pin                                      | Storage                                            | Anti-affinity                      |
+| ------------------- | --------- | ---------------------------------------- | -------------------------------------------------- | ---------------------------------- |
+| **OVH-HA**          | 2         | `topology.kubernetes.io/zone: hil-ovh`   | HDD: `piraeus-hdd-local`; SSD: `piraeus-ssd-local` | required, `kubernetes.io/hostname` |
+| **Proxmox-single**  | 1         | `topology.kubernetes.io/region: proxmox` | `local-path-proxmox`                               | n/a                                |
+| **Optiplex-single** | 1         | `kubernetes.io/hostname: optiplex`       | `piraeus-ssd-local`                                | n/a                                |
 
 **OVH-HA**: For services co-located with the SeaweedFS cluster on the OVH
 nodes. Two instances on separate nodes.
@@ -55,16 +55,8 @@ all instances to one site avoids this.
 
 ### R3: CNPG storage class follows the pin
 
-OVH-HA uses `local-path-ovh-hdd` or, for SSD-backed DBs, `piraeus-ssd-local`.
-The old `local-path-ovh-ssd` class remains for retained legacy PVs and
-SeaweedFS claim templates; new CNPG clusters use Piraeus.
-(`local-path-ovh` is a deprecated alias re-pinned to the
-same media as `-hdd`, kept only for already-bound PVCs — see the SC manifest;
-new clusters name the tiered classes explicitly.) The Piraeus pilot profile's
-new claim uses `piraeus-ssd-local`; this local, one-node class does not replace
-the existing replicas' bound volumes. The bounded Piraeus migration-template
-profile uses `piraeus-ssd-local` only for a newly-created claim; existing
-replicas stay on their bound volumes. Proxmox-single uses
+OVH-HA uses `piraeus-ssd-local`, or `piraeus-hdd-local` for an HDD-backed DB.
+Proxmox-single uses
 `local-path-proxmox`. OVH-HA gets
 replication at the CNPG level (2 instances on separate nodes);
 Proxmox-single gets replication at the storage level (ZFS on the Proxmox
@@ -107,47 +99,10 @@ sweep them with:
 grep -rl 'kind: Cluster' cluster/k8s --include='postgres-cluster*.yaml'
 ```
 
-Most active Cluster manifests describe 2-instance OVH-HA — most on the
-deprecated `local-path-ovh` alias, while SSD-backed databases use
-`piraeus-ssd-local`. Current exceptions:
-
-- `attic-db` (`nix-cache/`): 3 instances using the Piraeus pilot profile. Its
-  two existing local-path PVCs remain unchanged; the new claim uses
-  `piraeus-ssd-local`.
-- `study-casino-db` (`generated/study-casino/`): 3 instances using the Piraeus
-  pilot profile. Its two existing 1Gi PVCs retain their current classes; the
-  new claim uses `piraeus-ssd-local`. This restores its deliberate profile for
-  tolerating one-node loss without quorum or primary impact.
-- `agentplane-staging/postgres`, `atuin-db`, `authentik-db-ovh`,
-  `forgejo-db-ssd`, `langfuse-db`, `seaweedfs-filer-db-ssd`, and
-  `tofu-state-db-ovh`: 2 desired instances using the Piraeus migration-template
-  profile for the `ovh-ns104952` SSD evacuation. Existing PVCs keep their
-  current StorageClass and size; a new claim uses
-  `piraeus-ssd-local` sized for measured data and headroom, with
-  `resizeInUseVolumes: false`. Create the temporary third member one cluster
-  at a time under a resource-specific Flux hold. After switchover, keep the
-  Piraeus-seeded member and retire only the exact old member on `ovh-ns104952`;
-  restore/verify two desired members before releasing the hold.
-- `claude-session-sync-db` (40Gi), `mcp-oauth-state-db` (5Gi), and `ntfy-db`
-  (2Gi): 2 desired instances using the same new-claim profile for the
-  `ovh-ns103656` HDD evacuation. Rebuild only the targeted standby, briefly
-  leaving the primary alone, and verify two healthy members off the target
-  before disk wipe. Protect the old PV with reclaim policy `Retain`; remove
-  only the old standby PVC and claim metadata needed to force a fresh Piraeus
-  claim, leaving the retained PV unused.
-  Preserve the primary Pod UID by adding the control-plane toleration in place
-  to its Pod and stored `cnpg.io/podSpec` annotation while CNPG is paused.
-  Keep a resource-specific Flux hold on each Cluster until this template change
-  is merged and reconciled.
-- `gatus-db` (2Gi), `grafana-db-ovh` (4Gi), `haku-console-db` (3Gi),
-  `haku-mailbox-db` (10Gi), `litellm-db` (5Gi), `matrix-db` (10Gi), and
-  `plaid-mcp-db` (5Gi): 2 desired instances using the Piraeus migration
-  template for the `ovh-ns103711` HDD evacuation. Existing claims keep their
-  current class and size; replacement claims use `piraeus-ssd-local` with
-  `resizeInUseVolumes: false`. New sizes are at least 1Gi above measured
-  PGDATA including WAL, rounded up to whole GiB; larger existing requests are
-  retained. Apply the primary Pod UID preservation rule above before replacing
-  each standby.
+Active Clusters are 2-instance OVH-HA on `piraeus-ssd-local`, except
+`attic-db` (`nix-cache/`) and `study-casino-db` (`generated/study-casino/`),
+which run 3 instances to tolerate one node loss without quorum or primary
+impact.
 
 Parked clusters (retained in Git; R2/R3 bind again on revival):
 

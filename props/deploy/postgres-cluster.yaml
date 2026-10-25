@@ -36,7 +36,7 @@ spec:
                 operator: DoesNotExist
 
   storage:
-    storageClass: local-path-ovh
+    storageClass: piraeus-hdd-local
     size: 10Gi
 
   monitoring:

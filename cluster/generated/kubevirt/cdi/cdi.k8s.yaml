@@ -16,7 +16,7 @@ spec:
       requests:
         cpu: 100m
         memory: 128Mi
-    scratchSpaceStorageClass: local-path-ovh
+    scratchSpaceStorageClass: piraeus-hdd-local
   imagePullPolicy: IfNotPresent
   infra:
     nodeSelector:
@@ -35,17 +35,6 @@ spec:
                     - proxmox
                 - key: node-role.kubernetes.io/control-plane
                   operator: DoesNotExist
----
-apiVersion: cdi.kubevirt.io/v1beta1
-kind: StorageProfile
-metadata:
-  name: local-path-ovh
-spec:
-  claimPropertySets:
-    - accessModes:
-        - ReadWriteOnce
-      volumeMode: Filesystem
-  cloneStrategy: copy
 ---
 apiVersion: cdi.kubevirt.io/v1beta1
 kind: StorageProfile
@@ -112,6 +101,17 @@ spec:
         - ReadWriteOnce
       volumeMode: Block
   cloneStrategy: snapshot
+---
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: StorageProfile
+metadata:
+  name: piraeus-hdd-local
+spec:
+  claimPropertySets:
+    - accessModes:
+        - ReadWriteOnce
+      volumeMode: Filesystem
+  cloneStrategy: copy
 ---
 apiVersion: cdi.kubevirt.io/v1beta1
 kind: StorageProfile

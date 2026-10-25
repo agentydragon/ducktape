@@ -41,7 +41,6 @@ _NAME = "grocy"
 _LABELS = {"app.kubernetes.io/name": _NAME}
 _IMAGE = "lscr.io/linuxserver/grocy:v4.6.0-ls318"
 _CONFIG_CLAIM = "grocy-config-piraeus"
-_LEGACY_CONFIG_CLAIM = "grocy-config-ovh"
 _BACKUP = "grocy-config-ovh-backup"
 _HTTP = Port(name="http", number=80)
 # grocy/mcp.py and grocy/user_perms.py render one of theirs per household too.
@@ -228,24 +227,6 @@ def household_chart(app: App, *, household: str) -> Chart:
         spec=k8s.PersistentVolumeClaimSpec(
             access_modes=["ReadWriteOnce"],
             storage_class_name="piraeus-hdd-local",
-            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("1Gi")}),
-        ),
-    )
-    # Retain the original local-path PVC through data acceptance and until the source node
-    # is ready to wipe. It is intentionally no longer mounted by the application.
-    k8s.KubePersistentVolumeClaim(
-        chart,
-        "legacy-config-claim",
-        metadata=k8s.ObjectMeta(
-            name=_LEGACY_CONFIG_CLAIM,
-            namespace=namespace,
-            annotations={
-                "description": "Original Grocy config on ovh-ns103711; retain until Piraeus data is accepted and the node is ready to wipe."
-            },
-        ),
-        spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteOnce"],
-            storage_class_name="local-path-ovh",
             resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("1Gi")}),
         ),
     )

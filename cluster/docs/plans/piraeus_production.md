@@ -22,34 +22,36 @@ the replicated-class and Seaweed-reduction work, and the separate Wyrm2/NixOS ph
 
 ## Retire OVH local-path
 
-Converting the disks did not change every claim default. These still name a
-`local-path-ovh*` class and would allocate on a missing path if their pre-created
-Piraeus claim were deleted. Change each authoritative default to its Piraeus
-class, with an orphan/adopt handoff wherever a StatefulSet claim template is
-immutable, preserving Pod and PVC identities:
+No live data remains on OVH local-path (inventory 2026-10-25); every live claim
+is a pre-created Piraeus claim. What remains is defaults that would allocate on
+a missing path if a claim were recreated. Map `local-path-ovh` and `-hdd` to
+`piraeus-hdd-local` and `-ssd` to `piraeus-ssd-local`, matching the live claims.
 
-- Seaweed master persistence (`local-path-ovh-ssd`) and the evacuated legacy
-  `ssd` volume group (`replicas=0`, kept for rollback) in `seaweedfs/cluster.py`;
-  the legacy HDD group's Services and ServiceMonitor.
-- Mimir ingesters, Loki writers and Alertmanager (`monitoring/{mimir,loki,stack}.py`).
-- Langfuse and OCI-cache Valkey (`langfuse/app.py`, `oci_cache/zot.py`).
-- ClickHouse's default data and Keeper templates (`clickhouse/installation.py`).
-- Public coder state, workspace and backup cache (`public_coder/{app,backup}.py`).
-- CDI scratch space (`kubevirt/cdi.py`).
-- The props and wayback CNPG clusters (`props/deploy`, `loom/wayback/deploy`).
+StatefulSet claim templates are immutable: change the source, orphan-delete the
+StatefulSet so its owner recreates it, and check that Pod UIDs, PVC names and PV
+identities are unchanged.
+
+- Seaweed master persistence (`seaweedfs/cluster.py`).
+- Langfuse and OCI-cache Valkey (`langfuse/app.py`, `oci_cache/zot.py`). Forgejo
+  Valkey's source is already Piraeus; only its live StatefulSet lags.
+- Loki writers, Mimir ingesters and Alertmanager (`monitoring/{loki,mimir,stack}.py`).
 
 Then remove leftovers:
 
-- The two Grocy `grocy-config-ovh` claims, still declared in `grocy/app.py`
-  although the apps run on `grocy-config-piraeus`; their PVs point at the wiped
-  `ovh-ns103711`.
-- `haku-sandbox/haku-anki-collection`, Bound to the wiped `ovh-ns103711`: confirm
-  its owner no longer declares it, then delete the record.
-- Released Piraeus PVs `agentplane-staging/public-coder-ducktape-2-{state,workspace}`
-  and the OptiPlex `volsync-dst-optiplex-migration-ha-piraeus-restore-cache`.
-- The OVH `local-path-*` StorageClasses and nodePathMap entries in
-  `local_path_provisioner.py`, once nothing references them. `local-path-proxmox`
-  and `local-path-home-ssd` stay for the Wyrm2 phase.
+- The empty Seaweed `ssd` rollback group (`replicas=0`) and the legacy HDD
+  group's Services and ServiceMonitor in `seaweedfs/cluster.py`.
+- ClickHouse's unused `data`, `keeper-data` and `keeper-data-control-plane`
+  templates (`clickhouse/installation.py`); no replica references them.
+- `haku-sandbox/haku-anki-collection`, Bound to the wiped `ovh-ns103711`:
+  confirm its owner no longer declares it, then delete the record.
+- The Pending `public-coder-agent` Restic cache claim; the parked backup's
+  `cache_storage_class_name` (`public_coder/backup.py`) and the parked app's
+  claims move to Piraeus on revival.
+- The Released OptiPlex Piraeus PV
+  `volsync-dst-optiplex-migration-ha-piraeus-restore-cache`.
+- The OVH `local-path-*` StorageClasses, their descheduler entries and the
+  nodePathMap entries in `local_path_provisioner.py`, once nothing references
+  them. `local-path-proxmox` and `local-path-home-ssd` stay for the Wyrm2 phase.
 
 Done when no OVH workload template can allocate local-path storage, the classes
 are gone, and no retained record points at an erased disk.

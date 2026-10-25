@@ -155,21 +155,6 @@ spec:
       storage: 1Gi
   storageClassName: piraeus-hdd-local
 ---
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  annotations:
-    description: Original Grocy config on ovh-ns103711; retain until Piraeus data is accepted and the node is ready to wipe.
-  name: grocy-config-ovh
-  namespace: grocy-sf
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 1Gi
-  storageClassName: local-path-ovh
----
 apiVersion: batch/v1
 kind: Job
 metadata:

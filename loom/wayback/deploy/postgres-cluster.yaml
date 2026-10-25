@@ -24,7 +24,7 @@ spec:
     topologyKey: kubernetes.io/hostname
 
   storage:
-    storageClass: local-path-ovh
+    storageClass: piraeus-hdd-local
     size: 10Gi
 
   monitoring:
