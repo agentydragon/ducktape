@@ -207,6 +207,14 @@ Unsupported local parameter patterns and implicit `arguments` preserve actual
 input taint and raw callback effects. These guards prevent stale source slots or
 newly installed setters from being mistaken for ordinary data.
 
+Protocol fallbacks preserve the escaped capability pool, including nested
+returned callbacks. Their read and taint closure reuses coverage-checked
+synchronous owner summaries: reads after a definite `await` cannot affect the
+current prefix, while nested callable prefixes and generator bodies remain
+conservative. Incomplete reachability, dynamic scope, or uncovered callable and
+accessor facts retain whole lazy reads. All lazy rebinds remain retained because
+write coverage is incomplete.
+
 An exact single-spread object literal `{ ...source }` can retain a fresh copy
 identity when its source is one untainted verified ordinary object containing
 only static own data properties. The copy retains each field value and its

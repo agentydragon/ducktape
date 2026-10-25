@@ -5634,15 +5634,40 @@ impl Executor<'_> {
             };
             owners.extend(owner);
         }
-        for owner in owners {
-            let (reads, rebinds) = self.owner_read_closure.lazy_effects_for_owner(owner);
-            let reads = reads.clone();
-            let rebinds = rebinds.clone();
+        if self.reachability.incomplete {
+            for owner in owners {
+                let (reads, rebinds) = self.owner_read_closure.lazy_effects_for_owner(owner);
+                let reads = reads.clone();
+                let rebinds = rebinds.clone();
+                let referenced = reads
+                    .iter()
+                    .flat_map(|id| self.prefix_values.get(id).into_iter().flatten().cloned())
+                    .collect();
+                self.taint_objects(&referenced);
+                self.promote_lazy_effects(&reads, &rebinds, effect_owner, outcome);
+            }
+            return;
+        }
+        let reached = FactsOwnerReadClosure::extend_synchronous_owners(
+            &self.synchronous_owner_adjacency,
+            owners,
+            &mut BTreeSet::new(),
+        );
+        for owner in reached {
+            let fact = &self.facts[owner.0];
+            // This coverage-checked union includes every retained callable's
+            // synchronous prefix, including returned callbacks and getters.
+            // Bodies past a definite await cannot run during this protocol.
+            let reads = self.synchronous_owner_reads[owner.0]
+                .unwrap_or(&fact.reads.lazy)
+                .clone();
+            let rebinds = fact.rebinds.lazy.clone();
             let referenced = reads
                 .iter()
                 .flat_map(|id| self.prefix_values.get(id).into_iter().flatten().cloned())
                 .collect();
             self.taint_objects(&referenced);
+            // Write coverage is not complete: retain all lazy rebinds.
             self.promote_lazy_effects(&reads, &rebinds, effect_owner, outcome);
         }
     }

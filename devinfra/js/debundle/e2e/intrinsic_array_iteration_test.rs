@@ -515,3 +515,56 @@ fn copy_contexts_retain_missing_fields_for_default_consumers() {
         );
     }
 }
+
+#[test]
+fn getter_triggered_async_work_keeps_future_reads_after_await() {
+    let source = "let later = 0;\nclass Reader { static async read() { await 0; console.log(later); } }\nconst holder = { get value() { Reader.read(); return 0; } };\nconst observed = holder.value;\nlater = 42;\nconsole.log(observed);\n";
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    assert_preserved_entry_output(&fixture, "0\n42\n");
+    let fixture = run_fixture(FixtureOpts::new(
+        source,
+        vec![
+            logical_module(
+                "registry",
+                &[
+                    Member::new("Reader"),
+                    Member::new("holder"),
+                    Member::new("observed"),
+                ],
+            ),
+            logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
+        ],
+    ));
+    assert_preserved_entry_output(&fixture, "0\n42\n");
+}
+
+#[test]
+fn installed_getters_can_invoke_returned_escaped_callbacks() {
+    let source = "import { retain } from './peer.js';\nlet later = 0;\nfunction createReader() { return () => later; }\nconst holder = { value: 1 };\nretain(createReader);\nretain(holder);\nconst observed = holder.missing;\nlater = 42;\nconsole.log(observed);\n";
+    let peers = [(
+        "static/peer",
+        "let factory; export function retain(value) { if (typeof value === 'function') factory = value; else Object.defineProperty(value, 'missing', { get() { return factory()(); } }); }\n",
+    )];
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]).with_extra_chunks(&peers));
+    assert_preserved_entry_output(&fixture, "0\n");
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon(
+                    "registry",
+                    &[
+                        Member::new("createReader"),
+                        Member::new("holder"),
+                        Member::new("observed"),
+                    ],
+                    &["retain(createReader);", "retain(holder);"],
+                ),
+                logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
+            ],
+        )
+        .with_extra_chunks(&peers),
+        &["registry", "values/later"],
+        &[],
+    );
+}
