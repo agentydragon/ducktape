@@ -265,6 +265,19 @@ it("offers a Sandbox-scoped Langfuse link from the active Thread menu", async ()
   expect((link as HTMLAnchorElement).target).toBe("_blank");
 });
 
+it("keeps the Langfuse link available from a stale Sandbox snapshot", async () => {
+  inventoryFresh = false;
+  const container = await render();
+  const menuButton = container.querySelector<HTMLButtonElement>('button[aria-label="More"]');
+  if (!menuButton) throw new Error("Missing thread actions menu");
+  await act(async () => menuButton.click());
+  expect(
+    [...document.querySelectorAll('[role="menuitem"]')].some((node) =>
+      node.textContent?.includes("Sandbox LLM traces in Langfuse")
+    )
+  ).toBe(true);
+});
+
 it("hides the Grafana trace link from the thread menu when unconfigured", async () => {
   traceSearchSettings = null;
   const container = await render();

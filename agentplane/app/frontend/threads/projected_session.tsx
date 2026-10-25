@@ -1709,7 +1709,7 @@ export function ProjectedSession({
               onStatusChange={setTabStatus}
               traceSearch={traceSearch}
               langfuseSearch={langfuseSearch}
-              sandbox={inventoryFresh ? sandbox : undefined}
+              sandbox={sandbox}
             />
           </sync.Thread>
         )}
