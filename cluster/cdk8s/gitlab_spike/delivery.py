@@ -19,7 +19,7 @@ from flux_imageupdateautomation_crds.io.fluxcd.toolkit.image import (
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecSourceRef, KustomizationSpecSourceRefKind
 from flux_receiver_crds.io.fluxcd.toolkit.notification import ReceiverSpecSecretRef, ReceiverSpecType
 
-from cluster.cdk8s.flux import flux_kustomization
+from cluster.cdk8s import flux
 from cluster.cdk8s.image_automation import newest_ci_tag_policy
 from cluster.cdk8s.providers.flux.git_repository import GitRepository
 from cluster.cdk8s.providers.flux.image_repository import ImageRepository
@@ -84,7 +84,7 @@ def chart(app: App) -> Chart:
         ],
     )
     reconciler = ServiceAccount(
-        chart, "reconciler", metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE), automount_token=False
+        chart, "reconciler", metadata=ApiObjectMetadata(name=_NAME, namespace=flux.NAMESPACE), automount_token=False
     )
     role = Role(
         chart,
@@ -98,10 +98,12 @@ def chart(app: App) -> Chart:
         ],
     )
     role.bind(reconciler)
-    flux_kustomization(
+    flux.flux_kustomization(
         chart,
         "gitlab-spike-demo",
-        KustomizationSpecSourceRef(kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name=source.name),
+        KustomizationSpecSourceRef(
+            kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name=source.name, namespace=source.metadata.namespace
+        ),
         path="./k8s",
         interval="1m",
         target_namespace=_DEMO_NAMESPACE,
