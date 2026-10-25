@@ -169,7 +169,9 @@ only when every owner in both groups has the same original module home; an
 existing mixed-home coarsened group is never split or joined to a pure group.
 Each contraction passes the quotient's incremental gate, and the final complete
 partition passes the shared gate again. The command reports a proposal and
-does not edit the spec.
+does not edit the spec. An optional per-home pair-attempt limit bounds partial
+fallback checks across all passes while preserving whole-home checks; the
+report identifies homes left with untried pairs. The default remains exhaustive.
 
 ## Readable names and the chunk public surface
 

@@ -93,6 +93,23 @@ fn rejoining_restores_a_safe_home_and_keeps_an_unrelated_module() {
     assert_eq!(rejoining["stop_reason"], "converged", "{report}");
     assert_eq!(rejoining["attempted_contractions"], 1, "{report}");
     assert_eq!(rejoining["accepted_contractions"], 2, "{report}");
+    let mut capped_args = args.to_vec();
+    capped_args.extend(["--rejoin-pair-attempt-limit", "0"]);
+    let capped = fixture.json(&capped_args);
+    assert_eq!(capped["candidate_is_realizable"], true, "{capped}");
+    assert_eq!(capped["coverage_complete"], true, "{capped}");
+    assert_eq!(
+        capped["coarsening"]["original_home_rejoining"]["stop_reason"], "converged",
+        "{capped}"
+    );
+    assert_eq!(
+        capped["coarsening"]["original_home_rejoining"]["accepted_contractions"], 2,
+        "{capped}"
+    );
+    assert_eq!(
+        capped["coarsening"]["original_home_rejoining"]["budget_limited_home_count"], 0,
+        "{capped}"
+    );
     assert!(
         rejoining["fully_restored_module_paths"]
             .as_array()
@@ -125,6 +142,51 @@ fn rejoining_restores_a_safe_home_and_keeps_an_unrelated_module() {
     );
     debundle_e2e_support::assert_node_output(&fixture.source_path(), "10\n", "");
     assert_emitted_layout_and_output(&fixture, &["home", "outside"], "10\n");
+}
+
+#[test]
+fn zero_pair_budget_still_restores_a_two_fragment_home() {
+    let fixture = GraphFixture::new(
+        "const left = 2;\nconst right = 3;\nconst outside = 4;\nconsole.log(left + right + outside);\n",
+        &[
+            (
+                "home.yaml",
+                "members: [{selector: {binding: {name: left}}}, {selector: {binding: {name: right}}}]\n",
+            ),
+            (
+                "outside.yaml",
+                "members: [{selector: {binding: {name: outside}}}]\n",
+            ),
+        ],
+    );
+    let report = fixture.json(&[
+        "modules",
+        "decompose",
+        "--atomic",
+        "--coarsen-blocking-sccs",
+        "--rejoin-original-modules",
+        "--rejoin-pair-attempt-limit",
+        "0",
+        "--graph",
+        fixture.graph.to_str().unwrap(),
+        "--modules",
+        fixture.modules.to_str().unwrap(),
+    ]);
+    assert_eq!(report["coverage_complete"], true, "{report}");
+    assert_eq!(report["candidate_is_realizable"], true, "{report}");
+    let rejoining = &report["coarsening"]["original_home_rejoining"];
+    assert_eq!(rejoining["stop_reason"], "converged", "{report}");
+    assert_eq!(rejoining["accepted_contractions"], 1, "{report}");
+    assert_eq!(rejoining["budget_limited_home_count"], 0, "{report}");
+    assert!(
+        rejoining["fully_restored_module_paths"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("home")),
+        "{report}"
+    );
+    debundle_e2e_support::assert_node_output(&fixture.source_path(), "9\n", "");
+    assert_emitted_layout_and_output(&fixture, &["home", "outside"], "9\n");
 }
 
 #[test]
@@ -177,6 +239,42 @@ fn rejoining_keeps_an_unsafe_home_split_and_refine_applies_accepted_groups() {
         .filter(|group| group["origin_module_paths"] == serde_json::json!(["home"]))
         .collect();
     assert_eq!(split.len(), 2, "{report}");
+    let capped = fixture.json(&[
+        "modules",
+        "decompose",
+        "--atomic",
+        "--coarsen-blocking-sccs",
+        "--rejoin-original-modules",
+        "--rejoin-pair-attempt-limit",
+        "0",
+        "--graph",
+        fixture.graph.to_str().unwrap(),
+        "--modules",
+        fixture.modules.to_str().unwrap(),
+    ]);
+    assert_eq!(capped["coverage_complete"], true, "{capped}");
+    assert_eq!(capped["candidate_is_realizable"], true, "{capped}");
+    assert_eq!(capped["cycles"], serde_json::json!([]), "{capped}");
+    assert_eq!(capped["cross_rebinds"], serde_json::json!([]), "{capped}");
+    let capped_rejoining = &capped["coarsening"]["original_home_rejoining"];
+    assert_eq!(
+        capped_rejoining["stop_reason"],
+        "pair_attempt_limit_reached"
+    );
+    assert_eq!(capped_rejoining["pair_attempt_limit"], 0);
+    assert_eq!(capped_rejoining["budget_limited_home_count"], 1);
+    assert_eq!(
+        capped_rejoining["budget_limited_home_paths"],
+        serde_json::json!(["home"])
+    );
+    assert_eq!(capped_rejoining["accepted_contractions"], 0);
+    let capped_home_groups = capped["coarsening"]["groups"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|group| group["origin_module_paths"] == serde_json::json!(["home"]))
+        .count();
+    assert!(capped_home_groups > split.len(), "{capped}");
     assert!(
         groups
             .iter()
