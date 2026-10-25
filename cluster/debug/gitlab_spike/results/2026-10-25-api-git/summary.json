@@ -1,0 +1,207 @@
+{
+  "quantiles": "nearest rank p95; sample medians; five sequential alternating pairs; warm cache paths; live ambient cluster load",
+  "batches": [
+    {
+      "pair": 1,
+      "arm": "gitlab",
+      "started": "2026-10-25T07:44:47Z",
+      "finished": "2026-10-25T07:46:11Z",
+      "median_seconds": {
+        "version": 0.0570345,
+        "contents_read": 0.1308175,
+        "contents_write": 1.0756035000000002,
+        "git_push": 1.15
+      }
+    },
+    {
+      "pair": 1,
+      "arm": "forgejo",
+      "started": "2026-10-25T07:46:11Z",
+      "finished": "2026-10-25T07:48:22Z",
+      "median_seconds": {
+        "version": 0.3815275,
+        "contents_read": 0.5225470000000001,
+        "contents_write": 2.846321,
+        "git_push": 1.66
+      }
+    },
+    {
+      "pair": 2,
+      "arm": "gitlab",
+      "started": "2026-10-25T07:51:04Z",
+      "finished": "2026-10-25T07:52:02Z",
+      "median_seconds": {
+        "version": 0.0470975,
+        "contents_read": 0.1079755,
+        "contents_write": 0.8742719999999999,
+        "git_push": 0.925
+      }
+    },
+    {
+      "pair": 2,
+      "arm": "forgejo",
+      "started": "2026-10-25T07:48:22Z",
+      "finished": "2026-10-25T07:51:04Z",
+      "median_seconds": {
+        "version": 0.38201549999999995,
+        "contents_read": 0.4856355,
+        "contents_write": 4.258786499999999,
+        "git_push": 2.115
+      }
+    },
+    {
+      "pair": 3,
+      "arm": "gitlab",
+      "started": "2026-10-25T07:52:02Z",
+      "finished": "2026-10-25T07:53:06Z",
+      "median_seconds": {
+        "version": 0.05765,
+        "contents_read": 0.1286585,
+        "contents_write": 1.048972,
+        "git_push": 0.98
+      }
+    },
+    {
+      "pair": 3,
+      "arm": "forgejo",
+      "started": "2026-10-25T07:53:06Z",
+      "finished": "2026-10-25T07:55:01Z",
+      "median_seconds": {
+        "version": 0.3566485,
+        "contents_read": 0.5369955,
+        "contents_write": 2.4918495,
+        "git_push": 1.565
+      }
+    },
+    {
+      "pair": 4,
+      "arm": "gitlab",
+      "started": "2026-10-25T07:56:57Z",
+      "finished": "2026-10-25T07:57:55Z",
+      "median_seconds": {
+        "version": 0.053655999999999995,
+        "contents_read": 0.114787,
+        "contents_write": 0.922292,
+        "git_push": 0.995
+      }
+    },
+    {
+      "pair": 4,
+      "arm": "forgejo",
+      "started": "2026-10-25T07:55:02Z",
+      "finished": "2026-10-25T07:56:56Z",
+      "median_seconds": {
+        "version": 0.374831,
+        "contents_read": 0.49207900000000004,
+        "contents_write": 2.4464765,
+        "git_push": 1.53
+      }
+    },
+    {
+      "pair": 5,
+      "arm": "gitlab",
+      "started": "2026-10-25T07:57:55Z",
+      "finished": "2026-10-25T07:58:48Z",
+      "median_seconds": {
+        "version": 0.058974,
+        "contents_read": 0.120002,
+        "contents_write": 0.862116,
+        "git_push": 0.975
+      }
+    },
+    {
+      "pair": 5,
+      "arm": "forgejo",
+      "started": "2026-10-25T07:58:48Z",
+      "finished": "2026-10-25T08:00:43Z",
+      "median_seconds": {
+        "version": 0.3481945,
+        "contents_read": 0.4839925,
+        "contents_write": 2.4735955,
+        "git_push": 1.56
+      }
+    }
+  ],
+  "summary": [
+    {
+      "operation": "version",
+      "gitlab": {
+        "samples": 100,
+        "median": 0.0543405,
+        "p95": 0.073719,
+        "max": 0.11578,
+        "batch_median_min": 0.0470975,
+        "batch_median_max": 0.058974
+      },
+      "forgejo": {
+        "samples": 100,
+        "median": 0.3587495,
+        "p95": 0.434982,
+        "max": 0.479737,
+        "batch_median_min": 0.3481945,
+        "batch_median_max": 0.38201549999999995
+      },
+      "forgejo_over_gitlab_median": 6.601880733522879
+    },
+    {
+      "operation": "contents_read",
+      "gitlab": {
+        "samples": 100,
+        "median": 0.11861,
+        "p95": 0.169917,
+        "max": 0.236788,
+        "batch_median_min": 0.1079755,
+        "batch_median_max": 0.1308175
+      },
+      "forgejo": {
+        "samples": 100,
+        "median": 0.500677,
+        "p95": 0.6055,
+        "max": 0.650842,
+        "batch_median_min": 0.4839925,
+        "batch_median_max": 0.5369955
+      },
+      "forgejo_over_gitlab_median": 4.22120394570441
+    },
+    {
+      "operation": "contents_write",
+      "gitlab": {
+        "samples": 100,
+        "median": 0.9303545,
+        "p95": 1.528233,
+        "max": 5.937906,
+        "batch_median_min": 0.862116,
+        "batch_median_max": 1.0756035000000002
+      },
+      "forgejo": {
+        "samples": 100,
+        "median": 2.6003745,
+        "p95": 4.677484,
+        "max": 6.913943,
+        "batch_median_min": 2.4464765,
+        "batch_median_max": 4.258786499999999
+      },
+      "forgejo_over_gitlab_median": 2.7950361931930248
+    },
+    {
+      "operation": "git_push",
+      "gitlab": {
+        "samples": 100,
+        "median": 0.98,
+        "p95": 1.62,
+        "max": 2.47,
+        "batch_median_min": 0.925,
+        "batch_median_max": 1.15
+      },
+      "forgejo": {
+        "samples": 100,
+        "median": 1.62,
+        "p95": 2.35,
+        "max": 4.42,
+        "batch_median_min": 1.53,
+        "batch_median_max": 2.115
+      },
+      "forgejo_over_gitlab_median": 1.653061224489796
+    }
+  ]
+}

@@ -1,0 +1,3 @@
+error: RPC failed; HTTP 500 curl 22 The requested URL returned error: 500
+send-pack: unexpected disconnect while reading sideband packet
+fatal: the remote end hung up unexpectedly

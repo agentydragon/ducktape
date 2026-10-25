@@ -1,0 +1,170 @@
+[
+  {
+    "name": "gitlab-spike-gitaly-default-0",
+    "uid": "b30a7538-e774-4730-82c6-2c3970ed8c8d",
+    "node": "ovh-ns103656",
+    "labels": {
+      "app": "gitaly",
+      "app.kubernetes.io/name": "gitlab-spike",
+      "app.kubernetes.io/version": "v19.5.1",
+      "apps.kubernetes.io/pod-index": "0",
+      "chart": "gitaly-10.5.1",
+      "controller-revision-hash": "gitlab-spike-gitaly-default-5c6d84c76",
+      "heritage": "Helm",
+      "release": "gitlab-spike",
+      "statefulset.kubernetes.io/pod-name": "gitlab-spike-gitaly-default-0",
+      "storage": "default",
+      "topology.kubernetes.io/region": "hil",
+      "topology.kubernetes.io/zone": "hil-ovh"
+    },
+    "conditions": [
+      {
+        "lastProbeTime": null,
+        "lastTransitionTime": "2026-10-25T06:59:33Z",
+        "observedGeneration": 1,
+        "status": "True",
+        "type": "PodReadyToStartContainers"
+      },
+      {
+        "lastProbeTime": null,
+        "lastTransitionTime": "2026-10-25T06:59:37Z",
+        "observedGeneration": 1,
+        "status": "True",
+        "type": "Initialized"
+      },
+      {
+        "lastProbeTime": null,
+        "lastTransitionTime": "2026-10-25T08:31:47Z",
+        "observedGeneration": 1,
+        "status": "True",
+        "type": "Ready"
+      },
+      {
+        "lastProbeTime": null,
+        "lastTransitionTime": "2026-10-25T08:31:47Z",
+        "observedGeneration": 1,
+        "status": "True",
+        "type": "ContainersReady"
+      },
+      {
+        "lastProbeTime": null,
+        "lastTransitionTime": "2026-10-25T06:59:17Z",
+        "observedGeneration": 1,
+        "status": "True",
+        "type": "PodScheduled"
+      }
+    ]
+  },
+  {
+    "name": "gitlab-spike-gitaly-default-1",
+    "uid": "907edcf1-c5c7-4c6a-95f2-1c587697c849",
+    "node": "ovh-ns102453",
+    "labels": {
+      "app": "gitaly",
+      "app.kubernetes.io/name": "gitlab-spike",
+      "app.kubernetes.io/version": "v19.5.1",
+      "apps.kubernetes.io/pod-index": "1",
+      "chart": "gitaly-10.5.1",
+      "controller-revision-hash": "gitlab-spike-gitaly-default-5c6d84c76",
+      "heritage": "Helm",
+      "release": "gitlab-spike",
+      "statefulset.kubernetes.io/pod-name": "gitlab-spike-gitaly-default-1",
+      "storage": "default",
+      "topology.kubernetes.io/region": "hil",
+      "topology.kubernetes.io/zone": "hil-ovh"
+    },
+    "conditions": [
+      {
+        "lastProbeTime": null,
+        "lastTransitionTime": "2026-10-25T06:59:10Z",
+        "observedGeneration": 1,
+        "status": "True",
+        "type": "PodReadyToStartContainers"
+      },
+      {
+        "lastProbeTime": null,
+        "lastTransitionTime": "2026-10-25T06:59:13Z",
+        "observedGeneration": 1,
+        "status": "True",
+        "type": "Initialized"
+      },
+      {
+        "lastProbeTime": null,
+        "lastTransitionTime": "2026-10-25T06:59:16Z",
+        "observedGeneration": 1,
+        "status": "True",
+        "type": "Ready"
+      },
+      {
+        "lastProbeTime": null,
+        "lastTransitionTime": "2026-10-25T06:59:16Z",
+        "observedGeneration": 1,
+        "status": "True",
+        "type": "ContainersReady"
+      },
+      {
+        "lastProbeTime": null,
+        "lastTransitionTime": "2026-10-25T06:59:04Z",
+        "observedGeneration": 1,
+        "status": "True",
+        "type": "PodScheduled"
+      }
+    ]
+  },
+  {
+    "name": "gitlab-spike-gitaly-default-2",
+    "uid": "734026a3-2d07-4b79-bc98-0ed5fbc47012",
+    "node": "ovh-ns103711",
+    "labels": {
+      "app": "gitaly",
+      "app.kubernetes.io/name": "gitlab-spike",
+      "app.kubernetes.io/version": "v19.5.1",
+      "apps.kubernetes.io/pod-index": "2",
+      "chart": "gitaly-10.5.1",
+      "controller-revision-hash": "gitlab-spike-gitaly-default-5c6d84c76",
+      "heritage": "Helm",
+      "release": "gitlab-spike",
+      "statefulset.kubernetes.io/pod-name": "gitlab-spike-gitaly-default-2",
+      "storage": "default",
+      "topology.kubernetes.io/region": "hil",
+      "topology.kubernetes.io/zone": "hil-ovh"
+    },
+    "conditions": [
+      {
+        "lastProbeTime": null,
+        "lastTransitionTime": "2026-10-25T06:58:56Z",
+        "observedGeneration": 1,
+        "status": "True",
+        "type": "PodReadyToStartContainers"
+      },
+      {
+        "lastProbeTime": null,
+        "lastTransitionTime": "2026-10-25T06:58:59Z",
+        "observedGeneration": 1,
+        "status": "True",
+        "type": "Initialized"
+      },
+      {
+        "lastProbeTime": null,
+        "lastTransitionTime": "2026-10-25T06:59:01Z",
+        "observedGeneration": 1,
+        "status": "True",
+        "type": "Ready"
+      },
+      {
+        "lastProbeTime": null,
+        "lastTransitionTime": "2026-10-25T06:59:01Z",
+        "observedGeneration": 1,
+        "status": "True",
+        "type": "ContainersReady"
+      },
+      {
+        "lastProbeTime": null,
+        "lastTransitionTime": "2026-10-25T06:58:52Z",
+        "observedGeneration": 1,
+        "status": "True",
+        "type": "PodScheduled"
+      }
+    ]
+  }
+]

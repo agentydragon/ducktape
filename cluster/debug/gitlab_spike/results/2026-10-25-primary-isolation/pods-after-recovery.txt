@@ -1,0 +1,24 @@
+NAME                                               READY   STATUS      RESTARTS      AGE    IP             NODE            NOMINATED NODE   READINESS GATES
+gitlab-db-1                                        2/2     Running     0             113m   10.244.3.224   ovh-ns104963    <none>           <none>
+gitlab-db-2                                        2/2     Running     0             112m   10.244.0.71    ovh-ns104952    <none>           <none>
+gitlab-db-3                                        2/2     Running     0             109m   10.244.9.145   ovh-ns1001419   <none>           <none>
+gitlab-spike-bootstrap-v1-ppctv                    0/1     Completed   0             82m    10.244.5.18    wyrm2           <none>           <none>
+gitlab-spike-gitaly-default-0                      1/1     Running     0             92m    10.244.1.227   ovh-ns103656    <none>           <none>
+gitlab-spike-gitaly-default-1                      1/1     Running     0             92m    10.244.4.189   ovh-ns102453    <none>           <none>
+gitlab-spike-gitaly-default-2                      1/1     Running     0             93m    10.244.2.235   ovh-ns103711    <none>           <none>
+gitlab-spike-gitlab-exporter-5d48968c5-2fx84       1/1     Running     0             93m    10.244.4.23    ovh-ns102453    <none>           <none>
+gitlab-spike-gitlab-shell-5cb64b479b-h24gw         1/1     Running     0             93m    10.244.4.46    ovh-ns102453    <none>           <none>
+gitlab-spike-gitlab-shell-5cb64b479b-xc7pj         1/1     Running     0             92m    10.244.2.163   ovh-ns103711    <none>           <none>
+gitlab-spike-migrations-1a96853-5j5z7              0/1     Completed   0             93m    10.244.4.59    ovh-ns102453    <none>           <none>
+gitlab-spike-praefect-0                            1/1     Running     0             92m    10.244.4.127   ovh-ns102453    <none>           <none>
+gitlab-spike-praefect-1                            1/1     Running     0             92m    10.244.1.198   ovh-ns103656    <none>           <none>
+gitlab-spike-praefect-2                            1/1     Running     0             93m    10.244.2.162   ovh-ns103711    <none>           <none>
+gitlab-spike-registry-78d4b9b9cc-j27xl             1/1     Running     0             93m    10.244.4.154   ovh-ns102453    <none>           <none>
+gitlab-spike-registry-78d4b9b9cc-tcsfg             1/1     Running     0             92m    10.244.1.147   ovh-ns103656    <none>           <none>
+gitlab-spike-sidekiq-all-in-1-v2-8c4f58489-dbt4q   1/1     Running     0             87m    10.244.2.134   ovh-ns103711    <none>           <none>
+gitlab-spike-sidekiq-all-in-1-v2-8c4f58489-v89vg   1/1     Running     1 (90m ago)   93m    10.244.4.125   ovh-ns102453    <none>           <none>
+gitlab-spike-toolbox-6cc66678f4-lmmmt              1/1     Running     0             93m    10.244.4.131   ovh-ns102453    <none>           <none>
+gitlab-spike-webservice-default-7f4b7cdb44-777w2   2/2     Running     0             84m    10.244.2.71    ovh-ns103711    <none>           <none>
+gitlab-spike-webservice-default-7f4b7cdb44-dgkld   2/2     Running     2 (86m ago)   93m    10.244.4.239   ovh-ns102453    <none>           <none>
+gitlab-valkey-0                                    1/1     Running     0             113m   10.244.4.65    ovh-ns102453    <none>           <none>
+gitlab-valkey-1                                    1/1     Running     0             113m   10.244.1.250   ovh-ns103656    <none>           <none>

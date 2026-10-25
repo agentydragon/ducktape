@@ -1,0 +1,223 @@
+[
+  {
+    "kind": "Kustomization",
+    "namespace": "ducktape-flux",
+    "name": "gitlab-spike",
+    "generation": 1,
+    "conditions": [
+      {
+        "lastTransitionTime": "2026-10-25T08:40:26Z",
+        "message": "Applied revision: latest@sha256:e0f2491a53f8b67675a181a739fec941f1cd552ad933a517e2cee7ae1e5bc746",
+        "observedGeneration": 1,
+        "reason": "ReconciliationSucceeded",
+        "status": "True",
+        "type": "Ready"
+      },
+      {
+        "lastTransitionTime": "2026-10-25T08:40:26Z",
+        "message": "Health check passed in 303.195493ms",
+        "observedGeneration": 1,
+        "reason": "Succeeded",
+        "status": "True",
+        "type": "Healthy"
+      }
+    ],
+    "lastAppliedRevision": "latest@sha256:e0f2491a53f8b67675a181a739fec941f1cd552ad933a517e2cee7ae1e5bc746",
+    "lastAttemptedRevision": "latest@sha256:e0f2491a53f8b67675a181a739fec941f1cd552ad933a517e2cee7ae1e5bc746",
+    "observedGeneration": 1
+  },
+  {
+    "kind": "Kustomization",
+    "namespace": "ducktape-flux",
+    "name": "gitlab-spike-bootstrap",
+    "generation": 1,
+    "conditions": [
+      {
+        "lastTransitionTime": "2026-10-25T08:41:36Z",
+        "message": "Applied revision: latest@sha256:7e80cb04ac30be511ff9d1d29012e50172fe46648d64833d4f05f1f525e1c1da",
+        "observedGeneration": 1,
+        "reason": "ReconciliationSucceeded",
+        "status": "True",
+        "type": "Ready"
+      },
+      {
+        "lastTransitionTime": "2026-10-25T08:41:35Z",
+        "message": "Health check passed in 184.914023ms",
+        "observedGeneration": 1,
+        "reason": "Succeeded",
+        "status": "True",
+        "type": "Healthy"
+      }
+    ],
+    "lastAppliedRevision": "latest@sha256:7e80cb04ac30be511ff9d1d29012e50172fe46648d64833d4f05f1f525e1c1da",
+    "lastAttemptedRevision": "latest@sha256:7e80cb04ac30be511ff9d1d29012e50172fe46648d64833d4f05f1f525e1c1da",
+    "observedGeneration": 1
+  },
+  {
+    "kind": "Kustomization",
+    "namespace": "ducktape-flux",
+    "name": "gitlab-spike-demo",
+    "generation": 2,
+    "conditions": [
+      {
+        "lastTransitionTime": "2026-10-25T08:47:37Z",
+        "message": "Running health checks for revision main@sha1:86ac20af182b8fe2c75d75b0edd1b4470cdcef5a with a timeout of 5m0s",
+        "observedGeneration": 2,
+        "reason": "Progressing",
+        "status": "True",
+        "type": "Reconciling"
+      },
+      {
+        "lastTransitionTime": "2026-10-25T08:47:37Z",
+        "message": "Reconciliation in progress",
+        "observedGeneration": 2,
+        "reason": "Progressing",
+        "status": "Unknown",
+        "type": "Ready"
+      },
+      {
+        "lastTransitionTime": "2026-10-25T08:47:37Z",
+        "message": "Running health checks for revision main@sha1:86ac20af182b8fe2c75d75b0edd1b4470cdcef5a with a timeout of 5m0s",
+        "observedGeneration": 2,
+        "reason": "Progressing",
+        "status": "Unknown",
+        "type": "Healthy"
+      }
+    ],
+    "lastAttemptedRevision": "main@sha1:86ac20af182b8fe2c75d75b0edd1b4470cdcef5a",
+    "observedGeneration": -1
+  },
+  {
+    "kind": "Kustomization",
+    "namespace": "ducktape-flux",
+    "name": "gitlab-spike-dependencies",
+    "generation": 1,
+    "conditions": [
+      {
+        "lastTransitionTime": "2026-10-25T08:43:57Z",
+        "message": "Applied revision: latest@sha256:b3415cf11d7bc7875c0682eba8440a2fa0937495c2381518db1ef0fda9a5401f",
+        "observedGeneration": 1,
+        "reason": "ReconciliationSucceeded",
+        "status": "True",
+        "type": "Ready"
+      },
+      {
+        "lastTransitionTime": "2026-10-25T08:43:57Z",
+        "message": "Health check passed in 1.469392949s",
+        "observedGeneration": 1,
+        "reason": "Succeeded",
+        "status": "True",
+        "type": "Healthy"
+      }
+    ],
+    "lastAppliedRevision": "latest@sha256:b3415cf11d7bc7875c0682eba8440a2fa0937495c2381518db1ef0fda9a5401f",
+    "lastAttemptedRevision": "latest@sha256:b3415cf11d7bc7875c0682eba8440a2fa0937495c2381518db1ef0fda9a5401f",
+    "observedGeneration": 1
+  },
+  {
+    "kind": "Kustomization",
+    "namespace": "ducktape-flux",
+    "name": "gitlab-spike-gitops",
+    "generation": 1,
+    "conditions": [
+      {
+        "lastTransitionTime": "2026-10-25T08:46:11Z",
+        "message": "Applied revision: latest@sha256:4a7ebd3d051143232dc8b52042312ac9085d54d2202cd8dcc8f7401141ce74d1",
+        "observedGeneration": 1,
+        "reason": "ReconciliationSucceeded",
+        "status": "True",
+        "type": "Ready"
+      },
+      {
+        "lastTransitionTime": "2026-10-25T08:46:11Z",
+        "message": "Health check passed in 88.499618ms",
+        "observedGeneration": 1,
+        "reason": "Succeeded",
+        "status": "True",
+        "type": "Healthy"
+      }
+    ],
+    "lastAppliedRevision": "latest@sha256:4a7ebd3d051143232dc8b52042312ac9085d54d2202cd8dcc8f7401141ce74d1",
+    "lastAttemptedRevision": "latest@sha256:4a7ebd3d051143232dc8b52042312ac9085d54d2202cd8dcc8f7401141ce74d1",
+    "observedGeneration": 1
+  },
+  {
+    "kind": "Kustomization",
+    "namespace": "ducktape-flux",
+    "name": "gitlab-spike-integrations",
+    "generation": 1,
+    "conditions": [
+      {
+        "lastTransitionTime": "2026-10-25T08:44:59Z",
+        "message": "Applied revision: latest@sha256:79703dd1e5977c710ccd8995fb3ffb220f11cce3e688420f2f791f4a6697dc33",
+        "observedGeneration": 1,
+        "reason": "ReconciliationSucceeded",
+        "status": "True",
+        "type": "Ready"
+      },
+      {
+        "lastTransitionTime": "2026-10-25T08:44:59Z",
+        "message": "Health check passed in 87.668611ms",
+        "observedGeneration": 1,
+        "reason": "Succeeded",
+        "status": "True",
+        "type": "Healthy"
+      }
+    ],
+    "lastAppliedRevision": "latest@sha256:79703dd1e5977c710ccd8995fb3ffb220f11cce3e688420f2f791f4a6697dc33",
+    "lastAttemptedRevision": "latest@sha256:79703dd1e5977c710ccd8995fb3ffb220f11cce3e688420f2f791f4a6697dc33",
+    "observedGeneration": 1
+  },
+  {
+    "kind": "HelmRelease",
+    "namespace": "gitlab-spike-ci",
+    "name": "gitlab-spike-runner",
+    "generation": 2,
+    "conditions": [
+      {
+        "lastTransitionTime": "2026-10-25T08:06:19Z",
+        "message": "Helm upgrade succeeded for release gitlab-spike-ci/gitlab-spike-runner.v2 with chart gitlab-runner@0.94.1",
+        "observedGeneration": 2,
+        "reason": "UpgradeSucceeded",
+        "status": "True",
+        "type": "Ready"
+      },
+      {
+        "lastTransitionTime": "2026-10-25T08:06:19Z",
+        "message": "Helm upgrade succeeded for release gitlab-spike-ci/gitlab-spike-runner.v2 with chart gitlab-runner@0.94.1",
+        "observedGeneration": 2,
+        "reason": "UpgradeSucceeded",
+        "status": "True",
+        "type": "Released"
+      }
+    ],
+    "lastAttemptedRevision": "0.94.1",
+    "observedGeneration": 2
+  },
+  {
+    "kind": "HelmRelease",
+    "namespace": "gitlab-spike",
+    "name": "gitlab-spike",
+    "generation": 2,
+    "conditions": [
+      {
+        "lastTransitionTime": "2026-10-25T07:09:13Z",
+        "message": "Helm upgrade succeeded for release gitlab-spike/gitlab-spike.v2 with chart gitlab@10.5.1",
+        "observedGeneration": 2,
+        "reason": "UpgradeSucceeded",
+        "status": "True",
+        "type": "Ready"
+      },
+      {
+        "lastTransitionTime": "2026-10-25T07:09:13Z",
+        "message": "Helm upgrade succeeded for release gitlab-spike/gitlab-spike.v2 with chart gitlab@10.5.1",
+        "observedGeneration": 2,
+        "reason": "UpgradeSucceeded",
+        "status": "True",
+        "type": "Released"
+      }
+    ],
+    "lastAttemptedRevision": "10.5.1",
+    "observedGeneration": 2
+  }
+]

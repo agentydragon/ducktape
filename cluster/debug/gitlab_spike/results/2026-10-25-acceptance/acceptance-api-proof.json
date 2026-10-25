@@ -1,0 +1,157 @@
+{
+  "human": {
+    "id": 3,
+    "username": "agentydragon",
+    "is_admin": false,
+    "identity_matches_declared_subject": true,
+    "ssh_key_matches": {
+      "atlas": true,
+      "iguana": true,
+      "rugged": true,
+      "wyrm2": true
+    }
+  },
+  "project": {
+    "id": 1,
+    "path_with_namespace": "spike/acceptance",
+    "visibility": "private",
+    "default_branch": "main",
+    "repository_access_level": "private",
+    "builds_access_level": "private",
+    "merge_requests_access_level": "private",
+    "container_registry_access_level": "private"
+  },
+  "protection": {
+    "push_access_levels": [40],
+    "merge_access_levels": [40],
+    "allow_force_push": false
+  },
+  "project_access_tokens": [
+    {
+      "name": "gitlab-spike-proof",
+      "scopes": ["read_api", "write_repository"],
+      "access_level": 30,
+      "revoked": false,
+      "active": true
+    },
+    {
+      "name": "gitlab-spike-flux",
+      "scopes": ["read_repository", "write_repository"],
+      "access_level": 40,
+      "revoked": false,
+      "active": true
+    }
+  ],
+  "registry_deploy_tokens": [
+    {
+      "name": "gitlab-spike-registry-pull",
+      "scopes": ["read_registry"]
+    }
+  ],
+  "hooks": [
+    {
+      "id": 1,
+      "destination_host": "flux-webhook.allegedly.works",
+      "push_events": true,
+      "pipeline_events": true,
+      "deliveries": [
+        {
+          "id": 10,
+          "trigger": "pipeline_hooks",
+          "response_status": "200",
+          "execution_duration": 0.23604693599918392,
+          "created_at": "2026-10-25T08:31:38.774Z",
+          "pipeline_id": 3,
+          "pipeline_status": "skipped"
+        },
+        {
+          "id": 9,
+          "trigger": "push_hooks",
+          "response_status": "200",
+          "execution_duration": 0.21801455300010275,
+          "created_at": "2026-10-25T08:31:37.354Z",
+          "pipeline_id": null,
+          "pipeline_status": null
+        },
+        {
+          "id": 8,
+          "trigger": "pipeline_hooks",
+          "response_status": "200",
+          "execution_duration": 0.20083267099107616,
+          "created_at": "2026-10-25T08:14:52.055Z",
+          "pipeline_id": 2,
+          "pipeline_status": "skipped"
+        },
+        {
+          "id": 7,
+          "trigger": "push_hooks",
+          "response_status": "200",
+          "execution_duration": 0.22598594000737648,
+          "created_at": "2026-10-25T08:14:51.294Z",
+          "pipeline_id": null,
+          "pipeline_status": null
+        },
+        {
+          "id": 6,
+          "trigger": "pipeline_hooks",
+          "response_status": "200",
+          "execution_duration": 0.21898723900085315,
+          "created_at": "2026-10-25T08:14:48.442Z",
+          "pipeline_id": 1,
+          "pipeline_status": "success"
+        },
+        {
+          "id": 5,
+          "trigger": "pipeline_hooks",
+          "response_status": "200",
+          "execution_duration": 0.2989254330022959,
+          "created_at": "2026-10-25T08:13:16.400Z",
+          "pipeline_id": 1,
+          "pipeline_status": "running"
+        },
+        {
+          "id": 4,
+          "trigger": "pipeline_hooks",
+          "response_status": "200",
+          "execution_duration": 0.3846025629900396,
+          "created_at": "2026-10-25T07:42:00.484Z",
+          "pipeline_id": 1,
+          "pipeline_status": "failed"
+        },
+        {
+          "id": 3,
+          "trigger": "pipeline_hooks",
+          "response_status": "200",
+          "execution_duration": 0.32292748999316245,
+          "created_at": "2026-10-25T07:41:11.735Z",
+          "pipeline_id": 1,
+          "pipeline_status": "running"
+        },
+        {
+          "id": 2,
+          "trigger": "pipeline_hooks",
+          "response_status": "200",
+          "execution_duration": 0.20386660999793094,
+          "created_at": "2026-10-25T07:41:00.341Z",
+          "pipeline_id": 1,
+          "pipeline_status": "pending"
+        },
+        {
+          "id": 1,
+          "trigger": "push_hooks",
+          "response_status": "200",
+          "execution_duration": 0.21761925899772905,
+          "created_at": "2026-10-25T07:40:58.756Z",
+          "pipeline_id": null,
+          "pipeline_status": null
+        }
+      ]
+    }
+  ],
+  "pipeline": {
+    "id": 1,
+    "status": "success",
+    "sha": "668fcd0ecaeea29cd6012c3866b24e3b212939ac",
+    "web_url": "https://gitlab-spike.allegedly.works/spike/acceptance/-/pipelines/1"
+  }
+}

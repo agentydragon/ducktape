@@ -4,6 +4,9 @@ This component deploys a separate GitLab Free evaluation instance through the no
 cdk8s → ArtifactGenerator → Flux path. Merging enables its Kustomizations. The generated
 outputs live under `cluster/generated/gitlab-spike/`.
 
+[Live findings and benchmark evidence, 2026-10-25](../../debug/gitlab_spike/2026-10-25-live.md)
+record the deployed proofs, resource costs and remaining replacement gates.
+
 - Web: `https://gitlab-spike.allegedly.works`
 - Registry: `registry-gitlab-spike.allegedly.works`
 - SSH: `gitlab-spike.allegedly.works:2223`

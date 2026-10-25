@@ -1,0 +1,25 @@
+{
+  "image": "registry-gitlab-spike.allegedly.works/spike/acceptance:devel-20261025081415-668fcd0@sha256:6511ad0627bd8217c566dc928f49bcd025ba36164c8c74e9aa9d162eb65d077f",
+  "manifest_digest": "sha256:6511ad0627bd8217c566dc928f49bcd025ba36164c8c74e9aa9d162eb65d077f",
+  "media_type": "application/vnd.oci.image.manifest.v1+json",
+  "anonymous_manifest_status": 401,
+  "credential": "Terraform registry read-only deploy token from demo pull Secret",
+  "verified_blobs": [
+    {
+      "digest": "sha256:a50531f25f92b3230bc7ad517799f8df9f4211b7e30fcf4e0fffd028a902fad8",
+      "size": 1554
+    },
+    {
+      "digest": "sha256:31b720d12cabe8983e6d3389f6c26ffd15ed2ebfd291f617a37664a26fbc446b",
+      "size": 607311
+    },
+    {
+      "digest": "sha256:250c06f7c38e52dc77e5c7586c3e40280dc7ff9bb9007c396e06d96736cf8542",
+      "size": 127
+    },
+    {
+      "digest": "sha256:42ebf3a11866b7ad2211047572bef4b4dc8a7a058e71b9650715d40ba93a284a",
+      "size": 4939505
+    }
+  ]
+}

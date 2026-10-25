@@ -1,0 +1,20 @@
+{
+  "source_sha": "da781199d2e3ea08de0ff68f35db27d62eb3e6c9",
+  "source_ref": "refs/heads/main",
+  "workload": "one branch, full history; no other refs",
+  "client_host": "wyrm2",
+  "route": "external HTTPS ingress from outside Kubernetes",
+  "run_id": "20261025080238",
+  "repos": {
+    "gitlab": {
+      "id": 7,
+      "path": "spike-benchmark/git-transfer-spike-20261025080238"
+    },
+    "forgejo": {
+      "id": 122,
+      "path": "gitlab-spike-control/git-transfer-spike-20261025080238"
+    }
+  },
+  "completed_at": "2026-10-25T08:12:13.793101+00:00",
+  "cleanup_requests_accepted": true
+}

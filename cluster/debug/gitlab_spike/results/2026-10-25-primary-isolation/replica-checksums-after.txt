@@ -1,0 +1,4 @@
+
+Project name | gitlab-spike-gitaly-default-2 (primary)  | gitlab-spike-gitaly-default-0            | gitlab-spike-gitaly-default-1
+---------------------------------------------------------------------------------------------------------------------------------------------
+Acceptance   | 5f11370057658bfdcb90ebfb38495b843c256e63 | 5f11370057658bfdcb90ebfb38495b843c256e63 | 5f11370057658bfdcb90ebfb38495b843c256e63

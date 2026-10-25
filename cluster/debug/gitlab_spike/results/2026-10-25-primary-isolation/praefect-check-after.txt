@@ -1,0 +1,34 @@
+Checking praefect migrations - confirms whether or not all praefect migrations have run [fatal]
+Passed
+Checking gitaly node connectivity & disk access - confirms if praefect can reach all of its gitaly nodes, and whether or not the gitaly nodes can read/write from and to its storages. [fatal]
+[tcp://gitlab-spike-gitaly-default-2.gitlab-spike-gitaly-default.gitlab-spike.svc:8075]: dialing...
+[tcp://gitlab-spike-gitaly-default-0.gitlab-spike-gitaly-default.gitlab-spike.svc:8075]: dialing...
+[tcp://gitlab-spike-gitaly-default-1.gitlab-spike-gitaly-default.gitlab-spike.svc:8075]: dialing...
+[tcp://gitlab-spike-gitaly-default-2.gitlab-spike-gitaly-default.gitlab-spike.svc:8075]: dialed successfully!
+[tcp://gitlab-spike-gitaly-default-2.gitlab-spike-gitaly-default.gitlab-spike.svc:8075]: checking health...
+[tcp://gitlab-spike-gitaly-default-0.gitlab-spike-gitaly-default.gitlab-spike.svc:8075]: dialed successfully!
+[tcp://gitlab-spike-gitaly-default-0.gitlab-spike-gitaly-default.gitlab-spike.svc:8075]: checking health...
+[tcp://gitlab-spike-gitaly-default-1.gitlab-spike-gitaly-default.gitlab-spike.svc:8075]: dialed successfully!
+[tcp://gitlab-spike-gitaly-default-1.gitlab-spike-gitaly-default.gitlab-spike.svc:8075]: checking health...
+[tcp://gitlab-spike-gitaly-default-1.gitlab-spike-gitaly-default.gitlab-spike.svc:8075]: SUCCESS: node is healthy!
+[tcp://gitlab-spike-gitaly-default-1.gitlab-spike-gitaly-default.gitlab-spike.svc:8075]: checking consistency...
+[tcp://gitlab-spike-gitaly-default-0.gitlab-spike-gitaly-default.gitlab-spike.svc:8075]: SUCCESS: node is healthy!
+[tcp://gitlab-spike-gitaly-default-0.gitlab-spike-gitaly-default.gitlab-spike.svc:8075]: checking consistency...
+[tcp://gitlab-spike-gitaly-default-2.gitlab-spike-gitaly-default.gitlab-spike.svc:8075]: SUCCESS: node is healthy!
+[tcp://gitlab-spike-gitaly-default-2.gitlab-spike-gitaly-default.gitlab-spike.svc:8075]: checking consistency...
+[tcp://gitlab-spike-gitaly-default-1.gitlab-spike-gitaly-default.gitlab-spike.svc:8075]: SUCCESS: confirmed Gitaly storage "gitlab-spike-gitaly-default-1" in virtual storages [default] is served
+[tcp://gitlab-spike-gitaly-default-1.gitlab-spike-gitaly-default.gitlab-spike.svc:8075]: SUCCESS: node configuration is consistent!
+[tcp://gitlab-spike-gitaly-default-0.gitlab-spike-gitaly-default.gitlab-spike.svc:8075]: SUCCESS: confirmed Gitaly storage "gitlab-spike-gitaly-default-0" in virtual storages [default] is served
+[tcp://gitlab-spike-gitaly-default-0.gitlab-spike-gitaly-default.gitlab-spike.svc:8075]: SUCCESS: node configuration is consistent!
+[tcp://gitlab-spike-gitaly-default-2.gitlab-spike-gitaly-default.gitlab-spike.svc:8075]: SUCCESS: confirmed Gitaly storage "gitlab-spike-gitaly-default-2" in virtual storages [default] is served
+[tcp://gitlab-spike-gitaly-default-2.gitlab-spike-gitaly-default.gitlab-spike.svc:8075]: SUCCESS: node configuration is consistent!
+Passed
+Checking database read/write - checks if praefect can write/read to and from the database [fatal]
+successfully read from database
+successfully wrote to database
+Passed
+Checking unavailable repositories - lists repositories that are missing a valid primary, hence rendering them unavailable [warning]
+All repositories are available.
+Passed
+
+All checks passed.

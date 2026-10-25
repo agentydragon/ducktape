@@ -1,0 +1,15 @@
+started_at_utc=2026-10-25T08:30:46Z
+context=admin@talos-cluster
+namespace=gitlab-spike
+statefulset=gitlab-spike-gitaly-default
+primary_pod=gitlab-spike-gitaly-default-0
+primary_storage=gitlab-spike-gitaly-default-0
+healthy_peer_pod=gitlab-spike-gitaly-default-1
+healthy_peer_uid=907edcf1-c5c7-4c6a-95f2-1c587697c849
+praefect_pod=gitlab-spike-praefect-0
+toolbox_pod=gitlab-spike-toolbox-6cc66678f4-lmmmt
+project=spike/acceptance
+project_id=1
+relative_path=@hashed/6b/86/6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b.git
+remote=https://gitlab-spike.allegedly.works/spike/acceptance.git
+fault_label_removed_at_utc=2026-10-25T08:31:39Z

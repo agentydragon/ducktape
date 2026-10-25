@@ -1,0 +1,3 @@
+cilium_probe=timeout
+command terminated with exit code 42
+kubectl_exec_exit_status=42

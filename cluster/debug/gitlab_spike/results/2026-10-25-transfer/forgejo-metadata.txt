@@ -1,0 +1,26 @@
+target=forgejo-current
+remote=https://git.allegedly.works/gitlab-spike-control/git-transfer-spike-20261025080238.git
+started_at_utc=2026-10-25T08:09:01Z
+runner_host=wyrm2
+bench_location=wyrm2
+bench_route=external HTTPS ingress
+cluster_context=not-applicable
+job_pod_uid=not-applicable
+git_version=git version 2.54.0
+clone_samples=5
+fetch_samples=20
+ref_count=1
+commit_count=26864
+object_count=367979
+git_count_objects_begin
+count: 0
+size: 0
+in-pack: 367979
+packs: 1
+size-pack: 526926
+prune-packable: 0
+garbage: 0
+size-garbage: 0
+git_count_objects_end
+mirror_size_kib=530076
+finished_at_utc=2026-10-25T08:12:10Z

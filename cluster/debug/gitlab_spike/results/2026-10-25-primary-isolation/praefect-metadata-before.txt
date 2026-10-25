@@ -1,0 +1,25 @@
+Repository ID: 1
+Virtual Storage: "default"
+Relative Path: "@hashed/6b/86/6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b.git"
+Replica Path: "@cluster/repositories/6b/86/1"
+Primary: "gitlab-spike-gitaly-default-0"
+Generation: 15
+Replicas:
+- Storage: "gitlab-spike-gitaly-default-0"
+  Assigned: true
+  Generation: 15, fully up to date
+  Healthy: true
+  Valid Primary: true
+  Verified At: 2026-10-25 07:40:28.06128 +0000 UTC
+- Storage: "gitlab-spike-gitaly-default-1"
+  Assigned: true
+  Generation: 15, fully up to date
+  Healthy: true
+  Valid Primary: true
+  Verified At: 2026-10-25 07:40:28.06128 +0000 UTC
+- Storage: "gitlab-spike-gitaly-default-2"
+  Assigned: true
+  Generation: 15, fully up to date
+  Healthy: true
+  Valid Primary: true
+  Verified At: 2026-10-25 07:40:28.06128 +0000 UTC

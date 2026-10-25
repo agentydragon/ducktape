@@ -1,0 +1,14 @@
+[
+  {
+    "name": "acceptance-64cf7db8c8-zlh49",
+    "node": "wyrm2",
+    "containers": [
+      {
+        "name": "app",
+        "ready": true,
+        "image": "registry-gitlab-spike.allegedly.works/spike/acceptance:devel-20261025081415-668fcd0",
+        "imageID": "registry-gitlab-spike.allegedly.works/spike/acceptance@sha256:6511ad0627bd8217c566dc928f49bcd025ba36164c8c74e9aa9d162eb65d077f"
+      }
+    ]
+  }
+]

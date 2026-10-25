@@ -1,0 +1,2 @@
+cilium_probe=connected
+kubectl_exec_exit_status=0

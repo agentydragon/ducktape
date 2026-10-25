@@ -1,8 +1,7 @@
 # GitLab replacement spike
 
 This directory contains disposable acceptance material for the GitLab spike. It does not
-enable or reconcile the deployment. Current state: **not deployed; no live acceptance evidence
-has been collected**.
+enable or reconcile the deployment. Current results: [live rollout and evidence, 2026-10-25](../../debug/gitlab_spike/2026-10-25-live.md).
 
 | Boundary                            | Expected value                                                 |
 | ----------------------------------- | -------------------------------------------------------------- |
@@ -73,8 +72,8 @@ field sensitive; do not copy raw plans or controller logs into this repository.
 
 ## Manual OIDC browser proof
 
-OIDC is **pending manual proof**. It cannot be established from chart values or a healthy
-callback route.
+Initial and repeat human OIDC login were confirmed in the [live findings](../../debug/gitlab_spike/2026-10-25-live.md#oidc-finding).
+For a rerun, use this browser procedure; chart values and route health alone are insufficient.
 
 1. Open a private browser session at `https://gitlab-spike.allegedly.works` and choose the
    configured OpenID Connect login.
@@ -150,8 +149,8 @@ and Chainguard's [registry network requirements](https://edu.chainguard.dev/chai
 
 This is an OCI image assembly path, not a Dockerfile or general-purpose container build
 service. A production application that needs Dockerfile semantics still needs a separately
-reviewed rootless builder or approved build service. The runner and ko build path have not
-been exercised.
+reviewed rootless builder or approved build service. The runner and ko build path completed in the
+[live delivery proof](../../debug/gitlab_spike/2026-10-25-live.md#ci-registry-and-flux-delivery).
 
 ## Repeated 20-operation application benchmark
 
@@ -159,6 +158,11 @@ Reuse the existing scripts without modification:
 
 - GitLab: `cluster/debug/gitlab_gitaly_storage_bench/gitlab-bench.sh`
 - Forgejo control: `cluster/debug/piraeus_migration/benchmarks/forgejo-bench.sh`
+
+GitLab 19.5 scheduled deletion rather than immediately removing benchmark projects. After
+running, verify recorded IDs, exact full paths, dedicated owner, creation times and deletion
+marks before requesting permanent removal with the project API. Confirm the dedicated account
+inventory is empty. Never apply that cleanup to `spike/acceptance` or a human-owned repository.
 
 Each script creates a uniquely named private disposable project, performs 20 samples each of
 version, contents read, contents write, and tiny Git push, then deletes that project. Do not
@@ -351,9 +355,8 @@ than the expected primary TCP timeout aborts the proof and restores the label. T
 [Cilium Endpoint CRD](https://docs.cilium.io/en/stable/network/kubernetes/ciliumendpoint/)
 mirrors the endpoint status from `cilium-dbg endpoint get`; Cilium's [endpoint lifecycle
 documentation](https://docs.cilium.io/en/stable/security/policy/lifecycle/) defines `ready` as
-successfully regenerated endpoint networking configuration. The gate still needs live
-validation against the deployed Cilium version before the primary-failure proof is considered
-available. The script removes the label on ordinary exit, interrupt, and termination; it never
+successfully regenerated endpoint networking configuration. The gate and one controlled primary partition were
+[validated live on Cilium v1.19.8](../../debug/gitlab_spike/2026-10-25-live.md#controlled-gitaly-primary-partition). The script removes the label on ordinary exit, interrupt, and termination; it never
 deletes PVCs, drains nodes, or scales a StatefulSet.
 
 The failure proof is opt-in. Prepare a rollback window and use the project-scoped Developer

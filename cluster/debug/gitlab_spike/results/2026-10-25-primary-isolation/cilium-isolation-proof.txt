@@ -1,0 +1,4 @@
+endpoint_state=ready
+policy_enabled=both
+primary_probe=timeout
+healthy_peer_probe=connected

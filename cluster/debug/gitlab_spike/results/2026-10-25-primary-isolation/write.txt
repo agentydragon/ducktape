@@ -1,0 +1,17 @@
+branch=spike/failure-injection-20261025T083117Z-4090362
+commit=b9658454a5226be13ca83a82d2f810e366f5d82a
+push_started_at_utc=2026-10-25T08:31:33Z
+push_exit_status=0
+push_attempt_count=2
+push_acknowledged_at_utc=2026-10-25T08:31:37Z
+push_ack_rto_seconds=3.618
+acknowledged_write=yes
+read_during_fault_commit=b9658454a5226be13ca83a82d2f810e366f5d82a
+promoted_storage=gitlab-spike-gitaly-default-2
+replica_catchup_attempts=6
+recovered_ref_commit=b9658454a5226be13ca83a82d2f810e366f5d82a
+read_after_recovery_commit=b9658454a5226be13ca83a82d2f810e366f5d82a
+ref_integrity=passed
+replica_generation=converged
+checksum_match=passed
+git_fsck=passed
