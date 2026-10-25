@@ -94,6 +94,51 @@ pub struct ModuleDecompositionReport {
     /// The exact cycle and rebinding result from the shared factorization gate.
     pub cycles: Vec<gate::CycleReport>,
     pub cross_rebinds: Vec<String>,
+    /// Present only when the caller explicitly requested SCC coarsening.
+    /// `modules` remains the initial decomposition; this records the final
+    /// candidate and the gate-reported merges used to reach it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub coarsening: Option<ModuleDecompositionCoarsening>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModuleDecompositionCoarseningMode {
+    None,
+    MergeBlockingSccs,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModuleDecompositionCoarseningStopReason {
+    Accepted,
+    AtomicUnitConflicts,
+    CrossModuleRebinds,
+    NoProgress,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ModuleDecompositionCoarsening {
+    pub stop_reason: ModuleDecompositionCoarseningStopReason,
+    pub rounds: Vec<ModuleDecompositionCoarseningRound>,
+    /// Final ownership under the names checked by the last full gate run.
+    /// These names are suggestions, and can combine distinct source homes.
+    pub groups: Vec<ModuleDecompositionCoarsenedGroup>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ModuleDecompositionCoarseningRound {
+    /// The exact blocking SCCs consumed from the shared gate report.
+    pub blocking_sccs: Vec<Vec<ModulePath>>,
+    pub suggested_merge_paths: Vec<ModulePath>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ModuleDecompositionCoarsenedGroup {
+    pub suggested_module_path: ModulePath,
+    /// Original source module labels represented by this candidate group.
+    pub origin_module_paths: Vec<ModulePath>,
+    pub owner_ids: Vec<String>,
+    pub binding_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -327,42 +372,32 @@ pub fn propose_from_graph(
     )
 }
 
-/// Build a seed-only decomposition candidate. It preserves current module
-/// labels unless a module has multiple same-module seed classes, and it does
-/// not run atomic-DAG reachability or greedy cross-module merges.
-pub fn decompose_modules_from_files(
-    options: &ProposalOptions,
-) -> Result<ModuleDecompositionReport> {
-    decompose_modules_from_files_with_strategy(options, ModuleDecompositionStrategy::Seed)
+#[derive(Debug, Clone, Copy)]
+pub struct ModuleDecompositionOptions {
+    pub strategy: ModuleDecompositionStrategy,
+    pub coarsening: ModuleDecompositionCoarseningMode,
 }
 
-pub fn decompose_modules_from_files_with_strategy(
+pub fn decompose_modules_from_files_with_options(
     options: &ProposalOptions,
-    strategy: ModuleDecompositionStrategy,
+    decomposition: ModuleDecompositionOptions,
 ) -> Result<ModuleDecompositionReport> {
     let graph: OwnerGraphReport = serde_json::from_str(
         &fs::read_to_string(&options.owner_graph_path)
             .with_context(|| format!("reading {}", options.owner_graph_path.display()))?,
     )
     .with_context(|| format!("parsing {}", options.owner_graph_path.display()))?;
-    decompose_modules_from_graph_with_strategy(&graph, options, strategy)
+    decompose_modules_from_graph_with_options(&graph, options, decomposition)
 }
 
-pub fn decompose_modules_from_graph(
+pub fn decompose_modules_from_graph_with_options(
     graph: &OwnerGraphReport,
     options: &ProposalOptions,
-) -> Result<ModuleDecompositionReport> {
-    decompose_modules_from_graph_with_strategy(graph, options, ModuleDecompositionStrategy::Seed)
-}
-
-pub fn decompose_modules_from_graph_with_strategy(
-    graph: &OwnerGraphReport,
-    options: &ProposalOptions,
-    strategy: ModuleDecompositionStrategy,
+    decomposition: ModuleDecompositionOptions,
 ) -> Result<ModuleDecompositionReport> {
     let claims = active_claims_from_options(graph, options)?;
     let existing_module_paths = module_paths_from_options(graph, options)?;
-    decompose_modules(graph, &claims, existing_module_paths, strategy)
+    decompose_modules(graph, &claims, existing_module_paths, decomposition)
 }
 
 fn module_paths_from_options(
@@ -417,8 +452,9 @@ fn decompose_modules(
     graph: &OwnerGraphReport,
     active_claims: &BTreeMap<String, ModulePath>,
     existing_module_paths: BTreeSet<ModulePath>,
-    strategy: ModuleDecompositionStrategy,
+    decomposition: ModuleDecompositionOptions,
 ) -> Result<ModuleDecompositionReport> {
+    let strategy = decomposition.strategy;
     let owner_modules: Vec<ModulePath> = graph
         .nodes
         .iter()
@@ -500,7 +536,7 @@ fn decompose_modules(
     };
 
     let mut occupied_paths: BTreeSet<ModulePath> = owner_modules.iter().cloned().collect();
-    occupied_paths.extend(existing_module_paths);
+    occupied_paths.extend(existing_module_paths.iter().cloned());
     let mut candidate_owner_modules = owner_modules.clone();
     let mut refinements = Vec::new();
     for (module_id, groups) in module_groups {
@@ -542,6 +578,124 @@ fn decompose_modules(
         });
     }
 
+    let mut validation =
+        validate_decomposition_candidate(graph, &candidate_owner_modules, &residual_path)?;
+    let mut coarsening = None;
+    if decomposition.coarsening == ModuleDecompositionCoarseningMode::MergeBlockingSccs {
+        let mut occupied_paths: BTreeSet<ModulePath> =
+            candidate_owner_modules.iter().cloned().collect();
+        occupied_paths.extend(existing_module_paths);
+        let mut rounds = Vec::new();
+        let stop_reason = loop {
+            if !validation.atomic_unit_conflicts.is_empty() {
+                break ModuleDecompositionCoarseningStopReason::AtomicUnitConflicts;
+            }
+            if !validation.cross_rebinds.is_empty() {
+                break ModuleDecompositionCoarseningStopReason::CrossModuleRebinds;
+            }
+            if validation.cycles.is_empty() {
+                break ModuleDecompositionCoarseningStopReason::Accepted;
+            }
+
+            let mut remaps = Vec::new();
+            let mut blocking_sccs = Vec::new();
+            let mut suggested_merge_paths = Vec::new();
+            let mut consumed_paths = BTreeSet::new();
+            for cycle in &validation.cycles {
+                let cycle_paths: BTreeSet<ModulePath> = cycle.modules.iter().cloned().collect();
+                let mut represented_paths: BTreeSet<ModulePath> = candidate_owner_modules
+                    .iter()
+                    .filter(|path| cycle_paths.contains(*path))
+                    .cloned()
+                    .collect();
+                if cycle_paths.contains(&residual_path) {
+                    represented_paths.insert(residual_path.clone());
+                }
+                if represented_paths.len() < 2
+                    || represented_paths
+                        .iter()
+                        .any(|path| consumed_paths.contains(path))
+                {
+                    continue;
+                }
+
+                let target = if represented_paths.contains(&residual_path) {
+                    residual_path.clone()
+                } else {
+                    let first_path = represented_paths
+                        .iter()
+                        .next()
+                        .expect("at least two represented paths")
+                        .clone();
+                    next_fragment_path(&first_path, &mut occupied_paths)
+                };
+                consumed_paths.extend(represented_paths.iter().cloned());
+                blocking_sccs.push(cycle.modules.clone());
+                suggested_merge_paths.push(target.clone());
+                remaps.push((represented_paths, target));
+            }
+            if remaps.is_empty() {
+                break ModuleDecompositionCoarseningStopReason::NoProgress;
+            }
+
+            for (paths, target) in &remaps {
+                for owner_path in &mut candidate_owner_modules {
+                    if paths.contains(owner_path) {
+                        *owner_path = target.clone();
+                    }
+                }
+            }
+            rounds.push(ModuleDecompositionCoarseningRound {
+                blocking_sccs,
+                suggested_merge_paths,
+            });
+            validation =
+                validate_decomposition_candidate(graph, &candidate_owner_modules, &residual_path)?;
+        };
+        coarsening = Some(ModuleDecompositionCoarsening {
+            stop_reason,
+            rounds,
+            groups: coarsened_groups(graph, &owner_modules, &candidate_owner_modules),
+        });
+    }
+
+    let covered_owner_ids: BTreeSet<&str> =
+        graph.nodes.iter().map(|node| node.id.as_str()).collect();
+    let coverage_complete = covered_owner_ids.len() == graph.nodes.len()
+        && candidate_owner_modules.len() == graph.nodes.len();
+    let candidate_is_realizable = coverage_complete
+        && validation.atomic_unit_conflicts.is_empty()
+        && validation.cycles.is_empty()
+        && validation.cross_rebinds.is_empty();
+    let original_modules: BTreeSet<ModulePath> = owner_modules.into_iter().collect();
+    let unchanged_module_count = original_modules.len().saturating_sub(refinements.len());
+
+    Ok(ModuleDecompositionReport {
+        strategy,
+        candidate_is_realizable,
+        coverage_complete,
+        owner_count: graph.nodes.len(),
+        assigned_owner_count: candidate_owner_modules.len(),
+        unchanged_module_count,
+        modules: refinements,
+        atomic_unit_conflicts: validation.atomic_unit_conflicts,
+        cycles: validation.cycles,
+        cross_rebinds: validation.cross_rebinds,
+        coarsening,
+    })
+}
+
+struct DecompositionValidation {
+    atomic_unit_conflicts: Vec<ModuleDecompositionAtomicConflict>,
+    cycles: Vec<gate::CycleReport>,
+    cross_rebinds: Vec<String>,
+}
+
+fn validate_decomposition_candidate(
+    graph: &OwnerGraphReport,
+    candidate_owner_modules: &[ModulePath],
+    residual_path: &ModulePath,
+) -> Result<DecompositionValidation> {
     let owner_index: HashMap<&str, usize> = graph
         .nodes
         .iter()
@@ -577,7 +731,7 @@ fn decompose_modules(
     let mut paths_by_module_id = BTreeMap::from([(ModuleId::logical(0), residual_path.clone())]);
     let mut next_module_idx = 1;
     for path in paths {
-        if path == residual_path {
+        if &path == residual_path {
             continue;
         }
         let module_id = ModuleId::logical(next_module_idx);
@@ -601,29 +755,48 @@ fn decompose_modules(
             .cloned()
             .unwrap_or_else(|| residual_path.clone())
     });
-    let covered_owner_ids: BTreeSet<&str> =
-        graph.nodes.iter().map(|node| node.id.as_str()).collect();
-    let coverage_complete = covered_owner_ids.len() == graph.nodes.len()
-        && candidate_owner_modules.len() == graph.nodes.len();
-    let candidate_is_realizable = coverage_complete
-        && atomic_unit_conflicts.is_empty()
-        && gate_report.cycles.is_empty()
-        && gate_report.cross_rebinds.is_empty();
-    let original_modules: BTreeSet<ModulePath> = owner_modules.into_iter().collect();
-    let unchanged_module_count = original_modules.len().saturating_sub(refinements.len());
-
-    Ok(ModuleDecompositionReport {
-        strategy,
-        candidate_is_realizable,
-        coverage_complete,
-        owner_count: graph.nodes.len(),
-        assigned_owner_count: candidate_owner_modules.len(),
-        unchanged_module_count,
-        modules: refinements,
+    Ok(DecompositionValidation {
         atomic_unit_conflicts,
         cycles: gate_report.cycles,
         cross_rebinds: gate_report.cross_rebinds,
     })
+}
+
+fn coarsened_groups(
+    graph: &OwnerGraphReport,
+    original_owner_modules: &[ModulePath],
+    candidate_owner_modules: &[ModulePath],
+) -> Vec<ModuleDecompositionCoarsenedGroup> {
+    let mut by_module: BTreeMap<ModulePath, Vec<usize>> = BTreeMap::new();
+    for (owner_idx, path) in candidate_owner_modules.iter().enumerate() {
+        by_module.entry(path.clone()).or_default().push(owner_idx);
+    }
+    by_module
+        .into_iter()
+        .map(|(suggested_module_path, owner_indices)| {
+            let mut origin_module_paths = BTreeSet::new();
+            let mut owner_ids = Vec::new();
+            let mut binding_ids = BTreeSet::new();
+            for owner_idx in owner_indices {
+                origin_module_paths.insert(original_owner_modules[owner_idx].clone());
+                let owner = &graph.nodes[owner_idx];
+                owner_ids.push(owner.id.clone());
+                binding_ids.extend(
+                    owner
+                        .declared_bindings
+                        .iter()
+                        .map(|binding| binding.binding.to_string()),
+                );
+            }
+            owner_ids.sort();
+            ModuleDecompositionCoarsenedGroup {
+                suggested_module_path,
+                origin_module_paths: origin_module_paths.into_iter().collect(),
+                owner_ids,
+                binding_ids: binding_ids.into_iter().collect(),
+            }
+        })
+        .collect()
 }
 
 type AtomicModuleGroups = BTreeMap<ModulePath, Vec<(Vec<usize>, bool)>>;
