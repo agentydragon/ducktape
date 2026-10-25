@@ -50,14 +50,21 @@ ts_library(
 )
 
 ts_library(
-    name = "trace_search",
-    srcs = ["trace_search.ts"],
+    name = "frontend_config",
+    srcs = ["frontend_config.ts"],
     tsconfig = TSCONFIG,
     deps = [
         ":client",
         "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
+)
+
+ts_library(
+    name = "trace_search",
+    srcs = ["trace_search.ts"],
+    tsconfig = TSCONFIG,
+    deps = [":client"],
 )
 
 agentplane_vitest_test(

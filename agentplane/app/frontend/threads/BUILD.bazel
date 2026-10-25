@@ -188,6 +188,7 @@ ts_library(
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:disclosure",
         "//agentplane/app/frontend:format_time",
+        "//agentplane/app/frontend:frontend_config",
         "//agentplane/app/frontend:icons",
         "//agentplane/app/frontend:live",
         "//agentplane/app/frontend:notification_status",

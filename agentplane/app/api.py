@@ -214,7 +214,7 @@ async def list_models(catalog: Models) -> ModelCatalog:
 
 
 preset_router = APIRouter(prefix="/presets", tags=["presets"])
-trace_search_router = APIRouter(tags=["trace search"])
+frontend_config_router = APIRouter(tags=["frontend config"])
 
 
 @preset_router.get("")
@@ -222,10 +222,16 @@ async def list_presets(services: Services) -> list[SandboxPresetView]:
     return services.presets.views()
 
 
-@trace_search_router.get("/trace-search")
-async def trace_search_settings(services: Services) -> TraceSearchSettings | None:
-    """An optional Grafana target for Tempo links in sandbox and Thread menus."""
-    return services.trace_search
+class FrontendConfig(BaseModel):
+    """Browser-facing settings that are safe to expose to the frontend."""
+
+    trace_search: TraceSearchSettings | None
+
+
+@frontend_config_router.get("/frontend-config")
+async def frontend_config(services: Services) -> FrontendConfig:
+    """Browser-facing configuration; optional settings remain present as null."""
+    return FrontendConfig(trace_search=services.trace_search)
 
 
 @router.get("")
@@ -1224,7 +1230,7 @@ def create_app(
         router,
         models,
         preset_router,
-        trace_search_router,
+        frontend_config_router,
         runner_bridge.router,
         threads,
         operator_router,

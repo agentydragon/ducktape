@@ -229,6 +229,7 @@ ts_library(
         "//:node_modules/react",
         "//:node_modules/react-router",
         "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:frontend_config",
         "//agentplane/app/frontend:icons",
         "//agentplane/app/frontend:live",
         "//agentplane/app/frontend:mark_glyph",

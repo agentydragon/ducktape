@@ -2450,11 +2450,13 @@ function pendingActions(): ActionRequestView[] {
 routes.push(
   [
     "GET",
-    /^\/trace-search$/,
+    /^\/frontend-config$/,
     () => ({
-      grafana_base_url: "https://grafana.test.invalid",
-      tempo_datasource_uid: "tempo-test",
-      deployment_environment: "agentplane-visual-test",
+      trace_search: {
+        grafana_base_url: "https://grafana.test.invalid",
+        tempo_datasource_uid: "tempo-test",
+        deployment_environment: "agentplane-visual-test",
+      },
     }),
   ],
   [

@@ -64,7 +64,8 @@ import { TimeAgo } from "../time_ago";
 import { NotificationStatus } from "../notification_status";
 import { TopbarActions, TopbarTitle } from "../topbar";
 import { finishSessionCreate, withinSessionCreate } from "../tracing";
-import { traceSearchUrl, useTraceSearchSettings } from "../trace_search";
+import { traceSearchUrl } from "../trace_search";
+import { useFrontendConfig } from "../frontend_config";
 import { installThreadFavicon } from "./thread_favicon";
 import {
   appDocumentTitle,
@@ -1589,7 +1590,8 @@ export function ProjectedSession({
     snapshotFresh(threadsLive)
   );
   const [error, setError] = useState<string | null>(null);
-  const traceSearch = useTraceSearchSettings();
+  const frontendConfig = useFrontendConfig();
+  const traceSearch = frontendConfig?.trace_search ?? null;
   const environment = useRequiredSandboxesLive();
   const inventoryFresh = environment.stream.standing === "current" && environment.health?.fresh === true;
   const sandbox = environment.snapshot?.sandboxes.find((candidate) => candidate.name === thread?.sandbox);

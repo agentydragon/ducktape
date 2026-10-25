@@ -197,8 +197,8 @@ async function render(
     if (path === "/sandboxes/form") {
       return Promise.resolve(Response.json({ policy_sets: [] }));
     }
-    if (path === "/trace-search") {
-      return Promise.resolve(Response.json(traceSearchSettings));
+    if (path === "/frontend-config") {
+      return Promise.resolve(Response.json({ trace_search: traceSearchSettings }));
     }
     if (path === "/presets") {
       return Promise.resolve(

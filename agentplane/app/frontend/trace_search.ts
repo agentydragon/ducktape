@@ -1,6 +1,4 @@
-import { useEffect, useState } from "react";
-
-import { api, type TraceSearchSettings } from "./client";
+import type { TraceSearchSettings } from "./client";
 
 type TraceTarget = { kind: "sandbox" | "session"; id: string };
 
@@ -31,24 +29,4 @@ export function traceSearchUrl(settings: TraceSearchSettings, target: TraceTarge
     })
   );
   return url.toString();
-}
-
-/** Load the app-owned optional Grafana target once per page. An absent or unavailable setting hides links. */
-export function useTraceSearchSettings(): TraceSearchSettings | null {
-  const [settings, setSettings] = useState<TraceSearchSettings | null>(null);
-  useEffect(() => {
-    let current = true;
-    void api
-      .GET("/trace-search")
-      .then(({ data, error }) => {
-        if (current) setSettings(error === undefined ? (data ?? null) : null);
-      })
-      .catch(() => {
-        if (current) setSettings(null);
-      });
-    return () => {
-      current = false;
-    };
-  }, []);
-  return settings;
 }

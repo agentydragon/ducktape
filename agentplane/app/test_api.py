@@ -276,18 +276,18 @@ async def test_the_form_offers_the_namespace_policy_sets_and_the_configured_defa
     }
 
 
-async def test_trace_search_settings_are_optional_and_served_to_the_frontend(
-    client: httpx.AsyncClient, app: FastAPI
-) -> None:
-    assert (await client.get("/trace-search")).json() is None
+async def test_frontend_config_serves_optional_trace_search_settings(client: httpx.AsyncClient, app: FastAPI) -> None:
+    assert (await client.get("/frontend-config")).json() == {"trace_search": None}
 
     app.state.services.trace_search = TraceSearchSettings(
         grafana_base_url="https://grafana.test.invalid", tempo_datasource_uid="tempo", deployment_environment="test"
     )
-    assert (await client.get("/trace-search")).json() == {
-        "grafana_base_url": "https://grafana.test.invalid/",
-        "tempo_datasource_uid": "tempo",
-        "deployment_environment": "test",
+    assert (await client.get("/frontend-config")).json() == {
+        "trace_search": {
+            "grafana_base_url": "https://grafana.test.invalid/",
+            "tempo_datasource_uid": "tempo",
+            "deployment_environment": "test",
+        }
     }
 
 

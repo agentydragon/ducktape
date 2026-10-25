@@ -271,7 +271,7 @@ async def test_sandbox(view: VisualPage, app: AgentplaneFixture) -> None:
     await expect(page.get_by_role("menuitem", name="Find Sandbox traces in Grafana")).to_be_visible()
     await view.capture(name=f"{view.capture_name}_sandbox_trace_menu")
     await page.get_by_role("button", name="More Sandbox actions").click()
-    await page.get_by_role("button", name="More actions for ready-session").click()
+    await page.get_by_role("button", name=f"More actions for {IDLE_THREAD}").click()
     await expect(page.get_by_role("menuitem", name="Find Session traces in Grafana")).to_be_visible()
     await view.capture(name=f"{view.capture_name}_session_trace_menu")
 

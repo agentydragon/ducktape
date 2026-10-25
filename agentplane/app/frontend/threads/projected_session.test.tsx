@@ -140,8 +140,8 @@ beforeEach(() => {
   threadRows = null;
   vi.spyOn(api, "GET").mockImplementation((async (path: string) => {
     const data =
-      path === "/trace-search"
-        ? traceSearchSettings
+      path === "/frontend-config"
+        ? { trace_search: traceSearchSettings }
         : { auto_title_on_first_message_default: false, title_generation_available: false };
     return { data, response: Response.json(data) };
   }) as never);

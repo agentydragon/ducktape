@@ -42,7 +42,8 @@ import { hasVmConsole, sandboxReady, sandboxStatusDetail, sandboxSummary, sandbo
 import { SANDBOX_STATUS_MARKS } from "../status_mark";
 import { snapshotFresh } from "../threads/thread_status";
 import { beginSessionCreate, finishSessionCreate, withinSessionCreate } from "../tracing";
-import { traceSearchUrl, useTraceSearchSettings } from "../trace_search";
+import { traceSearchUrl } from "../trace_search";
+import { useFrontendConfig } from "../frontend_config";
 import { TopbarActions, TopbarTitle } from "../topbar";
 import type { SessionSpec } from "../../../proto/runner_pb";
 
@@ -88,7 +89,8 @@ export function SandboxPage({
   onOpenThread: (threadId: string) => void;
   onBack: () => void;
 }): JSX.Element {
-  const traceSearch = useTraceSearchSettings();
+  const frontendConfig = useFrontendConfig();
+  const traceSearch = frontendConfig?.trace_search ?? null;
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get("tab");
