@@ -3,6 +3,51 @@
 use debundle_e2e_support::*;
 
 #[test]
+fn unescaped_function_declaration_does_not_root_its_lazy_read() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const prefix = new globalThis.Error();
+function readLater() { return later; }
+const dynamic = ((object) => {
+  object[(object.key = 0)] = "value";
+  return 1;
+})({});
+const later = dynamic;
+console.log(later);
+"#,
+        vec![
+            logical_module(
+                "values/dynamic",
+                &[Member::new("dynamic"), Member::new("prefix")],
+            ),
+            logical_module(
+                "values/later",
+                &[Member::new("later"), Member::new("readLater")],
+            ),
+        ],
+    ));
+
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/values/dynamic.js",
+        &["dynamic"],
+        &["later"],
+    );
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/values/later.js",
+        &["later"],
+        &["dynamic"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/values/later.js",
+        &["function readLater"],
+        &[],
+    );
+    assert_preserved_entry_output(&fixture, "1\n");
+}
+
+#[test]
 fn earlier_unknown_call_does_not_promote_unescaped_local_reader() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"const prefix = new globalThis.Error();

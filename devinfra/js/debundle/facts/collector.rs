@@ -1026,6 +1026,17 @@ impl Visit for StatementFactsCollector {
         node.visit_children_with(self);
     }
 
+    fn visit_fn_decl(&mut self, node: &FnDecl) {
+        // The name is a declaration, not an evaluation-time read. Visit the
+        // function normally so recursive references in its body stay lazy.
+        node.function.visit_with(self);
+    }
+
+    fn visit_fn_expr(&mut self, node: &FnExpr) {
+        // A named function expression's local name is a binding too.
+        node.function.visit_with(self);
+    }
+
     fn visit_function(&mut self, node: &Function) {
         lazy_visit_function(self, node);
     }
