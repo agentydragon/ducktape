@@ -42,9 +42,8 @@ bazel build //path/to:debundle \
 ## Integration boundary
 
 Corpus integrations use `pipeline.bzl`'s `debundle_pipeline`, the public
-`:debundler` label flag, or the public `:debundle` executable. The live-proxy
-macro lives in `defs.bzl`. `README.md`, `SPEC.md`, and `perf_wrapper.sh` are
-exported resources.
+`:debundler` label flag, or the public `:debundle` executable.
+`README.md`, `SPEC.md`, and `perf_wrapper.sh` are exported resources.
 
 The Rust libraries in the root BUILD are internal to this subtree (including
 `e2e/`). They are dependency boundaries, not a supported Rust SDK. A corpus
