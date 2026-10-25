@@ -476,6 +476,26 @@ function declarations with one simple identifier parameter. The body must
 only return a zero-argument function or arrow that only calls that parameter
 with no arguments. Reassigned bindings and dynamic scopes remain opaque.
 
+`chunk_analysis_options.<chunk>.deferred_global_publications` names audited
+browser-global data slots, for example `{globalThis: [inspectState]}` or
+`{window: [inspectState]}`. A listed slot must be an ordinary inert own data
+property, or an absent slot whose creation cannot invoke an inherited setter,
+at the write. The object must permit the write. No host, importer, or source
+consumer may use its stored function or class during synchronous
+initialization of this chunk.
+The analyzer admits only a whole top-level direct assignment of a known local
+function/class, or the same `window.slot = value` assignment behind a checked
+`typeof window` guard. It rejects ambiguous aliases, visible global-root
+replacement, dynamic global access,
+additional source mentions of the slot (including through another builtin
+global alias), and visible global-object escapes. The certificate delays only
+the callback-availability consequence of that exact write. RHS evaluation,
+eager reads, property mutation, ordinary effects, and source-order constraints
+remain. Independent exports or other publications of the same value retain
+their own reentry behavior. A spec author must audit the host's property
+descriptor and all consumers; source checks alone cannot establish either
+host fact.
+
 ## Local-effect decorator annotations
 
 `effect: typescript_decorate_helper` asserts target-local mutation; it does not

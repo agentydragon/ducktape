@@ -225,9 +225,18 @@ pub struct ChunkExportPurity {
 /// deserializes into this), and it's the input to
 /// `analysis::build_owner_graph_with`. The materializer threads it
 /// straight through — no per-chunk copy.
-#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct OwnerGraphOptions {
+    /// Author-certified browser-global data slots whose writes publish a
+    /// callback only for use after synchronous chunk initialization. The
+    /// slot must be an ordinary inert own data property, or an absent slot
+    /// whose creation cannot invoke an inherited setter, at the write. No
+    /// importer, host, or source consumer may read/call the stored capability
+    /// during that initialization. This is a timing assertion, not purity:
+    /// the write, RHS evaluation, and ordering effects remain observable.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub deferred_global_publications: BTreeMap<BuiltinGlobalRoot, BTreeSet<String>>,
     /// Emit the side-effect ordering chain using per-statement
     /// (writes, reads) summaries instead of the adjacent-impure
     /// transitive reduction. See the S-chain block in
@@ -298,6 +307,14 @@ pub struct OwnerGraphOptions {
     /// classification regardless of this flag.
     #[serde(default)]
     pub local_property_effects: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
+pub enum BuiltinGlobalRoot {
+    #[serde(rename = "globalThis")]
+    GlobalThis,
+    #[serde(rename = "window")]
+    Window,
 }
 
 /// One named input-chunk admission check, identified by the
