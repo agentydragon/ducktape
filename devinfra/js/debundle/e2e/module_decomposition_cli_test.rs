@@ -3,6 +3,44 @@
 use debundle_e2e_support::GraphFixture;
 use serde_json::Value;
 use std::fs;
+use std::process::Command;
+
+fn assert_emitted_layout_and_output(
+    fixture: &GraphFixture,
+    module_paths: &[&str],
+    expected_output: &str,
+) {
+    let source_path = fixture.source_path();
+    let root = source_path.parent().unwrap().parent().unwrap();
+    let output_root = tempfile::tempdir_in(root).unwrap();
+    let output = Command::new(debundle_e2e_support::debundler_path())
+        .arg("run")
+        .arg("--tree-config")
+        .arg(root.join("spec_config.yaml"))
+        .arg("--tree-modules")
+        .arg(root.join("modules"))
+        .arg("--tree-vendor-marks")
+        .arg(root.join("vendor_marks.yaml"))
+        .arg("--tree-source-root")
+        .arg(root)
+        .arg("--out-root")
+        .arg(output_root.path())
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let app = output_root.path().join("app/main");
+    for module_path in module_paths {
+        assert!(
+            app.join(format!("{module_path}.js")).is_file(),
+            "missing emitted module {module_path}"
+        );
+    }
+    debundle_e2e_support::assert_node_output(&app.join("entry.js"), expected_output, "");
+}
 
 #[test]
 fn proposes_a_realizable_refinement_without_changing_the_spec() {
