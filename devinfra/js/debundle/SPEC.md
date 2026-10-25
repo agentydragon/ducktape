@@ -462,8 +462,8 @@ initialization of this chunk.
 The analyzer admits only a whole top-level direct assignment of a known local
 function/class, or the same `window.slot = value` assignment behind a checked
 `typeof window` guard. It rejects ambiguous aliases, visible global-root
-replacement, dynamic global access,
-additional source mentions of the slot (including through another builtin
+replacement, dynamic global access, additional source mentions of the slot
+(including through another builtin
 global alias), and visible global-object escapes. The certificate delays only
 the callback-availability consequence of that exact write. RHS evaluation,
 eager reads, property mutation, ordinary effects, and source-order constraints
@@ -471,6 +471,11 @@ remain. Independent exports or other publications of the same value retain
 their own reentry behavior. A spec author must audit the host's property
 descriptor and all consumers; source checks alone cannot establish either
 host fact.
+Primitive-valued operator results cannot carry the global-object identity.
+The synthetic protocol call for a literal-key `in` check on a direct builtin
+global root does not publish that root as a value; its possible host or proxy
+effects remain in synchronous effect analysis. Dynamic keys, aliases, ordinary
+calls, and visible root replacement retain the conservative publication guard.
 
 ## Local-effect decorator annotations
 
