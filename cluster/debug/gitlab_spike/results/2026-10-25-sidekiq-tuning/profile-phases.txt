@@ -1,0 +1,26 @@
+samples=80039 missed=6960 interval_us=1000
+{:name=>"Sidekiq::CLI#boot_application", :file=>"/srv/gitlab/vendor/gems/sidekiq/lib/sidekiq/cli.rb", :line=>296, :total_samples=>68370, :samples=>0}
+{:name=>"Rails::Initializable#run_initializers", :file=>"/srv/gitlab/vendor/bundle/ruby/3.3.0/gems/railties-7.2.3.1/lib/rails/initializable.rb", :line=>58, :total_samples=>63133, :samples=>2}
+{:name=>"Rails::Application#initialize!", :file=>"/srv/gitlab/vendor/bundle/ruby/3.3.0/gems/railties-7.2.3.1/lib/rails/application.rb", :line=>433, :total_samples=>63133, :samples=>0}
+{:name=>"Zeitwerk::Loader::EagerLoad#eager_load", :file=>"/srv/gitlab/vendor/bundle/ruby/3.3.0/gems/zeitwerk-2.6.18/lib/zeitwerk/loader/eager_load.rb", :line=>9, :total_samples=>16037, :samples=>0}
+{:name=>"Zeitwerk::Loader::EagerLoad#actual_eager_load_dir", :file=>"/srv/gitlab/vendor/bundle/ruby/3.3.0/gems/zeitwerk-2.6.18/lib/zeitwerk/loader/eager_load.rb", :line=>160, :total_samples=>16035, :samples=>35}
+{:name=>"Zeitwerk::Loader.eager_load_all", :file=>"/srv/gitlab/vendor/bundle/ruby/3.3.0/gems/zeitwerk-2.6.18/lib/zeitwerk/loader.rb", :line=>410, :total_samples=>15978, :samples=>0}
+{:name=>"AbstractController.eager_load!", :file=>"/srv/gitlab/vendor/bundle/ruby/3.3.0/gems/actionpack-7.2.3.1/lib/abstract_controller.rb", :line=>27, :total_samples=>15504, :samples=>0}
+{:name=>"AbstractController::Base.eager_load!", :file=>"/srv/gitlab/vendor/bundle/ruby/3.3.0/gems/actionpack-7.2.3.1/lib/abstract_controller/base.rb", :line=>130, :total_samples=>15283, :samples=>1}
+{:name=>"ActionView::Rendering::ClassMethods#eager_load!", :file=>"/srv/gitlab/vendor/bundle/ruby/3.3.0/gems/actionview-7.2.3.1/lib/action_view/rendering.rb", :line=>76, :total_samples=>14664, :samples=>6}
+{:name=>"Rails::Application#reload_routes!", :file=>"/srv/gitlab/vendor/bundle/ruby/3.3.0/gems/railties-7.2.3.1/lib/rails/application.rb", :line=>159, :total_samples=>4279, :samples=>0}
+{:name=>"ActionDispatch::Routing::RouteSet#eager_load!", :file=>"/srv/gitlab/vendor/bundle/ruby/3.3.0/gems/actionpack-7.2.3.1/lib/action_dispatch/routing/route_set.rb", :line=>404, :total_samples=>3247, :samples=>0}
+{:name=>"ActionDispatch::Journey::Route#eager_load!", :file=>"/srv/gitlab/vendor/bundle/ruby/3.3.0/gems/actionpack-7.2.3.1/lib/action_dispatch/journey/route.rb", :line=>80, :total_samples=>2607, :samples=>1}
+{:name=>"ActionDispatch::Journey::Path::Pattern#eager_load!", :file=>"/srv/gitlab/vendor/bundle/ruby/3.3.0/gems/actionpack-7.2.3.1/lib/action_dispatch/journey/path/pattern.rb", :line=>29, :total_samples=>2589, :samples=>2}
+{:name=>"TZInfo.eager_load!", :file=>"/srv/gitlab/vendor/bundle/ruby/3.3.0/gems/tzinfo-2.0.6/lib/tzinfo.rb", :line=>14, :total_samples=>726, :samples=>0}
+{:name=>"TZInfo::DataSource#eager_load!", :file=>"/srv/gitlab/vendor/bundle/ruby/3.3.0/gems/tzinfo-2.0.6/lib/tzinfo/data_source.rb", :line=>255, :total_samples=>726, :samples=>0}
+{:name=>"ActionDispatch::Journey::Router#eager_load!", :file=>"/srv/gitlab/vendor/bundle/ruby/3.3.0/gems/actionpack-7.2.3.1/lib/action_dispatch/journey/router.rb", :line=>26, :total_samples=>616, :samples=>0}
+{:name=>"ActionView::Rendering::ClassMethods#eager_load!", :file=>"/srv/gitlab/vendor/bundle/ruby/3.3.0/gems/actionview-7.2.3.1/lib/action_view/rendering.rb", :line=>76, :total_samples=>564, :samples=>1}
+{:name=>"GraphQL.eager_load!", :file=>"/srv/gitlab/vendor/bundle/ruby/3.3.0/gems/graphql-2.6.10/lib/graphql.rb", :line=>14, :total_samples=>27, :samples=>0}
+{:name=>"GraphQL::Autoload#eager_load!", :file=>"/srv/gitlab/vendor/bundle/ruby/3.3.0/gems/graphql-2.6.10/lib/graphql/autoload.rb", :line=>20, :total_samples=>23, :samples=>0}
+{:name=>"ActionDispatch::Journey::Formatter#eager_load!", :file=>"/srv/gitlab/vendor/bundle/ruby/3.3.0/gems/actionpack-7.2.3.1/lib/action_dispatch/journey/formatter.rb", :line=>114, :total_samples=>21, :samples=>0}
+{:name=>"Rails::Application#initialize", :file=>"/srv/gitlab/vendor/bundle/ruby/3.3.0/gems/railties-7.2.3.1/lib/rails/application.rb", :line=>108, :total_samples=>21, :samples=>18}
+{:name=>"ActiveSupport::Autoload#eager_load!", :file=>"/srv/gitlab/vendor/bundle/ruby/3.3.0/gems/activesupport-7.2.3.1/lib/active_support/dependencies/autoload.rb", :line=>65, :total_samples=>18, :samples=>0}
+{:name=>"ActionView.eager_load!", :file=>"/srv/gitlab/vendor/bundle/ruby/3.3.0/gems/actionview-7.2.3.1/lib/action_view.rb", :line=>94, :total_samples=>17, :samples=>0}
+{:name=>"ActionView::Helpers.eager_load!", :file=>"/srv/gitlab/vendor/bundle/ruby/3.3.0/gems/actionview-7.2.3.1/lib/action_view/helpers.rb", :line=>35, :total_samples=>11, :samples=>0}
+{:name=>"Rails::Paths::Root#eager_load", :file=>"/srv/gitlab/vendor/bundle/ruby/3.3.0/gems/railties-7.2.3.1/lib/rails/paths.rb", :line=>93, :total_samples=>10, :samples=>0}

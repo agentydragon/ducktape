@@ -1,0 +1,46 @@
+{
+  "before": {
+    "samples": 3,
+    "first_capture": "20261025T204219Z",
+    "last_capture": "20261025T204300Z",
+    "namespace_gib_median": 11.908088684082031,
+    "sidekiq_gib_median": 3.3350067138671875,
+    "replicas_observed": [2],
+    "namespace_gib_range": [11.886627197265625, 11.913093566894531],
+    "sidekiq_gib_range": [3.3243446350097656, 3.3377723693847656],
+    "components_gib_median": {
+      "PostgreSQL": 1.0211982727050781,
+      "gitaly": 0.4152412414550781,
+      "gitlab-exporter": 0.03856658935546875,
+      "gitlab-shell": 0.018413543701171875,
+      "praefect": 0.23522186279296875,
+      "registry": 0.03824615478515625,
+      "sidekiq": 3.3350067138671875,
+      "toolbox": 0.16270828247070312,
+      "webservice": 6.596649169921875,
+      "Valkey": 0.055141448974609375
+    }
+  },
+  "after": {
+    "samples": 10,
+    "first_capture": "20261025T210950Z",
+    "last_capture": "20261025T211407Z",
+    "namespace_gib_median": 11.700227737426758,
+    "sidekiq_gib_median": 3.1616859436035156,
+    "replicas_observed": [2],
+    "namespace_gib_range": [11.637165069580078, 11.709590911865234],
+    "sidekiq_gib_range": [3.123088836669922, 3.169605255126953],
+    "components_gib_median": {
+      "PostgreSQL": 0.9791641235351562,
+      "gitaly": 0.41518402099609375,
+      "gitlab-exporter": 0.03809547424316406,
+      "gitlab-shell": 0.017543792724609375,
+      "praefect": 0.21959686279296875,
+      "registry": 0.0386810302734375,
+      "sidekiq": 3.1616859436035156,
+      "toolbox": 0.15840530395507812,
+      "webservice": 6.61114501953125,
+      "Valkey": 0.05517387390136719
+    }
+  }
+}

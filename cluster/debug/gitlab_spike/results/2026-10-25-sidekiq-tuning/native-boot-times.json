@@ -1,0 +1,24 @@
+[
+  {
+    "time": "2026-10-25T21:02:07.761Z",
+    "message": "Application boot finished",
+    "runtime": "sidekiq",
+    "duration_s": 76.82211126000038,
+    "bootsnap.hit": 32470,
+    "bootsnap.revalidated": 0,
+    "bootsnap.miss": 1,
+    "bootsnap.stale": 11,
+    "bootsnap.hit_ratio": 100
+  },
+  {
+    "time": "2026-10-25T21:03:37.645Z",
+    "message": "Application boot finished",
+    "runtime": "sidekiq",
+    "duration_s": 55.36045973,
+    "bootsnap.hit": 32470,
+    "bootsnap.revalidated": 0,
+    "bootsnap.miss": 1,
+    "bootsnap.stale": 11,
+    "bootsnap.hit_ratio": 100
+  }
+]
