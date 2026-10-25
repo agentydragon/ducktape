@@ -91,7 +91,9 @@ enum ModulesNsCommand {
     /// for a faster, more fragmented structural baseline. Suggested paths are
     /// review aids; the command does not edit the spec. Pair `--atomic` with
     /// `--include-residual` to split residual body atoms while keeping top-level
-    /// imports and exports in the entry module.
+    /// imports and exports in the entry module. `--preserve-selector-anchors`
+    /// resolves current claims using `--source-root` and keeps local
+    /// `intrinsic_alias.referenced_by` pairs together.
     Decompose(ModuleDecomposeArgs),
     /// List all modules in the spec with summary stats.
     ///
@@ -126,6 +128,14 @@ struct ModuleDecomposeArgs {
     /// the shared gate, revalidating the complete candidate after each round.
     #[arg(long, requires = "atomic")]
     coarsen_blocking_sccs: bool,
+
+    /// Source root used to resolve existing source-backed and relational claims.
+    #[arg(long = "source-root", env = "DEBUNDLE_SOURCE_ROOT")]
+    source_root: Option<PathBuf>,
+
+    /// Keep each local intrinsic_alias member with its resolved referenced_by anchor.
+    #[arg(long, requires = "source_root")]
+    preserve_selector_anchors: bool,
 }
 
 #[derive(Debug, ClapArgs)]
@@ -291,6 +301,15 @@ fn render_module_decomposition_text(report: &ModuleDecompositionReport, out: &mu
         ModuleDecompositionStrategy::AtomicIncludingResidual => "atomic_including_residual",
     };
     out.push_str(&format!("strategy: {strategy}\n"));
+    if report.preserve_selector_anchors {
+        let relation_count = report
+            .selector_anchor_relations
+            .as_ref()
+            .map_or(0, Vec::len);
+        out.push_str(&format!(
+            "selector anchor cohesion: enabled ({relation_count} local intrinsic_alias relation(s))\n"
+        ));
+    }
     out.push_str(if report.candidate_is_realizable {
         "candidate is realizable\n"
     } else {
@@ -382,7 +401,7 @@ fn run_module_decompose(args: ModuleDecomposeArgs) -> Result<()> {
             owner_graph_path: args.common.owner_graph_path,
             modules_root: args.common.modules_root,
             tree_config: args.tree_config,
-            source_root: None,
+            source_root: args.source_root,
             size_cap_lines: DEFAULT_SIZE_CAP_LINES,
         },
         ModuleDecompositionOptions {
@@ -400,6 +419,7 @@ fn run_module_decompose(args: ModuleDecomposeArgs) -> Result<()> {
             } else {
                 ModuleDecompositionCoarseningMode::None
             },
+            preserve_selector_anchors: args.preserve_selector_anchors,
         },
     )?;
     emit_report(
