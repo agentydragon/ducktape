@@ -1,3 +1,4 @@
+use crate::analysis_inputs::AnalysisAssumptions;
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::*;
@@ -26,9 +27,12 @@ fn analyze_redundant_hints(
 ) -> Vec<(String, RedundantPurityReason)> {
     analyze_chunk(
         module,
-        &AnalysisHints {
-            declared_pure: declared_pure.clone(),
-            ..AnalysisHints::default()
+        &AnalysisInputs {
+            assumptions: AnalysisAssumptions {
+                declared_pure: declared_pure.clone(),
+                ..AnalysisAssumptions::default()
+            },
+            ..AnalysisInputs::default()
         },
         None,
         |_| None,
@@ -200,9 +204,12 @@ fn pure_member_hints(
     // pure function of the hint set + `PURE_STATIC_CALLS`), so
     // any well-formed module works.
     let module = parse("const _ = 1;");
-    let hints = AnalysisHints {
-        declared_pure_members,
-        ..AnalysisHints::default()
+    let hints = AnalysisInputs {
+        assumptions: AnalysisAssumptions {
+            declared_pure_members,
+            ..AnalysisAssumptions::default()
+        },
+        ..AnalysisInputs::default()
     };
     analyze_chunk(&module, &hints, None, |_| None)
         .redundant_pure_member_hints

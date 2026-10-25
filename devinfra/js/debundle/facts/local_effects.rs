@@ -10,7 +10,7 @@ use super::{
     ChunkValueFlow, StructuralStatementFacts, TopLevelItemView, collect_declared_names,
     metadata_decorate_call, var_decl_of_item,
 };
-use crate::analysis_hints::{KnownEffect, LocalEffectPolicy};
+use crate::analysis_inputs::{KnownEffect, LocalEffectPolicy};
 use crate::purity::{ChunkCodeGraph, classify_expr_purity};
 
 #[derive(Debug, Default)]

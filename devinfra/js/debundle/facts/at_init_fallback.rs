@@ -169,7 +169,7 @@ impl Visit for SyncInvocationFinder {
 /// rationale.
 struct OpaqueAtInitCallFinder<'a> {
     shadowed: &'a BTreeSet<&'static str>,
-    hints: &'a AnalysisHints,
+    hints: &'a AnalysisInputs,
     graph: &'a ChunkCodeGraph,
     found: bool,
     lazy_depth: u32,
@@ -196,7 +196,7 @@ impl Visit for OpaqueAtInitCallFinder<'_> {
                     expr,
                     self.shadowed,
                     &BTreeSet::new(),
-                    &self.hints.declared_pure,
+                    &self.hints.assumptions.declared_pure,
                     self.graph,
                 )
                 .is_pure(),
@@ -239,7 +239,7 @@ impl Visit for OpaqueAtInitCallFinder<'_> {
 pub(crate) fn has_opaque_at_init_call(
     item: &ModuleItem,
     shadowed: &BTreeSet<&'static str>,
-    hints: &AnalysisHints,
+    hints: &AnalysisInputs,
     graph: &ChunkCodeGraph,
 ) -> bool {
     let mut finder = OpaqueAtInitCallFinder {
@@ -256,10 +256,10 @@ pub(crate) fn has_opaque_at_init_call(
 
 pub(crate) fn has_untrusted_at_init_unresolved_inline_fn_call(
     item: &ModuleItem,
-    hints: &AnalysisHints,
+    hints: &AnalysisInputs,
 ) -> bool {
     let mut finder = UntrustedAtInitInlineFnFallbackFinder {
-        no_sync_callback_members: &hints.no_sync_callback_members,
+        no_sync_callback_members: &hints.assumptions.no_sync_callback_members,
         found: false,
     };
     item.visit_with(&mut finder);
@@ -268,10 +268,10 @@ pub(crate) fn has_untrusted_at_init_unresolved_inline_fn_call(
 
 pub(crate) fn no_sync_member_argument_fallback_sources(
     item: &ModuleItem,
-    hints: &AnalysisHints,
+    hints: &AnalysisInputs,
 ) -> PositionBucketed<BTreeSet<Id>> {
     let mut collector = NoSyncMemberArgumentSourceCollector {
-        no_sync_callback_members: &hints.no_sync_callback_members,
+        no_sync_callback_members: &hints.assumptions.no_sync_callback_members,
         sources: PositionBucketed::default(),
         lazy_depth: 0,
         past_await: false,

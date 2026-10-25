@@ -1,3 +1,4 @@
+use crate::analysis_inputs::AnalysisAssumptions;
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::*;
@@ -10,7 +11,7 @@ fn test_id(name: &str) -> Id {
 }
 
 fn analyze_facts(module: &Module) -> Vec<StatementFacts> {
-    analyze_chunk(module, &AnalysisHints::default(), None, |_| None).facts
+    analyze_chunk(module, &AnalysisInputs::default(), None, |_| None).facts
 }
 
 use raw_js_test_support::parse;
@@ -1094,9 +1095,12 @@ fn declared_pure_hint_applies_inside_chunk_function_bodies() {
     let value_is_pure = |declared_pure: BTreeSet<String>| {
         analyze_chunk(
             &module,
-            &AnalysisHints {
-                declared_pure,
-                ..AnalysisHints::default()
+            &AnalysisInputs {
+                assumptions: AnalysisAssumptions {
+                    declared_pure,
+                    ..AnalysisAssumptions::default()
+                },
+                ..AnalysisInputs::default()
             },
             None,
             |_| None,

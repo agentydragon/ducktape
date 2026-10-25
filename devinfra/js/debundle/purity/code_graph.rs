@@ -65,7 +65,7 @@ pub struct ChunkCodeGraph {
     /// `k.object({...}).optional().describe(...)` — which no
     /// binding-keyed surface (`declared_pure_members`,
     /// `imported_purities`) can ever reach. Seeded from
-    /// `AnalysisHints::fluent_bindings` and closed over chunk-top
+    /// `AnalysisInputs::fluent_bindings` and closed over chunk-top
     /// `const X = <fluent chain>` declarations
     /// (`collect_fluent_const_bindings`). Author-trust contract: see
     /// docs/design.md A9.

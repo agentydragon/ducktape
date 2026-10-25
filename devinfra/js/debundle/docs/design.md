@@ -90,6 +90,12 @@ detection, dependency-graph cycles.
 
 ### Conditionally-correct optimizations
 
+`AnalysisAssumptions` carries author-certified contracts, including declared
+purity, callback behavior, and audited global publication. `AnalysisInputs` pairs
+those assertions with imported call summaries and the caller's local-effect
+policy. Imported summaries may depend on assertions in their defining chunks;
+neither author assertions nor imported summaries are unconditional source facts.
+
 Soundness does not require every inference to hold for arbitrary JS. An
 inference may be **conditionally correct** — sound only when the input
 satisfies a checkable precondition — provided the implementation:

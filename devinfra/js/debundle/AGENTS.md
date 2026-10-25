@@ -95,6 +95,9 @@ completeness. Read <docs/purity_soundness.md> before touching
 
 ## Rust shapes
 
+- Semantic passes take `AnalysisInputs`: keep author contracts in
+  `AnalysisAssumptions`, separate from imported summaries and analysis policy.
+  An asserted contract is not an inferred source fact.
 - Typed structs/enums, not string discriminators or `Map<String, Value>` mirrors of
   JSON. File roles are `FileRole`. Owned serialized enums use
   `#[serde(rename_all = "snake_case")]` unless an external contract says otherwise.

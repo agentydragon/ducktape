@@ -1,7 +1,7 @@
 //! Chunk-analysis composer for the per-chunk pipeline.
 //!
-//! Chunk analysis is the **spec-independent** half of the per-chunk
-//! pipeline. Given a parsed chunk AST plus analysis hints +
+//! Chunk analysis is independent of module placement. Given a parsed chunk AST,
+//! explicit [`AnalysisInputs`] (including author-certified assumptions), and
 //! per-chunk owner-graph options, it produces:
 //!
 //! - per-statement static facts (declared bindings, eager/lazy reads,
@@ -22,14 +22,16 @@
 //!   checkable input assumptions (docs/design.md A1/A3/A5; see
 //!   `chunk_admission`), including its override notices.
 //!
-//! Chunk analysis is a pure function of `(chunk_id, module, hints,
-//! owner_graph_options)` plus the spec-free `source_path` annotation,
+//! Analysis results depend on `(chunk_id, module, analysis_inputs,
+//! owner_graph_options)` plus the `source_path` annotation,
 //! the line-index callback for source-location resolution, and the
 //! caller-supplied dynamic-import resolver (the A3 admission check
 //! needs "which chunk does this specifier land in", but chunk
-//! analysis itself stays artifact-free). It does not read the spec,
-//! the assignment, chunk renames, or the unassigned-mode policy —
-//! those are materialization inputs.
+//! analysis itself stays artifact-free). It does not read the spec directly,
+//! the assignment, chunk renames, or the unassigned-mode policy. Its caller
+//! resolves author annotations into assumptions before invoking analysis; the
+//! resulting facts are conditional on those contracts. Admission diagnostics
+//! and redundant-assumption warnings are emitted by this composer.
 //!
 //! Chunk analysis is materialized only in memory, by callers
 //! (today: `materialize_logical_chunk`) that call
@@ -49,7 +51,7 @@ use anyhow::{Context, Result, bail};
 use swc_common::Span;
 use swc_ecma_ast::Module;
 
-use analysis::AnalysisHints;
+use analysis::AnalysisInputs;
 use analysis::atomic_units::{OwnerGraphAndUnits, compute_owner_graph_and_units_with};
 use analysis::facts::{
     ChunkFactAnalysis, ExportReentryPolicy, StructuralChunkAnalysis, analyze_chunk_with_policy,
@@ -65,7 +67,7 @@ pub struct ChunkAnalysisOutput {
     /// await detection, redundant purity / pure-member hints).
     pub fact_analysis: ChunkFactAnalysis,
     /// Owner graph + structural atomic units derived from
-    /// `fact_analysis.facts`. Carries no spec-dependent state; the
+    /// `fact_analysis.facts`. Carries no assignment-dependent state; the
     /// atomic units here are the *structural* class (per docs/design.md
     /// §"Two classes of atom") that any valid factorization must
     /// preserve.
@@ -93,7 +95,7 @@ pub fn compute_chunk_analysis<F>(
     chunk_id: &str,
     module: &Module,
     structural: StructuralChunkAnalysis<'_>,
-    hints: &AnalysisHints,
+    hints: &AnalysisInputs,
     source_path: Option<&str>,
     line_range_for_span: F,
     owner_graph_options: OwnerGraphOptions,

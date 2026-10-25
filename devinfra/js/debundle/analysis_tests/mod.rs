@@ -15,19 +15,25 @@ fn test_id(name: &str) -> Id {
     (name.into(), SyntaxContext::empty())
 }
 
-fn hints_with_decorate_helper(name: &str) -> AnalysisHints {
-    AnalysisHints {
-        known_effects: BTreeMap::from([(name.to_string(), KnownEffect::TypescriptDecorateHelper)]),
-        ..AnalysisHints::default()
+fn hints_with_decorate_helper(name: &str) -> AnalysisInputs {
+    AnalysisInputs {
+        assumptions: AnalysisAssumptions {
+            known_effects: BTreeMap::from([(
+                name.to_string(),
+                KnownEffect::TypescriptDecorateHelper,
+            )]),
+            ..AnalysisAssumptions::default()
+        },
+        ..AnalysisInputs::default()
     }
 }
 
-fn analyze_facts_with_hints(module: &Module, hints: &AnalysisHints) -> Vec<StatementFacts> {
+fn analyze_facts_with_hints(module: &Module, hints: &AnalysisInputs) -> Vec<StatementFacts> {
     analyze_chunk(module, hints, None, |_| None).facts
 }
 
 fn analyze_facts(module: &Module) -> Vec<StatementFacts> {
-    analyze_facts_with_hints(module, &AnalysisHints::default())
+    analyze_facts_with_hints(module, &AnalysisInputs::default())
 }
 
 fn build_owner_graph(facts: &[StatementFacts]) -> Result<OwnerGraph, DuplicateTopLevelDeclaration> {
@@ -361,12 +367,15 @@ fn no_sync_callback_member_hint_suppresses_at_init_inline_fallback() {
     let default_facts = analyze_facts(&module);
     assert!(default_facts[2].at_init_unresolved_inline_fn);
 
-    let hints = AnalysisHints {
-        no_sync_callback_members: BTreeMap::from([(
-            "state".to_string(),
-            BTreeSet::from(["setPending".to_string()]),
-        )]),
-        ..AnalysisHints::default()
+    let hints = AnalysisInputs {
+        assumptions: AnalysisAssumptions {
+            no_sync_callback_members: BTreeMap::from([(
+                "state".to_string(),
+                BTreeSet::from(["setPending".to_string()]),
+            )]),
+            ..AnalysisAssumptions::default()
+        },
+        ..AnalysisInputs::default()
     };
     let facts = analyze_facts_with_hints(&module, &hints);
     assert!(
@@ -389,12 +398,15 @@ fn no_sync_callback_member_hint_does_not_cover_other_members() {
          const state = {}; \
          state.invokeNow(() => later);",
     );
-    let hints = AnalysisHints {
-        no_sync_callback_members: BTreeMap::from([(
-            "state".to_string(),
-            BTreeSet::from(["setPending".to_string()]),
-        )]),
-        ..AnalysisHints::default()
+    let hints = AnalysisInputs {
+        assumptions: AnalysisAssumptions {
+            no_sync_callback_members: BTreeMap::from([(
+                "state".to_string(),
+                BTreeSet::from(["setPending".to_string()]),
+            )]),
+            ..AnalysisAssumptions::default()
+        },
+        ..AnalysisInputs::default()
     };
     let facts = analyze_facts_with_hints(&module, &hints);
     assert!(facts[2].at_init_unresolved_inline_fn);
@@ -415,12 +427,15 @@ fn no_sync_callback_member_hint_suppresses_argument_fallback_roots() {
             .contains(&test_id("provider"))
     );
 
-    let hints = AnalysisHints {
-        no_sync_callback_members: BTreeMap::from([(
-            "registry".to_string(),
-            BTreeSet::from(["registerProvider".to_string()]),
-        )]),
-        ..AnalysisHints::default()
+    let hints = AnalysisInputs {
+        assumptions: AnalysisAssumptions {
+            no_sync_callback_members: BTreeMap::from([(
+                "registry".to_string(),
+                BTreeSet::from(["registerProvider".to_string()]),
+            )]),
+            ..AnalysisAssumptions::default()
+        },
+        ..AnalysisInputs::default()
     };
     let facts = analyze_facts_with_hints(&module, &hints);
     assert!(
@@ -463,12 +478,15 @@ fn no_sync_callback_member_hint_suppresses_first_order_argument_fallback_roots()
          function boot() { registry.registerProvider(provider); } \
          boot();",
     );
-    let hints = AnalysisHints {
-        no_sync_callback_members: BTreeMap::from([(
-            "registry".to_string(),
-            BTreeSet::from(["registerProvider".to_string()]),
-        )]),
-        ..AnalysisHints::default()
+    let hints = AnalysisInputs {
+        assumptions: AnalysisAssumptions {
+            no_sync_callback_members: BTreeMap::from([(
+                "registry".to_string(),
+                BTreeSet::from(["registerProvider".to_string()]),
+            )]),
+            ..AnalysisAssumptions::default()
+        },
+        ..AnalysisInputs::default()
     };
     let facts = analyze_facts_with_hints(&module, &hints);
     assert!(
@@ -716,9 +734,9 @@ fn vendor_prune_policy_records_static_object_local_effects() {
     let default_facts = analyze_facts(&module);
     assert!(default_facts[1].local_effects.is_empty());
 
-    let hints = AnalysisHints {
+    let hints = AnalysisInputs {
         local_effect_policy: LocalEffectPolicy::VendorPrune,
-        ..AnalysisHints::default()
+        ..AnalysisInputs::default()
     };
     let vendor_facts = analyze_facts_with_hints(&module, &hints);
     assert_eq!(
@@ -730,9 +748,9 @@ fn vendor_prune_policy_records_static_object_local_effects() {
 
 /// Analyze under `LocalEffectPolicy::LocalPropertyWrites`.
 fn analyze_facts_with_property_writes(module: &Module) -> Vec<StatementFacts> {
-    let hints = AnalysisHints {
+    let hints = AnalysisInputs {
         local_effect_policy: LocalEffectPolicy::LocalPropertyWrites,
-        ..AnalysisHints::default()
+        ..AnalysisInputs::default()
     };
     analyze_facts_with_hints(module, &hints)
 }
@@ -810,9 +828,9 @@ assign(target, { deep: true });"#,
     let default_facts = analyze_facts(&module);
     assert!(default_facts[2].local_effects.is_empty());
 
-    let hints = AnalysisHints {
+    let hints = AnalysisInputs {
         local_effect_policy: LocalEffectPolicy::VendorPrune,
-        ..AnalysisHints::default()
+        ..AnalysisInputs::default()
     };
     let vendor_facts = analyze_facts_with_hints(&module, &hints);
     assert_eq!(
@@ -830,9 +848,9 @@ fn vendor_prune_policy_records_var_init_local_effects() {
     let default_facts = analyze_facts(&module);
     assert!(default_facts[2].local_effects.is_empty());
 
-    let hints = AnalysisHints {
+    let hints = AnalysisInputs {
         local_effect_policy: LocalEffectPolicy::VendorPrune,
-        ..AnalysisHints::default()
+        ..AnalysisInputs::default()
     };
     let vendor_facts = analyze_facts_with_hints(&module, &hints);
     assert_eq!(
@@ -859,9 +877,9 @@ Object.entries(methods).forEach(function (entry) {
     let default_facts = analyze_facts(&module);
     assert!(default_facts[3].local_effects.is_empty());
 
-    let hints = AnalysisHints {
+    let hints = AnalysisInputs {
         local_effect_policy: LocalEffectPolicy::VendorPrune,
-        ..AnalysisHints::default()
+        ..AnalysisInputs::default()
     };
     let vendor_facts = analyze_facts_with_hints(&module, &hints);
     assert_eq!(
@@ -886,9 +904,9 @@ Object.entries(methods).forEach(function (entry) {
   key !== "concat" && define(ObservableArray.prototype, key, value);
 });"#,
     );
-    let hints = AnalysisHints {
+    let hints = AnalysisInputs {
         local_effect_policy: LocalEffectPolicy::VendorPrune,
-        ..AnalysisHints::default()
+        ..AnalysisInputs::default()
     };
     let facts = analyze_facts_with_hints(&module, &hints);
     assert_eq!(
@@ -906,9 +924,9 @@ Object.entries(methods).forEach(function (entry) {
   sideEffect(entry);
 });"#,
     );
-    let hints = AnalysisHints {
+    let hints = AnalysisInputs {
         local_effect_policy: LocalEffectPolicy::VendorPrune,
-        ..AnalysisHints::default()
+        ..AnalysisInputs::default()
     };
     let facts = analyze_facts_with_hints(&module, &hints);
     assert!(facts[1].local_effects.is_empty());
@@ -925,9 +943,9 @@ fn vendor_prune_policy_records_namespace_iife_local_effects() {
   target.resolve = resolve;
 })(ns || (ns = {}));"#,
     );
-    let hints = AnalysisHints {
+    let hints = AnalysisInputs {
         local_effect_policy: LocalEffectPolicy::VendorPrune,
-        ..AnalysisHints::default()
+        ..AnalysisInputs::default()
     };
     let facts = analyze_facts_with_hints(&module, &hints);
     assert_eq!(facts[1].local_effects, BTreeSet::from([test_id("ns")]));
@@ -954,9 +972,9 @@ push(tasks, task);
   };
 })(scheduler);"#,
     );
-    let hints = AnalysisHints {
+    let hints = AnalysisInputs {
         local_effect_policy: LocalEffectPolicy::VendorPrune,
-        ..AnalysisHints::default()
+        ..AnalysisInputs::default()
     };
     let facts = analyze_facts_with_hints(&module, &hints);
     assert_eq!(
@@ -968,9 +986,9 @@ push(tasks, task);
 #[test]
 fn vendor_prune_policy_records_local_binding_writes() {
     let module = parse("let assigned;\nconst source = { value: 1 };\nassigned = source.value;");
-    let hints = AnalysisHints {
+    let hints = AnalysisInputs {
         local_effect_policy: LocalEffectPolicy::VendorPrune,
-        ..AnalysisHints::default()
+        ..AnalysisInputs::default()
     };
     let facts = analyze_facts_with_hints(&module, &hints);
     assert_eq!(
@@ -983,9 +1001,9 @@ fn vendor_prune_policy_records_local_binding_writes() {
 #[test]
 fn vendor_prune_policy_ignores_undeclared_binding_writes() {
     let module = parse("const source = { value: 1 };\nexternal = source.value;");
-    let hints = AnalysisHints {
+    let hints = AnalysisInputs {
         local_effect_policy: LocalEffectPolicy::VendorPrune,
-        ..AnalysisHints::default()
+        ..AnalysisInputs::default()
     };
     let facts = analyze_facts_with_hints(&module, &hints);
     assert!(facts[1].local_effects.is_empty());
@@ -1004,9 +1022,9 @@ target.exports ? ((clsx.default = clsx), (target.exports = clsx)) : (window.clas
   })();
 })(module);"#,
     );
-    let hints = AnalysisHints {
+    let hints = AnalysisInputs {
         local_effect_policy: LocalEffectPolicy::VendorPrune,
-        ..AnalysisHints::default()
+        ..AnalysisInputs::default()
     };
     let facts = analyze_facts_with_hints(&module, &hints);
     assert_eq!(facts[1].local_effects, BTreeSet::from([test_id("module")]));
@@ -1016,7 +1034,7 @@ target.exports ? ((clsx.default = clsx), (target.exports = clsx)) : (window.clas
 /// The policy-independent layer of `analyze_chunk` produces identical
 /// per-statement structural facts (declared names, at-init/lazy reads,
 /// writes, calls, global accesses, dataflow_summarizable, kind) and
-/// top-level-await ordinal regardless of `AnalysisHints`. This is the
+/// top-level-await ordinal regardless of `AnalysisInputs`. This is the
 /// whole point of the structural-vs-policy split: the structural pass
 /// looks at the module text only.
 ///
@@ -1037,16 +1055,19 @@ sideEffect(C, E);
 "#,
     );
 
-    let hints_default = AnalysisHints::default();
-    let hints_decorate = AnalysisHints {
+    let hints_default = AnalysisInputs::default();
+    let hints_decorate = AnalysisInputs {
+        assumptions: AnalysisAssumptions {
+            declared_pure: BTreeSet::from(["sideEffect".to_string()]),
+            declared_pure_new: BTreeSet::from(["C".to_string()]),
+            known_effects: BTreeMap::from([(
+                "sideEffect".to_string(),
+                KnownEffect::TypescriptDecorateHelper,
+            )]),
+            ..AnalysisAssumptions::default()
+        },
         local_effect_policy: LocalEffectPolicy::VendorPrune,
-        declared_pure: BTreeSet::from(["sideEffect".to_string()]),
-        declared_pure_new: BTreeSet::from(["C".to_string()]),
-        known_effects: BTreeMap::from([(
-            "sideEffect".to_string(),
-            KnownEffect::TypescriptDecorateHelper,
-        )]),
-        ..AnalysisHints::default()
+        ..AnalysisInputs::default()
     };
 
     let a = analyze_chunk(&module, &hints_default, None, |_| None);
@@ -1100,12 +1121,15 @@ fn eager_class_parts_retain_untrusted_inline_callback_fallback() {
 
 #[test]
 fn lazy_class_registration_cannot_suppress_an_eager_callback_source() {
-    let hints = AnalysisHints {
-        no_sync_callback_members: BTreeMap::from([(
-            "api".to_string(),
-            BTreeSet::from(["save".to_string()]),
-        )]),
-        ..AnalysisHints::default()
+    let hints = AnalysisInputs {
+        assumptions: AnalysisAssumptions {
+            no_sync_callback_members: BTreeMap::from([(
+                "api".to_string(),
+                BTreeSet::from(["save".to_string()]),
+            )]),
+            ..AnalysisAssumptions::default()
+        },
+        ..AnalysisInputs::default()
     };
     for lazy_part in [
         "constructor() { api.save(provider); }",
