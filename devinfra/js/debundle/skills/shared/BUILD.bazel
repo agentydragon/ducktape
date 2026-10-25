@@ -1,5 +1,5 @@
 exports_files([
     "module_shape.md",
-    "purity_annotations.md",
+    "initialization_contracts.md",
     "workflow.md",
 ])

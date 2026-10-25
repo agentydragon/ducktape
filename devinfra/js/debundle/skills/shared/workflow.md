@@ -97,7 +97,7 @@ conventions take precedence over generic guidance.
 - Classify the actual blocker before choosing an author assertion: effect
   purity, callback retention or synchronous reentry, runtime loading, metadata
   mutation, and global publication have different contracts. Follow
-  `references/purity_annotations.md` for the decision route and bundled
+  `references/initialization_contracts.md` for the decision route and bundled
   `references/SPEC.md` for callback, runtime, metadata, and publication audits.
   A cycle alone establishes none of these premises.
 - After a justified annotation, rerun source validation, the same extraction
