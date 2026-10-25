@@ -67,6 +67,62 @@ export { Command, factory, command, later };
 }
 
 #[test]
+fn local_constructor_callback_field_remains_a_consumer() {
+    let source = r#"let later = 0;
+class Holder {
+  constructor(callback) { this.value = callback; }
+}
+const holder = new Holder(() => later);
+globalThis.observed = holder.value();
+later = 42;
+console.log(globalThis.observed, later);
+export { Holder, holder, later };
+"#;
+    let colocated = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module_with_anon(
+                "all",
+                &[
+                    Member::new("Holder"),
+                    Member::new("holder"),
+                    Member::new("later"),
+                ],
+                &[
+                    "globalThis.observed = holder.value();",
+                    "later = 42;",
+                    "console.log(globalThis.observed, later);",
+                ],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&colocated, "0 42\n");
+
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module("command", &[Member::new("Holder"), Member::new("holder")]),
+                logical_module_with_anon(
+                    "consumer",
+                    &[],
+                    &["globalThis.observed = holder.value();"],
+                ),
+                logical_module_with_anon(
+                    "value",
+                    &[Member::new("later")],
+                    &["later = 42;", "console.log(globalThis.observed, later);"],
+                ),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+        &["consumer", "value"],
+        &[],
+    );
+}
+
+#[test]
 fn local_constructor_reads_fresh_config_with_an_ordinary_method() {
     let fixture = run_fixture(
         FixtureOpts::new(

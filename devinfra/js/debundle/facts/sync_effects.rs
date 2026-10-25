@@ -1766,6 +1766,8 @@ struct LocalConstructor {
     key: Option<u32>,
     /// No constructor body or instance fields run during direct allocation.
     inert_allocation: bool,
+    /// Own data fields written by the checked constructor body.
+    own_fields: BTreeSet<String>,
     /// Parameter property reads must come from fresh plain data objects.
     property_reads: BTreeSet<usize>,
     /// Unqualified reads must resolve to local bindings, not host getters.
@@ -1891,6 +1893,7 @@ fn local_constructor(class: &Class) -> Option<LocalConstructor> {
         return Some(LocalConstructor {
             key: None,
             inert_allocation: !has_instance_fields,
+            own_fields: BTreeSet::new(),
             property_reads: BTreeSet::new(),
             binding_reads: BTreeSet::new(),
         });
@@ -1940,6 +1943,7 @@ fn local_constructor(class: &Class) -> Option<LocalConstructor> {
     Some(LocalConstructor {
         key: Some(ctor.span.lo.0),
         inert_allocation: false,
+        own_fields: written_properties,
         property_reads,
         binding_reads,
     })
@@ -6790,7 +6794,9 @@ impl Executor<'_> {
                                         .instance_fields
                                         .get(property)
                                         .is_some_and(|value| !matches!(value, ValueExpr::Unknown))
-                            })
+                            }) || self.index.local_constructors.get(key).is_some_and(
+                                |constructor| constructor.own_fields.contains(property),
+                            )
                         })
                 }
                 _ => false,
