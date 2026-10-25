@@ -146,3 +146,26 @@ py_library(
         "@pypi//cdk8s",
     ],
 )
+
+
+py_library(
+    name = "blueprint_contracts",
+    testonly = True,
+    srcs = ["blueprint_contracts.py"],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_blueprint_contracts",
+    srcs = ["test_blueprint_contracts.py"],
+    data = ["//cluster/k8s:authentik_blueprint_contract_files"],
+    deps = [
+        ":blueprint_contracts",
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
