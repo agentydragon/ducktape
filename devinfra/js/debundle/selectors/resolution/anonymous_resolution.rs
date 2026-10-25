@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 use analysis::{OwnerGraphReport, OwnerId, StatementKind};
 use anyhow::{Context, Result, bail};
 use selector_outcome::{Candidate, Outcome, SelectorOutcome, Severity};
+pub use selector_resolve::ModuleNeutralReferenceMeaning;
 use selector_resolve::{AnonymousStatement, EntityIndex, Member, MemberSelector, SpecModule};
 use source_match::ParsedSourceMatchSelector;
 use spec::{AnonymousStatementSelector, MemberSelectorSpec, SourceMatchClaim};
@@ -37,13 +38,20 @@ pub struct ResolvedSourceClaims {
     /// The resolved source binding for each non-name-pin member's readable name.
     pub member_bindings: BTreeMap<String, String>,
     /// Resolved free-name references from one source-backed member claim to
-    /// another member in the same module. These use the resolver's classified
-    /// references, not names re-parsed from selector text.
-    pub local_member_references: BTreeSet<(String, String)>,
+    /// another member in the same module. `module_neutral_meaning` is from the
+    /// canonical export classifier, not names re-parsed from selector text.
+    pub local_member_references: BTreeSet<ResolvedLocalMemberReference>,
     pub anonymous_owners: BTreeSet<OwnerId>,
     /// The owner selected by each anonymous source selector. The key keeps
     /// authored selector entries addressable when a CLI edit moves claims.
     pub anonymous_selector_owners: BTreeMap<AnonymousStatementSelector, OwnerId>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ResolvedLocalMemberReference {
+    pub member: String,
+    pub referenced_by: String,
+    pub module_neutral_meaning: ModuleNeutralReferenceMeaning,
 }
 
 /// Resolve every module's claims together against each chunk source the
@@ -189,7 +197,11 @@ fn resolve_claim_sets(
                         };
                         set.claims
                             .local_member_references
-                            .insert((reference.source_member, reference.referenced_member));
+                            .insert(ResolvedLocalMemberReference {
+                                member: reference.source_member,
+                                referenced_by: reference.referenced_member,
+                                module_neutral_meaning: reference.module_neutral_meaning,
+                            });
                     }
                     for entity in resolution.outcomes {
                         per_source

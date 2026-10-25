@@ -600,3 +600,85 @@ annotations:
     ]);
     fixture.assert_runs("widget\n");
 }
+
+#[test]
+fn atomic_decomposition_splits_source_match_from_a_unique_local_helper() {
+    let fixture = GraphFixture::new(
+        r#"const decorate = value => value;
+class Widget { render() { return "widget"; } }
+decorate(Widget);
+const widget = new Widget();
+const spare = 4;
+console.log(widget.render());
+"#,
+        &[(
+            "home.yaml",
+            r#"members:
+  - name: applyDecorators
+    selector: {binding: {name: decorate}}
+  - name: Spare
+    selector: {binding: {name: spare}}
+source_matches:
+  - match: |
+      class patternWidget { render() { return "widget"; } }
+      applyDecorators(patternWidget);
+      const patternWidgetInstance = new patternWidget();
+    bindings:
+      - {local: patternWidget, name: Widget}
+      - {local: patternWidgetInstance, name: WidgetInstance}
+annotations:
+  Widget: {purity: pure_new}
+"#,
+        )],
+    );
+    fixture.assert_runs("widget\n");
+
+    let source_path = fixture.source_path();
+    let source_root = source_path.parent().unwrap().to_str().unwrap();
+    let decomposition = fixture.json(&[
+        "modules",
+        "decompose",
+        "--atomic",
+        "--preserve-selector-anchors",
+        "--source-root",
+        source_root,
+    ]);
+    assert_eq!(decomposition["candidate_is_realizable"], true);
+    assert!(
+        decomposition["selector_anchor_relations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|relation| relation["kind"] != "source_match_reference")
+    );
+
+    let mut paths = BTreeMap::new();
+    let mut rows = Vec::new();
+    for module in decomposition["modules"].as_array().unwrap() {
+        for fragment in module["fragments"].as_array().unwrap() {
+            let suggested_module = fragment["suggested_module_path"].as_str().unwrap();
+            for owner_id in fragment["owner_ids"].as_array().unwrap() {
+                let owner_id = owner_id.as_str().unwrap();
+                paths.insert(owner_id.to_string(), suggested_module.to_string());
+                rows.push(json!({
+                    "owner_id": owner_id,
+                    "module": suggested_module,
+                }));
+            }
+        }
+    }
+    assert_ne!(
+        paths[&owner_for_binding(&fixture, "Widget")],
+        paths[&owner_for_binding(&fixture, "decorate")],
+        "a unique global helper name should not force module co-location"
+    );
+
+    let batch = write_batch(serde_json::Value::Array(rows));
+    fixture.assert_success(&[
+        "modules",
+        "refine",
+        "--batch",
+        batch.path().join("refine.json").to_str().unwrap(),
+    ]);
+    fixture.assert_runs("widget\n");
+}

@@ -389,7 +389,9 @@ selected mode.
 `intrinsic_alias.referenced_by` selectors resolve their anchor within the same
 logical module. A `source_match` template can also use a free identifier that
 resolves to a member claim in its own module; moving that capture away can make
-the reference ambiguous when another module exports the same readable name.
+the reference ambiguous when more than one member exports that readable name.
+When the module-neutral resolver finds one export, it can still resolve the
+reference after the capture is split away.
 To preserve both kinds of local relationship while splitting, opt in to
 source-backed selector resolution:
 
@@ -400,11 +402,11 @@ debundle modules decompose --atomic --preserve-selector-anchors \
 
 This option requires `--source-root` and resolves current claims through the
 normal joint selector resolver. It coalesces each member with its local
-`intrinsic_alias` anchor and each source-match capture with the members its free
-names resolve to in the same module. The JSON report sets
+`intrinsic_alias` anchor and each source-match capture with local members whose
+free names are ambiguous under module-neutral lookup. The JSON report sets
 `preserve_selector_anchors` and lists each relationship, with a `kind`, in
-`selector_anchor_relations`. External and ambiguous references retain their
-normal resolver behavior. The command remains read-only, and the complete
+`selector_anchor_relations`. Other references retain their normal resolver
+behavior. The command remains read-only, and the complete
 candidate still passes through the same structural and realizability gates.
 Without the option, graph-only decomposition behavior is unchanged.
 
