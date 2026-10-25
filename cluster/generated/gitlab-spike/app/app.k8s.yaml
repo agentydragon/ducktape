@@ -78,6 +78,7 @@ spec:
       webservice:
         maxReplicas: 2
         minReplicas: 2
+        workerProcesses: 1
     gitlab-runner:
       install: false
     global:

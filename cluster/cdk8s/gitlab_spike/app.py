@@ -210,7 +210,7 @@ def _values() -> dict[str, object]:
                 "antiAffinity": "hard",
                 "affinity": {"podAntiAffinity": {"topologyKey": "kubernetes.io/hostname"}},
             },
-            "webservice": {"minReplicas": 2, "maxReplicas": 2},
+            "webservice": {"minReplicas": 2, "maxReplicas": 2, "workerProcesses": 1},
             "sidekiq": {"maxReplicas": 2, "concurrency": 10, "livenessProbe": {"initialDelaySeconds": 300}},
             "toolbox": {
                 "backups": {
