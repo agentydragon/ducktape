@@ -2214,6 +2214,7 @@ struct ExecutionIndex {
     callback_factory_imports: BTreeSet<Id>,
     inline_callback_factory_imports: BTreeSet<Id>,
     callback_factory_members: BTreeMap<Id, BTreeSet<String>>,
+    no_reentry_exports: BTreeSet<Id>,
     no_reentry_members: BTreeMap<Id, BTreeSet<String>>,
     callback_factory_functions: BTreeSet<u32>,
 }
@@ -2285,6 +2286,7 @@ impl Default for ExecutionIndex {
             callback_factory_imports: BTreeSet::new(),
             inline_callback_factory_imports: BTreeSet::new(),
             callback_factory_members: BTreeMap::new(),
+            no_reentry_exports: BTreeSet::new(),
             no_reentry_members: BTreeMap::new(),
             callback_factory_functions: BTreeSet::new(),
         }
@@ -2385,6 +2387,9 @@ impl ExecutionIndex {
                     }
                     if hints.inline_callback_factories.contains(local.sym.as_ref()) {
                         index.inline_callback_factory_imports.insert(local.to_id());
+                    }
+                    if hints.no_reentry_exports.contains(local.sym.as_ref()) {
+                        index.no_reentry_exports.insert(local.to_id());
                     }
                     if let Some(members) = hints.callback_factory_members.get(local.sym.as_ref()) {
                         index
@@ -6932,6 +6937,16 @@ impl Executor<'_> {
         }
         for values in &mut args {
             values.remove(&AbstractValue::Unavailable);
+        }
+        // The author assertion covers this direct imported call with checked
+        // primitive arguments. Its result remains Unknown; only opaque
+        // callback promotion is suppressed.
+        if call.kind == CallKind::Call
+            && call.no_reentry_candidate
+            && let ValueExpr::Binding(binding) = &call.callee
+            && self.index.no_reentry_exports.contains(binding)
+        {
+            return;
         }
         // The author assertion covers this direct, stable member call with
         // primitive arguments. The provider may have private effects, but it

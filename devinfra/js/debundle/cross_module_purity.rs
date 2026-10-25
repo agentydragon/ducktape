@@ -419,6 +419,15 @@ pub fn resolve_asserted_no_reentry_members(
     resolve_asserted_members(modules, asserted_members, "no_reentry_members")
 }
 
+/// Project direct-export call-timing assertions through resolved import
+/// identities, without inferring purity or wrapper behavior.
+pub fn resolve_asserted_no_reentry_bindings(
+    modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
+    asserted: &BTreeMap<ModuleKey, BTreeSet<String>>,
+) -> BTreeMap<ModuleKey, BTreeSet<String>> {
+    resolve_asserted_export_bindings(modules, asserted, "no_reentry_exports")
+}
+
 pub fn resolve_asserted_namespace_independent_members(
     modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
     asserted_members: &BTreeMap<ModuleKey, BTreeMap<String, BTreeSet<String>>>,
