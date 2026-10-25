@@ -49,14 +49,18 @@ def test_long_context_route_has_explicit_litellm_timeouts() -> None:
     assert "stream_timeout" not in standard
 
 
-def test_langfuse_otel_v2_captures_content_on_spans_without_console_exporter() -> None:
+def test_langfuse_otel_v2_uses_one_explicit_otlp_exporter() -> None:
     [spec] = proxy_specs()
     env = {entry.name: getattr(entry, "value", None) for entry in spec.env}
+    config = main_proxy_config()
 
     assert env["LITELLM_OTEL_V2"] == "true"
+    assert env["OTEL_EXPORTER"] == "otlp_http"
+    assert env["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"].endswith("/api/public/otel/v1/traces")
     assert env["OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"] == "span_only"
-    assert "OTEL_EXPORTER" not in env
-    assert "langfuse_otel" in main_proxy_config()["litellm_settings"]["callbacks"]
+    assert spec.command == ("python", "-m", "tana.litellm_proxy.entrypoint")
+    assert config["litellm_settings"]["callbacks"] == ["otel", "prometheus"]
+    assert config["callback_settings"]["otel"]["mapper_names"] == ["langfuse"]
 
 
 if __name__ == "__main__":

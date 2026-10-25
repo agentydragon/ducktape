@@ -84,6 +84,8 @@ _NAMESPACE = "litellm"
 _MASTER_KEY = SecretRef(namespace=_NAMESPACE, name="litellm-master-key").key("api-key")
 # Langfuse's project keys.
 _LANGFUSE = SecretRef(namespace=_NAMESPACE, name="langfuse-secrets")
+_LANGFUSE_OTEL_HOST = "http://langfuse-web.langfuse.svc.cluster.local:3000"
+_LANGFUSE_OTLP_TRACES_ENDPOINT = f"{_LANGFUSE_OTEL_HOST}/api/public/otel/v1/traces"
 _CONFIG_DIR = "/etc/litellm"
 _RUGGED_LOCAL_LLM_PORT = Port(name="http", number=RUGGED_LOCAL_LLM_PORT)
 
@@ -120,6 +122,7 @@ class ProxySpec:
     replicas: int
     env: tuple[_EnvEntry, ...]
     startup_failure_threshold: int
+    command: tuple[str, ...] | None = None
     resources: ContainerResources | None = None
     image_pull_policy: ImagePullPolicy | None = None
     image_pull_secret_name: str | None = None
@@ -160,7 +163,6 @@ def _base_env(*entries: _EnvEntry) -> tuple[_EnvEntry, ...]:
 def _langfuse_env(*entries: _EnvEntry) -> tuple[_EnvEntry, ...]:
     return (
         *_base_env(*entries),
-        _LiteralEnv("LANGFUSE_OTEL_HOST", "http://langfuse-web.langfuse.svc.cluster.local:3000"),
         _SecretEnv("LANGFUSE_PUBLIC_KEY", _LANGFUSE.key("LANGFUSE_INIT_PROJECT_PUBLIC_KEY")),
         _SecretEnv("LANGFUSE_SECRET_KEY", _LANGFUSE.key("LANGFUSE_INIT_PROJECT_SECRET_KEY")),
     )
@@ -174,11 +176,14 @@ def proxy_specs() -> tuple[ProxySpec, ...]:
             config=configs["litellm"],
             image_name="git.allegedly.works/ducktape-ci/tana-litellm-proxy",
             replicas=2,
+            command=("python", "-m", "tana.litellm_proxy.entrypoint"),
             env=_langfuse_env(
-                # The Langfuse OTel callback needs v2 plus span content to populate
-                # the /v1/responses root observation. Keep Langfuse as the exporter;
-                # a console exporter would write captured prompts into pod logs.
+                # Use the generic OTel callback with one explicit Langfuse OTLP
+                # destination. LiteLLM's langfuse_otel preset appends Langfuse to
+                # the default console exporter, which writes captured prompts to stdout.
                 _LiteralEnv("LITELLM_OTEL_V2", "true"),
+                _LiteralEnv("OTEL_EXPORTER", "otlp_http"),
+                _LiteralEnv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", _LANGFUSE_OTLP_TRACES_ENDPOINT),
                 _LiteralEnv("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "span_only"),
                 _SecretEnv("LITELLM_MASTER_KEY", _MASTER_KEY),
                 _SecretEnv("DATABASE_URL", database.DATABASE.app_secret.key("uri")),
@@ -341,6 +346,7 @@ class LiteLLMProxy(Construct):
         deployment.add_container(
             name="litellm",
             image=f"{self.spec.image_name}:{_PLACEHOLDER_TAG}",
+            command=list(self.spec.command) if self.spec.command is not None else None,
             args=["--config", f"{_CONFIG_DIR}/config.yaml"],
             ports=[ref.port.container_port()],
             env_variables=self._env_variables(),
