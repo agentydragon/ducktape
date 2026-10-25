@@ -231,6 +231,7 @@ impl ValueExpr {
                 .last()
                 .map_or(Self::Unknown, |expr| Self::from_expr(expr)),
             Expr::Assign(assign) => Self::from_expr(&assign.right),
+            Expr::Lit(Lit::Regex(regex)) => Self::ObjectLiteral(regex.span.lo.0, Vec::new()),
             Expr::Lit(_) | Expr::Tpl(_) => Self::NonCallable,
             _ => Self::Unknown,
         }
@@ -338,6 +339,18 @@ impl ValueExpr {
     }
 }
 
+fn has_definite_primitive_result(expression: &Expr) -> bool {
+    match expression.unwrap_parens() {
+        Expr::Lit(Lit::Regex(_)) => false,
+        Expr::Lit(_) | Expr::Tpl(_) | Expr::Unary(_) | Expr::Update(_) => true,
+        Expr::Bin(binary) => !matches!(
+            binary.op,
+            BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::NullishCoalescing
+        ),
+        _ => false,
+    }
+}
+
 #[derive(Debug, Clone)]
 struct Parameter {
     binding: Option<Id>,
@@ -368,15 +381,22 @@ impl Parameter {
 
 #[derive(Debug, Clone)]
 struct Call {
+    kind: CallKind,
     callee: ValueExpr,
     args: Vec<ValueExpr>,
     span: Span,
-    is_new: bool,
     caller: Option<u32>,
     owner: StatementOrdinal,
     plain_object_sources: bool,
     no_sync_arguments: bool,
     has_spread: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CallKind {
+    Call,
+    New,
+    ImplicitCoercion,
 }
 
 fn plain_assign_source_property(property: &PropOrSpread) -> bool {
@@ -1040,6 +1060,31 @@ impl ExecutionIndex {
         }
     }
 
+    fn record_implicit_coercion(&mut self, expression: &Expr, span: Span) {
+        if (self.current.is_some() && self.past_await) || has_definite_primitive_result(expression)
+        {
+            return;
+        }
+        self.record_implicit_coercion_value(ValueExpr::from_expr(expression), span);
+    }
+
+    fn record_implicit_coercion_value(&mut self, argument: ValueExpr, span: Span) {
+        if self.current.is_some() && self.past_await {
+            return;
+        }
+        self.record_call(Call {
+            kind: CallKind::ImplicitCoercion,
+            callee: ValueExpr::Unknown,
+            args: vec![argument],
+            span,
+            caller: self.current,
+            owner: self.owner,
+            plain_object_sources: false,
+            no_sync_arguments: false,
+            has_spread: false,
+        });
+    }
+
     fn mark_opaque(&mut self) {
         if self.current.is_some() && self.past_await {
             return;
@@ -1407,6 +1452,23 @@ impl Visit for ExecutionIndex {
             self.conditional_depth -= 1;
             self.past_await = after_left;
         }
+        match expression.op {
+            // Strict comparisons, short-circuit operators and `instanceof`
+            // do not apply ToPrimitive to their operands. `in` converts only
+            // the left operand to a property key. The remaining eager binary
+            // operators can convert either object operand.
+            BinaryOp::EqEqEq
+            | BinaryOp::NotEqEq
+            | BinaryOp::InstanceOf
+            | BinaryOp::LogicalAnd
+            | BinaryOp::LogicalOr
+            | BinaryOp::NullishCoalescing => {}
+            BinaryOp::In => self.record_implicit_coercion(&expression.left, expression.span),
+            _ => {
+                self.record_implicit_coercion(&expression.left, expression.span);
+                self.record_implicit_coercion(&expression.right, expression.span);
+            }
+        }
     }
 
     fn visit_while_stmt(&mut self, node: &WhileStmt) {
@@ -1539,6 +1601,24 @@ impl Visit for ExecutionIndex {
         ) {
             self.past_await = before_assignment;
         }
+        if !matches!(
+            assignment.op,
+            AssignOp::Assign | AssignOp::AndAssign | AssignOp::OrAssign | AssignOp::NullishAssign
+        ) {
+            let left = match &assignment.left {
+                AssignTarget::Simple(SimpleAssignTarget::Ident(binding)) => {
+                    ValueExpr::Binding(binding.id.to_id())
+                }
+                AssignTarget::Simple(SimpleAssignTarget::Member(member)) => ValueExpr::Member(
+                    Box::new(ValueExpr::from_expr(&member.obj)),
+                    static_prop(&member.prop),
+                    matches!(member.prop, MemberProp::Ident(_)),
+                ),
+                _ => ValueExpr::Unknown,
+            };
+            self.record_implicit_coercion_value(left, assignment.span);
+            self.record_implicit_coercion(&assignment.right, assignment.span);
+        }
         if let (Some(key), AssignTarget::Simple(SimpleAssignTarget::Ident(binding))) =
             (self.current, &assignment.left)
         {
@@ -1617,6 +1697,7 @@ impl Visit for ExecutionIndex {
             self.reassigned_map = true;
         }
         expression.visit_children_with(self);
+        self.record_implicit_coercion(&expression.arg, expression.span);
         if let Expr::Member(member) = expression.arg.unwrap_parens() {
             self.mark_dynamic_property_effect(Some(&member.obj));
         }
@@ -1625,6 +1706,12 @@ impl Visit for ExecutionIndex {
 
     fn visit_unary_expr(&mut self, expression: &UnaryExpr) {
         expression.visit_children_with(self);
+        if matches!(
+            expression.op,
+            UnaryOp::Plus | UnaryOp::Minus | UnaryOp::Tilde
+        ) {
+            self.record_implicit_coercion(&expression.arg, expression.span);
+        }
         if expression.op == UnaryOp::Delete
             && let Expr::Member(member) = expression.arg.unwrap_parens()
         {
@@ -1694,7 +1781,7 @@ impl Visit for ExecutionIndex {
                     .iter()
                     .map(|arg| ValueExpr::from_expr(&arg.expr))
                     .collect(),
-                is_new: false,
+                kind: CallKind::Call,
                 span: call.span,
                 has_spread: call.args.iter().any(|arg| arg.spread.is_some()),
                 no_sync_arguments: is_no_sync_callback_member_call(
@@ -1756,7 +1843,7 @@ impl Visit for ExecutionIndex {
                 .iter()
                 .map(|arg| ValueExpr::from_expr(&arg.expr))
                 .collect(),
-            is_new: true,
+            kind: CallKind::New,
             span: new_expr.span,
             has_spread: new_expr
                 .args
@@ -2251,7 +2338,7 @@ impl Executor<'_> {
     }
 
     fn safe_object_assign_target(&self, call: &Call, id: &Id) -> bool {
-        if call.is_new
+        if call.kind == CallKind::New
             || !call.plain_object_sources
             || !matches!(call.args.first(), Some(ValueExpr::Binding(target)) if target == id)
         {
@@ -3486,10 +3573,47 @@ impl Executor<'_> {
         captures: &Context,
         outcome: &mut Outcome,
     ) {
+        if call.kind == CallKind::ImplicitCoercion {
+            let values = call
+                .args
+                .first()
+                .map(|argument| self.evaluate(argument, env, captures))
+                .unwrap_or_else(unknown);
+            if values.iter().all(|value| {
+                matches!(
+                    value,
+                    AbstractValue::NonCallable
+                        | AbstractValue::Undefined
+                        | AbstractValue::Unavailable
+                )
+            }) {
+                return;
+            }
+            let mut possible_values = values;
+            possible_values.remove(&AbstractValue::Unavailable);
+            if possible_values.is_empty() {
+                return;
+            }
+            // ToPrimitive may call an own [Symbol.toPrimitive], valueOf, or
+            // toString method. Treat that protocol step like an opaque
+            // synchronous call and expose callbacks carried by the operand;
+            // this covers both the exotic and ordinary conversion paths
+            // without assuming which method succeeds first.
+            outcome.complete = false;
+            outcome.unknown_call = true;
+            self.note_unknown_call(call);
+            // A conversion property may be an accessor that returns a
+            // conversion function. Promote the operand's retained callback
+            // closure as well as invoking its directly visible callbacks so
+            // effects in such returned functions remain visible.
+            self.promote_deferred_callbacks(&possible_values, outcome);
+            self.invoke_possible_callbacks(&[possible_values], false, outcome);
+            return;
+        }
         // Only a fresh primitive literal or a checked const alias to one is
         // safe to omit from callback effects. A pure object/function element
         // can be retained by the Set and invoked by a later opaque consumer.
-        if call.is_new
+        if call.kind == CallKind::New
             && call.caller.is_none()
             && self.set_iterable_proof.contains_constructor(call.span)
         {
@@ -3498,7 +3622,7 @@ impl Executor<'_> {
         // Empty intrinsic collections return before consulting an adder or
         // iterator. This proves only their construction has no callbacks;
         // later operations and any constructor arguments remain conservative.
-        if call.is_new
+        if call.kind == CallKind::New
             && call.args.is_empty()
             && matches!(&call.callee, ValueExpr::Binding(id)
                 if matches!(id.0.as_ref(), "Map" | "Set" | "WeakMap" | "WeakSet")
@@ -3525,7 +3649,7 @@ impl Executor<'_> {
         for values in &mut args {
             values.remove(&AbstractValue::Unavailable);
         }
-        if call.is_new
+        if call.kind == CallKind::New
             && self.is_proven_map_entry_array(&call.callee, &call.args, env, captures, call.owner)
         {
             return;
@@ -3542,7 +3666,7 @@ impl Executor<'_> {
         for target in targets {
             match target {
                 AbstractValue::CallbackFactory
-                    if !call.is_new
+                    if call.kind == CallKind::Call
                         && !call.has_spread
                         && (retained_callback
                             || matches!(
@@ -3578,13 +3702,13 @@ impl Executor<'_> {
                 | AbstractValue::Undefined
                 | AbstractValue::NonCallable => {}
                 AbstractValue::ObjectAssign
-                    if !call.is_new
+                    if call.kind == CallKind::Call
                         && call.plain_object_sources
                         && matches!(call.args.first(), Some(ValueExpr::Binding(id)) if call.caller
                         .and_then(|caller| self.index.callables.get(&caller).map(|body| (caller, body)))
                         .is_some_and(|(caller, body)| self.stable_fresh_function_target(caller, body, id))) =>
                     {}
-                AbstractValue::ObjectAssign if !call.is_new => {
+                AbstractValue::ObjectAssign if call.kind == CallKind::Call => {
                     // Once the target's descriptor/prototype integrity is
                     // unproven, copying a property may synchronously call a
                     // setter. Include nested lazy bodies of owners that ran
@@ -3613,7 +3737,7 @@ impl Executor<'_> {
                     outcome.complete = false;
                     outcome.unknown_call = true;
                 }
-                AbstractValue::Origin(ValueOrigin::Class(key)) if call.is_new => {
+                AbstractValue::Origin(ValueOrigin::Class(key)) if call.kind == CallKind::New => {
                     if let Some((nested, _)) = (!call.has_spread)
                         .then(|| self.construct_local_class(key, &args))
                         .flatten()
@@ -3642,7 +3766,9 @@ impl Executor<'_> {
                         }
                     }
                 }
-                AbstractValue::Origin(ValueOrigin::Function(key)) if !call.is_new => {
+                AbstractValue::Origin(ValueOrigin::Function(key))
+                    if call.kind == CallKind::Call =>
+                {
                     let nested = self.invoke(key, args.clone(), None, false);
                     self.apply_rebind_effects(&nested.effects.rebinds);
                     outcome.effects.reads.extend(nested.effects.reads);
@@ -3655,7 +3781,7 @@ impl Executor<'_> {
                     outcome.unknown_call |= nested.unknown_call;
                     outcome.complete &= nested.complete;
                 }
-                AbstractValue::Closure(key, captured) if !call.is_new => {
+                AbstractValue::Closure(key, captured) if call.kind == CallKind::Call => {
                     let nested = self.invoke(key, args.clone(), Some(captured), false);
                     self.apply_rebind_effects(&nested.effects.rebinds);
                     outcome.effects.reads.extend(nested.effects.reads);

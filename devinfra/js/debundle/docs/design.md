@@ -723,6 +723,20 @@ partition-independent: intra-module promoted edges are dropped by the
 quotient automatically, so the same promoted owner graph drives
 hypothetical planner partitions and the validator's actual one.
 
+The retained call index also records implicit object conversions performed by
+arithmetic, relational and loose-equality operators, the left operand of `in`,
+numeric unary operators, updates and non-logical compound assignments. The
+executor skips a conversion when value flow proves its operand primitive. For
+object or unknown operands it follows the conservative synchronous callback
+path, which covers possible `[Symbol.toPrimitive]`, `valueOf` and `toString`
+callbacks without trying to predict which method the runtime selects. Strict
+equality, short-circuit operators, `typeof`, logical negation and `instanceof`
+do not add a ToPrimitive call. These retained facts are collected during the
+existing AST visit; they do not trigger a second source scan. The operand's
+retained lazy callback closure is also promoted, so an accessor returning a
+second conversion callable remains visible without modeling the runtime's
+method-selection order.
+
 **Algorithm.** The call-site execution pass records callable identities,
 argument and default values, returned values, and the local environment of a
 created closure. For each at-init call, it follows only bodies that can execute

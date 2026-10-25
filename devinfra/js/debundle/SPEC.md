@@ -224,6 +224,19 @@ initializers, methods, and accessors. Their synchronous read closure stops at a
 definite `await` where retained callable coverage is complete; uncovered owners
 and incomplete reachability retain whole-body effects and rebinds.
 
+At-init callback analysis also records possible implicit primitive conversions
+from arithmetic, relational and loose-equality operators, the left operand of
+`in`, numeric unary operators, updates and non-logical compound assignments.
+If retained value flow proves an operand primitive, the conversion adds no
+callback effect. An object or unknown operand uses the conservative synchronous
+callback path, covering custom `[Symbol.toPrimitive]`, `valueOf` and `toString`
+methods without assuming which conversion method runs. Strict equality,
+short-circuit operators, `typeof`, logical negation and `instanceof` do not
+create a ToPrimitive effect. Callback effects reachable through an operand's
+retained lazy closure are included as well, covering an accessor that returns
+another conversion callable. This is callback-effect analysis; it does not
+classify the enclosing operator as pure.
+
 ## Audited callback factories
 
 `chunk_export_purity.<defining chunk>.callback_factory_exports` lists named
