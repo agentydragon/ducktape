@@ -226,6 +226,11 @@ Opaque calls holding a class or instance may invoke its constructor, field
 initializers, methods, and accessors. Their synchronous read closure stops at a
 definite `await` where retained callable coverage is complete; uncovered owners
 and incomplete reachability retain whole-body effects and rebinds.
+Defining a pure, unpublished subclass with a direct, uniquely known ordinary
+class superclass reads that superclass for the eager dependency graph, but does
+not by itself publish or invoke the superclass constructor or methods. Actual
+construction and publication remain reachability roots; unknown or alternate
+superclass values retain conservative roots.
 When those effects reach a top-level class declaration with a simple binding
 as its superclass, analysis uses the possible class values from the prefix at
 the declaration. Later writes to that binding do not replace the superclass

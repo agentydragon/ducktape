@@ -1630,6 +1630,15 @@ member names`, it projects onto each importing chunk's local binding
   including imported implementations. This stronger value is independent of
   purity, and the older helper value does not imply it.
 
+  For a validated metadata application, the eager target read remains a graph
+  dependency while the target class and the whole metadata application are
+  omitted from that statement's opaque callback reachability roots. Rooting
+  the application itself would reach the class again through its eager read.
+  The same proof of initialized, stable helper and class identities, member
+  decorator integrity, and absent dynamic scope controls both decisions.
+  Other eager-read owners remain roots. An independent export or publication
+  of the class still makes its methods reachable at that point.
+
   `effect: typescript_metadata_decorate_helper_with_member_decorators` also
   admits a single static property lookup on an imported decorator provider.
   The source scan rejects direct writes or rebinds of that provider; the author
