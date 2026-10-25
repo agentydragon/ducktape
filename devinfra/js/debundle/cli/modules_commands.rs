@@ -144,6 +144,11 @@ struct ModuleDecomposeArgs {
     #[arg(long, requires = "rejoin_original_modules")]
     rejoin_pair_attempt_limit: Option<usize>,
 
+    /// Limit complete stable-order passes over original homes during rejoining.
+    /// Zero skips rejoining; the final complete candidate is still gate-checked.
+    #[arg(long, requires = "rejoin_original_modules")]
+    rejoin_home_pass_limit: Option<usize>,
+
     /// Source root used to resolve existing source-backed and relational claims.
     #[arg(long = "source-root", env = "DEBUNDLE_SOURCE_ROOT")]
     source_root: Option<PathBuf>,
@@ -437,8 +442,11 @@ fn render_module_decomposition_text(report: &ModuleDecompositionReport, out: &mu
             }
         }
         if let Some(rejoining) = &coarsening.original_home_rejoining {
+            let whole_home_pass_limit = rejoining
+                .whole_home_pass_limit
+                .map_or_else(|| "unlimited".to_owned(), |limit| limit.to_string());
             out.push_str(&format!(
-                "original-home rejoining stopped: {:?}; restored={}/{} groups={} largest_group_owners={} largest_group_origins={} contractions={}/{} budget_limited_homes={}\n",
+                "original-home rejoining stopped: {:?}; restored={}/{} groups={} largest_group_owners={} largest_group_origins={} contractions={}/{} whole_home_passes={}/{} budget_limited_homes={}\n",
                 rejoining.stop_reason,
                 rejoining.fully_restored_module_count,
                 rejoining.original_module_count,
@@ -447,6 +455,8 @@ fn render_module_decomposition_text(report: &ModuleDecompositionReport, out: &mu
                 rejoining.largest_group_origin_module_count,
                 rejoining.accepted_contractions,
                 rejoining.attempted_contractions,
+                rejoining.whole_home_pass_count,
+                whole_home_pass_limit,
                 rejoining.budget_limited_home_count,
             ));
         }
@@ -485,6 +495,7 @@ fn run_module_decompose(args: ModuleDecomposeArgs) -> Result<()> {
             coarsen_atomic_conflicts: args.coarsen_atomic_conflicts,
             rejoin_original_modules: args.rejoin_original_modules,
             rejoin_pair_attempt_limit: args.rejoin_pair_attempt_limit,
+            whole_home_pass_limit: args.rejoin_home_pass_limit,
         },
     )?;
     emit_report(

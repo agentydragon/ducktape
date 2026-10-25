@@ -171,7 +171,13 @@ Each contraction passes the quotient's incremental gate, and the final complete
 partition passes the shared gate again. The command reports a proposal and
 does not edit the spec. An optional per-home pair-attempt limit bounds partial
 fallback checks across all passes while preserving whole-home checks; the
-report identifies homes left with untried pairs. The default remains exhaustive.
+report identifies homes left with untried pairs. An optional whole-home pass
+limit bounds complete stable-order passes across original homes; zero skips
+rejoining and one permits at most one pass. If the limit stops a productive pass
+while pure homes remain split, the report says `whole_home_pass_limit_reached`
+and includes the actual `whole_home_pass_count`. The default remains exhaustive.
+Every preserving contraction still passes the incremental gate, and the final
+complete partition still passes the shared gate.
 
 ## Readable names and the chunk public surface
 
