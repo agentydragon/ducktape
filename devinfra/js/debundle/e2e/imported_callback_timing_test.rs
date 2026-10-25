@@ -474,7 +474,18 @@ const wrapped = api.make(() => later);
 const later = 42;
 console.log(wrapped.invoke(), provider.limit, provider.candidates().length);
 "#,
-            modules(),
+            vec![
+                logical_module_with_anon(
+                    "callbacks/wrapped",
+                    &[
+                        Member::new("Provider"),
+                        Member::new("provider"),
+                        Member::new("wrapped"),
+                    ],
+                    &["provider.limit = 1 / 0;", "provider.candidates = () => [];"],
+                ),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
         )
         .with_extra_chunks(&[("static/peer", NAMESPACE_FACTORY)])
         .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
@@ -490,6 +501,37 @@ fn namespace_factory_tracks_namespace_seed_in_self_initializer() {
         "var state = state || api;\n\
          globalThis.exposed = state;\n",
     );
+}
+
+#[test]
+fn namespace_factory_keeps_unproven_instance_writes_conservative() {
+    for prefix in [
+        "class Provider { value = 0; constructor() {} }\nconst provider = new Provider();\nprovider.value = 0;\n",
+        "class Base { value = 0; }\nclass Provider extends Base {}\nconst provider = new Provider();\nprovider.value = 0;\n",
+        "class Provider { value = 0; }\nconst provider = new Provider();\ninspect(provider);\nprovider.value = 0;\n",
+        "class Provider { value = 0; }\nconst provider = new Provider();\ndelete provider.value;\nprovider.value = 0;\n",
+        "class Provider { value = 0; }\nconst provider = new Provider();\nprovider.other = 0;\n",
+        "class Provider { value = 0; }\nconst provider = new Provider();\nprovider.value = computeValue();\n",
+    ] {
+        expect_atomic_conflict_rejection(
+            FixtureOpts::new(
+                &format!(
+                    "import {{ api }} from './peer.js';\n\
+                     function inspect(value) {{ return value; }}\n\
+                     function computeValue() {{ return 0; }}\n{prefix}\
+                     const wrapped = api.make(() => later);\n\
+                     const later = 42;\nconsole.log(wrapped.invoke());\n"
+                ),
+                modules(),
+            )
+            .with_extra_chunks(&[("static/peer", NAMESPACE_FACTORY)])
+            .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+                .with_callback_factory_members("api", &["make"])
+                .build()]),
+            &["callbacks/wrapped", "values/later"],
+            &["eager_use", "sequenced"],
+        );
+    }
 }
 
 #[test]
