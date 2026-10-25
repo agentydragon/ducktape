@@ -156,6 +156,41 @@ stored in the resulting Set and called by a later consumer. Shadowed `Set`,
 spreads, holes, getters, proxies, function-valued or unknown properties, and
 mutated or escaped tables remain conservative.
 
+## Callback storage through mapped `Object.fromEntries`
+
+Synchronous callback analysis has a separate, narrow storage proof for
+`Object.fromEntries(entries.map(entry => [entry.key, entry]))`. It is not a
+purity-whitelist entry. The call is skipped as a callback effect only when the
+source is a chunk-top `const` binding admitted by the existing plain-array
+proof and, at the current prefix, resolves to one fresh dense array of fresh
+ordinary data objects. Each selected key must be exactly one own static data
+property with a primitive literal initializer. The source and entries must not
+have been written, escaped to opaque code, or otherwise tainted before
+construction.
+
+The mapper must be a single-identifier, non-async arrow returning exactly a
+dense two-element array containing `entry.key` and `entry`, in that order.
+`Object.fromEntries` and the `Array` machinery must be the unshadowed standard
+intrinsics, with no visible intrinsic mutation or dynamic scope. Holes,
+spreads, accessors, computed fields, non-literal keys, aliases that fail the
+plain-array proof, and other call shapes stay on the conservative effect path.
+The argument expression is still evaluated normally. When the proof applies,
+callbacks reachable through the source objects are retained on the abstract
+result rather than invoked or globally published; later member calls and opaque
+consumers continue through ordinary callback-effect analysis.
+
+This relies on the standard Array iterator and `Array.prototype.map` reading
+the dense own data elements and storing each mapper result without invoking
+its contents, followed by `Object.fromEntries` applying `ToPropertyKey` only
+to the primitive selected field and storing the paired object value. The
+prefix taint checks reject prior source/property writes and opaque calls;
+visible writes through aliases and `Object`/`Reflect` mutation helpers also
+disable the proof. A11 supplies integrity for unmodified built-in prototypes
+and intrinsics outside the analyzed chunk. The paired CLI controls live in
+`from_entries_callback_storage_test`: construction alone preserves output,
+while an early consumer, opaque consumer, mutated key, or changed array species
+keeps the callback effects visible.
+
 ## `PURE_STATIC_PROPS` — disposal symbols
 
 `Symbol.dispose` and `Symbol.asyncDispose` are well-known Symbol values, just

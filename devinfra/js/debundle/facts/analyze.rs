@@ -328,7 +328,10 @@ where
         super::sync_effects::annotate_synchronous_calls(
             &body,
             &value_flow,
-            &set_iterable_proof,
+            super::sync_effects::SynchronousCallProofs {
+                set_iterable: &set_iterable_proof,
+                graph: &graph,
+            },
             &shadowed,
             hints,
             export_reentry_policy,

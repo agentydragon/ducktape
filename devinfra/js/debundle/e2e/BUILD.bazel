@@ -58,6 +58,8 @@ debundle_e2e_test(name = "empty_collection_timing_test")
 
 debundle_e2e_test(name = "map_entry_callbacks_test")
 
+debundle_e2e_test(name = "from_entries_callback_storage_test")
+
 debundle_e2e_test(
     name = "export_reentry_report_test",
     deps = ["@crates//:serde_json"],

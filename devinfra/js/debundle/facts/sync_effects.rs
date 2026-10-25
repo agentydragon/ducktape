@@ -6,6 +6,7 @@ use super::value_flow::{Values as FlowValues, static_prop};
 use super::*;
 use std::cmp::Ordering;
 use std::sync::Arc;
+use swc_common::SyntaxContext;
 
 type Values = BTreeSet<AbstractValue>;
 type Context = BTreeMap<Id, Values>;
@@ -66,6 +67,14 @@ enum AbstractValue {
 }
 
 #[derive(Debug, Clone)]
+struct FromEntriesMappedProof {
+    source: ValueExpr,
+    key: String,
+    map_call_span: u32,
+    object_intrinsic: Id,
+}
+
+#[derive(Debug, Clone)]
 enum ValueExpr {
     Binding(Id),
     Origin(ValueOrigin),
@@ -73,7 +82,7 @@ enum ValueExpr {
     Undefined,
     NonCallable,
     Member(Box<Self>, Option<String>, bool),
-    Call(Box<Self>, Vec<Self>),
+    Call(Box<Self>, Vec<Self>, u32),
     New(Box<Self>, Vec<Self>),
     /// An operator result is primitive on successful evaluation. This is a
     /// value-kind fact, not a purity claim: keep operands so calls and
@@ -117,6 +126,101 @@ fn map_entry_array_span(new_expr: &NewExpr) -> Option<u32> {
         }
     }
     Some(entries.span.lo.0)
+}
+
+fn from_entries_mapped_proof(
+    call: &CallExpr,
+    plain_array_bindings: &BTreeSet<String>,
+) -> Option<FromEntriesMappedProof> {
+    let Callee::Expr(callee) = &call.callee else {
+        return None;
+    };
+    let Expr::Member(from_entries) = callee.unwrap_parens() else {
+        return None;
+    };
+    if !matches!(from_entries.obj.unwrap_parens(), Expr::Ident(object) if object.sym == "Object")
+        || !matches!(&from_entries.prop, MemberProp::Ident(property) if property.sym == "fromEntries")
+    {
+        return None;
+    }
+    let [argument] = call.args.as_slice() else {
+        return None;
+    };
+    if argument.spread.is_some() {
+        return None;
+    }
+    let Expr::Call(map_call) = argument.expr.unwrap_parens() else {
+        return None;
+    };
+    let Callee::Expr(map_callee) = &map_call.callee else {
+        return None;
+    };
+    let Expr::Member(map_member) = map_callee.unwrap_parens() else {
+        return None;
+    };
+    if !matches!(&map_member.prop, MemberProp::Ident(method) if method.sym == "map")
+        || map_call.args.len() != 1
+        || map_call.args[0].spread.is_some()
+    {
+        return None;
+    }
+    let Expr::Ident(source) = map_member.obj.unwrap_parens() else {
+        return None;
+    };
+    if !plain_array_bindings.contains(source.sym.as_ref()) {
+        return None;
+    }
+    let Expr::Arrow(mapper) = map_call.args[0].expr.unwrap_parens() else {
+        return None;
+    };
+    if mapper.is_async
+        || mapper.params.len() != 1
+        || mapper.type_params.is_some()
+        || mapper.return_type.is_some()
+    {
+        return None;
+    }
+    let Pat::Ident(parameter) = &mapper.params[0] else {
+        return None;
+    };
+    let ArrowFunctionBody::Expr(body) = mapper.body.as_ref() else {
+        return None;
+    };
+    let Expr::Array(pair) = body.unwrap_parens() else {
+        return None;
+    };
+    if pair.elems.len() != 2
+        || pair.elems.iter().any(|element| {
+            element
+                .as_ref()
+                .is_none_or(|element| element.spread.is_some())
+        })
+    {
+        return None;
+    }
+    let [Some(key), Some(value)] = pair.elems.as_slice() else {
+        return None;
+    };
+    let Expr::Member(key_member) = key.expr.unwrap_parens() else {
+        return None;
+    };
+    let MemberProp::Ident(key_property) = &key_member.prop else {
+        return None;
+    };
+    if !matches!(key_member.obj.unwrap_parens(), Expr::Ident(id) if id.to_id() == parameter.id.to_id())
+        || !matches!(value.expr.unwrap_parens(), Expr::Ident(id) if id.to_id() == parameter.id.to_id())
+    {
+        return None;
+    }
+    Some(FromEntriesMappedProof {
+        source: ValueExpr::Binding(source.to_id()),
+        key: key_property.sym.to_string(),
+        map_call_span: map_call.span.lo.0,
+        object_intrinsic: match from_entries.obj.unwrap_parens() {
+            Expr::Ident(object) => object.to_id(),
+            _ => unreachable!("checked Object.fromEntries receiver"),
+        },
+    })
 }
 
 #[derive(Debug, Clone, Default)]
@@ -192,6 +296,13 @@ fn primitive_constant(expression: &Expr) -> bool {
         }
         _ => false,
     }
+}
+
+fn primitive_literal(expression: &Expr) -> bool {
+    matches!(
+        expression.unwrap_parens(),
+        Expr::Lit(Lit::Str(_) | Lit::Bool(_) | Lit::Null(_) | Lit::Num(_) | Lit::BigInt(_))
+    )
 }
 
 fn value_without_user_code(expression: &Expr) -> bool {
@@ -466,6 +577,7 @@ impl ValueExpr {
                             .iter()
                             .map(|arg| Self::from_expr(&arg.expr))
                             .collect(),
+                        call.span.lo.0,
                     ),
                     Callee::Import(_) | Callee::Super(_) => Self::Unknown,
                 }
@@ -527,7 +639,7 @@ impl ValueExpr {
                 result.insert(id.clone());
             }
             Self::Member(object, _, _) => object.bindings(result),
-            Self::Call(callee, args) | Self::New(callee, args) => {
+            Self::Call(callee, args, _) | Self::New(callee, args) => {
                 callee.bindings(result);
                 for arg in args {
                     arg.bindings(result);
@@ -567,11 +679,11 @@ impl ValueExpr {
                 .iter()
                 .any(|value| value.carries_namespace(id, aliases)),
             Self::Member(object, _, _) => {
-                matches!(object.as_ref(), Self::Call(callee, _)
+                matches!(object.as_ref(), Self::Call(callee, _, _)
                     if Self::is_direct_namespace_member_callee(callee, id))
                     || object.carries_namespace(id, aliases)
             }
-            Self::Call(callee, args) => {
+            Self::Call(callee, args, _) => {
                 args.iter()
                     .any(|value| value.carries_namespace(id, aliases))
                     || (!Self::is_direct_namespace_member_callee(callee, id)
@@ -707,7 +819,7 @@ impl ValueExpr {
                     visiting_classes,
                 )
             }
-            Self::Call(callee, args) => {
+            Self::Call(callee, args, _) => {
                 args.iter().any(|value| {
                     value.may_publish_namespace_inner(
                         id,
@@ -829,7 +941,7 @@ impl ValueExpr {
                     // return the namespace even when the literal is fresh.
                     return true;
                 }
-                matches!(object.as_ref(), Self::Call(callee, _)
+                matches!(object.as_ref(), Self::Call(callee, _, _)
                     if Self::is_direct_namespace_member_callee(callee, id))
                     || matches!(object.as_ref(), Self::Unknown | Self::New(_, _))
                     || object.may_be_namespace_mutation_receiver(
@@ -839,7 +951,7 @@ impl ValueExpr {
                         facts,
                     )
             }
-            Self::Call(callee, args) => {
+            Self::Call(callee, args, _) => {
                 args.iter()
                     .any(|value| value.carries_namespace(id, aliases))
                     || !Self::is_direct_namespace_member_callee(callee, id)
@@ -1742,33 +1854,75 @@ fn is_callback_forwarder(expr: &Expr, callback: &Id) -> bool {
         && matches!(&call.callee, Callee::Expr(callee) if matches!(callee.unwrap_parens(), Expr::Ident(ident) if ident.to_id() == *callback)))
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum ErrorIntrinsicRoot {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum IntrinsicRoot {
     GlobalObject,
     Error,
+    Object,
+    Array,
 }
 
-fn error_intrinsic_root(
+type IntrinsicRoots = BTreeSet<IntrinsicRoot>;
+
+fn intrinsic_roots(
     value: &ValueExpr,
-    roots: &BTreeMap<Id, ErrorIntrinsicRoot>,
+    roots: &BTreeMap<Id, IntrinsicRoots>,
     globals: &BTreeSet<&str>,
-) -> Option<ErrorIntrinsicRoot> {
+) -> IntrinsicRoots {
     match value {
-        ValueExpr::Binding(id) if id.0.as_ref() == "Error" => Some(ErrorIntrinsicRoot::Error),
-        ValueExpr::Binding(id) if globals.contains(id.0.as_ref()) => {
-            Some(ErrorIntrinsicRoot::GlobalObject)
+        ValueExpr::Binding(id) if id.0.as_ref() == "Error" => {
+            BTreeSet::from([IntrinsicRoot::Error])
         }
-        ValueExpr::Binding(id) => roots.get(id).copied(),
-        ValueExpr::Member(base, property, _) => match error_intrinsic_root(base, roots, globals)? {
-            ErrorIntrinsicRoot::Error => Some(ErrorIntrinsicRoot::Error),
-            ErrorIntrinsicRoot::GlobalObject
-                if property.as_ref().is_none_or(|name| name == "Error") =>
-            {
-                Some(ErrorIntrinsicRoot::Error)
+        ValueExpr::Binding(id) if id.0.as_ref() == "Object" => {
+            BTreeSet::from([IntrinsicRoot::Object])
+        }
+        ValueExpr::Binding(id) if id.0.as_ref() == "Array" => {
+            BTreeSet::from([IntrinsicRoot::Array])
+        }
+        ValueExpr::Binding(id) if globals.contains(id.0.as_ref()) => {
+            BTreeSet::from([IntrinsicRoot::GlobalObject])
+        }
+        ValueExpr::Binding(id) => roots.get(id).cloned().unwrap_or_default(),
+        ValueExpr::Alternatives(options) => {
+            options
+                .iter()
+                .fold(IntrinsicRoots::new(), |mut combined, option| {
+                    combined.extend(intrinsic_roots(option, roots, globals));
+                    combined
+                })
+        }
+        ValueExpr::Member(base, property, _) => {
+            let base_roots = intrinsic_roots(base, roots, globals);
+            let mut out = IntrinsicRoots::new();
+            for root in base_roots {
+                match root {
+                    IntrinsicRoot::GlobalObject => match property.as_deref() {
+                        Some("Error") => {
+                            out.insert(IntrinsicRoot::Error);
+                        }
+                        Some("Object") => {
+                            out.insert(IntrinsicRoot::Object);
+                        }
+                        Some("Array") => {
+                            out.insert(IntrinsicRoot::Array);
+                        }
+                        Some("globalThis" | "window" | "self" | "frames" | "top") | None => {
+                            out.insert(IntrinsicRoot::GlobalObject);
+                        }
+                        _ => {}
+                    },
+                    // A member of a builtin constructor remains rooted in that
+                    // constructor: Array.prototype.map, Array[Symbol.species],
+                    // and Object.fromEntries are mutations of their respective
+                    // intrinsic families.
+                    IntrinsicRoot::Error | IntrinsicRoot::Object | IntrinsicRoot::Array => {
+                        out.insert(root);
+                    }
+                }
             }
-            ErrorIntrinsicRoot::GlobalObject => None,
-        },
-        _ => None,
+            out
+        }
+        _ => IntrinsicRoots::new(),
     }
 }
 
@@ -1857,6 +2011,12 @@ struct ExecutionIndex {
     safe_class_target: Option<Id>,
     plain_data_objects: BTreeSet<u32>,
     map_entry_arrays: BTreeSet<u32>,
+    dense_array_literals: BTreeMap<u32, usize>,
+    primitive_data_properties: BTreeSet<(u32, String)>,
+    from_entries_map_calls: BTreeMap<u32, FromEntriesMappedProof>,
+    mapped_array_map_calls: BTreeMap<u32, FromEntriesMappedProof>,
+    plain_array_bindings: BTreeSet<String>,
+    mutated_intrinsic_roots: IntrinsicRoots,
     reassigned_map: bool,
     namespace_privacy: NamespacePrivacy,
     fresh_error_claims: Vec<FreshErrorWriteClaim>,
@@ -1914,6 +2074,12 @@ impl Default for ExecutionIndex {
             safe_class_target: None,
             plain_data_objects: BTreeSet::new(),
             map_entry_arrays: BTreeSet::new(),
+            dense_array_literals: BTreeMap::new(),
+            primitive_data_properties: BTreeSet::new(),
+            from_entries_map_calls: BTreeMap::new(),
+            mapped_array_map_calls: BTreeMap::new(),
+            plain_array_bindings: BTreeSet::new(),
+            mutated_intrinsic_roots: IntrinsicRoots::new(),
             reassigned_map: false,
             namespace_privacy: NamespacePrivacy::default(),
             fresh_error_claims: Vec::new(),
@@ -1958,6 +2124,7 @@ impl ExecutionIndex {
         body: &[TopLevelItemView<'_>],
         hints: &AnalysisHints,
         flow: Option<&ChunkValueFlow>,
+        plain_array_bindings: &BTreeSet<String>,
     ) -> Self {
         let mut index = Self {
             top_calls: vec![Vec::new(); body.len()],
@@ -1974,6 +2141,7 @@ impl ExecutionIndex {
                 .map(|item| metadata_decorate_call(item.as_module_item(), &hints.known_effects))
                 .collect(),
             global_object_names: super::global_object::unshadowed_global_object_aliases(body),
+            plain_array_bindings: plain_array_bindings.clone(),
             no_sync_callback_members: hints.no_sync_callback_members.clone(),
             ..Self::default()
         };
@@ -2090,6 +2258,49 @@ impl ExecutionIndex {
                 .collect(),
             &namespace_assignments,
         );
+        // Track aliases to the built-in objects used by narrow construction
+        // proofs. A value may retain multiple roots (for example, a
+        // conditional alias of Object and Array), so merge sets rather than
+        // imposing an arbitrary ordering on them.
+        let mut intrinsic_aliases = BTreeMap::<Id, IntrinsicRoots>::new();
+        loop {
+            let mut changed = false;
+            for (id, value) in &namespace_assignments {
+                let found = intrinsic_roots(value, &intrinsic_aliases, &index.global_object_names);
+                if !found.is_empty() {
+                    let roots = intrinsic_aliases.entry((*id).clone()).or_default();
+                    let before = roots.len();
+                    roots.extend(found);
+                    changed |= roots.len() != before;
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+        let mut mutated_intrinsics = IntrinsicRoots::new();
+        for (id, _) in &namespace_assignments {
+            match id.0.as_ref() {
+                "Error" => {
+                    mutated_intrinsics.insert(IntrinsicRoot::Error);
+                }
+                "Object" => {
+                    mutated_intrinsics.insert(IntrinsicRoot::Object);
+                }
+                "Array" => {
+                    mutated_intrinsics.insert(IntrinsicRoot::Array);
+                }
+                _ => {}
+            }
+        }
+        for receiver in &index.intrinsic_mutation_receivers {
+            mutated_intrinsics.extend(intrinsic_roots(
+                receiver,
+                &intrinsic_aliases,
+                &index.global_object_names,
+            ));
+        }
+        index.mutated_intrinsic_roots = mutated_intrinsics.clone();
         let mut claim_counts = BTreeMap::<FreshErrorWriteSite, usize>::new();
         if !index.fresh_error_claims.is_empty()
             && !index.callback_factory_members.is_empty()
@@ -2098,34 +2309,8 @@ impl ExecutionIndex {
             // A11 supplies the standard Error allocation/prototype behavior. Reject
             // visible replacement of that intrinsic, including writes through local
             // aliases of a known global object. This is not a general effect proof.
-            let mut intrinsic_roots = BTreeMap::new();
-            loop {
-                let mut changed = false;
-                for (id, value) in &namespace_assignments {
-                    if let Some(root) =
-                        error_intrinsic_root(value, &intrinsic_roots, &index.global_object_names)
-                    {
-                        let combined = intrinsic_roots
-                            .get(id)
-                            .copied()
-                            .map_or(root, |previous| previous.max(root));
-                        if intrinsic_roots.get(id) != Some(&combined) {
-                            intrinsic_roots.insert((*id).clone(), combined);
-                            changed = true;
-                        }
-                    }
-                }
-                if !changed {
-                    break;
-                }
-            }
-            let intrinsic_mutated = namespace_assignments
-                .iter()
-                .any(|(id, _)| id.0.as_ref() == "Error")
-                || index.intrinsic_mutation_receivers.iter().any(|receiver| {
-                    error_intrinsic_root(receiver, &intrinsic_roots, &index.global_object_names)
-                        .is_some()
-                });
+            let intrinsic_mutated = mutated_intrinsics.contains(&IntrinsicRoot::Error)
+                || mutated_intrinsics.contains(&IntrinsicRoot::GlobalObject);
             if !intrinsic_mutated
                 && index.dynamic_scope_owners.is_empty()
                 && let Some(flow) = flow
@@ -2767,7 +2952,7 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_object_lit(&mut self, object: &ObjectLit) {
-        if object.props.iter().all(|property| match property {
+        let plain_data = object.props.iter().all(|property| match property {
             PropOrSpread::Spread(_) => false,
             PropOrSpread::Prop(property) => match property.as_ref() {
                 Prop::KeyValue(pair) => {
@@ -2785,8 +2970,41 @@ impl Visit for ExecutionIndex {
                 }
                 _ => false,
             },
-        }) {
+        });
+        if plain_data {
             self.plain_data_objects.insert(object.span.lo.0);
+        }
+        let mut primitive_property_counts = BTreeMap::<String, usize>::new();
+        let mut primitive_property_values = BTreeSet::<String>::new();
+        for property in &object.props {
+            let PropOrSpread::Prop(property) = property else {
+                continue;
+            };
+            let (name, primitive_value) = match property.as_ref() {
+                Prop::KeyValue(pair) => (
+                    static_property_name(&pair.key),
+                    primitive_literal(&pair.value),
+                ),
+                Prop::Shorthand(ident) => (Some(ident.sym.to_string()), false),
+                Prop::Assign(assign) => (Some(assign.key.sym.to_string()), false),
+                Prop::Method(method) => (static_property_name(&method.key), false),
+                Prop::Getter(getter) => (static_property_name(&getter.key), false),
+                Prop::Setter(setter) => (static_property_name(&setter.key), false),
+            };
+            if let Some(name) = name {
+                *primitive_property_counts.entry(name.clone()).or_default() += 1;
+                if primitive_value {
+                    primitive_property_values.insert(name);
+                }
+            }
+        }
+        if plain_data {
+            for (name, count) in primitive_property_counts {
+                if count == 1 && primitive_property_values.contains(&name) {
+                    self.primitive_data_properties
+                        .insert((object.span.lo.0, name));
+                }
+            }
         }
         self.literal_depth += 1;
         for property in &object.props {
@@ -2812,6 +3030,14 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_array_lit(&mut self, array: &ArrayLit) {
+        if array.elems.iter().all(|element| {
+            element
+                .as_ref()
+                .is_some_and(|element| element.spread.is_none())
+        }) {
+            self.dense_array_literals
+                .insert(array.span.lo.0, array.elems.len());
+        }
         self.literal_depth += 1;
         array.visit_children_with(self);
         self.literal_depth -= 1;
@@ -3308,7 +3534,8 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_update_expr(&mut self, expression: &UpdateExpr) {
-        if matches!(expression.arg.unwrap_parens(), Expr::Ident(id) if id.sym == "Error") {
+        if matches!(expression.arg.unwrap_parens(), Expr::Ident(id) if matches!(id.sym.as_ref(), "Error" | "Object" | "Array"))
+        {
             self.intrinsic_mutation_receivers
                 .push(ValueExpr::from_expr(&expression.arg));
         }
@@ -3439,6 +3666,11 @@ impl Visit for ExecutionIndex {
         }
         if call.args.iter().any(|arg| arg.spread.is_some()) {
             self.mark_opaque();
+        }
+        if let Some(proof) = from_entries_mapped_proof(call, &self.plain_array_bindings) {
+            self.mapped_array_map_calls
+                .insert(proof.map_call_span, proof.clone());
+            self.from_entries_map_calls.insert(call.span.lo.0, proof);
         }
         if let Callee::Expr(callee) = &call.callee {
             self.record_call(Call {
@@ -3687,6 +3919,118 @@ impl Executor<'_> {
             && !self.index.dynamic_scope_owners.contains(&owner)
             && matches!(args, [ValueExpr::ObjectLiteral(span, _)]
                 if self.index.map_entry_arrays.contains(span))
+    }
+
+    fn proven_from_entries_callbacks(
+        &mut self,
+        call_span: u32,
+        env: &Context,
+        captures: &Context,
+    ) -> Option<Values> {
+        let proof = self
+            .index
+            .from_entries_map_calls
+            .get(&call_span)
+            .or_else(|| self.index.mapped_array_map_calls.get(&call_span))?
+            .clone();
+        let array_intrinsic = ("Array".into(), SyntaxContext::empty());
+        if !self.index.dynamic_scope_owners.is_empty()
+            || self.flow.is_declared(&proof.object_intrinsic)
+            || self.shadowed.contains("Object")
+            || self.flow.is_declared(&array_intrinsic)
+            || self.shadowed.contains("Array")
+            || self.index.mutated_intrinsic_roots.iter().any(|root| {
+                matches!(
+                    root,
+                    IntrinsicRoot::GlobalObject | IntrinsicRoot::Object | IntrinsicRoot::Array
+                )
+            })
+        {
+            return None;
+        }
+        let ValueExpr::Binding(source_id) = &proof.source else {
+            return None;
+        };
+        // This path deliberately accepts only a chunk-top plain-array binding.
+        // Local parameters, aliases from opaque calls, and synthetic map results
+        // stay on the ordinary unknown-call path.
+        if !self.top_bindings.contains(source_id)
+            || !self
+                .index
+                .plain_array_bindings
+                .contains(source_id.0.as_ref())
+        {
+            return None;
+        }
+        let source_values = self.evaluate(&proof.source, env, captures);
+        let [AbstractValue::Origin(ValueOrigin::Object(array))] =
+            source_values.iter().collect::<Vec<_>>().as_slice()
+        else {
+            return None;
+        };
+        if self.tainted_objects.contains(array) {
+            return None;
+        }
+        let count = *self.index.dense_array_literals.get(array)?;
+        let mut expected_entries = Values::new();
+        for index in 0..count {
+            let slot = self.flow.values_of_property(*array, &index.to_string())?;
+            if slot.iter().next().is_none()
+                || slot.iter().any(|origin| origin == ValueOrigin::Unknown)
+            {
+                return None;
+            }
+            for origin in slot {
+                let ValueOrigin::Object(entry) = origin else {
+                    return None;
+                };
+                if !self.index.plain_data_objects.contains(&entry)
+                    || !self
+                        .index
+                        .primitive_data_properties
+                        .contains(&(entry, proof.key.clone()))
+                    || self.tainted_objects.contains(&entry)
+                {
+                    return None;
+                }
+                let key_values = self
+                    .prefix_object_properties
+                    .get(&entry)
+                    .and_then(|properties| properties.get(&Some(proof.key.clone())))?;
+                if key_values.is_empty()
+                    || key_values.iter().any(|value| {
+                        !matches!(value, AbstractValue::NonCallable | AbstractValue::Undefined)
+                    })
+                {
+                    return None;
+                }
+                expected_entries.insert(AbstractValue::Origin(ValueOrigin::Object(entry)));
+            }
+        }
+        let actual_entries = self
+            .prefix_object_properties
+            .get(array)
+            .and_then(|properties| properties.get(&None))?;
+        if actual_entries != &expected_entries {
+            return None;
+        }
+        Some(self.callback_values(&source_values))
+    }
+
+    fn callbacks_in_from_entries_source(
+        &mut self,
+        call_span: u32,
+        env: &Context,
+        captures: &Context,
+    ) -> Option<Values> {
+        let proof = self
+            .index
+            .from_entries_map_calls
+            .get(&call_span)
+            .or_else(|| self.index.mapped_array_map_calls.get(&call_span))?
+            .clone();
+        let source_values = self.evaluate(&proof.source, env, captures);
+        Some(self.callback_values(&source_values))
     }
 
     fn summarize_metadata_decoration(
@@ -4954,7 +5298,7 @@ impl Executor<'_> {
                 }
                 values
             }
-            ValueExpr::Call(callee, args) => {
+            ValueExpr::Call(callee, args, span) => {
                 let targets = self.evaluate(callee, env, captures);
                 if targets.len() == 1 && targets.contains(&AbstractValue::Unavailable) {
                     return BTreeSet::from([AbstractValue::Unavailable]);
@@ -4978,6 +5322,9 @@ impl Executor<'_> {
                 }
                 for values in &mut args {
                     values.remove(&AbstractValue::Unavailable);
+                }
+                if let Some(callbacks) = self.proven_from_entries_callbacks(*span, env, captures) {
+                    return BTreeSet::from([self.deferred_callbacks(callbacks)]);
                 }
                 let deferred_callback = matches!(args.as_slice(), [values] if !values.is_empty()
                     && values.iter().all(|value| matches!(value, AbstractValue::DeferredCallbacks(_))));
@@ -5369,10 +5716,46 @@ impl Executor<'_> {
         {
             return;
         }
+        let from_entries_source_callbacks = if call.kind == CallKind::Call {
+            if self
+                .proven_from_entries_callbacks(call.span.lo.0, env, captures)
+                .is_some()
+            {
+                return;
+            }
+            self.callbacks_in_from_entries_source(call.span.lo.0, env, captures)
+        } else {
+            None
+        };
         if call.kind == CallKind::New
             && self.is_proven_map_entry_array(&call.callee, &call.args, env, captures, call.owner)
         {
             return;
+        }
+        let mut opaque_args = args.clone();
+        if let Some(callbacks) = from_entries_source_callbacks {
+            opaque_args.push(callbacks);
+        }
+        if targets.is_empty()
+            || targets.iter().any(|target| {
+                matches!(
+                    target,
+                    AbstractValue::Unknown
+                        | AbstractValue::DeferredCallbacks(_)
+                        | AbstractValue::ClassMembers(_)
+                        | AbstractValue::Instance(_, _)
+                )
+            })
+        {
+            // Opaque calls can mutate objects passed as arguments or used as
+            // method receivers. Preserve that possibility for later narrow
+            // construction proofs (including changes to an entry's own data
+            // properties or an array's iterator/species surface).
+            let mut possible_objects: Values = args.iter().flatten().cloned().collect();
+            if let ValueExpr::Member(receiver, _, _) = &call.callee {
+                possible_objects.extend(self.evaluate(receiver, env, captures));
+            }
+            self.taint_objects(&possible_objects);
         }
         let retained_callback = matches!(args.as_slice(), [values] if !values.is_empty()
             && values.iter().all(|value| matches!(value, AbstractValue::DeferredCallbacks(_))));
@@ -5380,7 +5763,7 @@ impl Executor<'_> {
             outcome.complete = false;
             outcome.unknown_call = true;
             self.note_unknown_call(call);
-            self.invoke_possible_callbacks(&args, call.no_sync_arguments, outcome);
+            self.invoke_possible_callbacks(&opaque_args, call.no_sync_arguments, outcome);
         }
         let mut invoked_unknown_callbacks = targets.is_empty();
         for target in targets {
@@ -5404,7 +5787,7 @@ impl Executor<'_> {
                     outcome.complete = false;
                     outcome.unknown_call = true;
                     self.note_unknown_call(call);
-                    let mut possible_args = args.clone();
+                    let mut possible_args = opaque_args.clone();
                     possible_args.push((*captured.values).clone());
                     self.promote_deferred_callbacks(&captured.values, outcome);
                     self.invoke_possible_callbacks(&possible_args, false, outcome);
@@ -5414,14 +5797,14 @@ impl Executor<'_> {
                     outcome.unknown_call = true;
                     self.note_unknown_call(call);
                     self.promote_class_members(key, outcome);
-                    self.invoke_possible_callbacks(&args, false, outcome);
+                    self.invoke_possible_callbacks(&opaque_args, false, outcome);
                 }
                 AbstractValue::Instance(key, captured) => {
                     outcome.complete = false;
                     outcome.unknown_call = true;
                     self.note_unknown_call(call);
                     self.promote_class_members(key, outcome);
-                    let mut possible_args = args.clone();
+                    let mut possible_args = opaque_args.clone();
                     possible_args.push((*captured.values).clone());
                     self.invoke_possible_callbacks(&possible_args, false, outcome);
                 }
@@ -5526,7 +5909,11 @@ impl Executor<'_> {
                     outcome.unknown_call = true;
                     self.note_unknown_call(call);
                     if !invoked_unknown_callbacks {
-                        self.invoke_possible_callbacks(&args, call.no_sync_arguments, outcome);
+                        self.invoke_possible_callbacks(
+                            &opaque_args,
+                            call.no_sync_arguments,
+                            outcome,
+                        );
                         invoked_unknown_callbacks = true;
                     }
                 }
@@ -5542,7 +5929,7 @@ pub(crate) fn infer_returned_callback_factories(
     body: &[TopLevelItemView<'_>],
     exported_locals: &BTreeSet<String>,
 ) -> BTreeSet<String> {
-    let index = ExecutionIndex::collect(body, &AnalysisHints::default(), None);
+    let index = ExecutionIndex::collect(body, &AnalysisHints::default(), None, &BTreeSet::new());
     if !index.dynamic_scope_owners.is_empty() {
         return BTreeSet::new();
     }
@@ -5570,16 +5957,22 @@ pub(crate) fn infer_returned_callback_factories(
         .collect()
 }
 
+pub(crate) struct SynchronousCallProofs<'a> {
+    pub(crate) set_iterable: &'a SetIterableProof,
+    pub(crate) graph: &'a ChunkCodeGraph,
+}
+
 pub(crate) fn annotate_synchronous_calls(
     body: &[TopLevelItemView<'_>],
     flow: &ChunkValueFlow,
-    set_iterable_proof: &SetIterableProof,
+    proofs: SynchronousCallProofs<'_>,
     shadowed: &BTreeSet<&'static str>,
     hints: &AnalysisHints,
     export_reentry_policy: ExportReentryPolicy,
     facts: &mut [StatementFacts],
 ) {
-    let index = ExecutionIndex::collect(body, hints, Some(flow));
+    let index =
+        ExecutionIndex::collect(body, hints, Some(flow), proofs.graph.plain_array_bindings());
     // Every top-level call is executed by `top_calls`, regardless of whether
     // its result is retained. Keep an initializer's value only if a later
     // call may read it, directly or through another initializer/function.
@@ -5719,7 +6112,7 @@ pub(crate) fn annotate_synchronous_calls(
         index: &index,
         facts,
         flow,
-        set_iterable_proof,
+        set_iterable_proof: proofs.set_iterable,
         shadowed,
         top_bindings,
         binding_owner: facts
