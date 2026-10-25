@@ -1032,9 +1032,9 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 """,
-    integrity = "sha512-3TEPslRaNmlgJST5xMJJ9ZWXW1hr4RlVEpF0tO4NULNGj4b5naWlHa6PlSRiDpnMz322aJkz0uvyyKqc37rLJQ==",
+    integrity = "sha512-cjK2mdHIfEepZ1lQ1MX3aTQC+8ncIsvnacl/6vI2dIIcfP8/MrhTQ2+qRlkXFNDzJSj1d36quIszP+3/4CUJWQ==",
     strip_prefix = "package/vendor/x86_64-unknown-linux-musl",
-    urls = ["https://registry.npmjs.org/@openai/codex/-/codex-0.157.0-linux-x64.tgz"],
+    urls = ["https://registry.npmjs.org/@openai/codex/-/codex-0.162.1-linux-x64.tgz"],
 )
 
 # The one browser every Playwright test drives: Chrome for Testing's headless shell. `:executable`

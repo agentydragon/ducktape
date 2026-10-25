@@ -462,6 +462,7 @@ spec:
       - chatgpt-sub/oai-responses/gpt-6-astra
       - chatgpt-sub/oai-responses/gpt-6-luna
       - chatgpt-sub/oai-responses/gpt-6-sol
+      - chatgpt-sub/oai-responses/gpt-6.1-sol
       - anthropic-max20/ant-messages/claude-opus-5-5
       - anthropic-max20/ant-messages/claude-sonnet-5-5
       - anthropic-max20/ant-messages/claude-fable-5-1
@@ -591,6 +592,7 @@ spec:
       - chatgpt-sub/oai-responses/gpt-6-astra
       - chatgpt-sub/oai-responses/gpt-6-luna
       - chatgpt-sub/oai-responses/gpt-6-sol
+      - chatgpt-sub/oai-responses/gpt-6.1-sol
   providerConfigRef:
     kind: ProviderConfig
     name: default
@@ -702,6 +704,7 @@ spec:
       - chatgpt-sub/oai-responses/gpt-6-astra
       - chatgpt-sub/oai-responses/gpt-6-luna
       - chatgpt-sub/oai-responses/gpt-6-sol
+      - chatgpt-sub/oai-responses/gpt-6.1-sol
       - google/goog-generate/gemini-3.7-flash
       - google/goog-generate/gemini-3.5-flash-lite
       - antigravity/ant-messages/claude-opus-4-6-thinking
@@ -931,6 +934,7 @@ spec:
       - chatgpt-sub/oai-responses/gpt-6-astra
       - chatgpt-sub/oai-responses/gpt-6-luna
       - chatgpt-sub/oai-responses/gpt-6-sol
+      - chatgpt-sub/oai-responses/gpt-6.1-sol
   providerConfigRef:
     kind: ProviderConfig
     name: default

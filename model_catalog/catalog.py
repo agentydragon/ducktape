@@ -287,6 +287,13 @@ GPT_6_ASTRA = Model(id="gpt-6-astra", display_name="GPT-6 Astra", limits=_ASTRA_
 GPT_6_LUNA = Model(id="gpt-6-luna", display_name="GPT-6 Luna", limits=_CHATGPT_LIMITS, reasoning=True)
 GPT_6_SOL = Model(id="gpt-6-sol", display_name="GPT-6 Sol", limits=_CHATGPT_LIMITS, reasoning=True)
 
+# CLIProxyAPI model-registry snapshot (2026-10-25):
+# https://raw.githubusercontent.com/router-for-me/models/63c1ae7e1d6dfb0224b0f8fb9e3e072f458589ce/models.json
+# declares context_length=272000 and max_completion_tokens=128000. These are
+# gateway declarations, not measured serving capacity or a Codex client context budget.
+_GPT_6_1_SOL_LIMITS = TokenLimits(max_input_tokens=272_000, max_output_tokens=128_000)
+GPT_6_1_SOL = Model(id="gpt-6.1-sol", display_name="GPT-6.1 Sol", limits=_GPT_6_1_SOL_LIMITS, reasoning=True)
+
 # Tana-UI models served by the main LiteLLM proxy's in-process Tana provider. Tana
 # encodes reasoning effort in the
 # model name (`/medium`, `/high`), not a `reasoning_effort` param, so there is no clean
@@ -615,8 +622,11 @@ CHATGPT_MESSAGES_ROUTES = (GPT6_ASTRA_MESSAGES, GPT6_SOL_MESSAGES, GPT6_LUNA_MES
 GPT6_ASTRA_RESPONSES = Route(GPT_6_ASTRA, CHATGPT_RESPONSES, publish_limits=True, reasoning_efforts=_CODEX_EFFORTS)
 GPT6_LUNA_RESPONSES = Route(GPT_6_LUNA, CHATGPT_RESPONSES, publish_limits=True, reasoning_efforts=_CODEX_EFFORTS)
 GPT6_SOL_RESPONSES = Route(GPT_6_SOL, CHATGPT_RESPONSES, publish_limits=True, reasoning_efforts=_CODEX_EFFORTS)
-GPT6_RESPONSES_ROUTES = (GPT6_ASTRA_RESPONSES, GPT6_LUNA_RESPONSES, GPT6_SOL_RESPONSES)
-CHATGPT_RESPONSES_ROUTES = (GPT6_ASTRA_RESPONSES, GPT6_SOL_RESPONSES, GPT6_LUNA_RESPONSES)
+GPT6_1_SOL_RESPONSES = Route(
+    GPT_6_1_SOL, CHATGPT_RESPONSES, publish_limits=True, reasoning_efforts=("low", "medium", "high", "xhigh", "max")
+)
+GPT6_RESPONSES_ROUTES = (GPT6_ASTRA_RESPONSES, GPT6_LUNA_RESPONSES, GPT6_SOL_RESPONSES, GPT6_1_SOL_RESPONSES)
+CHATGPT_RESPONSES_ROUTES = (GPT6_ASTRA_RESPONSES, GPT6_SOL_RESPONSES, GPT6_LUNA_RESPONSES, GPT6_1_SOL_RESPONSES)
 ANTHROPIC_SUBSCRIPTION = Upstream(Provider.ANTHROPIC_MAX20, "anthropic", "messages", supports_function_calling=True)
 OPUS_SUBSCRIPTION = Route(
     _SUBSCRIPTION_OPUS, ANTHROPIC_SUBSCRIPTION, publish_limits=True, reasoning_efforts=_ANTHROPIC_EFFORTS
