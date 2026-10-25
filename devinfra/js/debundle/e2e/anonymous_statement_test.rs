@@ -4,6 +4,240 @@
 use debundle_e2e_support::*;
 use std::fs;
 
+#[test]
+fn anonymous_context_selects_only_final_statement() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const first = "first";
+console.log("same");
+const second = "second";
+console.log("same");
+export { first, second };
+"#,
+        vec![
+            logical_module("context", &[Member::new("first")]),
+            logical_module_with_anon_alpha(
+                "selected",
+                &[],
+                &[r#"const anchor = "first";
+console.log("same");"#],
+            ),
+        ],
+    ));
+
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/context.js",
+        &["first"],
+        &[],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/context.js",
+        &["const first"],
+        &["console.log"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/selected.js",
+        &[r#"console.log("same")"#],
+        &["const first", "const second"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/residual/unhandled.js",
+        &["const second"],
+        &["const first", "console.log"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/entry.js",
+        &[r#"console.log("same")"#],
+        &["const first", "const second"],
+    );
+    assert_preserved_entry_output(&fixture, "same\nsame\n");
+}
+
+#[test]
+fn repeated_anonymous_context_stays_ambiguous() {
+    let outcome = expect_selector_outcome(
+        FixtureOpts::new(
+            r#"const first = "same";
+console.log("same");
+const second = "same";
+console.log("same");
+export { first, second };
+"#,
+            vec![logical_module_with_anon_alpha(
+                "selected",
+                &[],
+                &[r#"const anchor = "same";
+console.log("same");"#],
+            )],
+        ),
+        "ambiguous",
+        "selected",
+    );
+    assert_eq!(
+        outcome["selector_preview"],
+        "const anchor = \"same\"; console.log(\"same\");"
+    );
+}
+
+#[test]
+fn context_only_reference_constrains_identical_final_calls() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"function first() {}
+function second() {}
+const before = first;
+console.log("same");
+const middle = 1;
+const after = second;
+console.log("same");
+export { first, second, before, middle, after };
+"#,
+        vec![logical_module_with_anon_alpha(
+            "selected",
+            &[Member::renamed("Store", "first"), Member::new("middle")],
+            &[r#"const anchor = Store;
+console.log("same");"#],
+        )],
+    ));
+
+    let selected = fs::read_to_string(fixture.out_root.join("static/app/modules/selected.js"))
+        .expect("read selected module");
+    let call = selected
+        .find(r#"console.log("same")"#)
+        .expect("selected call");
+    let middle = selected.find("const middle = 1").expect("selected middle");
+    assert!(call < middle, "selected the call after middle: {selected}");
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/selected.js",
+        &["function Store", "const middle", r#"console.log("same")"#],
+        &["const before", "const after", "function second"],
+    );
+    assert_preserved_entry_output(&fixture, "same\nsame\n");
+}
+
+#[test]
+fn overlapping_context_windows_cannot_claim_one_final_statement_twice() {
+    let outcome = expect_selector_outcome(
+        FixtureOpts::new(
+            r#"const first = "first";
+const second = "second";
+console.log("same");
+export { first, second };
+"#,
+            vec![
+                logical_module_with_anon_alpha(
+                    "wide",
+                    &[],
+                    &[r#"const a = "first";
+const b = "second";
+console.log("same");"#],
+                ),
+                logical_module_with_anon_alpha(
+                    "narrow",
+                    &[],
+                    &[r#"const b = "second";
+console.log("same");"#],
+                ),
+            ],
+        ),
+        "unsatisfiable",
+        "wide",
+    );
+    assert_eq!(outcome["outcome"]["kind"], "unsatisfiable");
+}
+
+#[test]
+fn anonymous_context_requires_adjacency() {
+    let outcome = expect_selector_outcome(
+        FixtureOpts::new(
+            r#"const first = "first";
+const spacer = 0;
+console.log("same");
+export { first, spacer };
+"#,
+            vec![logical_module_with_anon_alpha(
+                "selected",
+                &[],
+                &[r#"const anchor = "first";
+console.log("same");"#],
+            )],
+        ),
+        "no_match",
+        "selected",
+    );
+    assert_eq!(
+        outcome["selector_preview"],
+        "const anchor = \"first\"; console.log(\"same\");"
+    );
+}
+
+#[test]
+fn anonymous_context_requires_an_anonymous_final_statement() {
+    expect_rejection_containing_all(
+        FixtureOpts::new(
+            r#"const first = "first";
+const second = "second";
+export { first, second };
+"#,
+            vec![logical_module_with_anon_alpha(
+                "selected",
+                &[],
+                &[r#"const anchor = "first";
+const target = "second";"#],
+            )],
+        ),
+        &["invalid", "final statement declares a binding"],
+    );
+}
+
+#[test]
+fn anonymous_context_rejects_a_declaring_candidate_behind_a_hole() {
+    expect_rejection_containing_all(
+        FixtureOpts::new(
+            r#"const first = "first";
+const second = "second";
+export { first, second };
+"#,
+            vec![logical_module_with_anon_alpha(
+                "selected",
+                &[],
+                &[r#"const anchor = "first";
+STMT_TARGET;"#],
+            )],
+        ),
+        &[
+            "invalid",
+            "final statement at body index 1 declares a binding",
+        ],
+    );
+}
+
+#[test]
+fn exact_anonymous_match_remains_one_statement() {
+    expect_rejection_containing_all(
+        FixtureOpts::new(
+            r#"const first = "first";
+console.log("same");
+export { first };
+"#,
+            vec![logical_module_with_anon(
+                "selected",
+                &[],
+                &[r#"const first = "first";
+console.log("same");"#],
+            )],
+        ),
+        &[
+            "invalid",
+            "exact `match` must contain exactly one top-level statement",
+        ],
+    );
+}
+
 // Round-trip pin for anonymous-statement member support.
 //
 // Today the spec only addresses named bindings via

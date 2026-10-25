@@ -70,6 +70,13 @@ operators, member property names, object keys and tree structure are
 significant. Relational selectors (`cross_ref`, `reads_member`, …) match through
 facts derived from the chunk, not through templates.
 
+An `anonymous_statements[].source_match.match` may contain a contiguous run of
+top-level statements. The final statement is the only claimed place; preceding
+statements constrain the match through their shape and free identifiers and may
+be owned by other entities. The context form requires an anonymous final
+statement. A bare `anonymous_statements[].match` contains exactly one statement.
+A context window does not use a top-level `STMT_LIST` hole.
+
 ## Local selector explanations
 
 `inspect-source` labels the parsed file's top-level statements and original

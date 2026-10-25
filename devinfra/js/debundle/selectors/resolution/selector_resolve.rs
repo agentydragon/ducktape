@@ -1056,36 +1056,43 @@ impl<'c, 'm> Resolve<'c, 'm> {
     ) -> Result<Collected, Rejection> {
         let statement = &self.modules[module_index].anonymous_statements[position];
         let places = self.chunk.places();
-        let rows =
-            self.chunk
-                .matcher()
-                .anonymous_group_candidates(&self.ids[module_index], &statement.selector)
-                .map_err(|error| Rejection::invalid(MATCHER_ERROR, &error))?
-                .into_iter()
-                .map(|group| {
-                    let [body_idx] = group.body_indices.as_slice() else {
-                        bail!(
-                            "anonymous source_match candidate group has {} statements; projected \
-                         lowering currently supports one statement per anonymous claim",
-                            group.body_indices.len()
-                        );
-                    };
-                    let owner = places.owner_by_body.get(body_idx).copied().with_context(|| {
+        let rows = self
+            .chunk
+            .matcher()
+            .anonymous_group_candidates(&self.ids[module_index], &statement.selector)
+            .map_err(|error| Rejection::invalid(MATCHER_ERROR, &error))?
+            .into_iter()
+            .map(|group| {
+                let body_idx = group.body_indices.last().with_context(
+                    || "anonymous source_match candidate has no final statement to claim",
+                )?;
+                if group.body_indices.len() > 1
+                    && places
+                        .owner_by_body_and_binding
+                        .keys()
+                        .any(|(index, _)| index == body_idx)
+                {
+                    bail!(
+                        "anonymous source_match final statement at body index {body_idx} \
+                             declares a binding and cannot be claimed as anonymous"
+                    );
+                }
+                let owner = places.owner_by_body.get(body_idx).copied().with_context(|| {
                     format!(
-                        "anonymous source_match candidate at body index {body_idx} does not \
-                         map to an owner-graph node",
+                        "anonymous source_match final statement at body index {body_idx} does not \
+                         map to an assignable owner-graph node",
                     )
                 })?;
-                    Ok(CollectedRow {
-                        places: vec![Place {
-                            owner,
-                            binding: None,
-                        }],
-                        free_bindings: group.free_bindings,
-                    })
+                Ok(CollectedRow {
+                    places: vec![Place {
+                        owner,
+                        binding: None,
+                    }],
+                    free_bindings: group.free_bindings,
                 })
-                .collect::<Result<Vec<_>>>()
-                .map_err(|error| Rejection::invalid(OWNER_MAPPING_ERROR, &error))?;
+            })
+            .collect::<Result<Vec<_>>>()
+            .map_err(|error| Rejection::invalid(OWNER_MAPPING_ERROR, &error))?;
         Ok(Collected {
             module_index,
             free: template_free_identifiers(&statement.selector),
