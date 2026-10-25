@@ -12,7 +12,7 @@ import httpx
 import pytest
 import pytest_bazel
 import uvicorn
-from pydantic import ValidationError
+from pydantic import AnyHttpUrl, ValidationError
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
@@ -153,7 +153,7 @@ def test_trace_search_settings_load_from_the_deployment_config(monkeypatch: pyte
     monkeypatch.setenv("AGENTPLANE_CONFIG_FILE", str(config))
 
     assert Settings(_cli_parse_args=[]).trace_search == TraceSearchSettings(
-        grafana_base_url="https://grafana.test.invalid",
+        grafana_base_url=AnyHttpUrl("https://grafana.test.invalid"),
         tempo_datasource_uid="tempo",
         deployment_environment="agentplane-staging",
     )

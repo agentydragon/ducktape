@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from pydantic import AnyHttpUrl
+
 from agentplane.app.action_federation_settings import ActionFederationSettings
 from agentplane.app.presets import SandboxPreset, ThreadPreset
 from agentplane.app.sandbox_models import NewSandboxDefaults
@@ -123,7 +125,7 @@ def config(
         auto_title_on_first_message_default=auto_title_on_first_message_default,
         title_generation=title_generation,
         trace_search=TraceSearchSettings(
-            grafana_base_url=GRAFANA_BASE_URL,
+            grafana_base_url=AnyHttpUrl(GRAFANA_BASE_URL),
             tempo_datasource_uid=TEMPO_DATASOURCE_UID,
             deployment_environment=namespace,
         ),

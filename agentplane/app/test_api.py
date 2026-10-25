@@ -16,6 +16,7 @@ import pytest_bazel
 from fastapi import FastAPI
 from google.protobuf.json_format import MessageToDict
 from google.protobuf.timestamp_pb2 import Timestamp
+from pydantic import AnyHttpUrl
 
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import _require_operator_login, create_app, upstream_http_error
@@ -280,7 +281,9 @@ async def test_frontend_config_serves_optional_trace_search_settings(client: htt
     assert (await client.get("/frontend-config")).json() == {"trace_search": None}
 
     app.state.services.trace_search = TraceSearchSettings(
-        grafana_base_url="https://grafana.test.invalid", tempo_datasource_uid="tempo", deployment_environment="test"
+        grafana_base_url=AnyHttpUrl("https://grafana.test.invalid"),
+        tempo_datasource_uid="tempo",
+        deployment_environment="test",
     )
     assert (await client.get("/frontend-config")).json() == {
         "trace_search": {
