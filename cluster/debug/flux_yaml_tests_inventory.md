@@ -1,6 +1,6 @@
 # Tests that read Flux manifest trees
 
-Snapshot of live `devel` at `dde6abdbaa5d51a9688a378d6c7827193287b69f`, confirmed through Agentplane's GitHub Actions. Rows are Bazel test targets; a target may contain several test cases. This report changes documentation only.
+Snapshot of live `devel` at `532da491ed47eb532d1b68598d5efa3f1a61deb0`, confirmed through Agentplane's GitHub Actions. Rows are Bazel test targets; a target may contain several test cases. This report changes documentation only.
 
 Tests should read the source they are meant to validate. Most cdk8s behavior can be tested from focused constructs or in-memory synth output. Keep the cdk8s parity check against the files Flux consumes until cutover; that one relation does not make a shared rendered input necessary for other tests. Whole-graph checks belong with the owner of the Flux source graph.
 
@@ -23,7 +23,7 @@ Tests should read the source they are meant to validate. Most cdk8s behavior can
 | `cluster/cdk8s/haku_ci/test_secret_contract.py`; `//cluster/cdk8s/haku_ci:test_secret_contract` | Reads the authored `cluster/k8s/haku/forgejo-tea/haku-forgejo-tea.sops.yaml`. Checks Secret name/key against the runner model and verifies the Reflector annotations target the KEDA namespace. | b | Keep as a narrow source-Secret contract beside the Haku CI runner model; do not load a rendered copy or the whole graph. | No specific regression or issue is cited. |
 | `cluster/validation/test_cluster_integration.py`; `//cluster/validation:test_cluster_integration` | Through `conftest.py`, `parse_cluster`, and its Bazel data closure, reads the complete `cluster/k8s/` and `cluster/generated/` trees plus package-local manifest groups. Checks full-graph build coverage, dependencies, health checks, credential ownership, image/namespace and ImageRepository/Receiver relations, image-policy markers, Flux rewrite and bootstrap constraints, SOPS decryption, orphan files, Agentplane namespace-owner/delegation dependencies, and absence of retired readers. | b (mixed with c) | Keep complete-graph assertions with the Flux graph owner. Extract an assertion only when a focused source-model test proves the same contract; the Agentplane grant/model checks already live at the cdk8s layer. | The image-policy marker check cites [#3882](https://github.com/agentydragon/ducktape/pull/3882), where a stale marker stopped an image from updating. The Flux rewrite check records three formatting regressions in its source comment. |
 | `cluster/validation/test_flux_build.py`; `//cluster/validation:test_flux_build` | Uses the root `cluster/k8s/kustomization.yaml` and Bazel data for the referenced hand-written and generated trees, including package-local groups. Runs `flux build` and asserts the complete source graph builds and contains Kustomization and GitRepository resources. | c | Keep with the source graph owner and run against that graph's source tree. This is a graph build check, not a consumer of a shared CI render. | No specific regression or issue is cited. |
-| `cluster/validation/test_generator_namespace.py`; `//cluster/validation:test_generator_namespace` | Uses the root Kustomization as a runfiles anchor and reads hand-written `kustomization.yaml` files under `cluster/k8s/` plus central Flux Kustomizations. Checks active Flux targets using ConfigMap/Secret generators declare a namespace locally or through `targetNamespace`; it skips generated-root files before reading their contents. The target still has an unnecessary `//cluster:generated_manifests` data dependency. | b | Keep the source-declaration check with the hand-written Kustomizations. Remove the unused generated-manifests data dependency in a small cleanup; test cdk8s-generated declarations at the model layer. | The test comment records a three-hour public-coder 502 outage on 2026-07-29 after a generator was applied without a namespace. |
+| `cluster/validation/test_generator_namespace.py`; `//cluster/validation:test_generator_namespace` | Uses the root Kustomization as a runfiles anchor and scans hand-written `kustomization.yaml` files under `cluster/k8s/` plus central Flux Kustomizations. Checks active Flux targets using ConfigMap/Secret generators declare a namespace locally or through `targetNamespace`. It enumerates manifest roots but skips generated-root entries before opening them; its data deps include only the hand-written roots it reads. | b | Keep the source-declaration check with the hand-written Kustomizations. Test cdk8s-generated declarations at the model layer. | The test comment records a three-hour public-coder 502 outage on 2026-07-29 after a generator was applied without a namespace. |
 | `cluster/validation/test_public_coder_clickhouse_reader_contract.py`; `//cluster/validation:test_public_coder_clickhouse_reader_contract` | Reads the authored `cluster/k8s/clickhouse/cluster/public-coder-credentials.sops.yaml`. Checks Secret name, namespace, password key, and absence of Reflector annotations against `cluster.cdk8s.clickhouse.client` constants. | b | Keep the exact Secret source contract with the ClickHouse client model; the target is a candidate to move from `cluster/validation` into `cluster/cdk8s/clickhouse`. Do not load a rendered Secret or whole cluster. | No specific regression or issue is cited. |
 
 Counts assign one primary class to each Bazel target. The integration target is mixed because it checks artifact relations and rendered policy/graph properties; the generator target is also d.
@@ -37,7 +37,7 @@ Counts assign one primary class to each Bazel target. The integration target is 
 | e — other | 0 |
 | **Total** | **8** |
 
-Three targets read generated Flux output as part of their actual work: `test_generate_manifests`, `test_cluster_integration`, and `test_flux_build`. `test_generator_namespace` carries the generated tree in runfiles but skips the generated root before opening YAML; its data edge can be dropped. The four focused source contracts read only Authentik blueprints, Haku's SMTP config, the Haku CI Secret, or the ClickHouse Secret.
+Three targets read generated Flux output as part of their actual work: `test_generate_manifests`, `test_cluster_integration`, and `test_flux_build`. `test_generator_namespace` enumerates manifest roots but skips generated-root entries before opening YAML; its data deps contain only the hand-written inputs it reads. The four focused source contracts read only Authentik blueprints, Haku's SMTP config, the Haku CI Secret, or the ClickHouse Secret.
 
 ## Searches and completeness
 
@@ -49,6 +49,7 @@ repo:agentydragon/ducktape cluster/k8s
 repo:agentydragon/ducktape cluster/k8s language:Python
 repo:agentydragon/ducktape cluster/generated path:cluster/validation
 repo:agentydragon/ducktape cluster/k8s path:cluster/validation
+repo:agentydragon/ducktape cluster/k8s path:cluster/cdk8s
 repo:agentydragon/ducktape generated_manifests path:cluster
 repo:agentydragon/ducktape cluster_all_files path:cluster
 repo:agentydragon/ducktape manifest_files path:cluster
@@ -59,12 +60,12 @@ repo:agentydragon/ducktape cluster/k8s OR cluster/generated language:TypeScript
 repo:agentydragon/ducktape cluster/k8s OR cluster/generated language:Shell
 ```
 
-The `cluster/generated` query returned 59 results; the matching test sources were `test_cluster`, `test_generate_manifests`, and `test_cluster_integration`. The Python `cluster/k8s` query returned 93 results. I followed candidates to their opens and Bazel targets, including the `generated_manifests` and `cluster_all_files` data edges, package-boundary filegroups, and shared loaders. No Go, TypeScript, or shell source matched either tree.
+The broad `cluster/generated` query returned 636 matches, including documentation, comments, and archived `props/specimens` copies, so I used it only to find candidates. Narrower searches returned 3 matches for `cluster/generated path:cluster/validation`, 16 for `cluster/k8s path:cluster/validation`, 61 for `cluster/k8s path:cluster/cdk8s`, 3 for `generated_manifests path:cluster`, and 8 for `cluster_all_files path:cluster`. These counts are GitHub search matches, not unique readers. I followed candidates to their opens and Bazel targets, including data edges, package-boundary filegroups, and shared loaders. The current validation BUILD has generated-tree data edges only for `test_cluster_integration` and `test_flux_build`; `test_generator_namespace` has no generated-tree data dependency. No Go, TypeScript, or shell source matched either tree.
 
 For reproduction from a local checkout containing the snapshot commit, these broad `git grep` scans include the test suffixes and runfiles/helper names:
 
 ```sh
-git grep -n -E 'cluster/(k8s|generated)|manifest_files\(|k8s_dir|generated_dir|GENERATED_ROOT|repo_root|_main/cluster/(k8s|generated)/' dde6abdbaa5d51a9688a378d6c7827193287b69f -- \
+git grep -n -E 'cluster/(k8s|generated)|manifest_files\(|k8s_dir|generated_dir|GENERATED_ROOT|repo_root|_main/cluster/(k8s|generated)/' 532da491ed47eb532d1b68598d5efa3f1a61deb0 -- \
   ':(glob)**/test*.py' ':(glob)**/*_test.py' \
   ':(glob)**/*_test.go' ':(glob)**/*.test.ts' ':(glob)**/*.spec.ts' \
   ':(glob)**/*_test.ts' ':(glob)**/*_test.tsx' \
@@ -74,21 +75,21 @@ git grep -n -E 'cluster/(k8s|generated)|manifest_files\(|k8s_dir|generated_dir|G
 The Bazel data-edge search includes package-boundary globs and named filegroups:
 
 ```sh
-git grep -n -E 'cluster/(k8s|generated)|generated_manifests|parked_generated_manifests|cluster_all_files|flux_bootstrap_files|flux_system_files|authentik_blueprints|agentplane-staging:manifests|proxy_manifest' dde6abdbaa5d51a9688a378d6c7827193287b69f -- \
+git grep -n -E 'cluster/(k8s|generated)|generated_manifests|parked_generated_manifests|cluster_all_files|flux_bootstrap_files|flux_system_files|authentik_blueprints|agentplane-staging:manifests|proxy_manifest' 532da491ed47eb532d1b68598d5efa3f1a61deb0 -- \
   ':(glob)**/BUILD.bazel' ':(glob)**/BUILD' ':(glob)**/*.bzl' ':(exclude,glob)props/**'
 ```
 
 I traced shared loaders and anchors through `cluster/validation/conftest.py`, `cluster/validation/cluster.py`, `cluster/cdk8s/manifest_roots.py`, and `util.bazel.runfiles.get_required_path`:
 
 ```sh
-git grep -n -E '(_main/)?cluster/(k8s|generated)/|manifest_files\(|GENERATED_ROOT|generated_dir|k8s_dir|BLUEPRINTS_DIR_ANCHOR|proxy_manifest' dde6abdbaa5d51a9688a378d6c7827193287b69f -- \
+git grep -n -E '(_main/)?cluster/(k8s|generated)/|manifest_files\(|GENERATED_ROOT|generated_dir|k8s_dir|BLUEPRINTS_DIR_ANCHOR|proxy_manifest' 532da491ed47eb532d1b68598d5efa3f1a61deb0 -- \
   cluster/validation cluster/cdk8s cluster/rotators agentplane/system_tests
 ```
 
 The equivalent local scan for non-Python test files is:
 
 ```sh
-git grep -n -E 'cluster/(k8s|generated)|manifest_files\(|k8s_dir|generated_dir|GENERATED_ROOT' dde6abdbaa5d51a9688a378d6c7827193287b69f -- \
+git grep -n -E 'cluster/(k8s|generated)|manifest_files\(|k8s_dir|generated_dir|GENERATED_ROOT' 532da491ed47eb532d1b68598d5efa3f1a61deb0 -- \
   ':(glob)**/*_test.go' ':(glob)**/*.test.ts' ':(glob)**/*.spec.ts' \
   ':(glob)**/*_test.ts' ':(glob)**/*_test.tsx' ':(glob)**/*test*.sh' ':(glob)**/*.bats' \
   ':(exclude,glob)props/**'
@@ -98,17 +99,17 @@ False positives were checked and excluded: `test_render_diff` creates temporary 
 
 ## Recommended next directions
 
-The first two items are small candidate PRs. Keep each independent so it can be reviewed on its own. The rest are focused coverage reviews or cutover work.
+The ten current follow-up directions are:
 
-1. **Drop the unused generated-tree data edge.** Remove `//cluster:generated_manifests` from `//cluster/validation:test_generator_namespace`; preserve its hand-written Kustomization check.
-2. **Place the ClickHouse source contract with its model.** Move `test_public_coder_clickhouse_reader_contract` into `cluster/cdk8s/clickhouse`, retaining only its authored Secret input from the source package.
-3. **Test Forgejo ImageRepository/Receiver wiring in the source model.** Add focused cdk8s coverage for the shared CI image roster and Receiver references. Remove the duplicated whole-graph assertion only if the focused tests cover both directions.
-4. **Assess Forgejo image credential coverage.** Check whether focused cdk8s synthesis covers every workload and reflected pull Secret in `test_forgejo_image_namespaces_are_reflected`. Keep residual graph coverage for Helm or non-cdk8s workloads.
+1. **Place the ClickHouse source contract with its model.** Move `test_public_coder_clickhouse_reader_contract` into `cluster/cdk8s/clickhouse`, retaining only its authored Secret input from the source package.
+2. **Test Forgejo ImageRepository/Receiver wiring in the source model.** `test_image_automation_webhook_consistency` checks that every rendered GHCR ImageRepository is in the Receiver and that the Receiver names no missing repository. Add focused cdk8s coverage for this relation; the `forgejo_registry` package currently has no test target. Remove the whole-graph assertion only if the focused test covers both directions.
+3. **Assess Forgejo image credential coverage.** Check whether focused cdk8s synthesis covers every workload and reflected pull Secret in `test_forgejo_image_namespaces_are_reflected`. Keep residual graph coverage for Helm or non-cdk8s workloads.
+4. **Review external credential ownership coverage.** Compare `test_external_credential_ownership` with focused model tests; move only relations whose source and consumer are cdk8s-owned, keeping hand-written Secret and Flux boundary checks with the graph.
 5. **Compare Goldilocks checks for overlap.** `test_goldilocks_namespace_labels` validates the rendered namespace set; compare it with namespace-constructor coverage and remove only proven duplication.
 6. **Compare Cilium policy checks with synth-time validation.** `test_cilium_policy_rules_nonempty` also sees hand-written or post-Kustomize resources; retain that coverage unless the source-model tests cover those inputs.
-7. **Review controller health and retry checks individually.** Their predicates concern Flux Kustomization specs and applied resources. Move an assertion only when source-model tests cover every relevant Kustomization.
-8. **Keep image-marker and rewrite-format checks with Flux source.** They inspect YAML comments and exact source text that Flux rewrites. Move them with the authored Flux tree when its owner changes.
+7. **Review controller health and retry checks individually.** `test_controller_resources_have_health_checks` and `test_retry_policy` inspect Flux Kustomization specs and applied resources. Move an assertion only when source-model tests cover every relevant Kustomization.
+8. **Keep image-marker and rewrite-format checks with Flux source.** `test_image_policy_markers_resolve` and `test_files_flux_rewrites_use_block_style` inspect YAML comments and exact source text that Flux rewrites. Move them with the authored Flux tree when its owner changes.
 9. **Keep graph-structure checks with the graph owner.** `test_flux_build`, dependency resolution, orphan detection, SOPS decryption, and namespace-owner/delegation dependencies require the actual Flux graph.
 10. **At cutover, remove only the parity comparison.** Keep generator invariants on in-memory output and move graph checks to the Flux source owner's pipeline.
 
-The remaining ownership question is where authored inputs under `cluster/k8s/`—blueprints, SOPS Secrets, SMTP config, and hand-written Kustomizations—will live after Flux delivery leaves `devel`. Their contract tests should follow those source inputs. The answer affects package ownership, not the two immediately actionable trim candidates above.
+The remaining ownership question is where authored inputs under `cluster/k8s/`—blueprints, SOPS Secrets, SMTP config, and hand-written Kustomizations—will live after Flux delivery leaves `devel`. Their contract tests should follow those source inputs. This does not block the focused model and test-ownership follow-ups above.
