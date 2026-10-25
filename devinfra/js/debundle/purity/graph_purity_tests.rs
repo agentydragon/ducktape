@@ -217,6 +217,14 @@ fn plain_data_const_object_literal_is_tracked() {
 }
 
 #[test]
+fn plain_data_alias_member_mutation_disqualifies_source() {
+    assert!(!is_plain_data(
+        "const lookup = { key: 'token' }, alias = lookup; alias.key = () => later;",
+        "lookup",
+    ));
+}
+
+#[test]
 fn plain_data_const_array_literal_is_tracked() {
     assert!(is_plain_data("const TA = [1, 2, 3];", "TA"));
 }

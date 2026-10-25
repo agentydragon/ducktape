@@ -16,6 +16,7 @@ impl SetIterableProof {
         body: &[TopLevelItemView<'_>],
         shadowed: &BTreeSet<&'static str>,
         flow: &ChunkValueFlow,
+        plain_data_bindings: &[String],
     ) -> Self {
         if shadowed.contains("Set") {
             return Self::default();
@@ -73,12 +74,152 @@ impl SetIterableProof {
                 constructor_starts.insert(start);
             }
         }
+        constructor_starts.extend(proven_static_member_sets(
+            body,
+            shadowed,
+            flow,
+            plain_data_bindings,
+        ));
         Self { constructor_starts }
     }
 
     pub(crate) fn contains_constructor(&self, span: Span) -> bool {
         self.constructor_starts.contains(&span.lo.0)
     }
+}
+
+/// A chunk-top `const` object literal has an own primitive data property at
+/// each recorded key. `PlainData` separately proves that its identity neither
+/// escapes nor receives writes/accessors elsewhere in the chunk. Both proofs
+/// are needed: a pure member read can still return a callback or iterator.
+fn primitive_object_properties(
+    body: &[TopLevelItemView<'_>],
+    plain_data_bindings: &[String],
+) -> BTreeMap<u32, BTreeSet<String>> {
+    let plain_names: BTreeSet<&str> = plain_data_bindings.iter().map(String::as_str).collect();
+    let mut objects = BTreeMap::new();
+    for item in body {
+        let ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) = item.as_module_item() else {
+            continue;
+        };
+        if var.kind != VarDeclKind::Const {
+            continue;
+        }
+        for decl in &var.decls {
+            let Pat::Ident(binding) = &decl.name else {
+                continue;
+            };
+            if !plain_names.contains(binding.id.sym.as_ref()) {
+                continue;
+            }
+            let Some(Expr::Object(object)) = decl.init.as_deref().map(Expr::unwrap_parens) else {
+                continue;
+            };
+            let mut primitive_keys = BTreeSet::new();
+            let mut ordinary_shape = true;
+            for prop in &object.props {
+                let PropOrSpread::Prop(prop) = prop else {
+                    ordinary_shape = false;
+                    break;
+                };
+                let Prop::KeyValue(kv) = prop.as_ref() else {
+                    ordinary_shape = false;
+                    break;
+                };
+                let key = match &kv.key {
+                    PropName::Ident(name) => name.sym.to_string(),
+                    PropName::Str(name) => name.value.to_string_lossy().into_owned(),
+                    _ => {
+                        ordinary_shape = false;
+                        break;
+                    }
+                };
+                if key == "__proto__" {
+                    ordinary_shape = false;
+                    break;
+                }
+                // Later duplicate properties replace earlier ones.
+                if is_primitive_literal(&kv.value) {
+                    primitive_keys.insert(key);
+                } else {
+                    primitive_keys.remove(&key);
+                }
+            }
+            if ordinary_shape {
+                objects.insert(object.span.lo.0, primitive_keys);
+            }
+        }
+    }
+    objects
+}
+
+fn is_primitive_literal(expr: &Expr) -> bool {
+    matches!(
+        expr.unwrap_parens(),
+        Expr::Lit(Lit::Str(_) | Lit::Num(_) | Lit::Bool(_) | Lit::Null(_) | Lit::BigInt(_))
+    )
+}
+
+fn proven_static_member_sets(
+    body: &[TopLevelItemView<'_>],
+    shadowed: &BTreeSet<&'static str>,
+    flow: &ChunkValueFlow,
+    plain_data_bindings: &[String],
+) -> BTreeSet<u32> {
+    let objects = primitive_object_properties(body, plain_data_bindings);
+    if objects.is_empty() {
+        return BTreeSet::new();
+    }
+    let mut proven = BTreeSet::new();
+    for item in body {
+        let ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) = item.as_module_item() else {
+            continue;
+        };
+        for decl in &var.decls {
+            let Some(Expr::New(new)) = decl.init.as_deref().map(Expr::unwrap_parens) else {
+                continue;
+            };
+            if !is_standard_set_constructor(&new.callee, shadowed, flow) {
+                continue;
+            }
+            let Some([ExprOrSpread { spread: None, expr }]) = new.args.as_deref() else {
+                continue;
+            };
+            let Expr::Array(array) = expr.unwrap_parens() else {
+                continue;
+            };
+            let mut has_member = false;
+            let all_primitive = array.elems.iter().all(|element| {
+                let Some(ExprOrSpread { spread: None, expr }) = element else {
+                    return false;
+                };
+                match expr.unwrap_parens() {
+                    Expr::Member(member) => {
+                        has_member = true;
+                        let Expr::Ident(_) = member.obj.unwrap_parens() else {
+                            return false;
+                        };
+                        let MemberProp::Ident(prop) = &member.prop else {
+                            return false;
+                        };
+                        let mut receiver_values = flow.values_of_expr(&member.obj).into_iter();
+                        let Some(ValueOrigin::Object(object)) = receiver_values.next() else {
+                            return false;
+                        };
+                        receiver_values.next().is_none()
+                            && objects
+                                .get(&object)
+                                .is_some_and(|keys| keys.contains(prop.sym.as_ref()))
+                    }
+                    other => is_primitive_literal(other),
+                }
+            });
+            if has_member && all_primitive {
+                proven.insert(new.span.lo.0);
+            }
+        }
+    }
+    proven
 }
 
 #[derive(Debug)]
@@ -214,5 +355,61 @@ impl Visit for ArrayUseScanner<'_> {
             self.has_dynamic_scope = true;
         }
         node.visit_children_with(self);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::facts::{compute_shadowed_globals, top_level_item_views};
+    use crate::purity::collect_plain_data_bindings;
+    use raw_js_test_support::parse;
+
+    fn proves_only_new(src: &str) -> bool {
+        let module = parse(src);
+        let body = top_level_item_views(&module.body);
+        let shadowed = compute_shadowed_globals(&body);
+        let flow = ChunkValueFlow::analyze(&body);
+        let plain_data = collect_plain_data_bindings(&body, &shadowed, &flow);
+        let proof = SetIterableProof::analyze(&body, &shadowed, &flow, &plain_data);
+        struct NewSpans(Vec<Span>);
+        impl Visit for NewSpans {
+            fn visit_new_expr(&mut self, node: &NewExpr) {
+                if matches!(node.callee.unwrap_parens(), Expr::Ident(ident) if ident.sym.as_ref() == "Set")
+                {
+                    self.0.push(node.span);
+                }
+                node.visit_children_with(self);
+            }
+        }
+        let mut spans = NewSpans(Vec::new());
+        module.visit_with(&mut spans);
+        assert_eq!(spans.0.len(), 1, "fixture needs one constructor");
+        proof.contains_constructor(spans.0[0])
+    }
+
+    #[test]
+    fn static_member_proof_requires_unchanged_own_primitive_value() {
+        assert!(proves_only_new(
+            "const lookup = { key: 'token', other: 7 }, unique = new Set([lookup.key]);"
+        ));
+        assert!(!proves_only_new(
+            "const lookup = { key: () => later }, unique = new Set([lookup.key]);"
+        ));
+        assert!(!proves_only_new(
+            "const lookup = { key: 'token', key: () => later }, unique = new Set([lookup.key]);"
+        ));
+        assert!(!proves_only_new(
+            "const lookup = { get key() { return 'token'; } }, unique = new Set([lookup.key]);"
+        ));
+        assert!(!proves_only_new(
+            "const lookup = new Proxy({ key: 'token' }, {}), unique = new Set([lookup.key]);"
+        ));
+        assert!(!proves_only_new(
+            "const lookup = { key: 'token' }, alias = lookup; alias.key = () => later; const unique = new Set([lookup.key]);"
+        ));
+        assert!(!proves_only_new(
+            "const lookup = { key: 'token' }; function make(lookup) { return new Set([lookup.key]); }"
+        ));
     }
 }
