@@ -61,9 +61,71 @@ fn three_argument_metadata_keeps_getters_deferred_and_inheritance_intact() {
     let fixture = run_fixture(
         FixtureOpts::new(
             SOURCE,
-            modules(MemberEffect::TypescriptMetadataDecorateHelper),
+            modules(MemberEffect::TypescriptMetadataDecorateHelperThreeArgs),
         )
         .with_extra_chunks(&[("static/peer", PROVIDER)]),
     );
     assert_preserved_entry_output(&fixture, "42 read,own 1 read\n");
+}
+
+#[test]
+fn earlier_effects_do_not_assert_three_argument_metadata_timing() {
+    for effect in [
+        MemberEffect::Default,
+        MemberEffect::TypescriptDecorateHelper,
+        MemberEffect::TypescriptMetadataDecorateHelper,
+    ] {
+        expect_atomic_conflict_rejection(
+            FixtureOpts::new(SOURCE, modules(effect))
+                .with_extra_chunks(&[("static/peer", PROVIDER)]),
+            &["controllers/child", "values/later"],
+            &["eager_use", "sequenced"],
+        );
+    }
+}
+
+#[test]
+fn three_argument_metadata_mutations_stay_with_the_target() {
+    let mut claimed = modules(MemberEffect::TypescriptMetadataDecorateHelperThreeArgs);
+    claimed[1] = logical_module("controllers/child", &[Member::new("Child")]);
+    claimed.push(logical_module_with_anon(
+        "metadata/install",
+        &[],
+        &[
+            "decorate([inheritAnnotation], Child.prototype, \"read\");",
+            "decorate([annotate], Child.prototype, \"own\");",
+        ],
+    ));
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(SOURCE, claimed).with_extra_chunks(&[("static/peer", PROVIDER)]),
+        &["controllers/child", "metadata/install"],
+        &["local_effect"],
+    );
+}
+
+#[test]
+fn unsupported_three_argument_metadata_shapes_remain_opaque() {
+    let original = "decorate([inheritAnnotation], Child.prototype, \"read\");";
+    for unsupported in [
+        "decorate([inheritAnnotation], Child.prototype, \"read\", 1);",
+        "decorate([... [inheritAnnotation]], Child.prototype, \"read\");",
+        "decorate([({ inheritAnnotation }).inheritAnnotation], Child.prototype, \"read\");",
+        "decorate([inheritAnnotation], Child.prototype, [\"read\"][0]);",
+    ] {
+        let source = SOURCE.replace(original, unsupported);
+        let mut claimed = modules(MemberEffect::TypescriptMetadataDecorateHelperThreeArgs);
+        claimed[1] = logical_module_with_anon(
+            "controllers/child",
+            &[Member::new("Child")],
+            &[
+                unsupported,
+                "decorate([annotate], Child.prototype, \"own\");",
+            ],
+        );
+        expect_atomic_conflict_rejection(
+            FixtureOpts::new(&source, claimed).with_extra_chunks(&[("static/peer", PROVIDER)]),
+            &["controllers/child", "values/later"],
+            &["eager_use", "sequenced"],
+        );
+    }
 }

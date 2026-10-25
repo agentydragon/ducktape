@@ -367,6 +367,18 @@ all supported applications of the helper, not just a single call. Computed
 keys, chained members, spreads, and local providers remain conservative.
 The existing bare-identifier helper effect does not acquire member support.
 
+`effect: typescript_metadata_decorate_helper_three_args` explicitly asserts
+the same metadata-only behavior for
+`helper([bare identifiers], LocalClass.prototype, literalStringKey)`.
+The helper determines the descriptor without a fourth kind argument. All
+helper branches and supplied decorators must satisfy the contract above;
+reading and restoring an ordinary own descriptor must preserve its behavior.
+For a subclass target, inherited metadata must also be ordinary inert data:
+copying it may neither invoke accessors nor mutate the base class's metadata.
+Stable initialized identities, dependency closures and target co-location
+checks still apply. Extra arguments and unsupported decorator/key expressions
+remain conservative. Earlier effects retain their existing accepted shapes.
+
 ## Vendor split-brain evidence
 
 A partial vendor swap rejected for shared retained implementation reports both

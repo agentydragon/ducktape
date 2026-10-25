@@ -15,6 +15,7 @@ pub enum KnownEffect {
     TypescriptDecorateHelper,
     TypescriptMetadataDecorateHelper,
     TypescriptMetadataDecorateHelperWithMemberDecorators,
+    TypescriptMetadataDecorateHelperThreeArgs,
 }
 
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq)]

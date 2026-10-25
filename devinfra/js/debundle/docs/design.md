@@ -1539,6 +1539,12 @@ member names`, it projects onto each importing chunk's local binding
   certifies an ordinary stable data property with no proxy, accessor, alias
   mutation, or hidden reentry. Other member shapes retain the opaque path.
 
+  `effect: typescript_metadata_decorate_helper_three_args` uses the same
+  target-local mutation and synchronous dependency summary for an exact
+  three-argument property application. It requires a separate author assertion;
+  descriptor and inherited metadata safety remain author obligations. The
+  earlier four-argument assertion retains its existing shape checks.
+
   `chunk_analysis_options.<chunk>.local_property_effects` is the
   chunk-wide structural sibling of the same idea, for plain
   data-property annotation writes rather than helper calls: a whole

@@ -1695,6 +1695,9 @@ pub enum MemberEffect {
     /// Like `typescript_metadata_decorate_helper`, additionally admits an
     /// audited one-hop static member of an imported decorator provider.
     TypescriptMetadataDecorateHelperWithMemberDecorators,
+    /// The same metadata-only contract for standalone three-argument property
+    /// applications. The helper determines its descriptor without a kind argument.
+    TypescriptMetadataDecorateHelperThreeArgs,
 }
 
 #[cfg(test)]

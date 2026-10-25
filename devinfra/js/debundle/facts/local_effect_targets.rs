@@ -45,7 +45,8 @@ fn recognized_local_effect_target(
     match known_effects.get(callee.sym.as_ref())? {
         KnownEffect::TypescriptDecorateHelper => typescript_decorate_helper_target(call),
         KnownEffect::TypescriptMetadataDecorateHelper
-        | KnownEffect::TypescriptMetadataDecorateHelperWithMemberDecorators => {
+        | KnownEffect::TypescriptMetadataDecorateHelperWithMemberDecorators
+        | KnownEffect::TypescriptMetadataDecorateHelperThreeArgs => {
             context.metadata_decorate_target(item).cloned()
         }
     }
@@ -89,12 +90,16 @@ pub(crate) fn metadata_decorate_call(
         return None;
     };
     let helper = call_callee_ident(call)?;
-    let member_contract = match known_effects.get(helper.sym.as_ref()) {
-        Some(KnownEffect::TypescriptMetadataDecorateHelper) => false,
-        Some(KnownEffect::TypescriptMetadataDecorateHelperWithMemberDecorators) => true,
+    let effect = known_effects.get(helper.sym.as_ref())?;
+    let argument_count = match effect {
+        KnownEffect::TypescriptMetadataDecorateHelper
+        | KnownEffect::TypescriptMetadataDecorateHelperWithMemberDecorators => 4,
+        KnownEffect::TypescriptMetadataDecorateHelperThreeArgs => 3,
         _ => return None,
     };
-    if call.args.len() != 4 || call.args.iter().any(|arg| arg.spread.is_some()) {
+    let member_contract =
+        *effect == KnownEffect::TypescriptMetadataDecorateHelperWithMemberDecorators;
+    if call.args.len() != argument_count || call.args.iter().any(|arg| arg.spread.is_some()) {
         return None;
     }
     let Expr::Array(array) = call.args[0].expr.unwrap_parens() else {
@@ -135,8 +140,9 @@ pub(crate) fn metadata_decorate_call(
     if !matches!(&prototype.prop, MemberProp::Ident(property) if property.sym == "prototype")
         || !matches!(call.args[2].expr.unwrap_parens(), Expr::Lit(Lit::Str(key))
             if key.value.to_string_lossy() != "__proto__")
-        || !matches!(call.args[3].expr.unwrap_parens(), Expr::Lit(Lit::Num(kind))
-            if kind.value == 1.0 || kind.value == 2.0)
+        || (argument_count == 4
+            && !matches!(call.args[3].expr.unwrap_parens(), Expr::Lit(Lit::Num(kind))
+            if kind.value == 1.0 || kind.value == 2.0))
     {
         return None;
     }

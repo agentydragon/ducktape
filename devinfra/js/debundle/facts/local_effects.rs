@@ -45,6 +45,7 @@ impl LocalEffectContext {
                 effect,
                 KnownEffect::TypescriptMetadataDecorateHelper
                     | KnownEffect::TypescriptMetadataDecorateHelperWithMemberDecorators
+                    | KnownEffect::TypescriptMetadataDecorateHelperThreeArgs
             )
         }) {
             let changed_roots: BTreeSet<Id> = if member_contract {

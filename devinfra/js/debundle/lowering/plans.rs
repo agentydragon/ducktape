@@ -470,5 +470,8 @@ pub(super) fn known_effect_from_member_effect(effect: MemberEffect) -> Option<Kn
         MemberEffect::TypescriptMetadataDecorateHelperWithMemberDecorators => {
             Some(KnownEffect::TypescriptMetadataDecorateHelperWithMemberDecorators)
         }
+        MemberEffect::TypescriptMetadataDecorateHelperThreeArgs => {
+            Some(KnownEffect::TypescriptMetadataDecorateHelperThreeArgs)
+        }
     }
 }
