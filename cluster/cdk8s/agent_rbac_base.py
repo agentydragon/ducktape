@@ -163,81 +163,82 @@ def _add_sandbox(chart: Chart) -> None:
 
 
 def _add_cluster_roles(chart: Chart) -> None:
-    _cluster_role(
-        chart,
-        "cluster-diagnostics-reader",
-        _read(
-            "",
-            "nodes",
-            "namespaces",
-            "pods",
-            "pods/status",
-            "services",
-            "endpoints",
-            "persistentvolumeclaims",
-            "persistentvolumes",
-            "resourcequotas",
-            "limitranges",
-            "events",
-        ),
-        _read("apps", "deployments", "replicasets", "statefulsets", "daemonsets"),
-        _read("batch", "jobs", "cronjobs"),
-        _read("autoscaling", "horizontalpodautoscalers"),
-        _read("autoscaling.k8s.io", "verticalpodautoscalers"),
-        _read("policy", "poddisruptionbudgets"),
-        _read("networking.k8s.io", "ingresses", "ingressclasses", "networkpolicies"),
-        _read("storage.k8s.io", "storageclasses", "volumeattachments"),
-        _read("discovery.k8s.io", "endpointslices"),
-        _read("scheduling.k8s.io", "priorityclasses"),
-        _read("coordination.k8s.io", "leases"),
-        _read("apiextensions.k8s.io", "customresourcedefinitions"),
-        _read("cert-manager.io", "certificates", "certificaterequests", "issuers", "clusterissuers"),
-        _read(_RBAC_GROUP, "roles", "rolebindings", "clusterroles", "clusterrolebindings"),
-        # SubjectAccessReview / LocalSubjectAccessReview answer "could <subject> do <action>?"
-        # directly from the apiserver's authorizer -- the authoritative complement to reading the
-        # Role/binding graph above (e.g. "why is this ServiceAccount's pods/exec denied?"). This
-        # "create" grants nothing: a review persists no object and changes no state -- it is a
-        # read-only authorization probe. It reveals only what the RBAC objects readable above
-        # already imply, so it stays secret-free and adds no ability to act.
+    core_api_resources = (
+        "nodes",
+        "namespaces",
+        "pods",
+        "pods/status",
+        "services",
+        "endpoints",
+        "persistentvolumeclaims",
+        "persistentvolumes",
+        "resourcequotas",
+        "limitranges",
+        "events",
+    )
+    monitoring_resources = ("prometheuses", "alertmanagers", "servicemonitors", "podmonitors", "prometheusrules")
+    diagnostics_read_grants: tuple[tuple[str, tuple[str, ...]], ...] = (
+        # keep-sorted start
+        ("", core_api_resources),
+        ("admissionregistration.k8s.io", ("mutatingwebhookconfigurations", "validatingwebhookconfigurations")),
+        ("apiextensions.k8s.io", ("customresourcedefinitions",)),
+        ("apps", ("deployments", "replicasets", "statefulsets", "daemonsets")),
+        ("autoscaling", ("horizontalpodautoscalers",)),
+        ("autoscaling.k8s.io", ("verticalpodautoscalers",)),
+        ("batch", ("jobs", "cronjobs")),
+        ("cert-manager.io", ("certificates", "certificaterequests", "issuers", "clusterissuers")),
+        ("cilium.io", ("ciliumnetworkpolicies", "ciliumclusterwidenetworkpolicies")),
+        ("coordination.k8s.io", ("leases",)),
+        ("discovery.k8s.io", ("endpointslices",)),
+        ("dns.cav.enablers.ob", ("clusterzones", "clusterrrsets")),
+        ("external-secrets.io", ("externalsecrets",)),
+        ("externaldns.k8s.io", ("dnsendpoints",)),
+        ("gateway.networking.k8s.io", ("gateways", "httproutes", "tlsroutes", "grpcroutes")),
+        ("grafana.integreatly.org", ("grafanadashboards",)),
+        ("helm.toolkit.fluxcd.io", ("helmreleases",)),
+        ("image.toolkit.fluxcd.io", ("imagepolicies", "imagerepositories", "imageupdateautomations")),
+        ("infra.contrib.fluxcd.io", ("terraforms",)),
+        # TODO: Consider restoring a narrowly scoped way for agents to request Flux
+        # reconciliation, without granting arbitrary Kustomization patches.
+        ("kustomize.toolkit.fluxcd.io", ("kustomizations",)),
+        ("kyverno.io", ("clusterpolicies", "policies", "policyreports", "clusterpolicyreports")),
+        ("metrics.k8s.io", ("pods", "nodes")),
+        # No nodes/proxy, even get-only: the kubelet authorizes a WebSocket /exec handshake as
+        # `get` on nodes/proxy, so the grant is command execution in any pod on the node.
+        # Kubelet stats and metrics are scraped by Prometheus.
+        ("monitoring.coreos.com", monitoring_resources),
+        ("networking.k8s.io", ("ingresses", "ingressclasses", "networkpolicies")),
+        ("notification.toolkit.fluxcd.io", ("receivers", "alerts", "providers")),
+        ("opentofu.upbound.io", ("workspaces",)),
+        ("policy", ("poddisruptionbudgets",)),
+        ("postgresql.cnpg.io", ("clusters", "backups", "scheduledbackups")),
+        ("redis.redis.opstreelabs.in", ("redisreplications",)),
+        ("scheduling.k8s.io", ("priorityclasses",)),
+        ("source.toolkit.fluxcd.io", ("gitrepositories", "helmrepositories", "ocirepositories", "helmcharts")),
+        ("storage.k8s.io", ("storageclasses", "volumeattachments")),
+        ("trust.cert-manager.io", ("bundles",)),
+        (_RBAC_GROUP, ("roles", "rolebindings", "clusterroles", "clusterrolebindings")),
+        # keep-sorted end
+    )
+    diagnostics_rules: list[k8s.PolicyRule] = []
+    for api_group, resources in diagnostics_read_grants:
+        diagnostics_rules.append(_read(api_group, *resources))
+    # SubjectAccessReview / LocalSubjectAccessReview answer "could <subject> do <action>?"
+    # directly from the apiserver's authorizer -- the authoritative complement to reading the
+    # Role/binding graph above (e.g. "why is this ServiceAccount's pods/exec denied?"). This
+    # "create" grants nothing: a review persists no object and changes no state -- it is a
+    # read-only authorization probe. It reveals only what the RBAC objects readable above
+    # already imply, so it stays secret-free and adds no ability to act.
+    diagnostics_rules.append(
         k8s.PolicyRule(
             api_groups=["authorization.k8s.io"],
             resources=["subjectaccessreviews", "localsubjectaccessreviews"],
             verbs=["create"],
-        ),
-        _read("admissionregistration.k8s.io", "mutatingwebhookconfigurations", "validatingwebhookconfigurations"),
-        _read("source.toolkit.fluxcd.io", "gitrepositories", "helmrepositories", "ocirepositories", "helmcharts"),
-        _read("helm.toolkit.fluxcd.io", "helmreleases"),
-        # TODO: Consider restoring a narrowly scoped way for agents to request Flux
-        # reconciliation, without granting arbitrary Kustomization patches.
-        _read("kustomize.toolkit.fluxcd.io", "kustomizations"),
-        _read("metrics.k8s.io", "pods", "nodes"),
-        # No nodes/proxy, even get-only: the kubelet authorizes a WebSocket /exec handshake as
-        # `get` on nodes/proxy, so the grant is command execution in any pod on the node.
-        # Kubelet stats and metrics are scraped by Prometheus.
-        _read(
-            "monitoring.coreos.com",
-            "prometheuses",
-            "alertmanagers",
-            "servicemonitors",
-            "podmonitors",
-            "prometheusrules",
-        ),
-        _read("grafana.integreatly.org", "grafanadashboards"),
-        _read("gateway.networking.k8s.io", "gateways", "httproutes", "tlsroutes", "grpcroutes"),
-        _read("postgresql.cnpg.io", "clusters", "backups", "scheduledbackups"),
-        _read("redis.redis.opstreelabs.in", "redisreplications"),
-        _read("infra.contrib.fluxcd.io", "terraforms"),
-        _read("image.toolkit.fluxcd.io", "imagepolicies", "imagerepositories", "imageupdateautomations"),
-        _read("notification.toolkit.fluxcd.io", "receivers", "alerts", "providers"),
-        _read("cilium.io", "ciliumnetworkpolicies", "ciliumclusterwidenetworkpolicies"),
-        _read("kyverno.io", "clusterpolicies", "policies", "policyreports", "clusterpolicyreports"),
-        _read("dns.cav.enablers.ob", "clusterzones", "clusterrrsets"),
-        _read("trust.cert-manager.io", "bundles"),
-        _read("external-secrets.io", "externalsecrets"),
-        _read("externaldns.k8s.io", "dnsendpoints"),
-        # pods/log and configmaps are granted via namespaced RoleBindings to logs-configmaps-reader
-        # in monitoring, kube-system, flux-system, grocy-sf, grocy-vallejo, airlock, authentik.
+        )
     )
+    # pods/log and configmaps are granted via namespaced RoleBindings to logs-configmaps-reader
+    # in monitoring, kube-system, flux-system, grocy-sf, grocy-vallejo, airlock, authentik.
+    _cluster_role(chart, "cluster-diagnostics-reader", *diagnostics_rules)
     # Pod logs explicitly classified as safe for durable agent access. Additive to
     # agent-readable-namespace-metadata; grants only the Kubernetes log subresource. A Namespace
     # classified LOGS in namespace_access receives both Flux-owned bindings.
