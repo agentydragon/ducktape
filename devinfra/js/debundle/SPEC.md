@@ -308,9 +308,9 @@ must audit all provider paths and preserve the exported callable's identity
 through synchronous initialization; a provider-side rebind or mutable wrapper
 that can change its behavior is outside the assertion. Provider-private effects
 remain possible, and the result stays opaque. Only a direct imported binding
-call with no spread or `new` and primitive literals, `void` of a primitive
-literal, or templates without substitutions as arguments is admitted; zero
-arguments are allowed. Argument expressions are still visited normally.
+call with no spread or `new` and the same checked primitive argument forms as
+`no_reentry_members` below is admitted; zero arguments are allowed. Argument
+expressions are still visited normally.
 Aliases, uncertain arguments, and result use retain ordinary reentry checks.
 The defining module still initializes in its usual order. This contract is
 independent of `pure_exports` and callback-factory assertions.
