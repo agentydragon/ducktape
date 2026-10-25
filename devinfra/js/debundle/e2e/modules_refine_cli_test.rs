@@ -162,6 +162,54 @@ fn rejects_atom_split_without_changing_any_module_yaml() {
 }
 
 #[test]
+fn moves_free_claim_from_use_inside_multi_declarator_statement() {
+    let fixture = GraphFixture::new(
+        "const spare = 0, limit = 8, sanitizer = value => value.length > limit ? value.slice(0, limit) : value, tail = 1;\nconsole.log(sanitizer('hello world'));\n",
+        &[(
+            "home.yaml",
+            "source_matches:\n  - match: 'const normalize = value => value.length > maxLength ? value.slice(0, maxLength) : value;'\n    bindings: [normalize, maxLength]\n",
+        )],
+    );
+    fixture.assert_runs("hello wo\n");
+
+    let batch = write_batch(json!([{
+        "owner_id": owner_for_binding(&fixture, "limit"),
+        "module": "config/limit",
+    }]));
+    fixture.assert_success(&[
+        "modules",
+        "refine",
+        "--batch",
+        batch.path().join("refine.json").to_str().unwrap(),
+    ]);
+    fixture.assert_runs("hello wo\n");
+}
+
+#[test]
+fn moves_one_claim_from_gapped_source_match_group() {
+    let fixture = GraphFixture::new(
+        "function first() { return 1; }\nfunction middle() { return 99; }\nfunction second() { return 2; }\nconsole.log(first() + second());\n",
+        &[(
+            "home.yaml",
+            "source_matches:\n  - match: |\n      function left() { return 1; }\n      STMT_LIST;\n      function right() { return 2; }\n    bindings: [left, right]\n",
+        )],
+    );
+    fixture.assert_runs("3\n");
+
+    let batch = write_batch(json!([{
+        "owner_id": owner_for_binding(&fixture, "first"),
+        "module": "split/first",
+    }]));
+    fixture.assert_success(&[
+        "modules",
+        "refine",
+        "--batch",
+        batch.path().join("refine.json").to_str().unwrap(),
+    ]);
+    fixture.assert_runs("3\n");
+}
+
+#[test]
 fn refines_only_the_selected_chunk_under_tree_config() {
     let run = run_tree_fixture(
         &TreeFixture {

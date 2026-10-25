@@ -1004,6 +1004,48 @@ fn member_matches_single_statement(
 }
 
 impl ChunkResolver<'_> {
+    /// Candidate free-name mappings for a template that claims a binding by
+    /// its use site. A single-declarator needle must match each candidate
+    /// declarator, even when its source statement declares other bindings.
+    /// Anonymous statement selectors retain whole-statement semantics.
+    pub fn free_reference_candidates(
+        &self,
+        request_id: &str,
+        parsed: &ParsedSourceMatchSelector,
+    ) -> Result<Vec<BTreeMap<String, String>>> {
+        if let [needle] = parsed.body()
+            && selector_single_var_declarator(needle).is_some()
+        {
+            let declared = parsed.declared_binding_names();
+            if !declared.is_empty() {
+                let targets = declared
+                    .into_iter()
+                    .map(|name| (name.clone(), name))
+                    .collect();
+                return group_matches_single_declarator(
+                    self,
+                    needle,
+                    request_id,
+                    parsed.selector(),
+                    &targets,
+                )
+                .map(|candidates| {
+                    candidates
+                        .into_iter()
+                        .map(|candidate| candidate.free_bindings)
+                        .collect()
+                });
+            }
+        }
+        self.anonymous_group_candidates(request_id, parsed)
+            .map(|candidates| {
+                candidates
+                    .into_iter()
+                    .map(|candidate| candidate.free_bindings)
+                    .collect()
+            })
+    }
+
     /// Every place a `source_match` member selector matches, each carrying its
     /// `body_idx` and claimed binding; the caller (the global selector solve, the
     /// minimizer's uniqueness measure) decides what the matches mean.

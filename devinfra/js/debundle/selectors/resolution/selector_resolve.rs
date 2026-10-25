@@ -1182,10 +1182,10 @@ impl<'c, 'm> Resolve<'c, 'm> {
             .partition(|(local, _)| declared_names.contains(local));
         let matched = if declared.is_empty() {
             matcher
-                .anonymous_group_candidates(logical_module, template)
+                .free_reference_candidates(logical_module, template)
                 .map_err(|error| Rejection::invalid(MATCHER_ERROR, &error))?
                 .into_iter()
-                .map(|group| Ok((BTreeMap::new(), group.free_bindings)))
+                .map(|free_bindings| Ok((BTreeMap::new(), free_bindings)))
                 .collect::<Result<Vec<_>>>()
         } else {
             matcher
@@ -2386,9 +2386,10 @@ fn member_place(
     })
 }
 
-/// A module's `source_match` members grouped by shared template: members
-/// whose templates differ only in their `target_binding`, when there are at
-/// least two and no two claim the same binding.
+/// A module's `source_matches[]` members grouped by shared template: members
+/// whose templates differ only in their `target_binding` and do not claim the
+/// same binding. A one-binding claim keeps group matching semantics after a
+/// `modules refine` split.
 fn source_match_groups(module: &SpecModule) -> Vec<Group> {
     let mut by_template = BTreeMap::<AnonymousStatementSelector, Vec<usize>>::new();
     for (index, member) in module.members.iter().enumerate() {
@@ -2404,7 +2405,6 @@ fn source_match_groups(module: &SpecModule) -> Vec<Group> {
     }
     let mut groups = by_template
         .into_values()
-        .filter(|indices| indices.len() >= 2)
         .filter_map(|indices| {
             let mut exports_by_target = BTreeMap::new();
             let mut members_by_target = BTreeMap::new();
