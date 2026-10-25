@@ -4972,7 +4972,8 @@ impl Executor<'_> {
             return roots;
         }
         if self.exported_owners.contains(&fact.ordinal)
-            || !(fact.purity.is_pure() && fact.declares_direct_function)
+            || !(fact.purity.is_pure()
+                && (fact.declares_direct_function || matches!(fact.kind, StatementKind::ClassDecl)))
         {
             roots.insert(fact.ordinal);
         }
