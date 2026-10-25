@@ -757,6 +757,103 @@ impl QuotientGraph {
         true
     }
 
+    /// Try a complete multi-class contraction as one shared-gate move. The
+    /// intermediate pairwise partitions need not be realizable: only the
+    /// proposed final partition is checked and then committed to the index.
+    /// Used by original-home rejoining before its deterministic pair fallback.
+    pub(crate) fn contract_group_if_preserving(&mut self, classes: &[ClassId]) -> bool {
+        let classes: BTreeSet<ClassId> = classes.iter().copied().collect();
+        if classes.len() < 3
+            || classes.iter().any(|class| {
+                self.classes
+                    .get(class.0)
+                    .is_none_or(|data| data.members.is_empty())
+            })
+        {
+            return false;
+        }
+        let combined_lines = classes.iter().fold(0usize, |lines, class| {
+            lines.saturating_add(self.classes[class.0].lines)
+        });
+        if combined_lines > self.cap_lines {
+            return false;
+        }
+
+        let winner = *classes.first().expect("at least three live classes");
+        let is_entry_module = classes
+            .iter()
+            .any(|class| self.classes[class.0].is_entry_module);
+        let is_pre_existing_module = classes
+            .iter()
+            .any(|class| self.classes[class.0].is_pre_existing_module);
+        let post_module = if is_entry_module
+            || projects_to_residual(
+                is_pre_existing_module,
+                classes
+                    .iter()
+                    .flat_map(|class| self.classes[class.0].members.iter()),
+                &self.gate_residual_owners,
+            ) {
+            ModuleId::logical(0)
+        } else {
+            classes
+                .iter()
+                .find_map(|class| {
+                    self.class_module_id
+                        .get(class)
+                        .copied()
+                        .filter(|module| *module != ModuleId::logical(0))
+                })
+                .unwrap_or_else(|| ModuleId::logical(self.next_module_idx))
+        };
+        let moved: Vec<OwnerId> = classes
+            .iter()
+            .flat_map(|class| self.classes[class.0].members.iter())
+            .map(|owner| OwnerId(owner.0))
+            .filter(|owner| self.realizability_index.partition().of(*owner) != post_module)
+            .collect();
+        if !self
+            .realizability_index
+            .would_remain_realizable_after_moving_owners_touching(
+                &self.owner_graph,
+                &moved,
+                post_module,
+            )
+        {
+            return false;
+        }
+
+        for &loser in classes.iter().filter(|&&class| class != winner) {
+            let loser_members = std::mem::take(&mut self.classes[loser.0].members);
+            for member in &loser_members {
+                self.owner_to_class[member.0] = winner;
+            }
+            self.classes[winner.0].members.extend(loser_members);
+            self.classes[loser.0].lines = 0;
+            self.classes[loser.0].is_pre_existing_module = false;
+            self.classes[loser.0].is_entry_module = false;
+            self.update_class_adjacency_after_merge(winner, loser);
+            self.class_module_id.remove(&loser);
+        }
+        self.classes[winner.0].lines = combined_lines;
+        self.classes[winner.0].is_pre_existing_module = is_pre_existing_module;
+        self.classes[winner.0].is_entry_module = is_entry_module;
+        if !moved.is_empty() {
+            self.realizability_index.apply(
+                &self.owner_graph,
+                PartitionDelta::MoveOwners {
+                    owners: moved,
+                    to: post_module,
+                },
+            );
+        }
+        if post_module.0.0 >= self.next_module_idx {
+            self.next_module_idx = post_module.0.0 + 1;
+        }
+        self.class_module_id.insert(winner, post_module);
+        true
+    }
+
     /// Merge two classes without consulting the realizability /
     /// cap gates. The lower of the two `ClassId`s
     /// survives; the higher is emptied. Returns the survivor.

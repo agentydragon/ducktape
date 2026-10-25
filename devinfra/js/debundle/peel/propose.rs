@@ -1427,6 +1427,17 @@ fn rejoin_original_home_fragments(
                     .collect::<BTreeSet<_>>()
                     .into_iter()
                     .collect();
+                // A whole home commonly has many harmless fragments. Validate
+                // its complete target partition in one index overlay before
+                // trying pairs; a rejected batch leaves the quotient untouched.
+                if classes.len() > 2 {
+                    attempted += 1;
+                    if quotient.contract_group_if_preserving(&classes) {
+                        accepted += classes.len() - 1;
+                        pass_progress = true;
+                        break;
+                    }
+                }
                 let mut home_progress = false;
                 'pairs: for (left_idx, &left) in classes.iter().enumerate() {
                     for &right in classes.iter().skip(left_idx + 1) {
