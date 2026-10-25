@@ -749,7 +749,7 @@ impl QuotientGraph {
     /// to consider many candidate pairs; callers that need rejection evidence
     /// should use `contract` and `would_be_cycles_after_contract`.
     pub(crate) fn contract_if_preserving(&mut self, c1: ClassId, c2: ClassId) -> bool {
-        if !self.check_merge_boolean(c1, c2) {
+        if self.check_merge_preconditions(c1, c2).is_err() {
             return false;
         }
         let (winner, loser) = (c1.min(c2), c1.max(c2));
@@ -764,14 +764,14 @@ impl QuotientGraph {
             return false;
         }
         self.merge_classes_unchecked(c1, c2)
-            .expect("the boolean gate already rejected identical/dead classes");
+            .expect("the preserving gate already rejected identical/dead classes");
         true
     }
 
     /// A contraction can change global ESM import order and expose a TDZ in
-    /// an I-SCC that does not contain the merged module. The touching gate is
-    /// a fast rejection filter; original-home rejoining must also check the
-    /// complete proposed partition before committing each accepted move.
+    /// an I-SCC that does not contain the merged module. Original-home
+    /// rejoining checks the complete proposed partition before committing
+    /// each accepted move.
     fn full_gate_accepts_move(&self, moved: &[OwnerId], to: ModuleId) -> bool {
         self.realizability_index
             .verdict_after_moving_owners(&self.owner_graph, moved, to)
@@ -833,16 +833,6 @@ impl QuotientGraph {
             .map(|owner| OwnerId(owner.0))
             .filter(|owner| self.realizability_index.partition().of(*owner) != post_module)
             .collect();
-        if !self
-            .realizability_index
-            .would_remain_realizable_after_moving_owners_touching(
-                &self.owner_graph,
-                &moved,
-                post_module,
-            )
-        {
-            return false;
-        }
         if !self.full_gate_accepts_move(&moved, post_module) {
             return false;
         }
