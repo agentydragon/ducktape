@@ -1587,6 +1587,16 @@ member names`, it projects onto each importing chunk's local binding
   patch intrinsics would need the affected whitelist entries
   disabled for soundness.)
 
+Namespace admission retains member targets nested in destructuring assignments
+and loop heads during the existing execution-index visit. A member target can
+replace a factory or install receiver-sensitive behavior even when SWC represents
+it as a pattern expression. Receiver checks include every such target; assigned
+values conservatively retain publication paths from the whole assignment source
+and applicable default initializers.
+Loop iteration sources and unsupported member-target syntax remain unknown.
+Default initializers, computed keys, and ordinary assignment effects retain their
+normal traversal and effects.
+
 The [ECMA-262 Error constructor](https://tc39.es/ecma262/#sec-error-message)
 allocates a fresh ordinary error object. Adjacent writes to a direct global
 `Error(...)` result within one sequence

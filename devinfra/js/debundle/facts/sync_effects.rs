@@ -1572,6 +1572,12 @@ struct FreshErrorWriteClaim {
     local_read: Option<Id>,
 }
 
+struct DestructuringMemberWrite {
+    receiver: ValueExpr,
+    /// The whole source (including defaults) over-approximates the target value.
+    source: ValueExpr,
+}
+
 struct ExecutionIndex {
     owner: StatementOrdinal,
     current: Option<u32>,
@@ -1593,6 +1599,8 @@ struct ExecutionIndex {
     reassigned_map: bool,
     fresh_error_claims: Vec<FreshErrorWriteClaim>,
     intrinsic_mutation_receivers: Vec<ValueExpr>,
+    destructuring_source: Option<ValueExpr>,
+    destructuring_member_writes: Vec<DestructuringMemberWrite>,
     setter_owners: BTreeMap<Option<String>, BTreeSet<StatementOrdinal>>,
     hoisted_nested_functions: BTreeSet<u32>,
     owner_callable_prefix_reads: Vec<Option<BTreeSet<Id>>>,
@@ -1646,6 +1654,8 @@ impl Default for ExecutionIndex {
             reassigned_map: false,
             fresh_error_claims: Vec::new(),
             intrinsic_mutation_receivers: Vec::new(),
+            destructuring_source: None,
+            destructuring_member_writes: Vec::new(),
             setter_owners: BTreeMap::new(),
             hoisted_nested_functions: BTreeSet::new(),
             owner_callable_prefix_reads: Vec::new(),
@@ -1898,6 +1908,12 @@ impl ExecutionIndex {
                                 || receiver_aliases.contains(receiver))
                     })
                 });
+            let destructuring_write = index.destructuring_member_writes.iter().any(|write| {
+                is_mutation_receiver(&write.receiver)
+                    || write
+                        .source
+                        .may_publish_namespace(id, &aliases, &namespace_value_facts)
+            });
             let top_dynamic_write = index
                 .top_dynamic_property_receivers
                 .iter()
@@ -1980,6 +1996,7 @@ impl ExecutionIndex {
                 .any(|value| value.may_publish_namespace(id, &aliases, &namespace_value_facts))
                 || index.exported_bindings.iter().any(is_namespace_or_alias);
             !(top_member_write
+                || destructuring_write
                 || top_dynamic_write
                 || top_callback_result_write
                 || callable_write
@@ -2727,6 +2744,54 @@ impl Visit for ExecutionIndex {
         }
     }
 
+    fn visit_pat(&mut self, pattern: &Pat) {
+        if let Some(source) = &self.destructuring_source {
+            let receiver = match pattern {
+                Pat::Expr(expression) => Some(match expression.unwrap_parens() {
+                    Expr::Member(member) => {
+                        self.intrinsic_mutation_receivers
+                            .push(intrinsic_write_target(member));
+                        ValueExpr::from_expr(&member.obj)
+                    }
+                    _ => ValueExpr::Unknown,
+                }),
+                Pat::Invalid(_) => Some(ValueExpr::Unknown),
+                _ => None,
+            };
+            if let Some(receiver) = receiver {
+                self.destructuring_member_writes
+                    .push(DestructuringMemberWrite {
+                        receiver,
+                        source: source.clone(),
+                    });
+            }
+        }
+        pattern.visit_children_with(self);
+    }
+
+    fn visit_assign_pat(&mut self, assignment: &AssignPat) {
+        let Some(source) = self.destructuring_source.take() else {
+            assignment.visit_children_with(self);
+            return;
+        };
+        self.destructuring_source = Some(ValueExpr::Alternatives(vec![
+            source.clone(),
+            ValueExpr::from_expr(&assignment.right),
+        ]));
+        assignment.left.visit_with(self);
+        self.destructuring_source = Some(source);
+        assignment.right.visit_with(self);
+    }
+
+    fn visit_for_head(&mut self, head: &ForHead) {
+        let previous_source = self.destructuring_source.take();
+        if matches!(head, ForHead::Pat(_)) {
+            self.destructuring_source = Some(ValueExpr::Unknown);
+        }
+        head.visit_children_with(self);
+        self.destructuring_source = previous_source;
+    }
+
     fn visit_assign_expr(&mut self, assignment: &AssignExpr) {
         if matches!(&assignment.left,
             AssignTarget::Simple(SimpleAssignTarget::Ident(binding))
@@ -2739,7 +2804,13 @@ impl Visit for ExecutionIndex {
                 .push(intrinsic_write_target(member));
         }
         let before_assignment = self.past_await;
-        assignment.visit_children_with(self);
+        let previous_source = self.destructuring_source.take();
+        if matches!(assignment.left, AssignTarget::Pat(_)) {
+            self.destructuring_source = Some(ValueExpr::from_expr(&assignment.right));
+        }
+        assignment.left.visit_with(self);
+        self.destructuring_source = previous_source;
+        assignment.right.visit_with(self);
         if matches!(
             assignment.op,
             AssignOp::AndAssign | AssignOp::OrAssign | AssignOp::NullishAssign

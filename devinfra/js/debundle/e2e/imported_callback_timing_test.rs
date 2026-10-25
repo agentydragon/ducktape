@@ -2114,3 +2114,157 @@ fn fresh_error_metadata_proof_requires_every_write_to_be_adjacent() {
         assert_preserved_entry_output(&fixture, "42\n");
     }
 }
+
+#[test]
+fn destructuring_namespace_member_writes_cannot_hide_early_callback_reads() {
+    const PEER: &str =
+        "export const api = { make(callback) { return { invoke: () => callback() }; } };\n";
+    for (setup, peer) in [
+        ("({ make: api.make } = { make: eager });", PEER),
+        ("[api.make] = [eager];", PEER),
+        ("({ make: api.make = eager } = {});", PEER),
+        ("[api.make = eager] = [];", PEER),
+        (
+            "({ nested: { make: api.make } } = { nested: { make: eager } });",
+            PEER,
+        ),
+        ("[[api.make]] = [[eager]];", PEER),
+        ("({ make: api['make'] } = { make: eager });", PEER),
+        ("for ({ make: api.make } of [{ make: eager }]) {}", PEER),
+        (
+            "({ ...api.methods } = { make: eager });",
+            "const deferred = callback => ({ invoke: () => callback() });\n\
+             export const api = { methods: { make: deferred }, make(callback) { return this.methods.make(callback); } };\n",
+        ),
+        (
+            "[...api.methods] = [eager];",
+            "const deferred = callback => ({ invoke: () => callback() });\n\
+             export const api = { methods: [deferred], make(callback) { return this.methods[0](callback); } };\n",
+        ),
+    ] {
+        let source = format!(
+            "import {{ api }} from './peer.js';\n\
+             function eager(callback) {{ const value = callback(); return {{ invoke: () => value }}; }}\n\
+             let later = 0;\n{setup}\n\
+             const wrapped = api.make(() => later);\n\
+             later = 42;\nconsole.log(wrapped.invoke());\n"
+        );
+        let peers = [("static/peer", peer)];
+        let contracts = [ChunkExportPurityBuilder::new("static/peer")
+            .with_callback_factory_members("api", &["make"])
+            .build()];
+        expect_atomic_conflict_rejection(
+            FixtureOpts::new(
+                &source,
+                vec![
+                    logical_module_with_anon(
+                        "callbacks/wrapped",
+                        &[Member::new("wrapped"), Member::new("eager")],
+                        &[setup],
+                    ),
+                    logical_module_with_anon(
+                        "values/later",
+                        &[Member::new("later")],
+                        &["later = 42;"],
+                    ),
+                ],
+            )
+            .with_extra_chunks(&peers)
+            .with_chunk_export_purity(&contracts),
+            &["callbacks/wrapped", "values/later"],
+            &[],
+        );
+        let fixture = run_fixture(
+            FixtureOpts::new(&source, vec![])
+                .with_extra_chunks(&peers)
+                .with_chunk_export_purity(&contracts),
+        );
+        assert_preserved_entry_output(&fixture, "0\n");
+    }
+}
+
+#[test]
+fn unrelated_destructuring_member_writes_keep_factory_callbacks_deferred() {
+    let source = "import { api } from './peer.js';\n\
+                  const target = {};\n\
+                  ({ kind: target.kind } = { kind: 'metadata' });\n\
+                  const wrapped = api.make(() => later);\n\
+                  const later = 42;\nconsole.log(wrapped.invoke(), target.kind);\n";
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon(
+                    "callbacks/wrapped",
+                    &[Member::new("wrapped"), Member::new("target")],
+                    &["({ kind: target.kind } = { kind: 'metadata' });"],
+                ),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        )
+        .with_extra_chunks(&[(
+            "static/peer",
+            "export const api = { make(callback) { return { invoke: () => callback() }; } };\n",
+        )])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+            .with_callback_factory_members("api", &["make"])
+            .build()]),
+    );
+    assert_preserved_entry_output(&fixture, "42 metadata\n");
+}
+
+#[test]
+fn destructuring_member_values_keep_namespace_publication_visible() {
+    for setup in [
+        "({ value: target.value } = { value: api });",
+        "({ value: target.value = api } = {});",
+        "[target.value = api] = [];",
+    ] {
+        let source = format!(
+            "import {{ api }} from './peer.js';\n\
+             function eager(callback) {{ const value = callback(); return {{ invoke: () => value }}; }}\n\
+             const target = {{}};\nlet later = 0;\n{setup}\n\
+             target.value.make = eager;\n\
+             const wrapped = api.make(() => later);\n\
+             later = 42;\nconsole.log(wrapped.invoke());\n"
+        );
+        let peers = [(
+            "static/peer",
+            "export const api = { make(callback) { return { invoke: () => callback() }; } };\n",
+        )];
+        let contracts = [ChunkExportPurityBuilder::new("static/peer")
+            .with_callback_factory_members("api", &["make"])
+            .build()];
+        expect_atomic_conflict_rejection(
+            FixtureOpts::new(
+                &source,
+                vec![
+                    logical_module_with_anon(
+                        "callbacks/wrapped",
+                        &[
+                            Member::new("wrapped"),
+                            Member::new("target"),
+                            Member::new("eager"),
+                        ],
+                        &[setup, "target.value.make = eager;"],
+                    ),
+                    logical_module_with_anon(
+                        "values/later",
+                        &[Member::new("later")],
+                        &["later = 42;"],
+                    ),
+                ],
+            )
+            .with_extra_chunks(&peers)
+            .with_chunk_export_purity(&contracts),
+            &["callbacks/wrapped", "values/later"],
+            &[],
+        );
+        let fixture = run_fixture(
+            FixtureOpts::new(&source, vec![])
+                .with_extra_chunks(&peers)
+                .with_chunk_export_purity(&contracts),
+        );
+        assert_preserved_entry_output(&fixture, "0\n");
+    }
+}

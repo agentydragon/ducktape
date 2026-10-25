@@ -278,6 +278,10 @@ Calls with a named callback, a retained factory result, spread arguments, or
 `new` use conservative callback timing. This contract is independent of purity
 and does not grant the broader `callback_factory_exports` composition rule.
 
+Explicit member writes nested in object or array destructuring, including nested,
+default, rest, and loop-head targets, retain the same conservative namespace
+mutation checks as ordinary member assignments.
+
 For a namespace-member contract, the author must also audit the provider and all
 caller/runtime paths that supply values used by admitted callbacks. The listed
 factory members must keep their audited identities and behavior throughout the
