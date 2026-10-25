@@ -4922,9 +4922,20 @@ impl Executor<'_> {
         {
             roots.insert(fact.ordinal);
         }
+        // A pure class definition evaluates its superclass value, but merely
+        // reading a known ordinary class does not run that class's constructor
+        // or methods. The eager read remains in StatementFacts for the owner
+        // graph. Calls/static initializers and actual capability publication
+        // still enter reachability through their own executor paths.
+        let inert_heritage = self.inert_class_heritage_binding(fact);
         roots.extend(
-            self.owner_read_closure
-                .owners_for_bindings(fact.reads.eager.iter().chain(fact.rebinds.eager.iter())),
+            self.owner_read_closure.owners_for_bindings(
+                fact.reads
+                    .eager
+                    .iter()
+                    .filter(|id| Some(*id) != inert_heritage)
+                    .chain(fact.rebinds.eager.iter()),
+            ),
         );
         roots
     }
@@ -4958,6 +4969,46 @@ impl Executor<'_> {
             && call.kind == CallKind::Call
             && !call.has_spread
             && CallSite::from(call.span) == *site
+    }
+
+    fn inert_class_heritage_binding<'a>(&'a self, fact: &StatementFacts) -> Option<&'a Id> {
+        if !matches!(fact.kind, StatementKind::ClassDecl)
+            || !fact.purity.is_pure()
+            || self.exported_owners.contains(&fact.ordinal)
+            || self.reachability.incomplete
+        {
+            return None;
+        }
+        let (class_key, _) = self.index.class_bindings.iter().find(|(key, binding)| {
+            self.index.class_owners.get(key) == Some(&fact.ordinal)
+                && fact.declared.contains(binding)
+        })?;
+        let ValueExpr::Binding(base) = self
+            .index
+            .class_values
+            .get(class_key)?
+            .super_class
+            .as_ref()?
+        else {
+            return None;
+        };
+        let values = self.prefix_values.get(base)?;
+        let Some(AbstractValue::Origin(ValueOrigin::Class(base_key))) = values.first() else {
+            return None;
+        };
+        let base_owner = *self.index.class_owners.get(base_key)?;
+        if !self.initialized_bindings.contains(base)
+            || !fact.reads.eager.contains(base)
+            || self.index.class_bindings.get(base_key) != Some(base)
+            || base_owner.0 >= fact.ordinal.0
+            || !self.facts[base_owner.0].purity.is_pure()
+            || self.tainted_classes.contains(base_key)
+            || self.escaped_class_capabilities.contains(base_key)
+            || values.len() != 1
+        {
+            return None;
+        }
+        Some(base)
     }
 
     fn extend_reachable_owners(
@@ -7288,6 +7339,17 @@ pub(crate) fn annotate_synchronous_calls(
             }
         }
     }
+    // The class heritage reachability check consumes the current value of a
+    // direct superclass binding. Keep that value even when no call or export
+    // otherwise needs it; assignments and alternate values then follow the
+    // same prefix tracking as every other binding.
+    needed.extend(index.class_values.values().filter_map(|class| {
+        if let Some(ValueExpr::Binding(binding)) = class.super_class.as_ref() {
+            Some(binding.clone())
+        } else {
+            None
+        }
+    }));
     needed.extend(index.exported_bindings.iter().cloned());
     for exported in &index.top_exported_values {
         for expression in exported {
