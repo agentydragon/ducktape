@@ -2578,27 +2578,25 @@ reinterpret `effect:` independently.
 
 ### Pipeline trajectory
 
-The pipeline (`pipeline.rs`) is a fixed composition over three layers:
+The pipeline (`pipeline.rs`) separates source preparation, reconstruction,
+validation, and writing:
 
-- **Classify (input space).** Load + prepare (one parallel per-chunk
-  parse computing shallow program facts), then one read-only vendor
-  resolution pass (`build_vendor_resolution_plan`) that validates every
-  `vendor` mark, resolves boundary mappings / swap targets / per-symbol
-  tables, and runs the plan-time consumer gate before anything is
-  written. Spec selectors always match prepare-time input-space ASTs;
-  nothing mutates them.
-- **Plan.** Lowering plans plus the `VendorResolutionPlan` as the
-  single resolution oracle for import construction — both lowering's
-  per-plan directive construction and the emission-time rewriting of
-  non-lowered files consult it.
-- **Emit.** `materialize_logical_modules` is the single artifact
-  mutation wave; `apply_emission_rewrites` then performs the
-  pass-through directive rewrite (specifier canonicalization,
-  boundary-rename mapping, partial-swap consumer surgery) and computes
-  each partially-swapped vendor chunk's residual (self-rewrite + strip)
-  as one function body. Fully-swapped chunks are an emission-set
-  exclusion, not an artifact removal; wrappers / facades / manifests
-  are emission outputs.
+- **Prepare and resolve.** Load and parse source chunks once, compute shallow
+  facts, and resolve selectors against that input syntax. One read-only
+  `VendorResolutionPlan` resolves and validates replacement marks, boundary
+  mappings, package targets, and input-space consumer shapes.
+- **Reconstruct.** Plan assignment and linkage, lower selected syntax, then apply
+  cross-chunk naming, pass-through directive rewrites, vendor residual stripping,
+  and dead import/export pruning. All construction paths consult the same vendor
+  oracle. Fully swapped chunks are excluded from emission; replacement wrappers
+  and facades remain planned outputs.
+- **Validate.** Consume the final `ReconstructionPlan`, checking synthesized
+  partial-swap consumers, duplicate public exports, and unresolved claims. Return
+  an immutable `ValidatedPlan` only on acceptance. These final checks supplement
+  assignment realizability and input-space vendor checks.
+- **Write.** Tree and browser writers require `ValidatedPlan`; vendor assets use
+  the same accepted plan. No body transformation runs after validation. Rejection
+  reports are diagnostic output and do not require an accepted plan.
 
 Preparation returns `SourceProgram`, which owns prepared chunks and their
 matching indexes. Resolution and vendor planning borrow it immutably. Lowering
@@ -2606,16 +2604,14 @@ consumes its source bundle; a pass-through run instead converts it directly to
 `EmissionFiles`, reusing the indexes without rebuilding them. The mutable indexed
 file container is private to these phase types.
 
-The emission boundary is `EmissionFiles`: lowering finalizes lowered and
-pass-through chunk files into this owned output set; cross-chunk import
-naturalization, vendor emission rewrites, dead-import/export pruning and
-final export validation run against that set, then tree/harness writers read
-it. Its output-path indexes are built once after lowering changes entry and
-module paths and retained across body-only passes behind an indexed-layout
-check. No disk reparse or pipeline splice into the prepared input artifact
-occurs. `EmissionFiles` currently uses `ChunkBundle` internally as the file
-container for existing transformation helpers; that does not change which
-phase owns the files.
+`EmissionFiles` owns reconstructed syntax while body transformations are still
+allowed. Its output-path indexes are built once after lowering changes entry and
+module paths, then retained across body-only passes behind an indexed-layout
+check. Final validation consumes these files and the vendor plan; writers obtain
+both files and full-swap exclusions from the resulting `ValidatedPlan`. No disk
+reparse or splice back into prepared source occurs. `EmissionFiles` currently
+uses `ChunkBundle` internally for existing transformation helpers; phase ownership
+is explicit in its enclosing types.
 
 ## Anonymous-statement selectors
 
@@ -3029,10 +3025,10 @@ A `logical_modules` member whose binding selector names no top-level
 declaration in the chunk is recorded as an `UnmatchedSpecClaim`
 (<../lowering/materialize/plan_builder.rs>); lowering continues as if the
 member were absent, so the claim neither moves the binding nor adds an export.
-After emit, vendor swaps and reports — so the generated tree and every
-chunk's offenders are available — the pipeline fails with the full list across
-chunks (<../pipeline.rs>): the named binding fell into the residual sweep and
-the destination module is one export short.
+Final validation rejects the full list across chunks before writing the accepted
+JS tree, browser harness, or vendor assets (<../reconstruction.rs>). Diagnostic
+reports remain available for inspection. The named destination would otherwise
+be one export short.
 
 A module whose members are all `import_specifier` claims owns no bindings and
 emits a re-export-only file (re-imports and re-exports, no owned code).

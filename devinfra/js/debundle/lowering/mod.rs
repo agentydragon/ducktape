@@ -15,6 +15,7 @@ use artifact::{
 };
 
 use output_layout::MODULES_REPORT;
+use reconstruction::UnmatchedSpecClaim;
 
 use spec::{ChunkExportPurity, ChunkRenames, LogicalModule, UnassignedMode};
 
@@ -70,9 +71,9 @@ pub struct MaterializeLogicalModulesResult {
     /// declaration exists in the source chunk. Previously dropped
     /// silently — the binding would fall through to the residual and
     /// the named module's export list would be one entry short. Now
-    /// collected across every chunk so the pipeline keeps emitting
-    /// (the chunk lowers as if the spec had not claimed the missing
-    /// name), then fails at the end with the full list. See
+    /// collected across every chunk so reconstruction can diagnose
+    /// all claims (the chunk lowers as if the missing claim were absent).
+    /// Final validation rejects the full list before writing the output. See
     /// [`UnmatchedSpecClaim`].
     pub unmatched_spec_claims: Vec<UnmatchedSpecClaim>,
 }
@@ -87,19 +88,6 @@ pub fn validate_logical_module_claims(
     exports::reject_duplicate_export_names("logical_module", id, &members)?;
     exports::reject_duplicate_member_bindings("logical_module", id, &members)?;
     Ok(())
-}
-
-/// A `define_logical_module` member whose `binding.name` did not
-/// resolve to a top-level declaration in the chunk. Surfaced after
-/// the pipeline finishes so the build prints every offender at once
-/// instead of failing on the first chunk.
-#[derive(Debug, Clone, Serialize)]
-pub struct UnmatchedSpecClaim {
-    pub chunk_id: String,
-    /// Claiming module, by canonical [`spec::ModulePath`].
-    pub module_path: spec::ModulePath,
-    pub binding_name: String,
-    pub export_name: String,
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -11,20 +11,20 @@ use artifact::write_json;
 use artifact::{ChunkDecompositionOutput, ChunkId};
 use emit_harness::emit_browser_harness;
 use lowering::{
-    MaterializeLogicalModulesOptions, MaterializeSpecInputs, ReportEmission, UnmatchedSpecClaim,
+    MaterializeLogicalModulesOptions, MaterializeSpecInputs, ReportEmission,
     materialize_logical_modules, naturalize_cross_chunk_imports,
 };
 use prepare_chunks::prepare_js_chunks;
 use prune_dead_imports::prune_dead_import_specifiers;
 use prune_module_exports::prune_unimported_module_exports;
+use reconstruction::{ReconstructionPlan, UnmatchedSpecClaim};
 use spec::TransformSpec;
 use spec_modules::read_flat_transform_spec;
 use spec_tree::{CompileSpecTreeOptions, compile_spec_tree};
-use validate_emitted_exports::validate_emitted_exports;
 use vendor::{
     ChunkBundledPartialSwapResolution, ChunkPartialSwapResolution, VendorPlanOptions,
     VendorResolution, apply_emission_rewrites_in_place, build_partial_swap_resolutions,
-    build_vendor_resolution_plan, validate_partial_swap_consumers, write_planned_vendor_outputs,
+    build_vendor_resolution_plan,
 };
 use write_tree::{WriteTreeInput, write_js_tree};
 
@@ -212,7 +212,6 @@ pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Re
     // contained vendor chunks — but emission, the rename queue, the
     // emit-shape check, and the chunk reports skip them. Their
     // wire-facing resolutions are projections of the plan.
-    let excluded_chunk_ids = vendor_plan.full_swap_chunk_ids();
     vendor_report.full = vendor_plan.full_swap_resolutions();
 
     let processed_chunk_names: BTreeSet<String> = materialise_chunk_ids.iter().cloned().collect();
@@ -222,9 +221,8 @@ pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Re
     // Spec member claims whose `binding.name` did not resolve to a
     // top-level declaration in the source chunk. Collected across
     // every chunk by `materialize_logical_modules`; surfaced at the
-    // end of the pipeline (after vendor swaps, emit-shape check, and
-    // tree/harness emission) so the user sees the full list and the
-    // generated output is still available for inspection.
+    // final validation boundary so the user sees the full list without
+    // mistaking partial reconstruction for accepted output.
     let mut unmatched_spec_claims: Vec<UnmatchedSpecClaim> = Vec::new();
     // Vendor rewrites lowering applied at construction time inside
     // materialized module bodies, keyed by (swapped chunk, chunk
@@ -309,28 +307,8 @@ pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Re
         })?;
     merge_rewrite_counts(&mut vendor_rewrite_counts, emission_references);
 
-    if vendor_plan.has_partial_swaps() || vendor_plan.has_bundled_partial_swaps() {
-        // Post-strip consumer gate: no retained file may still consume
-        // the stripped portion of a partially-swapped chunk's export
-        // surface. Load-bearing behind the plan-time gate — it covers
-        // directives lowering synthesized inside materialized module
-        // bodies (see `validate_partial_swap_consumers`).
-        validate_partial_swap_consumers(&emission_files, &vendor_plan)?;
-    }
     (vendor_report.partial, vendor_report.bundled_partial) =
         build_partial_swap_resolutions(&vendor_plan, &vendor_rewrite_counts)?;
-
-    // Vendor emission outputs: full-swap wrappers and bundled bundle
-    // copies / facades, plus the combined manifest — all write-gated
-    // behind `swap_vendor_chunks.write`.
-    if write_vendor_outputs {
-        write_planned_vendor_outputs(&vendor_plan)?;
-    }
-    write_vendor_swaps_report(
-        write_vendor_outputs,
-        spec.swap_vendor_chunks.output_manifest_path.as_deref(),
-        &vendor_report,
-    )?;
 
     // Trim dead named import specifiers across the whole bundle (entry
     // included): the lowerer over-imports residual/hub bindings the
@@ -353,14 +331,24 @@ pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Re
         Ok(())
     })?;
 
-    // Final emit-shape check: every JS file that came out of the
-    // materialize / strip pipeline must have unique public export
-    // names per file. Catching a duplicate here turns a downstream
-    // browser-link failure (which Chromium reports as a silent empty
-    // pageerror) into an immediate build-time error pointing at the
-    // exact file, name, and source lines. Runs unconditionally so
-    // pipelines without vendor swaps still benefit.
-    validate_emitted_exports(&emission_files, &excluded_chunk_ids)?;
+    // Freeze the exact final syntax and replacement decisions before any
+    // accepted-program output is written. Diagnostic reports may already exist.
+    let validated_plan =
+        ReconstructionPlan::new(emission_files, vendor_plan, unmatched_spec_claims).validate()?;
+    let emission_files = validated_plan.files();
+    let excluded_chunk_ids = validated_plan.excluded_chunk_ids();
+
+    // Vendor emission outputs: full-swap wrappers and bundled bundle
+    // copies / facades, plus the combined manifest — all write-gated
+    // behind `swap_vendor_chunks.write`.
+    if write_vendor_outputs {
+        validated_plan.write_vendor_outputs()?;
+    }
+    write_vendor_swaps_report(
+        write_vendor_outputs,
+        spec.swap_vendor_chunks.output_manifest_path.as_deref(),
+        &vendor_report,
+    )?;
 
     // Chunk records of the emission set: records of excluded
     // (fully-swapped) chunks are dropped from the emitted reports.
@@ -377,14 +365,13 @@ pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Re
         && let Some(cfg) = &spec.write_js_tree
     {
         write_js_tree(&WriteTreeInput {
-            files: &emission_files,
+            plan: &validated_plan,
             out_dir: &cfg.out_dir,
             lowerings: &selected_lowerings,
             counts: &counts,
             chunk_records: &emitted_chunk_records,
             module_count,
             decomposition_by_chunk: &decomposition_by_chunk,
-            excluded_chunk_ids: &excluded_chunk_ids,
         })?;
     }
 
@@ -392,38 +379,11 @@ pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Re
         && let Some(cfg) = &spec.emit_browser_harness
     {
         emit_browser_harness(
-            &emission_files,
+            &validated_plan,
             cfg,
             &emitted_chunk_records,
             &decomposition_by_chunk,
-            &excluded_chunk_ids,
         )?;
-    }
-
-    // Defer unmatched-spec-claim failure to here so the build runs
-    // emit + reports first — the user gets the full list across
-    // every chunk plus the artifact tree to inspect, instead of one
-    // bail per first-offending chunk and no output.
-    if !unmatched_spec_claims.is_empty() {
-        let mut lines = String::new();
-        for claim in &unmatched_spec_claims {
-            lines.push_str(&format!(
-                "  - chunk {chunk_id}: module {module_path} claims binding `{binding}` (export `{export}`); \
-                 no top-level declaration with that name exists in the chunk.\n",
-                chunk_id = claim.chunk_id,
-                module_path = claim.module_path,
-                binding = claim.binding_name,
-                export = claim.export_name,
-            ));
-        }
-        bail!(
-            "Transform spec referenced {n} top-level binding name(s) that the source chunk \
-             does not declare. The pipeline finished emitting (so any unrelated modules \
-             still landed), but unresolved spec claims silently fall into the residual sweep \
-             and leave the named destination module short an export. Fix the spec (correct \
-             the binding name, drop the member, or rename via `chunk_renames`):\n{lines}",
-            n = unmatched_spec_claims.len(),
-        );
     }
 
     Ok(())
