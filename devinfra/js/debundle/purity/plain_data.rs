@@ -59,10 +59,27 @@ pub(crate) fn collect_plain_data_bindings(
     if candidates.is_empty() {
         return Vec::new();
     }
-    let top_level_names: BTreeSet<String> = body
+    let top_level_ids: BTreeMap<String, Id> = body
         .iter()
         .flat_map(|item| crate::facts::collect_declared_names(item.as_module_item()))
-        .map(|id| id.0.to_string())
+        .map(|id| (id.0.to_string(), id))
+        .collect();
+    let top_level_names: BTreeSet<String> = top_level_ids.keys().cloned().collect();
+    // These are candidate facts, not an admission on their own. Every write,
+    // alias escape and accessor/prototype installation still invalidates the
+    // receiver during the whole-chunk scan below.
+    let primitive_members: BTreeMap<Id, BTreeSet<String>> = candidates
+        .iter()
+        .filter_map(|name| {
+            let [(init, VarDeclKind::Const)] = inits_by_name[name].as_slice() else {
+                return None;
+            };
+            let Expr::Object(object) = init.unwrap_parens() else {
+                return None;
+            };
+            let keys = crate::facts::primitive_literal_property_keys(object)?;
+            Some((top_level_ids[name].clone(), keys))
+        })
         .collect();
     let mut objects = BTreeSet::new();
     for name in &candidates {
@@ -120,6 +137,7 @@ pub(crate) fn collect_plain_data_bindings(
         ),
         object_to_names,
         return_exempt,
+        primitive_members,
     };
     for item in body {
         let module_item = item.as_module_item();
@@ -210,6 +228,7 @@ pub(crate) fn collect_plain_array_bindings(
         candidate_index: None,
         object_to_names: BTreeMap::new(),
         return_exempt: BTreeSet::new(),
+        primitive_members: BTreeMap::new(),
     };
     let mut method_scanner = PlainArrayMethodScanner {
         candidates: &candidates,
@@ -546,6 +565,7 @@ pub(crate) struct PlainDataWriteScanner<'a> {
     candidate_index: Option<crate::facts::CandidateObjectIndex>,
     object_to_names: BTreeMap<crate::facts::ValueOrigin, BTreeSet<String>>,
     return_exempt: BTreeSet<String>,
+    primitive_members: BTreeMap<Id, BTreeSet<String>>,
 }
 
 impl PlainDataWriteScanner<'_> {
@@ -655,22 +675,43 @@ impl PlainDataWriteScanner<'_> {
         let Some(flow) = self.value_flow else {
             return;
         };
-        struct ReferencedIds(BTreeSet<Id>);
-        impl Visit for ReferencedIds {
+        struct ReferencedIds<'a> {
+            ids: BTreeSet<Id>,
+            primitive_members: &'a BTreeMap<Id, BTreeSet<String>>,
+        }
+        impl Visit for ReferencedIds<'_> {
             fn visit_ident(&mut self, ident: &Ident) {
-                self.0.insert(ident.to_id());
+                self.ids.insert(ident.to_id());
+            }
+
+            fn visit_member_expr(&mut self, member: &MemberExpr) {
+                if let Expr::Ident(receiver) = member.obj.unwrap_parens()
+                    && let MemberProp::Ident(property) = &member.prop
+                    && self
+                        .primitive_members
+                        .get(&receiver.to_id())
+                        .is_some_and(|keys| keys.contains(property.sym.as_ref()))
+                {
+                    // Passing the literal value cannot expose its receiver.
+                    // Keep every other value/capture on the conservative path.
+                    return;
+                }
+                member.visit_children_with(self);
             }
         }
-        let mut referenced = ReferencedIds(BTreeSet::new());
+        let mut referenced = ReferencedIds {
+            ids: BTreeSet::new(),
+            primitive_members: &self.primitive_members,
+        };
         expr.visit_with(&mut referenced);
         let index = self.candidate_index.as_ref().unwrap();
         let mut escaped = BTreeSet::new();
-        if referenced.0.is_empty() {
+        if referenced.ids.is_empty() {
             index.for_values(&flow.values_of_expr(expr), |object| {
                 escaped.insert(object);
             });
         }
-        for id in referenced.0 {
+        for id in referenced.ids {
             if self
                 .parameter_scopes
                 .iter()

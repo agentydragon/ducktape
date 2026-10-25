@@ -313,6 +313,19 @@ fromEntries}` single argument with `Object` unshadowed, the vetted
   when one is passed to an unknown consumer or used at a mutation
   site. Other return shapes remain escapes.
 
+- **Primitive member values do not expose their receiver.** The escape scan
+  distinguishes an exact static member read on a chunk-top `const` object
+  from passing the object's identity. The cached initializer must be an
+  ordinary object literal with an own primitive literal value at that key
+  after duplicate-key replacement. Binding IDs distinguish local shadows.
+  Reads of those values, including inside a formatted message, do not expose
+  the receiver to a consumer. The whole-chunk mutation, alias and escape scan
+  still runs: a write or an actual object escape invalidates the candidate.
+  Computed keys, spreads, accessors, nonprimitive values and method results
+  retain conservative escape handling. An empty value-flow result alone is
+  not a primitive proof: some unsupported expressions also have no tracked
+  object origin.
+
 - **Re-bind soundness for `let`.** Reads on `X` after a re-bind see
   the new plain-literal value; reads before still saw the old
   plain-literal value. At no program point does `X` hold an

@@ -22,6 +22,37 @@ const later = 42;
 console.log(unique.size, later);
 "#;
 
+const PRIMITIVE_MEMBER_ARGUMENT_SOURCE: &str = r#"globalThis.saved = () => later;
+const lookup = { key: "token", other: 7 };
+function sendKey(consume) { consume(lookup.key); }
+const unique = new Set([lookup.key]);
+const later = 42;
+console.log(unique.size, later);
+"#;
+
+const PRIMITIVE_MEMBER_MESSAGE_SOURCE: &str = r#"globalThis.saved = () => later;
+const lookup = { key: "token", other: 7 };
+function sendKey(consume) { consume("key=" + lookup.key + ";"); }
+const unique = new Set([lookup.key]);
+const later = 42;
+console.log(unique.size, later);
+"#;
+
+const METHOD_RECEIVER_ESCAPE_SOURCE: &str = r#"globalThis.consume = function (values) {
+  for (const callback of values) {
+    try { callback(); } catch (error) { return error.name; }
+  }
+};
+globalThis.install = function (value) {
+  Object.defineProperty(value, "key", { get() { return () => later; } });
+};
+const lookup = { key: "token", getSelf: function () { return this; } };
+globalThis.install(lookup.getSelf());
+const collection = new Set([lookup.key]);
+console.log(globalThis.consume(collection));
+const later = 42;
+"#;
+
 const CUSTOM_ITERATOR_SOURCE: &str = r#"const values = ["a"];
 globalThis.saved = () => later;
 values[Symbol.iterator] = function () { let done = false; return { next() { if (done) return { done: true }; done = true; try { globalThis.saved(); } catch (error) { return { value: error.name, done: false }; } return { value: "a", done: false }; } }; };
@@ -325,6 +356,57 @@ fn opaque_alias_member_mutation_retains_callback() {
             &[
                 "globalThis.consume = function (values) { for (const callback of values) { try { callback(); } catch (error) { return error.name; } } };",
                 "alias.key = () => later;",
+            ],
+        ),
+        "ReferenceError\n",
+    );
+}
+
+#[test]
+fn passing_primitive_property_does_not_escape_the_receiver() {
+    assert_split_runs(
+        PRIMITIVE_MEMBER_ARGUMENT_SOURCE,
+        logical_module_with_anon(
+            "values/collection",
+            &[
+                Member::new("lookup"),
+                Member::new("sendKey"),
+                Member::new("unique"),
+            ],
+            &["globalThis.saved = () => later;"],
+        ),
+        "1 42\n",
+    );
+}
+
+#[test]
+fn formatting_primitive_property_does_not_escape_the_receiver() {
+    assert_split_runs(
+        PRIMITIVE_MEMBER_MESSAGE_SOURCE,
+        logical_module_with_anon(
+            "values/collection",
+            &[
+                Member::new("lookup"),
+                Member::new("sendKey"),
+                Member::new("unique"),
+            ],
+            &["globalThis.saved = () => later;"],
+        ),
+        "1 42\n",
+    );
+}
+
+#[test]
+fn method_returning_receiver_still_exposes_the_object() {
+    assert_real_callback_keeps_split_rejected(
+        METHOD_RECEIVER_ESCAPE_SOURCE,
+        logical_module_with_anon(
+            "values/collection",
+            &[Member::new("lookup"), Member::new("collection")],
+            &[
+                "globalThis.consume = function (values) { for (const callback of values) { try { callback(); } catch (error) { return error.name; } } };",
+                "globalThis.install = function (value) { Object.defineProperty(value, 'key', { get() { return () => later; } }); };",
+                "globalThis.install(lookup.getSelf());",
             ],
         ),
         "ReferenceError\n",
