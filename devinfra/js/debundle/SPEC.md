@@ -205,6 +205,36 @@ assert that the factory call is pure or effect-free. Writes through the result
 that can install opaque values, accessors, or a new prototype conservatively
 restore callback effects; known primitive metadata writes retain deferral.
 
+For a namespace-member contract, the author must also audit the provider and all
+caller/runtime paths that supply values used by admitted callbacks. The listed
+factory members must keep their audited identities and behavior throughout the
+analyzed chunk's synchronous initialization. In particular, provider or other
+namespace members, callback/ref/hook inputs, and values returned through those
+paths must not expose an alias that can replace a listed factory member.
+Direct static identifier-property namespace call results are treated as
+independent only under this explicit author assertion. Computed, chained,
+unrelated, and unknown call results remain conservative when assigned, returned,
+or used as dynamic-write receivers. For call-argument checks, the analyzer
+follows namespace values in the supplied argument expressions and excludes the
+callee expression, which is not passed as an argument; an unrelated call result
+is not assumed to be the namespace solely because it appears as an argument.
+Unknown expression shapes remain conservative. The analyzer tracks
+dynamic-write receiver values and rejects receivers whose checked value flow
+reaches the namespace through direct member-rooted writes, local aliases, or
+unknown call results. Receivers with no syntactic path to the namespace are
+accepted only under the audited non-aliasing assertion; this is a trusted
+contract, not an automatic proof that arbitrary callback parameters cannot
+alias the namespace.
+
+Inside callback result object data properties, the analyzer also treats a
+one-hop read such as `namespace.member` as a deferred member value. Only an
+ordinary data property qualifies; the object-literal `__proto__` prototype
+setter does not. That direct shape does not prove the member value's identity;
+the author must audit its provider branches and any accessor, proxy, or
+callback behavior reachable through it. Computed reads, chains, calls, spreads,
+arrays, and other expression shapes remain conservative. Direct namespace
+values and aliases remain rejected.
+
 Without an assertion, source inference recognizes only immutable exported
 function declarations with one simple identifier parameter. The body must
 only return a zero-argument function or arrow that only calls that parameter

@@ -927,8 +927,36 @@ Nested audited factories retain the original callback through each returned
 graph. Invoking or publishing a result before the captured lexical cells are
 initialized reactivates the ordinary callback-read analysis. Namespace member
 contracts require an unmodified imported namespace target; reassigned or
-dynamic targets fall back to opaque calls. Calls remain impure for S-chain ordering unless a separate purity contract
-applies. Without an author assertion, source inference recognizes only
+dynamic targets fall back to opaque calls. Their authors must audit the provider
+and every caller/runtime path supplying values used by admitted callbacks,
+establishing that listed factory members retain their identities and behavior
+through the analyzed chunk's synchronous initialization. That includes
+checking that provider or other namespace members and callback/ref/hook inputs
+cannot expose an alias that replaces a listed factory member. Direct static
+identifier-property namespace call results are treated as independent only
+under this explicit author assertion. Computed, chained, unrelated, and unknown
+call results remain conservative when assigned, returned, or used as
+dynamic-write receivers. For call-argument checks, the checker follows
+namespace values in the supplied argument expressions and excludes the callee
+expression, which is not passed as an argument; an unrelated call result is not
+assumed to be the namespace solely because it appears as an argument. Unknown
+expression shapes remain conservative. The checker tracks dynamic-write
+receiver values and rejects receivers whose checked value flow reaches the
+namespace, including direct member-rooted writes, local aliases, and unknown
+call results. Receivers with no syntactic path to the namespace rely on the
+author's audited non-aliasing assertion; this is a trusted contract, not a
+proof that arbitrary callback parameters are disjoint from the namespace.
+
+Authors must also audit one-hop static namespace member reads used as callback
+result object data properties. The checker treats that direct shape as a
+deferred member value but cannot prove the member's runtime identity or inspect
+accessor, proxy, or callback behavior reachable through it. The object-literal
+`__proto__` prototype setter is not an ordinary data property and stays
+conservative. Computed reads, chains, calls, spreads, arrays, and other forms
+remain conservative. Direct namespace values and aliases remain rejected.
+Calls remain impure for S-chain ordering unless a separate purity contract
+applies.
+Without an author assertion, source inference recognizes only
 immutable exported function declarations with one simple identifier parameter.
 Their body must only return a zero-argument function or arrow that only calls
 that parameter with no arguments. Reassigned bindings and dynamic scopes stay
