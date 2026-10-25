@@ -1,6 +1,6 @@
 # gazelle:ignore
 
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
     name = "db",
@@ -146,7 +146,6 @@ py_library(
         "@pypi//cdk8s",
     ],
 )
-
 
 py_library(
     name = "blueprint_contracts",

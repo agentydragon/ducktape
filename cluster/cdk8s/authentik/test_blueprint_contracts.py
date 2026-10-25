@@ -40,4 +40,3 @@ def test_outpost_provider_references_resolve(k8s_dir: Path) -> None:
 
 if __name__ == "__main__":
     pytest_bazel.main()
-

@@ -81,4 +81,3 @@ filegroup(
     ],
     visibility = ["//cluster/cdk8s/authentik:__pkg__"],
 )
-

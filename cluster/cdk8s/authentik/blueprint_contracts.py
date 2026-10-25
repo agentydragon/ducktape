@@ -201,4 +201,3 @@ def check_outpost_provider_references(k8s_dir: Path) -> list[str]:
                     "the reference from embedded-outpost.yaml."
                 )
     return errors
-
