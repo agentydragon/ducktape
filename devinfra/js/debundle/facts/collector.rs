@@ -1041,6 +1041,16 @@ impl Visit for StatementFactsCollector {
     fn visit_setter_prop(&mut self, node: &SetterProp) {
         lazy_visit_setter_prop(self, node);
     }
+    fn visit_class_decl(&mut self, node: &ClassDecl) {
+        // The declaration name binds the class; evaluating its definition
+        // does not read that binding. Heritage, computed keys, static fields,
+        // and method bodies still visit through the class node below.
+        node.class.visit_with(self);
+    }
+    fn visit_class_expr(&mut self, node: &ClassExpr) {
+        // A named class expression has a local binding with the same rule.
+        node.class.visit_with(self);
+    }
     fn visit_class(&mut self, node: &Class) {
         lazy_visit_class(self, node);
     }

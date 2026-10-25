@@ -547,6 +547,42 @@ fn class_instance_init_is_lazy() {
 }
 
 #[test]
+fn class_names_are_bindings_but_class_evaluation_reads_remain_eager() {
+    let reads_symbol = |reads: &std::collections::BTreeSet<swc_ecma_ast::Id>, name: &str| {
+        reads.iter().any(|(symbol, _)| symbol.as_ref() == name)
+    };
+    for source in [
+        "class Container { read() { return later; } }",
+        "export class Container { read() { return later; } }",
+        "export default class Container { read() { return later; } }",
+    ] {
+        let facts = analyze_facts(&parse(source));
+        assert_eq!(facts.len(), 1, "{source}");
+        assert!(
+            !reads_symbol(&facts[0].reads.eager, "Container"),
+            "{source}"
+        );
+        assert!(facts[0].reads.lazy.contains(&test_id("later")), "{source}");
+    }
+
+    let facts = analyze_facts(&parse(
+        "const Value = class Inner { read() { return Inner; } };",
+    ));
+    assert!(!reads_symbol(&facts[0].reads.eager, "Inner"));
+    assert!(facts[0].reads.lazy.contains(&test_id("Inner")));
+
+    let facts = analyze_facts(&parse(
+        "class Container extends Base { [key]() {} static value = initial; }",
+    ));
+    for binding in ["Base", "key", "initial"] {
+        assert!(
+            facts[0].reads.eager.contains(&test_id(binding)),
+            "{binding}"
+        );
+    }
+}
+
+#[test]
 fn annotated_decorate_helper_call_records_target_local_effect_not_global_sequence() {
     let module = parse(
         r#"console.log("boot");

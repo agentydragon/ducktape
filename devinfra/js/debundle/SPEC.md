@@ -226,6 +226,11 @@ Opaque calls holding a class or instance may invoke its constructor, field
 initializers, methods, and accessors. Their synchronous read closure stops at a
 definite `await` where retained callable coverage is complete; uncovered owners
 and incomplete reachability retain whole-body effects and rebinds.
+When those effects reach a top-level class declaration with a simple binding
+as its superclass, analysis uses the possible class values from the prefix at
+the declaration. Later writes to that binding do not replace the superclass
+captured by the class. Unsupported or uncertain heritage retains the generic
+fallback.
 
 At-init callback analysis also records possible implicit primitive conversions
 from arithmetic, relational and loose-equality operators, the left operand of
