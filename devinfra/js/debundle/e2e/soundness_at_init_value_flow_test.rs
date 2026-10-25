@@ -73,7 +73,7 @@ fn local_constructor_sequence_and_lazy_fields_keep_callbacks_deferred() {
             r#"class Command {
   constructor(config, checker, attrs) {
     (this.config = config, this.checker = checker, this.attrs = attrs,
-     this.weight = config.weight ?? 0, this.focus = config.focus === true,
+     this.weight = config.weight ?? 0, this.focus = config.focus === !0,
      this.children = config.children);
   }
   weight;
@@ -87,7 +87,7 @@ function factory(config, checker, attrs) { return new Command(config, checker, a
 function isCommand(value) { return value instanceof Command; }
 const command = factory({ execute: () => later }, () => later, {});
 const later = 7;
-console.log(isCommand(command), command.search());
+console.log(isCommand(command), command.focus, command.search());
 export { Command, factory, isCommand, command, later };
 "#,
             vec![
@@ -105,7 +105,35 @@ export { Command, factory, isCommand, command, later };
         )
         .with_unassigned_mode(unassigned_mode_inline()),
     );
-    assert_preserved_entry_output(&fixture, "true 7\n");
+    assert_preserved_entry_output(&fixture, "true false 7\n");
+}
+
+#[test]
+fn negated_constructor_values_keep_getter_and_call_effects() {
+    for value in ["!config.focus", "!config.execute()"] {
+        expect_atomic_conflict_rejection(
+            FixtureOpts::new(
+                &format!(
+                    r#"class Command {{
+  constructor(config) {{ this.focus = {value}; }}
+}}
+const command = new Command({{
+  get focus() {{ return later; }},
+  execute: () => later,
+}});
+const later = 7;
+export {{ Command, command, later }};
+"#
+                ),
+                vec![
+                    logical_module("command", &[Member::new("command")]),
+                    logical_module("value", &[Member::new("later")]),
+                ],
+            ),
+            &["command", "value"],
+            &[],
+        );
+    }
 }
 
 #[test]
