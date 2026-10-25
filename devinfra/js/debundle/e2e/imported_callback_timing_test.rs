@@ -18,6 +18,112 @@ fn modules() -> Vec<LogicalModuleEntry> {
 }
 
 #[test]
+fn namespace_factory_keeps_unrelated_optional_member_values_independent() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import { api } from './peer.js';\n\
+             const input = { message: 'ready' };\n\
+             const message = input?.message;\n\
+             const wrapped = api.make(() => later);\n\
+             const later = 42;\n\
+             console.log(message, wrapped.invoke());\n",
+            vec![
+                logical_module(
+                    "callbacks/wrapped",
+                    &[
+                        Member::new("input"),
+                        Member::new("message"),
+                        Member::new("wrapped"),
+                    ],
+                ),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        )
+        .with_extra_chunks(&[(
+            "static/peer",
+            "export const api = { make(callback) { return { invoke: () => callback() }; } };\n",
+        )])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+            .with_callback_factory_members("api", &["make"])
+            .build()]),
+    );
+    assert_preserved_entry_output(&fixture, "ready 42\n");
+}
+
+#[test]
+fn optional_namespace_member_aliases_still_disable_factory_deferral() {
+    for (holder, lookup) in [
+        ("{ api }", "holder?.api"),
+        ("{ api }", "holder?.['api']"),
+        ("{ get api() { return api; } }", "holder?.api"),
+    ] {
+        let source = format!(
+            "import {{ api }} from './peer.js';\n\
+             let later = 0;\n\
+             const holder = {holder};\n\
+             const alias = {lookup};\n\
+             const eager = callback => {{ globalThis.observed = callback(); return {{ invoke: () => callback() }}; }};\n\
+             alias.make = eager;\n\
+             const wrapped = api.make(() => later);\n\
+             later = 42;\n\
+             console.log(globalThis.observed, wrapped.invoke());\n"
+        );
+        let peer = [(
+            "static/peer",
+            "export const api = { make(callback) { return { invoke: () => callback() }; } };\n",
+        )];
+        let purity = [ChunkExportPurityBuilder::new("static/peer")
+            .with_callback_factory_members("api", &["make"])
+            .build()];
+        let colocated = run_fixture(
+            FixtureOpts::new(
+                &source,
+                vec![logical_module_with_anon(
+                    "all",
+                    &[
+                        Member::new("later"),
+                        Member::new("holder"),
+                        Member::new("alias"),
+                        Member::new("eager"),
+                        Member::new("wrapped"),
+                    ],
+                    &["alias.make = eager;", "later = 42;"],
+                )],
+            )
+            .with_extra_chunks(&peer)
+            .with_chunk_export_purity(&purity),
+        );
+        assert_preserved_entry_output(&colocated, "0 42\n");
+        expect_atomic_conflict_rejection(
+            FixtureOpts::new(
+                &source,
+                vec![
+                    logical_module_with_anon(
+                        "callbacks/wrapped",
+                        &[
+                            Member::new("holder"),
+                            Member::new("alias"),
+                            Member::new("eager"),
+                            Member::new("wrapped"),
+                        ],
+                        &["alias.make = eager;"],
+                    ),
+                    logical_module_with_anon(
+                        "values/later",
+                        &[Member::new("later")],
+                        &["later = 42;"],
+                    ),
+                ],
+            )
+            .with_extra_chunks(&peer)
+            .with_chunk_export_purity(&purity),
+            &["callbacks/wrapped", "values/later"],
+            &["eager_use", "sequenced"],
+        );
+    }
+}
+
+#[test]
 fn returned_wrapper_does_not_invoke_its_callback_at_creation() {
     let peers = [(
         "static/peer",

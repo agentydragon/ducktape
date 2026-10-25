@@ -293,7 +293,12 @@ runtime value is unknown; the author audit asserts that values used by admitted
 callbacks cannot alias or replace listed members. Unknown syntax remains
 conservative at publication and call-argument sinks. Binding cycles alone do
 not establish namespace provenance; namespace and
-unknown-value inputs to a cycle remain conservative. For call-argument checks,
+unknown-value inputs to a cycle remain conservative. A static identifier-property
+optional read directly from an identifier retains the receiver's namespace
+provenance and the possible undefined result. Optional calls, computed optional
+reads and chained receivers remain conservative; this value-flow rule does not
+assert purity or remove accessor effects.
+For call-argument checks,
 the analyzer follows namespace values in the supplied argument expressions
 and excludes the callee expression, which is not passed as an argument. A
 value from an unknown call or constructor used as a static or dynamic write

@@ -379,6 +379,24 @@ impl ValueExpr {
                 static_prop(&member.prop),
                 matches!(member.prop, MemberProp::Ident(_)),
             ),
+            Expr::OptChain(chain) => match chain.base.as_ref() {
+                OptChainBase::Member(member)
+                    if matches!(member.obj.unwrap_parens(), Expr::Ident(_))
+                        && matches!(member.prop, MemberProp::Ident(_)) =>
+                {
+                    Self::Alternatives(vec![
+                        Self::Undefined,
+                        Self::Member(
+                            Box::new(Self::from_expr(&member.obj)),
+                            static_prop(&member.prop),
+                            true,
+                        ),
+                    ])
+                }
+                // Calls, computed keys and receiver chains retain the unknown
+                // publication fallback until their provenance is supported.
+                _ => Self::Unknown,
+            },
             Expr::Call(call) if call.args.iter().all(|arg| arg.spread.is_none()) => {
                 match &call.callee {
                     Callee::Expr(callee) => Self::Call(
