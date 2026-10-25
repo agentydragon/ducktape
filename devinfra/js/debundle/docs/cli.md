@@ -386,6 +386,24 @@ those labels and the report remains false with that atom conflict listed. Both
 modes run the same full candidate gate; JSON's `strategy` field identifies the
 selected mode.
 
+Local `intrinsic_alias.referenced_by` selectors resolve their anchor within the
+same logical module. To keep each such member with its resolved anchor while
+splitting, opt in to source-backed selector resolution:
+
+```sh
+debundle modules decompose --atomic --preserve-selector-anchors \
+  --source-root source --graph owner_graph.json --modules spec/modules --format json
+```
+
+This option requires `--source-root`, resolves current claims through the normal
+joint selector resolver, and coalesces only the member and its local anchor in
+the candidate. The JSON report sets `preserve_selector_anchors` and lists the
+resolved relationships in `selector_anchor_relations`. Other selector anchors
+remain governed by their existing global semantics. The command remains
+read-only, and the complete candidate still passes through the same structural
+and realizability gates. Without the option, graph-only decomposition behavior
+is unchanged.
+
 To ask for a coarser candidate when the atomic partition is blocked by gate
 cycles, add `--coarsen-blocking-sccs`:
 

@@ -2,6 +2,7 @@
 
 use debundle_e2e_support::{GraphFixture, TreeFixture, debundler_path, run_tree_fixture};
 use serde_json::json;
+use std::collections::BTreeMap;
 use std::fs;
 use std::process::Command;
 
@@ -320,4 +321,146 @@ fn rejects_unclaimed_scaffolding_and_duplicate_owner_rows() {
         ],
         &["owner assignment batch repeats"],
     );
+}
+
+#[test]
+fn atomic_decomposition_can_preserve_local_selector_anchors() {
+    let fixture = GraphFixture::new(
+        r#"var getDescriptor = Object.getOwnPropertyDescriptor;
+var defineProperty = Object.defineProperty;
+var decorate = (decorators, target, key) => {
+  const descriptor = getDescriptor(target, key);
+  for (const decorator of decorators) decorator(target, key, descriptor);
+  defineProperty(target, key, descriptor);
+};
+const tag = (target, key, descriptor) => {
+  const original = descriptor.value;
+  descriptor.value = function () { return original.call(this) + "!"; };
+};
+class C { greet() { return "hi"; } }
+const marker = 7;
+decorate([tag], C.prototype, "greet");
+console.log(new C().greet());
+"#,
+        &[
+            (
+                "model.yaml",
+                "members: [{name: DecoratedClass, selector: {binding: {name: C}}}]\n",
+            ),
+            (
+                "runtime/decorators.yaml",
+                "members:\n  - name: applyDecorators\n    selector: {makes_decorate_call: {class: DecoratedClass}}\n  - name: defineProp\n    selector: {intrinsic_alias: {property: defineProperty, referenced_by: applyDecorators}}\n  - name: getPropDesc\n    selector: {intrinsic_alias: {property: getOwnPropertyDescriptor, referenced_by: applyDecorators}}\n  - name: marker\n    selector: {binding: {name: marker}}\n",
+            ),
+        ],
+    );
+
+    fixture.assert_runs("hi!\n");
+    let model_yaml = fs::read(fixture.modules.join("model.yaml")).unwrap();
+    let decorators_yaml = fs::read(fixture.modules.join("runtime/decorators.yaml")).unwrap();
+
+    let atomic = fixture.json(&["modules", "decompose", "--atomic"]);
+    assert_eq!(atomic["candidate_is_realizable"], true);
+    assert_eq!(atomic.get("preserve_selector_anchors"), None);
+    let mut atomic_paths = BTreeMap::new();
+    let mut atomic_rows = Vec::new();
+    for module in atomic["modules"].as_array().unwrap() {
+        for fragment in module["fragments"].as_array().unwrap() {
+            let suggested_module = fragment["suggested_module_path"].as_str().unwrap();
+            for owner_id in fragment["owner_ids"].as_array().unwrap() {
+                let owner_id = owner_id.as_str().unwrap();
+                atomic_paths.insert(owner_id.to_string(), suggested_module.to_string());
+                atomic_rows.push(json!({
+                    "owner_id": owner_id,
+                    "module": suggested_module,
+                }));
+            }
+        }
+    }
+    assert_ne!(
+        atomic_paths[&owner_for_binding(&fixture, "decorate")],
+        atomic_paths[&owner_for_binding(&fixture, "getDescriptor")],
+        "graph-only atomic decomposition should expose the local anchor split"
+    );
+    let invalid_batch = write_batch(serde_json::Value::Array(atomic_rows));
+    fixture.assert_rejected_unchanged(
+        &[
+            "modules",
+            "refine",
+            "--batch",
+            invalid_batch.path().join("refine.json").to_str().unwrap(),
+        ],
+        &[
+            "selector anchor",
+            "does not name a lowered member in module",
+        ],
+    );
+
+    let source_path = fixture.source_path();
+    let source_root = source_path.parent().unwrap().to_str().unwrap();
+    let cohesive = fixture.json(&[
+        "modules",
+        "decompose",
+        "--atomic",
+        "--preserve-selector-anchors",
+        "--source-root",
+        source_root,
+    ]);
+    assert_eq!(cohesive["candidate_is_realizable"], true);
+    assert_eq!(cohesive["preserve_selector_anchors"], true);
+    assert_eq!(
+        cohesive["selector_anchor_relations"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+
+    let mut cohesive_paths = BTreeMap::new();
+    let mut cohesive_rows = Vec::new();
+    for module in cohesive["modules"].as_array().unwrap() {
+        for fragment in module["fragments"].as_array().unwrap() {
+            let suggested_module = fragment["suggested_module_path"].as_str().unwrap();
+            for owner_id in fragment["owner_ids"].as_array().unwrap() {
+                let owner_id = owner_id.as_str().unwrap();
+                cohesive_paths.insert(owner_id.to_string(), suggested_module.to_string());
+                cohesive_rows.push(json!({
+                    "owner_id": owner_id,
+                    "module": suggested_module,
+                }));
+            }
+        }
+    }
+    let decorate_path = &cohesive_paths[&owner_for_binding(&fixture, "decorate")];
+    assert_eq!(
+        decorate_path,
+        &cohesive_paths[&owner_for_binding(&fixture, "getDescriptor")]
+    );
+    assert_eq!(
+        decorate_path,
+        &cohesive_paths[&owner_for_binding(&fixture, "defineProperty")]
+    );
+    assert_ne!(
+        decorate_path,
+        &cohesive_paths[&owner_for_binding(&fixture, "marker")],
+        "unrelated owners should remain independently decomposable"
+    );
+    assert_eq!(
+        fs::read(fixture.modules.join("model.yaml")).unwrap(),
+        model_yaml,
+        "decompose must not edit the spec"
+    );
+    assert_eq!(
+        fs::read(fixture.modules.join("runtime/decorators.yaml")).unwrap(),
+        decorators_yaml,
+        "decompose must not edit the spec"
+    );
+
+    let batch = write_batch(serde_json::Value::Array(cohesive_rows));
+    fixture.assert_success(&[
+        "modules",
+        "refine",
+        "--batch",
+        batch.path().join("refine.json").to_str().unwrap(),
+    ]);
+    fixture.assert_runs("hi!\n");
 }
