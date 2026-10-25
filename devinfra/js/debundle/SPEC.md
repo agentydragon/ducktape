@@ -499,6 +499,12 @@ remain. Independent exports or other publications of the same value retain
 their own reentry behavior. A spec author must audit the host's property
 descriptor and all consumers; source checks alone cannot establish either
 host fact.
+An earlier anonymous, zero-argument synchronous function IIFE with a discarded
+result may use a local global-object alias before the certified write if that
+alias and every derived value stay inside the invocation. Ordinary calls with
+the alias, nested
+callbacks, returns, dynamic direct member access, and certified-slot access
+through the alias retain the conservative fallback.
 Primitive-valued operator results cannot carry the global-object identity.
 The synthetic protocol call for a literal-key `in` check on a direct builtin
 global root does not publish that root as a value; its possible host or proxy
