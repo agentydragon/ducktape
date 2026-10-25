@@ -402,6 +402,7 @@ fn atomic_mode_leaves_cross_module_structural_atoms_on_their_current_paths() {
         "--atomic",
         "--coarsen-blocking-sccs",
         "--coarsen-atomic-conflicts",
+        "--rejoin-original-modules",
         "--graph",
         fixture.graph.to_str().unwrap(),
         "--modules",
@@ -416,6 +417,10 @@ fn atomic_mode_leaves_cross_module_structural_atoms_on_their_current_paths() {
             .is_empty()
     );
     assert_eq!(merged["coarsening"]["stop_reason"], "accepted");
+    assert_eq!(
+        merged["coarsening"]["original_home_rejoining"]["stop_reason"],
+        "converged"
+    );
     let atomic_merges = merged["coarsening"]["atomic_conflict_merges"]
         .as_array()
         .unwrap();
@@ -812,6 +817,7 @@ fn source_aware_coarsening_reports_all_readable_name_collisions() {
         "decompose",
         "--atomic",
         "--coarsen-blocking-sccs",
+        "--rejoin-original-modules",
         "--preserve-selector-anchors",
         "--source-root",
         source_root,
