@@ -29,8 +29,12 @@ pub struct ChunkCodeGraph {
     /// code — `X` is admitted as result-primitive wherever it is not
     /// locally shadowed. The init's own evaluation effects are
     /// classified separately at its declaration site; only the
-    /// *value* class matters here. See `collect_primitive_const_bindings`.
+    /// *value* class matters here. See `collect_const_value_classes`.
     pub(crate) primitive_const_bindings: BTreeSet<String>,
+    /// Immutable Symbol-valued consts are safe only for ToPropertyKey.
+    /// They must not enter `primitive_const_bindings`: ToString(Symbol)
+    /// throws, unlike the result-primitive forms tracked there.
+    pub(crate) symbol_const_bindings: BTreeSet<String>,
     /// Chunk-top `const X = [..]` bindings that remain static ordinary
     /// arrays under the same no-escape scan as `PlainData`, and are
     /// never used as the receiver of unknown/mutating array methods.
@@ -242,11 +246,14 @@ impl ChunkCodeGraph {
                 .entry(name.clone())
                 .or_insert(ChunkBinding::PlainData);
         }
+        let (primitive_const_bindings, symbol_const_bindings) =
+            collect_const_value_classes(body, shadowed);
         let mut graph = ChunkCodeGraph {
             bindings,
             pure_new_constructors: declared_pure_new.clone(),
             declared_pure_members: declared_pure_members.clone(),
-            primitive_const_bindings: collect_primitive_const_bindings(body),
+            primitive_const_bindings,
+            symbol_const_bindings,
             plain_array_bindings: collect_plain_array_bindings(body, shadowed),
             set_iterable_proof: set_iterable_proof.clone(),
             imported_purities: imported_purities.clone(),

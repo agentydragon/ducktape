@@ -709,6 +709,49 @@ fn classify_class_computed_keys_require_safe_primitive_keys() {
     assert!((classify("class { ['x'] = io(); }")).is_pure()); // instance init is lazy
 }
 
+#[test]
+fn immutable_symbol_const_is_safe_only_as_a_computed_key() {
+    let classify_key: fn(&str, &str) -> Purity = classify_built;
+    assert!(classify_key("const brand = Symbol('brand');", "class { [brand]() {} }").is_pure());
+    assert!(
+        classify_key(
+            "const brand = Symbol('brand'); const alias = brand;",
+            "class { [alias]() {} }"
+        )
+        .is_pure()
+    );
+    assert!(!classify_key("const brand = Symbol('brand');", "`${brand}`").is_pure());
+    assert!(!classify_key("let brand = Symbol('brand');", "class { [brand]() {} }").is_pure());
+    assert!(!classify_key("const brand = Symbol(value);", "class { [brand]() {} }").is_pure());
+    assert!(
+        !classify_key(
+            "const Symbol = () => ({ toString() { return 'x'; } }); const brand = Symbol('brand');",
+            "class { [brand]() {} }"
+        )
+        .is_pure()
+    );
+    assert!(
+        !classify_key(
+            "Symbol = make; const brand = Symbol('brand');",
+            "class { [brand]() {} }"
+        )
+        .is_pure()
+    );
+    for mutation in [
+        "({ Symbol } = provider);",
+        "globalThis['Symbol'] = make;",
+        "const globalAlias = globalThis; globalAlias.Symbol = make;",
+        "Object.defineProperty(globalThis, 'Symbol', { value: make });",
+        "Reflect.set(globalThis, 'Symbol', make);",
+    ] {
+        let source = format!("{mutation} const brand = Symbol('brand');");
+        assert!(
+            !classify_key(&source, "class { [brand]() {} }").is_pure(),
+            "visible Symbol replacement must disable the key proof: {mutation}"
+        );
+    }
+}
+
 /// Parse a single class declaration with decorators /
 /// auto-accessors enabled and run `class_has_static_observable`
 /// on it with empty shadow/annotation context.

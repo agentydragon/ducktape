@@ -469,6 +469,7 @@ fn classify_member_purity(
                     shadowed,
                     local_shadowed,
                     &graph.primitive_const_bindings,
+                    &graph.symbol_const_bindings,
                 ) {
                     key_purity
                 } else {
@@ -933,6 +934,7 @@ fn classify_propname_purity(
                 shadowed,
                 local_shadowed,
                 &graph.primitive_const_bindings,
+                &graph.symbol_const_bindings,
             ) {
                 key_purity
             } else {
@@ -989,6 +991,7 @@ pub(crate) fn class_has_static_observable(
                     shadowed,
                     local_shadowed,
                     &graph.primitive_const_bindings,
+                    &graph.symbol_const_bindings,
                 )
         }
     };

@@ -278,13 +278,13 @@ fn expr_is_plain_array_receiver(expr: &Expr, known_plain_arrays: &BTreeSet<Strin
     }
 }
 
-/// Chunk-top `const X = <init>` names whose init evaluates to a
-/// **primitive** value, resolving references to earlier such consts.
+/// Chunk-top `const` names whose init evaluates to either a
+/// ToString-safe primitive or a Symbol, resolving earlier const aliases.
 /// `const` guarantees the binding never rebinds, and a primitive
-/// carries no user accessors, so coercing a reference to the name
-/// fires no user code regardless of how the init was computed (the
-/// init's own evaluation effects are classified at its declaration
-/// site — only the resulting value class matters here). `let` / `var`
+/// carries no user accessors. Symbols are kept separate because
+/// ToPropertyKey accepts them but ToString throws. The init's own
+/// evaluation effects are classified at its declaration site; only
+/// the resulting value class matters here. `let` / `var`
 /// are excluded: a later non-primitive rebind would invalidate the
 /// claim.
 ///
@@ -293,20 +293,146 @@ fn expr_is_plain_array_receiver(expr: &Expr, known_plain_arrays: &BTreeSet<Strin
 /// hitting the temporal dead zone. Function/arrow inits never reach
 /// here (`plain_data_var_candidates` filters them) and are not
 /// primitive anyway.
-pub(crate) fn collect_primitive_const_bindings(body: &[TopLevelItemView<'_>]) -> BTreeSet<String> {
+pub(crate) fn collect_const_value_classes(
+    body: &[TopLevelItemView<'_>],
+    shadowed: &BTreeSet<&'static str>,
+) -> (BTreeSet<String>, BTreeSet<String>) {
     let mut primitives: BTreeSet<String> = BTreeSet::new();
+    let mut symbols: BTreeSet<String> = BTreeSet::new();
+    let mut symbol_write = SymbolGlobalWriteFinder::default();
     let no_local_shadow: BTreeSet<String> = BTreeSet::new();
     for item in body {
+        item.as_module_item().visit_with(&mut symbol_write);
         for (name, init, kind) in plain_data_var_candidates(item.as_module_item()) {
-            if kind == VarDeclKind::Const
-                && !primitives.contains(&name)
-                && is_result_primitive(init, &primitives, &no_local_shadow)
-            {
+            if kind != VarDeclKind::Const {
+                continue;
+            }
+            if is_result_primitive(init, &primitives, &no_local_shadow) {
                 primitives.insert(name);
+            } else if is_symbol_const_init(init, &symbols, shadowed) {
+                symbols.insert(name);
             }
         }
     }
-    primitives
+    if symbol_write.hit {
+        // A visible replacement can make `Symbol(...)` return an object.
+        // Discard even earlier candidates so later computed-key uses cannot
+        // rely on source-order assumptions about an untracked global cell.
+        symbols.clear();
+    }
+    (primitives, symbols)
+}
+
+#[derive(Default)]
+struct SymbolGlobalWriteFinder {
+    hit: bool,
+}
+
+impl Visit for SymbolGlobalWriteFinder {
+    fn visit_assign_expr(&mut self, node: &AssignExpr) {
+        match &node.left {
+            AssignTarget::Simple(SimpleAssignTarget::Member(member)) => {
+                self.hit |= is_symbol_member(member);
+            }
+            other => {
+                let mut target = SymbolTargetFinder::default();
+                other.visit_with(&mut target);
+                self.hit |= target.hit;
+            }
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_update_expr(&mut self, node: &UpdateExpr) {
+        if matches!(node.arg.unwrap_parens(), Expr::Ident(id) if id.sym.as_ref() == "Symbol")
+            || matches!(node.arg.unwrap_parens(), Expr::Member(member) if is_symbol_member(member))
+        {
+            self.hit = true;
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_unary_expr(&mut self, node: &UnaryExpr) {
+        if node.op == UnaryOp::Delete
+            && matches!(node.arg.unwrap_parens(), Expr::Member(member) if is_symbol_member(member))
+        {
+            self.hit = true;
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_call_expr(&mut self, node: &CallExpr) {
+        if let Callee::Expr(callee) = &node.callee
+            && let Expr::Member(member) = callee.unwrap_parens()
+            && let Expr::Ident(receiver) = member.obj.unwrap_parens()
+            && let MemberProp::Ident(property) = &member.prop
+            && matches!(
+                (receiver.sym.as_ref(), property.sym.as_ref()),
+                ("Object", "defineProperty" | "defineProperties" | "assign")
+                    | ("Reflect", "defineProperty" | "set")
+            )
+            && node.args.len() >= 2
+            && (matches!(node.args[1].expr.unwrap_parens(), Expr::Lit(Lit::Str(key)) if key.value.as_str() == Some("Symbol"))
+                || matches!(node.args[1].expr.unwrap_parens(), Expr::Object(object) if object.props.iter().any(|prop| matches!(prop, PropOrSpread::Prop(prop) if matches!(prop.as_ref(), Prop::KeyValue(kv) if matches!(&kv.key, PropName::Ident(id) if id.sym.as_ref() == "Symbol"))))))
+        {
+            self.hit = true;
+        }
+        node.visit_children_with(self);
+    }
+}
+
+#[derive(Default)]
+struct SymbolTargetFinder {
+    hit: bool,
+}
+
+impl Visit for SymbolTargetFinder {
+    fn visit_ident(&mut self, ident: &Ident) {
+        self.hit |= ident.sym.as_ref() == "Symbol";
+    }
+
+    fn visit_member_expr(&mut self, member: &MemberExpr) {
+        self.hit |= is_symbol_member(member);
+        member.visit_children_with(self);
+    }
+}
+
+fn is_symbol_member(member: &MemberExpr) -> bool {
+    match &member.prop {
+        MemberProp::Ident(id) => id.sym.as_ref() == "Symbol",
+        MemberProp::Computed(key) => {
+            matches!(key.expr.unwrap_parens(), Expr::Lit(Lit::Str(value)) if value.value.as_str() == Some("Symbol"))
+        }
+        MemberProp::PrivateName(_) => false,
+    }
+}
+
+fn is_symbol_const_init(
+    init: &Expr,
+    symbols: &BTreeSet<String>,
+    shadowed: &BTreeSet<&'static str>,
+) -> bool {
+    match init.unwrap_parens() {
+        Expr::Ident(id) => symbols.contains(id.sym.as_ref()),
+        Expr::Call(call) if !shadowed.contains("Symbol") => {
+            matches!(&call.callee, Callee::Expr(callee) if matches!(callee.unwrap_parens(), Expr::Ident(id) if id.sym.as_ref() == "Symbol"))
+                && call.args.len() <= 1
+                && call.args.iter().all(|arg| {
+                    arg.spread.is_none()
+                        && matches!(
+                            arg.expr.unwrap_parens(),
+                            Expr::Lit(
+                                Lit::Str(_)
+                                    | Lit::Num(_)
+                                    | Lit::Bool(_)
+                                    | Lit::Null(_)
+                                    | Lit::BigInt(_)
+                            )
+                        )
+                })
+        }
+        _ => false,
+    }
 }
 
 /// Close the author-asserted fluent roots (`seed`, the projected

@@ -98,6 +98,20 @@ by `fresh_proxy_object_literals_are_pure`,
 See the [Proxy constructor algorithm](https://tc39.es/ecma262/multipage/reflection.html#sec-proxy-constructor)
 and [ProxyCreate](https://tc39.es/ecma262/multipage/ordinary-and-exotic-objects-behaviours.html#sec-proxycreate).
 
+## Immutable Symbol computed keys
+
+Chunk-top `const` values made by unshadowed `Symbol()` with at most one
+primitive literal argument, and immutable aliases of those values, are safe
+computed property keys. `ToPropertyKey` returns a Symbol unchanged. The
+declaration's evaluation effects remain classified separately. Recognized
+direct writes to `Symbol` and static property/descriptor writes named
+`Symbol` disable this value proof; other mutation of built-in intrinsics
+remains under A11's author-audited integrity assumption.
+These bindings stay outside the result-primitive set used by string
+interpolation and numeric/string coercion: `ToString(Symbol)` throws.
+`let`/`var`, shadowed `Symbol`, spread or uncertain arguments, and locally
+shadowed key bindings keep the conservative classification.
+
 ## `String.raw` tagged templates
 
 `String.raw` tagged templates are admitted only when the tag is exactly the

@@ -349,6 +349,14 @@ fn class_decl_pure_without_static_init() {
 }
 
 #[test]
+fn immutable_symbol_const_is_an_inert_computed_class_key() {
+    assert_eq!(
+        has_side_effect_for("const brand = Symbol('brand'); class C { [brand]() {} }"),
+        vec![false, false]
+    );
+}
+
+#[test]
 fn bare_expression_classified_by_purity() {
     // Plain ident-read expression statement: pure.
     assert_eq!(has_side_effect_for("X;"), vec![false]);

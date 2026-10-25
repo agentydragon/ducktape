@@ -757,6 +757,27 @@ export { X, Y, Z };
 // Symbol purity.
 // ---------------------------------------------------------------------------
 
+#[test]
+fn immutable_symbol_key_does_not_make_class_definition_an_effect() {
+    assert_pure_cycle_break(
+        r#"const before = (() => 1)();
+const brand = Symbol('brand');
+class Hidden { [brand]() { return 7; } }
+const after = Hidden.name + before;
+console.log(after);
+export { Hidden, after };
+"#,
+        vec![logical_module(
+            "class/hidden",
+            &[Member::new("brand"), Member::new("Hidden")],
+        )],
+        "class/hidden",
+        &["class Hidden", "brand"],
+        &["const before"],
+        "Hidden1\n",
+    );
+}
+
 // Pin `Symbol(primitive_literal)` purity classification.
 //
 // ECMA-262 §20.4.1.1 says `Symbol(description)`:
