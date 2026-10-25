@@ -69,6 +69,18 @@ fn rejoining_restores_a_safe_home_and_keeps_an_unrelated_module() {
     assert!(
         String::from_utf8_lossy(&missing_coarsening.stderr).contains("--coarsen-blocking-sccs")
     );
+    let missing_rejoining = fixture.command(&[
+        "modules",
+        "decompose",
+        "--atomic",
+        "--coarsen-blocking-sccs",
+        "--rejoin-home-pass-limit",
+        "1",
+    ]);
+    assert_eq!(missing_rejoining.status.code(), Some(2));
+    assert!(
+        String::from_utf8_lossy(&missing_rejoining.stderr).contains("--rejoin-original-modules")
+    );
     let args = [
         "modules",
         "decompose",
@@ -221,6 +233,9 @@ fn rejoining_keeps_an_unsafe_home_split_and_refine_applies_accepted_groups() {
     assert_eq!(report["cycles"], serde_json::json!([]), "{report}");
     assert_eq!(report["cross_rebinds"], serde_json::json!([]), "{report}");
     let rejoining = &report["coarsening"]["original_home_rejoining"];
+    assert_eq!(rejoining["stop_reason"], "converged", "{report}");
+    assert_eq!(rejoining["whole_home_pass_count"], 2, "{report}");
+    assert!(rejoining.get("whole_home_pass_limit").is_none(), "{report}");
     // One rejected whole-home check, then pair fallback across two safe
     // contractions and a final pass. Do not retry the same rejected batch
     // after each safe pair within the home.
@@ -239,6 +254,85 @@ fn rejoining_keeps_an_unsafe_home_split_and_refine_applies_accepted_groups() {
         .filter(|group| group["origin_module_paths"] == serde_json::json!(["home"]))
         .collect();
     assert_eq!(split.len(), 2, "{report}");
+
+    let zero_passes = fixture.json(&[
+        "modules",
+        "decompose",
+        "--atomic",
+        "--coarsen-blocking-sccs",
+        "--rejoin-original-modules",
+        "--rejoin-home-pass-limit",
+        "0",
+        "--graph",
+        fixture.graph.to_str().unwrap(),
+        "--modules",
+        fixture.modules.to_str().unwrap(),
+    ]);
+    assert_eq!(zero_passes["coverage_complete"], true, "{zero_passes}");
+    assert_eq!(
+        zero_passes["candidate_is_realizable"], true,
+        "{zero_passes}"
+    );
+    let zero_rejoining = &zero_passes["coarsening"]["original_home_rejoining"];
+    assert_eq!(
+        zero_rejoining["stop_reason"], "whole_home_pass_limit_reached",
+        "{zero_passes}"
+    );
+    assert_eq!(zero_rejoining["whole_home_pass_count"], 0, "{zero_passes}");
+    assert_eq!(zero_rejoining["whole_home_pass_limit"], 0, "{zero_passes}");
+    assert_eq!(zero_rejoining["attempted_contractions"], 0, "{zero_passes}");
+    assert_eq!(zero_rejoining["accepted_contractions"], 0, "{zero_passes}");
+    assert!(
+        zero_rejoining["unrestored_module_paths"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("home")),
+        "{zero_passes}"
+    );
+
+    let one_pass = fixture.json(&[
+        "modules",
+        "decompose",
+        "--atomic",
+        "--coarsen-blocking-sccs",
+        "--rejoin-original-modules",
+        "--rejoin-home-pass-limit",
+        "1",
+        "--graph",
+        fixture.graph.to_str().unwrap(),
+        "--modules",
+        fixture.modules.to_str().unwrap(),
+    ]);
+    assert_eq!(one_pass["coverage_complete"], true, "{one_pass}");
+    assert_eq!(one_pass["candidate_is_realizable"], true, "{one_pass}");
+    assert_eq!(one_pass["cycles"], serde_json::json!([]), "{one_pass}");
+    assert_eq!(
+        one_pass["cross_rebinds"],
+        serde_json::json!([]),
+        "{one_pass}"
+    );
+    let one_pass_rejoining = &one_pass["coarsening"]["original_home_rejoining"];
+    assert_eq!(
+        one_pass_rejoining["stop_reason"], "whole_home_pass_limit_reached",
+        "{one_pass}"
+    );
+    assert_eq!(one_pass_rejoining["whole_home_pass_count"], 1, "{one_pass}");
+    assert_eq!(one_pass_rejoining["whole_home_pass_limit"], 1, "{one_pass}");
+    assert!(
+        one_pass_rejoining["accepted_contractions"]
+            .as_u64()
+            .unwrap()
+            > 0,
+        "{one_pass}"
+    );
+    assert!(
+        one_pass_rejoining["unrestored_module_paths"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("home")),
+        "{one_pass}"
+    );
+
     let capped = fixture.json(&[
         "modules",
         "decompose",
