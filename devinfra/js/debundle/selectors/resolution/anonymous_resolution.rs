@@ -36,6 +36,10 @@ pub struct ResolvedSourceClaims {
     pub bindings: BTreeSet<String>,
     /// The resolved source binding for each non-name-pin member's readable name.
     pub member_bindings: BTreeMap<String, String>,
+    /// Resolved free-name references from one source-backed member claim to
+    /// another member in the same module. These use the resolver's classified
+    /// references, not names re-parsed from selector text.
+    pub local_member_references: BTreeSet<(String, String)>,
     pub anonymous_owners: BTreeSet<OwnerId>,
     /// The owner selected by each anonymous source selector. The key keeps
     /// authored selector entries addressable when a CLI edit moves claims.
@@ -176,6 +180,17 @@ fn resolve_claim_sets(
                 let mut per_source = BTreeMap::<(usize, EntityIndex), Vec<SourceOutcome>>::new();
                 for ((source_path, parsed), resolution) in parsed_by_source.iter().zip(resolutions)
                 {
+                    for reference in resolution.member_references {
+                        if reference.source_module != reference.referenced_module {
+                            continue;
+                        }
+                        let Ok(set) = &mut resolved[reference.source_module] else {
+                            continue;
+                        };
+                        set.claims
+                            .local_member_references
+                            .insert((reference.source_member, reference.referenced_member));
+                    }
                     for entity in resolution.outcomes {
                         per_source
                             .entry((entity.module, entity.entity))
