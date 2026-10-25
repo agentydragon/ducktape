@@ -412,6 +412,26 @@ fn render_module_decomposition_text(report: &ModuleDecompositionReport, out: &mu
                 group.binding_ids.join(", "),
             ));
         }
+        if let Some(collisions) = &coarsening.naming_collisions {
+            for collision in collisions {
+                out.push_str(&format!(
+                    "  name collision {} in {}: {}\n",
+                    collision.readable_name,
+                    collision.suggested_module_path,
+                    collision
+                        .claims
+                        .iter()
+                        .map(|claim| format!(
+                            "{}:{} (owners {})",
+                            claim.original_module_path,
+                            claim.binding_id,
+                            claim.owner_ids.join(", ")
+                        ))
+                        .collect::<Vec<_>>()
+                        .join("; ")
+                ));
+            }
+        }
         if let Some(rejoining) = &coarsening.original_home_rejoining {
             out.push_str(&format!(
                 "original-home rejoining stopped: {:?}; restored={}/{} groups={} largest_group_owners={} largest_group_origins={} contractions={}/{}\n",

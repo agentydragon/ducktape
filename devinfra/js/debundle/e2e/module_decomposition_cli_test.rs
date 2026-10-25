@@ -785,3 +785,102 @@ fn coarsening_an_entry_scc_keeps_import_and_export_owners_at_the_entry_path() {
         );
     }
 }
+
+#[test]
+fn source_aware_coarsening_reports_all_readable_name_collisions() {
+    let fixture = GraphFixture::rejected(
+        "const seed = 'a';\nconst first_value = seed + 'b', first_aux = seed + 'c';\nconst second_value = seed + 'd', second_aux = seed + 'e';\nfunction first_reader() { return first_value + first_aux; }\nfunction second_reader() { return second_value + second_aux; }\nconst unrelated = 7;\nconsole.log(first_reader(), second_reader(), unrelated);\n",
+        &[
+            (
+                "first.yaml",
+                "members:\n  - {name: Shared, selector: {binding: {name: first_value}}}\nsource_matches:\n  - match: \"const value = base + 'b', extra = base + 'c';\"\n    bindings: [{local: extra, name: AlsoShared}]\n",
+            ),
+            (
+                "second.yaml",
+                "members:\n  - {name: Shared, selector: {binding: {name: second_value}}}\nsource_matches:\n  - match: \"const value = base + 'd', extra = base + 'e';\"\n    bindings: [{local: extra, name: AlsoShared}]\n",
+            ),
+            (
+                "unrelated.yaml",
+                "members: [{name: Unique, selector: {binding: {name: unrelated}}}]\n",
+            ),
+        ],
+    );
+    let source_path = fixture.source_path();
+    let source_root = source_path.parent().unwrap().to_str().unwrap();
+    let args = [
+        "modules",
+        "decompose",
+        "--atomic",
+        "--coarsen-blocking-sccs",
+        "--rejoin-original-modules",
+        "--preserve-selector-anchors",
+        "--source-root",
+        source_root,
+    ];
+    let report = fixture.json(&args);
+    assert_eq!(report["candidate_is_realizable"], true, "{report}");
+    let collisions = report["coarsening"]["naming_collisions"]
+        .as_array()
+        .expect("source-aware coarsening should list naming collisions");
+    assert_eq!(collisions.len(), 2, "{report}");
+    assert_eq!(
+        collisions
+            .iter()
+            .map(|collision| collision["readable_name"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        vec!["AlsoShared", "Shared"]
+    );
+    let graph = fixture.owner_graph();
+    for collision in collisions {
+        let claims = collision["claims"].as_array().unwrap();
+        assert_eq!(claims.len(), 2, "{collision}");
+        assert_eq!(claims[0]["original_module_path"], "first");
+        assert_eq!(claims[1]["original_module_path"], "second");
+        let expected_bindings = if collision["readable_name"] == "Shared" {
+            ["first_value", "second_value"]
+        } else {
+            ["first_aux", "second_aux"]
+        };
+        assert_eq!(
+            claims
+                .iter()
+                .map(|claim| claim["binding_id"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            expected_bindings
+        );
+        for claim in claims {
+            let binding = claim["binding_id"].as_str().unwrap();
+            let owner = graph
+                .nodes
+                .iter()
+                .find(|owner| {
+                    owner
+                        .declared_bindings
+                        .iter()
+                        .any(|declared| declared.binding.as_str() == binding)
+                })
+                .unwrap();
+            assert_eq!(claim["owner_ids"], serde_json::json!([owner.id]));
+        }
+    }
+    assert!(
+        report["coarsening"]["groups"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|group| { group["origin_module_paths"] == serde_json::json!(["unrelated"]) }),
+        "the unrelated group should remain separate: {report}"
+    );
+    assert!(
+        collisions
+            .iter()
+            .all(|collision| collision["suggested_module_path"] != "unrelated")
+    );
+    let graph_only = fixture.json(&[
+        "modules",
+        "decompose",
+        "--atomic",
+        "--coarsen-blocking-sccs",
+    ]);
+    assert!(graph_only["coarsening"].get("naming_collisions").is_none());
+}
