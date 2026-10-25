@@ -41,7 +41,7 @@ use artifact::{
     ArtifactIndexes, ChunkBundle, ChunkId, FileMetadata, FileRole, JsFile, JsFileBody,
     SelectedModuleLowering,
 };
-use gate::ChunkFactorization;
+use gate::ValidatedAssignment;
 use js_ast::ParsedJsModule;
 use rayon::prelude::*;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -92,7 +92,7 @@ pub(super) struct LowerChunkPlan<'a> {
     /// the spec claimed as anonymous-statement members. See
     /// `ModulePlan::anonymous_statement_ordinals`.
     pub(super) anonymous_ordinal_assignment: &'a BTreeMap<usize, usize>,
-    pub(super) factorization: &'a ChunkFactorization,
+    pub(super) validated_assignment: &'a ValidatedAssignment<'a>,
 }
 
 /// Spec-derived + chunk-AST-derived facts the lowerer consults at
@@ -162,8 +162,9 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         module_plans,
         binding_assignment,
         anonymous_ordinal_assignment,
-        factorization,
+        validated_assignment,
     } = plan;
+    let factorization = validated_assignment.factorization();
     let LowerChunkSpecFacts {
         runtime_import_facts,
         sealed_renames,

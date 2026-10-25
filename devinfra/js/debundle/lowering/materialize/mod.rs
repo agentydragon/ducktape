@@ -45,7 +45,10 @@ use artifact::{
     normalize_module_path,
 };
 use chunk_analysis::{ChunkAnalysisOutput, DynamicImportTarget, compute_chunk_analysis};
-use gate::{ChunkFactorization, render_atomic_unit_conflict_summary, render_cycle_summary};
+use gate::{
+    ChunkFactorization, ValidatedAssignment, render_atomic_unit_conflict_summary,
+    render_cycle_summary,
+};
 use js_ast::{ParsedJsModule, statement_ordinal_for_body_index};
 use output_layout::{
     ATOMIC_UNIT_CONFLICTS_REPORT, CYCLES_REPORT, EXPORT_REENTRY_REPORT, OWNER_GRAPH_REPORT,
@@ -595,12 +598,10 @@ pub(super) fn finish_logical_chunk(
         factorization_chunk_renames,
         default_destination,
     );
-    let factorization_report = factorization.validate();
-    validate_and_emit_reports(
+    let validated_assignment = validate_and_emit_reports(
         chunk_id,
         report_emission,
         &factorization,
-        &factorization_report,
         &export_reentry_reports[&chunk_id_interned],
     )?;
 
@@ -625,7 +626,7 @@ pub(super) fn finish_logical_chunk(
             module_plans: &module_plans,
             binding_assignment: &binding_assignment,
             anonymous_ordinal_assignment: &anonymous_ordinal_assignment,
-            factorization: &factorization,
+            validated_assignment: &validated_assignment,
         },
         spec_facts: LowerChunkSpecFacts {
             runtime_import_facts: &runtime_import_facts,
@@ -646,7 +647,7 @@ pub(super) fn finish_logical_chunk(
         build_final_module_report(&module_plans, &factorization, chunk_top_level_mark);
     let directory_dependency_facts = build_directory_dependency_facts(chunk_id, &factorization);
     let validation = ChunkValidationSummary {
-        linker_order: factorization_report.linker_order.clone(),
+        linker_order: validated_assignment.report().linker_order.clone(),
     };
     let report = ChunkModulesReport {
         chunk_id: chunk_id.to_string(),
@@ -1004,13 +1005,17 @@ fn pattern_binds_name(pattern: &Pat, binding: &str) -> bool {
 /// --dry-run` mode) the accept path writes nothing, but a rejection
 /// still writes `owner_graph.json` plus the rejection evidence so
 /// the documented `debundle gate list/describe` follow-up works.
-fn validate_and_emit_reports(
+fn validate_and_emit_reports<'a>(
     chunk_id: &str,
     report_emission: &ReportEmission,
-    factorization: &ChunkFactorization,
-    factorization_report: &::gate::FactorizationReport,
+    factorization: &'a ChunkFactorization,
     export_reentry_report: &ExportReentryReport,
-) -> Result<()> {
+) -> Result<ValidatedAssignment<'a>> {
+    let validation = factorization.validate_for_emission();
+    let factorization_report = match &validation {
+        Ok(assignment) => assignment.report(),
+        Err(report) => report,
+    };
     let rejected = !factorization_report.atomic_unit_conflicts.is_empty()
         || !factorization_report.cycles.is_empty();
     // Full mode writes the owner graph unconditionally; OnRejection
@@ -1096,7 +1101,11 @@ fn validate_and_emit_reports(
             rebinds = factorization_report.cross_rebinds.join("\n  "),
         );
     }
-    Ok(())
+    validation.map_err(|_| {
+        anyhow::anyhow!(
+            "chunk {chunk_id}: assignment validation rejected without a rendered diagnostic"
+        )
+    })
 }
 
 /// Build the per-plan `FinalModuleContent` rows for `ChunkModulesReport`.

@@ -52,6 +52,24 @@ pub struct ChunkFactorization {
     import_order: EsmImportOrder,
 }
 
+/// An immutable assignment whose atomic-unit, schedule, and rebinding checks
+/// passed. The borrow prevents changing the assignment while lowering uses it.
+#[derive(Debug)]
+pub struct ValidatedAssignment<'a> {
+    factorization: &'a ChunkFactorization,
+    report: FactorizationReport,
+}
+
+impl ValidatedAssignment<'_> {
+    pub fn factorization(&self) -> &ChunkFactorization {
+        self.factorization
+    }
+
+    pub fn report(&self) -> &FactorizationReport {
+        &self.report
+    }
+}
+
 impl ChunkFactorization {
     /// Build a factorization from a caller-computed owner graph +
     /// atomic units (the materializer computes these once per chunk
@@ -152,6 +170,20 @@ impl ChunkFactorization {
             .map(|id| self.analysis.module_path(*id))
             .collect();
         report
+    }
+
+    pub fn validate_for_emission(&self) -> Result<ValidatedAssignment<'_>, FactorizationReport> {
+        let report = self.validate();
+        if !report.atomic_unit_conflicts.is_empty()
+            || !report.cycles.is_empty()
+            || !report.cross_rebinds.is_empty()
+        {
+            return Err(report);
+        }
+        Ok(ValidatedAssignment {
+            factorization: self,
+            report,
+        })
     }
 
     /// High-fidelity node-link view of the fine owner graph plus
