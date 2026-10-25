@@ -1,0 +1,11 @@
+{
+  "terraform": {
+    "required_providers": {
+      "forgejo": { "source": "svalabs/forgejo", "version": "~>1.5" },
+      "gitlab": { "source": "gitlabhq/gitlab", "version": "~>19.4.0" },
+      "kubernetes": { "source": "hashicorp/kubernetes", "version": "~>3.0" },
+      "random": { "source": "hashicorp/random", "version": "~>3.9.0" }
+    },
+    "required_version": ">= 1.0"
+  }
+}

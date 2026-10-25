@@ -16,6 +16,9 @@ account and links its current Authentik UID before login; automatic account crea
 The human account receives the existing Forgejo SSH public keys for `atlas`, `iguana`,
 `rugged`, and `wyrm2`.
 
+Provider constraints in `tf/gitops/gitlab-spike/versions.tf.json` are generated from its
+`BUILD.bazel`: run `bb run //tf/gitops/gitlab-spike:gen-tf-versions` after changing them.
+
 Praefect manages three separate Gitaly PVCs with one local HDD copy each on distinct OVH
 workers. PostgreSQL and Praefect metadata use separate CNPG clusters and backup buckets.
 Gitaly cgroup isolation is disabled pending validation of the writable cgroup mount on Talos.
