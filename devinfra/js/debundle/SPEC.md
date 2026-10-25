@@ -233,6 +233,11 @@ Opaque calls holding a class or instance may invoke its constructor, field
 initializers, methods, and accessors. Their synchronous read closure stops at a
 definite `await` where retained callable coverage is complete; uncovered owners
 and incomplete reachability retain whole-body effects and rebinds.
+Defining a pure, unpublished subclass with a direct, uniquely known ordinary
+class superclass reads that superclass for the eager dependency graph, but does
+not by itself publish or invoke the superclass constructor or methods. Actual
+construction and publication remain reachability roots; unknown or alternate
+superclass values retain conservative roots.
 
 At-init callback analysis also records possible implicit primitive conversions
 from arithmetic, relational and loose-equality operators, the left operand of
