@@ -12,6 +12,7 @@
 //!
 //! * `EagerUse`: add `u → v` (u depends on v at init time).
 //! * `LazyUse`: skip (call-time read).
+//! * `HoistedUse`: skip (function binding initialized during instantiation).
 //! * `EagerRebind` / `LazyRebind` / `DeferredRebind`: add both
 //!   directions (declarer and assigner of a mutable binding must
 //!   co-locate — ESM imports are read-only whenever the write
@@ -39,7 +40,7 @@ use crate::graph::{
 /// One atomic factor unit: a set of owners that any valid
 /// factorization must keep co-located, plus the `DepKind`s of the
 /// constraining edges *inside* the unit (everything except
-/// `LazyUse`) — used by [`crate::factor_assembly`] to explain *why*
+/// `LazyUse` and `HoistedUse`) — used by [`crate::factor_assembly`] to explain *why*
 /// a unit is forced together when its claims conflict.
 ///
 /// `causes` is a `BTreeSet<DepKind>` so iteration order is the
@@ -92,7 +93,7 @@ pub fn compute_atomic_units(owner_graph: &OwnerGraph) -> Vec<AtomicUnit> {
             DepKind::EagerUse | DepKind::Sequenced => {
                 g_atomic.add_edge(edge.from, edge.to, ());
             }
-            DepKind::LazyUse => {}
+            DepKind::LazyUse | DepKind::HoistedUse => {}
             DepKind::EagerRebind
             | DepKind::LazyRebind
             | DepKind::DeferredRebind
@@ -120,7 +121,9 @@ pub fn compute_atomic_units(owner_graph: &OwnerGraph) -> Vec<AtomicUnit> {
         })
         .collect();
     for edge in owner_graph.iter_edges() {
-        if edge.from == edge.to || edge.reason.kind == DepKind::LazyUse {
+        if edge.from == edge.to
+            || matches!(edge.reason.kind, DepKind::LazyUse | DepKind::HoistedUse)
+        {
             continue;
         }
         let (Some(from_unit), Some(to_unit)) = (unit_of[edge.from.0], unit_of[edge.to.0]) else {

@@ -319,7 +319,7 @@ fn build_atomic_graph_report(factorization: &ChunkFactorization) -> AtomicGraphR
     // sort.
     let mut accum: HashMap<(usize, usize), AtomicEdgeAccumulator> = HashMap::new();
     for edge in owner_graph.iter_edges() {
-        if edge.reason.kind == DepKind::LazyUse {
+        if matches!(edge.reason.kind, DepKind::LazyUse | DepKind::HoistedUse) {
             continue;
         }
         let (Some(from_unit), Some(to_unit)) = (
