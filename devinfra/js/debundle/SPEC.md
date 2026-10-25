@@ -232,6 +232,17 @@ not by itself publish or invoke the superclass constructor or methods. Actual
 construction and publication remain reachability roots; unknown or alternate
 superclass values retain conservative roots.
 
+A pure initializer that calls a uniquely known local function can retain an
+unpublished callback graph in a fresh ordinary record without making that
+initializer a speculative reachability root. The function must have simple
+parameters, no synchronous calls, writes, dynamic scope, defaults, or other
+effects, and a single return value modeled as a plain data record. Its values
+may be parameters, local or inline functions, primitives, or nested records
+of the same shape. Arguments must be inline functions or primitives. The call
+and its eager dependencies still run normally; any later export, write, or
+invocation of the result restores its callback reachability. Other local
+factories, including constructor calls, retain conservative roots.
+
 At-init callback analysis also records possible implicit primitive conversions
 from arithmetic, relational and loose-equality operators, the left operand of
 `in`, numeric unary operators, updates and non-logical compound assignments.

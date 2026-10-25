@@ -3,6 +3,195 @@
 use debundle_e2e_support::*;
 
 #[test]
+fn unpublished_local_factory_result_stays_deferred() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"function retain(read, write) {
+  async function guarded() { return read(); }
+  return { read, write, guarded, preview: async () => read() };
+}
+const prefix = new globalThis.Error();
+const holder = retain(() => later, () => 0);
+const dynamic = ((object) => {
+  object[(object.key = 0)] = "value";
+  return 1;
+})({});
+const later = dynamic;
+console.log(later);
+console.log(holder.read());
+"#,
+        vec![
+            logical_module(
+                "values/dynamic",
+                &[Member::new("dynamic"), Member::new("prefix")],
+            ),
+            logical_module(
+                "values/later",
+                &[
+                    Member::new("later"),
+                    Member::new("holder"),
+                    Member::new("retain"),
+                ],
+            ),
+        ],
+    ));
+
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/values/dynamic.js",
+        &["dynamic"],
+        &["later"],
+    );
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/values/later.js",
+        &["later", "holder"],
+        &["dynamic"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/values/later.js",
+        &["function retain", "async function guarded"],
+        &[],
+    );
+    assert_preserved_entry_output(&fixture, "1\n1\n");
+}
+
+#[test]
+fn published_local_factory_result_keeps_later_read() {
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            r#"function retain(read) { return { read }; }
+const prefix = new globalThis.Error();
+const holder = retain(() => later);
+globalThis.saved = holder;
+const dynamic = ((object) => {
+  object[(object.key = 0)] = "value";
+  return 1;
+})({});
+const later = dynamic;
+"#,
+            vec![
+                logical_module(
+                    "values/dynamic",
+                    &[Member::new("dynamic"), Member::new("prefix")],
+                ),
+                logical_module(
+                    "values/later",
+                    &[
+                        Member::new("later"),
+                        Member::new("holder"),
+                        Member::new("retain"),
+                    ],
+                ),
+            ],
+        ),
+        &["values/dynamic", "values/later"],
+        &[],
+    );
+}
+
+#[test]
+fn called_local_factory_result_keeps_later_read() {
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            r#"function retain(read) { return { read }; }
+const prefix = new globalThis.Error();
+const holder = retain(() => later);
+holder.read();
+const dynamic = ((object) => {
+  object[(object.key = 0)] = "value";
+  return 1;
+})({});
+const later = dynamic;
+"#,
+            vec![
+                logical_module(
+                    "values/dynamic",
+                    &[Member::new("dynamic"), Member::new("prefix")],
+                ),
+                logical_module(
+                    "values/later",
+                    &[
+                        Member::new("later"),
+                        Member::new("holder"),
+                        Member::new("retain"),
+                    ],
+                ),
+            ],
+        ),
+        &["values/dynamic", "values/later"],
+        &[],
+    );
+}
+
+#[test]
+fn reassigned_local_factory_keeps_conservative_reachability() {
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            r#"function retain(read) { return { read }; }
+retain = function replacement(read) { return { read }; };
+const prefix = new globalThis.Error();
+const holder = retain(() => later);
+const dynamic = ((object) => {
+  object[(object.key = 0)] = "value";
+  return 1;
+})({});
+const later = dynamic;
+"#,
+            vec![
+                logical_module(
+                    "values/dynamic",
+                    &[Member::new("dynamic"), Member::new("prefix")],
+                ),
+                logical_module(
+                    "values/later",
+                    &[
+                        Member::new("later"),
+                        Member::new("holder"),
+                        Member::new("retain"),
+                    ],
+                ),
+            ],
+        ),
+        &["values/dynamic", "values/later"],
+        &[],
+    );
+}
+
+#[test]
+fn accessor_return_from_local_factory_keeps_conservative_reachability() {
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            r#"function retain(read) { return { get read() { return read(); } }; }
+const prefix = new globalThis.Error();
+const holder = retain(() => later);
+const dynamic = ((object) => {
+  object[(object.key = 0)] = "value";
+  return 1;
+})({});
+const later = dynamic;
+"#,
+            vec![
+                logical_module(
+                    "values/dynamic",
+                    &[Member::new("dynamic"), Member::new("prefix")],
+                ),
+                logical_module(
+                    "values/later",
+                    &[
+                        Member::new("later"),
+                        Member::new("holder"),
+                        Member::new("retain"),
+                    ],
+                ),
+            ],
+        ),
+        &["values/dynamic", "values/later"],
+        &[],
+    );
+}
+
+#[test]
 fn unpublished_imported_callback_factory_result_stays_deferred() {
     let fixture = run_fixture(
         FixtureOpts::new(
