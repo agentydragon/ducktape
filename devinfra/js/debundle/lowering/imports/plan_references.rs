@@ -116,12 +116,12 @@ pub(crate) fn collect_imported_reexports_by_module(
     module_count: usize,
 ) -> Vec<Vec<ImportedReexport>> {
     let mut by_module: Vec<Vec<ImportedReexport>> = (0..module_count).map(|_| Vec::new()).collect();
-    // Stable iteration order on `factorization.analysis.bindings()` (HashMap): the
+    // Stable iteration order on `factorization.analysis().bindings()` (HashMap): the
     // recorded sequence determines the emit order of
     // `import { ... }` statements per module body and we want that
     // source-level shape pinned.
     let mut sorted_bindings: Vec<(&Id, &BindingKind)> =
-        factorization.analysis.bindings().iter().collect();
+        factorization.analysis().bindings().iter().collect();
     sorted_bindings.sort_by(|a, b| a.0.0.cmp(&b.0.0));
     for (id, kind) in sorted_bindings {
         // The body of this loop refers to the sym-typed `local` name
@@ -168,11 +168,11 @@ pub(crate) fn plan_module_reference_needs<'a>(
         let body_id = reference.emitted_id();
         let name_str = body_id.0.as_ref();
         if let Some(ModuleId(LogicalModuleIndex(provider_index))) =
-            factorization.analysis.owner_of(original_id)
+            factorization.analysis().owner_of(original_id)
         {
             if provider_index != module_index
                 && let Some(provider) = factorization
-                    .analysis
+                    .analysis()
                     .logical_module(LogicalModuleIndex(provider_index))
                 && let Some(exported_name) = provider.rename_map.get(original_id)
             {
@@ -240,9 +240,9 @@ fn collect_phantom_side_effect_providers(
     phantom_side_effect_providers: &mut BTreeSet<usize>,
 ) {
     let module_id = ModuleId(LogicalModuleIndex(module_index));
-    let residual = factorization.assignment.residual();
-    let owner_graph = factorization.analysis.owner_graph();
-    for (owner_id, owner_module) in factorization.assignment.iter() {
+    let residual = factorization.assignment().residual();
+    let owner_graph = factorization.analysis().owner_graph();
+    for (owner_id, owner_module) in factorization.assignment().iter() {
         if owner_module != module_id {
             continue;
         }
@@ -251,7 +251,7 @@ fn collect_phantom_side_effect_providers(
             if !edge.reason.constrains_init_order() {
                 continue;
             }
-            let target_module = factorization.assignment.of(edge.to);
+            let target_module = factorization.assignment().of(edge.to);
             if target_module == module_id || target_module == residual {
                 continue;
             }

@@ -71,7 +71,7 @@ pub(crate) fn cross_module_imports_for_plan(
         .into_iter()
         .filter_map(|(provider_index, bindings)| {
             factorization
-                .analysis
+                .analysis()
                 .logical_module(LogicalModuleIndex(provider_index))
                 .map(|provider| {
                     let mut minted = BTreeMap::new();
@@ -116,7 +116,7 @@ pub(crate) fn phantom_side_effect_imports(
         .into_iter()
         .filter_map(|provider_index| {
             let provider = factorization
-                .analysis
+                .analysis()
                 .logical_module(LogicalModuleIndex(provider_index))?;
             let source = super::import_emit::relative_source(from_file, &provider.target_file);
             Some((

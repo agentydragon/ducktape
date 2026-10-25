@@ -3147,7 +3147,10 @@ assignment (stored on `ChunkFactorization`).
 
 `ChunkFactorization::validate_for_emission` returns a `ValidatedAssignment` only
 when atomic-unit, schedule, and cross-destination rebinding checks pass. Lowering
-requires this immutable borrow of the checked assignment. Rejection reports remain
+requires this immutable borrow of the checked assignment. Assignment inputs and
+derived graph views are private and exposed only through immutable accessors, so
+callers cannot change the assignment independently of its cached import order or
+quotient. Rejection reports remain
 available to diagnostics without constructing an emission capability. This checks
 the assignment and shared import order; vendor consumer and final export checks
 still run on the emitted files.

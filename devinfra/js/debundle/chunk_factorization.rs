@@ -19,28 +19,29 @@ use crate::validation::{FactorizationReport, validate_factorization};
 ///
 /// Holds a reference to the [`FactorizationInputs`] it was factorized
 /// from (`analysis`); report emission and downstream emit code reach
-/// inputs (`bindings`, `logical_modules`, etc.) through
-/// `factorization.analysis.X`.
+/// inputs (`bindings`, `logical_modules`, etc.) through `analysis()`.
+/// Fields are private so the assignment cannot change independently of its
+/// cached quotient, SCCs, and import order.
 #[derive(Debug, Clone)]
 pub struct ChunkFactorization {
-    pub analysis: Arc<FactorizationInputs>,
+    analysis: Arc<FactorizationInputs>,
     /// Module assignment per owner — the spec's assignment of the
     /// owner graph. Stored separately from the IR so the IR stays
     /// immutable across validation/report construction.
-    pub assignment: ModuleAssignment,
+    assignment: ModuleAssignment,
     /// Atomic owner units computed from the owner graph's
     /// constraining-edge SCCs. Stored so report emission and
     /// downstream diagnostics reuse the same atomic-unit grouping that
     /// factor assembly validated.
-    pub atomic_units: Vec<AtomicUnit>,
+    atomic_units: Vec<AtomicUnit>,
     /// Atomic-factor-unit splits the spec demands but the
     /// constraining-edge SCC analysis forbids — populated by
     /// `assignment_assembly` when YAML claims split an atomic unit across
     /// destination modules. Non-empty means the spec is unrealizable
     /// by construction; the materializer bails on these before
     /// emitting code.
-    pub assembly_conflicts: Vec<AtomicUnitConflict>,
-    pub dep_graph: ModuleQuotient,
+    assembly_conflicts: Vec<AtomicUnitConflict>,
+    dep_graph: ModuleQuotient,
     /// SCC partition of `dep_graph` in `tarjan_scc` reverse-
     /// topological order. Precomputed at build time for
     /// `report_builders::build_quotient_scc_reports`.
@@ -71,6 +72,22 @@ impl ValidatedAssignment<'_> {
 }
 
 impl ChunkFactorization {
+    pub fn analysis(&self) -> &FactorizationInputs {
+        &self.analysis
+    }
+
+    pub fn assignment(&self) -> &ModuleAssignment {
+        &self.assignment
+    }
+
+    pub fn atomic_units(&self) -> &[AtomicUnit] {
+        &self.atomic_units
+    }
+
+    pub fn dep_graph(&self) -> &ModuleQuotient {
+        &self.dep_graph
+    }
+
     /// Build a factorization from a caller-computed owner graph +
     /// atomic units (the materializer computes these once per chunk
     /// for mini-factor synthesis), the binding catalogue, and the

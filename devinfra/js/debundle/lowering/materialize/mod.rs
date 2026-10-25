@@ -1049,8 +1049,8 @@ fn validate_and_emit_reports<'a>(
             // against the owner graph without string surgery.
             let wire = ::analysis::AtomicUnitConflictReport::from_conflicts(
                 &factorization_report.atomic_unit_conflicts,
-                &|id| factorization.analysis.module_path(id),
-                factorization.analysis.owner_graph(),
+                &|id| factorization.analysis().module_path(id),
+                factorization.analysis().owner_graph(),
             );
             write_chunk_report_json(
                 report_out_dir,
@@ -1061,8 +1061,8 @@ fn validate_and_emit_reports<'a>(
         }
         let summary = render_atomic_unit_conflict_summary(
             &factorization_report.atomic_unit_conflicts,
-            &|id| factorization.analysis.module_path(id),
-            factorization.analysis.owner_graph(),
+            &|id| factorization.analysis().module_path(id),
+            factorization.analysis().owner_graph(),
         );
         let causes = render_atomic_unit_cause_guidance(&factorization_report.atomic_unit_conflicts);
         bail!(
@@ -1128,7 +1128,7 @@ fn build_final_module_report(
                 .map(|name| top_level_id(name, chunk_top_level_mark))
                 .collect();
             let owner_ids = factorization
-                .analysis
+                .analysis()
                 .owner_report_ids_for_bindings(binding_ids.iter());
             FinalModuleContent {
                 binding_names,
@@ -1148,9 +1148,9 @@ fn build_directory_dependency_facts(
     factorization: &ChunkFactorization,
 ) -> Vec<DirectoryDependencyFact> {
     let mut facts = Vec::new();
-    for edge in factorization.analysis.owner_graph().iter_edges() {
-        let source_module = factorization.assignment.of(edge.from);
-        let target_module = factorization.assignment.of(edge.to);
+    for edge in factorization.analysis().owner_graph().iter_edges() {
+        let source_module = factorization.assignment().of(edge.from);
+        let target_module = factorization.assignment().of(edge.to);
         if source_module == target_module {
             continue;
         }
@@ -1164,7 +1164,7 @@ fn build_directory_dependency_facts(
             format!(
                 "{}#{}",
                 target_file,
-                factorization.analysis.export_name_for(id)
+                factorization.analysis().export_name_for(id)
             )
         });
         facts.push(DirectoryDependencyFact {
@@ -1190,7 +1190,7 @@ fn module_output_file(
     module: ModuleId,
 ) -> Option<String> {
     factorization
-        .analysis
+        .analysis()
         .logical_module(module.0)
         .map(|logical| join_module_path(&[chunk_id, &logical.target_file]))
 }
