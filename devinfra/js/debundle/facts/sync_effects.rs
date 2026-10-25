@@ -1949,12 +1949,21 @@ impl Executor<'_> {
         }
         let unknown_receiver = writes.iter().any(|(receiver, _)| receiver.is_none());
         if unknown_call {
-            possible_owners.extend(self.reachability.owners.iter().copied());
+            possible_owners.extend(
+                self.reachability
+                    .owners
+                    .iter()
+                    .copied()
+                    .filter(|candidate| self.may_be_available_accessor_owner(*candidate)),
+            );
             if self.reachability.incomplete {
                 possible_owners.extend(self.all_owners());
             }
         } else if unknown_receiver {
-            possible_owners.extend(self.all_owners());
+            possible_owners.extend(
+                self.all_owners()
+                    .filter(|candidate| self.may_be_available_accessor_owner(*candidate)),
+            );
         }
         let mut accessor_owners = BTreeSet::new();
         if unknown_call {
@@ -2003,6 +2012,26 @@ impl Executor<'_> {
             }
             outcome.complete = false;
         }
+    }
+
+    fn may_be_available_accessor_owner(&self, candidate: StatementOrdinal) -> bool {
+        if self.reachability.incomplete {
+            // Direct eval and `with` can manufacture references to lexical
+            // values outside the statically known read closure.
+            return true;
+        }
+        let Some(current) = self.current_top_owner else {
+            return true;
+        };
+        // Reachability follows lexical reads, including declarations whose
+        // initializer has not executed. Such a future let/const/class value
+        // cannot yet have been installed as a setter. Function declarations
+        // are hoisted, and a later var declaration can name a value assigned
+        // earlier, so retain both. Directly executed owners are added by the
+        // caller independently of this broad reachability filter.
+        candidate.0 <= current.0
+            || self.index.hoisted_function_owners.contains(&candidate)
+            || !self.facts[candidate.0].var_declared.is_empty()
     }
 
     fn safe_object_assign_target(&self, call: &Call, id: &Id) -> bool {
@@ -3238,7 +3267,13 @@ impl Executor<'_> {
                     self.note_unknown_call(call);
                     let possible_objects = args.iter().flatten().cloned().collect();
                     self.taint_objects(&possible_objects);
-                    let mut possible_accessors = self.reachability.owners.clone();
+                    let mut possible_accessors: BTreeSet<_> = self
+                        .reachability
+                        .owners
+                        .iter()
+                        .copied()
+                        .filter(|candidate| self.may_be_available_accessor_owner(*candidate))
+                        .collect();
                     possible_accessors.extend(outcome.executed_owners.iter().copied());
                     if self.reachability.incomplete {
                         possible_accessors.extend(self.all_owners());

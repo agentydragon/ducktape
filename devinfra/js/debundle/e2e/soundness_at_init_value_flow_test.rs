@@ -1289,3 +1289,160 @@ fn return_call_chain_through_parameters_recursion_and_property_fanout_preserves_
     );
     assert_preserved_entry_output(&fixture, "7\n");
 }
+
+#[test]
+fn future_uncreated_command_is_not_an_available_setter_for_fresh_property_write() {
+    let source = r#"function dormant() { return command; }
+const reference = dormant;
+globalThis.hostCall = () => {};
+globalThis.hostCall();
+const box = {};
+box.value = 1;
+const command = { run: () => later };
+const later = 7;
+console.log(box.value, later);
+export { box, later };
+"#;
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon(
+                    "value/box",
+                    &[Member::new("box"), Member::new("command")],
+                    &[
+                        "globalThis.hostCall = () => {};",
+                        "globalThis.hostCall();",
+                        "box.value = 1;",
+                    ],
+                ),
+                logical_module("value/later", &[Member::new("later")]),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&fixture, "1 7\n");
+}
+
+fn expect_property_write_reentry_conflict(source: &str, setup: &[&str]) {
+    let mut anonymous = setup.to_vec();
+    anonymous.push("box.value = 1;");
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon("value/box", &[Member::new("box")], &anonymous),
+                logical_module("value/later", &[Member::new("later")]),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+        &["value/box", "value/later"],
+        &[],
+    );
+}
+
+#[test]
+fn future_hoisted_setter_remains_available_before_its_declaration() {
+    expect_property_write_reentry_conflict(
+        r#"const box = {};
+Object.defineProperty(box, "value", { set: setter, configurable: true });
+box.value = 1;
+function setter() { return later; }
+const later = 7;
+export { box, later };
+"#,
+        &["Object.defineProperty(box, \"value\", { set: setter, configurable: true });"],
+    );
+}
+
+#[test]
+fn direct_eval_installed_setter_keeps_whole_chunk_fallback() {
+    let source = r#"function dormant() { return command; }
+const box = {};
+eval('Object.defineProperty(box, "value", { set() { return command.run(); }, configurable: true })');
+box.value = 1;
+const command = { run: () => later };
+const later = 7;
+export { box, command, later };
+"#;
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon(
+                    "value/box",
+                    &[Member::new("box"), Member::new("command")],
+                    &[
+                        "eval('Object.defineProperty(box, \"value\", { set() { return command.run(); }, configurable: true })');",
+                        "box.value = 1;",
+                    ],
+                ),
+                logical_module("value/later", &[Member::new("later")]),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_admission_overrides(&["a1_eval"]),
+        &["value/box", "value/later"],
+        &[],
+    );
+}
+
+#[test]
+fn proxy_set_trap_still_reads_future_value() {
+    expect_property_write_reentry_conflict(
+        r#"const box = new Proxy({}, { set() { return later; } });
+box.value = 1;
+const later = 7;
+export { box, later };
+"#,
+        &[],
+    );
+}
+
+#[test]
+fn assignment_before_future_var_declaration_can_install_setter() {
+    expect_property_write_reentry_conflict(
+        r#"const box = {};
+setter = () => later;
+Object.defineProperty(box, "value", { set: setter, configurable: true });
+box.value = 1;
+var setter;
+const later = 7;
+export { box, later };
+"#,
+        &[
+            "setter = () => later;",
+            "Object.defineProperty(box, \"value\", { set: setter, configurable: true });",
+        ],
+    );
+}
+
+#[test]
+fn executed_callback_reading_future_const_still_blocks_split() {
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            r#"globalThis.invoke = (callback) => callback();
+const box = {};
+globalThis.invoke(() => command);
+box.value = 1;
+const command = { run: () => 7 };
+export { box, command };
+"#,
+            vec![
+                logical_module_with_anon(
+                    "value/box",
+                    &[Member::new("box")],
+                    &[
+                        "globalThis.invoke = (callback) => callback();",
+                        "globalThis.invoke(() => command);",
+                        "box.value = 1;",
+                    ],
+                ),
+                logical_module("value/command", &[Member::new("command")]),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+        &["value/box", "value/command"],
+        &[],
+    );
+}
