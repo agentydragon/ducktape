@@ -157,7 +157,7 @@ fn rejoining_keeps_an_unsafe_home_split_and_refine_applies_accepted_groups() {
     let rejoining = &report["coarsening"]["original_home_rejoining"];
     assert!(rejoining["attempted_contractions"].as_u64().unwrap() >= 1);
     assert!(
-        rejoining["still_split_module_paths"]
+        rejoining["unrestored_module_paths"]
             .as_array()
             .unwrap()
             .contains(&serde_json::json!("home")),
@@ -733,6 +733,13 @@ fn coarsening_an_entry_scc_keeps_import_and_export_owners_at_the_entry_path() {
     assert_eq!(
         report["coarsening"]["original_home_rejoining"]["stop_reason"], "converged",
         "{report}"
+    );
+    assert!(
+        report["coarsening"]["original_home_rejoining"]["unrestored_module_paths"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("dependent")),
+        "a home absorbed into a mixed-origin SCC is unrestored: {report}"
     );
     let graph = fixture.owner_graph();
     let entry_path = graph

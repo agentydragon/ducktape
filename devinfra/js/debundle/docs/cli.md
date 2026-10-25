@@ -468,12 +468,12 @@ different original homes remain intact. The final complete partition is checked
 again by the shared gate. A fully rejoined home gets its original path; other
 groups keep deterministic temporary paths.
 
-The `coarsening.original_home_rejoining` report lists restored and remaining
-homes, attempted and accepted contractions, final group count, and largest
-group size and origin count. A remaining home may be split across groups or
-partly absorbed into a mixed-origin SCC group. The option has no module-size
-cap, so an existing large home can rejoin. It remains read-only: review the
-reported final `coarsening.groups` before applying assignments with
+The `coarsening.original_home_rejoining` report lists fully restored and
+`unrestored_module_paths`, attempted and accepted contractions, final group
+count, and largest group size and origin count. An unrestored home may be split
+across groups or wholly absorbed into a mixed-origin SCC group. The option has
+no module-size cap, so an existing large home can rejoin. It remains read-only:
+review the reported final `coarsening.groups` before applying assignments with
 `modules refine`.
 
 To include residual ownership in that baseline, add `--include-residual`:
