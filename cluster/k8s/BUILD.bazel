@@ -73,11 +73,4 @@ filegroup(
     visibility = ["//cluster/cdk8s/authentik:__pkg__"],
 )
 
-filegroup(
-    name = "authentik_blueprint_contract_files",
-    srcs = [
-        "kustomization.yaml",
-        ":authentik_blueprints",
-    ],
-    visibility = ["//cluster/cdk8s/authentik:__pkg__"],
-)
+
