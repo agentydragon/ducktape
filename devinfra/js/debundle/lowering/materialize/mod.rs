@@ -482,6 +482,12 @@ pub(super) fn finish_logical_chunk(
         if let Some(members) = cross_module_purities.no_reentry_members.get(chunk_id) {
             hints.no_reentry_members.extend(members.clone());
         }
+        if let Some(members) = cross_module_purities
+            .no_reentry_record_members
+            .get(chunk_id)
+        {
+            hints.no_reentry_record_members.extend(members.clone());
+        }
         if owner_graph_options.local_property_effects {
             hints.local_effect_policy = LocalEffectPolicy::LocalPropertyWrites;
         }

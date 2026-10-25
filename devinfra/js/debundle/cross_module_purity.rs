@@ -419,6 +419,13 @@ pub fn resolve_asserted_no_reentry_members(
     resolve_asserted_members(modules, asserted_members, "no_reentry_members")
 }
 
+pub fn resolve_asserted_no_reentry_record_members(
+    modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
+    asserted_members: &BTreeMap<ModuleKey, BTreeMap<String, BTreeSet<String>>>,
+) -> BTreeMap<ModuleKey, BTreeMap<String, BTreeSet<String>>> {
+    resolve_asserted_members(modules, asserted_members, "no_reentry_record_members")
+}
+
 pub fn resolve_asserted_namespace_independent_members(
     modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
     asserted_members: &BTreeMap<ModuleKey, BTreeMap<String, BTreeSet<String>>>,
