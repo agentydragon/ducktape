@@ -97,6 +97,7 @@ def main_proxy_config() -> dict:
         "model_list": [model_entry(route) for route in SERVED_ROUTES],
         "litellm_settings": {
             "drop_params": True,
+            # Duplicate console-to-Loki trace export: https://github.com/agentydragon/ducktape/issues/11937
             "callbacks": ["otel", "prometheus"],
             "custom_provider_map": [
                 {"provider": "tana", "custom_handler": "tana.litellm_proxy.custom_handler.tana_handler"}

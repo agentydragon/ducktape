@@ -182,6 +182,7 @@ def proxy_specs() -> tuple[ProxySpec, ...]:
                 # destination. LiteLLM's langfuse_otel preset appends Langfuse to
                 # the default console exporter, which writes captured prompts to stdout.
                 _LiteralEnv("LITELLM_OTEL_V2", "true"),
+                # Duplicate console-to-Loki trace export: https://github.com/agentydragon/ducktape/issues/11937
                 _LiteralEnv("OTEL_EXPORTER", "otlp_http"),
                 _LiteralEnv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", _LANGFUSE_OTLP_TRACES_ENDPOINT),
                 _LiteralEnv("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "span_only"),
