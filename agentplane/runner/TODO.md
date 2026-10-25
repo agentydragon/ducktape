@@ -20,10 +20,13 @@ and `claude_history.py` must then handle the flushed case.
 ## Reconcile conversations that were compacted
 
 Codex history RPCs report `UNKNOWN` when a compaction item appears in the recovery window;
-Claude's transcript reader does the same for `compact_boundary`. Characterize the public Codex
-projection against actual model continuation after compaction, and report retained items only
-where the protocol establishes them. Compaction outside Agentplane's observed recovery window and
-external rollback are not supported continuation proofs.
+Claude's transcript reader does the same for `compact_boundary`. The manual-compaction probe in
+`native/codex/test_history_projection.py::test_compaction_history_projection_against_resumed_model_input`
+shows paginated RPCs retaining pre-compaction item identities and command output after restart while
+the next model request uses the generated summary and omits pre-compaction reasoning, function call
+and output, and assistant answer. Keep the `UNKNOWN` barrier: those projected items are not proof that
+they remain in model context. Automatic compaction, interruption or process loss during compaction,
+compaction outside Agentplane's observed recovery window, and external rollback remain unproved.
 
 ## Codex reconcile edge cases
 

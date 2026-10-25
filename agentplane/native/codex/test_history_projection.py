@@ -85,12 +85,39 @@ async def history(process: AsyncNativeProcess, thread_id: str) -> dict[str, Any]
     return result
 
 
+def public_history_items(views: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    return {
+        "thread/read": [item for turn in views["thread/read"]["result"]["thread"]["turns"] for item in turn["items"]],
+        "thread/turns/list": [
+            item for page in views["thread/turns/list"] for turn in page["result"]["data"] for item in turn["items"]
+        ],
+        "thread/items/list": [
+            entry["item"] for page in views["thread/items/list"] for entry in page["result"]["data"] if "item" in entry
+        ],
+        "thread/timeline/list": [
+            entry["item"]
+            for page in views["thread/timeline/list"]
+            for entry in page["result"]["data"]
+            if "item" in entry
+        ],
+    }
+
+
 async def completed(cursor: FrameCursor, turn_id: str) -> None:
     while True:
         frame = await cursor.next()
         if frame.get("method") == "turn/completed" and frame["params"]["turn"]["id"] == turn_id:
             assert frame["params"]["turn"]["status"] == "completed"
             return
+
+
+async def compaction_completed(cursor: FrameCursor) -> tuple[dict[str, Any], str]:
+    while True:
+        frame = await cursor.next()
+        if frame.get("method") == "item/completed" and frame["params"]["item"]["type"] == "contextCompaction":
+            turn_id = frame["params"]["turnId"]
+            await completed(cursor, turn_id)
+            return frame["params"]["item"], turn_id
 
 
 def assert_history_views(evidence: dict[str, Any], *, legacy: bool) -> None:
@@ -215,6 +242,131 @@ async def test_history_projection_against_resumed_model_input(
                 assert "HISTORY_TOOL" in exchange.request.function_call_outputs[0].output
                 await exchange.send(
                     *responses_sse.response_stream([responses_sse.Message("CONTINUED")], model=MODEL).events
+                )
+            await completed(cursor, turn["id"])
+
+
+async def test_compaction_history_projection_against_resumed_model_input(
+    codex: CodexHarness, openai_responses: OpenAIResponses
+) -> None:
+    evidence: dict[str, Any] = {}
+    async with asyncio.timeout(60):
+        async with server(codex, openai_responses, "before-compaction") as process:
+            thread = (
+                await rpc(
+                    process,
+                    "thread/start",
+                    cwd=str(codex.workspace),
+                    model=MODEL,
+                    approvalPolicy="never",
+                    sandbox="danger-full-access",
+                    ephemeral=False,
+                    baseInstructions=scenarios.BASE_INSTRUCTIONS,
+                    config={"model_reasoning_effort": EFFORT},
+                )
+            )["thread"]
+            assert thread["historyMode"] == "paginated"
+            evidence["thread"] = thread
+            thread_id = thread["id"]
+
+            cursor = process.frames()
+            turn = (
+                await rpc(
+                    process, "turn/start", threadId=thread_id, input=[{"type": "text", "text": "COMPACT_SEED_USER"}]
+                )
+            )["turn"]
+            async with await openai_responses.await_next_request() as exchange:
+                await exchange.send(
+                    *responses_sse.response_stream(
+                        [
+                            responses_sse.Reasoning("COMPACT_SEED_REASONING", "enc_compaction_seed"),
+                            responses_sse.FunctionCall(
+                                "call_compaction_seed", "exec_command", {"cmd": "printf COMPACT_SEED_TOOL_OUTPUT"}
+                            ),
+                        ],
+                        model=MODEL,
+                    ).events
+                )
+            async with await openai_responses.await_next_request() as exchange:
+                assert "COMPACT_SEED_TOOL_OUTPUT" in exchange.request.function_call_outputs[0].output
+                await exchange.send(
+                    *responses_sse.response_stream(
+                        [
+                            responses_sse.Reasoning("COMPACT_SEED_FINAL_REASONING", "enc_compaction_seed_final"),
+                            responses_sse.Message("COMPACT_SEED_ASSISTANT"),
+                        ],
+                        model=MODEL,
+                    ).events
+                )
+            await completed(cursor, turn["id"])
+            evidence["beforeCompaction"] = await history(process, thread_id)
+
+            compact_cursor = process.frames()
+            await rpc(process, "thread/compact/start", threadId=thread_id)
+            async with await openai_responses.await_next_request() as exchange:
+                evidence["summarizationRequest"] = exchange.request.model_dump(mode="json")
+                assert exchange.request.client_metadata.thread_id == thread_id
+                assert any(item.encrypted_content == "enc_compaction_seed" for item in exchange.request.reasoning)
+                assert [item.call_id for item in exchange.request.function_calls] == ["call_compaction_seed"]
+                assert "COMPACT_SEED_TOOL_OUTPUT" in exchange.request.function_call_outputs[0].output
+                await exchange.send(
+                    *responses_sse.response_stream(
+                        [responses_sse.Message("COMPACTION_SUMMARY_MARKER: seed answer and tool output are complete.")],
+                        model=MODEL,
+                    ).events
+                )
+            evidence["compactionItem"], evidence["compactionTurnId"] = await compaction_completed(compact_cursor)
+            evidence["afterCompactionLoaded"] = await history(process, thread_id)
+
+        async with server(codex, openai_responses, "after-compaction-restart") as process:
+            evidence["afterCompactionCold"] = await history(process, thread_id)
+            evidence["resume"] = await rpc(process, "thread/resume", threadId=thread_id, excludeTurns=False)
+            evidence["afterCompactionResumed"] = await history(process, thread_id)
+            cursor = process.frames()
+            turn = (
+                await rpc(
+                    process,
+                    "turn/start",
+                    threadId=thread_id,
+                    input=[{"type": "text", "text": "COMPACTION_CONTINUATION_USER"}],
+                )
+            )["turn"]
+            async with await openai_responses.await_next_request() as exchange:
+                evidence["continuationRequest"] = exchange.request.model_dump(mode="json")
+                (codex.logs / "compaction-history-comparison.json").write_text(json.dumps(evidence, indent=2) + "\n")
+                assert exchange.request.client_metadata.turn_id == turn["id"]
+                user_messages = [item.text for item in exchange.request.messages("user")]
+                assert user_messages[0] == "COMPACT_SEED_USER"
+                assert "COMPACTION_SUMMARY_MARKER" in user_messages[-2]
+                assert user_messages[-1] == "COMPACTION_CONTINUATION_USER"
+                assert not exchange.request.reasoning
+                assert not exchange.request.function_calls
+                assert not exchange.request.function_call_outputs
+                assert not any(
+                    message.text == "COMPACT_SEED_ASSISTANT" for message in exchange.request.messages("assistant")
+                )
+                expected_items = {
+                    (item["type"], item["id"])
+                    for item in public_history_items(evidence["beforeCompaction"])["thread/read"]
+                } | {("contextCompaction", evidence["compactionItem"]["id"])}
+                expected_command_output = {
+                    item["id"]: item["aggregatedOutput"]
+                    for item in public_history_items(evidence["beforeCompaction"])["thread/read"]
+                    if item["type"] == "commandExecution"
+                }
+                for phase in ("afterCompactionLoaded", "afterCompactionCold", "afterCompactionResumed"):
+                    for items in public_history_items(evidence[phase]).values():
+                        assert {(item["type"], item["id"]) for item in items} == expected_items
+                        assert {
+                            item["id"]: item["aggregatedOutput"] for item in items if item["type"] == "commandExecution"
+                        } == expected_command_output
+                        (compaction_item,) = [item for item in items if item["type"] == "contextCompaction"]
+                        assert compaction_item == evidence["compactionItem"]
+                        assert "COMPACTION_SUMMARY_MARKER" not in json.dumps(items)
+                await exchange.send(
+                    *responses_sse.response_stream(
+                        [responses_sse.Message("COMPACTION_CONTINUED_OK")], model=MODEL
+                    ).events
                 )
             await completed(cursor, turn["id"])
 

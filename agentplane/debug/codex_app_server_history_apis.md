@@ -41,13 +41,37 @@ contains every history page, live completed items, rollout records, and the resu
 It contains only scripted fixture data.
 
 This verifies a completed shell call and two reasoning items across a clean process restart.
-It does not establish that paginated APIs are equivalent to model continuation after interruption,
-process loss, compaction, rollback, or for every tool kind. The public reasoning item also omits
-`encrypted_content`; seeing a summary is not proof of the encrypted continuation payload. The
-runner compares observed item content, so that field difference alone does not establish that it
-needs private storage. The runner uses turn-scoped public history RPCs and reports unknown when
-those RPCs cannot establish continuation; see the
+It does not establish equivalent continuation after interruption or process loss during a turn,
+compaction outside the observed recovery window, external rollback, or for every tool kind. The public
+reasoning item also omits `encrypted_content`; seeing a summary is not proof of the encrypted
+continuation payload. The runner compares observed item content, so that field difference alone does
+not establish that it needs private storage. The runner uses turn-scoped public history RPCs and
+reports unknown when those RPCs cannot establish continuation; see the
 [runner recovery contract](../runner/SPEC.md#interrupted-turns-and-continuation-recovery).
+
+### Completed compaction
+
+[`test_compaction_history_projection_against_resumed_model_input`](../native/codex/test_history_projection.py)
+uses `thread/compact/start` on a persisted paginated thread with a reasoning item, a completed shell
+call, and an assistant answer. It answers the compaction request with a distinctive summary, closes
+the app-server after the compaction item completes, reads history from a fresh process before and
+after `thread/resume`, and captures the next Responses request. The test artifact and raw stdio traces
+are available from the
+[BuildBuddy invocation](https://app.buildbuddy.io/invocation/7d992d81-731a-4b55-ad42-8301e951081b).
+
+Every public view tested (`thread/read`, `thread/turns/list`, `thread/items/list`, and
+`thread/timeline/list`) retains all pre-compaction item IDs and the completed command output after
+compaction and restart. Each adds the same `contextCompaction` ID. The views do not expose the summary
+text. The actual next model request contains the original user message, the generated summary, and
+the new user message; it omits the pre-compaction reasoning items, function call, function-call
+output, and assistant answer. Public display history therefore retains identities that the next
+model request no longer carries as continuation items. A compaction marker in the recovery window
+does not establish that those earlier items remain in model context, which supports reporting the
+window as unknown.
+
+This evidence covers an explicitly completed local compaction followed by process replacement. It
+does not cover interruption or process loss during compaction, compaction outside the observed
+recovery window, automatic threshold compaction, or external rollback.
 
 ### Why the pinned source behaves this way
 
@@ -72,6 +96,12 @@ the target of tag `rust-v0.157.0`.
 - [Model-context loading](https://github.com/openai/codex/blob/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs/thread-store/src/local/model_context.rs#L35-L79)
   reads rollout history separately from these display items. The actual captured next request
   establishes which records survive into model input in this scenario.
+- The [compaction implementation](https://github.com/openai/codex/blob/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs/core/src/compact.rs#L360-L368)
+  builds replacement history from retained user messages and a summary; it installs that history
+  with compaction metadata ([summary construction](https://github.com/openai/codex/blob/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs/core/src/compact.rs#L751-L759)).
+  The public history builder records a `ContextCompaction` item with an ID
+  ([handler](https://github.com/openai/codex/blob/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs/app-server-protocol/src/protocol/thread_history.rs#L1176-L1178));
+  it does not place the summary text in that item.
 
 ## Documented read paths
 
