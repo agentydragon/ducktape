@@ -1361,6 +1361,20 @@ fn has_definite_primitive_result(expression: &Expr) -> bool {
     }
 }
 
+/// Keep the no-reentry assertion on argument shapes whose evaluation cannot
+/// itself trigger a getter, conversion hook, or callback. The call result is
+/// still opaque and the ordinary visitor still records all argument effects.
+fn no_reentry_primitive_argument(expression: &Expr) -> bool {
+    match expression.unwrap_parens() {
+        Expr::Lit(literal) => !matches!(literal, Lit::Regex(_)),
+        Expr::Unary(unary) if unary.op == UnaryOp::Void => {
+            matches!(unary.arg.unwrap_parens(), Expr::Lit(literal) if !matches!(literal, Lit::Regex(_)))
+        }
+        Expr::Tpl(template) => template.exprs.is_empty(),
+        _ => false,
+    }
+}
+
 #[derive(Debug, Clone)]
 struct Parameter {
     binding: Option<Id>,
@@ -1399,6 +1413,7 @@ struct Call {
     owner: StatementOrdinal,
     plain_object_sources: bool,
     no_sync_arguments: bool,
+    no_reentry_candidate: bool,
     has_spread: bool,
 }
 
@@ -1875,6 +1890,7 @@ struct ExecutionIndex {
     callback_factory_imports: BTreeSet<Id>,
     inline_callback_factory_imports: BTreeSet<Id>,
     callback_factory_members: BTreeMap<Id, BTreeSet<String>>,
+    no_reentry_members: BTreeMap<Id, BTreeSet<String>>,
     callback_factory_functions: BTreeSet<u32>,
 }
 
@@ -1931,6 +1947,7 @@ impl Default for ExecutionIndex {
             callback_factory_imports: BTreeSet::new(),
             inline_callback_factory_imports: BTreeSet::new(),
             callback_factory_members: BTreeMap::new(),
+            no_reentry_members: BTreeMap::new(),
             callback_factory_functions: BTreeSet::new(),
         }
     }
@@ -1964,13 +1981,15 @@ impl ExecutionIndex {
         for item in body {
             // Seed all candidate roots before visiting any item, including imports
             // textually after a use. Other imported aliases remain an author audit.
-            if !hints.namespace_independent_members.is_empty()
+            if (!hints.namespace_independent_members.is_empty()
+                || !hints.no_reentry_members.is_empty())
                 && let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item.as_module_item()
             {
                 for specifier in &import.specifiers {
                     let local = specifier.local();
                     let name = local.sym.as_ref();
                     if hints.callback_factory_members.contains_key(name)
+                        || hints.no_reentry_members.contains_key(name)
                         || hints.namespace_independent_members.contains_key(name)
                     {
                         index.namespace_privacy.members.insert(
@@ -2028,6 +2047,11 @@ impl ExecutionIndex {
                     if let Some(members) = hints.callback_factory_members.get(local.sym.as_ref()) {
                         index
                             .callback_factory_members
+                            .insert(local.to_id(), members.clone());
+                    }
+                    if let Some(members) = hints.no_reentry_members.get(local.sym.as_ref()) {
+                        index
+                            .no_reentry_members
                             .insert(local.to_id(), members.clone());
                     }
                 }
@@ -2300,12 +2324,13 @@ impl ExecutionIndex {
                 || exported_value)
         };
         let namespace_family: Vec<_> = index.namespace_privacy.members.keys().cloned().collect();
-        let family_factory_members: BTreeSet<_> = if namespace_family.is_empty() {
+        let family_audited_members: BTreeSet<_> = if namespace_family.is_empty() {
             BTreeSet::new()
         } else {
             index
                 .callback_factory_members
                 .values()
+                .chain(index.no_reentry_members.values())
                 .flat_map(|members| members.iter().cloned())
                 .collect()
         };
@@ -2316,6 +2341,7 @@ impl ExecutionIndex {
             .collect();
         loop {
             let factory_members = index.callback_factory_members.clone();
+            let no_reentry_members = index.no_reentry_members.clone();
             // The fresh result is private until these adjacent writes finish.
             // Only currently admitted factories can establish that provenance;
             // removing a producer must invalidate proofs depending on its result.
@@ -2329,7 +2355,7 @@ impl ExecutionIndex {
             } else {
                 BTreeSet::new()
             };
-            index.callback_factory_members.retain(|id, members| {
+            let keep_audited_members = |id: &Id, members: &BTreeSet<String>| {
                 if namespace_family.is_empty() {
                     keep_namespace(id, members, &fresh_writes)
                 } else {
@@ -2337,10 +2363,23 @@ impl ExecutionIndex {
                     // Fallback must also certify every potentially aliasing root.
                     namespace_family
                         .iter()
-                        .all(|root| keep_namespace(root, &family_factory_members, &fresh_writes))
+                        .all(|root| keep_namespace(root, &family_audited_members, &fresh_writes))
                 }
+            };
+            index
+                .callback_factory_members
+                .retain(|id, members| keep_audited_members(id, members));
+            index.no_reentry_members.retain(|id, members| {
+                index
+                    .namespace_privacy
+                    .members
+                    .get(id)
+                    .is_some_and(|independent| members.is_subset(independent))
+                    && keep_audited_members(id, members)
             });
-            if index.callback_factory_members.len() == factory_members.len() {
+            if index.callback_factory_members.len() == factory_members.len()
+                && index.no_reentry_members.len() == no_reentry_members.len()
+            {
                 break;
             }
         }
@@ -2475,6 +2514,7 @@ impl ExecutionIndex {
             owner: self.owner,
             plain_object_sources: false,
             no_sync_arguments: false,
+            no_reentry_candidate: false,
             has_spread: false,
         });
     }
@@ -3411,6 +3451,10 @@ impl Visit for ExecutionIndex {
                 kind: CallKind::Call,
                 span: call.span,
                 has_spread: call.args.iter().any(|arg| arg.spread.is_some()),
+                no_reentry_candidate: call
+                    .args
+                    .iter()
+                    .all(|arg| arg.spread.is_none() && no_reentry_primitive_argument(&arg.expr)),
                 no_sync_arguments: is_no_sync_callback_member_call(
                     callee,
                     &self.no_sync_callback_members,
@@ -3495,6 +3539,7 @@ impl Visit for ExecutionIndex {
                 .iter()
                 .any(|arg| arg.spread.is_some()),
             no_sync_arguments: false,
+            no_reentry_candidate: false,
             caller: self.current,
             owner: self.owner,
             plain_object_sources: false,
@@ -5307,6 +5352,22 @@ impl Executor<'_> {
         }
         for values in &mut args {
             values.remove(&AbstractValue::Unavailable);
+        }
+        // The author assertion covers this direct, stable member call with
+        // primitive arguments. The provider may have private effects, but it
+        // cannot execute importer-owned code before returning. Its result
+        // remains Unknown in value evaluation; this only suppresses reentry.
+        if call.kind == CallKind::Call
+            && call.no_reentry_candidate
+            && let ValueExpr::Member(receiver, Some(property), true) = &call.callee
+            && let ValueExpr::Binding(namespace) = receiver.as_ref()
+            && self
+                .index
+                .no_reentry_members
+                .get(namespace)
+                .is_some_and(|members| members.contains(property))
+        {
+            return;
         }
         if call.kind == CallKind::New
             && self.is_proven_map_entry_array(&call.callee, &call.args, env, captures, call.owner)

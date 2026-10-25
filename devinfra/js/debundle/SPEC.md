@@ -278,6 +278,20 @@ Calls with a named callback, a retained factory result, spread arguments, or
 `new` use conservative callback timing. This contract is independent of purity
 and does not grant the broader `callback_factory_exports` composition rule.
 
+`chunk_export_purity.<defining chunk>.no_reentry_members` asserts a narrower
+call-timing fact for listed static namespace members: with admitted primitive
+arguments, the call does not synchronously invoke caller-, importer-, or
+host-provided callbacks or read importer-owned lexical state. Provider-private
+effects remain possible. It neither asserts purity nor describes the return
+value; the return stays opaque. The same member must also satisfy
+`namespace_independent_members` so its lookup cannot itself execute foreign
+code, and the namespace identity and mutation checks must pass. The checked
+call shape is a direct `namespace.member(...)` with no spread or `new` and only
+primitive literals, `void` of a primitive literal, or a template with no
+interpolations as arguments; zero arguments are allowed. Argument expressions
+are still visited normally. Uncertain objects, callbacks, aliases, optional or
+computed lookups, and changed namespace members retain ordinary reentry.
+
 `chunk_export_purity.<chunk>.namespace_independent_members` maps namespace
 exports to individually audited static member names. Each lookup must be stable,
 run no caller/importer/host code, and expose no capability to obtain the namespace

@@ -191,6 +191,11 @@ pub struct ChunkExportPurity {
     /// the same return-only callback contract as `callback_factory_exports`.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub callback_factory_members: BTreeMap<String, BTreeSet<String>>,
+    /// Static members of an imported namespace whose calls cannot synchronously
+    /// invoke caller, importer, or host callbacks or read importer-owned cells.
+    /// This asserts call timing only, not purity or the shape of the result.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub no_reentry_members: BTreeMap<String, BTreeSet<String>>,
     /// Stable lookups running no caller/importer/host code, whose capabilities cannot expose their namespace
     /// or replace audited factories except through supplied caller inputs.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]

@@ -974,6 +974,19 @@ Purity annotations alone do not assert that callback arguments are deferred.
 Property writes inside collection callbacks retain the conservative accessor
 fallback when receiver integrity is unproved.
 
+**Audited namespace calls without reentry.**
+`chunk_export_purity.<defining chunk>.no_reentry_members` is an author assertion
+about synchronous call timing, independent of purity and returned-value flow.
+For a direct static member call with no spread and only checked primitive
+arguments, the provider cannot invoke caller/importer/host callbacks or access
+importer-owned lexical state before returning. The imported namespace member
+must also have `namespace_independent_members` lookup integrity, and the shared
+namespace identity, mutation, and publication checks must pass. The evaluator
+therefore skips only opaque callback promotion for the admitted call. It keeps
+the result `Unknown`, visits argument effects, and leaves purity/S-chain
+classification unchanged. Construction, aliases, computed/optional lookups,
+uncertain arguments, and changed member identities use the ordinary fallback.
+
 **Audited callback-factory exports.**
 `chunk_export_purity.<defining chunk>.callback_factory_exports` and
 `callback_factory_members` are separate callback-flow contracts. The latter
