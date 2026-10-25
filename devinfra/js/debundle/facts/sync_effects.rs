@@ -363,6 +363,9 @@ fn safe_constructor_value(
             true
         }
         Expr::Lit(_) => true,
+        Expr::Unary(unary) if unary.op == UnaryOp::Bang => {
+            safe_constructor_value(&unary.arg, params, property_reads, binding_reads)
+        }
         Expr::Member(member) if matches!(&member.prop, MemberProp::Ident(_)) => {
             let Expr::Ident(id) = member.obj.unwrap_parens() else {
                 return false;
