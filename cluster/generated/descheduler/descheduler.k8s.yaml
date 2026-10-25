@@ -51,6 +51,8 @@ spec:
                         - name: lvm-proxmox-hdd-shared
                         - name: lvm-proxmox-ssd
                         - name: lvm-proxmox-ssd-block
+                        - name: piraeus-hdd-local
+                        - name: piraeus-ssd-local
                   extraEnabled:
                     - PodsWithPVC
                 priorityThreshold:

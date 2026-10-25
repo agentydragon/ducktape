@@ -868,6 +868,7 @@ py_library(
         ":helm",
         ":local_path_provisioner",
         ":manifest_roots",
+        ":piraeus",
         ":stateful_infra",
         ":tana_mcp",
         "//cluster/cdk8s/openebs_lvm:storage",

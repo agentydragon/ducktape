@@ -25,6 +25,10 @@ NAMESPACE = "piraeus-datastore"
 OPERATOR_OUTPUT_DIR = f"{GENERATED_ROOT}/piraeus/operator"
 CLUSTER_OUTPUT_DIR = f"{GENERATED_ROOT}/piraeus/cluster"
 
+_SSD_LOCAL = "piraeus-ssd-local"
+_HDD_LOCAL = "piraeus-hdd-local"
+# One copy with no remote access: the volume lives on one node's storage pool.
+NODE_LOCAL_STORAGE_CLASSES = {_SSD_LOCAL, _HDD_LOCAL}
 _PIRAEUS_READY_LABEL = "storage.allegedly.works/piraeus-ready"
 # Controller Pods can run on any prepared OVH node.
 _CONTROLLER_NODE_SELECTOR = {_PIRAEUS_READY_LABEL: "true", "topology.kubernetes.io/region": "hil"}
@@ -529,7 +533,7 @@ def cluster_chart(app: App) -> Chart:
             ],
             "storageClasses": [
                 {
-                    "name": "piraeus-ssd-local",
+                    "name": _SSD_LOCAL,
                     "reclaimPolicy": "Retain",
                     "volumeBindingMode": "WaitForFirstConsumer",
                     "allowVolumeExpansion": True,
@@ -540,7 +544,7 @@ def cluster_chart(app: App) -> Chart:
                     },
                 },
                 {
-                    "name": "piraeus-hdd-local",
+                    "name": _HDD_LOCAL,
                     "reclaimPolicy": "Retain",
                     "volumeBindingMode": "WaitForFirstConsumer",
                     "allowVolumeExpansion": True,
