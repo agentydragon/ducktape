@@ -162,6 +162,16 @@ elimination or by its references in a spec is `ambiguous` there.
 
 Warnings never stop a run.
 
+## Read-only decomposition candidates
+
+Opt-in original-home rejoining starts only from a complete atomic/SCC candidate
+accepted by the shared realizability gate. It contracts whole candidate groups
+only when every owner in both groups has the same original module home; an
+existing mixed-home coarsened group is never split or joined to a pure group.
+Each contraction passes the quotient's incremental gate, and the final complete
+partition passes the shared gate again. The command reports a proposal and
+does not edit the spec.
+
 ## Readable names and the chunk public surface
 
 `name:` on a member and the name assigned to `source_matches[].bindings[]`
