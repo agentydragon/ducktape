@@ -4415,13 +4415,21 @@ impl Executor<'_> {
         let mut containment = Values::new();
         let mut dense = true;
         let mut may_throw = false;
+        let mut can_complete = true;
         for element in elements {
+            if !can_complete {
+                break;
+            }
             let Some(element) = element else {
                 dense = false;
                 continue;
             };
             let mut values = self.evaluate(&element.value, env, captures);
             may_throw |= values.remove(&AbstractValue::Unavailable);
+            if values.is_empty() {
+                can_complete = false;
+                continue;
+            }
             containment.extend(values.iter().cloned());
             if element.spread {
                 if let Some((_, source)) = self.dense_source(&values) {
@@ -4432,6 +4440,15 @@ impl Executor<'_> {
             } else {
                 slots.push(values);
             }
+        }
+        if !can_complete {
+            // Do not publish this array origin or its retained callbacks when
+            // evaluation can only throw before the literal is constructed.
+            return if may_throw {
+                BTreeSet::from([AbstractValue::Unavailable])
+            } else {
+                Values::new()
+            };
         }
         self.prefix_object_properties
             .entry(object)
