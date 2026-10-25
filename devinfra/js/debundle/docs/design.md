@@ -987,6 +987,12 @@ before suspension while excluding reads after an unconditional await. Complete
 raw rebinds remain conservative; incomplete reachability or uncovered callable
 surfaces retain whole-body read effects.
 
+Opaque class and instance values can expose constructors, instance fields,
+methods, and accessors to foreign code. Their callback promotion uses the same
+synchronous owner adjacency and retained prefix reads, with the source closure
+cached per class. Uncovered owners retain raw lazy reads and all raw lazy
+rebinds; incomplete reachability uses the original whole-body closure.
+
 Nested audited factories retain the original callback through each returned
 graph. Invoking or publishing a result before the captured lexical cells are
 initialized reactivates the ordinary callback-read analysis. Namespace member

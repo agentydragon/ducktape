@@ -1859,6 +1859,7 @@ struct Executor<'a> {
     owner_read_closure: FactsOwnerReadClosure,
     synchronous_owner_adjacency: Vec<Vec<StatementOrdinal>>,
     synchronous_owner_reads: Vec<Option<&'a BTreeSet<Id>>>,
+    class_member_effects: BTreeMap<StatementOrdinal, (BTreeSet<Id>, BTreeSet<Id>)>,
     exported_owners: BTreeSet<StatementOrdinal>,
     prior_reachability_roots: Option<BTreeSet<StatementOrdinal>>,
     current_top_owner: Option<StatementOrdinal>,
@@ -2634,15 +2635,44 @@ impl Executor<'_> {
     }
 
     /// Opaque code holding a class or its prototype can retrieve and run any
-    /// method, getter, or static callback. The class owner's lazy closure also
-    /// covers calls made by those deferred bodies.
+    /// method, getter, field callback, or constructor synchronously. Cached
+    /// owner traversal includes those bodies and their synchronous callees,
+    /// while stopping reads after a definite await. Owners without complete
+    /// callable coverage retain their whole lazy read set.
     fn promote_class_members(&mut self, key: u32, outcome: &mut Outcome) {
         let Some(&owner) = self.flow.callable_owner.get(&ValueOrigin::Class(key)) else {
             return;
         };
-        let (reads, rebinds) = self.owner_read_closure.lazy_effects_for_owner(owner);
         let effect_owner = self.current_top_owner.unwrap_or(owner);
-        self.promote_lazy_effects(reads, rebinds, effect_owner, outcome);
+        if self.reachability.incomplete {
+            let (reads, rebinds) = self.owner_read_closure.lazy_effects_for_owner(owner);
+            self.promote_lazy_effects(reads, rebinds, effect_owner, outcome);
+        } else {
+            if !self.class_member_effects.contains_key(&owner) {
+                let reached = FactsOwnerReadClosure::extend_synchronous_owners(
+                    &self.synchronous_owner_adjacency,
+                    [owner],
+                    &mut BTreeSet::new(),
+                );
+                let mut reads = BTreeSet::new();
+                let mut rebinds = BTreeSet::new();
+                for reached_owner in reached {
+                    let fact = &self.facts[reached_owner.0];
+                    reads.extend(
+                        self.synchronous_owner_reads[reached_owner.0]
+                            .unwrap_or(&fact.reads.lazy)
+                            .iter()
+                            .cloned(),
+                    );
+                    // Prefix coverage is only proved for reads. Preserve all
+                    // lazy writes, including destructuring and updates.
+                    rebinds.extend(fact.rebinds.lazy.iter().cloned());
+                }
+                self.class_member_effects.insert(owner, (reads, rebinds));
+            }
+            let (reads, rebinds) = &self.class_member_effects[&owner];
+            self.promote_lazy_effects(reads, rebinds, effect_owner, outcome);
+        }
         // The opaque caller may invoke a method that changes a top-level
         // binding. Subsequent prefix calls must include its new possible
         // value, just as they do after an ordinary callback invocation.
@@ -3829,6 +3859,7 @@ pub(crate) fn annotate_synchronous_calls(
         owner_read_closure,
         synchronous_owner_adjacency,
         synchronous_owner_reads: prefix_reads,
+        class_member_effects: BTreeMap::new(),
         exported_owners,
         prior_reachability_roots: Some(initial_export_roots),
         current_top_owner: None,

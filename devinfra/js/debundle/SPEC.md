@@ -219,6 +219,11 @@ callback read coverage is complete. Possible synchronous reads and writes remain
 constraints, including for private callbacks that have not escaped. Unsupported
 bodies and dynamic scope retain conservative whole-body effects.
 
+Opaque calls holding a class or instance may invoke its constructor, field
+initializers, methods, and accessors. Their synchronous read closure stops at a
+definite `await` where retained callable coverage is complete; uncovered owners
+and incomplete reachability retain whole-body effects and rebinds.
+
 ## Audited callback factories
 
 `chunk_export_purity.<defining chunk>.callback_factory_exports` lists named
