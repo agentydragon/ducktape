@@ -176,6 +176,22 @@ pub struct ResolvedMemberReference {
     pub source_member: String,
     pub referenced_module: usize,
     pub referenced_member: String,
+    /// How the canonical free-name classifier resolves this identifier when
+    /// it has no same-module export to prefer. Anchor planners must preserve
+    /// local co-location only for names that are ambiguous in that view.
+    pub module_neutral_meaning: ModuleNeutralReferenceMeaning,
+}
+
+/// The module-neutral meaning of a reference that currently resolves to a
+/// member in the template's own module.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ModuleNeutralReferenceMeaning {
+    /// The export index has one matching member, so the reference still has a
+    /// unique target after the source template is separated from its module.
+    Unique,
+    /// The export index has several matching members, so the reference needs
+    /// its same-module preference to identify its current target.
+    Ambiguous,
 }
 
 #[derive(Debug, Clone)]
@@ -1469,7 +1485,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
                         .clone()
                 })
                 .collect::<Vec<_>>();
-            for (_, referenced_module, target) in &referenced {
+            for (name, referenced_module, target) in &referenced {
                 if *referenced_module != entity.module_index {
                     continue;
                 }
@@ -1484,6 +1500,14 @@ impl<'c, 'm> Resolve<'c, 'm> {
                 let referenced_member = modules[*target_module].members[*target_member]
                     .export_name
                     .clone();
+                let module_neutral_meaning =
+                    match classify_without_local_preference(name, &exports, &shadowing) {
+                        Meaning::Ambiguous(_) => ModuleNeutralReferenceMeaning::Ambiguous,
+                        Meaning::Reference(_, _) => ModuleNeutralReferenceMeaning::Unique,
+                        Meaning::Global | Meaning::Wildcard => {
+                            unreachable!("a resolved member reference has an exported target")
+                        }
+                    };
                 self.member_references
                     .extend(
                         source_members
@@ -1493,6 +1517,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
                                 source_member: source_member.clone(),
                                 referenced_module: *target_module,
                                 referenced_member: referenced_member.clone(),
+                                module_neutral_meaning,
                             }),
                     );
             }
@@ -2180,9 +2205,31 @@ fn classify(
     exports: &BTreeMap<&str, Vec<(usize, Referent)>>,
     shadowing: &BTreeSet<String>,
 ) -> Meaning {
+    classify_with_local_preference(name, Some(module_index), exports, shadowing)
+}
+
+/// Classify with no same-module export preference. This is the canonical
+/// resolver view a source-match reference will use after its current module
+/// no longer supplies the local preference.
+fn classify_without_local_preference(
+    name: &str,
+    exports: &BTreeMap<&str, Vec<(usize, Referent)>>,
+    shadowing: &BTreeSet<String>,
+) -> Meaning {
+    classify_with_local_preference(name, None, exports, shadowing)
+}
+
+fn classify_with_local_preference(
+    name: &str,
+    preferred_module: Option<usize>,
+    exports: &BTreeMap<&str, Vec<(usize, Referent)>>,
+    shadowing: &BTreeSet<String>,
+) -> Meaning {
     match exports.get(name).map(Vec::as_slice) {
         Some(named) => match (
-            named.iter().find(|(exporter, _)| *exporter == module_index),
+            preferred_module.and_then(|module_index| {
+                named.iter().find(|(exporter, _)| *exporter == module_index)
+            }),
             named,
         ) {
             (Some((exporter, referent)), _) | (None, [(exporter, referent)]) => {

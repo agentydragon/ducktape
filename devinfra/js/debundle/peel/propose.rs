@@ -49,8 +49,8 @@ use analysis::{
     StatementKind,
 };
 use anonymous_resolution::{
-    ResolvedSourceClaims, SourceClaimSet, addressable_anonymous_statement_owner_ids,
-    resolve_source_claims,
+    ModuleNeutralReferenceMeaning, ResolvedSourceClaims, SourceClaimSet,
+    addressable_anonymous_statement_owner_ids, resolve_source_claims,
 };
 use spec::{MemberSelectorSpec, ModulePath};
 use spec_modules::{
@@ -985,10 +985,13 @@ fn resolve_selector_anchor_relations(
                 ModuleDecompositionSelectorAnchorKind::IntrinsicAlias,
             )?);
         }
-        for (member, referenced_by) in &resolved.local_member_references {
+        for reference in &resolved.local_member_references {
+            if reference.module_neutral_meaning != ModuleNeutralReferenceMeaning::Ambiguous {
+                continue;
+            }
             relations.push(resolver.constraint(
-                member,
-                referenced_by,
+                &reference.member,
+                &reference.referenced_by,
                 ModuleDecompositionSelectorAnchorKind::SourceMatchReference,
             )?);
         }
