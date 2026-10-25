@@ -162,6 +162,10 @@ pub struct ModuleDecompositionHomeRejoining {
     pub stop_reason: ModuleDecompositionHomeRejoiningStopReason,
     pub attempted_contractions: usize,
     pub accepted_contractions: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pair_attempt_limit: Option<usize>,
+    pub budget_limited_home_count: usize,
+    pub budget_limited_home_paths: Vec<ModulePath>,
     pub original_module_count: usize,
     pub fully_restored_module_count: usize,
     pub fully_restored_module_paths: Vec<ModulePath>,
@@ -176,6 +180,7 @@ pub struct ModuleDecompositionHomeRejoining {
 pub enum ModuleDecompositionHomeRejoiningStopReason {
     CandidateNotRealizable,
     Converged,
+    PairAttemptLimitReached,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -455,6 +460,7 @@ pub struct ModuleDecompositionOptions {
     pub preserve_selector_anchors: bool,
     pub coarsen_atomic_conflicts: bool,
     pub rejoin_original_modules: bool,
+    pub rejoin_pair_attempt_limit: Option<usize>,
 }
 
 pub fn decompose_modules_from_files_with_options(
@@ -810,6 +816,7 @@ fn decompose_modules(
                 &owner_modules,
                 &residual_path,
                 &mut candidate_owner_modules,
+                decomposition.rejoin_pair_attempt_limit,
             )?
         } else {
             summarize_home_rejoining(
@@ -818,6 +825,8 @@ fn decompose_modules(
                 &candidate_owner_modules,
                 0,
                 0,
+                decomposition.rejoin_pair_attempt_limit,
+                Vec::new(),
             )
         };
         validation =
@@ -1332,6 +1341,7 @@ fn rejoin_original_home_fragments(
     original_owner_modules: &[ModulePath],
     residual_path: &ModulePath,
     candidate_owner_modules: &mut [ModulePath],
+    pair_attempt_limit: Option<usize>,
 ) -> Result<ModuleDecompositionHomeRejoining> {
     let (assignments, _) = candidate_partition_assignments(candidate_owner_modules, residual_path)?;
     // Decomposition has no size ceiling: an original home can be larger than
@@ -1375,13 +1385,15 @@ fn rejoin_original_home_fragments(
 
     let mut attempted = 0;
     let mut accepted = 0;
+    let mut pair_attempts_by_home = BTreeMap::<ModulePath, usize>::new();
+    let mut limited_homes = BTreeSet::<ModulePath>::new();
     // Stable path and owner order makes the result deterministic. Exhaust each
     // home before moving to the next; another home's contraction may make an
     // earlier rejected pair admissible, so repeat whole-home passes only when
     // some contraction was accepted during the previous pass.
     loop {
         let mut pass_progress = false;
-        for representatives in pure_home_representatives.values() {
+        for (home, representatives) in &pure_home_representatives {
             let mut attempted_whole_home = false;
             loop {
                 let classes: Vec<ClassId> = representatives
@@ -1393,18 +1405,38 @@ fn rejoin_original_home_fragments(
                 // A rejected whole-home target is unchanged by this home's
                 // pairwise contractions. Retry only on another whole-home
                 // pass, after other homes may have changed the gate.
-                if classes.len() > 2 && !attempted_whole_home {
+                if !attempted_whole_home
+                    && (classes.len() > 2 || (pair_attempt_limit.is_some() && classes.len() == 2))
+                {
                     attempted_whole_home = true;
                     attempted += 1;
-                    if quotient.contract_group_if_preserving(&classes) {
+                    let whole_home_accepted = if classes.len() == 2 {
+                        quotient.contract_if_preserving(classes[0], classes[1])
+                    } else {
+                        quotient.contract_group_if_preserving(&classes)
+                    };
+                    if whole_home_accepted {
                         accepted += classes.len() - 1;
                         pass_progress = true;
+                        break;
+                    }
+                    // With exactly two classes, this was the only possible pair.
+                    if classes.len() == 2 {
                         break;
                     }
                 }
                 let mut home_progress = false;
                 'pairs: for (left_idx, &left) in classes.iter().enumerate() {
                     for &right in classes.iter().skip(left_idx + 1) {
+                        if let Some(limit) = pair_attempt_limit {
+                            let pair_attempts =
+                                pair_attempts_by_home.entry(home.clone()).or_default();
+                            if *pair_attempts >= limit {
+                                limited_homes.insert(home.clone());
+                                break 'pairs;
+                            }
+                            *pair_attempts += 1;
+                        }
                         attempted += 1;
                         if quotient.contract_if_preserving(left, right) {
                             accepted += 1;
@@ -1423,6 +1455,22 @@ fn rejoin_original_home_fragments(
             break;
         }
     }
+
+    // A later whole-home pass can restore a home even after its fallback
+    // budget was exhausted. A two-class home also gets its sole pair checked
+    // as a whole-home move, leaving no untried pairs to report.
+    limited_homes.retain(|home| {
+        pure_home_representatives
+            .get(home)
+            .is_some_and(|representatives| {
+                representatives
+                    .iter()
+                    .map(|&owner| quotient.class_of(owner))
+                    .collect::<BTreeSet<_>>()
+                    .len()
+                    > 2
+            })
+    });
 
     let mut final_paths = BTreeMap::<ClassId, ModulePath>::new();
     let mut used_paths = BTreeSet::new();
@@ -1463,11 +1511,17 @@ fn rejoin_original_home_fragments(
             .clone();
     }
     Ok(summarize_home_rejoining(
-        ModuleDecompositionHomeRejoiningStopReason::Converged,
+        if limited_homes.is_empty() {
+            ModuleDecompositionHomeRejoiningStopReason::Converged
+        } else {
+            ModuleDecompositionHomeRejoiningStopReason::PairAttemptLimitReached
+        },
         original_owner_modules,
         candidate_owner_modules,
         attempted,
         accepted,
+        pair_attempt_limit,
+        limited_homes.into_iter().collect(),
     ))
 }
 
@@ -1477,6 +1531,8 @@ fn summarize_home_rejoining(
     candidate_owner_modules: &[ModulePath],
     attempted_contractions: usize,
     accepted_contractions: usize,
+    pair_attempt_limit: Option<usize>,
+    budget_limited_home_paths: Vec<ModulePath>,
 ) -> ModuleDecompositionHomeRejoining {
     let mut groups = BTreeMap::<&ModulePath, (usize, BTreeSet<&ModulePath>)>::new();
     let mut homes = BTreeMap::<&ModulePath, BTreeSet<&ModulePath>>::new();
@@ -1504,6 +1560,9 @@ fn summarize_home_rejoining(
         stop_reason,
         attempted_contractions,
         accepted_contractions,
+        pair_attempt_limit,
+        budget_limited_home_count: budget_limited_home_paths.len(),
+        budget_limited_home_paths,
         original_module_count: fully_restored_module_paths.len() + unrestored_module_paths.len(),
         fully_restored_module_count: fully_restored_module_paths.len(),
         fully_restored_module_paths,
