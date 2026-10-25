@@ -165,7 +165,7 @@ pub struct ModuleDecompositionHomeRejoining {
     pub original_module_count: usize,
     pub fully_restored_module_count: usize,
     pub fully_restored_module_paths: Vec<ModulePath>,
-    pub still_split_module_paths: Vec<ModulePath>,
+    pub unrestored_module_paths: Vec<ModulePath>,
     pub final_group_count: usize,
     pub largest_group_owner_count: usize,
     pub largest_group_origin_module_count: usize,
@@ -1473,7 +1473,7 @@ fn summarize_home_rejoining(
         group.1.insert(home);
         homes.entry(home).or_default().insert(candidate);
     }
-    let (fully_restored_module_paths, still_split_module_paths): (Vec<_>, Vec<_>) =
+    let (fully_restored_module_paths, unrestored_module_paths): (Vec<_>, Vec<_>) =
         homes.into_iter().partition(|(home, candidates)| {
             candidates.len() == 1
                 && candidates.contains(home)
@@ -1483,7 +1483,7 @@ fn summarize_home_rejoining(
         .into_iter()
         .map(|(home, _)| home.clone())
         .collect();
-    let still_split_module_paths: Vec<ModulePath> = still_split_module_paths
+    let unrestored_module_paths: Vec<ModulePath> = unrestored_module_paths
         .into_iter()
         .map(|(home, _)| home.clone())
         .collect();
@@ -1491,10 +1491,10 @@ fn summarize_home_rejoining(
         stop_reason,
         attempted_contractions,
         accepted_contractions,
-        original_module_count: fully_restored_module_paths.len() + still_split_module_paths.len(),
+        original_module_count: fully_restored_module_paths.len() + unrestored_module_paths.len(),
         fully_restored_module_count: fully_restored_module_paths.len(),
         fully_restored_module_paths,
-        still_split_module_paths,
+        unrestored_module_paths,
         final_group_count: groups.len(),
         largest_group_owner_count: groups.values().map(|group| group.0).max().unwrap_or(0),
         largest_group_origin_module_count: groups
