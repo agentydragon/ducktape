@@ -83,6 +83,7 @@ fn local_constructor_sequence_and_lazy_fields_keep_callbacks_deferred() {
   get expands() { return this.children; }
   execute(context) { return this.config.execute(context); }
 }
+
 function factory(config, checker, attrs) { return new Command(config, checker, attrs); }
 function isCommand(value) { return value instanceof Command; }
 const command = factory({ execute: () => later }, () => later, {});
@@ -106,6 +107,91 @@ export { Command, factory, isCommand, command, later };
         .with_unassigned_mode(unassigned_mode_inline()),
     );
     assert_preserved_entry_output(&fixture, "true false 7\n");
+}
+
+#[test]
+fn fresh_constructor_writes_after_opaque_checker_keep_callback_deferred() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"class Checker { isAllowed() { return true; } }
+globalThis.savedChecker = Checker;
+class Command {
+  constructor(config, checker) {
+    this.config = config;
+    this.checker = checker;
+    this.weight = config.weight ?? 0;
+  }
+  execute() { return this.config.execute(); }
+}
+function create(config) { return new Command(config, new Checker()); }
+const command = create({ execute: () => later });
+const later = 7;
+console.log(command.execute());
+export { Checker, Command, create, command, later };
+"#,
+            vec![
+                logical_module_with_anon(
+                    "command",
+                    &[
+                        Member::new("Checker"),
+                        Member::new("Command"),
+                        Member::new("create"),
+                        Member::new("command"),
+                    ],
+                    &["globalThis.savedChecker = Checker;"],
+                ),
+                logical_module("value", &[Member::new("later")]),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&fixture, "7\n");
+}
+
+#[test]
+fn opaque_checker_receiving_config_keeps_callback_reentry_possible() {
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            r#"class Checker { constructor(config) { config.execute(); } }
+globalThis.savedChecker = Checker;
+class Command {
+  constructor(config, checker) { this.config = config; this.checker = checker; }
+}
+function create(config) { return new Command(config, new Checker(config)); }
+const command = create({ execute: () => later });
+const later = 7;
+export { Checker, Command, create, command, later };
+"#,
+            vec![
+                logical_module("command", &[Member::new("command")]),
+                logical_module("value", &[Member::new("later")]),
+            ],
+        ),
+        &["command", "value"],
+        &[],
+    );
+}
+
+#[test]
+fn constructor_prototype_getter_collision_remains_opaque() {
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            r#"class Command {
+  get config() { return 0; }
+  constructor(config) { this.config = config; }
+}
+const command = new Command({ execute: () => later });
+const later = 7;
+export { Command, command, later };
+"#,
+            vec![
+                logical_module("command", &[Member::new("command")]),
+                logical_module("value", &[Member::new("later")]),
+            ],
+        ),
+        &["command", "value"],
+        &[],
+    );
 }
 
 #[test]
