@@ -411,7 +411,7 @@ pub(super) fn finish_logical_chunk(
     // the facts pass's local-effect policy, which travels in the hints.
     let owner_graph_options = chunk_analysis_options
         .get(chunk_id)
-        .copied()
+        .cloned()
         .unwrap_or_default();
     let line_index = runtime_ast.line_index();
     // A3 admission resolver: where does a dynamic-import specifier in
@@ -495,6 +495,8 @@ pub(super) fn finish_logical_chunk(
             hints.local_effect_policy = LocalEffectPolicy::LocalPropertyWrites;
         }
         hints.trusted_dataflow_summaries = owner_graph_options.trusted_dataflow_summaries;
+        hints.deferred_global_publications =
+            owner_graph_options.deferred_global_publications.clone();
         hints
     };
     // Chunk analysis: hint-sensitive facts, owner graph, and structural
