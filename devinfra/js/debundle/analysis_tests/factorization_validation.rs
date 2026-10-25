@@ -456,7 +456,7 @@ fn validate_surfaces_linker_order_for_acyclic_spec() {
     // mod_0 reads B from mod_1 at-init → mod_1 must precede
     // mod_0 in the linker's evaluation order.
     let factorization = factorization_for(
-        "const A = B + 1; const B = 42;",
+        "const B = 42; const A = B + 1;",
         &[("A", logical(0)), ("B", logical(1))],
     );
     let report = factorization.validate();

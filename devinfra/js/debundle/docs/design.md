@@ -770,9 +770,10 @@ traversal, so aliases share visited sets for objects, closures, and escaped
 values.
 
 The summary also records reads at the callback's source prefix. For each
-callback-read binding, the graph builds a source-order timeline of callback
-readers and known writers, including lexical and `var` initialization, eager
-rebinds, synchronous-call rebinds, and trusted local mutations. Direct
+binding with an ordinary eager or callback read, the graph builds a source-order
+timeline of readers and known writers, including lexical and `var`
+initialization, eager rebinds, synchronous-call rebinds, and trusted local
+mutations. Direct
 `Sequenced` edges preserve writer order and place each callback or ordinary
 eager reader against its nearest preceding and following writer. This keeps
 earlier values before their readers and every later writer after those reads

@@ -154,18 +154,37 @@ export { makeRegistry, registry, later };
 }
 
 #[test]
-fn failed_map_entry_evaluation_does_not_retain_callbacks() {
-    let fixture = run_fixture(split_collection_later(
-        r#"const result = "ok";
+fn failed_map_entry_evaluation_keeps_the_tdz_order() {
+    let source = r#"function opaqueConsumer(value) { globalThis.saved = value; }
+const result = "ok";
 try { opaqueConsumer(new Map([[missing, () => later]])); }
 catch {}
 const missing = "key";
 const later = 42;
-console.log(result);
+console.log(result, globalThis.saved === undefined);
 export { result, missing, later };
-"#,
-        &[Member::new("result"), Member::new("missing")],
-    ));
-    assert_preserved_entry_output(&fixture, "ok\n");
-    assert_all_emitted_js_checks(&fixture);
+"#;
+    let colocated = FixtureOpts::new(
+        source,
+        vec![logical_module_with_anon(
+            "runtime/all",
+            &[
+                Member::new("opaqueConsumer"),
+                Member::new("result"),
+                Member::new("missing"),
+                Member::new("later"),
+            ],
+            &[
+                "try { opaqueConsumer(new Map([[missing, () => later]])); } catch {}",
+                "console.log(result, globalThis.saved === undefined);",
+            ],
+        )],
+    )
+    .with_unassigned_mode(unassigned_mode_inline());
+    assert_preserved_entry_output(&run_fixture(colocated), "ok true\n");
+    expect_atomic_conflict_rejection(
+        split_collection_later(source, &[Member::new("result"), Member::new("missing")]),
+        &["anon_residual_sentinel", "values/collection"],
+        &[],
+    );
 }
