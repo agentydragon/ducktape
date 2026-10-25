@@ -7,8 +7,8 @@ use crate::module_apply::{ModulesApplyArgs, run_modules_apply};
 use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, Subcommand};
 use peel::propose::{
-    DEFAULT_SIZE_CAP_LINES, ModuleDecompositionReport, ProposalOptions,
-    decompose_modules_from_files,
+    DEFAULT_SIZE_CAP_LINES, ModuleDecompositionReport, ModuleDecompositionStrategy,
+    ProposalOptions, decompose_modules_from_files_with_strategy,
 };
 use peel::{CommonArgs, OutputFormat, PlanWorkArgs, run_plan_work_report};
 use std::path::PathBuf;
@@ -72,8 +72,11 @@ enum ModulesNsCommand {
     /// The planner keeps each current module separate from the others and
     /// groups its owners by the gated atomic/same-module seed classes. It
     /// validates the complete candidate against the structural atoms and
-    /// shared realizability gate. Suggested paths are review aids; the command
-    /// does not edit the spec.
+    /// shared realizability gate. `--atomic` skips same-module seed contraction
+    /// for a faster, more fragmented structural baseline. Suggested paths are
+    /// review aids; the command does not edit the spec. Pair `--atomic` with
+    /// `--include-residual` to split residual body atoms while keeping top-level
+    /// imports and exports in the entry module.
     Decompose(ModuleDecomposeArgs),
     /// List all modules in the spec with summary stats.
     ///
@@ -94,6 +97,15 @@ struct ModuleDecomposeArgs {
     /// Output format. Default `text` on tty, `json` on pipe.
     #[arg(long, value_enum)]
     format: Option<OutputFormat>,
+
+    /// Use structural atomic units only, skipping same-module seed contractions.
+    #[arg(long)]
+    atomic: bool,
+
+    /// With `--atomic`, also split residual body atoms into proposed modules.
+    /// Top-level import and export declarations stay in the entry module.
+    #[arg(long, requires = "atomic")]
+    include_residual: bool,
 }
 
 /// Args for `debundle modules list`.
@@ -222,6 +234,12 @@ fn render_modules_list_text(report: &ModulesListReport, out: &mut String, with_a
 }
 
 fn render_module_decomposition_text(report: &ModuleDecompositionReport, out: &mut String) {
+    let strategy = match report.strategy {
+        ModuleDecompositionStrategy::Seed => "seed",
+        ModuleDecompositionStrategy::Atomic => "atomic",
+        ModuleDecompositionStrategy::AtomicIncludingResidual => "atomic_including_residual",
+    };
+    out.push_str(&format!("strategy: {strategy}\n"));
     out.push_str(if report.candidate_is_realizable {
         "candidate is realizable\n"
     } else {
@@ -270,13 +288,28 @@ fn render_module_decomposition_text(report: &ModuleDecompositionReport, out: &mu
 }
 
 fn run_module_decompose(args: ModuleDecomposeArgs) -> Result<()> {
-    let report = decompose_modules_from_files(&ProposalOptions {
-        owner_graph_path: args.common.owner_graph_path,
-        modules_root: args.common.modules_root,
-        tree_config: args.tree_config,
-        source_root: None,
-        size_cap_lines: DEFAULT_SIZE_CAP_LINES,
-    })?;
+    anyhow::ensure!(
+        !args.include_residual || args.atomic,
+        "--include-residual requires --atomic"
+    );
+    let report = decompose_modules_from_files_with_strategy(
+        &ProposalOptions {
+            owner_graph_path: args.common.owner_graph_path,
+            modules_root: args.common.modules_root,
+            tree_config: args.tree_config,
+            source_root: None,
+            size_cap_lines: DEFAULT_SIZE_CAP_LINES,
+        },
+        if args.atomic {
+            if args.include_residual {
+                ModuleDecompositionStrategy::AtomicIncludingResidual
+            } else {
+                ModuleDecompositionStrategy::Atomic
+            }
+        } else {
+            ModuleDecompositionStrategy::Seed
+        },
+    )?;
     emit_report(
         args.format,
         &report,
