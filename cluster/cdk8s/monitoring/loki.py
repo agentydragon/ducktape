@@ -134,13 +134,13 @@ def _loki_values() -> dict[str, object]:
         "singleBinary": {"replicas": 0},
         # SimpleScalable: write owns the ingester WAL (needs PVC), backend's disk
         # is shipper/compactor cache (emptyDir is fine), read is stateless.
-        # All pinned to OVH kimsufi zone so the PVCs land on local-path-ovh.
+        # All pinned to OVH kimsufi zone, where the Piraeus HDD pools are.
         "write": {
             "replicas": 2,
             "annotations": _GOLDILOCKS_OFF,
             "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
             "affinity": node_scheduling.PREFER_WORKERS,
-            "persistence": {"storageClass": "local-path-ovh", "size": "10Gi"},
+            "persistence": {"storageClass": "piraeus-hdd-local", "size": "10Gi"},
             "extraEnvFrom": _CREDENTIALS_ENV_FROM,
             "resources": {"requests": {"cpu": "100m", "memory": "256Mi"}, "limits": {"cpu": "500m", "memory": "512Mi"}},
         },

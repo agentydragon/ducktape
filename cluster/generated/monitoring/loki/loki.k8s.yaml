@@ -255,7 +255,7 @@ spec:
         topology.kubernetes.io/zone: hil-ovh
       persistence:
         size: 10Gi
-        storageClass: local-path-ovh
+        storageClass: piraeus-hdd-local
       replicas: 2
       resources:
         limits:

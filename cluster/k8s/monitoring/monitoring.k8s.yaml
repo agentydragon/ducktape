@@ -68,7 +68,7 @@ spec:
               resources:
                 requests:
                   storage: 1Gi
-              storageClassName: local-path-ovh
+              storageClassName: piraeus-hdd-local
         tolerations:
           - effect: NoSchedule
             key: node-role.kubernetes.io/control-plane

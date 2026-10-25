@@ -315,7 +315,7 @@ def _values() -> dict[str, object]:
                     "volumeClaimTemplate": {
                         "metadata": {"name": "db"},
                         "spec": {
-                            "storageClassName": "local-path-ovh",
+                            "storageClassName": "piraeus-hdd-local",
                             "accessModes": ["ReadWriteOnce"],
                             "resources": {"requests": {"storage": "1Gi"}},
                         },

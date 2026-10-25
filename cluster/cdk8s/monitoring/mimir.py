@@ -167,7 +167,7 @@ def _values() -> dict[str, object]:
         "distributor": _component(1, "50m", "128Mi"),
         "ingester": {
             "replicas": 2,
-            "persistentVolume": {"storageClass": "local-path-ovh", "size": "10Gi"},
+            "persistentVolume": {"storageClass": "piraeus-hdd-local", "size": "10Gi"},
             "resources": {"requests": {"cpu": "100m", "memory": "256Mi"}},
             "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
             # 2 ingesters + RF=2 + RF=2 on the 2 kimsufi workers gives all-pairs
