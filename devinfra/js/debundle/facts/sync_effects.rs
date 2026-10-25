@@ -82,6 +82,42 @@ enum ValueExpr {
     Unknown,
 }
 
+fn map_entry_array_span(new_expr: &NewExpr) -> Option<u32> {
+    if !matches!(new_expr.callee.unwrap_parens(), Expr::Ident(ident) if ident.sym == "Map") {
+        return None;
+    }
+    let [argument] = new_expr.args.as_deref().unwrap_or_default() else {
+        return None;
+    };
+    if argument.spread.is_some() {
+        return None;
+    }
+    let Expr::Array(entries) = argument.expr.unwrap_parens() else {
+        return None;
+    };
+    for entry in &entries.elems {
+        let Some(entry) = entry else {
+            return None;
+        };
+        if entry.spread.is_some() {
+            return None;
+        }
+        let Expr::Array(pair) = entry.expr.unwrap_parens() else {
+            return None;
+        };
+        if pair.elems.len() != 2
+            || pair.elems.iter().any(|element| {
+                element
+                    .as_ref()
+                    .is_none_or(|element| element.spread.is_some())
+            })
+        {
+            return None;
+        }
+    }
+    Some(entries.span.lo.0)
+}
+
 impl ValueExpr {
     fn from_expr(expr: &Expr) -> Self {
         match expr.unwrap_parens() {
@@ -675,6 +711,8 @@ struct ExecutionIndex {
     other_class_uses: BTreeSet<Id>,
     safe_class_target: Option<Id>,
     plain_data_objects: BTreeSet<u32>,
+    map_entry_arrays: BTreeSet<u32>,
+    reassigned_map: bool,
     setter_owners: BTreeMap<Option<String>, BTreeSet<StatementOrdinal>>,
     hoisted_nested_functions: BTreeSet<u32>,
     owner_callable_prefix_reads: Vec<Option<BTreeSet<Id>>>,
@@ -720,6 +758,8 @@ impl Default for ExecutionIndex {
             other_class_uses: BTreeSet::new(),
             safe_class_target: None,
             plain_data_objects: BTreeSet::new(),
+            map_entry_arrays: BTreeSet::new(),
+            reassigned_map: false,
             setter_owners: BTreeMap::new(),
             hoisted_nested_functions: BTreeSet::new(),
             owner_callable_prefix_reads: Vec::new(),
@@ -1485,6 +1525,12 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_assign_expr(&mut self, assignment: &AssignExpr) {
+        if matches!(&assignment.left,
+            AssignTarget::Simple(SimpleAssignTarget::Ident(binding))
+                if binding.id.sym == "Map")
+        {
+            self.reassigned_map = true;
+        }
         let before_assignment = self.past_await;
         assignment.visit_children_with(self);
         if matches!(
@@ -1567,6 +1613,9 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_update_expr(&mut self, expression: &UpdateExpr) {
+        if matches!(expression.arg.unwrap_parens(), Expr::Ident(ident) if ident.sym == "Map") {
+            self.reassigned_map = true;
+        }
         expression.visit_children_with(self);
         if let Expr::Member(member) = expression.arg.unwrap_parens() {
             self.mark_dynamic_property_effect(Some(&member.obj));
@@ -1678,6 +1727,9 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_new_expr(&mut self, new_expr: &NewExpr) {
+        if let Some(span) = map_entry_array_span(new_expr) {
+            self.map_entry_arrays.insert(span);
+        }
         let previous_target = self.safe_class_target.take();
         self.safe_class_target = match new_expr.callee.unwrap_parens() {
             Expr::Ident(id) => Some(id.to_id()),
@@ -1834,6 +1886,28 @@ struct Executor<'a> {
 }
 
 impl Executor<'_> {
+    fn is_proven_map_entry_array(
+        &self,
+        callee: &ValueExpr,
+        args: &[ValueExpr],
+        env: &Context,
+        captures: &Context,
+        owner: StatementOrdinal,
+    ) -> bool {
+        let ValueExpr::Binding(id) = callee else {
+            return false;
+        };
+        id.0.as_ref() == "Map"
+            && !self.flow.is_declared(id)
+            && !self.shadowed.contains("Map")
+            && !env.contains_key(id)
+            && !captures.contains_key(id)
+            && !self.index.reassigned_map
+            && !self.index.dynamic_scope_owners.contains(&owner)
+            && matches!(args, [ValueExpr::ObjectLiteral(span, _)]
+                if self.index.map_entry_arrays.contains(span))
+    }
+
     fn summarize_metadata_decoration(
         &mut self,
         application: &MetadataDecorateCall,
@@ -3117,6 +3191,33 @@ impl Executor<'_> {
                     .map(|arg| self.evaluate(arg, env, captures))
                     .collect();
                 let mut results = Values::new();
+                if self.current_top_owner.is_some_and(|owner| {
+                    self.is_proven_map_entry_array(callee, args, env, captures, owner)
+                }) {
+                    let mut can_complete = true;
+                    let mut may_throw = false;
+                    let mut successful_args = Values::new();
+                    for values in &evaluated_args {
+                        if values.contains(&AbstractValue::Unavailable) {
+                            may_throw = true;
+                            can_complete &= values.len() > 1;
+                        }
+                        successful_args.extend(
+                            values
+                                .iter()
+                                .filter(|value| **value != AbstractValue::Unavailable)
+                                .cloned(),
+                        );
+                    }
+                    if can_complete {
+                        let callbacks = self.callback_values(&successful_args);
+                        results.insert(self.deferred_callbacks(callbacks));
+                    }
+                    if may_throw || !can_complete {
+                        results.insert(AbstractValue::Unavailable);
+                    }
+                    return results;
+                }
                 for target in targets {
                     match target {
                         AbstractValue::Origin(ValueOrigin::Class(key)) => {
@@ -3360,6 +3461,9 @@ impl Executor<'_> {
         }
         for values in &mut args {
             values.remove(&AbstractValue::Unavailable);
+        }
+        if self.is_proven_map_entry_array(&call.callee, &call.args, env, captures, call.owner) {
+            return;
         }
         let retained_callback = matches!(args.as_slice(), [values] if !values.is_empty()
             && values.iter().all(|value| matches!(value, AbstractValue::DeferredCallbacks(_))));
