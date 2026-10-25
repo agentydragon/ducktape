@@ -2593,10 +2593,11 @@ impl Executor<'_> {
         Some((outcome, instance))
     }
 
-    /// The foreign wrapper's body is opaque once invoked. Include the full
-    /// lazy closure, including callbacks returned by the original callback.
+    /// The foreign wrapper can invoke its captured callbacks and any values
+    /// they return synchronously. It cannot resume them past an await.
     fn promote_deferred_callbacks(&mut self, captured: &Values, outcome: &mut Outcome) {
         let effect_owner = self.current_top_owner.unwrap();
+        let mut roots = BTreeSet::new();
         for callback in self.callback_values(captured) {
             let key = match callback {
                 AbstractValue::Origin(ValueOrigin::Function(key))
@@ -2608,10 +2609,26 @@ impl Executor<'_> {
                 _ => continue,
             };
             if let Some(callable) = self.index.callables.get(&key) {
-                let (reads, rebinds) = self
-                    .owner_read_closure
-                    .lazy_effects_for_owner(callable.owner);
+                roots.insert(callable.owner);
+            }
+        }
+        if self.reachability.incomplete {
+            for owner in roots {
+                let (reads, rebinds) = self.owner_read_closure.lazy_effects_for_owner(owner);
                 self.promote_lazy_effects(reads, rebinds, effect_owner, outcome);
+            }
+        } else {
+            let reached = FactsOwnerReadClosure::extend_synchronous_owners(
+                &self.synchronous_owner_adjacency,
+                roots,
+                &mut BTreeSet::new(),
+            );
+            for owner in reached {
+                let fact = &self.facts[owner.0];
+                let reads = self.synchronous_owner_reads[owner.0].unwrap_or(&fact.reads.lazy);
+                // Retain complete rebinds: prefix coverage currently applies
+                // only to reads, not every update or destructuring write.
+                self.promote_lazy_effects(reads, &fact.rebinds.lazy, effect_owner, outcome);
             }
         }
     }

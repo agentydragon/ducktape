@@ -226,6 +226,9 @@ argument shapes remain conservative. The provider must not invoke that callback 
 caller-, host-, or export-provided callback synchronously, or publish the
 callback outside the returned fresh ordinary callable/plain-object graph. The
 consumer may later reach or invoke the captured callback through that result.
+An invocation includes synchronous reads by the callback and by callbacks it
+returns synchronously. Reads after an unconditional `await` remain deferred;
+unsupported callback bodies retain conservative whole-body effects.
 The provider must not synchronously read or write importer-owned state through
 another route, including imported lexical cells or caller-owned objects; effects
 confined to provider-private state are allowed.

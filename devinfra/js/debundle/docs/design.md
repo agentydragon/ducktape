@@ -973,6 +973,13 @@ captured callback through that result. Authors must audit all provider and type
 branches, helpers, callback-bearing property access on both input and result,
 and prototype integrity; neither graph may contain proxies or accessors at the
 call.
+
+Invoking a retained result promotes its callbacks through the shared synchronous
+owner adjacency and retained prefix reads. This includes callbacks returned
+before suspension while excluding reads after an unconditional await. Complete
+raw rebinds remain conservative; incomplete reachability or uncovered callable
+surfaces retain whole-body read effects.
+
 Nested audited factories retain the original callback through each returned
 graph. Invoking or publishing a result before the captured lexical cells are
 initialized reactivates the ordinary callback-read analysis. Namespace member

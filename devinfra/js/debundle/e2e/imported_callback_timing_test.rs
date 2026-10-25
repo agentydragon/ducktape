@@ -178,6 +178,80 @@ fn audited_factory_keeps_callbacks_in_its_returned_object() {
 }
 
 #[test]
+fn invoked_factory_result_does_not_run_its_callback_after_await_synchronously() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import { factory } from './peer.js';\n\
+             import { consume } from './host.js';\n\
+             const wrapped = factory(async () => { await 0; return later; });\n\
+             const consumed = consume(wrapped);\n\
+             const later = 42;\nconsole.log(later);\n",
+            vec![
+                logical_module(
+                    "callbacks/wrapped",
+                    &[Member::new("wrapped"), Member::new("consumed")],
+                ),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        )
+        .with_extra_chunks(&[
+            ("static/peer", OBJECT_FACTORY),
+            (
+                "static/host",
+                "export function consume(value) { return Reflect.apply(value.invoke, value, []); }\n",
+            ),
+        ])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+            .with_callback_factories(&["factory"])
+            .build()]),
+    );
+    assert_preserved_entry_output(&fixture, "42\n");
+}
+
+#[test]
+fn invoked_factory_result_keeps_synchronous_callback_and_returned_callback_reads() {
+    for (callback, consumer) in [
+        (
+            "async () => { globalThis.seen = later; await 0; }",
+            "export function consume(value) { return Reflect.apply(value.invoke, value, []); }\n",
+        ),
+        (
+            "() => () => { globalThis.seen = later; }",
+            "export function consume(value) { return Reflect.apply(Reflect.apply(value.invoke, value, []), null, []); }\n",
+        ),
+    ] {
+        expect_atomic_conflict_rejection(
+            FixtureOpts::new(
+                &format!(
+                    "import {{ factory }} from './peer.js';\n\
+                     import {{ consume }} from './host.js';\n\
+                     let later = 0;\nconst wrapped = factory({callback});\n\
+                     const consumed = consume(wrapped);\nlater = 42;\n\
+                     console.log(globalThis.seen, later);\n"
+                ),
+                vec![
+                    logical_module(
+                        "callbacks/wrapped",
+                        &[Member::new("wrapped"), Member::new("consumed")],
+                    ),
+                    logical_module_with_anon(
+                        "values/later",
+                        &[Member::new("later")],
+                        &["later = 42;"],
+                    ),
+                ],
+            )
+            .with_extra_chunks(&[("static/peer", OBJECT_FACTORY), ("static/host", consumer)])
+            .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+                .with_callback_factories(&["factory"])
+                .build()]),
+            &["callbacks/wrapped", "values/later"],
+            &[],
+        );
+    }
+}
+
+#[test]
 fn unknown_complex_factory_remains_conservative() {
     let peers = [("static/peer", OBJECT_FACTORY)];
     expect_atomic_conflict_rejection(
