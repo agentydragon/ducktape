@@ -1012,6 +1012,14 @@ branches, helpers, callback-bearing property access on both input and result,
 and prototype integrity; neither graph may contain proxies or accessors at the
 call.
 
+A pure, single-binding declaration whose only top-level call is a direct
+named import covered by `callback_factory_exports` can create its fresh result
+without making the retained callback reachable through an earlier opaque call.
+This root exclusion requires one inline function or arrow argument and a
+definite initializer. It does not apply to namespace member calls or arbitrary
+factory aliases. A subsequent call, export, or publication of the result still
+promotes the retained callback through the value-flow model.
+
 `inline_callback_factory_exports` is a named-export contract for providers
 audited only with one non-spread syntactic inline function or arrow argument.
 The provider returns a fresh ordinary callable retaining that callback and
