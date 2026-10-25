@@ -1,8 +1,9 @@
 import { Button, Group, MultiSelect, Select, Stack, Text, Title } from "@mantine/core";
 import { type JSX, useEffect, useState } from "react";
 
-import { BindingsTable } from "../bindings_table";
+import { BINDING_GRANT_HELP, BindingsTable } from "../bindings_table";
 import { api, displayableError, type BindingView } from "../client";
+import { HelpTooltip } from "../help_tooltip";
 
 /** How long a grant lasts; the Policy Controller deletes the binding when it ends. */
 const GRANT_DURATIONS = [
@@ -105,7 +106,10 @@ export function PolicyBindingsSection({
   return (
     <Stack gap="xs">
       <Group justify="space-between">
-        <Title order={5}>Bindings</Title>
+        <Group gap={4}>
+          <Title order={5}>Bindings</Title>
+          <HelpTooltip topic="Bindings" description={BINDING_GRANT_HELP} />
+        </Group>
         <Button
           size="compact-sm"
           variant={granting ? "light" : "default"}

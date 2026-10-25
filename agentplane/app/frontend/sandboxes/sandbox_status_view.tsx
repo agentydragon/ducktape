@@ -1,7 +1,15 @@
 import { Accordion, Badge, Button, Group, Paper, Stack, Table, Text, Title } from "@mantine/core";
 import { type JSX, type ReactNode, useEffect, useState } from "react";
 
-import { displayableError, getRunnerStatus, harnessLabel, type RunnerStatusView, type SandboxView } from "../client";
+import {
+  displayableError,
+  getRunnerStatus,
+  harnessLabel,
+  type RunnerStatusView,
+  type SandboxView,
+  type ThreadView,
+} from "../client";
+import { HelpTooltip } from "../help_tooltip";
 import { IdleSuspendInput } from "./idle_suspend";
 import { JsonView } from "../json_view";
 import { deleting } from "./lifecycle";
@@ -203,11 +211,14 @@ function KubernetesStatus({ sandbox }: { sandbox: SandboxView }): JSX.Element {
   );
 }
 
-function Detail({ label, children }: { label: string; children: ReactNode }): JSX.Element {
+function Detail({ label, help, children }: { label: string; help?: string; children: ReactNode }): JSX.Element {
   return (
     <Table.Tr>
-      <Table.Th scope="row" style={{ width: "1%", whiteSpace: "nowrap", verticalAlign: "top" }}>
-        {label}
+      <Table.Th scope="row" aria-label={label} style={{ width: "1%", whiteSpace: "nowrap", verticalAlign: "top" }}>
+        <Group gap={4} wrap="nowrap">
+          {label}
+          {help && <HelpTooltip topic={label} description={help} />}
+        </Group>
       </Table.Th>
       <Table.Td>{children}</Table.Td>
     </Table.Tr>
@@ -232,19 +243,14 @@ function SandboxDetails({
           <TimeAgo value={sandbox.created_at} />
         </Detail>
         {sandbox.preset && <Detail label="Preset">{sandbox.preset}</Detail>}
-        {/* The account its Pod runs as is what every binding names, so the Policies tab is its policy, not this
-            Sandbox's: two sandboxes sharing an account share what they may do. */}
-        <Detail label="ServiceAccount">
+        <Detail
+          label="ServiceAccount"
+          help="The subject its policy bindings name. Two sandboxes sharing an account share what they may do."
+        >
           {sandbox.service_account.namespace}/{sandbox.service_account.name}
-          <Text size="xs" c="dimmed">
-            The subject its policy bindings name.
-          </Text>
         </Detail>
-        <Detail label="Wake on message">
+        <Detail label="Wake on message" help="A message to one of its Sessions resumes it while suspended.">
           <WakeOnSendCheckbox sandbox={sandbox} disabled={deleting(sandbox)} onError={onError} />
-          <Text size="xs" c="dimmed">
-            A message to one of its Sessions resumes it while suspended.
-          </Text>
         </Detail>
         <Detail label="Suspend when idle (min)">
           <IdleSuspendInput sandbox={sandbox} disabled={deleting(sandbox)} onError={onError} />
@@ -311,7 +317,15 @@ type RunnerDiagnosticsState =
   | { kind: "unavailable"; reason: string }
   | { kind: "suspended" };
 
-function RunnerDiagnostics({ sandbox, active }: { sandbox: SandboxView; active: boolean }): JSX.Element {
+function RunnerDiagnostics({
+  sandbox,
+  threads,
+  active,
+}: {
+  sandbox: SandboxView;
+  threads: ThreadView[];
+  active: boolean;
+}): JSX.Element {
   const [state, setState] = useState<RunnerDiagnosticsState>({ kind: "loading" });
   const [refreshVersion, setRefreshVersion] = useState(0);
   useEffect(() => {
@@ -334,6 +348,7 @@ function RunnerDiagnostics({ sandbox, active }: { sandbox: SandboxView; active: 
       current = false;
     };
   }, [active, refreshVersion, sandbox.name, sandbox.operating_mode, sandbox.phase]);
+  const threadsById = new Map(threads.map((thread) => [thread.id, thread]));
 
   return (
     <Stack gap="xs" data-testid="sandbox-runner-diagnostics">
@@ -408,31 +423,39 @@ function RunnerDiagnostics({ sandbox, active }: { sandbox: SandboxView; active: 
           ) : (
             <Stack gap="xs">
               <Title order={6}>Sessions</Title>
-              {state.value.sessions.map((session) => (
-                <Paper key={session.session_id} withBorder p="sm" radius="md">
-                  <Stack gap={4}>
-                    <Group justify="space-between" wrap="wrap" gap="xs">
-                      <Text fw={600} style={{ overflowWrap: "anywhere" }}>
-                        {session.session_id}
+              {state.value.sessions.map((session) => {
+                const title = threadsById.get(session.session_id)?.name?.trim();
+                return (
+                  <Paper key={session.session_id} withBorder p="sm" radius="md">
+                    <Stack gap={4}>
+                      <Group justify="space-between" wrap="wrap" gap="xs">
+                        <Text fw={600} style={{ overflowWrap: "anywhere" }}>
+                          {title || session.session_id}
+                        </Text>
+                        <Badge>{executionStateLabel(session.execution_state)}</Badge>
+                      </Group>
+                      {title && (
+                        <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
+                          Session ID · {session.session_id}
+                        </Text>
+                      )}
+                      <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
+                        Process ID · {session.process_id ?? "—"}
                       </Text>
-                      <Badge>{executionStateLabel(session.execution_state)}</Badge>
-                    </Group>
-                    <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-                      Process ID · {session.process_id ?? "—"}
-                    </Text>
-                    <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-                      Native Session ID · {session.native_session_id ?? "—"}
-                    </Text>
-                    <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-                      Active turn · {session.active_turn_id ?? "—"}
-                    </Text>
-                    <Text size="xs" c="dimmed">
-                      Failure cursor · {session.failure_cursor ?? "—"}
-                      {session.busy ? " · Work in progress" : ""}
-                    </Text>
-                  </Stack>
-                </Paper>
-              ))}
+                      <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
+                        Native Session ID · {session.native_session_id ?? "—"}
+                      </Text>
+                      <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
+                        Active turn · {session.active_turn_id ?? "—"}
+                      </Text>
+                      <Text size="xs" c="dimmed">
+                        Failure cursor · {session.failure_cursor ?? "—"}
+                        {session.busy ? " · Work in progress" : ""}
+                      </Text>
+                    </Stack>
+                  </Paper>
+                );
+              })}
             </Stack>
           )}
         </Stack>
@@ -444,10 +467,12 @@ function RunnerDiagnostics({ sandbox, active }: { sandbox: SandboxView; active: 
 /** The Sandbox's state and settings, what Kubernetes reports of it, and what its runner reports. */
 export function StatusView({
   sandbox,
+  threads,
   active,
   onError,
 }: {
   sandbox: SandboxView;
+  threads: ThreadView[];
   active: boolean;
   onError: (message: string | null) => void;
 }): JSX.Element {
@@ -465,7 +490,7 @@ export function StatusView({
           <KubernetesStatus sandbox={sandbox} />
         </>
       )}
-      <RunnerDiagnostics sandbox={sandbox} active={active} />
+      <RunnerDiagnostics sandbox={sandbox} threads={threads} active={active} />
     </Stack>
   );
 }

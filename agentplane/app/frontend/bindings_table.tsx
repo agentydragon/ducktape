@@ -25,6 +25,9 @@ const NOT_REVOCABLE: Partial<Record<BindingView["provenance"], string>> = {
   sandbox: "Kept equal to the Sandbox's policy sets by its controller, which would recreate it.",
 };
 
+export const BINDING_GRANT_HELP =
+  "A binding grants the rules of its policy sets until it expires or is revoked. One from the repository is removed there.";
+
 /** When a binding stops counting, red once that is past: the objects are pushed, the clock is not. */
 function Expiry({ expiresAt }: { expiresAt: string | null | undefined }): JSX.Element {
   if (!expiresAt) return <Text size="sm">never</Text>;
@@ -281,10 +284,6 @@ export function BindingsTable({
           return rows;
         })}
       </Table.Tbody>
-      <Table.Caption>
-        A binding grants the rules of its policy sets until it expires or is revoked. One from the repository is removed
-        there.
-      </Table.Caption>
     </Table>
   );
 }

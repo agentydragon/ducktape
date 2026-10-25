@@ -81,6 +81,7 @@ ts_library(
         "//:node_modules/react",
         "//agentplane/app/frontend:bindings_table",
         "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:help_tooltip",
         "//agentplane/app/frontend/actions:policy",
     ],
 )

@@ -71,6 +71,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:help_tooltip",
         "//agentplane/app/frontend:json_view",
         "//agentplane/app/frontend:raw_switch",
         "//agentplane/app/frontend:sandbox_status",
@@ -149,6 +150,7 @@ ts_library(
         "//:node_modules/react",
         "//agentplane/app/frontend:bindings_table",
         "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:help_tooltip",
     ],
 )
 

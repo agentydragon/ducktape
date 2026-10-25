@@ -2,8 +2,9 @@ import { Alert, Button, Group, Stack, Text, Title } from "@mantine/core";
 import { type JSX, useEffect, useState } from "react";
 
 import { ActionPolicySection } from "../actions/policy";
-import { BindingsTable } from "../bindings_table";
+import { BINDING_GRANT_HELP, BindingsTable } from "../bindings_table";
 import { type CallerServiceAccount, displayableError, serviceAccountKey } from "../client";
+import { HelpTooltip } from "../help_tooltip";
 import { readCallerGrants } from "./caller_grants_client";
 import type { CallerGrantReader, CallerGrantView } from "./models";
 
@@ -54,7 +55,10 @@ export function CallerGrants({
       {!view && !error && <Text role="status">Loading grants…</Text>}
       {view && (
         <>
-          <Title order={6}>Bindings</Title>
+          <Group gap={4}>
+            <Title order={6}>Bindings</Title>
+            <HelpTooltip topic="Bindings" description={BINDING_GRANT_HELP} />
+          </Group>
           <BindingsTable bindings={view.bindings} onRevoke={null} />
           <ActionPolicySection policy={view.action_policy} />
         </>

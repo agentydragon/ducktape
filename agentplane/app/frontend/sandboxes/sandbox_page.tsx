@@ -449,7 +449,7 @@ export function SandboxPage({
           </Stack>
         </Tabs.Panel>
         <Tabs.Panel value="status" pt="sm">
-          {sandbox && <StatusView sandbox={sandbox} active={tab === "status"} onError={setError} />}
+          {sandbox && <StatusView sandbox={sandbox} threads={threads} active={tab === "status"} onError={setError} />}
         </Tabs.Panel>
         {vmConsoleAvailable && (
           <Tabs.Panel value="console" pt="sm">
