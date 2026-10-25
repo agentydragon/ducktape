@@ -527,6 +527,7 @@ rust_test(
     edition = "2024",
     deps = [
         ":raw_js_test_support",
+        ":report_fixtures",
         "@crates//:proptest",
         "@crates//:serde_json",
         "@crates//:swc_common",

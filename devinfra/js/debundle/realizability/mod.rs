@@ -38,7 +38,9 @@ use petgraph::graphmap::DiGraphMap;
 use rustc_hash::FxHashMap;
 
 use analysis::OwnerId;
-use analysis::graph::{OwnerEdgeId, OwnerGraph, chunk_constraining_module_edges};
+use analysis::graph::{
+    ChunkConstrainingEdgeSet, OwnerEdgeId, OwnerGraph, chunk_constraining_module_edges,
+};
 use analysis::ids::ModuleId;
 use analysis::partition::Partition;
 use analysis::reports::SccCore;
@@ -172,11 +174,10 @@ pub fn check_realizability(
     owner_graph: &OwnerGraph,
     partition: &Partition,
 ) -> RealizabilityVerdict {
-    let mut verdict = RealizabilityVerdict::default();
-
     // Cross-destination rebinds are a separate clause-2 violation and
     // not part of the I-graph. Collect them in a single pass over
     // owner edges; the canonical edge set handles everything else.
+    let mut cross_rebinds = Vec::new();
     for edge in owner_graph.iter_edges() {
         if owner_graph.node(edge.from).is_none() || owner_graph.node(edge.to).is_none() {
             continue;
@@ -191,7 +192,7 @@ pub fn check_realizability(
         ) else {
             continue;
         };
-        verdict.cross_rebinds.push(CrossRebindEdge {
+        cross_rebinds.push(CrossRebindEdge {
             from,
             to,
             owner_edge: edge.id,
@@ -203,6 +204,21 @@ pub fn check_realizability(
     // includes lazy import back-edges for Pass 2's ESM evaluation topology.
     // Sharing the projection does not make the two SCC partitions equivalent.
     let canonical = chunk_constraining_module_edges(owner_graph, partition);
+    verdict_from_canonical(canonical, cross_rebinds, partition.residual())
+}
+
+/// Run the complete gate over the canonical module projection. The pure
+/// owner-graph path and the incremental hypothetical-move path both use this
+/// body, so they cannot drift on remote SCCs or ESM evaluation order.
+fn verdict_from_canonical(
+    canonical: ChunkConstrainingEdgeSet,
+    cross_rebinds: Vec<CrossRebindEdge>,
+    residual: ModuleId,
+) -> RealizabilityVerdict {
+    let mut verdict = RealizabilityVerdict {
+        unrealizable_sccs: Vec::new(),
+        cross_rebinds,
+    };
     if canonical.edges.is_empty() {
         return verdict;
     }
@@ -300,11 +316,8 @@ pub fn check_realizability(
 
     if !candidate_sccs.is_empty() {
         let constraining_pairs: BTreeSet<(ModuleId, ModuleId)> = canonical.pairs().collect();
-        let simulation = EsmEvaluationSimulator::build(
-            &canonical.i_successors,
-            &constraining_pairs,
-            partition.residual(),
-        );
+        let simulation =
+            EsmEvaluationSimulator::build(&canonical.i_successors, &constraining_pairs, residual);
         for modules in candidate_sccs {
             let tdz_pairs: Vec<(ModuleId, ModuleId)> = simulation
                 .tdz_pairs(&modules, &constraining_pairs)
@@ -328,7 +341,7 @@ pub fn check_realizability(
     }
 
     for (&(from, to), edges) in &canonical.edges {
-        if to == partition.residual() {
+        if to == residual {
             reject_entry_dependency(&mut verdict, from, to, edges.clone());
         }
     }
@@ -457,6 +470,38 @@ impl RealizabilityIndex {
     /// ignored.
     pub fn verdict_touching(&self, module: ModuleId) -> RealizabilityVerdict {
         self.quotient.verdict_touching(module)
+    }
+
+    /// Full verdict for a hypothetical owner move. The incident-edge overlay
+    /// changes the canonical module projection without mutating the index;
+    /// the shared gate body then checks every SCC, including SCCs remote from
+    /// the destination whose ESM import order changes after this move.
+    pub fn verdict_after_moving_owners(
+        &self,
+        owner_graph: &OwnerGraph,
+        owners: &[OwnerId],
+        to: ModuleId,
+    ) -> RealizabilityVerdict {
+        let overlay = self
+            .quotient
+            .overlay_for_move(owner_graph, &self.partition, owners, to);
+        let verdict = verdict_from_canonical(
+            self.quotient.canonical_with_overlay(&overlay),
+            self.quotient.cross_rebinds_with_overlay(&overlay),
+            self.partition.residual(),
+        );
+        if gate_oracle_enabled() {
+            let mut post_partition = self.partition.clone();
+            for &owner in owners {
+                post_partition.set(owner, to);
+            }
+            let reference = check_realizability(owner_graph, &post_partition);
+            assert_eq!(
+                verdict, reference,
+                "DEBUNDLE_GATE_ORACLE: full overlay verdict diverges from the pure reference"
+            );
+        }
+        verdict
     }
 
     /// Verdict for a hypothetical owner move, filtered to the target
