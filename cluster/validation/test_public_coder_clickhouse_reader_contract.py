@@ -21,9 +21,7 @@ def test_public_coder_clickhouse_reader_contract() -> None:
     source_secret = cast(
         dict[str, Any],
         yaml.safe_load(
-            get_required_path(
-                "_main/cluster/k8s/clickhouse/cluster/public-coder-credentials.sops.yaml"
-            ).read_text()
+            get_required_path("_main/cluster/k8s/clickhouse/cluster/public-coder-credentials.sops.yaml").read_text()
         ),
     )
     metadata = source_secret["metadata"]
@@ -37,4 +35,3 @@ def test_public_coder_clickhouse_reader_contract() -> None:
 
 if __name__ == "__main__":
     pytest_bazel.main()
-

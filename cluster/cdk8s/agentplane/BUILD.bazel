@@ -1215,4 +1215,3 @@ py_library(
         "@pypi//constructs",
     ],
 )
-

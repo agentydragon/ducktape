@@ -92,18 +92,11 @@ def test_clickhouse_history_password_has_one_exact_source_reader() -> None:
         and resource["metadata"]["namespace"] == STAGING_CREDENTIALS_NAMESPACE
         and resource["metadata"]["name"] == secret
     )
-    assert external_secret["spec"]["secretStoreRef"] == {
-        "kind": "ClusterSecretStore",
-        "name": store_name,
-    }
+    assert external_secret["spec"]["secretStoreRef"] == {"kind": "ClusterSecretStore", "name": store_name}
     assert external_secret["spec"]["data"] == [
-        {
-            "secretKey": clickhouse.PASSWORD_KEY,
-            "remoteRef": {"key": secret, "property": clickhouse.PASSWORD_KEY},
-        }
+        {"secretKey": clickhouse.PASSWORD_KEY, "remoteRef": {"key": secret, "property": clickhouse.PASSWORD_KEY}}
     ]
 
 
 if __name__ == "__main__":
     pytest_bazel.main()
-
