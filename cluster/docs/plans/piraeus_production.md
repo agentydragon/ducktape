@@ -38,8 +38,8 @@ identities are unchanged.
 
 Then remove leftovers:
 
-- The empty Seaweed `ssd` rollback group (`replicas=0`) and the legacy HDD
-  group's Services and ServiceMonitor in `seaweedfs/cluster.py`.
+- The operator-generated Services and ServiceMonitor left by the removed
+  Seaweed `ssd` and legacy HDD volume groups (live only; no source).
 - ClickHouse's unused `data`, `keeper-data` and `keeper-data-control-plane`
   templates (`clickhouse/installation.py`); no replica references them.
 - `haku-sandbox/haku-anki-collection`, Bound to the wiped `ovh-ns103711`:
