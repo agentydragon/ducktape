@@ -153,6 +153,7 @@ spec:
       config: |
         [[runners]]
           executor = "kubernetes"
+          environment = ["HOME=/tmp"]
           clone_url = "http://gitlab-spike-webservice-default.gitlab-spike.svc:8181"
           [runners.kubernetes]
             namespace = "gitlab-spike-ci"
