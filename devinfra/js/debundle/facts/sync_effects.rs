@@ -437,9 +437,10 @@ impl ValueExpr {
                     )
             }
             Self::Binding(binding) => {
-                if binding == id || aliases.contains(binding) {
-                    true
-                } else if facts.unstable_class_bindings.contains(binding) {
+                if binding == id
+                    || aliases.contains(binding)
+                    || facts.unstable_class_bindings.contains(binding)
+                {
                     true
                 } else if let Some(value) = facts.bindings.get(binding) {
                     if !visiting_bindings.insert(binding.clone()) {
@@ -568,9 +569,8 @@ impl NamespaceValueFacts {
             classes,
             bindings: values
                 .iter()
-                .filter_map(|(binding, values)| {
-                    (values.len() == 1).then(|| (binding.clone(), values[0].clone()))
-                })
+                .filter(|(_, values)| values.len() == 1)
+                .map(|(binding, values)| (binding.clone(), values[0].clone()))
                 .collect(),
             binding_assignments: values,
             unstable_class_bindings: BTreeSet::new(),
