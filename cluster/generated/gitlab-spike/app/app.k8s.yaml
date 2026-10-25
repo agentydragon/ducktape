@@ -51,6 +51,8 @@ spec:
         replicas: 3
       sidekiq:
         concurrency: 10
+        livenessProbe:
+          initialDelaySeconds: 300
         maxReplicas: 2
       toolbox:
         backups:
