@@ -149,6 +149,107 @@ export { Checker, Command, create, command, later };
 }
 
 #[test]
+fn escaped_constructorless_class_allocation_does_not_reenter_global_callback() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const saved = () => later;
+globalThis.saved = saved;
+class Checker { isAllowed() { return true; } }
+globalThis.savedChecker = Checker;
+class Command {
+  constructor(config, checker) { this.config = config; this.checker = checker; }
+  execute() { return this.config.execute(); }
+}
+function create(config) { return new Command(config, new Checker()); }
+const command = create({ execute: () => later });
+const later = 7;
+console.log(command.execute());
+export { saved, Checker, Command, create, command, later };
+"#,
+            vec![
+                logical_module_with_anon(
+                    "command",
+                    &[
+                        Member::new("saved"),
+                        Member::new("Checker"),
+                        Member::new("Command"),
+                        Member::new("create"),
+                        Member::new("command"),
+                    ],
+                    &[
+                        "globalThis.saved = saved;",
+                        "globalThis.savedChecker = Checker;",
+                    ],
+                ),
+                logical_module("value", &[Member::new("later")]),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&fixture, "7\n");
+}
+
+#[test]
+fn escaped_class_work_at_construction_keeps_callback_reentry_possible() {
+    for checker in [
+        "class Checker { constructor() { globalThis.saved(); } }",
+        "class Checker { result = globalThis.saved(); }",
+    ] {
+        expect_atomic_conflict_rejection(
+            FixtureOpts::new(
+                &format!(
+                    r#"const saved = () => later;
+globalThis.saved = saved;
+{checker}
+globalThis.savedChecker = Checker;
+class Command {{
+  constructor(config, checker) {{ this.config = config; this.checker = checker; }}
+}}
+function create(config) {{ return new Command(config, new Checker()); }}
+const command = create({{ execute: () => later }});
+const later = 7;
+export {{ saved, Checker, Command, create, command, later }};
+"#
+                ),
+                vec![
+                    logical_module("command", &[Member::new("command")]),
+                    logical_module("value", &[Member::new("later")]),
+                ],
+            ),
+            &["command", "value"],
+            &[],
+        );
+    }
+}
+
+#[test]
+fn reassigned_escaped_class_keeps_unknown_constructor_alternative() {
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            r#"const saved = () => later;
+globalThis.saved = saved;
+class Checker { isAllowed() { return true; } }
+globalThis.savedChecker = Checker;
+Checker = function () { saved(); };
+class Command {
+  constructor(config, checker) { this.config = config; this.checker = checker; }
+}
+function create(config) { return new Command(config, new Checker()); }
+const command = create({ execute: () => later });
+const later = 7;
+export { saved, Checker, Command, create, command, later };
+"#,
+            vec![
+                logical_module("command", &[Member::new("command")]),
+                logical_module("value", &[Member::new("later")]),
+            ],
+        ),
+        &["command", "value"],
+        &[],
+    );
+}
+
+#[test]
 fn opaque_checker_receiving_config_keeps_callback_reentry_possible() {
     expect_atomic_conflict_rejection(
         FixtureOpts::new(

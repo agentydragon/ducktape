@@ -321,6 +321,8 @@ struct Callable {
 #[derive(Debug, Clone)]
 struct LocalConstructor {
     key: Option<u32>,
+    /// No constructor body or instance fields run during direct allocation.
+    inert_allocation: bool,
     /// Parameter property reads must come from fresh plain data objects.
     property_reads: BTreeSet<usize>,
     /// Unqualified reads must resolve to local bindings, not host getters.
@@ -410,6 +412,7 @@ fn local_constructor(class: &Class) -> Option<LocalConstructor> {
         return None;
     }
     let mut constructor = None;
+    let mut has_instance_fields = false;
     for member in &class.body {
         match member {
             ClassMember::Constructor(ctor) if constructor.is_none() => constructor = Some(ctor),
@@ -424,13 +427,19 @@ fn local_constructor(class: &Class) -> Option<LocalConstructor> {
                     && !matches!(prop.key, PropName::Computed(_))
                     && prop.value.as_deref().is_none_or(|value| {
                         matches!(value.unwrap_parens(), Expr::Fn(_) | Expr::Arrow(_))
-                    }) => {}
+                    }) =>
+            {
+                has_instance_fields = true
+            }
             ClassMember::PrivateProp(prop)
                 if !prop.is_static
                     && prop.decorators.is_empty()
                     && prop.value.as_deref().is_none_or(|value| {
                         matches!(value.unwrap_parens(), Expr::Fn(_) | Expr::Arrow(_))
-                    }) => {}
+                    }) =>
+            {
+                has_instance_fields = true
+            }
             ClassMember::Empty(_) => {}
             _ => return None,
         }
@@ -438,6 +447,7 @@ fn local_constructor(class: &Class) -> Option<LocalConstructor> {
     let Some(ctor) = constructor else {
         return Some(LocalConstructor {
             key: None,
+            inert_allocation: !has_instance_fields,
             property_reads: BTreeSet::new(),
             binding_reads: BTreeSet::new(),
         });
@@ -486,6 +496,7 @@ fn local_constructor(class: &Class) -> Option<LocalConstructor> {
     }
     Some(LocalConstructor {
         key: Some(ctor.span.lo.0),
+        inert_allocation: false,
         property_reads,
         binding_reads,
     })
@@ -2072,15 +2083,20 @@ impl Executor<'_> {
     ) -> Option<(Outcome, AbstractValue)> {
         let constructor = self.index.local_constructors.get(&key)?.clone();
         let binding = self.index.class_bindings.get(&key)?;
-        // A class used only as a direct `new` target cannot have its prototype
-        // changed by another local expression or passed to host code. An
-        // instance that escaped earlier could still expose its constructor.
-        if self.index.other_class_uses.contains(binding)
-            || (self.export_reentry_enabled && self.index.exported_bindings.contains(binding))
-            || self.tainted_classes.contains(&key)
-            || self
-                .global_escaped_callbacks
-                .contains(&AbstractValue::ClassMembers(key))
+        // A constructorless, fieldless class only allocates an instance for a
+        // direct zero-argument `new`. Even if its class object escaped, a
+        // modified prototype or deferred method cannot run during allocation.
+        // Any unknown/reassigned callee alternative still takes the ordinary
+        // opaque path in execute_call. Other constructors need the class and
+        // prototype to remain unexposed to avoid setters and method reentry.
+        let inert_allocation = constructor.inert_allocation && args.is_empty();
+        if !inert_allocation
+            && (self.index.other_class_uses.contains(binding)
+                || (self.export_reentry_enabled && self.index.exported_bindings.contains(binding))
+                || self.tainted_classes.contains(&key)
+                || self
+                    .global_escaped_callbacks
+                    .contains(&AbstractValue::ClassMembers(key)))
         {
             return None;
         }
