@@ -214,6 +214,13 @@ impl IntoNeighbors for &EsmIGraph<'_> {
         // descended into first.
         if node == self.residual {
             succs.sort_by_key(|m| std::cmp::Reverse(self.import_order.entry_import_sort_key(*m)));
+        } else if succs.len() >= 64 {
+            // Large import lists otherwise repeat the position-map lookup
+            // during every sort comparison. The cached-key sort is stable and
+            // uses the same shared emitter key, computed once per target.
+            succs.sort_by_cached_key(|m| {
+                std::cmp::Reverse(self.import_order.module_import_sort_key(*m))
+            });
         } else {
             succs.sort_by_key(|m| std::cmp::Reverse(self.import_order.module_import_sort_key(*m)));
         }
