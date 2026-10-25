@@ -4,13 +4,13 @@ Snapshot of live `devel` at `532da491ed47eb532d1b68598d5efa3f1a61deb0`, confirme
 
 Tests should read the source they are meant to validate. Most cdk8s behavior can be tested from focused constructs or in-memory synth output. Keep the cdk8s parity check against the files Flux consumes until cutover; that one relation does not make a shared rendered input necessary for other tests. Whole-graph checks belong with the owner of the Flux source graph.
 
-| Class | Meaning |
-| --- | --- |
-| a | Change detector or restatement of declarations; delete candidate. |
-| b | Durable relation between source or rendered artifacts. |
-| c | Rendered schema/policy validation or full Flux graph validation. |
-| d | Generator/model behavior that can run on cdk8s output in memory. |
-| e | Other; the row explains the consumer-specific reason. |
+| Class | Meaning                                                           |
+| ----- | ----------------------------------------------------------------- |
+| a     | Change detector or restatement of declarations; delete candidate. |
+| b     | Durable relation between source or rendered artifacts.            |
+| c     | Rendered schema/policy validation or full Flux graph validation.  |
+| d     | Generator/model behavior that can run on cdk8s output in memory.  |
+| e     | Other; the row explains the consumer-specific reason.             |
 
 ## Inventory
 
@@ -28,14 +28,14 @@ Tests should read the source they are meant to validate. Most cdk8s behavior can
 
 Counts assign one primary class to each Bazel target. The integration target is mixed because it checks artifact relations and rendered policy/graph properties; the generator target is also d.
 
-| Primary class | Test targets |
-| --- | ---: |
-| a — change detector / restatement | 0 |
-| b — artifact relations | 7 |
-| c — rendered schema / policy validation | 1 |
-| d — generator/model behavior | 0 |
-| e — other | 0 |
-| **Total** | **8** |
+| Primary class                           | Test targets |
+| --------------------------------------- | -----------: |
+| a — change detector / restatement       |            0 |
+| b — artifact relations                  |            7 |
+| c — rendered schema / policy validation |            1 |
+| d — generator/model behavior            |            0 |
+| e — other                               |            0 |
+| **Total**                               |        **8** |
 
 Three targets read generated Flux output as part of their actual work: `test_generate_manifests`, `test_cluster_integration`, and `test_flux_build`. `test_generator_namespace` enumerates manifest roots but skips generated-root entries before opening YAML; its data deps contain only the hand-written inputs it reads. The four focused source contracts read only Authentik blueprints, Haku's SMTP config, the Haku CI Secret, or the ClickHouse Secret.
 
