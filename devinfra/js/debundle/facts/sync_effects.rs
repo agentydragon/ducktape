@@ -1769,7 +1769,7 @@ struct LocalConstructor {
     /// Own data fields written by the checked constructor body.
     own_fields: BTreeSet<String>,
     /// Parameter property reads must come from fresh plain data objects.
-    property_reads: BTreeSet<usize>,
+    property_reads: BTreeSet<(usize, String)>,
     /// Unqualified reads must resolve to local bindings, not host getters.
     binding_reads: BTreeSet<Id>,
 }
@@ -1777,7 +1777,7 @@ struct LocalConstructor {
 fn safe_constructor_value(
     expression: &Expr,
     params: &[Option<Id>],
-    property_reads: &mut BTreeSet<usize>,
+    property_reads: &mut BTreeSet<(usize, String)>,
     binding_reads: &mut BTreeSet<Id>,
 ) -> bool {
     match expression.unwrap_parens() {
@@ -1804,7 +1804,10 @@ fn safe_constructor_value(
             else {
                 return false;
             };
-            property_reads.insert(index);
+            let MemberProp::Ident(property) = &member.prop else {
+                unreachable!()
+            };
+            property_reads.insert((index, property.sym.to_string()));
             true
         }
         Expr::Bin(bin) if matches!(bin.op, BinaryOp::NullishCoalescing | BinaryOp::EqEqEq) => {
@@ -1818,7 +1821,7 @@ fn safe_constructor_value(
 fn safe_constructor_assignment(
     expression: &Expr,
     params: &[Option<Id>],
-    property_reads: &mut BTreeSet<usize>,
+    property_reads: &mut BTreeSet<(usize, String)>,
     binding_reads: &mut BTreeSet<Id>,
     written_properties: &mut BTreeSet<String>,
 ) -> bool {
@@ -4286,6 +4289,10 @@ struct Executor<'a> {
     exported_owners: BTreeSet<StatementOrdinal>,
     prior_reachability_roots: Option<BTreeSet<StatementOrdinal>>,
     current_top_owner: Option<StatementOrdinal>,
+    /// Owners executed while building a certified unpublished instance graph.
+    /// Their synchronous effects still run; execution alone does not expose
+    /// the wrapper or the classes' deferred callable members to the host.
+    private_constructor_result_owners: BTreeSet<StatementOrdinal>,
     prior_effect_owners: BTreeSet<StatementOrdinal>,
     reachability: ReachabilityState,
     mutable_captures: BTreeSet<Id>,
@@ -4327,6 +4334,52 @@ struct ValidatedMetadataDecoration {
 }
 
 impl Executor<'_> {
+    fn ordinary_object_prototype_intact(&self) -> bool {
+        self.index.dynamic_scope_owners.is_empty()
+            && !self
+                .index
+                .mutated_intrinsic_roots
+                .iter()
+                .any(|root| matches!(root, IntrinsicRoot::GlobalObject | IntrinsicRoot::Object))
+    }
+
+    fn standard_object_prototype_property(property: &str) -> bool {
+        matches!(
+            property,
+            "constructor"
+                | "__proto__"
+                | "__defineGetter__"
+                | "__defineSetter__"
+                | "__lookupGetter__"
+                | "__lookupSetter__"
+                | "hasOwnProperty"
+                | "isPrototypeOf"
+                | "propertyIsEnumerable"
+                | "toLocaleString"
+                | "toString"
+                | "valueOf"
+        )
+    }
+
+    /// Under A11, an ordinary object literal has no inherited user getter
+    /// for a missing name. Keep standard Object.prototype names and any
+    /// visible intrinsic mutation on the conservative member-read path.
+    fn absent_plain_data_property(&self, object: u32, property: &str) -> bool {
+        if Self::standard_object_prototype_property(property)
+            || !self.index.plain_data_objects.contains(&object)
+            || self.tainted_objects.contains(&object)
+            || !self.ordinary_object_prototype_intact()
+        {
+            return false;
+        }
+        self.prefix_object_properties
+            .get(&object)
+            .is_some_and(|properties| {
+                !properties.contains_key(&None)
+                    && !properties.contains_key(&Some(property.to_owned()))
+            })
+    }
+
     fn ordinary_data_properties(
         &self,
         values: &Values,
@@ -4925,6 +4978,7 @@ impl Executor<'_> {
         &self,
         fact: &StatementFacts,
         metadata_target: Option<StatementOrdinal>,
+        private_constructor_result_owners: &BTreeSet<StatementOrdinal>,
     ) -> BTreeSet<StatementOrdinal> {
         let mut roots = BTreeSet::new();
         // Export lists link bindings; evaluating one does not expose a value
@@ -4939,11 +4993,12 @@ impl Executor<'_> {
         // synchronous owner closure and undo the target filter below.
         if metadata_target.is_none()
             && (self.exported_owners.contains(&fact.ordinal)
-                || !(fact.purity.is_pure()
+                || !((fact.purity.is_pure()
                     && (fact.declares_direct_function
                         || matches!(fact.kind, StatementKind::ClassDecl)
                         || self.closed_callback_factory_result(fact)
-                        || self.closed_local_record_factory_result(fact))))
+                        || self.closed_local_record_factory_result(fact)))
+                    || !private_constructor_result_owners.is_empty()))
         {
             roots.insert(fact.ordinal);
         }
@@ -4963,7 +5018,10 @@ impl Executor<'_> {
                         .chain(fact.rebinds.eager.iter()),
                 )
                 .into_iter()
-                .filter(|owner| Some(*owner) != metadata_target),
+                .filter(|owner| {
+                    Some(*owner) != metadata_target
+                        && !private_constructor_result_owners.contains(owner)
+                }),
         );
         roots
     }
@@ -5104,6 +5162,232 @@ impl Executor<'_> {
         }
     }
 
+    /// A locally checked constructor can retain callbacks in a fresh instance
+    /// without publishing them. This certifies the wrapper's whole return
+    /// expression before its source owner enters the reachability roots; the
+    /// ordinary executor still runs the wrapper and constructor afterward.
+    fn closed_local_constructor_factory_result(
+        &self,
+        fact: &StatementFacts,
+    ) -> Option<BTreeSet<StatementOrdinal>> {
+        if !matches!(fact.kind, StatementKind::VarDecl)
+            || fact.declared.len() != 1
+            || self.reachability.incomplete
+            || self.exported_owners.contains(&fact.ordinal)
+            || !self.ordinary_object_prototype_intact()
+            || self.index.opaque_top.contains(&fact.ordinal)
+            || !self.index.top_property_writes[fact.ordinal.0].is_empty()
+            || !self.index.top_member_value_writes[fact.ordinal.0].is_empty()
+            || !self.index.top_callback_result_writes[fact.ordinal.0].is_empty()
+            || !self.index.top_exported_values[fact.ordinal.0].is_empty()
+        {
+            return None;
+        }
+        let [(binding, ValueExpr::Call(callee, args, site))] =
+            self.index.top_assignments[fact.ordinal.0].as_slice()
+        else {
+            return None;
+        };
+        let [call] = self.index.top_calls[fact.ordinal.0].as_slice() else {
+            return None;
+        };
+        let ValueExpr::Binding(factory) = callee.as_ref() else {
+            return None;
+        };
+        let &key = self.index.hoisted_bindings.get(factory)?;
+        if !fact.declared.contains(binding)
+            || !self.index.top_definite_initializers[fact.ordinal.0].contains(binding)
+            || self.index.exported_bindings.contains(binding)
+            || self.index.exported_bindings.contains(factory)
+            || self
+                .global_escaped_callbacks
+                .contains(&AbstractValue::Origin(ValueOrigin::Function(key)))
+            || self
+                .flow
+                .values_of_binding(factory)
+                .iter()
+                .ne([ValueOrigin::Function(key)])
+            || !self.prefix_values.get(factory).is_some_and(|values| {
+                values.len() == 1
+                    && values.contains(&AbstractValue::Origin(ValueOrigin::Function(key)))
+            })
+            || call.kind != CallKind::Call
+            || call.has_spread
+            || CallSite::from(call.span) != *site
+            || !args.iter().all(|arg| self.closed_constructor_input(arg))
+        {
+            return None;
+        }
+        let callable = self.index.callables.get(&key)?;
+        if callable.opaque
+            || callable.generator
+            || self.index.async_callables.contains(&key)
+            || callable.may_fall_through
+            || !callable.rebinds.is_empty()
+            || !callable.local_assignments.is_empty()
+            || !callable.member_writes.is_empty()
+            || !callable.member_value_writes.is_empty()
+            || !callable.callback_result_writes.is_empty()
+            || callable.dynamic_property_effect
+            || !callable.escaped_bindings.is_empty()
+            || !callable.namespace_escape_values.is_empty()
+            || callable.returns.len() != 1
+            || callable.params.len() != args.len()
+            || callable
+                .params
+                .iter()
+                .any(|param| param.binding.is_none() || param.default.is_some())
+        {
+            return None;
+        }
+        let params: BTreeMap<_, _> = callable
+            .params
+            .iter()
+            .zip(args)
+            .map(|(param, arg)| (param.binding.clone().unwrap(), arg))
+            .collect();
+        let mut class_reads = BTreeSet::new();
+        let mut allocations = BTreeMap::new();
+        let checked_return = self.checked_constructor_return(
+            &callable.returns[0],
+            &params,
+            false,
+            &mut class_reads,
+            &mut allocations,
+        );
+        if !checked_return {
+            return None;
+        }
+        let allowed_reads: BTreeSet<_> = params.keys().cloned().chain(class_reads).collect();
+        if !callable.reads.is_subset(&allowed_reads) {
+            return None;
+        }
+        let mut indexed_allocations = BTreeMap::new();
+        for nested in &callable.calls {
+            let ValueExpr::Binding(class) = &nested.callee else {
+                return None;
+            };
+            let class_key = self.stable_local_class_key(class)?;
+            if nested.kind != CallKind::New || nested.has_spread {
+                return None;
+            }
+            *indexed_allocations
+                .entry((class_key, nested.args.len()))
+                .or_insert(0) += 1;
+        }
+        if allocations != indexed_allocations {
+            return None;
+        }
+        let mut owners = BTreeSet::from([callable.owner]);
+        for (class_key, _) in allocations.keys() {
+            owners.insert(*self.index.class_owners.get(class_key)?);
+        }
+        Some(owners)
+    }
+
+    fn closed_constructor_input(&self, value: &ValueExpr) -> bool {
+        match value {
+            ValueExpr::ObjectLiteral(key, properties) => {
+                self.index.plain_data_objects.contains(key)
+                    && properties
+                        .iter()
+                        .all(|(name, value)| name.is_some() && self.closed_constructor_input(value))
+            }
+            ValueExpr::Primitive(operands) => operands
+                .iter()
+                .all(|operand| matches!(operand, ValueExpr::NonCallable | ValueExpr::Undefined)),
+            ValueExpr::Origin(ValueOrigin::Function(_))
+            | ValueExpr::NonCallable
+            | ValueExpr::Undefined => true,
+            _ => false,
+        }
+    }
+
+    fn stable_local_class_key(&self, binding: &Id) -> Option<u32> {
+        let values = self.prefix_values.get(binding)?;
+        let [AbstractValue::Origin(ValueOrigin::Class(key))] =
+            values.iter().collect::<Vec<_>>().as_slice()
+        else {
+            return None;
+        };
+        (self.initialized_bindings.contains(binding)
+            && self.index.class_bindings.get(key) == Some(binding))
+        .then_some(*key)
+    }
+
+    fn checked_constructor_return(
+        &self,
+        value: &ValueExpr,
+        params: &BTreeMap<Id, &ValueExpr>,
+        nested: bool,
+        class_reads: &mut BTreeSet<Id>,
+        allocations: &mut BTreeMap<(u32, usize), usize>,
+    ) -> bool {
+        let ValueExpr::New(callee, args) = value else {
+            return false;
+        };
+        let ValueExpr::Binding(class) = callee.as_ref() else {
+            return false;
+        };
+        let Some(key) = self.stable_local_class_key(class) else {
+            return false;
+        };
+        let Some(constructor) = self.eligible_local_constructor(key, args.len()) else {
+            return false;
+        };
+        if nested && !constructor.inert_allocation {
+            return false;
+        }
+        class_reads.insert(class.clone());
+        *allocations.entry((key, args.len())).or_insert(0) += 1;
+        for arg in args {
+            match arg {
+                ValueExpr::New(..) => {
+                    if !self.checked_constructor_return(arg, params, true, class_reads, allocations)
+                    {
+                        return false;
+                    }
+                }
+                ValueExpr::Binding(binding) => {
+                    if !params
+                        .get(binding)
+                        .is_some_and(|value| self.closed_constructor_input(value))
+                    {
+                        return false;
+                    }
+                }
+                other if self.closed_constructor_input(other) => {}
+                _ => return false,
+            }
+        }
+        for (index, property) in &constructor.property_reads {
+            let Some(arg) = args.get(*index) else {
+                return false;
+            };
+            let source = match arg {
+                ValueExpr::Binding(binding) => {
+                    let Some(value) = params.get(binding) else {
+                        return false;
+                    };
+                    *value
+                }
+                other => other,
+            };
+            let ValueExpr::ObjectLiteral(object, properties) = source else {
+                return false;
+            };
+            if !self.index.plain_data_objects.contains(object)
+                || (!properties
+                    .iter()
+                    .any(|(name, _)| name.as_deref() == Some(property))
+                    && Self::standard_object_prototype_property(property))
+            {
+                return false;
+            }
+        }
+        true
+    }
+
     fn inert_class_heritage_binding<'a>(&'a self, fact: &StatementFacts) -> Option<&'a Id> {
         if !matches!(fact.kind, StatementKind::ClassDecl)
             || !fact.purity.is_pure()
@@ -5218,6 +5502,9 @@ impl Executor<'_> {
     }
 
     fn record_executed_owner(&mut self, owner: StatementOrdinal) {
+        if self.private_constructor_result_owners.contains(&owner) {
+            return;
+        }
         if self.reachability.unknown_call_seen {
             self.extend_reachable_owners([owner]);
         } else if let Some(roots) = &mut self.prior_reachability_roots {
@@ -5688,12 +5975,8 @@ impl Executor<'_> {
         }
     }
 
-    fn construct_local_class(
-        &mut self,
-        key: u32,
-        args: &[Values],
-    ) -> Option<(Outcome, AbstractValue)> {
-        let constructor = self.index.local_constructors.get(&key)?.clone();
+    fn eligible_local_constructor(&self, key: u32, arg_count: usize) -> Option<&LocalConstructor> {
+        let constructor = self.index.local_constructors.get(&key)?;
         let binding = self.index.class_bindings.get(&key)?;
         // A constructorless, fieldless class only allocates an instance for a
         // direct zero-argument `new`. Even if its class object escaped, a
@@ -5701,11 +5984,12 @@ impl Executor<'_> {
         // Any unknown/reassigned callee alternative still takes the ordinary
         // opaque path in execute_call. Other constructors need the class and
         // prototype to remain unexposed to avoid setters and method reentry.
-        let inert_allocation = constructor.inert_allocation && args.is_empty();
+        let inert_allocation = constructor.inert_allocation && arg_count == 0;
         if !inert_allocation
             && (self.index.other_class_uses.contains(binding)
                 || (self.export_reentry_enabled && self.index.exported_bindings.contains(binding))
                 || self.tainted_classes.contains(&key)
+                || !self.ordinary_object_prototype_intact()
                 || self
                     .global_escaped_callbacks
                     .contains(&AbstractValue::ClassMembers(key)))
@@ -5719,6 +6003,15 @@ impl Executor<'_> {
         {
             return None;
         }
+        Some(constructor)
+    }
+
+    fn construct_local_class(
+        &mut self,
+        key: u32,
+        args: &[Values],
+    ) -> Option<(Outcome, AbstractValue)> {
+        let constructor = self.eligible_local_constructor(key, args.len())?.clone();
         if self.export_reentry_enabled {
             let exported: Values = self
                 .index
@@ -5728,7 +6021,7 @@ impl Executor<'_> {
                 .collect();
             self.taint_objects(&exported);
         }
-        for index in &constructor.property_reads {
+        for (index, _) in &constructor.property_reads {
             let values = args.get(*index)?;
             if values.is_empty()
                 || !values.iter().all(|value| {
@@ -6512,6 +6805,8 @@ impl Executor<'_> {
                                 if let Some(property) = property {
                                     if let Some(found) = properties.get(&Some(property.clone())) {
                                         values.extend(found.iter().cloned());
+                                    } else if self.absent_plain_data_property(object_id, property) {
+                                        values.insert(AbstractValue::Undefined);
                                     } else {
                                         values.insert(AbstractValue::Unknown);
                                     }
@@ -7021,7 +7316,10 @@ impl Executor<'_> {
                             && !self.dense_arrays.contains_key(object))
                             || !self.prefix_object_properties.get(object).is_some_and(
                                 |properties| {
-                                    property.is_some() && properties.contains_key(property)
+                                    property.as_ref().is_some_and(|property| {
+                                        properties.contains_key(&Some(property.clone()))
+                                            || self.absent_plain_data_property(*object, property)
+                                    })
                                 },
                             ))
                 }
@@ -7619,6 +7917,7 @@ pub(crate) fn annotate_synchronous_calls(
         exported_owners,
         prior_reachability_roots: Some(initial_export_roots),
         current_top_owner: None,
+        private_constructor_result_owners: BTreeSet::new(),
         prior_effect_owners: BTreeSet::new(),
         reachability: ReachabilityState::default(),
         mutable_captures: index
@@ -7681,6 +7980,9 @@ pub(crate) fn annotate_synchronous_calls(
         executor.fallback_outcome = Outcome::default();
         executor.fallback_callback_sizes = None;
         executor.fallback_local_owners.clear();
+        executor.private_constructor_result_owners = executor
+            .closed_local_constructor_factory_result(fact)
+            .unwrap_or_default();
         // A recognized metadata statement is a whole call expression. Its
         // eligibility proof is stable across this statement's preparatory
         // lanes, so use the same proof for reachability and call execution.
@@ -7698,6 +8000,7 @@ pub(crate) fn annotate_synchronous_calls(
         let fact_roots = executor.fact_roots(
             fact,
             prevalidated_metadata.map(|validated| validated.target_owner),
+            &executor.private_constructor_result_owners,
         );
         if executor.reachability.unknown_call_seen {
             executor.extend_reachable_owners(fact_roots.iter().copied());
@@ -7795,15 +8098,38 @@ pub(crate) fn annotate_synchronous_calls(
         }
         outcome.complete &= !index.opaque_top.contains(&fact.ordinal);
         outcome.effects.complete = outcome.complete;
+        // A failed runtime path forfeits the prevalidated private-result proof.
+        // Keep the actual execution/effect outcome in either case.
+        if !executor.private_constructor_result_owners.is_empty()
+            && (!outcome.complete || outcome.unknown_call)
+        {
+            let owners = std::mem::take(&mut executor.private_constructor_result_owners);
+            executor.extend_reachable_owners(owners.into_iter().chain([fact.ordinal]));
+            // The source proof normally makes this unreachable. If an actual
+            // executor path fails, restore the current statement's omitted
+            // callback effects as well as all future reachability roots.
+            for owner in executor.reachability.owners.clone() {
+                executor.promote_lazy_owner(owner, fact.ordinal, &mut outcome);
+            }
+            executor.apply_rebind_effects(&outcome.effects.rebinds);
+        }
         let mut prior_effect_owners = outcome.executed_owners.clone();
-        if !fact.purity.is_pure() {
+        prior_effect_owners
+            .retain(|owner| !executor.private_constructor_result_owners.contains(owner));
+        if !fact.purity.is_pure() && executor.private_constructor_result_owners.is_empty() {
             prior_effect_owners.insert(fact.ordinal);
         }
         executor.prior_effect_owners.extend(prior_effect_owners);
         if !executor.reachability.unknown_call_seen
             && let Some(roots) = &mut executor.prior_reachability_roots
         {
-            roots.extend(outcome.executed_owners.iter().copied());
+            roots.extend(
+                outcome
+                    .executed_owners
+                    .iter()
+                    .copied()
+                    .filter(|owner| !executor.private_constructor_result_owners.contains(owner)),
+            );
         }
         effects.push(outcome.effects);
         for (id, expression) in assignments {

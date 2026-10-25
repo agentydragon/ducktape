@@ -901,6 +901,21 @@ also take that path because their parameter defaults execute at call time
 while their bodies wait for iteration; spread arguments may likewise execute
 iterator code before the callee runs.
 
+A single-binding top-level call to a uniquely known local wrapper can produce
+an unpublished checked instance graph. A source certificate requires one
+returned `new` expression; all nested `new` expressions must use inert local
+classes, and the wrapper's indexed calls must be exactly those allocations.
+The wrapper accepts only simple parameters bound to inline functions, primitive
+values, or fresh plain-data records. The same constructor eligibility checks
+used by actual execution validate each class, and constructor property reads
+must resolve to own data or a safe missing property under A11. The analyzer
+executes the wrapper and constructors normally and keeps their synchronous
+effects and source ordering. For this certified initializer only, those executed
+owners are not treated as published callable or accessor capabilities. A later
+call, escape, or export of the result follows the ordinary instance value model.
+If actual execution is incomplete, reachability falls back to the initializer
+and its checked owners. Unsupported shapes keep ordinary roots.
+
 The same call-site pass recognizes an ordinary unshadowed `new Map` over one
 inline dense array whose entries are inline dense two-element arrays. Evaluating
 the array expressions still runs their effects, but Map construction does not
