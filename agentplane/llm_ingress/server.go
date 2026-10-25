@@ -38,16 +38,16 @@ var (
 )
 
 type ingressHandler struct {
-	resolver                *auth.Resolver
-	backend                 *http.Client
-	baseURL                 *url.URL
-	key                     string
-	models                  map[string]modelConfig
-	attributionDestinations []attributionDestination
-	codex                   *codexCatalog
-	logBody                 bool
-	logger                  *slog.Logger
-	pool                    chan struct{}
+	resolver    *auth.Resolver
+	backend     *http.Client
+	baseURL     *url.URL
+	key         string
+	models      map[string]modelConfig
+	attribution attributionConfig
+	codex       *codexCatalog
+	logBody     bool
+	logger      *slog.Logger
+	pool        chan struct{}
 }
 
 func newIngressHandler(c config, resolver *auth.Resolver, logger *slog.Logger) (*ingressHandler, error) {
@@ -90,16 +90,16 @@ func newIngressHandler(c config, resolver *auth.Resolver, logger *slog.Logger) (
 		}
 	}
 	return &ingressHandler{
-		resolver:                resolver,
-		backend:                 backend,
-		baseURL:                 baseURL,
-		key:                     c.LiteLLMKey,
-		models:                  models,
-		attributionDestinations: c.AttributionDestinations,
-		codex:                   codex,
-		logBody:                 c.LogLLMRequests,
-		logger:                  logger,
-		pool:                    make(chan struct{}, 100),
+		resolver:    resolver,
+		backend:     backend,
+		baseURL:     baseURL,
+		key:         c.LiteLLMKey,
+		models:      models,
+		attribution: c.Attribution,
+		codex:       codex,
+		logBody:     c.LogLLMRequests,
+		logger:      logger,
+		pool:        make(chan struct{}, 100),
 	}, nil
 }
 
@@ -243,7 +243,7 @@ func (h *ingressHandler) forward(writer http.ResponseWriter, incoming *http.Requ
 		writeJSONError(writer, http.StatusBadGateway, "LiteLLM backend unavailable", "")
 		return
 	}
-	outgoing.Header, err = forwardedRequestHeaders(incoming.Header, principal, h.key, h.attributionDestinations)
+	outgoing.Header, err = forwardedRequestHeaders(incoming.Header, principal, h.key, h.attribution)
 	if err != nil {
 		writeJSONError(writer, http.StatusInternalServerError, "Could not attach verified attribution", "")
 		return
@@ -306,9 +306,13 @@ func forwardedRequestHeaders(
 	headers http.Header,
 	principal auth.Principal,
 	key string,
-	attributionDestinations []attributionDestination,
+	attribution attributionConfig,
 ) (http.Header, error) {
 	connectionTokens := connectionHeaderTokens(headers)
+	configuredHeaders := make(map[string]struct{}, len(attribution.JSONHeaders))
+	for _, header := range attribution.JSONHeaders {
+		configuredHeaders[strings.ToLower(header.Name)] = struct{}{}
+	}
 	forwarded := make(http.Header)
 	for name, values := range headers {
 		lower := strings.ToLower(name)
@@ -321,6 +325,9 @@ func forwardedRequestHeaders(
 		if _, found := credentialHeaders[lower]; found {
 			continue
 		}
+		if _, found := configuredHeaders[lower]; found {
+			continue
+		}
 		if _, found := untrustedMetadataHeaders[lower]; found || lower == "host" || lower == "content-length" || lower == "baggage" {
 			continue
 		}
@@ -330,36 +337,38 @@ func forwardedRequestHeaders(
 		forwarded[name] = append([]string(nil), values...)
 	}
 	forwarded.Set("Authorization", "Bearer "+key)
-	claims := map[string]string{
-		"agentplane.namespace":       principal.Account.Namespace,
-		"agentplane.service_account": principal.Account.Name,
-		"agentplane.pod_name":        principal.PodName,
-		"agentplane.pod_uid":         principal.PodUID,
+	claims := map[verifiedClaim]string{
+		verifiedNamespace:      principal.Account.Namespace,
+		verifiedServiceAccount: principal.Account.Name,
+		verifiedPodName:        principal.PodName,
+		verifiedPodUID:         principal.PodUID,
 	}
-	for _, destination := range attributionDestinations {
-		switch destination {
-		case attributionDestinationLiteLLMSpendLogsMetadata:
-			metadata, err := json.Marshal(claims)
-			if err != nil {
-				return nil, err
-			}
-			forwarded.Set("x-litellm-spend-logs-metadata", string(metadata))
-		case attributionDestinationOtelBaggage:
-			value, err := agentplaneIdentityBaggage(claims)
-			if err != nil {
-				return nil, err
-			}
-			forwarded.Set("baggage", value)
+	for _, header := range attribution.JSONHeaders {
+		members := make(map[string]string, len(header.Fields))
+		for _, field := range header.Fields {
+			members[field.Key] = claims[field.Source]
 		}
+		metadata, err := json.Marshal(members)
+		if err != nil {
+			return nil, err
+		}
+		forwarded.Set(header.Name, string(metadata))
+	}
+	if len(attribution.Baggage) > 0 {
+		value, err := agentplaneIdentityBaggage(attribution.Baggage, claims)
+		if err != nil {
+			return nil, err
+		}
+		forwarded.Set("baggage", value)
 	}
 	return forwarded, nil
 }
 
-func agentplaneIdentityBaggage(claims map[string]string) (string, error) {
+func agentplaneIdentityBaggage(fields []attributionField, claims map[verifiedClaim]string) (string, error) {
 	// Baggage is derived only from the authenticated Kubernetes principal.
 	outgoing := baggage.Baggage{}
-	for key, value := range claims {
-		member, err := baggage.NewMemberRaw("litellm.metadata.spend_logs_metadata."+key, value)
+	for _, field := range fields {
+		member, err := baggage.NewMemberRaw(field.Key, claims[field.Source])
 		if err != nil {
 			return "", err
 		}

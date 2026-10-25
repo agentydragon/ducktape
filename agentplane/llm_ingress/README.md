@@ -24,12 +24,29 @@ object is:
 }
 ```
 
-`attribution_destinations` chooses where these verified claims go. Its default is
-`[litellm_spend_logs_metadata]`; staging also enables `otel_baggage` so LiteLLM's
-OpenTelemetry request span receives the four `litellm.metadata.spend_logs_metadata.agentplane.*`
-baggage members before the request starts. The ingress discards caller-supplied baggage and
-constructs these members from its authenticated Kubernetes principal. It preserves trace
-context headers so the request remains linked to its caller's trace.
+`attribution` maps literal output keys to one of four verified Kubernetes principal fields:
+`namespace`, `service_account`, `pod_name`, or `pod_uid`. The default sends the four
+`agentplane.*` JSON members in `x-litellm-spend-logs-metadata`. Staging also configures
+four `litellm.metadata.spend_logs_metadata.agentplane.*` W3C baggage members, which
+LiteLLM places on its normal request span before the upstream call. For example, a custom
+JSON field can be configured as:
+
+```yaml
+attribution:
+  json_headers:
+    - name: x-litellm-spend-logs-metadata
+      fields:
+        - key: agentplane.pod_name
+          source: pod_name
+  baggage:
+    - key: litellm.metadata.spend_logs_metadata.agentplane.pod_name
+      source: pod_name
+```
+
+Keys are literal, including dots and case. The ingress removes caller copies of configured
+JSON headers and all caller baggage, then constructs the configured values from its
+authenticated principal. It preserves trace context headers so the request stays linked
+to its caller's trace.
 
 Incoming LiteLLM metadata/customer/agent headers and Agentplane/Sandbox/Pod/Agent/Thread identity
 headers are removed before this object is stamped. Request bodies remain provider-native and are

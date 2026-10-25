@@ -61,7 +61,7 @@ models:
 	}
 }
 
-func TestAttributionDestinationsConfig(t *testing.T) {
+func TestAttributionConfig(t *testing.T) {
 	base := `allowed_service_account_namespaces: [test-namespace]
 token_audience: test-audience
 litellm_url: http://127.0.0.1:8100
@@ -70,34 +70,43 @@ litellm_key: test-secret
 	for _, test := range []struct {
 		name  string
 		yaml  string
-		want  []attributionDestination
 		fails bool
 	}{
-		{name: "default", want: []attributionDestination{attributionDestinationLiteLLMSpendLogsMetadata}},
-		{name: "baggage only", yaml: "attribution_destinations: [otel_baggage]\n", want: []attributionDestination{attributionDestinationOtelBaggage}},
-		{name: "both", yaml: "attribution_destinations: [litellm_spend_logs_metadata, otel_baggage]\n", want: []attributionDestination{attributionDestinationLiteLLMSpendLogsMetadata, attributionDestinationOtelBaggage}},
-		{name: "empty", yaml: "attribution_destinations: []\n", fails: true},
-		{name: "duplicate", yaml: "attribution_destinations: [otel_baggage, otel_baggage]\n", fails: true},
-		{name: "unknown", yaml: "attribution_destinations: [body_metadata]\n", fails: true},
+		{name: "default"},
+		{name: "baggage only", yaml: "attribution:\n  baggage:\n    - key: Custom.PodUid\n      source: pod_uid\n"},
+		{name: "mixed-case custom key", yaml: "attribution:\n  json_headers:\n    - name: X-Custom-Verified\n      fields:\n        - key: Agentplane.PodName\n          source: pod_name\n"},
+		{name: "empty", yaml: "attribution: {}\n", fails: true},
+		{name: "empty JSON fields", yaml: "attribution:\n  json_headers:\n    - name: x-custom-verified\n      fields: []\n", fails: true},
+		{name: "duplicate key", yaml: "attribution:\n  baggage:\n    - key: same\n      source: pod_uid\n    - key: same\n      source: namespace\n", fails: true},
+		{name: "unknown source", yaml: "attribution:\n  baggage:\n    - key: claim\n      source: body_metadata\n", fails: true},
+		{name: "credential header", yaml: "attribution:\n  json_headers:\n    - name: X-Api-Key\n      fields:\n        - key: a\n          source: pod_name\n", fails: true},
+		{name: "routing header", yaml: "attribution:\n  json_headers:\n    - name: X-Forwarded-For\n      fields:\n        - key: a\n          source: pod_name\n", fails: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			path := writeSettings(t, base+test.yaml)
 			c, err := loadTestConfig(t, []string{configFileEnv + "=" + path})
 			if test.fails {
 				if err == nil {
-					t.Fatalf("invalid destinations accepted: %+v", c.AttributionDestinations)
+					t.Fatalf("invalid attribution accepted: %+v", c.Attribution)
 				}
 				return
 			}
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(c.AttributionDestinations) != len(test.want) {
-				t.Fatalf("destinations = %v, want %v", c.AttributionDestinations, test.want)
-			}
-			for i, want := range test.want {
-				if c.AttributionDestinations[i] != want {
-					t.Fatalf("destinations = %v, want %v", c.AttributionDestinations, test.want)
+			switch test.name {
+			case "default":
+				if len(c.Attribution.JSONHeaders) != 1 || c.Attribution.JSONHeaders[0].Name != "x-litellm-spend-logs-metadata" || len(c.Attribution.Baggage) != 0 {
+					t.Fatalf("default attribution = %+v", c.Attribution)
+				}
+			case "baggage only":
+				if len(c.Attribution.JSONHeaders) != 0 || len(c.Attribution.Baggage) != 1 || c.Attribution.Baggage[0].Key != "Custom.PodUid" {
+					t.Fatalf("baggage-only attribution = %+v", c.Attribution)
+				}
+			case "mixed-case custom key":
+				if len(c.Attribution.JSONHeaders) != 1 || c.Attribution.JSONHeaders[0].Name != "X-Custom-Verified" ||
+					c.Attribution.JSONHeaders[0].Fields[0].Key != "Agentplane.PodName" {
+					t.Fatalf("custom attribution lost spelling: %+v", c.Attribution)
 				}
 			}
 		})
