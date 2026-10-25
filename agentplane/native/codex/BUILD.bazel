@@ -72,6 +72,7 @@ py_test(
     ],
     deps = [
         ":conftest",
+        ":scenarios",
         ":wire",
         "//:conftest",
         "//agentplane/native:conftest",
@@ -95,6 +96,7 @@ py_test(
     ],
     deps = [
         ":conftest",
+        ":scenarios",
         ":wire",
         "//:conftest",
         "//agentplane/native:conftest",
@@ -191,6 +193,7 @@ py_test(
     ],
     deps = [
         ":conftest",
+        ":scenarios",
         ":wire",
         "//:conftest",
         "//agentplane/native:conftest",
@@ -213,6 +216,7 @@ py_test(
     ],
     deps = [
         ":conftest",
+        ":scenarios",
         ":wire",
         "//:conftest",
         "//agentplane/native:conftest",
@@ -235,6 +239,7 @@ py_test(
     ],
     deps = [
         ":conftest",
+        ":scenarios",
         ":wire",
         "//:conftest",
         "//agentplane/native:conftest",
@@ -286,6 +291,7 @@ py_test(
         ":conftest",
         ":driver",
         ":scenarios",
+        ":wire",
         "//:conftest",
         "//agentplane/native:conftest",
         "//agentplane/native/codex/testing:harness",

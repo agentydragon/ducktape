@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest_bazel
 
-from agentplane.native.codex import wire
+from agentplane.native.codex import scenarios, wire
 from agentplane.native.codex.scenarios import MAX_RETRIES
 from agentplane.native.codex.testing import frames, responses_sse
 from agentplane.native.codex.testing.harness import CodexHarness
@@ -29,7 +29,8 @@ async def test_stream_lost_before_content_is_retried(codex: CodexHarness, openai
         async with await openai_responses.await_next_request() as exchange:
             request = exchange.request
             assert request.stream is True
-            assert request.item_kinds == ["message:user"]
+            assert request.item_kinds == ["message:developer", "message:user"]
+            assert [message.text for message in request.messages("developer")] == [scenarios.BASE_INSTRUCTIONS]
             assert request.messages("user")[-1].text == "Reply with exactly: CONNECTION_RETRY_OK"
             stream = responses_sse.response_stream([responses_sse.Message("CONNECTION_RETRY_OK")], model=MODEL)
             await exchange.send(*stream.events)
@@ -60,7 +61,8 @@ async def test_stream_lost_after_visible_text_is_retried_and_the_thread_continue
         async with await openai_responses.await_next_request() as exchange:
             request = exchange.request
             # The retry resends the turn without the partial text.
-            assert request.item_kinds == ["message:user"]
+            assert request.item_kinds == ["message:developer", "message:user"]
+            assert [message.text for message in request.messages("developer")] == [scenarios.BASE_INSTRUCTIONS]
             stream = responses_sse.response_stream([responses_sse.Message("POST_FAILURE_FIRST_OK")], model=MODEL)
             await exchange.send(*stream.events)
         assert (await first.completed()).params.turn.status is wire.TurnStatus.COMPLETED
@@ -68,7 +70,7 @@ async def test_stream_lost_after_visible_text_is_retried_and_the_thread_continue
         second = await run.start_turn("Reply with exactly: POST_FAILURE_FOLLOW_UP_OK")
         async with await openai_responses.await_next_request() as exchange:
             request = exchange.request
-            assert request.item_kinds == ["message:user", "message:assistant", "message:user"]
+            assert request.item_kinds == ["message:developer", "message:user", "message:assistant", "message:user"]
             assert request.messages("assistant")[0].text == "POST_FAILURE_FIRST_OK"
             stream = responses_sse.response_stream([responses_sse.Message("POST_FAILURE_FOLLOW_UP_OK")], model=MODEL)
             await exchange.send(*stream.events)
@@ -92,7 +94,7 @@ async def test_retry_exhaustion_fails_the_turn_and_the_thread_accepts_the_next_i
         second = await run.start_turn("Reply with exactly: POST_EXHAUSTION_FOLLOW_UP_OK")
         async with await openai_responses.await_next_request() as exchange:
             request = exchange.request
-            assert request.item_kinds == ["message:user", "message:user"]
+            assert request.item_kinds == ["message:developer", "message:user", "message:user"]
             assert request.messages("user")[-1].text == "Reply with exactly: POST_EXHAUSTION_FOLLOW_UP_OK"
             stream = responses_sse.response_stream([responses_sse.Message("POST_EXHAUSTION_FOLLOW_UP_OK")], model=MODEL)
             await exchange.send(*stream.events)

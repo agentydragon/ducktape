@@ -6,7 +6,7 @@ import asyncio
 
 import pytest_bazel
 
-from agentplane.native.codex import wire
+from agentplane.native.codex import scenarios, wire
 from agentplane.native.codex.testing import responses_sse
 from agentplane.native.codex.testing.harness import CodexHarness
 from agentplane.native.codex.testing.model import MODEL
@@ -21,7 +21,13 @@ async def test_compaction_preserves_instructions_in_next_request_and_resume(
     async with codex.start(openai_responses, persist=True, instructions=STANDING) as first:
         turn = await first.start_turn("Reply SEED_OK")
         async with await openai_responses.await_next_request() as exchange:
-            assert [message.text for message in exchange.request.messages("developer")] == [STANDING]
+            request = exchange.request
+            assert request.instructions is None
+            assert request.item_kinds == ["message:developer", "message:developer", "message:user"]
+            assert [message.text for message in request.messages("developer")] == [
+                scenarios.BASE_INSTRUCTIONS,
+                STANDING,
+            ]
             await exchange.send(*responses_sse.response_stream([responses_sse.Message("SEED_OK")], model=MODEL).events)
         assert (await turn.completed()).params.turn.status is wire.TurnStatus.COMPLETED
 
@@ -51,8 +57,12 @@ async def test_compaction_preserves_instructions_in_next_request_and_resume(
         async with await openai_responses.await_next_request() as exchange:
             request = exchange.request
             assert request.client_metadata.turn_id == turn.id  # ordinary request, not the summary call
+            assert request.instructions is None
             assert request.messages("user")[-1].text == "Reply AFTER_COMPACT_OK"
-            assert [message.text for message in request.messages("developer")] == [STANDING]
+            assert [message.text for message in request.messages("developer")] == [
+                scenarios.BASE_INSTRUCTIONS,
+                STANDING,
+            ]
             await exchange.send(
                 *responses_sse.response_stream([responses_sse.Message("AFTER_COMPACT_OK")], model=MODEL).events
             )
@@ -62,7 +72,11 @@ async def test_compaction_preserves_instructions_in_next_request_and_resume(
         turn = await resumed.start_turn("Reply RESUMED_OK")
         async with await openai_responses.await_next_request() as exchange:
             assert exchange.request.client_metadata.turn_id == turn.id
-            assert [message.text for message in exchange.request.messages("developer")] == [STANDING]
+            assert exchange.request.instructions is None
+            assert [message.text for message in exchange.request.messages("developer")] == [
+                scenarios.BASE_INSTRUCTIONS,
+                STANDING,
+            ]
             await exchange.send(
                 *responses_sse.response_stream([responses_sse.Message("RESUMED_OK")], model=MODEL).events
             )

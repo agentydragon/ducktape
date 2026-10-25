@@ -25,7 +25,7 @@ import pytest
 import pytest_bazel
 from pydantic import BaseModel
 
-from agentplane.native.codex import driver, scenarios
+from agentplane.native.codex import driver, scenarios, wire
 from agentplane.native.codex.testing import responses_sse
 from agentplane.native.codex.testing.harness import CodexHarness
 from agentplane.native.codex.testing.model import EFFORT, MODEL
@@ -181,7 +181,12 @@ async def test_v2_child_discovery_and_resume(
                 "kind": "started",
                 "agentThreadId": child_id,
                 "agentPath": "/root/probe",
+                "model": MODEL,
+                "reasoningEffort": EFFORT,
             }
+            spawn_model = wire.SubAgentActivityItem.model_validate(spawn["item"])
+            assert spawn_model.model == MODEL
+            assert spawn_model.reasoning_effort == EFFORT
         async with server(codex, openai_responses, "resumed") as resumed:
             assert await listed(resumed, "thread/loaded/list") == []
             restored = (await rpc(resumed, "thread/resume", threadId=root_id, excludeTurns=True))["thread"]

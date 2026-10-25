@@ -116,9 +116,11 @@ class ClientMetadata(BaseModel):
 
 
 class ResponsesRequest(BaseModel):
-    """A Responses request. A catalog entry with `use_responses_lite` (the bundled GPT-6 ones) moves the base
-    instructions into a developer message and the tools into an `additional_tools` item, so the request carries
-    neither top-level `instructions` nor `tools`."""
+    """A Responses request as emitted by the pinned Codex CLI.
+
+    Codex sends its effective base instructions as a leading developer message in `input`, leaving the top-level
+    `instructions` field unset. Preserve the input order because thread-specific developer instructions follow it.
+    """
 
     reasoning_config: dict[str, str] | None = Field(default=None, alias="reasoning")
     model: str

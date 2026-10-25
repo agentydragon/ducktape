@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import pytest_bazel
 
-from agentplane.native.codex import wire
+from agentplane.native.codex import scenarios, wire
 from agentplane.native.codex.testing import responses_sse
 from agentplane.native.codex.testing.harness import CodexHarness
 from agentplane.native.codex.testing.model import MODEL
@@ -72,7 +72,10 @@ async def test_independent_threads_share_a_process_and_resume_by_thread_id(
                 assert second_request.reasoning_config["effort"] == "high"
                 assert second_request.client_metadata.thread_id == second.thread_id
                 assert second_request.prompt_cache_key == second.thread_id
-                assert [message.text for message in second_request.messages("developer")] == [SECONDARY_INSTRUCTIONS]
+                assert [message.text for message in second_request.messages("developer")] == [
+                    scenarios.BASE_INSTRUCTIONS,
+                    SECONDARY_INSTRUCTIONS,
+                ]
                 assert second_request.messages("user")[-1].text == SECOND_PROMPT
                 await second_exchange.send(
                     *responses_sse.response_stream(
@@ -164,7 +167,10 @@ async def test_independent_threads_share_a_process_and_resume_by_thread_id(
             second_resume_request = second_resume_exchange.request
             assert second_resume_request.model == SECONDARY_MODEL
             assert second_resume_request.client_metadata.thread_id == second_thread_id
-            assert second_resume_request.messages("developer")[0].text == SECONDARY_INSTRUCTIONS
+            assert [message.text for message in second_resume_request.messages("developer")] == [
+                scenarios.BASE_INSTRUCTIONS,
+                SECONDARY_INSTRUCTIONS,
+            ]
             assert second_resume_request.messages("user")[-1].text == SECOND_RESUME_PROMPT
             await second_resume_exchange.send(
                 *responses_sse.response_stream(

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest_bazel
 
-from agentplane.native.codex import wire
+from agentplane.native.codex import scenarios, wire
 from agentplane.native.codex.testing import responses_sse
 from agentplane.native.codex.testing.harness import CodexHarness
 from agentplane.native.codex.testing.model import MODEL
@@ -27,9 +27,13 @@ async def test_resume_replays_original_developer_message_before_compaction(
         turn = await first.start_turn("Reply: SEED_OK")
         async with await openai_responses.await_next_request() as exchange:
             request = exchange.request
-            # The instructions lead the thread, ahead of the first user message.
-            assert request.item_kinds == ["message:developer", "message:user"]
-            assert [message.text for message in request.messages("developer")] == [STARTED_WITH]
+            # The configured base policy and then thread-specific instructions lead the prompt.
+            assert request.instructions is None
+            assert request.item_kinds == ["message:developer", "message:developer", "message:user"]
+            assert [message.text for message in request.messages("developer")] == [
+                scenarios.BASE_INSTRUCTIONS,
+                STARTED_WITH,
+            ]
             stream = responses_sse.response_stream([responses_sse.Message("SEED_OK")], model=MODEL)
             await exchange.send(*stream.events)
         assert (await turn.completed()).params.turn.status is wire.TurnStatus.COMPLETED
@@ -44,10 +48,10 @@ async def test_resume_replays_original_developer_message_before_compaction(
         turn = await second.start_turn("Reply: NEXT_OK")
         async with await openai_responses.await_next_request() as exchange:
             request = exchange.request
-            # The base override changes the request immediately.
-            assert request.instructions == RESUMED_BASE
-            # One developer message, the thread's own — neither replaced nor joined by the new text.
-            assert [message.text for message in request.messages("developer")] == [STARTED_WITH]
+            # The base override changes the first developer message immediately. The original
+            # thread-specific instruction remains second, ahead of the new user message.
+            assert request.instructions is None
+            assert [message.text for message in request.messages("developer")] == [RESUMED_BASE, STARTED_WITH]
             stream = responses_sse.response_stream([responses_sse.Message("NEXT_OK")], model=MODEL)
             await exchange.send(*stream.events)
         assert (await turn.completed()).params.turn.status is wire.TurnStatus.COMPLETED

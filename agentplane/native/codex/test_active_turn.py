@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest_bazel
 
-from agentplane.native.codex import wire
+from agentplane.native.codex import scenarios, wire
 from agentplane.native.codex.testing import frames, responses_sse
 from agentplane.native.codex.testing.harness import CodexHarness
 from agentplane.native.codex.testing.model import MODEL
@@ -44,7 +44,14 @@ async def test_second_input_during_a_tool_joins_the_running_turn(
 
         async with await openai_responses.await_next_request() as exchange:
             request = exchange.request
-            assert request.item_kinds == ["message:user", "function_call", "function_call_output", "message:user"]
+            assert request.item_kinds == [
+                "message:developer",
+                "message:user",
+                "function_call",
+                "function_call_output",
+                "message:user",
+            ]
+            assert [message.text for message in request.messages("developer")] == [scenarios.BASE_INSTRUCTIONS]
             assert request.function_call_outputs[0].call_id == "call_test_1"
             assert "wait_finished" in request.function_call_outputs[0].output
             assert request.messages("user")[-1].text == SECOND_INPUT
@@ -76,7 +83,14 @@ async def test_steer_during_a_tool_joins_the_running_turn(
 
         async with await openai_responses.await_next_request() as exchange:
             request = exchange.request
-            assert request.item_kinds == ["message:user", "function_call", "function_call_output", "message:user"]
+            assert request.item_kinds == [
+                "message:developer",
+                "message:user",
+                "function_call",
+                "function_call_output",
+                "message:user",
+            ]
+            assert [message.text for message in request.messages("developer")] == [scenarios.BASE_INSTRUCTIONS]
             assert request.messages("user")[-1].text == STEER_INPUT
             stream = responses_sse.response_stream([responses_sse.Message("STEERED")], model=MODEL)
             await exchange.send(*stream.events)
@@ -121,7 +135,15 @@ async def test_interrupt_drops_joined_inputs_before_the_next_model_request(
 
         recovery = await run.start_turn(INTERRUPT_RECOVERY)
         async with await openai_responses.await_next_request() as recovery_exchange:
-            assert recovery_exchange.request.item_kinds == ["message:user"] * 3
+            assert recovery_exchange.request.item_kinds == [
+                "message:developer",
+                "message:user",
+                "message:user",
+                "message:user",
+            ]
+            assert [message.text for message in recovery_exchange.request.messages("developer")] == [
+                scenarios.BASE_INSTRUCTIONS
+            ]
             assert [message.text for message in recovery_exchange.request.messages("user")] == [
                 INTERRUPTED_INITIAL,
                 frames.INTERRUPTED_TURN_MARKER,

@@ -15,7 +15,7 @@ import shlex
 import pytest
 import pytest_bazel
 
-from agentplane.native.codex import wire
+from agentplane.native.codex import scenarios, wire
 from agentplane.native.codex.testing import frames, responses_sse
 from agentplane.native.codex.testing.harness import CodexHarness
 from agentplane.native.codex.testing.model import MODEL
@@ -46,6 +46,7 @@ async def test_parallel_shell_commands_report_output_and_exit_codes(
         async with await openai_responses.await_next_request() as exchange:
             request = exchange.request
             assert request.item_kinds == [
+                "message:developer",
                 "message:user",
                 "reasoning",
                 "function_call",
@@ -53,6 +54,7 @@ async def test_parallel_shell_commands_report_output_and_exit_codes(
                 "function_call_output",
                 "function_call_output",
             ]
+            assert [message.text for message in request.messages("developer")] == [scenarios.BASE_INSTRUCTIONS]
             # The reasoning item's encrypted content comes back verbatim ahead of the calls.
             assert request.reasoning[0].encrypted_content == "enc_test_1"
             assert [call.call_id for call in request.function_calls] == ["call_test_1", "call_test_2"]

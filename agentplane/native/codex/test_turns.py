@@ -36,9 +36,10 @@ async def test_baseline_turn(codex: CodexHarness, openai_responses: OpenAIRespon
             request = exchange.request
             assert request.model == MODEL
             assert request.stream is True
-            assert request.instructions == scenarios.BASE_INSTRUCTIONS
+            assert request.instructions is None
+            assert [message.text for message in request.messages("developer")] == [scenarios.BASE_INSTRUCTIONS]
             assert request.tool_names == TOOLS
-            assert request.item_kinds == ["message:user"]
+            assert request.item_kinds == ["message:developer", "message:user"]
             assert request.messages("user")[-1].text == "Reply with exactly: CAPTURE_BASELINE_OK"
             assert request.prompt_cache_key == run.thread_id
             assert request.client_metadata.thread_id == run.thread_id
@@ -89,7 +90,13 @@ async def test_idle_resume_replays_the_thread_from_disk(codex: CodexHarness, ope
 
         async with await openai_responses.await_next_request() as exchange:
             request = exchange.request
-            assert request.item_kinds == ["message:user", "reasoning", "message:assistant", "message:user"]
+            assert request.item_kinds == [
+                "message:developer",
+                "message:user",
+                "reasoning",
+                "message:assistant",
+                "message:user",
+            ]
             assert [message.text for message in request.messages("user")] == [
                 "Reply with exactly: IDLE_RESUME_SEED_OK",
                 "Reply with exactly: IDLE_RESUME_OK",
@@ -190,6 +197,7 @@ async def test_resume_after_an_interrupted_partial_turn_keeps_the_user_item_not_
         async with await openai_responses.await_next_request() as exchange:
             replay = exchange.request
             assert replay.item_kinds == [
+                "message:developer",
                 "message:user",
                 "reasoning",
                 "message:assistant",
@@ -203,6 +211,7 @@ async def test_resume_after_an_interrupted_partial_turn_keeps_the_user_item_not_
                 frames.INTERRUPTED_TURN_MARKER,
                 INTERRUPTED_RESUME_RECOVERY,
             ]
+            assert [message.text for message in replay.messages("developer")] == [scenarios.BASE_INSTRUCTIONS]
             assert [message.text for message in replay.messages("assistant")] == ["CODEX_INTERRUPTED_RESUME_SEED_OK"]
             assert replay.reasoning[0].encrypted_content == "enc_interrupted_resume"
             await exchange.send(
@@ -247,7 +256,8 @@ async def test_resumed_redispatch_of_an_accepted_input_duplicates_native_history
         await accepted.started()
         async with await openai_responses.await_next_request() as exchange:
             request = exchange.request
-            assert request.item_kinds == ["message:user"]
+            assert request.item_kinds == ["message:developer", "message:user"]
+            assert [message.text for message in request.messages("developer")] == [scenarios.BASE_INSTRUCTIONS]
             assert [message.text for message in request.messages("user")] == [REDISPATCH_INPUT]
             assert request.client_metadata.thread_id == first.thread_id
             assert request.client_metadata.turn_id == accepted.id
@@ -265,7 +275,7 @@ async def test_resumed_redispatch_of_an_accepted_input_duplicates_native_history
         assert redispatched.id != accepted.id
         async with await openai_responses.await_next_request() as exchange:
             request = exchange.request
-            assert request.item_kinds == ["message:user", "message:user"]
+            assert request.item_kinds == ["message:developer", "message:user", "message:user"]
             assert [message.text for message in request.messages("user")] == [REDISPATCH_INPUT, REDISPATCH_INPUT]
             assert request.client_metadata.thread_id == first.thread_id
             assert request.client_metadata.turn_id == redispatched.id
