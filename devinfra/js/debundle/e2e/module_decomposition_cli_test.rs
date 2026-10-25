@@ -43,6 +43,7 @@ fn proposes_a_realizable_refinement_without_changing_the_spec() {
         String::from_utf8_lossy(&output.stderr)
     );
     let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["strategy"], "seed", "{report}");
     assert_eq!(report["candidate_is_realizable"], true, "{report}");
     assert_eq!(report["coverage_complete"], true, "{report}");
 
@@ -65,6 +66,29 @@ fn proposes_a_realizable_refinement_without_changing_the_spec() {
         .map(Value::as_str)
         .collect::<Vec<_>>();
     assert_eq!(bindings, vec![Some("first"), Some("last")]);
+
+    let atomic_report = fixture.json(&[
+        "modules",
+        "decompose",
+        "--atomic",
+        "--graph",
+        fixture.graph.to_str().unwrap(),
+        "--modules",
+        fixture.modules.to_str().unwrap(),
+    ]);
+    assert_eq!(atomic_report["strategy"], "atomic", "{atomic_report}");
+    assert_eq!(
+        atomic_report["candidate_is_realizable"], true,
+        "{atomic_report}"
+    );
+    let atomic_fragments = atomic_report["modules"][0]["fragments"].as_array().unwrap();
+    assert_eq!(
+        atomic_fragments
+            .iter()
+            .map(|fragment| fragment["suggested_module_path"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        suggested_paths
+    );
     assert_eq!(
         before,
         ["bad.yaml", "middle.yaml", "bad/part-1.yaml"]
@@ -76,7 +100,7 @@ fn proposes_a_realizable_refinement_without_changing_the_spec() {
 
     fs::remove_file(fixture.modules.join("bad.yaml")).unwrap();
     fs::remove_file(unclaimed).unwrap();
-    for fragment in fragments {
+    for fragment in atomic_fragments {
         let module_path = fragment["suggested_module_path"].as_str().unwrap();
         let members = fragment["binding_ids"]
             .as_array()
@@ -96,6 +120,111 @@ fn proposes_a_realizable_refinement_without_changing_the_spec() {
     }
     fixture.assert_runs("3\n");
     debundle_e2e_support::assert_node_output(&fixture.source_path(), "3\n", "");
+}
+
+#[test]
+fn atomic_mode_leaves_cross_module_structural_atoms_on_their_current_paths() {
+    let fixture = GraphFixture::rejected(
+        "let count = 0;\nfunction bump() { count += 1; }\nconsole.log(count, typeof bump);\n",
+        &[
+            (
+                "state.yaml",
+                "members: [{selector: {binding: {name: count}}}]\n",
+            ),
+            (
+                "action.yaml",
+                "members: [{selector: {binding: {name: bump}}}]\n",
+            ),
+        ],
+    );
+    let report = fixture.json(&[
+        "modules",
+        "decompose",
+        "--atomic",
+        "--graph",
+        fixture.graph.to_str().unwrap(),
+        "--modules",
+        fixture.modules.to_str().unwrap(),
+    ]);
+    assert_eq!(report["strategy"], "atomic", "{report}");
+    assert_eq!(report["candidate_is_realizable"], false, "{report}");
+    let conflicts = report["atomic_unit_conflicts"].as_array().unwrap();
+    assert!(!conflicts.is_empty(), "{report}");
+    let modules = conflicts[0]["candidate_modules"].as_array().unwrap();
+    assert!(modules.iter().any(|path| path == "state"), "{report}");
+    assert!(modules.iter().any(|path| path == "action"), "{report}");
+}
+
+#[test]
+fn atomic_residual_mode_moves_body_atoms_but_keeps_entry_imports_and_exports() {
+    let fixture = GraphFixture::new(
+        "import './dependency.js';\nconst ready = 1;\nexport { ready };\nconsole.log(ready);\n",
+        &[],
+    );
+    let report = fixture.json(&[
+        "modules",
+        "decompose",
+        "--atomic",
+        "--include-residual",
+        "--graph",
+        fixture.graph.to_str().unwrap(),
+        "--modules",
+        fixture.modules.to_str().unwrap(),
+    ]);
+    assert_eq!(report["strategy"], "atomic_including_residual", "{report}");
+    assert_eq!(report["coverage_complete"], true, "{report}");
+    assert_eq!(report["candidate_is_realizable"], true, "{report}");
+
+    let graph = fixture.owner_graph();
+    let entry_path = graph
+        .quotient
+        .nodes
+        .iter()
+        .find(|module| module.residual)
+        .expect("residual entry module")
+        .path
+        .to_string();
+    let entry_row = report["modules"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|module| module["module_id"] == entry_path)
+        .expect("residual module refinement");
+    let fragments = entry_row["fragments"].as_array().unwrap();
+    let entry_fragment = fragments
+        .iter()
+        .find(|fragment| fragment["suggested_module_path"] == entry_path)
+        .expect("import/export fragment remains in the entry");
+    let entry_owner_ids = entry_fragment["owner_ids"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(Value::as_str)
+        .collect::<std::collections::BTreeSet<_>>();
+    for owner in graph.nodes.iter().filter(|owner| {
+        matches!(
+            owner.statement_kind.to_string().as_str(),
+            "import" | "export"
+        )
+    }) {
+        assert!(
+            entry_owner_ids.contains(owner.id.as_str()),
+            "entry declaration {} was moved: {report}",
+            owner.id
+        );
+    }
+
+    let suggested_paths = fragments
+        .iter()
+        .map(|fragment| fragment["suggested_module_path"].as_str().unwrap())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(suggested_paths.len(), fragments.len(), "{report}");
+    assert!(
+        suggested_paths
+            .iter()
+            .any(|path| path.starts_with("decomposition/residual/")),
+        "residual body atoms need active module destinations: {report}"
+    );
 }
 
 #[test]

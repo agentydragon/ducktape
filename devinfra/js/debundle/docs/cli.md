@@ -363,9 +363,10 @@ that structural atomic units stay together, and runs the shared realizability
 gate over the complete candidate. `candidate_is_realizable: true` means that
 candidate passed those checks. A false result includes the gate's cycles or
 cross-module rebinds and any structural atom conflicts; the fragments remain
-diagnostic suggestions and do not form an accepted partition. Residual owners
-keep their current destination and are not split into suggestions, so a
-candidate can remain invalid when its conflict involves residual ownership.
+diagnostic suggestions and do not form an accepted partition. By default
+residual owners keep their current destination and are not split into
+suggestions, so a candidate can remain invalid when its conflict involves
+residual ownership.
 
 The command does not modify YAML. Review the reported owner and binding IDs,
 choose semantic module names for each suggested part, and assign the complete
@@ -377,6 +378,29 @@ module-size cap and does not run the greedy cross-module proposer.
 Some fragments may include owners without binding IDs, such as anonymous
 statements; inspect those owners and move them with their `anonymous_statements:`
 selectors when applying the reviewed split.
+
+For a faster, more fragmented baseline, pass `--atomic`. This mode skips
+same-module seed contractions and creates one candidate group per structural
+atomic unit. If a unit already spans existing module labels, its owners keep
+those labels and the report remains false with that atom conflict listed. Both
+modes run the same full candidate gate; JSON's `strategy` field identifies the
+selected mode.
+
+To include residual ownership in that baseline, add `--include-residual`:
+
+```sh
+debundle modules decompose --atomic --include-residual \
+  --graph owner_graph.json --modules spec/modules --format json
+```
+
+Each residual body atom gets its own proposed active module. Top-level import
+and export declaration atoms remain at the residual entry destination so the
+normal emitter can keep their module scaffolding in the entry. Atoms spanning
+different current destinations also keep those destinations and remain visible
+as conflicts. The complete candidate still goes through the shared gate; an
+atomic split is not assumed to be realizable. The suggested
+`decomposition/residual/part-N` paths are temporary names that authors should
+replace after reviewing the source.
 
 ### `--batch` JSON format
 
