@@ -2604,6 +2604,13 @@ consumes its source bundle; a pass-through run instead converts it directly to
 `EmissionFiles`, reusing the indexes without rebuilding them. The mutable indexed
 file container is private to these phase types.
 
+During assignment construction, `ChunkPlanBuilder::bindings_catalogue` is the
+authoritative destination of each declared or imported binding. Its spelling
+index stores binding identities and resolves destinations through the catalogue.
+Module plans carry export names and comments. Rebind analysis and lowering obtain
+an owned-only destination projection when needed; each construction update changes
+the catalogue once.
+
 `EmissionFiles` owns reconstructed syntax while body transformations are still
 allowed. Its output-path indexes are built once after lowering changes entry and
 module paths, then retained across body-only passes behind an indexed-layout
