@@ -3111,6 +3111,7 @@ pub(crate) fn annotate_synchronous_calls(
             expression.bindings(dependencies.entry(id.clone()).or_default());
         }
     }
+    let mut member_write_receivers = BTreeMap::<ValueOrigin, BTreeSet<Id>>::new();
     for writes in &index.top_member_value_writes {
         for (receiver, _, expression) in writes {
             if index.global_object_names.contains(receiver.0.as_ref()) {
@@ -3118,17 +3119,42 @@ pub(crate) fn annotate_synchronous_calls(
                 // every later opaque call, even when the receiver alias is
                 // not mentioned by a statically visible callee.
                 expression.bindings(&mut needed);
-            } else if needed.contains(receiver) {
+            } else {
                 expression.bindings(dependencies.entry(receiver.clone()).or_default());
+                // A later call may read an object through a different local
+                // alias than the one used for this property write. Retain
+                // that receiver's prefix value whenever its known object
+                // identity also reaches a needed binding.
+                for origin in flow.values_of_binding(receiver) {
+                    if matches!(origin, ValueOrigin::Object(_)) {
+                        member_write_receivers
+                            .entry(origin)
+                            .or_default()
+                            .insert(receiver.clone());
+                    }
+                }
             }
         }
     }
     let mut pending: Vec<Id> = needed.iter().cloned().collect();
+    let mut visited_objects = BTreeSet::new();
     while let Some(id) = pending.pop() {
         if let Some(inputs) = dependencies.get(&id) {
             for input in inputs {
                 if needed.insert(input.clone()) {
                     pending.push(input.clone());
+                }
+            }
+        }
+        for origin in flow.values_of_binding(&id) {
+            if !matches!(origin, ValueOrigin::Object(_)) || !visited_objects.insert(origin) {
+                continue;
+            }
+            if let Some(receivers) = member_write_receivers.get(&origin) {
+                for receiver in receivers {
+                    if needed.insert(receiver.clone()) {
+                        pending.push(receiver.clone());
+                    }
                 }
             }
         }
