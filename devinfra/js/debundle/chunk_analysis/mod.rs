@@ -28,7 +28,7 @@
 //! caller-supplied dynamic-import resolver (the A3 admission check
 //! needs "which chunk does this specifier land in", but chunk
 //! analysis itself stays artifact-free). It does not read the spec,
-//! the partition, chunk renames, or the unassigned-mode policy —
+//! the assignment, chunk renames, or the unassigned-mode policy —
 //! those are materialization inputs.
 //!
 //! Chunk analysis is materialized only in memory, by callers
@@ -58,7 +58,7 @@ use analysis::graph::OwnerGraphOptions;
 use analysis::purity::{RedundantPureMemberReason, RedundantPurityReason};
 
 /// Output of chunk analysis: per-chunk facts, owner graph, and atomic
-/// units that do not depend on the module partition.
+/// units that do not depend on the module assignment.
 #[derive(Debug, Clone)]
 pub struct ChunkAnalysisOutput {
     /// Per-statement static facts plus chunk-wide flags (top-level

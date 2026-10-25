@@ -62,7 +62,7 @@ initializer or remove independently observed callback dependencies.
 
 Record the inspected source, audited provider/runtime premises, and exact
 assertion. Rerun source validation, the extraction gate, and the adapter's
-runtime smoke. Confirm the intended partition passes and inspect the retained
+runtime smoke. Confirm the intended assignment passes and inspect the retained
 constraints. A successful source match alone does not prove runtime behavior.
 If the premise cannot be established, retain the conservative constraints and
 choose a different module boundary.

@@ -9,7 +9,7 @@ use analysis::OwnerId;
 use analysis::facts::analyze_chunk;
 use analysis::graph::{EdgeRole, build_owner_graph_with};
 use analysis::ids::{LogicalModuleIndex, ModuleId};
-use analysis::partition::Partition;
+use analysis::module_assignment::ModuleAssignment;
 use analysis::{AnalysisHints, DepKind, OwnerGraph};
 use petgraph::visit::IntoNeighbors;
 use report_fixtures::{
@@ -104,8 +104,8 @@ fn full_overlay_verdict_matches_pure_gate_across_typed_moves() {
         let assignments = (0..names.len())
             .map(|i| module_id((i * 3 + seed) % 5))
             .collect();
-        let partition = Partition::from_assignments(assignments, module_id(0));
-        let mut index = RealizabilityIndex::from_partition(&graph, partition);
+        let assignment = ModuleAssignment::from_assignments(assignments, module_id(0));
+        let mut index = RealizabilityIndex::from_assignment(&graph, assignment);
         for step in 0..12usize {
             let first = (step * 5 + seed) % names.len();
             let owners = if step % 3 == 0 {
@@ -116,8 +116,8 @@ fn full_overlay_verdict_matches_pure_gate_across_typed_moves() {
             let to = module_id((step + seed * 2) % 5);
             let overlay = index
                 .quotient
-                .overlay_for_move(&graph, index.partition(), &owners, to);
-            let mut post = index.partition().clone();
+                .overlay_for_move(&graph, index.assignment(), &owners, to);
+            let mut post = index.assignment().clone();
             for &owner in &owners {
                 post.set(owner, to);
             }
@@ -132,7 +132,7 @@ fn full_overlay_verdict_matches_pure_gate_across_typed_moves() {
                 "full verdict diverged: seed={seed} step={step}",
             );
             if step % 2 == 0 {
-                index.apply(&graph, PartitionDelta::MoveOwners { owners, to });
+                index.apply(&graph, ModuleAssignmentDelta::MoveOwners { owners, to });
             }
         }
     }
@@ -190,10 +190,10 @@ fn acyclic_cross_module_at_init_read_is_realizable() {
     // Owner 0: const a = 1 → module 1.
     // Owner 1: const b = a + 1 → module 2.
     // Edge owner_1 → owner_0 (eager_use of `a`).
-    let mut partition = Partition::new(&owner_graph, module_id(0));
-    partition.set(OwnerId(0), module_id(1));
-    partition.set(OwnerId(1), module_id(2));
-    let verdict = check_realizability(&owner_graph, &partition);
+    let mut assignment = ModuleAssignment::new(&owner_graph, module_id(0));
+    assignment.set(OwnerId(0), module_id(1));
+    assignment.set(OwnerId(1), module_id(2));
+    let verdict = check_realizability(&owner_graph, &assignment);
     assert!(
         verdict.is_realizable(),
         "verdict should be empty: {verdict:#?}"
@@ -214,9 +214,9 @@ fn constraining_cycle_across_two_modules_is_unrealizable() {
     // what clause 3 rejects.
     let source = "const a = b + 1; const b = a + 1;";
     let owner_graph = parse_and_build(source);
-    let mut partition = Partition::new(&owner_graph, module_id(0));
-    partition.set(OwnerId(1), module_id(1));
-    let verdict = check_realizability(&owner_graph, &partition);
+    let mut assignment = ModuleAssignment::new(&owner_graph, module_id(0));
+    assignment.set(OwnerId(1), module_id(1));
+    let verdict = check_realizability(&owner_graph, &assignment);
     assert!(
         !verdict.is_realizable(),
         "verdict should report an SCC: {verdict:#?}"
@@ -243,17 +243,17 @@ fn touching_filter_keeps_only_diagnoses_involving_the_queried_module() {
     // is an unrelated clean module 3.
     let source = "const a = b + 1; const b = a + 1; const c = 1;";
     let owner_graph = parse_and_build(source);
-    let mut partition = Partition::new(&owner_graph, module_id(0));
-    partition.set(OwnerId(0), module_id(1));
-    partition.set(OwnerId(1), module_id(2));
-    partition.set(OwnerId(2), module_id(3));
-    assert!(!check_realizability(&owner_graph, &partition).is_realizable());
-    let touching_cycle = check_realizability_touching(&owner_graph, &partition, module_id(1));
+    let mut assignment = ModuleAssignment::new(&owner_graph, module_id(0));
+    assignment.set(OwnerId(0), module_id(1));
+    assignment.set(OwnerId(1), module_id(2));
+    assignment.set(OwnerId(2), module_id(3));
+    assert!(!check_realizability(&owner_graph, &assignment).is_realizable());
+    let touching_cycle = check_realizability_touching(&owner_graph, &assignment, module_id(1));
     assert!(
         !touching_cycle.is_realizable(),
         "module 1 is in the SCC; the diagnosis must survive the filter: {touching_cycle:#?}",
     );
-    let touching_clean = check_realizability_touching(&owner_graph, &partition, module_id(3));
+    let touching_clean = check_realizability_touching(&owner_graph, &assignment, module_id(3));
     assert!(
         touching_clean.is_realizable(),
         "module 3 touches no diagnosis; pre-existing violations \
@@ -270,20 +270,20 @@ fn touching_filter_keeps_only_cross_rebinds_at_the_queried_module() {
     // (mod 2, unrelated).
     let source = "let a = 1; a = 2; const z = 3;";
     let owner_graph = parse_and_build(source);
-    let mut partition = Partition::new(&owner_graph, module_id(0));
-    partition.set(OwnerId(1), module_id(1));
-    partition.set(OwnerId(2), module_id(2));
-    let full = check_realizability(&owner_graph, &partition);
+    let mut assignment = ModuleAssignment::new(&owner_graph, module_id(0));
+    assignment.set(OwnerId(1), module_id(1));
+    assignment.set(OwnerId(2), module_id(2));
+    let full = check_realizability(&owner_graph, &assignment);
     assert!(
         !full.cross_rebinds.is_empty(),
         "fixture must produce a cross-module rebind: {full:#?}",
     );
-    let touching_writer = check_realizability_touching(&owner_graph, &partition, module_id(1));
+    let touching_writer = check_realizability_touching(&owner_graph, &assignment, module_id(1));
     assert!(
         !touching_writer.cross_rebinds.is_empty(),
         "module 1 is the rebind's writer side: {touching_writer:#?}",
     );
-    let touching_clean = check_realizability_touching(&owner_graph, &partition, module_id(2));
+    let touching_clean = check_realizability_touching(&owner_graph, &assignment, module_id(2));
     assert!(
         touching_clean.is_realizable(),
         "module 2 is on neither rebind endpoint: {touching_clean:#?}",
@@ -298,9 +298,9 @@ fn touching_filter_keeps_only_cross_rebinds_at_the_queried_module() {
 fn pure_lazy_cycle_is_realizable() {
     let source = "function a() { return b(); } function b() { return a(); }";
     let owner_graph = parse_and_build(source);
-    let mut partition = Partition::new(&owner_graph, module_id(0));
-    partition.set(OwnerId(1), module_id(1));
-    let verdict = check_realizability(&owner_graph, &partition);
+    let mut assignment = ModuleAssignment::new(&owner_graph, module_id(0));
+    assignment.set(OwnerId(1), module_id(1));
+    let verdict = check_realizability(&owner_graph, &assignment);
     assert!(
         verdict.is_realizable(),
         "lazy-only cycle should be realizable: {verdict:#?}"
@@ -319,11 +319,11 @@ fn namespace_aggregator_with_pure_subs_is_realizable() {
     // owner_3: console.log(ids)
     let source = "const sub1 = { foo: 1 }; const sub2 = { bar: 2 }; const ids = {...sub1, ...sub2}; console.log(ids);";
     let owner_graph = parse_and_build(source);
-    let mut partition = Partition::new(&owner_graph, module_id(0));
-    partition.set(OwnerId(0), module_id(1)); // sub1 → mod_sub1
-    partition.set(OwnerId(1), module_id(2)); // sub2 → mod_sub2
-    partition.set(OwnerId(2), module_id(3)); // ids  → mod_ids
-    let verdict = check_realizability(&owner_graph, &partition);
+    let mut assignment = ModuleAssignment::new(&owner_graph, module_id(0));
+    assignment.set(OwnerId(0), module_id(1)); // sub1 → mod_sub1
+    assignment.set(OwnerId(1), module_id(2)); // sub2 → mod_sub2
+    assignment.set(OwnerId(2), module_id(3)); // ids  → mod_ids
+    let verdict = check_realizability(&owner_graph, &assignment);
     assert!(
         verdict.is_realizable(),
         "pure namespace-aggregator split must be realizable; verdict: {verdict:#?}",
@@ -361,11 +361,11 @@ fn promoted_edge_in_aggregator_cycle_is_unrealizable() {
     // owner_4: const consumed = ids              (residual)
     let source = "const seed = \"S\"; const readSeed = () => seed; const sub1 = { foo: readSeed() }; const ids = sub1.foo + \"x\"; const consumed = ids; console.log(consumed);";
     let owner_graph = parse_and_build(source);
-    let mut partition = Partition::new(&owner_graph, module_id(0));
-    partition.set(OwnerId(1), module_id(1)); // readSeed → mod_helpers
-    partition.set(OwnerId(2), module_id(2)); // sub1 → mod_sub1
-    partition.set(OwnerId(3), module_id(3)); // ids → mod_ids
-    let verdict = check_realizability(&owner_graph, &partition);
+    let mut assignment = ModuleAssignment::new(&owner_graph, module_id(0));
+    assignment.set(OwnerId(1), module_id(1)); // readSeed → mod_helpers
+    assignment.set(OwnerId(2), module_id(2)); // sub1 → mod_sub1
+    assignment.set(OwnerId(3), module_id(3)); // ids → mod_ids
+    let verdict = check_realizability(&owner_graph, &assignment);
     assert!(
         !verdict.is_realizable(),
         "promoted-edge aggregator cycle must be flagged by the gate \
@@ -382,8 +382,8 @@ fn promoted_edge_in_aggregator_cycle_is_unrealizable() {
 fn single_module_is_always_realizable() {
     let source = "const a = 1; const b = a + 1; const c = a * b;";
     let owner_graph = parse_and_build(source);
-    let partition = Partition::new(&owner_graph, module_id(0));
-    let verdict = check_realizability(&owner_graph, &partition);
+    let assignment = ModuleAssignment::new(&owner_graph, module_id(0));
+    let verdict = check_realizability(&owner_graph, &assignment);
     assert!(verdict.is_realizable());
 }
 
@@ -431,9 +431,9 @@ fn move_overlay_matches_applied_verdict_on_cycle_rebind_and_chain_moves() {
     for (label, source, base, owner, to, sccs, rebinds) in cases {
         let owner_graph = parse_and_build(source);
         let index =
-            RealizabilityIndex::from_partition(&owner_graph, partition_with(&owner_graph, base));
+            RealizabilityIndex::from_assignment(&owner_graph, assignment_with(&owner_graph, base));
         let before = normalize_verdict(index.verdict());
-        let home = index.partition().of(OwnerId(owner));
+        let home = index.assignment().of(OwnerId(owner));
         let (owners, to) = ([OwnerId(owner)], module_id(to));
 
         assert_move_agrees_across_paths(&index, &owner_graph, &owners, to);
@@ -447,14 +447,14 @@ fn move_overlay_matches_applied_verdict_on_cycle_rebind_and_chain_moves() {
         assert_eq!(
             normalize_verdict(index.verdict()),
             before,
-            "{label}: overlay query must not mutate the working partition",
+            "{label}: overlay query must not mutate the working assignment",
         );
-        assert_eq!(index.partition().of(OwnerId(owner)), home, "{label}");
+        assert_eq!(index.assignment().of(OwnerId(owner)), home, "{label}");
     }
 }
 
 /// After each committed move the index's verdict equals the pure
-/// from-scratch verdict on the same partition, has the stated shape, and its
+/// from-scratch verdict on the same assignment, has the stated shape, and its
 /// touching verdict for the target module is the full verdict filtered to it.
 #[test]
 fn incremental_index_matches_pure_verdict_after_each_committed_move() {
@@ -477,9 +477,9 @@ fn incremental_index_matches_pure_verdict_after_each_committed_move() {
     ];
     for (label, source, moves) in rows {
         let owner_graph = parse_and_build(source);
-        let baseline = Partition::new(&owner_graph, module_id(0));
+        let baseline = ModuleAssignment::new(&owner_graph, module_id(0));
         let mut explicit = baseline.clone();
-        let mut index = RealizabilityIndex::from_partition(&owner_graph, baseline);
+        let mut index = RealizabilityIndex::from_assignment(&owner_graph, baseline);
         assert_eq!(
             normalize_verdict(index.verdict()),
             normalize_verdict(check_realizability(&owner_graph, &explicit)),
@@ -488,7 +488,7 @@ fn incremental_index_matches_pure_verdict_after_each_committed_move() {
         for (owner, to, realizable, sccs, rebinds) in moves {
             index.apply(
                 &owner_graph,
-                PartitionDelta::MoveOwners {
+                ModuleAssignmentDelta::MoveOwners {
                     owners: vec![OwnerId(owner)],
                     to: module_id(to),
                 },
@@ -766,14 +766,14 @@ fn incremental_simulator_matches_rebuild_after_each_delta() {
     ];
     for fixture in fixtures {
         let owner_graph = parse_and_build(fixture.source);
-        let baseline = Partition::new(&owner_graph, module_id(0));
-        let mut index = RealizabilityIndex::from_partition(&owner_graph, baseline);
+        let baseline = ModuleAssignment::new(&owner_graph, module_id(0));
+        let mut index = RealizabilityIndex::from_assignment(&owner_graph, baseline);
         assert_cached_simulator_matches_rebuild(&index, fixture.label, "initial");
         for (owner_indices, dest) in &fixture.deltas {
             let owners: Vec<OwnerId> = owner_indices.iter().copied().map(OwnerId).collect();
             index.apply(
                 &owner_graph,
-                PartitionDelta::MoveOwners {
+                ModuleAssignmentDelta::MoveOwners {
                     owners,
                     to: module_id(*dest),
                 },
@@ -781,7 +781,7 @@ fn incremental_simulator_matches_rebuild_after_each_delta() {
             assert_cached_simulator_matches_rebuild(&index, fixture.label, "after-apply");
             // verdict() pulls through the cached simulator; assert
             // it stays consistent with `check_realizability`.
-            let projected = index.partition().clone();
+            let projected = index.assignment().clone();
             assert_eq!(
                 normalize_verdict(index.verdict()),
                 normalize_verdict(check_realizability(&owner_graph, &projected)),
@@ -825,9 +825,9 @@ fn assert_ladder_matches_verdict(
 fn ladder_tier0_delta_free_move_accepts_on_clean_state() {
     let source = "const a = 1; const b = a + 1;";
     let owner_graph = parse_and_build(source);
-    let index = RealizabilityIndex::from_partition(
+    let index = RealizabilityIndex::from_assignment(
         &owner_graph,
-        Partition::new(&owner_graph, module_id(0)),
+        ModuleAssignment::new(&owner_graph, module_id(0)),
     );
     // Owner 1 already lives in module 0 — the move is delta-free.
     let decision = assert_ladder_matches_verdict(&index, &owner_graph, &[OwnerId(1)], module_id(0));
@@ -841,10 +841,10 @@ fn ladder_tier0_delta_free_move_rejects_on_dirty_pre_state() {
     // the pre-state touching verdict is dirty).
     let source = "const a = b + 1; const b = a + 1;";
     let owner_graph = parse_and_build(source);
-    let mut partition = Partition::new(&owner_graph, module_id(0));
-    partition.set(OwnerId(0), module_id(1));
-    partition.set(OwnerId(1), module_id(2));
-    let index = RealizabilityIndex::from_partition(&owner_graph, partition);
+    let mut assignment = ModuleAssignment::new(&owner_graph, module_id(0));
+    assignment.set(OwnerId(0), module_id(1));
+    assignment.set(OwnerId(1), module_id(2));
+    let index = RealizabilityIndex::from_assignment(&owner_graph, assignment);
     let decision = assert_ladder_matches_verdict(&index, &owner_graph, &[OwnerId(0)], module_id(1));
     assert_eq!(decision, LadderDecision::DeltaFreeReject);
 }
@@ -855,9 +855,9 @@ fn ladder_tier1_rejects_constraining_cycle_move() {
     // a Pass-1 reject the constraining condensation decides.
     let source = "const a = b + 1; const b = a + 1;";
     let owner_graph = parse_and_build(source);
-    let index = RealizabilityIndex::from_partition(
+    let index = RealizabilityIndex::from_assignment(
         &owner_graph,
-        Partition::new(&owner_graph, module_id(0)),
+        ModuleAssignment::new(&owner_graph, module_id(0)),
     );
     let decision = assert_ladder_matches_verdict(&index, &owner_graph, &[OwnerId(1)], module_id(1));
     assert_eq!(decision, LadderDecision::ConstrainingCycleReject);
@@ -869,9 +869,9 @@ fn ladder_tier1_rejects_cross_rebind_move() {
     // into a clause-2 cross-module rebinding write.
     let source = "let a = 0; function b() { a = 1; }";
     let owner_graph = parse_and_build(source);
-    let index = RealizabilityIndex::from_partition(
+    let index = RealizabilityIndex::from_assignment(
         &owner_graph,
-        Partition::new(&owner_graph, module_id(0)),
+        ModuleAssignment::new(&owner_graph, module_id(0)),
     );
     let decision = assert_ladder_matches_verdict(&index, &owner_graph, &[OwnerId(1)], module_id(1));
     assert_eq!(decision, LadderDecision::CrossRebindReject);
@@ -884,9 +884,9 @@ fn ladder_tier2_accepts_acyclic_cross_module_move() {
     // I-condensation proves Pass 2 vacuous without a simulator build.
     let source = "const a = 1; const b = a + 1;";
     let owner_graph = parse_and_build(source);
-    let index = RealizabilityIndex::from_partition(
+    let index = RealizabilityIndex::from_assignment(
         &owner_graph,
-        Partition::new(&owner_graph, module_id(0)),
+        ModuleAssignment::new(&owner_graph, module_id(0)),
     );
     let decision = assert_ladder_matches_verdict(&index, &owner_graph, &[OwnerId(0)], module_id(1));
     assert_eq!(decision, LadderDecision::NoMultiModuleISccAccept);
@@ -898,9 +898,9 @@ fn ladder_tier2_accepts_pure_lazy_cycle_move() {
     // constraining pair inside — Lemma 2 says it never TDZs.
     let source = "function a() { return b(); } function b() { return a(); }";
     let owner_graph = parse_and_build(source);
-    let index = RealizabilityIndex::from_partition(
+    let index = RealizabilityIndex::from_assignment(
         &owner_graph,
-        Partition::new(&owner_graph, module_id(0)),
+        ModuleAssignment::new(&owner_graph, module_id(0)),
     );
     let decision = assert_ladder_matches_verdict(&index, &owner_graph, &[OwnerId(1)], module_id(1));
     assert_eq!(decision, LadderDecision::NoConstrainingPairAccept);
@@ -915,10 +915,10 @@ fn ladder_tier3_accepts_lemma_two_rescued_move() {
     // rescues (Lemma 2).
     let source = "const dep_value = \"alpha\"; const cross_value = dep_value + \"-beta\"; function lazy_reader() { return cross_value; } console.log(dep_value, cross_value, lazy_reader());";
     let owner_graph = parse_and_build(source);
-    let mut partition = Partition::new(&owner_graph, module_id(0));
-    partition.set(OwnerId(0), module_id(1));
-    partition.set(OwnerId(2), module_id(1));
-    let index = RealizabilityIndex::from_partition(&owner_graph, partition);
+    let mut assignment = ModuleAssignment::new(&owner_graph, module_id(0));
+    assignment.set(OwnerId(0), module_id(1));
+    assignment.set(OwnerId(2), module_id(1));
+    let index = RealizabilityIndex::from_assignment(&owner_graph, assignment);
     let decision = assert_ladder_matches_verdict(&index, &owner_graph, &[OwnerId(1)], module_id(2));
     assert_eq!(decision, LadderDecision::SimulatorAccept);
 }
@@ -932,9 +932,9 @@ fn ladder_rejects_entry_tdz_before_simulation() {
     // entry-last check rejects before tier 2 can skip the simulator.
     let source = "const seed = 1; const x = seed + 1; function readX() { return x; }";
     let owner_graph = parse_and_build(source);
-    let index = RealizabilityIndex::from_partition(
+    let index = RealizabilityIndex::from_assignment(
         &owner_graph,
-        Partition::new(&owner_graph, module_id(0)),
+        ModuleAssignment::new(&owner_graph, module_id(0)),
     );
     let decision = assert_ladder_matches_verdict(&index, &owner_graph, &[OwnerId(1)], module_id(1));
     assert_eq!(decision, LadderDecision::EntryDependencyReject);
@@ -948,9 +948,9 @@ fn ladder_rejects_entry_tdz_before_simulation() {
 fn ladder_matches_verdict_across_applied_moves() {
     let source = "const a = b + 1; const b = a + 1; function c() { return a; }";
     let owner_graph = parse_and_build(source);
-    let mut index = RealizabilityIndex::from_partition(
+    let mut index = RealizabilityIndex::from_assignment(
         &owner_graph,
-        Partition::new(&owner_graph, module_id(0)),
+        ModuleAssignment::new(&owner_graph, module_id(0)),
     );
     let sweep = |index: &RealizabilityIndex| {
         for owner in 0..owner_graph.num_nodes() {
@@ -968,7 +968,7 @@ fn ladder_matches_verdict_across_applied_moves() {
     for (owner, to) in [(1, 1), (2, 2), (1, 0)] {
         index.apply(
             &owner_graph,
-            PartitionDelta::MoveOwners {
+            ModuleAssignmentDelta::MoveOwners {
                 owners: vec![OwnerId(owner)],
                 to: module_id(to),
             },
@@ -986,17 +986,17 @@ fn ladder_matches_verdict_across_applied_moves() {
 /// routes to the gate: the overlay (the production speculative path,
 /// both the evidence-producing verdict and the tier ladder), the
 /// committed path (`apply` on a copy, then `verdict_touching`), and the
-/// pure from-scratch reference on the post-move partition.
+/// pure from-scratch reference on the post-move assignment.
 fn assert_move_agrees_across_paths(
     index: &RealizabilityIndex,
     owner_graph: &OwnerGraph,
     owners: &[OwnerId],
     to: ModuleId,
 ) {
-    let base: Vec<usize> = index.partition().iter().map(|(_, m)| m.0.0).collect();
+    let base: Vec<usize> = index.assignment().iter().map(|(_, m)| m.0.0).collect();
     let overlay = index.verdict_after_moving_owners_touching(owner_graph, owners, to);
     let ladder = index.ladder_decision_after_moving_owners_touching(owner_graph, owners, to);
-    let mut post = index.partition().clone();
+    let mut post = index.assignment().clone();
     for &owner in owners {
         post.set(owner, to);
     }
@@ -1004,7 +1004,7 @@ fn assert_move_agrees_across_paths(
     let mut moved = index.clone();
     moved.apply(
         owner_graph,
-        PartitionDelta::MoveOwners {
+        ModuleAssignmentDelta::MoveOwners {
             owners: owners.to_vec(),
             to,
         },
@@ -1028,12 +1028,12 @@ fn assert_move_agrees_across_paths(
     );
 }
 
-fn partition_with(owner_graph: &OwnerGraph, assignments: &[(usize, usize)]) -> Partition {
-    let mut partition = Partition::new(owner_graph, module_id(0));
+fn assignment_with(owner_graph: &OwnerGraph, assignments: &[(usize, usize)]) -> ModuleAssignment {
+    let mut assignment = ModuleAssignment::new(owner_graph, module_id(0));
     for &(owner, module) in assignments {
-        partition.set(OwnerId(owner), module_id(module));
+        assignment.set(OwnerId(owner), module_id(module));
     }
-    partition
+    assignment
 }
 
 /// Every single- and pair-owner move from every assignment of the
@@ -1088,9 +1088,9 @@ fn move_overlay_matches_committed_and_pure_on_promoted_edge_graphs() {
             let base: Vec<(usize, usize)> = (0..owner_count)
                 .map(|owner| (owner, assignment / 3usize.pow(owner as u32) % 3))
                 .collect();
-            let index = RealizabilityIndex::from_partition(
+            let index = RealizabilityIndex::from_assignment(
                 &owner_graph,
-                partition_with(&owner_graph, &base),
+                assignment_with(&owner_graph, &base),
             );
             for owners in &moves {
                 for to in 0..4 {
@@ -1104,14 +1104,14 @@ fn move_overlay_matches_committed_and_pure_on_promoted_edge_graphs() {
 #[test]
 fn entry_dependency_is_rejected_by_reference_overlay_and_committed_gates() {
     let graph = parse_and_build("const a = 1; const b = a + 1;");
-    let mut partition = Partition::new(&graph, module_id(0));
-    let mut index = RealizabilityIndex::from_partition(&graph, partition.clone());
+    let mut assignment = ModuleAssignment::new(&graph, module_id(0));
+    let mut index = RealizabilityIndex::from_assignment(&graph, assignment.clone());
     let decision = assert_ladder_matches_verdict(&index, &graph, &[OwnerId(1)], module_id(1));
     assert_eq!(decision, LadderDecision::EntryDependencyReject);
-    partition.set(OwnerId(1), module_id(1));
-    assert!(!check_realizability(&graph, &partition).is_realizable());
+    assignment.set(OwnerId(1), module_id(1));
+    assert!(!check_realizability(&graph, &assignment).is_realizable());
     // Rebuild the committed cache from the same concrete assignment.
-    index = RealizabilityIndex::from_partition(&graph, partition);
+    index = RealizabilityIndex::from_assignment(&graph, assignment);
     assert_eq!(
         assert_ladder_matches_verdict(&index, &graph, &[OwnerId(1)], module_id(1)),
         LadderDecision::DeltaFreeReject

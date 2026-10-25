@@ -520,11 +520,11 @@ modules") — no cross-destination rebinding write, and the two-pass gate of
 in the `gate` crate (`realizability/`). Every code path that asks "is this
 destination assignment realizable?" reaches it through the same primitive:
 
-> `check_realizability(owner_graph, partition) → RealizabilityVerdict`
+> `check_realizability(owner_graph, assignment) → RealizabilityVerdict`
 
 The verdict lists the unrealizable SCCs (each an `SccDiagnosis`, rejected as
 `MutualConstrainingCycle` or `EsmEvaluationTdz`) and the cross-destination
-rebinds, with owner-edge provenance. An empty verdict means the partition is
+rebinds, with owner-edge provenance. An empty verdict means the assignment is
 realizable. Clause 1 (importability) is emit policy and not part of the
 verdict ("Emit-side responsibilities").
 
@@ -532,11 +532,11 @@ The predicate has two forms:
 
 1. **The pure function `check_realizability`**, `O(N + M)` per call. The
    validator (`validate_factorization`) calls it on the spec's actual
-   partition; a non-empty verdict stops materialization.
-2. **`RealizabilityIndex`**, a stateful index over a working partition for
+   assignment; a non-empty verdict stops materialization.
+2. **`RealizabilityIndex`**, a stateful index over a working assignment for
    callers that ask many hypothetical questions — the peel kernel
    (`peel/quotient.rs`). Its only mutator, `apply`, commits a
-   `PartitionDelta`, updating quotient edge buckets and graph adjacency only
+   `ModuleAssignmentDelta`, updating quotient edge buckets and graph adjacency only
    for the owner edges incident to the moved owners. Speculative moves never
    mutate it: they go through a non-mutating overlay of the same state, since
    the `CondensationOrder` union-find cannot be rolled back and reverting a
@@ -550,7 +550,7 @@ Differential tests (`realizability/tests.rs`,
 No production code answers the validity question by walking the owner graph or
 the quotient with its own algorithm: two algorithms drift, one shared
 implementation cannot. A caller that needs a verdict over a hypothetical
-partition asks the index. Adjacent diagnostics may read the verdict's
+assignment asks the index. Adjacent diagnostics may read the verdict's
 owner-edge provenance, but the validity decision goes through the primitive
 only.
 
@@ -571,13 +571,13 @@ asymmetric `(eager forward, lazy back)` I-cycles that the
    (and not anchored to an existing module) share the residual
    `ModuleId::logical(0)`. Every committed mutation — `contract`, the
    `is_pre_existing_module` promotion in `set_class_pre_existing_module` —
-   applies the matching `PartitionDelta::MoveOwners` to the index.
+   applies the matching `ModuleAssignmentDelta::MoveOwners` to the index.
 3. The speculative queries — the boolean `merge_preserves_invariants` and the
    evidence-producing `would_be_cycles_after_contract` — are one evaluation
    through the index's tier ladder (below). `realizability_verdict()` reads the
    index's maintained verdict.
 
-Original-home rejoining begins with a fully realizable partition and must
+Original-home rejoining begins with a fully realizable assignment and must
 preserve that property after every contraction. Its pair and whole-home
 commit paths retain their structural and size checks, then run
 `RealizabilityIndex::verdict_after_moving_owners` over the complete post-move
@@ -586,7 +586,7 @@ edge evidence, and cross-rebinds with the proposed incident-edge overlay;
 the pure reference and this overlay use the same full SCC and ESM simulator
 gate body. A merge can change global ESM import order and expose a TDZ in an
 I-SCC outside the merged module, which a touching verdict cannot see. General
-seed/greedy contractions can start from an unrealizable partition while
+seed/greedy contractions can start from an unrealizable assignment while
 repairing it; the final proposal verdict checks their result.
 
 #### Cost and the tier ladder
@@ -731,9 +731,9 @@ primitive's clause-3 verdict is sound for the canonical
 boundary).
 
 The promotion runs once in `build_owner_graph_with` and is
-partition-independent: intra-module promoted edges are dropped by the
+assignment-independent: intra-module promoted edges are dropped by the
 quotient automatically, so the same promoted owner graph drives
-hypothetical planner partitions and the validator's actual one.
+hypothetical planner assignments and the validator's actual one.
 
 The retained call index also records implicit object conversions performed by
 arithmetic, relational and loose-equality operators, the left operand of `in`,
@@ -989,7 +989,7 @@ calling statement gets promoted `EagerUse` edges to every collected
 target — rebind targets included (order-only: write legality is
 separately enforced by the direct `LazyRebind`/`DeferredRebind`
 edge from the statement lexically containing the write).
-Fallback edges sourced in residual are dropped at partition
+Fallback edges sourced in residual are dropped during assignment
 projection: residual is the ESM DFS root and evaluates last, so an
 at-init call from residual code cannot observe a TDZ, and the
 emitter emits no entry-side phantom imports the gate could
@@ -2066,12 +2066,12 @@ dependencies:
   crate's `FactorizationInputs` — that bundles `ChunkFactAnalysis` (facts +
   top-level-await detection + redundant-hint warnings) with the
   `OwnerGraphAndUnits` derived from those facts.
-- **Materialization** (spec-dependent): assemble the partition from the
+- **Materialization** (spec-dependent): assemble the assignment from the
   spec's binding claims, run the realizability gate, lower to ESM. This is
   `lowering::materialize_logical_modules`; per chunk it runs
   `prepare_logical_chunk`, then `resolve_prepared_chunks` (selector
   resolution, joint across chunks), then `finish_logical_chunk` (chunk
-  analysis, partition assembly, the gate, lowering).
+  analysis, assignment assembly, the gate, lowering).
 
 The materializer is the composition of both, and chunk analysis is computed
 in memory at one call site in `finish_logical_chunk`. The boundary is
@@ -2113,7 +2113,7 @@ a rebind nested ≥2 closures deep or past an `await` — joins
 imports are read-only whenever the write fires, but it does NOT
 constrain init order: it is excluded from the constraining-edge
 subgraph the realizability gate and the I-graph use.) Any spec assignment that routes the unit's
-owners to different modules is invalid — `assemble_partition`
+owners to different modules is invalid — `assemble_assignment`
 detects this before the materializer touches the quotient. **No
 information about the spec is required to identify a structural
 atom**: it is a property of the source bytes plus the analyzer's
@@ -2162,7 +2162,7 @@ build owner graph
   ↓
 compute structural atoms = SCC(G_atomic over owners)
   ↓
-apply spec assignment + assemble_partition
+apply spec assignment + assemble_assignment
   ↓
   ├── if any structural atom is split across modules:
   │   reject with AtomicUnitConflict (owner-level blame)
@@ -2206,11 +2206,11 @@ Five layers, bottom-up:
    (`compute_atomic_units`). Each unit is the smallest set of
    owners a valid module assignment may not split. Surfaced in
    `owner_graph.json.atomic_graph`.
-3. **Spec partition** — the author's current assignment of owners
+3. **Spec assignment** — the author's current mapping of owners
    to modules (the spec's `members:` + `anonymous_statements:`
    plus the residual default).
-4. **Module quotient** — the owner graph projected onto the spec's
-   partition. Cross-module edges are the realizability evidence
+4. **Module quotient** — the owner graph projected under the spec's
+   assignment. Cross-module edges are the realizability evidence
    `check_realizability` operates on.
 5. **Module proposals** — DAG-derived advisory recommendations
    computed by the proposer (`debundle modules propose`) over
@@ -2224,20 +2224,20 @@ broad, inspect the atomic-DAG edges that close it and decide
 whether the edge classification is too conservative or whether the
 larger module is genuinely required.
 
-### Factor assembly inside `debundle run`
+### Assignment assembly inside `debundle run`
 
 The spec's explicit claims are resolved against the owner graph in
-`factor_assembly.rs`. The rules are deliberately strict:
+`assignment_assembly.rs`. The rules are deliberately strict:
 
 - Two different logical modules may not claim owners from the same
   atomic unit.
 - A module claim that only covers part of an atomic unit is a
   conflict, not an implicit request to move the rest.
 - Unclaimed owners default to the synthesized residual module.
-- The materializer consumes only the final explicit partition; it
+- The materializer consumes only the final explicit assignment; it
   does not silently co-move extra owners on behalf of the author.
 
-If the explicit partition is inconsistent, `debundle run` rejects
+If the explicit assignment is inconsistent, `debundle run` rejects
 and emits diagnostic side outputs (`cycles.json` or
 `atomic_unit_conflicts.json` under `reports/tree/<chunk-id>/`).
 
@@ -2701,12 +2701,12 @@ prettifier reformats whitespace but preserves AST structure, and
 upstream changes that touch the statement's content surface as a
 zero-match diagnostic the spec author can fix.
 
-### Claimed anonymous owners in the partition
+### Claimed anonymous owners in the assignment
 
 An owner with no declared binding belongs to the residual module unless a
 module claims it through `anonymous_statements`.
-`factor_assembly::compute_owner_claims` resolves those claims (each module's
-`anonymous_statement_ordinals`) into the partition that
+`assignment_assembly::compute_owner_claims` resolves those claims (each module's
+`anonymous_statement_ordinals`) into the assignment that
 `ChunkFactorization::build_with` quotients by, so the gate sees the module dep
 graph the materializer will emit. Without that resolution, an anon owner with a
 constraining in-edge from a peeled named owner would create a fake
@@ -3123,7 +3123,7 @@ rejected.
 The runtime data structures the validator and emitter both consume are a pair:
 the `gate` crate's per-chunk `FactorizationInputs` (inputs + IR; distinct from
 `chunk_analysis::ChunkAnalysisOutput`, the spec-independent composer output) and a
-`ChunkFactorization` wrapping it (partition + derived realizability views).
+`ChunkFactorization` wrapping it (assignment + derived realizability views).
 Together they carry the chunk's statement facts, the binding catalogue, the
 explicit logical modules, the owner graph, and the module dep graph derived by
 quotienting that owner graph under the spec assignment.
@@ -3183,12 +3183,12 @@ re-exporter (a consumer that wants a different local name
 aliases at its own import site instead of authoring a separate
 re-export module).
 
-### Rejected: one partition-optional chunk IR
+### Rejected: one assignment-optional chunk IR
 
 Folding `ChunkFactorization` into `FactorizationInputs` as one IR with optional
-partition state looks like it removes a layer, but the two-layer shape is
-already in place: `FactorizationInputs` is the partition-free IR, `ChunkFactorization`
-adds the applied partition, and `validate()` derives `FactorizationReport` from
+assignment state looks like it removes a layer, but the two-layer shape is
+already in place: `FactorizationInputs` is the assignment-free IR, `ChunkFactorization`
+adds the applied assignment, and `validate()` derives `FactorizationReport` from
 it. Removing the `Arc<FactorizationInputs>` boundary touches the whole
 materializer/emitter path for no behavior change, so the layers stay.
 

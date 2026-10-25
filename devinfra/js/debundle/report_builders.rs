@@ -115,11 +115,11 @@ fn attach_cause_refs(
 /// Build the per-owner node report and the per-edge edge report
 /// together. Both walks are independent, but bundling them lets the
 /// rayon `join` split four ways without an explicit `scope` and keeps
-/// the partition-of()/export-name-for()/etc.\ touches paired in cache.
+/// the assignment-of()/export-name-for()/etc.\ touches paired in cache.
 fn build_owner_nodes_and_edges(
     factorization: &ChunkFactorization,
 ) -> (Vec<OwnerGraphNodeReport>, Vec<OwnerGraphEdgeReport>) {
-    let partition = &factorization.partition;
+    let assignment = &factorization.assignment;
     let owner_graph = factorization.analysis.owner_graph();
     let nodes = owner_graph
         .iter_nodes()
@@ -130,7 +130,7 @@ fn build_owner_nodes_and_edges(
             declared_bindings: binding_reports(factorization, node.declared.iter()),
             statement_kind: node.kind,
             purity: node.purity.clone(),
-            destination: module_key(partition.of(node.id)),
+            destination: module_key(assignment.of(node.id)),
         })
         .collect();
     let edges = owner_graph
@@ -167,7 +167,7 @@ fn build_quotient_node_reports(factorization: &ChunkFactorization) -> Vec<Module
     for idx in 0..factorization.analysis.logical_modules().len() {
         modules.insert(ModuleId(LogicalModuleIndex(idx)));
     }
-    for (_, module) in factorization.partition.iter() {
+    for (_, module) in factorization.assignment.iter() {
         modules.insert(module);
     }
     for (from, to) in factorization.dep_graph.all_edges() {
@@ -189,17 +189,17 @@ fn build_quotient_edge_reports(factorization: &ChunkFactorization) -> Vec<Quotie
     // `BTreeSet` per pair (small — at most one entry per `DepKind`
     // variant) so the final `edge_kinds: Vec<DepKind>` stays sorted
     // without a per-pair sort.
-    let partition = &factorization.partition;
+    let assignment = &factorization.assignment;
     let owner_graph = factorization.analysis.owner_graph();
     let mut accum: HashMap<(ModuleId, ModuleId), QuotientEdgeAccumulator> =
         HashMap::with_capacity(owner_graph.num_edges());
     let mut seen_side_effect_module_pairs: HashSet<(ModuleId, ModuleId)> = HashSet::new();
     for edge in owner_graph.iter_edges() {
-        // Same partition view every other quotient consumer uses; see
-        // `partition_endpoints` invariant doc.
-        let Some((from, to)) = analysis::graph::partition_endpoints(
+        // Same assignment view every other quotient consumer uses; see
+        // `assignment_endpoints` invariant doc.
+        let Some((from, to)) = analysis::graph::assignment_endpoints(
             edge,
-            partition,
+            assignment,
             analysis::graph::EndpointView::Lenient,
         ) else {
             continue;
@@ -263,7 +263,7 @@ fn build_atomic_unit_report(
             }
             min_ordinal = min_ordinal.min(node.statement_ordinal.0);
             max_ordinal = max_ordinal.max(node.statement_ordinal.0);
-            let destination = module_key(factorization.partition.of(*owner_id));
+            let destination = module_key(factorization.assignment.of(*owner_id));
             if !destinations.contains(&destination) {
                 destinations.push(destination);
             }

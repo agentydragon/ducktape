@@ -3,11 +3,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use petgraph::graphmap::DiGraphMap;
 
 use crate::ModuleId;
-use crate::partition::Partition;
+use crate::module_assignment::ModuleAssignment;
 
 use super::edge::OwnerEdgeId;
 use super::owner_graph::OwnerGraph;
-use super::quotient::{EndpointView, partition_endpoints};
+use super::quotient::{EndpointView, assignment_endpoints};
 
 /// The canonical chunk-wide ESM I-graph. The realizability gate
 /// (Pass-2 simulator's `i_successors`, linker / source-import
@@ -49,7 +49,7 @@ use super::quotient::{EndpointView, partition_endpoints};
 /// the simulator.
 pub fn chunk_constraining_module_edges(
     owner_graph: &OwnerGraph,
-    partition: &Partition,
+    assignment: &ModuleAssignment,
 ) -> ChunkConstrainingEdgeSet {
     let mut edges: BTreeMap<(ModuleId, ModuleId), Vec<OwnerEdgeId>> = BTreeMap::new();
     let mut i_successors: BTreeMap<ModuleId, BTreeSet<ModuleId>> = BTreeMap::new();
@@ -58,8 +58,8 @@ pub fn chunk_constraining_module_edges(
         // Gate-side view: keep cross-module at-init promoted edges.
         // The matching `EndpointView::Lenient` view would drop them;
         // the canonical edge set is the strict view (see
-        // [`partition_endpoints`]).
-        let Some((from, to)) = partition_endpoints(edge, partition, EndpointView::Gate) else {
+        // [`assignment_endpoints`]).
+        let Some((from, to)) = assignment_endpoints(edge, assignment, EndpointView::Gate) else {
             continue;
         };
         if edge.reason.is_rebind() {

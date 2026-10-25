@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use swc_atoms::Atom;
 
-use crate::factor_assembly::AtomicUnitConflict;
+use crate::assignment_assembly::AtomicUnitConflict;
 use crate::ids::ModuleId;
 use crate::purity::Purity;
 use crate::{DepKind, StatementKind, StatementOrdinal};

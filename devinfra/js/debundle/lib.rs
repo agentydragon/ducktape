@@ -8,8 +8,8 @@
 //!    locations, and top-level await (`facts`, `purity`).
 //! 2. Build a fine-grained owner graph over those facts (`graph`,
 //!    `atomic_units`).
-//! 3. Map owners to destination modules from the spec (`partition`,
-//!    `factor_assembly`).
+//! 3. Map owners to destination modules from the spec (`assignment`,
+//!    `assignment_assembly`).
 //! 4. Emit stable graph reports from that same graph model (`reports`).
 //!
 //! Realizability checking and factorization validation live in the
@@ -17,22 +17,22 @@
 //! composer lives in the `chunk_analysis` crate. Both build on this core.
 
 pub mod analysis_hints;
+pub mod assignment_assembly;
 pub mod atomic_units;
 pub mod cross_module_purity;
-pub mod factor_assembly;
 pub mod facts;
 pub mod graph;
 pub mod ids;
-pub mod partition;
+pub mod module_assignment;
 pub mod purity;
 pub mod reports;
 
 pub use analysis_hints::{AnalysisHints, KnownEffect, LocalEffectPolicy};
+pub use assignment_assembly::{
+    AssemblyOutcome, AtomicUnitConflict, ConflictingClaim, assemble_assignment,
+};
 pub use atomic_units::{
     AtomicUnit, OwnerGraphAndUnits, compute_atomic_units, compute_owner_graph_and_units_with,
-};
-pub use factor_assembly::{
-    AssemblyOutcome, AtomicUnitConflict, ConflictingClaim, assemble_partition,
 };
 pub use facts::{
     ChunkFactAnalysis, EffectCell, PositionBucketed, StatementEffectSummary, StatementFacts,
@@ -50,7 +50,7 @@ pub use ids::{
     BindingKind, ChunkId, ChunkTable, LogicalModuleIndex, ModuleId, PlannedModule,
     StatementOrdinal, top_level_id,
 };
-pub use partition::Partition;
+pub use module_assignment::ModuleAssignment;
 pub use purity::{
     Purity, PurityReason, PurityRule, RedundantPureMemberHint, RedundantPureMemberReason,
     RedundantPurityHint, RedundantPurityReason,

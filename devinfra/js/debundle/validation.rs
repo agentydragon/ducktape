@@ -5,9 +5,9 @@ use petgraph::graph::DiGraph;
 use serde::{Deserialize, Serialize};
 
 use crate::realizability::{RealizabilityVerdict, SccRejection, check_realizability};
-use analysis::factor_assembly::AtomicUnitConflict;
-use analysis::graph::{EndpointView, OwnerEdgeId, partition_endpoints};
-use analysis::partition::Partition;
+use analysis::assignment_assembly::AtomicUnitConflict;
+use analysis::graph::{EndpointView, OwnerEdgeId, assignment_endpoints};
+use analysis::module_assignment::ModuleAssignment;
 use spec::ModulePath;
 use swc_atoms::Atom;
 
@@ -347,10 +347,10 @@ fn cut_pairs_count(cut: &[CycleEdge]) -> usize {
 /// same chunk is genuinely unrealizable.
 pub fn validate_factorization(
     owner_graph: &OwnerGraph,
-    partition: &Partition,
+    assignment: &ModuleAssignment,
     module_path: &dyn Fn(ModuleId) -> ModulePath,
 ) -> FactorizationReport {
-    let verdict = check_realizability(owner_graph, partition);
+    let verdict = check_realizability(owner_graph, assignment);
     let cross_rebinds = render_cross_rebinds(owner_graph, &verdict, module_path);
     if verdict.unrealizable_sccs.is_empty() {
         return FactorizationReport {
@@ -383,7 +383,7 @@ pub fn validate_factorization(
                 SccRejection::MutualConstrainingCycle => (
                     compute_realizability_cut(
                         owner_graph,
-                        partition,
+                        assignment,
                         &diagnosis.core.constraining_owner_edges,
                         module_path,
                         &from_binding_by_ordinal,
@@ -396,14 +396,14 @@ pub fn validate_factorization(
                 SccRejection::EsmEvaluationTdz => (
                     cycle_edges_for(
                         owner_graph,
-                        partition,
+                        assignment,
                         diagnosis.core.constraining_owner_edges.iter().copied(),
                         module_path,
                         &from_binding_by_ordinal,
                     ),
                     nonconstraining_closure_edges(
                         owner_graph,
-                        partition,
+                        assignment,
                         &diagnosis.core.modules,
                         module_path,
                         &from_binding_by_ordinal,
@@ -467,7 +467,7 @@ fn render_cross_rebinds(
 /// keep their cross-module endpoints.
 fn cycle_edges_for(
     owner_graph: &OwnerGraph,
-    partition: &Partition,
+    assignment: &ModuleAssignment,
     edge_ids: impl IntoIterator<Item = OwnerEdgeId>,
     module_path: &dyn Fn(ModuleId) -> ModulePath,
     from_binding_by_ordinal: &HashMap<StatementOrdinal, Atom>,
@@ -476,7 +476,7 @@ fn cycle_edges_for(
         .into_iter()
         .map(|edge_id| {
             let edge = owner_graph.edge(edge_id);
-            let (from, to) = partition_endpoints(edge, partition, EndpointView::Gate)
+            let (from, to) = assignment_endpoints(edge, assignment, EndpointView::Gate)
                 .expect("verdict owner-edge provenance is cross-module in the gate view");
             CycleEdge {
                 from: module_path(from),
@@ -501,7 +501,7 @@ fn cycle_edges_for(
 /// closing the I-cycle the ESM evaluation simulator walked.
 fn nonconstraining_closure_edges(
     owner_graph: &OwnerGraph,
-    partition: &Partition,
+    assignment: &ModuleAssignment,
     modules: &BTreeSet<ModuleId>,
     module_path: &dyn Fn(ModuleId) -> ModulePath,
     from_binding_by_ordinal: &HashMap<StatementOrdinal, Atom>,
@@ -513,12 +513,12 @@ fn nonconstraining_closure_edges(
         {
             return None;
         }
-        let (from, to) = partition_endpoints(edge, partition, EndpointView::Gate)?;
+        let (from, to) = assignment_endpoints(edge, assignment, EndpointView::Gate)?;
         (modules.contains(&from) && modules.contains(&to)).then_some(edge.id)
     });
     cycle_edges_for(
         owner_graph,
-        partition,
+        assignment,
         lazy_edge_ids,
         module_path,
         from_binding_by_ordinal,
@@ -666,7 +666,7 @@ pub(crate) fn render_sequenced_owner_causes(causes: &[SequencedOwnerCause], out:
 /// approximates within a constant factor on dense instances.
 fn compute_realizability_cut(
     owner_graph: &OwnerGraph,
-    partition: &Partition,
+    assignment: &ModuleAssignment,
     constraining_owner_edges: &[OwnerEdgeId],
     module_path: &dyn Fn(ModuleId) -> ModulePath,
     from_binding_by_ordinal: &HashMap<StatementOrdinal, Atom>,
@@ -674,7 +674,7 @@ fn compute_realizability_cut(
     let mut by_pair: BTreeMap<(ModuleId, ModuleId), Vec<OwnerEdgeId>> = BTreeMap::new();
     for &edge_id in constraining_owner_edges {
         let edge = owner_graph.edge(edge_id);
-        let (from, to) = partition_endpoints(edge, partition, EndpointView::Gate)
+        let (from, to) = assignment_endpoints(edge, assignment, EndpointView::Gate)
             .expect("verdict owner-edge provenance is cross-module in the gate view");
         by_pair.entry((from, to)).or_default().push(edge_id);
     }
@@ -701,7 +701,7 @@ fn compute_realizability_cut(
     }
     cycle_edges_for(
         owner_graph,
-        partition,
+        assignment,
         cut_edge_ids,
         module_path,
         from_binding_by_ordinal,

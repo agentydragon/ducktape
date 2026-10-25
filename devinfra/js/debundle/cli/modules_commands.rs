@@ -43,7 +43,7 @@ enum ModulesNsCommand {
     /// source `comment:` fields concatenate into the target's with a
     /// `--- from <source>:` divider, and `merged from: <sources>`
     /// provenance lands in the target's `note:`. Validates the
-    /// post-merge partition with the realizability gate (requires
+    /// post-merge assignment with the realizability gate (requires
     /// `--graph` unless `--no-verify`).
     Merge(MergeArgs),
     /// Delete one or more module YAML files. Refuses non-empty modules unless `--force`.
@@ -52,7 +52,7 @@ enum ModulesNsCommand {
     /// `annotations:`, or `anonymous_statements:`. Multiple paths delete
     /// atomically: every path is validated up front; if any check fails,
     /// nothing is deleted. All-empty deletions cannot change the
-    /// partition, so the gate is a no-op; `--force` deletions of
+    /// assignment, so the gate is a no-op; `--force` deletions of
     /// non-empty modules run the realizability gate against the
     /// post-delete spec (requires `--graph` unless `--no-verify`).
     Delete(DeleteArgs),
@@ -77,7 +77,7 @@ enum ModulesNsCommand {
     /// rows. Omitted owners keep their current module. This command moves
     /// existing selectors and metadata without synthesizing selectors, then
     /// resolves the entire scoped spec again and requires the complete owner
-    /// partition to match the requested assignment before running the normal
+    /// assignment to match the requested assignment before running the normal
     /// realizability and atomic-unit gates. Import/export scaffolding and
     /// residual owners cannot be moved. Module comments and notes stay with
     /// their original YAML module.

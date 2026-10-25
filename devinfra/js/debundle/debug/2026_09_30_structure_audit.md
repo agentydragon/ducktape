@@ -26,7 +26,7 @@ to make those moves should be considered complete, not future work.
 ### The remaining crate-root files are cross-cutting entry points, not a move list
 
 The 26 root-level Rust files now cover crate entry points, orchestration,
-preparation, gating, shared graph/partition types, and emitted-output
+preparation, gating, shared graph/assignment types, and emitted-output
 validation. That is still a sizeable root, but the inventory alone does not
 show that those files share one stronger domain boundary. Moving them into
 directories without a call-path or ownership reason would risk replacing one

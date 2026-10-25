@@ -166,7 +166,7 @@ Warnings never stop a run.
 
 Opt-in atomic-conflict coarsening joins whole candidate groups connected by
 native reported structural atomic units. It preserves the residual entry path
-when a joined group contains that entry, then validates the complete partition
+when a joined group contains that entry, then validates the complete assignment
 through the shared gate before blocking-SCC coarsening. Without the opt-in,
 structural conflicts stop coarsening and remain reported.
 
@@ -175,7 +175,7 @@ accepted by the shared realizability gate. It contracts whole candidate groups
 only when every owner in both groups has the same original module home; an
 existing mixed-home coarsened group is never split or joined to a pure group.
 Each proposed contraction passes the full shared realizability gate on its
-hypothetical complete partition, and the final partition passes that gate again.
+hypothetical complete assignment, and the final assignment passes that gate again.
 The command reports a proposal and does not edit the spec. An optional per-home
 pair-attempt limit bounds partial fallback checks across all passes while
 preserving whole-home checks; the report identifies homes left with untried

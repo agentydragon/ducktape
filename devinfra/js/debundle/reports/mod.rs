@@ -21,7 +21,7 @@ use crate::reports::schema::ModuleKey;
 ///
 /// The rendered/wire projections re-encode these two fields with their
 /// own id spelling and decorations, so they point here rather than
-/// re-describing the shape. [`crate::factor_assembly::AtomicUnitConflict`]
+/// re-describing the shape. [`crate::assignment_assembly::AtomicUnitConflict`]
 /// is the atom-level sibling — same "unrealizable, here's why" framing
 /// but a different domain (owners in an atomic unit, not modules in an
 /// SCC), so it does not reuse this core.

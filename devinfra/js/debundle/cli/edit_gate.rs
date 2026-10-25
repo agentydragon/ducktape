@@ -7,10 +7,10 @@
 //! against the on-disk spec:
 //!
 //! 1. **No cross-module init-order cycles** — `check_realizability` /
-//!    `validate_factorization` over the post-edit partition.
+//!    `validate_factorization` over the post-edit assignment.
 //! 2. **No atom-split** — every `AtomicUnit` (constraining-edge SCC of
 //!    the owner graph) maps to a single destination module under the
-//!    post-edit partition. Splitting a member off into a different
+//!    post-edit assignment. Splitting a member off into a different
 //!    module is unrealizable by construction (see
 //!    `docs/design.md` §"Two classes of atom").
 //!
@@ -18,7 +18,7 @@
 //! module paths, each with the binding names and anonymous owner ids
 //! it declares. Each verb projects its planned documents or deletions into a
 //! `PostEditSpec` and then calls
-//! `gate_post_edit_partition` which is the single entry point
+//! `gate_post_edit_assignment` which is the single entry point
 //! responsible for verdict + diagnostic rendering. The function bails
 //! with a [`GateRejection`] error carrying the same
 //! `render_cycle_summary` / `render_atomic_unit_conflict_summary`
@@ -49,8 +49,8 @@ use ::gate::{
     validate_factorization,
 };
 use analysis::{
-    AtomicUnit, AtomicUnitConflict, AtomicUnitConflictReport, ConflictingClaim, ModuleId,
-    OwnerGraph, OwnerGraphReport, OwnerId, Partition, compute_atomic_units,
+    AtomicUnit, AtomicUnitConflict, AtomicUnitConflictReport, ConflictingClaim, ModuleAssignment,
+    ModuleId, OwnerGraph, OwnerGraphReport, OwnerId, compute_atomic_units,
 };
 use anonymous_resolution::{ResolvedSourceClaims, SourceClaimSet, resolve_source_claims};
 use anyhow::{Context, Result, bail};
@@ -167,7 +167,7 @@ impl<'a> Gate<'a> {
         expected: &[ExpectedResolvedMember],
     ) -> Result<()> {
         match self {
-            Self::Run { graph, source_root } => gate_post_edit_partition_with_expected(
+            Self::Run { graph, source_root } => gate_post_edit_assignment_with_expected(
                 graph,
                 modules_root,
                 *source_root,
@@ -207,7 +207,7 @@ pub enum GateRejectionReport {
     },
 }
 
-/// Error returned by [`gate_post_edit_partition`] on rejection. The
+/// Error returned by [`gate_post_edit_assignment`] on rejection. The
 /// `Display` text is the terse one-line verdict (the blame report has
 /// already gone to stderr); `report` is the structured payload CLI
 /// dispatchers serialize to stdout under a JSON format.
@@ -277,7 +277,7 @@ pub struct PostEditSpec {
 
 /// Complete owner assignment implied by a scoped module tree. `None` is the
 /// residual destination; every graph owner appears so edit callers can prove
-/// the post-edit spec matches the whole reviewed partition.
+/// the post-edit spec matches the whole reviewed assignment.
 pub type OwnerModuleAssignments = BTreeMap<String, Option<String>>;
 
 /// Project the typed in-memory spec used by edit commands into the canonical
@@ -389,7 +389,7 @@ fn assign_owner_module(
 
 /// Build the post-delete spec view in memory. Drops the deleted YAML
 /// paths from the modules tree; bindings they used to declare are
-/// implicitly unclaimed in the resulting partition (i.e. fall back to
+/// implicitly unclaimed in the resulting assignment (i.e. fall back to
 /// residual).
 pub fn post_delete_spec(modules_root: &Path, deleted_abs: &[PathBuf]) -> Result<PostEditSpec> {
     let removed: BTreeSet<PathBuf> = deleted_abs.iter().cloned().collect();
@@ -449,7 +449,7 @@ pub fn read_gate_claims(path: &Path) -> Result<ModuleClaims> {
 }
 
 /// Reconstruct the `OwnerGraph` from `owner_graph_path`, build the
-/// `Partition` implied by `post_spec`, and run BOTH realizability
+/// `ModuleAssignment` implied by `post_spec`, and run BOTH realizability
 /// gates: the cross-module init-order check (cycles) AND the
 /// atom-split check (every `AtomicUnit`'s members must co-locate).
 /// Returns `Ok(())` when both verdicts are clean. Prints the
@@ -457,13 +457,13 @@ pub fn read_gate_claims(path: &Path) -> Result<ModuleClaims> {
 /// blame report to stderr and returns an `anyhow::Error` when either
 /// rejects, so the CLI exit code is non-zero and the caller bails
 /// before writing.
-pub fn gate_post_edit_partition(
+pub fn gate_post_edit_assignment(
     owner_graph_path: &Path,
     modules_root: &Path,
     source_root: Option<&Path>,
     post_spec: &PostEditSpec,
 ) -> Result<()> {
-    gate_post_edit_partition_with_expected(
+    gate_post_edit_assignment_with_expected(
         owner_graph_path,
         modules_root,
         source_root,
@@ -474,9 +474,9 @@ pub fn gate_post_edit_partition(
     )
 }
 
-/// Run the normal gate and prove the entire resolved post-edit owner partition
+/// Run the normal gate and prove the entire resolved post-edit owner assignment
 /// is exactly the reviewed assignment, including owners that remain residual.
-pub fn gate_post_edit_partition_with_expected_owner_modules(
+pub fn gate_post_edit_assignment_with_expected_owner_modules(
     owner_graph_path: &Path,
     modules_root: &Path,
     source_root: Option<&Path>,
@@ -484,7 +484,7 @@ pub fn gate_post_edit_partition_with_expected_owner_modules(
     expected_owner_modules: &OwnerModuleAssignments,
     scope: Option<&ModuleTreeScope>,
 ) -> Result<()> {
-    gate_post_edit_partition_with_expected(
+    gate_post_edit_assignment_with_expected(
         owner_graph_path,
         modules_root,
         source_root,
@@ -495,7 +495,7 @@ pub fn gate_post_edit_partition_with_expected_owner_modules(
     )
 }
 
-fn gate_post_edit_partition_with_expected(
+fn gate_post_edit_assignment_with_expected(
     owner_graph_path: &Path,
     modules_root: &Path,
     source_root: Option<&Path>,
@@ -506,10 +506,10 @@ fn gate_post_edit_partition_with_expected(
 ) -> Result<()> {
     let owner_graph_report = crate::load_owner_graph_report(owner_graph_path)?;
 
-    // The gate algorithm walks edges + partition, not declared sets:
+    // The gate algorithm walks edges + assignment, not declared sets:
     // `from_report` leaves `declared` empty, which is fine for
     // `check_realizability`/`validate_factorization` (both consume the
-    // partition we build below, not the per-owner declared field).
+    // assignment we build below, not the per-owner declared field).
     let owner_graph = OwnerGraph::from_report(&owner_graph_report)
         .with_context(|| format!("reconstructing owner graph {}", owner_graph_path.display()))?;
 
@@ -623,7 +623,7 @@ fn gate_post_edit_partition_with_expected(
             of[owner.0] = mid;
         }
     }
-    let partition = Partition::from_assignments(of, residual);
+    let assignment = ModuleAssignment::from_assignments(of, residual);
 
     let module_path = |m: ModuleId| {
         module_path_by_id.get(&m).cloned().unwrap_or_else(|| {
@@ -641,7 +641,7 @@ fn gate_post_edit_partition_with_expected(
     // "here is the atomic unit you split".
     let atomic_units = compute_atomic_units(&owner_graph);
     let atomic_conflicts =
-        detect_atomic_unit_conflicts(&atomic_units, &partition, &owner_graph_report);
+        detect_atomic_unit_conflicts(&atomic_units, &assignment, &owner_graph_report);
     if !atomic_conflicts.is_empty() {
         let conflicts =
             AtomicUnitConflictReport::from_conflicts(&atomic_conflicts, &module_path, &owner_graph);
@@ -662,7 +662,7 @@ fn gate_post_edit_partition_with_expected(
     }
 
     // Check 2 — module-quotient cycles.
-    let report = validate_factorization(&owner_graph, &partition, &module_path);
+    let report = validate_factorization(&owner_graph, &assignment, &module_path);
     if !report.cycles.is_empty() {
         let blocking_sccs = BlockingSccEntry::from_cycle_reports(&report.cycles);
         write_rejection_artifact(
@@ -692,14 +692,14 @@ fn gate_post_edit_partition_with_expected(
     Ok(())
 }
 
-/// Per-unit atom-split detection over the post-edit partition.
+/// Per-unit atom-split detection over the post-edit assignment.
 ///
-/// Mirrors `factor_assembly::detect_unit_conflict` but operates on
-/// `Partition::of` rather than the explicit `claims` array
-/// `assemble_partition` builds — the CLI gate's partition already
+/// Mirrors `assignment_assembly::detect_unit_conflict` but operates on
+/// `ModuleAssignment::of` rather than the explicit `claims` array
+/// `assemble_assignment` builds — the CLI gate's assignment already
 /// encodes "claim or fall back to residual" via
-/// `Partition::from_assignments`, so this is structurally equivalent
-/// (each member's `Partition::of` value IS the effective claim).
+/// `ModuleAssignment::from_assignments`, so this is structurally equivalent
+/// (each member's `ModuleAssignment::of` value IS the effective claim).
 ///
 /// `report` supplies the wire-shape `declared_bindings` used to label
 /// each conflicting claim. The resulting `AtomicUnitConflict` mirrors
@@ -708,7 +708,7 @@ fn gate_post_edit_partition_with_expected(
 /// `debundle run` or a CLI edit verb.
 fn detect_atomic_unit_conflicts(
     units: &[AtomicUnit],
-    partition: &Partition,
+    assignment: &ModuleAssignment,
     report: &OwnerGraphReport,
 ) -> Vec<AtomicUnitConflict> {
     let mut conflicts = Vec::new();
@@ -716,7 +716,7 @@ fn detect_atomic_unit_conflicts(
         let resolved: Vec<(OwnerId, ModuleId)> = unit
             .members
             .iter()
-            .map(|o| (*o, partition.of(*o)))
+            .map(|o| (*o, assignment.of(*o)))
             .collect();
         let mut first: Option<ModuleId> = None;
         let mut split = false;

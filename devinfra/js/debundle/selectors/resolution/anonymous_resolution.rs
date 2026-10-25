@@ -32,7 +32,7 @@ pub struct SourceClaimSet<'a> {
     pub anonymous_selectors: &'a BTreeSet<AnonymousStatementSelector>,
 }
 
-/// What one module's resolved claims contribute to the owner partition.
+/// What one module's resolved claims contribute to the owner assignment.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ResolvedSourceClaims {
     /// Chunk-top binding names claimed by source or relational selectors.

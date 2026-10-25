@@ -10,7 +10,7 @@
 //! an `atomic_unit_conflict` and the materializer would bail.
 //!
 //! The pass takes the post-seed binding→module assignment (the
-//! "partition" after explicit requests + destructure pull + residual
+//! "assignment" after explicit requests + destructure pull + residual
 //! sweep have all run) plus the structural atomic units, and decides
 //! which unclaimed cycle members should silently fold into the
 //! cycle's single explicit destination. The decision is pure: it
@@ -19,7 +19,7 @@
 //! the post-seed lowering assignment; mutation of the `ModulePlan`
 //! list happens at the caller (today: `ChunkPlanBuilder::apply_rebind_folds`).
 //! It runs after chunk analysis (`compute_chunk_analysis`) and after
-//! the partition's seed phases, but before module emission.
+//! the assignment's seed phases, but before module emission.
 
 use std::collections::HashMap;
 

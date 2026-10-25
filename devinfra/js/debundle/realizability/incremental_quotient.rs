@@ -1,4 +1,4 @@
-//! Incremental quotient maintenance: `PartitionDelta`, the
+//! Incremental quotient maintenance: `ModuleAssignmentDelta`, the
 //! `QuotientOverlay` scratch layer, and the `IncrementalQuotient` the
 //! `RealizabilityIndex` queries.
 
@@ -10,7 +10,7 @@ use analysis::graph::{
     ChunkConstrainingEdgeSet, EndpointView, OwnerEdge, OwnerEdgeId, OwnerGraph, project_endpoints,
 };
 use analysis::ids::ModuleId;
-use analysis::partition::Partition;
+use analysis::module_assignment::ModuleAssignment;
 use analysis::reports::SccCore;
 use rustc_hash::FxHashSet;
 
@@ -23,10 +23,10 @@ use super::{
     overlay_is_simulator_noop,
 };
 
-/// A mutation of a `Partition` that `RealizabilityIndex::apply`
+/// A mutation of a `ModuleAssignment` that `RealizabilityIndex::apply`
 /// commits to the index.
 #[derive(Debug, Clone)]
-pub enum PartitionDelta {
+pub enum ModuleAssignmentDelta {
     /// Reassign every owner in `owners` to `to`. Owners not in the
     /// list keep their current assignment.
     MoveOwners { owners: Vec<OwnerId>, to: ModuleId },
@@ -480,13 +480,13 @@ pub(super) struct IncrementalQuotient {
 }
 
 impl IncrementalQuotient {
-    pub(super) fn new(owner_graph: &OwnerGraph, partition: &Partition) -> Self {
+    pub(super) fn new(owner_graph: &OwnerGraph, assignment: &ModuleAssignment) -> Self {
         let mut quotient = Self {
             i_graph: CountedDiGraph::new(),
             constraining_graph: CountedDiGraph::new(),
             constraining_buckets: BTreeMap::new(),
             cross_rebinds: BTreeMap::new(),
-            residual: partition.residual(),
+            residual: assignment.residual(),
             cached_base_simulator: RefCell::new(None),
             cached_base_i_successors: RefCell::new(None),
             cached_base_constraining_pairs: RefCell::new(None),
@@ -497,7 +497,7 @@ impl IncrementalQuotient {
             cached_touching_clean: RefCell::new(BTreeMap::new()),
         };
         for edge in owner_graph.iter_edges() {
-            quotient.add_current_edge(edge, partition);
+            quotient.add_current_edge(edge, assignment);
         }
         quotient
     }
@@ -583,15 +583,15 @@ impl IncrementalQuotient {
     pub(super) fn add_current_edge(
         &mut self,
         edge: &analysis::graph::OwnerEdge,
-        partition: &Partition,
+        assignment: &ModuleAssignment,
     ) {
         // Gate-side view: keep cross-module at-init promoted edges.
-        // See [`analysis::graph::partition_endpoints`] for why and
+        // See [`analysis::graph::assignment_endpoints`] for why and
         // `tests::promoted_edge_in_aggregator_cycle_is_unrealizable`
         // for the regression fixture.
-        let Some((from, to)) = analysis::graph::partition_endpoints(
+        let Some((from, to)) = analysis::graph::assignment_endpoints(
             edge,
-            partition,
+            assignment,
             analysis::graph::EndpointView::Gate,
         ) else {
             return;
@@ -630,14 +630,14 @@ impl IncrementalQuotient {
     pub(super) fn remove_current_edge(
         &mut self,
         edge: &analysis::graph::OwnerEdge,
-        partition: &Partition,
+        assignment: &ModuleAssignment,
     ) {
         // Gate-side view: keep cross-module at-init promoted edges.
         // Must mirror `add_current_edge` (see
-        // [`analysis::graph::partition_endpoints`]).
-        let Some((from, to)) = analysis::graph::partition_endpoints(
+        // [`analysis::graph::assignment_endpoints`]).
+        let Some((from, to)) = analysis::graph::assignment_endpoints(
             edge,
-            partition,
+            assignment,
             analysis::graph::EndpointView::Gate,
         ) else {
             return;
@@ -1203,7 +1203,7 @@ impl IncrementalQuotient {
     pub(super) fn overlay_for_move(
         &self,
         owner_graph: &OwnerGraph,
-        partition: &Partition,
+        assignment: &ModuleAssignment,
         owners: &[OwnerId],
         to: ModuleId,
     ) -> QuotientOverlay {
@@ -1218,12 +1218,12 @@ impl IncrementalQuotient {
             // when the target moves, nor cancels a real edge on the same
             // module pair when the caller leaves residual.
             let current =
-                edge_contribution(edge, partition.residual(), |owner| partition.of(owner));
-            let next = edge_contribution(edge, partition.residual(), |owner| {
+                edge_contribution(edge, assignment.residual(), |owner| assignment.of(owner));
+            let next = edge_contribution(edge, assignment.residual(), |owner| {
                 if owners.contains(&owner) {
                     to
                 } else {
-                    partition.of(owner)
+                    assignment.of(owner)
                 }
             });
             if current == next {

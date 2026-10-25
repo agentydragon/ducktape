@@ -82,4 +82,4 @@ Public invocations:
 - Final focused checks: <https://app.buildbuddy.io/invocation/516ba59a-77d2-4cdd-ac65-ae807730d8c4>
 
 The full private application spec is validated separately; success on this
-controlled input is not proof that its module partition passes the gate.
+controlled input is not proof that its module assignment passes the gate.

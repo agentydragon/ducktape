@@ -1,6 +1,6 @@
 ---
 name: debundle_plan_work
-description: Plan JS debundle extraction or existing-module reorganization using read-only graph and source queries. Use for residual proposals, gate-checked decomposition, atomic coverage, selector anchors, and reviewed owner-partition handoffs. Generic to any debundle target; this skill does not edit the spec.
+description: Plan JS debundle extraction or existing-module reorganization using read-only graph and source queries. Use for residual proposals, gate-checked decomposition, atomic coverage, selector anchors, and reviewed owner-assignment handoffs. Generic to any debundle target; this skill does not edit the spec.
 ---
 
 # Debundle Plan Work

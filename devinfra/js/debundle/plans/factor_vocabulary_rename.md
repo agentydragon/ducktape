@@ -10,14 +10,15 @@ Active priorities live in <../TODO.md>.
 
 ## Authoritative assignment names
 
-`factor_assembly.rs` builds the owner-to-module `Partition`;
+`assignment_assembly.rs` builds the owner-to-module `ModuleAssignment`;
 `ChunkFactorization` combines that assignment with its graph-derived state;
 `validate_factorization` returns a `FactorizationReport`.
 
-Possible names are `assignment_assembly`, `ModuleAssignment`, and
-`AssignmentReport`. Do not call an unchecked `ChunkFactorization` a
-`ValidatedChunk`: construction does not guarantee a passing verdict. Rename
-these only when the benefit exceeds the churn across the gate and lowerer.
+The owner-to-module assembly now uses `assignment_assembly`,
+`ModuleAssignment`, and `assemble_assignment`. `AssignmentReport` remains
+a possible name for `FactorizationReport`. Do not call an unchecked
+`ChunkFactorization` a `ValidatedChunk`: construction does not guarantee a
+passing verdict.
 
 Keep `OwnerGraph`, `OwnerId`, `AtomicUnit`, and `ModuleQuotient`. They describe
 different mathematical objects. The quotient can contain lazy-only or rejected

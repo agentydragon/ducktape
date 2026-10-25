@@ -3,9 +3,9 @@
 //! Compares the kernel's hot boolean merge gate
 //! (`QuotientGraph::merge_preserves_invariants`) against the
 //! **reference predicate**: `gate(c1, c2)` accepts iff
-//! `check_realizability_touching(owner_graph, post_partition, M)` is
+//! `check_realizability_touching(owner_graph, post_assignment, M)` is
 //! realizable, where `M` is the post-merge module and
-//! `post_partition` is built by an independent reference projection
+//! `post_assignment` is built by an independent reference projection
 //! over the kernel's public class-membership surface.
 //!
 //! `check_merge_boolean` routes through the index's tier ladder, so
@@ -21,7 +21,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use analysis::ids::{LogicalModuleIndex, ModuleId};
-use analysis::partition::Partition;
+use analysis::module_assignment::ModuleAssignment;
 use analysis::{DepKind, OwnerGraphNodeReport, OwnerGraphReport};
 use gate::{
     LadderDecision, RealizabilityVerdict, SccRejection, check_realizability,
@@ -43,7 +43,7 @@ fn module_id(index: usize) -> ModuleId {
 // ---------------------------------------------------------------------
 // Independent reference projection.
 //
-// Rebuilds the module-level partition from the kernel's *public*
+// Rebuilds the module-level assignment from the kernel's *public*
 // class-membership surface plus the report's own residual flags, so
 // it shares no projection code with the kernel. Projection rules
 // (docs/design.md "Peel planner unification"):
@@ -125,13 +125,13 @@ fn reference_post_module(
         .unwrap_or(module_id(next_fresh))
 }
 
-/// Owner-indexed partition from a class → module map, with the
+/// Owner-indexed assignment from a class → module map, with the
 /// optional speculative `(winner ∪ loser) → M` overlay applied.
-fn reference_partition(
+fn reference_assignment(
     q: &QuotientGraph,
     class_modules: &BTreeMap<ClassId, ModuleId>,
     overlay: Option<(ClassId, ClassId, ModuleId)>,
-) -> Partition {
+) -> ModuleAssignment {
     let residual = module_id(0);
     let mut of = vec![residual; q.owner_graph().num_nodes()];
     for class in q.iter_classes() {
@@ -143,18 +143,18 @@ fn reference_partition(
             of[owner.0] = module;
         }
     }
-    Partition::from_assignments(of, residual)
+    ModuleAssignment::from_assignments(of, residual)
 }
 
 /// The index's committed verdict must agree with a from-scratch
 /// `check_realizability` over the reference projection of the same
-/// class membership: the index's maintained partition stays in step
+/// class membership: the index's maintained assignment stays in step
 /// with the class projection across committed mutations.
 fn assert_committed_verdict_matches_reference(report: &OwnerGraphReport, q: &QuotientGraph) {
     let (class_modules, _) = reference_class_modules(q, &residual_owner_ids(report));
     let reference = check_realizability(
         q.owner_graph(),
-        &reference_partition(q, &class_modules, None),
+        &reference_assignment(q, &class_modules, None),
     );
     assert_eq!(
         q.realizability_verdict().is_realizable(),
@@ -252,9 +252,9 @@ fn compare_gate_to_reference(
     let residual_ids = residual_owner_ids(report);
     let (pre_modules, next_fresh) = reference_class_modules(q, &residual_ids);
     let post_module = reference_post_module(q, &residual_ids, &pre_modules, next_fresh, c1, c2);
-    let post_partition = reference_partition(q, &pre_modules, Some((c1, c2, post_module)));
+    let post_assignment = reference_assignment(q, &pre_modules, Some((c1, c2, post_module)));
     let owner_graph = q.owner_graph();
-    let reference = check_realizability_touching(owner_graph, &post_partition, post_module);
+    let reference = check_realizability_touching(owner_graph, &post_assignment, post_module);
     let gate_accepts = q.merge_preserves_invariants(c1, c2);
     let ladder = q.ladder_decision_for_merge(c1, c2);
     assert_ladder_matches_reference(c1, c2, ladder, &reference);

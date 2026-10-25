@@ -2,9 +2,9 @@
 //! subgraph `G_atomic` over an owner graph. Each SCC is one set of
 //! owners any valid factorization must keep co-located, because the
 //! bundle's original init order is otherwise unrealizable as ESM.
-//! [`crate::factor_assembly::assemble_partition`] consumes the units
+//! [`crate::assignment_assembly::assemble_assignment`] consumes the units
 //! plus YAML claims and `unassigned_mode` to produce the final
-//! partition. See `docs/design.md` §"Two classes of atom" + §"Factor
+//! assignment. See `docs/design.md` §"Two classes of atom" + §"Factor
 //! assembly inside `debundle run`" for the architecture.
 //!
 //! Closure rules for `G_atomic` — for each edge `e: u → v` with
@@ -40,7 +40,7 @@ use crate::graph::{
 /// One atomic factor unit: a set of owners that any valid
 /// factorization must keep co-located, plus the `DepKind`s of the
 /// constraining edges *inside* the unit (everything except
-/// `LazyUse` and `HoistedUse`) — used by [`crate::factor_assembly`] to explain *why*
+/// `LazyUse` and `HoistedUse`) — used by [`crate::assignment_assembly`] to explain *why*
 /// a unit is forced together when its claims conflict.
 ///
 /// `causes` is a `BTreeSet<DepKind>` so iteration order is the

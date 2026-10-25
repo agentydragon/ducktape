@@ -77,13 +77,13 @@ fn original_home_merge_rejects_remote_tdz() {
     let left = q.class_of(q.owner_idx_of("owner:3").unwrap());
     let right = q.class_of(q.owner_idx_of("owner:7").unwrap());
     assert!(q.merge_preserves_invariants(left, right));
-    let mut post = q.realizability_partition().clone();
+    let mut post = q.realizability_assignment().clone();
     let target = post.of(analysis::OwnerId(7));
     post.set(analysis::OwnerId(3), target);
     let post_verdict = gate::check_realizability(q.owner_graph(), &post);
-    let index = gate::RealizabilityIndex::from_partition(
+    let index = gate::RealizabilityIndex::from_assignment(
         q.owner_graph(),
-        q.realizability_partition().clone(),
+        q.realizability_assignment().clone(),
     );
     assert_eq!(
         index.verdict_after_moving_owners(q.owner_graph(), &[analysis::OwnerId(3)], target),
@@ -101,7 +101,7 @@ fn original_home_merge_rejects_remote_tdz() {
 }
 
 #[test]
-fn group_contraction_commits_one_final_entry_partition_and_honors_cap() {
+fn group_contraction_commits_one_final_entry_assignment_and_honors_cap() {
     let report = singleton_graph(
         vec![
             active_owner("owner:a", 1, &["A"], 5, "home"),
@@ -117,7 +117,7 @@ fn group_contraction_commits_one_final_entry_partition_and_honors_cap() {
         ModuleId::logical(0),
         ModuleId::logical(3),
     ];
-    let mut q = QuotientGraph::from_report_with_realizable_partition(
+    let mut q = QuotientGraph::from_report_with_realizable_assignment(
         &report,
         9,
         &assignments,
@@ -128,7 +128,7 @@ fn group_contraction_commits_one_final_entry_partition_and_honors_cap() {
     assert!(!q.contract_if_preserving(ClassId(0), ClassId(1)));
     assert_eq!(q.class_of(OwnerIdx(1)), ClassId(1));
 
-    let mut q = QuotientGraph::from_report_with_realizable_partition(
+    let mut q = QuotientGraph::from_report_with_realizable_assignment(
         &report,
         14,
         &assignments,
@@ -138,12 +138,12 @@ fn group_contraction_commits_one_final_entry_partition_and_honors_cap() {
     let classes = [ClassId(0), ClassId(1), ClassId(2)];
     assert!(!q.contract_group_if_preserving(&classes));
     assert_eq!(
-        q.realizability_partition().of(analysis::OwnerId(0)),
+        q.realizability_assignment().of(analysis::OwnerId(0)),
         assignments[0]
     );
     assert_eq!(q.class_of(OwnerIdx(0)), ClassId(0));
 
-    let mut q = QuotientGraph::from_report_with_realizable_partition(
+    let mut q = QuotientGraph::from_report_with_realizable_assignment(
         &report,
         15,
         &assignments,
@@ -154,13 +154,13 @@ fn group_contraction_commits_one_final_entry_partition_and_honors_cap() {
     for owner in 0..3 {
         assert_eq!(q.class_of(OwnerIdx(owner)), ClassId(0));
         assert_eq!(
-            q.realizability_partition().of(analysis::OwnerId(owner)),
+            q.realizability_assignment().of(analysis::OwnerId(owner)),
             ModuleId::logical(0)
         );
     }
     assert_eq!(q.class_of(OwnerIdx(3)), ClassId(3));
     assert_eq!(
-        q.realizability_partition().of(analysis::OwnerId(3)),
+        q.realizability_assignment().of(analysis::OwnerId(3)),
         assignments[3]
     );
     assert!(q.realizability_verdict().is_realizable());
@@ -401,7 +401,7 @@ fn post_seed_reports_each_unrealizable_scc_in_owner_id_order() {
 
 // ---------- Greedy merge to convergence tests. ----------
 //
-// The greedy operates over a quotient whose initial partition the
+// The greedy operates over a quotient whose initial assignment the
 // caller has chosen — typically the seed quotient (atomic units +
 // spec modules pre-contracted) augmented with whatever classes the
 // renderer has marked as pre-existing active modules. The kernel
@@ -674,7 +674,7 @@ fn pass3_diagnostic_walk_never_commits_a_merge() {
     // *why* it could not contract. That walk must be read-only: it
     // must never commit a merge. A stray successful contraction there
     // would join two classes the fixed-point loop deliberately left
-    // apart, silently corrupting the partition that the post-seed
+    // apart, silently corrupting the assignment that the post-seed
     // realizability gate (and the returned `q`) then reads — and that
     // merge would be neither counted nor looped.
     //
@@ -782,21 +782,21 @@ fn pass3_diagnostic_walk_never_commits_a_merge() {
 //
 // The peel planner's seed-quotient cycle gate must produce the same
 // realizability verdict as the materializer's `check_realizability`
-// run on the projected partition. A planner that reimplemented
+// run on the projected assignment. A planner that reimplemented
 // Tarjan over only constraining edges in the JSON report would miss
 // asymmetric I-cycles the materializer catches via its
 // `EsmEvaluationSimulator` pass. The tests below pin the agreement:
 // every planner verdict must match the materializer verdict on the
 // same input.
 
-/// Build an `OwnerGraph` + `Partition` from a report + spec module
-/// list. The partition assigns each owner to the module derived from
+/// Build an `OwnerGraph` + `ModuleAssignment` from a report + spec module
+/// list. The assignment assigns each owner to the module derived from
 /// its `destination.id`; residual destinations land on the residual
 /// `ModuleId`. Used by the planner-vs-materializer cross-check tests.
-fn owner_graph_and_partition_from_spec(
+fn owner_graph_and_assignment_from_spec(
     report: &analysis::OwnerGraphReport,
     spec: &[SpecModuleGroup],
-) -> (analysis::OwnerGraph, analysis::Partition) {
+) -> (analysis::OwnerGraph, analysis::ModuleAssignment) {
     use std::collections::HashMap;
     let owner_graph = analysis::OwnerGraph::from_report(report).unwrap();
     let owner_index: HashMap<&str, usize> = report
@@ -829,8 +829,8 @@ fn owner_graph_and_partition_from_spec(
             }
         }
     }
-    let partition = analysis::Partition::from_assignments(of, residual);
-    (owner_graph, partition)
+    let assignment = analysis::ModuleAssignment::from_assignments(of, residual);
+    (owner_graph, assignment)
 }
 
 #[test]
@@ -1042,9 +1042,9 @@ fn planner_and_materializer_agree_on_corpus() {
     let mut materializer_unrealizable_labels = Vec::new();
     for case in &cases {
         // Materializer-side.
-        let (owner_graph, partition) =
-            owner_graph_and_partition_from_spec(&case.report, &case.spec);
-        let verdict = gate::check_realizability(&owner_graph, &partition);
+        let (owner_graph, assignment) =
+            owner_graph_and_assignment_from_spec(&case.report, &case.spec);
+        let verdict = gate::check_realizability(&owner_graph, &assignment);
         let materializer_unrealizable = !verdict.is_realizable();
 
         // Planner-side.
@@ -1250,7 +1250,7 @@ fn lazy_pq_greedy_matches_full_scan_greedy_on_corpus() {
 }
 
 #[test]
-fn gate_bypassing_partition_cycle_surfaces_and_recovers() {
+fn gate_bypassing_assignment_cycle_surfaces_and_recovers() {
     // `from_report_with_partition` bypasses the contraction gate: a
     // group that closes a module-graph cycle is legal input. Shape:
     // a → b → c (owner constraining edges), group {a, c}. Contracting

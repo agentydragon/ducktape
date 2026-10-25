@@ -12,14 +12,14 @@
 //! marker prints (after the debundler runs, so the analyzed graph is
 //! untouched), and compares the observed completion order against
 //! `gate::simulated_evaluation_post_order` on the same owner graph
-//! and partition.
+//! and assignment.
 
 use std::collections::BTreeMap;
 
 use analysis::facts::analyze_chunk;
 use analysis::graph::build_owner_graph_with;
 use analysis::ids::{LogicalModuleIndex, ModuleId};
-use analysis::{AnalysisHints, OwnerGraph, Partition};
+use analysis::{AnalysisHints, ModuleAssignment, OwnerGraph};
 use debundle_e2e_support::*;
 use gate::simulated_evaluation_post_order;
 
@@ -29,7 +29,7 @@ struct SweepCase {
     /// `(module name, member bindings)`, alphabetical by module name.
     /// The pipeline indexes logical-module plans in spec-map order
     /// (alphabetical by target path) with the residual sentinel last;
-    /// the hand-built partition below mirrors that numbering so the
+    /// the hand-built assignment below mirrors that numbering so the
     /// simulator's `ModuleId` tie-breaks match the emitted tree's.
     modules: &'static [(&'static str, &'static [&'static str])],
 }
@@ -122,12 +122,12 @@ fn parse_and_build(source: &str) -> OwnerGraph {
     build_owner_graph_with(&facts, Default::default()).unwrap()
 }
 
-/// Build the partition matching the case's spec assignment:
+/// Build the assignment matching the case's spec assignment:
 /// module index = position in the (alphabetical) module list,
 /// residual = the sentinel index after every named module.
-fn partition_for(owner_graph: &OwnerGraph, case: &SweepCase) -> Partition {
+fn assignment_for(owner_graph: &OwnerGraph, case: &SweepCase) -> ModuleAssignment {
     let residual = ModuleId(LogicalModuleIndex(case.modules.len()));
-    let mut partition = Partition::new(owner_graph, residual);
+    let mut assignment = ModuleAssignment::new(owner_graph, residual);
     for (index, (module_name, bindings)) in case.modules.iter().enumerate() {
         for binding in *bindings {
             let owner = owner_graph
@@ -139,10 +139,10 @@ fn partition_for(owner_graph: &OwnerGraph, case: &SweepCase) -> Partition {
                         case.name
                     )
                 });
-            partition.set(owner.id, ModuleId(LogicalModuleIndex(index)));
+            assignment.set(owner.id, ModuleId(LogicalModuleIndex(index)));
         }
     }
-    partition
+    assignment
 }
 
 #[test]
@@ -156,10 +156,10 @@ fn simulator_post_order_matches_node_evaluation_order_across_fixture_family() {
         );
 
         // Simulator side: predicted post-order on the same owner
-        // graph + partition the pipeline derives from the spec.
+        // graph + assignment the pipeline derives from the spec.
         let owner_graph = parse_and_build(case.source);
-        let partition = partition_for(&owner_graph, case);
-        let post_order = simulated_evaluation_post_order(&owner_graph, &partition);
+        let assignment = assignment_for(&owner_graph, case);
+        let post_order = simulated_evaluation_post_order(&owner_graph, &assignment);
         // The simulator's residual node is the ESM DFS root — the
         // emitted entry file (the sweep's residual statements are all
         // anonymous, so no catchall module file materializes).

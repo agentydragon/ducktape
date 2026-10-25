@@ -1377,7 +1377,7 @@ export { a, b, Foo, result };
 }
 
 #[test]
-fn callback_partition_with_initialized_value_in_dependency_runs() {
+fn callback_assignment_with_initialized_value_in_dependency_runs() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"const a = 1;
 const b = a + 1;
@@ -1403,7 +1403,7 @@ export { a, b, foo, bar, result };
 }
 
 #[test]
-fn constructor_partition_with_initialized_value_in_dependency_runs() {
+fn constructor_assignment_with_initialized_value_in_dependency_runs() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"const a = 1;
 const b = a + 1;

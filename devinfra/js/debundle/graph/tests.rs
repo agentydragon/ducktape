@@ -8,7 +8,7 @@ mod chunk_constraining_module_edges_tests {
 
     use crate::graph::*;
     use crate::ids::{LogicalModuleIndex, ModuleId};
-    use crate::partition::Partition;
+    use crate::module_assignment::ModuleAssignment;
     use crate::{AnalysisHints, OwnerGraph, OwnerId, facts::analyze_chunk};
 
     fn module_id(index: usize) -> ModuleId {
@@ -47,9 +47,9 @@ mod chunk_constraining_module_edges_tests {
     fn eager_cross_module_edge_included() {
         let source = "const a = 1; const b = a + 1;";
         let owner_graph = parse_and_build(source);
-        let mut partition = Partition::new(&owner_graph, module_id(0));
-        partition.set(OwnerId(1), module_id(1));
-        let canonical = chunk_constraining_module_edges(&owner_graph, &partition);
+        let mut assignment = ModuleAssignment::new(&owner_graph, module_id(0));
+        assignment.set(OwnerId(1), module_id(1));
+        let canonical = chunk_constraining_module_edges(&owner_graph, &assignment);
         let pairs: BTreeSet<(ModuleId, ModuleId)> = canonical.pairs().collect();
         assert_eq!(
             pairs,
@@ -65,8 +65,8 @@ mod chunk_constraining_module_edges_tests {
         let source = "const a = 1; const b = a + 1;";
         let owner_graph = parse_and_build(source);
         // Both owners in module 0 → no cross-module edges.
-        let partition = Partition::new(&owner_graph, module_id(0));
-        let canonical = chunk_constraining_module_edges(&owner_graph, &partition);
+        let assignment = ModuleAssignment::new(&owner_graph, module_id(0));
+        let canonical = chunk_constraining_module_edges(&owner_graph, &assignment);
         assert!(canonical.edges.is_empty());
     }
 
@@ -78,9 +78,9 @@ mod chunk_constraining_module_edges_tests {
         // Simple two-module DAG.
         let source = "const a = 1; const b = a + 1;";
         let owner_graph = parse_and_build(source);
-        let mut partition = Partition::new(&owner_graph, module_id(0));
-        partition.set(OwnerId(1), module_id(1));
-        let canonical = chunk_constraining_module_edges(&owner_graph, &partition);
+        let mut assignment = ModuleAssignment::new(&owner_graph, module_id(0));
+        assignment.set(OwnerId(1), module_id(1));
+        let canonical = chunk_constraining_module_edges(&owner_graph, &assignment);
         let extra: BTreeSet<ModuleId> = BTreeSet::from([module_id(5), module_id(0)]);
         let order = chunk_source_import_order_from_adjacency(
             canonical.pairs(),

@@ -262,7 +262,7 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
     // (the emitted entry file — always the ESM DFS root, so its slot
     // in the list is a runtime no-op, but it still gets its shared-
     // ordering position for determinism).
-    let residual_module = factorization.partition.residual();
+    let residual_module = factorization.assignment.residual();
     intra_chunk_imports.extend(
         residual_entry_import_items
             .into_iter()

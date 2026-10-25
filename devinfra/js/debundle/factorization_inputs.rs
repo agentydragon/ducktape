@@ -5,7 +5,7 @@
 //! the owner graph derived from the chunk facts, and the small
 //! lookup caches that depend only on inputs. The propose algorithm
 //! consumes a `FactorizationInputs` plus a default destination to produce a
-//! [`crate::ChunkFactorization`] — the partition-and-derived state
+//! [`crate::ChunkFactorization`] — the assignment-and-derived state
 //! that depends on which logical-module assignment the spec chose.
 
 use std::collections::{BTreeSet, HashMap};
@@ -20,7 +20,7 @@ use analysis::{BindingKind, LogicalModuleIndex, ModuleId, OwnerGraph, PlannedMod
 ///
 /// Constructed once per chunk and held by reference (typically via
 /// `Arc<FactorizationInputs>`) by every [`crate::ChunkFactorization`]
-/// candidate that explores a partition over the same owner graph.
+/// candidate that explores a assignment over the same owner graph.
 /// All fields are private: the lookup tables are precomputed from the
 /// inputs at [`FactorizationInputs::build`] time, so a mutable input field
 /// would silently stale the caches. Read access goes through the

@@ -11,7 +11,7 @@
 //!   before residual_entry).
 //! - `internal_edges`, `edges_to_other_residual_cells`,
 //!   `other_residual_cells_referenced`: cell-graph relationship
-//!   counts derived from the partition the analyzer chose.
+//!   counts derived from the assignment the analyzer chose.
 //!
 //! Diagnostics come through separately. A diagnostic is not a module
 //! assignment the author can land as-is.
@@ -45,7 +45,7 @@ use anyhow::{Context, Result};
 use serde::Serialize;
 
 use analysis::{
-    LineRange, ModuleId, OwnerGraph, OwnerGraphNodeReport, OwnerGraphReport, Partition,
+    LineRange, ModuleAssignment, ModuleId, OwnerGraph, OwnerGraphNodeReport, OwnerGraphReport,
     StatementKind,
 };
 use anonymous_resolution::{
@@ -858,7 +858,7 @@ fn decompose_modules(
                 || (validation.atomic_unit_conflicts.is_empty()
                     && validation.cycles.is_empty()
                     && validation.cross_rebinds.is_empty()),
-            "shared gate rejected the partition after original-home rejoining"
+            "shared gate rejected the assignment after original-home rejoining"
         );
         coarsening_report.groups =
             coarsened_groups(graph, &owner_modules, &candidate_owner_modules);
@@ -1396,9 +1396,9 @@ fn validate_decomposition_candidate(
     let owner_graph = OwnerGraph::from_report(graph)
         .context("reconstructing the owner graph for decomposition validation")?;
     let (assignments, paths_by_module_id) =
-        candidate_partition_assignments(candidate_owner_modules, residual_path)?;
-    let partition = Partition::from_assignments(assignments, ModuleId::logical(0));
-    let gate_report = gate::validate_factorization(&owner_graph, &partition, &|module_id| {
+        candidate_module_assignments(candidate_owner_modules, residual_path)?;
+    let assignment = ModuleAssignment::from_assignments(assignments, ModuleId::logical(0));
+    let gate_report = gate::validate_factorization(&owner_graph, &assignment, &|module_id| {
         paths_by_module_id
             .get(&module_id)
             .cloned()
@@ -1411,7 +1411,7 @@ fn validate_decomposition_candidate(
     })
 }
 
-fn candidate_partition_assignments(
+fn candidate_module_assignments(
     candidate_owner_modules: &[ModulePath],
     residual_path: &ModulePath,
 ) -> Result<(Vec<ModuleId>, BTreeMap<ModuleId, ModulePath>)> {
@@ -1497,11 +1497,11 @@ fn rejoin_original_home_fragments(
         ));
     }
 
-    let (assignments, _) = candidate_partition_assignments(candidate_owner_modules, residual_path)?;
+    let (assignments, _) = candidate_module_assignments(candidate_owner_modules, residual_path)?;
     // Decomposition has no size ceiling: an original home can be larger than
     // the proposer's default cap. The shared incremental gate still checks
-    // every contraction against the complete candidate partition.
-    let mut quotient = QuotientGraph::from_report_with_realizable_partition(
+    // every contraction against the complete candidate assignment.
+    let mut quotient = QuotientGraph::from_report_with_realizable_assignment(
         graph,
         usize::MAX,
         &assignments,

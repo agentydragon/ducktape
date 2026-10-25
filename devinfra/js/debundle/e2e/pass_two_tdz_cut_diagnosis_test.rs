@@ -37,7 +37,7 @@ export { seed_value, lazy_back };
         )],
     )
     // Inline mode keeps `seed_value` / `lazy_back` in the entry file
-    // (the partition's residual), which is what makes the eager read
+    // (the assignment's residual), which is what makes the eager read
     // target the DFS root rather than an ordinary sibling module.
     .with_unassigned_mode(unassigned_mode_inline())
 }

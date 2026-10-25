@@ -25,7 +25,7 @@
 //! ## The realizability gate
 //!
 //! The kernel's cycle gate is the realizability primitive itself
-//! (`gate::check_realizability(&OwnerGraph, &Partition)` — the same
+//! (`gate::check_realizability(&OwnerGraph, &ModuleAssignment)` — the same
 //! predicate the materializer's `validate_factorization` computes),
 //! evaluated at **module** granularity under the kernel's projection
 //! by checking whether a speculative merge's post-merge module `M`
@@ -57,7 +57,7 @@
 //! (`would_be_cycles_after_contract`) are the same evaluation — one
 //! entry point, two output shapes — so the gate cannot drift from the
 //! materializer's verdict. Per committed contract, the kernel applies
-//! `PartitionDelta::MoveOwners` deltas to the index; speculative
+//! `ModuleAssignmentDelta::MoveOwners` deltas to the index; speculative
 //! queries read it non-mutatingly through the overlay path (every
 //! speculative merge delta targets the single post-merge module,
 //! asserted in `realizability_cycles_after_contract`).
@@ -66,10 +66,10 @@ use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 
 use analysis::{
-    DepKind, ModuleId, OwnerGraph, OwnerGraphReport, OwnerId, Partition, StatementKind,
+    DepKind, ModuleAssignment, ModuleId, OwnerGraph, OwnerGraphReport, OwnerId, StatementKind,
 };
 use anyhow::Context;
-use gate::{LadderDecision, PartitionDelta, RealizabilityIndex, RealizabilityVerdict};
+use gate::{LadderDecision, ModuleAssignmentDelta, RealizabilityIndex, RealizabilityVerdict};
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde::Serialize;
 
@@ -173,7 +173,7 @@ pub enum SeedContractionRejected {
     /// multiple per-merge contractions whose individual
     /// rejections the per-merge gate did not fire on (each
     /// contraction was locally realizable; the assembled
-    /// partition is not).
+    /// assignment is not).
     ///
     /// `owner_ids` lists every owner in the unrealizable SCC, as
     /// reported by `RealizabilityVerdict::unrealizable_sccs`.
@@ -225,7 +225,7 @@ pub struct QuotientGraph {
     /// `true`. Set by `from_report` from the JSON wire flag (the
     /// same residual identification `propose.rs` uses). A class made
     /// only of these, and not anchored to a module, projects to the
-    /// partition's residual `ModuleId` for the realizability gate.
+    /// assignment's residual `ModuleId` for the realizability gate.
     gate_residual_owners: BTreeSet<OwnerIdx>,
     /// Stable owner IDs in `OwnerIdx.0` order. Inherited from the
     /// source `OwnerGraphReport.nodes`.
@@ -278,7 +278,7 @@ pub struct QuotientGraph {
     /// the gate" section.
     realizability_index: RealizabilityIndex,
     /// Cached `class_id -> module_id` mapping: the class projection
-    /// the realizability index's partition holds. Maintained alongside
+    /// the realizability index's assignment holds. Maintained alongside
     /// the index so query deltas can be computed without walking every
     /// owner per call.
     class_module_id: BTreeMap<ClassId, ModuleId>,
@@ -312,7 +312,7 @@ fn projects_to_residual<'a>(
 /// Project every live class onto a `ModuleId` — the residual
 /// `ModuleId::logical(0)` where `projects_to_residual`, otherwise a
 /// fresh one numbered densely from 1 in ascending `ClassId` order — and
-/// build the realizability index over the resulting owner partition.
+/// build the realizability index over the resulting owner assignment.
 /// Returns the index, the class → module map, and the next free module
 /// index.
 fn project_classes(
@@ -343,7 +343,7 @@ fn project_classes(
         };
         class_module_id.insert(ClassId(class_idx), module);
     }
-    let partition = Partition::from_assignments(
+    let assignment = ModuleAssignment::from_assignments(
         owner_to_class
             .iter()
             .map(|c| class_module_id.get(c).copied().unwrap_or(residual_module))
@@ -351,7 +351,7 @@ fn project_classes(
         residual_module,
     );
     (
-        RealizabilityIndex::from_partition(owner_graph, partition),
+        RealizabilityIndex::from_assignment(owner_graph, assignment),
         class_module_id,
         next_module_idx,
     )
@@ -430,7 +430,7 @@ impl QuotientGraph {
             });
             owner_to_class.push(ClassId(i));
             // The realizability gate's ESM simulator DFS starts at the
-            // partition's residual; any residual owner projects to that
+            // assignment's residual; any residual owner projects to that
             // residual ModuleId so the simulator's DFS reaches the
             // candidate SCCs.
             if report.is_residual(&node.destination) {
@@ -491,8 +491,8 @@ impl QuotientGraph {
         Ok(q)
     }
 
-    /// Build a quotient from a complete candidate owner partition that
-    /// already passes the shared realizability gate. The partition is checked
+    /// Build a quotient from a complete candidate owner assignment that
+    /// already passes the shared realizability gate. The assignment is checked
     /// here before any quotient state is returned, and structural atomic units
     /// plus residual entry declarations must remain whole.
     ///
@@ -500,7 +500,7 @@ impl QuotientGraph {
     /// be the candidate's entry module. Non-residual groups are marked as
     /// anchored modules so residual-only owners deliberately assigned to a
     /// non-entry fragment stay in that fragment.
-    pub fn from_report_with_realizable_partition(
+    pub fn from_report_with_realizable_assignment(
         report: &OwnerGraphReport,
         cap_lines: usize,
         owner_modules: &[ModuleId],
@@ -508,7 +508,7 @@ impl QuotientGraph {
     ) -> anyhow::Result<Self> {
         anyhow::ensure!(
             owner_modules.len() == report.nodes.len(),
-            "candidate partition assigns {} owners, but graph has {}",
+            "candidate assignment assigns {} owners, but graph has {}",
             owner_modules.len(),
             report.nodes.len()
         );
@@ -518,12 +518,13 @@ impl QuotientGraph {
         );
 
         let owner_graph = OwnerGraph::from_report(report)
-            .context("reconstructing owner graph for candidate partition")?;
-        let partition = Partition::from_assignments(owner_modules.to_vec(), residual_module);
-        let verdict = gate::check_realizability(&owner_graph, &partition);
+            .context("reconstructing owner graph for candidate assignment")?;
+        let assignment =
+            ModuleAssignment::from_assignments(owner_modules.to_vec(), residual_module);
+        let verdict = gate::check_realizability(&owner_graph, &assignment);
         anyhow::ensure!(
             verdict.is_realizable(),
-            "candidate partition is not realizable under the shared gate"
+            "candidate assignment is not realizable under the shared gate"
         );
 
         let owner_id_to_idx: FxHashMap<&str, usize> = report
@@ -550,7 +551,7 @@ impl QuotientGraph {
                 if let Some(expected) = unit_module {
                     anyhow::ensure!(
                         expected == module,
-                        "candidate partition splits structural atomic unit {}",
+                        "candidate assignment splits structural atomic unit {}",
                         unit.id
                     );
                 } else {
@@ -587,7 +588,7 @@ impl QuotientGraph {
         }
 
         let mut quotient = Self::from_report(report, cap_lines)
-            .context("building quotient for realizable candidate partition")?;
+            .context("building quotient for realizable candidate assignment")?;
         let mut class_module_id = BTreeMap::new();
         for (module, members) in owners_by_module {
             let survivor = members[0];
@@ -614,7 +615,7 @@ impl QuotientGraph {
             class_module_id.insert(class_id, module);
         }
         quotient.realizability_index =
-            RealizabilityIndex::from_partition(&quotient.owner_graph, partition);
+            RealizabilityIndex::from_assignment(&quotient.owner_graph, assignment);
         quotient.class_module_id = class_module_id;
         quotient.next_module_idx = owner_modules
             .iter()
@@ -668,11 +669,11 @@ impl QuotientGraph {
         self.realizability_index.verdict()
     }
 
-    /// The partition currently held by the persistent realizability
+    /// The assignment currently held by the persistent realizability
     /// index. Read-only — mutation goes through the kernel's
     /// contract/query APIs.
-    pub fn realizability_partition(&self) -> &Partition {
-        self.realizability_index.partition()
+    pub fn realizability_assignment(&self) -> &ModuleAssignment {
+        self.realizability_index.assignment()
     }
 
     /// Cheap query: would contracting `c1` and `c2` preserve the
@@ -680,7 +681,7 @@ impl QuotientGraph {
     ///
     /// 1. `c1 != c2`.
     /// 2. `class_lines(c1) + class_lines(c2) <= cap_lines`.
-    /// 3. The post-merge partition, under the kernel's module
+    /// 3. The post-merge assignment, under the kernel's module
     ///    projection, has no clause-2 or clause-3 violation touching
     ///    the post-merge module (the tier-laddered realizability
     ///    predicate).
@@ -694,7 +695,7 @@ impl QuotientGraph {
     }
 
     /// Diagnostic: what violations would the merge create or surface?
-    /// Returns `None` if the post-merge partition is realizable
+    /// Returns `None` if the post-merge assignment is realizable
     /// (touching the post-merge module). Returns `Some(evidence)`
     /// otherwise.
     ///
@@ -757,7 +758,7 @@ impl QuotientGraph {
         let moved: Vec<OwnerId> = deltas
             .into_iter()
             .flat_map(|delta| match delta {
-                PartitionDelta::MoveOwners { owners, .. } => owners,
+                ModuleAssignmentDelta::MoveOwners { owners, .. } => owners,
             })
             .collect();
         if !self.full_gate_accepts_move(&moved, post_module) {
@@ -770,7 +771,7 @@ impl QuotientGraph {
 
     /// A contraction can change global ESM import order and expose a TDZ in
     /// an I-SCC that does not contain the merged module. Original-home
-    /// rejoining checks the complete proposed partition before committing
+    /// rejoining checks the complete proposed assignment before committing
     /// each accepted move.
     fn full_gate_accepts_move(&self, moved: &[OwnerId], to: ModuleId) -> bool {
         self.realizability_index
@@ -779,8 +780,8 @@ impl QuotientGraph {
     }
 
     /// Try a complete multi-class contraction as one shared-gate move. The
-    /// intermediate pairwise partitions need not be realizable: only the
-    /// proposed final partition is checked and then committed to the index.
+    /// intermediate pairwise assignments need not be realizable: only the
+    /// proposed final assignment is checked and then committed to the index.
     /// Used by original-home rejoining before its deterministic pair fallback.
     pub(crate) fn contract_group_if_preserving(&mut self, classes: &[ClassId]) -> bool {
         let classes: BTreeSet<ClassId> = classes.iter().copied().collect();
@@ -831,7 +832,7 @@ impl QuotientGraph {
             .iter()
             .flat_map(|class| self.classes[class.0].members.iter())
             .map(|owner| OwnerId(owner.0))
-            .filter(|owner| self.realizability_index.partition().of(*owner) != post_module)
+            .filter(|owner| self.realizability_index.assignment().of(*owner) != post_module)
             .collect();
         if !self.full_gate_accepts_move(&moved, post_module) {
             return false;
@@ -855,7 +856,7 @@ impl QuotientGraph {
         if !moved.is_empty() {
             self.realizability_index.apply(
                 &self.owner_graph,
-                PartitionDelta::MoveOwners {
+                ModuleAssignmentDelta::MoveOwners {
                     owners: moved,
                     to: post_module,
                 },
@@ -982,7 +983,7 @@ impl QuotientGraph {
         // `MoveOwners` into the single post-merge module.
         assert!(
             deltas.iter().all(|d| match d {
-                PartitionDelta::MoveOwners { to, .. } => *to == post_module,
+                ModuleAssignmentDelta::MoveOwners { to, .. } => *to == post_module,
             }),
             "speculative deltas are single-target by construction (merges contract \
              two classes into one); implement a multi-target overlay deliberately \
@@ -990,7 +991,7 @@ impl QuotientGraph {
         );
         let mut owners: Vec<OwnerId> = Vec::new();
         for d in &deltas {
-            let PartitionDelta::MoveOwners { owners: o, .. } = d;
+            let ModuleAssignmentDelta::MoveOwners { owners: o, .. } = d;
             owners.extend(o.iter().copied());
         }
         owners.sort();
@@ -1006,7 +1007,7 @@ impl QuotientGraph {
                 if owners_set.contains(&id) {
                     post_module
                 } else {
-                    self.realizability_index.partition().of(id)
+                    self.realizability_index.assignment().of(id)
                 }
             })
             .collect();
@@ -1030,7 +1031,7 @@ impl QuotientGraph {
         let (post_module, deltas) = self.compute_merge_deltas(winner, loser);
         let mut owners: Vec<OwnerId> = Vec::new();
         for delta in &deltas {
-            let PartitionDelta::MoveOwners { owners: moved, to } = delta;
+            let ModuleAssignmentDelta::MoveOwners { owners: moved, to } = delta;
             debug_assert_eq!(
                 *to, post_module,
                 "speculative deltas are single-target by construction",
@@ -1047,7 +1048,7 @@ impl QuotientGraph {
     /// kernel's `CycleEvidence` shape (`ClassId` space, owner-id
     /// strings), reading each owner's module from `owner_modules`.
     /// Speculative queries take their verdict from a non-mutating
-    /// overlay, so the index's own partition never reflects the
+    /// overlay, so the index's own assignment never reflects the
     /// hypothetical move; `overlay` projects the merged pair's classes
     /// onto the survivor.
     ///
@@ -1219,8 +1220,8 @@ impl QuotientGraph {
             .unwrap_or_else(|| ModuleId::logical(self.next_module_idx))
     }
 
-    /// Compute the `PartitionDelta::MoveOwners` deltas needed to
-    /// transition the realizability index's working partition to the
+    /// Compute the `ModuleAssignmentDelta::MoveOwners` deltas needed to
+    /// transition the realizability index's working assignment to the
     /// post-merge projection for `(winner, loser)`. Returns the
     /// post-merge winner `ModuleId` (which may differ from
     /// `class_module_id[winner]` when a gate-residual transition
@@ -1234,19 +1235,19 @@ impl QuotientGraph {
         &self,
         winner: ClassId,
         loser: ClassId,
-    ) -> (ModuleId, Vec<PartitionDelta>) {
+    ) -> (ModuleId, Vec<ModuleAssignmentDelta>) {
         let post_module = self.projected_winner_module_after_merge(winner, loser);
-        let mut deltas: Vec<PartitionDelta> = Vec::new();
+        let mut deltas: Vec<ModuleAssignmentDelta> = Vec::new();
         // Loser members move to post_module (if their current
         // assignment differs).
         let loser_members: Vec<OwnerId> = self.classes[loser.0]
             .members
             .iter()
-            .filter(|m| self.realizability_index.partition().of(OwnerId(m.0)) != post_module)
+            .filter(|m| self.realizability_index.assignment().of(OwnerId(m.0)) != post_module)
             .map(|m| OwnerId(m.0))
             .collect();
         if !loser_members.is_empty() {
-            deltas.push(PartitionDelta::MoveOwners {
+            deltas.push(ModuleAssignmentDelta::MoveOwners {
                 owners: loser_members,
                 to: post_module,
             });
@@ -1262,11 +1263,11 @@ impl QuotientGraph {
             let winner_members: Vec<OwnerId> = self.classes[winner.0]
                 .members
                 .iter()
-                .filter(|m| self.realizability_index.partition().of(OwnerId(m.0)) != post_module)
+                .filter(|m| self.realizability_index.assignment().of(OwnerId(m.0)) != post_module)
                 .map(|m| OwnerId(m.0))
                 .collect();
             if !winner_members.is_empty() {
-                deltas.push(PartitionDelta::MoveOwners {
+                deltas.push(ModuleAssignmentDelta::MoveOwners {
                     owners: winner_members,
                     to: post_module,
                 });
@@ -1389,7 +1390,7 @@ impl QuotientGraph {
         if !owners_to_move.is_empty() {
             self.realizability_index.apply(
                 &self.owner_graph,
-                PartitionDelta::MoveOwners {
+                ModuleAssignmentDelta::MoveOwners {
                     owners: owners_to_move,
                     to: new_module,
                 },
@@ -1996,7 +1997,7 @@ pub fn build_seed_quotient(
         }
         // Diagnostic-only: `check_merge` classifies *why* this pair did
         // not contract without committing. A `contract` here would
-        // mutate the partition the post-seed gate below reads; a pair
+        // mutate the assignment the post-seed gate below reads; a pair
         // that would now succeed is unreachable at fixed point and
         // reports nothing.
         if let Err(rejection) = q.check_merge(cs, ct) {
@@ -2011,16 +2012,16 @@ pub fn build_seed_quotient(
     }
 
     // ---- Post-seed: run the realizability gate once on the
-    //      assembled partition. Catches asymmetric I-cycles and mutual
+    //      assembled assignment. Catches asymmetric I-cycles and mutual
     //      constraining cycles that no individual contraction created
     //      on its own, so `modules propose` and the materializer's
     //      `validate_factorization` agree on whether a spec is
     //      realizable. One O(|V|+|E|) call.
     let verdict = q.realizability_verdict();
     if !verdict.is_realizable() {
-        let partition = q.realizability_partition();
+        let assignment = q.realizability_assignment();
         let owner_modules: Vec<ModuleId> = (0..q.owner_ids.len())
-            .map(|owner_idx| partition.of(OwnerId(owner_idx)))
+            .map(|owner_idx| assignment.of(OwnerId(owner_idx)))
             .collect();
         let mut sccs = q
             .translate_verdict_with_owner_modules(&verdict, &owner_modules, None)
@@ -2115,7 +2116,7 @@ pub(crate) mod testing {
         /// Build a quotient over `report.nodes` and immediately
         /// contract each owner group into a single class. Unlike
         /// `contract`, this bypasses the realizability gate — the
-        /// partition is taken as authoritative, so tests can seed
+        /// assignment is taken as authoritative, so tests can seed
         /// states `contract` would refuse. Returns the quotient plus
         /// one class ID per group, in `groups` order.
         ///
@@ -2138,18 +2139,18 @@ pub(crate) mod testing {
                         Some(w) => {
                             let merged = q
                                 .merge_classes_unchecked(w, c)
-                                .expect("partition group owners are pre-coalesced");
+                                .expect("assignment group owners are pre-coalesced");
                             winner = Some(merged);
                         }
                     }
                 }
-                let survivor = winner.expect("partition group must be non-empty");
+                let survivor = winner.expect("assignment group must be non-empty");
                 if group.is_pre_existing_module {
                     q.classes[survivor.0].is_pre_existing_module = true;
                 }
                 group_class_ids.push(survivor);
             }
-            // Partition seeding bypasses the gate, so the cached
+            // ModuleAssignment seeding bypasses the gate, so the cached
             // adjacency / realizability index can drift from the
             // per-merge incremental update. Rebuild from scratch so
             // callers see the correct initial state.
@@ -2166,7 +2167,7 @@ pub(crate) mod testing {
         /// The typed `OwnerGraph` IR reconstructed at construction
         /// time, for comparing the kernel's verdicts against
         /// `check_realizability` over an independently projected
-        /// partition.
+        /// assignment.
         pub fn owner_graph(&self) -> &OwnerGraph {
             &self.owner_graph
         }

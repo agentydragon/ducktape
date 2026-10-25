@@ -833,7 +833,7 @@ pub struct LogicalModule {
 
 impl LogicalModule {
     /// No ownership claims or binding metadata. Explicit deletion of this
-    /// module cannot alter the partition, even if it has a comment or note.
+    /// module cannot alter the assignment, even if it has a comment or note.
     pub fn is_structurally_empty(&self) -> bool {
         self.members.is_empty()
             && self.source_matches.is_empty()

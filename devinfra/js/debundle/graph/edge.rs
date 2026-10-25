@@ -17,7 +17,7 @@ use super::owner_graph::OwnerId;
 /// - `PromotedAtInit { callee_owner }` — `promote_at_init_calls`
 ///   manufactured the edge by lifting a function-body lazy read/rebind
 ///   into a caller's eager read. The lenient view (quotient, reports)
-///   drops these when `partition.of(callee_owner) != partition.of(from)`
+///   drops these when `assignment.of(callee_owner) != assignment.of(from)`
 ///   — the body read fires inside a call into a *different* module,
 ///   so by ESM DFS post-order the callee module (and its transitive
 ///   imports) are fully evaluated before the call returns; the
@@ -169,7 +169,7 @@ impl EdgeReason {
     /// Promote this reason to `EdgeRole::PromotedAtInit`. Used by
     /// `promote_at_init_calls`; downstream gate/lenient projection
     /// helpers consult `role` to decide whether to drop the edge when
-    /// caller and callee land in different partition slots.
+    /// caller and callee land in different assignment slots.
     pub(crate) fn promoted_at_init(mut self, callee_owner: OwnerId) -> Self {
         self.role = EdgeRole::PromotedAtInit { callee_owner };
         self

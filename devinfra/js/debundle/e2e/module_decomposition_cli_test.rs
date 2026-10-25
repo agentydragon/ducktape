@@ -1033,7 +1033,7 @@ fn reports_unfixed_cross_module_cycles_instead_of_calling_them_safe() {
 }
 
 #[test]
-fn coarsens_only_gate_blocking_sccs_and_the_reported_partition_runs() {
+fn coarsens_only_gate_blocking_sccs_and_the_reported_assignment_runs() {
     let fixture = GraphFixture::rejected(
         "const seed_value = \"alpha\";\nconst cross_value = seed_value + \"-beta\";\nfunction lazy_back() { return cross_value; }\nconsole.log(cross_value, lazy_back());\n",
         &[(

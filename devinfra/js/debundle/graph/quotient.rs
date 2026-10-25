@@ -2,13 +2,13 @@ use petgraph::algo::tarjan_scc;
 use petgraph::graphmap::DiGraphMap;
 
 use crate::ModuleId;
-use crate::partition::Partition;
+use crate::module_assignment::ModuleAssignment;
 
 use super::edge::{EdgeRole, OwnerEdge};
 use super::owner_graph::{OwnerGraph, OwnerId};
 
 /// The I∪S module dependency graph: the quotient of an [`OwnerGraph`]
-/// by a [`Partition`], one edge per directed `(from, to)` module pair.
+/// by a [`ModuleAssignment`], one edge per directed `(from, to)` module pair.
 ///
 /// Newtype around `petgraph::DiGraphMap<ModuleId, ()>`. Mutation
 /// happens only inside [`build_module_quotient`]; callers go through
@@ -35,7 +35,7 @@ impl ModuleQuotient {
 }
 
 /// Selects between the gate and lenient views in
-/// [`partition_endpoints`].
+/// [`assignment_endpoints`].
 ///
 /// `Lenient` drops cross-module `PromotedAtInit` edges (the quotient
 /// builder and reports view); `Gate` keeps them (the realizability
@@ -47,7 +47,7 @@ pub enum EndpointView {
     Gate,
 }
 
-/// Partition-projected endpoints of `edge` when it participates in
+/// Assignment-projected endpoints of `edge` when it participates in
 /// the module quotient view; `None` means "skip this edge."
 ///
 /// `view` selects which projection rule the caller wants:
@@ -76,23 +76,23 @@ pub enum EndpointView {
 ///
 /// Invariant: every quotient-projecting consumer of the owner graph
 /// MUST route through this function (or [`project_endpoints`], its form
-/// for an owner assignment that is not a materialised [`Partition`]) so
+/// for an owner assignment that is not a materialised [`ModuleAssignment`]) so
 /// the lenient-vs-gate decision stays welded to the edge's [`EdgeRole`]
 /// at one source-level point.
-pub fn partition_endpoints(
+pub fn assignment_endpoints(
     edge: &OwnerEdge,
-    partition: &Partition,
+    assignment: &ModuleAssignment,
     view: EndpointView,
 ) -> Option<(ModuleId, ModuleId)> {
-    project_endpoints(edge, partition.residual(), view, |owner| {
-        partition.of(owner)
+    project_endpoints(edge, assignment.residual(), view, |owner| {
+        assignment.of(owner)
     })
 }
 
-/// [`partition_endpoints`] under an arbitrary owner → module
+/// [`assignment_endpoints`] under an arbitrary owner → module
 /// assignment `module_of`, with `residual` the assignment's ESM DFS
 /// root. Lets the gate's speculative move overlay project edges under
-/// the post-move assignment without cloning the partition.
+/// the post-move assignment without cloning the assignment.
 pub fn project_endpoints(
     edge: &OwnerEdge,
     residual: ModuleId,
@@ -132,14 +132,17 @@ pub fn project_endpoints(
     Some((from, to))
 }
 
-/// Quotient the owner graph by `partition` to build the module
+/// Quotient the owner graph by `assignment` to build the module
 /// dependency graph consumed by validation and emit. The single
 /// public construction path; validation and reports both go through
 /// this for any non-hypothetical quotient.
-pub fn build_module_quotient(owner_graph: &OwnerGraph, partition: &Partition) -> ModuleQuotient {
+pub fn build_module_quotient(
+    owner_graph: &OwnerGraph,
+    assignment: &ModuleAssignment,
+) -> ModuleQuotient {
     let mut graph = DiGraphMap::new();
     for edge in owner_graph.iter_edges() {
-        if let Some((from, to)) = partition_endpoints(edge, partition, EndpointView::Lenient) {
+        if let Some((from, to)) = assignment_endpoints(edge, assignment, EndpointView::Lenient) {
             graph.add_edge(from, to, ());
         }
     }

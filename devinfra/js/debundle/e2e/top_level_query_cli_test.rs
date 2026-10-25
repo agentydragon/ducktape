@@ -307,7 +307,7 @@ fn duplicate_anonymous_statements_are_advisory_not_landable_proposals() {
     let report = fixture.json(&["modules", "propose", "--size-cap-lines", "10000"]);
     let proposals = report["proposals"].as_array().unwrap();
     // Real sequencing edges may group both statements into one proposal.
-    // Whichever partition the heuristic chooses, neither ambiguous owner is
+    // Whichever assignment the heuristic chooses, neither ambiguous owner is
     // addressable by a unique selector, and no containing proposal is landable.
     let mut unaddressable: Vec<_> = proposals
         .iter()

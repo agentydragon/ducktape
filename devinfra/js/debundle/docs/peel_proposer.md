@@ -36,7 +36,7 @@ Current rejection kinds:
   represented as one class.
 - `atomic_reachability`: an atomic-DAG reachability closure edge would
   have created an unrealizable quotient.
-- `post_seed_unrealizable_scc`: the final seed partition is rejected by
+- `post_seed_unrealizable_scc`: the final seed assignment is rejected by
   the shared realizability gate.
 
 Well-formed inputs normally have no seed rejections. When they appear,

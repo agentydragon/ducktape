@@ -1,5 +1,5 @@
-//! Factor assembly: produces the authoritative per-owner
-//! [`Partition`] from [`crate::atomic_units`]' SCCs + the spec's YAML
+//! Assignment assembly: produces the authoritative per-owner
+//! [`ModuleAssignment`] from [`crate::atomic_units`]' SCCs + the spec's YAML
 //! claims. When two or more distinct claims fall inside one atomic
 //! unit the spec is unrealizable; we surface an
 //! [`AtomicUnitConflict`] (members + each conflicting claim + the
@@ -7,7 +7,7 @@
 //! before emit. This pass deliberately does *not* extend a single-
 //! member claim to cover the rest of its unit — that promotion is
 //! an authoring decision surfaced by `debundle coverage`.
-//! See `docs/design.md` §"Factor assembly inside `debundle run`".
+//! See `docs/design.md` §"Assignment assembly inside `debundle run`".
 
 use std::collections::{BTreeSet, HashMap};
 
@@ -18,7 +18,7 @@ use swc_ecma_ast::Id;
 use crate::atomic_units::AtomicUnit;
 use crate::graph::{DepKind, OwnerGraph, OwnerId};
 use crate::ids::{BindingKind, LogicalModuleIndex, ModuleId, PlannedModule};
-use crate::partition::Partition;
+use crate::module_assignment::ModuleAssignment;
 
 /// One owner's claimed destination inside a conflicting atomic
 /// unit. Listed inside an [`AtomicUnitConflict`].
@@ -53,11 +53,11 @@ pub struct AtomicUnitConflict {
 
 #[derive(Debug, Clone)]
 pub struct AssemblyOutcome {
-    pub partition: Partition,
+    pub assignment: ModuleAssignment,
     pub conflicts: Vec<AtomicUnitConflict>,
 }
 
-/// Build the partition + any unit-claim conflicts. The partition is
+/// Build the assignment + any unit-claim conflicts. The assignment is
 /// best-effort when conflicts exist (first-seen claim wins per unit)
 /// so downstream owner-graph/report code keeps working — the
 /// conflict list is what surfaces the rejection to the user.
@@ -65,7 +65,7 @@ pub struct AssemblyOutcome {
 /// `default_destination` is the residual logical module id that
 /// unclaimed owners fall back to (and the conflict detector reports as
 /// the effective destination of unclaimed unit members).
-pub fn assemble_partition(
+pub fn assemble_assignment(
     owner_graph: &OwnerGraph,
     atomic_units: &[AtomicUnit],
     bindings: &HashMap<Id, BindingKind>,
@@ -73,10 +73,10 @@ pub fn assemble_partition(
     default_destination: ModuleId,
 ) -> AssemblyOutcome {
     let claims = compute_owner_claims(owner_graph, bindings, logical_modules);
-    let mut partition = Partition::new(owner_graph, default_destination);
+    let mut assignment = ModuleAssignment::new(owner_graph, default_destination);
     for (idx, claim) in claims.iter().enumerate() {
         if let Some(dest) = claim {
-            partition.set(OwnerId(idx), *dest);
+            assignment.set(OwnerId(idx), *dest);
         }
     }
     let mut conflicts = Vec::<AtomicUnitConflict>::new();
@@ -88,7 +88,7 @@ pub fn assemble_partition(
         }
     }
     AssemblyOutcome {
-        partition,
+        assignment,
         conflicts,
     }
 }

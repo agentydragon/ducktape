@@ -683,10 +683,10 @@ pub(super) fn finish_logical_chunk(
 /// Rebind-fold composer: fold rebind-only atomic units into their
 /// explicit destination. Bridges the pure
 /// `compute_rebind_folds` decision in `lowering/rebind_fold.rs` over the chunk's
-/// post-seed partition (managed by `ChunkPlanBuilder`) into the
+/// post-seed assignment (managed by `ChunkPlanBuilder`) into the
 /// builder's plan-list/catalogue state.
 ///
-/// This runs after the seed phases of partition construction
+/// This runs after the seed phases of assignment construction
 /// (explicit requests, destructure pull, residual sweep) and before
 /// `synthesize_mini_factors`. The decision step is spec-independent —
 /// it only inspects the chunk-analysis owner graph + atomic units, the
@@ -708,10 +708,10 @@ fn apply_rebind_folds_from_chunk_analysis(
 
 /// Build the `PlannedModule` list the proposer
 /// consumes from the per-chunk `ModulePlan`s, then append the
-/// "anon residual" sentinel that holds the partition's default
+/// "anon residual" sentinel that holds the assignment's default
 /// destination.
 ///
-/// The partition's default destination is a factorization-only sentinel
+/// The assignment's default destination is a factorization-only sentinel
 /// appended past `module_plans.len()`. The emit loop never writes it as a
 /// file. In `catchall_file` mode, plan construction routes the anonymous
 /// owners required by catchall atomicity or side-effect order there; other
@@ -1140,8 +1140,8 @@ fn build_directory_dependency_facts(
 ) -> Vec<DirectoryDependencyFact> {
     let mut facts = Vec::new();
     for edge in factorization.analysis.owner_graph().iter_edges() {
-        let source_module = factorization.partition.of(edge.from);
-        let target_module = factorization.partition.of(edge.to);
+        let source_module = factorization.assignment.of(edge.from);
+        let target_module = factorization.assignment.of(edge.to);
         if source_module == target_module {
             continue;
         }

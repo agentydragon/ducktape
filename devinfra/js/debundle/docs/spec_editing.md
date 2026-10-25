@@ -5,14 +5,14 @@ Proposing, moving, merging, and renaming modules and bindings; peel heuristics;
 
 ## Workflow: reorganizing existing modules
 
-Use `modules decompose --atomic` to plan a complete partition of existing
+Use `modules decompose --atomic` to plan a complete assignment of existing
 module owners. Review semantic destinations, selector anchors, and the full
 candidate verdict; optional coarsening and original-home rejoining are
 described in [the decomposition guide](cli.md#refining-existing-modules-modules-decompose).
 
 Apply a reviewed `{owner_id, module}` map of already-claimed non-residual
 owners with `modules refine --dry-run`, then `modules refine`. Both resolve
-the full scoped spec and validate the requested partition before any write.
+the full scoped spec and validate the requested assignment before any write.
 The [owner-assignment guide](cli.md#applying-reviewed-owner-assignments-modules-refine)
 defines batch fields, multi-chunk paths, and excluded owner kinds. Residual
 extraction uses the proposal workflow below; focused binding moves use
@@ -182,8 +182,8 @@ and the destinations each member would land in.
    debundle atoms --format json | jq '.[] | select(...)'
    ```
    `debundle coverage` reports per-atom spec coverage; rows tagged
-   "split" by current YAML are not landable until the partition agrees.
-4. **Either expand the move set or revisit the partition.** The
+   "split" by current YAML are not landable until the assignment agrees.
+4. **Either expand the move set or revisit the assignment.** The
    diagnostic does not auto-compute the minimal completion ("also move
    `rRe` and `MRe`"); read the printed atom membership and add the
    missing moves to your batch.
@@ -191,9 +191,9 @@ and the destinations each member would land in.
 
 The gate refuses; nothing on disk has changed.
 
-## Workflow: applying a reviewed owner partition
+## Workflow: applying a reviewed owner assignment
 
-When `modules decompose` reports a useful owner partition, replace its
+When `modules decompose` reports a useful owner assignment, replace its
 temporary part labels with semantic module names and apply the complete
 assignment through `modules refine`. For specs using local
 `intrinsic_alias.referenced_by` anchors, pass
@@ -262,7 +262,7 @@ edges they carry already point at the class).
 
 If owners at consecutive statement ordinals `N` and `N+1` are each
 the other's only edge target/source, they were lines next to each
-other in the source and the partitioner accidentally put them in
+other in the source and the decomposer assigned them to
 sibling shells. Merge the two `auto_partition_*` modules into one.
 Detectable via `cluster(A).out == [B] && cluster(B).in == [A]` plus
 `|N+1 - N| == 1`.
@@ -325,7 +325,7 @@ debundle modules merge --target runtime/plugins runtime/widgets
 Source-module comments and notes are composed as described in
 § Comments and notes below.
 
-The realizability gate runs against the post-merge partition before
+The realizability gate runs against the post-merge assignment before
 the YAML splice fires — pass `--graph <owner_graph.json>` so the
 gate has the chunk's edge topology. The gate rejects merges that
 would create cross-module cycles; `--dry-run` runs the gate without

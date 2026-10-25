@@ -1,6 +1,6 @@
 //! Realizability gate and factorization validation.
 //!
-//! Builds on the `analysis` core (owner graph, partition, reports):
+//! Builds on the `analysis` core (owner graph, assignment, reports):
 //! quotient the owner graph into the module dependency graph used by
 //! ESM import emission and linker-order reasoning, validate
 //! realizability (`realizability`, `validation`), and assemble the
@@ -21,7 +21,7 @@ pub use chunk_factorization::ChunkFactorization;
 pub use esm_import_order::EsmImportOrder;
 pub use factorization_inputs::FactorizationInputs;
 pub use realizability::{
-    LadderDecision, PartitionDelta, RealizabilityIndex, RealizabilityVerdict, SccDiagnosis,
+    LadderDecision, ModuleAssignmentDelta, RealizabilityIndex, RealizabilityVerdict, SccDiagnosis,
     SccRejection, check_realizability, check_realizability_touching,
     simulated_evaluation_post_order,
 };

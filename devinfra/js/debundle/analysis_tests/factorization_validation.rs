@@ -22,7 +22,7 @@ fn residual() -> ModuleId {
     ModuleId::logical(usize::MAX)
 }
 
-/// Canonical-path renderer for test partitions: the residual
+/// Canonical-path renderer for test assignments: the residual
 /// sentinel renders as `residual`, explicit modules as `mod_<idx>`.
 fn render(id: ModuleId) -> spec::ModulePath {
     let LogicalModuleIndex(idx) = id.0;
@@ -44,7 +44,7 @@ fn member_bindings(members: &[BindingReport]) -> Vec<String> {
 // --- Lazy rebind atomic-unit constraints --------------------------------
 
 /// LazyRebind atomic-unit split: declarer and assigner of a
-/// mutable binding must materialize together. `factor_assembly`
+/// mutable binding must materialize together. `assignment_assembly`
 /// records this as an `atomic_unit_conflicts` entry on the
 /// factorization; the materializer bails on any non-empty list.
 #[test]
@@ -604,7 +604,7 @@ fn atomic_units_lazy_rebind_merges() {
 
 // --- Factor assembly -----------------------------------------------------
 
-fn partition_summary(factorization: &ChunkFactorization) -> Vec<(String, String)> {
+fn assignment_summary(factorization: &ChunkFactorization) -> Vec<(String, String)> {
     let mut out: Vec<(String, String)> = factorization
         .analysis
         .owner_graph()
@@ -616,7 +616,7 @@ fn partition_summary(factorization: &ChunkFactorization) -> Vec<(String, String)
             } else {
                 declared.join(",")
             };
-            let dest = factorization.partition.of(node.id);
+            let dest = factorization.assignment.of(node.id);
             // Residual modules render as `<residual>` so this
             // summary stays stable across residual-index changes;
             // explicit modules use their `mod_<idx>` label.
@@ -636,9 +636,9 @@ fn partition_summary(factorization: &ChunkFactorization) -> Vec<(String, String)
 }
 
 #[test]
-fn factor_assembly_unclaimed_owners_default_to_residual() {
+fn assignment_assembly_unclaimed_owners_default_to_residual() {
     let factorization = factorization_for("const A = 1; const B = 2;", &[]);
-    let summary = partition_summary(&factorization);
+    let summary = assignment_summary(&factorization);
     assert_eq!(
         summary,
         vec![
@@ -649,7 +649,7 @@ fn factor_assembly_unclaimed_owners_default_to_residual() {
 }
 
 #[test]
-fn factor_assembly_single_claim_with_unclaimed_unit_members_is_a_conflict() {
+fn assignment_assembly_single_claim_with_unclaimed_unit_members_is_a_conflict() {
     // `const A = B + 1; const B = A + 1;` is one EagerUse cycle —
     // a single atomic unit. Claiming A for mod_0 leaves B
     // defaulting to residual entry, which splits the unit
@@ -657,7 +657,7 @@ fn factor_assembly_single_claim_with_unclaimed_unit_members_is_a_conflict() {
     // author needs to either also assign B (or leave both
     // unassigned), or remove the constraining edge that fused
     // them in the first place. `debundle coverage` may flag the
-    // split unit as an advisory edit, but factor_assembly refuses
+    // split unit as an advisory edit, but assignment_assembly refuses
     // to silently move B for the user.
     let factorization =
         factorization_for("const A = B + 1; const B = A + 1;", &[("A", logical(0))]);
@@ -676,7 +676,7 @@ fn factor_assembly_single_claim_with_unclaimed_unit_members_is_a_conflict() {
 }
 
 #[test]
-fn factor_assembly_concordant_claims_within_unit_are_fine() {
+fn assignment_assembly_concordant_claims_within_unit_are_fine() {
     // Both members of the same atomic unit claimed for the same
     // module — that's the spec author being explicit, not a
     // conflict.
@@ -684,7 +684,7 @@ fn factor_assembly_concordant_claims_within_unit_are_fine() {
         "const A = B + 1; const B = A + 1;",
         &[("A", logical(0)), ("B", logical(0))],
     );
-    let summary = partition_summary(&factorization);
+    let summary = assignment_summary(&factorization);
     assert_eq!(
         summary,
         vec![
@@ -695,7 +695,7 @@ fn factor_assembly_concordant_claims_within_unit_are_fine() {
 }
 
 #[test]
-fn factor_assembly_records_conflict_on_split_eager_use_cycle() {
+fn assignment_assembly_records_conflict_on_split_eager_use_cycle() {
     let factorization = factorization_for(
         "const A = B + 1; const B = A + 1;",
         &[("A", logical(0)), ("B", logical(1))],
@@ -714,14 +714,14 @@ fn factor_assembly_records_conflict_on_split_eager_use_cycle() {
 }
 
 #[test]
-fn factor_assembly_records_no_conflict_for_sequenced_only_chain() {
+fn assignment_assembly_records_no_conflict_for_sequenced_only_chain() {
     // Three side-effect statements, source-ordered. Directed
     // Sequenced edges alone form a chain in `G_atomic`, not an
     // SCC, so every owner is its own atomic unit and the spec
     // can split them across modules without violating
     // co-location. The validator may still flag a module-level
     // cycle when the spec creates one through reverse claims,
-    // but factor_assembly itself does not panic / record a
+    // but assignment_assembly itself does not panic / record a
     // conflict here.
     let factorization = factorization_for(
         r#"const a1 = (globalThis.tag = "a1", 1); const b1 = (globalThis.tag = "b1", 2); const a2 = (globalThis.tag = "a2", 3);"#,
@@ -735,14 +735,14 @@ fn factor_assembly_records_no_conflict_for_sequenced_only_chain() {
 }
 
 #[test]
-fn factor_assembly_independent_owners_keep_independent_claims() {
+fn assignment_assembly_independent_owners_keep_independent_claims() {
     // Three eager-use chain: A → B → C, no cycle, three atomic
     // units. Each owner's claim takes effect independently.
     let factorization = factorization_for(
         "const C = 3; const B = C + 1; const A = B + 1;",
         &[("A", logical(0)), ("B", logical(1)), ("C", logical(0))],
     );
-    let summary = partition_summary(&factorization);
+    let summary = assignment_summary(&factorization);
     assert_eq!(
         summary,
         vec![

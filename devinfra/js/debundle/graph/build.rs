@@ -42,11 +42,11 @@ impl std::error::Error for DuplicateTopLevelDeclaration {}
 /// Build the fine owner graph from per-statement facts under the
 /// per-chunk [`OwnerGraphOptions`]. Pure IR construction: no module
 /// assignment, no quotient. Module-level dependencies are derived later
-/// by [`build_module_quotient`] given a [`Partition`] mapping owners to
+/// by [`build_module_quotient`] given a [`ModuleAssignment`] mapping owners to
 /// destination modules.
 ///
 /// [`build_module_quotient`]: super::quotient::build_module_quotient
-/// [`Partition`]: crate::partition::Partition
+/// [`ModuleAssignment`]: crate::module_assignment::ModuleAssignment
 pub fn build_owner_graph_with(
     facts: &[StatementFacts],
     options: OwnerGraphOptions,
@@ -241,7 +241,7 @@ pub fn build_owner_graph_with(
     // close through such a lazy edge look acyclic to the constraining
     // subgraph. After promotion, the primitive's verdict is sound.
     //
-    // Promoted edges are added at owner-graph level (partition-
+    // Promoted edges are added at owner-graph level (assignment-
     // independent): intra-module promoted edges are dropped by the
     // quotient automatically. Only direct `f(...)` callees that
     // resolve to chunk-declared bindings are followed; indirect
@@ -832,7 +832,7 @@ fn promote_at_init_calls(
     // 5. Emit promoted edges with per-statement, per-kind dedup.
     //    Each emitted reason carries `EdgeRole::PromotedAtInit {
     //    callee_owner }` so the realizability gate can drop the edge
-    //    when caller and callee land in different partition slots —
+    //    when caller and callee land in different assignment slots —
     //    the body read fires inside a call into a different module,
     //    after that callee module (and its imports) have already
     //    evaluated, so the manufactured constraint from R to the

@@ -26,7 +26,7 @@ the shared resolver and gate rather than their own acceptance rules.
 | Read flat/tree specs and authoring module documents            | `spec/`                                                  |
 | Match, jointly resolve, synthesize, and diagnose selectors     | `selectors/{matching,resolution,authoring,diagnostics}/` |
 | Analyze statement effects, dependencies, and structural atoms  | `facts/`, `purity/`, `graph/`, `chunk_analysis/`         |
-| Assemble assignments and validate realizability                | `factor_assembly.rs`, `gate.rs`, `realizability/`        |
+| Assemble assignments and validate realizability                | `assignment_assembly.rs`, `gate.rs`, `realizability/`    |
 | Lower accepted assignments to entry and logical-module files   | `lowering/`                                              |
 | Plan/apply vendor substitution and finalize emitted files      | `vendor/`, `pipeline.rs`, `artifacts/emission_files.rs`  |
 | Propose moves or safe module refinements; inspect or edit spec | `peel/`, `cli/`                                          |

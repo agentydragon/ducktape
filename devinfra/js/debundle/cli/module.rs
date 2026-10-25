@@ -3,10 +3,10 @@
 //! `debundle modules delete --force` verb removes a non-empty module.
 //!
 //! Both verbs run the unified realizability gate (see
-//! [`crate::edit_gate::gate_post_edit_partition`]) against the
-//! **post-edit** partition before touching the filesystem. The gate
+//! [`crate::edit_gate::gate_post_edit_assignment`]) against the
+//! **post-edit** assignment before touching the filesystem. The gate
 //! reconstructs the chunk's `OwnerGraph` from `owner_graph.json`
-//! (via `OwnerGraph::from_report`), builds the post-edit `Partition`
+//! (via `OwnerGraph::from_report`), builds the post-edit `ModuleAssignment`
 //! by mapping each surviving spec module's bindings to a fresh
 //! `ModuleId`, and runs BOTH `validate_factorization` (cross-module
 //! cycles) AND atom-split detection (every `AtomicUnit`'s members
@@ -197,7 +197,7 @@ impl DeleteSummary {
 /// Validation contract (per docs/cli.md § "Validate-by-default"):
 ///
 /// * Default: run the realizability gate against the post-merge
-///   partition. Accept and splice if `Verdict::Realizable`; reject
+///   assignment. Accept and splice if `Verdict::Realizable`; reject
 ///   and exit non-zero with the same `render_cycle_summary`
 ///   diagnostic the pipeline prints if `Verdict::Unrealizable`.
 /// * `--dry-run`: run the gate but do not modify any file.
@@ -406,10 +406,10 @@ fn plan_merge(modules_root: &Path, target: &Path, sources: &[&Path]) -> Result<M
 ///
 /// * Default: refuse the deletion of a module that still has members
 ///   or anonymous statements. For empty deletions, no gate run is
-///   needed — the partition doesn't change.
+///   needed — the assignment doesn't change.
 /// * `--force`: override the non-empty check. For non-empty
 ///   deletions the realizability gate runs against the post-delete
-///   partition (every binding previously owned by a deleted module
+///   assignment (every binding previously owned by a deleted module
 ///   falls back to residual); an `Unrealizable` verdict rejects the
 ///   deletion.
 /// * `--dry-run`: run the gate but do not delete any file.
@@ -476,9 +476,9 @@ pub fn run_delete(args: DeleteArgs) -> Result<()> {
 
     // Realizability gate. The all-empty fast path is a structural
     // no-op (an empty module owns no bindings and contributes no
-    // anonymous statements, so removing it leaves the partition
+    // anonymous statements, so removing it leaves the assignment
     // unchanged). For non-empty `--force` deletions we run the full
-    // gate against the post-delete partition.
+    // gate against the post-delete assignment.
     let gate_outcome = if non_empty.is_empty() {
         GateOutcome::NotRequired
     } else {

@@ -240,9 +240,9 @@ fn collect_phantom_side_effect_providers(
     phantom_side_effect_providers: &mut BTreeSet<usize>,
 ) {
     let module_id = ModuleId(LogicalModuleIndex(module_index));
-    let residual = factorization.partition.residual();
+    let residual = factorization.assignment.residual();
     let owner_graph = factorization.analysis.owner_graph();
-    for (owner_id, owner_module) in factorization.partition.iter() {
+    for (owner_id, owner_module) in factorization.assignment.iter() {
         if owner_module != module_id {
             continue;
         }
@@ -251,7 +251,7 @@ fn collect_phantom_side_effect_providers(
             if !edge.reason.constrains_init_order() {
                 continue;
             }
-            let target_module = factorization.partition.of(edge.to);
+            let target_module = factorization.assignment.of(edge.to);
             if target_module == module_id || target_module == residual {
                 continue;
             }

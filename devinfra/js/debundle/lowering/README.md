@@ -2,7 +2,7 @@
 
 - `mod.rs`: artifact-wide orchestration and the public lowering entry point.
 - `materialize/`: resolve requests and prepare accepted per-chunk plans.
-- `lower.rs`: partition a chunk, construct its residual entry, and dispatch module emission.
+- `lower.rs`: assign chunk owners to modules, construct its residual entry, and dispatch module emission.
 - `module_output.rs`: emit one logical module's imports, body rewrites, comments, and metadata.
   Its input contains only that module's selected exports and imported re-exports, not the
   vectors for every module in the chunk.

@@ -33,7 +33,7 @@ pub enum GateOutcome {
     NamesOnly,
     /// Validation skipped via `--no-verify`.
     Skipped,
-    /// No gate needed: the edit cannot change the partition (e.g.
+    /// No gate needed: the edit cannot change the assignment (e.g.
     /// deleting structurally empty modules, an empty batch).
     NotRequired,
 }

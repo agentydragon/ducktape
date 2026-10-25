@@ -28,7 +28,7 @@ pub struct ModulesApplyArgs {
     /// Tree config that scopes this graph-backed edit to its chunk's module roots.
     #[arg(long = "tree-config", env = "DEBUNDLE_TREE_CONFIG")]
     tree_config: Option<PathBuf>,
-    /// Current owner graph, used to check proposal identity and the resulting partition.
+    /// Current owner graph, used to check proposal identity and the resulting assignment.
     #[arg(long = "graph", env = "DEBUNDLE_GRAPH")]
     graph: PathBuf,
     /// Root for the chunk's source file.

@@ -62,7 +62,7 @@ export { ok_dep, ok_cross, ok_lazy_reader, bad_seed, bad_lazy_back };
         ],
     )
     // Inline mode keeps `bad_seed` / `bad_lazy_back` in the entry
-    // file (the partition's residual) so the broken pair's eager
+    // file (the assignment's residual) so the broken pair's eager
     // read targets the DFS root.
     .with_unassigned_mode(unassigned_mode_inline())
 }

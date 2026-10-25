@@ -21,7 +21,7 @@ JSON-on-stdout / structured-diagnostic-on-stderr convention.
 - Edit assignments or claim proposals: [Batch atomicity](#batch-atomicity-bindings-assign),
   [Claiming fresh proposals](#claiming-fresh-proposals-modules-apply), and
   <spec_editing.md>.
-- Reorganize existing modules: [Plan a partition](#refining-existing-modules-modules-decompose),
+- Reorganize existing modules: [Plan a module assignment](#refining-existing-modules-modules-decompose),
   then [apply reviewed owner assignments](#applying-reviewed-owner-assignments-modules-refine).
 - Diagnose a rejected edit: [Rejection diagnostics](#rejection-diagnostics)
   and [Gate queries](#gate-queries).
@@ -90,13 +90,13 @@ The mutating verbs (`bindings assign`, `bindings unassign`,
 one-line verdict (`<action>` plus move/file counts). Under a JSON format
 each verb prints **one outcome object** sharing a common schema core:
 
-| Field           | Values                                                                                                                            |
-| --------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `verb`          | `assign` \| `unassign` \| `rename` \| `merge` \| `delete`                                                                         |
-| `action`        | `applied` \| `dry-run` \| `noop` \| `unchanged` \| `rejected`                                                                     |
-| `gate`          | `passed` \| `names_only` \| `skipped` (`--no-verify`) \| `not_required` (edit cannot change the partition); success outcomes only |
-| `files_written` | Files written (or, under `--dry-run`, that would be written)                                                                      |
-| `files_deleted` | Files deleted (or, under `--dry-run`, that would be deleted)                                                                      |
+| Field           | Values                                                                                                                             |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `verb`          | `assign` \| `unassign` \| `rename` \| `merge` \| `delete`                                                                          |
+| `action`        | `applied` \| `dry-run` \| `noop` \| `unchanged` \| `rejected`                                                                      |
+| `gate`          | `passed` \| `names_only` \| `skipped` (`--no-verify`) \| `not_required` (edit cannot change the assignment); success outcomes only |
+| `files_written` | Files written (or, under `--dry-run`, that would be written)                                                                       |
+| `files_deleted` | Files deleted (or, under `--dry-run`, that would be deleted)                                                                       |
 
 Verb-specific fields flatten in alongside the core: `moves_applied`
 (assign), `unassigned` (unassign), `binding` / `old_readable` /
@@ -471,7 +471,7 @@ that structural atomic units stay together, and runs the shared realizability
 gate over the complete candidate. `candidate_is_realizable: true` means that
 candidate passed those checks. A false result includes the gate's cycles or
 cross-module rebinds and any structural atom conflicts; the fragments remain
-diagnostic suggestions and do not form an accepted partition. By default
+diagnostic suggestions and do not form an accepted assignment. By default
 residual owners keep their current destination and are not split into
 suggestions, so a candidate can remain invalid when its conflict involves
 residual ownership.
@@ -480,7 +480,7 @@ The command does not modify YAML. Review the reported owner and binding IDs,
 choose semantic module names for each suggested part, and assign the complete
 set of fragments together. Suggested `part-N` paths are temporary review aids,
 not names inferred from the source. This is a conservative seed refinement,
-not a minimum partition: its canonical pivot order can leave mutually compatible
+not a minimal module assignment: its canonical pivot order can leave mutually compatible
 owners in separate fragments. Unlike `modules propose`, decomposition has no
 module-size cap and does not run the greedy cross-module proposer.
 Some fragments may include owners without binding IDs, such as anonymous
@@ -524,7 +524,7 @@ remains read-only, and the complete candidate still passes through the same
 structural and realizability gates. Without the option, graph-only
 decomposition behavior is unchanged.
 
-To ask for a coarser candidate when the atomic partition is blocked by gate
+To ask for a coarser candidate when the atomic-unit assignment is blocked by gate
 cycles, add `--coarsen-blocking-sccs`:
 
 ```sh
@@ -544,7 +544,7 @@ The JSON `modules` rows still describe the initial atomic fragments. The
 `coarsening` object reports each consumed SCC, the final candidate groups, the
 original module paths represented by each group, and the stopping reason. The
 top-level coverage, cycle, rebind, and `candidate_is_realizable` fields describe
-the final candidate. A passing result is a gate-accepted partition, not a claim
+the final candidate. A passing result is a gate-accepted assignment, not a claim
 that groups sharing a suggested path belong to one semantic feature. The mode
 does not edit YAML or choose descriptive module names; review `origin_module_paths`
 and owner IDs before assigning the groups in a later spec change.
@@ -578,14 +578,14 @@ particular name check found none; the read-only planner does not rename members
 or certify that a later spec edit passes every source-level check. Graph-only
 decomposition omits this field.
 
-To retain as many original semantic homes as the accepted partition permits,
+To retain as many original semantic homes as the accepted assignment permits,
 add `--rejoin-original-modules` to the SCC coarsening command. This requires
 `--coarsen-blocking-sccs` and starts only after its complete candidate passes
 the shared gate. It contracts whole candidate groups when every owner in both
 groups came from the same original module. Each proposed contraction passes the
-full shared realizability gate on its hypothetical complete partition. Groups
+full shared realizability gate on its hypothetical complete assignment. Groups
 that already combine different original homes remain intact. The final complete
-partition passes that gate again. A fully rejoined home gets its original path;
+assignment passes that gate again. A fully rejoined home gets its original path;
 other groups keep deterministic temporary paths.
 
 For a bounded authoring pass, add `--rejoin-pair-attempt-limit N`. This requires
@@ -652,7 +652,7 @@ unclaimed, import, and export owners cannot be assigned. It rejects duplicate
 owner rows, split/conflicting current claims, destination name or annotation
 collisions, and stale owner graphs. It then resolves every selector in the
 complete scoped post-edit spec and compares every graph owner—including
-unchanged and residual owners—to the requested complete partition. Only after
+unchanged and residual owners—to the requested complete assignment. Only after
 that identity check does the shared atomic-unit and realizability gate run.
 There is no `--no-verify` mode. `--dry-run` performs the same checks without
 writing YAML; a rejected batch leaves every module document unchanged.

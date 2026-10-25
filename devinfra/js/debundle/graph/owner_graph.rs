@@ -19,7 +19,7 @@ pub struct OwnerId(pub usize);
 /// Fine-grained graph before logical modules are formed. Nodes are
 /// top-level owners/statements; edges are owner-level reads and
 /// source-order side-effect constraints. The module dependency graph
-/// is the quotient of this graph by a [`Partition`].
+/// is the quotient of this graph by a [`ModuleAssignment`].
 ///
 /// Storage is **flat-edges + CSR adjacency**, the canonical compiler-IR
 /// shape: one [`OwnerEdge`] per reason, indexed by [`OwnerEdgeId`]
@@ -29,7 +29,7 @@ pub struct OwnerId(pub usize);
 /// access by `(from, to)` and a separate `Vec<OwnerEdge>` for
 /// stable indices into edges; this collapses them.
 ///
-/// [`Partition`]: crate::partition::Partition
+/// [`ModuleAssignment`]: crate::module_assignment::ModuleAssignment
 #[derive(Debug, Clone, Default)]
 pub struct OwnerGraph {
     pub(crate) nodes: Vec<OwnerNode>,
@@ -68,7 +68,7 @@ impl OwnerGraph {
     }
 
     /// Total owner-node count. Callers that need to size a per-owner
-    /// vector (e.g. partition slots, unit assignments) should use this
+    /// vector (e.g. assignment slots, unit assignments) should use this
     /// instead of reaching into a private field.
     pub fn num_nodes(&self) -> usize {
         self.nodes.len()
@@ -113,7 +113,7 @@ impl OwnerGraph {
     /// per-node `kind` / `purity` the JSON wire shape mirrors. Every
     /// node's [`OwnerNode::declared`] is empty — the report has no
     /// hygienic `Id`s — so the graph cannot feed
-    /// [`crate::factor_assembly::assemble_partition`].
+    /// [`crate::assignment_assembly::assemble_assignment`].
     ///
     /// `OwnerEdgeId`s in the reconstructed graph are assigned in the
     /// order edges appear in `report.edges`; they don't necessarily

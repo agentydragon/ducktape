@@ -135,7 +135,7 @@ fn run_case(case: &MinimizedSelectorCase) {
     assert_eq!(
         outputs.len(),
         case.outputs.len(),
-        "{}: expected selector output partition {:?}, got {:?}",
+        "{}: expected selector output assignment {:?}, got {:?}",
         case.name,
         case.outputs
             .iter()

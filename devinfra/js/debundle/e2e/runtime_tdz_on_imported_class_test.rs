@@ -49,7 +49,7 @@
 //!
 //! The realizability gate recognizes the asymmetric-cycle shape
 //! `(at-init forward, lazy back)` and rejects the spec. The
-//! materializer can't emit working JS for this partition — ESM
+//! materializer can't emit working JS for this assignment — ESM
 //! hoists all imports above any statement, so re-sequencing
 //! `source_import_position` is never going to put entry's
 //! `class Backend` declaration before `mod_logger`'s

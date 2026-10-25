@@ -2,17 +2,17 @@ use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 
 use crate::report_builders::build_owner_graph_report;
+use analysis::assignment_assembly::{AtomicUnitConflict, assemble_assignment};
 use analysis::atomic_units::{AtomicUnit, OwnerGraphAndUnits};
-use analysis::factor_assembly::{AtomicUnitConflict, assemble_partition};
 use analysis::graph::{build_module_quotient, chunk_constraining_module_edges};
-use analysis::partition::Partition;
+use analysis::module_assignment::ModuleAssignment;
 use analysis::{LogicalModuleIndex, ModuleId, ModuleQuotient, OwnerGraphReport, PlannedModule};
 
 use crate::FactorizationInputs;
 use crate::esm_import_order::EsmImportOrder;
 use crate::validation::{FactorizationReport, validate_factorization};
 
-/// Per-chunk factorization output: the spec's partition of the
+/// Per-chunk factorization output: the spec's assignment of the
 /// owner graph, plus the realizability views derived from it
 /// (`dep_graph`, `linker_order`, `assembly_conflicts`) and small
 /// caches downstream consumers consult on the hot path.
@@ -24,18 +24,18 @@ use crate::validation::{FactorizationReport, validate_factorization};
 #[derive(Debug, Clone)]
 pub struct ChunkFactorization {
     pub analysis: Arc<FactorizationInputs>,
-    /// Module assignment per owner — the spec's partition of the
+    /// Module assignment per owner — the spec's assignment of the
     /// owner graph. Stored separately from the IR so the IR stays
     /// immutable across validation/report construction.
-    pub partition: Partition,
+    pub assignment: ModuleAssignment,
     /// Atomic owner units computed from the owner graph's
     /// constraining-edge SCCs. Stored so report emission and
-    /// downstream diagnostics reuse the same unit partition that
+    /// downstream diagnostics reuse the same atomic-unit grouping that
     /// factor assembly validated.
     pub atomic_units: Vec<AtomicUnit>,
     /// Atomic-factor-unit splits the spec demands but the
     /// constraining-edge SCC analysis forbids — populated by
-    /// `factor_assembly` when YAML claims split an atomic unit across
+    /// `assignment_assembly` when YAML claims split an atomic unit across
     /// destination modules. Non-empty means the spec is unrealizable
     /// by construction; the materializer bails on these before
     /// emitting code.
@@ -71,16 +71,16 @@ impl ChunkFactorization {
             owner_graph,
             atomic_units,
         } = precomputed;
-        let outcome = assemble_partition(
+        let outcome = assemble_assignment(
             &owner_graph,
             &atomic_units,
             &bindings,
             &logical_modules,
             default_destination,
         );
-        let partition = outcome.partition;
+        let assignment = outcome.assignment;
         let assembly_conflicts = outcome.conflicts;
-        let dep_graph = build_module_quotient(&owner_graph, &partition);
+        let dep_graph = build_module_quotient(&owner_graph, &assignment);
         // Cache the dep-graph SCC partition so downstream consumers
         // (`report_builders::build_quotient_scc_reports`, the validator's
         // verdict path) share one Tarjan walk instead of each
@@ -90,7 +90,7 @@ impl ChunkFactorization {
         // `ChunkConstrainingEdgeSet` so the emitter and the gate's
         // simulator share one source of truth — see
         // `graph::chunk_constraining_module_edges` for the invariant doc.
-        let canonical_edges = chunk_constraining_module_edges(&owner_graph, &partition);
+        let canonical_edges = chunk_constraining_module_edges(&owner_graph, &assignment);
         // Every logical module needs a deterministic source-order
         // slot for emit stability, even singletons that don't
         // participate in any canonical edge.
@@ -112,7 +112,7 @@ impl ChunkFactorization {
         ));
         Self {
             analysis,
-            partition,
+            assignment,
             atomic_units,
             assembly_conflicts,
             dep_graph,
@@ -141,7 +141,7 @@ impl ChunkFactorization {
     /// resulting report to fix any cycles or atomic-unit conflicts.
     pub fn validate(&self) -> FactorizationReport {
         let mut report =
-            validate_factorization(self.analysis.owner_graph(), &self.partition, &|id| {
+            validate_factorization(self.analysis.owner_graph(), &self.assignment, &|id| {
                 self.analysis.module_path(id)
             });
         report.atomic_unit_conflicts = self.assembly_conflicts.clone();

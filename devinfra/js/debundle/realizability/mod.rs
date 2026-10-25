@@ -16,11 +16,11 @@
 //!
 //! Two access shapes:
 //!
-//! - `check_realizability(owner_graph, partition) -> Verdict`: pure
+//! - `check_realizability(owner_graph, assignment) -> Verdict`: pure
 //!   function, from-scratch. The correctness reference and the cold-
 //!   start path. `O(N + M)` per call.
 //! - `RealizabilityIndex`: a stateful index that owns a working
-//!   `Partition`; `apply` commits a `PartitionDelta` to it and
+//!   `ModuleAssignment`; `apply` commits a `ModuleAssignmentDelta` to it and
 //!   `verdict()` reads the current state. A non-mutating overlay query
 //!   answers hypothetical owner moves for planner checks without
 //!   applying them.
@@ -42,7 +42,7 @@ use analysis::graph::{
     ChunkConstrainingEdgeSet, OwnerEdgeId, OwnerGraph, chunk_constraining_module_edges,
 };
 use analysis::ids::ModuleId;
-use analysis::partition::Partition;
+use analysis::module_assignment::ModuleAssignment;
 use analysis::reports::SccCore;
 
 mod condensation_order;
@@ -53,7 +53,7 @@ mod incremental_quotient;
 
 use esm_simulator::EsmEvaluationSimulator;
 use incremental_quotient::{IncrementalQuotient, QuotientOverlay};
-pub use incremental_quotient::{LadderDecision, PartitionDelta};
+pub use incremental_quotient::{LadderDecision, ModuleAssignmentDelta};
 
 /// Canonical in-memory diagnosis of one offending module-quotient
 /// SCC. The presence of any such diagnosis on a
@@ -172,7 +172,7 @@ fn reject_entry_dependency(
 /// backing.
 pub fn check_realizability(
     owner_graph: &OwnerGraph,
-    partition: &Partition,
+    assignment: &ModuleAssignment,
 ) -> RealizabilityVerdict {
     // Cross-destination rebinds are a separate clause-2 violation and
     // not part of the I-graph. Collect them in a single pass over
@@ -185,9 +185,9 @@ pub fn check_realizability(
         if !edge.reason.is_rebind() {
             continue;
         }
-        let Some((from, to)) = analysis::graph::partition_endpoints(
+        let Some((from, to)) = analysis::graph::assignment_endpoints(
             edge,
-            partition,
+            assignment,
             analysis::graph::EndpointView::Gate,
         ) else {
             continue;
@@ -203,8 +203,8 @@ pub fn check_realizability(
     // contains constraining dependencies for Pass 1, while `i_successors`
     // includes lazy import back-edges for Pass 2's ESM evaluation topology.
     // Sharing the projection does not make the two SCC partitions equivalent.
-    let canonical = chunk_constraining_module_edges(owner_graph, partition);
-    verdict_from_canonical(canonical, cross_rebinds, partition.residual())
+    let canonical = chunk_constraining_module_edges(owner_graph, assignment);
+    verdict_from_canonical(canonical, cross_rebinds, assignment.residual())
 }
 
 /// Run the complete gate over the canonical module projection. The pure
@@ -354,7 +354,7 @@ fn verdict_from_canonical(
 ///
 /// This is the gate ladder's **reference predicate**
 /// for a speculative merge: a post-merge module `M` is acceptable iff
-/// `check_realizability_touching(owner_graph, post_partition, M)`
+/// `check_realizability_touching(owner_graph, post_assignment, M)`
 /// `.is_realizable()`. Pre-existing violations not touching `M` are
 /// intentionally ignored, matching
 /// [`RealizabilityIndex::verdict_after_moving_owners_touching`]'s
@@ -364,10 +364,10 @@ fn verdict_from_canonical(
 /// too slow for the proposer's per-pop gate.
 pub fn check_realizability_touching(
     owner_graph: &OwnerGraph,
-    partition: &Partition,
+    assignment: &ModuleAssignment,
     module: ModuleId,
 ) -> RealizabilityVerdict {
-    let full = check_realizability(owner_graph, partition);
+    let full = check_realizability(owner_graph, assignment);
     RealizabilityVerdict {
         unrealizable_sccs: full
             .unrealizable_sccs
@@ -383,26 +383,26 @@ pub fn check_realizability_touching(
 }
 
 /// Simulator-predicted ECMA-262 Phase-2 evaluation post-order for a
-/// partition's emitted module tree: lower index = body evaluates
+/// assignment's emitted module tree: lower index = body evaluates
 /// earlier; modules unreachable from residual are absent. Exposed for
 /// Node-differential pins (`e2e/simulator_node_differential_sweep_test`)
 /// that compare this prediction against the evaluation order Node
 /// actually produces for the emitted tree.
 pub fn simulated_evaluation_post_order(
     owner_graph: &OwnerGraph,
-    partition: &Partition,
+    assignment: &ModuleAssignment,
 ) -> BTreeMap<ModuleId, usize> {
-    let canonical = chunk_constraining_module_edges(owner_graph, partition);
+    let canonical = chunk_constraining_module_edges(owner_graph, assignment);
     let constraining_pairs: BTreeSet<(ModuleId, ModuleId)> = canonical.pairs().collect();
     EsmEvaluationSimulator::build(
         &canonical.i_successors,
         &constraining_pairs,
-        partition.residual(),
+        assignment.residual(),
     )
     .post_order
 }
 
-/// Mutable index over a working partition: the incremental form of the
+/// Mutable index over a working assignment: the incremental form of the
 /// predicate `check_realizability` computes (docs/design.md
 /// "Realizability primitive").
 ///
@@ -418,47 +418,47 @@ pub fn simulated_evaluation_post_order(
 /// ownership flat.
 #[derive(Debug, Clone)]
 pub struct RealizabilityIndex {
-    partition: Partition,
+    assignment: ModuleAssignment,
     quotient: IncrementalQuotient,
 }
 
 impl RealizabilityIndex {
-    pub fn from_partition(owner_graph: &OwnerGraph, partition: Partition) -> Self {
-        let quotient = IncrementalQuotient::new(owner_graph, &partition);
+    pub fn from_assignment(owner_graph: &OwnerGraph, assignment: ModuleAssignment) -> Self {
+        let quotient = IncrementalQuotient::new(owner_graph, &assignment);
         Self {
-            partition,
+            assignment,
             quotient,
         }
     }
 
-    /// Borrow the current working partition. Callers should treat this
+    /// Borrow the current working assignment. Callers should treat this
     /// as read-only — mutation goes through [`Self::apply`] so the
     /// quotient stays consistent.
-    pub fn partition(&self) -> &Partition {
-        &self.partition
+    pub fn assignment(&self) -> &ModuleAssignment {
+        &self.assignment
     }
 
-    /// Commit `delta` to the working partition and quotient; it cannot
+    /// Commit `delta` to the working assignment and quotient; it cannot
     /// be reverted. Hypothetical moves are answered without mutation by
     /// [`Self::verdict_after_moving_owners_touching`] and
     /// [`Self::ladder_decision_after_moving_owners_touching`].
-    pub fn apply(&mut self, owner_graph: &OwnerGraph, delta: PartitionDelta) {
-        let PartitionDelta::MoveOwners { owners, to } = delta;
+    pub fn apply(&mut self, owner_graph: &OwnerGraph, delta: ModuleAssignmentDelta) {
+        let ModuleAssignmentDelta::MoveOwners { owners, to } = delta;
         let impacted_edges = impacted_owner_edges(owner_graph, &owners);
         for edge_id in &impacted_edges {
             self.quotient
-                .remove_current_edge(owner_graph.edge(*edge_id), &self.partition);
+                .remove_current_edge(owner_graph.edge(*edge_id), &self.assignment);
         }
         for owner in owners {
-            self.partition.set(owner, to);
+            self.assignment.set(owner, to);
         }
         for edge_id in &impacted_edges {
             self.quotient
-                .add_current_edge(owner_graph.edge(*edge_id), &self.partition);
+                .add_current_edge(owner_graph.edge(*edge_id), &self.assignment);
         }
     }
 
-    /// Verdict against the current working partition. Reads the
+    /// Verdict against the current working assignment. Reads the
     /// incrementally maintained quotient graph and evidence buckets.
     pub fn verdict(&self) -> RealizabilityVerdict {
         self.quotient.verdict()
@@ -484,18 +484,18 @@ impl RealizabilityIndex {
     ) -> RealizabilityVerdict {
         let overlay = self
             .quotient
-            .overlay_for_move(owner_graph, &self.partition, owners, to);
+            .overlay_for_move(owner_graph, &self.assignment, owners, to);
         let verdict = verdict_from_canonical(
             self.quotient.canonical_with_overlay(&overlay),
             self.quotient.cross_rebinds_with_overlay(&overlay),
-            self.partition.residual(),
+            self.assignment.residual(),
         );
         if gate_oracle_enabled() {
-            let mut post_partition = self.partition.clone();
+            let mut post_assignment = self.assignment.clone();
             for &owner in owners {
-                post_partition.set(owner, to);
+                post_assignment.set(owner, to);
             }
-            let reference = check_realizability(owner_graph, &post_partition);
+            let reference = check_realizability(owner_graph, &post_assignment);
             assert_eq!(
                 verdict, reference,
                 "DEBUNDLE_GATE_ORACLE: full overlay verdict diverges from the pure reference"
@@ -505,7 +505,7 @@ impl RealizabilityIndex {
     }
 
     /// Verdict for a hypothetical owner move, filtered to the target
-    /// module, without mutating the working partition. This is the
+    /// module, without mutating the working assignment. This is the
     /// candidate-evaluation fast path: it builds a small quotient
     /// overlay for the moved owners' incident edges and runs directed
     /// reachability against the effective graph.
@@ -517,7 +517,7 @@ impl RealizabilityIndex {
     ) -> RealizabilityVerdict {
         let overlay = self
             .quotient
-            .overlay_for_move(owner_graph, &self.partition, owners, to);
+            .overlay_for_move(owner_graph, &self.assignment, owners, to);
         let verdict = self.quotient.verdict_with_overlay_touching(to, &overlay);
         if gate_oracle_enabled() {
             // Oracle mode: the boolean tier ladder must agree with
@@ -550,14 +550,14 @@ impl RealizabilityIndex {
     ) -> LadderDecision {
         let overlay = self
             .quotient
-            .overlay_for_move(owner_graph, &self.partition, owners, to);
+            .overlay_for_move(owner_graph, &self.assignment, owners, to);
         let decision = self.quotient.ladder_decide(to, &overlay);
         if gate_oracle_enabled() {
-            let mut post_partition = self.partition.clone();
+            let mut post_assignment = self.assignment.clone();
             for &owner in owners {
-                post_partition.set(owner, to);
+                post_assignment.set(owner, to);
             }
-            let reference = check_realizability_touching(owner_graph, &post_partition, to);
+            let reference = check_realizability_touching(owner_graph, &post_assignment, to);
             assert_eq!(
                 decision.accepts(),
                 reference.is_realizable(),

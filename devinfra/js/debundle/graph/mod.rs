@@ -11,7 +11,7 @@
 //! - [`build`] — owner-graph construction ([`build_owner_graph_with`],
 //!   at-init call promotion, the S-chain).
 //! - [`quotient`] — module-level projection ([`ModuleQuotient`],
-//!   [`EndpointView`], [`partition_endpoints`], [`project_endpoints`],
+//!   [`EndpointView`], [`assignment_endpoints`], [`project_endpoints`],
 //!   [`build_module_quotient`]).
 //! - [`linker_order`] — the canonical ESM I-graph
 //!   ([`ChunkConstrainingEdgeSet`], [`chunk_constraining_module_edges`])
@@ -34,5 +34,5 @@ pub use linker_order::{
 };
 pub use owner_graph::{OwnerGraph, OwnerId, OwnerNode, UnresolvedOwnerEdgeEndpoint};
 pub use quotient::{
-    EndpointView, ModuleQuotient, build_module_quotient, partition_endpoints, project_endpoints,
+    EndpointView, ModuleQuotient, assignment_endpoints, build_module_quotient, project_endpoints,
 };

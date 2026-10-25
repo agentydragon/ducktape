@@ -259,7 +259,7 @@ pub enum RenameScope {
     Chunk,
     /// Module-wide renames within one emitted logical module. The identity
     /// is the same [`ModuleId`] (index into the finalized `module_plans`
-    /// list) that `binding_assignment` and the factorization partition use
+    /// list) that `binding_assignment` and the factorization assignment use
     /// to identify a binding's deriving module.
     Module(ModuleId),
     /// Scope-local renames derived by one function-like node.

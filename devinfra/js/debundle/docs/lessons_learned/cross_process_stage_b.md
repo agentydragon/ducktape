@@ -3,7 +3,7 @@
 A previous design proposed splitting the per-chunk pipeline into two
 Bazel actions: **Stage A** (parse + facts + owner-graph + atomic-
 units) emits a cacheable JSON artifact; **Stage B** (the materializer:
-assemble partition → realizability → lower) reads it as input. Goal:
+assemble assignment → realizability → lower) reads it as input. Goal:
 spec edits hit only Stage B; Stage A's expensive parse + analysis
 gets cached.
 

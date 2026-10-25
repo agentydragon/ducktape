@@ -33,7 +33,7 @@ use spec_tree::ModuleTreeScope;
 use yaml_edit::write_yaml_atomic;
 
 use crate::edit_gate::{
-    Gate, OwnerModuleAssignments, gate_post_edit_partition_with_expected_owner_modules,
+    Gate, OwnerModuleAssignments, gate_post_edit_assignment_with_expected_owner_modules,
     owner_module_assignments, post_edit_spec_from_docs, source_claim_sets_from_post_spec,
 };
 use crate::outcome::{GateOutcome, MutationOutcome};
@@ -596,7 +596,7 @@ fn proposal_to_moves(proposal: BatchProposal) -> std::result::Result<Vec<Move>, 
 ///     `comment:` or `note:`, no remaining `source_matches:`, `annotations:`, or
 ///     `anonymous_statements:`.
 ///   * [`Gate::Run`] runs the unified realizability gate
-///     ([`crate::edit_gate::gate_post_edit_partition`]) against the
+///     ([`crate::edit_gate::gate_post_edit_assignment`]) against the
 ///     in-memory post-batch spec; cycle or atom-split rejections
 ///     bail before any file is written. [`Gate::Skip`] (`--no-verify`)
 ///     skips validation. The CLI dispatcher requires `--graph` unless
@@ -1207,7 +1207,7 @@ pub fn run_owner_refine(
 
     let to_delete = drained_source_modules(&docs, &source_modules);
     let post_spec = post_edit_spec_from_docs(&docs, &to_delete)?;
-    gate_post_edit_partition_with_expected_owner_modules(
+    gate_post_edit_assignment_with_expected_owner_modules(
         owner_graph_path,
         modules_root,
         Some(source_root),
