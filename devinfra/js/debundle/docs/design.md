@@ -2835,20 +2835,18 @@ exports against upstream packages and strip the swapped bodies from
 the residual chunk). Soundness edges that are deliberate contracts
 rather than missing features are documented here.
 
-### Full swap: callers are proxy/import-map-dependent
+### Full swap: callers retain imports for removed chunks
 
-`level: swap` excludes the vendor chunk from the **emission set** —
-nothing removes it from the artifact, and the owner graph never
-contained vendor chunks; `write_js_tree`, harness emission, the
-emit-shape check, and the chunk reports skip it, and a wrapper module
-is written in its place. Caller imports of the excluded chunk are
-**intentionally left dangling** in the plain `write_js_tree` output:
-the live-proxy / import-map layer (<../live_proxy/>) resolves the
-dangling chunk specifier to the swapped package at serve time. The
-plain emitted tree is therefore not directly runnable under bare Node
-when a full swap is configured. Pinned by
-`full_swap_with_caller_keeps_dangling_chunk_import_for_live_proxy`
-in <../e2e/vendor_swap_test.rs>.
+`level: swap` excludes the vendor chunk from the emission set. The
+owner graph never contained vendor chunks; `write_js_tree`, harness
+emission, the emit-shape check, and chunk reports skip it, and a
+wrapper module is written in its place. Caller imports of the
+excluded chunk are **intentionally left unchanged** in the plain
+`write_js_tree` output. A host consuming that output supplies the
+package mapping. The emitted tree is therefore not directly runnable
+under bare Node when a full swap is configured. Pinned by
+`full_swap_with_caller_preserves_import_for_removed_chunk` in
+<../e2e/vendor_swap_test.rs>.
 
 ### Partial swap: consumer rewrites and the consumer gates
 

@@ -393,7 +393,7 @@ fn rewrite_export_from_decl(
 /// resolve to another chunk into the artifact-relative form; sources
 /// already spelled as artifact output paths keep their spelling.
 /// Directives targeting a full-swap chunk that index resolution misses
-/// (the live-proxy dangling-import contract) canonicalize against the
+/// (the full-swap dangling-import contract) canonicalize against the
 /// plan's recorded entry path instead.
 struct SourceCanonicalizer<'a> {
     context: &'a PassthroughContext<'a>,

@@ -52,8 +52,8 @@ spec runs. Concretely:
   visible in the compiled output. Goal: exercise the rename pipeline
   at realistic aggressiveness.
 - `emit_browser_harness`, relying on the always-on emission-time
-  specifier canonicalization, so the output is a runnable app the
-  live proxy can serve.
+  specifier canonicalization, so a test-owned runner can serve the
+  resulting app.
 
 The exact module list / rename list is part of the implementation —
 pick stable shapes that are unlikely to drift wildly when Excalidraw
@@ -67,8 +67,9 @@ matchers regressed).
   similar);
 - builds the Excalidraw bundle through the shared `debundle_pipeline`
   rule (<../pipeline.bzl>);
-- starts the live-proxy binary against the resulting harness;
-- drives a headless Chromium through the proxy, asserts:
+- starts a test-owned server for the resulting harness and package
+  mappings;
+- drives headless Chromium against that server, asserting:
   - no failed asset requests,
   - no console errors,
   - the canvas toolbar is visible (e.g. `[data-testid="toolbar"]`

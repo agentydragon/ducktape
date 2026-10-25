@@ -97,11 +97,7 @@ export default [
 
   // These scripts execute in browser pages or service workers.
   {
-    files: [
-      "util/testing/capture-diagnostics.js",
-      "util/testing/capture-diagnostics-fixture.js",
-      "devinfra/js/debundle/live_proxy/*.js",
-    ],
+    files: ["util/testing/capture-diagnostics.js", "util/testing/capture-diagnostics-fixture.js"],
     languageOptions: {
       parserOptions: { ecmaVersion: "latest", sourceType: "script" },
       globals: browserGlobals,

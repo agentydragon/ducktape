@@ -1321,7 +1321,7 @@ fn bundled_partial_swap_replaces_react_cjs_family_with_singleton_esm_facade() {
     // that proves both aliases came from one bundled package family rather
     // than from a residual in-blob copy plus raw CJS.
     // The Node probe below is the minimal gate; a browser importmap/load test would
-    // be the stronger proof for the live-proxy path.
+    // be a stronger browser-level proof.
     const MEGACHUNK_PATH: &str = "static/megachunk.js";
     const CALLER_PATH: &str = "static/app.js";
     const PACKAGE_NAME: &str = "react";
@@ -2409,12 +2409,10 @@ fn suppress_vendor_chunk_skips_specifier_canonicalization() {
 // ─── full swap: caller contract + export-shape validation ───────────────
 
 #[test]
-fn full_swap_with_caller_keeps_dangling_chunk_import_for_live_proxy() {
-    // `level: swap` removes the vendor chunk from the artifact; callers'
-    // imports of the removed chunk are intentionally left as-is in the
-    // plain `write_js_tree` output. The emitted tree is proxy-dependent:
-    // the live-proxy/import-map layer resolves the dangling specifier to
-    // the swapped package at serve time. This test pins that contract.
+fn full_swap_with_caller_preserves_import_for_removed_chunk() {
+    // `level: swap` removes the vendor chunk from the emitted tree and
+    // leaves the caller's import path intact. A host maps that path to the
+    // swapped package; this test pins the emitted path.
     const CHUNK_PATH: &str = "static/lib-X.js";
     const APP_PATH: &str = "static/app.js";
     const PACKAGE_NAME: &str = "lib";
@@ -2456,7 +2454,7 @@ fn full_swap_with_caller_keeps_dangling_chunk_import_for_live_proxy() {
     assert!(
         caller.contains("../lib-X/entry.js"),
         "caller's import of the removed chunk is intentionally left dangling \
-         (resolved by the live-proxy/import-map at serve time):\n{caller}",
+         (resolved by the host import map):\n{caller}",
     );
 }
 

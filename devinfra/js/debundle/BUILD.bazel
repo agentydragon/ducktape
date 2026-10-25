@@ -374,7 +374,7 @@ rust_test(
 rust_library(
     name = "emit_harness",
     srcs = ["artifacts/emit_harness.rs"],
-    compile_data = ["//devinfra/js/debundle/live_proxy:harness_monitor.html"],
+    compile_data = ["artifacts/harness_monitor.html"],
     crate_root = "artifacts/emit_harness.rs",
     edition = "2024",
     deps = [

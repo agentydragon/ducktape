@@ -164,7 +164,7 @@ impl VendorResolutionPlan {
 
     /// Output-tree path (`<chunk_name>/<entry_file>`) of a fully-swapped
     /// chunk's entry. Directives that keep targeting the excluded chunk
-    /// (the live-proxy dangling-import contract) canonicalize against
+    /// (the full-swap dangling-import contract) canonicalize against
     /// this recorded path; construction and the pass-through rewriter
     /// consult it when index resolution misses.
     pub fn full_swap_target_path(&self, chunk: ChunkId) -> Option<String> {
