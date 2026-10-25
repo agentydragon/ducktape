@@ -48,6 +48,10 @@ The resolve is two halves, so `run` can do the first per chunk in parallel:
    template uses without declaring (pinning by use site) is placed at each
    non-import top-level declaration of the identifier it bound in that match;
    a match where it bound none, or two identifiers, yields no row.
+   An anonymous `source_match` context matches a fixed contiguous statement
+   window. Its row projects only the final statement's owner; context owners
+   add no claims or `all_different` targets. Free-identifier bindings are
+   threaded through the whole window.
 3. **Program.** Name pins and relational selectors lower to relation atoms over
    chunk facts (`selector_ir_lowering`); candidates enter as one table of rows
    per entity. `all_different` spans every non-pin target of the chunk, with

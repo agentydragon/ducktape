@@ -1040,10 +1040,8 @@ impl ChunkResolver<'_> {
     }
 
     /// Candidate top-level body-index groups for an anonymous statement selector.
-    ///
-    /// The current public anonymous selector form validates to one parsed statement,
-    /// so each group contains one body index. The grouped shape keeps this reusable
-    /// if anonymous ranges grow a multi-statement form later.
+    /// A multi-statement `source_match` uses a contiguous context window; its
+    /// final body index is the only statement the caller claims.
     pub fn anonymous_group_candidates(
         &self,
         request_id: &str,
@@ -1051,20 +1049,37 @@ impl ChunkResolver<'_> {
     ) -> Result<Vec<AnonymousGroupMatch>> {
         let selector = parsed.selector();
         let needles = parsed.body();
-        anonymous_selector_statement_indices(request_id, selector, needles)?;
-        let [needle] = needles else {
-            unreachable!("anonymous selector validation requires one parsed statement")
-        };
-        let needle_facts = needle_item_facts(needle)?;
-        Ok(
-            matching_body_indices(self, &needle_facts, selector_mode(selector))?
-                .into_iter()
-                .map(|matched| AnonymousGroupMatch {
-                    body_indices: vec![matched.site],
-                    free_bindings: matched.free_bindings,
-                })
-                .collect(),
+        let target = anonymous_selector_target_index(request_id, selector, needles)?;
+        if target == 0 {
+            let needle_facts = needle_item_facts(&needles[0])?;
+            return Ok(
+                matching_body_indices(self, &needle_facts, selector_mode(selector))?
+                    .into_iter()
+                    .map(|matched| AnonymousGroupMatch {
+                        body_indices: vec![matched.site],
+                        free_bindings: matched.free_bindings,
+                    })
+                    .collect(),
+            );
+        }
+        let needle_indices = needles
+            .iter()
+            .map(needle_index)
+            .collect::<Result<Vec<_>>>()?;
+        let free = free_identifiers(&needle_indices);
+        Ok(selector_match::match_fixed_window_sequence_indexed(
+            &needle_indices,
+            &self.body_indices,
+            selector_mode(selector),
+            &free,
         )
+        .map_err(unsupported_error("anonymous source_match resolver"))?
+        .into_iter()
+        .map(|matched| AnonymousGroupMatch {
+            body_indices: (matched.site..=matched.site + target).collect(),
+            free_bindings: matched.free_bindings,
+        })
+        .collect())
     }
 }
 

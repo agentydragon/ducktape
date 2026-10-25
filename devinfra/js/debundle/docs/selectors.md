@@ -533,10 +533,16 @@ statement. Prefer a small selector whose distinguished target is the anonymous
 statement itself, using stable literals/properties or relation atoms to make
 that target unique.
 
+When identical anonymous statements need surrounding context, put the preceding
+statements and the target together in `source_match.match`. They must be adjacent
+in the source; only the final anonymous statement is claimed. Context
+declarations can be claimed by other selectors. Repeating the same context and
+target window is ambiguous. Bare `match:` still accepts one statement only.
+
 Do not solve ambiguity with opaque hashes. A selector should be readable
 enough for a reviewer to audit and edit. When an anonymous statement needs
-nearby declarations to be unique, prefer a relation-shaped selector or a
-separate small structural selector over source-order indexing.
+nearby declarations to be unique, keep the context short and structurally
+distinctive rather than using source-order indexing.
 
 ## Syntactic holes
 

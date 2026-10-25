@@ -2590,11 +2590,20 @@ wrong code while the spec still validated. Holes widen what a template matches,
 but an unintended match must still be the only one to be taken; otherwise it
 surfaces as `ambiguous` at validation time.
 
+An anonymous `source_match.match` may include preceding top-level context
+statements. It matches a contiguous window under one set of alpha/free-identifier
+bindings and claims only the final statement. A context declaration may be
+claimed separately by a member selector; it neither overlaps this anonymous
+claim nor enters `all_different` through it. The final statement must be
+anonymous in this context form, and repeated identical windows remain ambiguous.
+
 ### Constraints on the selector source
 
 - The `match` source must parse as JS through the same parser the chunk used.
-- An entry claims exactly one top-level statement; a template whose match
-  covers several statements is `invalid`.
+- An entry claims exactly one top-level statement. Bare `match:` must contain
+  one statement; `source_match.match` may include contiguous preceding context
+  statements and must end in the anonymous statement to claim. A top-level
+  `STMT_LIST` hole cannot appear in the context.
 
 ### Why shape rather than line/column
 
