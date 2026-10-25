@@ -89,6 +89,9 @@ async def async_main(settings: Settings) -> None:
         AsyncExitStack() as upstream_clients,
         ApiClient(configuration=await kubernetes_configuration(settings.kubeconfig)) as api,
         httpx.AsyncClient(base_url=str(settings.action_federation.service_url), timeout=10) as actions_http,
+        dial(
+            f"{settings.action_federation.service_url.host}:{settings.action_federation.service_url.port}"
+        ) as actions_health_channel,
         httpx.AsyncClient(base_url=str(settings.connection_service_url), timeout=10) as connection_http,
         dial(f"{settings.egress_admin_url.host}:{settings.egress_admin_url.port}") as egress_channel,
         dial(f"{settings.notifications_url.host}:{settings.notifications_url.port}") as notifications_channel,
@@ -169,7 +172,7 @@ async def async_main(settings: Settings) -> None:
         system_probes = [
             grpc_health_probe("Runner Gateway", gateway_channel),
             grpc_health_probe("History Service", history_health_channel),
-            http_health_probe("Action Service", actions_http, "/healthz"),
+            grpc_health_probe("Action Service", actions_health_channel),
             grpc_health_probe("Connection Service", connection_health_channel),
             grpc_health_probe("Notification Service", notifications_channel),
             grpc_health_probe("Egress proxy", egress_channel),
