@@ -139,6 +139,77 @@ fn full_overlay_verdict_matches_pure_gate_across_typed_moves() {
 }
 
 #[test]
+fn multi_owner_apply_defers_condensation_until_next_query() {
+    let names = ["owner:0", "owner:1", "owner:2", "owner:3"];
+    let nodes = names
+        .iter()
+        .enumerate()
+        .map(|(i, name)| active_owner(name, i + 1, &["Value"], 5, "ui/m"))
+        .collect();
+    let edges = (0..3)
+        .map(|i| {
+            owner_edge(
+                &format!("edge:{i}"),
+                names[i],
+                names[i + 1],
+                DepKind::EagerUse,
+                true,
+            )
+        })
+        .collect();
+    let graph = OwnerGraph::from_report(&singleton_graph(nodes, edges)).unwrap();
+    let partition = Partition::from_assignments((1..=4).map(module_id).collect(), module_id(0));
+    let mut index = RealizabilityIndex::from_partition(&graph, partition);
+    // Warm both orders so the post-apply stale state is caused by batching,
+    // not by the index's normal lazy construction.
+    index.modules_share_constraining_multi_scc(module_id(1), module_id(2));
+    index.quotient.i_order.borrow_mut().same_multi_scc(
+        &index.quotient.i_graph,
+        module_id(1),
+        module_id(2),
+    );
+    assert!(!index.quotient.constraining_order.borrow().is_stale());
+    assert!(!index.quotient.i_order.borrow().is_stale());
+
+    index.apply(
+        &graph,
+        PartitionDelta::MoveOwners {
+            owners: vec![OwnerId(0), OwnerId(1)],
+            to: module_id(5),
+        },
+    );
+    assert!(index.quotient.constraining_order.borrow().is_stale());
+    assert!(index.quotient.i_order.borrow().is_stale());
+    assert_eq!(
+        index.verdict(),
+        check_realizability(&graph, index.partition()),
+    );
+    index.would_remain_realizable_after_moving_owners_touching(&graph, &[OwnerId(3)], module_id(5));
+    index.quotient.i_order.borrow_mut().same_multi_scc(
+        &index.quotient.i_graph,
+        module_id(5),
+        module_id(2),
+    );
+    assert!(!index.quotient.constraining_order.borrow().is_stale());
+    assert!(!index.quotient.i_order.borrow().is_stale());
+
+    // Single-owner updates keep the incremental path when it stays valid.
+    index.apply(
+        &graph,
+        PartitionDelta::MoveOwners {
+            owners: vec![OwnerId(2)],
+            to: module_id(5),
+        },
+    );
+    assert!(!index.quotient.constraining_order.borrow().is_stale());
+    assert!(!index.quotient.i_order.borrow().is_stale());
+    assert_eq!(
+        index.verdict(),
+        check_realizability(&graph, index.partition()),
+    );
+}
+
+#[test]
 fn large_module_import_neighbors_match_the_shared_emitter_order() {
     use super::esm_simulator::EsmIGraph;
     use crate::esm_import_order::EsmImportOrder;
