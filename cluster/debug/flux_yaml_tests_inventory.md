@@ -1,6 +1,6 @@
 # Tests that read Flux manifest trees
 
-Snapshot of live `devel` at `7edbbafdfa33a11556be1712e250c50426839d9a`, confirmed through Agentplane's GitHub Actions. Rows are Bazel test targets; a target may contain several test cases. This report changes documentation only.
+Snapshot of live `devel` at `33b1b77e4c70809377974e2159e4a5e12dd37277`, confirmed through Agentplane's GitHub Actions. Rows are Bazel test targets; a target may contain several test cases. This report changes documentation only.
 
 Tests should read the source they are meant to validate. Most cdk8s behavior can be tested from focused constructs or in-memory synth output. Keep the cdk8s parity check against the files Flux consumes until cutover; that one relation does not make a shared rendered input necessary for other tests. Whole-graph checks belong with the owner of the Flux source graph.
 
@@ -65,7 +65,7 @@ The broad searches include documentation, comments, generated manifests, and sou
 For reproduction from a local checkout containing the snapshot commit, these broad `git grep` scans include the test suffixes and runfiles/helper names:
 
 ```sh
-git grep -n -E 'cluster/(k8s|generated)|manifest_files\(|k8s_dir|generated_dir|GENERATED_ROOT|repo_root|_main/cluster/(k8s|generated)/' 7edbbafdfa33a11556be1712e250c50426839d9a -- \
+git grep -n -E 'cluster/(k8s|generated)|manifest_files\(|k8s_dir|generated_dir|GENERATED_ROOT|repo_root|_main/cluster/(k8s|generated)/' 33b1b77e4c70809377974e2159e4a5e12dd37277 -- \
   ':(glob)**/test*.py' ':(glob)**/*_test.py' \
   ':(glob)**/*_test.go' ':(glob)**/*.test.ts' ':(glob)**/*.spec.ts' \
   ':(glob)**/*_test.ts' ':(glob)**/*_test.tsx' \
@@ -75,21 +75,21 @@ git grep -n -E 'cluster/(k8s|generated)|manifest_files\(|k8s_dir|generated_dir|G
 The Bazel data-edge search includes package-boundary globs and named filegroups:
 
 ```sh
-git grep -n -E 'cluster/(k8s|generated)|generated_manifests|parked_generated_manifests|cluster_all_files|flux_bootstrap_files|flux_system_files|authentik_blueprints|agentplane-staging:manifests|proxy_manifest' 7edbbafdfa33a11556be1712e250c50426839d9a -- \
+git grep -n -E 'cluster/(k8s|generated)|generated_manifests|parked_generated_manifests|cluster_all_files|flux_bootstrap_files|flux_system_files|authentik_blueprints|agentplane-staging:manifests|proxy_manifest' 33b1b77e4c70809377974e2159e4a5e12dd37277 -- \
   ':(glob)**/BUILD.bazel' ':(glob)**/BUILD' ':(glob)**/*.bzl' ':(exclude,glob)props/**'
 ```
 
 I traced shared loaders and anchors through `cluster/validation/conftest.py`, `cluster/validation/cluster.py`, `cluster/cdk8s/manifest_roots.py`, and `util.bazel.runfiles.get_required_path`:
 
 ```sh
-git grep -n -E '(_main/)?cluster/(k8s|generated)/|manifest_files\(|GENERATED_ROOT|generated_dir|k8s_dir|BLUEPRINTS_DIR_ANCHOR|proxy_manifest' 7edbbafdfa33a11556be1712e250c50426839d9a -- \
+git grep -n -E '(_main/)?cluster/(k8s|generated)/|manifest_files\(|GENERATED_ROOT|generated_dir|k8s_dir|BLUEPRINTS_DIR_ANCHOR|proxy_manifest' 33b1b77e4c70809377974e2159e4a5e12dd37277 -- \
   cluster/validation cluster/cdk8s cluster/rotators agentplane/system_tests
 ```
 
 The equivalent local scan for non-Python test files is:
 
 ```sh
-git grep -n -E 'cluster/(k8s|generated)|manifest_files\(|k8s_dir|generated_dir|GENERATED_ROOT' 7edbbafdfa33a11556be1712e250c50426839d9a -- \
+git grep -n -E 'cluster/(k8s|generated)|manifest_files\(|k8s_dir|generated_dir|GENERATED_ROOT' 33b1b77e4c70809377974e2159e4a5e12dd37277 -- \
   ':(glob)**/*_test.go' ':(glob)**/*.test.ts' ':(glob)**/*.spec.ts' \
   ':(glob)**/*_test.ts' ':(glob)**/*_test.tsx' ':(glob)**/*test*.sh' ':(glob)**/*.bats' \
   ':(exclude,glob)props/**'
