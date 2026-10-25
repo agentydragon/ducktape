@@ -137,6 +137,15 @@ struct FromEntriesMappedProof {
     object_intrinsic: Id,
 }
 
+/// A fresh, private Vite/Rollup style facade. Both intrinsic calls return the
+/// same ordinary object; its stored callable fields remain reachable if the
+/// facade is later published or consumed.
+struct FrozenNamespaceProof {
+    freeze_site: CallSite,
+    define_site: CallSite,
+    stored_bindings: BTreeSet<Id>,
+}
+
 #[derive(Debug, Clone)]
 enum ValueExpr {
     Binding(Id),
@@ -2513,6 +2522,7 @@ struct ExecutionIndex {
     other_class_uses: BTreeSet<Id>,
     safe_class_target: Option<Id>,
     plain_data_objects: BTreeSet<u32>,
+    null_proto_data_objects: BTreeSet<u32>,
     exact_object_spread_copies: BTreeSet<u32>,
     map_entry_arrays: BTreeSet<u32>,
     dense_array_literals: BTreeMap<u32, usize>,
@@ -2527,6 +2537,7 @@ struct ExecutionIndex {
     mapped_array_map_calls: BTreeMap<CallSite, FromEntriesMappedProof>,
     plain_array_bindings: BTreeSet<String>,
     mutated_intrinsic_roots: IntrinsicRoots,
+    symbol_intrinsic_mutated: bool,
     reassigned_map: bool,
     namespace_privacy: NamespacePrivacy,
     fresh_error_claims: Vec<FreshErrorWriteClaim>,
@@ -2542,6 +2553,7 @@ struct ExecutionIndex {
     top_dynamic_property_receivers: Vec<Vec<ValueExpr>>,
     top_assignments: Vec<Vec<(Id, ValueExpr)>>,
     top_definite_initializers: Vec<BTreeSet<Id>>,
+    const_call_owners: BTreeSet<StatementOrdinal>,
     top_member_value_writes: Vec<Vec<(Id, Option<String>, ValueExpr)>>,
     top_callback_result_writes: Vec<Vec<CallbackResultWrite>>,
     top_exported_values: Vec<Vec<ValueExpr>>,
@@ -2594,6 +2606,7 @@ impl Default for ExecutionIndex {
             other_class_uses: BTreeSet::new(),
             safe_class_target: None,
             plain_data_objects: BTreeSet::new(),
+            null_proto_data_objects: BTreeSet::new(),
             exact_object_spread_copies: BTreeSet::new(),
             map_entry_arrays: BTreeSet::new(),
             dense_array_literals: BTreeMap::new(),
@@ -2608,6 +2621,7 @@ impl Default for ExecutionIndex {
             mapped_array_map_calls: BTreeMap::new(),
             plain_array_bindings: BTreeSet::new(),
             mutated_intrinsic_roots: IntrinsicRoots::new(),
+            symbol_intrinsic_mutated: false,
             reassigned_map: false,
             namespace_privacy: NamespacePrivacy::default(),
             fresh_error_claims: Vec::new(),
@@ -2623,6 +2637,7 @@ impl Default for ExecutionIndex {
             top_dynamic_property_receivers: Vec::new(),
             top_assignments: Vec::new(),
             top_definite_initializers: Vec::new(),
+            const_call_owners: BTreeSet::new(),
             top_member_value_writes: Vec::new(),
             top_callback_result_writes: Vec::new(),
             top_exported_values: Vec::new(),
@@ -2868,6 +2883,41 @@ impl ExecutionIndex {
             ));
         }
         index.mutated_intrinsic_roots = mutated_intrinsics.clone();
+        // The frozen-facade proof also reads Symbol.toStringTag. Reuse the
+        // retained assignment and mutation receivers to reject a visible
+        // replacement through either the builtin or a simple local alias.
+        if !index.null_proto_data_objects.is_empty() && !index.const_call_owners.is_empty() {
+            let mut symbol_aliases = BTreeSet::<Id>::new();
+            let symbol_root = |value: &ValueExpr, aliases: &BTreeSet<Id>| match value {
+                ValueExpr::Binding(id) => id.0.as_ref() == "Symbol" || aliases.contains(id),
+                ValueExpr::Member(receiver, Some(property), _)
+                    if property == "Symbol"
+                        && matches!(receiver.as_ref(), ValueExpr::Binding(id)
+                            if index.global_object_names.contains(id.0.as_ref())) =>
+                {
+                    true
+                }
+                _ => false,
+            };
+            loop {
+                let before = symbol_aliases.len();
+                for (id, value) in &namespace_assignments {
+                    if symbol_root(value, &symbol_aliases) {
+                        symbol_aliases.insert(id.clone());
+                    }
+                }
+                if symbol_aliases.len() == before {
+                    break;
+                }
+            }
+            index.symbol_intrinsic_mutated = namespace_assignments
+                .iter()
+                .any(|(id, _)| id.0.as_ref() == "Symbol")
+                || index
+                    .intrinsic_mutation_receivers
+                    .iter()
+                    .any(|receiver| symbol_root(receiver, &symbol_aliases));
+        }
         let mut claim_counts = BTreeMap::<FreshErrorWriteSite, usize>::new();
         if !index.fresh_error_claims.is_empty()
             && !index.callback_factory_members.is_empty()
@@ -3259,6 +3309,16 @@ impl ExecutionIndex {
         let Some(declaration) = var_decl_of_item(item) else {
             return;
         };
+        if declaration.kind == VarDeclKind::Const
+            && matches!(declaration.decls.as_slice(), [declarator]
+                if matches!(declarator.init.as_deref().map(Expr::unwrap_parens), Some(Expr::Call(call))
+                    if matches!(&call.callee, Callee::Expr(callee)
+                        if matches!(callee.unwrap_parens(), Expr::Member(member)
+                            if matches!(member.obj.unwrap_parens(), Expr::Ident(id) if id.sym == "Object")
+                                && matches!(&member.prop, MemberProp::Ident(prop) if prop.sym == "freeze")))))
+        {
+            self.const_call_owners.insert(self.owner);
+        }
         if declaration.kind == VarDeclKind::Var {
             for declarator in &declaration.decls {
                 if declarator.init.is_some()
@@ -3657,13 +3717,20 @@ impl Visit for ExecutionIndex {
         if matches!(object.props.as_slice(), [PropOrSpread::Spread(_)]) {
             self.exact_object_spread_copies.insert(object.span.lo.0);
         }
-        let plain_data = object.props.iter().all(|property| match property {
+        let mut null_prototype = 0;
+        let static_data = object.props.iter().all(|property| match property {
             PropOrSpread::Spread(_) => false,
             PropOrSpread::Prop(property) => match property.as_ref() {
-                Prop::KeyValue(pair) => {
-                    static_property_name(&pair.key).is_some()
-                        && static_property_name(&pair.key).as_deref() != Some("__proto__")
-                }
+                Prop::KeyValue(pair) => match static_property_name(&pair.key).as_deref() {
+                    Some("__proto__")
+                        if matches!(pair.value.unwrap_parens(), Expr::Lit(Lit::Null(_))) =>
+                    {
+                        null_prototype += 1;
+                        true
+                    }
+                    Some("__proto__") | None => false,
+                    Some(_) => true,
+                },
                 Prop::Shorthand(id) => id.sym.as_ref() != "__proto__",
                 // Ordinary method syntax installs an own data property. Its
                 // body is only stored here, so parameter property reads by a
@@ -3676,8 +3743,12 @@ impl Visit for ExecutionIndex {
                 _ => false,
             },
         });
-        if plain_data {
-            self.plain_data_objects.insert(object.span.lo.0);
+        if static_data {
+            if null_prototype == 0 {
+                self.plain_data_objects.insert(object.span.lo.0);
+            } else if null_prototype == 1 {
+                self.null_proto_data_objects.insert(object.span.lo.0);
+            }
         }
         let mut primitive_property_counts = BTreeMap::<String, usize>::new();
         let mut primitive_property_values = BTreeSet::<String>::new();
@@ -3703,7 +3774,7 @@ impl Visit for ExecutionIndex {
                 }
             }
         }
-        if plain_data {
+        if static_data && null_prototype == 0 {
             for (name, count) in primitive_property_counts {
                 if count == 1 && primitive_property_values.contains(&name) {
                     self.primitive_data_properties
@@ -4858,6 +4929,7 @@ struct Executor<'a> {
     private_constructor_result_owners: BTreeSet<StatementOrdinal>,
     prior_effect_owners: BTreeSet<StatementOrdinal>,
     accepted_deferred_global_writes: BTreeSet<StatementOrdinal>,
+    frozen_namespace_calls: BTreeSet<CallSite>,
     reachability: ReachabilityState,
     mutable_captures: BTreeSet<Id>,
     prefix_values: Context,
@@ -5558,11 +5630,158 @@ impl Executor<'_> {
         roots
     }
 
+    fn private_frozen_namespace(&self, fact: &StatementFacts) -> Option<FrozenNamespaceProof> {
+        if !matches!(fact.kind, StatementKind::VarDecl)
+            || !fact.purity.is_pure()
+            || fact.declared.len() != 1
+            || !self.index.const_call_owners.contains(&fact.ordinal)
+            || self.exported_owners.contains(&fact.ordinal)
+            || self.reachability.incomplete
+            || !self.index.dynamic_scope_owners.is_empty()
+            || self.index.opaque_top.contains(&fact.ordinal)
+            || !self.index.top_property_writes[fact.ordinal.0].is_empty()
+            || !self.index.top_member_value_writes[fact.ordinal.0].is_empty()
+            || !self.index.top_callback_result_writes[fact.ordinal.0].is_empty()
+            || !self.index.top_exported_values[fact.ordinal.0].is_empty()
+            || self.shadowed.contains("Object")
+            || self.shadowed.contains("Symbol")
+            || self.index.symbol_intrinsic_mutated
+            || self
+                .index
+                .mutated_intrinsic_roots
+                .iter()
+                .any(|root| matches!(root, IntrinsicRoot::GlobalObject | IntrinsicRoot::Object))
+        {
+            return None;
+        }
+        let [(binding, ValueExpr::Call(freeze_callee, freeze_args, freeze_site))] =
+            self.index.top_assignments[fact.ordinal.0].as_slice()
+        else {
+            return None;
+        };
+        if !fact.declared.contains(binding)
+            || self.index.exported_bindings.contains(binding)
+            || !self.index.top_definite_initializers[fact.ordinal.0].contains(binding)
+        {
+            return None;
+        }
+        let ValueExpr::Member(freeze_receiver, Some(freeze_method), true) = freeze_callee.as_ref()
+        else {
+            return None;
+        };
+        let ValueExpr::Binding(object_intrinsic) = freeze_receiver.as_ref() else {
+            return None;
+        };
+        if freeze_method != "freeze" || object_intrinsic.0.as_ref() != "Object" {
+            return None;
+        }
+        if self.flow.is_declared(object_intrinsic) {
+            return None;
+        }
+        let [ValueExpr::Call(define_callee, define_args, define_site)] = freeze_args.as_slice()
+        else {
+            return None;
+        };
+        if !matches!(define_callee.as_ref(),
+            ValueExpr::Member(receiver, Some(method), true)
+                if method == "defineProperty"
+                    && matches!(receiver.as_ref(), ValueExpr::Binding(id) if id == object_intrinsic))
+        {
+            return None;
+        }
+        let [
+            ValueExpr::ObjectLiteral(object, fields),
+            ValueExpr::Member(symbol_receiver, Some(tag), true),
+            ValueExpr::ObjectLiteral(descriptor, descriptor_fields),
+        ] = define_args.as_slice()
+        else {
+            return None;
+        };
+        let ValueExpr::Binding(symbol) = symbol_receiver.as_ref() else {
+            return None;
+        };
+        if symbol.0.as_ref() != "Symbol"
+            || tag != "toStringTag"
+            || self.flow.is_declared(symbol)
+            || !self.index.null_proto_data_objects.contains(object)
+            || !self.index.plain_data_objects.contains(descriptor)
+            || !matches!(descriptor_fields.as_slice(), [(Some(name), ValueExpr::NonCallable)] if name == "value")
+            || !self
+                .index
+                .primitive_data_properties
+                .contains(&(*descriptor, "value".to_owned()))
+        {
+            return None;
+        }
+        let mut stored_bindings = BTreeSet::new();
+        let mut names = BTreeSet::new();
+        for (name, value) in fields {
+            let Some(name) = name else {
+                if self.index.null_proto_data_objects.contains(object)
+                    && !names.contains("__proto__")
+                    && matches!(value, ValueExpr::NonCallable)
+                {
+                    names.insert("__proto__".to_owned());
+                    continue;
+                }
+                return None;
+            };
+            if !names.insert(name.clone()) {
+                return None;
+            }
+            if name == "__proto__" {
+                if !self.index.null_proto_data_objects.contains(object)
+                    || !matches!(value, ValueExpr::NonCallable)
+                {
+                    return None;
+                }
+            } else {
+                match value {
+                    ValueExpr::Origin(ValueOrigin::Function(_)) => {}
+                    ValueExpr::Binding(id) => {
+                        if !self.prefix_values.get(id).is_some_and(|values| {
+                            !values.is_empty() && !values.contains(&AbstractValue::Unavailable)
+                        }) {
+                            return None;
+                        }
+                        stored_bindings.insert(id.clone());
+                    }
+                    ValueExpr::NonCallable
+                        if self
+                            .index
+                            .primitive_data_properties
+                            .contains(&(*object, name.clone())) => {}
+                    _ => return None,
+                }
+            }
+        }
+        let mut calls = self.index.top_calls[fact.ordinal.0].iter();
+        if !calls.all(|call| {
+            !call.has_spread
+                && (call.kind == CallKind::Call
+                    && (CallSite::from(call.span) == *freeze_site
+                        || CallSite::from(call.span) == *define_site)
+                    || call.kind == CallKind::LocalMemberRead
+                        && matches!(&call.callee,
+                            ValueExpr::Member(receiver, Some(property), true)
+                                if property == "toStringTag"
+                                    && matches!(receiver.as_ref(), ValueExpr::Binding(id) if id == symbol)))
+        }) {
+            return None;
+        }
+        Some(FrozenNamespaceProof {
+            freeze_site: *freeze_site,
+            define_site: *define_site,
+            stored_bindings,
+        })
+    }
+
     fn fact_roots(
         &self,
         fact: &StatementFacts,
         metadata_target: Option<StatementOrdinal>,
         private_constructor_result_owners: &BTreeSet<StatementOrdinal>,
+        frozen_namespace: Option<&FrozenNamespaceProof>,
     ) -> BTreeSet<StatementOrdinal> {
         let mut roots = BTreeSet::new();
         // Storing a known callable in an author-certified inert global data
@@ -5588,6 +5807,7 @@ impl Executor<'_> {
                         || matches!(fact.kind, StatementKind::ClassDecl)
                         || self.closed_callback_factory_result(fact)
                         || self.closed_local_record_factory_result(fact)))
+                    || frozen_namespace.is_some()
                     || !private_constructor_result_owners.is_empty()))
         {
             roots.insert(fact.ordinal);
@@ -5604,7 +5824,11 @@ impl Executor<'_> {
                     fact.reads
                         .eager
                         .iter()
-                        .filter(|id| Some(*id) != inert_heritage)
+                        .filter(|id| {
+                            Some(*id) != inert_heritage
+                                && !frozen_namespace
+                                    .is_some_and(|proof| proof.stored_bindings.contains(*id))
+                        })
                         .chain(fact.rebinds.eager.iter()),
                 )
                 .into_iter()
@@ -7516,6 +7740,9 @@ impl Executor<'_> {
                 values
             }
             ValueExpr::Call(callee, args, span) => {
+                if self.frozen_namespace_calls.contains(span) {
+                    return self.evaluate(&args[0], env, captures);
+                }
                 if let Some((proof, _, _, _, _)) = self.array_iteration_plan(*span, env, captures) {
                     return if proof.method == ArrayIterationMethod::ForEach {
                         BTreeSet::from([AbstractValue::Undefined])
@@ -7940,6 +8167,13 @@ impl Executor<'_> {
         captures: &Context,
         outcome: &mut Outcome,
     ) {
+        if call.kind == CallKind::Call
+            && self
+                .frozen_namespace_calls
+                .contains(&CallSite::from(call.span))
+        {
+            return;
+        }
         if matches!(
             call.kind,
             CallKind::InProtocol
@@ -8612,6 +8846,7 @@ pub(crate) fn annotate_synchronous_calls(
         private_constructor_result_owners: BTreeSet::new(),
         prior_effect_owners: BTreeSet::new(),
         accepted_deferred_global_writes: BTreeSet::new(),
+        frozen_namespace_calls: BTreeSet::new(),
         reachability: ReachabilityState::default(),
         mutable_captures: index
             .callables
@@ -8697,10 +8932,16 @@ pub(crate) fn annotate_synchronous_calls(
                 .accepted_deferred_global_writes
                 .insert(fact.ordinal);
         }
+        let frozen_namespace = executor.private_frozen_namespace(fact);
+        if let Some(proof) = &frozen_namespace {
+            executor.frozen_namespace_calls.insert(proof.freeze_site);
+            executor.frozen_namespace_calls.insert(proof.define_site);
+        }
         let fact_roots = executor.fact_roots(
             fact,
             prevalidated_metadata.map(|validated| validated.target_owner),
             &executor.private_constructor_result_owners,
+            frozen_namespace.as_ref(),
         );
         if executor.reachability.unknown_call_seen {
             executor.extend_reachable_owners(fact_roots.iter().copied());
