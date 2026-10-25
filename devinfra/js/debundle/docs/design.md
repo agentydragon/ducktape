@@ -868,7 +868,10 @@ nullish/equality expressions and Boolean negation of these values. Negation
 still checks its operand; getters and calls retain their effects. A write or opaque exposure invalidates the
 plain-data proof. At `new`, the pass invokes the indexed constructor and retains
 its argument graph and class methods on the instance value, so later member
-calls and publication can still expose stored callbacks. Reflective access to
+calls and publication can still expose stored callbacks. Writes to static
+`this` properties in this checked constructor are writes to a fresh instance;
+they do not publish their values through an earlier opaque call. A same-name
+prototype getter rejects this path because assignment would throw. Reflective access to
 an instance invalidates later construction of that class. Other constructor
 and member calls remain unknown and take the conservative path. Generator calls
 also take that path because their parameter defaults execute at call time
