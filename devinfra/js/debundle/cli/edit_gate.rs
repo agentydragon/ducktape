@@ -52,7 +52,7 @@ use analysis::{
     AtomicUnit, AtomicUnitConflict, AtomicUnitConflictReport, ConflictingClaim, ModuleId,
     OwnerGraph, OwnerGraphReport, OwnerId, Partition, compute_atomic_units,
 };
-use anonymous_resolution::{SourceClaimSet, resolve_source_claims};
+use anonymous_resolution::{ResolvedSourceClaims, SourceClaimSet, resolve_source_claims};
 use anyhow::{Context, Result, bail};
 use serde::Serialize;
 use spec::ModulePath;
@@ -60,6 +60,7 @@ use spec_modules::{
     ModuleClaims, ModuleFile, collect_module_files, is_module_yaml, module_claims,
     module_path_from_file, read_module_claims,
 };
+use spec_tree::ModuleTreeScope;
 
 /// Shared CLI contract for edits that may need graph validation.
 #[derive(Debug, clap::Args)]
@@ -172,6 +173,8 @@ impl<'a> Gate<'a> {
                 *source_root,
                 &post_spec()?,
                 expected,
+                None,
+                None,
             ),
             Self::Skip => Ok(()),
         }
@@ -272,6 +275,118 @@ pub struct PostEditSpec {
     pub modules: Vec<PostEditModule>,
 }
 
+/// Complete owner assignment implied by a scoped module tree. `None` is the
+/// residual destination; every graph owner appears so edit callers can prove
+/// the post-edit spec matches the whole reviewed partition.
+pub type OwnerModuleAssignments = BTreeMap<String, Option<String>>;
+
+/// Project the typed in-memory spec used by edit commands into the canonical
+/// resolver's per-module claim sets.
+pub fn source_claim_sets_from_post_spec(post_spec: &PostEditSpec) -> Vec<SourceClaimSet<'_>> {
+    post_spec
+        .modules
+        .iter()
+        .map(|module| SourceClaimSet {
+            module_path: &module.path,
+            member_selectors: &module.claims.member_selectors,
+            source_matches: &module.claims.source_matches,
+            anonymous_selectors: &module.claims.anonymous_selectors,
+        })
+        .collect()
+}
+
+/// Resolve all owners claimed by a candidate spec. The result uses module-file
+/// paths relative to `modules_root` and keeps unclaimed owners as residual.
+pub fn owner_module_assignments(
+    owner_graph_report: &OwnerGraphReport,
+    modules_root: &Path,
+    post_spec: &PostEditSpec,
+    resolved_claims: &[ResolvedSourceClaims],
+    scope: Option<&ModuleTreeScope>,
+) -> Result<OwnerModuleAssignments> {
+    anyhow::ensure!(
+        post_spec.modules.len() == resolved_claims.len(),
+        "resolved selector results do not match the post-edit module list"
+    );
+    let mut assignments = BTreeMap::new();
+    let mut owner_by_binding_name: HashMap<String, OwnerId> = HashMap::new();
+    for (idx, node) in owner_graph_report.nodes.iter().enumerate() {
+        anyhow::ensure!(
+            assignments.insert(node.id.clone(), None).is_none(),
+            "owner_graph.json repeats owner ID {:?}",
+            node.id
+        );
+        let owner = OwnerId(idx);
+        for binding in &node.declared_bindings {
+            let name = binding.binding.to_string();
+            if let Some(previous) = owner_by_binding_name.insert(name.clone(), owner)
+                && previous != owner
+            {
+                anyhow::bail!("owner_graph.json declares binding {name:?} in multiple owners");
+            }
+        }
+    }
+
+    for (module, resolved) in post_spec.modules.iter().zip(resolved_claims) {
+        let raw_path = module_path_from_file(&module.path, modules_root);
+        let module_path = if let Some(scope) = scope {
+            scope.canonical_destination(&raw_path)?
+        } else {
+            ModulePath::parse(&raw_path, "")?.as_str().to_string()
+        };
+        let claimed_names = module
+            .claims
+            .bindings
+            .iter()
+            .chain(&resolved.bindings)
+            .collect::<BTreeSet<_>>();
+        for name in claimed_names {
+            let owner = owner_by_binding_name.get(name).with_context(|| {
+                format!(
+                    "module {} claims binding {name:?}, absent from owner_graph.json",
+                    module.path.display()
+                )
+            })?;
+            assign_owner_module(&mut assignments, owner_graph_report, *owner, &module_path)?;
+        }
+        for owner in &resolved.anonymous_owners {
+            assign_owner_module(&mut assignments, owner_graph_report, *owner, &module_path)?;
+        }
+    }
+    Ok(assignments)
+}
+
+fn assign_owner_module(
+    assignments: &mut OwnerModuleAssignments,
+    owner_graph_report: &OwnerGraphReport,
+    owner: OwnerId,
+    module_path: &str,
+) -> Result<()> {
+    let node = owner_graph_report.nodes.get(owner.0).with_context(|| {
+        format!(
+            "resolved owner index {} is absent from owner_graph.json",
+            owner.0
+        )
+    })?;
+    let destination = assignments.get_mut(&node.id).with_context(|| {
+        format!(
+            "resolved owner {:?} is absent from owner_graph.json",
+            node.id
+        )
+    })?;
+    match destination {
+        None => *destination = Some(module_path.to_string()),
+        Some(existing) if existing == module_path => {}
+        Some(existing) => anyhow::bail!(
+            "owner {:?} is claimed by multiple modules: {} and {}",
+            node.id,
+            existing,
+            module_path
+        ),
+    }
+    Ok(())
+}
+
 /// Build the post-delete spec view in memory. Drops the deleted YAML
 /// paths from the modules tree; bindings they used to declare are
 /// implicitly unclaimed in the resulting partition (i.e. fall back to
@@ -354,6 +469,29 @@ pub fn gate_post_edit_partition(
         source_root,
         post_spec,
         &[],
+        None,
+        None,
+    )
+}
+
+/// Run the normal gate and prove the entire resolved post-edit owner partition
+/// is exactly the reviewed assignment, including owners that remain residual.
+pub fn gate_post_edit_partition_with_expected_owner_modules(
+    owner_graph_path: &Path,
+    modules_root: &Path,
+    source_root: Option<&Path>,
+    post_spec: &PostEditSpec,
+    expected_owner_modules: &OwnerModuleAssignments,
+    scope: Option<&ModuleTreeScope>,
+) -> Result<()> {
+    gate_post_edit_partition_with_expected(
+        owner_graph_path,
+        modules_root,
+        source_root,
+        post_spec,
+        &[],
+        Some(expected_owner_modules),
+        scope,
     )
 }
 
@@ -363,6 +501,8 @@ fn gate_post_edit_partition_with_expected(
     source_root: Option<&Path>,
     post_spec: &PostEditSpec,
     expected: &[ExpectedResolvedMember],
+    expected_owner_modules: Option<&OwnerModuleAssignments>,
+    scope: Option<&ModuleTreeScope>,
 ) -> Result<()> {
     let owner_graph_report = crate::load_owner_graph_report(owner_graph_path)?;
 
@@ -392,16 +532,7 @@ fn gate_post_edit_partition_with_expected(
     // owners they claim. A claim the gate cannot resolve (missing chunk
     // source, unmatched/ambiguous selector) is a hard error — the claimed
     // owner must never silently fall to residual.
-    let claim_sets: Vec<SourceClaimSet<'_>> = post_spec
-        .modules
-        .iter()
-        .map(|module| SourceClaimSet {
-            module_path: &module.path,
-            member_selectors: &module.claims.member_selectors,
-            source_matches: &module.claims.source_matches,
-            anonymous_selectors: &module.claims.anonymous_selectors,
-        })
-        .collect();
+    let claim_sets = source_claim_sets_from_post_spec(post_spec);
     let resolved_claims = resolve_source_claims(
         &owner_graph_report,
         owner_graph_path,
@@ -409,6 +540,32 @@ fn gate_post_edit_partition_with_expected(
         source_root,
         &claim_sets,
     )?;
+    if let Some(expected_owner_modules) = expected_owner_modules {
+        let actual_owner_modules = owner_module_assignments(
+            &owner_graph_report,
+            modules_root,
+            post_spec,
+            &resolved_claims,
+            scope,
+        )?;
+        if &actual_owner_modules != expected_owner_modules {
+            let owner_ids = actual_owner_modules
+                .keys()
+                .chain(expected_owner_modules.keys())
+                .collect::<BTreeSet<_>>();
+            let first_mismatch = owner_ids.into_iter().find(|owner_id| {
+                actual_owner_modules.get(*owner_id) != expected_owner_modules.get(*owner_id)
+            });
+            if let Some(owner_id) = first_mismatch {
+                bail!(
+                    "post-edit selector resolution changed the reviewed owner assignment for {owner_id:?}: requested {:?}, resolved {:?}",
+                    expected_owner_modules.get(owner_id),
+                    actual_owner_modules.get(owner_id)
+                );
+            }
+            bail!("post-edit owner assignment does not match the reviewed complete candidate");
+        }
+    }
     for target in expected {
         let module_idx = post_spec
             .modules
