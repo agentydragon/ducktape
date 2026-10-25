@@ -288,6 +288,12 @@ receiver remains a possible namespace alias, including through local aliases
 and member projections, and disables the contract. The checker does not prove
 that arbitrary callback parameters or unrelated call results are disjoint
 from the namespace; that non-aliasing guarantee is part of the author audit.
+Under intrinsic integrity, adjacent writes to declared own data fields of a
+checked fresh base-class instance do not invalidate a namespace contract.
+The allocation and assignment values must run no user code, and the instance
+must remain private throughout that run. Unsupported constructors, fields,
+receivers, dynamic scope, and intervening statements retain the conservative
+write checks.
 Within a literal traversed inside an admitted inline callback, a direct static
 namespace member used as a call callee is analyzed as the callee expression,
 not as a captured namespace value. Call arguments and effects remain analyzed;

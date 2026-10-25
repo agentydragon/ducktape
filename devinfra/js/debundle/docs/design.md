@@ -1040,7 +1040,18 @@ including through local aliases and member projections, and disables the
 contract. The checker does not prove that arbitrary callback parameters or
 unrelated call results are disjoint from the namespace; that non-aliasing
 guarantee is part of the author audit. Computed, chained, and unknown member
-results remain conservative when used as write receivers. Unary, update, and
+results remain conservative when used as write receivers.
+
+The receiver check exempts an adjacent run of assignments to declared own
+data fields after a fresh local base-class allocation. Retained class facts
+must prove that allocation runs no user code; each assignment must use that
+same binding, a known own field, and a value that runs no user code. The
+instance cannot escape or acquire an accessor during this run. Any intervening
+statement, unsupported class surface, or dynamic scope ends the proof and
+keeps the ordinary conservative write checks. Array iterator member values
+use A11's intrinsic integrity assumption.
+
+Unary, update, and
 non-logical binary expressions have primitive results on successful
 evaluation; their operand expressions remain in value flow so nested calls
 and unavailable reads are still analyzed. Conditional expressions and
