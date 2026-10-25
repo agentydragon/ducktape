@@ -2143,6 +2143,7 @@ struct FreshErrorWriteClaim {
 #[derive(Clone)]
 struct DeferredGlobalPublication {
     root: BuiltinGlobalRoot,
+    receiver_id: Id,
     property: String,
     value: ValueExpr,
 }
@@ -2196,9 +2197,10 @@ fn exposes_global_receiver(value: &ValueExpr, names: &BTreeSet<&str>) -> bool {
         ValueExpr::Call(_, args, _) | ValueExpr::New(_, args) => args
             .iter()
             .any(|value| exposes_global_receiver(value, names)),
-        ValueExpr::Primitive(values) => values
-            .iter()
-            .any(|value| exposes_global_receiver(value, names)),
+        // Operators can inspect or coerce their operands, but their result
+        // cannot be the global object. Calls arising from those operands are
+        // checked separately below.
+        ValueExpr::Primitive(_) => false,
         _ => false,
     }
 }
@@ -2207,6 +2209,31 @@ fn call_mutates_global_slot(call: &Call, names: &BTreeSet<&str>) -> bool {
     matches!(&call.callee, ValueExpr::Member(receiver, Some(property), _)
         if matches!(property.as_str(), "__defineSetter__" | "__defineGetter__")
             && exposes_global_receiver(receiver, names))
+}
+
+fn call_exposes_global_receiver(
+    call: &Call,
+    names: &BTreeSet<&str>,
+    certified_root_ids: &BTreeSet<Id>,
+) -> bool {
+    if call_mutates_global_slot(call, names) {
+        return true;
+    }
+    // The retained `in` protocol call models possible proxy/host effects;
+    // it does not pass its RHS to a user function. A literal key against a
+    // direct, unshadowed builtin global root cannot publish that root. Keep
+    // the protocol call itself for ordinary effect and reentry analysis.
+    if call.kind == CallKind::InProtocol
+        && matches!(call.args.as_slice(),
+            [ValueExpr::Binding(receiver), ValueExpr::NonCallable]
+                if names.contains(receiver.0.as_ref())
+                    && certified_root_ids.contains(receiver))
+    {
+        return false;
+    }
+    call.args
+        .iter()
+        .any(|value| exposes_global_receiver(value, names))
 }
 
 fn deferred_global_assignment(expression: &Expr) -> Option<DeferredGlobalPublication> {
@@ -2231,6 +2258,7 @@ fn deferred_global_assignment(expression: &Expr) -> Option<DeferredGlobalPublica
     }
     Some(DeferredGlobalPublication {
         root: builtin_global_root(receiver)?,
+        receiver_id: receiver.to_id(),
         property: property.sym.to_string(),
         value: ValueExpr::from_expr(&assignment.right),
     })
@@ -2961,6 +2989,23 @@ impl ExecutionIndex {
             }
         }
         if index.deferred_global_requested {
+            let certified_root_ids: BTreeSet<Id> = index
+                .deferred_global_candidates
+                .iter()
+                .flatten()
+                .filter(|candidate| {
+                    let name = match candidate.root {
+                        BuiltinGlobalRoot::GlobalThis => "globalThis",
+                        BuiltinGlobalRoot::Window => "window",
+                    };
+                    index.global_object_names.contains(name)
+                        && hints
+                            .deferred_global_publications
+                            .get(&candidate.root)
+                            .is_some_and(|slots| slots.contains(&candidate.property))
+                })
+                .map(|candidate| candidate.receiver_id.clone())
+                .collect();
             let global_root_exposed = index
                 .top_assignments
                 .iter()
@@ -2972,11 +3017,11 @@ impl ExecutionIndex {
                     .flatten()
                     .any(|value| exposes_global_receiver(value, &index.global_object_names))
                 || index.top_calls.iter().flatten().any(|call| {
-                    call_mutates_global_slot(call, &index.global_object_names)
-                        || call
-                            .args
-                            .iter()
-                            .any(|value| exposes_global_receiver(value, &index.global_object_names))
+                    call_exposes_global_receiver(
+                        call,
+                        &index.global_object_names,
+                        &certified_root_ids,
+                    )
                 })
                 || index.callables.values().any(|callable| {
                     callable.local_assignments.iter().any(|(_, value)| {
@@ -2986,10 +3031,11 @@ impl ExecutionIndex {
                         .iter()
                         .any(|value| exposes_global_receiver(value, &index.global_object_names))
                         || callable.calls.iter().any(|call| {
-                            call_mutates_global_slot(call, &index.global_object_names)
-                                || call.args.iter().any(|value| {
-                                    exposes_global_receiver(value, &index.global_object_names)
-                                })
+                            call_exposes_global_receiver(
+                                call,
+                                &index.global_object_names,
+                                &certified_root_ids,
+                            )
                         })
                 });
             if index.dynamic_scope_owners.is_empty()
