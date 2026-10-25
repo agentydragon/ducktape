@@ -35,8 +35,8 @@ use crate::{
 };
 use analysis::facts::ExportReentryPolicy;
 use analysis::{
-    AnalysisHints, LocalEffectPolicy, LogicalModuleIndex, ModuleId, OwnerGraphAndUnits,
-    OwnerGraphOptions, PlannedModule, top_level_id,
+    AnalysisHints, LocalEffectPolicy, ModuleId, OwnerGraphAndUnits, OwnerGraphOptions,
+    PlannedModule, top_level_id,
 };
 use anyhow::{Context, Result, bail};
 use artifact::{
@@ -766,7 +766,7 @@ fn project_factorization_modules_with_sentinel(
         rename_map: HashMap::new(),
         anonymous_statement_ordinals: Vec::new(),
     });
-    Ok((logical_modules, ModuleId(LogicalModuleIndex(sentinel_idx))))
+    Ok((logical_modules, ModuleId(sentinel_idx)))
 }
 
 /// Collect `AnalysisHints` from binding annotations. These are semantic
@@ -1182,6 +1182,6 @@ fn module_output_file(
 ) -> Option<String> {
     factorization
         .analysis
-        .logical_module(module.0)
+        .logical_module(module)
         .map(|logical| join_module_path(&[chunk_id, &logical.target_file]))
 }

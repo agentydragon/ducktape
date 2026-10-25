@@ -276,7 +276,7 @@ impl fmt::Display for RenameScope {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             RenameScope::Chunk => write!(f, "chunk scope"),
-            RenameScope::Module(ModuleId(index)) => write!(f, "module #{}", index.0),
+            RenameScope::Module(ModuleId(index)) => write!(f, "module #{}", index),
             RenameScope::Function(span) => write!(f, "function@{}..{}", span.lo, span.hi),
             RenameScope::EntryPublicExports => write!(f, "entry public exports"),
         }
@@ -1226,7 +1226,7 @@ mod tests {
     #[test]
     fn cross_scope_intents_do_not_leak_or_conflict() {
         let function_scope = RenameScope::Function(FunctionScopeId { lo: 10, hi: 20 });
-        let module_scope = RenameScope::Module(ModuleId::logical(0));
+        let module_scope = RenameScope::Module(ModuleId(0));
         let mut ledger = RenameLedger::default();
         // Same `from`, different targets — fine across scopes.
         ledger.submit(intent(
@@ -1240,7 +1240,7 @@ mod tests {
         ledger.submit(intent(module_scope, "e", "registry", A));
         let sealed = ledger.seal(&SealValidation::default()).unwrap();
         assert_eq!(
-            sealed.module_renames_by_name(ModuleId::logical(0)),
+            sealed.module_renames_by_name(ModuleId(0)),
             BTreeMap::from([("e".to_string(), "registry".to_string())]),
         );
         assert!(sealed.chunk_renames_by_name().is_empty());
@@ -1255,7 +1255,7 @@ mod tests {
     fn hygiene_distinct_ids_are_distinct_keys() {
         // Same sym, same scope, same priority, different targets: only the
         // SyntaxContext keeps these two from being a conflict.
-        let scope = RenameScope::Module(ModuleId::logical(0));
+        let scope = RenameScope::Module(ModuleId(0));
         let shadowing = (Atom::from("a"), SyntaxContext::from_u32(7));
         let mut ledger = RenameLedger::default();
         ledger.submit(intent(scope, "a", "first", A));
@@ -1294,7 +1294,7 @@ mod tests {
         ledger.seed_taken(RenameScope::Chunk, ["name".to_string()]);
         assert_eq!(ledger.mint(RenameScope::Chunk, "name"), "name$1");
         assert_eq!(
-            ledger.mint(RenameScope::Module(ModuleId::logical(0)), "name"),
+            ledger.mint(RenameScope::Module(ModuleId(0)), "name"),
             "name",
         );
     }
@@ -1387,7 +1387,7 @@ mod tests {
         // Module-scope explicit renames may swap two bindings' names:
         // each target's root slot is vacated by the other rename, and
         // module-style validation has no duplicate-against-root rule.
-        let module = RenameScope::Module(ModuleId::logical(0));
+        let module = RenameScope::Module(ModuleId(0));
         let mut ledger = RenameLedger::default();
         ledger.submit(intent(module, "a", "b", A));
         ledger.submit(intent(module, "b", "a", A));
@@ -1395,7 +1395,7 @@ mod tests {
             .seal(&body_occupancy(module, &["a", "b"], &[]))
             .unwrap();
         assert_eq!(
-            sealed.module_renames_by_name(ModuleId::logical(0)),
+            sealed.module_renames_by_name(ModuleId(0)),
             BTreeMap::from([
                 ("a".to_string(), "b".to_string()),
                 ("b".to_string(), "a".to_string()),
@@ -1405,7 +1405,7 @@ mod tests {
 
     #[test]
     fn module_explicit_target_colliding_with_root_binding_is_a_hard_error() {
-        let module = RenameScope::Module(ModuleId::logical(0));
+        let module = RenameScope::Module(ModuleId(0));
         let mut ledger = RenameLedger::default();
         ledger.submit(intent(module, "a", "readable", A));
         assert_eq!(
@@ -1442,7 +1442,7 @@ mod tests {
 
     #[test]
     fn captured_explicit_renames_are_refused_and_captured_heuristics_dropped() {
-        let module = RenameScope::Module(ModuleId::logical(0));
+        let module = RenameScope::Module(ModuleId(0));
         let pair = BTreeSet::from([("a".to_string(), "b".to_string())]);
 
         let mut ledger = RenameLedger::default();
@@ -1476,48 +1476,44 @@ mod tests {
         let sealed = ledger
             .seal(&captured_occupancy(module, &["a"], &["b"], &[("a", "b")]))
             .unwrap();
-        assert!(
-            sealed
-                .module_renames_by_name(ModuleId::logical(0))
-                .is_empty()
-        );
+        assert!(sealed.module_renames_by_name(ModuleId(0)).is_empty());
     }
 
     // --- heuristic drop policies ---
 
     #[test]
     fn module_heuristic_targeting_an_explicit_target_is_dropped() {
-        let module = RenameScope::Module(ModuleId::logical(0));
+        let module = RenameScope::Module(ModuleId(0));
         let mut ledger = RenameLedger::default();
         ledger.submit(intent(module, "a", "winner", A));
         ledger.submit(intent(module, "b", "winner", FREE));
         let sealed = ledger.seal(&body_occupancy(module, &["a"], &[])).unwrap();
         assert_eq!(
-            sealed.module_renames_by_name(ModuleId::logical(0)),
+            sealed.module_renames_by_name(ModuleId(0)),
             BTreeMap::from([("a".to_string(), "winner".to_string())]),
         );
         assert_eq!(
-            sealed.module_explicit_renames_by_name(ModuleId::logical(0)),
+            sealed.module_explicit_renames_by_name(ModuleId(0)),
             BTreeMap::from([("a".to_string(), "winner".to_string())]),
         );
     }
 
     #[test]
     fn module_explicit_query_excludes_heuristic_survivors() {
-        let module = RenameScope::Module(ModuleId::logical(0));
+        let module = RenameScope::Module(ModuleId(0));
         let mut ledger = RenameLedger::default();
         ledger.submit(intent(module, "a", "plan_name", A));
         ledger.submit(intent(module, "t", "options", FREE));
         let sealed = ledger.seal(&body_occupancy(module, &["a"], &[])).unwrap();
         assert_eq!(
-            sealed.module_renames_by_name(ModuleId::logical(0)),
+            sealed.module_renames_by_name(ModuleId(0)),
             BTreeMap::from([
                 ("a".to_string(), "plan_name".to_string()),
                 ("t".to_string(), "options".to_string()),
             ]),
         );
         assert_eq!(
-            sealed.module_explicit_renames_by_name(ModuleId::logical(0)),
+            sealed.module_explicit_renames_by_name(ModuleId(0)),
             BTreeMap::from([("a".to_string(), "plan_name".to_string())]),
         );
     }
@@ -1605,7 +1601,7 @@ mod tests {
         // Free-source aliases (source NOT bound in the subtree) are
         // exempt from the mentions rule but must not target a name the
         // subtree binds.
-        let module = RenameScope::Module(ModuleId::logical(0));
+        let module = RenameScope::Module(ModuleId(0));
         let scope = RenameScope::Function(FunctionScopeId { lo: 1, hi: 9 });
         let mut ledger = RenameLedger::default();
         ledger.submit(intent(module, "t", "options", FREE));
@@ -1624,7 +1620,7 @@ mod tests {
         // The Module-scope intent survives (merged-map bridge); the
         // Function-scope application copy is suppressed.
         assert_eq!(
-            sealed.module_renames_by_name(ModuleId::logical(0)),
+            sealed.module_renames_by_name(ModuleId(0)),
             BTreeMap::from([("t".to_string(), "options".to_string())]),
         );
         assert!(sealed.scope_renames_by_name(&scope).is_empty());
@@ -1632,7 +1628,7 @@ mod tests {
 
     #[test]
     fn free_alias_copy_survives_when_target_only_mentioned() {
-        let module = RenameScope::Module(ModuleId::logical(0));
+        let module = RenameScope::Module(ModuleId(0));
         let scope = RenameScope::Function(FunctionScopeId { lo: 1, hi: 9 });
         let mut ledger = RenameLedger::default();
         ledger.submit(intent(module, "t", "options", FREE));
@@ -1659,7 +1655,7 @@ mod tests {
         // Two deriving functions free-alias different sources onto one
         // target: both Module-scope intents drop (target collision), so
         // both Function-scope application copies must drop too.
-        let module = RenameScope::Module(ModuleId::logical(0));
+        let module = RenameScope::Module(ModuleId(0));
         let f1 = RenameScope::Function(FunctionScopeId { lo: 1, hi: 9 });
         let mut ledger = RenameLedger::default();
         ledger.submit(intent(module, "t", "options", FREE));
@@ -1676,11 +1672,7 @@ mod tests {
             },
         );
         let sealed = ledger.seal(&validation).unwrap();
-        assert!(
-            sealed
-                .module_renames_by_name(ModuleId::logical(0))
-                .is_empty()
-        );
+        assert!(sealed.module_renames_by_name(ModuleId(0)).is_empty());
         assert!(sealed.scope_renames_by_name(&f1).is_empty());
     }
 }

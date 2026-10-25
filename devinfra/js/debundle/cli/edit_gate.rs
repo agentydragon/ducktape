@@ -593,7 +593,7 @@ fn gate_post_edit_assignment_with_expected(
     // renders diagnostics with the same canonical [`ModulePath`]
     // every wire artifact uses (the module YAML's path relative to
     // the modules root, `.yaml` stripped).
-    let residual = ModuleId::logical(0);
+    let residual = ModuleId(0);
     let mut of: Vec<ModuleId> = vec![residual; owner_graph.num_nodes()];
     let mut module_path_by_id: HashMap<ModuleId, ModulePath> = [(
         residual,
@@ -602,7 +602,7 @@ fn gate_post_edit_assignment_with_expected(
     .into_iter()
     .collect();
     for (next_idx, (module_idx, module)) in (1usize..).zip(post_spec.modules.iter().enumerate()) {
-        let mid = ModuleId::logical(next_idx);
+        let mid = ModuleId(next_idx);
         let raw = module_path_from_file(&module.path, modules_root);
         module_path_by_id.insert(
             mid,
@@ -629,7 +629,7 @@ fn gate_post_edit_assignment_with_expected(
         module_path_by_id.get(&m).cloned().unwrap_or_else(|| {
             panic!(
                 "module id logical:{} not assigned by the post-edit spec",
-                m.0.0
+                m.0
             )
         })
     };

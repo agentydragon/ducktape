@@ -13,9 +13,9 @@ use analysis::reports::schema::LineRange;
 use analysis::reports::{atomic_unit_key, module_id_from_key, module_key, owner_key};
 use analysis::{
     AtomicGraphReport, AtomicUnit, AtomicUnitEdgeReport, AtomicUnitReport, BindingReport, DepKind,
-    EdgeRoleReport, LogicalModuleIndex, ModuleEntry, ModuleId, ModuleKey, OwnerGraphEdgeReport,
-    OwnerGraphNodeReport, OwnerGraphQuotientReport, OwnerGraphReport, Purity, PurityCauseReport,
-    QuotientEdgeReport, QuotientSccReport,
+    EdgeRoleReport, ModuleEntry, ModuleId, ModuleKey, OwnerGraphEdgeReport, OwnerGraphNodeReport,
+    OwnerGraphQuotientReport, OwnerGraphReport, Purity, PurityCauseReport, QuotientEdgeReport,
+    QuotientSccReport,
 };
 
 use crate::chunk_factorization::ChunkFactorization;
@@ -165,7 +165,7 @@ where
 fn build_quotient_node_reports(factorization: &ChunkFactorization) -> Vec<ModuleEntry> {
     let mut modules = BTreeSet::<ModuleId>::new();
     for idx in 0..factorization.analysis.logical_modules().len() {
-        modules.insert(ModuleId(LogicalModuleIndex(idx)));
+        modules.insert(ModuleId(idx));
     }
     for (_, module) in factorization.assignment.iter() {
         modules.insert(module);
@@ -446,7 +446,7 @@ fn quotient_edge_indices_by_source(
 fn is_residual_destination(factorization: &ChunkFactorization, id: ModuleId) -> bool {
     factorization
         .analysis
-        .logical_module(id.0)
+        .logical_module(id)
         .is_some_and(|module| module.residual)
 }
 

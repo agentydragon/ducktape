@@ -3,7 +3,7 @@ pub mod schema;
 use std::collections::BTreeSet;
 
 use crate::graph::{OwnerEdgeId, OwnerId};
-use crate::ids::{LogicalModuleIndex, ModuleId};
+use crate::ids::ModuleId;
 use crate::reports::schema::ModuleKey;
 
 /// The shared "modules in the SCC + the edges in the SCC" shape — the
@@ -39,7 +39,7 @@ pub fn owner_key(id: OwnerId) -> String {
 }
 
 pub fn module_key(id: ModuleId) -> ModuleKey {
-    let LogicalModuleIndex(idx) = id.0;
+    let idx = id.0;
     ModuleKey(format!("logical:{idx}"))
 }
 
@@ -51,5 +51,5 @@ pub fn module_id_from_key(key: &ModuleKey) -> Option<ModuleId> {
     key.as_str()
         .strip_prefix("logical:")
         .and_then(|idx| idx.parse::<usize>().ok())
-        .map(|idx| ModuleId(LogicalModuleIndex(idx)))
+        .map(ModuleId)
 }

@@ -12,20 +12,20 @@ use analysis::*;
 /// raw logical index (the `logical` free function is not part of the
 /// crate's public API).
 fn logical(idx: usize) -> ModuleId {
-    ModuleId::logical(idx)
+    ModuleId(idx)
 }
 
 /// logical module always sits at the highest index appended by
 /// `factorization_for` / `factorization_with_residual_module`. Tests use this
 /// instead of the historical `ModuleId::ResidualEntry` literal.
 fn residual() -> ModuleId {
-    ModuleId::logical(usize::MAX)
+    ModuleId(usize::MAX)
 }
 
 /// Canonical-path renderer for test assignments: the residual
 /// sentinel renders as `residual`, explicit modules as `mod_<idx>`.
 fn render(id: ModuleId) -> spec::ModulePath {
-    let LogicalModuleIndex(idx) = id.0;
+    let idx = id.0;
     let raw = if idx == usize::MAX {
         "residual".to_string()
     } else {
@@ -64,7 +64,7 @@ fn cross_destination_lazy_write_is_rejected() {
     // (the explicit `mod_0` is at index 0).
     assert_eq!(
         distinct_claim_modules(conflict),
-        vec![ModuleId::logical(0), ModuleId::logical(1)],
+        vec![ModuleId(0), ModuleId(1)],
     );
 }
 
@@ -106,8 +106,8 @@ fn same_destination_lazy_write_is_allowed() {
 /// `residual()` (a `usize::MAX`-indexed sentinel) and let the
 /// builder remap it.
 fn resolve_test_module_id(id: ModuleId, residual_idx: usize) -> ModuleId {
-    if id.0.0 == usize::MAX {
-        ModuleId::logical(residual_idx)
+    if id.0 == usize::MAX {
+        ModuleId(residual_idx)
     } else {
         id
     }
@@ -135,7 +135,7 @@ fn factorization_for(source: &str, ownership: &[(&str, ModuleId)]) -> ChunkFacto
     let facts = analyze_facts(&module);
     let mut max_idx: Option<usize> = None;
     for (_, id) in ownership {
-        let LogicalModuleIndex(i) = id.0;
+        let i = id.0;
         if i == usize::MAX {
             continue;
         }
@@ -164,12 +164,7 @@ fn factorization_for(source: &str, ownership: &[(&str, ModuleId)]) -> ChunkFacto
         rename_map: HashMap::new(),
         anonymous_statement_ordinals: Vec::new(),
     });
-    factorization_from_facts(
-        &facts,
-        bindings,
-        logical_modules,
-        ModuleId::logical(residual_idx),
-    )
+    factorization_from_facts(&facts, bindings, logical_modules, ModuleId(residual_idx))
 }
 
 fn factorization_with_residual_module(
@@ -620,11 +615,8 @@ fn assignment_summary(factorization: &ChunkFactorization) -> Vec<(String, String
             // Residual modules render as `<residual>` so this
             // summary stays stable across residual-index changes;
             // explicit modules use their `mod_<idx>` label.
-            let LogicalModuleIndex(idx) = dest.0;
-            let label = match factorization
-                .analysis
-                .logical_module(LogicalModuleIndex(idx))
-            {
+            let idx = dest.0;
+            let label = match factorization.analysis.logical_module(ModuleId(idx)) {
                 Some(m) if m.residual => "<residual>".to_string(),
                 _ => render(dest).to_string(),
             };
@@ -671,7 +663,7 @@ fn assignment_assembly_single_claim_with_unclaimed_unit_members_is_a_conflict() 
     // the explicit `mod_0`.
     assert_eq!(
         distinct_claim_modules(&report.atomic_unit_conflicts[0]),
-        vec![ModuleId::logical(0), ModuleId::logical(1)],
+        vec![ModuleId(0), ModuleId(1)],
     );
 }
 
@@ -709,7 +701,7 @@ fn assignment_assembly_records_conflict_on_split_eager_use_cycle() {
     let conflict = &report.atomic_unit_conflicts[0];
     assert_eq!(
         distinct_claim_modules(conflict),
-        vec![ModuleId::logical(0), ModuleId::logical(1)],
+        vec![ModuleId(0), ModuleId(1)],
     );
 }
 

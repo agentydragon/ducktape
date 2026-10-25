@@ -14,7 +14,7 @@ use swc_atoms::Atom;
 use swc_ecma_ast::Id;
 
 use analysis::reports::owner_key;
-use analysis::{BindingKind, LogicalModuleIndex, ModuleId, OwnerGraph, PlannedModule};
+use analysis::{BindingKind, ModuleId, OwnerGraph, PlannedModule};
 
 /// Per-chunk inputs + IR + input-derived caches.
 ///
@@ -110,7 +110,7 @@ impl FactorizationInputs {
     /// path; panics on an out-of-range id or unparseable identity —
     /// both are pipeline bugs, not user errors.
     pub fn module_path(&self, id: ModuleId) -> spec::ModulePath {
-        let LogicalModuleIndex(idx) = id.0;
+        let idx = id.0;
         let module = self.logical_modules.get(idx).unwrap_or_else(|| {
             panic!(
                 "ModuleId logical:{idx} out of range ({} logical modules)",
@@ -134,9 +134,9 @@ impl FactorizationInputs {
             .and_then(|info| info.owner)
     }
 
-    /// Lookup a logical module by index.
-    pub fn logical_module(&self, idx: LogicalModuleIndex) -> Option<&PlannedModule> {
-        self.logical_modules.get(idx.0)
+    /// Lookup a logical module by its dense identity.
+    pub fn logical_module(&self, id: ModuleId) -> Option<&PlannedModule> {
+        self.logical_modules.get(id.0)
     }
 
     pub fn owner_report_ids_for_bindings<'a>(
@@ -197,7 +197,7 @@ fn build_binding_lookup_by_id(
         };
         let export_name = match kind {
             BindingKind::Owned {
-                module: ModuleId(LogicalModuleIndex(idx)),
+                module: ModuleId(idx),
             } => logical_modules
                 .get(*idx)
                 .and_then(|module| module.rename_map.get(id))

@@ -20,7 +20,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use analysis::ids::{LogicalModuleIndex, ModuleId};
+use analysis::ids::ModuleId;
 use analysis::module_assignment::ModuleAssignment;
 use analysis::{DepKind, OwnerGraphNodeReport, OwnerGraphReport};
 use gate::{
@@ -37,7 +37,7 @@ use crate::quotient::{ClassId, QuotientGraph, SpecModuleGroup, build_seed_quotie
 const CAP_LINES: usize = 10_000;
 
 fn module_id(index: usize) -> ModuleId {
-    ModuleId(LogicalModuleIndex(index))
+    ModuleId(index)
 }
 
 // ---------------------------------------------------------------------

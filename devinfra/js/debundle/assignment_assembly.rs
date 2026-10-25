@@ -17,7 +17,7 @@ use swc_ecma_ast::Id;
 
 use crate::atomic_units::AtomicUnit;
 use crate::graph::{DepKind, OwnerGraph, OwnerId};
-use crate::ids::{BindingKind, LogicalModuleIndex, ModuleId, PlannedModule};
+use crate::ids::{BindingKind, ModuleId, PlannedModule};
 use crate::module_assignment::ModuleAssignment;
 
 /// One owner's claimed destination inside a conflicting atomic
@@ -113,7 +113,7 @@ fn compute_owner_claims(
         }
     }
     for (idx, module) in logical_modules.iter().enumerate() {
-        let dest = ModuleId(LogicalModuleIndex(idx));
+        let dest = ModuleId(idx);
         for ordinal in &module.anonymous_statement_ordinals {
             if let Some(node) = owner_graph
                 .iter_nodes()

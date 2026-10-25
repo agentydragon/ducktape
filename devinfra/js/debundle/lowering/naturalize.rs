@@ -151,7 +151,7 @@ pub(super) fn collect_plan_export_rename_intents(
         for (local, exported) in sorted_bindings {
             if local != exported && is_binding_identifier(exported) {
                 ledger.submit(RenameIntent {
-                    scope: RenameScope::Module(ModuleId::logical(index)),
+                    scope: RenameScope::Module(ModuleId(index)),
                     from: top_level_id(local, chunk_top_level_mark),
                     to: exported.as_str().into(),
                     origin: RenameOrigin::Explicit {

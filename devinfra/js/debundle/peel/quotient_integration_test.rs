@@ -111,17 +111,12 @@ fn group_contraction_commits_one_final_entry_assignment_and_honors_cap() {
         ],
         vec![],
     );
-    let assignments = [
-        ModuleId::logical(1),
-        ModuleId::logical(2),
-        ModuleId::logical(0),
-        ModuleId::logical(3),
-    ];
+    let assignments = [ModuleId(1), ModuleId(2), ModuleId(0), ModuleId(3)];
     let mut q = QuotientGraph::from_report_with_realizable_assignment(
         &report,
         9,
         &assignments,
-        ModuleId::logical(0),
+        ModuleId(0),
     )
     .unwrap();
     assert!(!q.contract_if_preserving(ClassId(0), ClassId(0)));
@@ -132,7 +127,7 @@ fn group_contraction_commits_one_final_entry_assignment_and_honors_cap() {
         &report,
         14,
         &assignments,
-        ModuleId::logical(0),
+        ModuleId(0),
     )
     .unwrap();
     let classes = [ClassId(0), ClassId(1), ClassId(2)];
@@ -147,7 +142,7 @@ fn group_contraction_commits_one_final_entry_assignment_and_honors_cap() {
         &report,
         15,
         &assignments,
-        ModuleId::logical(0),
+        ModuleId(0),
     )
     .unwrap();
     assert!(q.contract_group_if_preserving(&classes));
@@ -155,7 +150,7 @@ fn group_contraction_commits_one_final_entry_assignment_and_honors_cap() {
         assert_eq!(q.class_of(OwnerIdx(owner)), ClassId(0));
         assert_eq!(
             q.realizability_assignment().of(analysis::OwnerId(owner)),
-            ModuleId::logical(0)
+            ModuleId(0)
         );
     }
     assert_eq!(q.class_of(OwnerIdx(3)), ClassId(3));
@@ -807,14 +802,14 @@ fn owner_graph_and_assignment_from_spec(
         .collect();
     // Module-id assignment: residual goes to ModuleId(0). Every
     // distinct spec module gets its own ModuleId starting at 1.
-    let residual = analysis::ModuleId::logical(0);
+    let residual = analysis::ModuleId(0);
     let mut spec_module_ids: HashMap<&str, analysis::ModuleId> = HashMap::new();
     let mut next_idx = 1usize;
     for module in spec {
         spec_module_ids
             .entry(module.module_id.as_str())
             .or_insert_with(|| {
-                let m = analysis::ModuleId::logical(next_idx);
+                let m = analysis::ModuleId(next_idx);
                 next_idx += 1;
                 m
             });

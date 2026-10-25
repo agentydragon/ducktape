@@ -55,7 +55,7 @@ fn arb_origin() -> impl Strategy<Value = RenameOrigin> {
 fn arb_scope() -> impl Strategy<Value = RenameScope> {
     prop_oneof![
         Just(RenameScope::Chunk),
-        (0..3usize).prop_map(|index| RenameScope::Module(ModuleId::logical(index))),
+        (0..3usize).prop_map(|index| RenameScope::Module(ModuleId(index))),
         prop_oneof![
             Just(FunctionScopeId { lo: 1, hi: 9 }),
             Just(FunctionScopeId { lo: 10, hi: 20 }),
@@ -270,7 +270,7 @@ proptest! {
             0..=SOURCES.len(),
         ),
     ) {
-        let scope = RenameScope::Module(ModuleId::logical(0));
+        let scope = RenameScope::Module(ModuleId(0));
         let mut ledger = RenameLedger::default();
         for (&from, &to) in &renames {
             ledger.submit(RenameIntent {

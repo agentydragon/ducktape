@@ -129,9 +129,10 @@ spellings of one module therefore collapse to a single value, so `==`
 is an honest identity test — this is what makes the peel proposer's
 self-merge bug structurally impossible.
 
-The internal array handle `ModuleId(LogicalModuleIndex)` is an
-in-process index for O(1) lookups; it is distinct from `ModulePath` and
-is not the public identity.
+The internal array handle `ModuleId(usize)` is a dense in-process index
+for O(1) lookups; it is distinct from `ModulePath` and is not the public
+identity. It remains `#[serde(transparent)]`, so serialization is the
+underlying number.
 
 ## Convention: interned module references + a single module table
 

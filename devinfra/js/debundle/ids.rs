@@ -17,28 +17,16 @@ pub fn top_level_id(sym: &str, top_level_mark: Mark) -> Id {
     )
 }
 
-/// Index into the materializer's `module_plans` list, identifying a
-/// logical module produced by the spec.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize)]
-#[serde(transparent)]
-pub struct LogicalModuleIndex(pub usize);
-
 /// Identity of a module the graph/schedule analysis reasons about.
-/// Wraps a [`LogicalModuleIndex`] pointing into the schedule's
-/// `logical_modules` list. The residual catch-all is just a logical
-/// module flagged `residual: true` — synthesized by the materializer
+/// Its dense index points into the schedule's `logical_modules` list.
+/// The residual catch-all is a logical module flagged `residual: true`,
+/// synthesized by the materializer
 /// before `ChunkFactorization::build_with` for chunks that need a default
 /// destination (every `InlineInEntry` and `CatchallFile` chunk; the
 /// `MiniFactors` synthesizer handles assignments itself).
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize)]
 #[serde(transparent)]
-pub struct ModuleId(pub LogicalModuleIndex);
-
-impl ModuleId {
-    pub fn logical(idx: usize) -> Self {
-        Self(LogicalModuleIndex(idx))
-    }
-}
+pub struct ModuleId(pub usize);
 
 /// Position of a top-level statement in a chunk's source body.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]

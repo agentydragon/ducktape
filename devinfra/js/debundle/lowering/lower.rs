@@ -35,7 +35,7 @@ use crate::rename_ledger::{
     SealedRenames,
 };
 use crate::visitors::{IdentifierRenamer, RenameCaptureProbe};
-use analysis::{LogicalModuleIndex, ModuleId, top_level_id};
+use analysis::{ModuleId, top_level_id};
 use anyhow::Result;
 use artifact::{
     ArtifactIndexes, ChunkBundle, ChunkId, FileMetadata, FileRole, JsFile, JsFileBody,
@@ -281,7 +281,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
             // like the gate simulator's universal residual edges.
             if !selected_by_module[module_index].is_empty() {
                 entry_imports.push((
-                    ModuleId(LogicalModuleIndex(module_index)),
+                    ModuleId(module_index),
                     import_decl_module_item(
                         Vec::new(),
                         &relative_source(entry_file, &plan.target_file),
@@ -316,7 +316,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
             }
         }
         entry_imports.push((
-            ModuleId(LogicalModuleIndex(module_index)),
+            ModuleId(module_index),
             import_decl_for_plan(
                 entry_file,
                 &plan.target_file,
@@ -360,7 +360,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         .zip(module_plans)
         .enumerate()
         .map(|(index, (body, plan))| {
-            let module = ModuleId::logical(index);
+            let module = ModuleId(index);
             NaturalizedModuleBody::prepare(
                 body,
                 plan,

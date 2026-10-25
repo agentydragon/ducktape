@@ -125,7 +125,7 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
     // the ledger's taken-name set is seeded with every name bound
     // anywhere in the body so mints stay capture-free, and the sealed
     // projection below is the rename map the body renamer applies.
-    let module = ModuleId::logical(index);
+    let module = ModuleId(index);
     let module_local_names = collect_local_binding_names(&body);
     let mut import_ledger = RenameLedger::default();
     import_ledger.seed_taken(

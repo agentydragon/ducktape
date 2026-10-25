@@ -6,7 +6,7 @@ use analysis::assignment_assembly::{AtomicUnitConflict, assemble_assignment};
 use analysis::atomic_units::{AtomicUnit, OwnerGraphAndUnits};
 use analysis::graph::{build_module_quotient, chunk_constraining_module_edges};
 use analysis::module_assignment::ModuleAssignment;
-use analysis::{LogicalModuleIndex, ModuleId, ModuleQuotient, OwnerGraphReport, PlannedModule};
+use analysis::{ModuleId, ModuleQuotient, OwnerGraphReport, PlannedModule};
 
 use crate::FactorizationInputs;
 use crate::esm_import_order::EsmImportOrder;
@@ -94,9 +94,7 @@ impl ChunkFactorization {
         // Every logical module needs a deterministic source-order
         // slot for emit stability, even singletons that don't
         // participate in any canonical edge.
-        let extra_nodes: BTreeSet<ModuleId> = (0..logical_modules.len())
-            .map(|idx| ModuleId(LogicalModuleIndex(idx)))
-            .collect();
+        let extra_nodes: BTreeSet<ModuleId> = (0..logical_modules.len()).map(ModuleId).collect();
         let constraining_pairs: BTreeSet<(ModuleId, ModuleId)> = canonical_edges.pairs().collect();
         let import_order = EsmImportOrder::build(
             &constraining_pairs,

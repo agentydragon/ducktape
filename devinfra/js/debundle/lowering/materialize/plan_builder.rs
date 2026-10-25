@@ -14,9 +14,7 @@ use crate::imports::{
 use crate::plans::{LogicalRequest, MemberRequest, ModulePlan};
 use crate::rebind_fold::RebindFold;
 use crate::util::target_file_for_request;
-use analysis::{
-    BindingKind, LogicalModuleIndex, ModuleId, OwnerGraphAndUnits, OwnerId, top_level_id,
-};
+use analysis::{BindingKind, ModuleId, OwnerGraphAndUnits, OwnerId, top_level_id};
 use anyhow::{Context, Result, bail};
 use js_ast::body_index_for_statement_ordinal;
 use selector_outcome::{
@@ -181,7 +179,7 @@ impl ChunkPlanBuilder {
         reject_duplicate_member_bindings("logical_module", &request.id, &request.members)?;
         let mut bindings = HashMap::<String, String>::new();
         let dest_target_file = target_file_for_request(ctx.target_dir, &request.target_path)?;
-        let module_id = ModuleId(LogicalModuleIndex(index));
+        let module_id = ModuleId(index);
         let mut duplicate_bindings = BTreeSet::<String>::new();
         for member in &request.members {
             if !member.binding.is_empty() {
@@ -549,7 +547,7 @@ impl ChunkPlanBuilder {
     ) -> SelectorOutcome {
         let (plan_index, export_name) = match existing_kind {
             BindingKind::Owned {
-                module: ModuleId(LogicalModuleIndex(owner_index)),
+                module: ModuleId(owner_index),
             } => (
                 *owner_index,
                 self.module_plans[*owner_index]
@@ -558,7 +556,7 @@ impl ChunkPlanBuilder {
                     .cloned(),
             ),
             BindingKind::Imported {
-                re_exporter: ModuleId(LogicalModuleIndex(re_index)),
+                re_exporter: ModuleId(re_index),
                 public_name,
                 ..
             } => (*re_index, Some(public_name.to_string())),
@@ -588,7 +586,7 @@ impl ChunkPlanBuilder {
     ) -> Option<String> {
         member.selector.source_match()?;
         let BindingKind::Owned {
-            module: ModuleId(LogicalModuleIndex(owner_index)),
+            module: ModuleId(owner_index),
         } = existing_kind
         else {
             return None;
@@ -647,7 +645,7 @@ impl ChunkPlanBuilder {
             });
             return Ok(());
         }
-        let module_id = ModuleId(LogicalModuleIndex(index));
+        let module_id = ModuleId(index);
         if let Some(existing_kind) = self.catalogue_index_by_name.get(binding) {
             if let Some(report) = self.same_module_duplicate_source_binding_report(
                 existing_kind,
@@ -719,7 +717,7 @@ impl ChunkPlanBuilder {
             .iter()
             .find_map(|(binding, kind)| match kind {
                 BindingKind::Imported {
-                    re_exporter: ModuleId(LogicalModuleIndex(index)),
+                    re_exporter: ModuleId(index),
                     public_name,
                     ..
                 } if *index == request_index && public_name.as_ref() == member.export_name => {
@@ -766,7 +764,7 @@ impl ChunkPlanBuilder {
             let Some(&owner_index) = self.binding_assignment.get(&claimed_id) else {
                 continue;
             };
-            let owner_id = ModuleId(LogicalModuleIndex(owner_index));
+            let owner_id = ModuleId(owner_index);
             for sibling in sibling_set {
                 if sibling == claimed_name {
                     continue;
@@ -823,7 +821,7 @@ impl ChunkPlanBuilder {
             let Some(&plan_index) = self.anonymous_ordinal_assignment.get(&decl.ordinal) else {
                 continue;
             };
-            let module = ModuleId(LogicalModuleIndex(plan_index));
+            let module = ModuleId(plan_index);
             for (name, id) in &decl.bindings {
                 if let Some(existing) = self.binding_assignment.get(id).copied() {
                     if Some(existing) != self.residual_plan_index {
@@ -943,7 +941,7 @@ impl ChunkPlanBuilder {
     ) -> Result<()> {
         if let Some(residual) = residual_request {
             let residual_index = self.module_plans.len();
-            let residual_module_id = ModuleId(LogicalModuleIndex(residual_index));
+            let residual_module_id = ModuleId(residual_index);
             let mut residual_bindings = HashMap::<String, String>::new();
             for decl in declarations {
                 for (name, id) in &decl.bindings {
@@ -989,7 +987,7 @@ impl ChunkPlanBuilder {
                 .iter()
                 .position(|plan| plan.target_path == catchall_target);
             if let Some(owner_index) = owner_index {
-                let owner_id = ModuleId(LogicalModuleIndex(owner_index));
+                let owner_id = ModuleId(owner_index);
                 let owner_plan = &mut self.module_plans[owner_index];
                 owner_plan.explicit = false;
                 for decl in declarations {
@@ -1215,7 +1213,7 @@ impl ChunkPlanBuilder {
 
         for (idx, members) in unclaimed_units.into_iter().enumerate() {
             let synthetic_idx = self.module_plans.len();
-            let synthetic_module_id = ModuleId(LogicalModuleIndex(synthetic_idx));
+            let synthetic_module_id = ModuleId(synthetic_idx);
             let target_path = format!("__auto/mini/{idx:04}");
             let target_file = target_file_for_request(target_dir, &target_path)?;
             let mut bindings = HashMap::<String, String>::new();
@@ -1305,7 +1303,7 @@ impl ChunkPlanBuilder {
             self.bindings_catalogue.insert(
                 binding,
                 BindingKind::Owned {
-                    module: ModuleId::logical(dest),
+                    module: ModuleId(dest),
                 },
             );
             self.module_plans[dest]

@@ -576,7 +576,7 @@ asymmetric `(eager forward, lazy back)` I-cycles that the
    `RealizabilityIndex` over the class projection: each class is one
    `ModuleId`, except that classes made only of residual-destined owners
    (and not anchored to an existing module) share the residual
-   `ModuleId::logical(0)`. Every committed mutation — `contract`, the
+   `ModuleId(0)`. Every committed mutation — `contract`, the
    `is_pre_existing_module` promotion in `set_class_pre_existing_module` —
    applies the matching `ModuleAssignmentDelta::MoveOwners` to the index.
 3. The speculative queries — the boolean `merge_preserves_invariants` and the
@@ -3211,8 +3211,8 @@ A string that identifies a thing of a known kind gets a newtype; untyped
 `String` is reserved for free-form text (error messages, log lines, the
 actual JavaScript identifier _as text_). The identifier types live in
 <../ids.rs> and <../graph/>: `ChunkId` (an index interned by `ChunkTable`),
-`LogicalModuleIndex`, `ModuleId` (a `LogicalModuleIndex` wrapper — the
-in-process module handle), `StatementOrdinal`, `OwnerId` and `OwnerEdgeId`. A
+`ModuleId` (the in-process dense module handle), `StatementOrdinal`,
+`OwnerId` and `OwnerEdgeId`. A
 module's public identity is `spec::ModulePath`, never a `ModuleId`
 (<wire_format.md>). Artifact metadata follows the same rule: `FileRole` is a
 typed enum (`entry`, `module`, `runtime` in JSON via snake_case serde). Do not

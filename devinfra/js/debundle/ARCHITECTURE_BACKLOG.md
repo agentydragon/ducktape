@@ -66,9 +66,6 @@ of the live definitions, consumers, and documentation.
 
 ## Vocabulary / naming debt
 
-- **`ModuleId(pub LogicalModuleIndex)` wraps an index in another wrapper.**
-  Clarify which indices are stable within a chunk before changing this identity
-  model.
 - **`chunk` and `artifact` do not tell you which phase owns a value.**
   `ChunkBundle` / `ChunkArtifact` / `JsChunk` describe stored files;
   `ChunkAnalysisReport` is a manifest/report; `ChunkFactorization` is a

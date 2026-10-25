@@ -310,7 +310,7 @@ fn projects_to_residual<'a>(
 }
 
 /// Project every live class onto a `ModuleId` — the residual
-/// `ModuleId::logical(0)` where `projects_to_residual`, otherwise a
+/// `ModuleId(0)` where `projects_to_residual`, otherwise a
 /// fresh one numbered densely from 1 in ascending `ClassId` order — and
 /// build the realizability index over the resulting owner assignment.
 /// Returns the index, the class → module map, and the next free module
@@ -321,7 +321,7 @@ fn project_classes(
     classes: &[ClassData],
     gate_residual_owners: &BTreeSet<OwnerIdx>,
 ) -> (RealizabilityIndex, BTreeMap<ClassId, ModuleId>, usize) {
-    let residual_module = ModuleId::logical(0);
+    let residual_module = ModuleId(0);
     let mut class_module_id: BTreeMap<ClassId, ModuleId> = BTreeMap::new();
     let mut next_module_idx: usize = 1;
     for (class_idx, data) in classes
@@ -337,7 +337,7 @@ fn project_classes(
         {
             residual_module
         } else {
-            let m = ModuleId::logical(next_module_idx);
+            let m = ModuleId(next_module_idx);
             next_module_idx += 1;
             m
         };
@@ -513,7 +513,7 @@ impl QuotientGraph {
             report.nodes.len()
         );
         anyhow::ensure!(
-            residual_module == ModuleId::logical(0),
+            residual_module == ModuleId(0),
             "candidate residual module must use the entry module identity"
         );
 
@@ -619,7 +619,7 @@ impl QuotientGraph {
         quotient.class_module_id = class_module_id;
         quotient.next_module_idx = owner_modules
             .iter()
-            .map(|module| module.0.0)
+            .map(|module| module.0)
             .max()
             .unwrap_or(0)
             .saturating_add(1);
@@ -816,7 +816,7 @@ impl QuotientGraph {
                     .flat_map(|class| self.classes[class.0].members.iter()),
                 &self.gate_residual_owners,
             ) {
-            ModuleId::logical(0)
+            ModuleId(0)
         } else {
             classes
                 .iter()
@@ -824,9 +824,9 @@ impl QuotientGraph {
                     self.class_module_id
                         .get(class)
                         .copied()
-                        .filter(|module| *module != ModuleId::logical(0))
+                        .filter(|module| *module != ModuleId(0))
                 })
-                .unwrap_or_else(|| ModuleId::logical(self.next_module_idx))
+                .unwrap_or_else(|| ModuleId(self.next_module_idx))
         };
         let moved: Vec<OwnerId> = classes
             .iter()
@@ -862,8 +862,8 @@ impl QuotientGraph {
                 },
             );
         }
-        if post_module.0.0 >= self.next_module_idx {
-            self.next_module_idx = post_module.0.0 + 1;
+        if post_module.0 >= self.next_module_idx {
+            self.next_module_idx = post_module.0 + 1;
         }
         self.class_module_id.insert(winner, post_module);
         true
@@ -918,8 +918,8 @@ impl QuotientGraph {
         }
         // If `post_module` was freshly minted, bump the counter so
         // subsequent merges don't collide.
-        if post_module.0.0 >= self.next_module_idx {
-            self.next_module_idx = post_module.0.0 + 1;
+        if post_module.0 >= self.next_module_idx {
+            self.next_module_idx = post_module.0 + 1;
         }
         self.class_module_id.insert(winner, post_module);
         self.class_module_id.remove(&loser);
@@ -1197,7 +1197,7 @@ impl QuotientGraph {
     /// of both combined), except that a non-residual result reuses the
     /// winner's existing slot, else the loser's, else mints a fresh idx.
     fn projected_winner_module_after_merge(&self, winner: ClassId, loser: ClassId) -> ModuleId {
-        let residual_module = ModuleId::logical(0);
+        let residual_module = ModuleId(0);
         let winner_data = &self.classes[winner.0];
         let loser_data = &self.classes[loser.0];
         if projects_to_residual(
@@ -1217,7 +1217,7 @@ impl QuotientGraph {
                     .copied()
                     .filter(|m| *m != residual_module)
             })
-            .unwrap_or_else(|| ModuleId::logical(self.next_module_idx))
+            .unwrap_or_else(|| ModuleId(self.next_module_idx))
     }
 
     /// Compute the `ModuleAssignmentDelta::MoveOwners` deltas needed to
@@ -1258,7 +1258,7 @@ impl QuotientGraph {
             .class_module_id
             .get(&winner)
             .copied()
-            .unwrap_or(ModuleId::logical(0));
+            .unwrap_or(ModuleId(0));
         if winner_current != post_module {
             let winner_members: Vec<OwnerId> = self.classes[winner.0]
                 .members
@@ -1371,7 +1371,7 @@ impl QuotientGraph {
         self.classes[c.0].is_entry_module = false;
         // Promotion shifts the class's ModuleId from residual to a
         // fresh non-residual idx iff it was previously residual-mapped.
-        let residual_module = ModuleId::logical(0);
+        let residual_module = ModuleId(0);
         let current = self
             .class_module_id
             .get(&c)
@@ -1380,7 +1380,7 @@ impl QuotientGraph {
         if current != residual_module {
             return;
         }
-        let new_module = ModuleId::logical(self.next_module_idx);
+        let new_module = ModuleId(self.next_module_idx);
         self.next_module_idx += 1;
         let owners_to_move: Vec<OwnerId> = self.classes[c.0]
             .members

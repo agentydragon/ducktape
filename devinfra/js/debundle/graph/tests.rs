@@ -7,12 +7,12 @@ mod chunk_constraining_module_edges_tests {
     use std::collections::BTreeSet;
 
     use crate::graph::*;
-    use crate::ids::{LogicalModuleIndex, ModuleId};
+    use crate::ids::ModuleId;
     use crate::module_assignment::ModuleAssignment;
     use crate::{AnalysisHints, OwnerGraph, OwnerId, facts::analyze_chunk};
 
     fn module_id(index: usize) -> ModuleId {
-        ModuleId(LogicalModuleIndex(index))
+        ModuleId(index)
     }
 
     fn parse_facts(source: &str) -> Vec<crate::StatementFacts> {

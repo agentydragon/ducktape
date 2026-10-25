@@ -1397,7 +1397,7 @@ fn validate_decomposition_candidate(
         .context("reconstructing the owner graph for decomposition validation")?;
     let (assignments, paths_by_module_id) =
         candidate_module_assignments(candidate_owner_modules, residual_path)?;
-    let assignment = ModuleAssignment::from_assignments(assignments, ModuleId::logical(0));
+    let assignment = ModuleAssignment::from_assignments(assignments, ModuleId(0));
     let gate_report = gate::validate_factorization(&owner_graph, &assignment, &|module_id| {
         paths_by_module_id
             .get(&module_id)
@@ -1417,14 +1417,14 @@ fn candidate_module_assignments(
 ) -> Result<(Vec<ModuleId>, BTreeMap<ModuleId, ModulePath>)> {
     let mut paths: BTreeSet<ModulePath> = candidate_owner_modules.iter().cloned().collect();
     paths.insert(residual_path.clone());
-    let mut module_ids = BTreeMap::from([(residual_path.clone(), ModuleId::logical(0))]);
-    let mut paths_by_module_id = BTreeMap::from([(ModuleId::logical(0), residual_path.clone())]);
+    let mut module_ids = BTreeMap::from([(residual_path.clone(), ModuleId(0))]);
+    let mut paths_by_module_id = BTreeMap::from([(ModuleId(0), residual_path.clone())]);
     let mut next_module_idx = 1;
     for path in paths {
         if &path == residual_path {
             continue;
         }
-        let module_id = ModuleId::logical(next_module_idx);
+        let module_id = ModuleId(next_module_idx);
         next_module_idx += 1;
         module_ids.insert(path.clone(), module_id);
         paths_by_module_id.insert(module_id, path);
@@ -1505,7 +1505,7 @@ fn rejoin_original_home_fragments(
         graph,
         usize::MAX,
         &assignments,
-        ModuleId::logical(0),
+        ModuleId(0),
     )?;
 
     let mut attempted = 0;

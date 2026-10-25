@@ -4,7 +4,7 @@
 
 use crate::body_facts::NaturalizedBodyFacts;
 use crate::imports::{RuntimeImportFacts, RuntimeImportInfo};
-use analysis::{BindingKind, LogicalModuleIndex, ModuleId};
+use analysis::{BindingKind, ModuleId};
 use anyhow::{Context, Result};
 use artifact::{ArtifactIndexes, ArtifactSourceImportResolver, ChunkBundle};
 use gate::ChunkFactorization;
@@ -137,7 +137,7 @@ pub(crate) fn collect_imported_reexports_by_module(
         else {
             continue;
         };
-        let ModuleId(LogicalModuleIndex(index)) = re_exporter;
+        let ModuleId(index) = re_exporter;
         let Some(reexports) = by_module.get_mut(*index) else {
             continue;
         };
@@ -167,13 +167,11 @@ pub(crate) fn plan_module_reference_needs<'a>(
         };
         let body_id = reference.emitted_id();
         let name_str = body_id.0.as_ref();
-        if let Some(ModuleId(LogicalModuleIndex(provider_index))) =
-            factorization.analysis.owner_of(original_id)
-        {
+        if let Some(ModuleId(provider_index)) = factorization.analysis.owner_of(original_id) {
             if provider_index != module_index
                 && let Some(provider) = factorization
                     .analysis
-                    .logical_module(LogicalModuleIndex(provider_index))
+                    .logical_module(ModuleId(provider_index))
                 && let Some(exported_name) = provider.rename_map.get(original_id)
             {
                 needs
@@ -239,7 +237,7 @@ fn collect_phantom_side_effect_providers(
     cross_module_imports_by_provider: &BTreeMap<usize, BTreeMap<String, String>>,
     phantom_side_effect_providers: &mut BTreeSet<usize>,
 ) {
-    let module_id = ModuleId(LogicalModuleIndex(module_index));
+    let module_id = ModuleId(module_index);
     let residual = factorization.assignment.residual();
     let owner_graph = factorization.analysis.owner_graph();
     for (owner_id, owner_module) in factorization.assignment.iter() {
@@ -255,7 +253,7 @@ fn collect_phantom_side_effect_providers(
             if target_module == module_id || target_module == residual {
                 continue;
             }
-            let ModuleId(LogicalModuleIndex(target_index)) = target_module;
+            let ModuleId(target_index) = target_module;
             if cross_module_imports_by_provider.contains_key(&target_index) {
                 continue;
             }
