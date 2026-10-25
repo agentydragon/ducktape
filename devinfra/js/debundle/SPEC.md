@@ -307,6 +307,11 @@ The allocation and assignment values must run no user code, and the instance
 must remain private throughout that run. Unsupported constructors, fields,
 receivers, dynamic scope, and intervening statements retain the conservative
 write checks.
+Adjacent static property writes to the fresh ordinary result of a direct
+audited factory call with one inline callback also retain the contract. Their
+values must run no user code; prototype writes and intervening statements end
+the proof. Rejecting the producing namespace's factory contract also removes
+this proof from its results.
 Within a literal traversed inside an admitted inline callback, a direct static
 namespace member used as a call callee is analyzed as the callee expression,
 not as a captured namespace value. Call arguments and effects remain analyzed;
@@ -349,6 +354,30 @@ Helpers with non-top-level captured state, dynamic scopes and unsupported forms
 keep conservative timing. Eager argument reads,
 the helper's and local decorators' syntactic lazy read/rebind dependency closure,
 and target-local mutation/co-location edges remain. This is not purity.
+
+`effect: typescript_metadata_decorate_helper_with_member_decorators` adds one
+static member lookup (`provider.decorator`) to the admitted decorator array.
+The provider root must be an imported binding without any direct member write
+or rebind in the analyzed chunk. The author additionally certifies that each
+admitted provider lookup is an ordinary, stable own data property throughout
+synchronous initialization: no getter, proxy, alias mutation, or hidden
+callback reentry can replace or observe it. The selected member must itself
+be a metadata-only decorator under the contract above. This assertion covers
+all supported applications of the helper, not just a single call. Computed
+keys, chained members, spreads, and local providers remain conservative.
+The existing bare-identifier helper effect does not acquire member support.
+
+`effect: typescript_metadata_decorate_helper_three_args` explicitly asserts
+the same metadata-only behavior for
+`helper([bare identifiers], LocalClass.prototype, literalStringKey)`.
+The helper determines the descriptor without a fourth kind argument. All
+helper branches and supplied decorators must satisfy the contract above;
+reading and restoring an ordinary own descriptor must preserve its behavior.
+For a subclass target, inherited metadata must also be ordinary inert data:
+copying it may neither invoke accessors nor mutate the base class's metadata.
+Stable initialized identities, dependency closures and target co-location
+checks still apply. Extra arguments and unsupported decorator/key expressions
+remain conservative. Earlier effects retain their existing accepted shapes.
 
 ## Vendor split-brain evidence
 

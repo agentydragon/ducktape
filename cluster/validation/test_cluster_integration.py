@@ -19,7 +19,6 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 import yaml
-from more_itertools import one
 
 from cluster.validation.checks import (
     check_cilium_policy_rules_nonempty,
@@ -115,35 +114,6 @@ def test_image_policy_markers_resolve(cluster: ParsedCluster, k8s_dir: Path) -> 
     """Every `$imagepolicy` marker names a defined ImagePolicy, so no image silently stops rolling."""
     errors = check_image_policy_markers(cluster, k8s_dir)
     assert not errors, "\n".join(errors)
-
-
-def test_loki_proxy_static_allowlist_covers_agent_readable_log_namespaces(
-    cluster: ParsedCluster, bootstrap_resources: list[K8sResource], generated_dir: Path
-) -> None:
-    """A Namespace opt-in for Kubernetes pod logs must also permit its Loki logs.
-
-    A bearer-token request is authorized by the same RBAC the label generates,
-    but anonymous (token-less) callers are judged by this static allowlist; this
-    CI contract makes the GitOps-owned logs label the review point for both.
-    """
-    deployment = one(
-        obj
-        for obj in yaml.safe_load_all((generated_dir / "agents/loki-read-proxy/loki-read-proxy.k8s.yaml").read_text())
-        if obj["kind"] == "Deployment"
-    )
-    container = next(item for item in deployment["spec"]["template"]["spec"]["containers"] if item["name"] == "proxy")
-    env = {entry["name"]: entry["value"] for entry in container["env"]}
-    loki_allowlist = frozenset(namespace for namespace in env["NAMESPACE_ALLOWLIST"].split(",") if namespace)
-    log_label = "rbac.ducktape.io/agent-readable-logs"
-    rendered = [resource for build in cluster.build_results for resource in build.resources] + bootstrap_resources
-    labeled_namespaces = {
-        resource.name
-        for resource in rendered
-        if resource.kind == "Namespace" and resource.metadata.labels.get(log_label) == "true"
-    }
-
-    missing = sorted(labeled_namespaces - loki_allowlist)
-    assert not missing, f"agent-readable log namespaces missing from Loki proxy allowlist: {missing}"
 
 
 def test_agent_binding_delegation_dependencies_follow_namespace_owners(

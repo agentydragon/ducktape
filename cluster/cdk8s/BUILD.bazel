@@ -1928,6 +1928,7 @@ py_test(
         ":agent_rbac_test_support",
         ":agent_shared_rbac",
         ":ducktape_flux",
+        ":loki_read_proxy",
         ":namespace_access",
         "//cluster/cdk8s/agentplane:staging",
         "//cluster/cdk8s/clickhouse:installation",

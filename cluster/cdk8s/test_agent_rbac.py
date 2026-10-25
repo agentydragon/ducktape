@@ -10,7 +10,7 @@ import pytest_bazel
 import yaml
 from cdk8s import Testing as Cdk8sTesting
 
-from cluster.cdk8s import agent_namespace_rbac, agent_rbac_base, agent_shared_rbac, ducktape_flux
+from cluster.cdk8s import agent_namespace_rbac, agent_rbac_base, agent_shared_rbac, ducktape_flux, loki_read_proxy
 from cluster.cdk8s.agent_rbac_test_support import Permission, Rbac, uncovered
 from cluster.cdk8s.agentplane import staging
 from cluster.cdk8s.clickhouse import installation as clickhouse_installation
@@ -98,6 +98,13 @@ def test_namespace_diagnostics_cover_static_and_managed_bindings(
             for namespace in rule["namespaces"]
         }
         assert managed == expected, preset
+
+
+def test_agent_readable_log_namespaces_are_in_loki_anonymous_allowlist() -> None:
+    expected = {
+        namespace for namespace, classification in NAMESPACE_DIAGNOSTICS.items() if classification is AgentReadable.LOGS
+    }
+    assert expected <= set(loki_read_proxy.NAMESPACE_ALLOWLIST)
 
 
 @pytest.mark.parametrize(

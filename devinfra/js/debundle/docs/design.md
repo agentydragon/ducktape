@@ -1069,6 +1069,12 @@ return an object or callback. Receivers with no syntactic path to the
 namespace rely on the author's audited non-aliasing assertion; this is a
 trusted contract, not a proof that arbitrary callback parameters are
 disjoint from the namespace.
+The fresh-result guarantee also permits adjacent static property writes after
+a direct audited factory call with one inline callback. The receiver must stay
+private and the assigned value must run no user code; prototype writes and
+intervening statements end the proof. Namespace admission is recomputed after
+each removal, so a result from a rejected namespace factory cannot justify
+another namespace's admission. Other result writes keep the receiver fallback.
 Inside a literal traversed within an admitted inline callback, a direct static
 namespace member used as a call callee is not treated as a captured namespace
 value. The call's arguments and effects still flow through normal analysis;
@@ -1526,6 +1532,18 @@ member names`, it projects onto each importing chunk's local binding
   execute synchronously; the author audit covers their metadata-only behavior,
   including imported implementations. This stronger value is independent of
   purity, and the older helper value does not imply it.
+
+  `effect: typescript_metadata_decorate_helper_with_member_decorators` also
+  admits a single static property lookup on an imported decorator provider.
+  The source scan rejects direct writes or rebinds of that provider; the author
+  certifies an ordinary stable data property with no proxy, accessor, alias
+  mutation, or hidden reentry. Other member shapes retain the opaque path.
+
+  `effect: typescript_metadata_decorate_helper_three_args` uses the same
+  target-local mutation and synchronous dependency summary for an exact
+  three-argument property application. It requires a separate author assertion;
+  descriptor and inherited metadata safety remain author obligations. The
+  earlier four-argument assertion retains its existing shape checks.
 
   `chunk_analysis_options.<chunk>.local_property_effects` is the
   chunk-wide structural sibling of the same idea, for plain

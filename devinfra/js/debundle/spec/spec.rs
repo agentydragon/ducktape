@@ -1692,6 +1692,12 @@ pub enum MemberEffect {
     /// supplied decorator neither invoke target behavior nor publish callbacks
     /// or synchronously reenter other caller/host/export callbacks. See SPEC.md.
     TypescriptMetadataDecorateHelper,
+    /// Like `typescript_metadata_decorate_helper`, additionally admits an
+    /// audited one-hop static member of an imported decorator provider.
+    TypescriptMetadataDecorateHelperWithMemberDecorators,
+    /// The same metadata-only contract for standalone three-argument property
+    /// applications. The helper determines its descriptor without a kind argument.
+    TypescriptMetadataDecorateHelperThreeArgs,
 }
 
 #[cfg(test)]

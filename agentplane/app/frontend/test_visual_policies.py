@@ -696,6 +696,42 @@ async def test_compact_pr_with_description_offers_card_decisions(
 
 
 @DESKTOP_AND_MOBILE
+async def test_compact_pull_request_search_offers_card_decisions(
+    view: VisualPage, app: AgentplaneFixture, capture_name: str
+) -> None:
+    await app.show_action_preview(
+        "github",
+        "search_pull_requests",
+        {
+            "owner": "example",
+            "repo": "repo",
+            "query": "is:open label:bug",
+            "page": 2,
+            "perPage": 10,
+            "sort": "updated",
+            "order": "desc",
+            "fields": ["number", "title", "state", "html_url"],
+        },
+    )
+    await app.mount_thread(IDLE_THREAD)
+    section = view.page.locator(".agentplane-actions-sidebar")
+    await _open_phone_navigation(view.page)
+    collapsed_summary = section.locator(".agentplane-actions-sidebar-collapsed-preview")
+    await expect(collapsed_summary).to_contain_text("is:open label:bug")
+    await expect(collapsed_summary).to_contain_text("example")
+    await expect(collapsed_summary).to_contain_text("repo")
+    await expect(collapsed_summary).not_to_contain_text("Page 2")
+    await expect(collapsed_summary).not_to_contain_text("results per page")
+    await expect(collapsed_summary).not_to_contain_text("Sort by")
+    await expect(collapsed_summary).not_to_contain_text("Order:")
+    await expect(collapsed_summary).not_to_contain_text("Fields:")
+    await expect(section.get_by_role("button", name="Approve review search pull requests")).to_be_visible()
+    await expect(section.get_by_role("button", name="Deny review search pull requests")).to_be_visible()
+    await expect(section.get_by_role("button", name="Expand review search pull requests")).to_have_count(0)
+    await view.capture(f"{capture_name}-collapsed", target=section)
+
+
+@DESKTOP_AND_MOBILE
 async def test_wide_action_decisions(view: VisualPage, app: AgentplaneFixture, viewport: Viewport) -> None:
     await app.set_flag(Flag.PENDING_ACTIONS)
     await app.mount_app("/actions")

@@ -187,6 +187,33 @@ EXAMPLES = (
         "42",
     ),
     ActionExample(
+        "github",
+        "search_pull_requests",
+        {
+            "owner": "example",
+            "repo": "service",
+            "query": "is:open label:bug",
+            "page": 2,
+            "perPage": 10,
+            "sort": "updated",
+            "order": "desc",
+            "fields": ["number", "title", "state", "html_url"],
+        },
+        {
+            "total_count": 1,
+            "items": [
+                {
+                    "number": 42,
+                    "title": "Handle deployment checks",
+                    "state": "open",
+                    "html_url": "https://github.com/example/service/pull/42",
+                }
+            ],
+        },
+        "Handle deployment checks",
+        compact_card_expands=False,
+    ),
+    ActionExample(
         "gmail",
         "drafts_create",
         {

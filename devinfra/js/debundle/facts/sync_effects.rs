@@ -128,9 +128,15 @@ struct ClassValueFacts {
     allocation_without_user_code: bool,
 }
 
-enum FreshInstanceStep {
+enum FreshValueStep {
     Allocate { binding: Id, constructor: Id },
+    Factory { binding: Id, callee: ValueExpr },
     Write { receiver: Id, property: String },
+}
+
+enum FreshValue {
+    Instance(u32),
+    Factory,
 }
 
 fn primitive_constant(expression: &Expr) -> bool {
@@ -169,7 +175,7 @@ fn value_without_user_code(expression: &Expr) -> bool {
     }
 }
 
-fn fresh_instance_step(item: &ModuleItem) -> Option<FreshInstanceStep> {
+fn fresh_value_step(item: &ModuleItem) -> Option<FreshValueStep> {
     match item {
         ModuleItem::Stmt(Stmt::Decl(Decl::Var(declaration)))
             if declaration.kind == VarDeclKind::Const && declaration.decls.len() == 1 =>
@@ -178,18 +184,43 @@ fn fresh_instance_step(item: &ModuleItem) -> Option<FreshInstanceStep> {
             let Pat::Ident(binding) = &declaration.name else {
                 return None;
             };
-            let Expr::New(allocation) = declaration.init.as_deref()?.unwrap_parens() else {
+            let initializer = declaration.init.as_deref()?.unwrap_parens();
+            if let Expr::Call(call) = initializer {
+                let [argument] = call.args.as_slice() else {
+                    return None;
+                };
+                let Callee::Expr(callee) = &call.callee else {
+                    return None;
+                };
+                match callee.unwrap_parens() {
+                    Expr::Ident(_) => {}
+                    Expr::Member(member)
+                        if matches!(member.obj.unwrap_parens(), Expr::Ident(_))
+                            && matches!(member.prop, MemberProp::Ident(_)) => {}
+                    _ => return None,
+                }
+                return (argument.spread.is_none()
+                    && matches!(argument.expr.unwrap_parens(), Expr::Fn(_) | Expr::Arrow(_))
+                    && value_without_user_code(&argument.expr))
+                .then(|| FreshValueStep::Factory {
+                    binding: binding.id.to_id(),
+                    callee: ValueExpr::from_expr(callee),
+                });
+            }
+            let Expr::New(allocation) = initializer else {
                 return None;
             };
             let Expr::Ident(constructor) = allocation.callee.unwrap_parens() else {
                 return None;
             };
-            allocation.args.as_ref().is_none_or(Vec::is_empty).then(|| {
-                FreshInstanceStep::Allocate {
+            allocation
+                .args
+                .as_ref()
+                .is_none_or(Vec::is_empty)
+                .then(|| FreshValueStep::Allocate {
                     binding: binding.id.to_id(),
                     constructor: constructor.to_id(),
-                }
-            })
+                })
         }
         ModuleItem::Stmt(Stmt::Expr(statement)) => {
             let Expr::Assign(assignment) = statement.expr.unwrap_parens() else {
@@ -207,7 +238,7 @@ fn fresh_instance_step(item: &ModuleItem) -> Option<FreshInstanceStep> {
             let MemberProp::Ident(property) = &member.prop else {
                 return None;
             };
-            (property.sym != "__proto__").then(|| FreshInstanceStep::Write {
+            (property.sym != "__proto__").then(|| FreshValueStep::Write {
                 receiver: receiver.to_id(),
                 property: property.sym.to_string(),
             })
@@ -216,15 +247,17 @@ fn fresh_instance_step(item: &ModuleItem) -> Option<FreshInstanceStep> {
     }
 }
 
-fn fresh_own_field_writes(
-    steps: &[Option<FreshInstanceStep>],
+fn fresh_value_writes(
+    steps: &[Option<FreshValueStep>],
     facts: &NamespaceValueFacts,
+    factory_imports: &BTreeSet<Id>,
+    factory_members: &BTreeMap<Id, BTreeSet<String>>,
 ) -> BTreeSet<StatementOrdinal> {
-    let mut active: Option<(Id, u32)> = None;
+    let mut active: Option<(Id, FreshValue)> = None;
     let mut writes = BTreeSet::new();
     for (ordinal, step) in steps.iter().enumerate() {
         match step {
-            Some(FreshInstanceStep::Allocate {
+            Some(FreshValueStep::Allocate {
                 binding,
                 constructor,
             }) => {
@@ -240,11 +273,29 @@ fn fresh_own_field_writes(
                                 .get(key)
                                 .is_some_and(|class| class.allocation_without_user_code)
                     })
-                    .map(|(key, _)| (binding.clone(), key));
+                    .map(|(key, _)| (binding.clone(), FreshValue::Instance(key)));
             }
-            Some(FreshInstanceStep::Write { receiver, property })
-                if active.as_ref().is_some_and(|(binding, key)| {
-                    binding == receiver && facts.classes[key].instance_fields.contains_key(property)
+            Some(FreshValueStep::Factory { binding, callee }) => {
+                let is_factory = match callee {
+                    ValueExpr::Binding(callee) => factory_imports.contains(callee),
+                    ValueExpr::Member(object, Some(property), true) => {
+                        matches!(object.as_ref(), ValueExpr::Binding(namespace)
+                            if factory_members.get(namespace)
+                                .is_some_and(|members| members.contains(property)))
+                    }
+                    _ => false,
+                };
+                active = is_factory.then(|| (binding.clone(), FreshValue::Factory));
+            }
+            Some(FreshValueStep::Write { receiver, property })
+                if active.as_ref().is_some_and(|(binding, value)| {
+                    binding == receiver
+                        && match value {
+                            FreshValue::Instance(key) => {
+                                facts.classes[key].instance_fields.contains_key(property)
+                            }
+                            FreshValue::Factory => property != "prototype",
+                        }
                 }) =>
             {
                 writes.insert(StatementOrdinal(ordinal));
@@ -1477,6 +1528,7 @@ struct ExecutionIndex {
     top_callback_result_writes: Vec<Vec<CallbackResultWrite>>,
     top_exported_values: Vec<Vec<ValueExpr>>,
     top_metadata_decorations: Vec<Option<MetadataDecorateCall>>,
+    imported_bindings: BTreeSet<Id>,
     hoisted_bindings: BTreeMap<Id, u32>,
     exported_hoisted_functions: BTreeSet<u32>,
     global_object_names: BTreeSet<&'static str>,
@@ -1527,6 +1579,7 @@ impl Default for ExecutionIndex {
             top_callback_result_writes: Vec::new(),
             top_exported_values: Vec::new(),
             top_metadata_decorations: Vec::new(),
+            imported_bindings: BTreeSet::new(),
             hoisted_bindings: BTreeMap::new(),
             exported_hoisted_functions: BTreeSet::new(),
             global_object_names: BTreeSet::new(),
@@ -1587,7 +1640,7 @@ impl ExecutionIndex {
             }
         }
         for (ordinal, item) in body.iter().enumerate() {
-            fresh_steps.push(fresh_instance_step(item.as_module_item()));
+            fresh_steps.push(fresh_value_step(item.as_module_item()));
             index.owner = StatementOrdinal(ordinal);
             index.past_await = false;
             index.may_skip_await_depth = 0;
@@ -1600,6 +1653,7 @@ impl ExecutionIndex {
             if let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item.as_module_item() {
                 for specifier in &import.specifiers {
                     let local = specifier.local();
+                    index.imported_bindings.insert(local.to_id());
                     if hints.callback_factories.contains(local.sym.as_ref()) {
                         index.callback_factory_imports.insert(local.to_id());
                     }
@@ -1640,18 +1694,10 @@ impl ExecutionIndex {
             index.class_values.clone(),
             &namespace_assignments,
         );
-        // No user code runs from this allocation through its adjacent writes,
-        // so the fresh instance's declared own data fields cannot become
-        // accessors or namespace aliases before these particular assignments.
-        let fresh_writes = if index.dynamic_scope_owners.is_empty() {
-            fresh_own_field_writes(&fresh_steps, &namespace_value_facts)
-        } else {
-            BTreeSet::new()
-        };
         // A namespace member is an audited target only while its binding is
         // unchanged. Any local write could replace a member with an eager
         // callback invoker before the apparent factory call.
-        index.callback_factory_members.retain(|id, members| {
+        let keep_namespace = |id: &Id, members: &BTreeSet<String>, writes: &BTreeSet<_>| {
             let aliases =
                 infer_namespace_aliases(id, &namespace_assignments, &namespace_value_facts);
             let receiver_aliases =
@@ -1664,7 +1710,7 @@ impl ExecutionIndex {
                 .top_property_writes
                 .iter()
                 .enumerate()
-                .filter(|(owner, _)| !fresh_writes.contains(&StatementOrdinal(*owner)))
+                .filter(|(owner, _)| !writes.contains(&StatementOrdinal(*owner)))
                 .flat_map(|(_, writes)| writes)
                 .any(|(receiver, property)| {
                     receiver.as_ref().is_some_and(|receiver| {
@@ -1685,7 +1731,7 @@ impl ExecutionIndex {
                 .top_callback_result_writes
                 .iter()
                 .enumerate()
-                .filter(|(owner, _)| !fresh_writes.contains(&StatementOrdinal(*owner)))
+                .filter(|(owner, _)| !writes.contains(&StatementOrdinal(*owner)))
                 .flat_map(|(_, writes)| writes)
                 .any(|write| {
                     is_mutation_receiver(&write.receiver)
@@ -1757,7 +1803,34 @@ impl ExecutionIndex {
                 || top_member_value
                 || top_call_argument
                 || exported_value)
-        });
+        };
+        let factory_imports = index
+            .callback_factory_imports
+            .union(&index.inline_callback_factory_imports)
+            .cloned()
+            .collect();
+        loop {
+            let factory_members = index.callback_factory_members.clone();
+            // The fresh result is private until these adjacent writes finish.
+            // Only currently admitted factories can establish that provenance;
+            // removing a producer must invalidate proofs depending on its result.
+            let fresh_writes = if index.dynamic_scope_owners.is_empty() {
+                fresh_value_writes(
+                    &fresh_steps,
+                    &namespace_value_facts,
+                    &factory_imports,
+                    &factory_members,
+                )
+            } else {
+                BTreeSet::new()
+            };
+            index
+                .callback_factory_members
+                .retain(|id, members| keep_namespace(id, members, &fresh_writes));
+            if index.callback_factory_members.len() == factory_members.len() {
+                break;
+            }
+        }
         index
     }
 
@@ -2141,6 +2214,14 @@ impl Visit for ExecutionIndex {
                         && static_property_name(&pair.key).as_deref() != Some("__proto__")
                 }
                 Prop::Shorthand(id) => id.sym.as_ref() != "__proto__",
+                // Ordinary method syntax installs an own data property. Its
+                // body is only stored here, so parameter property reads by a
+                // local constructor cannot invoke it. Keep computed keys and
+                // the special prototype name outside this narrow proof.
+                Prop::Method(method) => {
+                    !matches!(method.key, PropName::Computed(_))
+                        && static_property_name(&method.key).is_some_and(|name| name != "__proto__")
+                }
                 _ => false,
             },
         }) {
@@ -2803,6 +2884,7 @@ struct Executor<'a> {
     prefix_values: Context,
     initialized_bindings: BTreeSet<Id>,
     var_bindings: BTreeSet<Id>,
+    changed_member_roots: BTreeSet<Id>,
     global_escaped_callbacks: Values,
     prefix_object_properties: BTreeMap<u32, BTreeMap<Option<String>, Values>>,
     tainted_objects: BTreeSet<u32>,
@@ -2885,10 +2967,18 @@ impl Executor<'_> {
         if application.stable_origins(self.flow) != Some((helper_key, *target_key)) {
             return false;
         }
+        if application.member_decorators.iter().any(|root| {
+            !self.index.imported_bindings.contains(root) || self.changed_member_roots.contains(root)
+        }) {
+            return false;
+        }
         // The author certifies the helper's dispatch and every decorator's
         // metadata-only behavior, not purity. Preserve all static dependencies
         // of their bodies without manufacturing calls into the target methods.
-        for binding in std::iter::once(&application.helper).chain(&application.decorators) {
+        for binding in std::iter::once(&application.helper)
+            .chain(&application.decorators)
+            .chain(&application.member_decorators)
+        {
             if let Some(&binding_owner) = self.binding_owner.get(binding) {
                 let (reads, rebinds) = self
                     .owner_read_closure
@@ -4823,6 +4913,23 @@ pub(crate) fn annotate_synchronous_calls(
         .iter()
         .flat_map(|fact| fact.var_declared.iter().cloned())
         .collect();
+    let changed_member_roots: BTreeSet<_> = if index.top_metadata_decorations.iter().any(|call| {
+        call.as_ref()
+            .is_some_and(|call| !call.member_decorators.is_empty())
+    }) {
+        facts
+            .iter()
+            .flat_map(|fact| {
+                fact.member_write_roots
+                    .iter()
+                    .chain(&fact.rebinds.eager)
+                    .chain(&fact.rebinds.lazy)
+                    .cloned()
+            })
+            .collect()
+    } else {
+        BTreeSet::new()
+    };
     let mut initial_values = Context::new();
     let mut initialized_bindings = BTreeSet::new();
     for (binding, key) in &index.hoisted_bindings {
@@ -4860,6 +4967,7 @@ pub(crate) fn annotate_synchronous_calls(
         prefix_values: initial_values,
         initialized_bindings,
         var_bindings,
+        changed_member_roots,
         global_escaped_callbacks: Values::new(),
         prefix_object_properties: BTreeMap::new(),
         tainted_objects: BTreeSet::new(),
