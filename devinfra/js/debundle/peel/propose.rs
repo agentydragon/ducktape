@@ -48,9 +48,15 @@ use analysis::{
     LineRange, ModuleId, OwnerGraph, OwnerGraphNodeReport, OwnerGraphReport, Partition,
     StatementKind,
 };
-use anonymous_resolution::addressable_anonymous_statement_owner_ids;
-use spec::ModulePath;
-use spec_modules::{collect_module_files, load_active_claims, module_path_from_file};
+use anonymous_resolution::{
+    ResolvedSourceClaims, SourceClaimSet, addressable_anonymous_statement_owner_ids,
+    resolve_source_claims,
+};
+use spec::{MemberSelectorSpec, ModulePath};
+use spec_modules::{
+    ModuleClaims, collect_module_files, load_active_claims, module_claims, module_path_from_file,
+    read_module_file,
+};
 use spec_tree::ModuleTreeScope;
 
 use crate::quotient::{
@@ -80,6 +86,13 @@ pub struct ProposalOptions {
 #[derive(Debug, Clone, Serialize)]
 pub struct ModuleDecompositionReport {
     pub strategy: ModuleDecompositionStrategy,
+    /// True only when the candidate also keeps each resolved
+    /// `intrinsic_alias.referenced_by` owner with its local member owner.
+    #[serde(skip_serializing_if = "is_false")]
+    pub preserve_selector_anchors: bool,
+    /// Resolved local anchor relationships when the opt-in mode is enabled.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub selector_anchor_relations: Option<Vec<ModuleDecompositionSelectorAnchor>>,
     /// True only when the candidate preserves whole structural atoms and
     /// passes the shared factorization gate over the complete owner graph.
     pub candidate_is_realizable: bool,
@@ -161,6 +174,15 @@ pub struct ModuleDecompositionFragment {
     pub suggested_module_path: ModulePath,
     pub owner_ids: Vec<String>,
     pub binding_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ModuleDecompositionSelectorAnchor {
+    pub module_path: ModulePath,
+    pub member: String,
+    pub referenced_by: String,
+    pub member_owner_ids: Vec<String>,
+    pub anchor_owner_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -376,6 +398,7 @@ pub fn propose_from_graph(
 pub struct ModuleDecompositionOptions {
     pub strategy: ModuleDecompositionStrategy,
     pub coarsening: ModuleDecompositionCoarseningMode,
+    pub preserve_selector_anchors: bool,
 }
 
 pub fn decompose_modules_from_files_with_options(
@@ -397,7 +420,13 @@ pub fn decompose_modules_from_graph_with_options(
 ) -> Result<ModuleDecompositionReport> {
     let claims = active_claims_from_options(graph, options)?;
     let existing_module_paths = module_paths_from_options(graph, options)?;
-    decompose_modules(graph, &claims, existing_module_paths, decomposition)
+    decompose_modules(
+        graph,
+        &claims,
+        existing_module_paths,
+        options,
+        decomposition,
+    )
 }
 
 fn module_paths_from_options(
@@ -452,6 +481,7 @@ fn decompose_modules(
     graph: &OwnerGraphReport,
     active_claims: &BTreeMap<String, ModulePath>,
     existing_module_paths: BTreeSet<ModulePath>,
+    options: &ProposalOptions,
     decomposition: ModuleDecompositionOptions,
 ) -> Result<ModuleDecompositionReport> {
     let strategy = decomposition.strategy;
@@ -478,7 +508,7 @@ fn decompose_modules(
                 .push(owner_idx);
         }
     }
-    let module_groups = match strategy {
+    let mut module_groups = match strategy {
         ModuleDecompositionStrategy::Seed => {
             let spec_modules: Vec<SpecModuleGroup> = module_owners
                 .iter()
@@ -533,6 +563,20 @@ fn decompose_modules(
         ModuleDecompositionStrategy::AtomicIncludingResidual => {
             atomic_module_groups(graph, &module_owners, &owner_modules, &residual_path, true)?
         }
+    };
+
+    let selector_anchor_relations = if decomposition.preserve_selector_anchors {
+        let relations = resolve_selector_anchor_relations(graph, options, &owner_modules)?;
+        let included_modules = module_owners.keys().cloned().collect();
+        cohere_selector_anchor_groups(&mut module_groups, &relations, &included_modules)?;
+        Some(
+            relations
+                .iter()
+                .map(|relation| relation.report.clone())
+                .collect(),
+        )
+    } else {
+        None
     };
 
     let mut occupied_paths: BTreeSet<ModulePath> = owner_modules.iter().cloned().collect();
@@ -672,6 +716,8 @@ fn decompose_modules(
 
     Ok(ModuleDecompositionReport {
         strategy,
+        preserve_selector_anchors: decomposition.preserve_selector_anchors,
+        selector_anchor_relations,
         candidate_is_realizable,
         coverage_complete,
         owner_count: graph.nodes.len(),
@@ -683,6 +729,271 @@ fn decompose_modules(
         cross_rebinds: validation.cross_rebinds,
         coarsening,
     })
+}
+
+fn is_false(value: &bool) -> bool {
+    !value
+}
+
+struct SelectorAnchorConstraint {
+    module_path: ModulePath,
+    member_owner_indices: Vec<usize>,
+    anchor_owner_indices: Vec<usize>,
+    report: ModuleDecompositionSelectorAnchor,
+}
+
+fn resolve_selector_anchor_relations(
+    graph: &OwnerGraphReport,
+    options: &ProposalOptions,
+    owner_modules: &[ModulePath],
+) -> Result<Vec<SelectorAnchorConstraint>> {
+    let source_root = options
+        .source_root
+        .as_deref()
+        .context("--preserve-selector-anchors requires --source-root")?;
+    let roots = if let Some(config) = &options.tree_config {
+        ModuleTreeScope::from_config(config, &graph.chunk_id)?
+            .roots()
+            .to_vec()
+    } else {
+        vec![PathBuf::new()]
+    };
+    let mut modules = Vec::<(PathBuf, ModuleClaims)>::new();
+    for root in roots {
+        let root = options.modules_root.join(root);
+        if !root.exists() {
+            continue;
+        }
+        for path in collect_module_files(&root)? {
+            let claims = module_claims(read_module_file(&path)?)?;
+            modules.push((path, claims));
+        }
+    }
+    let claim_sets = modules
+        .iter()
+        .map(|(path, claims)| SourceClaimSet {
+            module_path: path,
+            member_selectors: &claims.member_selectors,
+            source_matches: &claims.source_matches,
+            anonymous_selectors: &claims.anonymous_selectors,
+        })
+        .collect::<Vec<_>>();
+    let resolved = resolve_source_claims(
+        graph,
+        &options.owner_graph_path,
+        &options.modules_root,
+        Some(source_root),
+        &claim_sets,
+    )?;
+
+    let mut owner_indices_by_binding = BTreeMap::<String, Vec<usize>>::new();
+    for (owner_index, node) in graph.nodes.iter().enumerate() {
+        for binding in &node.declared_bindings {
+            let owners = owner_indices_by_binding
+                .entry(binding.binding.to_string())
+                .or_default();
+            if !owners.contains(&owner_index) {
+                owners.push(owner_index);
+            }
+        }
+    }
+
+    let mut relations = Vec::new();
+    for ((_, claims), resolved) in modules.iter().zip(&resolved) {
+        for (member, selector) in &claims.member_selectors {
+            let MemberSelectorSpec::IntrinsicAlias(alias) = selector else {
+                continue;
+            };
+            let member_binding = resolved
+                .member_bindings
+                .get(member)
+                .with_context(|| format!("intrinsic_alias member {member:?} did not resolve"))?;
+            let anchor_binding = binding_for_member(claims, resolved, &alias.referenced_by)
+                .with_context(|| {
+                    format!(
+                        "intrinsic_alias {member:?} anchor {:?} did not resolve",
+                        alias.referenced_by
+                    )
+                })?;
+            let member_owner_indices = owner_indices_by_binding
+                .get(member_binding)
+                .with_context(|| {
+                    format!(
+                        "intrinsic_alias member {member:?} binding {member_binding:?} has no owner"
+                    )
+                })?
+                .clone();
+            let anchor_owner_indices = owner_indices_by_binding
+                .get(anchor_binding)
+                .with_context(|| {
+                    format!(
+                        "intrinsic_alias anchor {:?} binding {anchor_binding:?} has no owner",
+                        alias.referenced_by
+                    )
+                })?
+                .clone();
+            let relation_modules = member_owner_indices
+                .iter()
+                .chain(&anchor_owner_indices)
+                .map(|&owner_index| owner_modules[owner_index].clone())
+                .collect::<BTreeSet<_>>();
+            anyhow::ensure!(
+                relation_modules.len() == 1,
+                "intrinsic_alias member {member:?} and anchor {:?} resolve to different modules: {}",
+                alias.referenced_by,
+                relation_modules
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+            let module_path = relation_modules
+                .into_iter()
+                .next()
+                .context("intrinsic_alias relation has no owner module")?;
+            relations.push(SelectorAnchorConstraint {
+                module_path: module_path.clone(),
+                member_owner_indices: member_owner_indices.clone(),
+                anchor_owner_indices: anchor_owner_indices.clone(),
+                report: ModuleDecompositionSelectorAnchor {
+                    module_path,
+                    member: member.clone(),
+                    referenced_by: alias.referenced_by.clone(),
+                    member_owner_ids: owner_ids(graph, &member_owner_indices),
+                    anchor_owner_ids: owner_ids(graph, &anchor_owner_indices),
+                },
+            });
+        }
+    }
+    Ok(relations)
+}
+
+fn binding_for_member<'a>(
+    claims: &'a ModuleClaims,
+    resolved: &'a ResolvedSourceClaims,
+    name: &str,
+) -> Option<&'a str> {
+    resolved
+        .member_bindings
+        .get(name)
+        .map(String::as_str)
+        .or_else(|| {
+            claims
+                .member_selectors
+                .iter()
+                .find(|(member, _)| member == name)
+                .and_then(|(_, selector)| match selector {
+                    MemberSelectorSpec::Binding(binding) => Some(binding.name.as_str()),
+                    _ => None,
+                })
+        })
+}
+
+fn owner_ids(graph: &OwnerGraphReport, owner_indices: &[usize]) -> Vec<String> {
+    let mut owner_ids = owner_indices
+        .iter()
+        .map(|&owner_index| graph.nodes[owner_index].id.clone())
+        .collect::<Vec<_>>();
+    owner_ids.sort();
+    owner_ids.dedup();
+    owner_ids
+}
+
+fn cohere_selector_anchor_groups(
+    groups_by_module: &mut AtomicModuleGroups,
+    relations: &[SelectorAnchorConstraint],
+    included_modules: &BTreeSet<ModulePath>,
+) -> Result<()> {
+    for (module_path, groups) in groups_by_module.iter_mut() {
+        if !included_modules.contains(module_path) {
+            continue;
+        }
+        let relevant = relations
+            .iter()
+            .filter(|relation| relation.module_path == *module_path)
+            .collect::<Vec<_>>();
+        if relevant.is_empty() {
+            continue;
+        }
+        let mut group_by_owner = BTreeMap::new();
+        for (group_index, (owner_indices, _)) in groups.iter().enumerate() {
+            for &owner_index in owner_indices {
+                anyhow::ensure!(
+                    group_by_owner.insert(owner_index, group_index).is_none(),
+                    "owner {} appears in more than one decomposition group in module {module_path}",
+                    owner_index
+                );
+            }
+        }
+        let mut parents = (0..groups.len()).collect::<Vec<_>>();
+        for relation in relevant {
+            let member_groups = relation
+                .member_owner_indices
+                .iter()
+                .map(|owner_index| {
+                    group_by_owner.get(owner_index).copied().with_context(|| {
+                        format!(
+                            "intrinsic_alias member {} owner {} is absent from decomposition groups",
+                            relation.report.member, owner_index
+                        )
+                    })
+                })
+                .collect::<Result<BTreeSet<_>>>()?;
+            let anchor_groups = relation
+                .anchor_owner_indices
+                .iter()
+                .map(|owner_index| {
+                    group_by_owner.get(owner_index).copied().with_context(|| {
+                        format!(
+                            "intrinsic_alias anchor {} owner {} is absent from decomposition groups",
+                            relation.report.referenced_by, owner_index
+                        )
+                    })
+                })
+                .collect::<Result<BTreeSet<_>>>()?;
+            for &member_group in &member_groups {
+                for &anchor_group in &anchor_groups {
+                    union_groups(&mut parents, member_group, anchor_group);
+                }
+            }
+        }
+
+        let mut merged = BTreeMap::<usize, (Vec<usize>, bool)>::new();
+        for (group_index, (owner_indices, preserve_module_path)) in groups.drain(..).enumerate() {
+            let root = find_group_root(&mut parents, group_index);
+            let (merged_owners, merged_preserve_path) = merged.entry(root).or_default();
+            merged_owners.extend(owner_indices);
+            *merged_preserve_path |= preserve_module_path;
+        }
+        *groups = merged
+            .into_values()
+            .map(|(mut owner_indices, preserve_module_path)| {
+                owner_indices.sort_unstable();
+                (owner_indices, preserve_module_path)
+            })
+            .collect();
+    }
+    Ok(())
+}
+
+fn find_group_root(parents: &mut [usize], group: usize) -> usize {
+    if parents[group] != group {
+        parents[group] = find_group_root(parents, parents[group]);
+    }
+    parents[group]
+}
+
+fn union_groups(parents: &mut [usize], left: usize, right: usize) {
+    let left_root = find_group_root(parents, left);
+    let right_root = find_group_root(parents, right);
+    if left_root != right_root {
+        let (lower, upper) = if left_root < right_root {
+            (left_root, right_root)
+        } else {
+            (right_root, left_root)
+        };
+        parents[upper] = lower;
+    }
 }
 
 struct DecompositionValidation {

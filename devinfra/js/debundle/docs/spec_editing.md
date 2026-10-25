@@ -180,8 +180,11 @@ The gate refuses; nothing on disk has changed.
 
 When `modules decompose` reports a useful owner partition, replace its
 temporary part labels with semantic module names and apply the complete
-assignment through `modules refine`. For each owner that changes destination,
-include one row in a JSON batch:
+assignment through `modules refine`. For specs using local
+`intrinsic_alias.referenced_by` anchors, pass
+`--preserve-selector-anchors --source-root <source-root>` when decomposing so
+the candidate keeps each alias with its resolved local anchor. For each owner
+that changes destination, include one row in a JSON batch:
 
 ```json
 [
