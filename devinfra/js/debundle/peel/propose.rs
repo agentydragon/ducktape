@@ -79,6 +79,7 @@ pub struct ProposalOptions {
 /// same-module classes that survived the gated seed pass.
 #[derive(Debug, Clone, Serialize)]
 pub struct ModuleDecompositionReport {
+    pub strategy: ModuleDecompositionStrategy,
     /// True only when the candidate preserves whole structural atoms and
     /// passes the shared factorization gate over the complete owner graph.
     pub candidate_is_realizable: bool,
@@ -93,6 +94,14 @@ pub struct ModuleDecompositionReport {
     /// The exact cycle and rebinding result from the shared factorization gate.
     pub cycles: Vec<gate::CycleReport>,
     pub cross_rebinds: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModuleDecompositionStrategy {
+    Seed,
+    Atomic,
+    AtomicIncludingResidual,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -324,21 +333,36 @@ pub fn propose_from_graph(
 pub fn decompose_modules_from_files(
     options: &ProposalOptions,
 ) -> Result<ModuleDecompositionReport> {
+    decompose_modules_from_files_with_strategy(options, ModuleDecompositionStrategy::Seed)
+}
+
+pub fn decompose_modules_from_files_with_strategy(
+    options: &ProposalOptions,
+    strategy: ModuleDecompositionStrategy,
+) -> Result<ModuleDecompositionReport> {
     let graph: OwnerGraphReport = serde_json::from_str(
         &fs::read_to_string(&options.owner_graph_path)
             .with_context(|| format!("reading {}", options.owner_graph_path.display()))?,
     )
     .with_context(|| format!("parsing {}", options.owner_graph_path.display()))?;
-    decompose_modules_from_graph(&graph, options)
+    decompose_modules_from_graph_with_strategy(&graph, options, strategy)
 }
 
 pub fn decompose_modules_from_graph(
     graph: &OwnerGraphReport,
     options: &ProposalOptions,
 ) -> Result<ModuleDecompositionReport> {
+    decompose_modules_from_graph_with_strategy(graph, options, ModuleDecompositionStrategy::Seed)
+}
+
+pub fn decompose_modules_from_graph_with_strategy(
+    graph: &OwnerGraphReport,
+    options: &ProposalOptions,
+    strategy: ModuleDecompositionStrategy,
+) -> Result<ModuleDecompositionReport> {
     let claims = active_claims_from_options(graph, options)?;
     let existing_module_paths = module_paths_from_options(graph, options)?;
-    decompose_modules(graph, &claims, existing_module_paths)
+    decompose_modules(graph, &claims, existing_module_paths, strategy)
 }
 
 fn module_paths_from_options(
@@ -393,61 +417,106 @@ fn decompose_modules(
     graph: &OwnerGraphReport,
     active_claims: &BTreeMap<String, ModulePath>,
     existing_module_paths: BTreeSet<ModulePath>,
+    strategy: ModuleDecompositionStrategy,
 ) -> Result<ModuleDecompositionReport> {
     let owner_modules: Vec<ModulePath> = graph
         .nodes
         .iter()
         .map(|node| active_module_label(node, active_claims, graph))
         .collect::<Result<_>>()?;
+    let residual_path = graph
+        .quotient
+        .nodes
+        .iter()
+        .find(|module| module.residual)
+        .map(|module| module.path.clone())
+        .context("owner graph has no residual module for decomposition validation")?;
+    let include_residual = strategy == ModuleDecompositionStrategy::AtomicIncludingResidual;
 
-    let mut module_owners: BTreeMap<ModulePath, Vec<String>> = BTreeMap::new();
+    let mut module_owners: BTreeMap<ModulePath, Vec<usize>> = BTreeMap::new();
     for (owner_idx, node) in graph.nodes.iter().enumerate() {
-        if !graph.is_residual(&node.destination) {
+        if include_residual || !graph.is_residual(&node.destination) {
             module_owners
                 .entry(owner_modules[owner_idx].clone())
                 .or_default()
-                .push(node.id.clone());
+                .push(owner_idx);
         }
     }
-    let spec_modules: Vec<SpecModuleGroup> = module_owners
-        .iter()
-        .map(|(module_id, owner_ids)| SpecModuleGroup {
-            module_id: module_id.to_string(),
-            owner_ids: owner_ids.clone(),
-        })
-        .collect();
-    // Module size is not a decomposition constraint. Keep the gate's
-    // structural and timing checks while allowing an existing large module
-    // to be considered as a whole.
-    let (quotient, _) = build_same_module_seed_quotient(
-        graph,
-        &graph.atomic_graph.nodes,
-        &spec_modules,
-        usize::MAX,
-    )?;
+    let module_groups = match strategy {
+        ModuleDecompositionStrategy::Seed => {
+            let spec_modules: Vec<SpecModuleGroup> = module_owners
+                .iter()
+                .map(|(module_id, owner_indices)| SpecModuleGroup {
+                    module_id: module_id.to_string(),
+                    owner_ids: owner_indices
+                        .iter()
+                        .map(|&owner_idx| graph.nodes[owner_idx].id.clone())
+                        .collect(),
+                })
+                .collect();
+            // Module size is not a decomposition constraint. Keep the gate's
+            // structural and timing checks while allowing an existing large module
+            // to be considered as a whole.
+            let (quotient, _) = build_same_module_seed_quotient(
+                graph,
+                &graph.atomic_graph.nodes,
+                &spec_modules,
+                usize::MAX,
+            )?;
+            module_owners
+                .iter()
+                .map(|(module_id, owner_indices)| {
+                    let mut fragments_by_class: BTreeMap<ClassId, Vec<usize>> = BTreeMap::new();
+                    for &owner_idx in owner_indices {
+                        let owner = quotient
+                            .owner_idx_of(&graph.nodes[owner_idx].id)
+                            .with_context(|| {
+                                format!(
+                                    "owner {} disappeared from seed quotient",
+                                    graph.nodes[owner_idx].id
+                                )
+                            })?;
+                        fragments_by_class
+                            .entry(quotient.class_of(owner))
+                            .or_default()
+                            .push(owner_idx);
+                    }
+                    Ok((
+                        module_id.clone(),
+                        fragments_by_class
+                            .into_values()
+                            .map(|owner_indices| (owner_indices, false))
+                            .collect::<Vec<_>>(),
+                    ))
+                })
+                .collect::<Result<BTreeMap<_, _>>>()?
+        }
+        ModuleDecompositionStrategy::Atomic => {
+            atomic_module_groups(graph, &module_owners, &owner_modules, &residual_path, false)?
+        }
+        ModuleDecompositionStrategy::AtomicIncludingResidual => {
+            atomic_module_groups(graph, &module_owners, &owner_modules, &residual_path, true)?
+        }
+    };
 
     let mut occupied_paths: BTreeSet<ModulePath> = owner_modules.iter().cloned().collect();
     occupied_paths.extend(existing_module_paths);
     let mut candidate_owner_modules = owner_modules.clone();
     let mut refinements = Vec::new();
-    for (module_id, owner_ids) in module_owners {
-        let mut fragments_by_class: BTreeMap<ClassId, Vec<usize>> = BTreeMap::new();
-        for owner_id in &owner_ids {
-            let owner = quotient
-                .owner_idx_of(owner_id)
-                .with_context(|| format!("owner {owner_id} disappeared from seed quotient"))?;
-            fragments_by_class
-                .entry(quotient.class_of(owner))
-                .or_default()
-                .push(owner.0);
-        }
-        if fragments_by_class.len() < 2 {
+    for (module_id, groups) in module_groups {
+        if groups.len() < 2 {
             continue;
         }
 
-        let mut fragments = Vec::with_capacity(fragments_by_class.len());
-        for owner_indices in fragments_by_class.into_values() {
-            let suggested_module_path = next_fragment_path(&module_id, &mut occupied_paths);
+        let mut fragments = Vec::with_capacity(groups.len());
+        for (owner_indices, preserve_module_path) in groups {
+            let suggested_module_path = if preserve_module_path {
+                module_id.clone()
+            } else if include_residual && module_id == residual_path {
+                next_residual_fragment_path(&mut occupied_paths)
+            } else {
+                next_fragment_path(&module_id, &mut occupied_paths)
+            };
             let mut fragment_owner_ids = Vec::with_capacity(owner_indices.len());
             let mut binding_ids = BTreeSet::new();
             for owner_idx in owner_indices {
@@ -502,13 +571,6 @@ fn decompose_modules(
 
     let owner_graph = OwnerGraph::from_report(graph)
         .context("reconstructing the owner graph for decomposition validation")?;
-    let residual_path = graph
-        .quotient
-        .nodes
-        .iter()
-        .find(|module| module.residual)
-        .map(|module| module.path.clone())
-        .context("owner graph has no residual module for decomposition validation")?;
     let mut paths: BTreeSet<ModulePath> = candidate_owner_modules.iter().cloned().collect();
     paths.insert(residual_path.clone());
     let mut module_ids = BTreeMap::from([(residual_path.clone(), ModuleId::logical(0))]);
@@ -551,6 +613,7 @@ fn decompose_modules(
     let unchanged_module_count = original_modules.len().saturating_sub(refinements.len());
 
     Ok(ModuleDecompositionReport {
+        strategy,
         candidate_is_realizable,
         coverage_complete,
         owner_count: graph.nodes.len(),
@@ -563,6 +626,126 @@ fn decompose_modules(
     })
 }
 
+type AtomicModuleGroups = BTreeMap<ModulePath, Vec<(Vec<usize>, bool)>>;
+
+fn atomic_module_groups(
+    graph: &OwnerGraphReport,
+    module_owners: &BTreeMap<ModulePath, Vec<usize>>,
+    owner_modules: &[ModulePath],
+    residual_path: &ModulePath,
+    include_residual: bool,
+) -> Result<AtomicModuleGroups> {
+    let owner_index: HashMap<&str, usize> = graph
+        .nodes
+        .iter()
+        .enumerate()
+        .map(|(idx, node)| (node.id.as_str(), idx))
+        .collect();
+    let mut unit_by_owner = vec![None; graph.nodes.len()];
+    for (unit_idx, unit) in graph.atomic_graph.nodes.iter().enumerate() {
+        for owner_id in &unit.owner_ids {
+            let owner_idx = owner_index.get(owner_id.as_str()).with_context(|| {
+                format!(
+                    "atomic unit {} references unknown owner {owner_id}",
+                    unit.id
+                )
+            })?;
+            if let Some(previous_unit) = unit_by_owner[*owner_idx].replace(unit_idx) {
+                anyhow::bail!(
+                    "owner {owner_id} appears in atomic units {previous_unit} and {unit_idx}"
+                );
+            }
+        }
+    }
+    if let Some(owner_idx) = unit_by_owner.iter().position(Option::is_none) {
+        anyhow::bail!(
+            "owner {} is absent from the atomic graph",
+            graph.nodes[owner_idx].id
+        );
+    }
+
+    let mut groups_by_module: BTreeMap<ModulePath, Vec<(Vec<usize>, bool)>> = BTreeMap::new();
+    let mut preserved_by_module: BTreeMap<ModulePath, Vec<usize>> = BTreeMap::new();
+    for unit in &graph.atomic_graph.nodes {
+        let owner_indices = unit
+            .owner_ids
+            .iter()
+            .map(|owner_id| {
+                owner_index
+                    .get(owner_id.as_str())
+                    .copied()
+                    .with_context(|| {
+                        format!(
+                            "atomic unit {} references unknown owner {owner_id}",
+                            unit.id
+                        )
+                    })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let modules = owner_indices
+            .iter()
+            .map(|&owner_idx| owner_modules[owner_idx].clone())
+            .collect::<BTreeSet<_>>();
+        if modules.len() > 1 {
+            for owner_idx in owner_indices {
+                if module_owners.contains_key(&owner_modules[owner_idx]) {
+                    preserved_by_module
+                        .entry(owner_modules[owner_idx].clone())
+                        .or_default()
+                        .push(owner_idx);
+                }
+            }
+        } else if let Some(module_id) = modules.into_iter().next()
+            && module_owners.contains_key(&module_id)
+        {
+            let keep_in_entry = include_residual
+                && module_id == *residual_path
+                && owner_indices.iter().any(|&owner_idx| {
+                    matches!(
+                        graph.nodes[owner_idx].statement_kind,
+                        StatementKind::Import | StatementKind::Export
+                    )
+                });
+            if keep_in_entry {
+                preserved_by_module
+                    .entry(module_id)
+                    .or_default()
+                    .extend(owner_indices);
+            } else {
+                groups_by_module
+                    .entry(module_id)
+                    .or_default()
+                    .push((owner_indices, false));
+            }
+        }
+    }
+    for (module_id, mut owner_indices) in preserved_by_module {
+        owner_indices.sort_unstable();
+        owner_indices.dedup();
+        groups_by_module
+            .entry(module_id)
+            .or_default()
+            .push((owner_indices, true));
+    }
+
+    for (module_id, expected_owner_indices) in module_owners {
+        let mut grouped_owner_indices = groups_by_module
+            .get(module_id)
+            .into_iter()
+            .flatten()
+            .flat_map(|(indices, _)| indices.iter().copied())
+            .collect::<Vec<_>>();
+        grouped_owner_indices.sort_unstable();
+        let mut expected_owner_indices = expected_owner_indices.clone();
+        expected_owner_indices.sort_unstable();
+        anyhow::ensure!(
+            grouped_owner_indices == expected_owner_indices,
+            "atomic groups do not cover owners in module {module_id} exactly once"
+        );
+    }
+    Ok(groups_by_module)
+}
+
 fn next_fragment_path(
     module_id: &ModulePath,
     occupied_paths: &mut BTreeSet<ModulePath>,
@@ -571,6 +754,18 @@ fn next_fragment_path(
         let raw = format!("{module_id}/part-{suffix}");
         let candidate = ModulePath::parse(&raw, "")
             .expect("a canonical module path followed by a simple suffix is valid");
+        if occupied_paths.insert(candidate.clone()) {
+            return candidate;
+        }
+    }
+    unreachable!("an unbounded suffix always has an unused module path")
+}
+
+fn next_residual_fragment_path(occupied_paths: &mut BTreeSet<ModulePath>) -> ModulePath {
+    for suffix in 1usize.. {
+        let raw = format!("decomposition/residual/part-{suffix}");
+        let candidate =
+            ModulePath::parse(&raw, "").expect("a fixed path followed by a simple suffix is valid");
         if occupied_paths.insert(candidate.clone()) {
             return candidate;
         }
