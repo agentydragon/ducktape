@@ -472,6 +472,15 @@ mutation); the TS-enum-IIFE shape `var X = ((p) => (p.A = "a", …, p))(X
 || {})` whose IIFE produces a plain object by parameter mutation (see
 `is_ts_enum_iife_init_for_binding`).
 
+The closed local constructor-result proof can also use an exact named
+primitive field from that enum object inside a fresh dense array argument.
+This requires one initializer for the binding, the whole-chunk PlainData
+no-write/no-escape proof, execution of that initializer before the read, and
+the ordinary Object prototype integrity guard. Numeric reverse-mapping writes
+can certify their inner named fields; computed or unknown read keys cannot.
+The member read remains an eager dependency and is evaluated normally. Array
+holes and spreads are outside this proof.
+
 Why member reads on PlainData are pure:
 
 - **No accessor channels at any program point.** The initial init is a
