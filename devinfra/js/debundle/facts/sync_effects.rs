@@ -2863,6 +2863,7 @@ impl ExecutionIndex {
             owner: self.owner,
             plain_object_sources: false,
             no_sync_arguments: false,
+            no_reentry_candidate: false,
             has_spread: false,
         });
     }
@@ -3213,6 +3214,7 @@ impl Visit for ExecutionIndex {
                         owner: self.owner,
                         plain_object_sources: false,
                         no_sync_arguments: false,
+                        no_reentry_candidate: false,
                         has_spread: false,
                     });
                 }
@@ -3271,6 +3273,7 @@ impl Visit for ExecutionIndex {
                     owner: self.owner,
                     plain_object_sources: false,
                     no_sync_arguments: false,
+                    no_reentry_candidate: false,
                     has_spread: false,
                 });
             }
@@ -3410,6 +3413,7 @@ impl Visit for ExecutionIndex {
                 owner: self.owner,
                 plain_object_sources: false,
                 no_sync_arguments: false,
+                no_reentry_candidate: false,
                 has_spread: false,
             });
         }
@@ -3567,6 +3571,7 @@ impl Visit for ExecutionIndex {
                 owner: self.owner,
                 plain_object_sources: false,
                 no_sync_arguments: false,
+                no_reentry_candidate: false,
                 has_spread: false,
             });
         }
