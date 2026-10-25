@@ -481,9 +481,10 @@ fn fresh_value_writes(
     facts: &NamespaceValueFacts,
     factory_imports: &BTreeSet<Id>,
     factory_members: &BTreeMap<Id, BTreeSet<String>>,
-) -> BTreeSet<StatementOrdinal> {
+) -> (BTreeSet<StatementOrdinal>, BTreeSet<StatementOrdinal>) {
     let mut active: Option<(Id, FreshValue)> = None;
     let mut writes = BTreeSet::new();
+    let mut instance_field_writes = BTreeSet::new();
     for (ordinal, step) in steps.iter().enumerate() {
         match step {
             Some(FreshValueStep::Allocate {
@@ -536,11 +537,20 @@ fn fresh_value_writes(
                 }) =>
             {
                 writes.insert(StatementOrdinal(ordinal));
+                if active
+                    .as_ref()
+                    .is_some_and(|(_, value)| matches!(value, FreshValue::Instance(_)))
+                {
+                    // A constructorless local class defined this own data
+                    // field before the adjacent write. An inherited setter
+                    // cannot observe the assignment.
+                    instance_field_writes.insert(StatementOrdinal(ordinal));
+                }
             }
             _ => active = None,
         }
     }
-    writes
+    (writes, instance_field_writes)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -2350,6 +2360,7 @@ struct ExecutionIndex {
     unindexed_accessor_owners: BTreeSet<StatementOrdinal>,
     top_calls: Vec<Vec<Call>>,
     top_property_writes: Vec<Vec<(Option<Id>, Option<String>)>>,
+    fresh_instance_field_writes: BTreeSet<StatementOrdinal>,
     top_dynamic_property_receivers: Vec<Vec<ValueExpr>>,
     top_assignments: Vec<Vec<(Id, ValueExpr)>>,
     top_definite_initializers: Vec<BTreeSet<Id>>,
@@ -2429,6 +2440,7 @@ impl Default for ExecutionIndex {
             unindexed_accessor_owners: BTreeSet::new(),
             top_calls: Vec::new(),
             top_property_writes: Vec::new(),
+            fresh_instance_field_writes: BTreeSet::new(),
             top_dynamic_property_receivers: Vec::new(),
             top_assignments: Vec::new(),
             top_definite_initializers: Vec::new(),
@@ -2900,7 +2912,7 @@ impl ExecutionIndex {
             // The fresh result is private until these adjacent writes finish.
             // Only currently admitted factories can establish that provenance;
             // removing a producer must invalidate proofs depending on its result.
-            let fresh_writes = if index.dynamic_scope_owners.is_empty() {
+            let (fresh_writes, instance_field_writes) = if index.dynamic_scope_owners.is_empty() {
                 fresh_value_writes(
                     &fresh_steps,
                     &namespace_value_facts,
@@ -2908,8 +2920,9 @@ impl ExecutionIndex {
                     &factory_members,
                 )
             } else {
-                BTreeSet::new()
+                (BTreeSet::new(), BTreeSet::new())
             };
+            index.fresh_instance_field_writes = instance_field_writes;
             let keep_audited_members = |id: &Id, members: &BTreeSet<String>| {
                 if namespace_family.is_empty() {
                     keep_namespace(id, members, &fresh_writes)
@@ -8544,7 +8557,10 @@ pub(crate) fn annotate_synchronous_calls(
                 executor.execute_call(call, &top_env, &top_captures, &mut outcome);
             }
         }
-        if !certified_deferred_write {
+        // The fresh-instance proof applies only to this whole top-level
+        // assignment. Nested callable writes owned by the same statement
+        // still take the normal setter fallback when invoked later.
+        if !certified_deferred_write && !index.fresh_instance_field_writes.contains(&fact.ordinal) {
             executor.promote_property_writes(
                 &index.top_property_writes[fact.ordinal.0],
                 fact.ordinal,

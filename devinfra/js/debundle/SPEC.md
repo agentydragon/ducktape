@@ -427,6 +427,10 @@ The allocation and assignment values must run no user code, and the instance
 must remain private throughout that run. Unsupported constructors, fields,
 receivers, dynamic scope, and intervening statements retain the conservative
 write checks.
+For that exact top-level own-field write, the same proof excludes a setter
+effect from unknown-call reachability. The assignment remains an actual
+top-level effect; nested callable writes and later receiver mutations retain
+their usual accessor checks.
 For a fresh top-level object literal that visibly contains the namespace and
 has static ordinary own data properties,
 the checker distinguishes the container's identity from namespace values held
