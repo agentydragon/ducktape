@@ -9,6 +9,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::purity::Purity;
+use spec::BuiltinGlobalRoot;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum KnownEffect {
@@ -35,6 +36,9 @@ pub enum LocalEffectPolicy {
 
 #[derive(Debug, Clone, Default)]
 pub struct AnalysisHints {
+    /// Exact author-certified browser-global slots whose stored capabilities
+    /// cannot be consumed before this chunk finishes synchronous init.
+    pub deferred_global_publications: BTreeMap<BuiltinGlobalRoot, BTreeSet<String>>,
     pub declared_pure: BTreeSet<String>,
     pub declared_pure_new: BTreeSet<String>,
     /// Author-trusted purity of one selected top-level variable initializer.

@@ -1027,6 +1027,23 @@ the result `Unknown`, visits argument effects, and leaves purity/S-chain
 classification unchanged. Construction, aliases, computed/optional lookups,
 uncertain arguments, and changed member identities use the ordinary fallback.
 
+**Audited deferred browser-global publication.**
+`chunk_analysis_options.<chunk>.deferred_global_publications` certifies an
+ordinary inert own data slot on `globalThis` or `window`, or an absent slot
+whose creation cannot invoke an inherited setter and is permitted by the
+object. It also certifies no synchronous host/importer/source consumption of
+the stored capability before this chunk
+finishes initialization. It does not make the write or its RHS pure. A
+structurally checked whole assignment of a known function/class, optionally
+behind a checked `typeof window` guard, keeps all eager dataflow and ordering
+effects but does not put that stored capability into the opaque-call callback
+pool or possible setter pool. A direct call, independent export, separate
+publication, source read, ambiguous alias, global-root replacement, dynamic
+global access, or visible descriptor installation uses the conservative path.
+The host descriptor and
+external-consumer conditions are author-audited; they are not inferred from
+the source scan or intrinsic-integrity assumption.
+
 **Audited callback-factory exports.**
 `chunk_export_purity.<defining chunk>.callback_factory_exports` and
 `callback_factory_members` are separate callback-flow contracts. The latter

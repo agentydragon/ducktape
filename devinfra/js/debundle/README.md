@@ -96,7 +96,9 @@ with `perf_wrapper.sh`: <docs/bazel_integration.md>.
   `chunk_analysis_options.<chunk_id>.dataflow_aware_s_chain` (+ author-trusted
   `trusted_dataflow_summaries`) orders impure statements by the cells they touch
   (§ Emission modes); `chunk_analysis_options.<chunk_id>.local_property_effects`
-  makes `X.prop = <pure-rhs>;` a local effect on `X` (A10).
+  makes `X.prop = <pure-rhs>;` a local effect on `X` (A10);
+  `deferred_global_publications` narrows callback reentry for audited inert
+  browser-global data slots while retaining write ordering.
 - **Input-chunk admission**: every materialized chunk is screened for A1 (top-level
   `eval`), A3 (dynamic `import(...)`), A5 (`import.meta`) before quotient/lowering
   (`chunk_analysis/chunk_admission.rs`); audited corpora disable checks with
