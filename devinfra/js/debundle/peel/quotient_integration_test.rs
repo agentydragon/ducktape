@@ -119,6 +119,17 @@ fn group_contraction_commits_one_final_entry_partition_and_honors_cap() {
     ];
     let mut q = QuotientGraph::from_report_with_realizable_partition(
         &report,
+        9,
+        &assignments,
+        ModuleId::logical(0),
+    )
+    .unwrap();
+    assert!(!q.contract_if_preserving(ClassId(0), ClassId(0)));
+    assert!(!q.contract_if_preserving(ClassId(0), ClassId(1)));
+    assert_eq!(q.class_of(OwnerIdx(1)), ClassId(1));
+
+    let mut q = QuotientGraph::from_report_with_realizable_partition(
+        &report,
         14,
         &assignments,
         ModuleId::logical(0),
@@ -153,6 +164,8 @@ fn group_contraction_commits_one_final_entry_partition_and_honors_cap() {
         assignments[3]
     );
     assert!(q.realizability_verdict().is_realizable());
+    assert!(!q.contract_if_preserving(ClassId(0), ClassId(1)));
+    assert!(!q.contract_group_if_preserving(&classes));
 }
 
 #[test]
