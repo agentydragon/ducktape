@@ -3528,15 +3528,6 @@ spec:
       namespace: ducktape-flux
     - name: seaweedfs-operator
       namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/k8s/litellm
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: litellm
-    namespace: ducktape-flux
-  timeout: 10m
   healthChecks:
     - apiVersion: postgresql.cnpg.io/v1
       kind: Cluster
@@ -3550,6 +3541,15 @@ spec:
       kind: HTTPRoute
       name: litellm
       namespace: litellm
+  interval: 10m
+  path: ./cluster/k8s/litellm
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: litellm
+    namespace: ducktape-flux
+  timeout: 10m
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
