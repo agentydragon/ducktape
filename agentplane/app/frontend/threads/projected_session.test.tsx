@@ -260,7 +260,7 @@ it("offers a Sandbox-scoped Langfuse link from the active Thread menu", async ()
   const url = new URL((link as HTMLAnchorElement).href);
   expect(url.searchParams.get("filter")).toBe(
     "metadata;stringObject;attributes.agentplane.namespace;=;agentplane-test," +
-      "metadata;stringObject;attributes.agentplane.service_account;=;test-sandbox"
+      "metadata;stringObject;attributes.agentplane.service_account;=;composer-test"
   );
   expect((link as HTMLAnchorElement).target).toBe("_blank");
 });
