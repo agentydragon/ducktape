@@ -6110,11 +6110,23 @@ impl Executor<'_> {
                 {
                     let source = self.evaluate(source, env, captures);
                     if let Some(properties) = self.ordinary_data_properties(&source) {
+                        let previously_evaluated = self.ordinary_spread_copies.contains(key);
                         let current = self.prefix_object_properties.entry(*key).or_default();
                         let mut changed = false;
+                        if previously_evaluated {
+                            for (property, values) in current.iter_mut() {
+                                if !properties.contains_key(property) {
+                                    changed |= values.insert(AbstractValue::Undefined);
+                                }
+                            }
+                        }
                         for (property, values) in properties {
+                            let new_property = !current.contains_key(&property);
                             let slot = current.entry(property).or_default();
                             let before = slot.len();
+                            if previously_evaluated && new_property {
+                                slot.insert(AbstractValue::Undefined);
+                            }
                             slot.extend(values);
                             changed |= slot.len() != before;
                         }

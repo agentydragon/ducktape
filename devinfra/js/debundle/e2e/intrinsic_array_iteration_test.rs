@@ -487,3 +487,31 @@ fn instanceof_proxy_and_custom_has_instance_effects_remain_visible() {
         &["Matcher"],
     );
 }
+
+#[test]
+fn copy_contexts_retain_missing_fields_for_default_consumers() {
+    for (entries, index) in [("[{ run: () => 0 }, {}]", 1), ("[{}, { run: () => 0 }]", 0)] {
+        let source = format!(
+            "let later = 0;\nconst entries = {entries};\nconst copies = entries.map(entry => ({{ ...entry }}));\nfunction consume(value = () => later) {{ return value(); }}\nconst observed = consume(copies[{index}].run);\nlater = 42;\nconsole.log(observed);\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+        assert_preserved_entry_output(&fixture, "0\n");
+        let split = vec![
+            logical_module(
+                "registry",
+                &[
+                    Member::new("entries"),
+                    Member::new("copies"),
+                    Member::new("consume"),
+                    Member::new("observed"),
+                ],
+            ),
+            logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
+        ];
+        expect_atomic_conflict_rejection(
+            FixtureOpts::new(&source, split),
+            &["registry", "values/later"],
+            &[],
+        );
+    }
+}
