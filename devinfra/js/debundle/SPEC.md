@@ -355,6 +355,18 @@ keep conservative timing. Eager argument reads,
 the helper's and local decorators' syntactic lazy read/rebind dependency closure,
 and target-local mutation/co-location edges remain. This is not purity.
 
+`effect: typescript_metadata_decorate_helper_with_member_decorators` adds one
+static member lookup (`provider.decorator`) to the admitted decorator array.
+The provider root must be an imported binding without any direct member write
+or rebind in the analyzed chunk. The author additionally certifies that each
+admitted provider lookup is an ordinary, stable own data property throughout
+synchronous initialization: no getter, proxy, alias mutation, or hidden
+callback reentry can replace or observe it. The selected member must itself
+be a metadata-only decorator under the contract above. This assertion covers
+all supported applications of the helper, not just a single call. Computed
+keys, chained members, spreads, and local providers remain conservative.
+The existing bare-identifier helper effect does not acquire member support.
+
 ## Vendor split-brain evidence
 
 A partial vendor swap rejected for shared retained implementation reports both

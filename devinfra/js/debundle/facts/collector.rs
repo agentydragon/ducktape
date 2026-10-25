@@ -31,6 +31,9 @@ pub(crate) struct StatementFactsCollector {
     pub(crate) var_initializers: BTreeSet<Id>,
     pub(crate) reads: PositionBucketed<BTreeSet<Id>>,
     pub(crate) rebinds: PositionBucketed<BTreeSet<Id>>,
+    /// Direct writes through a binding, including lazy bodies. A trusted
+    /// imported decorator member cannot retain its identity if written here.
+    pub(crate) member_write_roots: BTreeSet<Id>,
     pub(crate) calls: PositionBucketed<BTreeSet<Id>>,
     pub(crate) at_init_unresolved_sources: BTreeSet<Id>,
     pub(crate) at_init_unresolved_inline_fn: bool,
@@ -774,6 +777,11 @@ impl Visit for StatementFactsCollector {
     fn visit_assign_expr(&mut self, node: &AssignExpr) {
         let before_assignment = self.past_await;
         record_assign_target(&node.left, self);
+        if let Some(member) = simple_assign_member_target(&node.left)
+            && let Expr::Ident(root) = member.obj.unwrap_parens()
+        {
+            self.member_write_roots.insert(root.to_id());
+        }
         if self.lazy_depth == 0 {
             match &node.left {
                 AssignTarget::Simple(_) => {
@@ -812,6 +820,11 @@ impl Visit for StatementFactsCollector {
 
     fn visit_update_expr(&mut self, node: &UpdateExpr) {
         record_update_target(&node.arg, self);
+        if let Expr::Member(member) = node.arg.unwrap_parens()
+            && let Expr::Ident(root) = member.obj.unwrap_parens()
+        {
+            self.member_write_roots.insert(root.to_id());
+        }
         if self.lazy_depth == 0 {
             match node.arg.unwrap_parens() {
                 // `count++`: binding read+write, handled by
@@ -826,6 +839,16 @@ impl Visit for StatementFactsCollector {
             }
         }
         node.arg.visit_with(self);
+    }
+
+    fn visit_unary_expr(&mut self, node: &UnaryExpr) {
+        if node.op == UnaryOp::Delete
+            && let Expr::Member(member) = node.arg.unwrap_parens()
+            && let Expr::Ident(root) = member.obj.unwrap_parens()
+        {
+            self.member_write_roots.insert(root.to_id());
+        }
+        node.visit_children_with(self);
     }
 
     fn visit_for_in_stmt(&mut self, node: &ForInStmt) {
@@ -872,6 +895,22 @@ impl Visit for StatementFactsCollector {
     // ...)` / `Reflect.defineProperty(globalThis, ...)`, and
     // `new Proxy(globalThis, ...)`.
     fn visit_call_expr(&mut self, node: &CallExpr) {
+        if let Callee::Expr(callee) = &node.callee
+            && let Expr::Member(member) = callee.unwrap_parens()
+            && let (Expr::Ident(intrinsic), MemberProp::Ident(method)) =
+                (member.obj.unwrap_parens(), &member.prop)
+            && matches!(
+                (intrinsic.sym.as_ref(), method.sym.as_ref()),
+                (
+                    "Object",
+                    "assign" | "defineProperty" | "defineProperties" | "setPrototypeOf"
+                ) | ("Reflect", "set" | "defineProperty" | "setPrototypeOf")
+            )
+            && let Some(first) = node.args.first()
+            && let Expr::Ident(root) = first.expr.unwrap_parens()
+        {
+            self.member_write_roots.insert(root.to_id());
+        }
         // Callee/argument expressions evaluate before the call. If one
         // of them contains an `await` in an async body, the call itself
         // happens after suspension and must not be first-order.

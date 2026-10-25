@@ -1533,6 +1533,12 @@ member names`, it projects onto each importing chunk's local binding
   including imported implementations. This stronger value is independent of
   purity, and the older helper value does not imply it.
 
+  `effect: typescript_metadata_decorate_helper_with_member_decorators` also
+  admits a single static property lookup on an imported decorator provider.
+  The source scan rejects direct writes or rebinds of that provider; the author
+  certifies an ordinary stable data property with no proxy, accessor, alias
+  mutation, or hidden reentry. Other member shapes retain the opaque path.
+
   `chunk_analysis_options.<chunk>.local_property_effects` is the
   chunk-wide structural sibling of the same idea, for plain
   data-property annotation writes rather than helper calls: a whole

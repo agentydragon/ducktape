@@ -44,7 +44,8 @@ fn recognized_local_effect_target(
     let callee = call_callee_ident(call)?;
     match known_effects.get(callee.sym.as_ref())? {
         KnownEffect::TypescriptDecorateHelper => typescript_decorate_helper_target(call),
-        KnownEffect::TypescriptMetadataDecorateHelper => {
+        KnownEffect::TypescriptMetadataDecorateHelper
+        | KnownEffect::TypescriptMetadataDecorateHelperWithMemberDecorators => {
             context.metadata_decorate_target(item).cloned()
         }
     }
@@ -54,6 +55,9 @@ pub(crate) struct MetadataDecorateCall {
     pub helper: Id,
     pub target: Id,
     pub decorators: Vec<Id>,
+    /// A separately audited one-hop data-property lookup on an imported
+    /// provider. The root is retained for dependency and mutation checks.
+    pub member_decorators: Vec<Id>,
 }
 
 impl MetadataDecorateCall {
@@ -85,11 +89,12 @@ pub(crate) fn metadata_decorate_call(
         return None;
     };
     let helper = call_callee_ident(call)?;
-    if known_effects.get(helper.sym.as_ref())
-        != Some(&KnownEffect::TypescriptMetadataDecorateHelper)
-        || call.args.len() != 4
-        || call.args.iter().any(|arg| arg.spread.is_some())
-    {
+    let member_contract = match known_effects.get(helper.sym.as_ref()) {
+        Some(KnownEffect::TypescriptMetadataDecorateHelper) => false,
+        Some(KnownEffect::TypescriptMetadataDecorateHelperWithMemberDecorators) => true,
+        _ => return None,
+    };
+    if call.args.len() != 4 || call.args.iter().any(|arg| arg.spread.is_some()) {
         return None;
     }
     let Expr::Array(array) = call.args[0].expr.unwrap_parens() else {
@@ -98,17 +103,29 @@ pub(crate) fn metadata_decorate_call(
     if array.elems.is_empty() {
         return None;
     }
-    let decorators = array
-        .elems
-        .iter()
-        .map(|element| {
-            let element = element.as_ref()?;
-            let Expr::Ident(decorator) = element.expr.unwrap_parens() else {
-                return None;
-            };
-            element.spread.is_none().then(|| decorator.to_id())
-        })
-        .collect::<Option<Vec<_>>>()?;
+    let mut decorators = Vec::new();
+    let mut member_decorators = Vec::new();
+    for element in &array.elems {
+        let element = element.as_ref()?;
+        if element.spread.is_some() {
+            return None;
+        }
+        match element.expr.unwrap_parens() {
+            Expr::Ident(decorator) => decorators.push(decorator.to_id()),
+            Expr::Member(member) if member_contract => {
+                let (Expr::Ident(root), MemberProp::Ident(property)) =
+                    (member.obj.unwrap_parens(), &member.prop)
+                else {
+                    return None;
+                };
+                if property.sym == "__proto__" || property.sym == "prototype" {
+                    return None;
+                }
+                member_decorators.push(root.to_id());
+            }
+            _ => return None,
+        }
+    }
     let Expr::Member(prototype) = call.args[1].expr.unwrap_parens() else {
         return None;
     };
@@ -127,6 +144,7 @@ pub(crate) fn metadata_decorate_call(
         helper: helper.to_id(),
         target: target.to_id(),
         decorators,
+        member_decorators,
     })
 }
 

@@ -7,8 +7,8 @@ use swc_common::Spanned;
 use swc_ecma_ast::*;
 
 use super::{
-    ChunkValueFlow, TopLevelItemView, collect_declared_names, metadata_decorate_call,
-    var_decl_of_item,
+    ChunkValueFlow, StructuralStatementFacts, TopLevelItemView, collect_declared_names,
+    metadata_decorate_call, var_decl_of_item,
 };
 use crate::analysis_hints::{KnownEffect, LocalEffectPolicy};
 use crate::purity::{ChunkCodeGraph, classify_expr_purity};
@@ -33,16 +33,41 @@ impl LocalEffectContext {
         local_effect_policy: LocalEffectPolicy,
         known_effects: &BTreeMap<String, KnownEffect>,
         flow: &ChunkValueFlow,
+        per_statement: &[StructuralStatementFacts],
+        imported_bindings: &BTreeSet<Id>,
     ) -> Self {
         let mut context = Self::default();
-        if known_effects
-            .values()
-            .any(|effect| *effect == KnownEffect::TypescriptMetadataDecorateHelper)
-        {
+        let member_contract = known_effects.values().any(|effect| {
+            *effect == KnownEffect::TypescriptMetadataDecorateHelperWithMemberDecorators
+        });
+        if known_effects.values().any(|effect| {
+            matches!(
+                effect,
+                KnownEffect::TypescriptMetadataDecorateHelper
+                    | KnownEffect::TypescriptMetadataDecorateHelperWithMemberDecorators
+            )
+        }) {
+            let changed_roots: BTreeSet<Id> = if member_contract {
+                per_statement
+                    .iter()
+                    .flat_map(|fact| {
+                        fact.member_write_roots
+                            .iter()
+                            .chain(&fact.rebinds.eager)
+                            .chain(&fact.rebinds.lazy)
+                            .cloned()
+                    })
+                    .collect()
+            } else {
+                BTreeSet::new()
+            };
             for item in body {
                 if let Some(application) =
                     metadata_decorate_call(item.as_module_item(), known_effects)
                     && application.stable_origins(flow).is_some()
+                    && application.member_decorators.iter().all(|root| {
+                        imported_bindings.contains(root) && !changed_roots.contains(root)
+                    })
                 {
                     context
                         .metadata_decorate_targets

@@ -1528,6 +1528,7 @@ struct ExecutionIndex {
     top_callback_result_writes: Vec<Vec<CallbackResultWrite>>,
     top_exported_values: Vec<Vec<ValueExpr>>,
     top_metadata_decorations: Vec<Option<MetadataDecorateCall>>,
+    imported_bindings: BTreeSet<Id>,
     hoisted_bindings: BTreeMap<Id, u32>,
     exported_hoisted_functions: BTreeSet<u32>,
     global_object_names: BTreeSet<&'static str>,
@@ -1578,6 +1579,7 @@ impl Default for ExecutionIndex {
             top_callback_result_writes: Vec::new(),
             top_exported_values: Vec::new(),
             top_metadata_decorations: Vec::new(),
+            imported_bindings: BTreeSet::new(),
             hoisted_bindings: BTreeMap::new(),
             exported_hoisted_functions: BTreeSet::new(),
             global_object_names: BTreeSet::new(),
@@ -1651,6 +1653,7 @@ impl ExecutionIndex {
             if let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item.as_module_item() {
                 for specifier in &import.specifiers {
                     let local = specifier.local();
+                    index.imported_bindings.insert(local.to_id());
                     if hints.callback_factories.contains(local.sym.as_ref()) {
                         index.callback_factory_imports.insert(local.to_id());
                     }
@@ -2873,6 +2876,7 @@ struct Executor<'a> {
     prefix_values: Context,
     initialized_bindings: BTreeSet<Id>,
     var_bindings: BTreeSet<Id>,
+    changed_member_roots: BTreeSet<Id>,
     global_escaped_callbacks: Values,
     prefix_object_properties: BTreeMap<u32, BTreeMap<Option<String>, Values>>,
     tainted_objects: BTreeSet<u32>,
@@ -2955,10 +2959,18 @@ impl Executor<'_> {
         if application.stable_origins(self.flow) != Some((helper_key, *target_key)) {
             return false;
         }
+        if application.member_decorators.iter().any(|root| {
+            !self.index.imported_bindings.contains(root) || self.changed_member_roots.contains(root)
+        }) {
+            return false;
+        }
         // The author certifies the helper's dispatch and every decorator's
         // metadata-only behavior, not purity. Preserve all static dependencies
         // of their bodies without manufacturing calls into the target methods.
-        for binding in std::iter::once(&application.helper).chain(&application.decorators) {
+        for binding in std::iter::once(&application.helper)
+            .chain(&application.decorators)
+            .chain(&application.member_decorators)
+        {
             if let Some(&binding_owner) = self.binding_owner.get(binding) {
                 let (reads, rebinds) = self
                     .owner_read_closure
@@ -4893,6 +4905,23 @@ pub(crate) fn annotate_synchronous_calls(
         .iter()
         .flat_map(|fact| fact.var_declared.iter().cloned())
         .collect();
+    let changed_member_roots: BTreeSet<_> = if index.top_metadata_decorations.iter().any(|call| {
+        call.as_ref()
+            .is_some_and(|call| !call.member_decorators.is_empty())
+    }) {
+        facts
+            .iter()
+            .flat_map(|fact| {
+                fact.member_write_roots
+                    .iter()
+                    .chain(&fact.rebinds.eager)
+                    .chain(&fact.rebinds.lazy)
+                    .cloned()
+            })
+            .collect()
+    } else {
+        BTreeSet::new()
+    };
     let mut initial_values = Context::new();
     let mut initialized_bindings = BTreeSet::new();
     for (binding, key) in &index.hoisted_bindings {
@@ -4930,6 +4959,7 @@ pub(crate) fn annotate_synchronous_calls(
         prefix_values: initial_values,
         initialized_bindings,
         var_bindings,
+        changed_member_roots,
         global_escaped_callbacks: Values::new(),
         prefix_object_properties: BTreeMap::new(),
         tainted_objects: BTreeSet::new(),

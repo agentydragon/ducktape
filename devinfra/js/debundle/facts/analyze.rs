@@ -91,11 +91,15 @@ where
     let global_object_names = unshadowed_global_object_aliases(&body);
     let async_direct_function_bindings = collect_async_direct_function_bindings(&body);
     let mut top_level_await = None;
+    let mut imported_bindings = BTreeSet::new();
     let mut per_statement: Vec<StructuralStatementFacts> = body
         .iter()
         .enumerate()
         .map(|(ordinal, item)| {
             let item = item.as_module_item();
+            if let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item {
+                imported_bindings.extend(import.specifiers.iter().map(|s| s.local().to_id()));
+            }
             if top_level_await.is_none() {
                 let mut finder = TopLevelAwaitFinder::default();
                 item.visit_with(&mut finder);
@@ -152,6 +156,7 @@ where
                 declared,
                 reads: collector.reads,
                 rebinds: collector.rebinds,
+                member_write_roots: collector.member_write_roots,
                 calls: collector.calls,
                 constructor,
                 at_init_unresolved_sources: collector.at_init_unresolved_sources,
@@ -174,6 +179,7 @@ where
         SetIterableProof::analyze(&body, &shadowed, &value_flow, &plain_data_bindings);
     StructuralChunkAnalysis {
         body,
+        imported_bindings,
         value_flow,
         set_iterable_proof,
         plain_data_bindings,
@@ -229,6 +235,7 @@ where
 {
     let StructuralChunkAnalysis {
         body,
+        imported_bindings,
         value_flow,
         set_iterable_proof,
         plain_data_bindings,
@@ -265,6 +272,8 @@ where
         hints.local_effect_policy,
         &hints.known_effects,
         &value_flow,
+        &per_statement,
+        &imported_bindings,
     );
     let redundant_purity_hints =
         detect_redundant_purity_hints(&body, &shadowed, &hints.declared_pure);
@@ -410,6 +419,7 @@ fn assemble_statement_facts(
         var_initializers,
         reads,
         rebinds,
+        member_write_roots,
         calls,
         constructor,
         at_init_unresolved_sources,
@@ -502,6 +512,7 @@ fn assemble_statement_facts(
         var_initializers,
         reads,
         rebinds,
+        member_write_roots,
         local_effects,
         calls,
         constructor,
