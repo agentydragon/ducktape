@@ -1157,22 +1157,21 @@ impl Visit for ExecutionIndex {
         }
         self.literal_depth += 1;
         for property in &object.props {
-            match property {
-                PropOrSpread::Prop(property)
-                    if let Prop::KeyValue(pair) = property.as_ref()
-                        && self.is_factory_member_data_value(&pair.key, &pair.value) =>
-                {
-                    pair.key.visit_with(self);
-                    // This one-hop member read is a deferred data value, not
-                    // the namespace object itself. The factory contract's
-                    // author must establish that it cannot alias the namespace
-                    // or mutate a listed factory member; syntax alone cannot
-                    // prove the imported member's runtime identity.
-                    self.factory_member_value_depth += 1;
-                    pair.value.visit_with(self);
-                    self.factory_member_value_depth -= 1;
-                }
-                _ => property.visit_with(self),
+            if let PropOrSpread::Prop(property) = property
+                && let Prop::KeyValue(pair) = property.as_ref()
+                && self.is_factory_member_data_value(&pair.key, &pair.value)
+            {
+                pair.key.visit_with(self);
+                // This one-hop member read is a deferred data value, not
+                // the namespace object itself. The factory contract's
+                // author must establish that it cannot alias the namespace
+                // or mutate a listed factory member; syntax alone cannot
+                // prove the imported member's runtime identity.
+                self.factory_member_value_depth += 1;
+                pair.value.visit_with(self);
+                self.factory_member_value_depth -= 1;
+            } else {
+                property.visit_with(self);
             }
         }
         self.literal_depth -= 1;
