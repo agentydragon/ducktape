@@ -439,6 +439,109 @@ fn namespace_factory_keeps_computed_member_callees_conservative_in_literals() {
 }
 
 #[test]
+fn unrelated_primitive_operator_results_do_not_disable_namespace_factories() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import { api } from './peer.js';\n\
+             function makeKey(name, value) {\n\
+                 Symbol.for('prefix' + name);\n\
+                 return 1 / 0 + (value + 1) + (value > 0) + typeof value + void value + !value + value++;\n\
+             }\n\
+             const wrapped = api.make(() => later);\n\
+             const later = 42;\n\
+             console.log(wrapped.invoke());\n",
+            modules(),
+        )
+        .with_extra_chunks(&[(
+            "static/peer",
+            "export const api = { make(callback) { return { invoke: () => callback() }; } };\n",
+        )])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+            .with_callback_factory_members("api", &["make"])
+            .build()]),
+    );
+    assert_preserved_entry_output(&fixture, "42\n");
+}
+
+#[test]
+fn primitive_operator_operands_keep_callback_reentry_visible() {
+    let peers = [(
+        "static/peer",
+        "export const api = { make(callback) { return { invoke: () => callback() }; } };\n",
+    )];
+    let contracts = [ChunkExportPurityBuilder::new("static/peer")
+        .with_callback_factory_members("api", &["make"])
+        .build()];
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            "import { api } from './peer.js';\n\
+             function makeKey(read) { return Symbol.for('prefix' + read()); }\n\
+             const key = makeKey(() => later);\n\
+             const wrapped = api.make(() => later);\n\
+             const later = 42;\n\
+             console.log(key.description, wrapped.invoke());\n",
+            vec![
+                logical_module(
+                    "callbacks/wrapped",
+                    &[Member::new("key"), Member::new("wrapped")],
+                ),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        )
+        .with_extra_chunks(&peers)
+        .with_chunk_export_purity(&contracts),
+        &["callbacks/wrapped", "values/later"],
+        &["eager_use"],
+    );
+}
+
+#[test]
+fn primitive_operator_coercion_keeps_callback_reentry_visible() {
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            "import { api } from './peer.js';\n\
+             function makeKey(value) { return 'prefix' + value; }\n\
+             const key = makeKey({ [Symbol.toPrimitive]() { return later; } });\n\
+             const wrapped = api.make(() => later);\n\
+             const later = 42;\n\
+             console.log(key, wrapped.invoke());\n",
+            modules(),
+        )
+        .with_extra_chunks(&[(
+            "static/peer",
+            "export const api = { make(callback) { return { invoke: () => callback() }; } };\n",
+        )])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+            .with_callback_factory_members("api", &["make"])
+            .build()]),
+        &["callbacks/wrapped", "values/later"],
+        &["eager_use"],
+    );
+}
+
+#[test]
+fn logical_operator_results_still_preserve_namespace_alternatives() {
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            "import { api } from './peer.js';\n\
+             const wrapped = api.make(() => api || later);\n\
+             const later = 42;\n\
+             console.log(wrapped.invoke());\n",
+            modules(),
+        )
+        .with_extra_chunks(&[(
+            "static/peer",
+            "export const api = { make(callback) { return { invoke: () => callback() }; } };\n",
+        )])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+            .with_callback_factory_members("api", &["make"])
+            .build()]),
+        &["callbacks/wrapped", "values/later"],
+        &["eager_use", "sequenced"],
+    );
+}
+
+#[test]
 fn namespace_factory_allows_audited_method_results_and_unrelated_callback_receivers() {
     let fixture = run_fixture(
         FixtureOpts::new(

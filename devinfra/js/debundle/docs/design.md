@@ -979,12 +979,17 @@ dynamic-write receivers. For call-argument checks, the checker follows
 namespace values in the supplied argument expressions and excludes the callee
 expression, which is not passed as an argument; an unrelated call result is not
 assumed to be the namespace solely because it appears as an argument. Unknown
-expression shapes remain conservative. The checker tracks dynamic-write
-receiver values and rejects receivers whose checked value flow reaches the
-namespace, including direct member-rooted writes, local aliases, and unknown
-call results. Receivers with no syntactic path to the namespace rely on the
-author's audited non-aliasing assertion; this is a trusted contract, not a
-proof that arbitrary callback parameters are disjoint from the namespace.
+expression shapes remain conservative. Unary, update, and non-logical binary
+expressions have primitive results on successful evaluation; their operand
+expressions remain in value flow so nested calls and unavailable reads are
+still analyzed. Conditional expressions and `&&`, `||`, and `??` retain both
+possible result values because they can return an object or callback. The
+checker tracks dynamic-write receiver values and rejects receivers whose
+checked value flow reaches the namespace, including direct member-rooted
+writes, local aliases, and unknown call results. Receivers with no syntactic
+path to the namespace rely on the author's audited non-aliasing assertion; this
+is a trusted contract, not a proof that arbitrary callback parameters are
+disjoint from the namespace.
 Inside a literal traversed within an admitted inline callback, a direct static
 namespace member used as a call callee is not treated as a captured namespace
 value. The call's arguments and effects still flow through normal analysis;

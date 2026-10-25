@@ -74,6 +74,10 @@ enum ValueExpr {
     Member(Box<Self>, Option<String>, bool),
     Call(Box<Self>, Vec<Self>),
     New(Box<Self>, Vec<Self>),
+    /// An operator result is primitive on successful evaluation. This is a
+    /// value-kind fact, not a purity claim: keep operands so calls and
+    /// unavailable reads inside them still flow through the evaluator.
+    Primitive(Vec<Self>),
     Alternatives(Vec<Self>),
     Unknown,
 }
@@ -180,6 +184,12 @@ impl ValueExpr {
                     Self::from_expr(&bin.right),
                 ])
             }
+            Expr::Bin(bin) => Self::Primitive(vec![
+                Self::from_expr(&bin.left),
+                Self::from_expr(&bin.right),
+            ]),
+            Expr::Unary(unary) => Self::Primitive(vec![Self::from_expr(&unary.arg)]),
+            Expr::Update(update) => Self::Primitive(vec![Self::from_expr(&update.arg)]),
             Expr::Seq(seq) => seq
                 .exprs
                 .last()
@@ -207,6 +217,11 @@ impl ValueExpr {
                     option.bindings(result);
                 }
             }
+            Self::Primitive(operands) => {
+                for operand in operands {
+                    operand.bindings(result);
+                }
+            }
             Self::ObjectLiteral(_, properties) => {
                 for (_, value) in properties {
                     value.bindings(result);
@@ -226,6 +241,7 @@ impl ValueExpr {
             Self::ObjectLiteral(_, properties) => properties
                 .iter()
                 .any(|(_, value)| value.may_expose_namespace(id)),
+            Self::Primitive(_) => false,
             Self::Alternatives(options) => {
                 options.iter().any(|value| value.may_expose_namespace(id))
             }
@@ -253,6 +269,7 @@ impl ValueExpr {
             Self::ObjectLiteral(_, properties) => properties
                 .iter()
                 .any(|(_, value)| value.directly_exposes_namespace(id)),
+            Self::Primitive(_) => false,
             Self::Alternatives(options) => options
                 .iter()
                 .any(|value| value.directly_exposes_namespace(id)),
@@ -3074,6 +3091,28 @@ impl Executor<'_> {
                 } else {
                     results
                 }
+            }
+            ValueExpr::Primitive(operands) => {
+                let mut can_complete = true;
+                let mut may_throw = false;
+                for operand in operands {
+                    let mut values = self.evaluate(operand, env, captures);
+                    if values.remove(&AbstractValue::Unavailable) {
+                        may_throw = true;
+                    }
+                    if values.is_empty() {
+                        can_complete = false;
+                        break;
+                    }
+                }
+                let mut results = Values::new();
+                if can_complete {
+                    results.insert(AbstractValue::NonCallable);
+                }
+                if may_throw || !can_complete {
+                    results.insert(AbstractValue::Unavailable);
+                }
+                results
             }
             ValueExpr::Alternatives(options) => options
                 .iter()
