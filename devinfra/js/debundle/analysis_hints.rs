@@ -67,6 +67,9 @@ pub struct AnalysisHints {
     /// Imported callback factories with the return-only callback-flow contract.
     /// Independent of call purity; used only for checked fresh-callback calls.
     pub callback_factories: BTreeSet<String>,
+    /// Imported factories audited only for a single syntactic inline callback.
+    /// Retained results passed as arguments remain conservative.
+    pub inline_callback_factories: BTreeSet<String>,
     /// Static members of imported namespace bindings with an audited
     /// return-only callback contract, independent of member-call purity.
     pub callback_factory_members: BTreeMap<String, BTreeSet<String>>,

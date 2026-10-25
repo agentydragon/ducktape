@@ -995,6 +995,15 @@ branches, helpers, callback-bearing property access on both input and result,
 and prototype integrity; neither graph may contain proxies or accessors at the
 call.
 
+`inline_callback_factory_exports` is a named-export contract for providers
+audited only with one non-spread syntactic inline function or arrow argument.
+The provider returns a fresh ordinary callable retaining that callback and
+cannot invoke or publish it during construction. The same importer-state
+restriction applies. A retained result from another factory, a named callback,
+spread arguments, or construction does not use this contract. The imported
+binding identity follows the ordinary export/import resolver, including local
+renames; this callback-flow fact does not imply purity.
+
 Invoking a retained result promotes its callbacks through the shared synchronous
 owner adjacency and retained prefix reads. This includes callbacks returned
 before suspension while excluding reads after an unconditional await. Complete

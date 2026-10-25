@@ -28,6 +28,162 @@ fn returned_wrapper_does_not_invoke_its_callback_at_creation() {
 }
 
 #[test]
+fn audited_inline_factory_defers_its_single_callback() {
+    let peers = [(
+        "static/peer",
+        "export function action(callback) {\n\
+         function wrapped() { return callback(); }\n\
+         wrapped.kind = 'action';\n\
+         return wrapped;\n}\n",
+    )];
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import { action as create } from './peer.js';\n\
+             const wrapped = create(() => later);\n\
+             const later = 42;\nconsole.log(wrapped());\n",
+            modules(),
+        )
+        .with_extra_chunks(&peers)
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+            .with_inline_callback_factories(&["action"])
+            .build()]),
+    );
+    assert_preserved_entry_output(&fixture, "42\n");
+}
+
+#[test]
+fn inline_only_contract_keeps_other_call_shapes_conservative() {
+    let peers = [(
+        "static/peer",
+        "export function action(callback) {\n\
+         function wrapped() { return callback(); }\n\
+         wrapped.kind = 'action';\n\
+         return wrapped;\n}\n",
+    )];
+    for (setup, call, members) in [
+        (
+            "const callback = () => later;\n",
+            "action(callback)",
+            vec![Member::new("callback"), Member::new("wrapped")],
+        ),
+        ("", "action(...[() => later])", vec![Member::new("wrapped")]),
+        ("", "new action(() => later)", vec![Member::new("wrapped")]),
+    ] {
+        let source = format!(
+            "import {{ action }} from './peer.js';\n{setup}\
+             const wrapped = {call};\nconst later = 42;\nconsole.log(wrapped());\n"
+        );
+        expect_atomic_conflict_rejection(
+            FixtureOpts::new(
+                &source,
+                vec![
+                    logical_module("callbacks/wrapped", &members),
+                    logical_module("values/later", &[Member::new("later")]),
+                ],
+            )
+            .with_extra_chunks(&peers)
+            .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+                .with_inline_callback_factories(&["action"])
+                .build()]),
+            &["callbacks/wrapped", "values/later"],
+            &[],
+        );
+    }
+}
+
+#[test]
+fn inline_only_contract_does_not_compose_a_retained_object() {
+    let peers = [(
+        "static/peer",
+        "export function make(callback) { return { invoke: () => callback() }; }\n\
+         export function action(value) {\n\
+           if (typeof value !== 'function') return value.invoke();\n\
+           function wrapped() { return value(); }\n\
+           wrapped.kind = 'action';\n\
+           return wrapped;\n}\n",
+    )];
+    let source = "import { make, action } from './peer.js';\n\
+                  let later = 0;\nconst result = action(make(() => later));\n\
+                  later = 42;\nconsole.log(result);\n";
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module("callbacks/result", &[Member::new("result")]),
+                logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
+            ],
+        )
+        .with_extra_chunks(&peers)
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+            .with_callback_factories(&["make"])
+            .with_inline_callback_factories(&["action"])
+            .build()]),
+        &["callbacks/result", "values/later"],
+        &[],
+    );
+}
+
+#[test]
+fn inline_only_contract_does_not_cross_an_unresolved_reexport() {
+    let peers = [
+        (
+            "static/peer",
+            "export function action(callback) {\n\
+             function wrapped() { return callback(); }\n\
+             wrapped.kind = 'action';\nreturn wrapped;\n}\n",
+        ),
+        (
+            "static/bridge",
+            "export { action as create } from './peer.js';\n",
+        ),
+    ];
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            "import { create } from './bridge.js';\n\
+             const wrapped = create(() => later);\n\
+             const later = 42;\nconsole.log(wrapped());\n",
+            modules(),
+        )
+        .with_extra_chunks(&peers)
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+            .with_inline_callback_factories(&["action"])
+            .build()]),
+        &["callbacks/wrapped", "values/later"],
+        &[],
+    );
+}
+
+#[test]
+fn inline_only_result_invoked_before_later_write_remains_atomic() {
+    let peers = [(
+        "static/peer",
+        "export function action(callback) {\n\
+         function wrapped() { return callback(); }\n\
+         wrapped.kind = 'action';\nreturn wrapped;\n}\n",
+    )];
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            "import { action } from './peer.js';\n\
+             let later = 0;\nconst wrapped = action(() => later);\n\
+             const observed = wrapped();\nlater = 42;\nconsole.log(observed, later);\n",
+            vec![
+                logical_module(
+                    "callbacks/wrapped",
+                    &[Member::new("wrapped"), Member::new("observed")],
+                ),
+                logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
+            ],
+        )
+        .with_extra_chunks(&peers)
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+            .with_inline_callback_factories(&["action"])
+            .build()]),
+        &["callbacks/wrapped", "values/later"],
+        &[],
+    );
+}
+
+#[test]
 fn immediate_callback_invocation_preserves_the_tdz() {
     let peers = [(
         "static/peer",

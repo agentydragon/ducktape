@@ -181,6 +181,11 @@ pub struct ChunkExportPurity {
     /// still have observable effects and remains ordered as an impure call.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub callback_factory_exports: BTreeSet<String>,
+    /// Export names with the callback-factory contract restricted to exactly
+    /// one non-spread inline function or arrow argument. Retained results of
+    /// other factories are not admitted as inputs.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub inline_callback_factory_exports: BTreeSet<String>,
     /// Audited callback factories reached through static members of an
     /// exported namespace. Independent of `pure_members`; each member has
     /// the same return-only callback contract as `callback_factory_exports`.

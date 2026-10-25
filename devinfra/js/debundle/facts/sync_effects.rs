@@ -52,6 +52,7 @@ enum AbstractValue {
     /// callback values stored by its proven constructor.
     Instance(u32, Captured<Values>),
     CallbackFactory,
+    InlineCallbackFactory,
     /// A fresh opaque return value retaining callbacks without publishing them.
     DeferredCallbacks(Captured<Values>),
     ObjectAssign,
@@ -756,6 +757,7 @@ struct ExecutionIndex {
     opaque_top: BTreeSet<StatementOrdinal>,
     no_sync_callback_members: BTreeMap<String, BTreeSet<String>>,
     callback_factory_imports: BTreeSet<Id>,
+    inline_callback_factory_imports: BTreeSet<Id>,
     callback_factory_members: BTreeMap<Id, BTreeSet<String>>,
     callback_factory_functions: BTreeSet<u32>,
 }
@@ -803,6 +805,7 @@ impl Default for ExecutionIndex {
             opaque_top: BTreeSet::new(),
             no_sync_callback_members: BTreeMap::new(),
             callback_factory_imports: BTreeSet::new(),
+            inline_callback_factory_imports: BTreeSet::new(),
             callback_factory_members: BTreeMap::new(),
             callback_factory_functions: BTreeSet::new(),
         }
@@ -863,6 +866,9 @@ impl ExecutionIndex {
                     let local = specifier.local();
                     if hints.callback_factories.contains(local.sym.as_ref()) {
                         index.callback_factory_imports.insert(local.to_id());
+                    }
+                    if hints.inline_callback_factories.contains(local.sym.as_ref()) {
+                        index.inline_callback_factory_imports.insert(local.to_id());
                     }
                     if let Some(members) = hints.callback_factory_members.get(local.sym.as_ref()) {
                         index
@@ -3097,6 +3103,9 @@ impl Executor<'_> {
                 if self.index.callback_factory_imports.contains(id) {
                     return BTreeSet::from([AbstractValue::CallbackFactory]);
                 }
+                if self.index.inline_callback_factory_imports.contains(id) {
+                    return BTreeSet::from([AbstractValue::InlineCallbackFactory]);
+                }
                 if self.top_bindings.contains(id) {
                     if let Some(prefix_values) = self.prefix_values.get(id) {
                         let mut values = prefix_values.clone();
@@ -3296,6 +3305,10 @@ impl Executor<'_> {
                 for target in targets {
                     match target {
                         AbstractValue::CallbackFactory if inline_callback || deferred_callback => {
+                            let callbacks = self.callback_values(&args[0]);
+                            returns.insert(self.deferred_callbacks(callbacks));
+                        }
+                        AbstractValue::InlineCallbackFactory if inline_callback => {
                             let callbacks = self.callback_values(&args[0]);
                             returns.insert(self.deferred_callbacks(callbacks));
                         }
@@ -3673,6 +3686,13 @@ impl Executor<'_> {
                                 call.args.as_slice(),
                                 [ValueExpr::Origin(ValueOrigin::Function(_))]
                             )) => {}
+                AbstractValue::InlineCallbackFactory
+                    if call.kind == CallKind::Call
+                        && !call.has_spread
+                        && matches!(
+                            call.args.as_slice(),
+                            [ValueExpr::Origin(ValueOrigin::Function(_))]
+                        ) => {}
                 AbstractValue::DeferredCallbacks(captured) => {
                     outcome.complete = false;
                     outcome.unknown_call = true;

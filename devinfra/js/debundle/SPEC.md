@@ -257,6 +257,7 @@ unsupported callback bodies retain conservative whole-body effects.
 The provider must not synchronously read or write importer-owned state through
 another route, including imported lexical cells or caller-owned objects; effects
 confined to provider-private state are allowed.
+
 The author must audit every provider and type branch, helper, callback-bearing
 property access on both input and result, and prototype integrity; neither
 graph may contain proxies or accessors at the call. This assertion describes
@@ -264,6 +265,18 @@ callback flow only. It does not
 assert that the factory call is pure or effect-free. Writes through the result
 that can install opaque values, accessors, or a new prototype conservatively
 restore callback effects; known primitive metadata writes retain deferral.
+
+`chunk_export_purity.<defining chunk>.inline_callback_factory_exports` is a
+narrower named-export contract. It applies only to calls with exactly one
+non-spread syntactic inline function or arrow callback. The provider must
+return a fresh ordinary callable containing that callback, without invoking
+it or any caller-, host-, or export-provided callback synchronously or
+publishing it elsewhere. Its other synchronous behavior must satisfy the
+same importer-state restriction above. The author audits provider and helper
+paths reachable for this admitted input shape; other overloads are unclaimed.
+Calls with a named callback, a retained factory result, spread arguments, or
+`new` use conservative callback timing. This contract is independent of purity
+and does not grant the broader `callback_factory_exports` composition rule.
 
 For a namespace-member contract, the author must also audit the provider and all
 caller/runtime paths that supply values used by admitted callbacks. The listed

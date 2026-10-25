@@ -896,6 +896,12 @@ impl ChunkExportPurityBuilder {
         self
     }
 
+    pub fn with_inline_callback_factories(mut self, exports: &[&str]) -> Self {
+        self.purity.inline_callback_factory_exports =
+            exports.iter().map(|s| (*s).to_string()).collect();
+        self
+    }
+
     pub fn with_callback_factory_members(mut self, export: &str, members: &[&str]) -> Self {
         self.purity.callback_factory_members.insert(
             export.to_string(),

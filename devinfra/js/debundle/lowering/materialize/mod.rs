@@ -462,6 +462,14 @@ pub(super) fn finish_logical_chunk(
                 .callback_factories
                 .extend(callback_factories.iter().cloned());
         }
+        if let Some(factories) = cross_module_purities
+            .inline_callback_factories
+            .get(chunk_id)
+        {
+            hints
+                .inline_callback_factories
+                .extend(factories.iter().cloned());
+        }
         if let Some(members) = cross_module_purities.callback_factory_members.get(chunk_id) {
             hints.callback_factory_members.extend(members.clone());
         }
