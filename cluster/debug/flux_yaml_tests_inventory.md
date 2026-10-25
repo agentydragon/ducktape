@@ -127,26 +127,18 @@ checks the generated delegation Kustomizations against the owning namespace grap
 and `test_no_legacy_agent_diagnostic_rbac` rejects retired access resources. Keep
 these with the Flux graph through cutover.
 
-The focused follow-up trims are separate PRs:
+The focused follow-up trims were sent as separate PRs:
 
-- [#11965](https://github.com/agentydragon/ducktape/pull/11965) compares the Loki
-  allowlist with `NAMESPACE_DIAGNOSTICS` in the cdk8s model test, removing its
-  generated-YAML reader from `test_cluster_integration`.
-- [#11967](https://github.com/agentydragon/ducktape/pull/11967) moves Authentik
-  blueprint reference checks to `cluster/cdk8s/authentik`, alongside the owned
-  blueprint inputs. It is stacked on #11964 so its CI includes that PR’s focused
-  ClickHouse Secret runfile fix.
-- [#11966](https://github.com/agentydragon/ducktape/pull/11966) tests haku-ci's
-  TriggerAuthentication and ScaledJob from its cdk8s chart, while keeping the
-  authored Forgejo Secret contract in a focused target with that exact input.
-- [#11964](https://github.com/agentydragon/ducktape/pull/11964) checks the ClickHouse
-  source Role, store, and ExternalSecret in the Agentplane cdk8s model test, and
-  keeps the authored public-coder Secret contract on its exact source file.
+- Merged [#11964](https://github.com/agentydragon/ducktape/pull/11964) checks the ClickHouse source Role, store, and ExternalSecret in the Agentplane cdk8s model test, and keeps the authored public-coder Secret contract on its exact source file.
+- Merged [#11965](https://github.com/agentydragon/ducktape/pull/11965) compares the Loki allowlist with `NAMESPACE_DIAGNOSTICS` in the cdk8s model test, removing its generated-YAML reader from `test_cluster_integration`.
+- Merged [#11966](https://github.com/agentydragon/ducktape/pull/11966) tests haku-ci's TriggerAuthentication and ScaledJob from its cdk8s chart, while keeping the authored Forgejo Secret contract in a focused target with that exact input.
+- [#11967](https://github.com/agentydragon/ducktape/pull/11967) moves Authentik blueprint reference checks to `cluster/cdk8s/authentik`, alongside the owned blueprint inputs. It was initially stacked on #11964 for that PR's focused ClickHouse Secret runfile fix. #11964 has merged, and #11967's branch has been updated against `devel`; the PR remains open for CI and review.
 
-`test_generator_namespace` checks hand-written Kustomization declarations. Keep
+checks hand-written Kustomization declarations. Keep
 it with those declarations; cdk8s-owned Kustomization generation belongs in model
 tests. `test_flux_build` and the remaining whole-graph checks in
 `test_cluster_integration` validate the complete Flux source graph and stay with
 its owner. The authored Secret and blueprint contracts above read their specific
 source inputs; they do not depend on a CI render of the whole graph. Their future
 Git location remains an ownership decision for the Flux cutover.
+
