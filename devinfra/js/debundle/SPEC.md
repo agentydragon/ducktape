@@ -212,6 +212,13 @@ not thereby part of this package. The strip pass rejects non-shareable items
 also needed by residual exports and checks retained bindings and observable
 writes before removing swapped items.
 
+## Synchronous analysis limits
+
+Recursion and analysis limits preserve the first-await boundary where retained
+callback read coverage is complete. Possible synchronous reads and writes remain
+constraints, including for private callbacks that have not escaped. Unsupported
+bodies and dynamic scope retain conservative whole-body effects.
+
 ## Audited callback factories
 
 `chunk_export_purity.<defining chunk>.callback_factory_exports` lists named

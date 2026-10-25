@@ -1588,6 +1588,56 @@ export { box, later };
 }
 
 #[test]
+fn bounded_local_callback_fallback_ignores_post_await_read() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"async function load(count) {
+  if (count > 0) return load(count - 1);
+  await 0;
+  return later;
+}
+const pending = load(100);
+const later = 42;
+console.log(later);
+"#,
+        vec![
+            logical_module(
+                "callbacks/pending",
+                &[Member::new("load"), Member::new("pending")],
+            ),
+            logical_module("values/later", &[Member::new("later")]),
+        ],
+    ));
+    assert_preserved_entry_output(&fixture, "42\n");
+}
+
+#[test]
+fn bounded_local_callback_fallback_keeps_pre_await_read() {
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            r#"let later = 0;
+async function load(count) {
+  globalThis.seen = later;
+  if (count > 0) return load(count - 1);
+  await 0;
+}
+const pending = load(100);
+later = 42;
+console.log(globalThis.seen, later);
+"#,
+            vec![
+                logical_module(
+                    "callbacks/pending",
+                    &[Member::new("load"), Member::new("pending")],
+                ),
+                logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
+            ],
+        ),
+        &["callbacks/pending", "values/later"],
+        &[],
+    );
+}
+
+#[test]
 fn bounded_unknown_callback_fallback_ignores_post_await_read() {
     let fixture = run_fixture(
         FixtureOpts::new(

@@ -936,6 +936,13 @@ at-init call from residual code cannot observe a TDZ, and the
 emitter emits no entry-side phantom imports the gate could
 otherwise assume.
 
+Within synchronous value flow, recursion and budget limits summarize both
+escaped callbacks and the directly truncated callable through retained
+synchronous owner adjacency and prefix reads. Complete raw rebinds remain
+conservative. Private truncated roots are expanded once per source statement
+without adding them to the persistent escaped-callback cache. Incomplete
+reachability retains whole-body fallback.
+
 **Audited callback-storage APIs.** Member-specific
 `no_sync_callback_members` hints narrow only the fallback roots for
 calls like `registry.register(fn)` or `state.set({ onDone() {} })`

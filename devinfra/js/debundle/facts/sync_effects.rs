@@ -2924,22 +2924,31 @@ impl Executor<'_> {
             );
         }
         self.fallback_callback_sizes = Some(callback_sizes);
-        // The directly truncated callable need not escape. Its static SCC
-        // summary already contains the same transitive lazy effects, without
-        // adding its private roots to the persistent callback cache.
-        if !self.callback_fallback.expanded.contains(&owner)
-            && self.fallback_local_owners.insert(owner)
-        {
-            let (reads, rebinds) = self.owner_read_closure.lazy_effects_for_owner(owner);
-            let reads = reads
-                .difference(&self.callback_fallback.reads)
-                .cloned()
-                .collect();
-            let rebinds = rebinds
-                .difference(&self.callback_fallback.rebinds)
-                .cloned()
-                .collect();
-            self.promote_lazy_effects(&reads, &rebinds, effect_owner, &mut outcome);
+        // A directly truncated callable need not escape. Follow its same
+        // synchronous prefix graph without publishing private roots into the
+        // persistent callback cache. Expand each local owner once per source
+        // statement; earlier promotions remain in fallback_outcome.
+        if !self.callback_fallback.expanded.contains(&owner) {
+            let reached = FactsOwnerReadClosure::extend_synchronous_owners(
+                &self.synchronous_owner_adjacency,
+                [owner],
+                &mut self.fallback_local_owners,
+            );
+            for reached_owner in reached {
+                let fact = &self.facts[reached_owner.0];
+                let reads = self.synchronous_owner_reads[reached_owner.0]
+                    .unwrap_or(&fact.reads.lazy)
+                    .difference(&self.callback_fallback.reads)
+                    .cloned()
+                    .collect();
+                let rebinds = fact
+                    .rebinds
+                    .lazy
+                    .difference(&self.callback_fallback.rebinds)
+                    .cloned()
+                    .collect();
+                self.promote_lazy_effects(&reads, &rebinds, effect_owner, &mut outcome);
+            }
         }
 
         // The truncated body may have passed one of these callback values to
