@@ -93,8 +93,8 @@ resource "gitlab_project" "acceptance" {
 resource "gitlab_branch_protection" "acceptance_main" {
   project            = gitlab_project.acceptance.id
   branch             = "main"
-  push_access_level  = "maintainer"
-  merge_access_level = "maintainer"
+  allowed_to_push    = [{ access_level = "maintainer" }]
+  allowed_to_merge   = [{ access_level = "maintainer" }]
   allow_force_push   = false
 }
 
