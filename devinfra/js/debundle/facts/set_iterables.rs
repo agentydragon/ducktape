@@ -115,42 +115,40 @@ fn primitive_object_properties(
             let Some(Expr::Object(object)) = decl.init.as_deref().map(Expr::unwrap_parens) else {
                 continue;
             };
-            let mut primitive_keys = BTreeSet::new();
-            let mut ordinary_shape = true;
-            for prop in &object.props {
-                let PropOrSpread::Prop(prop) = prop else {
-                    ordinary_shape = false;
-                    break;
-                };
-                let Prop::KeyValue(kv) = prop.as_ref() else {
-                    ordinary_shape = false;
-                    break;
-                };
-                let key = match &kv.key {
-                    PropName::Ident(name) => name.sym.to_string(),
-                    PropName::Str(name) => name.value.to_string_lossy().into_owned(),
-                    _ => {
-                        ordinary_shape = false;
-                        break;
-                    }
-                };
-                if key == "__proto__" {
-                    ordinary_shape = false;
-                    break;
-                }
-                // Later duplicate properties replace earlier ones.
-                if is_primitive_literal(&kv.value) {
-                    primitive_keys.insert(key);
-                } else {
-                    primitive_keys.remove(&key);
-                }
-            }
-            if ordinary_shape {
+            if let Some(primitive_keys) = primitive_literal_property_keys(object) {
                 objects.insert(object.span.lo.0, primitive_keys);
             }
         }
     }
     objects
+}
+
+/// Own literal primitive values of an ordinary object, after duplicate-key
+/// replacement. Reject shapes whose keys or descriptors need runtime reasoning.
+pub(crate) fn primitive_literal_property_keys(object: &ObjectLit) -> Option<BTreeSet<String>> {
+    let mut primitive_keys = BTreeSet::new();
+    for prop in &object.props {
+        let PropOrSpread::Prop(prop) = prop else {
+            return None;
+        };
+        let Prop::KeyValue(kv) = prop.as_ref() else {
+            return None;
+        };
+        let key = match &kv.key {
+            PropName::Ident(name) => name.sym.to_string(),
+            PropName::Str(name) => name.value.to_string_lossy().into_owned(),
+            _ => return None,
+        };
+        if key == "__proto__" {
+            return None;
+        }
+        if is_primitive_literal(&kv.value) {
+            primitive_keys.insert(key);
+        } else {
+            primitive_keys.remove(&key);
+        }
+    }
+    Some(primitive_keys)
 }
 
 fn is_primitive_literal(expr: &Expr) -> bool {
