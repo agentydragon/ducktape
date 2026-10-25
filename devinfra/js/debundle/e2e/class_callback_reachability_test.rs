@@ -180,3 +180,47 @@ export { receiver, Controller, result, later };
         &["eager_use", "sequenced"],
     );
 }
+
+#[test]
+fn symbol_key_does_not_defer_an_actual_early_method_call() {
+    let source = r#"let later = 0;
+const brand = Symbol('brand');
+class Controller { [brand]() { return later; } }
+const observed = new Controller()[brand]();
+later = 42;
+console.log(observed, later);
+export { Controller, observed, later };
+"#;
+    let colocated = run_fixture(FixtureOpts::new(
+        source,
+        vec![logical_module_with_anon(
+            "controllers/controller",
+            &[
+                Member::new("brand"),
+                Member::new("Controller"),
+                Member::new("observed"),
+                Member::new("later"),
+            ],
+            &["later = 42;"],
+        )],
+    ));
+    assert_preserved_entry_output(&colocated, "0 42\n");
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module(
+                    "controllers/controller",
+                    &[
+                        Member::new("brand"),
+                        Member::new("Controller"),
+                        Member::new("observed"),
+                    ],
+                ),
+                logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
+            ],
+        ),
+        &["controllers/controller", "values/later"],
+        &[],
+    );
+}

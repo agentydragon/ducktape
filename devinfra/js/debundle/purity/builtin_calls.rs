@@ -643,7 +643,7 @@ pub(crate) fn is_primitive_literal(expr: &Expr) -> bool {
 /// * conditionals whose both branches are result-primitive;
 /// * a reference to a chunk-top `const` provably bound to a
 ///   primitive value (`primitives`, from
-///   `collect_primitive_const_bindings`), when the name is not
+///   `collect_const_value_classes`), when the name is not
 ///   locally shadowed.
 ///
 /// The global `undefined` is deliberately NOT admitted: it is an
@@ -684,7 +684,8 @@ pub(crate) fn is_result_primitive(
 /// Whether `key` is a safe computed property key: ToPropertyKey on
 /// its value fires no user code. True for result-primitive
 /// expressions (string/number coercion of a primitive is
-/// engine-only) and for whitelisted well-known-symbol reads
+/// engine-only), proven immutable Symbol-valued consts, and
+/// whitelisted well-known-symbol reads
 /// (`Symbol.iterator` etc. — Symbols are valid property keys with
 /// no coercion path), provided neither the global `Symbol` nor a
 /// local binding shadows the receiver.
@@ -693,8 +694,15 @@ pub(crate) fn is_safe_property_key(
     shadowed: &BTreeSet<&'static str>,
     local_shadowed: &BTreeSet<String>,
     primitives: &BTreeSet<String>,
+    symbols: &BTreeSet<String>,
 ) -> bool {
     if is_result_primitive(key, primitives, local_shadowed) {
+        return true;
+    }
+    if let Expr::Ident(id) = key.unwrap_parens()
+        && symbols.contains(id.sym.as_ref())
+        && !local_shadowed.contains(id.sym.as_ref())
+    {
         return true;
     }
     if let Expr::Member(member) = key.unwrap_parens()
