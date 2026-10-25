@@ -139,6 +139,21 @@ export { registry, later };
 }
 
 #[test]
+fn lazy_eval_disables_map_entry_proof_across_owners() {
+    assert_collection_requires_later(
+        r#"function makeRegistry() {
+  eval("1");
+  return new Map([["read", () => later]]);
+}
+const registry = makeRegistry();
+const later = 42;
+export { makeRegistry, registry, later };
+"#,
+        &[Member::new("makeRegistry"), Member::new("registry")],
+    );
+}
+
+#[test]
 fn failed_map_entry_evaluation_does_not_retain_callbacks() {
     let fixture = run_fixture(split_collection_later(
         r#"const result = "ok";

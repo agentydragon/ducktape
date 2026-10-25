@@ -887,8 +887,8 @@ the array expressions still runs their effects, but Map construction does not
 invoke callbacks stored as entry keys or values. The resulting abstract Map
 retains those callbacks: a later member operation or opaque call can expose
 them and conservatively promote their effects. Aliased iterables, spreads,
-holes, non-array entries, reassigned or shadowed `Map`, and dynamic-scope owners
-keep the opaque constructor path.
+holes, non-array entries, reassigned or shadowed `Map`, and any dynamic-scope
+owner in the chunk keep the opaque constructor path.
 
 **Hoisted-target filter.** Promoted reads filter out targets whose
 owner is a `FnDecl` — function declarations are hoisted at Phase-1

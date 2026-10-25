@@ -1903,6 +1903,7 @@ impl Executor<'_> {
             && !env.contains_key(id)
             && !captures.contains_key(id)
             && !self.index.reassigned_map
+            && self.index.dynamic_scope_owners.is_empty()
             && !self.index.dynamic_scope_owners.contains(&owner)
             && matches!(args, [ValueExpr::ObjectLiteral(span, _)]
                 if self.index.map_entry_arrays.contains(span))
@@ -3462,7 +3463,9 @@ impl Executor<'_> {
         for values in &mut args {
             values.remove(&AbstractValue::Unavailable);
         }
-        if self.is_proven_map_entry_array(&call.callee, &call.args, env, captures, call.owner) {
+        if call.is_new
+            && self.is_proven_map_entry_array(&call.callee, &call.args, env, captures, call.owner)
+        {
             return;
         }
         let retained_callback = matches!(args.as_slice(), [values] if !values.is_empty()
