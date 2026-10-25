@@ -248,6 +248,9 @@ _ANTHROPIC_EFFORTS = ("low", "medium", "high", "max")
 # CLIProxyAPI's Codex model-registry snapshot declares these five API reasoning
 # levels for GPT-6 Astra, Luna, Sol, and 6.1 Sol:
 # https://raw.githubusercontent.com/router-for-me/models/63c1ae7e1d6dfb0224b0f8fb9e3e072f458589ce/models.json
+# Live-checked 2026-10-25 via deployed CLIProxyAPI /v1/responses: all 4 models x
+# 5 efforts returned HTTP 200, completed, the requested model, and "OK" to a tiny
+# prompt. A bogus effort sent first returned HTTP 400 with invalid_value.
 _CODEX_EFFORTS = ("low", "medium", "high", "xhigh", "max")
 _ANTIGRAVITY_GEMINI_EFFORTS = ("minimal", "low", "medium", "high")
 
