@@ -601,7 +601,7 @@ fn atomic_units_lazy_rebind_merges() {
 
 fn assignment_summary(factorization: &ChunkFactorization) -> Vec<(String, String)> {
     let mut out: Vec<(String, String)> = factorization
-        .analysis
+        .analysis()
         .owner_graph()
         .iter_nodes()
         .map(|node| {
@@ -611,12 +611,12 @@ fn assignment_summary(factorization: &ChunkFactorization) -> Vec<(String, String
             } else {
                 declared.join(",")
             };
-            let dest = factorization.assignment.of(node.id);
+            let dest = factorization.assignment().of(node.id);
             // Residual modules render as `<residual>` so this
             // summary stays stable across residual-index changes;
             // explicit modules use their `mod_<idx>` label.
             let idx = dest.0;
-            let label = match factorization.analysis.logical_module(ModuleId(idx)) {
+            let label = match factorization.analysis().logical_module(ModuleId(idx)) {
                 Some(m) if m.residual => "<residual>".to_string(),
                 _ => render(dest).to_string(),
             };

@@ -573,7 +573,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
             chunk_top_level_mark,
         ));
     }
-    trim_dead_named_specifiers(&mut entry_body, factorization.analysis.bindings());
+    trim_dead_named_specifiers(&mut entry_body, factorization.analysis().bindings());
     let entry_exports_by_original_local = collect_entry_exports_by_original_local(
         &entry_body,
         &entry_binding_renames,

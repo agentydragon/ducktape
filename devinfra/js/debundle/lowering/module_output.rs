@@ -262,7 +262,7 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
     // (the emitted entry file — always the ESM DFS root, so its slot
     // in the list is a runtime no-op, but it still gets its shared-
     // ordering position for determinism).
-    let residual_module = factorization.assignment.residual();
+    let residual_module = factorization.assignment().residual();
     intra_chunk_imports.extend(
         residual_entry_import_items
             .into_iter()
@@ -360,7 +360,7 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
         }
     }
     // ImportSpecifier-bound members (`BindingKind::Imported` in
-    // `factorization.analysis.bindings()`): for each `Imported` binding whose
+    // `factorization.analysis().bindings()`): for each `Imported` binding whose
     // `re_exported_by` map names this module, emit a re-import
     // (using the local name as the alias) plus mirror the
     // public-name export. Per-destination relative paths are
@@ -468,7 +468,7 @@ fn build_module_output(
         .collect();
     let owner_ids = context
         .factorization
-        .analysis
+        .analysis()
         .owner_report_ids_for_bindings(binding_ids.iter());
     // Module-level `comment:` from the spec lands at the very top of
     // the emitted file (above the lowerer's pragma block), separated
