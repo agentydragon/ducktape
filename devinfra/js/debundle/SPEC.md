@@ -241,6 +241,11 @@ class superclass reads that superclass for the eager dependency graph, but does
 not by itself publish or invoke the superclass constructor or methods. Actual
 construction and publication remain reachability roots; unknown or alternate
 superclass values retain conservative roots.
+When those effects reach a top-level class declaration with a simple binding
+as its superclass, analysis uses the possible class values from the prefix at
+the declaration. Later writes to that binding do not replace the superclass
+captured by the class. Unsupported or uncertain heritage retains the generic
+fallback.
 
 At-init callback analysis also records possible implicit primitive conversions
 from arithmetic, relational and loose-equality operators, the left operand of

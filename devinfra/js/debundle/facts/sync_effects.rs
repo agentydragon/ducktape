@@ -4345,6 +4345,8 @@ struct Executor<'a> {
     synchronous_owner_adjacency: Vec<Vec<StatementOrdinal>>,
     synchronous_owner_reads: Vec<Option<&'a BTreeSet<Id>>>,
     class_member_effects: BTreeMap<StatementOrdinal, (BTreeSet<Id>, BTreeSet<Id>)>,
+    class_superclasses: BTreeMap<u32, Values>,
+    active_class_member_promotions: BTreeSet<u32>,
     exported_owners: BTreeSet<StatementOrdinal>,
     prior_reachability_roots: Option<BTreeSet<StatementOrdinal>>,
     current_top_owner: Option<StatementOrdinal>,
@@ -5916,10 +5918,23 @@ impl Executor<'_> {
     /// while stopping reads after a definite await. Owners without complete
     /// callable coverage retain their whole lazy read set.
     fn promote_class_members(&mut self, key: u32, outcome: &mut Outcome) {
-        let Some(&owner) = self.flow.callable_owner.get(&ValueOrigin::Class(key)) else {
+        if !self.active_class_member_promotions.insert(key) {
+            return;
+        }
+        let owner = self
+            .flow
+            .callable_owner
+            .get(&ValueOrigin::Class(key))
+            .copied()
+            .or_else(|| self.index.class_owners.get(&key).copied());
+        let Some(owner) = owner else {
+            self.active_class_member_promotions.remove(&key);
             return;
         };
         let effect_owner = self.current_top_owner.unwrap_or(owner);
+        // Class expressions may have only their containing statement owner,
+        // while their constructor and methods still contribute lazy reads to
+        // that owner's summary.
         if self.reachability.incomplete {
             let (reads, rebinds) = self.owner_read_closure.lazy_effects_for_owner(owner);
             self.promote_lazy_effects(reads, rebinds, effect_owner, outcome);
@@ -5949,10 +5964,73 @@ impl Executor<'_> {
             let (reads, rebinds) = &self.class_member_effects[&owner];
             self.promote_lazy_effects(reads, rebinds, effect_owner, outcome);
         }
+        self.promote_captured_superclass(key, owner, outcome);
         // The opaque caller may invoke a method that changes a top-level
         // binding. Subsequent prefix calls must include its new possible
         // value, just as they do after an ordinary callback invocation.
         self.apply_rebind_effects(&outcome.effects.rebinds);
+        self.active_class_member_promotions.remove(&key);
+    }
+
+    fn promote_captured_superclass(
+        &mut self,
+        key: u32,
+        owner: StatementOrdinal,
+        outcome: &mut Outcome,
+    ) {
+        let Some(class) = self.index.class_values.get(&key) else {
+            return;
+        };
+        if class.super_class.is_none() {
+            return;
+        }
+        let values = self
+            .class_superclasses
+            .get(&key)
+            .cloned()
+            .unwrap_or_else(unknown);
+        let mut has_unknown = values.is_empty();
+        for value in values {
+            let (function, captured) = match value {
+                AbstractValue::Origin(ValueOrigin::Class(base))
+                | AbstractValue::ClassMembers(base) => {
+                    self.promote_class_members(base, outcome);
+                    continue;
+                }
+                AbstractValue::Origin(ValueOrigin::Function(function)) => (function, None),
+                AbstractValue::Closure(function, captured) => (function, Some(captured)),
+                AbstractValue::Undefined
+                | AbstractValue::NonCallable
+                | AbstractValue::Unavailable => continue,
+                _ => {
+                    has_unknown = true;
+                    continue;
+                }
+            };
+            let count = self
+                .index
+                .callables
+                .get(&function)
+                .map_or(0, |callable| callable.params.len());
+            let nested = self.invoke(function, vec![unknown(); count], captured, false);
+            self.apply_rebind_effects(&nested.effects.rebinds);
+            outcome.effects.reads.extend(nested.effects.reads);
+            outcome.effects.rebinds.extend(nested.effects.rebinds);
+            outcome
+                .effects
+                .uninitialized_reads
+                .extend(nested.effects.uninitialized_reads);
+            outcome.executed_owners.extend(nested.executed_owners);
+            outcome.unknown_call |= nested.unknown_call;
+            outcome.complete &= nested.complete;
+        }
+        if has_unknown {
+            outcome.complete = false;
+            outcome.unknown_call = true;
+            let effect_owner = self.current_top_owner.unwrap_or(owner);
+            self.note_unknown_execution(effect_owner);
+            self.invoke_possible_callbacks(&[unknown()], false, outcome);
+        }
     }
 
     fn closure_captures(&mut self, key: u32, captures: &Context) -> CapturedContext {
@@ -7443,17 +7521,16 @@ pub(crate) fn annotate_synchronous_calls(
             }
         }
     }
-    // The class heritage reachability check consumes the current value of a
-    // direct superclass binding. Keep that value even when no call or export
-    // otherwise needs it; assignments and alternate values then follow the
-    // same prefix tracking as every other binding.
-    needed.extend(index.class_values.values().filter_map(|class| {
-        if let Some(ValueExpr::Binding(binding)) = class.super_class.as_ref() {
-            Some(binding.clone())
-        } else {
-            None
+    // Retain prefix values for direct heritage reachability and captured bases.
+    for key in index.class_bindings.keys() {
+        if let Some(super_class) = index
+            .class_values
+            .get(key)
+            .and_then(|class| class.super_class.as_ref())
+        {
+            super_class.bindings(&mut needed);
         }
-    }));
+    }
     needed.extend(index.exported_bindings.iter().cloned());
     for exported in &index.top_exported_values {
         for expression in exported {
@@ -7587,6 +7664,8 @@ pub(crate) fn annotate_synchronous_calls(
         synchronous_owner_adjacency,
         synchronous_owner_reads: prefix_reads,
         class_member_effects: BTreeMap::new(),
+        class_superclasses: BTreeMap::new(),
+        active_class_member_promotions: BTreeSet::new(),
         exported_owners,
         prior_reachability_roots: Some(initial_export_roots),
         current_top_owner: None,
@@ -7679,6 +7758,28 @@ pub(crate) fn annotate_synchronous_calls(
         }
         if index.opaque_top.contains(&fact.ordinal) {
             executor.note_unknown_execution(fact.ordinal);
+        }
+        // A class object keeps the superclass value from its definition.
+        // Snapshot a simple lexical heritage read from this source prefix so
+        // a later assignment to the binding cannot replace the base whose
+        // constructor the emitted class actually inherited.
+        for (key, class_binding) in &index.class_bindings {
+            let owns_needed_class = index.class_owners.get(key) == Some(&fact.ordinal)
+                && needed.contains(class_binding);
+            if !owns_needed_class {
+                continue;
+            }
+            let Some(class) = index.class_values.get(key) else {
+                continue;
+            };
+            let Some(super_class) = &class.super_class else {
+                continue;
+            };
+            let values = match super_class {
+                ValueExpr::Binding(_) => executor.evaluate(super_class, &top_env, &top_captures),
+                _ => unknown(),
+            };
+            executor.class_superclasses.insert(*key, values);
         }
         let mut outcome = Outcome {
             complete: true,

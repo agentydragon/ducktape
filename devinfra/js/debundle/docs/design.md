@@ -962,6 +962,14 @@ conservative. Private truncated roots are expanded once per source statement
 without adding them to the persistent escaped-callback cache. Incomplete
 reachability retains whole-body fallback.
 
+**Inherited class effects.** When an opaque use can invoke a class's
+constructor, field initializers, methods, or accessors, promotion follows the
+class's retained superclass value too. For a top-level class declaration with
+a simple binding in its `extends` clause, the execution index records the
+possible superclass values at that declaration's source prefix. Later writes
+to the binding do not replace the base captured by the class. Complex or
+unknown heritage keeps the conservative fallback.
+
 **Audited callback-storage APIs.** Member-specific
 `no_sync_callback_members` hints narrow only the fallback roots for
 calls like `registry.register(fn)` or `state.set({ onDone() {} })`
