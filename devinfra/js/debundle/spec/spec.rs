@@ -202,6 +202,12 @@ pub struct ChunkExportPurity {
     /// This asserts call timing only, not purity or the shape of the result.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub no_reentry_members: BTreeMap<String, BTreeSet<String>>,
+    /// Separate opt-in for those members when a direct call passes a fresh
+    /// static-key object record with recursively inert literal values. The
+    /// provider branch for records must be audited independently of primitive
+    /// arguments; the primitive-only assertion does not imply this one.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub no_reentry_record_members: BTreeMap<String, BTreeSet<String>>,
     /// Stable lookups running no caller/importer/host code, whose capabilities cannot expose their namespace
     /// or replace audited factories except through supplied caller inputs.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]

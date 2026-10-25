@@ -370,6 +370,25 @@ and args are still classified independently. The annotation is
 **per-member**: a sibling member without it stays subject to inferred
 classification. There is no "declare a whole module pure" shorthand.
 
+## Audited namespace calls without reentry
+
+`no_reentry_members` suppresses only the opaque synchronous callback fallback
+for a direct, stable static namespace member call with primitive literals,
+`void` or `!` of a primitive literal, or uninterpolated templates. The separate
+`no_reentry_record_members` assertion admits calls with at least one fresh
+object literal recursively made of those values under static data keys. It
+rejects spread, computed keys, accessors, methods, shorthand, `__proto__`,
+identifier values, calls, functions, proxies, and arrays. A primitive-only
+assertion cannot admit records. This syntax check proves only that evaluating
+the argument does not itself run caller code. The record assertion must cover
+every admitted record shape and provider branch. Handling the object or its
+prototype must not invoke caller/importer/host callbacks or read
+importer-owned lexical state before the call returns. A provider that stores
+the record without inspecting it can satisfy this when its other reachable
+behavior is audited. No library name is implicitly trusted. The independent
+lookup, namespace identity, publication,
+and mutation checks still apply, and the return value remains opaque.
+
 ## Audited callback-factory exports
 
 `chunk_export_purity.<defining chunk>.callback_factory_exports` and

@@ -316,10 +316,24 @@ value; the return stays opaque. The same member must also satisfy
 `namespace_independent_members` so its lookup cannot itself execute foreign
 code, and the namespace identity and mutation checks must pass. The checked
 call shape is a direct `namespace.member(...)` with no spread or `new` and only
-primitive literals, `void` of a primitive literal, or a template with no
+primitive literals, `void` or `!` of a primitive literal, or a template with no
 interpolations as arguments; zero arguments are allowed. Argument expressions
-are still visited normally. Uncertain objects, callbacks, aliases, optional or
-computed lookups, and changed namespace members retain ordinary reentry.
+are still visited normally. Caller-owned objects, callbacks, aliases, optional
+or computed lookups, and changed namespace members retain ordinary reentry.
+
+`chunk_export_purity.<defining chunk>.no_reentry_record_members` is a separate
+author assertion for direct static member calls with at least one fresh object
+literal argument. Every other argument must be an admitted primitive value or
+another fresh object literal. The objects may recursively contain those values
+under static data keys; spread, accessors, methods, shorthand, computed keys,
+and `__proto__` keys are excluded. This assertion requires an independent audit
+of each admitted record shape and its provider branch, including any reads,
+coercions, or retention of the object and its prototype. The provider must not
+synchronously invoke caller/importer/host callbacks or access importer-owned
+lexical state through the record. A primitive-only `no_reentry_members` assertion
+does not imply this record assertion, and neither annotation is a general
+whitelist for a named library. The same independent lookup, namespace identity,
+mutation, and publication checks apply; the call result remains opaque.
 
 `chunk_export_purity.<chunk>.namespace_independent_members` maps namespace
 exports to individually audited static member names. Each lookup must be stable,

@@ -81,6 +81,9 @@ pub struct AnalysisHints {
     /// Imported namespace members whose audited direct calls cannot reenter
     /// caller/importer/host code for primitive arguments. No purity claim.
     pub no_reentry_members: BTreeMap<String, BTreeSet<String>>,
+    /// Separate author assertion for direct calls with a fresh inert object
+    /// record argument. Primitive-only assertions do not imply this contract.
+    pub no_reentry_record_members: BTreeMap<String, BTreeSet<String>>,
     /// Stable lookups running no caller/importer/host code, whose capabilities cannot expose their namespace
     /// or replace audited factories except through supplied caller inputs.
     pub namespace_independent_members: BTreeMap<String, BTreeSet<String>>,

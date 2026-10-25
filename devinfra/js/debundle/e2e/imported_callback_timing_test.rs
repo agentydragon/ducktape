@@ -226,6 +226,60 @@ fn primitive_namespace_call_does_not_reenter_published_callback_when_asserted() 
     assert_preserved_entry_output(&fixture, "slot 42\n");
 }
 
+#[test]
+fn fresh_literal_record_namespace_call_does_not_reenter_published_callback_when_asserted() {
+    let source = "import { api } from './peer.js';\n\
+                  let later = 0;\n\
+                  const callback = () => later;\n\
+                  globalThis.saved = callback;\n\
+                  const slot = api.makeSlot({ field: 0, flag: !1, nested: { ready: !0, label: 'ok' } });\n\
+                  later = 42;\n\
+                  console.log(slot.kind, slot.defaults.field, slot.defaults.flag, slot.defaults.nested.ready, globalThis.saved());\n";
+    let peer = [(
+        "static/peer",
+        "export const api = { makeSlot(defaults) { return { kind: 'slot', defaults }; } };\n",
+    )];
+    let purity = [ChunkExportPurityBuilder::new("static/peer")
+        .with_no_reentry_members("api", &["makeSlot"])
+        .with_no_reentry_record_members("api", &["makeSlot"])
+        .with_namespace_independent_members("api", &["makeSlot"])
+        .build()];
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon(
+                    "callbacks/slot",
+                    &[Member::new("callback"), Member::new("slot")],
+                    &["globalThis.saved = callback;"],
+                ),
+                logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
+            ],
+        )
+        .with_extra_chunks(&peer)
+        .with_chunk_export_purity(&purity),
+    );
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/callbacks/slot.js",
+        &["slot"],
+        &["later"],
+    );
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/values/later.js",
+        &["later"],
+        &["slot"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/callbacks/slot.js",
+        &["makeSlot", "nested", "ready"],
+        &["later = 42"],
+    );
+    assert_preserved_entry_output(&fixture, "slot 0 false true 42\n");
+}
+
 fn assert_no_reentry_control(
     source: &str,
     peer_source: &str,
@@ -233,10 +287,14 @@ fn assert_no_reentry_control(
     callback_statements: &[&str],
     expected_output: &str,
     independent_lookup: bool,
+    record_contract: bool,
 ) {
     let peer = [("static/peer", peer_source)];
     let mut contract =
         ChunkExportPurityBuilder::new("static/peer").with_no_reentry_members("api", &["makeSlot"]);
+    if record_contract {
+        contract = contract.with_no_reentry_record_members("api", &["makeSlot"]);
+    }
     if independent_lookup {
         contract = contract.with_namespace_independent_members("api", &["makeSlot"]);
     }
@@ -296,6 +354,7 @@ fn namespace_no_reentry_requires_independent_member_lookup() {
         &["globalThis.saved = callback;"],
         "slot 42\n",
         false,
+        false,
     );
 }
 
@@ -313,6 +372,7 @@ fn namespace_no_reentry_rejects_member_replacement() {
         &["globalThis.saved = callback;", "api.makeSlot = eager;"],
         "0 slot 42\n",
         true,
+        false,
     );
 }
 
@@ -352,8 +412,115 @@ fn namespace_no_reentry_rejects_uncertain_arguments_and_keeps_argument_calls() {
             &["globalThis.saved = callback;"],
             expected,
             true,
+            false,
         );
     }
+}
+
+#[test]
+fn namespace_no_reentry_rejects_nonliteral_record_arguments() {
+    for (setup, argument, members) in [
+        (
+            "",
+            "{ get field() { return 0; } }",
+            vec!["callback", "slot"],
+        ),
+        ("", "{ field() { return 0; } }", vec!["callback", "slot"]),
+        ("", "{ ...{ field: 0 } }", vec!["callback", "slot"]),
+        ("", "{ ['field']: 0 }", vec!["callback", "slot"]),
+        ("", "{ __proto__: null }", vec!["callback", "slot"]),
+        ("", "{ '__proto__': null }", vec!["callback", "slot"]),
+        ("", "{ field: () => 0 }", vec!["callback", "slot"]),
+        ("", "new Proxy({ field: 0 }, {})", vec!["callback", "slot"]),
+        ("", "+{ valueOf() { return 0; } }", vec!["callback", "slot"]),
+        ("", "[0]", vec!["callback", "slot"]),
+        (
+            "const record = { field: 0 };\n",
+            "record",
+            vec!["callback", "record", "slot"],
+        ),
+        (
+            "function makeRecord() { return { field: 0 }; }\n",
+            "makeRecord()",
+            vec!["callback", "makeRecord", "slot"],
+        ),
+    ] {
+        let source = format!(
+            "import {{ api }} from './peer.js';\n\
+             let later = 0;\n\
+             const callback = () => later;\n\
+             globalThis.saved = callback;\n\
+             {setup}const slot = api.makeSlot({argument});\n\
+             later = 42;\n\
+             console.log(slot.kind, globalThis.saved());\n"
+        );
+        assert_no_reentry_control(
+            &source,
+            "export const api = { makeSlot() { return { kind: 'slot' }; } };\n",
+            &members,
+            &["globalThis.saved = callback;"],
+            "slot 42\n",
+            true,
+            true,
+        );
+    }
+}
+
+#[test]
+fn primitive_no_reentry_assertion_does_not_admit_a_record_branch() {
+    assert_no_reentry_control(
+        "import { api } from './peer.js';\n\
+         let later = 0;\n\
+         const callback = () => later;\n\
+         globalThis.saved = callback;\n\
+         const slot = api.makeSlot({ field: 0 });\n\
+         later = 42;\n\
+         console.log(globalThis.observed, slot.kind, globalThis.saved());\n",
+        "export const api = { makeSlot(defaults) { if (typeof defaults === 'object') globalThis.observed = globalThis.saved(); return { kind: 'slot' }; } };\n",
+        &["callback", "slot"],
+        &["globalThis.saved = callback;"],
+        "0 slot 42\n",
+        true,
+        false,
+    );
+}
+
+#[test]
+fn record_no_reentry_still_requires_lookup_and_member_identity() {
+    let source = "import { api } from './peer.js';\n\
+                  let later = 0;\n\
+                  const callback = () => later;\n\
+                  globalThis.saved = callback;\n\
+                  const slot = api.makeSlot({ field: 0 });\n\
+                  later = 42;\n\
+                  console.log(slot.kind, globalThis.saved());\n";
+    assert_no_reentry_control(
+        source,
+        "export const api = { makeSlot() { return { kind: 'slot' }; } };\n",
+        &["callback", "slot"],
+        &["globalThis.saved = callback;"],
+        "slot 42\n",
+        false,
+        true,
+    );
+
+    assert_no_reentry_control(
+        "import { api } from './peer.js';\n\
+         let later = 0;\n\
+         const callback = () => later;\n\
+         globalThis.saved = callback;\n\
+         const eager = () => { globalThis.observed = globalThis.saved(); return { kind: 'slot' }; };\n\
+         api.makeSlot = eager;\n\
+         const slot = api.makeSlot({ field: 0 });\n\
+         later = 42;\n\
+         console.log(globalThis.observed, slot.kind, globalThis.saved());\n",
+        "export const api = { makeSlot() { return { kind: 'slot' }; } };\n",
+        &["callback", "eager", "slot"],
+        &["globalThis.saved = callback;", "api.makeSlot = eager;"],
+        "0 slot 42\n",
+        true,
+        true,
+    );
 }
 
 #[test]
@@ -373,6 +540,7 @@ fn namespace_no_reentry_does_not_defer_opaque_result_invocation() {
         ],
         "0 42\n",
         true,
+        false,
     );
 }
 

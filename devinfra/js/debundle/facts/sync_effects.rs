@@ -1582,17 +1582,38 @@ fn has_definite_primitive_result(expression: &Expr) -> bool {
     }
 }
 
-/// Keep the no-reentry assertion on argument shapes whose evaluation cannot
-/// itself trigger a getter, conversion hook, or callback. The call result is
-/// still opaque and the ordinary visitor still records all argument effects.
+/// Admit only arguments whose evaluation cannot itself trigger caller code.
+/// The provider must separately be audited for every admitted argument shape.
+/// The call result stays opaque and the ordinary visitor records the effects.
 fn no_reentry_primitive_argument(expression: &Expr) -> bool {
     match expression.unwrap_parens() {
         Expr::Lit(literal) => !matches!(literal, Lit::Regex(_)),
-        Expr::Unary(unary) if unary.op == UnaryOp::Void => {
+        Expr::Unary(unary) if matches!(unary.op, UnaryOp::Void | UnaryOp::Bang) => {
             matches!(unary.arg.unwrap_parens(), Expr::Lit(literal) if !matches!(literal, Lit::Regex(_)))
         }
         Expr::Tpl(template) => template.exprs.is_empty(),
         _ => false,
+    }
+}
+
+fn no_reentry_inert_argument(expression: &Expr) -> bool {
+    match expression.unwrap_parens() {
+        Expr::Object(object) => object.props.iter().all(|property| {
+            let PropOrSpread::Prop(property) = property else {
+                return false;
+            };
+            let Prop::KeyValue(pair) = property.as_ref() else {
+                return false;
+            };
+            let static_key = match &pair.key {
+                PropName::Ident(ident) => ident.sym.as_ref() != "__proto__",
+                PropName::Str(string) => string.value.to_string_lossy() != "__proto__",
+                PropName::Num(_) | PropName::BigInt(_) => true,
+                PropName::Computed(_) => false,
+            };
+            static_key && no_reentry_inert_argument(&pair.value)
+        }),
+        _ => no_reentry_primitive_argument(expression),
     }
 }
 
@@ -1635,6 +1656,7 @@ struct Call {
     plain_object_sources: bool,
     no_sync_arguments: bool,
     no_reentry_candidate: bool,
+    no_reentry_record_candidate: bool,
     has_spread: bool,
 }
 
@@ -2216,6 +2238,7 @@ struct ExecutionIndex {
     callback_factory_members: BTreeMap<Id, BTreeSet<String>>,
     no_reentry_exports: BTreeSet<Id>,
     no_reentry_members: BTreeMap<Id, BTreeSet<String>>,
+    no_reentry_record_members: BTreeMap<Id, BTreeSet<String>>,
     callback_factory_functions: BTreeSet<u32>,
 }
 
@@ -2288,6 +2311,7 @@ impl Default for ExecutionIndex {
             callback_factory_members: BTreeMap::new(),
             no_reentry_exports: BTreeSet::new(),
             no_reentry_members: BTreeMap::new(),
+            no_reentry_record_members: BTreeMap::new(),
             callback_factory_functions: BTreeSet::new(),
         }
     }
@@ -2326,7 +2350,8 @@ impl ExecutionIndex {
             // Seed all candidate roots before visiting any item, including imports
             // textually after a use. Other imported aliases remain an author audit.
             if (!hints.namespace_independent_members.is_empty()
-                || !hints.no_reentry_members.is_empty())
+                || !hints.no_reentry_members.is_empty()
+                || !hints.no_reentry_record_members.is_empty())
                 && let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item.as_module_item()
             {
                 for specifier in &import.specifiers {
@@ -2334,6 +2359,7 @@ impl ExecutionIndex {
                     let name = local.sym.as_ref();
                     if hints.callback_factory_members.contains_key(name)
                         || hints.no_reentry_members.contains_key(name)
+                        || hints.no_reentry_record_members.contains_key(name)
                         || hints.namespace_independent_members.contains_key(name)
                     {
                         index.namespace_privacy.members.insert(
@@ -2399,6 +2425,11 @@ impl ExecutionIndex {
                     if let Some(members) = hints.no_reentry_members.get(local.sym.as_ref()) {
                         index
                             .no_reentry_members
+                            .insert(local.to_id(), members.clone());
+                    }
+                    if let Some(members) = hints.no_reentry_record_members.get(local.sym.as_ref()) {
+                        index
+                            .no_reentry_record_members
                             .insert(local.to_id(), members.clone());
                     }
                 }
@@ -2700,6 +2731,7 @@ impl ExecutionIndex {
                 .callback_factory_members
                 .values()
                 .chain(index.no_reentry_members.values())
+                .chain(index.no_reentry_record_members.values())
                 .flat_map(|members| members.iter().cloned())
                 .collect()
         };
@@ -2711,6 +2743,7 @@ impl ExecutionIndex {
         loop {
             let factory_members = index.callback_factory_members.clone();
             let no_reentry_members = index.no_reentry_members.clone();
+            let no_reentry_record_members = index.no_reentry_record_members.clone();
             // The fresh result is private until these adjacent writes finish.
             // Only currently admitted factories can establish that provenance;
             // removing a producer must invalidate proofs depending on its result.
@@ -2746,8 +2779,17 @@ impl ExecutionIndex {
                     .is_some_and(|independent| members.is_subset(independent))
                     && keep_audited_members(id, members)
             });
+            index.no_reentry_record_members.retain(|id, members| {
+                index
+                    .namespace_privacy
+                    .members
+                    .get(id)
+                    .is_some_and(|independent| members.is_subset(independent))
+                    && keep_audited_members(id, members)
+            });
             if index.callback_factory_members.len() == factory_members.len()
                 && index.no_reentry_members.len() == no_reentry_members.len()
+                && index.no_reentry_record_members.len() == no_reentry_record_members.len()
             {
                 break;
             }
@@ -2873,6 +2915,7 @@ impl ExecutionIndex {
             plain_object_sources: false,
             no_sync_arguments: false,
             no_reentry_candidate: false,
+            no_reentry_record_candidate: false,
             has_spread: false,
         });
     }
@@ -2899,6 +2942,7 @@ impl ExecutionIndex {
             plain_object_sources: false,
             no_sync_arguments: false,
             no_reentry_candidate: false,
+            no_reentry_record_candidate: false,
             has_spread: false,
         });
     }
@@ -3224,6 +3268,7 @@ impl Visit for ExecutionIndex {
                         plain_object_sources: false,
                         no_sync_arguments: false,
                         no_reentry_candidate: false,
+                        no_reentry_record_candidate: false,
                         has_spread: false,
                     });
                 }
@@ -3283,6 +3328,7 @@ impl Visit for ExecutionIndex {
                     plain_object_sources: false,
                     no_sync_arguments: false,
                     no_reentry_candidate: false,
+                    no_reentry_record_candidate: false,
                     has_spread: false,
                 });
             }
@@ -3423,6 +3469,7 @@ impl Visit for ExecutionIndex {
                 plain_object_sources: false,
                 no_sync_arguments: false,
                 no_reentry_candidate: false,
+                no_reentry_record_candidate: false,
                 has_spread: false,
             });
         }
@@ -3581,6 +3628,7 @@ impl Visit for ExecutionIndex {
                 plain_object_sources: false,
                 no_sync_arguments: false,
                 no_reentry_candidate: false,
+                no_reentry_record_candidate: false,
                 has_spread: false,
             });
         }
@@ -4097,6 +4145,14 @@ impl Visit for ExecutionIndex {
                     .args
                     .iter()
                     .all(|arg| arg.spread.is_none() && no_reentry_primitive_argument(&arg.expr)),
+                no_reentry_record_candidate: call
+                    .args
+                    .iter()
+                    .all(|arg| arg.spread.is_none() && no_reentry_inert_argument(&arg.expr))
+                    && call
+                        .args
+                        .iter()
+                        .any(|arg| matches!(arg.expr.unwrap_parens(), Expr::Object(_))),
                 no_sync_arguments: is_no_sync_callback_member_call(
                     callee,
                     &self.no_sync_callback_members,
@@ -4193,6 +4249,7 @@ impl Visit for ExecutionIndex {
                 .any(|arg| arg.spread.is_some()),
             no_sync_arguments: false,
             no_reentry_candidate: false,
+            no_reentry_record_candidate: false,
             caller: self.current,
             owner: self.owner,
             plain_object_sources: false,
@@ -7032,19 +7089,24 @@ impl Executor<'_> {
         {
             return;
         }
-        // The author assertion covers this direct, stable member call with
-        // primitive arguments. The provider may have private effects, but it
-        // cannot execute importer-owned code before returning. Its result
-        // remains Unknown in value evaluation; this only suppresses reentry.
+        // Distinct author assertions cover primitive and fresh-record inputs.
+        // Both use the same member identity and lookup guards. The provider
+        // may have private effects; this only suppresses callback reentry.
         if call.kind == CallKind::Call
-            && call.no_reentry_candidate
             && let ValueExpr::Member(receiver, Some(property), true) = &call.callee
             && let ValueExpr::Binding(namespace) = receiver.as_ref()
-            && self
-                .index
-                .no_reentry_members
-                .get(namespace)
-                .is_some_and(|members| members.contains(property))
+            && ((call.no_reentry_candidate
+                && self
+                    .index
+                    .no_reentry_members
+                    .get(namespace)
+                    .is_some_and(|members| members.contains(property)))
+                || (call.no_reentry_record_candidate
+                    && self
+                        .index
+                        .no_reentry_record_members
+                        .get(namespace)
+                        .is_some_and(|members| members.contains(property))))
         {
             return;
         }
