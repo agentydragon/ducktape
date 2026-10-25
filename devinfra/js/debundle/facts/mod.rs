@@ -73,7 +73,7 @@ pub(crate) use lazy_boundary::*;
 pub(crate) use local_effect_targets::*;
 pub(crate) use owner_read_closure::FactsOwnerReadClosure;
 pub(crate) use purity_classification::*;
-pub(crate) use set_iterables::SetIterableProof;
+pub(crate) use set_iterables::{SetIterableProof, primitive_literal_property_keys};
 pub(crate) use statement_facts::ConstructorFacts;
 pub(crate) use sync_effects::infer_returned_callback_factories;
 pub(crate) use value_flow::{CandidateObjectIndex, ChunkValueFlow, ValueOrigin};
