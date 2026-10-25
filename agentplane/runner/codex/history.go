@@ -189,6 +189,6 @@ func (a *codexAdapter) readTurnHistory(ctx context.Context, turnID string, items
 			return fmt.Errorf("invalid or repeated Codex history cursor")
 		}
 		cursors[*page.NextCursor] = true
-		params.Cursor = page.NextCursor
+		params.Cursor = &protocol.ThreadItemsListCursor{String: page.NextCursor}
 	}
 }

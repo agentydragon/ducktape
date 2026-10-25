@@ -101,7 +101,7 @@ func TestHistoryReadsOnlyRequestedTurnAndFollowsEveryPage(t *testing.T) {
 			t.Fatalf("unbounded or incorrectly scoped history request: %+v", req)
 		}
 	}
-	if host.requests[0].Cursor != nil || host.requests[1].Cursor == nil || *host.requests[1].Cursor != "opaque" {
+	if host.requests[0].Cursor != nil || host.requests[1].Cursor == nil || host.requests[1].Cursor.String == nil || *host.requests[1].Cursor.String != "opaque" || host.requests[1].Cursor.ThreadItemsListAnchor != nil {
 		t.Fatalf("cursor sequence = %v", host.requests)
 	}
 }
