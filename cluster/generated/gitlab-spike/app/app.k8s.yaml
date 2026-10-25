@@ -49,6 +49,9 @@ spec:
             topologyKey: kubernetes.io/hostname
         antiAffinity: hard
         replicas: 3
+      sidekiq:
+        concurrency: 10
+        maxReplicas: 2
       toolbox:
         backups:
           objectStorage:

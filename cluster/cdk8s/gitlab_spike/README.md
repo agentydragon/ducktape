@@ -28,6 +28,9 @@ CNPG cluster, with 25 GiB SSD storage per instance and one coordinated CNPG back
 Gitaly cgroup isolation is disabled pending validation of the writable cgroup mount on Talos.
 The experimental Praefect chart and beta Kubernetes topology remain evaluation constraints.
 
+Sidekiq scales from the chart minimum of one Pod to a maximum of two, with concurrency
+10 per Pod. Evaluate memory alongside queue depth and job latency before reducing it further.
+
 ESO owns the root password and bootstrap-token Secret. The bootstrap Job installs that
 token through Toolbox without printing it. Its PAT expires after 90 days; recreating the
 bootstrap Job renews it. Terraform owns and rotates the project-scoped proof and Flux tokens.

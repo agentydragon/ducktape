@@ -211,6 +211,7 @@ def _values() -> dict[str, object]:
                 "affinity": {"podAntiAffinity": {"topologyKey": "kubernetes.io/hostname"}},
             },
             "webservice": {"minReplicas": 2, "maxReplicas": 2},
+            "sidekiq": {"maxReplicas": 2, "concurrency": 10},
             "toolbox": {
                 "backups": {
                     "objectStorage": {"backend": "s3", "config": {"secret": BACKUP_S3CFG_SECRET, "key": "config"}}
