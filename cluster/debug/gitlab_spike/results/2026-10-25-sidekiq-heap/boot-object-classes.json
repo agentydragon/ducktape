@@ -1,0 +1,242 @@
+{
+  "Hash": {
+    "count": 400839,
+    "bytes": 116153168
+  },
+  "String": {
+    "count": 1125212,
+    "bytes": 106753493
+  },
+  "(anonymous class)": {
+    "count": 88197,
+    "bytes": 78378600
+  },
+  "RubyVM": {
+    "count": 1,
+    "bytes": 74981936
+  },
+  "Array": {
+    "count": 589184,
+    "bytes": 29853608
+  },
+  "Proc": {
+    "count": 279881,
+    "bytes": 22390480
+  },
+  "Regexp": {
+    "count": 20369,
+    "bytes": 21385517
+  },
+  "UnboundMethod": {
+    "count": 168678,
+    "bytes": 13494240
+  },
+  "Thread": {
+    "count": 15,
+    "bytes": 7349576
+  },
+  "Types::BaseField": {
+    "count": 10212,
+    "bytes": 6535680
+  },
+  "Module": {
+    "count": 9350,
+    "bytes": 5562624
+  },
+  "Prometheus::Client::MmapedValue": {
+    "count": 19305,
+    "bytes": 3088848
+  },
+  "RubyVM::InstructionSequence": {
+    "count": 4860,
+    "bytes": 2785304
+  },
+  "Symbol": {
+    "count": 63950,
+    "bytes": 2558000
+  },
+  "Thread::Mutex": {
+    "count": 30852,
+    "bytes": 2468160
+  },
+  "Types::BaseArgument": {
+    "count": 8285,
+    "bytes": 2222088
+  },
+  "ActionDispatch::Journey::Nodes::Cat": {
+    "count": 50286,
+    "bytes": 2011440
+  },
+  "Method": {
+    "count": 22171,
+    "bytes": 1773680
+  },
+  "Grape::Validations::Validators::CoerceValidator": {
+    "count": 10630,
+    "bytes": 1700800
+  },
+  "ActiveSupport::Callbacks::Callback": {
+    "count": 20445,
+    "bytes": 1635600
+  },
+  "Grape::Entity::Exposure::DelegatorExposure": {
+    "count": 8007,
+    "bytes": 1281120
+  },
+  "ActiveSupport::Callbacks::Filters::Before": {
+    "count": 14162,
+    "bytes": 1132960
+  },
+  "ActionDispatch::Journey::Nodes::Symbol": {
+    "count": 12488,
+    "bytes": 999040
+  },
+  "ActionDispatch::Journey::Nodes::Slash": {
+    "count": 23430,
+    "bytes": 937200
+  },
+  "Representable::Pipeline": {
+    "count": 22082,
+    "bytes": 883280
+  },
+  "ActiveRecord::AttributeMethods::GeneratedAttributeMethods": {
+    "count": 1397,
+    "bytes": 862904
+  },
+  "Gitlab::Graphql::Authorize::FieldExtension": {
+    "count": 10341,
+    "bytes": 827304
+  },
+  "Gitlab::Graphql::Present::FieldExtension": {
+    "count": 10341,
+    "bytes": 827304
+  },
+  "Representable::Config": {
+    "count": 2785,
+    "bytes": 789992
+  },
+  "Representable::Hash::Binding": {
+    "count": 9443,
+    "bytes": 755440
+  },
+  "ActiveRecord::Delegation::GeneratedRelationMethods": {
+    "count": 1397,
+    "bytes": 743160
+  },
+  "ActionDispatch::Journey::Path::Pattern": {
+    "count": 4287,
+    "bytes": 685920
+  },
+  "ActionDispatch::Journey::Route": {
+    "count": 4287,
+    "bytes": 685920
+  },
+  "GraphQL::Schema::Field": {
+    "count": 968,
+    "bytes": 619520
+  },
+  "TanukiEmoji::Character": {
+    "count": 3782,
+    "bytes": 605120
+  },
+  "Declarative::Heritage": {
+    "count": 2890,
+    "bytes": 596296
+  },
+  "ActionDispatch::Journey::Nodes::Literal": {
+    "count": 14772,
+    "bytes": 590880
+  },
+  "ActiveSupport::Callbacks::CallTemplate::MethodCall": {
+    "count": 14564,
+    "bytes": 582560
+  },
+  "Prometheus::Client::Histogram::Value": {
+    "count": 2393,
+    "bytes": 555176
+  },
+  "Types::BaseEnum::CustomValue": {
+    "count": 3205,
+    "bytes": 512368
+  },
+  "ActionDispatch::Journey::Format::Parameter": {
+    "count": 12488,
+    "bytes": 499520
+  },
+  "Grape::Validations::ParamsScope::Attr": {
+    "count": 11526,
+    "bytes": 461040
+  },
+  "Grape::Entity::Exposure::BlockExposure": {
+    "count": 2828,
+    "bytes": 452480
+  },
+  "Gitlab::Usage::MetricDefinition": {
+    "count": 5655,
+    "bytes": 452400
+  },
+  "GraphQL::Execution::Interpreter::ArgumentValue": {
+    "count": 5592,
+    "bytes": 447360
+  },
+  "Representable::Definition": {
+    "count": 11041,
+    "bytes": 441640
+  },
+  "Grape::Validations::ParamsScope": {
+    "count": 2595,
+    "bytes": 415200
+  },
+  "Grape::Endpoint": {
+    "count": 2545,
+    "bytes": 407504
+  },
+  "ActiveSupport::Callbacks::CallbackChain": {
+    "count": 5059,
+    "bytes": 404720
+  },
+  "MIME::Type::Columnar": {
+    "count": 2510,
+    "bytes": 401648
+  },
+  "StateMachines::Branch": {
+    "count": 2410,
+    "bytes": 385600
+  },
+  "ActiveSupport::HashWithIndifferentAccess": {
+    "count": 1465,
+    "bytes": 385312
+  },
+  "ActiveRecord::Reflection::BelongsToReflection": {
+    "count": 2259,
+    "bytes": 361440
+  },
+  "StateMachines::HelperModule": {
+    "count": 422,
+    "bytes": 360544
+  },
+  "Set": {
+    "count": 8976,
+    "bytes": 359040
+  },
+  "DeclarativePolicy::Condition": {
+    "count": 4371,
+    "bytes": 349680
+  },
+  "ClickHouse::SchemaCache::Column": {
+    "count": 2091,
+    "bytes": 334560
+  },
+  "ActionDispatch::Journey::Format": {
+    "count": 8273,
+    "bytes": 330920
+  },
+  "Grape::Util::InheritableSetting": {
+    "count": 4088,
+    "bytes": 327064
+  },
+  "Grape::Util::InheritableValues": {
+    "count": 8176,
+    "bytes": 327040
+  }
+}

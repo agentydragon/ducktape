@@ -140,3 +140,58 @@ operation, not capacity at the former benchmark rate.
 retain capture times and underlying metric timestamps/windows. Raw container and node
 captures remain in `/tmp/gitlab-sidekiq-cap-evidence` and `/tmp/gitlab-sidekiq-forensics`
 on the investigation host.
+
+## Inside one Sidekiq Ruby worker
+
+A later `/proc` snapshot measured the live worker at **1,475 MiB PSS**, including
+**1,457 MiB private anonymous memory** and approximately **13 MiB proportionally
+counted file-backed memory**. The supervisor, metrics server and logger added
+approximately **73 MiB PSS combined**. These process measurements are separate from
+cgroup/kernel accounting and the earlier namespace memory samples.
+
+Ruby heap introspection was not enabled in the running worker. A separate boot-only
+reproduction used Ruby's native `ObjectSpace` inspector after a full GC, without
+starting job processors. An initial allocation-traced attempt added approximately
+512 MiB of tracing metadata; its sizes were discarded. The final reproduction did
+not enable allocation tracing and used a private Prometheus metrics directory.
+
+| Ruby object category                                                        | Reported size |
+| --------------------------------------------------------------------------- | ------------: |
+| VM internal objects: methods, bytecode, environments and caches (`T_IMEMO`) |       429 MiB |
+| Class/module/mixin metadata (`T_CLASS`, `T_MODULE`, `T_ICLASS`)             |       132 MiB |
+| Hashes                                                                      |       118 MiB |
+| VM/C-backed data objects (`T_DATA`)                                         |       108 MiB |
+| Strings                                                                     |       101 MiB |
+| Ordinary objects                                                            |        43 MiB |
+| Arrays                                                                      |        40 MiB |
+| Regular expressions                                                         |        20 MiB |
+| Other types                                                                 |         5 MiB |
+| **Total reported live-object memory**                                       |   **996 MiB** |
+
+Internal record counts include approximately 392,000 instruction sequences, 550,000
+method entries, 842,000 call caches and 248,000 execution environments. These are VM
+records, not counts of source files or distinct application features. There were
+approximately 1.13 million strings and 421,000 hashes in the boot snapshot.
+
+Identifiable shallow object families include 10,212 GraphQL fields (6.23 MiB),
+8,285 GraphQL arguments (2.12 MiB), 279,881 Procs (21.35 MiB), and 168,678 unbound
+methods (12.87 MiB). Routing, model metadata and callbacks are also visible. Their
+associated strings, hashes, classes and code appear in the shared type buckets;
+these shallow figures are not whole-feature memory budgets.
+
+The native counts establish a large baseline before any jobs are processed. They do
+not reconcile every byte of the older live worker's RSS: ObjectSpace reports object
+storage/payloads, with incomplete accounting for some native allocations, and excludes
+free heap capacity. The boot-only process had a different lifetime and was explicitly
+garbage-collected. No full heap or string contents were exported.
+
+Boot diagnostics also create multiprocess metrics files under the fallback `sidekiq`
+identity when not isolated. Those files from the stopped diagnostic processes were
+removed only after checking their filename and creation time; the real `sidekiq_0`
+worker files were preserved. Temporary census files were removed after retaining
+safe aggregate results.
+
+[Aggregate object counts, class sizes and live process memory](results/2026-10-25-sidekiq-heap/)
+retain the evidence. The bytecode/class-heavy baseline explains why reducing job
+concurrency alone produced a small memory difference, while independent Pod replicas
+each carry most of that baseline.
