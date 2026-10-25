@@ -488,6 +488,15 @@ lists `budget_limited_home_count` and `budget_limited_home_paths`; a
 `pair_attempt_limit_reached` stop reason means some homes still have untried
 pairs. A limited proposal still passes the same complete final gate.
 
+To bound retries across homes, add `--rejoin-home-pass-limit N`. This also
+requires `--rejoin-original-modules` and limits complete stable-order passes
+over pure original homes. Zero skips rejoining; one runs at most one pass. The
+report gives `whole_home_pass_count` and `whole_home_pass_limit`; when the cap
+stops a productive pass while pure homes remain split, the stop reason is
+`whole_home_pass_limit_reached`. The default remains exhaustive, and every
+accepted contraction plus the final complete partition still goes through the
+shared realizability gate.
+
 The `coarsening.original_home_rejoining` report lists fully restored and
 `unrestored_module_paths`, attempted and accepted contractions, final group
 count, and largest group size and origin count. An unrestored home may be split
