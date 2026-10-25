@@ -150,6 +150,96 @@ console.log(later);
 }
 
 #[test]
+fn static_global_property_probe_preserves_deferred_publication() {
+    let probe = "'cache' in globalThis;";
+    let write = "globalThis.inspectState = () => later;";
+    let source = r#"'cache' in globalThis;
+globalThis.inspectState = () => later;
+const startup = new globalThis.Error();
+const later = 42;
+console.log(later);
+"#;
+    let mut colocated = FixtureOpts::new(
+        source,
+        vec![logical_module_with_anon(
+            "startup/all",
+            &[Member::new("startup"), Member::new("later")],
+            &[probe, write],
+        )],
+    );
+    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    assert_preserved_entry_output(&run_fixture(colocated), "42\n");
+
+    let source_without_publication = r#"'cache' in globalThis;
+const startup = new globalThis.Error();
+const later = 42;
+console.log(later);
+"#;
+    let mut no_publication = FixtureOpts::new(
+        source_without_publication,
+        vec![
+            logical_module_with_anon("debug/exposure", &[], &[probe]),
+            logical_module("startup", &[Member::new("startup")]),
+            logical_module("state/later", &[Member::new("later")]),
+        ],
+    );
+    no_publication.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    assert_preserved_entry_output(&run_fixture(no_publication), "42\n");
+
+    let mut split = FixtureOpts::new(
+        source,
+        vec![
+            logical_module_with_anon("debug/exposure", &[], &[probe, write]),
+            logical_module("startup", &[Member::new("startup")]),
+            logical_module("state/later", &[Member::new("later")]),
+        ],
+    );
+    split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    split.deferred_global_publications = &[("globalThis", "inspectState")];
+    assert_preserved_entry_output(&run_fixture(split), "42\n");
+}
+
+#[test]
+fn primitive_result_from_global_receiver_is_not_an_alias() {
+    let source = r#"const available = !!globalThis;
+globalThis.inspectState = () => later;
+const startup = new globalThis.Error();
+const later = 42;
+console.log(later);
+"#;
+    let mut colocated = FixtureOpts::new(
+        source,
+        vec![logical_module_with_anon(
+            "startup/all",
+            &[
+                Member::new("available"),
+                Member::new("startup"),
+                Member::new("later"),
+            ],
+            &["globalThis.inspectState = () => later;"],
+        )],
+    );
+    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    assert_preserved_entry_output(&run_fixture(colocated), "42\n");
+
+    let mut split = FixtureOpts::new(
+        source,
+        vec![
+            logical_module_with_anon(
+                "debug/exposure",
+                &[Member::new("available")],
+                &["globalThis.inspectState = () => later;"],
+            ),
+            logical_module("startup", &[Member::new("startup")]),
+            logical_module("state/later", &[Member::new("later")]),
+        ],
+    );
+    split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    split.deferred_global_publications = &[("globalThis", "inspectState")];
+    assert_preserved_entry_output(&run_fixture(split), "42\n");
+}
+
+#[test]
 fn deferred_global_certificate_does_not_cover_another_slot_or_cross_root_read() {
     let source = r#"globalThis.otherState = () => later;
 const startup = new globalThis.Error();
@@ -199,6 +289,7 @@ fn deferred_global_certificate_rejects_visible_descriptor_or_alias() {
         "Object.defineProperty(globalThis, 'inspectState', {set(fn) { globalThis.seen = fn(); }});",
         "const alias = globalThis; alias.inspectState = () => later;",
         "const alias = ({root: globalThis}).root; Object.defineProperty(alias, 'inspectState', {set(fn) { globalThis.seen = fn(); }});",
+        "const receive = value => Object.defineProperty(value, 'inspectState', {set(fn) { globalThis.seen = fn(); }}); receive(globalThis);",
     ] {
         let source = format!(
             "let later = 0;\n{before}\nglobalThis.inspectState = () => later;\nconst startup = new globalThis.Error();\nlater = 42;\nconsole.log(later);\n"
@@ -219,6 +310,90 @@ fn deferred_global_certificate_rejects_visible_descriptor_or_alias() {
         opts.deferred_global_publications = &[("globalThis", "inspectState")];
         expect_atomic_conflict_rejection(opts, &["startup", "state/later"], &[]);
     }
+}
+
+#[test]
+fn dynamic_in_key_keeps_its_early_callback_read() {
+    let source = r#"let later = 0;
+const key = {toString() { globalThis.observed = later; return 'cache'; }};
+key in globalThis;
+globalThis.inspectState = () => later;
+const startup = new globalThis.Error();
+later = 42;
+console.log(globalThis.observed, later);
+"#;
+    let setup = "key in globalThis;";
+    let write = "globalThis.inspectState = () => later;";
+    let assignment = "later = 42;";
+    let mut colocated = FixtureOpts::new(
+        source,
+        vec![logical_module_with_anon(
+            "state/all",
+            &[
+                Member::new("key"),
+                Member::new("startup"),
+                Member::new("later"),
+            ],
+            &[setup, write, assignment],
+        )],
+    );
+    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    assert_preserved_entry_output(&run_fixture(colocated), "0 42\n");
+
+    let mut split = FixtureOpts::new(
+        source,
+        vec![
+            logical_module_with_anon("debug/exposure", &[Member::new("key")], &[setup, write]),
+            logical_module("startup", &[Member::new("startup")]),
+            logical_module_with_anon("state/later", &[Member::new("later")], &[assignment]),
+        ],
+    );
+    split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    split.deferred_global_publications = &[("globalThis", "inspectState")];
+    expect_atomic_conflict_rejection(split, &["startup", "state/later"], &[]);
+}
+
+#[test]
+fn block_shadowed_window_in_protocol_cannot_hide_proxy_reentry() {
+    let block = "{ const window = new Proxy({}, {has() { globalThis.observed = later; return false; }}); 'cache' in window; }";
+    let write = "typeof window < 'u' && (window.inspectState = () => later);";
+    let source = format!(
+        "import './prelude.js';\nlet later = 0;\n{block}\n{write}\nconst startup = new globalThis.Error();\nlater = 42;\nconsole.log(globalThis.observed, later);\n"
+    );
+    let files = [
+        (
+            "static/prelude.js",
+            "globalThis.window = globalThis; export {};\n",
+        ),
+        (
+            "static/app/prelude.js",
+            "globalThis.window = globalThis; export {};\n",
+        ),
+    ];
+    let mut colocated = FixtureOpts::new(
+        &source,
+        vec![logical_module_with_anon(
+            "state/all",
+            &[Member::new("startup"), Member::new("later")],
+            &[block, write, "later = 42;"],
+        )],
+    )
+    .with_extra_files(&files);
+    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    assert_preserved_entry_output(&run_fixture(colocated), "0 42\n");
+
+    let mut split = FixtureOpts::new(
+        &source,
+        vec![
+            logical_module_with_anon("debug/exposure", &[], &[block, write]),
+            logical_module("startup", &[Member::new("startup")]),
+            logical_module_with_anon("state/later", &[Member::new("later")], &["later = 42;"]),
+        ],
+    )
+    .with_extra_files(&files);
+    split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    split.deferred_global_publications = &[("window", "inspectState")];
+    expect_atomic_conflict_rejection(split, &["startup", "state/later"], &[]);
 }
 
 #[test]

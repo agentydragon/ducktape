@@ -1038,17 +1038,20 @@ uncertain arguments, and changed member identities use the ordinary fallback.
 ordinary inert own data slot on `globalThis` or `window`, or an absent slot
 whose creation cannot invoke an inherited setter and is permitted by the
 object. It also certifies no synchronous host/importer/source consumption of
-the stored capability before this chunk
-finishes initialization. It does not make the write or its RHS pure. A
+the stored capability before this chunk finishes initialization. It does not
+make the write or its RHS pure. A
 structurally checked whole assignment of a known function/class, optionally
 behind a checked `typeof window` guard, keeps all eager dataflow and ordering
 effects but does not put that stored capability into the opaque-call callback
 pool or possible setter pool. A direct call, independent export, separate
 publication, source read, ambiguous alias, global-root replacement, dynamic
 global access, or visible descriptor installation uses the conservative path.
-The host descriptor and
-external-consumer conditions are author-audited; they are not inferred from
-the source scan or intrinsic-integrity assumption.
+The host descriptor and external-consumer conditions are author-audited; they
+are not inferred from the source scan or intrinsic-integrity assumption.
+Primitive operator results and the synthetic `in` protocol call with a
+literal key and direct global-object RHS do not themselves publish the global
+object as a value. The operator and operand effects still execute and
+participate in ordinary reentry analysis.
 
 **Audited callback-factory exports.**
 `chunk_export_purity.<defining chunk>.callback_factory_exports` and
