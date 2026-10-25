@@ -257,6 +257,10 @@ unknown call results. Receivers with no syntactic path to the namespace are
 accepted only under the audited non-aliasing assertion; this is a trusted
 contract, not an automatic proof that arbitrary callback parameters cannot
 alias the namespace.
+Within a literal traversed inside an admitted inline callback, a direct static
+namespace member used as a call callee is analyzed as the callee expression,
+not as a captured namespace value. Call arguments and effects remain analyzed;
+computed and chained callees stay conservative.
 
 Inside callback result object data properties, the analyzer also treats a
 one-hop read such as `namespace.member` as a deferred member value. Only an

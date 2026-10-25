@@ -985,6 +985,10 @@ namespace, including direct member-rooted writes, local aliases, and unknown
 call results. Receivers with no syntactic path to the namespace rely on the
 author's audited non-aliasing assertion; this is a trusted contract, not a
 proof that arbitrary callback parameters are disjoint from the namespace.
+Inside a literal traversed within an admitted inline callback, a direct static
+namespace member used as a call callee is not treated as a captured namespace
+value. The call's arguments and effects still flow through normal analysis;
+computed and chained callees remain conservative.
 
 Authors must also audit one-hop static namespace member reads used as callback
 result object data properties. The checker treats that direct shape as a

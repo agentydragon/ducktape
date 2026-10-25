@@ -286,6 +286,10 @@ member-rooted writes, local aliases, and unknown call results. A receiver with
 no syntactic path to the namespace is accepted only under the audited
 non-aliasing assertion; the checker does not prove that arbitrary callback
 parameters cannot alias the namespace.
+Within a literal traversed inside an admitted inline callback, a direct static
+namespace member used as a call callee is analyzed as a callee, not as a
+captured namespace value. Its arguments and effects remain analyzed; computed
+and chained callees stay conservative.
 
 The author must additionally audit static member reads used as callback result
 object data properties. The analyzer treats a direct one-hop

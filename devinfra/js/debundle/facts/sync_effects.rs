@@ -648,6 +648,7 @@ struct ExecutionIndex {
     conditional_depth: u32,
     literal_depth: u32,
     factory_member_value_depth: u32,
+    factory_callback_depth: u32,
     callables: BTreeMap<u32, Callable>,
     local_constructors: BTreeMap<u32, LocalConstructor>,
     class_bindings: BTreeMap<u32, Id>,
@@ -689,6 +690,7 @@ impl Default for ExecutionIndex {
             conditional_depth: 0,
             literal_depth: 0,
             factory_member_value_depth: 0,
+            factory_callback_depth: 0,
             callables: BTreeMap::new(),
             local_constructors: BTreeMap::new(),
             class_bindings: BTreeMap::new(),
@@ -767,6 +769,7 @@ impl ExecutionIndex {
             index.conditional_depth = 0;
             index.literal_depth = 0;
             index.factory_member_value_depth = 0;
+            index.factory_callback_depth = 0;
             index.collect_uninitialized_lexical_bindings(item.as_module_item());
             index.collect_export_roots(item.as_module_item());
             if let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item.as_module_item() {
@@ -1009,6 +1012,47 @@ impl ExecutionIndex {
         matches!(member.obj.unwrap_parens(), Expr::Ident(namespace)
             if self.callback_factory_members.contains_key(&namespace.to_id()))
             && matches!(member.prop, MemberProp::Ident(_))
+    }
+
+    fn is_callback_factory_member_callee(&self, expression: &Expr) -> bool {
+        let Expr::Member(member) = expression.unwrap_parens() else {
+            return false;
+        };
+        let Expr::Ident(namespace) = member.obj.unwrap_parens() else {
+            return false;
+        };
+        self.callback_factory_members
+            .contains_key(&namespace.to_id())
+            && matches!(member.prop, MemberProp::Ident(_))
+    }
+
+    fn inline_factory_callback_argument(&self, call: &CallExpr) -> Option<usize> {
+        if call.args.len() != 1 || call.args[0].spread.is_some() {
+            return None;
+        }
+        let Callee::Expr(callee) = &call.callee else {
+            return None;
+        };
+        let is_factory = match callee.unwrap_parens() {
+            Expr::Ident(callee) => self.callback_factory_imports.contains(&callee.to_id()),
+            Expr::Member(member) => {
+                let (Expr::Ident(namespace), MemberProp::Ident(property)) =
+                    (member.obj.unwrap_parens(), &member.prop)
+                else {
+                    return None;
+                };
+                self.callback_factory_members
+                    .get(&namespace.to_id())
+                    .is_some_and(|members| members.contains(property.sym.as_ref()))
+            }
+            _ => false,
+        };
+        (is_factory
+            && matches!(
+                call.args[0].expr.unwrap_parens(),
+                Expr::Fn(_) | Expr::Arrow(_)
+            ))
+        .then_some(0)
     }
 
     fn record_member_write(&mut self, member: &MemberExpr) {
@@ -1509,7 +1553,33 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_call_expr(&mut self, call: &CallExpr) {
-        call.visit_children_with(self);
+        let callback_argument = self.inline_factory_callback_argument(call);
+        let is_factory_member_callee = self.literal_depth > 0
+            && self.factory_callback_depth > 0
+            && matches!(&call.callee, Callee::Expr(callee)
+                if self.is_callback_factory_member_callee(callee));
+        if callback_argument.is_some() || is_factory_member_callee {
+            match &call.callee {
+                Callee::Expr(callee) if is_factory_member_callee => {
+                    self.factory_member_value_depth += 1;
+                    callee.visit_with(self);
+                    self.factory_member_value_depth -= 1;
+                }
+                callee => callee.visit_with(self),
+            }
+            for (index, argument) in call.args.iter().enumerate() {
+                if callback_argument == Some(index) {
+                    self.factory_callback_depth += 1;
+                    argument.visit_with(self);
+                    self.factory_callback_depth -= 1;
+                } else {
+                    argument.visit_with(self);
+                }
+            }
+            call.type_args.visit_with(self);
+        } else {
+            call.visit_children_with(self);
+        }
         if call.args.iter().any(|arg| arg.spread.is_some()) {
             self.mark_opaque();
         }

@@ -385,6 +385,60 @@ fn namespace_factory_defers_member_reads_inside_callback_result_literals() {
 }
 
 #[test]
+fn namespace_factory_ignores_member_callees_in_callback_result_literals() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import { api } from './peer.js';\n\
+             const wrapped = api.make(() => ({ onEvent: api.register(() => later) }));\n\
+             const later = 42;\nconsole.log(wrapped.invoke().onEvent());\n",
+            vec![logical_module(
+                "callbacks/wrapped",
+                &[Member::new("wrapped")],
+            )],
+        )
+        .with_extra_chunks(&[(
+            "static/peer",
+            "export const api = {\n\
+                 make(callback) { return { invoke: () => callback() }; },\n\
+                 register(callback) { return callback; },\n\
+             };\n",
+        )])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+            .with_callback_factory_members("api", &["make"])
+            .build()]),
+    );
+    assert_preserved_entry_output(&fixture, "42\n");
+}
+
+#[test]
+fn namespace_factory_keeps_computed_member_callees_conservative_in_literals() {
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            "import { api } from './peer.js';\n\
+             const wrapped = api.make(() => ({ onEvent: api[method](() => later) }));\n\
+             const method = 'register';\n\
+             const later = 42;\nconsole.log(wrapped.invoke().onEvent());\n",
+            vec![logical_module(
+                "callbacks/wrapped",
+                &[Member::new("wrapped")],
+            )],
+        )
+        .with_extra_chunks(&[(
+            "static/peer",
+            "export const api = {\n\
+                 make(callback) { return { invoke: () => callback() }; },\n\
+                 register(callback) { return callback; },\n\
+             };\n",
+        )])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+            .with_callback_factory_members("api", &["make"])
+            .build()]),
+        &["callbacks/wrapped"],
+        &["eager_use", "sequenced"],
+    );
+}
+
+#[test]
 fn namespace_factory_allows_audited_method_results_and_unrelated_callback_receivers() {
     let fixture = run_fixture(
         FixtureOpts::new(
