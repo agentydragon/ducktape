@@ -10,6 +10,7 @@ use analysis::graph::{EndpointView, OwnerEdge, OwnerEdgeId, OwnerGraph, project_
 use analysis::ids::ModuleId;
 use analysis::partition::Partition;
 use analysis::reports::SccCore;
+use rustc_hash::FxHashSet;
 
 use crate::counted_digraph::CountedDiGraph;
 
@@ -79,6 +80,24 @@ impl ConstrainingBucket {
         edges.sort();
         edges
     }
+}
+
+pub(super) fn constraining_bucket_is_empty_after_overlay(
+    base: Option<&ConstrainingBucket>,
+    removed: Option<&ConstrainingBucket>,
+    added: Option<&ConstrainingBucket>,
+) -> bool {
+    let base_has_remaining = base.is_some_and(|base| {
+        base.non_sequenced
+            .iter()
+            .any(|edge| !removed.is_some_and(|removed| removed.non_sequenced.contains(edge)))
+            || base
+                .sequenced
+                .iter()
+                .any(|edge| !removed.is_some_and(|removed| removed.sequenced.contains(edge)))
+    });
+    let added_has_edges = added.is_some_and(|added| !added.is_empty());
+    !base_has_remaining && !added_has_edges
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -272,9 +291,9 @@ pub(super) fn edge_contribution(
 
 pub(super) struct OverlayGraphView<'a> {
     pub(super) base: &'a CountedDiGraph<ModuleId>,
-    pub(super) delta: &'a BTreeMap<(ModuleId, ModuleId), isize>,
     pub(super) added_out: BTreeMap<ModuleId, BTreeSet<ModuleId>>,
     pub(super) added_in: BTreeMap<ModuleId, BTreeSet<ModuleId>>,
+    removed: FxHashSet<(ModuleId, ModuleId)>,
 }
 
 impl<'a> OverlayGraphView<'a> {
@@ -284,18 +303,22 @@ impl<'a> OverlayGraphView<'a> {
     ) -> Self {
         let mut added_out = BTreeMap::<ModuleId, BTreeSet<ModuleId>>::new();
         let mut added_in = BTreeMap::<ModuleId, BTreeSet<ModuleId>>::new();
+        let mut removed = FxHashSet::default();
         for (&(from, to), &count) in delta {
-            if count <= 0 {
-                continue;
+            let effective_count = base.edge_count(from, to) as isize + count;
+            if effective_count <= 0 {
+                removed.insert((from, to));
             }
-            added_out.entry(from).or_default().insert(to);
-            added_in.entry(to).or_default().insert(from);
+            if count > 0 {
+                added_out.entry(from).or_default().insert(to);
+                added_in.entry(to).or_default().insert(from);
+            }
         }
         Self {
             base,
-            delta,
             added_out,
             added_in,
+            removed,
         }
     }
 
@@ -307,15 +330,18 @@ impl<'a> OverlayGraphView<'a> {
         }
         let forward = self.reachable_from(node, WalkDirection::Forward);
         let reverse = self.reachable_from(node, WalkDirection::Reverse);
-        forward.intersection(&reverse).copied().collect()
+        forward
+            .into_iter()
+            .filter(|module| reverse.contains(module))
+            .collect()
     }
 
     pub(super) fn reachable_from(
         &self,
         start: ModuleId,
         direction: WalkDirection,
-    ) -> BTreeSet<ModuleId> {
-        let mut seen = BTreeSet::new();
+    ) -> FxHashSet<ModuleId> {
+        let mut seen = FxHashSet::default();
         let mut stack = vec![start];
         // The `seen` set provides dedup between base/overlay edges, so
         // both streams are iterated directly without a scratch set.
@@ -326,13 +352,13 @@ impl<'a> OverlayGraphView<'a> {
             match direction {
                 WalkDirection::Forward => {
                     for to in self.base.successors(node) {
-                        if !seen.contains(&to) && self.effective_count(node, to) > 0 {
+                        if !seen.contains(&to) && !self.removed.contains(&(node, to)) {
                             stack.push(to);
                         }
                     }
                     if let Some(overlay_neighbors) = self.added_out.get(&node) {
                         for &to in overlay_neighbors {
-                            if !seen.contains(&to) && self.effective_count(node, to) > 0 {
+                            if !seen.contains(&to) {
                                 stack.push(to);
                             }
                         }
@@ -340,13 +366,13 @@ impl<'a> OverlayGraphView<'a> {
                 }
                 WalkDirection::Reverse => {
                     for from in self.base.predecessors(node) {
-                        if !seen.contains(&from) && self.effective_count(from, node) > 0 {
+                        if !seen.contains(&from) && !self.removed.contains(&(from, node)) {
                             stack.push(from);
                         }
                     }
                     if let Some(overlay_neighbors) = self.added_in.get(&node) {
                         for &from in overlay_neighbors {
-                            if !seen.contains(&from) && self.effective_count(from, node) > 0 {
+                            if !seen.contains(&from) {
                                 stack.push(from);
                             }
                         }
@@ -358,40 +384,37 @@ impl<'a> OverlayGraphView<'a> {
     }
 
     pub(super) fn has_neighbor(&self, node: ModuleId, direction: WalkDirection) -> bool {
-        let check = |neighbor| {
-            let (from, to) = match direction {
-                WalkDirection::Forward => (node, neighbor),
-                WalkDirection::Reverse => (neighbor, node),
-            };
-            self.effective_count(from, to) > 0
-        };
         match direction {
             WalkDirection::Forward => {
-                if self.base.successors(node).any(check) {
+                if self
+                    .base
+                    .successors(node)
+                    .any(|to| !self.removed.contains(&(node, to)))
+                {
                     return true;
                 }
                 if let Some(overlay) = self.added_out.get(&node)
-                    && overlay.iter().any(|&n| check(n))
+                    && !overlay.is_empty()
                 {
                     return true;
                 }
             }
             WalkDirection::Reverse => {
-                if self.base.predecessors(node).any(check) {
+                if self
+                    .base
+                    .predecessors(node)
+                    .any(|from| !self.removed.contains(&(from, node)))
+                {
                     return true;
                 }
                 if let Some(overlay) = self.added_in.get(&node)
-                    && overlay.iter().any(|&n| check(n))
+                    && !overlay.is_empty()
                 {
                     return true;
                 }
             }
         }
         false
-    }
-
-    pub(super) fn effective_count(&self, from: ModuleId, to: ModuleId) -> isize {
-        self.base.edge_count(from, to) as isize + self.delta.get(&(from, to)).copied().unwrap_or(0)
     }
 }
 
@@ -855,9 +878,7 @@ impl IncrementalQuotient {
             .any(|(from, to)| {
                 modules.contains(from)
                     && modules.contains(to)
-                    && !self
-                        .constraining_bucket_with_overlay((*from, *to), overlay)
-                        .is_empty()
+                    && !self.constraining_bucket_is_empty_with_overlay((*from, *to), overlay)
             })
     }
 
@@ -875,11 +896,7 @@ impl IncrementalQuotient {
         let effective_pairs: BTreeSet<(ModuleId, ModuleId)> = self
             .constraining_pairs_with_overlay(overlay)
             .into_iter()
-            .filter(|pair| {
-                !self
-                    .constraining_bucket_with_overlay(*pair, overlay)
-                    .is_empty()
-            })
+            .filter(|pair| !self.constraining_bucket_is_empty_with_overlay(*pair, overlay))
             .collect();
         simulation.tdz_pairs(modules, &effective_pairs).collect()
     }
@@ -1131,10 +1148,7 @@ impl IncrementalQuotient {
             .copied()
             .collect();
         for pair in &touched_pairs {
-            if self
-                .constraining_bucket_with_overlay(*pair, overlay)
-                .is_empty()
-            {
+            if self.constraining_bucket_is_empty_with_overlay(*pair, overlay) {
                 constraining_pairs.remove(pair);
             } else {
                 constraining_pairs.insert(*pair);
@@ -1254,11 +1268,38 @@ impl IncrementalQuotient {
         &self,
         overlay: &QuotientOverlay,
     ) -> BTreeSet<(ModuleId, ModuleId)> {
-        let mut pairs: BTreeSet<(ModuleId, ModuleId)> =
-            self.constraining_buckets.keys().copied().collect();
-        pairs.extend(overlay.constraining_added.keys().copied());
-        pairs.extend(overlay.constraining_removed.keys().copied());
+        let mut pairs = self.base_constraining_pairs().clone();
+        let touched_pairs: BTreeSet<(ModuleId, ModuleId)> = overlay
+            .constraining_added
+            .keys()
+            .chain(overlay.constraining_removed.keys())
+            .copied()
+            .collect();
+        for pair in touched_pairs {
+            if self.constraining_bucket_is_empty_with_overlay(pair, overlay) {
+                pairs.remove(&pair);
+            } else {
+                pairs.insert(pair);
+            }
+        }
         pairs
+    }
+
+    fn constraining_bucket_is_empty_with_overlay(
+        &self,
+        pair: (ModuleId, ModuleId),
+        overlay: &QuotientOverlay,
+    ) -> bool {
+        let base = self.constraining_buckets.get(&pair);
+        let removed = overlay.constraining_removed.get(&pair);
+        let added = overlay.constraining_added.get(&pair);
+        if removed.is_none() {
+            if base.is_some_and(|bucket| !bucket.is_empty()) {
+                return false;
+            }
+            return added.is_none_or(ConstrainingBucket::is_empty);
+        }
+        constraining_bucket_is_empty_after_overlay(base, removed, added)
     }
 
     pub(super) fn constraining_bucket_with_overlay(

@@ -1,6 +1,8 @@
 use std::collections::BTreeSet;
 
-use super::incremental_quotient::OverlayGraphView;
+use super::incremental_quotient::{
+    ConstrainingBucket, OverlayGraphView, constraining_bucket_is_empty_after_overlay,
+};
 use super::*;
 use crate::counted_digraph::CountedDiGraph;
 use analysis::OwnerId;
@@ -376,6 +378,86 @@ fn empty_delta_overlay_scc_containing_is_the_base_scc() {
         BTreeSet::from([module_id(4)]),
         "4 is reachable from the cycle but cannot reach it",
     );
+}
+
+#[test]
+fn overlay_scc_matches_effective_graph_with_counted_additions_and_removals() {
+    let mut base = CountedDiGraph::new();
+    for (from, to) in [
+        (1, 2),
+        (1, 2), // One of two parallel edges remains after the overlay.
+        (2, 1),
+        (3, 4),
+        (4, 5),
+        (6, 7),
+    ] {
+        base.increment_edge(module_id(from), module_id(to));
+    }
+    let delta = BTreeMap::from([
+        ((module_id(1), module_id(2)), -1),
+        ((module_id(2), module_id(1)), -1),
+        ((module_id(3), module_id(4)), 1), // Existing adjacency with another edge.
+        ((module_id(5), module_id(3)), 1), // Closes a new three-node cycle.
+        ((module_id(6), module_id(7)), -1),
+    ]);
+    let view = OverlayGraphView::new(&base, &delta);
+
+    // Independently materialize the effective counted graph. This checks the
+    // overlay's zero-count filtering and positive additions without relying on
+    // the optimized reachability implementation.
+    let mut pairs: BTreeSet<_> = base.edge_pairs().collect();
+    pairs.extend(delta.keys().copied());
+    let mut effective = CountedDiGraph::new();
+    for (from, to) in pairs {
+        let count = base.edge_count(from, to) as isize
+            + delta.get(&(from, to)).copied().unwrap_or_default();
+        for _ in 0..count.max(0) {
+            effective.increment_edge(from, to);
+        }
+    }
+
+    for index in 1..=7 {
+        let node = module_id(index);
+        let expected = effective
+            .all_sccs()
+            .into_iter()
+            .find(|scc| scc.contains(&node))
+            .unwrap_or_else(|| BTreeSet::from([node]));
+        assert_eq!(view.scc_containing(node), expected, "module {index}");
+    }
+}
+
+#[test]
+fn overlay_bucket_emptiness_matches_materialized_added_and_removed_edges() {
+    let mut base = ConstrainingBucket::default();
+    base.insert_edge(analysis::graph::OwnerEdgeId(1), false);
+    base.insert_edge(analysis::graph::OwnerEdgeId(2), true);
+    let mut removed = ConstrainingBucket::default();
+    removed.insert_edge(analysis::graph::OwnerEdgeId(1), false);
+    let mut added = ConstrainingBucket::default();
+    added.insert_edge(analysis::graph::OwnerEdgeId(3), true);
+
+    let mut effective = base.clone();
+    effective.remove_from(&removed);
+    effective.extend_from(&added);
+    assert_eq!(
+        constraining_bucket_is_empty_after_overlay(Some(&base), Some(&removed), Some(&added)),
+        effective.is_empty(),
+    );
+
+    removed.insert_edge(analysis::graph::OwnerEdgeId(2), true);
+    let mut no_edges = base.clone();
+    no_edges.remove_from(&removed);
+    assert_eq!(
+        constraining_bucket_is_empty_after_overlay(Some(&base), Some(&removed), None),
+        no_edges.is_empty(),
+    );
+
+    assert!(!constraining_bucket_is_empty_after_overlay(
+        None,
+        None,
+        Some(&added),
+    ));
 }
 
 type NormalizedVerdict = (
