@@ -76,7 +76,6 @@ const holder = new Holder(() => later);
 globalThis.observed = holder.value();
 later = 42;
 console.log(globalThis.observed, later);
-export { Holder, holder, later };
 "#;
     let colocated = run_fixture(
         FixtureOpts::new(
