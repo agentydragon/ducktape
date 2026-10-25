@@ -124,6 +124,134 @@ struct ClassValueFacts {
     static_fields: BTreeMap<String, ValueExpr>,
     opaque_instance: bool,
     opaque_static: bool,
+    allocation_without_user_code: bool,
+}
+
+enum FreshInstanceStep {
+    Allocate { binding: Id, constructor: Id },
+    Write { receiver: Id, property: String },
+}
+
+fn primitive_constant(expression: &Expr) -> bool {
+    match expression.unwrap_parens() {
+        Expr::Lit(Lit::Str(_) | Lit::Bool(_) | Lit::Null(_) | Lit::Num(_) | Lit::BigInt(_)) => true,
+        Expr::Unary(unary) if unary.op != UnaryOp::Delete => primitive_constant(&unary.arg),
+        Expr::Bin(binary) if !matches!(binary.op, BinaryOp::In | BinaryOp::InstanceOf) => {
+            primitive_constant(&binary.left) && primitive_constant(&binary.right)
+        }
+        _ => false,
+    }
+}
+
+fn value_without_user_code(expression: &Expr) -> bool {
+    if primitive_constant(expression) {
+        return true;
+    }
+    match expression.unwrap_parens() {
+        Expr::Arrow(_) => true,
+        Expr::Fn(function) => {
+            function.function.decorators.is_empty()
+                && function
+                    .function
+                    .params
+                    .iter()
+                    .all(|parameter| parameter.decorators.is_empty())
+        }
+        Expr::Array(array) => array.elems.is_empty(),
+        // A11 fixes Array.prototype.values as an ordinary data property.
+        // The empty receiver cannot publish the instance being initialized.
+        Expr::Member(member) => {
+            matches!(&member.prop, MemberProp::Ident(property) if property.sym == "values")
+                && matches!(member.obj.unwrap_parens(), Expr::Array(array) if array.elems.is_empty())
+        }
+        _ => false,
+    }
+}
+
+fn fresh_instance_step(item: &ModuleItem) -> Option<FreshInstanceStep> {
+    match item {
+        ModuleItem::Stmt(Stmt::Decl(Decl::Var(declaration)))
+            if declaration.kind == VarDeclKind::Const && declaration.decls.len() == 1 =>
+        {
+            let declaration = &declaration.decls[0];
+            let Pat::Ident(binding) = &declaration.name else {
+                return None;
+            };
+            let Expr::New(allocation) = declaration.init.as_deref()?.unwrap_parens() else {
+                return None;
+            };
+            let Expr::Ident(constructor) = allocation.callee.unwrap_parens() else {
+                return None;
+            };
+            allocation.args.as_ref().is_none_or(Vec::is_empty).then(|| {
+                FreshInstanceStep::Allocate {
+                    binding: binding.id.to_id(),
+                    constructor: constructor.to_id(),
+                }
+            })
+        }
+        ModuleItem::Stmt(Stmt::Expr(statement)) => {
+            let Expr::Assign(assignment) = statement.expr.unwrap_parens() else {
+                return None;
+            };
+            if assignment.op != AssignOp::Assign || !value_without_user_code(&assignment.right) {
+                return None;
+            }
+            let AssignTarget::Simple(SimpleAssignTarget::Member(member)) = &assignment.left else {
+                return None;
+            };
+            let Expr::Ident(receiver) = member.obj.unwrap_parens() else {
+                return None;
+            };
+            let MemberProp::Ident(property) = &member.prop else {
+                return None;
+            };
+            (property.sym != "__proto__").then(|| FreshInstanceStep::Write {
+                receiver: receiver.to_id(),
+                property: property.sym.to_string(),
+            })
+        }
+        _ => None,
+    }
+}
+
+fn fresh_own_field_writes(
+    steps: &[Option<FreshInstanceStep>],
+    facts: &NamespaceValueFacts,
+) -> BTreeSet<StatementOrdinal> {
+    let mut active: Option<(Id, u32)> = None;
+    let mut writes = BTreeSet::new();
+    for (ordinal, step) in steps.iter().enumerate() {
+        match step {
+            Some(FreshInstanceStep::Allocate {
+                binding,
+                constructor,
+            }) => {
+                active = facts
+                    .resolve_class(
+                        &ValueExpr::Binding(constructor.clone()),
+                        &mut BTreeSet::new(),
+                    )
+                    .filter(|(key, surface)| {
+                        *surface == ClassSurface::Constructor
+                            && facts
+                                .classes
+                                .get(key)
+                                .is_some_and(|class| class.allocation_without_user_code)
+                    })
+                    .map(|(key, _)| (binding.clone(), key));
+            }
+            Some(FreshInstanceStep::Write { receiver, property })
+                if active.as_ref().is_some_and(|(binding, key)| {
+                    binding == receiver && facts.classes[key].instance_fields.contains_key(property)
+                }) =>
+            {
+                writes.insert(StatementOrdinal(ordinal));
+            }
+            _ => active = None,
+        }
+    }
+    writes
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -691,12 +819,38 @@ fn add_class_field(facts: &mut ClassValueFacts, is_static: bool, name: String, v
 }
 
 fn collect_class_value_facts(class: &Class) -> ClassValueFacts {
-    let mut facts = ClassValueFacts::default();
+    let mut facts = ClassValueFacts {
+        allocation_without_user_code: class.super_class.is_none() && class.decorators.is_empty(),
+        ..ClassValueFacts::default()
+    };
     if class.super_class.is_some() || !class.decorators.is_empty() {
         facts.opaque_instance = true;
         facts.opaque_static = true;
     }
     for member in &class.body {
+        facts.allocation_without_user_code &= match member {
+            ClassMember::ClassProp(property) => {
+                !property.is_static
+                    && property.decorators.is_empty()
+                    && static_property_name(&property.key).is_some_and(|name| name != "__proto__")
+                    && property
+                        .value
+                        .as_deref()
+                        .is_none_or(value_without_user_code)
+            }
+            ClassMember::Method(method) => {
+                !method.is_static
+                    && matches!(method.kind, MethodKind::Method)
+                    && method.function.decorators.is_empty()
+                    && method
+                        .function
+                        .params
+                        .iter()
+                        .all(|parameter| parameter.decorators.is_empty())
+            }
+            ClassMember::Empty(_) => true,
+            _ => false,
+        };
         match member {
             ClassMember::ClassProp(prop) => {
                 if !prop.decorators.is_empty() {
@@ -1408,6 +1562,7 @@ impl ExecutionIndex {
             no_sync_callback_members: hints.no_sync_callback_members.clone(),
             ..Self::default()
         };
+        let mut fresh_steps = Vec::with_capacity(body.len());
         for item in body {
             let declaration = match item.as_module_item() {
                 ModuleItem::Stmt(Stmt::Decl(Decl::Class(declaration))) => Some(declaration),
@@ -1429,6 +1584,7 @@ impl ExecutionIndex {
             }
         }
         for (ordinal, item) in body.iter().enumerate() {
+            fresh_steps.push(fresh_instance_step(item.as_module_item()));
             index.owner = StatementOrdinal(ordinal);
             index.past_await = false;
             index.may_skip_await_depth = 0;
@@ -1478,6 +1634,14 @@ impl ExecutionIndex {
             index.class_values.clone(),
             &namespace_assignments,
         );
+        // No user code runs from this allocation through its adjacent writes,
+        // so the fresh instance's declared own data fields cannot become
+        // accessors or namespace aliases before these particular assignments.
+        let fresh_writes = if index.dynamic_scope_owners.is_empty() {
+            fresh_own_field_writes(&fresh_steps, &namespace_value_facts)
+        } else {
+            BTreeSet::new()
+        };
         // A namespace member is an audited target only while its binding is
         // unchanged. Any local write could replace a member with an eager
         // callback invoker before the apparent factory call.
@@ -1490,39 +1654,39 @@ impl ExecutionIndex {
             let is_mutation_receiver = |receiver: &ValueExpr| {
                 receiver.may_be_namespace_mutation_receiver(id, &aliases, &receiver_aliases)
             };
-            let top_member_write =
-                index
-                    .top_property_writes
-                    .iter()
-                    .flatten()
-                    .any(|(receiver, property)| {
-                        receiver.as_ref().is_some_and(|receiver| {
-                            (receiver == id
-                                && property
-                                    .as_ref()
-                                    .is_none_or(|property| members.contains(property)))
-                                || aliases.contains(receiver)
-                                || receiver_aliases.contains(receiver)
-                        })
-                    });
+            let top_member_write = index
+                .top_property_writes
+                .iter()
+                .enumerate()
+                .filter(|(owner, _)| !fresh_writes.contains(&StatementOrdinal(*owner)))
+                .flat_map(|(_, writes)| writes)
+                .any(|(receiver, property)| {
+                    receiver.as_ref().is_some_and(|receiver| {
+                        (receiver == id
+                            && property
+                                .as_ref()
+                                .is_none_or(|property| members.contains(property)))
+                            || aliases.contains(receiver)
+                            || receiver_aliases.contains(receiver)
+                    })
+                });
             let top_dynamic_write = index
                 .top_dynamic_property_receivers
                 .iter()
                 .flatten()
                 .any(is_mutation_receiver);
-            let top_callback_result_write =
-                index
-                    .top_callback_result_writes
-                    .iter()
-                    .flatten()
-                    .any(|write| {
-                        is_mutation_receiver(&write.receiver)
-                            || write.value.may_publish_namespace(
-                                id,
-                                &aliases,
-                                &namespace_value_facts,
-                            )
-                    });
+            let top_callback_result_write = index
+                .top_callback_result_writes
+                .iter()
+                .enumerate()
+                .filter(|(owner, _)| !fresh_writes.contains(&StatementOrdinal(*owner)))
+                .flat_map(|(_, writes)| writes)
+                .any(|write| {
+                    is_mutation_receiver(&write.receiver)
+                        || write
+                            .value
+                            .may_publish_namespace(id, &aliases, &namespace_value_facts)
+                });
             let callable_write = index.callables.values().any(|callable| {
                 callable.member_writes.iter().any(|(receiver, property)| {
                     (receiver == id && members.contains(property))
