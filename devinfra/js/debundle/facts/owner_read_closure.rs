@@ -18,18 +18,17 @@ use crate::StatementOrdinal;
 /// Owner read closure over one chunk's statement facts.
 ///
 /// The SCC summaries preserve the closure used by graph at-init fallback;
-/// the owner adjacency also supports incremental traversal for other analyses
+/// the synchronous owner adjacency also supports incremental traversal for callback analyses
 /// without materializing a transitive closure for every possible root.
 pub(crate) struct FactsOwnerReadClosure {
     binding_owner: BTreeMap<Id, StatementOrdinal>,
-    owner_adjacency: BTreeMap<StatementOrdinal, Vec<StatementOrdinal>>,
     expanded_lazy_reads: Vec<BTreeSet<Id>>,
     expanded_lazy_rebinds: Vec<BTreeSet<Id>>,
     scc_of: BTreeMap<StatementOrdinal, usize>,
 }
 
 impl FactsOwnerReadClosure {
-    /// Build a second adjacency for synchronous callback fallback. The caller
+    /// Build an adjacency for synchronous callback fallback. The caller
     /// supplies retained callable-prefix reads where coverage is complete;
     /// other owners keep their whole lazy read set. A lexical read remains an
     /// edge even when its target's body is deferred.
@@ -123,14 +122,6 @@ impl FactsOwnerReadClosure {
             }
         }
 
-        let mut owner_adjacency = BTreeMap::new();
-        for owner in read_graph.nodes() {
-            let mut neighbors: Vec<_> = read_graph.neighbors(owner).collect();
-            neighbors.sort_unstable();
-            neighbors.dedup();
-            owner_adjacency.insert(owner, neighbors);
-        }
-
         let stmt_by_owner: BTreeMap<StatementOrdinal, &StatementFacts> =
             facts.iter().map(|stmt| (stmt.ordinal, stmt)).collect();
         let sccs = tarjan_scc(&read_graph);
@@ -200,7 +191,6 @@ impl FactsOwnerReadClosure {
 
         Self {
             binding_owner,
-            owner_adjacency,
             expanded_lazy_reads,
             expanded_lazy_rebinds,
             scc_of,
@@ -222,44 +212,6 @@ impl FactsOwnerReadClosure {
             .into_iter()
             .filter_map(|binding| self.owner_for_binding(binding))
             .collect()
-    }
-
-    /// Grow `owners` by the transitive read closure of `roots`.
-    ///
-    /// The caller retains `expanded` as roots grow, so every owner is expanded
-    /// at most once even when the same reachability set is extended repeatedly.
-    /// Return the newly expanded owners so callers can check exceptional scope
-    /// effects without rescanning the accumulated closure.
-    /// `owners` may already contain unrelated direct roots; `expanded` is the
-    /// separate traversal state that distinguishes those from expanded nodes.
-    pub(crate) fn extend_reachable_owners(
-        &self,
-        roots: impl IntoIterator<Item = StatementOrdinal>,
-        expanded: &mut BTreeSet<StatementOrdinal>,
-        owners: &mut BTreeSet<StatementOrdinal>,
-    ) -> Vec<StatementOrdinal> {
-        let mut pending = VecDeque::new();
-        let mut reached = Vec::new();
-        for root in roots {
-            if self.owner_adjacency.contains_key(&root) && expanded.insert(root) {
-                owners.insert(root);
-                reached.push(root);
-                pending.push_back(root);
-            }
-        }
-        while let Some(owner) = pending.pop_front() {
-            let Some(neighbors) = self.owner_adjacency.get(&owner) else {
-                continue;
-            };
-            for &target in neighbors {
-                if expanded.insert(target) {
-                    owners.insert(target);
-                    reached.push(target);
-                    pending.push_back(target);
-                }
-            }
-        }
-        reached
     }
 
     /// Return the transitive lazy reads and rebinds for one owner, retaining

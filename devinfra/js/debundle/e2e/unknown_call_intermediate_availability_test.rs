@@ -2,6 +2,138 @@
 
 use debundle_e2e_support::*;
 
+#[test]
+fn post_await_future_command_does_not_make_its_reader_synchronous() {
+    let source = r#"import { trigger } from './peer.js';
+const reader = () => later;
+async function load() { await 0; return command.run(); }
+globalThis.saved = load;
+const box = trigger();
+box.flag = 1;
+const command = { run: reader };
+const later = 42;
+console.log(box.flag, later);
+export { box, command, later };
+"#;
+    let peer = [(
+        "static/peer",
+        "export function trigger() { globalThis.saved(); return {}; }",
+    )];
+    let mut colocated = FixtureOpts::new(
+        source,
+        vec![logical_module_with_anon(
+            "runtime/all",
+            &[
+                Member::new("reader"),
+                Member::new("load"),
+                Member::new("box"),
+                Member::new("command"),
+                Member::new("later"),
+            ],
+            &[
+                "globalThis.saved = load;",
+                "box.flag = 1;",
+                "console.log(box.flag, later);",
+            ],
+        )],
+    )
+    .with_extra_chunks(&peer)
+    .with_unassigned_mode(unassigned_mode_inline());
+    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    assert_preserved_entry_output(&run_fixture(colocated), "1 42\n");
+
+    let mut split = FixtureOpts::new(
+        source,
+        vec![
+            logical_module("runtime/functions", &[Member::new("load")]),
+            logical_module_with_anon(
+                "runtime/call",
+                &[Member::new("box")],
+                &["globalThis.saved = load;", "box.flag = 1;"],
+            ),
+            logical_module(
+                "values/late",
+                &[
+                    Member::new("reader"),
+                    Member::new("command"),
+                    Member::new("later"),
+                ],
+            ),
+        ],
+    )
+    .with_extra_chunks(&peer);
+    split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    let fixture = run_fixture(split);
+    assert_preserved_entry_output(&fixture, "1 42\n");
+    assert_all_emitted_js_checks(&fixture);
+}
+
+#[test]
+fn before_await_published_reader_still_observes_early_value() {
+    let source = r#"import { trigger } from './peer.js';
+let later = 0;
+function reader() { return later; }
+const command = { run: reader };
+async function load() { globalThis.observed = command.run(); await 0; }
+globalThis.saved = load;
+const box = trigger();
+box.flag = 1;
+later = 42;
+console.log(globalThis.observed, later);
+export { box, command, later };
+"#;
+    let peer = [(
+        "static/peer",
+        "export function trigger() { globalThis.saved(); return {}; }",
+    )];
+    let mut colocated = FixtureOpts::new(
+        source,
+        vec![logical_module_with_anon(
+            "runtime/all",
+            &[
+                Member::new("reader"),
+                Member::new("load"),
+                Member::new("box"),
+                Member::new("command"),
+                Member::new("later"),
+            ],
+            &[
+                "globalThis.saved = load;",
+                "box.flag = 1;",
+                "later = 42;",
+                "console.log(globalThis.observed, later);",
+            ],
+        )],
+    )
+    .with_extra_chunks(&peer)
+    .with_unassigned_mode(unassigned_mode_inline());
+    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    assert_preserved_entry_output(&run_fixture(colocated), "0 42\n");
+
+    let mut split = FixtureOpts::new(
+        source,
+        vec![
+            logical_module(
+                "runtime/functions",
+                &[
+                    Member::new("reader"),
+                    Member::new("command"),
+                    Member::new("load"),
+                ],
+            ),
+            logical_module_with_anon(
+                "runtime/call",
+                &[Member::new("box")],
+                &["globalThis.saved = load;", "box.flag = 1;"],
+            ),
+            logical_module_with_anon("values/late", &[Member::new("later")], &["later = 42;"]),
+        ],
+    )
+    .with_extra_chunks(&peer);
+    split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    expect_atomic_conflict_rejection(split, &["runtime/call", "values/late"], &[]);
+}
+
 const PEER: &str = r#"import { readLater } from "./provider.js";
 globalThis.runBeforeInitialization = function runBeforeInitialization() {
   try {

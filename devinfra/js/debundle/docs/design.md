@@ -796,9 +796,11 @@ keeps any reads it proved, adds the normal unresolved-call fallback, and
 conservatively promotes nested lazy reads of owners already executed while
 constructing the target and source values. For a top-level call it also keeps
 such reads from earlier effectful statements, which may have installed an
-accessor. After an earlier unknown call, the fallback follows the transitive
-owner-read closure of earlier facts, the active call site's eager reads and
-rebinds, and executed callables. The closure includes externally reachable
+accessor. After an earlier unknown call, the fallback follows synchronous owner
+read edges from earlier facts, the active call site's eager reads and rebinds,
+and executed callables. Where retained callable-prefix coverage is complete,
+reads after a definite `await` do not extend this reachability. Uncovered
+owners keep their whole lazy reads. The closure includes externally reachable
 exports: hoisted function declarations are available from instantiation;
 other values enter when their declarations execute. Export lists themselves
 are linkage metadata and do not initialize their bindings. Direct `eval` or
@@ -837,7 +839,7 @@ For a potentially matching write, the executor promotes the setter owner's
 lazy reads and rebinds when that owner may have participated in constructing
 the receiver or run earlier at top level. Unknown receivers broaden the owner
 set. After an earlier unknown call, possible accessor effects include the
-transitive owner-read closure of the execution prefix, active call site, and
+synchronous owner closure of the execution prefix, active call site, and
 available exports. Unsupported execution syntax still contributes all of its
 syntactic reads to that closure; it does not expose unreferenced locals.
 Dynamic lexical scope retains the whole-chunk fallback because its binding
