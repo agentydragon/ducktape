@@ -59,6 +59,26 @@ in
 
   ducktape.homeWifi.enable = true;
 
+  # Compressed swap gives oomd time to react before memory pressure wedges the
+  # desktop. This is a logical swap capacity cap, not preallocated RAM.
+  zramSwap = {
+    enable = true;
+    algorithm = "zstd";
+    memoryPercent = 100;
+    memoryMax = 16 * 1024 * 1024 * 1024;
+    priority = 100;
+  };
+
+  # Use NixOS's user-slice pressure policy (80% sustained for 30 seconds).
+  # Kubernetes keeps its own pod eviction policy.
+  systemd.oomd = {
+    enable = true;
+    enableRootSlice = false;
+    enableSystemSlice = false;
+    enableUserSlices = true;
+    settings.OOM.DefaultMemoryPressureDurationSec = "30s";
+  };
+
   # Idle Bazel servers on this shared box stack up: Bazel's 3h default kept 10 of them,
   # ~22 GiB RSS, on 2026-10-24. Measured 2026-10-24 on devel 7976adcd, cold server and
   # fresh output base, warm shared repo caches: `bazel build --nobuild //...` took
