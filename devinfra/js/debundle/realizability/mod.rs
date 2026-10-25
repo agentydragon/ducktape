@@ -445,9 +445,6 @@ impl RealizabilityIndex {
     pub fn apply(&mut self, owner_graph: &OwnerGraph, delta: PartitionDelta) {
         let PartitionDelta::MoveOwners { owners, to } = delta;
         let impacted_edges = impacted_owner_edges(owner_graph, &owners);
-        if owners.len() > 1 {
-            self.quotient.defer_condensation_updates();
-        }
         for edge_id in &impacted_edges {
             self.quotient
                 .remove_current_edge(owner_graph.edge(*edge_id), &self.partition);

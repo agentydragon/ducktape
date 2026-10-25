@@ -24,9 +24,6 @@
 //! - [`Self::insert_edge`] / [`Self::remove_edge`] after
 //!   `increment_edge` / `decrement_edge`. Parallel-edge count changes
 //!   that do not add or drop a distinct adjacency pair are no-ops.
-//! - [`Self::mark_stale`] before a multi-edge batch when intermediate
-//!   states are not queried. Notifications during the batch retain node
-//!   interning, and the next query rebuilds from the final base graph.
 //!
 //! **Monotonicity**: insertions only ever coarsen the SCC partition,
 //! which is why a plain union-find (no rollback) suffices. Edge
@@ -131,13 +128,6 @@ where
             current_epoch: 0,
             stale: true,
         }
-    }
-
-    /// Defer rank and SCC maintenance during a committed batch of edge
-    /// changes. The caller keeps updating the base graph; the next query
-    /// rebuilds from its final state. Existing node interning is retained.
-    pub(super) fn mark_stale(&mut self) {
-        self.stale = true;
     }
 
     /// Whether `u` and `v` sit in the same multi-module SCC. The

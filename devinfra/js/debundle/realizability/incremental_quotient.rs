@@ -515,15 +515,6 @@ impl IncrementalQuotient {
         self.cached_touching_clean.get_mut().clear();
     }
 
-    /// A multi-owner move mutates many intermediate quotient states that no
-    /// caller observes. Keep graph counts and evidence current, but rebuild
-    /// both condensation orders once on their next query instead of reranking
-    /// after every intermediate edge insertion.
-    pub(super) fn defer_condensation_updates(&mut self) {
-        self.constraining_order.get_mut().mark_stale();
-        self.i_order.get_mut().mark_stale();
-    }
-
     /// Borrow the base simulator, building it on demand if the cache
     /// is empty. The simulator is a function of `(i_graph,
     /// constraining_buckets, residual)` — all of which are stable
