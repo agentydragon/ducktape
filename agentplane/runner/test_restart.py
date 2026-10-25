@@ -507,6 +507,113 @@ async def test_crash_after_dispatch_planned_does_not_retry_uncertain_command(
 
 @pytest.mark.timeout(60)
 @pytest.mark.parametrize("harness", [runner_pb2.HARNESS_CODEX], ids=["codex"])
+async def test_codex_unjournaled_turn_start_response_allows_fresh_input_without_resending(
+    harness: runner_pb2.Harness,
+    model: ScriptedModel,
+    spec: runner_pb2.SessionSpec,
+    start_runner: Callable[..., Awaitable[RunnerProcess]],
+    driver: RunnerDriver,
+) -> None:
+    """A sent turn/start with an unjournaled response stays uncertain, but does not block new input."""
+    command_id = "codex-turn-start-response-not-journaled"
+    uncertain_text = "Reply with exactly: CODEX_UNJOURNALED_TURN_START_OK"
+    first_runner = await start_runner(test_debug_checkpoint=("before-native-response-recorded", command_id))
+    first = await driver.attach("codex-un-journaled-turn-start", spec=spec)
+
+    # Resume requires an existing Codex thread with a completed turn.
+    await first.submit_input("seed-before-un-journaled-turn-start", "Reply with exactly: SEED_OK")
+    seed_request = await model.request()
+    await model.reply(seed_request, Text("SEED_OK"))
+    await first.until(events.turn_completed)
+
+    await first.submit_input(command_id, uncertain_text)
+    await first.until(events.is_kind("command_admitted"))
+    checkpoint = await first.until(events.is_kind("debug_checkpoint"))
+    assert (checkpoint.event.debug_checkpoint.name, checkpoint.event.debug_checkpoint.command_id) == (
+        "before-native-response-recorded",
+        command_id,
+    )
+
+    outgoing = _native_frames(first.seen, event_pb2.DIRECTION_TO_HARNESS)
+    [turn_start] = [
+        frame
+        for frame in outgoing
+        if frame.get("method") == "turn/start"
+        and any(item.get("text") == uncertain_text for item in frame["params"]["input"])
+    ]
+    incoming = _native_frames(first.seen, event_pb2.DIRECTION_FROM_HARNESS)
+    assert not any(frame.get("id") == turn_start["id"] for frame in incoming)
+    assert not any(
+        command_id in entry.event.harness_user_message_confirmed.origin_command_ids
+        for entry in events.of_kind(first.seen, "harness_user_message_confirmed")
+    )
+
+    accepted = await model.request()
+    assert accepted.user_texts.count(uncertain_text) == 1
+    assert accepted.user_texts[-1] == uncertain_text
+    await model.hold(accepted)
+    harness_pids = [entry.event.harness_started.pid for entry in events.of_kind(first.seen, "harness_started")]
+    await first_runner.crash(harness_pids)
+
+    await start_runner()
+    second = await driver.attach("codex-un-journaled-turn-start", spec=spec, after_cursor=first.cursor)
+    started = await second.until(events.is_kind("harness_started"))
+    assert started.event.harness_started.resumed
+
+    fresh_command_id = "input-after-un-journaled-turn-start"
+    fresh_text = "Reply with exactly: CODEX_FRESH_AFTER_UNJOURNALED_OK"
+    await second.submit_input(fresh_command_id, fresh_text)
+    async with asyncio.timeout(15):
+        resumed = await model.request()
+    assert resumed.user_texts.count(uncertain_text) == 1
+    assert resumed.user_texts[-1] == fresh_text
+    await model.reply(resumed, Text("CODEX_FRESH_AFTER_UNJOURNALED_OK"))
+
+    confirmed = await second.until(
+        lambda entry: (
+            events.kind(entry) == "harness_user_message_confirmed"
+            and fresh_command_id in entry.event.harness_user_message_confirmed.origin_command_ids
+        )
+    )
+    assert confirmed.event.harness_user_message_confirmed.origin_command_ids == [fresh_command_id]
+    assert not any(
+        command_id in entry.event.harness_user_message_confirmed.origin_command_ids
+        for entry in events.of_kind(second.seen, "harness_user_message_confirmed")
+    )
+    await second.until(events.turn_completed)
+
+    all_seen = [*first.seen, *second.seen]
+    turn_starts = [
+        frame
+        for frame in _native_frames(all_seen, event_pb2.DIRECTION_TO_HARNESS)
+        if frame.get("method") == "turn/start"
+    ]
+    assert (
+        len(
+            [
+                frame
+                for frame in turn_starts
+                if any(item.get("text") == uncertain_text for item in frame["params"]["input"])
+            ]
+        )
+        == 1
+    )
+    assert (
+        len(
+            [frame for frame in turn_starts if any(item.get("text") == fresh_text for item in frame["params"]["input"])]
+        )
+        == 1
+    )
+    assert not any(
+        entry.event.command_failed.command_id == command_id for entry in events.of_kind(all_seen, "command_failed")
+    )
+    assert not any(
+        entry.event.command_noop.command_id == command_id for entry in events.of_kind(all_seen, "command_noop")
+    )
+
+
+@pytest.mark.timeout(60)
+@pytest.mark.parametrize("harness", [runner_pb2.HARNESS_CODEX], ids=["codex"])
 async def test_codex_acceptance_before_confirmation_crash_confirms_native_turn_without_resending_input(
     harness: runner_pb2.Harness,
     model: ScriptedModel,

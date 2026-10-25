@@ -261,6 +261,9 @@ harness's outcome. Tool names and argument shapes are the harness's own.
   command state and release later response-dependent commands. If a response was committed before the
   restart, recovery translates it and settles the command. A planned interruption without terminal
   evidence also remains pending because the runner cannot know whether it reached the harness.
+  Unanswered Codex requests recovered from the journal do not block fresh input; their commands
+  remain pending and are never resent. Newly sent requests gate later input until their responses
+  are recorded.
 - A runner that finds a session whose setup had started without a terminal event records
   `SetupInterrupted`. It never executes that script again. The inherited state-owner descriptor
   keeps a replacement runner out until a surviving setup child exits.

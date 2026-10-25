@@ -359,6 +359,35 @@ func (s *Session) checkpoint(ctx context.Context, name, id string) error {
 	return ctx.Err()
 }
 
+func (s *Session) checkpointNativeResponse(ctx context.Context, line []byte) error {
+	configured := s.runner.config.DebugCheckpoint
+	if configured == nil || configured.Name != "before-native-response-recorded" {
+		return nil
+	}
+	var response struct {
+		ID     string `json:"id"`
+		Method string `json:"method"`
+	}
+	if json.Unmarshal(line, &response) != nil || response.ID == "" || response.Method != "" {
+		return nil
+	}
+	requests, err := s.journal.PendingNativeRequests(ctx)
+	if err != nil {
+		return err
+	}
+	for _, request := range requests {
+		if request.Kind != harness.CodexTurnStart || request.ID != response.ID {
+			continue
+		}
+		for _, record := range request.Commands {
+			if record.Command.GetCommandId() == configured.CommandID && record.Command.GetSubmitInput() != nil {
+				return s.checkpoint(ctx, configured.Name, configured.CommandID)
+			}
+		}
+	}
+	return nil
+}
+
 func (s *Session) wake() {
 	select {
 	case s.kick <- struct{}{}:
@@ -901,6 +930,9 @@ func (s *Session) RequestNativeHandshake(ctx context.Context, frame json.RawMess
 }
 
 func (s *Session) receive(ctx context.Context, line []byte, adapter harness.Adapter) error {
+	if err := s.checkpointNativeResponse(ctx, line); err != nil {
+		return err
+	}
 	entry, err := s.recordEvent(ctx, observation(&eventpb.Native{Direction: eventpb.Direction_DIRECTION_FROM_HARNESS, Line: string(line)}), nil, nil)
 	if err != nil {
 		return err

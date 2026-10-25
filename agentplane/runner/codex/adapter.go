@@ -256,6 +256,13 @@ func (a *codexAdapter) Recover(ctx context.Context) error {
 			delete(requestIDs, requestID)
 		}
 	}
+	// Recovery uses journaled replies to settle old requests. Unanswered commands stay
+	// uncertain; only requests sent by this adapter can block dispatch awaiting a live reply.
+	a.mu.Lock()
+	for requestID := range requestIDs {
+		delete(a.turnStarts, requestID)
+	}
+	a.mu.Unlock()
 	return nil
 }
 
