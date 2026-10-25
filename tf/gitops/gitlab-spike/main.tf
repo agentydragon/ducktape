@@ -87,6 +87,8 @@ resource "gitlab_project" "acceptance" {
   default_branch                  = "main"
   initialize_with_readme          = true
   repository_access_level         = "private"
+  builds_access_level             = "private"
+  merge_requests_access_level     = "private"
   container_registry_access_level = "private"
 }
 
