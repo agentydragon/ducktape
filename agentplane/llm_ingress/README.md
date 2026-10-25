@@ -8,7 +8,7 @@ Go workload-auth resolver, removes it, and forwards the request to LiteLLM with 
 server-held virtual key.
 
 The forwarded byte body, status, error body, and streamed chunks are not translated. Verified
-identity is attached only through LiteLLM's documented `x-litellm-spend-logs-metadata` JSON header
+identity is attached through LiteLLM's documented `x-litellm-spend-logs-metadata` JSON header
 (the deployed `tana-litellm-proxy` image, `tana/litellm_proxy/BUILD.bazel`, layered on the
 `litellm_upstream` pin in `MODULE.bazel`). That version consumes the header
 (`_get_spend_logs_metadata_from_request_headers`) in its common request setup used by both native
@@ -23,6 +23,13 @@ object is:
   "agentplane.pod_uid": "..."
 }
 ```
+
+`attribution_destinations` chooses where these verified claims go. Its default is
+`[litellm_spend_logs_metadata]`; staging also enables `otel_baggage` so LiteLLM's
+OpenTelemetry request span receives the four `litellm.metadata.spend_logs_metadata.agentplane.*`
+baggage members before the request starts. The ingress discards caller-supplied baggage and
+constructs these members from its authenticated Kubernetes principal. It preserves trace
+context headers so the request remains linked to its caller's trace.
 
 Incoming LiteLLM metadata/customer/agent headers and Agentplane/Sandbox/Pod/Agent/Thread identity
 headers are removed before this object is stamped. Request bodies remain provider-native and are

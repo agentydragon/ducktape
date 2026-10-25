@@ -27,6 +27,7 @@ from agentplane.action_service.operator_oidc_settings import OperatorOidcSetting
 from agentplane.action_service.sandbox.actions import SandboxAction
 from agentplane.action_service.sandbox.binding import PodExecutorBinding
 from agentplane.app.action_federation_settings import ExchangeFederationSettings
+from agentplane.llm_ingress.models import AttributionDestination
 from agentplane.sandboxes.kubernetes_grants import KubernetesGrant
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import (
@@ -333,6 +334,10 @@ ENV = Environment(
         models=model_configs(STAGING_APP_MODELS),
         codex_routes=STAGING_APP_MODELS.codex,
         log_llm_requests=True,
+        attribution_destinations=(
+            AttributionDestination.LITELLM_SPEND_LOGS_METADATA,
+            AttributionDestination.OTEL_BAGGAGE,
+        ),
     ),
     egress=EgressProps(
         ca_secret_name=public_coder_egress.CA_BUNDLE_NAME,

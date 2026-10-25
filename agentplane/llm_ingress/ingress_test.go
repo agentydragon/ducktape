@@ -23,6 +23,8 @@ import (
 	"testing"
 	"time"
 
+	"go.opentelemetry.io/otel/baggage"
+
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"github.com/bazelbuild/rules_go/go/runfiles"
@@ -88,6 +90,9 @@ func newIngressTestServer(t *testing.T, reviews auth.TokenReviews, backendURL st
 
 func newConfiguredIngressTestServer(t *testing.T, reviews auth.TokenReviews, c config, options ...auth.Option) *httptest.Server {
 	t.Helper()
+	if c.AttributionDestinations == nil {
+		c.AttributionDestinations = defaultConfig().AttributionDestinations
+	}
 	resolver, err := auth.NewResolver(reviews, testAudience, []string{testNamespace}, options...)
 	if err != nil {
 		t.Fatal(err)
@@ -534,6 +539,7 @@ func TestHopByHopAndCredentialHeadersAreFilteredByCopyHelpers(t *testing.T) {
 		"X-Litellm-Api-Key":             {"forged"},
 		"X-Litellm-Spend-Logs-Metadata": {`{"forged":true}`},
 		"X-Agentplane-Pod-Uid":          {"forged"},
+		"Baggage":                       {"litellm.metadata.spend_logs_metadata.agentplane.namespace=forged,ordinary=untrusted"},
 		"Content-Length":                {"8"},
 		"X-Ordinary":                    {"kept"},
 	}
@@ -541,7 +547,13 @@ func TestHopByHopAndCredentialHeadersAreFilteredByCopyHelpers(t *testing.T) {
 		Account: auth.Account{Namespace: testNamespace, Name: "sandbox-a"},
 		PodName: "sandbox-a", PodUID: "pod-a-uid",
 	}
-	forwarded := forwardedRequestHeaders(headers, principal, testBackendKey)
+	forwarded, err := forwardedRequestHeaders(headers, principal, testBackendKey, []attributionDestination{
+		attributionDestinationLiteLLMSpendLogsMetadata,
+		attributionDestinationOtelBaggage,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, name := range []string{
 		"Connection", "Keep-Alive", "x-drop", "X-Api-Key", "X-Litellm-Api-Key",
 		"X-Agentplane-Pod-Uid", "Content-Length",
@@ -552,6 +564,35 @@ func TestHopByHopAndCredentialHeadersAreFilteredByCopyHelpers(t *testing.T) {
 	}
 	if forwarded.Get("Authorization") != "Bearer "+testBackendKey || forwarded.Get("X-Ordinary") != "kept" {
 		t.Fatalf("request headers were not rebuilt safely: %v", forwarded)
+	}
+	if got := forwarded.Get("Baggage"); strings.Contains(got, "forged") || strings.Contains(got, "ordinary") ||
+		!strings.Contains(got, "litellm.metadata.spend_logs_metadata.agentplane.namespace="+testNamespace) {
+		t.Fatalf("baggage was not rebuilt from verified identity: %q", got)
+	}
+	parsedBaggage, err := baggage.Parse(forwarded.Get("Baggage"))
+	if err != nil || len(parsedBaggage.Members()) != 4 ||
+		parsedBaggage.Member("litellm.metadata.spend_logs_metadata.agentplane.pod_uid").Value() != principal.PodUID {
+		t.Fatalf("forwarded baggage cannot be extracted as four verified claims: %v, err=%v", parsedBaggage, err)
+	}
+	for _, test := range []struct {
+		name              string
+		destination       attributionDestination
+		wantSpendMetadata bool
+		wantBaggage       bool
+	}{
+		{name: "spend only", destination: attributionDestinationLiteLLMSpendLogsMetadata, wantSpendMetadata: true},
+		{name: "baggage only", destination: attributionDestinationOtelBaggage, wantBaggage: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			only, err := forwardedRequestHeaders(headers, principal, testBackendKey, []attributionDestination{test.destination})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if (only.Get("X-Litellm-Spend-Logs-Metadata") != "") != test.wantSpendMetadata ||
+				(only.Get("Baggage") != "") != test.wantBaggage {
+				t.Fatalf("unexpected attribution headers: %v", only)
+			}
+		})
 	}
 	var metadata map[string]string
 	if err := json.Unmarshal([]byte(forwarded.Get("X-Litellm-Spend-Logs-Metadata")), &metadata); err != nil ||

@@ -70,6 +70,7 @@ go_library(
         "@io_k8s_client_go//kubernetes/typed/authentication/v1:authentication",
         "@io_k8s_client_go//rest",
         "@io_k8s_client_go//tools/clientcmd",
+        "@io_opentelemetry_go_otel//baggage",
     ],
 )
 
@@ -94,5 +95,6 @@ go_test(
         "@io_bazel_rules_go//go/runfiles",
         "@io_k8s_api//core/v1:core",
         "@io_k8s_client_go//rest",
+        "@io_opentelemetry_go_otel//baggage",
     ],
 )

@@ -780,6 +780,16 @@ data:
       otel:
         mapper_names:
           - langfuse
+        baggage_metadata_keys:
+          - user_api_key_org_id
+          - user_api_key_user_id
+          - user_api_key_alias
+          - user_api_key_end_user_id
+          - requester_ip_address
+          - spend_logs_metadata.agentplane.namespace
+          - spend_logs_metadata.agentplane.service_account
+          - spend_logs_metadata.agentplane.pod_name
+          - spend_logs_metadata.agentplane.pod_uid
     router_settings:
       model_group_alias:
         gpt-6-astra:

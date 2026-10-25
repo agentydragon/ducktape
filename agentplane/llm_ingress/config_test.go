@@ -61,6 +61,49 @@ models:
 	}
 }
 
+func TestAttributionDestinationsConfig(t *testing.T) {
+	base := `allowed_service_account_namespaces: [test-namespace]
+token_audience: test-audience
+litellm_url: http://127.0.0.1:8100
+litellm_key: test-secret
+`
+	for _, test := range []struct {
+		name  string
+		yaml  string
+		want  []attributionDestination
+		fails bool
+	}{
+		{name: "default", want: []attributionDestination{attributionDestinationLiteLLMSpendLogsMetadata}},
+		{name: "baggage only", yaml: "attribution_destinations: [otel_baggage]\n", want: []attributionDestination{attributionDestinationOtelBaggage}},
+		{name: "both", yaml: "attribution_destinations: [litellm_spend_logs_metadata, otel_baggage]\n", want: []attributionDestination{attributionDestinationLiteLLMSpendLogsMetadata, attributionDestinationOtelBaggage}},
+		{name: "empty", yaml: "attribution_destinations: []\n", fails: true},
+		{name: "duplicate", yaml: "attribution_destinations: [otel_baggage, otel_baggage]\n", fails: true},
+		{name: "unknown", yaml: "attribution_destinations: [body_metadata]\n", fails: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			path := writeSettings(t, base+test.yaml)
+			c, err := loadTestConfig(t, []string{configFileEnv + "=" + path})
+			if test.fails {
+				if err == nil {
+					t.Fatalf("invalid destinations accepted: %+v", c.AttributionDestinations)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(c.AttributionDestinations) != len(test.want) {
+				t.Fatalf("destinations = %v, want %v", c.AttributionDestinations, test.want)
+			}
+			for i, want := range test.want {
+				if c.AttributionDestinations[i] != want {
+					t.Fatalf("destinations = %v, want %v", c.AttributionDestinations, test.want)
+				}
+			}
+		})
+	}
+}
+
 func TestLoadConfigRejectsInvalidModelBudgets(t *testing.T) {
 	for _, value := range []string{`"not-a-budget"`, "null", "0", "-1"} {
 		t.Run(value, func(t *testing.T) {

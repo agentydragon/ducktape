@@ -13,27 +13,40 @@ const (
 	configFileEnv = settingPrefix + "CONFIG_FILE"
 )
 
+type attributionDestination string
+
+const (
+	attributionDestinationLiteLLMSpendLogsMetadata attributionDestination = "litellm_spend_logs_metadata"
+	attributionDestinationOtelBaggage              attributionDestination = "otel_baggage"
+)
+
 type modelConfig struct {
 	Model                    string `json:"model" mapstructure:"model"`
 	TotalContextBudgetTokens int    `json:"total_context_budget_tokens" mapstructure:"total_context_budget_tokens"`
 }
 
 type config struct {
-	AllowedServiceAccountNamespaces []string          `mapstructure:"allowed_service_account_namespaces"`
-	TokenAudience                   string            `mapstructure:"token_audience"`
-	LogLLMRequests                  bool              `mapstructure:"log_llm_requests"`
-	Models                          []modelConfig     `mapstructure:"models"`
-	CodexModelCatalogFile           string            `mapstructure:"codex_model_catalog_file"`
-	LiteLLMURL                      string            `mapstructure:"litellm_url"`
-	LiteLLMKey                      string            `mapstructure:"litellm_key"`
-	LogLevels                       map[string]string `mapstructure:"log_levels"`
-	Host                            string            `mapstructure:"host"`
-	Port                            int               `mapstructure:"port"`
-	Kubeconfig                      string            `mapstructure:"kubeconfig"`
+	AllowedServiceAccountNamespaces []string                 `mapstructure:"allowed_service_account_namespaces"`
+	TokenAudience                   string                   `mapstructure:"token_audience"`
+	LogLLMRequests                  bool                     `mapstructure:"log_llm_requests"`
+	Models                          []modelConfig            `mapstructure:"models"`
+	AttributionDestinations         []attributionDestination `mapstructure:"attribution_destinations"`
+	CodexModelCatalogFile           string                   `mapstructure:"codex_model_catalog_file"`
+	LiteLLMURL                      string                   `mapstructure:"litellm_url"`
+	LiteLLMKey                      string                   `mapstructure:"litellm_key"`
+	LogLevels                       map[string]string        `mapstructure:"log_levels"`
+	Host                            string                   `mapstructure:"host"`
+	Port                            int                      `mapstructure:"port"`
+	Kubeconfig                      string                   `mapstructure:"kubeconfig"`
 }
 
 func defaultConfig() config {
-	return config{Host: "0.0.0.0", Port: 8080, LogLevels: map[string]string{}}
+	return config{
+		Host:                    "0.0.0.0",
+		Port:                    8080,
+		LogLevels:               map[string]string{},
+		AttributionDestinations: []attributionDestination{attributionDestinationLiteLLMSpendLogsMetadata},
+	}
 }
 
 func loadConfig() (config, error) {
@@ -81,6 +94,21 @@ func validateConfig(c *config) error {
 	}
 	if c.LiteLLMKey == "" {
 		return errors.New("litellm_key is required")
+	}
+	if len(c.AttributionDestinations) == 0 {
+		return errors.New("attribution_destinations must be non-empty")
+	}
+	seenAttributionDestinations := make(map[attributionDestination]struct{}, len(c.AttributionDestinations))
+	for _, destination := range c.AttributionDestinations {
+		switch destination {
+		case attributionDestinationLiteLLMSpendLogsMetadata, attributionDestinationOtelBaggage:
+		default:
+			return errors.New("attribution_destinations contains an unsupported destination")
+		}
+		if _, duplicate := seenAttributionDestinations[destination]; duplicate {
+			return errors.New("attribution_destinations cannot contain duplicates")
+		}
+		seenAttributionDestinations[destination] = struct{}{}
 	}
 	if c.Host == "" || c.Port < 0 || c.Port > 65535 {
 		return errors.New("host must be non-empty and port must be between 0 and 65535")

@@ -1104,6 +1104,9 @@ data:
       - agentplane-staging
     log_llm_requests: true
     models: []
+    attribution_destinations:
+      - litellm_spend_logs_metadata
+      - otel_baggage
     codex_model_catalog_file: /etc/agentplane-llm-ingress-codex/codex_models.json
 immutable: false
 ---

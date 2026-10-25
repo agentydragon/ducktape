@@ -3,10 +3,10 @@
 from pathlib import Path
 from typing import ClassVar
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import SettingsConfigDict
 
-from agentplane.llm_ingress.models import ModelConfig
+from agentplane.llm_ingress.models import AttributionDestination, ModelConfig
 from agentplane.log_levels import LogLevels
 from util.urls import HttpEndpointUrl
 from util.yaml_file_settings import YamlFileSettings
@@ -35,6 +35,21 @@ class Settings(YamlFileSettings):
     models: list[ModelConfig] = Field(
         default_factory=list, description="Per-route client configuration exposed to authenticated workloads."
     )
+    attribution_destinations: list[AttributionDestination] = Field(
+        default_factory=lambda: [AttributionDestination.LITELLM_SPEND_LOGS_METADATA],
+        min_length=1,
+        description="Headers receiving the ingress's verified Agentplane identity claims.",
+    )
+
+    @field_validator("attribution_destinations")
+    @classmethod
+    def unique_attribution_destinations(
+        cls, destinations: list[AttributionDestination]
+    ) -> list[AttributionDestination]:
+        if len(destinations) != len(set(destinations)):
+            raise ValueError("attribution_destinations must not contain duplicates")
+        return destinations
+
     codex_model_catalog_file: Path | None = Field(
         default=None,
         description=(

@@ -103,7 +103,22 @@ def main_proxy_config() -> dict:
                 {"provider": "tana", "custom_handler": "tana.litellm_proxy.custom_handler.tana_handler"}
             ],
         },
-        "callback_settings": {"otel": {"mapper_names": ["langfuse"]}},
+        "callback_settings": {
+            "otel": {
+                "mapper_names": ["langfuse"],
+                "baggage_metadata_keys": [
+                    "user_api_key_org_id",
+                    "user_api_key_user_id",
+                    "user_api_key_alias",
+                    "user_api_key_end_user_id",
+                    "requester_ip_address",
+                    "spend_logs_metadata.agentplane.namespace",
+                    "spend_logs_metadata.agentplane.service_account",
+                    "spend_logs_metadata.agentplane.pod_name",
+                    "spend_logs_metadata.agentplane.pod_uid",
+                ],
+            }
+        },
         "router_settings": {
             # Codex 0.153+ bundles metadata for this exact slug (272k base / 872k
             # configurable maximum). Keep the alias hidden so Codex can select the

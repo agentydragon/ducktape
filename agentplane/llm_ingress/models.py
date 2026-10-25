@@ -1,6 +1,15 @@
 """Workload-facing LLM ingress model configuration contract."""
 
+from enum import StrEnum
+
 from pydantic import BaseModel, ConfigDict, Field
+
+
+class AttributionDestination(StrEnum):
+    """Places where ingress may put its verified Agentplane identity claims."""
+
+    LITELLM_SPEND_LOGS_METADATA = "litellm_spend_logs_metadata"
+    OTEL_BAGGAGE = "otel_baggage"
 
 
 class ModelConfig(BaseModel):
