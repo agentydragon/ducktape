@@ -69,6 +69,20 @@ class LangfuseSearchSettings(BaseModel):
     )
 
 
+class FrontendConfig(BaseModel):
+    """Browser-safe settings exposed by `GET /frontend-config`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    trace_search: TraceSearchSettings | None = Field(
+        default=None, description="Optional Grafana Tempo trace links in sandbox and session menus."
+    )
+    langfuse_search: LangfuseSearchSettings | None = Field(
+        default=None,
+        description="Optional Langfuse links filtered by configured Sandbox namespace and ServiceAccount metadata.",
+    )
+
+
 class AppSettingsConfig(YamlFileSettings):
     """Deployment-authored app settings, before runtime-only inputs arrive.
 
@@ -111,12 +125,8 @@ class AppSettingsConfig(YamlFileSettings):
     title_generation: TitleGenerationSettings | None = Field(
         default=None, description="Optional OpenAI Responses-compatible backend for automatic Thread titles."
     )
-    trace_search: TraceSearchSettings | None = Field(
-        default=None, description="Optional Grafana Tempo trace search links in sandbox and session menus."
-    )
-    langfuse_search: LangfuseSearchSettings | None = Field(
-        default=None,
-        description="Optional Langfuse links filtered by configured Sandbox namespace and ServiceAccount metadata.",
+    frontend_config: FrontendConfig = Field(
+        default_factory=FrontendConfig, description="Browser-safe settings exposed by `GET /frontend-config`."
     )
 
     @model_validator(mode="after")
