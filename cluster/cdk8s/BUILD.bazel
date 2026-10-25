@@ -1908,3 +1908,37 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "agent_rbac_test_support",
+    testonly = True,
+    srcs = ["agent_rbac_test_support.py"],
+)
+
+py_test(
+    name = "test_agent_rbac",
+    size = "medium",
+    srcs = ["test_agent_rbac.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":agent_access_profiles",
+        ":agent_namespace_rbac",
+        ":agent_rbac_base",
+        ":agent_rbac_test_support",
+        ":agent_shared_rbac",
+        ":ducktape_flux",
+        ":namespace_access",
+        "//cluster/cdk8s/agentplane:staging",
+        "//cluster/cdk8s/clickhouse:installation",
+        "//cluster/cdk8s/haku:charts",
+        "//cluster/cdk8s/haku:rbac",
+        "//cluster/cdk8s/plaid_mcp:db",
+        "//cluster/cdk8s/plaid_mcp:spend",
+        "//cluster/cdk8s/public_coder:app",
+        "@pypi//cdk8s",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)

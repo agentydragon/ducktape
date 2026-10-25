@@ -21,7 +21,6 @@ import pytest_bazel
 import yaml
 from more_itertools import one
 
-from cluster.validation.agent_rbac import Permission, Rbac, uncovered
 from cluster.validation.checks import (
     check_cilium_policy_rules_nonempty,
     check_external_credential_ownership,
@@ -39,7 +38,7 @@ from cluster.validation.image_automation import (
     check_image_policy_markers,
     check_no_flow_mappings_where_flux_writes,
 )
-from cluster.validation.k8s import K8sResource, RbacRoleRef, RoleBindingResource
+from cluster.validation.k8s import K8sResource
 from cluster.validation.kustomize import (
     KustomizeBuildResult,
     flux_generated_kustomization,
@@ -147,36 +146,10 @@ def test_loki_proxy_static_allowlist_covers_agent_readable_log_namespaces(
     assert not missing, f"agent-readable log namespaces missing from Loki proxy allowlist: {missing}"
 
 
-@pytest.mark.parametrize("preset", ["haku", "public-coder", "finance-agent"])
-def test_managed_agent_read_grants_cover_declarative_namespace_opt_ins(
-    cluster: ParsedCluster,
-    bootstrap_resources: list[K8sResource],
-    staging_app_config: dict,
-    staging_policy_sets: dict[str, list[dict]],
-    staging_manifest_docs: list[dict],
-    k8s_dir: Path,
-    repo_root: Path,
-    generated_dir: Path,
-    preset: str,
+def test_agent_binding_delegation_dependencies_follow_namespace_owners(
+    cluster: ParsedCluster, staging_policy_sets: dict[str, list[dict]], k8s_dir: Path, repo_root: Path
 ) -> None:
-    """Managed agents get the same labeled namespace readers as the static identities.
-
-    Locally rendered, non-parked Namespace manifests participate. Shared policy emits labels,
-    static bindings, and catalog/default entries; namespace dependencies stay explicit.
-    """
-    metadata_label = "rbac.ducktape.io/agent-readable-metadata"
-    logs_label = "rbac.ducktape.io/agent-readable-logs"
-    expected: set[tuple[str, str]] = set()
-
-    def expect_readers(namespace: K8sResource) -> None:
-        labels = namespace.metadata.labels
-        if labels.get(metadata_label) == "true" or labels.get(logs_label) == "true":
-            expected.add((namespace.name, "agent-readable-namespace-metadata"))
-        if labels.get(logs_label) == "true":
-            expected.add((namespace.name, "agent-readable-namespace-logs"))
-
-    # A reconciliation hold leaves namespace Roles and bindings deployed. Parked and
-    # separately sourced workloads remain outside this local authorization inventory.
+    """Delegated binding applies follow the namespace owner that creates their targets."""
     retained_resources = cluster.flux_kust_resources(repo_root, include_suspended=True)
     namespace_owners: dict[str, set[str]] = {}
     for owner, resources in retained_resources.items():
@@ -184,20 +157,7 @@ def test_managed_agent_read_grants_cover_declarative_namespace_opt_ins(
             if resource.kind != "Namespace":
                 continue
             namespace_owners.setdefault(resource.name, set()).add(owner)
-            expect_readers(resource)
-    for resource in bootstrap_resources:
-        if resource.kind == "Namespace":
-            expect_readers(resource)
 
-    reader_roles = {"agent-readable-namespace-metadata", "agent-readable-namespace-logs"}
-    actual = {
-        (namespace, rule["role"]["name"])
-        for name in staging_app_config["sandbox_presets"][preset]["policy_sets"]
-        for rule in staging_policy_sets[name]
-        if rule["type"] == "kubernetes_role_binding" and rule["role"]["name"] in reader_roles
-        for namespace in rule["namespaces"]
-    }
-    assert actual == expected
     policy_set_namespaces = {
         namespace
         for rules in staging_policy_sets.values()
@@ -213,21 +173,6 @@ def test_managed_agent_read_grants_cover_declarative_namespace_opt_ins(
         "haku-sandbox",
         "litellm",
     }
-    assert not any(
-        doc["kind"] in {"Role", "RoleBinding"}
-        and doc["metadata"]["name"] in {"agentplane-staging-managed-bindings", "agentplane-staging-external-bindings"}
-        and doc["metadata"].get("namespace") != "agentplane-staging"
-        for doc in staging_manifest_docs
-    )
-
-    for rule in (
-        rule
-        for name in staging_app_config["sandbox_presets"][preset]["policy_sets"]
-        for rule in staging_policy_sets[name]
-    ):
-        assert rule.get("clusterRole") not in reader_roles, rule
-        if rule.get("role", {}).get("name") in reader_roles:
-            assert rule["role"]["kind"] == "ClusterRole"
 
     flux_objects = list(yaml.safe_load_all((k8s_dir / "flux/kustomizations.k8s.yaml").read_text()))
     delegation_name = "agentplane-staging-binding-delegation-"
@@ -242,8 +187,6 @@ def test_managed_agent_read_grants_cover_declarative_namespace_opt_ins(
     namespace_owners["haku-sandbox"] = {"haku-rbac"}
     namespace_owners["flux-system"] = set()
     namespace_owners["ducktape-flux"] = set()
-    # The clickhouse Namespace is emitted alongside the operator resources, but
-    # its service Kustomization owns the namespace-scoped workload and grants.
     delegation_owner_overrides = {"clickhouse": "clickhouse"}
     for namespace in expected_external_scopes:
         owners = namespace_owners[namespace]
@@ -255,46 +198,12 @@ def test_managed_agent_read_grants_cover_declarative_namespace_opt_ins(
         )
         assert is_bootstrap_root or len(owners) == 1, (namespace, owners)
 
-        path = generated_dir / "agentplane/binding-delegation/agentplane-staging" / namespace
-        objects = list(yaml.safe_load_all((path / f"{namespace}.k8s.yaml").read_text()))
-        role = one(doc for doc in objects if doc["kind"] == "Role")
-        binding = one(doc for doc in objects if doc["kind"] == "RoleBinding")
-        delegation_role = "agentplane-staging-external-bindings"
-        assert role["metadata"] == {"name": delegation_role, "namespace": namespace}
-        assert role["rules"][0] == {
-            "apiGroups": ["rbac.authorization.k8s.io"],
-            "resources": ["rolebindings"],
-            "verbs": ["create", "delete", "get", "list", "patch"],
-        }
-        assert {"apiGroups": ["rbac.authorization.k8s.io"], "resources": ["roles"], "verbs": ["get"]} in role["rules"]
-        expected_bound_roles = {
-            rule["role"]["name"]
-            for rules in staging_policy_sets.values()
-            for rule in rules
-            if rule["type"] == "kubernetes_role_binding"
-            and rule["role"]["kind"] == "Role"
-            and namespace in rule["namespaces"]
-        }
-        # The Litellm reader is a static Claude binding, not an assignable PolicySet role.
-        actual_bound_roles = {
-            tuple(rule.get("resourceNames", []))
-            for rule in role["rules"]
-            if rule["resources"] == ["roles"] and rule["verbs"] == ["bind"]
-        }
-        assert actual_bound_roles == {(name,) for name in expected_bound_roles}
-        assert binding["metadata"] == {"name": delegation_role, "namespace": namespace}
-        assert binding["roleRef"] == {"apiGroup": "rbac.authorization.k8s.io", "kind": "Role", "name": delegation_role}
-        assert binding["subjects"] == [
-            {"kind": "ServiceAccount", "name": "policy-controller", "namespace": "agentplane-staging"}
-        ]
-
         flux = flux_by_name[f"{delegation_name}{namespace}"]
         assert flux["spec"]["sourceRef"] == {"kind": "GitRepository", "name": "ducktape", "namespace": "ducktape-flux"}
         assert flux["spec"]["path"] == (
             f"./cluster/generated/agentplane/binding-delegation/agentplane-staging/{namespace}"
         )
         if expected_dependency is None:
-            # Bootstrap roots have no generated construct representing their owner.
             assert "dependsOn" not in flux["spec"]
         else:
             assert flux["spec"]["dependsOn"] == [{"name": expected_dependency[0], "namespace": "ducktape-flux"}]
@@ -369,23 +278,8 @@ def agent_permission_resources(
 
 
 @pytest.fixture(scope="module")
-def agent_rbac(agent_permission_resources: list[K8sResource]) -> Rbac:
-    return Rbac(agent_permission_resources)
-
-
-@pytest.fixture(scope="module")
 def staging_manifest_docs(k8s_dir: Path) -> list[dict]:
     return list(yaml.safe_load_all((k8s_dir / "agentplane-staging/agentplane-staging.k8s.yaml").read_text()))
-
-
-@pytest.fixture(scope="module")
-def staging_app_config(staging_manifest_docs: list[dict]) -> dict:
-    app_config = one(
-        doc for doc in staging_manifest_docs if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "app-config"
-    )
-    config = yaml.safe_load(app_config["data"]["config.yaml"])
-    assert isinstance(config, dict)
-    return config
 
 
 @pytest.fixture(scope="module")
@@ -396,209 +290,19 @@ def staging_policy_sets(staging_manifest_docs: list[dict]) -> dict[str, list[dic
 
 
 def test_no_legacy_agent_diagnostic_rbac(agent_permission_resources: list[K8sResource]) -> None:
+    """The delivered cluster has no implicit Kyverno-generated agent readers."""
     assert not any(
-        r.kind == "ClusterPolicy" and r.name == "generate-agent-diagnostics-readers" for r in agent_permission_resources
-    )
-    assert not any(
-        r.kind == "ClusterRole" and r.name == "kyverno-background-controller-rolebindings"
-        for r in agent_permission_resources
+        resource.kind == "ClusterPolicy" and resource.name == "generate-agent-diagnostics-readers"
+        for resource in agent_permission_resources
     )
     assert not any(
-        r.kind == "RoleBinding" and r.name in {"agent-readable-metadata", "agent-readable-logs"}
-        for r in agent_permission_resources
+        resource.kind == "ClusterRole" and resource.name == "kyverno-background-controller-rolebindings"
+        for resource in agent_permission_resources
     )
-
-
-def test_agent_diagnostic_binding_scopes(agent_permission_resources: list[K8sResource]) -> None:
-    # Compare binding scopes directly; broad Haku roles cannot mask omissions.
-    # Labels are now descriptive output of the shared policy, not an access trigger.
-    expected: set[tuple[str, str, str]] = set()
-    for resource in agent_permission_resources:
-        if resource.kind != "Namespace":
-            continue
-        labels = resource.metadata.labels
-        if labels.get("rbac.ducktape.io/agent-readable-logs") == "true":
-            expected.add((resource.name, "agent-diagnostics-metadata", "agent-readable-namespace-metadata"))
-            expected.add((resource.name, "agent-diagnostics-logs", "agent-readable-namespace-logs"))
-        elif labels.get("rbac.ducktape.io/agent-readable-metadata") == "true":
-            expected.add((resource.name, "agent-diagnostics-metadata", "agent-readable-namespace-metadata"))
-    actual: set[tuple[str, str, str]] = set()
-    for resource in agent_permission_resources:
-        if isinstance(resource, RoleBindingResource) and resource.name in {
-            "agent-diagnostics-metadata",
-            "agent-diagnostics-logs",
-        }:
-            assert resource.kind == "RoleBinding"
-            assert resource.role_ref is not None
-            assert resource.role_ref.kind == "ClusterRole"
-            actual.add((resource.namespace, resource.name, resource.role_ref.name))
-    assert actual == expected
-
-
-# Distinct access paths, not a union that could hide a broken Console or OIDC path.
-@pytest.mark.parametrize(
-    ("kind", "name", "namespace", "preset"),
-    [
-        ("Group", "oidc-ksbx-groups:haku", "", "haku"),
-        ("Group", "haku:access-profile:haku", "", "haku"),
-        ("ServiceAccount", "haku", "haku-sandbox", "haku"),
-    ],
-)
-def test_static_managed_agent_permission_parity(
-    agent_rbac: Rbac,
-    staging_app_config: dict,
-    staging_policy_sets: dict[str, list[dict]],
-    kind: str,
-    name: str,
-    namespace: str,
-    preset: str,
-) -> None:
-    static = agent_rbac.identity(kind, name, namespace)
-    managed = agent_rbac.managed(staging_app_config, staging_policy_sets, preset, namespace="agentplane-staging")
-    assert not uncovered(static, managed)
-    assert not uncovered(managed, static)
-
-
-def test_finance_spend_policy_role_is_named_get_only(
-    agent_rbac: Rbac, staging_policy_sets: dict[str, list[dict]]
-) -> None:
-    role_rule = one(
-        rule for rule in staging_policy_sets["spend-policy-config"] if rule["type"] == "kubernetes_role_binding"
+    assert not any(
+        resource.kind == "RoleBinding" and resource.name in {"agent-readable-metadata", "agent-readable-logs"}
+        for resource in agent_permission_resources
     )
-    assert role_rule == {
-        "type": "kubernetes_role_binding",
-        "role": {"kind": "Role", "name": "plaid-spend-finance-config-reader"},
-        "namespaces": ["plaid-mcp"],
-    }
-    assert agent_rbac.rules(
-        RbacRoleRef(api_group="rbac.authorization.k8s.io", **role_rule["role"]), one(role_rule["namespaces"])
-    ) == {Permission("plaid-mcp", "", "secrets", "get", "plaid-spend-policy")}
-
-
-def test_agent_permission_superset_and_finance_parity(
-    agent_rbac: Rbac, staging_app_config: dict, staging_policy_sets: dict[str, list[dict]]
-) -> None:
-    public = agent_rbac.managed(staging_app_config, staging_policy_sets, "public-coder", namespace="agentplane-staging")
-    haku = agent_rbac.managed(staging_app_config, staging_policy_sets, "haku", namespace="agentplane-staging")
-    finance = agent_rbac.managed(
-        staging_app_config, staging_policy_sets, "finance-agent", namespace="agentplane-staging"
-    )
-    assert not uncovered(public, haku)
-    assert not uncovered(public, finance)
-    # The shared cluster-diagnostics grant covers Plaid object reads too;
-    # finance adds only its secrets.
-    assert uncovered(finance, public) == {
-        Permission("agentplane-staging", "", "secrets", "get", "coinbase-api-credentials"),
-        Permission("plaid-mcp", "", "secrets", "get", "plaid-spend-policy"),
-    }
-
-
-@pytest.mark.parametrize("account", ["claude-ai", "haku-agent"])
-def test_legacy_agentplane_accounts_are_not_haku_profile_aliases(
-    agent_rbac: Rbac, agent_permission_resources: list[K8sResource], account: str
-) -> None:
-    # These OAuth/Actions accounts are NOT the Console profile or the managed
-    # Haku preset. Preserve their independently scoped existing Kubernetes access.
-    expected: set[Permission] = set()
-    if account == "claude-ai":
-        for kind, name, namespace in (
-            ("ClusterRole", "cluster-diagnostics-reader", None),
-            ("Role", "claude-ai-coinbase-reader", "agentplane-staging"),
-            ("Role", "claude-ai-sandbox-reader", "agentplane-staging"),
-            ("Role", "agent-haku-console-metadata-reader", "haku-console"),
-            ("Role", "agent-clickhouse-diagnostics-reader", "clickhouse"),
-            ("Role", "public-coder-agent-reader", "public-coder-agent"),
-            ("Role", "agent-public-coder-extended-diagnostics-reader", "public-coder-agent"),
-        ):
-            expected.update(
-                agent_rbac.rules(RbacRoleRef(api_group="rbac.authorization.k8s.io", kind=kind, name=name), namespace)
-            )
-        for resource in agent_permission_resources:
-            if resource.kind != "Namespace":
-                continue
-            labels = resource.metadata.labels
-            if (
-                labels.get("rbac.ducktape.io/agent-readable-metadata") == "true"
-                or labels.get("rbac.ducktape.io/agent-readable-logs") == "true"
-            ):
-                expected.update(
-                    agent_rbac.rules(
-                        RbacRoleRef(
-                            api_group="rbac.authorization.k8s.io",
-                            kind="ClusterRole",
-                            name="agent-readable-namespace-metadata",
-                        ),
-                        resource.name,
-                    )
-                )
-            if labels.get("rbac.ducktape.io/agent-readable-logs") == "true":
-                expected.update(
-                    agent_rbac.rules(
-                        RbacRoleRef(
-                            api_group="rbac.authorization.k8s.io",
-                            kind="ClusterRole",
-                            name="agent-readable-namespace-logs",
-                        ),
-                        resource.name,
-                    )
-                )
-    actual = agent_rbac.identity("ServiceAccount", account, "agentplane-staging")
-    assert not uncovered(actual, expected)
-    assert not uncovered(expected, actual)
-
-
-def test_agent_permission_denials(
-    agent_rbac: Rbac, staging_app_config: dict, staging_policy_sets: dict[str, list[dict]]
-) -> None:
-    profiles = {
-        name: agent_rbac.managed(staging_app_config, staging_policy_sets, name, namespace="agentplane-staging")
-        for name in ("public-coder", "finance-agent", "haku")
-    }
-    profiles.update(
-        {
-            "claude-ai": agent_rbac.identity("ServiceAccount", "claude-ai", "agentplane-staging"),
-            "haku-console": agent_rbac.identity("Group", "haku:access-profile:haku"),
-            "haku-oidc": agent_rbac.identity("Group", "oidc-ksbx-groups:haku"),
-            "haku-sa": agent_rbac.identity("ServiceAccount", "haku", "haku-sandbox"),
-        }
-    )
-    denied = {
-        Permission("public-coder-agent", "", "secrets", "list"),
-        Permission("agentplane-staging", "", "pods/exec", "create"),
-        Permission("agentplane-staging", "agents.x-k8s.io", "sandboxes", "create"),
-        Permission("agentplane-staging", "agents.x-k8s.io", "sandboxes", "patch"),
-        Permission("agentplane-staging", "agents.x-k8s.io", "sandboxes", "delete"),
-    }
-    denied |= {
-        Permission("agentplane-staging", "agentplane.allegedly.works", "sandboxes", verb)
-        for verb in ("create", "patch", "delete")
-    }
-    denied |= {
-        Permission("agentplane-staging", "", "serviceaccounts/token", "create", "sandbox-controller"),
-        Permission("agentplane-staging", "apps", "deployments", "patch", "app"),
-        Permission("agentplane-staging", "apps", "deployments/scale", "patch", "runner-gateway"),
-    }
-    denied |= {
-        Permission(namespace, "kustomize.toolkit.fluxcd.io", "kustomizations", "patch")
-        for namespace in ("flux-system", "ducktape-flux", "agentplane-staging")
-    }
-    coinbase = Permission("agentplane-staging", "", "secrets", "get", "coinbase-api-credentials")
-    denied |= {
-        Permission("agentplane-staging", "", "secrets", verb)
-        for verb in ("get", "list", "watch", "create", "update", "patch", "delete")
-    }
-    # The kubelet authorizes WebSocket exec as `get` on nodes/proxy.
-    denied.add(Permission(None, "", "nodes/proxy", "get"))
-    for name, permissions in profiles.items():
-        assert bool(uncovered({coinbase}, permissions)) == (name == "public-coder"), name
-        assert uncovered(denied, permissions) == denied, name
-        if name == "claude-ai":
-            sandbox_writes = {
-                Permission("haku-sandbox", "", resource, verb)
-                for resource in ("pods", "pods/exec", "secrets", "configmaps")
-                for verb in ("create", "update", "patch", "delete")
-            }
-            assert uncovered(sandbox_writes, permissions) == sandbox_writes
 
 
 if __name__ == "__main__":
