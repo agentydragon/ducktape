@@ -458,6 +458,33 @@ fn namespace_factory_ignores_self_initialized_unrelated_object() {
 }
 
 #[test]
+fn namespace_factory_allows_adjacent_fresh_own_field_writes() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"import { api } from './peer.js';
+class Provider {
+    limit = 1 / 0;
+    candidates = [].values;
+    async prepare() {}
+}
+const provider = new Provider();
+provider.limit = 1 / 0;
+provider.candidates = () => [];
+const wrapped = api.make(() => later);
+const later = 42;
+console.log(wrapped.invoke(), provider.limit, provider.candidates().length);
+"#,
+            modules(),
+        )
+        .with_extra_chunks(&[("static/peer", NAMESPACE_FACTORY)])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+            .with_callback_factory_members("api", &["make"])
+            .build()]),
+    );
+    assert_preserved_entry_output(&fixture, "42 Infinity 0\n");
+}
+
+#[test]
 fn namespace_factory_tracks_namespace_seed_in_self_initializer() {
     assert_namespace_factory_publication_rejected(
         "var state = state || api;\n\
