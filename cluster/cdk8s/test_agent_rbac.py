@@ -25,19 +25,20 @@ from cluster.cdk8s.public_coder import app as public_coder_app
 def model_resources() -> list[dict[str, Any]]:
     """Synthesize just the charts that declare agent RBAC and Agentplane's grants."""
     app = Cdk8sTesting.app()
-    agent_rbac_base.chart(app)
-    agent_shared_rbac.chart(app)
-    staging.chart(app)
-    haku_rbac.chart(app)
-    ducktape_flux.chart(app)
-    plaid_db.chart(app)
-    plaid_spend.chart(app)
-    public_coder_app.rbac_chart(app)
-    clickhouse_installation.agent_diagnostics_rbac_chart(app)
-    console_chart(app)
-    for namespace in NAMESPACE_DIAGNOSTICS:
-        agent_namespace_rbac.chart(app, namespace)
-    return cast(list[dict[str, Any]], Cdk8sTesting.synth(app))
+    charts = [
+        agent_rbac_base.chart(app),
+        agent_shared_rbac.chart(app),
+        staging.chart(app),
+        haku_rbac.chart(app),
+        ducktape_flux.chart(app),
+        plaid_db.chart(app),
+        plaid_spend.chart(app),
+        public_coder_app.rbac_chart(app),
+        clickhouse_installation.agent_diagnostics_rbac_chart(app),
+        console_chart(app),
+    ]
+    charts.extend(agent_namespace_rbac.chart(app, namespace) for namespace in NAMESPACE_DIAGNOSTICS)
+    return [doc for chart in charts for doc in cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))]
 
 
 @pytest.fixture(scope="module")
