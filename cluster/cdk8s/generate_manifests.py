@@ -1101,7 +1101,7 @@ def generate_manifests(root: Path) -> None:
         kyverno_kustomization,
     )
     langfuse_artifact = artifact("langfuse", langfuse_app.OUTPUT_DIR)
-    langfuse_kustomization = langfuse_app.langfuse(
+    langfuse_app.langfuse(
         flux_chart,
         write_directory(root, langfuse_artifact, langfuse_app.chart, siblings=["langfuse-secrets.sops.yaml"]),
         cnpg_kustomization,
@@ -1509,7 +1509,6 @@ def generate_manifests(root: Path) -> None:
         litellm_artifact,
         cnpg_kustomization,
         external_secrets_operator_kustomization,
-        langfuse_kustomization,
         monitoring_crds_kustomization,
         seaweedfs_operator_kustomization,
     )

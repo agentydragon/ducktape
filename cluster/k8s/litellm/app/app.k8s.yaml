@@ -819,6 +819,8 @@ automountServiceAccountToken: false
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  annotations:
+    secret.reloader.stakater.com/reload: litellm-langfuse-otel-headers
   labels:
     app.kubernetes.io/name: litellm
   name: litellm
@@ -925,6 +927,7 @@ spec:
                 secretKeyRef:
                   key: OTEL_EXPORTER_OTLP_HEADERS
                   name: litellm-langfuse-otel-headers
+                  optional: true
           image: git.allegedly.works/ducktape-ci/tana-litellm-proxy:unset
           imagePullPolicy: Always
           livenessProbe:

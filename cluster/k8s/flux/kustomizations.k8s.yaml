@@ -3524,8 +3524,6 @@ spec:
       namespace: ducktape-flux
     - name: external-secrets-operator
       namespace: ducktape-flux
-    - name: langfuse
-      namespace: ducktape-flux
     - name: monitoring-crds
       namespace: ducktape-flux
     - name: seaweedfs-operator
@@ -3539,7 +3537,19 @@ spec:
     name: litellm
     namespace: ducktape-flux
   timeout: 10m
-  wait: true
+  healthChecks:
+    - apiVersion: postgresql.cnpg.io/v1
+      kind: Cluster
+      name: litellm-db
+      namespace: litellm
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: litellm
+      namespace: litellm
+    - apiVersion: gateway.networking.k8s.io/v1
+      kind: HTTPRoute
+      name: litellm
+      namespace: litellm
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization

@@ -43,7 +43,7 @@ from cdk8s_plus_34 import (
     k8s,
 )
 from constructs import Construct
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy, KustomizationSpecHealthChecks
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
@@ -161,7 +161,7 @@ def _base_env(*entries: _EnvEntry) -> tuple[_EnvEntry, ...]:
 
 
 def _langfuse_env(*entries: _EnvEntry) -> tuple[_EnvEntry, ...]:
-    return (*_base_env(*entries), _SecretEnv("OTEL_EXPORTER_OTLP_HEADERS", _LANGFUSE_OTEL_HEADERS))
+    return (*_base_env(*entries), _SecretEnv("OTEL_EXPORTER_OTLP_HEADERS", _LANGFUSE_OTEL_HEADERS, optional=True))
 
 
 def proxy_specs() -> tuple[ProxySpec, ...]:
@@ -317,7 +317,12 @@ class LiteLLMProxy(Construct):
         deployment = Deployment(
             self,
             "deployment",
-            metadata=ApiObjectMetadata(name=self.spec.name, namespace=self.spec.namespace, labels=ref.pods.selector),
+            metadata=ApiObjectMetadata(
+                name=self.spec.name,
+                namespace=self.spec.namespace,
+                labels=ref.pods.selector,
+                annotations={"secret.reloader.stakater.com/reload": "litellm-langfuse-otel-headers"},
+            ),
             pod_metadata=ApiObjectMetadata(labels=ref.pods.selector),
             replicas=self.spec.replicas,
             strategy=self.spec.strategy,
@@ -485,7 +490,6 @@ def litellm(
     artifact: ArtifactGeneratorSpecArtifacts,
     cnpg: Kustomization,
     external_secrets_operator: Kustomization,
-    langfuse: Kustomization,
     monitoring_crds: Kustomization,
     seaweedfs_operator: Kustomization,
 ) -> Kustomization:
@@ -496,7 +500,19 @@ def litellm(
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         decryption=SOPS_DECRYPTION,
         timeout="10m",
+        wait=None,
+        health_checks=[
+            KustomizationSpecHealthChecks(
+                api_version="postgresql.cnpg.io/v1", kind="Cluster", name=database.DATABASE.name, namespace=_NAMESPACE
+            ),
+            KustomizationSpecHealthChecks(
+                api_version="apps/v1", kind="Deployment", name="litellm", namespace=_NAMESPACE
+            ),
+            KustomizationSpecHealthChecks(
+                api_version="gateway.networking.k8s.io/v1", kind="HTTPRoute", name="litellm", namespace=_NAMESPACE
+            ),
+        ],
         depends_on=flux_kustomization_depends_on_many(
-            cnpg, external_secrets_operator, langfuse, monitoring_crds, seaweedfs_operator
+            cnpg, external_secrets_operator, monitoring_crds, seaweedfs_operator
         ),
     )
