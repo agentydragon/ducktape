@@ -76,6 +76,14 @@ spec:
             secret:
               secretName: gitlab-bootstrap-token
       webservice:
+        deployment:
+          startupProbe:
+            failureThreshold: 60
+            httpGet:
+              path: /-/liveness
+              port: 8080
+            periodSeconds: 5
+            timeoutSeconds: 5
         maxReplicas: 2
         minReplicas: 2
         workerProcesses: 1
