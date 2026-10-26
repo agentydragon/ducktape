@@ -431,8 +431,9 @@ impl std::fmt::Display for ModuleKey {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ModuleEntry {
     pub key: ModuleKey,
-    /// Canonical module identity/destination path (see
-    /// [`spec::ModulePath`]).
+    /// Canonical report identity (see [`spec::ModulePath`]). For planned
+    /// outputs this is the module path; for `Entry` it is the historic
+    /// `anon_residual_sentinel` report label, not the emitted entry filename.
     pub path: spec::ModulePath,
     /// The physical entry destination or the policy role of a planned output.
     /// Authoritative; the authored `residual/` path namespace is independent.

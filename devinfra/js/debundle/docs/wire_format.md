@@ -182,6 +182,8 @@ via `DependencyGraphReport::module(key)` / `is_unassigned_or_entry(key)`.
 explicit planned output, or `unassigned` for a planned output receiving
 unclaimed source units. The authored `residual/` path namespace does not
 determine the destination kind.
+The entry's `path` is the historical report label `anon_residual_sentinel`;
+the emitted entry filename is chosen separately by the chunk configuration.
 
 ## Shared purity causes
 
