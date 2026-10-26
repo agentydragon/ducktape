@@ -929,6 +929,7 @@ flowchart TD
     VOLUME_LAYOUT_CONVERSION[Unscheduled: explicit offline volume conversion, much later]
     SANDBOX_SPEC_EDIT[Unscheduled: edit a suspended Sandbox's template or kind]
     WORKSPACE_NODE_PORTABILITY[Unscheduled: move a workspace between nodes]
+    SANDBOX_AUTODISKFUL[Decision, unscheduled: auto-diskful storage for Sandboxes]
     SANDBOX_ARCHIVE[Unscheduled: a suspended Sandbox archived to object storage]
     AGENT_RESUME_NOTICE[Unscheduled: tell agents when their Sandbox was suspended and resumed]
     RUNNER_BUSY_TRACKING -. related .-> AGENT_RESUME_NOTICE
@@ -1032,6 +1033,23 @@ Control design: [ADR](../docs/adr_sandbox_session_control.md).
 Fresh VM Sandboxes use [replicated Piraeus storage](../docs/vm_sandboxes.md#guest-and-storage). For other
 node-local volumes, consider portability by copying through VolSync, object storage or directly
 while the Sandbox is suspended. This broader copy-based path does not gate replicated VM storage.
+
+### `SANDBOX_AUTODISKFUL` — consider auto-diskful storage for Sandboxes
+
+**Decision, unscheduled; operator, 2026-10-26 PDT.** Evaluate replicated Piraeus auto-diskful
+storage for Pod Sandboxes, covering both retained state and workspace volumes. Fresh VM Sandboxes
+already use `piraeus-ssd-2-autodiskful`; Pod Sandboxes still use strict-local HDD claims.
+On 2026-10-26, both volumes pinned `public-coder-ducktape-2` to `ovh-ns102453`, where memory
+requests prevented resume until a stateless GitLab replica was moved elsewhere.
+
+Compare keeping strict-local placement against auto-diskful attachment within the OVH zone;
+recommend whether the scheduling flexibility justifies replication capacity and I/O costs.
+Include runner filesystem requirements and preservation of existing retained data in the decision:
+changing a template does not migrate existing PVCs. This is an evaluation, not an approved storage
+cutover or a prerequisite for the separate copy-based portability task.
+
+**Exit:** reviewed recommendation for Pod state and workspace storage, with any migration and
+activation work recorded as follow-up nodes if selected.
 
 ### `SANDBOX_ARCHIVE` — a suspended Sandbox archived to object storage
 
