@@ -151,6 +151,12 @@ spec:
 The executor also checks at execution that the named Sandbox still has the given UID, so a same-name replacement
 never inherits a grant meant for its predecessor.
 
+`create` on PolicySets and PolicyBindings would let the executor write any grant, so a `ValidatingAdmissionPolicy`
+on its service account admits only this shape: one owner reference, to a Sandbox in the same namespace; rules that
+name only that Sandbox's name and UID (the inbox targets, the schema's `const`) and only `orchestration` Actions; a
+binding whose PolicySets share that owner and whose subject is a configured orchestrator account. A bug in the
+executor then cannot grant past the worker it launched.
+
 ## Exposure
 
 **One Action group, `orchestration`, holds every operation**, as an executor kind in the Action Service beside the
@@ -161,7 +167,7 @@ appear as [direct tools](../action_service/README.md#direct-tools) and answer in
 
 The executor lives in the Action Service because it needs the authenticated `ExecutionRequest.caller`, to bind
 launcher grants and to record provenance, and the dispatch lease and receipts every Action has. Its service account
-gains `create` on Sandboxes, PolicySets and PolicyBindings in the Sandbox namespace, an entry among the Dispatcher's
+gains `create` on Sandboxes, and on PolicySets and PolicyBindings of the launcher shape only, in the Sandbox namespace, an entry among the Dispatcher's
 callers and wake callers, and one among History's readers. The Action Service already creates Pods as any caller
 account in that namespace and holds `pods/exec` there, which reaches Session Sandboxes too
 ([ADR](../docs/adr_action_sandboxes.md)); the new rights add Session commands and history reads, each behind a
