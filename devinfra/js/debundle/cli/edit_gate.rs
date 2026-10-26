@@ -49,13 +49,13 @@ use ::gate::{
     validate_assignment,
 };
 use analysis::{
-    AtomicGroup, AtomicGroupConflict, AtomicGroupConflictReport, ConflictingClaim,
+    AtomicGroup, AtomicGroupConflict, AtomicGroupConflictReport, ConflictingClaim, DepKind,
     ModuleAssignment, ModuleId, OwnerGraph, OwnerGraphReport, OwnerId, compute_atomic_groups,
 };
 use anonymous_resolution::{ResolvedSourceClaims, SourceClaimSet, resolve_source_claims};
 use anyhow::{Context, Result, bail};
 use serde::Serialize;
-use spec::ModulePath;
+use spec::{BindingSourceKind, MemberSelectorSpec, ModulePath};
 use spec_modules::{
     ModuleClaims, ModuleFile, collect_module_files, is_module_yaml, module_claims,
     module_path_from_file, read_module_claims,
@@ -280,6 +280,76 @@ pub struct PostEditSpec {
 /// the post-edit spec matches the whole reviewed assignment.
 pub type OwnerModuleAssignments = BTreeMap<String, Option<String>>;
 
+/// Resolution of one local binding name against the owner graph.
+///
+/// Multiple declaration sites are accepted only when the report carries
+/// `CoDeclaration` evidence for this exact binding connecting all of them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LocalBindingResolution {
+    Resolved(BTreeSet<OwnerId>),
+    Missing,
+    Ambiguous(BTreeSet<OwnerId>),
+}
+
+/// How a member's binding claim reached the owner projection.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProjectedBindingKind {
+    /// A direct local-name pin, retaining its optional source kind.
+    LocalName {
+        source_kind: Option<BindingSourceKind>,
+    },
+    /// A direct import claim. Imports are handled as re-exports and do not
+    /// claim a local declaration owner.
+    ImportSpecifier,
+    /// A non-name selector resolved by the canonical source resolver.
+    SourceResolved,
+}
+
+/// One member's typed projection. `None` resolution is reserved for imports;
+/// local claims always retain either resolved owners or an explicit mismatch.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectedMemberClaim {
+    pub binding_name: String,
+    pub kind: ProjectedBindingKind,
+    pub resolution: Option<LocalBindingResolution>,
+}
+
+/// A local name claim that could not be assigned to a unique declaration
+/// identity using the owner graph's declaration and co-declaration evidence.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnresolvedLocalBindingClaim {
+    pub module_path: PathBuf,
+    pub claim_name: String,
+    pub binding_name: String,
+    pub source_kind: Option<BindingSourceKind>,
+    pub resolution: LocalBindingResolution,
+}
+
+/// Typed claim projection shared by the normal realizability gate and the
+/// complete owner-assignment check used by `modules refine`.
+#[derive(Debug, Clone, Default)]
+pub struct ModuleClaimProjection {
+    /// In the same order as `PostEditModule::claims.member_selectors`.
+    pub members: Vec<ProjectedMemberClaim>,
+    /// Local binding names contributed by this module, including source-backed
+    /// claims, with declaration-site identity preserved.
+    pub local_bindings: BTreeMap<String, LocalBindingResolution>,
+    /// Every local owner contributed by the module's resolved claims.
+    pub owners: BTreeSet<OwnerId>,
+    /// Anonymous statement owners resolved by source location.
+    pub anonymous_owners: BTreeSet<OwnerId>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct OwnerClaimProjection {
+    /// Per-module claims remain aligned with `PostEditSpec::modules`.
+    pub modules: Vec<ModuleClaimProjection>,
+    /// Local direct claims whose owner identity is missing or ambiguous.
+    /// The first projection consumer records these; the strict CLI edit check
+    /// decides whether to reject them.
+    pub unresolved_local_bindings: Vec<UnresolvedLocalBindingClaim>,
+}
+
 /// Project the typed in-memory spec used by edit commands into the canonical
 /// resolver's per-module claim sets.
 pub fn source_claim_sets_from_post_spec(post_spec: &PostEditSpec) -> Vec<SourceClaimSet<'_>> {
@@ -295,61 +365,242 @@ pub fn source_claim_sets_from_post_spec(post_spec: &PostEditSpec) -> Vec<SourceC
         .collect()
 }
 
-/// Resolve all owners claimed by a candidate spec. The result uses module-file
-/// paths relative to `modules_root` and keeps unclaimed owners as residual.
-pub fn owner_module_assignments(
+/// Resolve typed binding claims to owner identities. Direct imports remain
+/// distinct from local declarations, and repeated local declarations are
+/// joined only when `owner_graph.json` carries matching `CoDeclaration` edges.
+pub fn project_owner_claims(
     owner_graph_report: &OwnerGraphReport,
-    modules_root: &Path,
     post_spec: &PostEditSpec,
     resolved_claims: &[ResolvedSourceClaims],
-    scope: Option<&ModuleTreeScope>,
-) -> Result<OwnerModuleAssignments> {
+) -> Result<OwnerClaimProjection> {
     anyhow::ensure!(
         post_spec.modules.len() == resolved_claims.len(),
         "resolved selector results do not match the post-edit module list"
     );
+    let mut projection = OwnerClaimProjection::default();
+    for (module, resolved) in post_spec.modules.iter().zip(resolved_claims) {
+        let mut module_projection = ModuleClaimProjection::default();
+        for (claim_name, selector) in &module.claims.member_selectors {
+            match selector {
+                MemberSelectorSpec::Binding(binding)
+                    if binding.kind == Some(BindingSourceKind::ImportSpecifier) =>
+                {
+                    module_projection.members.push(ProjectedMemberClaim {
+                        binding_name: binding.name.clone(),
+                        kind: ProjectedBindingKind::ImportSpecifier,
+                        resolution: None,
+                    });
+                }
+                MemberSelectorSpec::Binding(binding) => {
+                    let resolution =
+                        resolve_local_binding_owners(owner_graph_report, &binding.name);
+                    record_local_binding_claim(
+                        &mut projection,
+                        &mut module_projection,
+                        &module.path,
+                        claim_name,
+                        &binding.name,
+                        binding.kind,
+                        resolution.clone(),
+                    );
+                    module_projection.members.push(ProjectedMemberClaim {
+                        binding_name: binding.name.clone(),
+                        kind: ProjectedBindingKind::LocalName {
+                            source_kind: binding.kind,
+                        },
+                        resolution: Some(resolution),
+                    });
+                }
+                _ => {
+                    let binding_name =
+                        resolved.member_bindings.get(claim_name).with_context(|| {
+                            format!(
+                                "member {claim_name:?} in {} has no resolved binding",
+                                module.path.display()
+                            )
+                        })?;
+                    let resolution = resolve_local_binding_owners(owner_graph_report, binding_name);
+                    record_local_binding_claim(
+                        &mut projection,
+                        &mut module_projection,
+                        &module.path,
+                        claim_name,
+                        binding_name,
+                        None,
+                        resolution.clone(),
+                    );
+                    module_projection.members.push(ProjectedMemberClaim {
+                        binding_name: binding_name.clone(),
+                        kind: ProjectedBindingKind::SourceResolved,
+                        resolution: Some(resolution),
+                    });
+                }
+            }
+        }
+        for binding_name in &resolved.bindings {
+            if module_projection.local_bindings.contains_key(binding_name) {
+                continue;
+            }
+            let resolution = resolve_local_binding_owners(owner_graph_report, binding_name);
+            record_local_binding_claim(
+                &mut projection,
+                &mut module_projection,
+                &module.path,
+                "source-backed claim",
+                binding_name,
+                None,
+                resolution,
+            );
+        }
+        module_projection.anonymous_owners = resolved.anonymous_owners.clone();
+        module_projection
+            .owners
+            .extend(module_projection.anonymous_owners.iter().copied());
+        projection.modules.push(module_projection);
+    }
+    Ok(projection)
+}
+
+fn record_local_binding_claim(
+    projection: &mut OwnerClaimProjection,
+    module_projection: &mut ModuleClaimProjection,
+    module_path: &Path,
+    claim_name: &str,
+    binding_name: &str,
+    source_kind: Option<BindingSourceKind>,
+    resolution: LocalBindingResolution,
+) {
+    match &resolution {
+        LocalBindingResolution::Resolved(owners) => {
+            module_projection.owners.extend(owners.iter().copied());
+        }
+        LocalBindingResolution::Missing | LocalBindingResolution::Ambiguous(_) => {
+            projection
+                .unresolved_local_bindings
+                .push(UnresolvedLocalBindingClaim {
+                    module_path: module_path.to_path_buf(),
+                    claim_name: claim_name.to_string(),
+                    binding_name: binding_name.to_string(),
+                    source_kind,
+                    resolution: resolution.clone(),
+                });
+        }
+    }
+    module_projection
+        .local_bindings
+        .entry(binding_name.to_string())
+        .or_insert(resolution);
+}
+
+fn resolve_local_binding_owners(
+    owner_graph_report: &OwnerGraphReport,
+    binding_name: &str,
+) -> LocalBindingResolution {
+    let candidates = owner_graph_report
+        .nodes
+        .iter()
+        .enumerate()
+        .filter(|(_, node)| {
+            node.declared_bindings
+                .iter()
+                .any(|binding| binding.binding.as_ref() == binding_name)
+        })
+        .map(|(index, _)| OwnerId(index))
+        .collect::<BTreeSet<_>>();
+    if candidates.is_empty() {
+        return LocalBindingResolution::Missing;
+    }
+    if candidates.len() == 1 {
+        return LocalBindingResolution::Resolved(candidates);
+    }
+
+    // A repeated spelling is one local binding only when the report proves
+    // that exact binding's declaration sites are connected by CoDeclaration
+    // edges. Name equality alone is insufficient: separate hygienic identities
+    // with the same spelling remain ambiguous.
+    let owner_by_report_id = owner_graph_report
+        .nodes
+        .iter()
+        .enumerate()
+        .map(|(index, node)| (node.id.as_str(), OwnerId(index)))
+        .collect::<HashMap<_, _>>();
+    let mut adjacency = candidates
+        .iter()
+        .map(|owner| (*owner, BTreeSet::new()))
+        .collect::<BTreeMap<_, _>>();
+    for edge in &owner_graph_report.edges {
+        if edge.edge_kind != DepKind::CoDeclaration
+            || edge
+                .binding
+                .as_ref()
+                .is_none_or(|binding| binding.as_ref() != binding_name)
+        {
+            continue;
+        }
+        let (Some(&source), Some(&target)) = (
+            owner_by_report_id.get(edge.source.as_str()),
+            owner_by_report_id.get(edge.target.as_str()),
+        ) else {
+            continue;
+        };
+        if candidates.contains(&source) && candidates.contains(&target) {
+            adjacency
+                .get_mut(&source)
+                .expect("candidate owner indexed")
+                .insert(target);
+            adjacency
+                .get_mut(&target)
+                .expect("candidate owner indexed")
+                .insert(source);
+        }
+    }
+    let start = *candidates.first().expect("nonempty candidate set");
+    let mut reached = BTreeSet::from([start]);
+    let mut pending = vec![start];
+    while let Some(owner) = pending.pop() {
+        for next in &adjacency[&owner] {
+            if reached.insert(*next) {
+                pending.push(*next);
+            }
+        }
+    }
+    if reached == candidates {
+        LocalBindingResolution::Resolved(candidates)
+    } else {
+        LocalBindingResolution::Ambiguous(candidates)
+    }
+}
+
+/// Build the complete owner assignment represented by a typed claim
+/// projection. Unresolved local claims remain visible in the projection and
+/// are rejected by the strict edit check.
+pub fn owner_module_assignments_from_projection(
+    owner_graph_report: &OwnerGraphReport,
+    modules_root: &Path,
+    post_spec: &PostEditSpec,
+    projection: &OwnerClaimProjection,
+    scope: Option<&ModuleTreeScope>,
+) -> Result<OwnerModuleAssignments> {
+    anyhow::ensure!(
+        post_spec.modules.len() == projection.modules.len(),
+        "projected selector results do not match the post-edit module list"
+    );
     let mut assignments = BTreeMap::new();
-    let mut owner_by_binding_name: HashMap<String, OwnerId> = HashMap::new();
-    for (idx, node) in owner_graph_report.nodes.iter().enumerate() {
+    for node in &owner_graph_report.nodes {
         anyhow::ensure!(
             assignments.insert(node.id.clone(), None).is_none(),
             "owner_graph.json repeats owner ID {:?}",
             node.id
         );
-        let owner = OwnerId(idx);
-        for binding in &node.declared_bindings {
-            let name = binding.binding.to_string();
-            if let Some(previous) = owner_by_binding_name.insert(name.clone(), owner)
-                && previous != owner
-            {
-                anyhow::bail!("owner_graph.json declares binding {name:?} in multiple owners");
-            }
-        }
     }
-
-    for (module, resolved) in post_spec.modules.iter().zip(resolved_claims) {
+    for (module, projected) in post_spec.modules.iter().zip(&projection.modules) {
         let raw_path = module_path_from_file(&module.path, modules_root);
         let module_path = if let Some(scope) = scope {
             scope.canonical_destination(&raw_path)?
         } else {
             ModulePath::parse(&raw_path, "")?.as_str().to_string()
         };
-        let claimed_names = module
-            .claims
-            .bindings
-            .iter()
-            .chain(&resolved.bindings)
-            .collect::<BTreeSet<_>>();
-        for name in claimed_names {
-            let owner = owner_by_binding_name.get(name).with_context(|| {
-                format!(
-                    "module {} claims binding {name:?}, absent from owner_graph.json",
-                    module.path.display()
-                )
-            })?;
-            assign_owner_module(&mut assignments, owner_graph_report, *owner, &module_path)?;
-        }
-        for owner in &resolved.anonymous_owners {
+        for owner in &projected.owners {
             assign_owner_module(&mut assignments, owner_graph_report, *owner, &module_path)?;
         }
     }
@@ -513,21 +764,6 @@ fn gate_post_edit_assignment_with_expected(
     let owner_graph = OwnerGraph::from_report(&owner_graph_report)
         .with_context(|| format!("reconstructing owner graph {}", owner_graph_path.display()))?;
 
-    // owner_by_binding_name uses the Atom-only declared_bindings the
-    // wire shape carries; that's enough because the spec author also
-    // references bindings by name (no hygienic context). When a
-    // declared binding name is ambiguous across owners the first one
-    // wins — the materializer's spec validator catches that
-    // separately as a duplicate-binding diagnostic.
-    let mut owner_by_binding_name: HashMap<String, OwnerId> = HashMap::new();
-    for (idx, node) in owner_graph_report.nodes.iter().enumerate() {
-        let owner = OwnerId(idx);
-        for b in &node.declared_bindings {
-            owner_by_binding_name
-                .entry(b.binding.to_string())
-                .or_insert(owner);
-        }
-    }
     // Source-backed claims resolve to the chunk-top bindings and anonymous
     // owners they claim. A claim the gate cannot resolve (missing chunk
     // source, unmatched/ambiguous selector) is a hard error — the claimed
@@ -540,12 +776,13 @@ fn gate_post_edit_assignment_with_expected(
         source_root,
         &claim_sets,
     )?;
+    let claim_projection = project_owner_claims(&owner_graph_report, post_spec, &resolved_claims)?;
     if let Some(expected_owner_modules) = expected_owner_modules {
-        let actual_owner_modules = owner_module_assignments(
+        let actual_owner_modules = owner_module_assignments_from_projection(
             &owner_graph_report,
             modules_root,
             post_spec,
-            &resolved_claims,
+            &claim_projection,
             scope,
         )?;
         if &actual_owner_modules != expected_owner_modules {
@@ -609,17 +846,7 @@ fn gate_post_edit_assignment_with_expected(
             ModulePath::parse(&raw, "")
                 .with_context(|| format!("module YAML {} path", module.path.display()))?,
         );
-        for name in module
-            .claims
-            .bindings
-            .iter()
-            .chain(&resolved_claims[module_idx].bindings)
-        {
-            if let Some(&owner) = owner_by_binding_name.get(name) {
-                of[owner.0] = mid;
-            }
-        }
-        for owner in &resolved_claims[module_idx].anonymous_owners {
+        for owner in &claim_projection.modules[module_idx].owners {
             of[owner.0] = mid;
         }
     }

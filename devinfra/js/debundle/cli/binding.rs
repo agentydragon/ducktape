@@ -25,16 +25,18 @@ use anyhow::{Context, Result, anyhow, bail};
 use serde::Deserialize;
 
 use spec::{
-    AnonymousStatement, BindingAnnotation, LogicalModule, Member, MemberSelectorSpec, ModulePath,
-    SourceMatchBinding, SourceMatchBindingDetail, SourceMatchClaim, is_residual_module_path,
+    AnonymousStatement, BindingAnnotation, LogicalModule, Member, ModulePath, SourceMatchBinding,
+    SourceMatchBindingDetail, SourceMatchClaim, is_residual_module_path,
 };
 use spec_modules::{collect_module_files, module_path_from_file, read_module_file};
 use spec_tree::ModuleTreeScope;
 use yaml_edit::write_yaml_atomic;
 
 use crate::edit_gate::{
-    Gate, OwnerModuleAssignments, gate_post_edit_assignment_with_expected_owner_modules,
-    owner_module_assignments, post_edit_spec_from_docs, source_claim_sets_from_post_spec,
+    Gate, OwnerClaimProjection, OwnerModuleAssignments, ProjectedBindingKind,
+    gate_post_edit_assignment_with_expected_owner_modules,
+    owner_module_assignments_from_projection, post_edit_spec_from_docs, project_owner_claims,
+    source_claim_sets_from_post_spec,
 };
 use crate::outcome::{GateOutcome, MutationOutcome};
 
@@ -864,7 +866,7 @@ pub struct OwnerRefineOutcome {
     pub owners_reassigned: usize,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 enum OwnerClaimSlot {
     Member(usize),
     SourceMatch(usize, usize),
@@ -883,7 +885,7 @@ struct OwnerClaimLocation {
 
 #[derive(Debug, Clone)]
 struct PlannedOwnerMove {
-    owner_id: String,
+    owner_ids: BTreeSet<String>,
     source_module: String,
     destination: String,
     slot: OwnerClaimSlot,
@@ -922,25 +924,20 @@ pub fn run_owner_refine(
         Some(source_root),
         &claim_sets,
     )?;
-    let current_owner_modules = owner_module_assignments(
+    let claim_projection = project_owner_claims(&owner_graph, &initial_spec, &resolved)?;
+    let current_owner_modules = owner_module_assignments_from_projection(
         &owner_graph,
         modules_root,
         &initial_spec,
-        &resolved,
+        &claim_projection,
         scope.as_ref(),
     )?;
     check_graph_owner_destinations(&owner_graph, &current_owner_modules, scope.as_ref())?;
 
-    let mut owner_by_binding = BTreeMap::<String, OwnerId>::new();
     let mut owner_index_by_id = BTreeMap::<String, OwnerId>::new();
     for (index, node) in owner_graph.nodes.iter().enumerate() {
         let owner = OwnerId(index);
         owner_index_by_id.insert(node.id.clone(), owner);
-        for binding in &node.declared_bindings {
-            owner_by_binding
-                .entry(binding.binding.to_string())
-                .or_insert(owner);
-        }
     }
 
     let locations = owner_claim_locations(
@@ -949,7 +946,7 @@ pub fn run_owner_refine(
         &original_docs,
         &initial_spec,
         &resolved,
-        &owner_by_binding,
+        &claim_projection,
         scope.as_ref(),
     )?;
     let mut locations_by_owner = BTreeMap::<String, Vec<OwnerClaimLocation>>::new();
@@ -1026,7 +1023,8 @@ pub fn run_owner_refine(
     }
 
     let mut expected_owner_modules = current_owner_modules.clone();
-    let mut planned_moves = Vec::new();
+    let mut planned_moves = Vec::<PlannedOwnerMove>::new();
+    let mut planned_move_by_slot = BTreeMap::<(String, OwnerClaimSlot), usize>::new();
     let mut source_modules = BTreeSet::new();
     let mut owners_reassigned = 0;
     let existing_destinations = physical_modules_by_logical_destination(&docs, scope.as_ref())?;
@@ -1070,12 +1068,26 @@ pub fn run_owner_refine(
         };
         for location in owner_locations {
             source_modules.insert(source_module.clone());
-            planned_moves.push(PlannedOwnerMove {
-                owner_id: owner_id.clone(),
-                source_module: source_module.clone(),
-                destination: destination_module.clone(),
-                slot: location.slot.clone(),
-            });
+            let key = (source_module.clone(), location.slot.clone());
+            if let Some(&move_index) = planned_move_by_slot.get(&key) {
+                let movement = &mut planned_moves[move_index];
+                anyhow::ensure!(
+                    movement.destination == destination_module,
+                    "one spec claim resolves to multiple requested destinations for owners {:?} and {:?}",
+                    movement.owner_ids,
+                    owner_id
+                );
+                movement.owner_ids.insert(owner_id.clone());
+            } else {
+                let move_index = planned_moves.len();
+                planned_move_by_slot.insert(key, move_index);
+                planned_moves.push(PlannedOwnerMove {
+                    owner_ids: BTreeSet::from([owner_id.clone()]),
+                    source_module: source_module.clone(),
+                    destination: destination_module.clone(),
+                    slot: location.slot.clone(),
+                });
+            }
         }
     }
 
@@ -1114,7 +1126,10 @@ pub fn run_owner_refine(
                     .remove(&(movement.source_module.clone(), index))
                     .expect("planned member was extracted");
                 let name = member_effective_name(&member).with_context(|| {
-                    format!("owner {:?} member has no binding name", movement.owner_id)
+                    format!(
+                        "owner(s) {:?} member has no binding name",
+                        movement.owner_ids
+                    )
                 })?;
                 moved_names_by_destination
                     .entry(movement.destination.clone())
@@ -1243,15 +1258,24 @@ fn owner_claim_locations(
     docs: &ModuleDocs,
     post_spec: &crate::edit_gate::PostEditSpec,
     resolved: &[anonymous_resolution::ResolvedSourceClaims],
-    owner_by_binding: &BTreeMap<String, OwnerId>,
+    projection: &OwnerClaimProjection,
     scope: Option<&ModuleTreeScope>,
 ) -> Result<Vec<OwnerClaimLocation>> {
     anyhow::ensure!(
         post_spec.modules.len() == resolved.len(),
         "resolved selector results do not match the current module list"
     );
+    anyhow::ensure!(
+        post_spec.modules.len() == projection.modules.len(),
+        "projected selector results do not match the current module list"
+    );
     let mut locations = Vec::new();
-    for (module, resolved) in post_spec.modules.iter().zip(resolved) {
+    for ((module, resolved), projected) in post_spec
+        .modules
+        .iter()
+        .zip(resolved)
+        .zip(&projection.modules)
+    {
         let module_path = module_path_from_file(&module.path, modules_root);
         let logical_module = logical_module_path(&module_path, scope)?;
         let (_, doc) = docs.get(&module_path).with_context(|| {
@@ -1260,33 +1284,28 @@ fn owner_claim_locations(
                 module.path.display()
             )
         })?;
-        for (member_index, member) in doc.members.iter().enumerate() {
-            let binding = match member.selector.selected()? {
-                MemberSelectorSpec::Binding(binding) => binding.name,
-                _ => {
-                    let export_name = member.name.as_deref().with_context(|| {
-                        format!("non-binding member in {module_path} requires a readable name")
-                    })?;
-                    resolved
-                        .member_bindings
-                        .get(export_name)
-                        .cloned()
-                        .with_context(|| {
-                            format!(
-                                "member {export_name:?} in {module_path} has no resolved binding"
-                            )
-                        })?
+        anyhow::ensure!(
+            doc.members.len() == projected.members.len(),
+            "projected member claims do not match module {}",
+            module.path.display()
+        );
+        for member_index in 0..doc.members.len() {
+            let projected_member = &projected.members[member_index];
+            if matches!(projected_member.kind, ProjectedBindingKind::ImportSpecifier) {
+                continue;
+            }
+            if let Some(crate::edit_gate::LocalBindingResolution::Resolved(owners)) =
+                &projected_member.resolution
+            {
+                for owner in owners {
+                    locations.push(OwnerClaimLocation {
+                        owner_id: owner_graph.nodes[owner.0].id.clone(),
+                        physical_module: module_path.clone(),
+                        logical_module: logical_module.clone(),
+                        slot: OwnerClaimSlot::Member(member_index),
+                    });
                 }
-            };
-            let owner = owner_by_binding.get(&binding).with_context(|| {
-                format!("member binding {binding:?} in {module_path} is absent from owner graph")
-            })?;
-            locations.push(OwnerClaimLocation {
-                owner_id: owner_graph.nodes[owner.0].id.clone(),
-                physical_module: module_path.clone(),
-                logical_module: logical_module.clone(),
-                slot: OwnerClaimSlot::Member(member_index),
-            });
+            }
         }
         for (claim_index, claim) in doc.source_matches.iter().enumerate() {
             for (binding_index, binding) in claim.bindings.iter().enumerate() {
@@ -1303,18 +1322,18 @@ fn owner_claim_locations(
                 // pattern. Under alpha-equivalent matching, the actual source
                 // declaration can have a different name; the canonical
                 // resolver's outcome is the authoritative binding identity.
-                let owner = owner_by_binding.get(resolved_binding).with_context(|| {
-                    format!(
-                        "source-match binding {:?} resolved as {:?} in {module_path} is absent from owner graph",
-                        binding.local(), resolved_binding
-                    )
-                })?;
-                locations.push(OwnerClaimLocation {
-                    owner_id: owner_graph.nodes[owner.0].id.clone(),
-                    physical_module: module_path.clone(),
-                    logical_module: logical_module.clone(),
-                    slot: OwnerClaimSlot::SourceMatch(claim_index, binding_index),
-                });
+                if let Some(crate::edit_gate::LocalBindingResolution::Resolved(owners)) =
+                    projected.local_bindings.get(resolved_binding)
+                {
+                    for owner in owners {
+                        locations.push(OwnerClaimLocation {
+                            owner_id: owner_graph.nodes[owner.0].id.clone(),
+                            physical_module: module_path.clone(),
+                            logical_module: logical_module.clone(),
+                            slot: OwnerClaimSlot::SourceMatch(claim_index, binding_index),
+                        });
+                    }
+                }
             }
         }
         let mut selectors = BTreeSet::new();
