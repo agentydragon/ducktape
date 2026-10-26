@@ -114,8 +114,12 @@ impl DependencyGraphReport {
     /// This includes the physical entry destination and planned outputs with
     /// the `Unassigned` policy role. Unknown keys do not match.
     pub fn is_unassigned_or_entry(&self, key: &ModuleKey) -> bool {
-        self.module(key)
-            .is_some_and(|entry| entry.kind != ModuleDestinationKind::Specified)
+        self.module(key).is_some_and(|entry| {
+            matches!(
+                entry.kind,
+                ModuleDestinationKind::Entry | ModuleDestinationKind::Unassigned
+            )
+        })
     }
 }
 

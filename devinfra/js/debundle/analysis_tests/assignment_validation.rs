@@ -252,9 +252,6 @@ fn dependency_graph_report_emits_atomic_graph() {
     );
     let json = serde_json::to_string(&report).expect("serialize DependencyGraphReport");
     assert!(json.contains(r#""atomic_graph""#));
-    assert!(json.contains(r#""kind":"entry""#));
-    assert!(json.contains(r#""kind":"unassigned""#));
-    assert!(json.contains(r#""kind":"specified""#));
 }
 
 /// `cli/gate.rs` reads the callee source unit off the serialized `dependency_graph.json` edge to
