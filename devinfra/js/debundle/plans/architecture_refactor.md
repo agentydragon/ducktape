@@ -11,8 +11,8 @@ identities, similarity matching, promotion commands, or a content-hash framework
 
 This ledger covers the cross-phase refactor: source identity and resolution,
 semantic facts, assignment and reconstruction planning, validation, emission,
-authoring, and their readers. The separate `TODO.md` and trimmed
-`ARCHITECTURE_BACKLOG.md` keep unrelated deferred work. Landed behavior belongs
+authoring, and their readers. `TODO.md` and the trimmed
+`ARCHITECTURE_BACKLOG.md` retain unrelated deferred work. Landed behavior belongs
 in `SPEC.md`, `docs/`, or its code site; open work stays here. Remove tasks as
 they land, and delete this plan when the remaining refactor is complete or
 explicitly deferred. Documents outside a plan must not link here.
@@ -21,76 +21,109 @@ Use independently reviewable PRs from isolated worktrees. Update every live
 reader of a renamed interface, including dependent repositories, without
 transitional aliases. Separate mechanical restructuring from semantic changes.
 
-## Current phase vocabulary
+## Agreed target vocabulary
 
-| Responsibility                                         | Current representation                             |
-| ------------------------------------------------------ | -------------------------------------------------- |
-| Parsed program and shared syntax indexes               | `SourceProgram`                                    |
-| Binding identity independent of spelling and placement | `BindingId`, retaining chunk scope and SWC hygiene |
-| Original statement versus movable syntax fragment      | `StatementId` versus `SourceUnitId`                |
-| Reads, writes, effects, and ordering constraints       | `DependencyGraph` over source units                |
-| Dense identity for an output module                    | One `ModuleId(pub usize)` handle                   |
-| Requested output destinations                          | `ModuleAssignment`                                 |
-| Final lowered files and their matching output indexes  | `EmissionFiles`                                    |
+This table records the agreed architecture vocabulary. The status column
+separates landed representations from target boundaries that still need
+implementation and reader cutover.
 
-`ModuleId` remains the transparent numeric value used on its existing serde
-boundary. `ModuleAssignment` is the explicit owner-to-module input. The immutable
-validated assignment and the shared reconstruction plan are still open boundaries;
-do not imply that current factorization results already provide those guarantees.
-An output module quotient may contain cycles.
+| Responsibility                                              | Agreed target vocabulary                           | Status                                                              |
+| ----------------------------------------------------------- | -------------------------------------------------- | ------------------------------------------------------------------- |
+| Parsed program and shared syntax indexes                    | `SourceProgram`                                    | Landed                                                              |
+| Binding identity independent of spelling and placement      | `BindingId`, retaining chunk scope and SWC hygiene | Landed representation; reader coverage continues                    |
+| Identity of an original statement                           | `StatementId`                                      | Required Stage B work                                               |
+| Identity of a movable source fragment                       | `SourceUnitId`                                     | Required Stage B work                                               |
+| Reads, writes, effects, and ordering constraints            | `DependencyGraph` over source units                | Target boundary; active reader cutover                              |
+| Units proven to require co-location                         | `AtomicGroup`                                      | Target boundary; PR #12060                                          |
+| Explicit author contracts and runtime assumptions           | `AnalysisAssumptions`                              | Target boundary; PR #12059                                          |
+| Dense identity for an output module                         | `ModuleId(pub usize)`                              | Landed as one handle with transparent numeric serde representation  |
+| Requested output destinations                               | `ModuleAssignment`                                 | Landed                                                              |
+| Files, imports, exports, replacements, and evaluation order | `ReconstructionPlan`                               | Target boundary                                                     |
+| Plan accepted by the shared validator                       | `ValidatedPlan`                                    | Target boundary; PR #12054 supplies immutable assignment validation |
+| Final lowered files and matching output indexes             | `EmissionFiles`                                    | Current representation                                              |
+
+Use each name for its responsibility. Keep binding identity, original statement
+identity, movable source-unit identity, atomic groups, and output modules
+distinct. A module quotient may contain cycles; use SCC terminology for actual
+strongly connected components. IDs belong to the current program, SWC remains
+the syntax representation, and types live with their owning subsystem.
 
 ## Remaining work
 
 ### A. Baseline and consumer cutover — in progress
 
-The optimized public large-corpus baseline is measured and recorded in
+Enumerate registered public and downstream pipelines, actual report readers,
+CLI wrappers, specs, Bazel interfaces, and packaged skills. Record successful,
+rejected, and unverified controls separately with source, spec, and tool
+revisions. The optimized public large-corpus baseline is recorded in
 [`perf/large_web_corpus_baseline.md`](../perf/large_web_corpus_baseline.md).
-Baseline measurement is complete; the graph and reader cutover is not. Keep the
-registered pipeline inventory, actual report/CLI/Bazel readers, and downstream
-controls distinct from the performance result. Stage A is complete only when
-each changed interface has an identified reader and its successful, rejected,
-or unverified control is recorded. Do not infer consumer coverage from a named
-target's transitive build graph.
+That performance evidence supplements the acceptance controls below; it does
+not replace them. Stage A is complete only when each changed interface has an
+identified reader and downstream outcomes have a recorded control.
 
-### B. Identity and assignment — in progress
+Public acceptance control at source revision
+`f7bf0e0d836528c6cbcbc30f5625059bb30f47e8`: all 174 tests in
+`//devinfra/js/debundle/...` passed in invocation
+`335cb393-858c-42a3-a527-0ac76d6ea662`; the executable built in invocation
+`40ed35e6-a7b9-4170-94ed-28dd986b4e72`. The dependent web pipeline and all six
+existing regeneration, browser, and runtime controls passed with a source
+override in invocation `ba724e3b-4a6b-42f9-a937-6402ac7fbab2`. Those named
+tests consume the source-override extraction through their dependencies. The
+extraction producer action was cached in that invocation, so it is output
+acceptance evidence rather than a fresh extraction or performance run. Other
+registered captures without current controls remain unverified; historical
+rejections remain recorded as prior outcomes, not regressions.
 
-- PR #12054: require an immutable validated assignment at lowering boundaries.
-  It now contains child PR #12061 on that branch only; the combined change has
-  not landed on `devel` yet.
-- PR #12060: finish the atomic-group identity and consumer cutover. Preserve the
-  distinction between bindings, declarations, movable source units, groups that
-  must co-locate, and destination modules.
+### B. Names and identity — in progress
 
-### C. Source preparation and resolution — in progress
+Land one independent concept per PR. Distinguish binding identity, original
+statement identity, movable source-unit identity, anonymous-unit classification,
+residual placement, atomic grouping, and destination module identity. Replace
+residual sentinels and implicit anonymous-unit classification with explicit
+types. Active owner-graph cutover maps `OwnerId` to `SourceUnitId`, keeps a
+distinct `SourceUnitIndex` report arena, and maps `OwnerGraph` to
+`DependencyGraph`; these identities must not be collapsed into `NodeId`.
+Definitions and live consumers must agree without aliases or abandoned readers.
 
-Extract reusable structural resolution from lowering and route the remaining
-inspection and edit commands through the same resolved facts. A partial or
-ambiguous resolution must remain visibly incomplete in every consumer.
+- PR #12054: immutable validated assignment required by lowering; green, with
+  child PR #12061 merged into its branch.
+- PR #12060: atomic-group identity and consumer cutover remain active.
+
+### C. Source preparation and exact resolution — in progress
+
+Give parsing, structural indexes, and resolution clear ownership. Extract
+reusable structural resolution from lowering and route inspection and edit
+commands through the same resolved facts. Commands share successful matches
+and remaining mismatches. A partial or ambiguous resolution remains visibly
+incomplete in every consumer and cannot appear as complete acceptance.
 
 ### D. Semantic facts and assumptions — in progress
 
+Consolidate value flow, callback timing, effects, and dependency construction
+behind explicit inputs and results. Separate inferred facts from author
+assertions and cheap inspection from expensive analysis. Share immutable facts
+between reconstruction and authoring without making cheap inspection pay for
+expensive analysis.
+
 - PR #12059: make analysis assumptions explicit and keep inferred facts distinct
   from author assertions.
-- The owner is preparing the canonical catalogue PR; add its identifier after
-  it is opened. Keep value flow, callback timing, effects, and dependency
-  construction behind explicit inputs/results. Share immutable facts between
-  reconstruction and authoring without making cheap inspection pay for
-  expensive analysis.
 
-### E. Reconstruction planning
+### E. Assignment and reconstruction planning — in progress
 
 Use one authoritative assignment and a concrete plan for residual placement,
 imports, re-exports, readable names, vendor replacement, and loading topology.
 Emission must not independently rediscover placement or linkage decisions.
 
+- PR #12062: canonical catalogue work belongs to this stage.
+
 ### F. Validation and emission
 
 Validate the concrete plan and require the validated plan at emission boundaries.
 Keep AST lowering, final consistency checks, and output writing distinct. Ordinary
-runs and edit tools must share acceptance rules, and emitted linkage must match the
-validated plan. Retain post-emission safeguards until their construction paths
-and equivalent validation are proven; the partial-swap post-strip preconditions
-remain documented with that safeguard in `docs/design.md`.
+runs and edit tools must share acceptance rules, and emitted linkage must match
+the validated plan. Retain post-emission safeguards until their construction
+paths and equivalent validation are proven; the partial-swap post-strip
+preconditions remain documented with that safeguard in `docs/design.md`.
 
 ### G. Authoring, CLI, and wire readers
 
@@ -100,54 +133,44 @@ together. Handlers should be thin, assistance deterministic, and edits validated
 before writing.
 
 The following serialized or report-facing names still use older factor/cell
-vocabulary. They require an explicit reader cutover; internal type renames do not
+vocabulary and need an explicit reader cutover. Internal type renames do not
 rename these fields:
 
 - `factorize_proposals` and `factorize_diagnostics` in explain reports and their
   limits sections.
 - `edges_to_other_residual_cells`, `other_residual_cells_referenced`, and the
-  associated landability-note text. The proposer works on quotient classes,
-  while existing consumers still read cell terminology.
-- `UnassignedMode::MiniFactors`, serialized as `mini_factors`; a possible
-  replacement is `PerAtomicUnit` / `per_atomic_unit`.
+  associated landability-note text. The proposer works on quotient classes;
+  existing consumers still read cell terminology.
+- `UnassignedMode::MiniFactors`, serialized as `mini_factors`; the agreed target
+  is `PerAtomicGroup`, serialized as `per_atomic_group`.
 
-Any wire change must update specs, reports, documentation, and actual consumers
+Any wire change updates specs, reports, documentation, and actual consumers
 together. Do not make it a side effect of an internal rename or leave a second
-vocabulary behind through compatibility shims.
+vocabulary through compatibility shims.
 
 ### H. Documentation and closure
 
 Keep current behavior in the spec, design docs, skills, and code sites. This plan
-alone tracks unfinished architecture work. Close it only after downstream reader
+tracks unfinished architecture work. Close it only after downstream reader
 cutovers are complete and remaining correctness issues have landed or been
 explicitly deferred.
 
-## Deferred decisions within this refactor
+## Cross-cutting design constraints
 
-- `OwnerId`/`OwnerIdx` to `NodeId`, `OwnerGraph*` to `NodeGraph*`, and report/CLI
-  `owner:N` to `node:N` remain deferred. “Owner” is a coherent graph-node term;
-  revisit only as a wholesale rename across live definitions and readers.
-- Anonymous statements currently use owners with no declared bindings and
-  materializer-specific ordinals. Consider an explicit owner kind only after its
-  identity and assignment invariants are pinned alongside PR #12060.
-- `chunk` and `artifact` span several phases. Use phase-qualified names for new
-  boundary types, but do not mass-rename existing report fields or published
-  artifacts. `materialise` / `materialize` differs in one local pipeline name;
-  standardize it when touching that code. `peel`, `factor`, `atom`, `owner`, and
-  `quotient` are distinct concepts, not spelling variants.
-- Reuse of Tarjan/SCC results is valid only after proving that edge sets and
-  isolated-node handling match. The gate, quotient report, and other graph walks
-  have different contracts; do not consolidate them based only on the algorithm
-  name.
-- Keep broad crate-internal visibility and large-file movement out of scope unless
-  a phase boundary gives callers a narrower, stable interface. Candidate seams
-  include selector authoring/resolution/matching, quotient construction,
-  lowering's rename ledger, and artifact indexing. Preserve the existing source
-  order, hygiene, and pass-through paths when splitting fact extraction, entry
-  lowering orchestration, or graph representations.
-
-Other unrelated deferred integrity and test/spec items remain in
-`ARCHITECTURE_BACKLOG.md`.
+- Preserve source order, SWC hygiene, and pass-through paths when splitting fact
+  extraction, entry-lowering orchestration, or graph representations.
+- Reuse of Tarjan/SCC results is valid after proving that edge sets and isolated
+  node handling match. The gate, quotient report, and other graph walks may have
+  different contracts.
+- Keep broad crate-internal visibility and large-file movement out of scope
+  unless a phase boundary gives callers a narrower, stable interface. Candidate
+  seams include selector authoring/resolution/matching, quotient construction,
+  lowering's rename ledger, and artifact indexing.
+- Organize code by source, spec resolution, analysis, reconstruction, emission,
+  authoring, and boundary adapters; avoid a generic common module or framework.
+- Keep terms such as `peel`, `factor`, `atom`, `owner`, and `quotient` where they
+  describe distinct operations or data. Replace overloaded names according to
+  responsibility as boundaries are cut over.
 
 ## Correctness-change ordering
 
@@ -164,11 +187,14 @@ remaining work recorded. Continue independent refactoring. Never weaken
 validation to force acceptance, and keep the dependent repository on its working
 pin until the candidate engine and repaired specs validate together.
 
+Retain post-emission safeguards until the concrete plan covers their construction
+paths and validation demonstrates equivalent protection.
+
 ## Validation matrix
 
 | Boundary          | Required evidence                                                               |
 | ----------------- | ------------------------------------------------------------------------------- |
-| Resolution        | Existing CLI outcomes agree; ambiguous/unmatched claims stay explicit           |
+| Resolution        | Existing CLI outcomes agree; ambiguous or unmatched claims stay explicit        |
 | Source identity   | Repeated declarations, anonymous statements, split declarators, rebinding       |
 | Initialization    | Live bindings, TDZ/early `undefined`, callback timing, import order             |
 | Replacement       | Vendor ownership, generated re-exports, singleton/loading behavior              |
@@ -180,5 +206,5 @@ pin until the candidate engine and repaired specs validate together.
 
 Keep existing failures and unverified cases visible. Investigate repeatable
 performance regressions before landing. Completion requires live phase boundaries,
-shared vocabulary in both repositories, retained established downstream successes,
-and every remaining correctness issue landed or explicitly deferred.
+shared vocabulary in both repositories, retained established downstream
+successes, and every remaining correctness issue landed or explicitly deferred.
