@@ -242,3 +242,12 @@ not become a local owner claim; moving the local declaration passed
 passed (invocation `2896bc73-9a7a-4c52-a53c-3221f39ad3ba`, `gate=passed`,
 two owners reassigned). All commands were dry runs. Strict rejection of the
 stale direct claim is a separate follow-up change.
+
+## Indexed projection rerun
+
+After rebasing onto devel `98f571122f23ac3149573f234669f223eaabb751`, the
+same dry-run controls passed with the per-projection name and co-declaration
+index in place: import-aware refine (invocation
+`7f5c3166-e08f-4d58-943c-cee00e74e3e2`), repeated-`var` assignment
+(`1cfecf89-c5d2-490b-9777-60bdf3a961fa`), and repeated-`var` refine
+(`cd0caa41-e3d0-47c6-8ee3-6afd142f5480`). Each reported `gate=passed`.

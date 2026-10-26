@@ -350,6 +350,90 @@ pub struct OwnerClaimProjection {
     pub unresolved_local_bindings: Vec<UnresolvedLocalBindingClaim>,
 }
 
+/// Per-projection index for mapping local binding spellings to declaration
+/// owners. The report is scanned once; claim resolution then visits only
+/// owners and co-declaration edges for the requested spelling.
+struct LocalBindingIndex {
+    owners_by_binding: BTreeMap<String, BTreeSet<OwnerId>>,
+    co_declaration_neighbors: BTreeMap<String, BTreeMap<OwnerId, BTreeSet<OwnerId>>>,
+}
+
+impl LocalBindingIndex {
+    fn from_report(report: &OwnerGraphReport) -> Self {
+        let mut owners_by_binding = BTreeMap::<String, BTreeSet<OwnerId>>::new();
+        let mut owner_by_report_id = HashMap::<&str, OwnerId>::new();
+        for (index, node) in report.nodes.iter().enumerate() {
+            let owner = OwnerId(index);
+            owner_by_report_id.insert(node.id.as_str(), owner);
+            for binding in &node.declared_bindings {
+                owners_by_binding
+                    .entry(binding.binding.to_string())
+                    .or_default()
+                    .insert(owner);
+            }
+        }
+
+        let mut co_declaration_neighbors =
+            BTreeMap::<String, BTreeMap<OwnerId, BTreeSet<OwnerId>>>::new();
+        for edge in &report.edges {
+            if edge.edge_kind != DepKind::CoDeclaration {
+                continue;
+            }
+            let Some(binding) = edge.binding.as_ref() else {
+                continue;
+            };
+            let (Some(&source), Some(&target)) = (
+                owner_by_report_id.get(edge.source.as_str()),
+                owner_by_report_id.get(edge.target.as_str()),
+            ) else {
+                continue;
+            };
+            let neighbors = co_declaration_neighbors
+                .entry(binding.to_string())
+                .or_default();
+            neighbors.entry(source).or_default().insert(target);
+            neighbors.entry(target).or_default().insert(source);
+        }
+
+        Self {
+            owners_by_binding,
+            co_declaration_neighbors,
+        }
+    }
+
+    fn resolve(&self, binding_name: &str) -> LocalBindingResolution {
+        let Some(candidates) = self.owners_by_binding.get(binding_name) else {
+            return LocalBindingResolution::Missing;
+        };
+        if candidates.len() == 1 {
+            return LocalBindingResolution::Resolved(candidates.clone());
+        }
+
+        // A repeated spelling is one local binding only when the report proves
+        // that exact binding's declaration sites are connected by CoDeclaration
+        // edges. Name equality alone is insufficient: separate hygienic
+        // identities with the same spelling remain ambiguous.
+        let mut reached = BTreeSet::new();
+        let start = *candidates.first().expect("multiple candidates exist");
+        reached.insert(start);
+        let mut pending = vec![start];
+        if let Some(neighbors_by_owner) = self.co_declaration_neighbors.get(binding_name) {
+            while let Some(owner) = pending.pop() {
+                for next in neighbors_by_owner.get(&owner).into_iter().flatten() {
+                    if candidates.contains(next) && reached.insert(*next) {
+                        pending.push(*next);
+                    }
+                }
+            }
+        }
+        if reached == *candidates {
+            LocalBindingResolution::Resolved(candidates.clone())
+        } else {
+            LocalBindingResolution::Ambiguous(candidates.clone())
+        }
+    }
+}
+
 /// Project the typed in-memory spec used by edit commands into the canonical
 /// resolver's per-module claim sets.
 pub fn source_claim_sets_from_post_spec(post_spec: &PostEditSpec) -> Vec<SourceClaimSet<'_>> {
@@ -377,6 +461,7 @@ pub fn project_owner_claims(
         post_spec.modules.len() == resolved_claims.len(),
         "resolved selector results do not match the post-edit module list"
     );
+    let binding_index = LocalBindingIndex::from_report(owner_graph_report);
     let mut projection = OwnerClaimProjection::default();
     for (module, resolved) in post_spec.modules.iter().zip(resolved_claims) {
         let mut module_projection = ModuleClaimProjection::default();
@@ -392,8 +477,7 @@ pub fn project_owner_claims(
                     });
                 }
                 MemberSelectorSpec::Binding(binding) => {
-                    let resolution =
-                        resolve_local_binding_owners(owner_graph_report, &binding.name);
+                    let resolution = binding_index.resolve(&binding.name);
                     record_local_binding_claim(
                         &mut projection,
                         &mut module_projection,
@@ -419,7 +503,7 @@ pub fn project_owner_claims(
                                 module.path.display()
                             )
                         })?;
-                    let resolution = resolve_local_binding_owners(owner_graph_report, binding_name);
+                    let resolution = binding_index.resolve(binding_name);
                     record_local_binding_claim(
                         &mut projection,
                         &mut module_projection,
@@ -441,7 +525,7 @@ pub fn project_owner_claims(
             if module_projection.local_bindings.contains_key(binding_name) {
                 continue;
             }
-            let resolution = resolve_local_binding_owners(owner_graph_report, binding_name);
+            let resolution = binding_index.resolve(binding_name);
             record_local_binding_claim(
                 &mut projection,
                 &mut module_projection,
@@ -490,85 +574,6 @@ fn record_local_binding_claim(
         .local_bindings
         .entry(binding_name.to_string())
         .or_insert(resolution);
-}
-
-fn resolve_local_binding_owners(
-    owner_graph_report: &OwnerGraphReport,
-    binding_name: &str,
-) -> LocalBindingResolution {
-    let candidates = owner_graph_report
-        .nodes
-        .iter()
-        .enumerate()
-        .filter(|(_, node)| {
-            node.declared_bindings
-                .iter()
-                .any(|binding| binding.binding.as_ref() == binding_name)
-        })
-        .map(|(index, _)| OwnerId(index))
-        .collect::<BTreeSet<_>>();
-    if candidates.is_empty() {
-        return LocalBindingResolution::Missing;
-    }
-    if candidates.len() == 1 {
-        return LocalBindingResolution::Resolved(candidates);
-    }
-
-    // A repeated spelling is one local binding only when the report proves
-    // that exact binding's declaration sites are connected by CoDeclaration
-    // edges. Name equality alone is insufficient: separate hygienic identities
-    // with the same spelling remain ambiguous.
-    let owner_by_report_id = owner_graph_report
-        .nodes
-        .iter()
-        .enumerate()
-        .map(|(index, node)| (node.id.as_str(), OwnerId(index)))
-        .collect::<HashMap<_, _>>();
-    let mut adjacency = candidates
-        .iter()
-        .map(|owner| (*owner, BTreeSet::new()))
-        .collect::<BTreeMap<_, _>>();
-    for edge in &owner_graph_report.edges {
-        if edge.edge_kind != DepKind::CoDeclaration
-            || edge
-                .binding
-                .as_ref()
-                .is_none_or(|binding| binding.as_ref() != binding_name)
-        {
-            continue;
-        }
-        let (Some(&source), Some(&target)) = (
-            owner_by_report_id.get(edge.source.as_str()),
-            owner_by_report_id.get(edge.target.as_str()),
-        ) else {
-            continue;
-        };
-        if candidates.contains(&source) && candidates.contains(&target) {
-            adjacency
-                .get_mut(&source)
-                .expect("candidate owner indexed")
-                .insert(target);
-            adjacency
-                .get_mut(&target)
-                .expect("candidate owner indexed")
-                .insert(source);
-        }
-    }
-    let start = *candidates.first().expect("nonempty candidate set");
-    let mut reached = BTreeSet::from([start]);
-    let mut pending = vec![start];
-    while let Some(owner) = pending.pop() {
-        for next in &adjacency[&owner] {
-            if reached.insert(*next) {
-                pending.push(*next);
-            }
-        }
-    }
-    if reached == candidates {
-        LocalBindingResolution::Resolved(candidates)
-    } else {
-        LocalBindingResolution::Ambiguous(candidates)
-    }
 }
 
 /// Build the complete owner assignment represented by a typed claim
