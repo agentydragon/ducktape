@@ -54,7 +54,7 @@ The orchestrator or project adapter provides:
 propose` and `modules apply` so each sees only the graph chunk's mapped
    YAML roots.
 
-   For `modules refine`, review the `{source_unit_id, module}` batch against current
+   For `modules refine`, review the `{unit_id, module}` batch against current
    source and graph evidence. Run `--dry-run`, then apply the same reviewed
    batch; both resolve the complete scoped spec and check the full requested
    assignment. Preserve selector text and metadata through the CLI. Residual,
@@ -93,7 +93,7 @@ before choosing a destination.
 
 You may expand the batch when the assigned peel would split an atomic group or
 create a worse module shape. You may also skip assigned items when their
-natural owner still belongs to a larger atomic group that should move together.
+assigned source unit still belongs to a larger atomic group that should move together.
 
 ## Failure Handling
 

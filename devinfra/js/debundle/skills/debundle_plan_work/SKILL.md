@@ -67,7 +67,7 @@ bazelisk --output_base=/tmp/debundle-cli-bazel \
 
 Prefer these commands over grepping generated output. The dependency graph is
 the source of truth for cycle gates and residual dependencies; the embedded
-atomic DAG is the source of truth for sets of owners that must move together. The proposal
+atomic DAG is the source of truth for sets of source units that must move together. The proposal
 queue is a heuristic projection from that DAG, not a serialized fact from
 `debundle run`.
 

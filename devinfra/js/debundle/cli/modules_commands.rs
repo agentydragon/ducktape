@@ -337,7 +337,7 @@ fn render_module_decomposition_text(report: &ModuleDecompositionReport, out: &mu
         "candidate is not realizable\n"
     });
     out.push_str(&format!(
-        "coverage: {}/{} owners; unchanged modules={}\n",
+        "coverage: {}/{} source units; unchanged modules={}\n",
         report.assigned_source_unit_count, report.source_unit_count, report.unchanged_module_count
     ));
     for module in &report.modules {
@@ -348,7 +348,7 @@ fn render_module_decomposition_text(report: &ModuleDecompositionReport, out: &mu
         ));
         for fragment in &module.fragments {
             out.push_str(&format!(
-                "  {}  owners={} bindings={}\n",
+                "  {}  source_units={} bindings={}\n",
                 fragment.suggested_module_path,
                 fragment.source_unit_ids.join(", "),
                 fragment.binding_ids.join(", "),
@@ -410,7 +410,7 @@ fn render_module_decomposition_text(report: &ModuleDecompositionReport, out: &mu
         }
         for group in &coarsening.groups {
             out.push_str(&format!(
-                "  final {}  origins={} owners={} bindings={}\n",
+                "  final {}  origins={} source_units={} bindings={}\n",
                 group.suggested_module_path,
                 group
                     .origin_module_paths
@@ -432,7 +432,7 @@ fn render_module_decomposition_text(report: &ModuleDecompositionReport, out: &mu
                         .claims
                         .iter()
                         .map(|claim| format!(
-                            "{}:{} (owners {})",
+                            "{}:{} (source units {})",
                             claim.original_module_path,
                             claim.binding_id,
                             claim.source_unit_ids.join(", ")
@@ -562,7 +562,7 @@ fn render_plan_work_text(report: &peel::PlanWorkReport, out: &mut String) {
             "needs-manual-work"
         };
         out.push_str(&format!(
-            "  {}  owners={} size={} {}\n",
+            "  {}  source_units={} size={} {}\n",
             proposal.proposed_module_id,
             proposal.source_unit_ids.len(),
             proposal.size_lines_estimate,
@@ -573,7 +573,7 @@ fn render_plan_work_text(report: &peel::PlanWorkReport, out: &mut String) {
         }
         if !proposal.unaddressable_anonymous_source_unit_ids.is_empty() {
             out.push_str(&format!(
-                "    unaddressable anonymous owners: {}\n",
+                "    unaddressable anonymous source units: {}\n",
                 proposal.unaddressable_anonymous_source_unit_ids.join(", "),
             ));
         }

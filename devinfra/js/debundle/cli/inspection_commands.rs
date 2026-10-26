@@ -56,7 +56,7 @@ pub(super) struct DescribeArgs {
 /// Args for `debundle inspect-source`.
 #[derive(Debug, ClapArgs)]
 pub(super) struct InspectSourceArgs {
-    /// Resolve a binding, owner, atom, proposal, diagnostic, or module ID.
+    /// Resolve a binding, source unit, atom, proposal, diagnostic, or module ID.
     #[arg(long, conflicts_with_all = ["source_file", "chunk", "statements", "around_binding"])]
     pub id: Option<String>,
 
@@ -625,7 +625,7 @@ fn render_graph_summary_text(report: &peel::GraphSummaryReport, out: &mut String
         .map(|count| count.to_string())
         .unwrap_or_else(|| "skipped".to_string());
     out.push_str(&format!(
-        "owners={} edges={} atomic_groups={} residual_atomic_groups={} proposals={} diagnostics={}\n",
+        "source_units={} edges={} atomic_groups={} residual_atomic_groups={} proposals={} diagnostics={}\n",
         report.source_unit_count,
         report.dependency_edge_count,
         report.atomic_group_count,
@@ -641,7 +641,7 @@ fn render_explain_text(report: &peel::ExplainReport, out: &mut String) {
         report.query.kind, report.query.value
     ));
     out.push_str(&format!(
-        "  owners: {}\n",
+        "  source units: {}\n",
         report.source_unit_ids.join(", ")
     ));
     out.push_str(&format!(

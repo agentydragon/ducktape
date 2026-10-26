@@ -6,15 +6,15 @@ Proposing, moving, merging, and renaming modules and bindings; peel heuristics;
 ## Workflow: reorganizing existing modules
 
 Use `modules decompose --atomic` to plan a complete assignment of existing
-module owners. Review semantic destinations, selector anchors, and the full
+source units. Review semantic destinations, selector anchors, and the full
 candidate verdict; optional coarsening and original-home rejoining are
 described in [the decomposition guide](cli.md#refining-existing-modules-modules-decompose).
 
-Apply a reviewed `{source_unit_id, module}` map of already-claimed non-residual
-owners with `modules refine --dry-run`, then `modules refine`. Both resolve
+Apply a reviewed `{unit_id, module}` map of already-claimed non-residual
+source units with `modules refine --dry-run`, then `modules refine`. Both resolve
 the full scoped spec and validate the requested assignment before any write.
-The [owner-assignment guide](cli.md#applying-reviewed-owner-assignments-modules-refine)
-defines batch fields, multi-chunk paths, and excluded owner kinds. Residual
+The [source-unit assignment guide](cli.md#applying-reviewed-source-unit-assignments-modules-refine)
+defines batch fields, multi-chunk paths, and excluded source-unit kinds. Residual
 extraction uses the proposal workflow below; focused binding moves use
 `bindings assign`.
 
@@ -168,14 +168,14 @@ check its outcomes and `templates` listing.
 
 When `bindings assign` rejects with an "atom split" diagnostic, the
 realizability gate found that the requested move would split an
-indivisible owner set. The diagnostic names the split atom, its owners,
+indivisible source-unit set. The diagnostic names the split atom, its source units,
 and the destinations each member would land in.
 
-1. **Read the diagnostic.** It names the atom, lists each owner's
+1. **Read the diagnostic.** It names the atom, lists each source unit's
    current and proposed module, and the `DepKind` causes (eager_use,
    rebind, sequenced, ...).
 2. **Inspect the atom.** Run `debundle describe <atom-id>` for graph
-   context (which owners are in it, why they're co-bound), then
+   context (which source units are in it, why they're co-bound), then
    `debundle inspect-source --id <atom-id>` to read the source.
 3. **List atoms broadly** if you need to triangulate:
    ```bash
@@ -191,42 +191,42 @@ and the destinations each member would land in.
 
 The gate refuses; nothing on disk has changed.
 
-## Workflow: applying a reviewed owner assignment
+## Workflow: applying a reviewed source-unit assignment
 
-When `modules decompose` reports a useful owner assignment, replace its
+When `modules decompose` reports a useful source-unit assignment, replace its
 temporary part labels with semantic module names and apply the complete
 assignment through `modules refine`. For specs using local
 `intrinsic_alias.referenced_by` anchors, pass
 `--preserve-selector-anchors --source-root <source-root>` when decomposing so
-the candidate keeps each alias with its resolved local anchor. For each owner
+the candidate keeps each alias with its resolved local anchor. For each source unit
 that changes destination, include one row in a JSON batch:
 
 ```json
 [
-  { "source_unit_id": "unit:12", "module": "runtime/state" },
-  { "source_unit_id": "unit:19", "module": "runtime/effects" }
+  { "unit_id": "unit:12", "module": "runtime/state" },
+  { "unit_id": "unit:19", "module": "runtime/effects" }
 ]
 ```
 
 Then preview and apply the same reviewed file:
 
 ```bash
-debundle modules refine --batch reviewed-owners.json --dry-run \
+debundle modules refine --batch reviewed-source-units.json --dry-run \
   --graph dependency_graph.json --modules spec/modules --source-root source
-debundle modules refine --batch reviewed-owners.json \
+debundle modules refine --batch reviewed-source-units.json \
   --graph dependency_graph.json --modules spec/modules --source-root source
 ```
 
-This command moves existing selector entries for each owner as a unit. It
+This command moves existing selector entries for each source unit as a unit. It
 preserves their authored selectors and metadata, including all names in a
-multi-binding source match. Owners not listed retain their current module.
+multi-binding source match. Source units not listed retain their current module.
 For a multi-chunk tree, pass `--tree-config` and use destination paths prefixed
 by that chunk's module root. The command resolves the full post-edit selector
-set again, checks that every owner still resolves to the reviewed destination,
+set again, checks that every source unit still resolves to the reviewed destination,
 then runs the shared atomic-group and realizability gates. It refuses residual,
-unclaimed, import, and export owners and does not synthesize selectors. Module
+unclaimed, import, and export source units and does not synthesize selectors. Module
 comments and notes remain with their original files. See <cli.md> § Applying
-reviewed owner assignments (`modules refine`).
+reviewed source-unit assignments (`modules refine`).
 
 ## Peel heuristics: patterns that should move together
 
@@ -260,7 +260,7 @@ edges they carry already point at the class).
 
 ### Adjacent-ordinal singletons referencing each other
 
-If owners at consecutive statement ordinals `N` and `N+1` are each
+If source units at consecutive statement ordinals `N` and `N+1` are each
 the other's only edge target/source, they were lines next to each
 other in the source and the decomposer assigned them to
 sibling shells. Merge the two `auto_partition_*` modules into one.
@@ -337,7 +337,7 @@ refactors where an intermediate state is intentionally invalid).
 Module YAMLs, binding annotations, and `anonymous_statements:` entries accept
 optional `comment:` and `note:` strings. `comment:` survives rebuilds and emits
 into generated JS: a module comment at the top of its file, a binding comment
-above its owner statement, and an anonymous-statement comment above its matched
+above its declaring statement, and an anonymous-statement comment above its matched
 statement. An empty comment emits nothing. Claimed declarators of one
 `var`/`let`/`const` list emit as separate statements, each with its own comment;
 bindings of one destructuring declarator share a statement, with their comments

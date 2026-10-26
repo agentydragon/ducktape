@@ -31,7 +31,7 @@ greedy_merge_to_convergence
 └── merge_preserves_invariants
     └── check_merge_boolean
         └── ladder_decision_for_merge
-            └── realizability_index::ladder_decision_after_moving_owners_touching
+            └── realizability_index::ladder_decision_after_moving_source_units_touching
                 ├── tier 0: delta-free → cached pre-state verdict
                 ├── tier 1: constraining CondensationOrder (DSU + cone DFS)
                 ├── tier 2: I-graph CondensationOrder (exact_multi_scc fallback
@@ -42,7 +42,7 @@ contract / explicit diagnostic query
 └── would_be_cycles_after_contract
     ├── ladder_decision_for_merge          (accept → no evidence)
     └── realizability_index::verdict_after_moving_source_units_touching
-        └── build_simulator / translate_verdict_with_owner_modules
+        └── build_simulator / translate_verdict_with_source_unit_modules
 ```
 
 ## Optimization policy

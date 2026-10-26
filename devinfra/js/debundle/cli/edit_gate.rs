@@ -322,7 +322,9 @@ pub fn source_unit_module_assignments(
             if let Some(previous) = source_unit_by_binding_name.insert(name.clone(), source_unit)
                 && previous != source_unit
             {
-                anyhow::bail!("dependency_graph.json declares binding {name:?} in multiple owners");
+                anyhow::bail!(
+                    "dependency_graph.json declares binding {name:?} in multiple source units"
+                );
             }
         }
     }
@@ -488,7 +490,7 @@ pub fn gate_post_edit_assignment(
 }
 
 /// Run the normal gate and prove the entire resolved post-edit source-unit assignment
-/// is exactly the reviewed assignment, including owners that remain residual.
+/// is exactly the reviewed assignment, including source units that remain residual.
 pub fn gate_post_edit_assignment_with_expected_source_unit_modules(
     dependency_graph_path: &Path,
     modules_root: &Path,
@@ -534,7 +536,7 @@ fn gate_post_edit_assignment_with_expected(
     // source_unit_by_binding_name uses the Atom-only declared_bindings the
     // wire shape carries; that's enough because the spec author also
     // references bindings by name (no hygienic context). When a
-    // declared binding name is ambiguous across owners the first one
+    // declared binding name is ambiguous across source units the first one
     // wins — the materializer's spec validator catches that
     // separately as a duplicate-binding diagnostic.
     let mut source_unit_by_binding_name: HashMap<String, SourceUnitId> = HashMap::new();
@@ -547,7 +549,7 @@ fn gate_post_edit_assignment_with_expected(
         }
     }
     // Source-backed claims resolve to the chunk-top bindings and anonymous
-    // owners they claim. A claim the gate cannot resolve (missing chunk
+    // source units they claim. A claim the gate cannot resolve (missing chunk
     // source, unmatched/ambiguous selector) is a hard error — the claimed
     // owner must never silently fall to residual.
     let claim_sets = source_claim_sets_from_post_spec(post_spec);

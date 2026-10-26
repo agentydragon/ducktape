@@ -57,7 +57,7 @@ fn apply_decomposition(fixture: &GraphFixture, report: &Value) {
                         fragment["source_unit_ids"].as_array().unwrap().iter().map(
                             |source_unit_id| {
                                 json!({
-                                    "source_unit_id": source_unit_id,
+                                    "unit_id": source_unit_id,
                                     "module": fragment["suggested_module_path"],
                                 })
                             },
@@ -594,7 +594,7 @@ fn rejoining_keeps_an_unsafe_home_split_and_refine_applies_accepted_groups() {
                 .iter()
                 .map(|source_unit| {
                     serde_json::json!({
-                        "source_unit_id": source_unit,
+                        "unit_id": source_unit,
                         "module": group["suggested_module_path"],
                     })
                 })
@@ -877,7 +877,7 @@ fn atomic_mode_leaves_cross_module_structural_atoms_on_their_current_paths() {
         .as_array()
         .unwrap()
         .iter()
-        .map(|source_unit| serde_json::json!({"source_unit_id": source_unit, "module": target}))
+        .map(|source_unit| serde_json::json!({"unit_id": source_unit, "module": target}))
         .collect();
     fs::write(&batch_path, serde_json::to_vec(&assignments).unwrap()).unwrap();
     fixture.assert_success(&["modules", "refine", "--batch", batch_path.to_str().unwrap()]);

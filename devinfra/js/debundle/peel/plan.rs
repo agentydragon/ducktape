@@ -189,14 +189,14 @@ pub enum QueryKind {
     Diagnostic,
 }
 
-/// What `describe` / `inspect-source --id` select owners by; each variant carries its id.
+/// What `describe` / `inspect-source --id` can resolve; each variant names its query kind.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SelectionKind {
     /// One source-unit ID from `dependency_graph.json`.
     SourceUnit(String),
-    /// Every owner claimed by this module path.
+    /// Every source unit claimed by this module path.
     ModulePath(String),
-    /// Every owner assigned to this module id.
+    /// Every source unit assigned to this module ID.
     Module(String),
     /// The owner that declares this input binding id.
     Binding(String),
@@ -784,7 +784,7 @@ pub fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
         args.limit,
         sections,
         (limited_source_unit_ids, "source_unit_ids"),
-        (source_units, "owners"),
+        (source_units, "source_units"),
         (neighbor_source_units, "neighbor_source_units"),
         (bindings, "bindings"),
         (binding_homes, "binding_homes"),
