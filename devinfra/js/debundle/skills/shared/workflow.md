@@ -66,8 +66,10 @@ tooling rather than hand-maintaining exact long bodies across many modules.
 7. Rerun gate, regen, and adapter smoke tests as required.
 8. Update queues, architecture notes, and durable project conventions.
 
-Track work by stable source-unit IDs and binding IDs, not only generated proposal
-IDs. Proposal IDs may renumber after each integration.
+Track source units by the current graph's unit IDs and binding claims by their
+chunk and name, with the source/spec revisions that produced the graph. These
+identities are scoped to that input program. Proposal IDs may renumber after
+each integration.
 
 Track inflight, landed, and blocked assignments; the graph/build command
 that produced the evidence; and progress metrics such as residual source units,
