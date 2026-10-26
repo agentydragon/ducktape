@@ -233,7 +233,7 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: session-backup-volsync-egress
+  name: volsync-egress
   namespace: session-backup
 spec:
   egress:
@@ -271,13 +271,13 @@ spec:
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: session-backup-volsync-repository-reader
+  name: volsync-repository-reader
   namespace: session-backup
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: session-backup-volsync-repository-reader
+  name: volsync-repository-reader
   namespace: session-backup
 rules:
   - apiGroups:
@@ -293,15 +293,15 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: session-backup-volsync-repository-reader
+  name: volsync-repository-reader
   namespace: session-backup
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: session-backup-volsync-repository-reader
+  name: volsync-repository-reader
 subjects:
   - kind: ServiceAccount
-    name: session-backup-volsync-repository-reader
+    name: volsync-repository-reader
     namespace: session-backup
 ---
 apiVersion: external-secrets.io/v1
@@ -314,7 +314,7 @@ spec:
     kubernetes:
       auth:
         serviceAccount:
-          name: session-backup-volsync-repository-reader
+          name: volsync-repository-reader
           namespace: session-backup
       remoteNamespace: session-backup
       server:
