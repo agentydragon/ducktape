@@ -128,8 +128,8 @@ unambiguous module filenames, module ids (`logical:7`), source-unit IDs
 ## Validate-by-default (mutating commands)
 
 Every command that modifies the spec runs validation **by default** before
-writing changes back to disk. For commands that affect the chunk's
-factorization (anything that moves a binding between modules), that means
+writing changes back to disk. For commands that affect the chunk's module
+assignment (anything that moves a binding between modules), that means
 the post-edit claim checks followed by the full realizability + atom-split
 gate — which requires `--graph <dependency_graph.json>` unless `--no-verify` is set.
 Direct local claims must identify graph source units, typed `kind` pins must match

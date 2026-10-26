@@ -1,4 +1,4 @@
-//! Realizability gate and factorization validation.
+//! Realizability gate and assignment validation.
 //!
 //! Builds on the `analysis` core (dependency graph, assignment, reports):
 //! quotient the dependency graph into the module dependency graph used by

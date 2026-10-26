@@ -3,16 +3,16 @@
 //! Background: see <docs/design.md>. This crate carries the shared
 //! analysis substrate of the dependency-graph quotient model:
 //!
-//! 1. Analyze each source chunk into top-level source_unit facts: declarations,
+//! 1. Analyze each source chunk into top-level source-unit facts: declarations,
 //!    at-init reads/writes, lazy reads/writes, side effects, imports, source
 //!    locations, and top-level await (`facts`, `purity`).
 //! 2. Build a fine-grained dependency graph over those facts (`graph`,
 //!    `atomic_groups`).
-//! 3. Map source_units to destination modules from the spec (`module_assignment`,
+//! 3. Map source units to destination modules from the spec (`module_assignment`,
 //!    `assignment_assembly`).
 //! 4. Emit stable graph reports from that same graph model (`reports`).
 //!
-//! Realizability checking and factorization validation live in the
+//! Realizability checking and assignment validation live in the
 //! `gate` crate; the spec-independent per-chunk chunk-analysis
 //! composer lives in the `chunk_analysis` crate. Both build on this core.
 

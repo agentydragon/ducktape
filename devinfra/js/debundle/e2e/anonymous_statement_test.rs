@@ -651,7 +651,7 @@ export { X, Existing };
 // a peeled anon side-effect, with a named member also peeled,
 // and the round-trip must complete without a cycle error.
 #[test]
-fn anon_statement_after_comma_list_resolves_correct_owner() {
+fn anon_statement_after_comma_list_resolves_correct_source_unit() {
     // body[0] = `var a = 1, b = 2;` — 2-decl comma-list (post-split positions 0, 1)
     // body[1] = `console.log("between");`            — anon (post-split position 2)
     // body[2] = `var X = (() => "x")();`             — named (post-split position 3)
@@ -662,9 +662,9 @@ fn anon_statement_after_comma_list_resolves_correct_owner() {
     // Post-split statement_ordinal is 2 (because body[0]'s
     // comma-list adds +1 to the count).
     //
-    // If the conversion is wrong, factorization.rs would override
-    // owner with `statement_ordinal == 1` (which is `b`'s owner)
-    // instead of the anon owner — `b` would be claimed by
+    // If the conversion is wrong, assignment assembly would override
+    // the source unit with `statement_ordinal == 1` (which declares `b`)
+    // instead of the anonymous source unit — `b` would be claimed by
     // x_module while the anon stays in residual, and either:
     //   (a) the module dep graph would have a fake cycle, or
     //   (b) the named-member assertion would catch a non-X

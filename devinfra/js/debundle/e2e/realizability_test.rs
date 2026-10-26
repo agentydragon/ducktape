@@ -757,13 +757,6 @@ export { a1, a2, b1 };
         "side-effect edges must omit the binding: {graph:#?}"
     );
     assert!(
-        !rejected
-            .report_root
-            .join("static/app/factorization.json")
-            .exists(),
-        "factorization.json is folded into chunk.json / failure reports",
-    );
-    assert!(
         rejected.report_root.join("static/app/cycles.json").exists(),
         "cycle report should be written before rejection",
     );

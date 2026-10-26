@@ -30,7 +30,7 @@ enum BindingsNsCommand {
     /// current comment. An unset comment reads as `null` in JSON (an
     /// empty line in text), distinct from an explicit `comment: ""`.
     /// Member comments emit as JS comment blocks above the binding's
-    /// source_unit statement. Comments don't affect factorization, so there
+    /// source_unit statement. Comments don't affect module assignment, so there
     /// is no `--no-verify`; `--dry-run` previews without writing.
     Comment(BindingCommentArgs),
     /// List every binding in the spec with home module + filters.
