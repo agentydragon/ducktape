@@ -325,12 +325,20 @@ debundle modules merge --target runtime/plugins runtime/widgets
 Source-module comments and notes are composed as described in
 § Comments and notes below.
 
-The realizability gate runs against the post-merge assignment before
-the YAML splice fires — pass `--graph <dependency_graph.json>` so the
-gate has the chunk's edge topology. The gate rejects merges that
-would create cross-module cycles; `--dry-run` runs the gate without
-writing. Use `--no-verify` to skip the gate (e.g. during multi-step
-refactors where an intermediate state is intentionally invalid).
+The edit gate checks direct claims against the dependency graph and, for typed
+`kind` pins, the original source before checking the post-merge assignment.
+Pass `--graph <dependency_graph.json>` for the chunk's edge topology and
+`--source-root <dir>` when the graph's relative source paths are not otherwise
+resolvable. It rejects missing or ambiguous local claims, mismatched typed
+claims, and merges that would create cross-module cycles or split an atomic
+group. `--dry-run` runs these checks without writing. Use `--no-verify` to
+skip validation (e.g. during multi-step refactors where an intermediate state
+is intentionally invalid).
+
+A successful edit gate covers source claims, the post-merge assignment, and
+realizability checks. It does not establish complete reconstruction
+acceptance; `debundle run` remains the end-to-end acceptance path for vendor
+boundaries, exports, reconstruction, and browser planning.
 
 ## Comments and notes
 

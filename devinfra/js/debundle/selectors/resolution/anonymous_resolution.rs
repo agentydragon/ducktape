@@ -14,8 +14,11 @@ use analysis::{DependencyGraphReport, SourceUnitClass, SourceUnitId, StatementKi
 use anyhow::{Context, Result, bail};
 use selector_outcome::{Candidate, Outcome, SelectorOutcome, Severity};
 pub use selector_resolve::ModuleNeutralReferenceMeaning;
-use selector_resolve::{EntityIndex, SourceMatchReferenceOrigin, SpecModule};
-use spec::{AnonymousStatementSelector, MemberSelectorSpec, SourceMatchClaim};
+use selector_resolve::{
+    DirectBindingSourceEvidence, EntityIndex, ImportSpecifierKind, SourceMatchReferenceOrigin,
+    SpecModule,
+};
+use spec::{AnonymousStatementSelector, BindingSourceKind, MemberSelectorSpec, SourceMatchClaim};
 use spec_resolution::{
     anonymous_statement, member_from_source_match, member_from_spec, parse_anonymous_selector,
     resolve_chunks, spec_module as build_spec_module,
@@ -49,6 +52,30 @@ pub struct ResolvedSourceClaims {
     /// The source unit selected by each anonymous source selector. The key keeps
     /// authored selector entries addressable when a CLI edit moves claims.
     pub anonymous_selector_source_units: BTreeMap<AnonymousStatementSelector, SourceUnitId>,
+    /// Exact source evidence for typed direct binding pins. The vector is
+    /// aligned with `SourceClaimSet::member_selectors`; untyped name pins do
+    /// not require source-kind evidence here.
+    pub direct_binding_checks: Vec<Option<DirectBindingSourceCheck>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DirectBindingSourceCheck {
+    pub expected_kind: BindingSourceKind,
+    pub resolution: DirectBindingSourceResolution,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DirectBindingSourceResolution {
+    Matched {
+        source_path: String,
+    },
+    Missing,
+    WrongKind {
+        observed: Vec<(String, DirectBindingSourceEvidence)>,
+    },
+    Ambiguous {
+        source_paths: Vec<String>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -149,7 +176,9 @@ fn resolve_claim_sets(
                 && claims
                     .member_selectors
                     .iter()
-                    .all(|(_, selector)| matches!(selector, MemberSelectorSpec::Binding(_)))
+                    .all(|(_, selector)| {
+                        matches!(selector, MemberSelectorSpec::Binding(binding) if binding.kind.is_none())
+                    })
         })
     {
         return Ok(resolved);
@@ -175,8 +204,8 @@ fn resolve_claim_sets(
             "spec contains anonymous_statements, but dependency_graph.json has no source_location \
              data; cannot resolve anonymous selectors"
         } else {
-            "spec contains source-backed or relational binding claims, but dependency_graph.json has \
-             no source_location data; cannot resolve selectors"
+            "spec contains typed direct, source-backed, or relational binding claims, but \
+             dependency_graph.json has no source_location data; cannot resolve selectors"
         };
         with_source_modules(
             graph,
@@ -192,6 +221,35 @@ fn resolve_claim_sets(
                         selector_resolve::Chunk::analyze(source_path, &parsed.module)
                     })
                     .collect::<Vec<_>>();
+                for (module_index, claims) in claim_sets.iter().enumerate() {
+                    let Ok(set) = &mut resolved[module_index] else {
+                        continue;
+                    };
+                    set.claims
+                        .direct_binding_checks
+                        .resize(claims.member_selectors.len(), None);
+                    for (member_index, (_, selector)) in claims.member_selectors.iter().enumerate()
+                    {
+                        let MemberSelectorSpec::Binding(binding) = selector else {
+                            continue;
+                        };
+                        let Some(expected_kind) = binding.kind else {
+                            continue;
+                        };
+                        let observations = parsed_by_source
+                            .iter()
+                            .zip(&chunks)
+                            .map(|((source_path, _), chunk)| {
+                                (
+                                    source_path.clone(),
+                                    chunk.direct_binding_source_evidence(binding),
+                                )
+                            })
+                            .collect::<Vec<_>>();
+                        set.claims.direct_binding_checks[member_index] =
+                            Some(resolve_direct_binding_source(expected_kind, observations));
+                    }
+                }
                 let resolutions = resolve_chunks(
                     &chunks
                         .iter()
@@ -286,6 +344,68 @@ fn resolve_claim_sets(
         )
     })?;
     Ok(resolved)
+}
+
+fn resolve_direct_binding_source(
+    expected_kind: BindingSourceKind,
+    observations: Vec<(String, DirectBindingSourceEvidence)>,
+) -> DirectBindingSourceCheck {
+    let found = observations
+        .iter()
+        .filter(|(_, evidence)| !matches!(evidence, DirectBindingSourceEvidence::Missing))
+        .collect::<Vec<_>>();
+    let matching_sources = found
+        .iter()
+        .filter(|(_, evidence)| direct_binding_evidence_matches(expected_kind, evidence))
+        .map(|(source_path, _)| (*source_path).clone())
+        .collect::<Vec<_>>();
+    let resolution = match (found.is_empty(), matching_sources.as_slice()) {
+        (true, _) => DirectBindingSourceResolution::Missing,
+        (false, [source_path]) if found.len() == 1 => DirectBindingSourceResolution::Matched {
+            source_path: source_path.clone(),
+        },
+        (false, matches) if !matches.is_empty() => DirectBindingSourceResolution::Ambiguous {
+            source_paths: found
+                .iter()
+                .map(|(source_path, _)| (*source_path).clone())
+                .collect(),
+        },
+        (false, _) => DirectBindingSourceResolution::WrongKind {
+            observed: found
+                .into_iter()
+                .map(|(source_path, evidence)| (source_path.clone(), evidence.clone()))
+                .collect(),
+        },
+    };
+    DirectBindingSourceCheck {
+        expected_kind,
+        resolution,
+    }
+}
+
+fn direct_binding_evidence_matches(
+    expected_kind: BindingSourceKind,
+    evidence: &DirectBindingSourceEvidence,
+) -> bool {
+    match (expected_kind, evidence) {
+        (
+            BindingSourceKind::ImportSpecifier,
+            DirectBindingSourceEvidence::Import(ImportSpecifierKind::Named),
+        ) => true,
+        (BindingSourceKind::ImportSpecifier, _) => false,
+        (
+            _,
+            DirectBindingSourceEvidence::Local {
+                declaration_sites, ..
+            },
+        ) => {
+            let expected_statement_kind = selector_resolve::statement_kind_for_spec(expected_kind);
+            declaration_sites
+                .iter()
+                .any(|(_, statement_kind)| *statement_kind == expected_statement_kind)
+        }
+        (_, _) => false,
+    }
 }
 
 /// Adds what `entity` claims, given its outcome in every source, to `set`.

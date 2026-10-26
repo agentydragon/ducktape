@@ -53,7 +53,10 @@ use analysis::{
     DependencyGraph, DependencyGraphReport, ModuleAssignment, ModuleId, SourceUnitId,
     compute_atomic_groups,
 };
-use anonymous_resolution::{ResolvedSourceClaims, SourceClaimSet, resolve_source_claims};
+use anonymous_resolution::{
+    DirectBindingSourceCheck, DirectBindingSourceResolution, ResolvedSourceClaims, SourceClaimSet,
+    resolve_source_claims,
+};
 use anyhow::{Context, Result, bail};
 use serde::Serialize;
 use spec::{BindingSourceKind, MemberSelectorSpec, ModulePath};
@@ -326,6 +329,16 @@ pub struct UnresolvedLocalBindingClaim {
     pub resolution: LocalBindingResolution,
 }
 
+/// A typed direct binding claim that does not match exactly one source chunk
+/// with the claimed declaration/import kind.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnresolvedDirectBindingSourceClaim {
+    pub module_path: PathBuf,
+    pub claim_name: String,
+    pub binding_name: String,
+    pub check: DirectBindingSourceCheck,
+}
+
 /// Typed claim projection shared by the normal realizability gate and the
 /// complete source unit-assignment check used by `modules refine`.
 #[derive(Debug, Clone, Default)]
@@ -349,6 +362,9 @@ pub struct SourceUnitClaimProjection {
     /// The first projection consumer records these; the strict CLI edit check
     /// decides whether to reject them.
     pub unresolved_local_bindings: Vec<UnresolvedLocalBindingClaim>,
+    /// Typed direct claims whose kind/name pair is missing, mismatched, or
+    /// ambiguous in parsed source.
+    pub unresolved_direct_binding_sources: Vec<UnresolvedDirectBindingSourceClaim>,
 }
 
 /// Per-projection index for mapping local binding spellings to declaration
@@ -470,11 +486,20 @@ pub fn project_source_unit_claims(
     let mut projection = SourceUnitClaimProjection::default();
     for (module, resolved) in post_spec.modules.iter().zip(resolved_claims) {
         let mut module_projection = ModuleClaimProjection::default();
-        for (claim_name, selector) in &module.claims.member_selectors {
+        for (member_index, (claim_name, selector)) in
+            module.claims.member_selectors.iter().enumerate()
+        {
             match selector {
                 MemberSelectorSpec::Binding(binding)
                     if binding.kind == Some(BindingSourceKind::ImportSpecifier) =>
                 {
+                    record_direct_binding_source_check(
+                        &mut projection,
+                        &module.path,
+                        claim_name,
+                        binding,
+                        resolved.direct_binding_checks.get(member_index),
+                    );
                     module_projection.members.push(ProjectedMemberClaim {
                         binding_name: binding.name.clone(),
                         kind: ProjectedBindingKind::ImportSpecifier,
@@ -482,6 +507,13 @@ pub fn project_source_unit_claims(
                     });
                 }
                 MemberSelectorSpec::Binding(binding) => {
+                    record_direct_binding_source_check(
+                        &mut projection,
+                        &module.path,
+                        claim_name,
+                        binding,
+                        resolved.direct_binding_checks.get(member_index),
+                    );
                     let resolution = binding_index.resolve(&binding.name);
                     record_local_binding_claim(
                         &mut projection,
@@ -548,6 +580,39 @@ pub fn project_source_unit_claims(
         projection.modules.push(module_projection);
     }
     Ok(projection)
+}
+
+fn record_direct_binding_source_check(
+    projection: &mut SourceUnitClaimProjection,
+    module_path: &Path,
+    claim_name: &str,
+    binding: &spec::BindingSelector,
+    check: Option<&Option<DirectBindingSourceCheck>>,
+) {
+    if binding.kind.is_none() {
+        return;
+    }
+    let check =
+        check
+            .and_then(Option::as_ref)
+            .cloned()
+            .unwrap_or_else(|| DirectBindingSourceCheck {
+                expected_kind: binding.kind.expect("checked above"),
+                resolution: DirectBindingSourceResolution::Missing,
+            });
+    if !matches!(
+        check.resolution,
+        DirectBindingSourceResolution::Matched { .. }
+    ) {
+        projection
+            .unresolved_direct_binding_sources
+            .push(UnresolvedDirectBindingSourceClaim {
+                module_path: module_path.to_path_buf(),
+                claim_name: claim_name.to_string(),
+                binding_name: binding.name.clone(),
+                check,
+            });
+    }
 }
 
 fn record_local_binding_claim(
@@ -803,6 +868,7 @@ fn gate_post_edit_assignment_with_expected(
     )?;
     let claim_projection =
         project_source_unit_claims(&dependency_graph_report, post_spec, &resolved_claims)?;
+    reject_unresolved_projected_claims(&claim_projection)?;
     if let Some(expected_source_unit_modules) = expected_source_unit_modules {
         let actual_source_unit_modules = source_unit_module_assignments_from_projection(
             &dependency_graph_report,
@@ -955,6 +1021,55 @@ fn gate_post_edit_assignment_with_expected(
         output_layout::ATOMIC_GROUP_CONFLICTS_REPORT,
     )?;
     Ok(())
+}
+
+fn reject_unresolved_projected_claims(projection: &SourceUnitClaimProjection) -> Result<()> {
+    let mut mismatches = Vec::new();
+    for unresolved in &projection.unresolved_local_bindings {
+        let resolution = match &unresolved.resolution {
+            LocalBindingResolution::Missing => {
+                "no matching local declaration source unit exists".to_string()
+            }
+            LocalBindingResolution::Ambiguous(source_units) => {
+                format!("local name resolves to ambiguous declaration source units {source_units:?}")
+            }
+            LocalBindingResolution::Resolved(_) => continue,
+        };
+        mismatches.push(format!(
+            "- module {} member {:?} claims local binding {:?}: {resolution}",
+            unresolved.module_path.display(),
+            unresolved.claim_name,
+            unresolved.binding_name
+        ));
+    }
+    for unresolved in &projection.unresolved_direct_binding_sources {
+        let reason = match &unresolved.check.resolution {
+            DirectBindingSourceResolution::Matched { .. } => continue,
+            DirectBindingSourceResolution::Missing => {
+                "no source declaration or import with this kind was found".to_string()
+            }
+            DirectBindingSourceResolution::WrongKind { observed } => {
+                format!("source occurrences have incompatible kinds: {observed:?}")
+            }
+            DirectBindingSourceResolution::Ambiguous { source_paths } => {
+                format!("the typed claim occurs in multiple source chunks: {source_paths:?}")
+            }
+        };
+        mismatches.push(format!(
+            "- module {} member {:?} claims binding {:?} with kind {:?}: {reason}",
+            unresolved.module_path.display(),
+            unresolved.claim_name,
+            unresolved.binding_name,
+            unresolved.check.expected_kind
+        ));
+    }
+    if mismatches.is_empty() {
+        return Ok(());
+    }
+    bail!(
+        "post-edit binding claims are unresolved or do not match source:\n{}",
+        mismatches.join("\n")
+    )
 }
 
 /// Per-group atom-split detection over the post-edit assignment.
