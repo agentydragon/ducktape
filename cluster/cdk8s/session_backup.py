@@ -1,7 +1,7 @@
 """Authenticated Restic REST storage for workstation AI session backups.
 
-The primary repository and its versioned ``ResticBackup`` both use SeaweedFS; the
-separate bucket is an in-cluster logical backup, not an independent substrate copy.
+The primary repository uses replicated Piraeus block storage. A versioned
+``ResticBackup`` copies it into SeaweedFS; both copies remain in-cluster.
 """
 
 from __future__ import annotations
@@ -43,6 +43,7 @@ NAME = NAMESPACE = "session-backup"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/{NAME}"
 HOSTNAME = "ai-session-backups.allegedly.works"
 _DATA_CLAIM = "session-backup-data"
+_STORAGE_CLASS = "piraeus-ssd-2-autodiskful"
 _REST_SERVER_AUTH = "session-backup-rest-server-auth"
 _BUCKET = "session-backup-backups"
 _S3_CREDENTIALS = "session-backup-seaweedfs-credentials"
@@ -64,7 +65,7 @@ def chart(app: App) -> Chart:
             name=_DATA_CLAIM, namespace=NAMESPACE, annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"}
         ),
         access_modes=[PersistentVolumeAccessMode.READ_WRITE_ONCE],
-        storage_class_name="seaweedfs-ovh",
+        storage_class_name=_STORAGE_CLASS,
         storage=Size.gibibytes(100),
     )
 
@@ -150,7 +151,7 @@ def chart(app: App) -> Chart:
         bucket=_BUCKET,
         s3_credentials=_S3_CREDENTIALS,
         schedule="47 08 * * *",
-        cache_storage_class_name="local-path-ovh-hdd",
+        cache_storage_class_name=_STORAGE_CLASS,
     )
     return chart
 
@@ -158,6 +159,7 @@ def chart(app: App) -> Chart:
 def session_backup(
     chart: Chart,
     directory: RenderedDirectory,
+    piraeus_cluster: Kustomization,
     seaweedfs_operator: Kustomization,
     external_secrets_operator: Kustomization,
     volsync: Kustomization,
@@ -167,10 +169,12 @@ def session_backup(
         NAME,
         directory,
         timeout="5m",
-        depends_on=flux_kustomization_depends_on_many(seaweedfs_operator, external_secrets_operator, volsync),
+        depends_on=flux_kustomization_depends_on_many(
+            piraeus_cluster, seaweedfs_operator, external_secrets_operator, volsync
+        ),
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         description=(
             "Authenticated append-only Restic REST endpoint for workstation session backups, "
-            "with a SeaweedFS-backed primary PVC and a separate retained SeaweedFS VolSync copy."
+            "with a replicated Piraeus primary PVC and a separate retained SeaweedFS VolSync copy."
         ),
     )

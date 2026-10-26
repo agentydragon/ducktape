@@ -1222,6 +1222,7 @@ def generate_manifests(root: Path) -> None:
             session_backup.chart,
             siblings=["rest-server-auth.sops.yaml", "session-backup-volsync-restic-password.sops.yaml"],
         ),
+        piraeus_cluster_kustomization,
         seaweedfs_operator_kustomization,
         external_secrets_operator_kustomization,
         volsync_kustomization,

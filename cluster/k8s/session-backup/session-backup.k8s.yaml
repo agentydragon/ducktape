@@ -19,7 +19,7 @@ spec:
   resources:
     requests:
       storage: 100Gi
-  storageClassName: seaweedfs-ovh
+  storageClassName: piraeus-ssd-2-autodiskful
   volumeMode: Filesystem
 ---
 apiVersion: apps/v1
@@ -367,7 +367,7 @@ spec:
     cacheAccessModes:
       - ReadWriteOnce
     cacheCapacity: 1Gi
-    cacheStorageClassName: local-path-ovh-hdd
+    cacheStorageClassName: piraeus-ssd-2-autodiskful
     copyMethod: Direct
     moverPodLabels:
       app.kubernetes.io/name: session-backup-volsync
