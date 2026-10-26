@@ -454,8 +454,9 @@ outcomes. Operations no backend can grant a caller yet run as the operator's act
 (the operator offered approval-gated Actions, 23:21), with Sandbox-owned launcher grants making one approval per
 worker enough. Each moves to its backend rule as `THREAD_CREATE_AUTHORIZATION`, `THREAD_READ_POLICY` and
 `AGENT_SANDBOX_LAUNCH` land. Its turn reads (`read_turns`, `wait_for_turn`) wait on `HISTORY_READ_FOLLOW_API` and
-are not built on today's reads. **Question for review:** the plan's decisions, first whether the Dispatcher and History
-may trust the group's executor until then. No implementation until the operator accepts the plan.
+are not built on today's reads. The operator accepted the operator's-act path as transitional (2026-10-26 23:37 UTC),
+so the Dispatcher and History may trust the group's executor until then. **Question for review:** the plan's remaining
+decisions, next the default launcher grants. No implementation until the operator accepts the plan.
 
 ### `RUNNER_HARNESS_OBJECTS_DESIGN` — decide process diagnostics and placement policy
 
@@ -1283,7 +1284,9 @@ restart. Notification presentation/outcome design remains separate.
 
 **Deferred TODO; v0 decision does not block delivery design.** Dispatcher may specifically trust the
 App and Notification service identities to act for their users, with wake permission separately
-allowlisted. Do not extend that exception to agents or other services. Design destination- and
+allowlisted. Do not extend that exception to agents or other services, except the one the operator accepted on
+2026-10-26: the [`orchestration` group's executor](mcp_orchestration.md), which acts only on Action Decisions,
+until each of its operations has a caller grant. Design destination- and
 operation-scoped grants, delegated caller proof and the effect of revocation on queued work before
 general senders are admitted. Consider RBAC-backed permissions, but choose the authority with the
 multiagent model. Include authorization before wake and any required execution-time recheck. The

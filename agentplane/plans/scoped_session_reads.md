@@ -58,7 +58,9 @@ held with the other read decisions.
   a reusable all-history grant for a hosted agent.
 
 History enforces scoped authorization on its own API regardless of policy representation. Do not
-broaden its reader allowlist wholesale: a listed reader reads every Session. Keep read authority
+broaden its reader allowlist wholesale: a listed reader reads every Session. The one accepted exception
+(operator, 2026-10-26) is the [`orchestration` group's executor](mcp_orchestration.md), which reads only on an
+Action Decision until this policy replaces it. Keep read authority
 separate from message ingress, Session open/control, Sandbox lifecycle and grant administration.
 A read grant does not imply send or create authority.
 

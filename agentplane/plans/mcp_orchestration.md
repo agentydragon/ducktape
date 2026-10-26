@@ -229,7 +229,7 @@ results where its own grants let it write.
 ## Where this departs from current rules
 
 Each departure is transitional, is removed when the operation's backend rule lands, and gets a removal node in the
-[task DAG](task_dag.md).
+[task DAG](task_dag.md). The operator accepted the first two on 2026-10-26 (23:37 UTC).
 
 - **The Dispatcher gains a third trusted caller.** `DISPATCHER_SEND_AUTHORIZATION_GENERALIZE` says not to extend
   the app and Notifications exception "to agents or other services". The executor acts only on a Decision, the
@@ -277,12 +277,12 @@ grouping workers under their launcher, and a spend budget per account at the LLM
 
 ## Decisions for the operator
 
-Asked one at a time; each has a default the plan assumes.
+Asked one at a time; each open one has a default the plan assumes.
 
-1. **The operator's act for launch, Session commands and reads in v1.** Default: yes, through the `orchestration`
-   group, with the Dispatcher and History trusting its executor until each backend rule lands. Alternative: build
-   the caller rule types in the Dispatcher and History first, which reopens the held read policy and
-   `THREAD_CREATE_POLICY` before anything ships.
+1. **The operator's act for launch, Session commands and reads in v1. Accepted by the operator, 2026-10-26 23:37
+   UTC,** as a transitional path: the `orchestration` group, with the Dispatcher and History trusting its executor
+   until each backend rule lands. Rejected for now: building the caller rule types in the Dispatcher and History
+   first.
 2. **Launcher grants.** Default: a launch requests all of them on the new Sandbox, shown on the card. Alternative:
    none by default, each requested explicitly.
 3. **The preset catalog in the executor's settings.** Default: yes, rendered from the same definition as the app's.
