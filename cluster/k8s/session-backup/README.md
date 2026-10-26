@@ -73,24 +73,15 @@ are unique per host and match the bcrypt entries in
 One Rest Server pod mounts a 100 GiB ReadWriteOnce PVC on
 `piraeus-ssd-2-autodiskful`. Piraeus maintains two synchronous storage copies on
 distinct OVH nodes. The server uses a Recreate deployment strategy, and the primary
-filesystem is mounted directly through Piraeus CSI. The VolSync cache uses the same
-storage class. Flux waits for the Piraeus cluster before reconciling this component.
+filesystem is mounted directly through Piraeus CSI. Flux waits for the Piraeus cluster
+before reconciling this component.
 
-A daily VolSync/Restic `Direct` backup copies the server data into the SeaweedFS S3
-bucket `session-backup-backups`, retaining 7 daily, 4 weekly, and 6 monthly copies.
-SeaweedFS supplies this scheduled recovery copy; it is outside the primary filesystem
-path. The separate repository provides a versioned copy for recovery from primary
-repository loss or logical damage. Both copies remain in the same Kubernetes cluster
-and can share physical infrastructure, so this does not provide off-cluster disaster
-recovery.
+Rest Server's append-only mode prevents workstation clients from pruning snapshots or
+deleting repository data. No automatic repository expiration or pruning is configured;
+the repositories grow until an operator performs planned server-side maintenance.
+The repository has two storage copies within the cluster and no separate recovery copy.
 
 Before first deployment, complete the replicated-class failover, resync, and expansion
 rehearsal recorded in the [Piraeus production plan](../../docs/plans/piraeus_production.md#replicated-class-and-seaweed-reduction).
 
-The outer VolSync backup has its own password in
-`cluster/k8s/session-backup/session-backup-volsync-restic-password.sops.yaml`; it is
-different from the workstation repository encryption passphrase. Rest Server's
-append-only mode prevents workstation clients from pruning snapshots or deleting
-repository data. The inner repositories therefore grow until an operator performs
-planned server-side maintenance. The outer backup's retention applies to copies of the
-server data and does not prune workstation repositories.
+TODO: Consider a separate recovery copy of the Restic repository if needed.

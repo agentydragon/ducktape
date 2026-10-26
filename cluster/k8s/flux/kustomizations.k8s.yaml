@@ -2792,7 +2792,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Authenticated append-only Restic REST endpoint for workstation session backups, with a replicated Piraeus primary PVC and a separate retained SeaweedFS VolSync copy.
+    description: Authenticated append-only Restic REST endpoint for workstation session backups, with replicated Piraeus storage.
   name: session-backup
   namespace: ducktape-flux
 spec:
@@ -2803,12 +2803,6 @@ spec:
   deletionPolicy: Orphan
   dependsOn:
     - name: piraeus-cluster
-      namespace: ducktape-flux
-    - name: seaweedfs-operator
-      namespace: ducktape-flux
-    - name: external-secrets-operator
-      namespace: ducktape-flux
-    - name: volsync
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/session-backup

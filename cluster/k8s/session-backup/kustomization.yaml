@@ -3,4 +3,3 @@ kind: Kustomization
 resources:
   - session-backup.k8s.yaml
   - rest-server-auth.sops.yaml
-  - session-backup-volsync-restic-password.sops.yaml

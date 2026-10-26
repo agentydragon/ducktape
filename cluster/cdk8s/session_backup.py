@@ -1,8 +1,4 @@
-"""Authenticated Restic REST storage for workstation AI session backups.
-
-The primary repository uses replicated Piraeus block storage. A versioned
-``ResticBackup`` copies it into SeaweedFS; both copies remain in-cluster.
-"""
+"""Authenticated append-only Restic REST storage for workstation AI session backups."""
 
 from __future__ import annotations
 
@@ -35,8 +31,6 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.pod_policy import harden
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy, deny_all_egress
-from cluster.cdk8s.restic_backup import ResticBackup
-from cluster.cdk8s.seaweedfs import s3
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = NAMESPACE = "session-backup"
@@ -45,8 +39,6 @@ HOSTNAME = "ai-session-backups.allegedly.works"
 _DATA_CLAIM = "session-backup-data"
 _STORAGE_CLASS = "piraeus-ssd-2-autodiskful"
 _REST_SERVER_AUTH = "session-backup-rest-server-auth"
-_BUCKET = "session-backup-backups"
-_S3_CREDENTIALS = "session-backup-seaweedfs-credentials"
 _SERVER_PORT = 8000
 _LABELS = {"app.kubernetes.io/name": NAME}
 _SERVER = ServiceRef(
@@ -132,49 +124,19 @@ def chart(app: App) -> Chart:
         egress_deny=deny_all_egress(),
     )
 
-    s3.PrivateBucket(
-        chart,
-        "backup-bucket",
-        name=_BUCKET,
-        tenant=NAMESPACE,
-        adopt_existing=True,
-        description="SeaweedFS copy of the session-backup Restic REST server data.",
-        secret_name=_S3_CREDENTIALS,
-    )
-    ResticBackup(
-        chart,
-        "rest-server-data-backup",
-        namespace=NAMESPACE,
-        name="session-backup-server-data-restic",
-        repository="session-backup-server-data-restic",
-        source_pvc=_DATA_CLAIM,
-        bucket=_BUCKET,
-        s3_credentials=_S3_CREDENTIALS,
-        schedule="47 08 * * *",
-        cache_storage_class_name=_STORAGE_CLASS,
-    )
     return chart
 
 
-def session_backup(
-    chart: Chart,
-    directory: RenderedDirectory,
-    piraeus_cluster: Kustomization,
-    seaweedfs_operator: Kustomization,
-    external_secrets_operator: Kustomization,
-    volsync: Kustomization,
-) -> Kustomization:
+def session_backup(chart: Chart, directory: RenderedDirectory, piraeus_cluster: Kustomization) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
         directory,
         timeout="5m",
-        depends_on=flux_kustomization_depends_on_many(
-            piraeus_cluster, seaweedfs_operator, external_secrets_operator, volsync
-        ),
+        depends_on=flux_kustomization_depends_on_many(piraeus_cluster),
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         description=(
             "Authenticated append-only Restic REST endpoint for workstation session backups, "
-            "with a replicated Piraeus primary PVC and a separate retained SeaweedFS VolSync copy."
+            "with replicated Piraeus storage."
         ),
     )

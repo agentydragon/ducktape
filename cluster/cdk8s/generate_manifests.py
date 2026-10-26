@@ -1216,16 +1216,8 @@ def generate_manifests(root: Path) -> None:
     session_backup_artifact = artifact("session-backup", session_backup.OUTPUT_DIR)
     session_backup.session_backup(
         flux_chart,
-        write_directory(
-            root,
-            session_backup_artifact,
-            session_backup.chart,
-            siblings=["rest-server-auth.sops.yaml", "session-backup-volsync-restic-password.sops.yaml"],
-        ),
+        write_directory(root, session_backup_artifact, session_backup.chart, siblings=["rest-server-auth.sops.yaml"]),
         piraeus_cluster_kustomization,
-        seaweedfs_operator_kustomization,
-        external_secrets_operator_kustomization,
-        volsync_kustomization,
     )
     oci_cache_artifact = artifact("oci-cache", oci_cache_zot.OUTPUT_DIR)
     oci_cache_kustomization = oci_cache_flux_kustomizations.oci_cache(
