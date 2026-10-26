@@ -22,12 +22,18 @@ That shared file is decryptable on all three workstations, so any of them can re
 another workstation's repository. Escrow `restic_password` in the user's password
 manager before enabling the client backup timer.
 
-The first workstation timer run captures the complete Claude and Codex directories,
+The first workstation timer run captures the Claude and Codex directories,
 including credentials, configuration, caches, transcripts, subagents, original SQLite
 files, and their sidecars. Later runs add incremental snapshots every 15 minutes;
 unchanged captures create no new snapshot. The roots respect `CLAUDE_CONFIG_DIR`,
 `CODEX_HOME`, and the Home Manager XDG configuration. Captured history stays in the
 append-only repository even after a harness deletes its local files.
+
+`${CLAUDE_CONFIG_DIR:-~/.claude}/session-env` is excluded from both raw backup and
+SQLite discovery. The [Claude hook](../../../devinfra/claude/claude_hook/main.rs)
+(`home_session_dir`, `write_session_bazelrc`) writes per-session runtime configuration
+there and directs Bazel's build output into it. Previously staged SQLite images from
+that subtree are also excluded from new snapshots; existing archived snapshots remain.
 
 The client also scans both trees for SQLite file headers, regardless of filename or
 subdirectory, and uses SQLite's online backup API to create consistent database images

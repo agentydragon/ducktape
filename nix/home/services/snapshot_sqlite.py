@@ -12,7 +12,7 @@ import sqlite3
 import stat
 import sys
 import tempfile
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Collection, Iterator, Mapping
 from pathlib import Path
 
 SQLITE_HEADER = b"SQLite format 3\x00"
@@ -41,13 +41,15 @@ def publish(source: Path, destination: Path, digest: str) -> None:
         temporary.unlink(missing_ok=True)
 
 
-def databases(root: Path, on_error: Callable[[OSError], None]) -> Iterator[Path]:
+def databases(root: Path, on_error: Callable[[OSError], None], excluded_directories: set[Path]) -> Iterator[Path]:
     # SQLite databases need not have a .sqlite suffix. Do not follow symlinks
     # outside the captured tree or block on pipes/sockets while probing headers.
+    if root in excluded_directories:
+        return
     if not root.is_dir():
         raise FileNotFoundError(f"harness directory does not exist: {root}")
     for directory, subdirectories, filenames in os.walk(root, onerror=on_error, followlinks=False):
-        subdirectories.sort()
+        subdirectories[:] = sorted(name for name in subdirectories if Path(directory, name) not in excluded_directories)
         for filename in sorted(filenames):
             path = Path(directory, filename)
             try:
@@ -61,7 +63,10 @@ def databases(root: Path, on_error: Callable[[OSError], None]) -> Iterator[Path]
                 on_error(error)
 
 
-def snapshot_databases(roots: Mapping[str, Path], output_dir: Path) -> list[str]:
+def snapshot_databases(
+    roots: Mapping[str, Path], output_dir: Path, *, excluded_directories: Collection[Path] = ()
+) -> list[str]:
+    excluded = {path.absolute() for path in excluded_directories}
     for name, root in roots.items():
         if re.fullmatch(r"[A-Za-z0-9_-]+", name) is None:
             raise ValueError(f"invalid harness name: {name!r}")
@@ -77,7 +82,7 @@ def snapshot_databases(roots: Mapping[str, Path], output_dir: Path) -> list[str]
         for name, configured_root in sorted(roots.items()):
             root = configured_root.absolute()
             try:
-                for database in databases(root, lambda error: errors.append(str(error))):
+                for database in databases(root, lambda error: errors.append(str(error)), excluded):
                     image = temporary / "database.sqlite"
                     image.unlink(missing_ok=True)
                     relative = database.relative_to(root)
@@ -122,11 +127,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--root", nargs=2, action="append", metavar=("HARNESS", "DIRECTORY"), required=True)
+    parser.add_argument("--exclude-directory", type=Path, action="append", default=[])
     args = parser.parse_args()
     roots = {name: Path(directory) for name, directory in args.root}
     if len(roots) != len(args.root):
         parser.error("harness names must be unique")
-    errors = snapshot_databases(roots, args.output)
+    errors = snapshot_databases(roots, args.output, excluded_directories=args.exclude_directory)
     for error in errors:
         print(f"SQLite snapshot failed: {error}", file=sys.stderr)
     if errors:
