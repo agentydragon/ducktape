@@ -305,6 +305,10 @@ flowchart TD
     HISTORY_SANDBOX_RECORD --> THREAD_READ_POLICY
     THREAD_CREATE_POLICY --> THREAD_CREATE_AUTHORIZATION
     AGENT_LAUNCH_POLICY_DESIGN --> AGENT_SANDBOX_LAUNCH
+    MCP_ORCHESTRATION_DESIGN[Decision: orchestrating agents from an MCP client]
+    MCP_ORCHESTRATION_DESIGN -. interim until .-> THREAD_CREATE_AUTHORIZATION
+    MCP_ORCHESTRATION_DESIGN -. interim until .-> THREAD_READ_POLICY
+    MCP_ORCHESTRATION_DESIGN -. interim until .-> AGENT_SANDBOX_LAUNCH
     RUNNER_HARNESS_OBJECTS_DESIGN[Decision: process diagnostics and placement]
     HARNESS_IDENTITY_DESIGN[Decision: private store and native Session mapping]
     HARNESS_IDENTITY_DESIGN --> RUNNER_HARNESS_OBJECTS_DESIGN
@@ -441,6 +445,16 @@ alternative. Spend limits: see `THREAD_CREATE_POLICY`.
 effective spec and delegation server-side. Test allowed and forbidden launch parameters and
 concurrent retries. Reuse the app's create path (the shared Sandbox inventory), not harness-native agent tools. Launch alone
 does not grant history read, messaging, credentials or execution of another principal's Actions.
+
+### `MCP_ORCHESTRATION_DESIGN` — orchestrating agents from an MCP client
+
+**Decision; operator request, 2026-10-26 UTC.** [Plan](mcp_orchestration.md): one `orchestration` Action group lets
+an MCP Connection or an in-cluster orchestrator launch Session Sandboxes, open Sessions, send input and read turn
+outcomes. Operations no backend can grant a caller yet run as the operator's act, authorized by the Action Decision
+(the operator offered approval-gated Actions, 23:21), with Sandbox-owned launcher grants making one approval per
+worker enough. Each moves to its backend rule as `THREAD_CREATE_AUTHORIZATION`, `THREAD_READ_POLICY` and
+`AGENT_SANDBOX_LAUNCH` land. **Question for review:** the plan's decisions, first whether the Dispatcher and History
+may trust the group's executor until then. No implementation until the operator accepts the plan.
 
 ### `RUNNER_HARNESS_OBJECTS_DESIGN` — decide process diagnostics and placement policy
 

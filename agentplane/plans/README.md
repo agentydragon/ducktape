@@ -38,6 +38,9 @@ operator decisions and proportional acceptance from the [low-priority freezer](t
 - [Kubernetes API aggregation](api_aggregation_exploration.md) — held design exploration of serving
   agent-facing records through an extension apiserver, with RBAC via `SubjectAccessReview` as the
   cheaper route
+- [Orchestrating agents from an MCP client](mcp_orchestration.md) — proposed workflow, tool surface and authority
+  for Claude or any MCP Connection to launch worker Sandboxes, give them tasks and read their outcomes: one Action
+  group run as the operator's act until each backend can grant callers itself
 - [Scoped Session reads](scoped_session_reads.md) — proposed ServiceAccount read policy for
   retained Session history
 - [KubeVirt execution environments](kubevirt_environments.md) — the live gates for VM Sandboxes that no
