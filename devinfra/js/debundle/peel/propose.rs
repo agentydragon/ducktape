@@ -577,7 +577,12 @@ fn decompose_modules(
         .quotient
         .nodes
         .iter()
-        .find(|module| module.kind != ModuleDestinationKind::Specified)
+        .find(|module| {
+            matches!(
+                module.kind,
+                ModuleDestinationKind::Entry | ModuleDestinationKind::Unassigned
+            )
+        })
         .map(|module| module.path.clone())
         .context("dependency graph has no residual module for decomposition validation")?;
     let include_residual = strategy == ModuleDecompositionStrategy::AtomicIncludingResidual;

@@ -1406,7 +1406,10 @@ fn check_graph_source_unit_destinations(
             .with_context(|| {
                 format!("source unit {:?} has an unknown graph destination", node.id)
             })?;
-        let expected = if graph_destination.kind != ModuleDestinationKind::Specified {
+        let expected = if matches!(
+            graph_destination.kind,
+            ModuleDestinationKind::Entry | ModuleDestinationKind::Unassigned
+        ) {
             None
         } else {
             Some(graph_destination.path.as_str().to_string())
