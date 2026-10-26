@@ -1,4 +1,3 @@
-use source_identity::SourceUnitOrdinal;
 mod chunk_constraining_module_edges_tests {
     //! Regression coverage for [`chunk_constraining_module_edges`]'s
     //! filter rule. The canonical edge set must match what the
@@ -106,6 +105,8 @@ mod from_report_tests {
     //! `DependencyEdgeReport.role`; the peel planner reconstructs it
     //! here. Both ends must agree so the planner's gate runs the same
     //! cross-module-at-init filter the materializer's gate does.
+    use source_identity::SourceUnitOrdinal;
+
     use crate::purity::Purity;
     use crate::reports::schema::{
         AtomicGraphReport, DependencyEdgeReport, DependencyGraphReport, EdgeRoleReport,
