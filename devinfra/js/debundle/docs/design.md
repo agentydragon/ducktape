@@ -270,7 +270,7 @@ Let the input _chunk_ be a sequence of top-level statements
 `S_1, ..., S_n` in source order. Let the spec be a partial map
 `owner: binding → ModuleId` (over bindings of kind `Owned`);
 bindings without an explicit owner default to the _residual_
-module (a synthesized `PlannedModule` with `residual: true` that
+module (a synthesized `PlannedModule` with the `Unassigned` role that
 holds whatever is left over).
 
 For each statement `S`:

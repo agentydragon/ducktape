@@ -1,6 +1,7 @@
 //! Output plan structures kept by lowering. Spec-derived request
 //! construction lives in `spec_resolution`.
 
+use analysis::ModuleRole;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 #[derive(Debug, Clone)]
@@ -11,7 +12,11 @@ pub(super) struct ModulePlan {
     /// Distinct from `target_file`, which is the chunk-relative
     /// emitted file path (e.g. `"modules/foo.js"`).
     pub(super) target_path: String,
-    pub(super) explicit: bool,
+    /// Assignment policy for this destination. Explicit module requests are
+    /// `Specified`; outputs used for unassigned owners are `Unassigned`,
+    /// including the catch-all and synthesized atomic-group outputs. This
+    /// role does not identify the physical DFS root.
+    pub(super) role: ModuleRole,
     /// Local-name → public-export-name for every owned binding this
     /// plan claims (i.e. members whose `selector.binding.kind` is
     /// _not_ `ImportSpecifier`). ImportSpecifier-bound members live

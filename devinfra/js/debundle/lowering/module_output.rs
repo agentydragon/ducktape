@@ -23,7 +23,7 @@ use crate::plans::ModulePlan;
 use crate::rename_ledger::{RenameLedger, RenameScope, ScopeOccupancy, SealValidation};
 use crate::rewrite_runtime::rewrite_runtime_sources_for_target;
 use crate::visitors::IdentifierRenamer;
-use analysis::{ModuleId, top_level_id};
+use analysis::{ModuleId, ModuleRole, top_level_id};
 use anyhow::{Result, bail};
 use artifact::{
     ChunkId, FileMetadata, FileRole, JsFile, JsFileBody, SelectedModuleLowering, join_module_path,
@@ -542,7 +542,7 @@ fn build_module_output(
         cross_chunk_import_aliases: Vec::new(),
         file: context.entry_file.to_string(),
         owner_ids,
-        residual: !plan.explicit,
+        residual: plan.role == ModuleRole::Unassigned,
         target_file: plan.target_file.clone(),
         target_path: plan.target_path.clone(),
     };

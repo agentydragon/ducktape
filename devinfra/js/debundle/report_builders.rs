@@ -13,7 +13,7 @@ use analysis::reports::schema::LineRange;
 use analysis::reports::{atomic_group_key, module_id_from_key, module_key, owner_key};
 use analysis::{
     AtomicGraphReport, AtomicGroup, AtomicGroupEdgeReport, AtomicGroupReport, BindingReport,
-    DepKind, EdgeRoleReport, ModuleEntry, ModuleId, ModuleKey, OwnerGraphEdgeReport,
+    DepKind, EdgeRoleReport, ModuleEntry, ModuleId, ModuleKey, ModuleRole, OwnerGraphEdgeReport,
     OwnerGraphNodeReport, OwnerGraphQuotientReport, OwnerGraphReport, Purity, PurityCauseReport,
     QuotientEdgeReport, QuotientSccReport,
 };
@@ -445,16 +445,14 @@ fn quotient_edge_indices_by_source(
     by_source
 }
 
-/// True iff `id` refers to a logical module whose `residual` flag is
-/// set — the chunk's catch-all destination synthesized before
-/// `AssignmentAnalysis::build_with`. Used by the destination
-/// projection in reports to gate residual-only predicates without
-/// string-matching module ids or labels.
-fn is_residual_destination(factorization: &AssignmentAnalysis, id: ModuleId) -> bool {
+/// True iff `id` refers to a logical module with the `Unassigned` policy
+/// role. The report schema projects this classification to its legacy
+/// `residual` flag; it does not identify the physical DFS root.
+fn is_unassigned_destination(factorization: &AssignmentAnalysis, id: ModuleId) -> bool {
     factorization
         .analysis()
         .logical_module(id)
-        .is_some_and(|module| module.residual)
+        .is_some_and(|module| module.role == ModuleRole::Unassigned)
 }
 
 /// Map a typed [`EdgeRole`] to its wire-format projection. `None`
@@ -476,6 +474,6 @@ fn module_entry(factorization: &AssignmentAnalysis, id: ModuleId) -> ModuleEntry
     ModuleEntry {
         key: module_key(id),
         path: factorization.analysis().module_path(id),
-        residual: is_residual_destination(factorization, id),
+        residual: is_unassigned_destination(factorization, id),
     }
 }

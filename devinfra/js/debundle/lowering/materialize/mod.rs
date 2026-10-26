@@ -32,8 +32,8 @@ use crate::{
 };
 use analysis::facts::{ExportReentryPolicy, StructuralChunkAnalysis};
 use analysis::{
-    AnalysisAssumptions, AnalysisInputs, LocalEffectPolicy, ModuleId, OwnerGraphAndAtomicGroups,
-    OwnerGraphOptions, PlannedModule, top_level_id,
+    AnalysisAssumptions, AnalysisInputs, LocalEffectPolicy, ModuleId, ModuleRole,
+    OwnerGraphAndAtomicGroups, OwnerGraphOptions, PlannedModule, top_level_id,
 };
 use anyhow::{Context, Result, bail};
 use artifact::{
@@ -756,7 +756,7 @@ fn project_factorization_modules_with_sentinel(
         .map(|plan| PlannedModule {
             id: plan.id.clone(),
             target_file: plan.target_file.clone(),
-            residual: !plan.explicit,
+            role: plan.role,
             rename_map: plan
                 .bindings
                 .iter()
@@ -788,7 +788,7 @@ fn project_factorization_modules_with_sentinel(
     logical_modules.push(PlannedModule {
         id: format!("{chunk_id}::anon_residual_sentinel"),
         target_file: sentinel_residual_target,
-        residual: true,
+        role: ModuleRole::Unassigned,
         rename_map: HashMap::new(),
         anonymous_statement_ordinals: Vec::new(),
     });
@@ -1174,7 +1174,7 @@ fn build_final_module_report(
                 path: spec::ModulePath::parse(&plan.target_path, "")
                     .expect("plan target_path is a canonical module path"),
                 owner_ids,
-                residual: !plan.explicit,
+                residual: plan.role == ModuleRole::Unassigned,
             }
         })
         .collect()

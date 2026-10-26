@@ -23,7 +23,7 @@ fn residual() -> ModuleId {
 }
 
 /// Canonical-path renderer for test assignments: the residual
-/// sentinel renders as `residual`, explicit modules as `mod_<idx>`.
+/// sentinel renders as `residual`, named modules as `mod_<idx>`.
 fn render(id: ModuleId) -> spec::ModulePath {
     let idx = id.0;
     let raw = if idx == usize::MAX {
@@ -152,7 +152,7 @@ fn factorization_for(source: &str, ownership: &[(&str, ModuleId)]) -> Assignment
         .map(|i| PlannedModule {
             id: format!("mod_{i}"),
             target_file: format!("mod_{i}.js"),
-            residual: false,
+            role: ModuleRole::Specified,
             rename_map: HashMap::new(),
             anonymous_statement_ordinals: Vec::new(),
         })
@@ -160,7 +160,7 @@ fn factorization_for(source: &str, ownership: &[(&str, ModuleId)]) -> Assignment
     logical_modules.push(PlannedModule {
         id: "residual".to_string(),
         target_file: "residual/unhandled.js".to_string(),
-        residual: true,
+        role: ModuleRole::Unassigned,
         rename_map: HashMap::new(),
         anonymous_statement_ordinals: Vec::new(),
     });
@@ -187,14 +187,14 @@ fn factorization_with_residual_module(
         PlannedModule {
             id: "residual".to_string(),
             target_file: "residual/unhandled.js".to_string(),
-            residual: true,
+            role: ModuleRole::Unassigned,
             rename_map: HashMap::new(),
             anonymous_statement_ordinals: Vec::new(),
         },
         PlannedModule {
             id: "mod_1".to_string(),
             target_file: "mod_1.js".to_string(),
-            residual: false,
+            role: ModuleRole::Specified,
             rename_map: HashMap::new(),
             anonymous_statement_ordinals: Vec::new(),
         },
@@ -614,12 +614,12 @@ fn assignment_summary(factorization: &AssignmentAnalysis) -> Vec<(String, String
                 declared.join(",")
             };
             let dest = factorization.assignment().of(node.id);
-            // Residual modules render as `<residual>` so this
-            // summary stays stable across residual-index changes;
-            // explicit modules use their `mod_<idx>` label.
+            // The legacy residual report projection renders as
+            // `<residual>` so this summary stays stable across index
+            // changes; specified modules use their `mod_<idx>` label.
             let idx = dest.0;
             let label = match factorization.analysis().logical_module(ModuleId(idx)) {
-                Some(m) if m.residual => "<residual>".to_string(),
+                Some(m) if m.role == ModuleRole::Unassigned => "<residual>".to_string(),
                 _ => render(dest).to_string(),
             };
             (key, label)

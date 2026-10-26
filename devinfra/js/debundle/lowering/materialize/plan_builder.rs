@@ -13,7 +13,9 @@ use crate::imports::{
 use crate::plans::ModulePlan;
 use crate::rebind_fold::RebindFold;
 use crate::util::target_file_for_request;
-use analysis::{BindingKind, ModuleId, OwnerGraphAndAtomicGroups, OwnerId, top_level_id};
+use analysis::{
+    BindingKind, ModuleId, ModuleRole, OwnerGraphAndAtomicGroups, OwnerId, top_level_id,
+};
 use anyhow::{Context, Result, bail};
 use js_ast::body_index_for_statement_ordinal;
 use selector_outcome::{
@@ -315,7 +317,7 @@ impl ChunkPlanBuilder {
             id: request.id.clone(),
             target_file: dest_target_file,
             target_path: request.target_path.clone(),
-            explicit: true,
+            role: ModuleRole::Specified,
             bindings,
             spec_named_bindings: request
                 .members
@@ -879,10 +881,9 @@ impl ChunkPlanBuilder {
     /// 1. A memberless residual request was synthesized (or supplied
     ///    by the spec) — build a new residual plan, append it, and
     ///    point `residual_plan_index` at it.
-    /// 2. An explicit `logical_modules` entry already pins itself at
-    ///    the catchall target — repurpose that plan: flip its
-    ///    `explicit` flag and append unclaimed bindings to its
-    ///    members.
+    /// 2. A `logical_modules` entry already pins itself at the
+    ///    catchall target — repurpose that plan: mark it `Unassigned`
+    ///    and append unclaimed bindings to its members.
     ///
     /// `None` for both `residual_request` and `catchall_target`
     /// leaves `residual_plan_index` unset, which is the
@@ -916,7 +917,7 @@ impl ChunkPlanBuilder {
                     id: residual.id.clone(),
                     target_file: target_file_for_request(target_dir, &residual.target_path)?,
                     target_path: residual.target_path.clone(),
-                    explicit: false,
+                    role: ModuleRole::Unassigned,
                     bindings: residual_bindings,
                     spec_named_bindings: BTreeSet::new(),
                     anonymous_statement_ordinals: Vec::new(),
@@ -931,11 +932,10 @@ impl ChunkPlanBuilder {
             // No memberless residual request was synthesized — an
             // explicit `logical_modules` entry already pinned itself at
             // the catchall target. Append unclaimed bindings to that
-            // plan so the residual sweep still has a home, and flip
-            // its `explicit` flag so downstream consumers see it as
-            // the residual destination (residual flag on the factorization
-            // module, OutputRole::ResidualModule in artifact metadata, and
-            // `residual: true` in modules.json).
+            // plan so the residual sweep still has a home, and mark
+            // it Unassigned. The role preserves the legacy residual
+            // report/artifact projection for default-assigned outputs;
+            // it does not select the physical DFS root.
             let owner_index = self
                 .module_plans
                 .iter()
@@ -943,7 +943,7 @@ impl ChunkPlanBuilder {
             if let Some(owner_index) = owner_index {
                 let owner_id = ModuleId(owner_index);
                 let owner_plan = &mut self.module_plans[owner_index];
-                owner_plan.explicit = false;
+                owner_plan.role = ModuleRole::Unassigned;
                 for decl in declarations {
                     for (name, id) in &decl.bindings {
                         if owned_destination(&self.bindings_catalogue, id).is_none() {
@@ -1213,7 +1213,7 @@ impl ChunkPlanBuilder {
                 id: target_path.clone(),
                 target_file,
                 target_path,
-                explicit: false,
+                role: ModuleRole::Unassigned,
                 bindings,
                 spec_named_bindings: BTreeSet::new(),
                 anonymous_statement_ordinals,

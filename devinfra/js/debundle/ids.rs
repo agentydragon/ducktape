@@ -19,7 +19,8 @@ pub fn top_level_id(sym: &str, top_level_mark: Mark) -> Id {
 
 /// Identity of a module the graph/schedule analysis reasons about.
 /// Its dense index points into the schedule's `logical_modules` list.
-/// The residual catch-all is a logical module flagged `residual: true`,
+/// A default-assignment output is a logical module with
+/// [`ModuleRole::Unassigned`],
 /// synthesized by the materializer
 /// before `AssignmentAnalysis::build_with` for chunks that need a default
 /// destination (every `InlineInEntry` and `CatchallFile` chunk; the
@@ -108,6 +109,19 @@ pub enum BindingKind {
     },
 }
 
+/// Semantic role of a planned module destination.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum ModuleRole {
+    /// A destination explicitly specified by a module request.
+    Specified,
+    /// A destination used by the default policy for source owners that
+    /// were not assigned by an explicit module request. This includes the
+    /// catch-all, generated atomic-group outputs, and the anonymous sentinel;
+    /// it describes assignment policy, not the physical DFS root selected by
+    /// [`crate::ModuleAssignment::residual`].
+    Unassigned,
+}
+
 /// A planned module produced from the spec for the current chunk.
 /// Projection of `ModulePlan` carrying the fields downstream emit
 /// helpers consume (`cross_module_imports_for_body`,
@@ -117,9 +131,12 @@ pub struct PlannedModule {
     pub id: String,
     /// Chunk-relative path the module emits to (e.g. `"runtime/foo.js"`).
     pub target_file: String,
-    /// True for the generated residual catch-all module. Reports use this to
-    /// identify the remaining unpeeled owner set without relying on labels.
-    pub residual: bool,
+    /// This policy role distinguishes explicitly specified destinations from
+    /// outputs that receive unassigned source owners. It is independent of the
+    /// physical DFS root selected by [`crate::ModuleAssignment::residual`]. Reports
+    /// project `Unassigned` to their legacy residual boolean, including for
+    /// generated atomic-group outputs.
+    pub role: ModuleRole,
     /// Local-name → exported-name map for the bindings this module
     /// owns. Empty when the module re-exports only imported
     /// bindings. Iteration order is undefined; report and emit
