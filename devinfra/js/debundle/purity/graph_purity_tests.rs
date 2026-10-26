@@ -58,9 +58,11 @@ fn enum_named_data_fact_requires_stable_single_initializer() {
         let graph = ChunkCodeGraph::build(&body, &shadowed, &BTreeSet::new());
         let facts = analyze_facts(&module);
         assert_eq!(
-            crate::facts::stable_ts_enum_named_data_members(&graph, &facts)
-                .get(&test_id("Flags"))
-                .is_some_and(|keys| keys.contains("FIRST")),
+            crate::facts::sync_effects::execution_index::stable_ts_enum_named_data_members(
+                &graph, &facts,
+            )
+            .get(&test_id("Flags"))
+            .is_some_and(|keys| keys.contains("FIRST")),
             admitted,
             "incorrect enum own-field fact after {suffix:?}"
         );
@@ -72,9 +74,11 @@ fn enum_named_data_fact_requires_stable_single_initializer() {
     let graph = ChunkCodeGraph::build(&body, &shadowed, &BTreeSet::new());
     let facts = analyze_facts(&module);
     assert!(
-        crate::facts::stable_ts_enum_named_data_members(&graph, &facts)
-            .get(&test_id("Flags"))
-            .is_some_and(|keys| keys.contains("FIRST")),
+        crate::facts::sync_effects::execution_index::stable_ts_enum_named_data_members(
+            &graph, &facts,
+        )
+        .get(&test_id("Flags"))
+        .is_some_and(|keys| keys.contains("FIRST")),
         "the recognized initializer self-write must remain admitted"
     );
 }

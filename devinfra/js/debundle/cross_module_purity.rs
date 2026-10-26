@@ -328,7 +328,10 @@ pub fn resolve_imported_callback_factories(
             continue;
         }
         let views = top_level_item_views(facts.body);
-        let inferred = crate::facts::infer_returned_callback_factories(&views, &locals);
+        let inferred =
+            crate::facts::sync_effects::execution_index::infer_returned_callback_factories(
+                &views, &locals,
+            );
         factories.extend(
             facts
                 .exports

@@ -56,7 +56,7 @@ mod purity_classification;
 mod set_iterables;
 mod source_unit_read_closure;
 mod statement_facts;
-mod sync_effects;
+pub(crate) mod sync_effects;
 mod value_flow;
 #[cfg(test)]
 mod value_flow_tests;
@@ -75,9 +75,6 @@ pub(crate) use purity_classification::*;
 pub(crate) use set_iterables::{SetIterableProof, primitive_literal_property_keys};
 pub(crate) use source_unit_read_closure::SourceUnitReadClosure;
 pub(crate) use statement_facts::ConstructorFacts;
-pub(crate) use sync_effects::infer_returned_callback_factories;
-#[cfg(test)]
-pub(crate) use sync_effects::stable_ts_enum_named_data_members;
 pub(crate) use value_flow::{CandidateObjectIndex, ChunkValueFlow, ValueOrigin};
 
 // Public API: importable at `facts::<item>` exactly as before the split.

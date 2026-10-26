@@ -325,10 +325,10 @@ where
         .collect();
     value_flow.augment_calls(&body, &mut facts);
     if matches!(synchronous_calls, SynchronousCallAnalysis::Include) {
-        super::sync_effects::annotate_synchronous_calls(
+        super::sync_effects::execution_index::interpreter::annotate_synchronous_calls(
             &body,
             &value_flow,
-            super::sync_effects::SynchronousCallProofs {
+            super::sync_effects::execution_index::interpreter::SynchronousCallProofs {
                 set_iterable: &set_iterable_proof,
                 graph: &graph,
             },
