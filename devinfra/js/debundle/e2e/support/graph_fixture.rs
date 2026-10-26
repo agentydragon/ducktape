@@ -20,7 +20,19 @@ impl GraphFixture {
         Self::run(source, modules, false)
     }
 
+    pub fn with_dependency(source: &str, dependency: &str, modules: &[(&str, &str)]) -> Self {
+        Self::run_chunks(
+            &[("main", source), ("dependency", dependency)],
+            modules,
+            true,
+        )
+    }
+
     fn run(source: &str, modules: &[(&str, &str)], succeeds: bool) -> Self {
+        Self::run_chunks(&[("main", source)], modules, succeeds)
+    }
+
+    fn run_chunks(chunks: &[(&str, &str)], modules: &[(&str, &str)], succeeds: bool) -> Self {
         let files: Vec<_> = modules
             .iter()
             .map(|(path, yaml)| (format!("main/{path}"), *yaml))
@@ -31,7 +43,7 @@ impl GraphFixture {
             .collect();
         let run = run_tree_fixture(
             &TreeFixture {
-                chunks: &[("main", source)],
+                chunks,
                 module_roots: &[("main", "main")],
                 modules: if files.is_empty() {
                     &[("main/empty.yaml", "members: []\n")]
