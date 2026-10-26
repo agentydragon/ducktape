@@ -466,12 +466,7 @@ pub fn parse_anonymous_selector(
     description: impl Into<String>,
     selector: &spec::AnonymousStatementSelector,
 ) -> Result<ParsedSourceMatchSelector> {
-    Ok(ParsedSourceMatchSelector::parse(
-        request_id,
-        description.into(),
-        selector,
-        "source_match",
-    )?)
+    ParsedSourceMatchSelector::parse(request_id, description.into(), selector, "source_match")
 }
 
 /// Build a selector-engine anonymous statement from its authored index.
