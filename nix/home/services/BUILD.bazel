@@ -1,6 +1,36 @@
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
-    name = "snapshot-codex-sqlite",
-    srcs = ["snapshot-codex-sqlite.py"],
+    name = "snapshot_sqlite",
+    srcs = ["snapshot_sqlite.py"],
+)
+
+py_test(
+    name = "snapshot_sqlite_test",
+    srcs = ["snapshot_sqlite_test.py"],
+    deps = [
+        ":snapshot_sqlite",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "session_backup_test",
+    srcs = ["session_backup_test.py"],
+    data = [
+        "session_backup.sh",
+        "snapshot_sqlite.py",
+        "//third_party/restic",
+    ],
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        "//:conftest",
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )
