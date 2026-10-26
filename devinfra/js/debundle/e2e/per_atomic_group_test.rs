@@ -41,7 +41,9 @@ fn per_atomic_group_synthesizes_one_module_per_unclaimed_atomic_group() {
     // Two top-level const bindings with no constraining edges
     // between them form two separate atomic groups. Under
     // `per_atomic_group` each atomic group becomes its own synthetic module.
-    let group_dir = fixture.out_root.join("static/app/modules/__auto/atomic_groups");
+    let group_dir = fixture
+        .out_root
+        .join("static/app/modules/__auto/atomic_groups");
     assert!(
         group_dir.exists(),
         "expected synthetic atomic-group module directory at {}",
@@ -88,7 +90,9 @@ fn per_atomic_group_synthesizes_one_module_per_unclaimed_atomic_group() {
 }
 
 fn atomic_group_dir_exists(out_root: &Path) -> bool {
-    out_root.join("static/app/modules/__auto/atomic_groups").exists()
+    out_root
+        .join("static/app/modules/__auto/atomic_groups")
+        .exists()
 }
 
 #[test]
