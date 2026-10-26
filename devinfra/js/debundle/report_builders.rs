@@ -14,8 +14,9 @@ use analysis::reports::{atomic_group_key, module_id_from_key, module_key, source
 use analysis::{
     AtomicGraphReport, AtomicGroup, AtomicGroupEdgeReport, AtomicGroupReport, BindingId,
     BindingReport, DepKind, DependencyEdgeReport, DependencyGraphReport, EdgeRoleReport,
-    ModuleEntry, ModuleId, ModuleKey, ModuleQuotientReport, ModuleRole, Purity, PurityCauseReport,
-    QuotientEdgeReport, QuotientSccReport, SourceUnitClass, SourceUnitReport,
+    ModuleDestinationKind, ModuleEntry, ModuleId, ModuleKey, ModuleQuotientReport, ModuleRole,
+    Purity, PurityCauseReport, QuotientEdgeReport, QuotientSccReport, SourceUnitClass,
+    SourceUnitReport,
 };
 
 use crate::assignment_analysis::AssignmentAnalysis;
@@ -480,19 +481,28 @@ fn quotient_edge_indices_by_source(
     by_source
 }
 
-/// True iff `id` is the entry destination or a planned output with the
-/// `Unassigned` policy role. The report schema projects this classification
-/// to its legacy `residual` flag; that flag does not identify the physical
-/// DFS root.
-fn is_unassigned_destination(assignment_analysis: &AssignmentAnalysis, id: ModuleId) -> bool {
-    id == assignment_analysis
+/// Preserve the disjoint entry identity and planned-output policy in the
+/// report. Neither is inferred from an authored module path.
+fn destination_kind(
+    assignment_analysis: &AssignmentAnalysis,
+    id: ModuleId,
+) -> ModuleDestinationKind {
+    if id == assignment_analysis
         .assignment()
         .entry_destination()
         .module_id()
-        || assignment_analysis
-            .inputs()
-            .planned_module(id)
-            .is_some_and(|module| module.role == ModuleRole::Unassigned)
+    {
+        return ModuleDestinationKind::Entry;
+    }
+    match assignment_analysis
+        .inputs()
+        .planned_module(id)
+        .expect("non-entry destination has a planned module")
+        .role
+    {
+        ModuleRole::Specified => ModuleDestinationKind::Specified,
+        ModuleRole::Unassigned => ModuleDestinationKind::Unassigned,
+    }
 }
 
 /// Map a typed [`EdgeRole`] to its wire-format projection. `None`
@@ -509,11 +519,11 @@ fn edge_role_report(role: EdgeRole) -> Option<EdgeRoleReport> {
 }
 
 /// Build the module-table entry for `id`: the single place its
-/// canonical [`spec::ModulePath`] and residual flag are recorded.
+/// canonical [`spec::ModulePath`] and destination kind are recorded.
 fn module_entry(assignment_analysis: &AssignmentAnalysis, id: ModuleId) -> ModuleEntry {
     ModuleEntry {
         key: module_key(id),
         path: assignment_analysis.module_path(id),
-        residual: is_unassigned_destination(assignment_analysis, id),
+        kind: destination_kind(assignment_analysis, id),
     }
 }

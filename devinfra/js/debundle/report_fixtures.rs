@@ -2,7 +2,7 @@
 //!
 //! The dependency-graph report interns module identity: a reference is a
 //! [`ModuleKey`] (`"logical:N"`) and each module's canonical
-//! [`spec::ModulePath`] + residual flag live once in the module table
+//! [`spec::ModulePath`] + destination kind live once in the module table
 //! (`ModuleQuotientReport::nodes`, a list of [`ModuleEntry`]). Tests
 //! across several crates build that table — and the owner/edge/atomic-group
 //! report nodes around it — the same way, so the builders live here
@@ -10,18 +10,20 @@
 //!
 //! Convention: a test destination key's string **is** the module's
 //! canonical path (e.g. `"residual"`, `"ui/plugins"`), so [`module_table`]
-//! recovers the path by parsing the key and derives `residual` from
-//! [`spec::is_residual_module_path`].
+//! recovers the path by parsing the key. The `"residual"` test sentinel
+//! represents the physical entry destination; other keys represent specified
+//! planned outputs.
 
 use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeMap, BTreeSet};
 
 use analysis::{
     AtomicGraphReport, AtomicGroupEdgeReport, AtomicGroupReport, BindingReport, DepKind,
-    DependencyEdgeReport, DependencyGraphReport, EdgeRoleReport, LineRange, ModuleEntry, ModuleKey,
-    ModuleQuotientReport, Purity, SourceLocation, SourceUnitReport, StatementKind,
+    DependencyEdgeReport, DependencyGraphReport, EdgeRoleReport, LineRange, ModuleDestinationKind,
+    ModuleEntry, ModuleKey, ModuleQuotientReport, Purity, SourceLocation, SourceUnitReport,
+    StatementKind,
 };
-use spec::{ModulePath, is_residual_module_path};
+use spec::ModulePath;
 
 /// A destination key whose string is the module's canonical path.
 pub fn module_ref(path: &str) -> ModuleKey {
@@ -29,20 +31,24 @@ pub fn module_ref(path: &str) -> ModuleKey {
 }
 
 /// The module-table entry for a single destination key: the canonical
-/// `ModulePath` (parsed from the key) and its residual flag.
+/// `ModulePath` (parsed from the key) and destination kind.
 pub fn module_entry(key: &ModuleKey) -> ModuleEntry {
     let path = ModulePath::parse(key.as_str(), "").expect("test module key is a valid path");
-    let residual = is_residual_module_path(path.as_str());
+    let kind = if path.as_str() == "residual" {
+        ModuleDestinationKind::Entry
+    } else {
+        ModuleDestinationKind::Specified
+    };
     ModuleEntry {
         key: key.clone(),
         path,
-        residual,
+        kind,
     }
 }
 
 /// Build the module table (`quotient.nodes`) from a set of destination
 /// keys, deduplicating. The single source of truth for each module's
-/// path + residual flag in a test fixture.
+/// path + destination kind in a test fixture.
 pub fn module_table<'a>(keys: impl IntoIterator<Item = &'a ModuleKey>) -> Vec<ModuleEntry> {
     let mut seen = BTreeSet::new();
     keys.into_iter()

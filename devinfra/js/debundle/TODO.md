@@ -178,11 +178,6 @@ confirmed it.
   likely benign. The post-seed reporting in `peel/quotient.rs` keeps an SCC
   whose owners collapse into one class, while the `translate_*` helpers drop it
   and `would_be_cycles_after_contract` fabricates a two-class evidence.
-- **Two definitions of "residual".** Status: reported. `reports/schema.rs`
-  `ModuleEntry.residual` is documented as authoritative, not derivable from
-  `path`, while `spec::is_residual_module_path`, `spec_stats` and the CLI derive
-  it from the `residual/` prefix. Possibly intentional (authoring tree versus
-  materialized), but undocumented.
 
 ## CLI usability
 

@@ -57,7 +57,7 @@ fn residual_source_unit_ids(report: &DependencyGraphReport) -> BTreeSet<String> 
     report
         .nodes
         .iter()
-        .filter(|node| report.is_residual(&node.destination))
+        .filter(|node| report.is_unassigned_or_entry(&node.destination))
         .map(|node| node.id.clone())
         .collect()
 }

@@ -205,8 +205,10 @@ struct ModulesListArgs {
     #[arg(long)]
     pub empty: bool,
 
-    /// Restrict to residual modules (any module whose path starts with `residual/`).
+    /// Restrict to authored modules in the `residual/` path namespace.
     #[arg(long)]
+    /// Whether the authored path belongs to the `residual/` namespace.
+    /// Independent of a generated graph destination's policy or entry role.
     pub residual: bool,
 
     /// Same predicate as `--empty`.
@@ -251,7 +253,7 @@ struct ModulesListReport {
 }
 
 fn run_modules_list(args: ModulesListArgs) -> Result<()> {
-    use spec::is_residual_module_path;
+    use spec::is_residual_namespace_path;
     use spec_modules::{collect_module_files, module_path_from_file, read_module_file};
     let files = collect_module_files(&args.modules_root)
         .with_context(|| format!("walking {}", args.modules_root.display()))?;
@@ -259,7 +261,7 @@ fn run_modules_list(args: ModulesListArgs) -> Result<()> {
     for file in files {
         let module = read_module_file(&file)?;
         let path = module_path_from_file(&file, &args.modules_root);
-        let residual = is_residual_module_path(&path);
+        let residual = is_residual_namespace_path(&path);
         let source_match_binding_count = module
             .source_matches
             .iter()

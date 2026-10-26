@@ -222,7 +222,7 @@ pub struct QuotientGraph {
     /// realizability gate (`gate::check_realizability`). Stored once
     /// at construction; never mutated.
     dependency_graph: DependencyGraph,
-    /// Source units whose `SourceUnitReport.destination.residual` is
+    /// Source units whose destination kind is `entry` or `unassigned` are
     /// `true`. Set by `from_report` from the JSON wire flag (the
     /// same residual identification `propose.rs` uses). A class made
     /// only of these, and not anchored to a module, projects to the
@@ -434,7 +434,7 @@ impl QuotientGraph {
             // assignment's residual; any residual source_unit projects to that
             // residual ModuleId so the simulator's DFS reaches the
             // candidate SCCs.
-            if report.is_residual(&node.destination) {
+            if report.is_unassigned_or_entry(&node.destination) {
                 gate_residual_source_units.insert(SourceUnitIndex(i));
             }
         }
@@ -573,7 +573,7 @@ impl QuotientGraph {
         );
 
         for (source_unit_idx, node) in report.nodes.iter().enumerate() {
-            if report.is_residual(&node.destination)
+            if report.is_unassigned_or_entry(&node.destination)
                 && matches!(
                     node.statement_kind,
                     StatementKind::Import | StatementKind::Export
@@ -1970,7 +1970,7 @@ pub fn build_seed_quotient(
                     atomic_group
                         .destinations
                         .iter()
-                        .any(|dest| report.is_residual(dest)),
+                        .any(|dest| report.is_unassigned_or_entry(dest)),
                 )
             })
             .collect();

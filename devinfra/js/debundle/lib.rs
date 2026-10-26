@@ -60,7 +60,7 @@ pub use purity::{
 pub use reports::schema::{
     AtomicGraphReport, AtomicGroupConflictReport, AtomicGroupEdgeReport, AtomicGroupReport,
     BindingReport, ConflictingClaimReport, DependencyEdgeReport, DependencyGraphReport,
-    EdgeRoleReport, LineRange, ModuleEntry, ModuleKey, ModuleQuotientReport, PurityCauseReport,
-    QuotientEdgeReport, QuotientSccReport, SequencedSourceUnitCause, SourceLocation,
-    SourceUnitReport,
+    EdgeRoleReport, LineRange, ModuleDestinationKind, ModuleEntry, ModuleKey, ModuleQuotientReport,
+    PurityCauseReport, QuotientEdgeReport, QuotientSccReport, SequencedSourceUnitCause,
+    SourceLocation, SourceUnitReport,
 };

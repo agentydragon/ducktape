@@ -104,16 +104,18 @@ pub struct PurityCauseReport {
 impl DependencyGraphReport {
     /// Resolve a [`ModuleKey`] to its module-table entry. The table
     /// (`quotient.nodes`) is the single source of truth for a module's
-    /// path + residual flag; consumers look up here rather than reading
+    /// path + destination kind; consumers look up here rather than reading
     /// a duplicated field off the reference.
     pub fn module(&self, key: &ModuleKey) -> Option<&ModuleEntry> {
         self.quotient.nodes.iter().find(|entry| &entry.key == key)
     }
 
-    /// Whether `key` has the residual policy flag in the module table.
-    /// Unknown keys are not residual.
-    pub fn is_residual(&self, key: &ModuleKey) -> bool {
-        self.module(key).is_some_and(|entry| entry.residual)
+    /// Whether `key` receives source units without an explicit module claim.
+    /// This includes the physical entry destination and planned outputs with
+    /// the `Unassigned` policy role. Unknown keys do not match.
+    pub fn is_unassigned_or_entry(&self, key: &ModuleKey) -> bool {
+        self.module(key)
+            .is_some_and(|entry| entry.kind != ModuleDestinationKind::Specified)
     }
 }
 
@@ -421,17 +423,23 @@ impl std::fmt::Display for ModuleKey {
 
 /// One entry in the destination table (`ModuleQuotientReport::nodes`).
 /// The single source of truth mapping a [`ModuleKey`] to its canonical
-/// path and residual-policy flag. No other wire field duplicates `path` or
-/// `residual`.
+/// path and destination kind. No other wire field duplicates them.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ModuleEntry {
     pub key: ModuleKey,
     /// Canonical module identity/destination path (see
     /// [`spec::ModulePath`]).
     pub path: spec::ModulePath,
-    /// `true` for the entry destination or a planned output with the
-    /// `Unassigned` policy role. Authoritative — not derivable from `path`
-    /// (a spec author may legitimately name another destination
-    /// `residual/...`).
-    pub residual: bool,
+    /// The physical entry destination or the policy role of a planned output.
+    /// Authoritative; the authored `residual/` path namespace is independent.
+    pub kind: ModuleDestinationKind,
+}
+
+/// Disjoint destinations in the module quotient's wire table.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ModuleDestinationKind {
+    Entry,
+    Specified,
+    Unassigned,
 }

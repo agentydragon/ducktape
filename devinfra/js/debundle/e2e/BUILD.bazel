@@ -483,6 +483,7 @@ debundle_e2e_test(name = "edit_gate_direct_claims_cli_test")
 debundle_e2e_test(
     name = "module_decomposition_cli_test",
     deps = [
+        "//devinfra/js/debundle:analysis",
         "@crates//:serde_json",
         "@crates//:tempfile",
     ],
