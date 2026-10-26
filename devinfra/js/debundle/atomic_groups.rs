@@ -54,7 +54,7 @@ pub struct AtomicGroup {
 
 /// Owner graph plus its precomputed atomic groups. Bundled so a single
 /// chunk-level computation pays the Tarjan/SCC cost once and threads
-/// the result through `ChunkPlanBuilder::synthesize_mini_factors` →
+/// the result through `ChunkPlanBuilder::synthesize_per_atomic_group` →
 /// `AssignmentAnalysis::build_with` (gate crate) and atomic-DAG report emission.
 #[derive(Debug, Clone)]
 pub struct OwnerGraphAndAtomicGroups {

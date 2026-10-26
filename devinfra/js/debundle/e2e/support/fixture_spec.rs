@@ -663,7 +663,7 @@ pub struct FixtureOpts<'a> {
     /// Renders as a YAML object with `kind: <discriminant>` plus
     /// any variant-specific fields. Use [`unassigned_mode_inline`],
     /// [`unassigned_mode_catchall_file`], or
-    /// [`unassigned_mode_mini_factors`] to build typical bodies.
+    /// [`unassigned_mode_per_atomic_group`] to build typical bodies.
     pub unassigned_mode: UnassignedMode,
     /// Opt into the dataflow-aware S-chain emission in `graph/` for
     /// this chunk. Default `false` — leaves the strictly-conservative
@@ -712,8 +712,8 @@ impl<'a> FixtureOpts<'a> {
         // residual-module emission path and rely on
         // `static/app/modules/residual/unhandled.js` being written.
         // Tests that exercise `InlineInEntry` semantics override with
-        // [`unassigned_mode_inline`]; tests that exercise mini factors
-        // override with [`unassigned_mode_mini_factors`].
+        // [`unassigned_mode_inline`]; tests that exercise per-group modules
+        // override with [`unassigned_mode_per_atomic_group`].
         Self {
             execution_runtime: spec::ExecutionRuntime::default(),
             source,
@@ -843,9 +843,9 @@ pub fn unassigned_mode_catchall_file(target: Option<&str>) -> UnassignedMode {
     }
 }
 
-/// Build an `unassigned_mode: mini_factors` entry.
-pub fn unassigned_mode_mini_factors() -> UnassignedMode {
-    UnassignedMode::MiniFactors
+/// Build an `unassigned_mode: per_atomic_group` entry.
+pub fn unassigned_mode_per_atomic_group() -> UnassignedMode {
+    UnassignedMode::PerAtomicGroup
 }
 
 /// Fluent wrapper for building a `(chunk, ChunkExportPurity)` tuple with the

@@ -546,8 +546,8 @@ pub(super) fn finish_logical_chunk(
         owner_graph_and_atomic_groups: precomputed,
     } = chunk_analysis;
     apply_rebind_folds_from_chunk_analysis(&mut builder, &precomputed);
-    if matches!(chunk_unassigned_mode, UnassignedMode::MiniFactors) {
-        builder.synthesize_mini_factors(&precomputed, &runtime_ast.module.body, target_dir)?;
+    if matches!(chunk_unassigned_mode, UnassignedMode::PerAtomicGroup) {
+        builder.synthesize_per_atomic_group(&precomputed, &runtime_ast.module.body, target_dir)?;
     }
     builder.route_nested_var_statements(&runtime_ast.module.body, &declarations)?;
     if matches!(chunk_unassigned_mode, UnassignedMode::CatchallFile { .. }) {
@@ -714,7 +714,7 @@ pub(super) fn finish_logical_chunk(
 ///
 /// This runs after the seed phases of assignment construction
 /// (explicit requests, destructure pull, residual sweep) and before
-/// `synthesize_mini_factors`. The decision step is spec-independent —
+/// `synthesize_per_atomic_group`. The decision step is spec-independent —
 /// it only inspects the chunk-analysis owner graph + atomic groups, the
 /// builder's binding→plan assignment, and the residual landing-site
 /// index — so it lives in the `analysis` crate; this thin composer

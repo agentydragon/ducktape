@@ -109,6 +109,10 @@ with `perf_wrapper.sh`: <docs/bazel_integration.md>.
 
 ## Spec features
 
+- **Unassigned source:** `unassigned_mode` keeps unclaimed code in the entry,
+  collects it in a catchall file, or decomposes it into one module per atomic
+  group. Policies and generated paths: <SPEC.md#unassigned-source>.
+
 - **Runtime loading:** `execution_runtime: native_browser_esm` declares native
   browser module loading independently of harness emission; omitted or `generic`
   retains host-loader fallback. Checked closure and replacement prerequisites:

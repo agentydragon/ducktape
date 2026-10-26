@@ -92,7 +92,7 @@ pub(super) struct ChunkPlanBuilder {
     /// Index into `module_plans` of the "catchall" plan that
     /// unclaimed bindings sweep into, when one exists. `None` when
     /// the chunk has no residual landing site (default
-    /// `InlineInEntry` with no fallback request, or `MiniFactors`).
+    /// `InlineInEntry` with no fallback request, or `PerAtomicGroup`).
     residual_plan_index: Option<usize>,
     /// Spec claims that named a binding for which no top-level
     /// declaration exists in this chunk. Materialization keeps
@@ -887,7 +887,7 @@ impl ChunkPlanBuilder {
     ///
     /// `None` for both `residual_request` and `catchall_target`
     /// leaves `residual_plan_index` unset, which is the
-    /// `InlineInEntry` / `MiniFactors` shape.
+    /// `InlineInEntry` / `PerAtomicGroup` shape.
     pub(super) fn add_residual_sweep(
         &mut self,
         residual_request: Option<&LogicalRequest>,
@@ -1092,14 +1092,14 @@ impl ChunkPlanBuilder {
         }
     }
 
-    /// `MiniFactors` mode: every unclaimed atomic factor group gets
-    /// its own synthesized plan at `__auto/mini/NNNN`. Run after rebind folding
+    /// `PerAtomicGroup` mode: every unclaimed atomic factor group gets
+    /// its own synthesized plan at `__auto/atomic_groups/NNNN`. Run after rebind folding
     /// so the residual sweep and fold decisions have already settled which
     /// atomic groups are still unclaimed. Bindings
     /// previously parked at the residual plan are moved out into the
     /// synthesized plan; the residual plan's `bindings` map is
     /// pruned to match.
-    pub(super) fn synthesize_mini_factors(
+    pub(super) fn synthesize_per_atomic_group(
         &mut self,
         precomputed: &OwnerGraphAndAtomicGroups,
         body: &[ModuleItem],
@@ -1165,7 +1165,7 @@ impl ChunkPlanBuilder {
         for (idx, members) in unclaimed_atomic_groups.into_iter().enumerate() {
             let synthetic_idx = self.module_plans.len();
             let synthetic_module_id = ModuleId(synthetic_idx);
-            let target_path = format!("__auto/mini/{idx:04}");
+            let target_path = format!("__auto/atomic_groups/{idx:04}");
             let target_file = target_file_for_request(target_dir, &target_path)?;
             let mut bindings = HashMap::<String, String>::new();
             let mut anonymous_statement_ordinals = Vec::<usize>::new();

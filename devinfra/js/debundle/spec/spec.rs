@@ -9,7 +9,7 @@
 //! A third per-chunk map, `unassigned_mode`, decides what happens to
 //! top-level statements that no `logical_modules` entry explicitly
 //! claims (catch-all to entry, catch-all to a separate file, or one
-//! synthetic mini-factor per atomic group). See [`UnassignedMode`].
+//! synthetic atomic-group module per atomic group). See [`UnassignedMode`].
 //!
 //! Pipeline stages run in a fixed canonical order; each stage is either
 //! always-on or gated by the contents of those maps / by the presence of a
@@ -573,10 +573,7 @@ pub enum VendorLevel {
 /// each *unclaimed* atomic group lands in.
 ///
 /// The three variants are mutually exclusive — every chunk picks
-/// exactly one destination policy. Subsuming the previous
-/// `residual_modules` map: today's `CatchallFile` variant covers
-/// the case the standalone map used to express ("emit unclaimed
-/// code to a separate file at `target`").
+/// exactly one destination policy.
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "snake_case", tag = "kind", deny_unknown_fields)]
 pub enum UnassignedMode {
@@ -599,11 +596,11 @@ pub enum UnassignedMode {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         target: Option<String>,
     },
-    /// One synthetic mini-factor per unclaimed atomic factor group.
+    /// One synthetic atomic-group module per unclaimed atomic factor group.
     /// The residual catch-all collapses to whatever truly cannot
     /// be peeled (typically empty for clean chunks). See
     /// `docs/design.md` §"Layered mental model" + §"Two classes of atom".
-    MiniFactors,
+    PerAtomicGroup,
 }
 
 impl UnassignedMode {

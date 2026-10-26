@@ -1,11 +1,11 @@
-//! `unassigned_mode: mini_factors` synthesizes one logical module
+//! `unassigned_mode: per_atomic_group` synthesizes one logical module
 //! per unclaimed atomic factor group instead of funneling everything
 //! into the residual catch-all. Pin the contract:
 //!
 //! * Default mode (`catchall`): unclaimed bindings live together in
 //!   the residual module.
-//! * `mini_factors`: each unclaimed atomic group becomes its own
-//!   synthetic `__auto/mini/{idx:04}` module; the residual catch-all
+//! * `per_atomic_group`: each unclaimed atomic group becomes its own
+//!   synthetic `__auto/atomic_groups/{idx:04}` module; the residual catch-all
 //!   collapses to whatever truly couldn't be peeled (here: nothing).
 
 use debundle_e2e_support::*;
@@ -19,7 +19,7 @@ export const b = 2;
 fn catchall_keeps_unclaimed_bindings_in_residual() {
     let fixture = run_fixture(FixtureOpts::new(FIXTURE_SOURCE, vec![]));
     // Default catchall: both `a` and `b` go into the residual
-    // module; no synthetic `__auto/mini/...` files exist.
+    // module; no synthetic `__auto/atomic_groups/...` files exist.
     assert_module_exports(
         &fixture.out_root,
         "static/app/modules/residual/unhandled.js",
@@ -27,28 +27,28 @@ fn catchall_keeps_unclaimed_bindings_in_residual() {
         &[],
     );
     assert!(
-        !mini_factor_dir_exists(&fixture.out_root),
-        "expected no __auto/mini/ tree under catchall mode",
+        !atomic_group_dir_exists(&fixture.out_root),
+        "expected no __auto/atomic_groups/ tree under catchall mode",
     );
 }
 
 #[test]
-fn mini_factors_synthesizes_one_module_per_unclaimed_atomic_group() {
+fn per_atomic_group_synthesizes_one_module_per_unclaimed_atomic_group() {
     let fixture = run_fixture(
         FixtureOpts::new(FIXTURE_SOURCE, vec![])
-            .with_unassigned_mode(unassigned_mode_mini_factors()),
+            .with_unassigned_mode(unassigned_mode_per_atomic_group()),
     );
     // Two top-level const bindings with no constraining edges
     // between them form two separate atomic groups. Under
-    // `mini_factors` each atomic group becomes its own synthetic module.
-    let mini_dir = fixture.out_root.join("static/app/modules/__auto/mini");
+    // `per_atomic_group` each atomic group becomes its own synthetic module.
+    let group_dir = fixture.out_root.join("static/app/modules/__auto/atomic_groups");
     assert!(
-        mini_dir.exists(),
-        "expected synthetic mini-factor directory at {}",
-        mini_dir.display(),
+        group_dir.exists(),
+        "expected synthetic atomic-group module directory at {}",
+        group_dir.display(),
     );
     // Collect synthesized files and union their exports.
-    let mut entries: Vec<String> = std::fs::read_dir(&mini_dir)
+    let mut entries: Vec<String> = std::fs::read_dir(&group_dir)
         .unwrap()
         .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
         .filter(|name| name.ends_with(".js"))
@@ -56,13 +56,13 @@ fn mini_factors_synthesizes_one_module_per_unclaimed_atomic_group() {
     entries.sort();
     assert!(
         entries.len() >= 2,
-        "expected at least two synthesized mini-factor modules; got {entries:?}",
+        "expected at least two synthesized atomic-group modules; got {entries:?}",
     );
     let mut all_exports = std::collections::BTreeSet::<String>::new();
     for entry in &entries {
         let exports = list_module_exports(
             &fixture.out_root,
-            &format!("static/app/modules/__auto/mini/{entry}"),
+            &format!("static/app/modules/__auto/atomic_groups/{entry}"),
         );
         all_exports.extend(exports);
     }
@@ -82,19 +82,19 @@ fn mini_factors_synthesizes_one_module_per_unclaimed_atomic_group() {
         );
         assert!(
             !residual_exports.iter().any(|e| e == "a" || e == "b"),
-            "expected residual to no longer carry `a`/`b` under mini_factors; got {residual_exports:?}",
+            "expected residual to no longer carry `a`/`b` under per_atomic_group; got {residual_exports:?}",
         );
     }
 }
 
-fn mini_factor_dir_exists(out_root: &Path) -> bool {
-    out_root.join("static/app/modules/__auto/mini").exists()
+fn atomic_group_dir_exists(out_root: &Path) -> bool {
+    out_root.join("static/app/modules/__auto/atomic_groups").exists()
 }
 
 #[test]
-fn mini_factors_peels_entry_with_leading_import() {
+fn per_atomic_group_peels_entry_with_leading_import() {
     let mut opts = FixtureOpts::new("import { a } from './dep.js'; console.log(a);", vec![]);
-    opts.unassigned_mode = unassigned_mode_mini_factors();
+    opts.unassigned_mode = unassigned_mode_per_atomic_group();
     opts.extra_chunks = &[("static/dep", "export const a = 1;")];
     let fixture = run_fixture(opts);
     assert_entry_output(&fixture, "1\n");

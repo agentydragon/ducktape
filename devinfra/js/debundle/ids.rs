@@ -24,7 +24,7 @@ pub fn top_level_id(sym: &str, top_level_mark: Mark) -> Id {
 /// synthesized by the materializer
 /// before `AssignmentAnalysis::build_with` for chunks that need a default
 /// destination (every `InlineInEntry` and `CatchallFile` chunk; the
-/// `MiniFactors` synthesizer handles assignments itself).
+/// `PerAtomicGroup` synthesizer handles assignments itself).
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize)]
 #[serde(transparent)]
 pub struct ModuleId(pub usize);

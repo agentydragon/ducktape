@@ -28,8 +28,8 @@ impl ModuleAssignment {
     /// Build an assignment keyed by `owner_graph.num_nodes()` slots,
     /// each defaulting to `default_destination`. Callers pass the
     /// chunk's residual logical-module id (synthesized by the
-    /// materializer); MiniFactors callers can pass any placeholder
-    /// because every owner gets a concrete claim from the mini-factor
+    /// materializer); PerAtomicGroup callers can pass any placeholder
+    /// because every owner gets a concrete claim from the per-group
     /// synthesizer before the assignment is consulted.
     pub fn new(owner_graph: &OwnerGraph, default_destination: ModuleId) -> Self {
         Self {

@@ -90,7 +90,7 @@ impl AssignmentAnalysis {
 
     /// Build a factorization from a caller-computed owner graph +
     /// atomic groups (the materializer computes these once per chunk
-    /// for mini-factor synthesis), the binding catalogue, and the
+    /// for atomic-group module synthesis), the binding catalogue, and the
     /// spec-derived logical modules. `bindings` should already have
     /// every `Owned` binding the spec assigned and every `Imported`
     /// binding the spec re-exports.

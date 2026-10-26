@@ -41,6 +41,21 @@ only when proposal analysis runs. Their limits sections use the same field names
 Proposals name their outgoing residual quotient-class dependencies with
 `edges_to_other_residual_classes` and `other_residual_classes_referenced`.
 
+## Unassigned source
+
+Every configured chunk selects one `unassigned_mode` destination policy:
+
+| `kind`             | Destination of unclaimed source                                                   |
+| ------------------ | --------------------------------------------------------------------------------- |
+| `inline_in_entry`  | Keep it in the chunk entry.                                                       |
+| `catchall_file`    | Collect it in `target`, defaulting to `residual/unhandled`.                       |
+| `per_atomic_group` | Emit one module at `__auto/atomic_groups/NNNN` per wholly unclaimed atomic group. |
+
+An atomic group contains source units that must stay together. Explicit claims
+are retained; selecting a destination policy does not relax the complete
+assignment's realizability checks. The per-group policy decomposes unassigned
+source deterministically and does not infer semantic module names.
+
 ## Entities
 
 An **entity** is one thing a spec places in a chunk: a module member, a
