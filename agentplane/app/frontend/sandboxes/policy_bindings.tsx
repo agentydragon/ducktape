@@ -93,7 +93,9 @@ export function PolicyBindingsSection({
       params: { path: { name: sandbox } },
       body: {
         policy_sets: picked,
-        expires_at: duration === "forever" ? null : new Date(Date.now() + Number(duration) * 3_600_000).toISOString(),
+        ...(duration === "forever"
+          ? {}
+          : { expires_at: new Date(Date.now() + Number(duration) * 3_600_000).toISOString() }),
       },
     });
     setError(failure ? displayableError(failure) : null);

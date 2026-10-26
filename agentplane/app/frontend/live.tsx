@@ -13,16 +13,41 @@
 import { createContext, type JSX, type ReactNode, useContext, useEffect, useState } from "react";
 import { useMatch } from "react-router";
 
-import type { components } from "./api/schema";
+import type {
+  ActionPolicyUnavailable,
+  ActionPolicyView,
+  BindingView,
+  Decision,
+  SandboxView,
+  ThreadView,
+} from "./client";
 import { ageAgo } from "./format_time";
 import { followStream, type StreamConnection } from "./live_stream";
 import { type StreamStatus, useStreamStatus } from "./stream_status";
 
-export type WatchHealth = components["schemas"]["WatchHealth"];
-export type SandboxesSnapshot = components["schemas"]["SandboxesSnapshot"];
-export type SandboxSnapshot = components["schemas"]["SandboxSnapshot"];
-export type ThreadsSnapshot = components["schemas"]["ThreadsSnapshot"];
-export type DecisionsSnapshot = components["schemas"]["DecisionsSnapshot"];
+export type WatchHealth = {
+  fresh: boolean;
+  stale_after_seconds: number;
+  refreshed_seconds_ago: Record<string, number>;
+};
+export type SandboxesSnapshot = { sandboxes: SandboxView[]; watch: WatchHealth };
+export type ThreadsSnapshot = {
+  sandboxes: SandboxView[];
+  threads: ThreadView[];
+  more: boolean;
+  archived_count: number;
+  updates_connected: boolean;
+  watch: WatchHealth;
+};
+export type SandboxSnapshot = {
+  sandbox: SandboxView | null;
+  bindings: BindingView[];
+  action_policy: ActionPolicyView | ActionPolicyUnavailable | null;
+  threads: ThreadView[] | { kind: "unavailable"; code: string };
+  updates_connected: boolean;
+  watch: WatchHealth;
+};
+export type DecisionsSnapshot = { watching: boolean; decisions: Decision[] | { detail: string } };
 
 export interface Live<T> {
   /** The last snapshot, or null until the first frame arrives. */

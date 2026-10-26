@@ -38,7 +38,10 @@ const live = vi.hoisted(
           operating_mode: "Running",
           wake_on_send: false,
           service_account: { namespace: "agentplane-test", name: "startup-test" },
+          binding: null,
           preset: "test-preset",
+          idle_suspend_after_seconds: null,
+          suspended_by: null,
           status: { conditions: [{ type: "Ready", status: "True" }] },
           phase: "Running",
           pod: {
@@ -147,6 +150,15 @@ function thread(overrides: Partial<ThreadView> & Pick<ThreadView, "id">): Thread
     archived: false,
     last_cursor: 0,
     harness_state: "HARNESS_STATE_UNSPECIFIED",
+    last_event_at: null,
+    last_model_activity_at: null,
+    idle_since: null,
+    setup_state: null,
+    launch_outcome: null,
+    active_turn_id: null,
+    reasoning_effort: null,
+    feed_status: null,
+    last_turn_status: null,
     ...overrides,
   };
 }

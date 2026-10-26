@@ -15,17 +15,17 @@ load("@npm_ducktape//:@hey-api/openapi-ts/package_json.bzl", openapi_ts_bin = "b
 load("@npm_ducktape//:openapi-typescript/package_json.bzl", openapi_typescript_bin = "bin")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 
-def _openapi_json_genrule(name, generator):
+def _openapi_json_genrule(name, generator, generator_args = []):
     json_out = "_" + name + "_openapi.json"
     native.genrule(
         name = "_" + name + "_openapi_json",
         outs = [json_out],
-        cmd = "$(location {}) > $@".format(generator),
+        cmd = "$(location {}) {} > $@".format(generator, " ".join(generator_args)),
         tools = [generator],
     )
     return json_out
 
-def js_openapi_schema(name, generator, out = "api/schema.d.ts", visibility = None):
+def js_openapi_schema(name, generator, out = "api/schema.d.ts", generator_args = [], visibility = None):
     """Generate a js_library with TypeScript type definitions from an OpenAPI schema.
 
     Runs *generator* (a binary that prints an OpenAPI JSON schema to stdout),
@@ -35,11 +35,12 @@ def js_openapi_schema(name, generator, out = "api/schema.d.ts", visibility = Non
     Args:
         name:       Name of the output ``js_library`` target.
         generator:  Label of the executable that writes OpenAPI JSON to stdout.
+        generator_args: Optional arguments passed to the generator executable.
         out:        Package-relative path for the generated ``.d.ts`` file.
                     Defaults to ``api/schema.d.ts``.
         visibility: Visibility of the output ``js_library``.
     """
-    json_out = _openapi_json_genrule(name, generator)
+    json_out = _openapi_json_genrule(name, generator, generator_args)
 
     openapi_typescript_bin.openapi_typescript_binary(
         name = "_" + name + "_openapi_typescript_bin",

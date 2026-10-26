@@ -1,7 +1,6 @@
 import { create, fromJson, toJson, type JsonValue as ProtoJsonValue } from "@bufbuild/protobuf";
 import { TimestampSchema, ValueSchema, type Timestamp, type Value } from "@bufbuild/protobuf/wkt";
 
-import type { components } from "../api/schema";
 import { fetchWithLogin, HttpError } from "../client";
 import type { StreamConnection } from "../live_stream";
 import { followWatch } from "../watch_stream";
@@ -51,9 +50,7 @@ import type {
 } from "./types";
 
 export type { ActionGroupView, ActionHistoryPage, ActionRequestView, ActionState, Verdict } from "./types";
-export type ActionPolicyView = components["schemas"]["ActionPolicyView"];
-export type ActionPolicyUnavailable = components["schemas"]["ActionPolicyUnavailable"];
-export type EffectivePolicyView = components["schemas"]["EffectivePolicyView"];
+export type { ActionPolicyUnavailable, ActionPolicyView, EffectivePolicyView } from "../client";
 
 type Fetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 

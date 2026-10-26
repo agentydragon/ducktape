@@ -1,0 +1,49 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane/app:__subpackages__"])
+
+go_library(
+    name = "bridge",
+    srcs = [
+        "bridge.go",
+        "dispatcher.go",
+        "errors.go",
+        "runner.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/app/go/bridge",
+    deps = [
+        "//agentplane/grpc/bearer",
+        "//agentplane/observability",
+        "//agentplane/proto:runner_go_proto",
+        "//agentplane/proto:sandboxes_go_proto",
+        "//agentplane/runner:runner_service_go_proto",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",
+        "//agentplane/sandboxes/api",
+        "//agentplane/sandboxes/runnerclient",
+        "@com_github_google_uuid//:uuid",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//encoding/protojson",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//reflect/protoreflect",
+    ],
+)
+
+go_test(
+    name = "unit_test",
+    srcs = ["bridge_test.go"],
+    embed = [":bridge"],
+    deps = [
+        "//agentplane/proto:runner_go_proto",
+        "//agentplane/proto:sandboxes_go_proto",
+        "//agentplane/runner:runner_service_go_proto",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",
+        "//agentplane/sandboxes/api",
+        "@com_github_google_uuid//:uuid",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//encoding/protojson",
+        "@org_golang_google_protobuf//proto",
+    ],
+)

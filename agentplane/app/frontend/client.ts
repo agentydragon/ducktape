@@ -41,34 +41,150 @@ export function ok<T>(answer: { data?: T; error?: unknown; response: Response })
 }
 
 export type SandboxView = components["schemas"]["SandboxView"];
-export type RunnerStatusView = components["schemas"]["RunnerStatusView"];
-export type PodView = components["schemas"]["PodView"];
-export type NewSandbox = components["schemas"]["NewSandbox"];
+export type PodView = components["schemas"]["SandboxPodView"];
+export type NewSandbox = components["schemas"]["NewSandboxInputBody"];
 export type NewSandboxDefaults = components["schemas"]["NewSandboxDefaults"];
 export type ThreadView = components["schemas"]["ThreadView"];
-export type ThreadScope = components["schemas"]["ThreadScopeResponse"];
-export type ThreadEntityView = components["schemas"]["ThreadEntityView"];
+export type ThreadScope = { projection_epoch: string; through_cursor: string };
+export type ThreadPayloadRef = {
+  projection_epoch: string;
+  owner_cursor: string;
+  owner_id: string;
+  field: "text" | "arguments" | "output" | "confirmed_input" | "command_input";
+  revision_cursor: string;
+  generation: string;
+  chunk_count: string;
+};
+export type ThreadEntityState =
+  | {
+      controls: {
+        applied_model: string | null;
+        applied_reasoning_effort: string | null;
+        active_turn_id: string | null;
+        harness_state: string | null;
+      };
+      operational: {
+        status: "active" | "ended" | "failed";
+        last_verified_cursor: string;
+        feed_error: { cursor: string | null; message: string } | null;
+      };
+    }
+  | {
+      kind: number;
+      tool_name: string;
+      completion: string | null;
+      tool_succeeded: boolean | null;
+      recovery: number | null;
+      recovery_reason: string | null;
+    }
+  | { harness_message_id: string; origin_command_ids: string[] }
+  | { observation: string; event: unknown }
+  | {
+      operation: string;
+      outcome: "pending" | "effected" | "failed" | "noop";
+      outcome_cursor: string | null;
+      outcome_reason: string | null;
+      requested_value: string | null;
+    };
+export type ThreadEntityView = {
+  text_ref: ThreadPayloadRef | null;
+  state: ThreadEntityState;
+};
 export type EvidencePage = components["schemas"]["EvidencePage"];
 export type NativeFramePage = components["schemas"]["NativeFramePage"];
 export type ObservationPage = components["schemas"]["ObservationPage"];
-export type ArchivedObservationEntry = components["schemas"]["ArchivedObservationEntry"];
-export type BindingView = components["schemas"]["BindingView"];
-export type PolicySetView = components["schemas"]["PolicySetView"];
-export type EgressRuleView = components["schemas"]["EgressRuleView"];
+export type ArchivedObservationEntry = components["schemas"]["ObservationEntry"];
+type OtherRuleView = {
+  kind: "other";
+  number: number;
+  type: string;
+  fields: Record<string, unknown>;
+};
+type PolicyRuleView = EgressRuleView | OtherRuleView;
+export type PolicySetView = Omit<components["schemas"]["PolicySetView"], "rules"> & { rules: PolicyRuleView[] };
+export type BindingView = Omit<components["schemas"]["BindingView"], "policy_sets"> & { policy_sets: PolicySetView[] };
+export type EgressRuleView = {
+  kind: "egress";
+  number: number;
+  hosts: string[];
+  methods: string[] | null;
+  paths: string[] | null;
+  credential: components["schemas"]["CredentialView"] | null;
+  missing_credential: string | null;
+};
 export type SandboxPresetView = components["schemas"]["SandboxPresetView"];
-export type SessionDefaults = components["schemas"]["SessionDefaults"];
+export type SessionDefaults = components["schemas"]["SessionDefaultsView"];
 export type SessionOpening = {
   sessionId: string;
   sandbox: string;
   state: string;
   reason?: string;
 };
-export type Harness = components["schemas"]["Harness"];
+export type Harness = NonNullable<ThreadView["harness"]>;
 export type ModelOption = components["schemas"]["ModelOption"];
 export type ModelCatalog = components["schemas"]["ModelCatalog"];
 export type TraceSearchSettings = components["schemas"]["TraceSearchSettings"];
 export type LangfuseSearchSettings = components["schemas"]["LangfuseSearchSettings"];
 export type FrontendConfig = components["schemas"]["FrontendConfig"];
+
+/** The runner's protobuf JSON status; this route carries generated proto data as a raw JSON object. */
+export type RunnerStatusView = {
+  runner_boot_id: string;
+  processes: {
+    process_id: string;
+    pid: number | string | null;
+    harness: Harness | "HARNESS_UNSPECIFIED";
+    state: "PROCESS_STATE_STARTING" | "PROCESS_STATE_RUNNING" | "PROCESS_STATE_STOPPING" | "PROCESS_STATE_UNSPECIFIED";
+    assigned_session_ids: string[];
+  }[];
+  sessions: {
+    session_id: string;
+    process_id: string | null;
+    native_session_id: string | null;
+    execution_state:
+      | "SESSION_EXECUTION_STATE_DORMANT"
+      | "SESSION_EXECUTION_STATE_PREPARING"
+      | "SESSION_EXECUTION_STATE_READY"
+      | "SESSION_EXECUTION_STATE_FAILED"
+      | "SESSION_EXECUTION_STATE_UNSPECIFIED";
+    active_turn_id: string | null;
+    failure_cursor: number | string | null;
+    busy: boolean;
+  }[];
+};
+
+/** Views carried by the raw live egress stream and the sandbox stream's Action policy field. */
+export type Decision = {
+  at: string;
+  method: string;
+  host: string;
+  port: number;
+  outcome: "allow" | "deny";
+  reason: string | null;
+  binding: string | null;
+  policy: string | null;
+  rule: number | null;
+  substituted: boolean;
+  address: string | null;
+};
+
+export type EffectivePolicyView = {
+  binding: string;
+  policy_set: string;
+  source: string;
+  index: number;
+  policy:
+    | { type: "exact_actions" | "github_public_repository"; actions: Record<string, string[]> }
+    | { type: "argument_schema"; actions: Record<string, string[]>; argument_schema: Record<string, unknown> }
+    | { type: "github_repository"; actions: Record<string, string[]>; owner: string; repository: string }
+    | { type: "home_assistant_entity_control"; actions: Record<string, string[]>; entities: Record<string, string[]> };
+};
+export type ActionPolicyView = { synced: boolean; auto_approve_if: EffectivePolicyView[] };
+export type ActionPolicyUnavailable = {
+  kind: "unavailable";
+  code: string;
+  upstream: { method: string; url: string; upstream_status: number | null; error_type: string } | null;
+};
 
 /** An empty model list disables new-session selection, not the native harness. */
 export function harnessOptions(catalog: ModelCatalog | null): { value: Harness; label: string; disabled: boolean }[] {
@@ -83,13 +199,14 @@ export function harnessOptions(catalog: ModelCatalog | null): { value: Harness; 
 }
 
 /** A harness as the pages name it; null while a Thread has no runner attachment to say. */
-export function harnessLabel(harness: Harness | null): string {
+export function harnessLabel(harness: Harness | "HARNESS_UNSPECIFIED" | null): string {
   switch (harness) {
     case "HARNESS_CLAUDE":
       return "Claude";
     case "HARNESS_CODEX":
       return "Codex";
     case null:
+    case "HARNESS_UNSPECIFIED":
       return "Unknown harness";
   }
 }
@@ -97,14 +214,13 @@ export function harnessLabel(harness: Harness | null): string {
 /** The models offered for one harness, resolved from the catalog's deduplicated `models`
  * list via its `harnesses` id references. */
 export function modelsForHarness(catalog: ModelCatalog, harness: Harness): ModelOption[] {
-  const byId = new Map(catalog.models.map((option) => [option.model, option]));
+  const byId = new Map((catalog.models ?? []).map((option) => [option.model, option]));
   return (catalog.harnesses[harness] ?? []).flatMap((id) => {
     const option = byId.get(id);
     return option ? [option] : [];
   });
 }
 export type ComponentStatus = components["schemas"]["ComponentStatus"];
-export type Decision = components["schemas"]["Decision"];
 export interface CallerServiceAccount {
   namespace: string;
   name: string;
@@ -195,6 +311,14 @@ export function serviceAccountKey(account: CallerServiceAccount): string {
 export function isEligibleCaller(caller: CallerServiceAccount, accounts: CallerServiceAccount[]): boolean {
   return accounts.some((account) => serviceAccountKey(account) === serviceAccountKey(caller));
 }
+export type CallerGrantView = Omit<components["schemas"]["CallerGrantsView"], "action_policy" | "bindings"> & {
+  bindings: NonNullable<components["schemas"]["CallerGrantsView"]["bindings"]>;
+  action_policy: ActionPolicyView | ActionPolicyUnavailable | null;
+};
+export type CallerGrantReader = (account: CallerServiceAccount, signal: AbortSignal) => Promise<CallerGrantView>;
+
+export const readCallerGrants: CallerGrantReader = async (account, signal) =>
+  ok(await api.GET("/caller-grants/{namespace}/{name}", { params: { path: account }, signal })) as CallerGrantView;
 
 export function displayableError(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -240,7 +364,7 @@ export async function getRunnerStatus(sandbox: string): Promise<RunnerStatusView
     await api.GET("/sandboxes/{name}/runner-status", {
       params: { path: { name: sandbox } },
     })
-  );
+  ) as RunnerStatusView;
 }
 
 /** Asks for the Sandbox to run; the watch behind the live streams brings back the change. */

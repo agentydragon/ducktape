@@ -50,7 +50,7 @@ def _database_secret(
     uri = f"postgresql://{role}:{password}@{host}:{PORT}/{database}?sslmode=disable"
     data = {"password": password, "uri": uri}
     if async_uri:
-        data["async-uri"] = f"postgresql+asyncpg://{role}:{password}@{host}:{PORT}/{database}"
+        data["async-uri"] = f"postgresql+asyncpg://{role}:{password}@{host}:{PORT}/{database}?sslmode=disable"
     Secret(
         scope,
         f"credentials-{role}",

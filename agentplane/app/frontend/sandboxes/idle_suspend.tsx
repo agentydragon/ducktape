@@ -54,9 +54,13 @@ export function IdleSuspendInput({
   async function save(): Promise<void> {
     if (draft === idleMinutes(stored)) return;
     setSaving(true);
+    const idleSuspendAfterSeconds = idleSeconds(draft);
     const { error: failure } = await api.PATCH("/sandboxes/{name}/idle-suspend", {
       params: { path: { name: sandbox.name } },
-      body: { uid: sandbox.uid, idle_suspend_after_seconds: idleSeconds(draft) },
+      body: {
+        uid: sandbox.uid,
+        ...(idleSuspendAfterSeconds === null ? {} : { idle_suspend_after_seconds: idleSuspendAfterSeconds }),
+      },
     });
     setSaving(false);
     if (failure) setDraft(idleMinutes(stored));

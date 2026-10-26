@@ -1877,6 +1877,65 @@ go_deps.gazelle_override(
     path = "github.com/containerd/cgroups/v3",
 )
 
+# KubeVirt ships gomock and helper files for its test client in the production
+# package. They depend on removed APIs and are not used by the typed kubecli
+# implementation.
+go_deps.gazelle_override(
+    build_file_generation = "clean",
+    directives = [
+        "gazelle:exclude kubecli/generated_mock_kubevirt.go",
+        "gazelle:exclude kubecli/kubevirt_test_utils.go",
+    ],
+    path = "kubevirt.io/client-go",
+)
+
+# KubeVirt's generated BUILD files reference these APIs directly. Keep the
+# repositories visible even though they are indirect from the root module.
+go_deps.module(
+    path = "github.com/k8snetworkplumbingwg/network-attachment-definition-client",
+    sum = "h1:Lq6HJa0JqSg5ko/mkizFWlpIrY7845g9Dzz9qeD5aXI=",
+    version = "v0.0.0-20191119172530-79f836b90111",
+)
+go_deps.module(
+    path = "golang.org/x/crypto",
+    sum = "h1:3ZVCjf8Ggz7zneR/EHRVx68Ctf+2pmIMP2UFhh9cC6M=",
+    version = "v0.57.0",
+)
+go_deps.module(
+    path = "github.com/kubernetes-csi/external-snapshotter/client/v4",
+    sum = "h1:nHHjmvjitIiyPlUHk/ofpgvBcNcawJLtf4PYHORLjAA=",
+    version = "v4.2.0",
+)
+go_deps.module(
+    path = "github.com/go-kit/log",
+    sum = "h1:MRVx0/zhvdseW+Gza6N9rVzU/IVzaeE1SFI4raAhmBU=",
+    version = "v0.2.1",
+)
+go_deps.module(
+    path = "github.com/go-logfmt/logfmt",
+    sum = "h1:wGYYu3uicYdqXVgoYbvnkrPVXkuLM1p1ifugDMEdRi4=",
+    version = "v0.6.0",
+)
+go_deps.module(
+    path = "github.com/openshift/client-go",
+    sum = "h1:+TEY29DK0XhqB7HFC9OfV8qf3wffSyi7MWv3AP28DGQ=",
+    version = "v0.0.0-20210112165513-ebc401615f47",
+)
+go_deps.module(
+    path = "github.com/openshift/api",
+    sum = "h1:9wG43AJGupRUUAAF/GN2CtQgVlo+BzdIlmsTwUlIATE=",
+    version = "v0.0.0-20210105115604-44119421ec6b",
+)
+go_deps.gazelle_override(
+    directives = ["gazelle:proto disable"],
+    path = "github.com/openshift/api",
+)
+go_deps.module(
+    path = "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring",
+    sum = "h1:yl9ceUSUBo9woQIO+8eoWpcxZkdZgm89g+rVvu37TUw=",
+    version = "v0.68.0",
+)
+
 # k8s.io/apimachinery's generated BUILD files import kube-openapi, but that
 # dependency is not imported by first-party Go files.
 go_deps.module(
@@ -2228,6 +2287,7 @@ use_repo(
     "com_github_coder_websocket",
     "com_github_containerd_cgroups_v3",
     "com_github_coreos_go_oidc_v3",
+    "com_github_danielgtaylor_huma_v2",
     "com_github_docker_docker",
     "com_github_dustin_go_humanize",
     "com_github_elliotchance_orderedmap",
@@ -2237,6 +2297,8 @@ use_repo(
     "com_github_go_git_go_git_v5",
     "com_github_go_jose_go_jose_v4",
     "com_github_go_json_experiment_json",
+    "com_github_go_kit_log",
+    "com_github_go_logfmt_logfmt",
     "com_github_go_logr_logr",
     "com_github_go_viper_mapstructure_v2",
     "com_github_gobuffalo_flect",
@@ -2244,10 +2306,13 @@ use_repo(
     "com_github_google_uuid",
     "com_github_goretk_gore",
     "com_github_goretk_redress",
+    "com_github_gorilla_securecookie",
     "com_github_grpc_ecosystem_grpc_gateway_v2",
     "com_github_hashicorp_golang_lru_v2",
     "com_github_invopop_jsonschema",
     "com_github_josharian_intern",
+    "com_github_k8snetworkplumbingwg_network_attachment_definition_client",
+    "com_github_kubernetes_csi_external_snapshotter_client_v4",
     "com_github_lib_pq",
     "com_github_mailru_easyjson",
     "com_github_mandiant_goresym",
@@ -2259,17 +2324,19 @@ use_repo(
     "com_github_modelcontextprotocol_go_sdk",
     "com_github_munnerz_goautoneg",
     "com_github_nervsystems_osmmcp",
+    "com_github_openshift_api",
+    "com_github_openshift_client_go",
     "com_github_pb33f_ordered_map_v2",
     "com_github_pressly_goose_v3",
     "com_github_prometheus_client_golang",
     "com_github_prometheus_client_model",
     "com_github_prometheus_common",
+    "com_github_prometheus_operator_prometheus_operator_pkg_apis_monitoring",
     "com_github_prometheus_procfs",
     "com_github_santhosh_tekuri_jsonschema_v6",
     "com_github_schlunsen_claude_agent_sdk_go",
     "com_github_sethvargo_go_retry",
     "com_github_sherclockholmes_webpush_go",
-    "com_github_spf13_cast",
     "com_github_spf13_cobra",
     "com_github_spf13_viper",
     "com_github_tcm1911_r2g2",
@@ -2289,11 +2356,14 @@ use_repo(
     "io_k8s_sigs_controller_runtime",
     "io_k8s_sigs_controller_tools",
     "io_kubevirt_api",
+    "io_kubevirt_client_go",
     "io_opentelemetry_go_auto_sdk",
     "io_opentelemetry_go_contrib_instrumentation_google_golang_org_grpc_otelgrpc",
     "io_opentelemetry_go_otel",
     "io_opentelemetry_go_otel_exporters_otlp_otlptrace",
     "io_opentelemetry_go_otel_exporters_otlp_otlptrace_otlptracegrpc",
+    "io_opentelemetry_go_otel_exporters_otlp_otlptrace_otlptracehttp",
+    "io_opentelemetry_go_otel_exporters_stdout_stdouttrace",
     "io_opentelemetry_go_otel_metric",
     "io_opentelemetry_go_otel_sdk",
     "io_opentelemetry_go_otel_trace",
@@ -2312,6 +2382,7 @@ use_repo(
     "org_golang_x_text",
     "org_golang_x_time",
     "org_modernc_sqlite",
+    "org_uber_go_mock",
 )
 
 # ─ BuildBuddy proto definitions (for bbapi CLI) ──────────────────────────────

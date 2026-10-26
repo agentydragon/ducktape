@@ -295,6 +295,8 @@ function processStateLabel(state: RunnerStatusView["processes"][number]["state"]
       return "Running";
     case "PROCESS_STATE_STOPPING":
       return "Stopping";
+    case "PROCESS_STATE_UNSPECIFIED":
+      return "Unspecified";
   }
 }
 
@@ -308,6 +310,8 @@ function executionStateLabel(state: RunnerStatusView["sessions"][number]["execut
       return "Ready";
     case "SESSION_EXECUTION_STATE_FAILED":
       return "Failed";
+    case "SESSION_EXECUTION_STATE_UNSPECIFIED":
+      return "Unspecified";
   }
 }
 

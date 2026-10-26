@@ -45,6 +45,7 @@ const EMPTY_FORM: NewSandbox = {
   bootstrap: "",
   wake_on_send: false,
 };
+type NewSandboxForm = Omit<NewSandbox, "idle_suspend_after_seconds"> & { idle_suspend_after_seconds?: number | null };
 // The picked preset, in the URL like the sandbox page's tab, so a launch form can be linked to.
 const PRESET_PARAM = "preset";
 
@@ -62,9 +63,12 @@ function StatusIcon({ row }: { row: SandboxView }): JSX.Element {
 export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX.Element {
   // The list is pushed; an action's own failure is what this holds.
   const [error, setError] = useState<string | null>(null);
-  const [form, setForm] = useState<NewSandbox>(EMPTY_FORM);
+  const [form, setForm] = useState<NewSandboxForm>(EMPTY_FORM);
   // The app's starting wake and idle suspension values; a preset leaves them alone.
-  const [defaults, setDefaults] = useState<NewSandboxDefaults>({ wake_on_send: false });
+  const [defaults, setDefaults] = useState<NewSandboxDefaults>({
+    wake_on_send: false,
+    idle_suspend_after_seconds: null,
+  });
   const [presets, setPresets] = useState<SandboxPresetView[]>([]);
   const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
   const [templates, setTemplates] = useState<string[]>([]);
@@ -138,8 +142,10 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
   }
 
   async function create(): Promise<void> {
+    const { idle_suspend_after_seconds: idleSuspendAfterSeconds, ...formFields } = form;
     const body = {
-      ...form,
+      ...formFields,
+      ...(idleSuspendAfterSeconds == null ? {} : { idle_suspend_after_seconds: idleSuspendAfterSeconds }),
       name: form.name || placeholderName,
       preset: selectedPreset ?? undefined,
     };

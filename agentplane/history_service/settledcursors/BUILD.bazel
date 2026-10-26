@@ -1,6 +1,9 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
-package(default_visibility = ["//agentplane/history_service:__subpackages__"])
+package(default_visibility = [
+    "//agentplane/app/go:__subpackages__",
+    "//agentplane/history_service:__subpackages__",
+])
 
 go_library(
     name = "settledcursors",

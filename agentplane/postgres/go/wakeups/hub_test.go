@@ -141,6 +141,9 @@ func TestEverySubscriberWakesAfterTheConnectionIsLostAndListeningContinues(t *te
 
 func TestPingSucceedsOnALiveConnectionAndFailsOnceTheHubIsClosed(t *testing.T) {
 	hub := listen(t, "test-wakeups-ping", "test_wakeups_a")
+	if !hub.Connected() {
+		t.Fatal("a listening hub reports disconnected")
+	}
 	if err := hub.Ping(); err != nil {
 		t.Fatal(err)
 	}

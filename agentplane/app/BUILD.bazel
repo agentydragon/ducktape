@@ -1,7 +1,8 @@
 load("@aspect_rules_py//py:defs.bzl", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//agentplane/runner/testing:exec_properties.bzl", "NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES")
-load("//devinfra/oci:py_image.bzl", "py_image_bytecode_layer", "py_image_entrypoint", "py_image_env", "shared_py_image_layers")
+load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env", "shared_py_image_layers")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(default_visibility = [
@@ -15,18 +16,6 @@ package(default_visibility = [
 # they are killed at a small target's 60s with the budget spent fetching inputs rather than running
 # -- 70s of `fileDownloadDurationUsec` against 12KB actually fetched and, for two of them, no CPU
 # burned at all. <devinfra/debug/2026_08_rbe_small_test_timeouts.md> is the class.
-
-py_binary(
-    name = "main_bin",
-    main_module = "agentplane.app.main",
-    deps = [":main"],
-)
-
-py_binary(
-    name = "export_schema_bin",
-    main_module = "agentplane.app.export_schema",
-    deps = [":export_schema"],
-)
 
 py_library(
     name = "api",
@@ -450,84 +439,28 @@ py_test(
     ],
 )
 
-py_library(
-    name = "export_schema",
-    srcs = ["export_schema.py"],
-    deps = [
-        ":action_policy",
-        ":api",
-        ":database",
-        ":database_updates",
-        ":egress_access",
-        ":electric",
-        ":live",
-        ":model_catalog",
-        ":notifications_operator_client",
-        ":operator_sessions",
-        ":sandbox_access",
-        ":system_status",
-        ":upstream_proxy",
-        "//agentplane:kubernetes_watch",
-        "//agentplane/app/threads:bridge",
-        "//agentplane/app/threads:dispatcher_client",
-        "//agentplane/app/threads:runner_directory",
-        "//agentplane/app/threads:store",
-        "//agentplane/app/threads:summaries",
-        "//agentplane/app/threads/events:event_log",
-        "//agentplane/app/threads/view:content",
-        "//agentplane/egress:decisions_client",
-        "//agentplane/grpc:calls",
-        "//agentplane/history_service:client",
-        "//agentplane/history_service/fold:views",
-        "//agentplane/runner:harness",
-        "//agentplane/runner_gateway:client",
-        "@pypi//grpcio",
-        "@pypi//httpx",
-        "@pypi//kubernetes_asyncio",
-        "@pypi//pydantic",
-    ],
-)
-
-# The app image: the API and the bridge, on debian slim as user 1000.
-# Published as agentplane-app (devinfra/ci/image_targets.json) and run by the Deployment in
-# cluster/k8s/agentplane-staging.
-aspect_py_binary(
-    name = "app_image_bin",
-    main = "main.py",
-    deps = [":main"],
-)
-
-app_layers_oci_tars = shared_py_image_layers(
-    name = "app_layers",
-    binary = ":app_image_bin",
-    group = "1000",
-    owner = "1000",
-)
-
-py_image_bytecode_layer(
-    name = "app_bytecode",
-    layers = [
-        ":app_layers_default",
-        "//devinfra/oci/python_runtime:runtime_interpreter_layer",
-        ":app_layers_packages",
-    ],
+# The production API is the Go service. The retained Python contract suite is not packaged into the
+# serving image.
+pkg_tar(
+    name = "app_binary_layer",
+    srcs = ["//agentplane/app/go:agentplane-app"],
+    mode = "0755",
+    package_dir = "/usr/local/bin",
 )
 
 oci_image(
     name = "image",
-    base = "@debian_trixie_slim_linux_amd64",
-    entrypoint = py_image_entrypoint("app_image_bin"),
-    env = py_image_env(
-        binary_name = "app_image_bin",
-        extra_env = {"SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt"},
-    ),
+    base = "@distroless_static_debian13_linux_amd64",
+    entrypoint = ["/usr/local/bin/agentplane-app"],
+    env = {"SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt"},
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
-    tars = app_layers_oci_tars + [
-        ":app_bytecode",
+    tars = [
+        ":app_binary_layer",
         "//third_party/debian_slim:cacerts",
     ],
     user = "1000:1000",
     visibility = ["//agentplane/system_tests/k3s:__pkg__"],
+    workdir = "/",
 )
 
 py_library(
@@ -1625,5 +1558,43 @@ py_test(
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "export_schema",
+    srcs = ["export_schema.py"],
+    deps = [
+        ":action_policy",
+        ":api",
+        ":database",
+        ":database_updates",
+        ":egress_access",
+        ":electric",
+        ":live",
+        ":model_catalog",
+        ":notifications_operator_client",
+        ":operator_sessions",
+        ":sandbox_access",
+        ":system_status",
+        ":upstream_proxy",
+        "//agentplane:kubernetes_watch",
+        "//agentplane/app/threads:bridge",
+        "//agentplane/app/threads:dispatcher_client",
+        "//agentplane/app/threads:runner_directory",
+        "//agentplane/app/threads:store",
+        "//agentplane/app/threads:summaries",
+        "//agentplane/app/threads/events:event_log",
+        "//agentplane/app/threads/view:content",
+        "//agentplane/egress:decisions_client",
+        "//agentplane/grpc:calls",
+        "//agentplane/history_service:client",
+        "//agentplane/history_service/fold:views",
+        "//agentplane/runner:harness",
+        "//agentplane/runner_gateway:client",
+        "@pypi//grpcio",
+        "@pypi//httpx",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pydantic",
     ],
 )

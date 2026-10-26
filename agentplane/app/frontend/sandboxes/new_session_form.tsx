@@ -15,7 +15,11 @@ import {
 import { Disclosure, DisclosureBody } from "../disclosure";
 import { SessionSpecSchema, type SessionSpec } from "../../../proto/runner_pb";
 
-type LoadedPresetDefaults = { preset: string | null; defaults: SessionDefaults | null };
+type LoadedPresetDefaults = { preset: string | null; defaults: Partial<SessionDefaults> | null };
+
+function isHarness(value: string): value is Harness {
+  return value === "HARNESS_CLAUDE" || value === "HARNESS_CODEX";
+}
 
 /**
  * What a new Session is launched with. It starts from the Sandbox's preset and the operator edits it
@@ -134,14 +138,16 @@ export function NewSessionForm({
     const option = models.find((entry) => entry.model === model);
     // A Sandbox binding can arrive before the model catalog; do not erase its default
     // while the selected model is not yet known to this catalog.
-    if (option && !option.reasoning_efforts.includes(effort)) setEffort(option.reasoning_efforts[0] ?? "");
+    const reasoningEfforts = option?.reasoning_efforts ?? [];
+    if (option && !reasoningEfforts.includes(effort)) setEffort(reasoningEfforts[0] ?? "");
   }, [effort, model, models]);
 
   const applyPresetDefaults = useEffectEvent(() => {
     if (!presetDefaults || presetDefaults.preset !== presetName || presetDefaults.defaults === null) return;
     const defaults = presetDefaults.defaults;
+    const defaultHarness = defaults.harness ?? "";
     setInheritsDefaults(presetName !== null);
-    setHarness(defaults.harness ?? "HARNESS_CLAUDE");
+    setHarness(isHarness(defaultHarness) ? defaultHarness : "HARNESS_CLAUDE");
     setModel(defaults.model ?? null);
     setEffort(defaults.reasoning_effort ?? "low");
     setInstructions(defaults.instructions ?? "");

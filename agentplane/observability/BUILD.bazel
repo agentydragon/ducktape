@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
 
@@ -13,9 +13,17 @@ go_library(
         "@io_opentelemetry_go_otel//codes",
         "@io_opentelemetry_go_otel//propagation",
         "@io_opentelemetry_go_otel_exporters_otlp_otlptrace_otlptracegrpc//:otlptracegrpc",
+        "@io_opentelemetry_go_otel_exporters_otlp_otlptrace_otlptracehttp//:otlptracehttp",
+        "@io_opentelemetry_go_otel_exporters_stdout_stdouttrace//:stdouttrace",
         "@io_opentelemetry_go_otel_sdk//resource",
         "@io_opentelemetry_go_otel_sdk//trace",
         "@io_opentelemetry_go_otel_trace//:trace",
         "@org_golang_google_grpc//:grpc",
     ],
+)
+
+go_test(
+    name = "tracing_test",
+    srcs = ["tracing_test.go"],
+    embed = [":observability"],
 )
