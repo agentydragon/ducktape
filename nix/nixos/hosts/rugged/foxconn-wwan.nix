@@ -42,6 +42,26 @@ let
 
   foxflss = pkgs.callPackage ../../../packages/foxflss.nix { };
 
+  # Record the MHI PM counters at the exact return from mhi_pm_suspend().
+  # Module BTF makes this a live kretprobe; no kernel rebuild or reboot needed.
+  # See tracking issue #11789.
+  mhiSuspendTrace = pkgs.writeText "mhi-suspend-trace.bt" ''
+    kprobe:mhi_pm_suspend
+    {
+      @mhi_cntrl[tid] = arg0;
+    }
+
+    kretprobe:mhi_pm_suspend
+    /@mhi_cntrl[tid] != 0/
+    {
+      $cntrl = (struct mhi_controller *)@mhi_cntrl[tid];
+      printf("%llu comm=%s mhi_pm_suspend_ret=%d dev_wake=%d pending_pkts=%d\n",
+             nsecs, comm, retval, $cntrl->dev_wake.counter,
+             $cntrl->pending_pkts.counter);
+      delete(@mhi_cntrl[tid]);
+    }
+  '';
+
   # Script run by the NM dispatcher on wwan0 up: FCC unlock warm-up, then
   # RF calibration. Bare FoxFlss first because on Ubuntu, ModemManager runs
   # fcc-unlock.d (bare FoxFlss) before FoxFlss.service, which flushes stale
@@ -112,6 +132,7 @@ in
 {
   options.ducktape.foxconnWwan = {
     enable = lib.mkEnableOption "Foxconn DW5932e/DW5934e WWAN FCC unlock";
+    debugMhiSuspend = lib.mkEnableOption "MHI suspend return probe for issue #11789";
   };
 
   config = lib.mkIf cfg.enable {
@@ -295,6 +316,21 @@ in
       "" # clear systemd's list-merge so our value replaces the unit's default
       "${pkgs.modemmanager}/sbin/ModemManager --test-low-power-suspend-resume"
     ];
+
+    # Investigation-only; a systemd switch attaches the kprobe immediately,
+    # and systemd restarts it on future boots. It does not alter modem policy.
+    systemd.services.mhi-suspend-trace = lib.mkIf cfg.debugMhiSuspend {
+      description = "Trace MHI suspend results for Ducktape #11789";
+      wantedBy = [ "multi-user.target" ];
+      wants = [ "systemd-udev-trigger.service" ];
+      after = [ "systemd-udev-trigger.service" ];
+      serviceConfig = {
+        Type = "simple";
+        ExecStart = "${pkgs.bpftrace}/bin/bpftrace -q ${mhiSuspendTrace}";
+        Restart = "on-failure";
+        RestartSec = 5;
+      };
+    };
 
     # CLEANUP(added 2026-04-30): Try retiring this service after ~1 month of
     #   uneventful operation. It was added before we found the dmidecode

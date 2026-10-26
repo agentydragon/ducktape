@@ -172,7 +172,12 @@ in
 
   # WWAN/5G modem support (Foxconn DP25-42843-47)
   networking.modemmanager.enable = true;
-  ducktape.foxconnWwan.enable = true;
+  ducktape.foxconnWwan = {
+    enable = true;
+    # Temporarily capture MHI suspend returns and resource counters.
+    # Revert after resolving https://github.com/agentydragon/ducktape/issues/11789.
+    debugMhiSuspend = true;
+  };
 
   # Native Wayland for Chrome and Electron apps. Without this, they run under
   # XWayland and can't use the PipeWire camera portal (or screen sharing portal).
