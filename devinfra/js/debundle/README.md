@@ -29,21 +29,27 @@ artifacts.
 propose, or edit that spec. Commands that resolve selectors or validate edits reuse
 the shared resolver and gate rather than their own acceptance rules.
 
-| Responsibility                                                 | Start here                                               |
-| -------------------------------------------------------------- | -------------------------------------------------------- |
-| Load and prepare source; retain ASTs and manifest indexes      | `prepare_chunks.rs`, `program_analysis.rs`, `artifacts/` |
-| Read flat/tree specs and authoring module documents            | `spec/`                                                  |
-| Match, jointly resolve, synthesize, and diagnose selectors     | `selectors/{matching,resolution,authoring,diagnostics}/` |
-| Analyze statement effects, dependencies, and structural atoms  | `facts/`, `purity/`, `graph/`, `chunk_analysis/`         |
-| Assemble assignments and validate realizability                | `assignment_assembly.rs`, `gate.rs`, `realizability/`    |
-| Lower accepted assignments to entry and logical-module files   | `lowering/`                                              |
-| Plan/apply vendor substitution and finalize emitted files      | `vendor/`, `pipeline.rs`, `artifacts/emission_files.rs`  |
-| Propose moves or safe module refinements; inspect or edit spec | `peel/`, `cli/`                                          |
+| Responsibility                                                           | Start here                                               |
+| ------------------------------------------------------------------------ | -------------------------------------------------------- |
+| Load and prepare source; retain ASTs and manifest indexes                | `prepare_chunks.rs`, `program_analysis.rs`, `artifacts/` |
+| Read flat/tree specs and authoring module documents                      | `spec/`                                                  |
+| Compile spec claims and share exact selector resolution                  | `spec_resolution.rs`, `selectors/resolution/`            |
+| Match, synthesize, and diagnose selectors                                | `selectors/{matching,authoring,diagnostics}/`            |
+| Analyze statement effects, dependencies, and structural atoms            | `facts/`, `purity/`, `graph/`, `chunk_analysis/`         |
+| Assemble assignments and validate realizability                          | `assignment_assembly.rs`, `gate.rs`, `realizability/`    |
+| Lower accepted assignments to entry and logical-module files             | `lowering/`                                              |
+| Plan/apply vendor substitution and finalize emitted files                | `vendor/`, `artifacts/emission_files.rs`                 |
+| Accept concrete syntax, replacements, and browser loading before writing | `reconstruction.rs`, `artifacts/browser_harness_plan.rs` |
+| Propose moves or safe module refinements; inspect or edit spec           | `peel/`, `cli/`                                          |
 
 `pipeline.rs` composes these stages. Preparation returns a `SourceProgram` with
 its matching syntax and path indexes; finalized `EmissionFiles` own output files
 and their output indexes. These are different phase types even when a pass-through
 program reuses the prepared indexes.
+
+Assignment gates check module realizability. Final run acceptance also checks
+unresolved claims, reconstructed exports, and replacement consumers;
+writers require the resulting immutable `ValidatedPlan`.
 
 Docs: splitting correctness and implementation entry points <docs/design.md>
 (§ File references); selector semantics <SPEC.md>, <docs/selector_resolution.md>;
