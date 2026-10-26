@@ -229,31 +229,31 @@ find "$REPORT_TREE" -name index.json -print0 |
 jq -r '.outgoing.symbols | to_entries | sort_by(.value) | reverse[] |
   "\(.value)\t\(.key)"' "$REPORT_TREE/<emitted-dir>/index.json" | head -50
 
-# Show root-to-root dependency pressure from dependency_graph.json.
+# Count distinct module dependencies between top-level report-path buckets.
 jq -r '
-  (.nodes | map({key:.id,value:.destination.target_file}) | from_entries) as $d |
-  reduce .edges[] as $e ({};
-    ($d[$e.source] // "<missing>") as $s |
-    ($d[$e.target] // "<missing>") as $t |
+  (.module_graph.nodes | map({key:.key,value:.path}) | from_entries) as $d |
+  reduce .module_graph.edges[] as $e ({};
+    ($d[$e.source] // error("unknown module source: \($e.source)")) as $s |
+    ($d[$e.target] // error("unknown module target: \($e.target)")) as $t |
     ($s|split("/")[0]) as $sr |
     ($t|split("/")[0]) as $tr |
     .["\($sr) -> \($tr)"] += 1
-  ) | to_entries | sort_by(.value) | reverse |
-  .[] | "\(.value)\t\(.key)"
-' "$GRAPH" | head -80
+  ) | to_entries | sort_by(.value) | reverse | .[:80][] |
+  "\(.value)\t\(.key)"
+' "$GRAPH"
 
-# Show in-bucket clusters at two path segments.
+# Count distinct module dependencies between two-segment report-path buckets.
 jq -r '
-  (.nodes | map({key:.id,value:.destination.target_file}) | from_entries) as $d |
-  reduce .edges[] as $e ({};
-    ($d[$e.source] // "<missing>") as $s |
-    ($d[$e.target] // "<missing>") as $t |
+  (.module_graph.nodes | map({key:.key,value:.path}) | from_entries) as $d |
+  reduce .module_graph.edges[] as $e ({};
+    ($d[$e.source] // error("unknown module source: \($e.source)")) as $s |
+    ($d[$e.target] // error("unknown module target: \($e.target)")) as $t |
     ($s|split("/")[0:2]|join("/")) as $sr |
     ($t|split("/")[0:2]|join("/")) as $tr |
     .["\($sr) -> \($tr)"] += 1
-  ) | to_entries | sort_by(.value) | reverse |
-  .[] | "\(.value)\t\(.key)"
-' "$GRAPH" | head -100
+  ) | to_entries | sort_by(.value) | reverse | .[:100][] |
+  "\(.value)\t\(.key)"
+' "$GRAPH"
 ```
 
 ## Convention Induction
@@ -308,9 +308,11 @@ Induction, made executable.
 ### How to build them
 
 - **Consume the debundler's JSON side outputs, not the emitted JS text.** The
-  dependency graph (`dependency_graph.json`) carries, per module, its `target_file` and
-  the typed module-to-module edges (`module_graph.edges` with `edge_kinds` and
-  `constrains_init_order`). That is a stable, rerunnable contract; re-parsing
+  dependency graph (`dependency_graph.json`) carries each module's report `path`
+  in `module_graph.nodes` and the typed module-to-module edges
+  (`module_graph.edges` with `edge_kinds` and
+  `constrains_init_order`). The entry uses the synthetic
+  `anon_residual_sentinel` report path. That is a stable, rerunnable contract; re-parsing
   `import` statements from the JS is brittle and misses lazy/eager/rebind edge
   semantics the graph already classifies. Use `describe`, `cluster`, `scc`,
   `coverage`, and `graph-summary` outputs the same way when a metric needs
