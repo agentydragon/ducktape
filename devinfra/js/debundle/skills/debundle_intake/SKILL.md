@@ -39,7 +39,7 @@ For each `proposals[]` entry with `landable_today: true`:
 
 - classify it as `fresh`, `extend_active`, or `side_effect_cell`
 - read enough source to choose a tentative name and destination
-- keep whole owner sets together; do not split certified proposal sets
+- keep whole source-unit sets together; do not split certified proposal sets
 - flag ambiguous or oversized proposals for the architect
 - skip `diagnostics[]` as dispatchable work
 
@@ -56,7 +56,7 @@ the needed evidence.
 
 ## Source Reading Budget
 
-Read small slices, usually 10-50 lines around the proposal or owner. Look for
+Read small slices, usually 10-50 lines around the proposal or source unit. Look for
 visible strings, exported readable names, API names, component or class shapes,
 registry keys, schema names, command IDs, and source proximity.
 
@@ -72,7 +72,7 @@ Write `<scratch>/seeds.json`:
   {
     "proposal_id": "auto_partition_0042",
     "kind": "fresh",
-    "owner_ids": ["..."],
+    "source_unit_ids": ["..."],
     "binding_ids": ["..."],
     "extends_module_id": null,
     "proposed_destination": "path/to/module.yaml",
@@ -85,7 +85,7 @@ Write `<scratch>/seeds.json`:
 ]
 ```
 
-For workers consuming fresh/extension seeds, carry `proposal_id`, `owner_ids`,
+For workers consuming fresh/extension seeds, carry `proposal_id`, `source_unit_ids`,
 reviewed module path, and readable names into `debundle modules apply --batch`.
 Workers inspect the dry-run `selector_reviews` before applying, and may add
 reviewed selector overrides or leave a proposal residual. The selector proof
@@ -99,7 +99,7 @@ Sort seeds by:
 3. high-confidence active-module extensions before fresh modules
 4. lower-risk side-effect cells after ordinary binding cells
 
-Track inflight and landed work by stable `binding_ids` / `owner_ids`, not only
+Track inflight and landed work by stable `binding_ids` / `source_unit_ids`, not only
 auto-generated proposal IDs, because proposal IDs may renumber after each
 integration.
 

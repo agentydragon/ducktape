@@ -1,8 +1,8 @@
-//! Pin that the owner-graph `purity` field carries structured reasons
+//! Pin that the dependency graph `purity` field carries structured reasons
 //! for non-Pure verdicts: `purity: Purity { kind: "pure" | "not_pure",
 //! reasons }`.
 //!
-//! Diagnostic contract: every owner with `purity.kind != "pure"`
+//! Diagnostic contract: every source_unit with `purity.kind != "pure"`
 //! has at least one `PurityReason` describing which classifier
 //! rule fired and where (`source_location` is populated). For
 //! compound shapes (e.g. `new Set([f()])`) the offending inner
@@ -21,13 +21,13 @@ export { a };
         vec![logical_module("a_module", &[Member::new("a")])],
     ));
     assert_entry_output(&fixture, "1\n");
-    let graph = fixture.owner_graph();
-    let owner = graph
+    let graph = fixture.dependency_graph();
+    let source_unit = graph
         .nodes
         .iter()
         .find(|n| n.declared_bindings.iter().any(|b| b.binding == "a"))
-        .expect("owner declaring a should exist");
-    let v = serde_json::to_value(&owner.purity).expect("serialize purity");
+        .expect("source_unit declaring a should exist");
+    let v = serde_json::to_value(&source_unit.purity).expect("serialize purity");
     assert_eq!(
         v["kind"], "pure",
         "Pure declarator should serialize as kind=pure: {v}"
@@ -50,14 +50,14 @@ export { a };
     ));
     assert_entry_output(&fixture, "1\n");
 
-    let graph = fixture.owner_graph();
-    let owner = graph
+    let graph = fixture.dependency_graph();
+    let source_unit = graph
         .nodes
         .iter()
         .find(|n| n.declared_bindings.iter().any(|b| b.binding == "a"))
-        .expect("owner declaring a should exist");
+        .expect("source_unit declaring a should exist");
 
-    let v = serde_json::to_value(&owner.purity).expect("serialize purity");
+    let v = serde_json::to_value(&source_unit.purity).expect("serialize purity");
     assert_eq!(
         v["kind"], "not_pure",
         "Number(x) call init should be NotPure: {v}"
@@ -106,13 +106,13 @@ export { a };
     ));
     assert_entry_output(&fixture, "1\n");
 
-    let graph = fixture.owner_graph();
-    let owner = graph
+    let graph = fixture.dependency_graph();
+    let source_unit = graph
         .nodes
         .iter()
         .find(|n| n.declared_bindings.iter().any(|b| b.binding == "a"))
-        .expect("owner declaring a should exist");
-    let v = serde_json::to_value(&owner.purity).expect("serialize purity");
+        .expect("source_unit declaring a should exist");
+    let v = serde_json::to_value(&source_unit.purity).expect("serialize purity");
     assert_eq!(v["kind"], "not_pure", "should be NotPure: {v}");
     let rules: Vec<&str> = v["reasons"]
         .as_array()
@@ -145,13 +145,13 @@ export { a };
     ));
     assert_entry_output(&fixture, "0\n");
 
-    let graph = fixture.owner_graph();
-    let owner = graph
+    let graph = fixture.dependency_graph();
+    let source_unit = graph
         .nodes
         .iter()
         .find(|n| n.declared_bindings.iter().any(|b| b.binding == "a"))
-        .expect("owner declaring a should exist");
-    let v = serde_json::to_value(&owner.purity).expect("serialize purity");
+        .expect("source_unit declaring a should exist");
+    let v = serde_json::to_value(&source_unit.purity).expect("serialize purity");
     let rules: Vec<&str> = v["reasons"]
         .as_array()
         .expect("reasons array")
@@ -167,7 +167,7 @@ export { a };
 #[test]
 fn multiple_offenders_concatenate_reasons_in_source_order() {
     // `f() + g()` with both calls unknown — both reasons are
-    // emitted on the owner's purity, not just the first.
+    // emitted on the source_unit's purity, not just the first.
     let fixture = run_fixture(FixtureOpts::new(
         r#"const x = 1;
 const a = Number(x) + Number(x);
@@ -178,13 +178,13 @@ export { a };
     ));
     assert_entry_output(&fixture, "2\n");
 
-    let graph = fixture.owner_graph();
-    let owner = graph
+    let graph = fixture.dependency_graph();
+    let source_unit = graph
         .nodes
         .iter()
         .find(|n| n.declared_bindings.iter().any(|b| b.binding == "a"))
-        .expect("owner declaring a should exist");
-    let v = serde_json::to_value(&owner.purity).expect("serialize purity");
+        .expect("source_unit declaring a should exist");
+    let v = serde_json::to_value(&source_unit.purity).expect("serialize purity");
     let unknown_call_count = v["reasons"]
         .as_array()
         .expect("reasons array")

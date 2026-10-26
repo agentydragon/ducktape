@@ -27,7 +27,7 @@ Before starting a round, the project adapter should identify:
 
 - debundle target and graph-refresh command
 - modules directory, patch stream if any, emitted JS root, and source root
-- owner graph, root/chunk reports, directory reports, and cycle report
+- dependency graph, root/chunk reports, directory reports, and cycle report
   locations
 - gate, regen, uniqueness-check, and smoke-test commands
 - project convention docs and taxonomy docs
@@ -47,7 +47,7 @@ tooling rather than hand-maintaining exact long bodies across many modules.
 ## Round Loop
 
 1. Refresh debundle outputs, root/chunk reports, directory reports, and
-   owner graph.
+   dependency graph.
 2. Use `graph-summary` for orientation. Choose `modules propose` for residual
    extraction or `modules decompose --atomic` for existing-module layout work.
    Use `graph-summary --include-proposals` when proposal counts are needed.
@@ -58,7 +58,7 @@ tooling rather than hand-maintaining exact long bodies across many modules.
    is graph readiness; workers still prove selectors and run the edit gate.
    For decomposition, review the complete candidate, source-backed selector
    anchors, semantic destinations, and any coarsening/rejoining results.
-   Hand a reviewed owner map directly to a lane worker for `modules refine`;
+   Hand a reviewed source-unit map directly to a lane worker for `modules refine`;
    residual groups need the separate fresh-claim workflow. Planning remains
    read-only; optional search limits retain the full candidate gate.
 5. Dispatch independent lane workers and any architect/naming/doc cleanup work.
@@ -66,11 +66,11 @@ tooling rather than hand-maintaining exact long bodies across many modules.
 7. Rerun gate, regen, and adapter smoke tests as required.
 8. Update queues, architecture notes, and durable project conventions.
 
-Track work by stable owner IDs and binding IDs, not only generated proposal
+Track work by stable source-unit IDs and binding IDs, not only generated proposal
 IDs. Proposal IDs may renumber after each integration.
 
 Track inflight, landed, and blocked assignments; the graph/build command
-that produced the evidence; and progress metrics such as residual owners,
+that produced the evidence; and progress metrics such as residual source units,
 patch-stream members, named module fraction, selector debt, and largest
 remaining generated files.
 
@@ -88,7 +88,7 @@ conventions take precedence over generic guidance.
 - Stale graph: refresh evidence before reassigning blame.
 - Gate failure: read structured cycle/report output before bisection.
 - For a side-effect cycle, start with the exact cycle edge and initializer
-  evidence: identify the owner, source location, purity rule, and called
+  evidence: identify the source unit, source location, purity rule, and called
   binding. Check whether the effect is in an eagerly evaluated initializer or
   only in a lazily called function body, then inspect the called value's
   definition and defining chunk. Unknown imported calls are conservatively

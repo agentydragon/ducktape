@@ -8,7 +8,7 @@ the validator enforces) before working on the splitting pipeline.
 ## Spec authoring
 
 - Invest in tools and side-output analyses that make spec authoring cheap; the
-  pipeline emits machine-readable artifacts for suggesting owner/module splits and
+  pipeline emits machine-readable artifacts for suggesting source-unit/module splits and
   renames.
 - Treat each spec as the exact contract for one configured input program. Do not
   add cross-version reasoning, multi-spec comparison, or automatic promotion or
@@ -61,7 +61,7 @@ solver constraints and § Rejected: localizing a contradiction with assumption c
 are measured dead ends — reopen only with a new measurement.
 
 **Debugging a selector**: <docs/debugging_selectors.md>. Statement indices belong to
-the parsed input file, not a prepared owner graph; check the printed range first. A
+the parsed input file, not a prepared dependency graph; check the printed range first. A
 `matched` explanation is local and never replaces `spec validate` or the gate;
 `limited`/`unsupported` are inconclusive; a failed backtracking branch is not proof
 of a matcher bug — reduce the range/pattern and establish a supported control first.

@@ -1,7 +1,7 @@
 //! Realizability gate and factorization validation.
 //!
-//! Builds on the `analysis` core (owner graph, assignment, reports):
-//! quotient the owner graph into the module dependency graph used by
+//! Builds on the `analysis` core (dependency graph, assignment, reports):
+//! quotient the dependency graph into the module dependency graph used by
 //! ESM import emission and linker-order reasoning, validate
 //! realizability (`realizability`, `validation`), and assemble the
 //! per-chunk factorization state (`chunk_analysis`,

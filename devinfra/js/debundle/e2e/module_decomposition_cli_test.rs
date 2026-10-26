@@ -43,29 +43,28 @@ fn assert_emitted_layout_and_output(
 }
 
 fn apply_decomposition(fixture: &GraphFixture, report: &Value) {
-    let assignments = report["modules"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .flat_map(|module| {
-            module["fragments"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .flat_map(|fragment| {
-                    fragment["owner_ids"]
-                        .as_array()
-                        .unwrap()
-                        .iter()
-                        .map(|owner_id| {
-                            json!({
-                                "owner_id": owner_id,
-                                "module": fragment["suggested_module_path"],
-                            })
-                        })
-                })
-        })
-        .collect::<Vec<_>>();
+    let assignments =
+        report["modules"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|module| {
+                module["fragments"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .flat_map(|fragment| {
+                        fragment["source_unit_ids"].as_array().unwrap().iter().map(
+                            |source_unit_id| {
+                                json!({
+                                    "source_unit_id": source_unit_id,
+                                    "module": fragment["suggested_module_path"],
+                                })
+                            },
+                        )
+                    })
+            })
+            .collect::<Vec<_>>();
     let batch = tempfile::NamedTempFile::new().unwrap();
     fs::write(batch.path(), serde_json::to_vec(&assignments).unwrap()).unwrap();
     fixture.assert_success(&[
@@ -76,22 +75,28 @@ fn apply_decomposition(fixture: &GraphFixture, report: &Value) {
     ]);
 }
 
-fn decomposition_path<'a>(report: &'a Value, owner_id: &Value) -> &'a str {
+fn decomposition_path<'a>(report: &'a Value, source_unit_id: &Value) -> &'a str {
     report["modules"]
         .as_array()
         .unwrap()
         .iter()
         .flat_map(|module| module["fragments"].as_array().unwrap())
-        .find(|fragment| fragment["owner_ids"].as_array().unwrap().contains(owner_id))
-        .unwrap_or_else(|| panic!("owner {owner_id} missing from decomposition {report}"))
-        ["suggested_module_path"]
+        .find(|fragment| {
+            fragment["source_unit_ids"]
+                .as_array()
+                .unwrap()
+                .contains(source_unit_id)
+        })
+        .unwrap_or_else(|| {
+            panic!("source_unit {source_unit_id} missing from decomposition {report}")
+        })["suggested_module_path"]
         .as_str()
         .unwrap()
 }
 
-fn owner_id_for_binding(fixture: &GraphFixture, binding: &str) -> String {
+fn source_unit_id_for_binding(fixture: &GraphFixture, binding: &str) -> String {
     fixture
-        .owner_graph()
+        .dependency_graph()
         .nodes
         .into_iter()
         .find(|node| {
@@ -99,13 +104,13 @@ fn owner_id_for_binding(fixture: &GraphFixture, binding: &str) -> String {
                 .iter()
                 .any(|declared| declared.binding.as_str() == binding)
         })
-        .unwrap_or_else(|| panic!("missing owner for binding {binding:?}"))
+        .unwrap_or_else(|| panic!("missing source_unit for binding {binding:?}"))
         .id
 }
 
-fn owner_id_for_line(fixture: &GraphFixture, line: usize) -> String {
+fn source_unit_id_for_line(fixture: &GraphFixture, line: usize) -> String {
     fixture
-        .owner_graph()
+        .dependency_graph()
         .nodes
         .into_iter()
         .find(|node| {
@@ -113,18 +118,26 @@ fn owner_id_for_line(fixture: &GraphFixture, line: usize) -> String {
                 .as_ref()
                 .is_some_and(|location| location.start_line == line)
         })
-        .unwrap_or_else(|| panic!("missing owner on source line {line}"))
+        .unwrap_or_else(|| panic!("missing source_unit on source line {line}"))
         .id
 }
 
-fn assert_owner_module(fixture: &GraphFixture, owner_id: &str, expected: &str) {
-    assert_eq!(owner_module_path(fixture, owner_id), expected);
+fn assert_source_unit_module(fixture: &GraphFixture, source_unit_id: &str, expected: &str) {
+    assert_eq!(source_unit_module_path(fixture, source_unit_id), expected);
 }
 
-fn owner_module_path(fixture: &GraphFixture, owner_id: &str) -> String {
-    let graph = fixture.owner_graph();
-    let owner = graph.nodes.iter().find(|node| node.id == owner_id).unwrap();
-    graph.module(&owner.destination).unwrap().path.to_string()
+fn source_unit_module_path(fixture: &GraphFixture, source_unit_id: &str) -> String {
+    let graph = fixture.dependency_graph();
+    let source_unit = graph
+        .nodes
+        .iter()
+        .find(|node| node.id == source_unit_id)
+        .unwrap();
+    graph
+        .module(&source_unit.destination)
+        .unwrap()
+        .path
+        .to_string()
 }
 
 fn ambiguous_decorator_fixture(with_duplicate_provider: bool) -> GraphFixture {
@@ -163,8 +176,8 @@ console.log(new Widget().ready);
 #[test]
 fn decomposition_coheres_anonymous_call_with_ambiguous_local_helper() {
     let fixture = ambiguous_decorator_fixture(true);
-    let anonymous_owner = owner_id_for_line(&fixture, 5);
-    assert_owner_module(&fixture, &anonymous_owner, "home");
+    let anonymous_source_unit = source_unit_id_for_line(&fixture, 5);
+    assert_source_unit_module(&fixture, &anonymous_source_unit, "home");
     debundle_e2e_support::assert_node_output(&fixture.source_path(), "A\n", "");
 
     let source_path = fixture.source_path();
@@ -189,17 +202,17 @@ fn decomposition_coheres_anonymous_call_with_ambiguous_local_helper() {
     );
     assert_eq!(relation["referenced_by"], "applyDecorators");
 
-    let helper_owner = owner_id_for_binding(&fixture, "decorateA");
-    let duplicate_owner = owner_id_for_binding(&fixture, "decorateB");
-    assert_eq!(relation["source_owner_ids"][0], anonymous_owner);
-    assert_eq!(relation["anchor_owner_ids"][0], helper_owner);
+    let helper_source_unit = source_unit_id_for_binding(&fixture, "decorateA");
+    let duplicate_source_unit = source_unit_id_for_binding(&fixture, "decorateB");
+    assert_eq!(relation["source_unit_ids"][0], anonymous_source_unit);
+    assert_eq!(relation["anchor_source_unit_ids"][0], helper_source_unit);
     assert_eq!(
-        decomposition_path(&report, &json!(anonymous_owner)),
-        decomposition_path(&report, &json!(helper_owner))
+        decomposition_path(&report, &json!(anonymous_source_unit)),
+        decomposition_path(&report, &json!(helper_source_unit))
     );
     assert_ne!(
-        decomposition_path(&report, &json!(helper_owner)),
-        owner_module_path(&fixture, &duplicate_owner),
+        decomposition_path(&report, &json!(helper_source_unit)),
+        source_unit_module_path(&fixture, &duplicate_source_unit),
         "the unchanged duplicate provider keeps its original module"
     );
 
@@ -210,8 +223,8 @@ fn decomposition_coheres_anonymous_call_with_ambiguous_local_helper() {
 #[test]
 fn decomposition_keeps_unique_anonymous_reference_separately_movable() {
     let fixture = ambiguous_decorator_fixture(false);
-    let anonymous_owner = owner_id_for_line(&fixture, 5);
-    assert_owner_module(&fixture, &anonymous_owner, "home");
+    let anonymous_source_unit = source_unit_id_for_line(&fixture, 5);
+    assert_source_unit_module(&fixture, &anonymous_source_unit, "home");
     debundle_e2e_support::assert_node_output(&fixture.source_path(), "A\n", "");
 
     let source_path = fixture.source_path();
@@ -226,10 +239,10 @@ fn decomposition_keeps_unique_anonymous_reference_separately_movable() {
     ]);
     assert_eq!(report["candidate_is_realizable"], true, "{report}");
     assert_eq!(report["selector_anchor_relations"], json!([]));
-    let helper_owner = owner_id_for_binding(&fixture, "decorateA");
+    let helper_source_unit = source_unit_id_for_binding(&fixture, "decorateA");
     assert_ne!(
-        decomposition_path(&report, &json!(anonymous_owner)),
-        decomposition_path(&report, &json!(helper_owner)),
+        decomposition_path(&report, &json!(anonymous_source_unit)),
+        decomposition_path(&report, &json!(helper_source_unit)),
         "a module-neutral unique reference remains free to move"
     );
 
@@ -575,12 +588,16 @@ fn rejoining_keeps_an_unsafe_home_split_and_refine_applies_accepted_groups() {
     let assignments: Vec<_> = split
         .iter()
         .flat_map(|group| {
-            group["owner_ids"].as_array().unwrap().iter().map(|owner| {
-                serde_json::json!({
-                    "owner_id": owner,
-                    "module": group["suggested_module_path"],
+            group["source_unit_ids"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|source_unit| {
+                    serde_json::json!({
+                        "source_unit_id": source_unit,
+                        "module": group["suggested_module_path"],
+                    })
                 })
-            })
         })
         .collect();
     let batch_dir = tempfile::tempdir().unwrap();
@@ -856,11 +873,11 @@ fn atomic_mode_leaves_cross_module_structural_atoms_on_their_current_paths() {
 
     let batch_dir = tempfile::tempdir().unwrap();
     let batch_path = batch_dir.path().join("batch.json");
-    let assignments: Vec<_> = group["owner_ids"]
+    let assignments: Vec<_> = group["source_unit_ids"]
         .as_array()
         .unwrap()
         .iter()
-        .map(|owner| serde_json::json!({"owner_id": owner, "module": target}))
+        .map(|source_unit| serde_json::json!({"source_unit_id": source_unit, "module": target}))
         .collect();
     fs::write(&batch_path, serde_json::to_vec(&assignments).unwrap()).unwrap();
     fixture.assert_success(&["modules", "refine", "--batch", batch_path.to_str().unwrap()]);
@@ -907,7 +924,7 @@ fn coarsening_atomic_conflicts_keeps_residual_import_and_export_declarations() {
             .is_empty(),
         "the option must resolve a real structural conflict: {report}"
     );
-    let graph = fixture.owner_graph();
+    let graph = fixture.dependency_graph();
     let entry_path = graph
         .quotient
         .nodes
@@ -922,19 +939,22 @@ fn coarsening_atomic_conflicts_keeps_residual_import_and_export_declarations() {
         .iter()
         .find(|group| group["suggested_module_path"] == entry_path)
         .expect("entry group remains present");
-    let entry_owners: std::collections::BTreeSet<_> = entry["owner_ids"]
+    let entry_source_units: std::collections::BTreeSet<_> = entry["source_unit_ids"]
         .as_array()
         .unwrap()
         .iter()
-        .map(|owner| owner.as_str().unwrap())
+        .map(|source_unit| source_unit.as_str().unwrap())
         .collect();
-    for owner in graph.nodes.iter().filter(|owner| {
+    for source_unit in graph.nodes.iter().filter(|source_unit| {
         matches!(
-            owner.statement_kind.to_string().as_str(),
+            source_unit.statement_kind.to_string().as_str(),
             "import" | "export"
         )
     }) {
-        assert!(entry_owners.contains(owner.id.as_str()), "{report}");
+        assert!(
+            entry_source_units.contains(source_unit.id.as_str()),
+            "{report}"
+        );
     }
 }
 
@@ -958,7 +978,7 @@ fn atomic_residual_mode_moves_body_atoms_but_keeps_entry_imports_and_exports() {
     assert_eq!(report["coverage_complete"], true, "{report}");
     assert_eq!(report["candidate_is_realizable"], true, "{report}");
 
-    let graph = fixture.owner_graph();
+    let graph = fixture.dependency_graph();
     let entry_path = graph
         .quotient
         .nodes
@@ -978,22 +998,22 @@ fn atomic_residual_mode_moves_body_atoms_but_keeps_entry_imports_and_exports() {
         .iter()
         .find(|fragment| fragment["suggested_module_path"] == entry_path)
         .expect("import/export fragment remains in the entry");
-    let entry_owner_ids = entry_fragment["owner_ids"]
+    let entry_source_unit_ids = entry_fragment["source_unit_ids"]
         .as_array()
         .unwrap()
         .iter()
         .filter_map(Value::as_str)
         .collect::<std::collections::BTreeSet<_>>();
-    for owner in graph.nodes.iter().filter(|owner| {
+    for source_unit in graph.nodes.iter().filter(|source_unit| {
         matches!(
-            owner.statement_kind.to_string().as_str(),
+            source_unit.statement_kind.to_string().as_str(),
             "import" | "export"
         )
     }) {
         assert!(
-            entry_owner_ids.contains(owner.id.as_str()),
+            entry_source_unit_ids.contains(source_unit.id.as_str()),
             "entry declaration {} was moved: {report}",
-            owner.id
+            source_unit.id
         );
     }
 
@@ -1079,7 +1099,7 @@ fn coarsens_only_gate_blocking_sccs_and_the_reported_assignment_runs() {
     assert_eq!(report["coarsening"]["stop_reason"], "accepted", "{report}");
     assert_eq!(report["coarsening"]["rounds"].as_array().unwrap().len(), 1);
     let entry_path = fixture
-        .owner_graph()
+        .dependency_graph()
         .quotient
         .nodes
         .iter()
@@ -1111,7 +1131,7 @@ fn coarsens_only_gate_blocking_sccs_and_the_reported_assignment_runs() {
 }
 
 #[test]
-fn coarsening_an_entry_scc_keeps_import_and_export_owners_at_the_entry_path() {
+fn coarsening_an_entry_scc_keeps_import_and_export_source_units_at_the_entry_path() {
     let fixture = GraphFixture::rejected(
         "import './dependency.js';\nconst seed_value = \"alpha\";\nconst cross_value = seed_value + \"-beta\";\nfunction lazy_back() { return cross_value; }\nexport { seed_value, lazy_back };\n",
         &[(
@@ -1144,7 +1164,7 @@ fn coarsening_an_entry_scc_keeps_import_and_export_owners_at_the_entry_path() {
             .contains(&serde_json::json!("dependent")),
         "a home absorbed into a mixed-origin SCC is unrestored: {report}"
     );
-    let graph = fixture.owner_graph();
+    let graph = fixture.dependency_graph();
     let entry_path = graph
         .quotient
         .nodes
@@ -1164,22 +1184,22 @@ fn coarsening_an_entry_scc_keeps_import_and_export_owners_at_the_entry_path() {
         serde_json::json!([entry_path.clone(), "dependent"]),
         "a mixed-origin SCC group must not be broken by rejoining: {report}"
     );
-    let entry_owners = entry["owner_ids"]
+    let entry_source_units = entry["source_unit_ids"]
         .as_array()
         .unwrap()
         .iter()
         .filter_map(Value::as_str)
         .collect::<std::collections::BTreeSet<_>>();
-    for owner in graph.nodes.iter().filter(|owner| {
+    for source_unit in graph.nodes.iter().filter(|source_unit| {
         matches!(
-            owner.statement_kind.to_string().as_str(),
+            source_unit.statement_kind.to_string().as_str(),
             "import" | "export"
         )
     }) {
         assert!(
-            entry_owners.contains(owner.id.as_str()),
+            entry_source_units.contains(source_unit.id.as_str()),
             "entry declaration {} moved from {entry_path}: {report}",
-            owner.id
+            source_unit.id
         );
     }
 }
@@ -1228,7 +1248,7 @@ fn source_aware_coarsening_reports_all_readable_name_collisions() {
             .collect::<Vec<_>>(),
         vec!["AlsoShared", "Shared"]
     );
-    let graph = fixture.owner_graph();
+    let graph = fixture.dependency_graph();
     for collision in collisions {
         let claims = collision["claims"].as_array().unwrap();
         assert_eq!(claims.len(), 2, "{collision}");
@@ -1248,17 +1268,20 @@ fn source_aware_coarsening_reports_all_readable_name_collisions() {
         );
         for claim in claims {
             let binding = claim["binding_id"].as_str().unwrap();
-            let owner = graph
+            let source_unit = graph
                 .nodes
                 .iter()
-                .find(|owner| {
-                    owner
+                .find(|source_unit| {
+                    source_unit
                         .declared_bindings
                         .iter()
                         .any(|declared| declared.binding.as_str() == binding)
                 })
                 .unwrap();
-            assert_eq!(claim["owner_ids"], serde_json::json!([owner.id]));
+            assert_eq!(
+                claim["source_unit_ids"],
+                serde_json::json!([source_unit.id])
+            );
         }
     }
     assert!(

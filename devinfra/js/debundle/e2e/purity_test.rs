@@ -711,7 +711,7 @@ fn optional_chain_on_whitelisted_receiver_classified_pure() {
     //
     // If OptChain were `Unknown`:
     //   Y has has_side_effect=true.
-    //   S-edges (transitive reduction over SE owners):
+    //   S-edges (transitive reduction over SE source_units):
     //     Y → X        (Y depends on X via source order, both SE)
     //     console.log(Z) → Y
     //   After peeling Y to y_module, the schedule sees:

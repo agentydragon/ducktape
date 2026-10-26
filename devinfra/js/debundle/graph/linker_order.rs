@@ -5,8 +5,8 @@ use petgraph::graphmap::DiGraphMap;
 use crate::ModuleId;
 use crate::module_assignment::ModuleAssignment;
 
-use super::edge::OwnerEdgeId;
-use super::owner_graph::OwnerGraph;
+use super::dependency_graph::DependencyGraph;
+use super::edge::DependencyEdgeId;
 use super::quotient::{EndpointView, assignment_endpoints};
 
 /// The canonical chunk-wide ESM I-graph. The realizability gate
@@ -48,13 +48,13 @@ use super::quotient::{EndpointView, assignment_endpoints};
 /// `from -> {to}` adjacency map (`i_successors`) ready to feed into
 /// the simulator.
 pub fn chunk_constraining_module_edges(
-    owner_graph: &OwnerGraph,
+    dependency_graph: &DependencyGraph,
     assignment: &ModuleAssignment,
 ) -> ChunkConstrainingEdgeSet {
-    let mut edges: BTreeMap<(ModuleId, ModuleId), Vec<OwnerEdgeId>> = BTreeMap::new();
+    let mut edges: BTreeMap<(ModuleId, ModuleId), Vec<DependencyEdgeId>> = BTreeMap::new();
     let mut i_successors: BTreeMap<ModuleId, BTreeSet<ModuleId>> = BTreeMap::new();
     let mut seen_sequenced_pairs: BTreeSet<(ModuleId, ModuleId)> = BTreeSet::new();
-    for edge in owner_graph.iter_edges() {
+    for edge in dependency_graph.iter_edges() {
         // Gate-side view: keep cross-module at-init promoted edges.
         // The matching `EndpointView::Lenient` view would drop them;
         // the canonical edge set is the strict view (see
@@ -98,10 +98,10 @@ pub fn chunk_constraining_module_edges(
 /// function-level doc for the filter rule.
 #[derive(Debug, Clone, Default, Eq, PartialEq)]
 pub struct ChunkConstrainingEdgeSet {
-    /// `(from_module, to_module) -> all owner-edge ids` projecting
+    /// `(from_module, to_module) -> all dependency edge ids` projecting
     /// onto this module pair. Stable ordering by `(ModuleId,
     /// ModuleId)`.
-    pub edges: BTreeMap<(ModuleId, ModuleId), Vec<OwnerEdgeId>>,
+    pub edges: BTreeMap<(ModuleId, ModuleId), Vec<DependencyEdgeId>>,
     /// `from_module -> set of import targets` over every non-rebind
     /// cross-module edge, `LazyUse` included — a superset of the
     /// `edges` keys. Precomputed because every simulator and emitter
@@ -110,8 +110,8 @@ pub struct ChunkConstrainingEdgeSet {
 }
 
 impl ChunkConstrainingEdgeSet {
-    /// `(from, to) -> &[OwnerEdgeId]` lookup.
-    pub fn edges_for(&self, from: ModuleId, to: ModuleId) -> &[OwnerEdgeId] {
+    /// `(from, to) -> &[DependencyEdgeId]` lookup.
+    pub fn edges_for(&self, from: ModuleId, to: ModuleId) -> &[DependencyEdgeId] {
         self.edges
             .get(&(from, to))
             .map(Vec::as_slice)

@@ -1,6 +1,6 @@
-//! Bounded Hall-deficiency witnesses for candidate-owner domains.
+//! Bounded Hall-deficiency witnesses for candidate-source unit domains.
 //!
-//! Each domain is the set of right-side owner ordinals available to one
+//! Each domain is the set of right-side source unit ordinals available to one
 //! distinct left-side claim. A maximum matching that cannot cover every left
 //! vertex proves a Hall deficiency. Alternating reachability from all
 //! unmatched left vertices then returns one such deficient set.
@@ -14,7 +14,7 @@ const MAX_EDGE_VISITS: usize = 1_000_000;
 /// Return a deterministic, nonempty Hall-deficient set of left vertex indices,
 /// or `None` when all left vertices can be matched or a work bound is reached.
 ///
-/// `domains` is expected to contain sorted, deduplicated owner ordinals. The
+/// `domains` is expected to contain sorted, deduplicated source unit ordinals. The
 /// ordinals are compressed to a dense, sorted right-side index space, so large
 /// sparse ordinals do not cause large allocations. The matching and witness
 /// search are iterative and share a one-million-edge-visit budget.
@@ -32,37 +32,41 @@ pub fn deficient_set(domains: &[Vec<usize>]) -> Option<Vec<usize>> {
         }
     }
 
-    // Singleton claims that share an owner are already a complete
+    // Singleton claims that share a source unit are already a complete
     // two-vertex Hall witness. Find the earliest collision in left-index order
     // before building the general matching graph.
     let mut first_singleton_claim = BTreeMap::new();
     for (left, domain) in domains.iter().enumerate() {
-        let [owner] = domain.as_slice() else {
+        let [source_unit] = domain.as_slice() else {
             continue;
         };
-        if let Some(&first_left) = first_singleton_claim.get(owner) {
+        if let Some(&first_left) = first_singleton_claim.get(source_unit) {
             return Some(vec![first_left, left]);
         }
-        first_singleton_claim.insert(*owner, left);
+        first_singleton_claim.insert(*source_unit, left);
     }
 
-    let mut owners = Vec::with_capacity(edge_count);
+    let mut source_units = Vec::with_capacity(edge_count);
     for domain in domains {
-        owners.extend_from_slice(domain);
+        source_units.extend_from_slice(domain);
     }
-    owners.sort_unstable();
-    owners.dedup();
+    source_units.sort_unstable();
+    source_units.dedup();
 
     let adjacency: Vec<Vec<usize>> = domains
         .iter()
         .map(|domain| {
             domain
                 .iter()
-                .map(|owner| owners.binary_search(owner).expect("owner was collected"))
+                .map(|source_unit| {
+                    source_units
+                        .binary_search(source_unit)
+                        .expect("source unit was collected")
+                })
                 .collect()
         })
         .collect();
-    let right_count = owners.len();
+    let right_count = source_units.len();
 
     // `left_match[l] = r` and `right_match[r] = l` describe the current
     // matching. Processing each left vertex once with a complete augmenting
@@ -227,7 +231,7 @@ mod tests {
     #[test]
     fn duplicate_singleton_claims_have_a_witness() {
         let domains = vec![vec![0], vec![0]];
-        let witness = deficient_set(&domains).expect("two claims cannot share one owner");
+        let witness = deficient_set(&domains).expect("two claims cannot share one source unit");
         assert_eq!(witness, vec![0, 1]);
         assert_deficient(&domains, &witness);
     }
@@ -295,7 +299,7 @@ mod tests {
 
     #[test]
     fn edge_visit_budget_exhaustion_returns_no_witness() {
-        // The first 100 left vertices match the 100 owners. Every later
+        // The first 100 left vertices match the 100 source units. Every later
         // augmenting search explores the same dense alternating component;
         // this exceeds the fixed visit budget before producing any witness.
         let domains = vec![(0..100).collect::<Vec<_>>(); MAX_LEFT_VERTICES];

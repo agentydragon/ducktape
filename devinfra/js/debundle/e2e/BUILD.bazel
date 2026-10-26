@@ -379,7 +379,7 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(
-    name = "owner_graph_purity_reason_test",
+    name = "dependency_graph_purity_reason_test",
     deps = [
         "//devinfra/js/debundle:analysis",
         "@crates//:serde_json",

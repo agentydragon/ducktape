@@ -4967,7 +4967,7 @@ struct Executor<'a> {
     enum_data_members: BTreeMap<Id, BTreeSet<String>>,
     top_bindings: BTreeSet<Id>,
     binding_owner: BTreeMap<Id, StatementOrdinal>,
-    owner_read_closure: FactsOwnerReadClosure,
+    source_unit_read_closure: SourceUnitReadClosure,
     synchronous_owner_adjacency: Vec<Vec<StatementOrdinal>>,
     synchronous_owner_reads: Vec<Option<&'a BTreeSet<Id>>>,
     class_member_effects: BTreeMap<StatementOrdinal, (BTreeSet<Id>, BTreeSet<Id>)>,
@@ -5598,8 +5598,8 @@ impl Executor<'_> {
         {
             if let Some(&binding_owner) = self.binding_owner.get(binding) {
                 let (reads, rebinds) = self
-                    .owner_read_closure
-                    .lazy_effects_for_owner(binding_owner);
+                    .source_unit_read_closure
+                    .lazy_effects_for_source_unit(binding_owner);
                 self.promote_lazy_effects(reads, rebinds, owner, outcome);
                 outcome.executed_owners.insert(binding_owner);
             }
@@ -5689,10 +5689,9 @@ impl Executor<'_> {
     fn roots_for_owner(&self, owner: StatementOrdinal) -> BTreeSet<StatementOrdinal> {
         let mut roots = BTreeSet::from([owner]);
         if let Some(fact) = self.facts.get(owner.0) {
-            roots.extend(
-                self.owner_read_closure
-                    .owners_for_bindings(fact.reads.eager.iter().chain(fact.rebinds.eager.iter())),
-            );
+            roots.extend(self.source_unit_read_closure.source_units_for_bindings(
+                fact.reads.eager.iter().chain(fact.rebinds.eager.iter()),
+            ));
         }
         roots
     }
@@ -5886,8 +5885,8 @@ impl Executor<'_> {
         // still enter reachability through their own executor paths.
         let inert_heritage = self.inert_class_heritage_binding(fact);
         roots.extend(
-            self.owner_read_closure
-                .owners_for_bindings(
+            self.source_unit_read_closure
+                .source_units_for_bindings(
                     fact.reads
                         .eager
                         .iter()
@@ -6336,7 +6335,7 @@ impl Executor<'_> {
         // chunk is initializing. In particular, a binding used after a
         // definite await cannot make the body of its future value executable
         // during an opaque call at this prefix.
-        let reached = FactsOwnerReadClosure::extend_synchronous_owners(
+        let reached = SourceUnitReadClosure::extend_synchronous_source_units(
             &self.synchronous_owner_adjacency,
             roots,
             &mut self.reachability.expanded,
@@ -7071,7 +7070,7 @@ impl Executor<'_> {
                     .map(|callable| callable.owner),
                 AbstractValue::ClassMembers(key) => self
                     .flow
-                    .callable_owner
+                    .callable_source_unit
                     .get(&ValueOrigin::Class(key))
                     .or_else(|| self.index.class_owners.get(&key))
                     .copied(),
@@ -7081,7 +7080,9 @@ impl Executor<'_> {
         }
         if self.reachability.incomplete {
             for owner in owners {
-                let (reads, rebinds) = self.owner_read_closure.lazy_effects_for_owner(owner);
+                let (reads, rebinds) = self
+                    .source_unit_read_closure
+                    .lazy_effects_for_source_unit(owner);
                 let reads = reads.clone();
                 let rebinds = rebinds.clone();
                 let referenced = reads
@@ -7093,7 +7094,7 @@ impl Executor<'_> {
             }
             return;
         }
-        let reached = FactsOwnerReadClosure::extend_synchronous_owners(
+        let reached = SourceUnitReadClosure::extend_synchronous_source_units(
             &self.synchronous_owner_adjacency,
             owners,
             &mut BTreeSet::new(),
@@ -7136,11 +7137,13 @@ impl Executor<'_> {
         }
         if self.reachability.incomplete {
             for owner in roots {
-                let (reads, rebinds) = self.owner_read_closure.lazy_effects_for_owner(owner);
+                let (reads, rebinds) = self
+                    .source_unit_read_closure
+                    .lazy_effects_for_source_unit(owner);
                 self.promote_lazy_effects(reads, rebinds, effect_owner, outcome);
             }
         } else {
-            let reached = FactsOwnerReadClosure::extend_synchronous_owners(
+            let reached = SourceUnitReadClosure::extend_synchronous_source_units(
                 &self.synchronous_owner_adjacency,
                 roots,
                 &mut BTreeSet::new(),
@@ -7166,7 +7169,7 @@ impl Executor<'_> {
         }
         let owner = self
             .flow
-            .callable_owner
+            .callable_source_unit
             .get(&ValueOrigin::Class(key))
             .copied()
             .or_else(|| self.index.class_owners.get(&key).copied());
@@ -7179,11 +7182,13 @@ impl Executor<'_> {
         // while their constructor and methods still contribute lazy reads to
         // that owner's summary.
         if self.reachability.incomplete {
-            let (reads, rebinds) = self.owner_read_closure.lazy_effects_for_owner(owner);
+            let (reads, rebinds) = self
+                .source_unit_read_closure
+                .lazy_effects_for_source_unit(owner);
             self.promote_lazy_effects(reads, rebinds, effect_owner, outcome);
         } else {
             if !self.class_member_effects.contains_key(&owner) {
-                let reached = FactsOwnerReadClosure::extend_synchronous_owners(
+                let reached = SourceUnitReadClosure::extend_synchronous_source_units(
                     &self.synchronous_owner_adjacency,
                     [owner],
                     &mut BTreeSet::new(),
@@ -7482,13 +7487,16 @@ impl Executor<'_> {
                 roots.insert(callback_owner);
             }
             if let AbstractValue::ClassMembers(key) = callback
-                && let Some(&owner) = self.flow.callable_owner.get(&ValueOrigin::Class(*key))
+                && let Some(&owner) = self
+                    .flow
+                    .callable_source_unit
+                    .get(&ValueOrigin::Class(*key))
             {
                 roots.insert(owner);
             }
         }
         self.extend_reachable_owners(roots.iter().copied().chain([owner]));
-        let mut reached = FactsOwnerReadClosure::extend_synchronous_owners(
+        let mut reached = SourceUnitReadClosure::extend_synchronous_source_units(
             &self.synchronous_owner_adjacency,
             roots.iter().copied(),
             &mut self.callback_fallback.expanded,
@@ -7559,7 +7567,7 @@ impl Executor<'_> {
         // persistent callback cache. Expand each local owner once per source
         // statement; earlier promotions remain in fallback_outcome.
         if !self.callback_fallback.expanded.contains(&owner) {
-            let reached = FactsOwnerReadClosure::extend_synchronous_owners(
+            let reached = SourceUnitReadClosure::extend_synchronous_source_units(
                 &self.synchronous_owner_adjacency,
                 [owner],
                 &mut self.fallback_local_owners,
@@ -8773,7 +8781,7 @@ pub(crate) fn stable_ts_enum_named_data_members(
         for binding in fact.rebinds.eager.iter().chain(&fact.rebinds.lazy) {
             if candidates
                 .get(binding)
-                .is_some_and(|candidate| candidate.initializer_owner != fact.ordinal)
+                .is_some_and(|candidate| candidate.initializer_source_unit != fact.ordinal)
             {
                 unstable.insert(binding.clone());
             }
@@ -8884,7 +8892,7 @@ pub(crate) fn annotate_synchronous_calls(
             }
         }
     }
-    let owner_read_closure = FactsOwnerReadClosure::new(facts);
+    let source_unit_read_closure = SourceUnitReadClosure::new(facts);
     let prefix_reads: Vec<_> = facts
         .iter()
         .map(|fact| {
@@ -8898,11 +8906,12 @@ pub(crate) fn annotate_synchronous_calls(
         })
         .collect();
     let synchronous_owner_adjacency =
-        owner_read_closure.synchronous_adjacency(facts, &prefix_reads);
+        source_unit_read_closure.synchronous_adjacency(facts, &prefix_reads);
     let mut exported_owners = BTreeSet::new();
     if export_reentry_policy == ExportReentryPolicy::Conservative {
         exported_owners.extend(index.exported_declaration_owners.iter().copied());
-        exported_owners.extend(owner_read_closure.owners_for_bindings(&index.exported_bindings));
+        exported_owners
+            .extend(source_unit_read_closure.source_units_for_bindings(&index.exported_bindings));
     }
     let initial_export_roots = exported_owners
         .intersection(&index.hoisted_function_owners)
@@ -8955,7 +8964,7 @@ pub(crate) fn annotate_synchronous_calls(
             .iter()
             .flat_map(|fact| fact.declared.iter().cloned().map(|id| (id, fact.ordinal)))
             .collect(),
-        owner_read_closure,
+        source_unit_read_closure,
         synchronous_owner_adjacency,
         synchronous_owner_reads: prefix_reads,
         class_member_effects: BTreeMap::new(),

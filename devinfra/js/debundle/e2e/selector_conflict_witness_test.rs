@@ -51,7 +51,7 @@ fn duplicate_singletons_report_the_same_group_and_ownership_witness() {
                 {"logical_module": "conflicts/left", "entity": {"export": "Left"}},
                 {"logical_module": "conflicts/right", "entity": {"export": "Right"}},
             ],
-            "owners": [{"owner": 0, "statement": 0, "bindings": ["actual"]}],
+            "source_units": [{"source_unit": 0, "body_index": 0, "bindings": ["actual"]}],
         },
     });
     assert_eq!(left["outcome"], expected, "{left:#}");
@@ -69,7 +69,7 @@ fn duplicate_singletons_report_the_same_group_and_ownership_witness() {
 }
 
 #[test]
-fn three_selectors_over_two_owners_report_a_hall_witness() {
+fn three_selectors_over_two_source_units_report_a_hall_witness() {
     let source = r#"function first() { return "shared"; }
 function second() { return "shared"; }
 "#;
@@ -115,10 +115,10 @@ function second() { return "shared"; }
             "{record:#}"
         );
         assert_eq!(
-            conflict["owners"],
+            conflict["source_units"],
             json!([
-                {"owner": 0, "statement": 0, "bindings": ["first"]},
-                {"owner": 1, "statement": 1, "bindings": ["second"]},
+                {"source_unit": 0, "body_index": 0, "bindings": ["first"]},
+                {"source_unit": 1, "body_index": 1, "bindings": ["second"]},
             ]),
             "{record:#}"
         );
@@ -232,7 +232,7 @@ fn deficient_chain_explains_participants_and_blocked_bystander() {
         either["outcome"],
         json!({
             "kind": "resolved",
-            "owner": 3,
+            "body_index": 3,
             "binding": "u",
             "resolved_by": {
                 "by": "elimination",
@@ -328,8 +328,8 @@ fn multi_binding_groups_contribute_one_exclusivity_representative() {
         "grouped bindings from one source match are one ownership claim: {first:#}"
     );
     assert_eq!(
-        conflict["owners"],
-        json!([{"owner": 0, "statement": 0, "bindings": ["a"]}]),
+        conflict["source_units"],
+        json!([{"source_unit": 0, "body_index": 0, "bindings": ["a"]}]),
         "the witness should use each source group's existing exclusivity representative: {first:#}"
     );
     for export in ["LeftTwo", "RightOne", "RightTwo"] {

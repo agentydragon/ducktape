@@ -9,7 +9,7 @@
 //! 1. **No cross-module init-order cycles** — `check_realizability` /
 //!    `validate_assignment` over the post-edit assignment.
 //! 2. **No atom-split** — every `AtomicGroup` (constraining-edge SCC of
-//!    the owner graph) maps to a single destination module under the
+//!    the dependency graph) maps to a single destination module under the
 //!    post-edit assignment. Splitting a member off into a different
 //!    module is unrealizable by construction (see
 //!    `docs/design.md` §"Two classes of atom").
@@ -32,7 +32,7 @@
 //!
 //! On rejection the gate also writes the same on-disk artifacts the
 //! pipeline writes — `cycles.json` / `atomic_group_conflicts.json` as
-//! siblings of the supplied `owner_graph.json` (the location
+//! siblings of the supplied `dependency_graph.json` (the location
 //! `debundle gate list/describe` reads by default) — so the
 //! documented `gate` follow-up queries work after an edit-gate or
 //! `--dry-run` rejection. Stale artifacts from a previous rejection
@@ -49,8 +49,8 @@ use ::gate::{
     validate_assignment,
 };
 use analysis::{
-    AtomicGroup, AtomicGroupConflict, AtomicGroupConflictReport, ConflictingClaim,
-    ModuleAssignment, ModuleId, OwnerGraph, OwnerGraphReport, OwnerId, compute_atomic_groups,
+    AtomicGroup, AtomicGroupConflict, AtomicGroupConflictReport, ConflictingClaim, DependencyGraph,
+    DependencyGraphReport, ModuleAssignment, ModuleId, SourceUnitId, compute_atomic_groups,
 };
 use anonymous_resolution::{ResolvedSourceClaims, SourceClaimSet, resolve_source_claims};
 use anyhow::{Context, Result, bail};
@@ -74,10 +74,10 @@ pub struct GraphEditArgs {
     /// Skip validation. Can permit name collisions or unrealizable specs.
     #[arg(long)]
     pub no_verify: bool,
-    /// Owner graph for validation; required unless --no-verify or the edit
+    /// Dependency graph for validation; required unless --no-verify or the edit
     /// cannot change ownership (such as deleting a structurally empty module).
     #[arg(long = "graph", env = "DEBUNDLE_GRAPH")]
-    pub owner_graph_path: Option<PathBuf>,
+    pub dependency_graph_path: Option<PathBuf>,
     /// Root for relative source paths used to resolve source-backed claims.
     #[arg(long = "source-root", env = "DEBUNDLE_SOURCE_ROOT")]
     pub source_root: Option<PathBuf>,
@@ -90,20 +90,20 @@ impl GraphEditArgs {
     pub fn gate(&self) -> Result<Gate<'_>> {
         Gate::from_cli(
             self.no_verify,
-            self.owner_graph_path.as_deref(),
+            self.dependency_graph_path.as_deref(),
             self.source_root.as_deref(),
         )
     }
 }
 
 /// How a spec-mutating CLI verb validates its edit. Replaces the
-/// `(no_verify: bool, owner_graph_path: Option<&Path>)` pair whose
+/// `(no_verify: bool, dependency_graph_path: Option<&Path>)` pair whose
 /// `(false, None)` combination used to silently skip the
 /// realizability gate.
 #[derive(Debug, Clone, Copy)]
 pub enum Gate<'a> {
     /// Run name-collision checks and the post-edit realizability +
-    /// atom-split gate against this owner graph.
+    /// atom-split gate against this dependency graph.
     Run {
         graph: &'a Path,
         /// Root used to resolve relative `source_location.source_path`
@@ -128,7 +128,7 @@ impl<'a> Gate<'a> {
         match graph {
             Some(graph) => Ok(Self::Run { graph, source_root }),
             None => bail!(
-                "realizability gate requires --graph (path to owner_graph.json) or --no-verify"
+                "realizability gate requires --graph (path to dependency_graph.json) or --no-verify"
             ),
         }
     }
@@ -225,15 +225,15 @@ impl fmt::Display for GateRejection {
 
 impl std::error::Error for GateRejection {}
 
-/// Write a rejection artifact next to `owner_graph_path` — the
+/// Write a rejection artifact next to `dependency_graph_path` — the
 /// default location `debundle gate list/describe/cut` resolves
 /// (`GateCommonArgs::resolved_cycles_path`).
 fn write_rejection_artifact<T: Serialize>(
-    owner_graph_path: &Path,
+    dependency_graph_path: &Path,
     filename: &str,
     value: &T,
 ) -> Result<()> {
-    let path = rejection_artifact_path(owner_graph_path, filename);
+    let path = rejection_artifact_path(dependency_graph_path, filename);
     fs::write(&path, serde_json::to_string_pretty(value)?)
         .with_context(|| format!("writing {}", path.display()))
 }
@@ -242,16 +242,16 @@ fn write_rejection_artifact<T: Serialize>(
 /// latest gate verdict (a missing `cycles.json` is the documented
 /// clean state). A pass clears both artifacts; each rejection kind
 /// clears the other kind's file.
-fn remove_rejection_artifact(owner_graph_path: &Path, filename: &str) -> Result<()> {
-    let path = rejection_artifact_path(owner_graph_path, filename);
+fn remove_rejection_artifact(dependency_graph_path: &Path, filename: &str) -> Result<()> {
+    let path = rejection_artifact_path(dependency_graph_path, filename);
     if path.exists() {
         fs::remove_file(&path).with_context(|| format!("removing stale {}", path.display()))?;
     }
     Ok(())
 }
 
-fn rejection_artifact_path(owner_graph_path: &Path, filename: &str) -> PathBuf {
-    owner_graph_path
+fn rejection_artifact_path(dependency_graph_path: &Path, filename: &str) -> PathBuf {
+    dependency_graph_path
         .parent()
         .unwrap_or_else(|| Path::new("."))
         .join(filename)
@@ -276,9 +276,9 @@ pub struct PostEditSpec {
 }
 
 /// Complete owner assignment implied by a scoped module tree. `None` is the
-/// residual destination; every graph owner appears so edit callers can prove
+/// residual destination; every graph source unit appears so edit callers can prove
 /// the post-edit spec matches the whole reviewed assignment.
-pub type OwnerModuleAssignments = BTreeMap<String, Option<String>>;
+pub type SourceUnitModuleAssignments = BTreeMap<String, Option<String>>;
 
 /// Project the typed in-memory spec used by edit commands into the canonical
 /// resolver's per-module claim sets.
@@ -295,34 +295,34 @@ pub fn source_claim_sets_from_post_spec(post_spec: &PostEditSpec) -> Vec<SourceC
         .collect()
 }
 
-/// Resolve all owners claimed by a candidate spec. The result uses module-file
-/// paths relative to `modules_root` and keeps unclaimed owners as residual.
-pub fn owner_module_assignments(
-    owner_graph_report: &OwnerGraphReport,
+/// Resolve all source units claimed by a candidate spec. The result uses module-file
+/// paths relative to `modules_root` and keeps unclaimed source units as residual.
+pub fn source_unit_module_assignments(
+    dependency_graph_report: &DependencyGraphReport,
     modules_root: &Path,
     post_spec: &PostEditSpec,
     resolved_claims: &[ResolvedSourceClaims],
     scope: Option<&ModuleTreeScope>,
-) -> Result<OwnerModuleAssignments> {
+) -> Result<SourceUnitModuleAssignments> {
     anyhow::ensure!(
         post_spec.modules.len() == resolved_claims.len(),
         "resolved selector results do not match the post-edit module list"
     );
     let mut assignments = BTreeMap::new();
-    let mut owner_by_binding_name: HashMap<String, OwnerId> = HashMap::new();
-    for (idx, node) in owner_graph_report.nodes.iter().enumerate() {
+    let mut source_unit_by_binding_name: HashMap<String, SourceUnitId> = HashMap::new();
+    for (idx, node) in dependency_graph_report.nodes.iter().enumerate() {
         anyhow::ensure!(
             assignments.insert(node.id.clone(), None).is_none(),
-            "owner_graph.json repeats owner ID {:?}",
+            "dependency_graph.json repeats source-unit ID {:?}",
             node.id
         );
-        let owner = OwnerId(idx);
+        let source_unit = SourceUnitId(idx);
         for binding in &node.declared_bindings {
             let name = binding.binding.to_string();
-            if let Some(previous) = owner_by_binding_name.insert(name.clone(), owner)
-                && previous != owner
+            if let Some(previous) = source_unit_by_binding_name.insert(name.clone(), source_unit)
+                && previous != source_unit
             {
-                anyhow::bail!("owner_graph.json declares binding {name:?} in multiple owners");
+                anyhow::bail!("dependency_graph.json declares binding {name:?} in multiple owners");
             }
         }
     }
@@ -341,36 +341,49 @@ pub fn owner_module_assignments(
             .chain(&resolved.bindings)
             .collect::<BTreeSet<_>>();
         for name in claimed_names {
-            let owner = owner_by_binding_name.get(name).with_context(|| {
+            let owner = source_unit_by_binding_name.get(name).with_context(|| {
                 format!(
-                    "module {} claims binding {name:?}, absent from owner_graph.json",
+                    "module {} claims binding {name:?}, absent from dependency_graph.json",
                     module.path.display()
                 )
             })?;
-            assign_owner_module(&mut assignments, owner_graph_report, *owner, &module_path)?;
+            assign_source_unit_module(
+                &mut assignments,
+                dependency_graph_report,
+                *owner,
+                &module_path,
+            )?;
         }
-        for owner in &resolved.anonymous_owners {
-            assign_owner_module(&mut assignments, owner_graph_report, *owner, &module_path)?;
+        for owner in &resolved.anonymous_source_units {
+            assign_source_unit_module(
+                &mut assignments,
+                dependency_graph_report,
+                *owner,
+                &module_path,
+            )?;
         }
     }
     Ok(assignments)
 }
 
-fn assign_owner_module(
-    assignments: &mut OwnerModuleAssignments,
-    owner_graph_report: &OwnerGraphReport,
-    owner: OwnerId,
+fn assign_source_unit_module(
+    assignments: &mut SourceUnitModuleAssignments,
+    dependency_graph_report: &DependencyGraphReport,
+    source_unit: SourceUnitId,
     module_path: &str,
 ) -> Result<()> {
-    let node = owner_graph_report.nodes.get(owner.0).with_context(|| {
-        format!(
-            "resolved owner index {} is absent from owner_graph.json",
-            owner.0
-        )
-    })?;
+    let node = dependency_graph_report
+        .nodes
+        .get(source_unit.0)
+        .with_context(|| {
+            format!(
+                "resolved source-unit index {} is absent from dependency_graph.json",
+                source_unit.0
+            )
+        })?;
     let destination = assignments.get_mut(&node.id).with_context(|| {
         format!(
-            "resolved owner {:?} is absent from owner_graph.json",
+            "resolved source unit {:?} is absent from dependency_graph.json",
             node.id
         )
     })?;
@@ -378,7 +391,7 @@ fn assign_owner_module(
         None => *destination = Some(module_path.to_string()),
         Some(existing) if existing == module_path => {}
         Some(existing) => anyhow::bail!(
-            "owner {:?} is claimed by multiple modules: {} and {}",
+            "source unit {:?} is claimed by multiple modules: {} and {}",
             node.id,
             existing,
             module_path
@@ -448,7 +461,7 @@ pub fn read_gate_claims(path: &Path) -> Result<ModuleClaims> {
     read_module_claims(path).with_context(|| format!("reading module {}", path.display()))
 }
 
-/// Reconstruct the `OwnerGraph` from `owner_graph_path`, build the
+/// Reconstruct the `DependencyGraph` from `dependency_graph_path`, build the
 /// `ModuleAssignment` implied by `post_spec`, and run BOTH realizability
 /// gates: the cross-module init-order check (cycles) AND the
 /// atom-split check (every `AtomicGroup`'s members must co-locate).
@@ -458,13 +471,13 @@ pub fn read_gate_claims(path: &Path) -> Result<ModuleClaims> {
 /// rejects, so the CLI exit code is non-zero and the caller bails
 /// before writing.
 pub fn gate_post_edit_assignment(
-    owner_graph_path: &Path,
+    dependency_graph_path: &Path,
     modules_root: &Path,
     source_root: Option<&Path>,
     post_spec: &PostEditSpec,
 ) -> Result<()> {
     gate_post_edit_assignment_with_expected(
-        owner_graph_path,
+        dependency_graph_path,
         modules_root,
         source_root,
         post_spec,
@@ -474,58 +487,63 @@ pub fn gate_post_edit_assignment(
     )
 }
 
-/// Run the normal gate and prove the entire resolved post-edit owner assignment
+/// Run the normal gate and prove the entire resolved post-edit source-unit assignment
 /// is exactly the reviewed assignment, including owners that remain residual.
-pub fn gate_post_edit_assignment_with_expected_owner_modules(
-    owner_graph_path: &Path,
+pub fn gate_post_edit_assignment_with_expected_source_unit_modules(
+    dependency_graph_path: &Path,
     modules_root: &Path,
     source_root: Option<&Path>,
     post_spec: &PostEditSpec,
-    expected_owner_modules: &OwnerModuleAssignments,
+    expected_source_unit_modules: &SourceUnitModuleAssignments,
     scope: Option<&ModuleTreeScope>,
 ) -> Result<()> {
     gate_post_edit_assignment_with_expected(
-        owner_graph_path,
+        dependency_graph_path,
         modules_root,
         source_root,
         post_spec,
         &[],
-        Some(expected_owner_modules),
+        Some(expected_source_unit_modules),
         scope,
     )
 }
 
 fn gate_post_edit_assignment_with_expected(
-    owner_graph_path: &Path,
+    dependency_graph_path: &Path,
     modules_root: &Path,
     source_root: Option<&Path>,
     post_spec: &PostEditSpec,
     expected: &[ExpectedResolvedMember],
-    expected_owner_modules: Option<&OwnerModuleAssignments>,
+    expected_source_unit_modules: Option<&SourceUnitModuleAssignments>,
     scope: Option<&ModuleTreeScope>,
 ) -> Result<()> {
-    let owner_graph_report = crate::load_owner_graph_report(owner_graph_path)?;
+    let dependency_graph_report = crate::load_dependency_graph_report(dependency_graph_path)?;
 
     // The gate algorithm walks edges + assignment, not declared sets:
     // `from_report` leaves `declared` empty, which is fine for
     // `check_realizability`/`validate_assignment` (both consume the
     // assignment we build below, not the per-owner declared field).
-    let owner_graph = OwnerGraph::from_report(&owner_graph_report)
-        .with_context(|| format!("reconstructing owner graph {}", owner_graph_path.display()))?;
+    let dependency_graph =
+        DependencyGraph::from_report(&dependency_graph_report).with_context(|| {
+            format!(
+                "reconstructing dependency graph {}",
+                dependency_graph_path.display()
+            )
+        })?;
 
-    // owner_by_binding_name uses the Atom-only declared_bindings the
+    // source_unit_by_binding_name uses the Atom-only declared_bindings the
     // wire shape carries; that's enough because the spec author also
     // references bindings by name (no hygienic context). When a
     // declared binding name is ambiguous across owners the first one
     // wins — the materializer's spec validator catches that
     // separately as a duplicate-binding diagnostic.
-    let mut owner_by_binding_name: HashMap<String, OwnerId> = HashMap::new();
-    for (idx, node) in owner_graph_report.nodes.iter().enumerate() {
-        let owner = OwnerId(idx);
+    let mut source_unit_by_binding_name: HashMap<String, SourceUnitId> = HashMap::new();
+    for (idx, node) in dependency_graph_report.nodes.iter().enumerate() {
+        let source_unit = SourceUnitId(idx);
         for b in &node.declared_bindings {
-            owner_by_binding_name
+            source_unit_by_binding_name
                 .entry(b.binding.to_string())
-                .or_insert(owner);
+                .or_insert(source_unit);
         }
     }
     // Source-backed claims resolve to the chunk-top bindings and anonymous
@@ -534,36 +552,39 @@ fn gate_post_edit_assignment_with_expected(
     // owner must never silently fall to residual.
     let claim_sets = source_claim_sets_from_post_spec(post_spec);
     let resolved_claims = resolve_source_claims(
-        &owner_graph_report,
-        owner_graph_path,
+        &dependency_graph_report,
+        dependency_graph_path,
         modules_root,
         source_root,
         &claim_sets,
     )?;
-    if let Some(expected_owner_modules) = expected_owner_modules {
-        let actual_owner_modules = owner_module_assignments(
-            &owner_graph_report,
+    if let Some(expected_source_unit_modules) = expected_source_unit_modules {
+        let actual_source_unit_modules = source_unit_module_assignments(
+            &dependency_graph_report,
             modules_root,
             post_spec,
             &resolved_claims,
             scope,
         )?;
-        if &actual_owner_modules != expected_owner_modules {
-            let owner_ids = actual_owner_modules
+        if &actual_source_unit_modules != expected_source_unit_modules {
+            let source_unit_ids = actual_source_unit_modules
                 .keys()
-                .chain(expected_owner_modules.keys())
+                .chain(expected_source_unit_modules.keys())
                 .collect::<BTreeSet<_>>();
-            let first_mismatch = owner_ids.into_iter().find(|owner_id| {
-                actual_owner_modules.get(*owner_id) != expected_owner_modules.get(*owner_id)
+            let first_mismatch = source_unit_ids.into_iter().find(|source_unit_id| {
+                actual_source_unit_modules.get(*source_unit_id)
+                    != expected_source_unit_modules.get(*source_unit_id)
             });
-            if let Some(owner_id) = first_mismatch {
+            if let Some(source_unit_id) = first_mismatch {
                 bail!(
-                    "post-edit selector resolution changed the reviewed owner assignment for {owner_id:?}: requested {:?}, resolved {:?}",
-                    expected_owner_modules.get(owner_id),
-                    actual_owner_modules.get(owner_id)
+                    "post-edit selector resolution changed the reviewed source-unit assignment for {source_unit_id:?}: requested {:?}, resolved {:?}",
+                    expected_source_unit_modules.get(source_unit_id),
+                    actual_source_unit_modules.get(source_unit_id)
                 );
             }
-            bail!("post-edit owner assignment does not match the reviewed complete candidate");
+            bail!(
+                "post-edit source-unit assignment does not match the reviewed complete candidate"
+            );
         }
     }
     for target in expected {
@@ -594,7 +615,7 @@ fn gate_post_edit_assignment_with_expected(
     // every wire artifact uses (the module YAML's path relative to
     // the modules root, `.yaml` stripped).
     let residual = ModuleId(0);
-    let mut of: Vec<ModuleId> = vec![residual; owner_graph.num_nodes()];
+    let mut of: Vec<ModuleId> = vec![residual; dependency_graph.num_nodes()];
     let mut module_path_by_id: HashMap<ModuleId, ModulePath> = [(
         residual,
         ModulePath::parse("residual", "").expect("residual is a canonical path"),
@@ -615,12 +636,12 @@ fn gate_post_edit_assignment_with_expected(
             .iter()
             .chain(&resolved_claims[module_idx].bindings)
         {
-            if let Some(&owner) = owner_by_binding_name.get(name) {
+            if let Some(&owner) = source_unit_by_binding_name.get(name) {
                 of[owner.0] = mid;
             }
         }
-        for owner in &resolved_claims[module_idx].anonymous_owners {
-            of[owner.0] = mid;
+        for source_unit in &resolved_claims[module_idx].anonymous_source_units {
+            of[source_unit.0] = mid;
         }
     }
     let assignment = ModuleAssignment::from_assignments(of, residual);
@@ -639,23 +660,26 @@ fn gate_post_edit_assignment_with_expected(
     // atom-split commonly induces a cycle in the module quotient, and
     // the cycle diagnostic is less actionable for the author than
     // "here is the atomic group you split".
-    let atomic_groups = compute_atomic_groups(&owner_graph);
+    let atomic_groups = compute_atomic_groups(&dependency_graph);
     let atomic_conflicts =
-        detect_atomic_group_conflicts(&atomic_groups, &assignment, &owner_graph_report);
+        detect_atomic_group_conflicts(&atomic_groups, &assignment, &dependency_graph_report);
     if !atomic_conflicts.is_empty() {
         let conflicts = AtomicGroupConflictReport::from_conflicts(
             &atomic_conflicts,
             &module_path,
-            &owner_graph,
+            &dependency_graph,
         );
         write_rejection_artifact(
-            owner_graph_path,
+            dependency_graph_path,
             output_layout::ATOMIC_GROUP_CONFLICTS_REPORT,
             &conflicts,
         )?;
-        remove_rejection_artifact(owner_graph_path, output_layout::CYCLES_REPORT)?;
-        let summary =
-            render_atomic_group_conflict_summary(&atomic_conflicts, &module_path, &owner_graph);
+        remove_rejection_artifact(dependency_graph_path, output_layout::CYCLES_REPORT)?;
+        let summary = render_atomic_group_conflict_summary(
+            &atomic_conflicts,
+            &module_path,
+            &dependency_graph,
+        );
         eprintln!("error: post-edit spec splits one or more atomic groups:\n{summary}");
         return Err(GateRejection {
             report: GateRejectionReport::AtomSplit { conflicts },
@@ -665,16 +689,16 @@ fn gate_post_edit_assignment_with_expected(
     }
 
     // Check 2 — module-quotient cycles.
-    let report = validate_assignment(&owner_graph, &assignment, &module_path);
+    let report = validate_assignment(&dependency_graph, &assignment, &module_path);
     if !report.cycles.is_empty() {
         let blocking_sccs = BlockingSccEntry::from_cycle_reports(&report.cycles);
         write_rejection_artifact(
-            owner_graph_path,
+            dependency_graph_path,
             output_layout::CYCLES_REPORT,
             &blocking_sccs,
         )?;
         remove_rejection_artifact(
-            owner_graph_path,
+            dependency_graph_path,
             output_layout::ATOMIC_GROUP_CONFLICTS_REPORT,
         )?;
         let summary = render_cycle_summary(&report.cycles);
@@ -687,9 +711,9 @@ fn gate_post_edit_assignment_with_expected(
     }
     // Pass: clear stale rejection artifacts from a previous rejected
     // edit/run so `gate list` reports the documented clean state.
-    remove_rejection_artifact(owner_graph_path, output_layout::CYCLES_REPORT)?;
+    remove_rejection_artifact(dependency_graph_path, output_layout::CYCLES_REPORT)?;
     remove_rejection_artifact(
-        owner_graph_path,
+        dependency_graph_path,
         output_layout::ATOMIC_GROUP_CONFLICTS_REPORT,
     )?;
     Ok(())
@@ -712,11 +736,11 @@ fn gate_post_edit_assignment_with_expected(
 fn detect_atomic_group_conflicts(
     atomic_groups: &[AtomicGroup],
     assignment: &ModuleAssignment,
-    report: &OwnerGraphReport,
+    report: &DependencyGraphReport,
 ) -> Vec<AtomicGroupConflict> {
     let mut conflicts = Vec::new();
     for atomic_group in atomic_groups {
-        let resolved: Vec<(OwnerId, ModuleId)> = atomic_group
+        let resolved: Vec<(SourceUnitId, ModuleId)> = atomic_group
             .members
             .iter()
             .map(|o| (*o, assignment.of(*o)))
@@ -741,7 +765,7 @@ fn detect_atomic_group_conflicts(
             .map(|(owner, module)| {
                 let binding_names: Vec<swc_atoms::Atom> = report
                     .nodes
-                    .get(owner.0)
+                    .get(source_unit.0)
                     .map(|n| {
                         n.declared_bindings
                             .iter()
@@ -750,7 +774,7 @@ fn detect_atomic_group_conflicts(
                     })
                     .unwrap_or_default();
                 ConflictingClaim {
-                    owner,
+                    source_unit,
                     binding_names,
                     module,
                 }

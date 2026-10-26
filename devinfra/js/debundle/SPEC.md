@@ -76,7 +76,7 @@ sites inside top-level control flow. A structural selector may identify it from
 any of those sites. Its declarations must share one output module; initializers,
 reads, and mutations retain their observable order. A bare redeclaration does
 not reset the binding. Other duplicate declaration combinations remain unsupported.
-Owner-based relational selectors inspect facts on each statement site; they do
+SourceUnit-based relational selectors inspect facts on each statement site; they do
 not union those facts across all redeclarations. Binding selectors canonicalize
 to the first declaration site, so relations composed with them cannot inspect
 later sites' facts. Control-flow statements containing `var` move intact; all
@@ -171,7 +171,7 @@ Every entity gets exactly one outcome, in one record format shared by `run`,
 | `ambiguous`                               | several assignments exist; at most 5 of its places are listed, with `truncated` when more exist, else with `differentiators` (below)                                                       | error    |
 | `conflict`                                | none of the places its selector matches agrees with where the entities its template references (`with`) resolve                                                                            | error    |
 | `too_broad`                               | its selector matches more than 100 places, and it takes no further part                                                                                                                    | error    |
-| `duplicate_claim`                         | resolved to a binding another entity already claims; `declaration` gives the statement declaring it (`owner`, its body index) and its keyword `kind` (`function`, `const`, `import`, ...)  | error    |
+| `duplicate_claim`                         | resolved to a binding another entity already claims; `declaration` gives the original body index (`body_index`) and its keyword `kind` (`function`, `const`, `import`, ...)                | error    |
 | `invalid`                                 | its selector does not parse, uses an unsupported construct, or its matches do not map to places                                                                                            | error    |
 | `undecided`                               | the solver stopped before deciding it                                                                                                                                                      | error    |
 
@@ -184,9 +184,9 @@ listed there, and the report says when no place has one.
 A contradiction affects only its group of interacting entities. Every member
 reports `unsatisfiable`, with `group` naming the group's first entity as a
 chunk-local identifier. An optional `witness` names distinct selector claims
-and their complete candidate-owner union, with fewer owners than claims.
-This proves an ownership conflict but need not be minimal. Each owner records
-its post-split ordinal, original source statement index, and matched bindings.
+and their complete candidate-source-unit union, with fewer source units than claims.
+This proves an ownership conflict but need not be minimal. Each witness row records
+the post-split `source_unit` ordinal, original `body_index`, and matched bindings.
 Witness members participate in that conflict; other group members remain
 blocked. Without a witness, the group remains infeasible and the diagnostic
 states that no smaller ownership witness was found within diagnostic limits.
@@ -224,7 +224,7 @@ structural conflicts stop coarsening and remain reported.
 
 Opt-in original-home rejoining starts only from a complete atomic/SCC candidate
 accepted by the shared realizability gate. It contracts whole candidate groups
-only when every owner in both groups has the same original module home; an
+only when every source unit in both groups has the same original module home; an
 existing mixed-home coarsened group is never split or joined to a pure group.
 Each proposed contraction passes the full shared realizability gate on its
 hypothetical complete assignment, and the final assignment passes that gate again.
@@ -243,9 +243,9 @@ authored selectors against their source chunks through the joint selector
 resolver. It reports local `intrinsic_alias` and module-neutral ambiguous
 source-match references in `selector_anchor_relations`, including named-member
 and anonymous-statement sources. Each relation carries a tagged `source`, the
-referenced member, and both owner-id sets. Anonymous sources use their authored
+referenced member, and both source-unit-ID sets. Anonymous sources use their authored
 `anonymous_statements[]` index; the resolver maps that selector to its stable
-owner before coalescing the candidate groups. A module-neutral unique reference
+source unit before coalescing the candidate groups. A module-neutral unique reference
 does not force co-location. The option is read-only and the complete candidate
 still passes the shared structural and realizability gates.
 
@@ -288,7 +288,7 @@ renames and suppressed chunks add no dependency edges.
 
 ## Hoisted function imports
 
-A direct eager read of a function declaration retains a `hoisted_use` owner
+A direct eager read of a function declaration retains a `hoisted_use` source unit
 edge. The function binding is initialized during ESM instantiation, so this
 edge does not constrain evaluation order or atomic co-location. It still
 participates in the imports graph: entering the function's module can change
@@ -298,7 +298,7 @@ that import even when reading the function itself is safe.
 ## Export-reentry diagnostics
 
 Materialization reports the selected export-reentry policy and its observed
-blockers in `export_reentry.json` beside the per-chunk owner graph. This is
+blockers in `export_reentry.json` beside the per-chunk dependency graph. This is
 diagnostic evidence only: it does not change the analyzer's proof or emitted
 JavaScript. `Full` reports include accepted and rejected chunks; rejection-only
 reports include it on rejection, while accepted dry runs remain silent. The
@@ -327,11 +327,11 @@ during chunk initialization.
 
 Ordinary eager reads and synchronous callback reads stay between the known
 preceding and following writes of the binding, including `var` initializers
-and later assignments, even when the eager reader's owner is pure.
+and later assignments, even when the eager reader's source unit is pure.
 
 Opaque calls holding a class or instance may invoke its constructor, field
 initializers, methods, and accessors. Their synchronous read closure stops at a
-definite `await` where retained callable coverage is complete; uncovered owners
+definite `await` where retained callable coverage is complete; uncovered source units
 and incomplete reachability retain whole-body effects and rebinds.
 Defining a pure, unpublished subclass with a direct, uniquely known ordinary
 class superclass reads that superclass for the eager dependency graph, but does
@@ -364,7 +364,7 @@ single-initializer TS enum object. Enum reads retain their eager dependencies;
 mutation, escape, holes, spreads, and unknown keys retain conservative
 reachability. Nested allocations must be inert; constructor
 property reads must resolve to own data or safe missing properties under A11.
-The initializer, wrapper, and class owners still contribute actual synchronous
+The initializer, wrapper, and class source units still contribute actual synchronous
 effects and ordering. Their execution alone does not expose deferred methods or
 make them available as host accessors. Later invocation or publication of the
 result restores those capabilities. Unsupported constructor paths retain
@@ -557,7 +557,7 @@ Under intrinsic integrity (A11), a sequence expression assigning a direct global
 `Error(...)` result to a local binding can retain the namespace contract through
 immediately following static property assignments to that binding. Values must
 be inert or declared local reads; `__proto__`, `stack`, and intervening
-expressions end the proof. Every matching write in that owner and callable must
+expressions end the proof. Every matching write in that source unit and callable must
 be proved. Calls, argument evaluation, and namespace publication through assigned
 values retain their ordinary checks. Shadowed or visibly replaced `Error` and
 dynamic scope remain conservative; see [design details](https://github.com/agentydragon/ducktape/blob/devel/devinfra/js/debundle/docs/design.md#conditions-on-the-input-chunk-assumptions-a1a11).

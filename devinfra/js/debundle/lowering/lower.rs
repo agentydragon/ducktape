@@ -82,8 +82,8 @@ pub(super) struct LowerChunkAst<'a> {
     pub(super) chunk_top_level_mark: swc_common::Mark,
 }
 
-/// Plan-side inputs: the per-chunk module plans + the binding /
-/// anonymous-ordinal assignment + the realizability factorization.
+/// Plan-side inputs: the per-chunk module plans and validated emission
+/// placement.
 /// Held in `LowerChunkInputs::plan`.
 pub(super) struct LowerChunkPlan<'a> {
     pub(super) module_plans: &'a [ModulePlan],

@@ -18,7 +18,7 @@
 //! - residual reads `dep_value`, `cross_value`, and calls
 //!   `lazy_reader()` at-init via the `console.log`.
 //!
-//! Owner-graph cross-module edges:
+//! SourceUnit-graph cross-module edges:
 //!
 //! - `mod_dependent → mod_dep` `EagerUse(dep_value)` (constraining)
 //! - `mod_dep → mod_dependent` `LazyUse(cross_value)` (non-constraining)

@@ -12,14 +12,14 @@ fn fixture() -> GraphFixture {
 #[test]
 fn inspect_source_graph_id_selects_only_its_statement_on_one_line() {
     let fixture = GraphFixture::new("const a = 1; const b = 2; console.log(a, b);", &[]);
-    let report = fixture.json(&["inspect-source", "--id", "owner:1", "--view", "raw"]);
+    let report = fixture.json(&["inspect-source", "--id", "unit:1", "--view", "raw"]);
     assert_eq!(
         report["files"][0]["statements"].as_array().unwrap().len(),
         1
     );
     let statement = &report["files"][0]["statements"][0];
     assert_eq!(statement["index"], 1);
-    assert_eq!(statement["owner_ids"], json!(["owner:1"]));
+    assert_eq!(statement["source_unit_ids"], json!(["unit:1"]));
     assert_eq!(statement["source"], "const b = 2;");
 }
 
@@ -32,10 +32,10 @@ fn inspect_source_maps_split_graph_ordinals_to_one_raw_body_item() {
             "members: [{selector: {binding: {name: a}}}, {selector: {binding: {name: b}}}]\n",
         )],
     );
-    let report = fixture.json(&["inspect-source", "--id", "owner:1", "--view", "raw"]);
+    let report = fixture.json(&["inspect-source", "--id", "unit:1", "--view", "raw"]);
     let statement = &report["files"][0]["statements"][0];
     assert_eq!(statement["index"], 0);
-    assert_eq!(statement["owner_ids"], json!(["owner:1"]));
+    assert_eq!(statement["source_unit_ids"], json!(["unit:1"]));
     assert_eq!(statement["source"], "const a = 1, b = 2;");
     let module = fixture.json(&["inspect-source", "--id", "foo", "--view", "raw"]);
     assert_eq!(
@@ -43,8 +43,8 @@ fn inspect_source_maps_split_graph_ordinals_to_one_raw_body_item() {
         1
     );
     assert_eq!(
-        module["files"][0]["statements"][0]["owner_ids"],
-        json!(["owner:0", "owner:1"])
+        module["files"][0]["statements"][0]["source_unit_ids"],
+        json!(["unit:0", "unit:1"])
     );
 }
 
@@ -73,7 +73,7 @@ fn inspect_source_bounds_long_lines_and_serialized_output() {
     let report = fixture.json(&[
         "inspect-source",
         "--id",
-        "owner:0",
+        "unit:0",
         "--view",
         "raw",
         "--max-line-bytes",
@@ -87,7 +87,7 @@ fn inspect_source_bounds_long_lines_and_serialized_output() {
     let out = fixture.command(&[
         "inspect-source",
         "--id",
-        "owner:0",
+        "unit:0",
         "--view",
         "raw",
         "--max-line-bytes",
@@ -114,7 +114,7 @@ fn inspect_source_bounds_long_lines_and_serialized_output() {
     let text = fixture.command(&[
         "inspect-source",
         "--id",
-        "owner:0",
+        "unit:0",
         "--max-line-bytes",
         "0",
         "--max-output-bytes",
@@ -152,7 +152,7 @@ fn inspect_source_direct_range_uses_raw_body_indices_and_default_item_limit() {
     let statement = &selected["files"][0]["statements"][0];
     assert_eq!(statement["index"], 39);
     assert_eq!(statement["source"], "const a39 = 39;");
-    assert_eq!(statement["owner_ids"], json!([]));
+    assert_eq!(statement["source_unit_ids"], json!([]));
 
     let all = fixture.json(&["inspect-source", "--source-file", path]);
     assert_eq!(all["files"][0]["statements"].as_array().unwrap().len(), 32);
@@ -163,10 +163,10 @@ fn inspect_source_direct_range_uses_raw_body_indices_and_default_item_limit() {
 fn inspect_source_rejects_stale_graph_source_and_old_command() {
     let fixture = GraphFixture::new("const a = 1;\n", &[]);
     fs::write(fixture.source_path(), "\nconst a = 1;\n").unwrap();
-    let out = fixture.command(&["inspect-source", "--id", "owner:0"]);
+    let out = fixture.command(&["inspect-source", "--id", "unit:0"]);
     assert!(!out.status.success());
-    assert!(String::from_utf8_lossy(&out.stderr).contains("regenerate the owner graph"));
-    let out = fixture.command(&["show-source", "owner:0"]);
+    assert!(String::from_utf8_lossy(&out.stderr).contains("regenerate the dependency graph"));
+    let out = fixture.command(&["show-source", "unit:0"]);
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("unrecognized subcommand"));
 }
@@ -177,7 +177,7 @@ fn atoms_summary_and_proposals_describe_the_real_graph() {
     let atoms = fixture.json(&["atoms"]);
     assert_eq!(atoms["atomic_groups"].as_array().unwrap().len(), 2);
     let summary = fixture.json(&["graph-summary"]);
-    assert_eq!(summary["owner_count"], 2);
+    assert_eq!(summary["source_unit_count"], 2);
     assert_eq!(summary["atomic_group_count"], 2);
     assert!(summary.get("proposal_count").is_none());
     assert!(summary.get("diagnostic_count").is_none());
@@ -188,18 +188,18 @@ fn atoms_summary_and_proposals_describe_the_real_graph() {
 #[test]
 fn describe_and_inspect_source_dispatch_bindings_and_module_ids() {
     let fixture = fixture();
-    for id in ["ZZ", "owner:0", "atomic:0"] {
+    for id in ["ZZ", "unit:0", "atomic:0"] {
         let report = fixture.json(&["describe", id]);
-        assert_eq!(report["owner_ids"], json!(["owner:0"]), "{id}");
+        assert_eq!(report["source_unit_ids"], json!(["unit:0"]), "{id}");
         assert_eq!(report["atomic_groups"][0]["id"], "atomic:0");
         if id == "atomic:0" {
             assert_eq!(report["query"]["kind"], "atomic_group");
         }
     }
-    let graph = fixture.owner_graph();
+    let graph = fixture.dependency_graph();
     let destination = &graph.nodes[0].destination;
     let report = fixture.json(&["describe", destination.as_str()]);
-    assert_eq!(report["owner_ids"], json!(["owner:0", "owner:1"]));
+    assert_eq!(report["source_unit_ids"], json!(["unit:0", "unit:1"]));
     let report = fixture.json(&["inspect-source", "--id", "ZZ"]);
     assert_eq!(
         report["files"][0]["statements"].as_array().unwrap().len(),
@@ -231,7 +231,7 @@ fn coverage_counts_anonymous_statement_claims() {
     assert_eq!(row["path"], "features/state");
     assert_eq!(row["status"], "complete_atomic_groups");
     assert_eq!(row["complete_atomic_group_ids"], json!(["atomic:0"]));
-    assert_eq!(row["missing_anonymous_owner_ids"], json!([]));
+    assert_eq!(row["missing_anonymous_source_unit_ids"], json!([]));
 }
 
 #[test]
@@ -253,9 +253,9 @@ fn source_match_claims_combine_with_members() {
     assert_eq!(row["requested_binding_ids"], json!(["alpha", "beta"]));
     assert_eq!(row["complete_atomic_group_ids"], json!(["atomic:0"]));
     assert_eq!(row["missing_binding_ids"], json!([]));
-    assert_eq!(row["missing_owner_ids"], json!([]));
+    assert_eq!(row["missing_source_unit_ids"], json!([]));
     let describe = fixture.json(&["describe", "features/state"]);
-    assert_eq!(describe["owner_ids"], json!(["owner:0", "owner:1"]));
+    assert_eq!(describe["source_unit_ids"], json!(["unit:0", "unit:1"]));
     assert_eq!(
         describe["bindings"]
             .as_array()
@@ -279,10 +279,10 @@ fn anonymous_only_module_path_dispatches_before_proposal_prefix() {
     for id in ["auto_partition/auto_partition_0187", "auto_partition_0187"] {
         let report = fixture.json(&["describe", id]);
         assert_eq!(report["query"]["kind"], "module");
-        assert_eq!(report["owner_ids"], json!(["owner:0"]));
+        assert_eq!(report["source_unit_ids"], json!(["unit:0"]));
         assert_eq!(
-            report["atomic_groups"][0]["anonymous_statement_owner_ids"],
-            json!(["owner:0"])
+            report["atomic_groups"][0]["anonymous_statement_source_unit_ids"],
+            json!(["unit:0"])
         );
     }
     let report = fixture.json(&[
@@ -310,12 +310,12 @@ fn duplicate_anonymous_statements_are_advisory_not_landable_proposals() {
     let report = fixture.json(&["modules", "propose", "--size-cap-lines", "10000"]);
     let proposals = report["proposals"].as_array().unwrap();
     // Real sequencing edges may group both statements into one proposal.
-    // Whichever assignment the heuristic chooses, neither ambiguous owner is
+    // Whichever assignment the heuristic chooses, neither ambiguous source_unit is
     // addressable by a unique selector, and no containing proposal is landable.
     let mut unaddressable: Vec<_> = proposals
         .iter()
         .flat_map(|p| {
-            p["unaddressable_anonymous_owner_ids"]
+            p["unaddressable_anonymous_source_unit_ids"]
                 .as_array()
                 .unwrap()
                 .iter()
@@ -323,7 +323,7 @@ fn duplicate_anonymous_statements_are_advisory_not_landable_proposals() {
         })
         .collect();
     unaddressable.sort_unstable();
-    assert_eq!(unaddressable, ["owner:0", "owner:1"]);
+    assert_eq!(unaddressable, ["unit:0", "unit:1"]);
     assert!(proposals.iter().all(|p| p["landable_today"] == false));
 }
 
@@ -476,14 +476,14 @@ fn coverage_matches_proposals_to_patch_sets_only_on_request() {
 fn describe_joins_graph_and_spec_context_and_runs_the_proposer_only_on_request() {
     let fixture = patched_fixture();
     let report = fixture.json(&["describe", "ZZ"]);
-    assert_eq!(report["owner_ids"], json!(["owner:0"]));
+    assert_eq!(report["source_unit_ids"], json!(["unit:0"]));
     assert_eq!(
         field_of_each(&report, "incoming_edges", "source"),
-        ["owner:1", "owner:3"]
+        ["unit:1", "unit:3"]
     );
     assert_eq!(
-        field_of_each(&report, "neighbor_owners", "id"),
-        ["owner:1", "owner:3"]
+        field_of_each(&report, "neighbor_source_units", "id"),
+        ["unit:1", "unit:3"]
     );
     assert_eq!(report["binding_homes"][0]["source_kind"], "binding_patch");
     assert_eq!(report["atomic_groups"][0]["id"], "atomic:0");
@@ -503,7 +503,7 @@ fn describe_limit_truncates_each_section_and_reports_its_total() {
     let report = patched_fixture().json(&["describe", "ZZ", "--limit", "1"]);
     assert_eq!(report["limits"]["limit"], 1);
     let sections = &report["limits"]["sections"];
-    for section in ["incoming_edges", "neighbor_owners"] {
+    for section in ["incoming_edges", "neighbor_source_units"] {
         assert_eq!(report[section].as_array().unwrap().len(), 1, "{section}");
         assert_eq!(
             sections[section],
@@ -512,7 +512,7 @@ fn describe_limit_truncates_each_section_and_reports_its_total() {
         );
     }
     assert_eq!(
-        sections["owner_ids"],
+        sections["source_unit_ids"],
         json!({"total": 1, "emitted": 1, "truncated": false})
     );
 }

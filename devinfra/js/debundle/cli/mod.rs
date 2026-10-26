@@ -27,14 +27,15 @@ use crate::modules_commands::ModulesNs;
 use crate::scc_cluster::{ClusterArgs, SccArgs, run_cluster, run_scc};
 use crate::spec_commands::SpecNs;
 
-/// Read and JSON-parse an `owner_graph.json` into an [`OwnerGraphReport`],
+/// Read and JSON-parse an `dependency_graph.json` into an [`DependencyGraphReport`],
 /// the load every `cli` verb that takes `--graph` shares.
-pub(crate) fn load_owner_graph_report(
+pub(crate) fn load_dependency_graph_report(
     path: &std::path::Path,
-) -> Result<analysis::OwnerGraphReport> {
+) -> Result<analysis::DependencyGraphReport> {
     let text =
         std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-    serde_json::from_str(&text).with_context(|| format!("parsing owner graph {}", path.display()))
+    serde_json::from_str(&text)
+        .with_context(|| format!("parsing dependency graph {}", path.display()))
 }
 
 #[derive(Debug, Parser)]
@@ -42,7 +43,7 @@ pub(crate) fn load_owner_graph_report(
     name = "debundle",
     version,
     about = "Debundle JavaScript bundles and inspect peelable module work.",
-    long_about = "Runs the debundle transform pipeline and exposes JSON peel-planning queries over generated owner graphs and spec modules."
+    long_about = "Runs the debundle transform pipeline and exposes JSON peel-planning queries over generated dependency graphs and spec modules."
 )]
 pub struct DebundleArgs {
     #[command(subcommand)]
@@ -53,37 +54,37 @@ pub struct DebundleArgs {
 enum DebundleCommand {
     /// Run the debundle transform pipeline from a flat or tree-shaped spec.
     ///
-    /// Parse + facts + owner_graph + atomic_groups + realizability gate +
+    /// Parse + facts + dependency_graph + atomic_groups + realizability gate +
     /// lower + emit. The gate is part of the pipeline contract: an
     /// unrealizable spec is rejected (there is no `run --no-verify` — fix
     /// the spec), and the rejection evidence (`cycles.json` /
     /// `atomic_group_conflicts.json`) is written under
-    /// `reports/tree/<chunk>/` next to `owner_graph.json`, where
+    /// `reports/tree/<chunk>/` next to `dependency_graph.json`, where
     /// `debundle gate list` / `gate describe` read it.
     Run(TransformArgs),
     /// Per-binding spec verbs (list, assign, unassign, rename, comment).
     Bindings(BindingsNs),
     /// Module-level spec verbs (list, merge, delete, propose, apply, comment).
     Modules(ModulesNs),
-    /// List atomic groups (owner-level SCCs of the constraining-edge
+    /// List atomic groups (source-unit-level SCCs of the constraining-edge
     /// graph; per docs/design.md § "Two classes of atom").
     Atoms(AtomicGroupsArgs),
     /// Report spec coverage against atomic groups: which groups are claimed,
     /// which fall through to residual.
     Coverage(PatchPlanArgs),
-    /// High-level graph counts (owners, edges, atomic groups,
+    /// High-level graph counts (source_units, edges, atomic groups,
     /// residual-eligible bindings, …).
     #[command(name = "graph-summary")]
     GraphSummary(GraphSummaryArgs),
     /// Dereference any identifier (binding, module path, proposal,
-    /// atomic group, owner, diagnostic) with full graph + spec context.
+    /// atomic group, source_unit, diagnostic) with full graph + spec context.
     Describe(DescribeArgs),
     /// Inspect source by graph ID, binding, or numbered top-level item.
     #[command(name = "inspect-source")]
     InspectSource(InspectSourceArgs),
     /// List SCCs in the module-quotient graph.
     Scc(SccArgs),
-    /// List the module-quotient neighbors of a binding's owner.
+    /// List the module-quotient neighbors of a binding's source_unit.
     Cluster(ClusterArgs),
     /// Spec-wide queries (e.g. `spec stats`).
     Spec(SpecNs),

@@ -331,7 +331,7 @@ fn outcome_kinds(outcomes: &[Value]) -> Vec<(String, Value)> {
 fn eliminated(chunk: &str) -> (String, Value) {
     (
         format!("Broad{chunk}"),
-        json!({"kind": "resolved", "owner": 0, "binding": format!("{chunk}Broad"),
+        json!({"kind": "resolved", "source_unit": 0, "binding": format!("{chunk}Broad"),
         "resolved_by": {"by": "elimination", "claimers": [
             {"logical_module": "routes", "entity": {"export": format!("Specific{chunk}")}},
         ]}}),

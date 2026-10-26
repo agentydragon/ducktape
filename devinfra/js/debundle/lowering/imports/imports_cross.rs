@@ -145,7 +145,7 @@ pub(crate) fn residual_entry_imports_for_moved_body(
         // — bail with the offending names so the bug stays
         // diagnosable.
         bail!(
-            "materialize_logical_modules: moved module {module_id} references residual entry binding(s) {} that are not exported by entry. This is an internal invariant violation in `auto_grown_residual_exports` — the export-growth pass should have surfaced these names before per-module emission. Report with the chunk's `owner_graph.json`.",
+            "materialize_logical_modules: moved module {module_id} references residual entry binding(s) {} that are not exported by entry. This is an internal invariant violation in `auto_grown_residual_exports` — the export-growth pass should have surfaced these names before per-module emission. Report with the chunk's `dependency_graph.json`.",
             missing_exports.into_iter().collect::<Vec<_>>().join(", "),
         );
     }

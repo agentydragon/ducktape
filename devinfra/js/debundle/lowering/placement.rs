@@ -26,7 +26,7 @@ impl<'a> EmissionPlacement<'a> {
         requested_statements: &BTreeMap<usize, usize>,
     ) -> Result<Self> {
         let factorization = validated.factorization();
-        let graph = factorization.analysis().owner_graph();
+        let graph = factorization.analysis().dependency_graph();
         let assignment = factorization.assignment();
         let residual = assignment.residual();
         let ordinals: Vec<usize> = graph

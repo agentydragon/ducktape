@@ -15,6 +15,6 @@ consumer policy rather than debundler core logic.
   scores, likely naming anchors, and warnings when a proposal is graph-valid
   but likely awkward for humans.
 - **Large function-internal seams.** A single giant handler can contain
-  independent semantic branches that owner-level splitting cannot see. Needs a
+  independent semantic branches that source-unit-level splitting cannot see. Needs a
   finer-grained model; until then planner output should say "blocked by
-  function-internal granularity" instead of proposing arbitrary owner moves.
+  function-internal granularity" instead of proposing arbitrary source-unit moves.

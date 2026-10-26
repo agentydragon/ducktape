@@ -56,7 +56,7 @@ elsewhere in the repo are not the live implementation.
 
 For existing-module layout work, start with `modules decompose --atomic`,
 review semantic destinations and the candidate's complete gate verdict, then
-apply the reviewed non-residual owner map with `modules refine --dry-run`
+apply the reviewed non-residual source-unit map with `modules refine --dry-run`
 and `modules refine`. Fresh residual claims use `modules propose` and
 `modules apply`. Workflow and batch contracts: <docs/cli.md>.
 

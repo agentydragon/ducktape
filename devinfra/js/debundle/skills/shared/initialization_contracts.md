@@ -6,13 +6,13 @@ changing the spec.
 
 ## Trace the blocker
 
-1. Refresh the graph and read the exact cycle/cut evidence. Record the owner,
+1. Refresh the graph and read the exact cycle/cut evidence. Record the source unit,
    source location, constraint kind, and called binding.
 2. Follow aliases and imports to the defining implementation. Separate eager
    effects, retained callback invocation, and reads before the first `await`.
    Include helpers, provider branches, property accessors, and publication paths.
 3. For export-reentry constraints, inspect `export_reentry.json` beside the
-   per-chunk owner graph. Verify the loader and dependency closure before
+   per-chunk dependency graph. Verify the loader and dependency closure before
    selecting a runtime contract.
 
 ## Choose the contract for the established fact

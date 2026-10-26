@@ -11,15 +11,15 @@
 //! pipeline, instruments the emitted module files with per-module
 //! marker prints (after the debundler runs, so the analyzed graph is
 //! untouched), and compares the observed completion order against
-//! `gate::simulated_evaluation_post_order` on the same owner graph
+//! `gate::simulated_evaluation_post_order` on the same dependency graph
 //! and assignment.
 
 use std::collections::BTreeMap;
 
 use analysis::facts::analyze_chunk;
-use analysis::graph::build_owner_graph_with;
+use analysis::graph::build_dependency_graph_with;
 use analysis::ids::ModuleId;
-use analysis::{AnalysisInputs, ModuleAssignment, OwnerGraph};
+use analysis::{AnalysisInputs, DependencyGraph, ModuleAssignment};
 use debundle_e2e_support::*;
 use gate::simulated_evaluation_post_order;
 
@@ -113,33 +113,33 @@ const SWEEP: &[SweepCase] = &[
     },
 ];
 
-/// Parse `source` and build the owner graph through the same
+/// Parse `source` and build the dependency graph through the same
 /// analysis path the pipeline uses (mirrors
 /// `realizability::tests::parse_and_build`).
-fn parse_and_build(source: &str) -> OwnerGraph {
+fn parse_and_build(source: &str) -> DependencyGraph {
     let module = raw_js_test_support::parse(source);
     let facts = analyze_chunk(&module, &AnalysisInputs::default(), None, |_| None).facts;
-    build_owner_graph_with(&facts, Default::default()).unwrap()
+    build_dependency_graph_with(&facts, Default::default()).unwrap()
 }
 
 /// Build the assignment matching the case's spec assignment:
 /// module index = position in the (alphabetical) module list,
 /// residual = the sentinel index after every named module.
-fn assignment_for(owner_graph: &OwnerGraph, case: &SweepCase) -> ModuleAssignment {
+fn assignment_for(dependency_graph: &DependencyGraph, case: &SweepCase) -> ModuleAssignment {
     let residual = ModuleId(case.modules.len());
-    let mut assignment = ModuleAssignment::new(owner_graph, residual);
+    let mut assignment = ModuleAssignment::new(dependency_graph, residual);
     for (index, (module_name, bindings)) in case.modules.iter().enumerate() {
         for binding in *bindings {
-            let owner = owner_graph
+            let source_unit = dependency_graph
                 .iter_nodes()
                 .find(|node| node.declared.iter().any(|id| id.0.as_ref() == *binding))
                 .unwrap_or_else(|| {
                     panic!(
-                        "{}: no owner declares binding {binding} for {module_name}",
+                        "{}: no source unit declares binding {binding} for {module_name}",
                         case.name
                     )
                 });
-            assignment.set(owner.id, ModuleId(index));
+            assignment.set(source_unit.id, ModuleId(index));
         }
     }
     assignment
@@ -155,11 +155,11 @@ fn simulator_post_order_matches_node_evaluation_order_across_fixture_family() {
             case.name,
         );
 
-        // Simulator side: predicted post-order on the same owner
+        // Simulator side: predicted post-order on the same source unit
         // graph + assignment the pipeline derives from the spec.
-        let owner_graph = parse_and_build(case.source);
-        let assignment = assignment_for(&owner_graph, case);
-        let post_order = simulated_evaluation_post_order(&owner_graph, &assignment);
+        let dependency_graph = parse_and_build(case.source);
+        let assignment = assignment_for(&dependency_graph, case);
+        let post_order = simulated_evaluation_post_order(&dependency_graph, &assignment);
         // The simulator's residual node is the ESM DFS root — the
         // emitted entry file (the sweep's residual statements are all
         // anonymous, so no catchall module file materializes).

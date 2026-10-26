@@ -31,7 +31,7 @@ fn applies_renamed_multi_declarator_with_cross_initializer_reference() {
             (!readable_names.is_empty()).then(|| {
                 json!({
                     "proposal_id": row["proposed_module_id"],
-                    "owner_ids": row["owner_ids"],
+                    "source_unit_ids": row["source_unit_ids"],
                     "module": "foo/delays",
                     "readable_names": readable_names,
                 })
@@ -83,7 +83,7 @@ fn apply_ignores_modules_owned_by_other_chunks() {
     );
     assert!(run.result.status.success(), "{}", run.result.stderr);
     let modules = run.root().join("modules");
-    let graph = run.report_root.join("main/owner_graph.json");
+    let graph = run.report_root.join("main/dependency_graph.json");
     let source = run.root().join("snapshot");
     let config = run.root().join("spec_config.yaml");
     let proposed = Command::new(debundler_path())
@@ -117,7 +117,7 @@ fn apply_ignores_modules_owned_by_other_chunks() {
         &batch,
         serde_json::to_vec(&json!([{
             "proposal_id": proposal["proposed_module_id"],
-            "owner_ids": proposal["owner_ids"],
+            "source_unit_ids": proposal["source_unit_ids"],
             "module": "chunks/main/foo",
             "readable_names": {"a": "foo"}
         }]))
@@ -158,7 +158,7 @@ fn apply_preserves_case_sensitive_chunk_root() {
     );
     assert!(run.result.status.success(), "{}", run.result.stderr);
     let modules = run.root().join("modules");
-    let graph = run.report_root.join("main/owner_graph.json");
+    let graph = run.report_root.join("main/dependency_graph.json");
     let config = run.root().join("spec_config.yaml");
     let proposed = Command::new(debundler_path())
         .args(["modules", "propose", "--graph"])
@@ -191,7 +191,7 @@ fn apply_preserves_case_sensitive_chunk_root() {
         &batch,
         serde_json::to_vec(&json!([{
             "proposal_id": proposal["proposed_module_id"],
-            "owner_ids": proposal["owner_ids"],
+            "source_unit_ids": proposal["source_unit_ids"],
             "module": "chunks/Main/services/foo",
             "readable_names": {"a": "foo"}
         }]))
@@ -254,7 +254,7 @@ fn provider_fixture() -> (GraphFixture, serde_json::Value) {
         .iter()
         .find(|row| {
             row["landable_today"] == true
-                && row["anonymous_statement_owner_ids"]
+                && row["anonymous_statement_source_unit_ids"]
                     .as_array()
                     .is_none_or(Vec::is_empty)
                 && row["binding_ids"]
@@ -264,7 +264,7 @@ fn provider_fixture() -> (GraphFixture, serde_json::Value) {
         .expect("a graph-ready residual provider proposal");
     let request = json!({
         "proposal_id": proposal["proposed_module_id"],
-        "owner_ids": proposal["owner_ids"],
+        "source_unit_ids": proposal["source_unit_ids"],
         "module": "services/provider",
         "readable_names": {"provider": "Provider"}
     });
@@ -332,7 +332,7 @@ fn synthesizes_multideclarator_template_with_trailing_spaces() {
         .expect("a proposal for the template-valued binding");
     let request = json!({
         "proposal_id": proposal["proposed_module_id"],
-        "owner_ids": proposal["owner_ids"],
+        "source_unit_ids": proposal["source_unit_ids"],
         "module": "foo/bar",
         "readable_names": {"a": "foo"}
     });
@@ -419,7 +419,7 @@ fn rejects_reviewed_selector_that_claims_a_different_binding() {
         .expect("a provider proposal");
     let request = json!({
         "proposal_id": proposal["proposed_module_id"],
-        "owner_ids": proposal["owner_ids"],
+        "source_unit_ids": proposal["source_unit_ids"],
         "module": "services/provider",
         "readable_names": {"provider": "Provider"},
         "selectors": {"provider": {"kind": "source_match", "selector": {
@@ -465,7 +465,7 @@ fn applies_reviewed_relational_selector() {
         .expect("an alias proposal");
     let request = json!({
         "proposal_id": proposal["proposed_module_id"],
-        "owner_ids": proposal["owner_ids"],
+        "source_unit_ids": proposal["source_unit_ids"],
         "module": "services/alias",
         "readable_names": {"alias": "Alias"},
         "selectors": {"alias": {"kind": "relational", "selector": {
@@ -494,7 +494,7 @@ fn applies_reviewed_relational_selector() {
 #[test]
 fn rejects_stale_selection_without_writing_any_claim() {
     let (fixture, mut request) = provider_fixture();
-    request["owner_ids"] = json!(["stale-owner"]);
+    request["source_unit_ids"] = json!(["stale-source_unit"]);
     let temp = tempfile::tempdir().unwrap();
     let batch = temp.path().join("apply.json");
     fs::write(&batch, serde_json::to_vec(&json!([request])).unwrap()).unwrap();
@@ -507,7 +507,7 @@ fn rejects_stale_selection_without_writing_any_claim() {
             "--size-cap-lines",
             "1",
         ],
-        &["owner IDs changed"],
+        &["source_unit IDs changed"],
     );
 }
 
@@ -563,7 +563,7 @@ fn applies_host_scoped_accessor_with_a_structural_selector() {
         .expect("an accessor proposal");
     let request = json!({
         "proposal_id": proposal["proposed_module_id"],
-        "owner_ids": proposal["owner_ids"],
+        "source_unit_ids": proposal["source_unit_ids"],
         "module": "services/accessor",
         "readable_names": {"accessor": "getProviderForHost"}
     });
@@ -625,7 +625,7 @@ fn explains_when_repeated_accessors_have_no_unique_context() {
         .expect("a repeated accessor proposal");
     let request = json!({
         "proposal_id": proposal["proposed_module_id"],
-        "owner_ids": proposal["owner_ids"],
+        "source_unit_ids": proposal["source_unit_ids"],
         "module": "services/accessor",
         "readable_names": {"d": "getValue"}
     });

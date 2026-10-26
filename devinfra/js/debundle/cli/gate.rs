@@ -11,7 +11,7 @@
 //!
 //! - `gate list` — one line per blocking SCC (id, modules count, cut size).
 //! - `gate describe <id>` — full picture: modules list, cut, and
-//!   **recomputed evidence**, sourced from `owner_graph.json` plus
+//!   **recomputed evidence**, sourced from `dependency_graph.json` plus
 //!   the SCC's module set. Same per-binding-pair render as the
 //!   per-rejection stderr summary.
 //! - `gate cut <id>` — just the cut edges (already in the trimmed
@@ -30,7 +30,7 @@ use std::path::{Path, PathBuf};
 
 use ::gate::{BlockingSccEntry, CycleEdge};
 use analysis::{
-    DepKind, EdgeRoleReport, ModuleKey, OwnerGraphReport, Purity, SequencedOwnerCause,
+    DepKind, DependencyGraphReport, EdgeRoleReport, ModuleKey, Purity, SequencedSourceUnitCause,
     StatementOrdinal,
 };
 use anyhow::{Context, Result};
@@ -59,7 +59,7 @@ enum GateCommand {
     /// Full picture for one blocking SCC: modules, cut, recomputed evidence.
     ///
     /// The per-edge evidence is recomputed on demand from
-    /// `owner_graph.json` and the SCC's module set — the same
+    /// `dependency_graph.json` and the SCC's module set — the same
     /// per-binding-pair blame view the realizability gate emits to
     /// stderr at rejection time.
     Describe(GateDescribeArgs),
@@ -76,13 +76,13 @@ enum GateCommand {
 /// keeps the two files in non-standard locations.
 #[derive(Debug, Clone, ClapArgs)]
 pub struct GateCommonArgs {
-    /// Path to `owner_graph.json` (debundler analysis output).
+    /// Path to `dependency_graph.json` (debundler analysis output).
     #[arg(
         long = "graph",
         env = "DEBUNDLE_GRAPH",
         required_unless_present = "cycles_path"
     )]
-    pub owner_graph_path: Option<PathBuf>,
+    pub dependency_graph_path: Option<PathBuf>,
 
     /// Override the default `cycles.json` location. Defaults to the
     /// sibling of `--graph`.
@@ -96,7 +96,7 @@ impl GateCommonArgs {
             return Ok(path.clone());
         }
         let graph = self
-            .owner_graph_path
+            .dependency_graph_path
             .as_deref()
             .context("--graph or --cycles is required")?;
         Ok(graph
@@ -119,7 +119,7 @@ pub struct GateListArgs {
 #[derive(Debug, ClapArgs)]
 pub struct GateDescribeArgs {
     /// Blocking-SCC id (zero-based index into `cycles.json`).
-    #[arg(requires = "owner_graph_path")]
+    #[arg(requires = "dependency_graph_path")]
     pub id: usize,
 
     #[command(flatten)]
@@ -167,7 +167,7 @@ pub struct GateDescribeReport {
     pub modules: Vec<ModulePath>,
     pub cut: Vec<CycleEdge>,
     /// Every constraining cross-module edge inside the SCC,
-    /// recomputed from `owner_graph.json` + `modules` (the wire
+    /// recomputed from `dependency_graph.json` + `modules` (the wire
     /// entry carries only `modules` + `cut`).
     pub evidence: Vec<CycleEdge>,
 }
@@ -245,9 +245,9 @@ fn find_entry(entries: &[BlockingSccEntry], id: usize) -> Result<&BlockingSccEnt
 fn run_describe(args: GateDescribeArgs) -> Result<()> {
     let entries = load_cycles(&args.common)?;
     let entry = find_entry(&entries, args.id)?;
-    let graph = crate::load_owner_graph_report(
+    let graph = crate::load_dependency_graph_report(
         args.common
-            .owner_graph_path
+            .dependency_graph_path
             .as_deref()
             .context("gate describe requires --graph")?,
     )?;
@@ -364,12 +364,12 @@ fn render_edge(edge: &CycleEdge, out: &mut String) {
         tm = edge.to,
         ord = edge.statement_ordinal.0,
     ));
-    if let Some(cause) = &edge.sequenced_owner
+    if let Some(cause) = &edge.sequenced_source_unit
         && let Purity::NotPure { reasons } = &cause.purity
     {
         for reason in reasons {
             let binding = if cause.binding_names.is_empty() {
-                cause.owner_id.clone()
+                cause.source_unit_id.clone()
             } else {
                 cause
                     .binding_names
@@ -413,7 +413,7 @@ fn edge_touches_binding(edge: &CycleEdge, binding: &str) -> bool {
         || edge.from_binding.as_ref().map(|a| a.as_ref()) == Some(binding)
 }
 
-/// Reconstruct diagnostic context for an SCC from `owner_graph.json`.
+/// Reconstruct diagnostic context for an SCC from `dependency_graph.json`.
 /// Unlike gate validation, this includes lazy edges as well as constraining
 /// edges. Preserve the report projection: omit intra-module/outside-SCC edges
 /// and promoted edges whose callee is in another module; dedup sequencing by
@@ -421,13 +421,16 @@ fn edge_touches_binding(edge: &CycleEdge, binding: &str) -> bool {
 /// gate provenance; do not replace it with the gate's constraining-edge set.
 ///
 /// Source labels prefer the first declared binding at the edge's statement
-/// ordinal, falling back to the source owner's first binding. Anonymous
+/// ordinal, falling back to the source source unit's first binding. Anonymous
 /// statements retain `None` and render as `<anon stmt #N>`.
 ///
-/// `cycles.json` uses canonical [`ModulePath`]s; resolve each owner's interned
+/// `cycles.json` uses canonical [`ModulePath`]s; resolve each source unit's interned
 /// destination [`ModuleKey`] through the report's module table. A missing table
-/// entry is malformed and errors; edges with absent owners are skipped.
-fn recompute_evidence(graph: &OwnerGraphReport, modules: &[ModulePath]) -> Result<Vec<CycleEdge>> {
+/// entry is malformed and errors; edges with absent source units are skipped.
+fn recompute_evidence(
+    graph: &DependencyGraphReport,
+    modules: &[ModulePath],
+) -> Result<Vec<CycleEdge>> {
     // Module table: interned key -> canonical path.
     let path_by_key: HashMap<&ModuleKey, &ModulePath> = graph
         .quotient
@@ -435,15 +438,15 @@ fn recompute_evidence(graph: &OwnerGraphReport, modules: &[ModulePath]) -> Resul
         .iter()
         .map(|entry| (&entry.key, &entry.path))
         .collect();
-    // Owner id -> report node and canonical destination. Reuse this index for
+    // SourceUnit id -> report node and canonical destination. Reuse this index for
     // source labels and sequencing causes instead of scanning nodes per edge.
-    let owners: HashMap<&str, _> = graph
+    let source_units: HashMap<&str, _> = graph
         .nodes
         .iter()
         .map(|n| {
             let path = path_by_key.get(&n.destination).copied().ok_or_else(|| {
                 anyhow::anyhow!(
-                    "owner {} has destination {} with no module-table entry",
+                    "source unit {} has destination {} with no module-table entry",
                     n.id,
                     n.destination
                 )
@@ -451,9 +454,9 @@ fn recompute_evidence(graph: &OwnerGraphReport, modules: &[ModulePath]) -> Resul
             Ok((n.id.as_str(), (n, path)))
         })
         .collect::<Result<_>>()?;
-    // Statement ordinal -> first declared binding of any owner
+    // Statement ordinal -> first declared binding of any source unit
     // declaring at that ordinal. The materializer indexes by ordinal
-    // (not owner) when labeling the source side; we match that here.
+    // (not source unit) when labeling the source side; we match that here.
     let from_binding_by_ordinal: HashMap<StatementOrdinal, Atom> = graph
         .nodes
         .iter()
@@ -469,10 +472,10 @@ fn recompute_evidence(graph: &OwnerGraphReport, modules: &[ModulePath]) -> Resul
     let mut out = Vec::new();
     let mut seen_sequenced_pairs: BTreeSet<(&ModulePath, &ModulePath)> = BTreeSet::new();
     for edge in &graph.edges {
-        let Some(&(source, from_mod)) = owners.get(edge.source.as_str()) else {
+        let Some(&(source, from_mod)) = source_units.get(edge.source.as_str()) else {
             continue;
         };
-        let Some(&(_, to_mod)) = owners.get(edge.target.as_str()) else {
+        let Some(&(_, to_mod)) = source_units.get(edge.target.as_str()) else {
             continue;
         };
         if from_mod == to_mod {
@@ -485,8 +488,8 @@ fn recompute_evidence(graph: &OwnerGraphReport, modules: &[ModulePath]) -> Resul
         // Preserve the diagnostic projection's lenient promotion policy:
         // cross-module callees are represented by the direct caller->callee
         // edge, not the manufactured caller->target edge.
-        if let Some(EdgeRoleReport::PromotedAtInit { callee_owner }) = &edge.role
-            && let Some(&(_, callee_mod)) = owners.get(callee_owner.as_str())
+        if let Some(EdgeRoleReport::PromotedAtInit { callee_source_unit }) = &edge.role
+            && let Some(&(_, callee_mod)) = source_units.get(callee_source_unit.as_str())
             && callee_mod != from_mod
         {
             continue;
@@ -510,10 +513,10 @@ fn recompute_evidence(graph: &OwnerGraphReport, modules: &[ModulePath]) -> Resul
             binding: edge.binding.clone(),
             from_binding,
             kind: edge.edge_kind,
-            sequenced_owner: (edge.edge_kind == DepKind::Sequenced
+            sequenced_source_unit: (edge.edge_kind == DepKind::Sequenced
                 && matches!(&source.purity, Purity::NotPure { .. }))
-            .then(|| SequencedOwnerCause {
-                owner_id: source.id.clone(),
+            .then(|| SequencedSourceUnitCause {
+                source_unit_id: source.id.clone(),
                 binding_names: source
                     .declared_bindings
                     .iter()

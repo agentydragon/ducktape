@@ -9,7 +9,7 @@ use petgraph::graphmap::DiGraphMap;
 /// The graph stores one adjacency edge for each `(from, to)` pair
 /// whose count is nonzero. Parallel edge reasons are represented by
 /// incrementing the count. This is intentionally generic and unaware
-/// of debundle owner/module semantics; callers layer evidence and
+/// of debundle source_unit/module semantics; callers layer evidence and
 /// domain-specific labels on top.
 #[derive(Debug, Clone)]
 pub struct CountedDiGraph<N> {

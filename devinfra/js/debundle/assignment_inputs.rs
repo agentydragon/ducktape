@@ -2,7 +2,7 @@
 //!
 //! [`AssignmentInputs`] is what's known about a chunk before propose
 //! runs — the spec-supplied logical modules, the binding catalogue,
-//! the owner graph derived from the chunk facts, and the small
+//! the dependency graph derived from the chunk facts, and the small
 //! lookup caches that depend only on inputs. The propose algorithm
 //! consumes an `AssignmentInputs` plus a default destination to produce a
 //! [`crate::AssignmentAnalysis`] — the assignment-and-derived state
@@ -13,14 +13,14 @@ use std::collections::{BTreeSet, HashMap};
 use swc_atoms::Atom;
 use swc_ecma_ast::Id;
 
-use analysis::reports::owner_key;
-use analysis::{BindingKind, ModuleId, OwnerGraph, PlannedModule};
+use analysis::reports::source_unit_key;
+use analysis::{BindingKind, DependencyGraph, ModuleId, PlannedModule};
 
 /// Per-chunk inputs + IR + input-derived caches.
 ///
 /// Constructed once per chunk and held by reference (typically via
 /// `Arc<AssignmentInputs>`) by every [`crate::AssignmentAnalysis`]
-/// candidate that explores an assignment over the same owner graph.
+/// candidate that explores an assignment over the same dependency graph.
 /// All fields are private: the lookup tables are precomputed from the
 /// inputs at [`AssignmentInputs::build`] time, so a mutable input field
 /// would silently stale the caches. Read access goes through the
@@ -30,8 +30,8 @@ pub struct AssignmentInputs {
     chunk_id: String,
     bindings: HashMap<Id, BindingKind>,
     logical_modules: Vec<PlannedModule>,
-    owner_graph: OwnerGraph,
-    owner_report_ids_by_binding: HashMap<Id, Vec<String>>,
+    dependency_graph: DependencyGraph,
+    source_unit_report_ids_by_binding: HashMap<Id, Vec<String>>,
     binding_lookup_by_id: HashMap<Id, BindingLookupInfo>,
 }
 
@@ -45,7 +45,7 @@ struct BindingLookupInfo {
 }
 
 impl AssignmentInputs {
-    /// Build an `AssignmentInputs` reusing a caller-supplied owner graph.
+    /// Build an `AssignmentInputs` reusing a caller-supplied dependency graph.
     /// `bindings` should already have every `Owned` binding the spec
     /// assigned and every `Imported` binding the spec re-exports.
     ///
@@ -54,20 +54,21 @@ impl AssignmentInputs {
     /// not retained beyond construction.
     pub fn build(
         chunk_id: String,
-        owner_graph: OwnerGraph,
+        dependency_graph: DependencyGraph,
         bindings: HashMap<Id, BindingKind>,
         logical_modules: Vec<PlannedModule>,
         chunk_renames: &HashMap<Id, Atom>,
     ) -> Self {
-        let owner_report_ids_by_binding = build_owner_report_ids_by_binding(&owner_graph);
+        let source_unit_report_ids_by_binding =
+            build_source_unit_report_ids_by_binding(&dependency_graph);
         let binding_lookup_by_id =
             build_binding_lookup_by_id(&bindings, chunk_renames, &logical_modules);
         Self {
             chunk_id,
             bindings,
             logical_modules,
-            owner_graph,
-            owner_report_ids_by_binding,
+            dependency_graph,
+            source_unit_report_ids_by_binding,
             binding_lookup_by_id,
         }
     }
@@ -88,8 +89,8 @@ impl AssignmentInputs {
         &self.logical_modules
     }
 
-    pub fn owner_graph(&self) -> &OwnerGraph {
-        &self.owner_graph
+    pub fn dependency_graph(&self) -> &DependencyGraph {
+        &self.dependency_graph
     }
 
     /// Pre-computed export name for a chunk binding, falling back
@@ -103,7 +104,7 @@ impl AssignmentInputs {
     }
 
     /// Canonical module identity for `id` — the [`spec::ModulePath`]
-    /// every wire artifact (`owner_graph.json` module table,
+    /// every wire artifact (`dependency_graph.json` module table,
     /// `cycles.json`, `atomic_group_conflicts.json`) and diagnostic
     /// uses to denote this module. Parses the in-process
     /// `PlannedModule.id` (`"<chunk_id>::<path>"`) down to the clean
@@ -139,12 +140,12 @@ impl AssignmentInputs {
         self.logical_modules.get(id.0)
     }
 
-    pub fn owner_report_ids_for_bindings<'a>(
+    pub fn source_unit_report_ids_for_bindings<'a>(
         &self,
         ids: impl IntoIterator<Item = &'a Id>,
     ) -> Vec<String> {
         ids.into_iter()
-            .filter_map(|id| self.owner_report_ids_by_binding.get(id))
+            .filter_map(|id| self.source_unit_report_ids_by_binding.get(id))
             .flat_map(|ids| ids.iter().cloned())
             .collect::<BTreeSet<_>>()
             .into_iter()
@@ -152,16 +153,18 @@ impl AssignmentInputs {
     }
 }
 
-/// Reverse-index `owner_graph.nodes[].declared` so graph and planner reports
-/// can resolve a binding `Id` → owners-that-declare-it in a single hash
-/// lookup. Most bindings come from exactly one owner;
+/// Reverse-index `dependency_graph.nodes[].declared` so graph and planner reports
+/// can resolve a binding `Id` → source units that declare it in a single hash
+/// lookup. Most bindings come from exactly one source unit;
 /// the `Vec<String>` shape accommodates the rare cases where the same
-/// hygiene-identity ends up on multiple owners (anonymous statements
-/// that share a synthetic owner).
-fn build_owner_report_ids_by_binding(owner_graph: &OwnerGraph) -> HashMap<Id, Vec<String>> {
+/// hygiene-identity ends up on multiple source units (anonymous statements
+/// that share a synthetic source unit).
+fn build_source_unit_report_ids_by_binding(
+    dependency_graph: &DependencyGraph,
+) -> HashMap<Id, Vec<String>> {
     let mut by_binding: HashMap<Id, BTreeSet<String>> = HashMap::new();
-    for node in owner_graph.iter_nodes() {
-        let report_id = owner_key(node.id);
+    for node in dependency_graph.iter_nodes() {
+        let report_id = source_unit_key(node.id);
         for binding in &node.declared {
             by_binding
                 .entry(binding.clone())

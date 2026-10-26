@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
 
-use analysis::{OwnerId, StatementOrdinal};
+use analysis::{SourceUnitId, StatementOrdinal};
 use selector_constraint_backend::{
     BackendAssignment, BackendAssignmentCoverage, BackendAssignmentError, BackendSolveResult,
     BackendSolveStatus, BackendVariableAssignment, CompiledSelectorProblem, ConstraintValue,
@@ -83,7 +83,7 @@ fn singleton_no_constraint_backend_result(
 
     let mut projected_variables = BTreeSet::new();
     for projection in &problem.target_projections {
-        projected_variables.insert(projection.owner_variable);
+        projected_variables.insert(projection.source_unit_variable);
         if let Some(TargetBindingProjection::Variable(variable)) =
             projection.binding_projection.as_ref()
         {
@@ -91,7 +91,7 @@ fn singleton_no_constraint_backend_result(
         }
     }
     // The synthetic backend assignment is intentionally partial. The decoder
-    // consumes only target owner variables plus optional target binding variables.
+    // consumes only target source unit variables plus optional target binding variables.
     let values = projected_variables
         .into_iter()
         .map(|variable| {
@@ -127,8 +127,8 @@ pub enum SelectorBackendSolveError<E> {
         expected: &'static str,
         actual: ConstraintValue,
     },
-    MissingOwnerFact {
-        owner: OwnerId,
+    MissingSourceUnitFact {
+        source_unit: SourceUnitId,
     },
     EmptySatisfyingAssignments {
         status: BackendSolveStatus,
@@ -169,10 +169,10 @@ impl<E: fmt::Display> fmt::Display for SelectorBackendSolveError<E> {
                 f,
                 "selector backend assignment gave variable {variable:?} a {actual:?} value, expected {expected}"
             ),
-            Self::MissingOwnerFact { owner } => {
+            Self::MissingSourceUnitFact { source_unit } => {
                 write!(
                     f,
-                    "selector backend assignment selected owner {owner:?} without an owner fact"
+                    "selector backend assignment selected source unit {source_unit:?} without a source unit fact"
                 )
             }
             Self::EmptySatisfyingAssignments { status } => {
@@ -210,7 +210,7 @@ where
             Self::MissingTargetProjection { .. }
             | Self::MissingAssignmentVariable { .. }
             | Self::DecodedAssignmentDomainMismatch { .. }
-            | Self::MissingOwnerFact { .. }
+            | Self::MissingSourceUnitFact { .. }
             | Self::EmptySatisfyingAssignments { .. }
             | Self::UnsatReturnedAssignments
             | Self::SampleCoverage { .. } => None,
@@ -278,7 +278,9 @@ fn decode_unknown_result<E>(
         .unwrap_or_else(|| "the selector backend stopped before deciding".to_string());
     let mut undecided = BTreeMap::new();
     for projection in &problem.target_projections {
-        let fixed = result.fixed_variables.contains(&projection.owner_variable)
+        let fixed = result
+            .fixed_variables
+            .contains(&projection.source_unit_variable)
             && match &projection.binding_projection {
                 Some(TargetBindingProjection::Variable(binding)) => {
                     result.fixed_variables.contains(binding)
@@ -333,14 +335,14 @@ fn decode_satisfying_assignments<E>(
             let projection = projections
                 .get(&target.id)
                 .ok_or(SelectorBackendSolveError::MissingTargetProjection { target: target.id })?;
-            let owner = assigned_owner(&decoded, projection.owner_variable)?;
+            let source_unit = assigned_source_unit(&decoded, projection.source_unit_variable)?;
             let binding = match &projection.binding_projection {
                 Some(TargetBindingProjection::Const(binding)) => Some(binding.clone()),
                 Some(TargetBindingProjection::Variable(binding_variable)) => {
                     Some(assigned_string(&decoded, *binding_variable)?)
                 }
                 None => facts
-                    .single_binding_for_owner(owner)
+                    .single_binding_for_source_unit(source_unit)
                     .map(ToString::to_string),
             };
             if matches!(
@@ -351,12 +353,12 @@ fn decode_satisfying_assignments<E>(
                 continue;
             }
             let statement_ordinal = facts
-                .statement_ordinal_by_owner
-                .get(&owner)
+                .statement_ordinal_by_unit
+                .get(&source_unit)
                 .copied()
-                .ok_or(SelectorBackendSolveError::MissingOwnerFact { owner })?;
+                .ok_or(SelectorBackendSolveError::MissingSourceUnitFact { source_unit })?;
             let claim = ResolvedClaim {
-                owner,
+                source_unit,
                 statement_ordinal,
                 binding,
             };
@@ -385,15 +387,15 @@ fn decode_satisfying_assignments<E>(
     })
 }
 
-fn assigned_owner<E>(
+fn assigned_source_unit<E>(
     assignment: &BTreeMap<ConstraintVariableId, ConstraintValue>,
     variable: ConstraintVariableId,
-) -> Result<OwnerId, SelectorBackendSolveError<E>> {
+) -> Result<SourceUnitId, SelectorBackendSolveError<E>> {
     match assignment.get(&variable) {
-        Some(ConstraintValue::Owner(owner)) => Ok(*owner),
+        Some(ConstraintValue::SourceUnit(source_unit)) => Ok(*source_unit),
         Some(value) => Err(SelectorBackendSolveError::DecodedAssignmentDomainMismatch {
             variable,
-            expected: "owner",
+            expected: "source unit",
             actual: value.clone(),
         }),
         None => Err(SelectorBackendSolveError::MissingAssignmentVariable { variable }),
@@ -447,8 +449,8 @@ fn unsatisfiable_result(program: &SelectorProgram) -> SolverResult {
 
 #[derive(Debug, Default)]
 struct MaterializationFacts {
-    statement_ordinal_by_owner: BTreeMap<OwnerId, StatementOrdinal>,
-    bindings_by_owner: BTreeMap<OwnerId, BTreeSet<String>>,
+    statement_ordinal_by_unit: BTreeMap<SourceUnitId, StatementOrdinal>,
+    bindings_by_unit: BTreeMap<SourceUnitId, BTreeSet<String>>,
 }
 
 impl MaterializationFacts {
@@ -456,19 +458,23 @@ impl MaterializationFacts {
         let mut index = Self::default();
         for fact in &facts.facts {
             match fact {
-                SelectorFact::Owner {
-                    owner,
+                SelectorFact::SourceUnit {
+                    source_unit,
                     statement_ordinal,
                     ..
                 } => {
                     index
-                        .statement_ordinal_by_owner
-                        .insert(*owner, *statement_ordinal);
+                        .statement_ordinal_by_unit
+                        .insert(*source_unit, *statement_ordinal);
                 }
-                SelectorFact::DeclaredBinding { owner, binding, .. } => {
+                SelectorFact::DeclaredBinding {
+                    source_unit,
+                    binding,
+                    ..
+                } => {
                     index
-                        .bindings_by_owner
-                        .entry(*owner)
+                        .bindings_by_unit
+                        .entry(*source_unit)
                         .or_default()
                         .insert(binding.clone());
                 }
@@ -478,8 +484,8 @@ impl MaterializationFacts {
         index
     }
 
-    fn single_binding_for_owner(&self, owner: OwnerId) -> Option<&str> {
-        let mut bindings = self.bindings_by_owner.get(&owner)?.iter();
+    fn single_binding_for_source_unit(&self, source_unit: SourceUnitId) -> Option<&str> {
+        let mut bindings = self.bindings_by_unit.get(&source_unit)?.iter();
         let binding = bindings.next()?;
         bindings.next().is_none().then_some(binding.as_str())
     }
@@ -489,13 +495,13 @@ impl MaterializationFacts {
 mod tests {
     use std::convert::Infallible;
 
-    use analysis::{OwnerId, StatementOrdinal};
+    use analysis::{SourceUnitId, StatementOrdinal};
     use selector_constraint_backend::ConstraintValue;
     use selector_constraint_backend::{
         BackendAssignment, BackendAssignmentCoverage, BackendSolveResult, BackendSolveStatus,
         BackendValueId, BackendVariableAssignment,
     };
-    use selector_ir::{OwnerTerm, SelectorAtom, StringTerm, VariableDomain};
+    use selector_ir::{SelectorAtom, SourceUnitTerm, StringTerm, VariableDomain};
 
     use super::*;
 
@@ -559,42 +565,43 @@ mod tests {
             .expect("test backend value must be in dictionary")
     }
 
-    fn owner(value: usize) -> ConstraintValue {
-        ConstraintValue::Owner(OwnerId(value))
+    fn source_unit(value: usize) -> ConstraintValue {
+        ConstraintValue::SourceUnit(SourceUnitId(value))
     }
 
     fn string(value: &str) -> ConstraintValue {
         ConstraintValue::String(value.to_string())
     }
 
-    fn owner_fact(owner: OwnerId, ordinal: usize, kind: &str) -> SelectorFact {
-        SelectorFact::Owner {
-            owner,
+    fn source_unit_fact(source_unit: SourceUnitId, ordinal: usize, kind: &str) -> SelectorFact {
+        SelectorFact::SourceUnit {
+            source_unit,
             statement_ordinal: StatementOrdinal(ordinal),
             statement_kind: kind.to_string(),
         }
     }
 
-    fn binding_fact(owner: OwnerId, binding: &str) -> SelectorFact {
+    fn binding_fact(source_unit: SourceUnitId, binding: &str) -> SelectorFact {
         SelectorFact::DeclaredBinding {
-            owner,
+            source_unit,
             binding: binding.to_string(),
         }
     }
 
     fn binding_program() -> (SelectorProgram, SelectorTargetId) {
         let mut program = SelectorProgram::default();
-        let owner = program.add_variable(VariableDomain::Owner, Some("owner".to_string()));
+        let source_unit =
+            program.add_variable(VariableDomain::SourceUnit, Some("source unit".to_string()));
         let binding = program.add_variable(VariableDomain::String, Some("binding".to_string()));
         let target = program.add_target(
-            owner,
+            source_unit,
             "module",
             ClaimKind::Binding {
                 export_name: Some("Readable".to_string()),
             },
         );
-        program.add_atom(SelectorAtom::OwnerDeclaresBinding {
-            owner: OwnerTerm::Var { id: owner },
+        program.add_atom(SelectorAtom::SourceUnitDeclaresBinding {
+            source_unit: SourceUnitTerm::Var { id: source_unit },
             binding: StringTerm::Var { id: binding },
         });
         (program, target)
@@ -602,16 +609,17 @@ mod tests {
 
     fn const_binding_program() -> (SelectorProgram, SelectorTargetId) {
         let mut program = SelectorProgram::default();
-        let owner = program.add_variable(VariableDomain::Owner, Some("owner".to_string()));
+        let source_unit =
+            program.add_variable(VariableDomain::SourceUnit, Some("source unit".to_string()));
         let target = program.add_target(
-            owner,
+            source_unit,
             "module",
             ClaimKind::Binding {
                 export_name: Some("Readable".to_string()),
             },
         );
-        program.add_atom(SelectorAtom::OwnerDeclaresBinding {
-            owner: OwnerTerm::Var { id: owner },
+        program.add_atom(SelectorAtom::SourceUnitDeclaresBinding {
+            source_unit: SourceUnitTerm::Var { id: source_unit },
             binding: StringTerm::Const {
                 value: "minA".to_string(),
             },
@@ -621,25 +629,27 @@ mod tests {
 
     fn duplicate_fixed_target_program() -> (SelectorProgram, SelectorTargetId, SelectorTargetId) {
         let mut program = SelectorProgram::default();
-        let first_owner = program.add_variable(VariableDomain::Owner, Some("first".to_string()));
-        let second_owner = program.add_variable(VariableDomain::Owner, Some("second".to_string()));
+        let first_source_unit =
+            program.add_variable(VariableDomain::SourceUnit, Some("first".to_string()));
+        let second_source_unit =
+            program.add_variable(VariableDomain::SourceUnit, Some("second".to_string()));
         let first_target = program.add_target(
-            first_owner,
+            first_source_unit,
             "module",
             ClaimKind::Binding {
                 export_name: Some("First".to_string()),
             },
         );
         let second_target = program.add_target(
-            second_owner,
+            second_source_unit,
             "module",
             ClaimKind::Binding {
                 export_name: Some("Second".to_string()),
             },
         );
-        for owner in [first_owner, second_owner] {
-            program.add_atom(SelectorAtom::OwnerDeclaresBinding {
-                owner: OwnerTerm::Var { id: owner },
+        for source_unit in [first_source_unit, second_source_unit] {
+            program.add_atom(SelectorAtom::SourceUnitDeclaresBinding {
+                source_unit: SourceUnitTerm::Var { id: source_unit },
                 binding: StringTerm::Const {
                     value: "minA".to_string(),
                 },
@@ -651,25 +661,25 @@ mod tests {
 
     fn facts() -> SelectorFactStore {
         let mut facts = SelectorFactStore::default();
-        facts.push(owner_fact(OwnerId(1), 10, "function"));
-        facts.push(binding_fact(OwnerId(1), "minA"));
-        facts.push(owner_fact(OwnerId(2), 20, "function"));
-        facts.push(binding_fact(OwnerId(2), "minB"));
+        facts.push(source_unit_fact(SourceUnitId(1), 10, "function"));
+        facts.push(binding_fact(SourceUnitId(1), "minA"));
+        facts.push(source_unit_fact(SourceUnitId(2), 20, "function"));
+        facts.push(binding_fact(SourceUnitId(2), "minB"));
         facts
     }
 
     fn single_binding_facts() -> SelectorFactStore {
         let mut facts = SelectorFactStore::default();
-        facts.push(owner_fact(OwnerId(1), 10, "function"));
-        facts.push(binding_fact(OwnerId(1), "minA"));
+        facts.push(source_unit_fact(SourceUnitId(1), 10, "function"));
+        facts.push(binding_fact(SourceUnitId(1), "minA"));
         facts
     }
 
-    /// The outcome of a target resolved to the owner declaring `minA`.
+    /// The outcome of a target resolved to the source unit declaring `minA`.
     fn min_a_outcome() -> ClaimOutcome {
         ClaimOutcome::Unique {
             claim: ResolvedClaim {
-                owner: OwnerId(1),
+                source_unit: SourceUnitId(1),
                 statement_ordinal: StatementOrdinal(10),
                 binding: Some("minA".to_string()),
             },
@@ -683,7 +693,7 @@ mod tests {
             status: BackendSolveStatus::Satisfiable,
             coverage: BackendAssignmentCoverage::TargetSupportComplete,
             assignments: vec![vec![
-                (ConstraintVariableId(0), owner(1)),
+                (ConstraintVariableId(0), source_unit(1)),
                 (ConstraintVariableId(1), string("minA")),
             ]],
         };
@@ -701,11 +711,11 @@ mod tests {
             coverage: BackendAssignmentCoverage::TargetSupportComplete,
             assignments: vec![
                 vec![
-                    (ConstraintVariableId(0), owner(1)),
+                    (ConstraintVariableId(0), source_unit(1)),
                     (ConstraintVariableId(1), string("minA")),
                 ],
                 vec![
-                    (ConstraintVariableId(0), owner(2)),
+                    (ConstraintVariableId(0), source_unit(2)),
                     (ConstraintVariableId(1), string("minB")),
                 ],
             ],
@@ -719,8 +729,16 @@ mod tests {
                 candidates_truncated: false,
             }) => {
                 assert_eq!(candidates.len(), 2);
-                assert!(candidates.iter().any(|claim| claim.owner == OwnerId(1)));
-                assert!(candidates.iter().any(|claim| claim.owner == OwnerId(2)));
+                assert!(
+                    candidates
+                        .iter()
+                        .any(|claim| claim.source_unit == SourceUnitId(1))
+                );
+                assert!(
+                    candidates
+                        .iter()
+                        .any(|claim| claim.source_unit == SourceUnitId(2))
+                );
             }
             other => panic!("expected ambiguous backend result, got {other:?}"),
         }
@@ -738,20 +756,21 @@ mod tests {
         }
     }
 
-    /// Two targets, each over a variable owner and binding, so the program
+    /// Two targets, each over a variable source unit and binding, so the program
     /// reaches the backend.
     #[test]
     fn backend_unsatisfiable_status_leaves_every_target_unsatisfiable() {
         let mut program = SelectorProgram::default();
         let targets = ["First", "Second"].map(|export_name| {
-            let owner = program.add_variable(VariableDomain::Owner, Some(export_name.to_string()));
+            let source_unit =
+                program.add_variable(VariableDomain::SourceUnit, Some(export_name.to_string()));
             let binding = program.add_variable(VariableDomain::String, None);
-            program.add_atom(SelectorAtom::OwnerDeclaresBinding {
-                owner: OwnerTerm::Var { id: owner },
+            program.add_atom(SelectorAtom::SourceUnitDeclaresBinding {
+                source_unit: SourceUnitTerm::Var { id: source_unit },
                 binding: StringTerm::Var { id: binding },
             });
             program.add_target(
-                owner,
+                source_unit,
                 "module",
                 ClaimKind::Binding {
                     export_name: Some(export_name.to_string()),
@@ -775,7 +794,7 @@ mod tests {
         let backend = SelectingBackend {
             status: BackendSolveStatus::Unsatisfiable,
             coverage: BackendAssignmentCoverage::Sample,
-            assignments: vec![vec![(ConstraintVariableId(0), owner(1))]],
+            assignments: vec![vec![(ConstraintVariableId(0), source_unit(1))]],
         };
 
         assert!(matches!(
@@ -791,7 +810,7 @@ mod tests {
             status: BackendSolveStatus::Satisfiable,
             coverage: BackendAssignmentCoverage::Sample,
             assignments: vec![vec![
-                (ConstraintVariableId(0), owner(1)),
+                (ConstraintVariableId(0), source_unit(1)),
                 (ConstraintVariableId(1), string("minA")),
             ]],
         };
@@ -839,16 +858,16 @@ mod tests {
         bindings
             .iter()
             .map(|binding| {
-                let owner =
-                    program.add_variable(VariableDomain::Owner, Some(format!("@{binding}")));
-                program.add_atom(SelectorAtom::OwnerDeclaresBinding {
-                    owner: OwnerTerm::Var { id: owner },
+                let source_unit =
+                    program.add_variable(VariableDomain::SourceUnit, Some(format!("@{binding}")));
+                program.add_atom(SelectorAtom::SourceUnitDeclaresBinding {
+                    source_unit: SourceUnitTerm::Var { id: source_unit },
                     binding: StringTerm::Const {
                         value: binding.to_string(),
                     },
                 });
                 program.add_target(
-                    owner,
+                    source_unit,
                     "module",
                     ClaimKind::Binding {
                         export_name: Some(binding.to_string()),
@@ -869,25 +888,29 @@ mod tests {
             unreachable!()
         };
         let mut facts = SelectorFactStore::default();
-        for (owner, binding) in [(1, "minA"), (2, "minB")] {
-            facts.push(owner_fact(OwnerId(owner), owner * 10, "function"));
-            facts.push(binding_fact(OwnerId(owner), binding));
+        for (source_unit, binding) in [(1, "minA"), (2, "minB")] {
+            facts.push(source_unit_fact(
+                SourceUnitId(source_unit),
+                source_unit * 10,
+                "function",
+            ));
+            facts.push(binding_fact(SourceUnitId(source_unit), binding));
         }
         let problem = compile_selector_problem(&program, &facts).unwrap();
-        let owner_variable = |target| {
+        let source_unit_variable = |target| {
             problem
                 .target_projections
                 .iter()
                 .find(|projection| projection.target == target)
                 .unwrap()
-                .owner_variable
+                .source_unit_variable
         };
         let row = BackendAssignment {
             values: [(fixed, 1), (unproven, 2)]
                 .into_iter()
                 .map(|(target, value)| BackendVariableAssignment {
-                    variable: owner_variable(target),
-                    value: backend_value_for(&problem, &owner(value)),
+                    variable: source_unit_variable(target),
+                    value: backend_value_for(&problem, &source_unit(value)),
                 })
                 .collect(),
         };
@@ -903,7 +926,7 @@ mod tests {
                 // Both rows agree on `unproven`, but nothing proved it fixed.
                 assignments: vec![row.clone(), row],
                 diagnostic: Some(reason.to_string()),
-                fixed_variables: BTreeSet::from([owner_variable(fixed)]),
+                fixed_variables: BTreeSet::from([source_unit_variable(fixed)]),
             },
         )
         .unwrap();

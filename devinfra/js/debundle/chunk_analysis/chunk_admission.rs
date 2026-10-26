@@ -71,7 +71,7 @@ struct AdmissionViolation {
     check: AdmissionCheck,
     /// Source-order statement ordinal in the post-comma-split view
     /// (`facts::top_level_item_views`), aligned with the A2 bail and
-    /// the owner-graph reports.
+    /// the dependency graph reports.
     ordinal: usize,
     description: String,
 }
@@ -537,7 +537,7 @@ mod tests {
     }
 
     /// Ordinals use the post-comma-split top-level view, matching the
-    /// A2 bail and the owner-graph reports.
+    /// A2 bail and the dependency graph reports.
     #[test]
     fn ordinals_align_with_comma_split_view() {
         assert_eq!(

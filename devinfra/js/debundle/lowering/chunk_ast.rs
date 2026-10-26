@@ -27,7 +27,7 @@ pub(super) struct ChunkAstAnalysis {
     pub(super) declarations: Vec<TopLevelDecl>,
     /// Every source statement that declares a top-level binding, in source order.
     /// `var` may redeclare the same hygienic Id at several sites; consumers that
-    /// need one owner choose a representative explicitly instead of losing the
+    /// need one body_index choose a representative explicitly instead of losing the
     /// earlier sites to `HashMap::collect`'s last-write behavior.
     pub(super) declaration_by_name: HashMap<Id, Vec<usize>>,
     /// Sibling sets for top-level destructuring declarators only.
@@ -156,7 +156,7 @@ pub(super) fn binding_declaration(
     declaration_by_name: &HashMap<Id, Vec<usize>>,
     binding: &Id,
 ) -> Result<Declaration> {
-    let owner = match declaration_by_name
+    let body_index = match declaration_by_name
         .get(binding)
         .and_then(|sites| sites.first())
     {
@@ -178,10 +178,10 @@ pub(super) fn binding_declaration(
             })
             .with_context(|| format!("no top-level statement declares `{}`", binding.0))?,
     };
-    let decl = match &body[owner] {
+    let decl = match &body[body_index] {
         ModuleItem::ModuleDecl(ModuleDecl::Import(_)) => {
             return Ok(Declaration {
-                owner,
+                body_index,
                 kind: DeclarationKind::Import,
             });
         }
@@ -190,11 +190,11 @@ pub(super) fn binding_declaration(
         // A `var` hoisted out of a block, loop or `try`.
         ModuleItem::Stmt(_) => {
             return Ok(Declaration {
-                owner,
+                body_index,
                 kind: DeclarationKind::Var,
             });
         }
-        ModuleItem::ModuleDecl(_) => bail!("body[{owner}] is not a declaration"),
+        ModuleItem::ModuleDecl(_) => bail!("body[{body_index}] is not a declaration"),
     };
     let kind = match decl {
         Decl::Fn(_) => DeclarationKind::Function,
@@ -206,9 +206,9 @@ pub(super) fn binding_declaration(
         },
         Decl::Using(using) if using.is_await => DeclarationKind::AwaitUsing,
         Decl::Using(_) => DeclarationKind::Using,
-        _ => bail!("body[{owner}] is a TypeScript declaration"),
+        _ => bail!("body[{body_index}] is a TypeScript declaration"),
     };
-    Ok(Declaration { owner, kind })
+    Ok(Declaration { body_index, kind })
 }
 
 /// Pick up `export { foo, bar as baz }` (no `from`) — i.e. re-exports

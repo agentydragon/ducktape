@@ -5,9 +5,10 @@
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 
-use analysis::OwnerId;
+use analysis::SourceUnitId;
 use analysis::graph::{
-    ChunkConstrainingEdgeSet, EndpointView, OwnerEdge, OwnerEdgeId, OwnerGraph, project_endpoints,
+    ChunkConstrainingEdgeSet, DependencyEdge, DependencyEdgeId, DependencyGraph, EndpointView,
+    project_endpoints,
 };
 use analysis::ids::ModuleId;
 use analysis::module_assignment::ModuleAssignment;
@@ -19,7 +20,7 @@ use crate::counted_digraph::CountedDiGraph;
 use super::condensation_order::CondensationOrder;
 use super::esm_simulator::EsmEvaluationSimulator;
 use super::{
-    CrossRebindEdge, RealizabilityVerdict, SccDiagnosis, SccRejection, impacted_owner_edges,
+    CrossRebindEdge, RealizabilityVerdict, SccDiagnosis, SccRejection, impacted_dependency_edges,
     overlay_is_simulator_noop,
 };
 
@@ -27,15 +28,18 @@ use super::{
 /// commits to the index.
 #[derive(Debug, Clone)]
 pub enum ModuleAssignmentDelta {
-    /// Reassign every owner in `owners` to `to`. Owners not in the
+    /// Reassign every source unit in `source units` to `to`. SourceUnits not in the
     /// list keep their current assignment.
-    MoveOwners { owners: Vec<OwnerId>, to: ModuleId },
+    MoveSourceUnits {
+        source_units: Vec<SourceUnitId>,
+        to: ModuleId,
+    },
 }
 
 #[derive(Debug, Clone, Default)]
 pub(super) struct ConstrainingBucket {
-    pub(super) non_sequenced: BTreeSet<OwnerEdgeId>,
-    pub(super) sequenced: BTreeSet<OwnerEdgeId>,
+    pub(super) non_sequenced: BTreeSet<DependencyEdgeId>,
+    pub(super) sequenced: BTreeSet<DependencyEdgeId>,
 }
 
 impl ConstrainingBucket {
@@ -43,7 +47,7 @@ impl ConstrainingBucket {
         self.non_sequenced.is_empty() && self.sequenced.is_empty()
     }
 
-    pub(super) fn insert_edge(&mut self, edge_id: OwnerEdgeId, sequenced: bool) {
+    pub(super) fn insert_edge(&mut self, edge_id: DependencyEdgeId, sequenced: bool) {
         if sequenced {
             self.sequenced.insert(edge_id);
         } else {
@@ -51,7 +55,7 @@ impl ConstrainingBucket {
         }
     }
 
-    pub(super) fn remove_edge(&mut self, edge_id: OwnerEdgeId, sequenced: bool) {
+    pub(super) fn remove_edge(&mut self, edge_id: DependencyEdgeId, sequenced: bool) {
         if sequenced {
             self.sequenced.remove(&edge_id);
         } else {
@@ -74,8 +78,8 @@ impl ConstrainingBucket {
         }
     }
 
-    pub(super) fn evidence_edges(&self) -> Vec<OwnerEdgeId> {
-        let mut edges: Vec<OwnerEdgeId> = self.non_sequenced.iter().copied().collect();
+    pub(super) fn evidence_edges(&self) -> Vec<DependencyEdgeId> {
+        let mut edges: Vec<DependencyEdgeId> = self.non_sequenced.iter().copied().collect();
         if let Some(first_sequenced) = self.sequenced.first() {
             edges.push(*first_sequenced);
         }
@@ -106,7 +110,7 @@ pub(super) fn constraining_bucket_is_empty_after_overlay(
 pub(super) struct EdgeContribution {
     pub(super) from: ModuleId,
     pub(super) to: ModuleId,
-    pub(super) owner_edge: OwnerEdgeId,
+    pub(super) dependency_edge: DependencyEdgeId,
     pub(super) kind: EdgeContributionKind,
 }
 
@@ -172,8 +176,8 @@ pub(super) struct QuotientOverlay {
     pub(super) constraining_delta: BTreeMap<(ModuleId, ModuleId), isize>,
     pub(super) constraining_added: BTreeMap<(ModuleId, ModuleId), ConstrainingBucket>,
     pub(super) constraining_removed: BTreeMap<(ModuleId, ModuleId), ConstrainingBucket>,
-    pub(super) cross_rebind_added: BTreeMap<OwnerEdgeId, CrossRebindEdge>,
-    pub(super) cross_rebind_removed: BTreeSet<OwnerEdgeId>,
+    pub(super) cross_rebind_added: BTreeMap<DependencyEdgeId, CrossRebindEdge>,
+    pub(super) cross_rebind_removed: BTreeSet<DependencyEdgeId>,
 }
 
 impl QuotientOverlay {
@@ -194,11 +198,11 @@ impl QuotientOverlay {
         match contribution.kind {
             EdgeContributionKind::Rebind => {
                 self.cross_rebind_added.insert(
-                    contribution.owner_edge,
+                    contribution.dependency_edge,
                     CrossRebindEdge {
                         from: contribution.from,
                         to: contribution.to,
-                        owner_edge: contribution.owner_edge,
+                        dependency_edge: contribution.dependency_edge,
                     },
                 );
             }
@@ -217,7 +221,7 @@ impl QuotientOverlay {
                     self.constraining_added
                         .entry((contribution.from, contribution.to))
                         .or_default()
-                        .insert_edge(contribution.owner_edge, sequenced);
+                        .insert_edge(contribution.dependency_edge, sequenced);
                 }
             }
         }
@@ -226,7 +230,8 @@ impl QuotientOverlay {
     pub(super) fn remove_contribution(&mut self, contribution: EdgeContribution) {
         match contribution.kind {
             EdgeContributionKind::Rebind => {
-                self.cross_rebind_removed.insert(contribution.owner_edge);
+                self.cross_rebind_removed
+                    .insert(contribution.dependency_edge);
             }
             EdgeContributionKind::Import {
                 constraining,
@@ -243,7 +248,7 @@ impl QuotientOverlay {
                     self.constraining_removed
                         .entry((contribution.from, contribution.to))
                         .or_default()
-                        .insert_edge(contribution.owner_edge, sequenced);
+                        .insert_edge(contribution.dependency_edge, sequenced);
                 }
             }
         }
@@ -265,13 +270,13 @@ pub(super) fn increment_delta(
     }
 }
 
-/// What `edge` contributes to the quotient under the owner → module
+/// What `edge` contributes to the quotient under the source unit → module
 /// assignment `module_of`, projected through the gate view exactly as
 /// `IncrementalQuotient::add_current_edge` does for the committed state.
 pub(super) fn edge_contribution(
-    edge: &OwnerEdge,
+    edge: &DependencyEdge,
     residual: ModuleId,
-    module_of: impl Fn(OwnerId) -> ModuleId,
+    module_of: impl Fn(SourceUnitId) -> ModuleId,
 ) -> Option<EdgeContribution> {
     let (from, to) = project_endpoints(edge, residual, EndpointView::Gate, module_of)?;
     let kind = if edge.reason.is_rebind() {
@@ -286,7 +291,7 @@ pub(super) fn edge_contribution(
     Some(EdgeContribution {
         from,
         to,
-        owner_edge: edge.id,
+        dependency_edge: edge.id,
         kind,
     })
 }
@@ -441,7 +446,7 @@ pub(super) struct IncrementalQuotient {
     pub(super) i_graph: CountedDiGraph<ModuleId>,
     pub(super) constraining_graph: CountedDiGraph<ModuleId>,
     pub(super) constraining_buckets: BTreeMap<(ModuleId, ModuleId), ConstrainingBucket>,
-    pub(super) cross_rebinds: BTreeMap<OwnerEdgeId, CrossRebindEdge>,
+    pub(super) cross_rebinds: BTreeMap<DependencyEdgeId, CrossRebindEdge>,
     /// Chunk's residual module — the ESM DFS root. The Lemma 2
     /// simulator that decides candidate asymmetric I-SCCs needs to
     /// know which module gets the source_import_position reversal
@@ -480,7 +485,7 @@ pub(super) struct IncrementalQuotient {
 }
 
 impl IncrementalQuotient {
-    pub(super) fn new(owner_graph: &OwnerGraph, assignment: &ModuleAssignment) -> Self {
+    pub(super) fn new(dependency_graph: &DependencyGraph, assignment: &ModuleAssignment) -> Self {
         let mut quotient = Self {
             i_graph: CountedDiGraph::new(),
             constraining_graph: CountedDiGraph::new(),
@@ -496,7 +501,7 @@ impl IncrementalQuotient {
             i_order: RefCell::new(CondensationOrder::new()),
             cached_touching_clean: RefCell::new(BTreeMap::new()),
         };
-        for edge in owner_graph.iter_edges() {
+        for edge in dependency_graph.iter_edges() {
             quotient.add_current_edge(edge, assignment);
         }
         quotient
@@ -582,7 +587,7 @@ impl IncrementalQuotient {
 
     pub(super) fn add_current_edge(
         &mut self,
-        edge: &analysis::graph::OwnerEdge,
+        edge: &analysis::graph::DependencyEdge,
         assignment: &ModuleAssignment,
     ) {
         // Gate-side view: keep cross-module at-init promoted edges.
@@ -602,7 +607,7 @@ impl IncrementalQuotient {
                 CrossRebindEdge {
                     from,
                     to,
-                    owner_edge: edge.id,
+                    dependency_edge: edge.id,
                 },
             );
             // Rebinds bypass the simulator/graph invalidation but DO
@@ -629,7 +634,7 @@ impl IncrementalQuotient {
 
     pub(super) fn remove_current_edge(
         &mut self,
-        edge: &analysis::graph::OwnerEdge,
+        edge: &analysis::graph::DependencyEdge,
         assignment: &ModuleAssignment,
     ) {
         // Gate-side view: keep cross-module at-init promoted edges.
@@ -684,12 +689,12 @@ impl IncrementalQuotient {
             if modules.len() < 2 {
                 continue;
             }
-            let constraining_owner_edges = self.constraining_edges_inside(&modules);
+            let constraining_dependency_edges = self.constraining_edges_inside(&modules);
             reported.insert(modules.clone());
             verdict.unrealizable_sccs.push(SccDiagnosis {
                 core: SccCore {
                     modules,
-                    constraining_owner_edges,
+                    constraining_dependency_edges,
                 },
                 rejection: SccRejection::MutualConstrainingCycle,
             });
@@ -700,8 +705,8 @@ impl IncrementalQuotient {
             if modules.len() < 2 || reported.contains(&modules) {
                 continue;
             }
-            let constraining_owner_edges = self.constraining_edges_inside(&modules);
-            if constraining_owner_edges.is_empty() {
+            let constraining_dependency_edges = self.constraining_edges_inside(&modules);
+            if constraining_dependency_edges.is_empty() {
                 continue;
             }
             candidates.push(modules);
@@ -717,11 +722,11 @@ impl IncrementalQuotient {
                 if tdz_pairs.is_empty() {
                     continue;
                 }
-                let constraining_owner_edges = self.tdz_constraining_edges(&tdz_pairs, None);
+                let constraining_dependency_edges = self.tdz_constraining_edges(&tdz_pairs, None);
                 verdict.unrealizable_sccs.push(SccDiagnosis {
                     core: SccCore {
                         modules,
-                        constraining_owner_edges,
+                        constraining_dependency_edges,
                     },
                     rejection: SccRejection::EsmEvaluationTdz,
                 });
@@ -734,9 +739,9 @@ impl IncrementalQuotient {
     }
 
     /// Project the effective quotient into the same typed canonical shape as
-    /// `chunk_constraining_module_edges`, without revisiting owner edges.
+    /// `chunk_constraining_module_edges`, without revisiting source unit edges.
     /// `evidence_edges` preserves the canonical first-sequenced-edge rule:
-    /// OwnerGraph iterates in OwnerEdgeId order, and the bucket keeps ids in
+    /// DependencyGraph iterates in DependencyEdgeId order, and the bucket keeps ids in
     /// that same order.
     pub(super) fn canonical_with_overlay(
         &self,
@@ -770,7 +775,7 @@ impl IncrementalQuotient {
             .map(|(_, rebind)| rebind.clone())
             .collect();
         rebinds.extend(overlay.cross_rebind_added.values().cloned());
-        rebinds.sort_by_key(|rebind| rebind.owner_edge);
+        rebinds.sort_by_key(|rebind| rebind.dependency_edge);
         rebinds
     }
 
@@ -785,12 +790,13 @@ impl IncrementalQuotient {
         let constraining_modules =
             OverlayGraphView::new(&self.constraining_graph, &no_delta).scc_containing(module);
         if constraining_modules.len() >= 2 {
-            let constraining_owner_edges = self.constraining_edges_inside(&constraining_modules);
+            let constraining_dependency_edges =
+                self.constraining_edges_inside(&constraining_modules);
             reported.insert(constraining_modules.clone());
             verdict.unrealizable_sccs.push(SccDiagnosis {
                 core: SccCore {
                     modules: constraining_modules,
-                    constraining_owner_edges,
+                    constraining_dependency_edges,
                 },
                 rejection: SccRejection::MutualConstrainingCycle,
             });
@@ -811,11 +817,11 @@ impl IncrementalQuotient {
                 .tdz_pairs(&i_modules, &constraining_pairs)
                 .collect();
             if !tdz_pairs.is_empty() {
-                let constraining_owner_edges = self.tdz_constraining_edges(&tdz_pairs, None);
+                let constraining_dependency_edges = self.tdz_constraining_edges(&tdz_pairs, None);
                 verdict.unrealizable_sccs.push(SccDiagnosis {
                     core: SccCore {
                         modules: i_modules,
-                        constraining_owner_edges,
+                        constraining_dependency_edges,
                     },
                     rejection: SccRejection::EsmEvaluationTdz,
                 });
@@ -842,13 +848,13 @@ impl IncrementalQuotient {
             OverlayGraphView::new(&self.constraining_graph, &overlay.constraining_delta);
         let constraining_modules = constraining_graph.scc_containing(module);
         if constraining_modules.len() >= 2 {
-            let constraining_owner_edges =
+            let constraining_dependency_edges =
                 self.constraining_edges_inside_with_overlay(&constraining_modules, overlay);
             reported.insert(constraining_modules.clone());
             verdict.unrealizable_sccs.push(SccDiagnosis {
                 core: SccCore {
                     modules: constraining_modules,
-                    constraining_owner_edges,
+                    constraining_dependency_edges,
                 },
                 rejection: SccRejection::MutualConstrainingCycle,
             });
@@ -862,12 +868,12 @@ impl IncrementalQuotient {
         {
             let tdz_pairs = self.overlay_tdz_pairs(&i_modules, overlay);
             if !tdz_pairs.is_empty() {
-                let constraining_owner_edges =
+                let constraining_dependency_edges =
                     self.tdz_constraining_edges(&tdz_pairs, Some(overlay));
                 verdict.unrealizable_sccs.push(SccDiagnosis {
                     core: SccCore {
                         modules: i_modules,
-                        constraining_owner_edges,
+                        constraining_dependency_edges,
                     },
                     rejection: SccRejection::EsmEvaluationTdz,
                 });
@@ -1076,15 +1082,15 @@ impl IncrementalQuotient {
     }
 
     /// Resolve a list of TDZ-violating `(from, to)` pairs to their
-    /// owner-edge ids, optionally applying `overlay`'s edits. Used
+    /// dependency edge ids, optionally applying `overlay`'s edits. Used
     /// by `verdict*` to surface only the surgical set of
     /// constraining edges the simulator flagged.
     pub(super) fn tdz_constraining_edges(
         &self,
         tdz_pairs: &[(ModuleId, ModuleId)],
         overlay: Option<&QuotientOverlay>,
-    ) -> Vec<OwnerEdgeId> {
-        let mut edges: Vec<OwnerEdgeId> = Vec::new();
+    ) -> Vec<DependencyEdgeId> {
+        let mut edges: Vec<DependencyEdgeId> = Vec::new();
         for &pair in tdz_pairs {
             let bucket = match overlay {
                 Some(overlay) => self.constraining_bucket_with_overlay(pair, overlay),
@@ -1202,28 +1208,29 @@ impl IncrementalQuotient {
 
     pub(super) fn overlay_for_move(
         &self,
-        owner_graph: &OwnerGraph,
+        dependency_graph: &DependencyGraph,
         assignment: &ModuleAssignment,
-        owners: &[OwnerId],
+        source_units: &[SourceUnitId],
         to: ModuleId,
     ) -> QuotientOverlay {
-        let impacted_edges = impacted_owner_edges(owner_graph, owners);
-        let owners: BTreeSet<OwnerId> = owners.iter().copied().collect();
+        let impacted_edges = impacted_dependency_edges(dependency_graph, source_units);
+        let source_units: BTreeSet<SourceUnitId> = source_units.iter().copied().collect();
         let mut overlay = QuotientOverlay::default();
         for edge_id in impacted_edges {
-            let edge = owner_graph.edge(edge_id);
+            let edge = dependency_graph.edge(edge_id);
             // Both sides take `project_endpoints`' gate view, so a residual
             // caller's fallback-promoted edge contributes nothing to either:
             // the overlay never adds a residual -> target edge the gate lacks
             // when the target moves, nor cancels a real edge on the same
             // module pair when the caller leaves residual.
-            let current =
-                edge_contribution(edge, assignment.residual(), |owner| assignment.of(owner));
-            let next = edge_contribution(edge, assignment.residual(), |owner| {
-                if owners.contains(&owner) {
+            let current = edge_contribution(edge, assignment.residual(), |source_unit| {
+                assignment.of(source_unit)
+            });
+            let next = edge_contribution(edge, assignment.residual(), |source_unit| {
+                if source_units.contains(&source_unit) {
                     to
                 } else {
-                    assignment.of(owner)
+                    assignment.of(source_unit)
                 }
             });
             if current == next {
@@ -1260,7 +1267,7 @@ impl IncrementalQuotient {
                 .filter(|rebind| rebind.from == module || rebind.to == module)
                 .cloned(),
         );
-        rebinds.sort_by_key(|rebind| rebind.owner_edge);
+        rebinds.sort_by_key(|rebind| rebind.dependency_edge);
         rebinds
     }
 
@@ -1271,14 +1278,14 @@ impl IncrementalQuotient {
             .filter(|rebind| rebind.from == module || rebind.to == module)
             .cloned()
             .collect();
-        rebinds.sort_by_key(|rebind| rebind.owner_edge);
+        rebinds.sort_by_key(|rebind| rebind.dependency_edge);
         rebinds
     }
 
     pub(super) fn constraining_edges_inside(
         &self,
         modules: &BTreeSet<ModuleId>,
-    ) -> Vec<OwnerEdgeId> {
+    ) -> Vec<DependencyEdgeId> {
         let mut edges = Vec::new();
         for ((from, to), bucket) in &self.constraining_buckets {
             if modules.contains(from) && modules.contains(to) {
@@ -1293,7 +1300,7 @@ impl IncrementalQuotient {
         &self,
         modules: &BTreeSet<ModuleId>,
         overlay: &QuotientOverlay,
-    ) -> Vec<OwnerEdgeId> {
+    ) -> Vec<DependencyEdgeId> {
         let mut edges = Vec::new();
         for pair in self.constraining_pairs_with_overlay(overlay) {
             if modules.contains(&pair.0) && modules.contains(&pair.1) {

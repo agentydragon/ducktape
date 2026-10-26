@@ -215,9 +215,9 @@ fn build_prepare_output(
     manifests: &[ChunkAnalysisReport],
 ) -> (ArtifactCounts, Vec<ArtifactChunkRecord>) {
     let counts = ArtifactCounts {
-        kept_top_level_declaration_owners: manifests
+        kept_top_level_declarations: manifests
             .iter()
-            .map(|manifest| manifest.counts.kept_top_level_declaration_owners)
+            .map(|manifest| manifest.counts.kept_top_level_declarations)
             .sum(),
         top_level_side_effects: manifests
             .iter()

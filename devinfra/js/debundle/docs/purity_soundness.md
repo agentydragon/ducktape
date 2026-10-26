@@ -223,7 +223,7 @@ newly installed setters from being mistaken for ordinary data.
 
 Protocol fallbacks preserve the escaped capability pool, including nested
 returned callbacks. Their read and taint closure reuses coverage-checked
-synchronous owner summaries: reads after a definite `await` cannot affect the
+synchronous source unit summaries: reads after a definite `await` cannot affect the
 current prefix, while nested callable prefixes and generator bodies remain
 conservative. Incomplete reachability, dynamic scope, or uncovered callable and
 accessor facts retain whole lazy reads. All lazy rebinds remain retained because

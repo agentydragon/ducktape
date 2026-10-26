@@ -319,7 +319,7 @@ fn unrenamed_top_level_sites(
 
 /// Names bound at module top-level by `item`. Mirrors the surface
 /// `program_analysis::analyze_program_shallow` already classifies as
-/// "owners" — function/class/var declarations, including the same
+/// "source_units" — function/class/var declarations, including the same
 /// shapes wrapped in `export`. Import locals also count: a minified
 /// import alias is a top-level binding that other modules see.
 fn top_level_binding_names(item: &ModuleItem) -> Vec<String> {

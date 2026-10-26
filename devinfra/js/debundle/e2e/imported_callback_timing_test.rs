@@ -2117,9 +2117,9 @@ fn regex_literal_with_custom_to_primitive_keeps_key_with_later_value() {
         )],
     ));
     assert_preserved_entry_output(&fixture, "prefix0 42\n");
-    let graph = fixture.owner_graph();
-    let key = owner_for_binding(&graph, "key");
-    let later = owner_for_binding(&graph, "later");
+    let graph = fixture.dependency_graph();
+    let key = source_unit_for_binding(&graph, "key");
+    let later = source_unit_for_binding(&graph, "later");
     assert!(graph.edges.iter().any(|edge| {
         edge.source == key
             && edge.target == later
@@ -2143,9 +2143,9 @@ fn strict_equality_and_known_primitive_operands_skip_coercion_callbacks() {
         ],
     ));
     assert_preserved_entry_output(&fixture, "false prefix3 42\n");
-    let graph = fixture.owner_graph();
-    let comparison = owner_for_binding(&graph, "same");
-    let later = owner_for_binding(&graph, "later");
+    let graph = fixture.dependency_graph();
+    let comparison = source_unit_for_binding(&graph, "same");
+    let later = source_unit_for_binding(&graph, "later");
     assert!(!graph.edges.iter().any(|edge| {
         edge.source == comparison
             && edge.target == later

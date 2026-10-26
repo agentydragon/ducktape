@@ -20,10 +20,10 @@
 //!
 //! ## Scope
 //!
-//! `member_of_module` pins the **declaring owner whose own subtree consumes
+//! `member_of_module` pins the **declaring source_unit whose own subtree consumes
 //! `mod.X`** (its `extends` clause, a decorator on it, a body call). It does
 //! **not** reach a target distinguished only by an *external* statement that
-//! consumes it (`registry.register(Target)`): that owner declares nothing, so the
+//! consumes it (`registry.register(Target)`): that source_unit declares nothing, so the
 //! `declares` conjunct correctly excludes it — pinning by a call *argument* needs
 //! a `resolves_to`-of-argument edge, which is `passed_to_call`. This test
 //! exercises the in-subtree use-site, which is the general primitive built here.
@@ -127,7 +127,7 @@ export { nextId };
 }
 
 /// Fail-closed: a `member_of_module` whose (module, member) pair is consumed by
-/// **two** declaring owners is ambiguous, so it errors rather than guessing one.
+/// **two** declaring source_units is ambiguous, so it errors rather than guessing one.
 #[test]
 fn member_of_module_ambiguous_fails_closed() {
     expect_rejection_containing_all(
@@ -151,7 +151,7 @@ export { a, b };
     );
 }
 
-/// Fail-closed: a `member_of_module` whose module member no declaring owner
+/// Fail-closed: a `member_of_module` whose module member no declaring source_unit
 /// consumes errors rather than silently dropping the claim.
 #[test]
 fn member_of_module_zero_match_fails_closed() {

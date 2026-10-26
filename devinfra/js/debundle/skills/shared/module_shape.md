@@ -33,7 +33,7 @@ not.
 
 A debundle over-splits when the chunker (or atomic-group granularity) emits a
 separate module for what a developer would have written inline in a larger
-file. Actively look for small modules and try to fold each into its true owner:
+file. Actively look for small modules and try to fold each into its true unit:
 its single real consumer, or a sibling that was clearly the same original
 source file.
 
@@ -58,7 +58,7 @@ Do NOT fold:
 - anything whose fold would cross a layer boundary or break the realizability
   gate
 
-Source-proximity — adjacent owner statement ordinals or line ranges in the
+Source-proximity — adjacent source units by statement ordinal or line range in the
 upstream blob — is the strongest signal that several small modules were one
 original file.
 

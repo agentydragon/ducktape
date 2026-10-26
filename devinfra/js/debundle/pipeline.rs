@@ -36,7 +36,7 @@ pub struct TransformCli {
 pub struct TransformRunOptions {
     pub dry_run: bool,
     pub keep_going: bool,
-    /// Force per-chunk reports (owner graph, selector diagnostics, …) to this
+    /// Force per-chunk reports (dependency graph, selector diagnostics, …) to this
     /// directory, overriding the spec's `materialize_logical_modules.report_out_dir`.
     /// Used by `debundle spec validate` to capture the keep-going
     /// selector diagnostics regardless of how the spec configures reporting.
@@ -86,7 +86,7 @@ pub struct TransformArgs {
     pub packages_root: Option<PathBuf>,
     /// Run pipeline parse/facts/gate checks without writing emitted JS
     /// or accept-path reports. A gate rejection still writes
-    /// `owner_graph.json` plus the rejection evidence (`cycles.json` /
+    /// `dependency_graph.json` plus the rejection evidence (`cycles.json` /
     /// `atomic_group_conflicts.json`) under `reports/tree/<chunk>/`, so
     /// `gate list` / `gate describe` work on the rejection just
     /// reported.
@@ -205,7 +205,7 @@ pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Re
     let write_vendor_outputs = swap_cfg.write && !options.dry_run;
 
     // Full swaps are an emission-set exclusion: the swapped chunks stay in
-    // the bundle — nothing removes them, and the owner graph never
+    // the bundle — nothing removes them, and the dependency graph never
     // contained vendor chunks — but emission, the rename queue, the
     // emit-shape check, and the chunk reports skip them. Their
     // wire-facing resolutions are projections of the plan.
@@ -248,7 +248,7 @@ pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Re
                 list_template_identifiers: options.list_template_identifiers,
                 // Dry-run keeps the no-output contract on the
                 // accept path but still materializes rejection
-                // evidence (owner graph + cycles/conflicts) at the
+                // evidence (dependency graph + cycles/conflicts) at the
                 // same reports/tree/<chunk>/ location a real run
                 // uses, so `debundle gate list/describe` works on
                 // the rejection that was just reported.

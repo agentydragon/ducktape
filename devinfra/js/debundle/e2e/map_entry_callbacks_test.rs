@@ -139,7 +139,7 @@ export { registry, later };
 }
 
 #[test]
-fn lazy_eval_disables_map_entry_proof_across_owners() {
+fn lazy_eval_disables_map_entry_proof_across_source_units() {
     assert_collection_requires_later(
         r#"function makeRegistry() {
   eval("1");

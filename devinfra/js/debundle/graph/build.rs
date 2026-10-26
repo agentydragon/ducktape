@@ -5,17 +5,17 @@ use petgraph::algo::tarjan_scc;
 use petgraph::graphmap::DiGraphMap;
 use swc_ecma_ast::Id;
 
-use crate::facts::{EffectCell, FactsOwnerReadClosure};
+use crate::facts::{EffectCell, SourceUnitReadClosure};
 use crate::{StatementFacts, StatementKind, StatementOrdinal};
 
-// `OwnerGraphOptions` lives in `spec/spec.rs` — both the spec YAML surface
+// `DependencyGraphOptions` lives in `spec/spec.rs` — both the spec YAML surface
 // and the graph-build API consume the same type. Re-exported from
-// crate root via `lib.rs` so `analysis::OwnerGraphOptions` continues
+// crate root via `lib.rs` so `analysis::DependencyGraphOptions` continues
 // to be the canonical path for external callers.
-pub use spec::OwnerGraphOptions;
+pub use spec::DependencyGraphOptions;
 
-use super::edge::{EdgeReason, EdgeRole, OwnerEdge, OwnerEdgeId};
-use super::owner_graph::{OwnerGraph, OwnerId, OwnerNode};
+use super::dependency_graph::{DependencyGraph, SourceUnit, SourceUnitId};
+use super::edge::{DependencyEdge, DependencyEdgeId, EdgeReason, EdgeRole};
 
 /// Multiple declarations of one binding are supported only when every site
 /// declares `var`. Other duplicate declaration shapes remain rejected.
@@ -39,29 +39,29 @@ impl fmt::Display for DuplicateTopLevelDeclaration {
 
 impl std::error::Error for DuplicateTopLevelDeclaration {}
 
-/// Build the fine owner graph from per-statement facts under the
-/// per-chunk [`OwnerGraphOptions`]. Pure IR construction: no module
+/// Build the fine dependency graph from per-statement facts under the
+/// per-chunk [`DependencyGraphOptions`]. Pure IR construction: no module
 /// assignment, no quotient. Module-level dependencies are derived later
-/// by [`build_module_quotient`] given a [`ModuleAssignment`] mapping owners to
+/// by [`build_module_quotient`] given a [`ModuleAssignment`] mapping source units to
 /// destination modules.
 ///
 /// [`build_module_quotient`]: super::quotient::build_module_quotient
 /// [`ModuleAssignment`]: crate::module_assignment::ModuleAssignment
-pub fn build_owner_graph_with(
+pub fn build_dependency_graph_with(
     facts: &[StatementFacts],
-    options: OwnerGraphOptions,
-) -> Result<OwnerGraph, DuplicateTopLevelDeclaration> {
-    let mut declaration_sites = BTreeMap::<Id, Vec<OwnerId>>::new();
-    let mut nodes = Vec::<OwnerNode>::with_capacity(facts.len());
+    options: DependencyGraphOptions,
+) -> Result<DependencyGraph, DuplicateTopLevelDeclaration> {
+    let mut declaration_sites = BTreeMap::<Id, Vec<SourceUnitId>>::new();
+    let mut nodes = Vec::<SourceUnit>::with_capacity(facts.len());
     for stmt in facts {
         for binding in &stmt.declared {
             declaration_sites
                 .entry(binding.clone())
                 .or_default()
-                .push(OwnerId(stmt.ordinal.0));
+                .push(SourceUnitId(stmt.ordinal.0));
         }
-        let id = OwnerId(stmt.ordinal.0);
-        nodes.push(OwnerNode {
+        let id = SourceUnitId(stmt.ordinal.0);
+        nodes.push(SourceUnit {
             id,
             statement_ordinal: stmt.ordinal,
             source_location: stmt.source_location.clone(),
@@ -73,15 +73,15 @@ pub fn build_owner_graph_with(
 
     // Keep every declaration site. A representative is only an address for a
     // binding; the co-declaration edges below make all sites inseparable.
-    let binding_owner: HashMap<Id, OwnerId> = declaration_sites
+    let binding_source_unit: HashMap<Id, SourceUnitId> = declaration_sites
         .iter()
         .map(|(binding, sites)| (binding.clone(), sites[0]))
         .collect();
     let mut shared_vars = BTreeSet::new();
     for (binding, sites) in &declaration_sites {
         if sites.len() > 1 {
-            for &owner in sites {
-                if !facts[owner.0].var_declared.contains(binding) {
+            for &source_unit in sites {
+                if !facts[source_unit.0].var_declared.contains(binding) {
                     return Err(DuplicateTopLevelDeclaration {
                         binding: binding.0.clone(),
                         first: StatementOrdinal(sites[0].0),
@@ -94,30 +94,30 @@ pub fn build_owner_graph_with(
     }
 
     // Collect (from, to, reason) triples; the final `edges` Vec is
-    // sorted at the end so `OwnerEdgeId` indices are stable.
-    let mut raw_edges = Vec::<(OwnerId, OwnerId, EdgeReason)>::new();
+    // sorted at the end so `DependencyEdgeId` indices are stable.
+    let mut raw_edges = Vec::<(SourceUnitId, SourceUnitId, EdgeReason)>::new();
     for binding in &shared_vars {
         let sites = &declaration_sites[binding];
-        for &owner in &sites[1..] {
+        for &source_unit in &sites[1..] {
             raw_edges.push((
-                owner,
+                source_unit,
                 sites[0],
-                EdgeReason::co_declaration(StatementOrdinal(owner.0), binding.clone()),
+                EdgeReason::co_declaration(StatementOrdinal(source_unit.0), binding.clone()),
             ));
             raw_edges.push((
                 sites[0],
-                owner,
+                source_unit,
                 EdgeReason::co_declaration(StatementOrdinal(sites[0].0), binding.clone()),
             ));
         }
     }
-    // Look-aside table for "what statement owns this OwnerId" — shared
+    // Look-aside table for "what statement owns this SourceUnitId" — shared
     // by the direct eager-read filter below and by
     // `promote_at_init_calls` (which builds its own local copy; the
     // duplicate cost is negligible).
-    let stmt_by_owner: std::collections::HashMap<OwnerId, &StatementFacts> = facts
+    let stmt_by_source_unit: std::collections::HashMap<SourceUnitId, &StatementFacts> = facts
         .iter()
-        .map(|stmt| (OwnerId(stmt.ordinal.0), stmt))
+        .map(|stmt| (SourceUnitId(stmt.ordinal.0), stmt))
         .collect();
     // A top-level eager read of a binding declared by a `function`
     // declaration cannot observe a TDZ: ECMAScript Phase 1 of module
@@ -131,18 +131,18 @@ pub fn build_owner_graph_with(
     // constraints: lexical declarations have a TDZ, while var initializers
     // change an already-hoisted cell whose value reads must observe in order.
     let target_is_hoisted = |id: &Id| -> bool {
-        binding_owner
+        binding_source_unit
             .get(id)
-            .and_then(|owner| stmt_by_owner.get(owner))
+            .and_then(|source_unit| stmt_by_source_unit.get(source_unit))
             .map(|stmt| stmt.kind == StatementKind::FnDecl)
             .unwrap_or(false)
     };
-    let push_binding_edge = |raw_edges: &mut Vec<(OwnerId, OwnerId, EdgeReason)>,
-                             from: OwnerId,
+    let push_binding_edge = |raw_edges: &mut Vec<(SourceUnitId, SourceUnitId, EdgeReason)>,
+                             from: SourceUnitId,
                              binding: &Id,
                              make_reason: fn(StatementOrdinal, Id) -> EdgeReason,
                              statement_ordinal: StatementOrdinal| {
-        let Some(to) = binding_owner.get(binding) else {
+        let Some(to) = binding_source_unit.get(binding) else {
             return; // not declared in this chunk (global, ImportSpecifier, never-declared)
         };
         if from == *to {
@@ -151,7 +151,7 @@ pub fn build_owner_graph_with(
         raw_edges.push((from, *to, make_reason(statement_ordinal, binding.clone())));
     };
     for stmt in facts {
-        let from = OwnerId(stmt.ordinal.0);
+        let from = SourceUnitId(stmt.ordinal.0);
         for binding in &stmt.reads.eager {
             push_binding_edge(
                 &mut raw_edges,
@@ -241,18 +241,18 @@ pub fn build_owner_graph_with(
     // close through such a lazy edge look acyclic to the constraining
     // subgraph. After promotion, the primitive's verdict is sound.
     //
-    // Promoted edges are added at owner-graph level (assignment-
+    // Promoted edges are added at dependency graph level (assignment-
     // independent): intra-module promoted edges are dropped by the
     // quotient automatically. Only direct `f(...)` callees that
     // resolve to chunk-declared bindings are followed; indirect
     // calls (`const g = f; g()`), method calls (`obj.method()`), and
     // dynamic dispatch are conservatively unmodelled.
-    promote_at_init_calls(facts, &binding_owner, &shared_vars, &mut raw_edges);
+    promote_at_init_calls(facts, &binding_source_unit, &shared_vars, &mut raw_edges);
 
     // Initializers and eager observations of shared var cells must retain their
     // order even when the expressions are pure. Include promoted reads from
     // at-init calls, not just syntactically direct reads.
-    let mut accesses: BTreeMap<Id, BTreeSet<OwnerId>> = shared_vars
+    let mut accesses: BTreeMap<Id, BTreeSet<SourceUnitId>> = shared_vars
         .iter()
         .map(|binding| (binding.clone(), BTreeSet::new()))
         .collect();
@@ -264,22 +264,22 @@ pub fn build_owner_graph_with(
             .chain(&stmt.rebinds.eager)
             .chain(&stmt.var_initializers)
         {
-            if let Some(owners) = accesses.get_mut(binding) {
-                owners.insert(OwnerId(stmt.ordinal.0));
+            if let Some(source_units) = accesses.get_mut(binding) {
+                source_units.insert(SourceUnitId(stmt.ordinal.0));
             }
         }
     }
     for (from, _, reason) in &raw_edges {
         if reason.kind == super::DepKind::EagerUse
             && let Some(binding) = reason.binding()
-            && let Some(owners) = accesses.get_mut(binding)
+            && let Some(source_units) = accesses.get_mut(binding)
         {
-            owners.insert(*from);
+            source_units.insert(*from);
         }
     }
-    for owners in accesses.values() {
-        let owners: Vec<_> = owners.iter().copied().collect();
-        for pair in owners.windows(2) {
+    for source_units in accesses.values() {
+        let source_units: Vec<_> = source_units.iter().copied().collect();
+        for pair in source_units.windows(2) {
             raw_edges.push((
                 pair[1],
                 pair[0],
@@ -290,7 +290,7 @@ pub fn build_owner_graph_with(
 
     emit_s_chain(facts, options, &mut raw_edges);
 
-    // Sort + assign stable `OwnerEdgeId` indices, then build CSR
+    // Sort + assign stable `DependencyEdgeId` indices, then build CSR
     // adjacency in one pass.
     raw_edges.sort_by(|(from_a, to_a, reason_a), (from_b, to_b, reason_b)| {
         from_a
@@ -300,24 +300,24 @@ pub fn build_owner_graph_with(
             .then(reason_a.statement_ordinal.cmp(&reason_b.statement_ordinal))
             .then(reason_a.binding.cmp(&reason_b.binding))
     });
-    let edges: Vec<OwnerEdge> = raw_edges
+    let edges: Vec<DependencyEdge> = raw_edges
         .into_iter()
         .enumerate()
-        .map(|(idx, (from, to, reason))| OwnerEdge {
-            id: OwnerEdgeId(idx),
+        .map(|(idx, (from, to, reason))| DependencyEdge {
+            id: DependencyEdgeId(idx),
             from,
             to,
             reason,
         })
         .collect();
-    Ok(OwnerGraph::from_parts(nodes, edges))
+    Ok(DependencyGraph::from_parts(nodes, edges))
 }
 
 /// Side-effect ordering edges (`S` per docs/design.md "Module dep graphs").
-/// At owner level, links impure top-level statements so any realizable
+/// At source unit level, links impure top-level statements so any realizable
 /// schedule preserves their observable order.
 ///
-/// Two emission modes selected by [`OwnerGraphOptions`]:
+/// Two emission modes selected by [`DependencyGraphOptions`]:
 ///
 /// - **Strict chain** (default): every later impure statement gets one
 ///   incoming `Sequenced` edge from the immediately previous impure
@@ -328,7 +328,7 @@ pub fn build_owner_graph_with(
 ///   the `dataflow_summarizable` check (dynamic globalThis key, `with`,
 ///   direct `eval`, `Function(...)` constructor, `defineProperty` on
 ///   globals, `Proxy` on globals) fall back to the strict edge against
-///   every prior impure owner. See `README.md` →
+///   every prior impure source unit. See `README.md` →
 ///   "Conditionally-correct optimizations" for the precondition this
 ///   relaxation requires.
 ///
@@ -340,13 +340,13 @@ pub fn build_owner_graph_with(
 /// const sequences.
 fn emit_s_chain(
     facts: &[StatementFacts],
-    options: OwnerGraphOptions,
-    raw_edges: &mut Vec<(OwnerId, OwnerId, EdgeReason)>,
+    options: DependencyGraphOptions,
+    raw_edges: &mut Vec<(SourceUnitId, SourceUnitId, EdgeReason)>,
 ) {
     if !options.dataflow_aware_s_chain {
-        let mut prev: Option<OwnerId> = None;
+        let mut prev: Option<SourceUnitId> = None;
         for stmt in facts.iter().filter(|s| !s.purity.is_pure()) {
-            let from = OwnerId(stmt.ordinal.0);
+            let from = SourceUnitId(stmt.ordinal.0);
             if let Some(to) = prev
                 && from != to
             {
@@ -360,25 +360,26 @@ fn emit_s_chain(
     // Dataflow-aware emission. For each impure `curr`, emit an
     // incoming Sequenced edge from:
     //
-    // - the most recent prior impure owner that wrote any cell in
+    // - the most recent prior impure source unit that wrote any cell in
     //   `curr.reads ∪ curr.writes` (read-after-write /
     //   write-after-write), and
-    // - every prior impure owner that READ a cell `curr` writes
+    // - every prior impure source unit that READ a cell `curr` writes
     //   since that cell's last write (write-after-read — without
     //   this, a later writer could be scheduled before an earlier
     //   reader and the reader would observe the new value).
     //
     // Statements with `dataflow_summarizable = false` are treated as
     // touching every cell — they get edges to every prior impure
-    // owner and become a barrier for subsequent statements.
-    let mut last_writer: BTreeMap<EffectCell, OwnerId> = BTreeMap::new();
-    let mut readers_since_last_write: BTreeMap<EffectCell, BTreeSet<OwnerId>> = BTreeMap::new();
-    let mut prior_impure_owners: Vec<OwnerId> = Vec::new();
-    let mut opaque_barrier: Option<OwnerId> = None;
+    // source unit and become a barrier for subsequent statements.
+    let mut last_writer: BTreeMap<EffectCell, SourceUnitId> = BTreeMap::new();
+    let mut readers_since_last_write: BTreeMap<EffectCell, BTreeSet<SourceUnitId>> =
+        BTreeMap::new();
+    let mut prior_impure_source_units: Vec<SourceUnitId> = Vec::new();
+    let mut opaque_barrier: Option<SourceUnitId> = None;
     for stmt in facts.iter().filter(|s| !s.purity.is_pure()) {
-        let from = OwnerId(stmt.ordinal.0);
+        let from = SourceUnitId(stmt.ordinal.0);
         let effects = stmt.effects();
-        let mut targets: BTreeSet<OwnerId> = BTreeSet::new();
+        let mut targets: BTreeSet<SourceUnitId> = BTreeSet::new();
         if stmt.dataflow_summarizable {
             for cell in effects.reads.iter().chain(effects.writes.iter()) {
                 if let Some(&to) = last_writer.get(cell) {
@@ -399,9 +400,9 @@ fn emit_s_chain(
         } else {
             // This statement can't be summarized: treat it as reading
             // and writing every cell. Depend on every prior impure
-            // owner, and become the new opaque barrier so later
+            // source unit, and become the new opaque barrier so later
             // summarizable statements depend on us too.
-            targets.extend(prior_impure_owners.iter().copied());
+            targets.extend(prior_impure_source_units.iter().copied());
             opaque_barrier = Some(from);
         }
         for to in targets {
@@ -421,18 +422,18 @@ fn emit_s_chain(
                     .insert(from);
             }
         }
-        prior_impure_owners.push(from);
+        prior_impure_source_units.push(from);
     }
 }
 
-/// Promote function-body lazy reads/rebinds to eager owner edges from
+/// Promote function-body lazy reads/rebinds to eager source unit edges from
 /// every statement that at-init-calls the function. Transitive over
 /// the call graph among chunk-declared functions: a top-level
 /// `f()` whose `f` calls `g` in its body promotes through `g`'s lazy
 /// reads/rebinds too. See docs/design.md "At-init call promotion".
 ///
 /// Per-statement dedup: at most one promoted eager edge per
-/// (caller, target-owner) pair. Rebind targets are also promoted as
+/// (caller, target-source unit) pair. Rebind targets are also promoted as
 /// eager order edges; the write site's direct rebind edge enforces
 /// write legality. Without dedup, a single at-init call to a
 /// function with N transitive lazy reads would emit N edges from the
@@ -474,33 +475,33 @@ fn first_order_unresolved_inline_fn(stmt: &StatementFacts) -> bool {
 
 fn promote_at_init_calls(
     facts: &[StatementFacts],
-    binding_owner: &HashMap<Id, OwnerId>,
+    binding_source_unit: &HashMap<Id, SourceUnitId>,
     shared_vars: &BTreeSet<Id>,
-    raw_edges: &mut Vec<(OwnerId, OwnerId, EdgeReason)>,
+    raw_edges: &mut Vec<(SourceUnitId, SourceUnitId, EdgeReason)>,
 ) {
-    let mut stmt_by_owner: BTreeMap<OwnerId, &StatementFacts> = BTreeMap::new();
+    let mut stmt_by_source_unit: BTreeMap<SourceUnitId, &StatementFacts> = BTreeMap::new();
     for stmt in facts {
-        stmt_by_owner.insert(OwnerId(stmt.ordinal.0), stmt);
+        stmt_by_source_unit.insert(SourceUnitId(stmt.ordinal.0), stmt);
     }
 
-    // Index statement owners that can change a chunk binding's value or
+    // Index statement source units that can change a chunk binding's value or
     // observable object state when they execute. A callback read must see the
-    // source-prefix value, so the callback-read and writer owners form one
+    // source-prefix value, so the callback-read and writer source units form one
     // source-order timeline. This also covers mutations of an already
     // initialized object: an ordinary promoted read dependency on its
     // declaration alone would not stop a later mutation from moving before
     // the callback. Unknown effects still take the existing strict S-chain
     // fallback; this index only records effects with a known binding target.
-    let mut writers_by_binding = BTreeMap::<Id, BTreeSet<OwnerId>>::new();
-    let mut callback_readers_by_binding = BTreeMap::<Id, BTreeSet<OwnerId>>::new();
-    let mut eager_readers_by_binding = BTreeMap::<Id, BTreeSet<OwnerId>>::new();
+    let mut writers_by_binding = BTreeMap::<Id, BTreeSet<SourceUnitId>>::new();
+    let mut callback_readers_by_binding = BTreeMap::<Id, BTreeSet<SourceUnitId>>::new();
+    let mut eager_readers_by_binding = BTreeMap::<Id, BTreeSet<SourceUnitId>>::new();
     for stmt in facts {
-        let owner = OwnerId(stmt.ordinal.0);
+        let source_unit = SourceUnitId(stmt.ordinal.0);
         for binding in &stmt.reads.eager {
             eager_readers_by_binding
                 .entry(binding.clone())
                 .or_default()
-                .insert(owner);
+                .insert(source_unit);
         }
         // Lexical declarations become observable at their statement. Function
         // declarations are initialized during module instantiation and are
@@ -516,7 +517,7 @@ fn promote_at_init_calls(
                 writers_by_binding
                     .entry(binding.clone())
                     .or_default()
-                    .insert(owner);
+                    .insert(source_unit);
             }
         }
         for binding in stmt
@@ -528,16 +529,16 @@ fn promote_at_init_calls(
             writers_by_binding
                 .entry(binding.clone())
                 .or_default()
-                .insert(owner);
+                .insert(source_unit);
         }
         // A summary's rebinds execute at this statement's callsite, not at
-        // the lexical owner containing the callback body.
+        // the lexical source unit containing the callback body.
         if let Some(synchronous) = &stmt.synchronous_calls {
             for (binding, _) in &synchronous.reads {
                 callback_readers_by_binding
                     .entry(binding.clone())
                     .or_default()
-                    .insert(owner);
+                    .insert(source_unit);
             }
             // Keep the graph sound even if an availability-specific read is
             // not duplicated in the general read set.
@@ -545,13 +546,13 @@ fn promote_at_init_calls(
                 callback_readers_by_binding
                     .entry(binding.clone())
                     .or_default()
-                    .insert(owner);
+                    .insert(source_unit);
             }
             for (binding, _) in &synchronous.rebinds {
                 writers_by_binding
                     .entry(binding.clone())
                     .or_default()
-                    .insert(owner);
+                    .insert(source_unit);
             }
         }
     }
@@ -559,13 +560,13 @@ fn promote_at_init_calls(
     // A pair may be observed by several callback callsites or be both a
     // future declaration and a future writer. Emit each temporal ordering
     // constraint only once within this pass.
-    let mut temporal_sequence_pairs = BTreeSet::<(OwnerId, OwnerId)>::new();
-    let mut existing_order_pairs: BTreeSet<(OwnerId, OwnerId)> = raw_edges
+    let mut temporal_sequence_pairs = BTreeSet::<(SourceUnitId, SourceUnitId)>::new();
+    let mut existing_order_pairs: BTreeSet<(SourceUnitId, SourceUnitId)> = raw_edges
         .iter()
         .filter(|(_, _, reason)| reason.constrains_init_order())
         .map(|(from, to, _)| (*from, *to))
         .collect();
-    let mut direct_eager_bindings: BTreeSet<(OwnerId, OwnerId, Id)> = raw_edges
+    let mut direct_eager_bindings: BTreeSet<(SourceUnitId, SourceUnitId, Id)> = raw_edges
         .iter()
         .filter_map(|(from, to, reason)| {
             (reason.kind == super::DepKind::EagerUse && reason.role == EdgeRole::Direct)
@@ -586,7 +587,7 @@ fn promote_at_init_calls(
     // Do not add reader-to-reader edges: independent observations of an
     // unchanged cell need no relative order and can form false cycles.
     for (binding, writers) in &writers_by_binding {
-        let mut readers: BTreeSet<OwnerId> = callback_readers_by_binding
+        let mut readers: BTreeSet<SourceUnitId> = callback_readers_by_binding
             .get(binding)
             .into_iter()
             .flat_map(|readers| readers.iter().copied())
@@ -641,7 +642,7 @@ fn promote_at_init_calls(
     }
 
     // Bindings rebound anywhere in the chunk: their value at call
-    // time may not be the function lexically defined at their owner,
+    // time may not be the function lexically defined at their source unit,
     // so calls to them are not precisely resolvable.
     let rebound: BTreeSet<&Id> = facts
         .iter()
@@ -654,16 +655,16 @@ fn promote_at_init_calls(
     // else — aliases (`const g = readB`), object-literal methods,
     // conditional initializers, rebound functions — takes the
     // conservative read-closure fallback below.
-    let resolvable_callee = |id: &Id| -> Option<OwnerId> {
-        let owner = binding_owner.get(id)?;
-        let stmt = stmt_by_owner.get(owner)?;
+    let resolvable_callee = |id: &Id| -> Option<SourceUnitId> {
+        let source_unit = binding_source_unit.get(id)?;
+        let stmt = stmt_by_source_unit.get(source_unit)?;
         ((stmt.declares_direct_function || stmt.constructor.is_some())
             && !rebound.contains(id)
             && !shared_vars.contains(id))
-        .then_some(*owner)
+        .then_some(*source_unit)
     };
 
-    // 1. Build the call graph: owner → owner edges for each
+    // 1. Build the call graph: source unit → source unit edges for each
     //    resolvable callee reachable via *first-order* calls.lazy.
     //    Nested-closure calls (e.g. inside an arrow returned by the
     //    body) don't fire when the body is invoked synchronously, so
@@ -671,85 +672,87 @@ fn promote_at_init_calls(
     //    docs/design.md "At-init call promotion" and the e2e test
     //    `at_init_promotion_nested_closure_test`.
     //
-    //    Add every owner whose body has any first-order lazy reads /
+    //    Add every source unit whose body has any first-order lazy reads /
     //    rebinds / calls — or an unresolvable first-order callee — as
     //    a node, so the closure pass below covers it even if it makes
     //    no resolvable calls (e.g. `function readB() { return B; }`).
     //
-    //    Per-owner "fallback roots": owners through which a function
-    //    value could reach a call the owner's first-order body makes
-    //    but promotion can't follow — the owners of bindings the
-    //    unresolved call mentions, the owners of chunk-declared
+    //    Per-source unit "fallback roots": source units through which a function
+    //    value could reach a call the source unit's first-order body makes
+    //    but promotion can't follow — the source units of bindings the
+    //    unresolved call mentions, the source units of chunk-declared
     //    Ident callees that aren't direct never-rebound functions,
-    //    and the owner itself when the unresolved call carries an
+    //    and the source unit itself when the unresolved call carries an
     //    inline function expression. At-init callers inherit these
     //    roots transitively through the call graph and expand them
     //    via [`UnresolvedCallFallback`].
-    let fallback_roots_of =
-        |sources: &BTreeSet<Id>, inline_fn: bool, self_owner: OwnerId| -> BTreeSet<OwnerId> {
-            let mut roots: BTreeSet<OwnerId> = sources
-                .iter()
-                .filter_map(|id| binding_owner.get(id).copied())
-                .collect();
-            if inline_fn {
-                roots.insert(self_owner);
-            }
-            roots
-        };
-    let owner_first_order_roots = |stmt: &StatementFacts| -> BTreeSet<OwnerId> {
-        let owner = OwnerId(stmt.ordinal.0);
+    let fallback_roots_of = |sources: &BTreeSet<Id>,
+                             inline_fn: bool,
+                             self_source_unit: SourceUnitId|
+     -> BTreeSet<SourceUnitId> {
+        let mut roots: BTreeSet<SourceUnitId> = sources
+            .iter()
+            .filter_map(|id| binding_source_unit.get(id).copied())
+            .collect();
+        if inline_fn {
+            roots.insert(self_source_unit);
+        }
+        roots
+    };
+    let source_unit_first_order_roots = |stmt: &StatementFacts| -> BTreeSet<SourceUnitId> {
+        let source_unit = SourceUnitId(stmt.ordinal.0);
         let mut roots = fallback_roots_of(
             first_order_unresolved_sources(stmt),
             first_order_unresolved_inline_fn(stmt),
-            owner,
+            source_unit,
         );
         for callee_id in first_order_calls(stmt) {
             if resolvable_callee(callee_id).is_none()
-                && let Some(&callee_owner) = binding_owner.get(callee_id)
+                && let Some(&callee_source_unit) = binding_source_unit.get(callee_id)
             {
-                roots.insert(callee_owner);
+                roots.insert(callee_source_unit);
             }
         }
         roots
     };
-    let mut call_graph: DiGraphMap<OwnerId, ()> = DiGraphMap::new();
+    let mut call_graph: DiGraphMap<SourceUnitId, ()> = DiGraphMap::new();
     for stmt in facts {
-        let owner = OwnerId(stmt.ordinal.0);
+        let source_unit = SourceUnitId(stmt.ordinal.0);
         if !first_order_calls(stmt).is_empty()
             || !first_order_reads(stmt).is_empty()
             || !first_order_rebinds(stmt).is_empty()
             || !first_order_unresolved_sources(stmt).is_empty()
             || first_order_unresolved_inline_fn(stmt)
         {
-            call_graph.add_node(owner);
+            call_graph.add_node(source_unit);
         }
     }
     for stmt in facts {
         if first_order_calls(stmt).is_empty() {
             continue;
         }
-        let caller = OwnerId(stmt.ordinal.0);
+        let caller = SourceUnitId(stmt.ordinal.0);
         for callee_id in first_order_calls(stmt) {
-            let Some(callee_owner) = resolvable_callee(callee_id) else {
+            let Some(callee_source_unit) = resolvable_callee(callee_id) else {
                 continue;
             };
-            call_graph.add_node(callee_owner);
-            call_graph.add_edge(caller, callee_owner, ());
+            call_graph.add_node(callee_source_unit);
+            call_graph.add_edge(caller, callee_source_unit, ());
         }
     }
 
     // 2. Tarjan SCC. `tarjan_scc` returns SCCs in reverse topological
     //    order: leaves (no outgoing edges to other SCCs) first.
     let sccs = tarjan_scc(&call_graph);
-    let mut scc_of: BTreeMap<OwnerId, usize> = BTreeMap::new();
+    let mut scc_of: BTreeMap<SourceUnitId, usize> = BTreeMap::new();
     for (idx, scc) in sccs.iter().enumerate() {
-        for owner in scc {
-            scc_of.insert(*owner, idx);
+        for source_unit in scc {
+            scc_of.insert(*source_unit, idx);
         }
     }
 
-    // 3. Per-owner seeds: own reads.lazy / rebinds.lazy resolved to
-    //    BindingId. Filters out targets whose owner is a function
+    // 3. Per-source unit seeds: own reads.lazy / rebinds.lazy resolved to
+    //    BindingId. Filters out targets whose source unit is a function
     //    declaration — function bindings are hoisted at module
     //    instantiation (Phase 1 of ESM linking), so a cross-module
     //    read of a function never observes a TDZ. Promoting such
@@ -763,19 +766,19 @@ fn promote_at_init_calls(
     //    too but is rare enough not to warrant a separate distinction
     //    in StatementKind.
     let target_is_hoisted = |id: &Id| -> bool {
-        let Some(target_owner) = binding_owner.get(id) else {
+        let Some(target_source_unit) = binding_source_unit.get(id) else {
             return false;
         };
-        stmt_by_owner
-            .get(target_owner)
+        stmt_by_source_unit
+            .get(target_source_unit)
             .map(|stmt| stmt.kind == StatementKind::FnDecl)
             .unwrap_or(false)
     };
     let mut scc_reads: Vec<BTreeSet<Id>> = vec![BTreeSet::new(); sccs.len()];
     let mut scc_rebinds: Vec<BTreeSet<Id>> = vec![BTreeSet::new(); sccs.len()];
-    let mut scc_fallback_roots: Vec<BTreeSet<OwnerId>> = vec![BTreeSet::new(); sccs.len()];
+    let mut scc_fallback_roots: Vec<BTreeSet<SourceUnitId>> = vec![BTreeSet::new(); sccs.len()];
     // A first-order call through a parameter/local cannot be mapped to a
-    // chunk-top owner here. The value may have come from an argument at the
+    // chunk-top source unit here. The value may have come from an argument at the
     // eventual at-init call site, so carry that obligation through the call
     // graph instead of silently dropping the Id in fallback_roots_of.
     let mut scc_needs_caller_values = vec![false; sccs.len()];
@@ -787,30 +790,32 @@ fn promote_at_init_calls(
     for (scc_idx, scc) in sccs.iter().enumerate() {
         let mut reads: BTreeSet<Id> = BTreeSet::new();
         let mut rebinds: BTreeSet<Id> = BTreeSet::new();
-        let mut roots: BTreeSet<OwnerId> = BTreeSet::new();
+        let mut roots: BTreeSet<SourceUnitId> = BTreeSet::new();
         let mut needs_caller_values = false;
-        for owner in scc {
-            let Some(stmt) = stmt_by_owner.get(owner) else {
+        for source_unit in scc {
+            let Some(stmt) = stmt_by_source_unit.get(source_unit) else {
                 continue;
             };
-            roots.extend(owner_first_order_roots(stmt));
+            roots.extend(source_unit_first_order_roots(stmt));
             needs_caller_values |= first_order_unresolved_sources(stmt)
                 .iter()
                 .chain(first_order_calls(stmt).iter())
-                .any(|id| stmt.local_bindings.contains(id) && !binding_owner.contains_key(id));
+                .any(|id| {
+                    stmt.local_bindings.contains(id) && !binding_source_unit.contains_key(id)
+                });
             for id in first_order_reads(stmt) {
-                if binding_owner.contains_key(id) && !target_is_hoisted(id) {
+                if binding_source_unit.contains_key(id) && !target_is_hoisted(id) {
                     reads.insert(id.clone());
                 }
             }
             for id in first_order_rebinds(stmt) {
-                if binding_owner.contains_key(id) {
+                if binding_source_unit.contains_key(id) {
                     rebinds.insert(id.clone());
                 }
             }
         }
-        for owner in scc {
-            for (_, target, _) in call_graph.edges(*owner) {
+        for source_unit in scc {
+            for (_, target, _) in call_graph.edges(*source_unit) {
                 let Some(&target_scc) = scc_of.get(&target) else {
                     continue;
                 };
@@ -831,7 +836,7 @@ fn promote_at_init_calls(
 
     // 5. Emit promoted edges with per-statement, per-kind dedup.
     //    Each emitted reason carries `EdgeRole::PromotedAtInit {
-    //    callee_owner }` so the realizability gate can drop the edge
+    //    callee_source_unit }` so the realizability gate can drop the edge
     //    when caller and callee land in different assignment slots —
     //    the body read fires inside a call into a different module,
     //    after that callee module (and its imports) have already
@@ -845,7 +850,7 @@ fn promote_at_init_calls(
     let mut fallback: Option<UnresolvedCallFallback> = None;
     for stmt in facts {
         if let Some(synchronous) = &stmt.synchronous_calls {
-            let caller = OwnerId(stmt.ordinal.0);
+            let caller = SourceUnitId(stmt.ordinal.0);
             let mut emitted = BTreeSet::new();
 
             // A read known to observe a binding before its source
@@ -855,26 +860,32 @@ fn promote_at_init_calls(
             // on the declaration, and when that declaration is later in the
             // source, pair it with reverse source order. EagerUse alone would
             // merely ask the later provider to run first; the pair makes the
-            // two owners atomic so the emitted module retains original order.
+            // two source units atomic so the emitted module retains original order.
             for target_binding in &synchronous.uninitialized_reads {
-                let Some(&target_owner) = binding_owner.get(target_binding) else {
+                let Some(&target_source_unit) = binding_source_unit.get(target_binding) else {
                     continue;
                 };
-                if caller == target_owner {
+                if caller == target_source_unit {
                     continue;
                 }
-                if direct_eager_bindings.insert((caller, target_owner, target_binding.clone())) {
+                if direct_eager_bindings.insert((
+                    caller,
+                    target_source_unit,
+                    target_binding.clone(),
+                )) {
                     raw_edges.push((
                         caller,
-                        target_owner,
+                        target_source_unit,
                         EdgeReason::eager_use(stmt.ordinal, target_binding.clone()),
                     ));
                 }
-                if caller < target_owner && temporal_sequence_pairs.insert((target_owner, caller)) {
+                if caller < target_source_unit
+                    && temporal_sequence_pairs.insert((target_source_unit, caller))
+                {
                     raw_edges.push((
-                        target_owner,
+                        target_source_unit,
                         caller,
-                        EdgeReason::sequenced(StatementOrdinal(target_owner.0)),
+                        EdgeReason::sequenced(StatementOrdinal(target_source_unit.0)),
                     ));
                 }
             }
@@ -888,18 +899,20 @@ fn promote_at_init_calls(
                 if target_is_hoisted(target_binding) {
                     continue;
                 }
-                let Some(&target_owner) = binding_owner.get(target_binding) else {
+                let Some(&target_source_unit) = binding_source_unit.get(target_binding) else {
                     continue;
                 };
-                let callee_owner = OwnerId(callee_ordinal.0);
-                if caller == target_owner || !emitted.insert((target_owner, callee_owner)) {
+                let callee_source_unit = SourceUnitId(callee_ordinal.0);
+                if caller == target_source_unit
+                    || !emitted.insert((target_source_unit, callee_source_unit))
+                {
                     continue;
                 }
                 raw_edges.push((
                     caller,
-                    target_owner,
+                    target_source_unit,
                     EdgeReason::eager_use(stmt.ordinal, target_binding.clone())
-                        .promoted_at_init(callee_owner),
+                        .promoted_at_init(callee_source_unit),
                 ));
             }
             if synchronous.complete {
@@ -912,61 +925,61 @@ fn promote_at_init_calls(
         {
             continue;
         }
-        let caller = OwnerId(stmt.ordinal.0);
-        let mut promoted_read_targets: BTreeSet<OwnerId> = BTreeSet::new();
+        let caller = SourceUnitId(stmt.ordinal.0);
+        let mut promoted_read_targets: BTreeSet<SourceUnitId> = BTreeSet::new();
         let mut fallback_roots = fallback_roots_of(&stmt.at_init_unresolved_sources, false, caller);
         if stmt.at_init_unresolved_inline_fn
             && let Some(&scc_idx) = scc_of.get(&caller)
         {
             fallback_roots.extend(scc_fallback_roots[scc_idx].iter().copied());
             for target_binding in &scc_reads[scc_idx] {
-                let Some(target_owner) = binding_owner.get(target_binding) else {
+                let Some(target_source_unit) = binding_source_unit.get(target_binding) else {
                     continue;
                 };
-                if caller == *target_owner {
+                if caller == *target_source_unit {
                     continue;
                 }
-                if !promoted_read_targets.insert(*target_owner) {
+                if !promoted_read_targets.insert(*target_source_unit) {
                     continue;
                 }
                 raw_edges.push((
                     caller,
-                    *target_owner,
+                    *target_source_unit,
                     EdgeReason::eager_use(stmt.ordinal, target_binding.clone())
                         .promoted_at_init(caller),
                 ));
             }
             for target_binding in &scc_rebinds[scc_idx] {
-                let Some(target_owner) = binding_owner.get(target_binding) else {
+                let Some(target_source_unit) = binding_source_unit.get(target_binding) else {
                     continue;
                 };
-                if caller == *target_owner {
+                if caller == *target_source_unit {
                     continue;
                 }
-                if !promoted_read_targets.insert(*target_owner) {
+                if !promoted_read_targets.insert(*target_source_unit) {
                     continue;
                 }
                 raw_edges.push((
                     caller,
-                    *target_owner,
+                    *target_source_unit,
                     EdgeReason::eager_use(stmt.ordinal, target_binding.clone())
                         .promoted_at_init(caller),
                 ));
             }
         }
         for callee_id in &stmt.calls.eager {
-            let Some(callee_owner) = resolvable_callee(callee_id) else {
+            let Some(callee_source_unit) = resolvable_callee(callee_id) else {
                 // A bare-Ident callee that isn't chunk-declared is a
                 // global/import — out of single-chunk analysis scope
                 // (documented precondition in docs/design.md). A
                 // chunk-declared but unresolvable callee falls back
-                // through the read closure of its own owner.
-                if let Some(&callee_owner) = binding_owner.get(callee_id) {
-                    fallback_roots.insert(callee_owner);
+                // through the read closure of its own source unit.
+                if let Some(&callee_source_unit) = binding_source_unit.get(callee_id) {
+                    fallback_roots.insert(callee_source_unit);
                 }
                 continue;
             };
-            let Some(&scc_idx) = scc_of.get(&callee_owner) else {
+            let Some(&scc_idx) = scc_of.get(&callee_source_unit) else {
                 continue;
             };
             fallback_roots.extend(scc_fallback_roots[scc_idx].iter().copied());
@@ -980,37 +993,37 @@ fn promote_at_init_calls(
                 fallback_roots.extend(fallback_roots_of(&stmt.reads.eager, false, caller));
             }
             for target_binding in &scc_reads[scc_idx] {
-                let Some(target_owner) = binding_owner.get(target_binding) else {
+                let Some(target_source_unit) = binding_source_unit.get(target_binding) else {
                     continue;
                 };
-                if caller == *target_owner {
+                if caller == *target_source_unit {
                     continue;
                 }
-                if !promoted_read_targets.insert(*target_owner) {
+                if !promoted_read_targets.insert(*target_source_unit) {
                     continue;
                 }
                 raw_edges.push((
                     caller,
-                    *target_owner,
+                    *target_source_unit,
                     EdgeReason::eager_use(stmt.ordinal, target_binding.clone())
-                        .promoted_at_init(callee_owner),
+                        .promoted_at_init(callee_source_unit),
                 ));
             }
             for target_binding in &scc_rebinds[scc_idx] {
-                let Some(target_owner) = binding_owner.get(target_binding) else {
+                let Some(target_source_unit) = binding_source_unit.get(target_binding) else {
                     continue;
                 };
-                if caller == *target_owner {
+                if caller == *target_source_unit {
                     continue;
                 }
-                if !promoted_read_targets.insert(*target_owner) {
+                if !promoted_read_targets.insert(*target_source_unit) {
                     continue;
                 }
                 raw_edges.push((
                     caller,
-                    *target_owner,
+                    *target_source_unit,
                     EdgeReason::eager_use(stmt.ordinal, target_binding.clone())
-                        .promoted_at_init(callee_owner),
+                        .promoted_at_init(callee_source_unit),
                 ));
             }
         }
@@ -1035,15 +1048,17 @@ fn promote_at_init_calls(
                 if target_is_hoisted(target_binding) {
                     continue;
                 }
-                let Some(target_owner) = binding_owner.get(target_binding) else {
+                let Some(target_source_unit) = binding_source_unit.get(target_binding) else {
                     continue;
                 };
-                if caller == *target_owner || !promoted_read_targets.insert(*target_owner) {
+                if caller == *target_source_unit
+                    || !promoted_read_targets.insert(*target_source_unit)
+                {
                     continue;
                 }
                 raw_edges.push((
                     caller,
-                    *target_owner,
+                    *target_source_unit,
                     EdgeReason::eager_use(stmt.ordinal, target_binding.clone())
                         .promoted_at_init(caller),
                 ));
@@ -1060,10 +1075,10 @@ fn promote_at_init_calls(
 /// invokes, it must have reached the call site through one of the
 /// bindings the call expression mentions (callee root, arguments,
 /// computed keys) or through an inline function expression at the
-/// call. Each such "root" owner is expanded to the **full lazy
-/// closure** of every owner reachable from it through the chunk's
-/// read graph: edges `O → owner(b)` for every chunk binding `b` the
-/// owner `O` reads (eagerly or lazily), with every reachable owner
+/// call. Each such "root" source unit is expanded to the **full lazy
+/// closure** of every source unit reachable from it through the chunk's
+/// read graph: edges `O → source unit(b)` for every chunk binding `b` the
+/// source unit `O` reads (eagerly or lazily), with every reachable source unit
 /// contributing its `reads.lazy` / `rebinds.lazy` at any nesting
 /// depth. The caller statement then eagerly depends on every
 /// collected target.
@@ -1075,21 +1090,21 @@ fn promote_at_init_calls(
 /// followed by the shared chunk value-flow pass before this fallback.
 ///
 /// Fallback-only edges carry `EdgeRole::PromotedAtInit` with
-/// `callee_owner = caller`, so neither projection view ever drops
+/// `callee_source_unit = caller`, so neither projection view ever drops
 /// them — there is no precisely-known callee module whose evaluation
 /// could make the constraint redundant.
 struct UnresolvedCallFallback {
-    closure: FactsOwnerReadClosure,
+    closure: SourceUnitReadClosure,
 }
 
 impl UnresolvedCallFallback {
     fn build(facts: &[StatementFacts]) -> Self {
         Self {
-            closure: FactsOwnerReadClosure::new(facts),
+            closure: SourceUnitReadClosure::new(facts),
         }
     }
 
-    fn closures_for(&self, owner: StatementOrdinal) -> (&BTreeSet<Id>, &BTreeSet<Id>) {
-        self.closure.lazy_effects_for_owner(owner)
+    fn closures_for(&self, source_unit: StatementOrdinal) -> (&BTreeSet<Id>, &BTreeSet<Id>) {
+        self.closure.lazy_effects_for_source_unit(source_unit)
     }
 }

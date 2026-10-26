@@ -7,7 +7,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::hash::{Hash, Hasher};
 
-use analysis::OwnerId;
+use analysis::SourceUnitId;
 use selector_ir::{SelectorTargetId, VariableDomain};
 
 const SHARED_SPARSE_DOMAIN_THRESHOLD: usize = 1024;
@@ -32,14 +32,14 @@ pub struct BackendValueId(pub i64);
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ConstraintValue {
-    Owner(OwnerId),
+    SourceUnit(SourceUnitId),
     String(String),
 }
 
 impl ConstraintValue {
     pub fn domain(&self) -> VariableDomain {
         match self {
-            Self::Owner(_) => VariableDomain::Owner,
+            Self::SourceUnit(_) => VariableDomain::SourceUnit,
             Self::String(_) => VariableDomain::String,
         }
     }
@@ -63,7 +63,7 @@ pub struct CompiledVariable {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TargetProjection {
     pub target: SelectorTargetId,
-    pub owner_variable: ConstraintVariableId,
+    pub source_unit_variable: ConstraintVariableId,
     pub binding_projection: Option<TargetBindingProjection>,
 }
 
@@ -220,21 +220,21 @@ pub struct CompiledAllDifferentConstraint {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FullDomainValues {
-    pub owners: Vec<BackendValueId>,
+    pub source_units: Vec<BackendValueId>,
     pub strings: Vec<BackendValueId>,
 }
 
 impl FullDomainValues {
     pub fn get(&self, domain: VariableDomain) -> &[BackendValueId] {
         match domain {
-            VariableDomain::Owner => &self.owners,
+            VariableDomain::SourceUnit => &self.source_units,
             VariableDomain::String => &self.strings,
         }
     }
 
     fn get_mut(&mut self, domain: VariableDomain) -> &mut Vec<BackendValueId> {
         match domain {
-            VariableDomain::Owner => &mut self.owners,
+            VariableDomain::SourceUnit => &mut self.source_units,
             VariableDomain::String => &mut self.strings,
         }
     }
@@ -242,23 +242,24 @@ impl FullDomainValues {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DomainValueDictionary {
-    pub owners: Vec<OwnerId>,
+    pub source_units: Vec<SourceUnitId>,
     pub strings: Vec<String>,
 }
 
 impl DomainValueDictionary {
     fn domain_len(&self, domain: VariableDomain) -> usize {
         match domain {
-            VariableDomain::Owner => self.owners.len(),
+            VariableDomain::SourceUnit => self.source_units.len(),
             VariableDomain::String => self.strings.len(),
         }
     }
 
     pub fn encode(&self, value: &ConstraintValue) -> Option<BackendValueId> {
         let index = match value {
-            ConstraintValue::Owner(value) => {
-                self.owners.iter().position(|candidate| candidate == value)
-            }
+            ConstraintValue::SourceUnit(value) => self
+                .source_units
+                .iter()
+                .position(|candidate| candidate == value),
             ConstraintValue::String(value) => {
                 self.strings.iter().position(|candidate| candidate == value)
             }
@@ -269,7 +270,11 @@ impl DomainValueDictionary {
     fn decode(&self, domain: VariableDomain, value: BackendValueId) -> Option<ConstraintValue> {
         let index = backend_value_index(value).ok()?;
         match domain {
-            VariableDomain::Owner => self.owners.get(index).copied().map(ConstraintValue::Owner),
+            VariableDomain::SourceUnit => self
+                .source_units
+                .get(index)
+                .copied()
+                .map(ConstraintValue::SourceUnit),
             VariableDomain::String => self
                 .strings
                 .get(index)
@@ -401,7 +406,7 @@ pub struct CompiledSelectorProblemBuilder {
 
 #[derive(Debug, Default)]
 struct DomainValueIds {
-    owners: HashMap<OwnerId, BackendValueId>,
+    source_units: HashMap<SourceUnitId, BackendValueId>,
     strings: HashMap<String, BackendValueId>,
 }
 
@@ -497,10 +502,10 @@ impl CompiledSelectorProblemBuilder {
     pub fn add_target_projection(
         &mut self,
         target: SelectorTargetId,
-        owner_variable: ConstraintVariableId,
+        source_unit_variable: ConstraintVariableId,
         binding_projection: Option<TargetBindingProjection>,
     ) -> Result<(), CompiledSelectorProblemError> {
-        self.require_domain(owner_variable, VariableDomain::Owner)?;
+        self.require_domain(source_unit_variable, VariableDomain::SourceUnit)?;
         if let Some(binding_variable) = binding_projection
             .as_ref()
             .and_then(TargetBindingProjection::variable)
@@ -516,7 +521,7 @@ impl CompiledSelectorProblemBuilder {
         }
         self.target_projections.push(TargetProjection {
             target,
-            owner_variable,
+            source_unit_variable,
             binding_projection,
         });
         Ok(())
@@ -671,17 +676,17 @@ impl CompiledSelectorProblemBuilder {
         self.set_variable_domain(variable, replacement)
     }
 
-    pub fn intern_owner(
+    pub fn intern_source_unit(
         &mut self,
-        value: OwnerId,
+        value: SourceUnitId,
     ) -> Result<BackendValueId, CompiledSelectorProblemError> {
-        if let Some(id) = self.value_ids.owners.get(&value) {
+        if let Some(id) = self.value_ids.source_units.get(&value) {
             return Ok(*id);
         }
-        let count = self.value_dictionary.owners.len();
+        let count = self.value_dictionary.source_units.len();
         let id = backend_value_id(count)?;
-        self.value_ids.owners.insert(value, id);
-        self.value_dictionary.owners.push(value);
+        self.value_ids.source_units.insert(value, id);
+        self.value_dictionary.source_units.push(value);
         Ok(id)
     }
 
@@ -726,7 +731,7 @@ impl CompiledSelectorProblemBuilder {
     ) -> Result<Option<AllDifferentConstraintId>, CompiledSelectorProblemError> {
         let variables = targets
             .iter()
-            .map(|target| self.target_owner_projection_variable(*target))
+            .map(|target| self.target_source_unit_projection_variable(*target))
             .collect::<Result<Vec<_>, _>>()?;
         let id = AllDifferentConstraintId(self.all_different.len());
         self.validate_all_different_constraint(id, &variables)?;
@@ -769,7 +774,7 @@ impl CompiledSelectorProblemBuilder {
         value: ConstraintValue,
     ) -> Result<BackendValueId, CompiledSelectorProblemError> {
         match value {
-            ConstraintValue::Owner(value) => self.intern_owner(value),
+            ConstraintValue::SourceUnit(value) => self.intern_source_unit(value),
             ConstraintValue::String(value) => self.intern_string(&value),
         }
     }
@@ -1303,14 +1308,14 @@ impl CompiledSelectorProblemBuilder {
         Ok(())
     }
 
-    fn target_owner_projection_variable(
+    fn target_source_unit_projection_variable(
         &self,
         target: SelectorTargetId,
     ) -> Result<ConstraintVariableId, CompiledSelectorProblemError> {
         self.target_projections
             .iter()
             .find_map(|projection| {
-                (projection.target == target).then_some(projection.owner_variable)
+                (projection.target == target).then_some(projection.source_unit_variable)
             })
             .ok_or(CompiledSelectorProblemError::UnknownTargetProjection { target })
     }

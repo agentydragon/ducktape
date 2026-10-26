@@ -1,6 +1,6 @@
 //! Structural atomic factor groups: SCCs of the constraining-edge
-//! subgraph `G_atomic` over an owner graph. Each SCC is one set of
-//! owners any valid factorization must keep co-located, because the
+//! subgraph `G_atomic` over a dependency graph. Each SCC is one set of
+//! source units any valid factorization must keep co-located, because the
 //! bundle's original init order is otherwise unrealizable as ESM.
 //! [`crate::assignment_assembly::assemble_assignment`] consumes the groups
 //! plus YAML claims and `unassigned_mode` to produce the final
@@ -20,7 +20,7 @@
 //! * `CoDeclaration`: add both directions (all declaration sites of one
 //!   module-scoped var binding share a destination).
 //! * `LocalEffect`: add both directions (target-local mutation must
-//!   co-locate with its target owner).
+//!   co-locate with its target source unit).
 //! * `Sequenced`: add `u → v`. Co-location is only forced when
 //!   another constraining edge runs the reverse direction —
 //!   Tarjan's SCC handles that automatically.
@@ -33,11 +33,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::facts::StatementFacts;
 use crate::graph::{
-    DepKind, DuplicateTopLevelDeclaration, OwnerGraph, OwnerGraphOptions, OwnerId,
-    build_owner_graph_with,
+    DepKind, DependencyGraph, DependencyGraphOptions, DuplicateTopLevelDeclaration, SourceUnitId,
+    build_dependency_graph_with,
 };
 
-/// One atomic factor group: a set of owners that any valid
+/// One atomic factor group: a set of source units that any valid
 /// factorization must keep co-located, plus the `DepKind`s of the
 /// constraining edges *inside* the group (everything except
 /// `LazyUse` and `HoistedUse`) — used by [`crate::assignment_assembly`] to explain *why*
@@ -48,44 +48,44 @@ use crate::graph::{
 /// drop their own post-collection sort.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AtomicGroup {
-    pub members: BTreeSet<OwnerId>,
+    pub members: BTreeSet<SourceUnitId>,
     pub causes: BTreeSet<DepKind>,
 }
 
-/// Owner graph plus its precomputed atomic groups. Bundled so a single
+/// Dependency graph plus its precomputed atomic groups. Bundled so a single
 /// chunk-level computation pays the Tarjan/SCC cost once and threads
 /// the result through `ChunkPlanBuilder::synthesize_per_atomic_group` →
 /// `AssignmentAnalysis::build_with` (gate crate) and atomic-DAG report emission.
 #[derive(Debug, Clone)]
-pub struct OwnerGraphAndAtomicGroups {
-    pub owner_graph: OwnerGraph,
+pub struct DependencyGraphAndAtomicGroups {
+    pub dependency_graph: DependencyGraph,
     pub atomic_groups: Vec<AtomicGroup>,
 }
 
-/// Build an owner graph from chunk facts under the per-chunk
-/// [`OwnerGraphOptions`] and immediately compute its atomic groups.
-pub fn compute_owner_graph_and_atomic_groups_with(
+/// Build a dependency graph from chunk facts under the per-chunk
+/// [`DependencyGraphOptions`] and immediately compute its atomic groups.
+pub fn compute_dependency_graph_and_atomic_groups_with(
     facts: &[StatementFacts],
-    options: OwnerGraphOptions,
-) -> Result<OwnerGraphAndAtomicGroups, DuplicateTopLevelDeclaration> {
-    let owner_graph = build_owner_graph_with(facts, options)?;
-    let atomic_groups = compute_atomic_groups(&owner_graph);
-    Ok(OwnerGraphAndAtomicGroups {
-        owner_graph,
+    options: DependencyGraphOptions,
+) -> Result<DependencyGraphAndAtomicGroups, DuplicateTopLevelDeclaration> {
+    let dependency_graph = build_dependency_graph_with(facts, options)?;
+    let atomic_groups = compute_atomic_groups(&dependency_graph);
+    Ok(DependencyGraphAndAtomicGroups {
+        dependency_graph,
         atomic_groups,
     })
 }
 
-/// Compute atomic factor groups for an owner graph. Returns one group
-/// per SCC of the constraining-edge subgraph; singleton owners with
+/// Compute atomic factor groups for a dependency graph. Returns one group
+/// per SCC of the constraining-edge subgraph; singleton source units with
 /// no constraining edges get their own (empty-cause) group so every
 /// owner is covered exactly once.
-pub fn compute_atomic_groups(owner_graph: &OwnerGraph) -> Vec<AtomicGroup> {
-    let mut g_atomic = DiGraphMap::<OwnerId, ()>::new();
-    for node in owner_graph.iter_nodes() {
+pub fn compute_atomic_groups(dependency_graph: &DependencyGraph) -> Vec<AtomicGroup> {
+    let mut g_atomic = DiGraphMap::<SourceUnitId, ()>::new();
+    for node in dependency_graph.iter_nodes() {
         g_atomic.add_node(node.id);
     }
-    for edge in owner_graph.iter_edges() {
+    for edge in dependency_graph.iter_edges() {
         if edge.from == edge.to {
             continue;
         }
@@ -105,14 +105,14 @@ pub fn compute_atomic_groups(owner_graph: &OwnerGraph) -> Vec<AtomicGroup> {
         }
     }
     let sccs = tarjan_scc(&g_atomic);
-    let mut atomic_group_of = vec![None::<usize>; owner_graph.num_nodes()];
+    let mut atomic_group_of = vec![None::<usize>; dependency_graph.num_nodes()];
     let mut atomic_groups: Vec<AtomicGroup> = sccs
         .into_iter()
         .enumerate()
         .map(|(idx, scc)| {
-            let members: BTreeSet<OwnerId> = scc.into_iter().collect();
-            for owner in &members {
-                atomic_group_of[owner.0] = Some(idx);
+            let members: BTreeSet<SourceUnitId> = scc.into_iter().collect();
+            for source_unit in &members {
+                atomic_group_of[source_unit.0] = Some(idx);
             }
             AtomicGroup {
                 members,
@@ -120,7 +120,7 @@ pub fn compute_atomic_groups(owner_graph: &OwnerGraph) -> Vec<AtomicGroup> {
             }
         })
         .collect();
-    for edge in owner_graph.iter_edges() {
+    for edge in dependency_graph.iter_edges() {
         if edge.from == edge.to
             || matches!(edge.reason.kind, DepKind::LazyUse | DepKind::HoistedUse)
         {

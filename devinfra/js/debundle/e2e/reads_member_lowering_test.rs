@@ -7,12 +7,12 @@
 //!
 //! These tests drive the real `debundle` binary: the
 //! spec carries `reads_member` selectors, the member-read facts are derived from
-//! the chunk's AST and joined to the owner graph, and we assert the resolved
+//! the chunk's AST and joined to the dependency graph, and we assert the resolved
 //! binding lands in the right module and the emitted tree runs under Node.
 //!
 //! The object-constrained tests also pin the **object-anchor ordering decision**
 //! (shared with `cross_ref`): the object's minified binding comes from the
-//! already-resolved members of the chunk, because the owner graph's `export_name`
+//! already-resolved members of the chunk, because the dependency graph's `export_name`
 //! is not populated at member-resolution time.
 
 use debundle_e2e_support::*;
@@ -127,7 +127,7 @@ export { ctx, node, ctxId, nodeId };
 }
 
 /// Fail-closed: a bare `reads_member` whose member is read by **two** declaring
-/// owners is ambiguous, so it errors rather than guessing one.
+/// source_units is ambiguous, so it errors rather than guessing one.
 #[test]
 fn reads_member_ambiguous_fails_closed() {
     expect_rejection_containing_all(
@@ -147,7 +147,7 @@ export { a, readA, readToo };
     );
 }
 
-/// Fail-closed: a `reads_member` whose member no declaring owner reads errors
+/// Fail-closed: a `reads_member` whose member no declaring source_unit reads errors
 /// rather than silently dropping the claim.
 #[test]
 fn reads_member_zero_match_fails_closed() {

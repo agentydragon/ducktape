@@ -181,7 +181,7 @@ fn anonymous_statement_unique_only_by_elimination_warns() {
         either["outcome"],
         json!({
             "kind": "resolved",
-            "owner": 0,
+            "body_index": 0,
             "resolved_by": {
                 "by": "elimination",
                 "claimers": [{"logical_module": "anonymous/other", "entity": {"anonymous_statement": 0}}],
@@ -323,10 +323,10 @@ fn ambiguous_lists_each_candidates_differentiator() {
     assert_eq!(
         any["outcome"]["differentiators"],
         json!([
-            {"owner": 0, "statement": 0, "anchor": "string literal \"first\""},
-            {"owner": 1, "statement": 1, "anchor": "string literal \"second\""},
-            {"owner": 3, "statement": 2, "anchor": "string literal \"gamma-marker\""},
-            {"owner": 4, "statement": 3, "anchor": "string literal \"same\""},
+            {"candidate_body_index": 0, "anchor_body_index": 0, "anchor": "string literal \"first\""},
+            {"candidate_body_index": 1, "anchor_body_index": 1, "anchor": "string literal \"second\""},
+            {"candidate_body_index": 3, "anchor_body_index": 2, "anchor": "string literal \"gamma-marker\""},
+            {"candidate_body_index": 4, "anchor_body_index": 3, "anchor": "string literal \"same\""},
         ]),
         "{any:#}"
     );
@@ -368,7 +368,7 @@ function work(value) {
     };
     assert_eq!(
         work["outcome"],
-        json!({"kind": "ambiguous", "candidates": [{"owner": 1}, {"owner": 3}], "truncated": false}),
+        json!({"kind": "ambiguous", "candidates": [{"body_index": 1}, {"body_index": 3}], "truncated": false}),
         "{work:#}"
     );
     assert!(

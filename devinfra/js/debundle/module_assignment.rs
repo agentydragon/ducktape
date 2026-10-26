@@ -1,10 +1,10 @@
-use crate::{ModuleId, OwnerGraph, OwnerId};
+use crate::{DependencyGraph, ModuleId, SourceUnitId};
 
-/// Per-owner module assignment for one chunk's owner graph.
+/// Per-source_unit module assignment for one chunk's dependency graph.
 ///
-/// Maps every owner in the chunk's program-dependence graph to an
-/// output module. Indexing is dense by [`OwnerId`]; every
-/// owner has an assignment (defaulting to the caller-supplied
+/// Maps every source_unit in the chunk's program-dependence graph to an
+/// output module. Indexing is dense by [`SourceUnitId`]; every
+/// source_unit has an assignment (defaulting to the caller-supplied
 /// `default_destination` — typically the chunk's synthesized residual
 /// module).
 ///
@@ -14,7 +14,7 @@ use crate::{ModuleId, OwnerGraph, OwnerId};
 #[derive(Debug, Clone)]
 pub struct ModuleAssignment {
     of: Vec<ModuleId>,
-    /// The chunk's residual logical module — where unassigned owners
+    /// The chunk's residual logical module — where unassigned source_units
     /// default to, and which the materializer emits as the chunk's
     /// runtime entry. Realizability uses this to identify the ESM
     /// DFS root: any cycle in `I` that contains `residual` with a
@@ -25,15 +25,15 @@ pub struct ModuleAssignment {
 }
 
 impl ModuleAssignment {
-    /// Build an assignment keyed by `owner_graph.num_nodes()` slots,
+    /// Build an assignment keyed by `dependency_graph.num_nodes()` slots,
     /// each defaulting to `default_destination`. Callers pass the
     /// chunk's residual logical-module id (synthesized by the
     /// materializer); PerAtomicGroup callers can pass any placeholder
-    /// because every owner gets a concrete claim from the per-group
+    /// because every source unit gets a concrete claim from the per-atomic-group
     /// synthesizer before the assignment is consulted.
-    pub fn new(owner_graph: &OwnerGraph, default_destination: ModuleId) -> Self {
+    pub fn new(dependency_graph: &DependencyGraph, default_destination: ModuleId) -> Self {
         Self {
-            of: vec![default_destination; owner_graph.num_nodes()],
+            of: vec![default_destination; dependency_graph.num_nodes()],
             residual: default_destination,
         }
     }
@@ -45,28 +45,28 @@ impl ModuleAssignment {
         self.residual
     }
 
-    /// Module assignment for `owner`. Panics if `owner` is out of
-    /// bounds — every `OwnerId` constructed from the same
-    /// `OwnerGraph` must have a slot.
-    pub fn of(&self, owner: OwnerId) -> ModuleId {
-        self.of[owner.0]
+    /// Module assignment for `source_unit`. Panics if `source_unit` is out of
+    /// bounds — every `SourceUnitId` constructed from the same
+    /// `DependencyGraph` must have a slot.
+    pub fn of(&self, source_unit: SourceUnitId) -> ModuleId {
+        self.of[source_unit.0]
     }
 
-    /// Reassign `owner` to `module`.
-    pub fn set(&mut self, owner: OwnerId, module: ModuleId) {
-        self.of[owner.0] = module;
+    /// Reassign `source_unit` to `module`.
+    pub fn set(&mut self, source_unit: SourceUnitId, module: ModuleId) {
+        self.of[source_unit.0] = module;
     }
 
-    /// `(OwnerId, ModuleId)` pairs in `OwnerId` order.
-    pub fn iter(&self) -> impl Iterator<Item = (OwnerId, ModuleId)> + '_ {
+    /// `(SourceUnitId, ModuleId)` pairs in `SourceUnitId` order.
+    pub fn iter(&self) -> impl Iterator<Item = (SourceUnitId, ModuleId)> + '_ {
         self.of
             .iter()
             .enumerate()
-            .map(|(idx, &m)| (OwnerId(idx), m))
+            .map(|(idx, &m)| (SourceUnitId(idx), m))
     }
 
     /// Construct an assignment from a dense `Vec<ModuleId>` indexed by
-    /// `OwnerId.0`. Caller-supplied residual; intended for the peel
+    /// `SourceUnitId.0`. Caller-supplied residual; intended for the peel
     /// planner's projection of `QuotientGraph` class assignments back
     /// to `ModuleAssignment` slots before running `check_realizability`.
     pub fn from_assignments(of: Vec<ModuleId>, residual: ModuleId) -> Self {

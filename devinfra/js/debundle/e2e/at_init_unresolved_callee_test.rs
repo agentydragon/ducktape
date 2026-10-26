@@ -119,13 +119,13 @@ export { later, tools, toolCopies, byName, ids, copiedIds };
         )],
     ));
 
-    let graph = fixture.owner_graph();
-    let later_owner = owner_for_binding(&graph, "later");
+    let graph = fixture.dependency_graph();
+    let later_source_unit = source_unit_for_binding(&graph, "later");
     let promoted_to_later: Vec<_> = graph
         .edges
         .iter()
         .filter(|edge| {
-            edge.target == later_owner
+            edge.target == later_source_unit
                 && edge.edge_kind == DepKind::EagerUse
                 && matches!(edge.role, Some(EdgeRoleReport::PromotedAtInit { .. }))
         })
@@ -134,7 +134,7 @@ export { later, tools, toolCopies, byName, ids, copiedIds };
         promoted_to_later.is_empty(),
         "static Array collection methods must not promote lazy reads \
          from function-valued elements; got {promoted_to_later:#?}\n\n\
-         Full owner graph: {graph:#?}",
+         Full dependency graph: {graph:#?}",
     );
     assert_entry_output(&fixture, "");
 }
@@ -257,13 +257,13 @@ export { later };
         vec![logical_module("later_mod", &[Member::new("later")])],
     ));
 
-    let graph = fixture.owner_graph();
-    let later_owner = owner_for_binding(&graph, "later");
+    let graph = fixture.dependency_graph();
+    let later_source_unit = source_unit_for_binding(&graph, "later");
     let promoted_to_later: Vec<_> = graph
         .edges
         .iter()
         .filter(|edge| {
-            edge.target == later_owner
+            edge.target == later_source_unit
                 && edge.edge_kind == DepKind::EagerUse
                 && matches!(edge.role, Some(EdgeRoleReport::PromotedAtInit { .. }))
         })
@@ -271,7 +271,7 @@ export { later };
     assert!(
         promoted_to_later.is_empty(),
         "global addEventListener registration must not promote lazy callback reads; \
-         got {promoted_to_later:#?}\n\nFull owner graph: {graph:#?}",
+         got {promoted_to_later:#?}\n\nFull dependency graph: {graph:#?}",
     );
     assert_entry_output(&fixture, "");
 }
@@ -292,13 +292,13 @@ export { later, document, button };
         vec![logical_module("later_mod", &[Member::new("later")])],
     ));
 
-    let graph = fixture.owner_graph();
-    let later_owner = owner_for_binding(&graph, "later");
+    let graph = fixture.dependency_graph();
+    let later_source_unit = source_unit_for_binding(&graph, "later");
     let promoted_to_later: Vec<_> = graph
         .edges
         .iter()
         .filter(|edge| {
-            edge.target == later_owner
+            edge.target == later_source_unit
                 && edge.edge_kind == DepKind::EagerUse
                 && matches!(edge.role, Some(EdgeRoleReport::PromotedAtInit { .. }))
         })
@@ -306,7 +306,7 @@ export { later, document, button };
     assert!(
         promoted_to_later.is_empty(),
         "DOM addEventListener registration must not promote lazy callback reads; \
-         got {promoted_to_later:#?}\n\nFull owner graph: {graph:#?}",
+         got {promoted_to_later:#?}\n\nFull dependency graph: {graph:#?}",
     );
     assert_entry_output(&fixture, "");
 }

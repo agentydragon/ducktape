@@ -10,7 +10,7 @@ module owners. Review semantic destinations, selector anchors, and the full
 candidate verdict; optional coarsening and original-home rejoining are
 described in [the decomposition guide](cli.md#refining-existing-modules-modules-decompose).
 
-Apply a reviewed `{owner_id, module}` map of already-claimed non-residual
+Apply a reviewed `{source_unit_id, module}` map of already-claimed non-residual
 owners with `modules refine --dry-run`, then `modules refine`. Both resolve
 the full scoped spec and validate the requested assignment before any write.
 The [owner-assignment guide](cli.md#applying-reviewed-owner-assignments-modules-refine)
@@ -45,7 +45,7 @@ use the module roots mapped to the graph's chunk.
    the project's extraction gate.
 
 ```bash
-# Author reviewed.json with proposal_id, owner_ids, module, and readable_names.
+# Author reviewed.json with proposal_id, source_unit_ids, module, and readable_names.
 debundle modules apply --batch reviewed.json --dry-run --format json
 debundle modules apply --batch reviewed.json
 ```
@@ -203,8 +203,8 @@ that changes destination, include one row in a JSON batch:
 
 ```json
 [
-  { "owner_id": "owner:12", "module": "runtime/state" },
-  { "owner_id": "owner:19", "module": "runtime/effects" }
+  { "source_unit_id": "unit:12", "module": "runtime/state" },
+  { "source_unit_id": "unit:19", "module": "runtime/effects" }
 ]
 ```
 
@@ -212,9 +212,9 @@ Then preview and apply the same reviewed file:
 
 ```bash
 debundle modules refine --batch reviewed-owners.json --dry-run \
-  --graph owner_graph.json --modules spec/modules --source-root source
+  --graph dependency_graph.json --modules spec/modules --source-root source
 debundle modules refine --batch reviewed-owners.json \
-  --graph owner_graph.json --modules spec/modules --source-root source
+  --graph dependency_graph.json --modules spec/modules --source-root source
 ```
 
 This command moves existing selector entries for each owner as a unit. It
@@ -288,7 +288,7 @@ mounts `<X />`. Move `X` into that consumer's YAML.
 Each `anonymous_statements:` entry can carry the `comment:` and `note:` fields
 described below. The materializer resolves `source_match` and emits the comment
 above the matched statement. Graph-backed CLI checks resolve the same selector
-against source and map the matched statement back to the owner graph, so the
+against source and map the matched statement back to the dependency graph, so the
 spec stays selector-based.
 
 ```yaml
@@ -326,7 +326,7 @@ Source-module comments and notes are composed as described in
 § Comments and notes below.
 
 The realizability gate runs against the post-merge assignment before
-the YAML splice fires — pass `--graph <owner_graph.json>` so the
+the YAML splice fires — pass `--graph <dependency_graph.json>` so the
 gate has the chunk's edge topology. The gate rejects merges that
 would create cross-module cycles; `--dry-run` runs the gate without
 writing. Use `--no-verify` to skip the gate (e.g. during multi-step
@@ -344,7 +344,7 @@ bindings of one destructuring declarator share a statement, with their comments
 stacked in pattern order.
 
 Use `comment:` to explain intent, invariants, and module relationships. Keep
-debt rationale, provenance, owner IDs, and source-call trivia in non-emitting
+debt rationale, provenance, source-unit IDs, and source-call trivia in non-emitting
 `note:` (or omit them). Both fields survive YAML rewrites; `#` YAML comments do
 not, because the rewriters re-emit the files without them. Per-binding metadata
 belongs under `annotations.<export_name>`, which also accepts `purity`, `effect`,

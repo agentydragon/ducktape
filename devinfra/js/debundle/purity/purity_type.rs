@@ -9,7 +9,7 @@ use std::sync::Arc;
 /// sub-expressions (in source order). Known impure callees are linked
 /// through shared cause nodes rather than flattened into this list. The classifier
 /// previously distinguished `Impure` from `Unknown` for an internal
-/// soundness argument, but downstream consumers (owner-graph
+/// soundness argument, but downstream consumers (dependency graph
 /// `has_side_effect`) collapsed both to "not pure"; this type
 /// matches that contract and replaces the bool with the full
 /// rationale via those links.

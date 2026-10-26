@@ -9,7 +9,7 @@ mod chunk_constraining_module_edges_tests {
     use crate::graph::*;
     use crate::ids::ModuleId;
     use crate::module_assignment::ModuleAssignment;
-    use crate::{AnalysisInputs, OwnerGraph, OwnerId, facts::analyze_chunk};
+    use crate::{AnalysisInputs, DependencyGraph, SourceUnitId, facts::analyze_chunk};
 
     fn module_id(index: usize) -> ModuleId {
         ModuleId(index)
@@ -20,12 +20,12 @@ mod chunk_constraining_module_edges_tests {
         analyze_chunk(&module, &AnalysisInputs::default(), None, |_| None).facts
     }
 
-    fn parse_and_build(source: &str) -> OwnerGraph {
-        build_owner_graph_with(&parse_facts(source), Default::default()).unwrap()
+    fn parse_and_build(source: &str) -> DependencyGraph {
+        build_dependency_graph_with(&parse_facts(source), Default::default()).unwrap()
     }
 
     #[test]
-    fn repeated_vars_retain_and_join_both_declaration_owners() {
+    fn repeated_vars_retain_and_join_both_declaration_source_units() {
         let graph = parse_and_build("var x = 1;\nvar x = 2;\n");
         assert_eq!(graph.num_nodes(), 2);
         for node in graph.iter_nodes() {
@@ -38,7 +38,10 @@ mod chunk_constraining_module_edges_tests {
             .collect();
         assert_eq!(
             co_declarations,
-            BTreeSet::from([(OwnerId(0), OwnerId(1)), (OwnerId(1), OwnerId(0)),])
+            BTreeSet::from([
+                (SourceUnitId(0), SourceUnitId(1)),
+                (SourceUnitId(1), SourceUnitId(0)),
+            ])
         );
     }
 
@@ -46,10 +49,10 @@ mod chunk_constraining_module_edges_tests {
     #[test]
     fn eager_cross_module_edge_included() {
         let source = "const a = 1; const b = a + 1;";
-        let owner_graph = parse_and_build(source);
-        let mut assignment = ModuleAssignment::new(&owner_graph, module_id(0));
-        assignment.set(OwnerId(1), module_id(1));
-        let canonical = chunk_constraining_module_edges(&owner_graph, &assignment);
+        let dependency_graph = parse_and_build(source);
+        let mut assignment = ModuleAssignment::new(&dependency_graph, module_id(0));
+        assignment.set(SourceUnitId(1), module_id(1));
+        let canonical = chunk_constraining_module_edges(&dependency_graph, &assignment);
         let pairs: BTreeSet<(ModuleId, ModuleId)> = canonical.pairs().collect();
         assert_eq!(
             pairs,
@@ -63,10 +66,10 @@ mod chunk_constraining_module_edges_tests {
     #[test]
     fn same_module_edges_excluded() {
         let source = "const a = 1; const b = a + 1;";
-        let owner_graph = parse_and_build(source);
-        // Both owners in module 0 → no cross-module edges.
-        let assignment = ModuleAssignment::new(&owner_graph, module_id(0));
-        let canonical = chunk_constraining_module_edges(&owner_graph, &assignment);
+        let dependency_graph = parse_and_build(source);
+        // Both source units in module 0 → no cross-module edges.
+        let assignment = ModuleAssignment::new(&dependency_graph, module_id(0));
+        let canonical = chunk_constraining_module_edges(&dependency_graph, &assignment);
         assert!(canonical.edges.is_empty());
     }
 
@@ -77,10 +80,10 @@ mod chunk_constraining_module_edges_tests {
     fn chunk_source_import_order_includes_extra_nodes() {
         // Simple two-module DAG.
         let source = "const a = 1; const b = a + 1;";
-        let owner_graph = parse_and_build(source);
-        let mut assignment = ModuleAssignment::new(&owner_graph, module_id(0));
-        assignment.set(OwnerId(1), module_id(1));
-        let canonical = chunk_constraining_module_edges(&owner_graph, &assignment);
+        let dependency_graph = parse_and_build(source);
+        let mut assignment = ModuleAssignment::new(&dependency_graph, module_id(0));
+        assignment.set(SourceUnitId(1), module_id(1));
+        let canonical = chunk_constraining_module_edges(&dependency_graph, &assignment);
         let extra: BTreeSet<ModuleId> = BTreeSet::from([module_id(5), module_id(0)]);
         let order = chunk_source_import_order_from_adjacency(
             canonical.pairs(),
@@ -97,22 +100,23 @@ mod chunk_constraining_module_edges_tests {
 }
 
 mod from_report_tests {
-    //! `OwnerGraph::from_report` reconstruction of the wire shape. The
+    //! `DependencyGraph::from_report` reconstruction of the wire shape. The
     //! materializer emits [`EdgeRole`] through
-    //! `OwnerGraphEdgeReport.role`; the peel planner reconstructs it
+    //! `DependencyEdgeReport.role`; the peel planner reconstructs it
     //! here. Both ends must agree so the planner's gate runs the same
     //! cross-module-at-init filter the materializer's gate does.
     use crate::purity::Purity;
     use crate::reports::schema::{
-        AtomicGraphReport, EdgeRoleReport, OwnerGraphEdgeReport, OwnerGraphNodeReport,
-        OwnerGraphQuotientReport, OwnerGraphReport,
+        AtomicGraphReport, DependencyEdgeReport, DependencyGraphReport, EdgeRoleReport,
+        ModuleQuotientReport, SourceUnitReport,
     };
     use crate::{
-        DepKind, EdgeRole, OwnerEdgeId, OwnerGraph, OwnerId, StatementKind, StatementOrdinal,
+        DepKind, DependencyEdgeId, DependencyGraph, EdgeRole, SourceUnitId, StatementKind,
+        StatementOrdinal,
     };
 
-    fn node(id: &str, ordinal: usize) -> OwnerGraphNodeReport {
-        OwnerGraphNodeReport {
+    fn node(id: &str, ordinal: usize) -> SourceUnitReport {
+        SourceUnitReport {
             id: id.to_string(),
             statement_ordinal: StatementOrdinal(ordinal),
             source_location: None,
@@ -123,16 +127,16 @@ mod from_report_tests {
         }
     }
 
-    /// An eager edge from `owner:1` to `target`, over owners 0..=2, carrying
+    /// An eager edge from `unit:1` to `target`, over source units 0..=2, carrying
     /// `role` on the wire.
-    fn report_with_edge(target: &str, role: Option<EdgeRoleReport>) -> OwnerGraphReport {
-        OwnerGraphReport {
+    fn report_with_edge(target: &str, role: Option<EdgeRoleReport>) -> DependencyGraphReport {
+        DependencyGraphReport {
             chunk_id: "chunk".into(),
-            nodes: vec![node("owner:0", 0), node("owner:1", 1), node("owner:2", 2)],
+            nodes: vec![node("unit:0", 0), node("unit:1", 1), node("unit:2", 2)],
             purity_causes: Vec::new(),
-            edges: vec![OwnerGraphEdgeReport {
-                id: "owner_edge:0".to_string(),
-                source: "owner:1".to_string(),
+            edges: vec![DependencyEdgeReport {
+                id: "dependency_edge:0".to_string(),
+                source: "unit:1".to_string(),
                 target: target.to_string(),
                 edge_kind: DepKind::EagerUse,
                 binding: None,
@@ -140,7 +144,7 @@ mod from_report_tests {
                 constrains_init_order: true,
                 role,
             }],
-            quotient: OwnerGraphQuotientReport {
+            quotient: ModuleQuotientReport {
                 nodes: Vec::new(),
                 edges: Vec::new(),
                 sccs: Vec::new(),
@@ -155,7 +159,7 @@ mod from_report_tests {
     /// Direct edges serialize with `role = None` and reconstruct as
     /// `EdgeRole::Direct`; promoted edges carry an
     /// `EdgeRoleReport::PromotedAtInit` and reconstruct as
-    /// `EdgeRole::PromotedAtInit` with the resolved callee `OwnerId`.
+    /// `EdgeRole::PromotedAtInit` with the resolved callee `SourceUnitId`.
     #[test]
     fn edge_role_round_trips_through_the_wire_shape() {
         for (case, wire_role, expected) in [
@@ -163,28 +167,33 @@ mod from_report_tests {
             (
                 "promoted at init",
                 Some(EdgeRoleReport::PromotedAtInit {
-                    callee_owner: "owner:2".to_string(),
+                    callee_source_unit: "unit:2".to_string(),
                 }),
                 EdgeRole::PromotedAtInit {
-                    callee_owner: OwnerId(2),
+                    callee_source_unit: SourceUnitId(2),
                 },
             ),
         ] {
-            let graph = OwnerGraph::from_report(&report_with_edge("owner:0", wire_role)).unwrap();
+            let graph =
+                DependencyGraph::from_report(&report_with_edge("unit:0", wire_role)).unwrap();
             assert_eq!(graph.num_edges(), 1, "{case}");
-            assert_eq!(graph.edge(OwnerEdgeId(0)).reason.role(), expected, "{case}");
+            assert_eq!(
+                graph.edge(DependencyEdgeId(0)).reason.role(),
+                expected,
+                "{case}"
+            );
         }
     }
 
-    /// Strict mapping: an edge referencing an owner id missing from
-    /// the node table (malformed / version-skewed `owner_graph.json`)
+    /// Strict mapping: an edge referencing an source unit id missing from
+    /// the node table (malformed / version-skewed `dependency_graph.json`)
     /// must be a hard error, not a silently dropped edge — the
     /// planner-side gate would otherwise reason over a weaker graph.
     #[test]
     fn from_report_errors_on_unresolvable_edge_endpoint() {
-        let err = OwnerGraph::from_report(&report_with_edge("owner:999", None)).unwrap_err();
-        assert_eq!(err.endpoint, "owner:999");
-        assert_eq!(err.edge_id, "owner_edge:0");
-        assert!(err.to_string().contains("owner:999"), "{err}");
+        let err = DependencyGraph::from_report(&report_with_edge("unit:999", None)).unwrap_err();
+        assert_eq!(err.endpoint, "unit:999");
+        assert_eq!(err.edge_id, "dependency_edge:0");
+        assert!(err.to_string().contains("unit:999"), "{err}");
     }
 }

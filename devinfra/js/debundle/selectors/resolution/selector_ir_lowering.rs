@@ -8,18 +8,18 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use analysis::StatementKind;
 use selector_ir::{
-    ClaimKind, OwnerTerm, SelectorAtom, SelectorProgram, SelectorProjectedValue, SelectorTargetId,
-    SelectorVariableId, StringTerm, VariableDomain,
+    ClaimKind, SelectorAtom, SelectorProgram, SelectorProjectedValue, SelectorTargetId,
+    SelectorVariableId, SourceUnitTerm, StringTerm, VariableDomain,
 };
 use spec::{AnonymousStatementSelector, BindingSelector, BindingSourceKind, CrossRefRelation};
 
 /// A projected `source_match` candidate: its place and, per reference column,
 /// the chunk identifier its template bound there.
-pub type ProjectedRow = ((analysis::OwnerId, String), Vec<String>);
+pub type ProjectedRow = ((analysis::SourceUnitId, String), Vec<String>);
 
 /// A projected `source_matches[]` candidate: one place per target binding and,
 /// per reference column, the chunk identifier its template bound there.
-pub type ProjectedGroupRow = (Vec<(analysis::OwnerId, String)>, Vec<String>);
+pub type ProjectedGroupRow = (Vec<(analysis::SourceUnitId, String)>, Vec<String>);
 
 /// Incremental builder for one joint selector program. Targets are scoped by
 /// logical module plus export name, while relation anchors resolve against the
@@ -27,17 +27,17 @@ pub type ProjectedGroupRow = (Vec<(analysis::OwnerId, String)>, Vec<String>);
 #[derive(Debug, Clone, Default)]
 pub struct MemberSelectorProgramBuilder {
     program: SelectorProgram,
-    owners_by_export: BTreeMap<(String, String), SelectorVariableId>,
+    source_units_by_export: BTreeMap<(String, String), SelectorVariableId>,
     /// The binding each projected `source_match` export declares, by
     /// (logical module, export name).
     projected_bindings: BTreeMap<(String, String), SelectorVariableId>,
-    /// Each projected anonymous statement's owner variable, by logical module
+    /// Each projected anonymous statement's source unit variable, by logical module
     /// and statement index.
-    projected_anonymous_owners: BTreeMap<(String, usize), SelectorVariableId>,
-    global_owner_by_export: BTreeMap<String, Option<SelectorVariableId>>,
-    targeted_owners: BTreeMap<SelectorVariableId, String>,
-    injective_targeted_owners: BTreeSet<SelectorVariableId>,
-    owner_injectivity_classes: BTreeMap<SelectorVariableId, String>,
+    projected_anonymous_source_units: BTreeMap<(String, usize), SelectorVariableId>,
+    global_source_unit_by_export: BTreeMap<String, Option<SelectorVariableId>>,
+    targeted_source_units: BTreeMap<SelectorVariableId, String>,
+    injective_targeted_source_units: BTreeSet<SelectorVariableId>,
+    source_unit_injectivity_classes: BTreeMap<SelectorVariableId, String>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -53,8 +53,8 @@ pub enum MemberSelectorSpecRef<'a> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-enum OwnerInjectivityClass {
-    Owner(SelectorVariableId),
+enum SourceUnitInjectivityClass {
+    SourceUnit(SelectorVariableId),
     Shared(String),
 }
 
@@ -99,21 +99,21 @@ impl MemberSelectorProgramBuilder {
         claim: ClaimKind,
     ) -> Result<SelectorTargetId, SelectorIrLoweringError> {
         let logical_module = logical_module.into();
-        let owner = self.owner_for_local_export(&logical_module, export_name);
-        self.targeted_owners
-            .insert(owner, format!("{logical_module}::{export_name}"));
+        let source_unit = self.source_unit_for_local_export(&logical_module, export_name);
+        self.targeted_source_units
+            .insert(source_unit, format!("{logical_module}::{export_name}"));
         if !matches!(selector, MemberSelectorSpecRef::Binding(_)) {
-            self.injective_targeted_owners.insert(owner);
+            self.injective_targeted_source_units.insert(source_unit);
         }
-        self.global_owner_by_export
+        self.global_source_unit_by_export
             .entry(export_name.to_string())
             .and_modify(|slot| {
-                if *slot != Some(owner) {
+                if *slot != Some(source_unit) {
                     *slot = None;
                 }
             })
-            .or_insert(Some(owner));
-        Ok(self.program.add_target(owner, logical_module, claim))
+            .or_insert(Some(source_unit));
+        Ok(self.program.add_target(source_unit, logical_module, claim))
     }
 
     pub fn declare_projected_anonymous_statement_target_in_module(
@@ -122,17 +122,17 @@ impl MemberSelectorProgramBuilder {
         statement_index: usize,
     ) -> SelectorTargetId {
         let logical_module = logical_module.into();
-        let owner = self.program.add_variable(
-            VariableDomain::Owner,
+        let source_unit = self.program.add_variable(
+            VariableDomain::SourceUnit,
             Some(format!(
                 "{logical_module}::anonymous_statement.projected.{statement_index}"
             )),
         );
-        self.projected_anonymous_owners
-            .insert((logical_module.clone(), statement_index), owner);
-        self.injective_targeted_owners.insert(owner);
+        self.projected_anonymous_source_units
+            .insert((logical_module.clone(), statement_index), source_unit);
+        self.injective_targeted_source_units.insert(source_unit);
         self.program.add_target(
-            owner,
+            source_unit,
             logical_module,
             ClaimKind::AnonymousStatement {
                 index: statement_index,
@@ -140,7 +140,7 @@ impl MemberSelectorProgramBuilder {
         )
     }
 
-    /// The candidate owners of an anonymous statement declared with
+    /// The candidate source units of an anonymous statement declared with
     /// [`Self::declare_projected_anonymous_statement_target_in_module`], each
     /// with the value of every `references` variable in that row.
     pub fn lower_projected_anonymous_statement_candidates(
@@ -148,18 +148,19 @@ impl MemberSelectorProgramBuilder {
         logical_module: &str,
         statement_index: usize,
         references: &[SelectorVariableId],
-        candidate_rows: Vec<(analysis::OwnerId, Vec<String>)>,
+        candidate_rows: Vec<(analysis::SourceUnitId, Vec<String>)>,
     ) {
-        let owner = self.projected_anonymous_owners[&(logical_module.to_string(), statement_index)];
+        let source_unit =
+            self.projected_anonymous_source_units[&(logical_module.to_string(), statement_index)];
         self.program.add_atom(SelectorAtom::ProjectedAllowedTuples {
-            variables: [owner]
+            variables: [source_unit]
                 .into_iter()
                 .chain(references.iter().copied())
                 .collect(),
             rows: candidate_rows
                 .into_iter()
-                .map(|(owner, referenced)| {
-                    [SelectorProjectedValue::Owner(owner)]
+                .map(|(source_unit, referenced)| {
+                    [SelectorProjectedValue::SourceUnit(source_unit)]
                         .into_iter()
                         .chain(referenced.into_iter().map(SelectorProjectedValue::String))
                         .collect()
@@ -174,8 +175,8 @@ impl MemberSelectorProgramBuilder {
         export_name: &str,
         selector: MemberSelectorSpecRef<'_>,
     ) -> Result<(), SelectorIrLoweringError> {
-        let owner = self.owner_for_local_export(logical_module, export_name);
-        self.lower_selector_atoms(logical_module, owner, selector)
+        let source_unit = self.source_unit_for_local_export(logical_module, export_name);
+        self.lower_selector_atoms(logical_module, source_unit, selector)
     }
 
     /// The binding variable of projected `source_match` export `export_name`,
@@ -202,7 +203,7 @@ impl MemberSelectorProgramBuilder {
 
     /// The binding variable of export `export_name`, pinned by a relational
     /// selector, for templates that reference it: the variable ranges over
-    /// the bindings its owner declares.
+    /// the bindings its source unit declares.
     pub fn relational_binding_variable(
         &mut self,
         logical_module: &str,
@@ -213,11 +214,12 @@ impl MemberSelectorProgramBuilder {
             return *binding;
         }
         let binding = self.projected_binding_variable(logical_module, export_name);
-        let owner = self.owner_for_local_export(logical_module, export_name);
-        self.program.add_atom(SelectorAtom::OwnerDeclaresBinding {
-            owner: owner_term(owner),
-            binding: string_term(binding),
-        });
+        let source_unit = self.source_unit_for_local_export(logical_module, export_name);
+        self.program
+            .add_atom(SelectorAtom::SourceUnitDeclaresBinding {
+                source_unit: source_unit_term(source_unit),
+                binding: string_term(binding),
+            });
         binding
     }
 
@@ -230,22 +232,23 @@ impl MemberSelectorProgramBuilder {
         references: &[SelectorVariableId],
         candidate_rows: Vec<ProjectedRow>,
     ) {
-        let owner = self.owner_for_local_export(logical_module, export_name);
+        let source_unit = self.source_unit_for_local_export(logical_module, export_name);
         let binding = self.projected_binding_variable(logical_module, export_name);
-        self.program.add_atom(SelectorAtom::OwnerDeclaresBinding {
-            owner: owner_term(owner),
-            binding: string_term(binding),
-        });
+        self.program
+            .add_atom(SelectorAtom::SourceUnitDeclaresBinding {
+                source_unit: source_unit_term(source_unit),
+                binding: string_term(binding),
+            });
         self.program.add_atom(SelectorAtom::ProjectedAllowedTuples {
-            variables: [owner, binding]
+            variables: [source_unit, binding]
                 .into_iter()
                 .chain(references.iter().copied())
                 .collect(),
             rows: candidate_rows
                 .into_iter()
-                .map(|((owner, binding), referenced)| {
+                .map(|((source_unit, binding), referenced)| {
                     [
-                        SelectorProjectedValue::Owner(owner),
+                        SelectorProjectedValue::SourceUnit(source_unit),
                         SelectorProjectedValue::String(binding),
                     ]
                     .into_iter()
@@ -279,15 +282,16 @@ impl MemberSelectorProgramBuilder {
                 .join(",")
         );
         for export_name in exports_by_target.values() {
-            let owner = self.owner_for_local_export(logical_module, export_name);
-            self.owner_injectivity_classes
-                .insert(owner, injectivity_class.clone());
+            let source_unit = self.source_unit_for_local_export(logical_module, export_name);
+            self.source_unit_injectivity_classes
+                .insert(source_unit, injectivity_class.clone());
             let binding = self.projected_binding_variable(logical_module, export_name);
-            self.program.add_atom(SelectorAtom::OwnerDeclaresBinding {
-                owner: owner_term(owner),
-                binding: string_term(binding),
-            });
-            variables.push(owner);
+            self.program
+                .add_atom(SelectorAtom::SourceUnitDeclaresBinding {
+                    source_unit: source_unit_term(source_unit),
+                    binding: string_term(binding),
+                });
+            variables.push(source_unit);
             variables.push(binding);
         }
         variables.extend(references.iter().copied());
@@ -298,9 +302,9 @@ impl MemberSelectorProgramBuilder {
                 .map(|(places, referenced)| {
                     places
                         .into_iter()
-                        .flat_map(|(owner, binding)| {
+                        .flat_map(|(source_unit, binding)| {
                             [
-                                SelectorProjectedValue::Owner(owner),
+                                SelectorProjectedValue::SourceUnit(source_unit),
                                 SelectorProjectedValue::String(binding),
                             ]
                         })
@@ -312,30 +316,33 @@ impl MemberSelectorProgramBuilder {
     }
 
     pub fn into_program(mut self) -> Result<SelectorProgram, SelectorIrLoweringError> {
-        for ((logical_module, export_name), owner) in &self.owners_by_export {
-            if !self.targeted_owners.contains_key(owner) {
+        for ((logical_module, export_name), source_unit) in &self.source_units_by_export {
+            if !self.targeted_source_units.contains_key(source_unit) {
                 return Err(SelectorIrLoweringError::DanglingAnchor {
                     logical_module: logical_module.clone(),
                     export_name: export_name.clone(),
                 });
             }
         }
-        let mut unique_target_by_owner_class =
-            BTreeMap::<OwnerInjectivityClass, SelectorTargetId>::new();
+        let mut unique_target_by_source_unit_class =
+            BTreeMap::<SourceUnitInjectivityClass, SelectorTargetId>::new();
         for target in &self.program.targets {
-            if self.injective_targeted_owners.contains(&target.owner) {
+            if self
+                .injective_targeted_source_units
+                .contains(&target.source_unit)
+            {
                 let class = self
-                    .owner_injectivity_classes
-                    .get(&target.owner)
+                    .source_unit_injectivity_classes
+                    .get(&target.source_unit)
                     .cloned()
-                    .map(OwnerInjectivityClass::Shared)
-                    .unwrap_or(OwnerInjectivityClass::Owner(target.owner));
-                unique_target_by_owner_class
+                    .map(SourceUnitInjectivityClass::Shared)
+                    .unwrap_or(SourceUnitInjectivityClass::SourceUnit(target.source_unit));
+                unique_target_by_source_unit_class
                     .entry(class)
                     .or_insert(target.id);
             }
         }
-        let all_different_targets = unique_target_by_owner_class
+        let all_different_targets = unique_target_by_source_unit_class
             .into_values()
             .collect::<Vec<_>>();
         if all_different_targets.len() > 1 {
@@ -345,46 +352,48 @@ impl MemberSelectorProgramBuilder {
         Ok(self.program)
     }
 
-    fn owner_for_local_export(
+    fn source_unit_for_local_export(
         &mut self,
         logical_module: &str,
         export_name: &str,
     ) -> SelectorVariableId {
         let key = (logical_module.to_string(), export_name.to_string());
-        if let Some(owner) = self.owners_by_export.get(&key) {
-            return *owner;
+        if let Some(source_unit) = self.source_units_by_export.get(&key) {
+            return *source_unit;
         }
-        let owner = self.program.add_variable(
-            VariableDomain::Owner,
+        let source_unit = self.program.add_variable(
+            VariableDomain::SourceUnit,
             Some(format!("{logical_module}::@{export_name}")),
         );
-        self.owners_by_export.insert(key, owner);
-        owner
+        self.source_units_by_export.insert(key, source_unit);
+        source_unit
     }
 
-    fn owner_for_global_export(
+    fn source_unit_for_global_export(
         &mut self,
         export_name: &str,
     ) -> Result<SelectorVariableId, SelectorIrLoweringError> {
         match self
-            .global_owner_by_export
+            .global_source_unit_by_export
             .get(export_name)
             .copied()
             .flatten()
         {
-            Some(owner) => Ok(owner),
-            None if self.global_owner_by_export.contains_key(export_name) => {
+            Some(source_unit) => Ok(source_unit),
+            None if self.global_source_unit_by_export.contains_key(export_name) => {
                 Err(SelectorIrLoweringError::AmbiguousAnchor {
                     export_name: export_name.to_string(),
                 })
             }
             None => {
-                let owner = self
+                let source_unit = self
                     .program
-                    .add_variable(VariableDomain::Owner, Some(format!("@{export_name}")));
-                self.owners_by_export
-                    .insert(("<global>".to_string(), export_name.to_string()), owner);
-                Ok(owner)
+                    .add_variable(VariableDomain::SourceUnit, Some(format!("@{export_name}")));
+                self.source_units_by_export.insert(
+                    ("<global>".to_string(), export_name.to_string()),
+                    source_unit,
+                );
+                Ok(source_unit)
             }
         }
     }
@@ -392,99 +401,105 @@ impl MemberSelectorProgramBuilder {
     fn lower_selector_atoms(
         &mut self,
         logical_module: &str,
-        owner: SelectorVariableId,
+        source_unit: SelectorVariableId,
         selector: MemberSelectorSpecRef<'_>,
     ) -> Result<(), SelectorIrLoweringError> {
         match selector {
-            MemberSelectorSpecRef::Binding(binding) => self.lower_binding_selector(owner, binding),
+            MemberSelectorSpecRef::Binding(binding) => {
+                self.lower_binding_selector(source_unit, binding)
+            }
             MemberSelectorSpecRef::SourceMatch(_) => Err(SelectorIrLoweringError::unsupported(
                 "source_match",
                 "source_match candidates come from the shape matcher \
                  (lower_projected_source_match_candidates), not selector IR atoms",
             )),
             MemberSelectorSpecRef::CrossRef(target) => {
-                let anchor = self.owner_for_global_export(&target.anchor)?;
+                let anchor = self.source_unit_for_global_export(&target.anchor)?;
                 match target.relation {
                     CrossRefRelation::References => {
-                        self.program.add_atom(SelectorAtom::OwnerReferencesOwner {
-                            owner: owner_term(owner),
-                            referenced: owner_term(anchor),
-                        });
+                        self.program
+                            .add_atom(SelectorAtom::SourceUnitReferencesSourceUnit {
+                                source_unit: source_unit_term(source_unit),
+                                referenced: source_unit_term(anchor),
+                            });
                     }
                     CrossRefRelation::Aliases => {
-                        self.program.add_atom(SelectorAtom::OwnerAliasesOwner {
-                            owner: owner_term(owner),
-                            aliased: owner_term(anchor),
-                        });
+                        self.program
+                            .add_atom(SelectorAtom::SourceUnitAliasesSourceUnit {
+                                source_unit: source_unit_term(source_unit),
+                                aliased: source_unit_term(anchor),
+                            });
                     }
                 }
-                self.add_kind_atom(owner, target.kind);
+                self.add_kind_atom(source_unit, target.kind);
                 Ok(())
             }
             MemberSelectorSpecRef::ReadsMember(target) => {
                 if let Some(object) = &target.object {
-                    let object = self.owner_for_global_export(object)?;
-                    self.program.add_atom(SelectorAtom::ReadsMemberOfOwner {
-                        owner: owner_term(owner),
-                        object: owner_term(object),
-                        member: const_str(&target.member),
-                    });
+                    let object = self.source_unit_for_global_export(object)?;
+                    self.program
+                        .add_atom(SelectorAtom::ReadsMemberOfSourceUnit {
+                            source_unit: source_unit_term(source_unit),
+                            object: source_unit_term(object),
+                            member: const_str(&target.member),
+                        });
                 } else {
                     self.program.add_atom(SelectorAtom::ReadsMember {
-                        owner: owner_term(owner),
+                        source_unit: source_unit_term(source_unit),
                         member: const_str(&target.member),
                     });
                 }
-                self.add_kind_atom(owner, target.kind);
+                self.add_kind_atom(source_unit, target.kind);
                 Ok(())
             }
             MemberSelectorSpecRef::MemberOfModule(target) => {
                 self.program.add_atom(SelectorAtom::ConsumesModuleMember {
-                    owner: owner_term(owner),
+                    source_unit: source_unit_term(source_unit),
                     module: const_str(&target.module),
                     member: const_str(&target.member),
                 });
-                self.add_kind_atom(owner, target.kind);
+                self.add_kind_atom(source_unit, target.kind);
                 Ok(())
             }
             MemberSelectorSpecRef::PassedToCall(target) => {
                 let arg_index = optional_index(target.arg_index)?;
                 if let Some(object) = &target.object {
-                    let object = self.owner_for_global_export(object)?;
-                    self.program.add_atom(SelectorAtom::PassedToCallOfOwner {
-                        owner: owner_term(owner),
-                        callee_object: owner_term(object),
-                        callee_member: const_str(&target.callee_member),
-                        arg_index,
-                    });
+                    let object = self.source_unit_for_global_export(object)?;
+                    self.program
+                        .add_atom(SelectorAtom::PassedToCallOfSourceUnit {
+                            source_unit: source_unit_term(source_unit),
+                            callee_object: source_unit_term(object),
+                            callee_member: const_str(&target.callee_member),
+                            arg_index,
+                        });
                 } else {
                     self.program.add_atom(SelectorAtom::PassedToCall {
-                        owner: owner_term(owner),
+                        source_unit: source_unit_term(source_unit),
                         callee_member: const_str(&target.callee_member),
                         arg_index,
                     });
                 }
-                self.add_kind_atom(owner, target.kind);
+                self.add_kind_atom(source_unit, target.kind);
                 Ok(())
             }
             MemberSelectorSpecRef::MakesDecorateCall(target) => {
-                let class_anchor = self.owner_for_global_export(&target.class)?;
+                let class_anchor = self.source_unit_for_global_export(&target.class)?;
                 self.program
-                    .add_atom(SelectorAtom::MakesDecorateCallForOwner {
-                        owner: owner_term(owner),
-                        class_anchor: owner_term(class_anchor),
+                    .add_atom(SelectorAtom::MakesDecorateCallForSourceUnit {
+                        source_unit: source_unit_term(source_unit),
+                        class_anchor: source_unit_term(class_anchor),
                         member: target.member.as_deref().map(const_str),
                     });
-                self.add_kind_atom(owner, target.kind);
+                self.add_kind_atom(source_unit, target.kind);
                 Ok(())
             }
             MemberSelectorSpecRef::IntrinsicAlias(target) => {
                 let referenced_by =
-                    self.owner_for_local_export(logical_module, &target.referenced_by);
+                    self.source_unit_for_local_export(logical_module, &target.referenced_by);
                 self.program.add_atom(SelectorAtom::IntrinsicAlias {
-                    owner: owner_term(owner),
+                    source_unit: source_unit_term(source_unit),
                     property: const_str(&target.property),
-                    referenced_by: owner_term(referenced_by),
+                    referenced_by: source_unit_term(referenced_by),
                 });
                 Ok(())
             }
@@ -493,36 +508,37 @@ impl MemberSelectorProgramBuilder {
 
     fn lower_binding_selector(
         &mut self,
-        owner: SelectorVariableId,
+        source_unit: SelectorVariableId,
         selector: &BindingSelector,
     ) -> Result<(), SelectorIrLoweringError> {
         if selector.kind == Some(BindingSourceKind::ImportSpecifier) {
             return Err(SelectorIrLoweringError::unsupported(
                 "binding",
-                "import_specifier binding selectors need import-owner fact modeling",
+                "import_specifier binding selectors need import-source unit fact modeling",
             ));
         }
 
-        self.program.add_atom(SelectorAtom::OwnerDeclaresBinding {
-            owner: OwnerTerm::Var { id: owner },
-            binding: const_str(&selector.name),
-        });
-        self.add_kind_atom(owner, selector.kind);
+        self.program
+            .add_atom(SelectorAtom::SourceUnitDeclaresBinding {
+                source_unit: SourceUnitTerm::Var { id: source_unit },
+                binding: const_str(&selector.name),
+            });
+        self.add_kind_atom(source_unit, selector.kind);
         Ok(())
     }
 
-    fn add_kind_atom(&mut self, owner: SelectorVariableId, kind: Option<BindingSourceKind>) {
+    fn add_kind_atom(&mut self, source_unit: SelectorVariableId, kind: Option<BindingSourceKind>) {
         if let Some(kind) = kind {
-            self.program.add_atom(SelectorAtom::OwnerKind {
-                owner: owner_term(owner),
+            self.program.add_atom(SelectorAtom::SourceUnitKind {
+                source_unit: source_unit_term(source_unit),
                 statement_kind: const_str(statement_kind_str_for_spec(kind)),
             });
         }
     }
 }
 
-fn owner_term(owner: SelectorVariableId) -> OwnerTerm {
-    OwnerTerm::Var { id: owner }
+fn source_unit_term(source_unit: SelectorVariableId) -> SourceUnitTerm {
+    SourceUnitTerm::Var { id: source_unit }
 }
 
 fn string_term(string: SelectorVariableId) -> StringTerm {
@@ -645,13 +661,13 @@ mod tests {
             error,
             SelectorIrLoweringError::Unsupported {
                 selector_kind: "binding",
-                reason: "import_specifier binding selectors need import-owner fact modeling",
+                reason: "import_specifier binding selectors need import-source unit fact modeling",
             }
         );
     }
 
     #[test]
-    fn joint_builder_reuses_anchor_owner_variable() {
+    fn joint_builder_reuses_anchor_source_unit_variable() {
         let mut builder = MemberSelectorProgramBuilder::default();
         let anchor = lower(
             &mut builder,
@@ -667,25 +683,25 @@ mod tests {
         .unwrap();
 
         let program = builder.into_program().unwrap();
-        let anchor_owner = program.targets[anchor.0].owner;
-        let delegator_owner = program.targets[delegator.0].owner;
+        let anchor_source_unit = program.targets[anchor.0].source_unit;
+        let delegator_source_unit = program.targets[delegator.0].source_unit;
 
         assert_eq!(program.variables.len(), 2);
         assert!(
             program.all_different.is_empty(),
-            "plain binding targets are not owner-injective by themselves"
+            "plain binding targets are not source_unit-injective by themselves"
         );
         assert!(matches!(
-            program.atoms.iter().find(|atom| matches!(atom, SelectorAtom::OwnerReferencesOwner { .. })),
-            Some(SelectorAtom::OwnerReferencesOwner {
-                owner: OwnerTerm::Var { id: owner_id },
-                referenced: OwnerTerm::Var { id: referenced_id },
-            }) if *owner_id == delegator_owner && *referenced_id == anchor_owner
+            program.atoms.iter().find(|atom| matches!(atom, SelectorAtom::SourceUnitReferencesSourceUnit { .. })),
+            Some(SelectorAtom::SourceUnitReferencesSourceUnit {
+                source_unit: SourceUnitTerm::Var { id: source_unit_id },
+                referenced: SourceUnitTerm::Var { id: referenced_id },
+            }) if *source_unit_id == delegator_source_unit && *referenced_id == anchor_source_unit
         ));
     }
 
     #[test]
-    fn relational_targets_remain_owner_injective_without_binding_anchors() {
+    fn relational_targets_remain_source_unit_injective_without_binding_anchors() {
         let mut builder = MemberSelectorProgramBuilder::default();
         let anchor = lower(
             &mut builder,
@@ -715,7 +731,7 @@ mod tests {
                 .iter()
                 .flatten()
                 .any(|target| *target == anchor),
-            "plain binding anchors should not participate in target owner injectivity"
+            "plain binding anchors should not participate in target source unit injectivity"
         );
     }
 }

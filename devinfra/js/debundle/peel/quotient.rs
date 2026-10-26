@@ -1,8 +1,8 @@
 //! Quotient-graph kernel for the peel proposer.
 //!
 //! `QuotientGraph` represents the current equivalence relation `~` over
-//! owners, plus the cross-class edge structure derived from the
-//! constraining-init-order owner edges. The kernel exposes one mutation
+//! source_units, plus the cross-class edge structure derived from the
+//! constraining-init-order source_unit edges. The kernel exposes one mutation
 //! (`contract`) and two non-mutating queries
 //! (`merge_preserves_invariants`, `would_be_cycles_after_contract`).
 //!
@@ -25,17 +25,17 @@
 //! ## The realizability gate
 //!
 //! The kernel's cycle gate is the realizability primitive itself
-//! (`gate::check_realizability(&OwnerGraph, &ModuleAssignment)` — the same
+//! (`gate::check_realizability(&DependencyGraph, &ModuleAssignment)` — the same
 //! predicate the materializer's `validate_assignment` computes),
 //! evaluated at **module** granularity under the kernel's projection
 //! by checking whether a speculative merge's post-merge module `M`
 //! has no clause-2 or clause-3 violation touching `M`.
 //!
 //! The kernel must not reimplement the gate over the JSON
-//! `OwnerGraphReport` adjacency: a constraining-only projection drops
+//! `DependencyGraphReport` adjacency: a constraining-only projection drops
 //! non-constraining edges and misses asymmetric `(eager forward, lazy
 //! back)` I-cycles that the materializer catches. The kernel
-//! reconstructs an `OwnerGraph` from the report, stores it on the
+//! reconstructs an `DependencyGraph` from the report, stores it on the
 //! kernel, and keeps a persistent `gate::RealizabilityIndex` in sync
 //! with its class projection.
 //!
@@ -46,7 +46,7 @@
 //! implementation would cost `O(|V|² · |E|)` per planner round.
 //!
 //! Instead, every query routes through the index's tier ladder
-//! (`ladder_decision_after_moving_owners_touching`; docs/design.md
+//! (`ladder_decision_after_moving_source_units_touching`; docs/design.md
 //! "Cost and the tier ladder"): tier 0
 //! short-circuits delta-free moves, tiers 1–2 answer Pass 1 /
 //! Pass-2-vacuity from maintained `CondensationOrder` structures in
@@ -57,7 +57,7 @@
 //! (`would_be_cycles_after_contract`) are the same evaluation — one
 //! entry point, two output shapes — so the gate cannot drift from the
 //! materializer's verdict. Per committed contract, the kernel applies
-//! `ModuleAssignmentDelta::MoveOwners` deltas to the index; speculative
+//! `ModuleAssignmentDelta::MoveSourceUnits` deltas to the index; speculative
 //! queries read it non-mutatingly through the overlay path (every
 //! speculative merge delta targets the single post-merge module,
 //! asserted in `realizability_cycles_after_contract`).
@@ -66,20 +66,21 @@ use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 
 use analysis::{
-    DepKind, ModuleAssignment, ModuleId, OwnerGraph, OwnerGraphReport, OwnerId, StatementKind,
+    DepKind, DependencyGraph, DependencyGraphReport, ModuleAssignment, ModuleId, SourceUnitId,
+    StatementKind,
 };
 use anyhow::Context;
 use gate::{LadderDecision, ModuleAssignmentDelta, RealizabilityIndex, RealizabilityVerdict};
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde::Serialize;
 
-/// Owner index into the `OwnerGraphReport.nodes` vector. Stable for
+/// Source-unit report index into the `DependencyGraphReport.nodes` vector. Stable for
 /// the lifetime of one quotient graph.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize)]
-pub struct OwnerIdx(pub usize);
+pub struct SourceUnitIndex(pub usize);
 
 /// Class identifier in the current quotient. Class IDs are assigned
-/// densely starting at 0; the owner with the lowest `OwnerIdx` in a
+/// densely starting at 0; the source_unit with the lowest `SourceUnitIndex` in a
 /// class is canonical (used for tiebreaking and as the class
 /// representative in diagnostics).
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize)]
@@ -91,10 +92,10 @@ pub struct ClassId(pub usize);
 pub struct CycleClassSet {
     /// Sorted, deduplicated class IDs participating in the cycle.
     pub classes: Vec<ClassId>,
-    /// Sorted, deduplicated owner IDs (as strings, from the report)
+    /// Sorted, deduplicated source-unit IDs (as strings, from the report)
     /// participating in any class in `classes`. Stable for
     /// diagnostic byte-equality.
-    pub owner_ids: Vec<String>,
+    pub source_unit_ids: Vec<String>,
 }
 
 /// Aggregated cycle evidence: zero or more multi-class SCCs.
@@ -111,7 +112,7 @@ impl CycleEvidence {
 
 /// Reason a `contract` call could not proceed. Surfaces the cycle
 /// evidence so the caller can attribute the rejection to a specific
-/// owner pair.
+/// source_unit pair.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize)]
 pub enum ContractRejected {
     WouldCreateCycle { cycle: CycleEvidence },
@@ -137,13 +138,13 @@ impl ContractRejected {
 pub enum SeedContractionRejected {
     AtomicGroup {
         atomic_group_id: String,
-        owner_ids: Vec<String>,
+        source_unit_ids: Vec<String>,
         rejected_pair: (String, String),
         cycle: CycleEvidence,
     },
     SpecModule {
         module_id: String,
-        owner_ids: Vec<String>,
+        source_unit_ids: Vec<String>,
         rejected_pair: (String, String),
         cycle: CycleEvidence,
     },
@@ -157,8 +158,8 @@ pub enum SeedContractionRejected {
         edge_id: String,
         source_atomic_group_id: String,
         target_atomic_group_id: String,
-        /// `(source_owner_id, target_owner_id)` — the
-        /// representative owners (lowest `OwnerIdx` in each group at
+        /// `(source_unit_id, target_source_unit_id)` — the
+        /// representative source_units (lowest `SourceUnitIndex` in each group at
         /// rejection time) whose class-level contraction tripped
         /// the gate.
         rejected_pair: (String, String),
@@ -175,32 +176,32 @@ pub enum SeedContractionRejected {
     /// contraction was locally realizable; the assembled
     /// assignment is not).
     ///
-    /// `owner_ids` lists every owner in the unrealizable SCC, as
+    /// `source_unit_ids` lists every source_unit in the unrealizable SCC, as
     /// reported by `RealizabilityVerdict::unrealizable_sccs`.
     /// `cycle` carries the kernel-shape evidence for callers that
     /// already render the other rejection variants.
     PostSeedUnrealizableScc {
-        owner_ids: Vec<String>,
+        source_unit_ids: Vec<String>,
         cycle: CycleEvidence,
     },
 }
 
 /// One spec-module declaration the seeding protocol consumes. The
-/// `owner_ids` list is the set of owners the module's `members:`
+/// `source_unit_ids` list is the set of source_units the module's `members:`
 /// resolves to; the seed pre-contracts them all into one class.
 #[derive(Debug, Clone)]
 pub struct SpecModuleGroup {
     pub module_id: String,
-    pub owner_ids: Vec<String>,
+    pub source_unit_ids: Vec<String>,
 }
 
 /// Internal: one class's metadata. Class membership is tracked by
-/// `owner_to_class`; this struct caches per-class aggregates that
+/// `source_unit_to_class`; this struct caches per-class aggregates that
 /// `merge_preserves_invariants` consults.
 #[derive(Debug, Clone)]
 struct ClassData {
-    /// Owners in this class, by `OwnerIdx`. Sorted.
-    members: BTreeSet<OwnerIdx>,
+    /// Source units in this class, by `SourceUnitIndex`. Sorted.
+    members: BTreeSet<SourceUnitIndex>,
     /// Summed source-line count across members.
     lines: usize,
     /// `true` if this class anchors a spec module
@@ -209,55 +210,55 @@ struct ClassData {
     /// that is itself pre-existing).
     is_pre_existing_module: bool,
     /// Explicitly assigned to the candidate's entry module. This also
-    /// covers coarsened entry groups that contain non-residual owners.
+    /// covers coarsened entry groups that contain non-residual source_units.
     is_entry_module: bool,
 }
 
-/// The quotient graph: owners partitioned into classes, with the
+/// The quotient graph: source_units partitioned into classes, with the
 /// cross-class constraining edges materialized on demand.
 #[derive(Debug, Clone)]
 pub struct QuotientGraph {
     /// Typed IR reconstructed from the source report. Used by the
     /// realizability gate (`gate::check_realizability`). Stored once
     /// at construction; never mutated.
-    owner_graph: OwnerGraph,
-    /// Owners whose `OwnerGraphNodeReport.destination.residual` is
+    dependency_graph: DependencyGraph,
+    /// Source units whose `SourceUnitReport.destination.residual` is
     /// `true`. Set by `from_report` from the JSON wire flag (the
     /// same residual identification `propose.rs` uses). A class made
     /// only of these, and not anchored to a module, projects to the
     /// assignment's residual `ModuleId` for the realizability gate.
-    gate_residual_owners: BTreeSet<OwnerIdx>,
-    /// Stable owner IDs in `OwnerIdx.0` order. Inherited from the
-    /// source `OwnerGraphReport.nodes`.
-    owner_ids: Vec<String>,
-    /// Reverse index for `owner_ids`: owner-id string → `OwnerIdx`.
-    /// Built once at construction; `owner_ids` is never mutated after
-    /// that, so this stays in sync. Backs `owner_idx_of` so callers
+    gate_residual_source_units: BTreeSet<SourceUnitIndex>,
+    /// Stable source-unit IDs in `SourceUnitIndex.0` order. Inherited from the
+    /// source `DependencyGraphReport.nodes`.
+    source_unit_ids: Vec<String>,
+    /// Reverse index for `source_unit_ids`: source_unit-id string → `SourceUnitIndex`.
+    /// Built once at construction; `source_unit_ids` is never mutated after
+    /// that, so this stays in sync. Backs `source_unit_idx_of` so callers
     /// avoid an O(n) linear scan per lookup in the proposer.
-    owner_id_to_idx: FxHashMap<String, OwnerIdx>,
-    /// Owner → current class. Dense, indexed by `OwnerIdx.0`.
-    owner_to_class: Vec<ClassId>,
+    source_unit_id_to_index: FxHashMap<String, SourceUnitIndex>,
+    /// SourceUnitIndex → current class. Dense, indexed by `SourceUnitIndex.0`.
+    source_unit_to_class: Vec<ClassId>,
     /// Class metadata. Indexed by `ClassId.0`. Entries for emptied
     /// classes (post-contract) remain in place with empty `members`
     /// to keep IDs stable; queries skip them.
     classes: Vec<ClassData>,
-    /// Constraining-edge owner adjacency: `(from_owner, to_owner)`
-    /// pairs from `OwnerGraphReport.edges` whose
+    /// Constraining-edge source_unit adjacency: `(from_source_unit, to_source_unit)`
+    /// pairs from `DependencyGraphReport.edges` whose
     /// `constrains_init_order` is true and whose endpoints both
-    /// resolve to known owners. Source-of-truth for the cycle set.
-    owner_constraining_edges: Vec<(OwnerIdx, OwnerIdx)>,
-    /// **All** owner edges, with their weight (from `DepKind`).
+    /// resolve to known source_units. Source-of-truth for the cycle set.
+    source_unit_constraining_edges: Vec<(SourceUnitIndex, SourceUnitIndex)>,
+    /// **All** source_unit edges, with their weight (from `DepKind`).
     /// Used by the greedy's coupling metric. Self-loops and
     /// non-constraining edges are included; `class_cross_edges`
     /// filters out same-class pairs at query time.
-    owner_weighted_edges: Vec<WeightedOwnerEdge>,
+    source_unit_weighted_edges: Vec<WeightedDependencyEdge>,
     /// Cap on per-class combined lines. Exceeding this is a rejected
     /// merge.
     cap_lines: usize,
     /// Class-level out-edge adjacency. Indexed by `ClassId.0`
     /// (dense; dead classes have an empty map). For each source class
     /// `s`, `out_edges[s.0]` is a map from target class `t` to an
-    /// `EdgeState` aggregating all underlying owner edges from members
+    /// `EdgeState` aggregating all underlying source_unit edges from members
     /// of `s` to members of `t`. Self-loops are filtered out at insert
     /// time.
     out_edges: Vec<FxHashMap<ClassId, EdgeState>>,
@@ -268,19 +269,19 @@ pub struct QuotientGraph {
     /// predecessors are the sources with
     /// `out_edges[s.0][&c].constraining_count > 0`.
     in_neighbors: Vec<FxHashSet<ClassId>>,
-    /// Persistent-state realizability index over `owner_graph`.
+    /// Persistent-state realizability index over `dependency_graph`.
     /// Synced to the kernel's current class projection after every
     /// committed mutation (`contract`, `set_class_pre_existing_module`).
     /// Speculative queries (`merge_preserves_invariants`,
     /// `would_be_cycles_after_contract`) read it non-mutatingly via
-    /// `verdict_after_moving_owners_touching` (all speculative moves
+    /// `verdict_after_moving_source_units_touching` (all speculative moves
     /// are single-target). See the module-level docstring's "Cost of
     /// the gate" section.
     realizability_index: RealizabilityIndex,
     /// Cached `class_id -> module_id` mapping: the class projection
     /// the realizability index's assignment holds. Maintained alongside
     /// the index so query deltas can be computed without walking every
-    /// owner per call.
+    /// source_unit per call.
     class_module_id: BTreeMap<ClassId, ModuleId>,
     /// Next free synthetic `ModuleId` index. Assigned densely from 1
     /// (0 is the residual catch-all). Incremented when a previously
@@ -289,37 +290,37 @@ pub struct QuotientGraph {
     next_module_idx: usize,
 }
 
-/// One owner-edge with its `DepKind`-derived weight. Stored on the
+/// One source_unit-edge with its `DepKind`-derived weight. Stored on the
 /// kernel so the greedy can evaluate the coupling metric without
 /// re-parsing the input report.
 #[derive(Debug, Clone, Copy)]
-struct WeightedOwnerEdge {
-    from: OwnerIdx,
-    to: OwnerIdx,
+struct WeightedDependencyEdge {
+    from: SourceUnitIndex,
+    to: SourceUnitIndex,
     weight: u32,
 }
 
 /// `true` if a class projects to the residual `ModuleId`: a class made
-/// only of gate-residual owners and not anchored to a module.
+/// only of gate-residual source_units and not anchored to a module.
 fn projects_to_residual<'a>(
     is_pre_existing_module: bool,
-    mut members: impl Iterator<Item = &'a OwnerIdx>,
-    gate_residual_owners: &BTreeSet<OwnerIdx>,
+    mut members: impl Iterator<Item = &'a SourceUnitIndex>,
+    gate_residual_source_units: &BTreeSet<SourceUnitIndex>,
 ) -> bool {
-    !is_pre_existing_module && members.all(|m| gate_residual_owners.contains(m))
+    !is_pre_existing_module && members.all(|m| gate_residual_source_units.contains(m))
 }
 
 /// Project every live class onto a `ModuleId` — the residual
 /// `ModuleId(0)` where `projects_to_residual`, otherwise a
 /// fresh one numbered densely from 1 in ascending `ClassId` order — and
-/// build the realizability index over the resulting owner assignment.
+/// build the realizability index over the resulting source_unit assignment.
 /// Returns the index, the class → module map, and the next free module
 /// index.
 fn project_classes(
-    owner_graph: &OwnerGraph,
-    owner_to_class: &[ClassId],
+    dependency_graph: &DependencyGraph,
+    source_unit_to_class: &[ClassId],
     classes: &[ClassData],
-    gate_residual_owners: &BTreeSet<OwnerIdx>,
+    gate_residual_source_units: &BTreeSet<SourceUnitIndex>,
 ) -> (RealizabilityIndex, BTreeMap<ClassId, ModuleId>, usize) {
     let residual_module = ModuleId(0);
     let mut class_module_id: BTreeMap<ClassId, ModuleId> = BTreeMap::new();
@@ -332,7 +333,7 @@ fn project_classes(
         let module = if projects_to_residual(
             data.is_pre_existing_module,
             data.members.iter(),
-            gate_residual_owners,
+            gate_residual_source_units,
         ) || data.is_entry_module
         {
             residual_module
@@ -344,14 +345,14 @@ fn project_classes(
         class_module_id.insert(ClassId(class_idx), module);
     }
     let assignment = ModuleAssignment::from_assignments(
-        owner_to_class
+        source_unit_to_class
             .iter()
             .map(|c| class_module_id.get(c).copied().unwrap_or(residual_module))
             .collect(),
         residual_module,
     );
     (
-        RealizabilityIndex::from_assignment(owner_graph, assignment),
+        RealizabilityIndex::from_assignment(dependency_graph, assignment),
         class_module_id,
         next_module_idx,
     )
@@ -371,88 +372,89 @@ fn edge_weight(kind: DepKind) -> u32 {
 
 /// Aggregated state for one directed class-pair `(s, t)`. Stored
 /// inline in `QuotientGraph::out_edges[s.0]` keyed by `t`. Per-edge
-/// counts roll up the underlying owner edges between the two classes.
+/// counts roll up the underlying source_unit edges between the two classes.
 ///
 /// Invariant: `constraining_count <= weighted_count`. An entry is
 /// present iff `weighted_count > 0`; the empty default is never
 /// stored.
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq)]
 pub(super) struct EdgeState {
-    /// Number of underlying owner edges from members of the source
+    /// Number of underlying source_unit edges from members of the source
     /// class to members of the target class whose
     /// `constrains_init_order` is true.
     pub(super) constraining_count: u32,
-    /// Total underlying owner edges (constraining or not) from
+    /// Total underlying source_unit edges (constraining or not) from
     /// members of the source class to members of the target class.
     /// Always `>= constraining_count`.
     pub(super) weighted_count: u32,
-    /// Sum of `edge_weight` over all underlying owner edges.
+    /// Sum of `edge_weight` over all underlying source_unit edges.
     weighted_sum: u64,
 }
 
 impl QuotientGraph {
-    /// Build a fresh quotient over `report.nodes`, each owner in its
+    /// Build a fresh quotient over `report.nodes`, each source_unit in its
     /// own singleton class. `cap_lines` is the size cap consulted by
     /// `merge_preserves_invariants`.
     ///
-    /// The kernel also reconstructs the typed `OwnerGraph` IR via
-    /// `OwnerGraph::from_report` and stashes it for the realizability
+    /// The kernel also reconstructs the typed `DependencyGraph` IR via
+    /// `DependencyGraph::from_report` and stashes it for the realizability
     /// gate. The reconstructed IR carries every edge
     /// the report listed — constraining and non-constraining alike —
     /// so the gate sees the same I-graph the materializer does.
     ///
-    /// The reconstructed graph's per-owner `declared` set is empty:
+    /// The reconstructed graph's per-source_unit `declared` set is empty:
     /// this kernel only consumes the edge topology + module quotient
     /// for the gate.
     pub fn from_report(
-        report: &OwnerGraphReport,
+        report: &DependencyGraphReport,
         cap_lines: usize,
-    ) -> Result<Self, analysis::UnresolvedOwnerEdgeEndpoint> {
-        let owner_graph = OwnerGraph::from_report(report)?;
-        let owner_ids: Vec<String> = report.nodes.iter().map(|n| n.id.clone()).collect();
-        let owner_id_to_idx: FxHashMap<String, OwnerIdx> = owner_ids
+    ) -> Result<Self, analysis::UnresolvedDependencyEdgeEndpoint> {
+        let dependency_graph = DependencyGraph::from_report(report)?;
+        let source_unit_ids: Vec<String> = report.nodes.iter().map(|n| n.id.clone()).collect();
+        let source_unit_id_to_index: FxHashMap<String, SourceUnitIndex> = source_unit_ids
             .iter()
             .enumerate()
-            .map(|(i, id)| (id.clone(), OwnerIdx(i)))
+            .map(|(i, id)| (id.clone(), SourceUnitIndex(i)))
             .collect();
 
-        let mut classes = Vec::<ClassData>::with_capacity(owner_ids.len());
-        let mut owner_to_class = Vec::<ClassId>::with_capacity(owner_ids.len());
-        let mut gate_residual_owners: BTreeSet<OwnerIdx> = BTreeSet::new();
+        let mut classes = Vec::<ClassData>::with_capacity(source_unit_ids.len());
+        let mut source_unit_to_class = Vec::<ClassId>::with_capacity(source_unit_ids.len());
+        let mut gate_residual_source_units: BTreeSet<SourceUnitIndex> = BTreeSet::new();
         for (i, node) in report.nodes.iter().enumerate() {
             let mut members = BTreeSet::new();
-            members.insert(OwnerIdx(i));
+            members.insert(SourceUnitIndex(i));
             classes.push(ClassData {
                 members,
                 lines: node.line_count(),
                 is_pre_existing_module: false,
                 is_entry_module: false,
             });
-            owner_to_class.push(ClassId(i));
+            source_unit_to_class.push(ClassId(i));
             // The realizability gate's ESM simulator DFS starts at the
-            // assignment's residual; any residual owner projects to that
+            // assignment's residual; any residual source_unit projects to that
             // residual ModuleId so the simulator's DFS reaches the
             // candidate SCCs.
             if report.is_residual(&node.destination) {
-                gate_residual_owners.insert(OwnerIdx(i));
+                gate_residual_source_units.insert(SourceUnitIndex(i));
             }
         }
 
-        let mut owner_constraining_edges: Vec<(OwnerIdx, OwnerIdx)> = Vec::new();
-        let mut owner_weighted_edges: Vec<WeightedOwnerEdge> =
+        let mut source_unit_constraining_edges: Vec<(SourceUnitIndex, SourceUnitIndex)> =
+            Vec::new();
+        let mut source_unit_weighted_edges: Vec<WeightedDependencyEdge> =
             Vec::with_capacity(report.edges.len());
         for edge in &report.edges {
             // Endpoint resolution can't fail here: the
-            // `OwnerGraph::from_report` call above already errored on
+            // `DependencyGraph::from_report` call above already errored on
             // any edge whose endpoint is missing from the node table.
             let resolve = |endpoint: &str| {
-                owner_id_to_idx
+                source_unit_id_to_index
                     .get(endpoint)
                     .copied()
-                    .expect("validated by OwnerGraph::from_report")
+                    .expect("validated by DependencyGraph::from_report")
             };
             let (s, t) = (resolve(&edge.source), resolve(&edge.target));
-            owner_weighted_edges.push(WeightedOwnerEdge {
+            source_unit_weighted_edges.push(WeightedDependencyEdge {
                 from: s,
                 to: t,
                 weight: edge_weight(edge.edge_kind),
@@ -460,26 +462,26 @@ impl QuotientGraph {
             if !edge.constrains_init_order || s == t {
                 continue;
             }
-            owner_constraining_edges.push((s, t));
+            source_unit_constraining_edges.push((s, t));
         }
 
         let (realizability_index, class_module_id, next_module_idx) = project_classes(
-            &owner_graph,
-            &owner_to_class,
+            &dependency_graph,
+            &source_unit_to_class,
             &classes,
-            &gate_residual_owners,
+            &gate_residual_source_units,
         );
 
         let num_classes = classes.len();
         let mut q = QuotientGraph {
-            owner_graph,
-            gate_residual_owners,
-            owner_ids,
-            owner_id_to_idx,
-            owner_to_class,
+            dependency_graph,
+            gate_residual_source_units,
+            source_unit_ids,
+            source_unit_id_to_index,
+            source_unit_to_class,
             classes,
-            owner_constraining_edges,
-            owner_weighted_edges,
+            source_unit_constraining_edges,
+            source_unit_weighted_edges,
             cap_lines,
             out_edges: vec![FxHashMap::default(); num_classes],
             in_neighbors: vec![FxHashSet::default(); num_classes],
@@ -491,25 +493,25 @@ impl QuotientGraph {
         Ok(q)
     }
 
-    /// Build a quotient from a complete candidate owner assignment that
+    /// Build a quotient from a complete candidate source_unit assignment that
     /// already passes the shared realizability gate. The assignment is checked
     /// here before any quotient state is returned, and structural atomic groups
     /// plus residual entry declarations must remain whole.
     ///
-    /// The assignment vector is indexed by `OwnerIdx`; `residual_module` must
+    /// The assignment vector is indexed by `SourceUnitIndex`; `residual_module` must
     /// be the candidate's entry module. Non-residual groups are marked as
-    /// anchored modules so residual-only owners deliberately assigned to a
+    /// anchored modules so residual-only source_units deliberately assigned to a
     /// non-entry fragment stay in that fragment.
     pub fn from_report_with_realizable_assignment(
-        report: &OwnerGraphReport,
+        report: &DependencyGraphReport,
         cap_lines: usize,
-        owner_modules: &[ModuleId],
+        source_unit_modules: &[ModuleId],
         residual_module: ModuleId,
     ) -> anyhow::Result<Self> {
         anyhow::ensure!(
-            owner_modules.len() == report.nodes.len(),
-            "candidate assignment assigns {} owners, but graph has {}",
-            owner_modules.len(),
+            source_unit_modules.len() == report.nodes.len(),
+            "candidate assignment assigns {} source units, but graph has {}",
+            source_unit_modules.len(),
             report.nodes.len()
         );
         anyhow::ensure!(
@@ -517,39 +519,41 @@ impl QuotientGraph {
             "candidate residual module must use the entry module identity"
         );
 
-        let owner_graph = OwnerGraph::from_report(report)
-            .context("reconstructing owner graph for candidate assignment")?;
+        let dependency_graph = DependencyGraph::from_report(report)
+            .context("reconstructing dependency graph for candidate assignment")?;
         let assignment =
-            ModuleAssignment::from_assignments(owner_modules.to_vec(), residual_module);
-        let verdict = gate::check_realizability(&owner_graph, &assignment);
+            ModuleAssignment::from_assignments(source_unit_modules.to_vec(), residual_module);
+        let verdict = gate::check_realizability(&dependency_graph, &assignment);
         anyhow::ensure!(
             verdict.is_realizable(),
             "candidate assignment is not realizable under the shared gate"
         );
 
-        let owner_id_to_idx: FxHashMap<&str, usize> = report
+        let source_unit_id_to_index: FxHashMap<&str, usize> = report
             .nodes
             .iter()
             .enumerate()
             .map(|(idx, node)| (node.id.as_str(), idx))
             .collect();
-        let mut owner_atomic_group = vec![None::<usize>; report.nodes.len()];
+        let mut source_unit_atomic_group = vec![None::<usize>; report.nodes.len()];
         for (atomic_group_idx, atomic_group) in report.atomic_graph.nodes.iter().enumerate() {
             let mut atomic_group_module = None;
-            for owner_id in &atomic_group.owner_ids {
-                let owner_idx = *owner_id_to_idx.get(owner_id.as_str()).with_context(|| {
-                    format!(
-                        "atomic group {} references unknown owner {owner_id}",
-                        atomic_group.id
-                    )
-                })?;
+            for source_unit_id in &atomic_group.source_unit_ids {
+                let source_unit_idx = *source_unit_id_to_index
+                    .get(source_unit_id.as_str())
+                    .with_context(|| {
+                        format!(
+                            "atomic group {} references unknown source unit {source_unit_id}",
+                            atomic_group.id
+                        )
+                    })?;
                 anyhow::ensure!(
-                    owner_atomic_group[owner_idx]
+                    source_unit_atomic_group[source_unit_idx]
                         .replace(atomic_group_idx)
                         .is_none(),
-                    "owner {owner_id} appears in more than one atomic group"
+                    "source unit {source_unit_id} appears in more than one atomic group"
                 );
-                let module = owner_modules[owner_idx];
+                let module = source_unit_modules[source_unit_idx];
                 if let Some(expected) = atomic_group_module {
                     anyhow::ensure!(
                         expected == module,
@@ -562,11 +566,11 @@ impl QuotientGraph {
             }
         }
         anyhow::ensure!(
-            owner_atomic_group.iter().all(Option::is_some),
-            "candidate graph has owners missing from the structural atomic groups"
+            source_unit_atomic_group.iter().all(Option::is_some),
+            "candidate graph has source units missing from the structural atomic groups"
         );
 
-        for (owner_idx, node) in report.nodes.iter().enumerate() {
+        for (source_unit_idx, node) in report.nodes.iter().enumerate() {
             if report.is_residual(&node.destination)
                 && matches!(
                     node.statement_kind,
@@ -574,19 +578,19 @@ impl QuotientGraph {
                 )
             {
                 anyhow::ensure!(
-                    owner_modules[owner_idx] == residual_module,
-                    "residual import/export owner {} must stay in the entry module",
+                    source_unit_modules[source_unit_idx] == residual_module,
+                    "residual import/export source unit {} must stay in the entry module",
                     node.id
                 );
             }
         }
 
-        let mut owners_by_module: BTreeMap<ModuleId, Vec<OwnerIdx>> = BTreeMap::new();
-        for (owner_idx, &module) in owner_modules.iter().enumerate() {
+        let mut owners_by_module: BTreeMap<ModuleId, Vec<SourceUnitIndex>> = BTreeMap::new();
+        for (source_unit_idx, &module) in source_unit_modules.iter().enumerate() {
             owners_by_module
                 .entry(module)
                 .or_default()
-                .push(OwnerIdx(owner_idx));
+                .push(SourceUnitIndex(source_unit_idx));
         }
 
         let mut quotient = Self::from_report(report, cap_lines)
@@ -600,7 +604,7 @@ impl QuotientGraph {
             for &member in &members {
                 class_members.insert(member);
                 lines = lines.saturating_add(report.nodes[member.0].line_count());
-                quotient.owner_to_class[member.0] = class_id;
+                quotient.source_unit_to_class[member.0] = class_id;
             }
             quotient.classes[class_id.0] = ClassData {
                 members: class_members,
@@ -617,9 +621,9 @@ impl QuotientGraph {
             class_module_id.insert(class_id, module);
         }
         quotient.realizability_index =
-            RealizabilityIndex::from_assignment(&quotient.owner_graph, assignment);
+            RealizabilityIndex::from_assignment(&quotient.dependency_graph, assignment);
         quotient.class_module_id = class_module_id;
-        quotient.next_module_idx = owner_modules
+        quotient.next_module_idx = source_unit_modules
             .iter()
             .map(|module| module.0)
             .max()
@@ -629,25 +633,25 @@ impl QuotientGraph {
         Ok(quotient)
     }
 
-    /// The class an owner currently belongs to.
-    pub fn class_of(&self, o: OwnerIdx) -> ClassId {
-        self.owner_to_class[o.0]
+    /// The class an source_unit currently belongs to.
+    pub fn class_of(&self, o: SourceUnitIndex) -> ClassId {
+        self.source_unit_to_class[o.0]
     }
 
-    /// Look up the owner index for a stable owner-id string. Returns
+    /// Look up the source_unit index for a stable source_unit-id string. Returns
     /// `None` for ids not present in the source report. O(1) via the
-    /// `owner_id_to_idx` FxHashMap.
-    pub fn owner_idx_of(&self, owner_id: &str) -> Option<OwnerIdx> {
-        self.owner_id_to_idx.get(owner_id).copied()
+    /// `source_unit_id_to_index` FxHashMap.
+    pub fn source_unit_idx_of(&self, source_unit_id: &str) -> Option<SourceUnitIndex> {
+        self.source_unit_id_to_index.get(source_unit_id).copied()
     }
 
-    /// Stable owner id string for an `OwnerIdx`.
-    pub fn owner_id(&self, o: OwnerIdx) -> &str {
-        &self.owner_ids[o.0]
+    /// Stable source_unit id string for an `SourceUnitIndex`.
+    pub fn source_unit_id(&self, o: SourceUnitIndex) -> &str {
+        &self.source_unit_ids[o.0]
     }
 
-    /// Members of a class in `OwnerIdx` order.
-    pub fn class_members(&self, c: ClassId) -> impl Iterator<Item = OwnerIdx> + '_ {
+    /// Members of a class in `SourceUnitIndex` order.
+    pub fn class_members(&self, c: ClassId) -> impl Iterator<Item = SourceUnitIndex> + '_ {
         self.classes[c.0].members.iter().copied()
     }
 
@@ -703,7 +707,7 @@ impl QuotientGraph {
     ///
     /// Same predicate as the boolean gate (`check_merge_boolean`):
     /// the ladder decides, and only on a reject does this path
-    /// materialize owner-level evidence through the index's
+    /// materialize source_unit-level evidence through the index's
     /// non-mutating overlay verdict — one entry point, two output
     /// shapes.
     pub fn would_be_cycles_after_contract(
@@ -723,13 +727,13 @@ impl QuotientGraph {
         }
         // The ladder rejected but the verdict translation produced no
         // multi-class SCC evidence — a clause-2 cross-rebind reject
-        // (no SCC to render), or an SCC whose owners collapse into a
+        // (no SCC to render), or an SCC whose source_units collapse into a
         // single class under the projection. Surface a minimal
         // two-class evidence shape so callers still see a rejection.
         Some(CycleEvidence {
             cycles: vec![CycleClassSet {
                 classes: vec![c1.min(c2), c1.max(c2)],
-                owner_ids: Vec::new(),
+                source_unit_ids: Vec::new(),
             }],
         })
     }
@@ -757,10 +761,10 @@ impl QuotientGraph {
         }
         let (winner, loser) = (c1.min(c2), c1.max(c2));
         let (post_module, deltas) = self.compute_merge_deltas(winner, loser);
-        let moved: Vec<OwnerId> = deltas
+        let moved: Vec<SourceUnitId> = deltas
             .into_iter()
             .flat_map(|delta| match delta {
-                ModuleAssignmentDelta::MoveOwners { owners, .. } => owners,
+                ModuleAssignmentDelta::MoveSourceUnits { source_units, .. } => source_units,
             })
             .collect();
         if !self.full_gate_accepts_move(&moved, post_module) {
@@ -775,9 +779,9 @@ impl QuotientGraph {
     /// an I-SCC that does not contain the merged module. Original-home
     /// rejoining checks the complete proposed assignment before committing
     /// each accepted move.
-    fn full_gate_accepts_move(&self, moved: &[OwnerId], to: ModuleId) -> bool {
+    fn full_gate_accepts_move(&self, moved: &[SourceUnitId], to: ModuleId) -> bool {
         self.realizability_index
-            .verdict_after_moving_owners(&self.owner_graph, moved, to)
+            .verdict_after_moving_source_units(&self.dependency_graph, moved, to)
             .is_realizable()
     }
 
@@ -816,7 +820,7 @@ impl QuotientGraph {
                 classes
                     .iter()
                     .flat_map(|class| self.classes[class.0].members.iter()),
-                &self.gate_residual_owners,
+                &self.gate_residual_source_units,
             ) {
             ModuleId(0)
         } else {
@@ -830,11 +834,13 @@ impl QuotientGraph {
                 })
                 .unwrap_or(ModuleId(self.next_module_idx))
         };
-        let moved: Vec<OwnerId> = classes
+        let moved: Vec<SourceUnitId> = classes
             .iter()
             .flat_map(|class| self.classes[class.0].members.iter())
-            .map(|owner| OwnerId(owner.0))
-            .filter(|owner| self.realizability_index.assignment().of(*owner) != post_module)
+            .map(|source_unit| SourceUnitId(source_unit.0))
+            .filter(|source_unit| {
+                self.realizability_index.assignment().of(*source_unit) != post_module
+            })
             .collect();
         if !self.full_gate_accepts_move(&moved, post_module) {
             return false;
@@ -843,7 +849,7 @@ impl QuotientGraph {
         for &loser in classes.iter().filter(|&&class| class != winner) {
             let loser_members = std::mem::take(&mut self.classes[loser.0].members);
             for member in &loser_members {
-                self.owner_to_class[member.0] = winner;
+                self.source_unit_to_class[member.0] = winner;
             }
             self.classes[winner.0].members.extend(loser_members);
             self.classes[loser.0].lines = 0;
@@ -857,9 +863,9 @@ impl QuotientGraph {
         self.classes[winner.0].is_entry_module = is_entry_module;
         if !moved.is_empty() {
             self.realizability_index.apply(
-                &self.owner_graph,
-                ModuleAssignmentDelta::MoveOwners {
-                    owners: moved,
+                &self.dependency_graph,
+                ModuleAssignmentDelta::MoveSourceUnits {
+                    source_units: moved,
                     to: post_module,
                 },
             );
@@ -901,7 +907,7 @@ impl QuotientGraph {
         self.classes[loser.0].is_pre_existing_module = false;
         self.classes[loser.0].is_entry_module = false;
         for member in &loser_members {
-            self.owner_to_class[member.0] = winner;
+            self.source_unit_to_class[member.0] = winner;
         }
         self.classes[winner.0].members.extend(loser_members);
         self.classes[winner.0].lines = self.classes[winner.0].lines.saturating_add(loser_lines);
@@ -916,7 +922,8 @@ impl QuotientGraph {
         // just landed. Update the class -> module map: winner gets
         // post_module, loser is dropped.
         for delta in deltas {
-            self.realizability_index.apply(&self.owner_graph, delta);
+            self.realizability_index
+                .apply(&self.dependency_graph, delta);
         }
         // If `post_module` was freshly minted, bump the counter so
         // subsequent merges don't collide.
@@ -942,7 +949,7 @@ impl QuotientGraph {
     /// evidence materialization. On large corpora, most rejected
     /// candidates only need a yes/no answer; constructing
     /// `CycleEvidence` routes through the full realizability verdict,
-    /// simulator, and owner-module diagnostic translation. The ladder
+    /// simulator, and source_unit-module diagnostic translation. The ladder
     /// answers the same predicate with the evidence elided.
     fn check_merge_boolean(&self, c1: ClassId, c2: ClassId) -> bool {
         if self.check_merge_preconditions(c1, c2).is_err() {
@@ -973,8 +980,8 @@ impl QuotientGraph {
     /// Incremental hypothetical query: cycle evidence after merging
     /// `(c1, c2)`, without committing the merge. Routes through the
     /// persistent realizability index's
-    /// `verdict_after_moving_owners_touching` overlay path: every
-    /// delta moves owners into the single post-merge `ModuleId`, so
+    /// `verdict_after_moving_source_units_touching` overlay path: every
+    /// delta moves source_units into the single post-merge `ModuleId`, so
     /// the index's graphs are never mutated and only SCCs touching
     /// the target module are read — the key cost saving on large
     /// inputs.
@@ -982,30 +989,39 @@ impl QuotientGraph {
         let (winner, loser) = if c1 < c2 { (c1, c2) } else { (c2, c1) };
         let (post_module, deltas) = self.compute_merge_deltas(winner, loser);
         // Producing invariant: `compute_merge_deltas` only ever emits
-        // `MoveOwners` into the single post-merge module.
+        // `MoveSourceUnits` into the single post-merge module.
         assert!(
             deltas.iter().all(|d| match d {
-                ModuleAssignmentDelta::MoveOwners { to, .. } => *to == post_module,
+                ModuleAssignmentDelta::MoveSourceUnits { to, .. } => *to == post_module,
             }),
             "speculative deltas are single-target by construction (merges contract \
              two classes into one); implement a multi-target overlay deliberately \
              before adding a non-merge mutation"
         );
-        let mut owners: Vec<OwnerId> = Vec::new();
+        let mut source_units: Vec<SourceUnitId> = Vec::new();
         for d in &deltas {
-            let ModuleAssignmentDelta::MoveOwners { owners: o, .. } = d;
-            owners.extend(o.iter().copied());
+            let ModuleAssignmentDelta::MoveSourceUnits {
+                source_units: o, ..
+            } = d;
+            source_units.extend(o.iter().copied());
         }
-        owners.sort();
-        owners.dedup();
+        source_units.sort();
+        source_units.dedup();
         let verdict = self
             .realizability_index
-            .verdict_after_moving_owners_touching(&self.owner_graph, &owners, post_module);
-        let owner_count = self.owner_ids.len().min(self.owner_graph.num_nodes());
-        let owners_set: BTreeSet<OwnerId> = owners.iter().copied().collect();
-        let owner_modules: Vec<ModuleId> = (0..owner_count)
+            .verdict_after_moving_source_units_touching(
+                &self.dependency_graph,
+                &source_units,
+                post_module,
+            );
+        let source_unit_count = self
+            .source_unit_ids
+            .len()
+            .min(self.dependency_graph.num_nodes());
+        let source_units_set: BTreeSet<SourceUnitId> = source_units.iter().copied().collect();
+        let source_unit_modules: Vec<ModuleId> = (0..source_unit_count)
             .map(|i| {
-                let id = OwnerId(i);
+                let id = SourceUnitId(i);
                 if owners_set.contains(&id) {
                     post_module
                 } else {
@@ -1013,7 +1029,11 @@ impl QuotientGraph {
                 }
             })
             .collect();
-        self.translate_verdict_with_owner_modules(&verdict, &owner_modules, Some((c1, c2)))
+        self.translate_verdict_with_source_unit_modules(
+            &verdict,
+            &source_unit_modules,
+            Some((c1, c2)),
+        )
     }
 
     /// Tier-laddered boolean gate decision for the speculative merge
@@ -1031,38 +1051,45 @@ impl QuotientGraph {
     pub fn ladder_decision_for_merge(&self, c1: ClassId, c2: ClassId) -> LadderDecision {
         let (winner, loser) = if c1 < c2 { (c1, c2) } else { (c2, c1) };
         let (post_module, deltas) = self.compute_merge_deltas(winner, loser);
-        let mut owners: Vec<OwnerId> = Vec::new();
+        let mut source_units: Vec<SourceUnitId> = Vec::new();
         for delta in &deltas {
-            let ModuleAssignmentDelta::MoveOwners { owners: moved, to } = delta;
+            let ModuleAssignmentDelta::MoveSourceUnits {
+                source_units: moved,
+                to,
+            } = delta;
             debug_assert_eq!(
                 *to, post_module,
                 "speculative deltas are single-target by construction",
             );
-            owners.extend(moved.iter().copied());
+            source_units.extend(moved.iter().copied());
         }
-        owners.sort();
-        owners.dedup();
+        source_units.sort();
+        source_units.dedup();
         self.realizability_index
-            .ladder_decision_after_moving_owners_touching(&self.owner_graph, &owners, post_module)
+            .ladder_decision_after_moving_source_units_touching(
+                &self.dependency_graph,
+                &source_units,
+                post_module,
+            )
     }
 
     /// Translate a `RealizabilityVerdict` (in `ModuleId` space) into the
-    /// kernel's `CycleEvidence` shape (`ClassId` space, owner-id
-    /// strings), reading each owner's module from `owner_modules`.
+    /// kernel's `CycleEvidence` shape (`ClassId` space, source_unit-id
+    /// strings), reading each source_unit's module from `source_unit_modules`.
     /// Speculative queries take their verdict from a non-mutating
     /// overlay, so the index's own assignment never reflects the
     /// hypothetical move; `overlay` projects the merged pair's classes
     /// onto the survivor.
     ///
-    /// One `O(num_owners)` pass builds a module → owners inverse index,
-    /// so each SCC visits only the owners in its own modules.
-    fn translate_verdict_with_owner_modules(
+    /// One `O(num_source_units)` pass builds a module → source_units inverse index,
+    /// so each SCC visits only the source_units in its own modules.
+    fn translate_verdict_with_source_unit_modules(
         &self,
         verdict: &RealizabilityVerdict,
-        owner_modules: &[ModuleId],
+        source_unit_modules: &[ModuleId],
         overlay: Option<(ClassId, ClassId)>,
     ) -> CycleEvidence {
-        let max_idx = self.owner_ids.len().min(owner_modules.len());
+        let max_idx = self.source_unit_ids.len().min(source_unit_modules.len());
         if verdict.is_realizable() {
             return CycleEvidence::default();
         }
@@ -1074,23 +1101,26 @@ impl QuotientGraph {
             }
             c
         };
-        // Only owner indices present in both `self.owner_ids` and
-        // `owner_modules` participate.
-        let mut module_to_owners: FxHashMap<ModuleId, Vec<usize>> = FxHashMap::default();
-        for (owner_idx, &module) in owner_modules.iter().enumerate().take(max_idx) {
-            module_to_owners.entry(module).or_default().push(owner_idx);
+        // Only source_unit indices present in both `self.source_unit_ids` and
+        // `source_unit_modules` participate.
+        let mut module_to_source_units: FxHashMap<ModuleId, Vec<usize>> = FxHashMap::default();
+        for (source_unit_idx, &module) in source_unit_modules.iter().enumerate().take(max_idx) {
+            module_to_source_units
+                .entry(module)
+                .or_default()
+                .push(source_unit_idx);
         }
         let mut cycles: Vec<CycleClassSet> = Vec::new();
         for scc in &verdict.unrealizable_sccs {
-            let mut owner_ids: BTreeSet<String> = BTreeSet::new();
+            let mut source_unit_ids: BTreeSet<String> = BTreeSet::new();
             let mut class_set: BTreeSet<ClassId> = BTreeSet::new();
             for module in &scc.core.modules {
-                let Some(idxs) = module_to_owners.get(module) else {
+                let Some(idxs) = module_to_source_units.get(module) else {
                     continue;
                 };
-                for &owner_idx in idxs {
-                    owner_ids.insert(self.owner_ids[owner_idx].clone());
-                    let c = self.owner_to_class[owner_idx];
+                for &source_unit_idx in idxs {
+                    source_unit_ids.insert(self.source_unit_ids[source_unit_idx].clone());
+                    let c = self.source_unit_to_class[source_unit_idx];
                     class_set.insert(project(c));
                 }
             }
@@ -1101,7 +1131,7 @@ impl QuotientGraph {
             classes.sort();
             cycles.push(CycleClassSet {
                 classes,
-                owner_ids: owner_ids.into_iter().collect(),
+                source_unit_ids: source_unit_ids.into_iter().collect(),
             });
         }
         cycles.sort();
@@ -1110,7 +1140,7 @@ impl QuotientGraph {
     }
 
     /// Rebuild class-level edge adjacency from scratch.
-    /// O(|owner edges|). Called in `from_report`; merges use
+    /// O(|source_unit edges|). Called in `from_report`; merges use
     /// `update_class_adjacency_after_merge`.
     fn rebuild_class_adjacency(&mut self) {
         for slot in &mut self.out_edges {
@@ -1121,12 +1151,12 @@ impl QuotientGraph {
         }
         // Constraining edges: bump constraining_count. Also seeds the
         // back-pointer in `in_neighbors`. Note constraining edges are
-        // a subset of the owner_weighted_edges loop below, which bumps
-        // weighted_count and weighted_sum for *every* owner edge
+        // a subset of the source_unit_weighted_edges loop below, which bumps
+        // weighted_count and weighted_sum for *every* source_unit edge
         // (constraining or not).
-        for &(s, t) in &self.owner_constraining_edges {
-            let cs = self.owner_to_class[s.0];
-            let ct = self.owner_to_class[t.0];
+        for &(s, t) in &self.source_unit_constraining_edges {
+            let cs = self.source_unit_to_class[s.0];
+            let ct = self.source_unit_to_class[t.0];
             if cs == ct {
                 continue;
             }
@@ -1134,9 +1164,9 @@ impl QuotientGraph {
             entry.constraining_count += 1;
             self.in_neighbors[ct.0].insert(cs);
         }
-        for &edge in &self.owner_weighted_edges {
-            let cs = self.owner_to_class[edge.from.0];
-            let ct = self.owner_to_class[edge.to.0];
+        for &edge in &self.source_unit_weighted_edges {
+            let cs = self.source_unit_to_class[edge.from.0];
+            let ct = self.source_unit_to_class[edge.to.0];
             if cs == ct {
                 continue;
             }
@@ -1205,7 +1235,7 @@ impl QuotientGraph {
         if projects_to_residual(
             winner_data.is_pre_existing_module || loser_data.is_pre_existing_module,
             winner_data.members.iter().chain(&loser_data.members),
-            &self.gate_residual_owners,
+            &self.gate_residual_source_units,
         ) || winner_data.is_entry_module
             || loser_data.is_entry_module
         {
@@ -1222,7 +1252,7 @@ impl QuotientGraph {
             .unwrap_or(ModuleId(self.next_module_idx))
     }
 
-    /// Compute the `ModuleAssignmentDelta::MoveOwners` deltas needed to
+    /// Compute the `ModuleAssignmentDelta::MoveSourceUnits` deltas needed to
     /// transition the realizability index's working assignment to the
     /// post-merge projection for `(winner, loser)`. Returns the
     /// post-merge winner `ModuleId` (which may differ from
@@ -1230,8 +1260,8 @@ impl QuotientGraph {
     /// promotes the merged class from residual to non-residual).
     ///
     /// At most two deltas are produced:
-    /// 1. `loser`'s owners → post-merge winner module.
-    /// 2. `winner`'s owners → post-merge winner module (only if the
+    /// 1. `loser`'s source_units → post-merge winner module.
+    /// 2. `winner`'s source_units → post-merge winner module (only if the
     ///    winner's module changed).
     fn compute_merge_deltas(
         &self,
@@ -1242,15 +1272,15 @@ impl QuotientGraph {
         let mut deltas: Vec<ModuleAssignmentDelta> = Vec::new();
         // Loser members move to post_module (if their current
         // assignment differs).
-        let loser_members: Vec<OwnerId> = self.classes[loser.0]
+        let loser_members: Vec<SourceUnitId> = self.classes[loser.0]
             .members
             .iter()
-            .filter(|m| self.realizability_index.assignment().of(OwnerId(m.0)) != post_module)
-            .map(|m| OwnerId(m.0))
+            .filter(|m| self.realizability_index.assignment().of(SourceUnitId(m.0)) != post_module)
+            .map(|m| SourceUnitId(m.0))
             .collect();
         if !loser_members.is_empty() {
-            deltas.push(ModuleAssignmentDelta::MoveOwners {
-                owners: loser_members,
+            deltas.push(ModuleAssignmentDelta::MoveSourceUnits {
+                source_units: loser_members,
                 to: post_module,
             });
         }
@@ -1262,15 +1292,17 @@ impl QuotientGraph {
             .copied()
             .unwrap_or(ModuleId(0));
         if winner_current != post_module {
-            let winner_members: Vec<OwnerId> = self.classes[winner.0]
+            let winner_members: Vec<SourceUnitId> = self.classes[winner.0]
                 .members
                 .iter()
-                .filter(|m| self.realizability_index.assignment().of(OwnerId(m.0)) != post_module)
-                .map(|m| OwnerId(m.0))
+                .filter(|m| {
+                    self.realizability_index.assignment().of(SourceUnitId(m.0)) != post_module
+                })
+                .map(|m| SourceUnitId(m.0))
                 .collect();
             if !winner_members.is_empty() {
-                deltas.push(ModuleAssignmentDelta::MoveOwners {
-                    owners: winner_members,
+                deltas.push(ModuleAssignmentDelta::MoveSourceUnits {
+                    source_units: winner_members,
                     to: post_module,
                 });
             }
@@ -1364,7 +1396,7 @@ impl QuotientGraph {
     /// — a previously gate-residual-only class is promoted from the
     /// residual module to a fresh non-residual one (see
     /// `projects_to_residual`). The realizability index is synced via
-    /// a `MoveOwners` delta when the transition fires.
+    /// a `MoveSourceUnits` delta when the transition fires.
     pub fn set_class_pre_existing_module(&mut self, c: ClassId) {
         if self.classes[c.0].is_pre_existing_module {
             return;
@@ -1384,16 +1416,16 @@ impl QuotientGraph {
         }
         let new_module = ModuleId(self.next_module_idx);
         self.next_module_idx += 1;
-        let owners_to_move: Vec<OwnerId> = self.classes[c.0]
+        let owners_to_move: Vec<SourceUnitId> = self.classes[c.0]
             .members
             .iter()
-            .map(|m| OwnerId(m.0))
+            .map(|m| SourceUnitId(m.0))
             .collect();
         if !owners_to_move.is_empty() {
             self.realizability_index.apply(
-                &self.owner_graph,
-                ModuleAssignmentDelta::MoveOwners {
-                    owners: owners_to_move,
+                &self.dependency_graph,
+                ModuleAssignmentDelta::MoveSourceUnits {
+                    source_units: owners_to_move,
                     to: new_module,
                 },
             );
@@ -1401,7 +1433,7 @@ impl QuotientGraph {
         self.class_module_id.insert(c, new_module);
     }
 
-    /// Number of owner edges between `a` and `b` (in either
+    /// Number of source_unit edges between `a` and `b` (in either
     /// direction), as constraining-edge multiplicities. Used by the
     /// coupling metric and `mergeable_preconditions`'s
     /// cross-edge presence check.
@@ -1422,7 +1454,7 @@ impl QuotientGraph {
     }
 
     fn class_out_count(&self, c: ClassId) -> u64 {
-        // Sum of `weighted_count` across all out-edges: total owner
+        // Sum of `weighted_count` across all out-edges: total source_unit
         // edges originating in c's members and crossing class
         // boundaries. Computed on demand; the per-class out-degree is
         // small in practice.
@@ -1816,32 +1848,37 @@ fn rank_candidate(q: &QuotientGraph, a: ClassId, b: ClassId) -> [u8; 33] {
 /// proposals. Each accepted contraction has passed the shared
 /// realizability gate, and modules remain separate from one another.
 pub fn build_same_module_seed_quotient(
-    report: &OwnerGraphReport,
+    report: &DependencyGraphReport,
     atomic_groups: &[analysis::AtomicGroupReport],
     spec_modules: &[SpecModuleGroup],
     cap_lines: usize,
-) -> Result<(QuotientGraph, Vec<SeedContractionRejected>), analysis::UnresolvedOwnerEdgeEndpoint> {
+) -> Result<(QuotientGraph, Vec<SeedContractionRejected>), analysis::UnresolvedDependencyEdgeEndpoint>
+{
     let mut q = QuotientGraph::from_report(report, cap_lines)?;
     let mut rejected = Vec::<SeedContractionRejected>::new();
 
-    // ---- Pass 1: atomic groups. Canonical order: lowest OwnerIdx
+    // ---- Pass 1: atomic groups. Canonical order: lowest SourceUnitIndex
     //      member, then atomic group id.
-    let mut atomic_groups: Vec<(&analysis::AtomicGroupReport, Option<OwnerIdx>)> = atomic_groups
-        .iter()
-        .map(|atomic_group| {
-            (
-                atomic_group,
-                lowest_owner_idx(&q, atomic_group.owner_ids.iter().map(String::as_str)),
-            )
-        })
-        .collect();
+    let mut atomic_groups: Vec<(&analysis::AtomicGroupReport, Option<SourceUnitIndex>)> =
+        atomic_groups
+            .iter()
+            .map(|atomic_group| {
+                (
+                    atomic_group,
+                    lowest_source_unit_idx(
+                        &q,
+                        atomic_group.source_unit_ids.iter().map(String::as_str),
+                    ),
+                )
+            })
+            .collect();
     atomic_groups.sort_by(|(a, ai), (b, bi)| ai.cmp(bi).then_with(|| a.id.cmp(&b.id)));
     for (atomic_group, _) in atomic_groups {
-        let owner_idxs = resolve_owner_idxs(&q, &atomic_group.owner_ids);
-        for (rejected_pair, cycle) in contract_group(&mut q, &owner_idxs) {
+        let source_unit_idxs = resolve_source_unit_idxs(&q, &atomic_group.source_unit_ids);
+        for (rejected_pair, cycle) in contract_group(&mut q, &source_unit_idxs) {
             rejected.push(SeedContractionRejected::AtomicGroup {
                 atomic_group_id: atomic_group.id.clone(),
-                owner_ids: atomic_group.owner_ids.clone(),
+                source_unit_ids: atomic_group.source_unit_ids.clone(),
                 rejected_pair,
                 cycle,
             });
@@ -1849,28 +1886,28 @@ pub fn build_same_module_seed_quotient(
     }
 
     // ---- Pass 2: spec modules. Canonical order: module id lex.
-    //      Every spec-module owner's surviving class is marked
+    //      Every spec-module source_unit's surviving class is marked
     //      `is_pre_existing_module = true` so the downstream greedy
     //      can identify it as a viable absorption target (single-
-    //      owner modules included).
+    //      source_unit modules included).
     let mut modules: Vec<&SpecModuleGroup> = spec_modules.iter().collect();
     modules.sort_by(|a, b| a.module_id.cmp(&b.module_id));
     for module in modules {
-        let owner_idxs = resolve_owner_idxs(&q, &module.owner_ids);
-        for (rejected_pair, cycle) in contract_group(&mut q, &owner_idxs) {
+        let source_unit_idxs = resolve_source_unit_idxs(&q, &module.source_unit_ids);
+        for (rejected_pair, cycle) in contract_group(&mut q, &source_unit_idxs) {
             rejected.push(SeedContractionRejected::SpecModule {
                 module_id: module.module_id.clone(),
-                owner_ids: module.owner_ids.clone(),
+                source_unit_ids: module.source_unit_ids.clone(),
                 rejected_pair,
                 cycle,
             });
         }
-        // Mark every spec-module owner's surviving class as
+        // Mark every spec-module source_unit's surviving class as
         // pre-existing-module-anchored (sticky across later
         // pass-3 / greedy merges; needed for the greedy gate to
         // recognize the orphan-absorption shape).
-        for &owner in &owner_idxs {
-            let c = q.class_of(owner);
+        for &source_unit in &source_unit_idxs {
+            let c = q.class_of(source_unit);
             q.set_class_pre_existing_module(c);
         }
     }
@@ -1884,16 +1921,17 @@ pub fn build_same_module_seed_quotient(
 /// `SeedContractionRejected` diagnostic into the returned vec and the
 /// kernel continues with the remaining contractions.
 ///
-/// Canonical order: atomic groups by lowest `OwnerIdx` member (then
+/// Canonical order: atomic groups by lowest `SourceUnitIndex` member (then
 /// atomic group id for ties); spec modules by module id lex. Within a group,
-/// members merge into the lowest-`OwnerIdx` pivot in `OwnerIdx`
+/// members merge into the lowest-`SourceUnitIndex` pivot in `SourceUnitIndex`
 /// order.
 pub fn build_seed_quotient(
-    report: &OwnerGraphReport,
+    report: &DependencyGraphReport,
     atomic_groups: &[analysis::AtomicGroupReport],
     spec_modules: &[SpecModuleGroup],
     cap_lines: usize,
-) -> Result<(QuotientGraph, Vec<SeedContractionRejected>), analysis::UnresolvedOwnerEdgeEndpoint> {
+) -> Result<(QuotientGraph, Vec<SeedContractionRejected>), analysis::UnresolvedDependencyEdgeEndpoint>
+{
     let (mut q, mut rejected) =
         build_same_module_seed_quotient(report, atomic_groups, spec_modules, cap_lines)?;
 
@@ -1949,26 +1987,28 @@ pub fn build_seed_quotient(
         edges.sort_by(|a, b| a.id.cmp(&b.id));
         edges
     };
-    let atomic_group_owner_idxs: std::collections::HashMap<&str, Vec<OwnerIdx>> = atomic_groups
-        .iter()
-        .map(|atomic_group| {
-            (
-                atomic_group.id.as_str(),
-                resolve_owner_idxs(&q, &atomic_group.owner_ids),
-            )
-        })
-        .collect();
+    let atomic_group_source_unit_idxs: std::collections::HashMap<&str, Vec<SourceUnitIndex>> =
+        atomic_groups
+            .iter()
+            .map(|atomic_group| {
+                (
+                    atomic_group.id.as_str(),
+                    resolve_source_unit_idxs(&q, &atomic_group.source_unit_ids),
+                )
+            })
+            .collect();
     loop {
         let mut applied = 0usize;
         for edge in &atomic_edges_relevant {
-            let Some(source_owners) = atomic_group_owner_idxs.get(edge.source.as_str()) else {
+            let Some(source_units) = atomic_group_source_unit_idxs.get(edge.source.as_str()) else {
                 continue;
             };
-            let Some(target_owners) = atomic_group_owner_idxs.get(edge.target.as_str()) else {
+            let Some(target_source_units) = atomic_group_source_unit_idxs.get(edge.target.as_str())
+            else {
                 continue;
             };
             let (Some(&src_pivot), Some(&tgt_pivot)) =
-                (source_owners.first(), target_owners.first())
+                (source_units.first(), target_source_units.first())
             else {
                 continue;
             };
@@ -1988,13 +2028,15 @@ pub fn build_seed_quotient(
     // Walk edges once more to record diagnostics for the pairs that
     // still cannot merge at fixed point.
     for edge in &atomic_edges_relevant {
-        let Some(source_owners) = atomic_group_owner_idxs.get(edge.source.as_str()) else {
+        let Some(source_units) = atomic_group_source_unit_idxs.get(edge.source.as_str()) else {
             continue;
         };
-        let Some(target_owners) = atomic_group_owner_idxs.get(edge.target.as_str()) else {
+        let Some(target_source_units) = atomic_group_source_unit_idxs.get(edge.target.as_str())
+        else {
             continue;
         };
-        let (Some(&src_pivot), Some(&tgt_pivot)) = (source_owners.first(), target_owners.first())
+        let (Some(&src_pivot), Some(&tgt_pivot)) =
+            (source_units.first(), target_source_units.first())
         else {
             continue;
         };
@@ -2013,7 +2055,7 @@ pub fn build_seed_quotient(
                 edge_id: edge.id.clone(),
                 source_atomic_group_id: edge.source.clone(),
                 target_atomic_group_id: edge.target.clone(),
-                rejected_pair: owner_pair(&q, src_pivot, tgt_pivot),
+                rejected_pair: source_unit_pair(&q, src_pivot, tgt_pivot),
                 cycle: rejection.into_cycle_evidence(),
             });
         }
@@ -2028,17 +2070,17 @@ pub fn build_seed_quotient(
     let verdict = q.realizability_verdict();
     if !verdict.is_realizable() {
         let assignment = q.realizability_assignment();
-        let owner_modules: Vec<ModuleId> = (0..q.owner_ids.len())
-            .map(|owner_idx| assignment.of(OwnerId(owner_idx)))
+        let source_unit_modules: Vec<ModuleId> = (0..q.source_unit_ids.len())
+            .map(|source_unit_idx| assignment.of(SourceUnitId(source_unit_idx)))
             .collect();
         let mut sccs = q
-            .translate_verdict_with_owner_modules(&verdict, &owner_modules, None)
+            .translate_verdict_with_source_unit_modules(&verdict, &source_unit_modules, None)
             .cycles;
-        // Stable diagnostic order: by the SCC's owner ids.
-        sccs.sort_by(|a, b| a.owner_ids.cmp(&b.owner_ids));
+        // Stable diagnostic order: by the SCC's source_unit ids.
+        sccs.sort_by(|a, b| a.source_unit_ids.cmp(&b.source_unit_ids));
         rejected.extend(sccs.into_iter().map(|scc| {
             SeedContractionRejected::PostSeedUnrealizableScc {
-                owner_ids: scc.owner_ids.clone(),
+                source_unit_ids: scc.source_unit_ids.clone(),
                 cycle: CycleEvidence { cycles: vec![scc] },
             }
         }));
@@ -2047,15 +2089,15 @@ pub fn build_seed_quotient(
     Ok((q, rejected))
 }
 
-/// Contract every other member of `owners` (sorted) into the first
+/// Contract every other member of `source_units` (sorted) into the first
 /// member's class through the gated protocol, skipping members already
-/// in it. Returns the `(pivot, member)` owner-id pair and cycle
+/// in it. Returns the `(pivot, member)` source_unit-id pair and cycle
 /// evidence of each contraction the gate refused.
 fn contract_group(
     q: &mut QuotientGraph,
-    owners: &[OwnerIdx],
+    source_units: &[SourceUnitIndex],
 ) -> Vec<((String, String), CycleEvidence)> {
-    let Some((&pivot, members)) = owners.split_first() else {
+    let Some((&pivot, members)) = source_units.split_first() else {
         return Vec::new();
     };
     members
@@ -2067,31 +2109,36 @@ fn contract_group(
             }
             let rejection = q.contract(c_pivot, c_member).err()?;
             Some((
-                owner_pair(q, pivot, member),
+                source_unit_pair(q, pivot, member),
                 rejection.into_cycle_evidence(),
             ))
         })
         .collect()
 }
 
-fn owner_pair(q: &QuotientGraph, a: OwnerIdx, b: OwnerIdx) -> (String, String) {
-    (q.owner_id(a).to_string(), q.owner_id(b).to_string())
+fn source_unit_pair(q: &QuotientGraph, a: SourceUnitIndex, b: SourceUnitIndex) -> (String, String) {
+    (
+        q.source_unit_id(a).to_string(),
+        q.source_unit_id(b).to_string(),
+    )
 }
 
-fn resolve_owner_idxs(q: &QuotientGraph, owner_ids: &[String]) -> Vec<OwnerIdx> {
-    let mut idxs: Vec<OwnerIdx> = owner_ids
+fn resolve_source_unit_idxs(q: &QuotientGraph, source_unit_ids: &[String]) -> Vec<SourceUnitIndex> {
+    let mut idxs: Vec<SourceUnitIndex> = source_unit_ids
         .iter()
-        .filter_map(|id| q.owner_idx_of(id))
+        .filter_map(|id| q.source_unit_idx_of(id))
         .collect();
     idxs.sort();
     idxs
 }
 
-fn lowest_owner_idx<'a>(
+fn lowest_source_unit_idx<'a>(
     q: &QuotientGraph,
-    owner_ids: impl Iterator<Item = &'a str>,
-) -> Option<OwnerIdx> {
-    owner_ids.filter_map(|id| q.owner_idx_of(id)).min()
+    source_unit_ids: impl Iterator<Item = &'a str>,
+) -> Option<SourceUnitIndex> {
+    source_unit_ids
+        .filter_map(|id| q.source_unit_idx_of(id))
+        .min()
 }
 
 /// Constructors and reference drivers the production pipeline never
@@ -2104,50 +2151,50 @@ pub(crate) mod testing {
     /// One input group for `QuotientGraph::from_report_with_partition`.
     #[derive(Debug, Clone)]
     pub struct PartitionGroup {
-        pub owner_idxs: Vec<OwnerIdx>,
+        pub source_unit_idxs: Vec<SourceUnitIndex>,
         /// `true` if this group is a pre-existing active spec module
         /// (the greedy may extend it by absorbing orphan residual
         /// classes).
         pub is_pre_existing_module: bool,
     }
 
-    /// Pre-existing spec module group for fixtures. The owner indexes
-    /// are owner-report positions.
-    pub fn module_group(owner_idxs: Vec<usize>) -> PartitionGroup {
+    /// Pre-existing spec module group for fixtures. The source_unit indexes
+    /// are source_unit-report positions.
+    pub fn module_group(source_unit_idxs: Vec<usize>) -> PartitionGroup {
         PartitionGroup {
-            owner_idxs: owner_idxs.into_iter().map(OwnerIdx).collect(),
+            source_unit_idxs: source_unit_idxs.into_iter().map(SourceUnitIndex).collect(),
             is_pre_existing_module: true,
         }
     }
 
     impl QuotientGraph {
         /// Build a quotient over `report.nodes` and immediately
-        /// contract each owner group into a single class. Unlike
+        /// contract each source_unit group into a single class. Unlike
         /// `contract`, this bypasses the realizability gate — the
         /// assignment is taken as authoritative, so tests can seed
         /// states `contract` would refuse. Returns the quotient plus
         /// one class ID per group, in `groups` order.
         ///
-        /// Groups must be pre-coalesced: an owner already co-located
-        /// with another group's owners panics.
+        /// Groups must be pre-coalesced: an source_unit already co-located
+        /// with another group's source_units panics.
         pub fn from_report_with_partition(
-            report: &OwnerGraphReport,
+            report: &DependencyGraphReport,
             cap_lines: usize,
             groups: &[PartitionGroup],
-        ) -> Result<(Self, Vec<ClassId>), analysis::UnresolvedOwnerEdgeEndpoint> {
+        ) -> Result<(Self, Vec<ClassId>), analysis::UnresolvedDependencyEdgeEndpoint> {
             let mut q = Self::from_report(report, cap_lines)?;
             let mut group_class_ids = Vec::with_capacity(groups.len());
             for group in groups {
                 let mut winner: Option<ClassId> = None;
-                for &owner in &group.owner_idxs {
-                    let c = q.class_of(owner);
+                for &source_unit in &group.source_unit_idxs {
+                    let c = q.class_of(source_unit);
                     match winner {
                         None => winner = Some(c),
                         Some(w) if c == w => {}
                         Some(w) => {
                             let merged = q
                                 .merge_classes_unchecked(w, c)
-                                .expect("assignment group owners are pre-coalesced");
+                                .expect("assignment group source units are pre-coalesced");
                             winner = Some(merged);
                         }
                     }
@@ -2164,20 +2211,20 @@ pub(crate) mod testing {
             // callers see the correct initial state.
             q.rebuild_class_adjacency();
             (q.realizability_index, q.class_module_id, q.next_module_idx) = project_classes(
-                &q.owner_graph,
-                &q.owner_to_class,
+                &q.dependency_graph,
+                &q.source_unit_to_class,
                 &q.classes,
-                &q.gate_residual_owners,
+                &q.gate_residual_source_units,
             );
             Ok((q, group_class_ids))
         }
 
-        /// The typed `OwnerGraph` IR reconstructed at construction
+        /// The typed `DependencyGraph` IR reconstructed at construction
         /// time, for comparing the kernel's verdicts against
         /// `check_realizability` over an independently projected
         /// assignment.
-        pub fn owner_graph(&self) -> &OwnerGraph {
-            &self.owner_graph
+        pub fn dependency_graph(&self) -> &DependencyGraph {
+            &self.dependency_graph
         }
     }
 

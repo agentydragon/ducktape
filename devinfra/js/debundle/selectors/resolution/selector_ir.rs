@@ -6,7 +6,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use analysis::{OwnerId, StatementOrdinal};
+use analysis::{SourceUnitId, StatementOrdinal};
 
 /// Dense id of a solver variable in a [`SelectorProgram`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -19,7 +19,7 @@ pub struct SelectorTargetId(pub usize);
 /// The relation domain a solver variable ranges over.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum VariableDomain {
-    Owner,
+    SourceUnit,
     String,
 }
 
@@ -33,9 +33,9 @@ pub struct SelectorVariable {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum OwnerTerm {
+pub enum SourceUnitTerm {
     Var { id: SelectorVariableId },
-    Const { owner: OwnerId },
+    Const { source_unit: SourceUnitId },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -44,13 +44,13 @@ pub enum StringTerm {
     Const { value: String },
 }
 
-/// Materializer-facing shape of a target once the solver has selected an owner.
+/// Materializer-facing shape of a target once the solver has selected a source unit.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClaimKind {
-    /// A normal exported member claim. The owner should declare `binding`.
+    /// A normal exported member claim. The source unit should declare `binding`.
     Binding { export_name: Option<String> },
     /// An anonymous top-level statement claim, the `index`th of its module's
-    /// `anonymous_statements[]`. The owner may declare no binding.
+    /// `anonymous_statements[]`. The source unit may declare no binding.
     AnonymousStatement { index: usize },
     /// One target in a `source_matches[].bindings[]` selector.
     BindingGroupMember { export_name: String },
@@ -60,7 +60,7 @@ pub enum ClaimKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SelectorTarget {
     pub id: SelectorTargetId,
-    pub owner: SelectorVariableId,
+    pub source_unit: SelectorVariableId,
     /// The target's module as `<chunk>::<path>`, which `selector_resolve`
     /// parses the path back out of.
     pub logical_module: String,
@@ -70,60 +70,60 @@ pub struct SelectorTarget {
 /// One conjunctive-query atom in the lowered selector program.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SelectorAtom {
-    OwnerKind {
-        owner: OwnerTerm,
+    SourceUnitKind {
+        source_unit: SourceUnitTerm,
         statement_kind: StringTerm,
     },
-    OwnerDeclaresBinding {
-        owner: OwnerTerm,
+    SourceUnitDeclaresBinding {
+        source_unit: SourceUnitTerm,
         binding: StringTerm,
     },
     ProjectedAllowedTuples {
         variables: Vec<SelectorVariableId>,
         rows: Vec<Vec<SelectorProjectedValue>>,
     },
-    OwnerReferencesOwner {
-        owner: OwnerTerm,
-        referenced: OwnerTerm,
+    SourceUnitReferencesSourceUnit {
+        source_unit: SourceUnitTerm,
+        referenced: SourceUnitTerm,
     },
-    OwnerAliasesOwner {
-        owner: OwnerTerm,
-        aliased: OwnerTerm,
+    SourceUnitAliasesSourceUnit {
+        source_unit: SourceUnitTerm,
+        aliased: SourceUnitTerm,
     },
     ReadsMember {
-        owner: OwnerTerm,
+        source_unit: SourceUnitTerm,
         member: StringTerm,
     },
-    ReadsMemberOfOwner {
-        owner: OwnerTerm,
-        object: OwnerTerm,
+    ReadsMemberOfSourceUnit {
+        source_unit: SourceUnitTerm,
+        object: SourceUnitTerm,
         member: StringTerm,
     },
     ConsumesModuleMember {
-        owner: OwnerTerm,
+        source_unit: SourceUnitTerm,
         module: StringTerm,
         member: StringTerm,
     },
     PassedToCall {
-        owner: OwnerTerm,
+        source_unit: SourceUnitTerm,
         callee_member: StringTerm,
         arg_index: Option<u32>,
     },
-    PassedToCallOfOwner {
-        owner: OwnerTerm,
-        callee_object: OwnerTerm,
+    PassedToCallOfSourceUnit {
+        source_unit: SourceUnitTerm,
+        callee_object: SourceUnitTerm,
         callee_member: StringTerm,
         arg_index: Option<u32>,
     },
-    MakesDecorateCallForOwner {
-        owner: OwnerTerm,
-        class_anchor: OwnerTerm,
+    MakesDecorateCallForSourceUnit {
+        source_unit: SourceUnitTerm,
+        class_anchor: SourceUnitTerm,
         member: Option<StringTerm>,
     },
     IntrinsicAlias {
-        owner: OwnerTerm,
+        source_unit: SourceUnitTerm,
         property: StringTerm,
-        referenced_by: OwnerTerm,
+        referenced_by: SourceUnitTerm,
     },
 }
 
@@ -131,15 +131,18 @@ impl SelectorAtom {
     pub fn variable_ids(&self) -> BTreeSet<SelectorVariableId> {
         let mut variables = BTreeSet::new();
         match self {
-            Self::OwnerKind {
-                owner,
+            Self::SourceUnitKind {
+                source_unit,
                 statement_kind,
             } => {
-                collect_owner_term_variables(owner, &mut variables);
+                collect_source_unit_term_variables(source_unit, &mut variables);
                 collect_string_term_variables(statement_kind, &mut variables);
             }
-            Self::OwnerDeclaresBinding { owner, binding } => {
-                collect_owner_term_variables(owner, &mut variables);
+            Self::SourceUnitDeclaresBinding {
+                source_unit,
+                binding,
+            } => {
+                collect_source_unit_term_variables(source_unit, &mut variables);
                 collect_string_term_variables(binding, &mut variables);
             }
             Self::ProjectedAllowedTuples {
@@ -148,73 +151,79 @@ impl SelectorAtom {
             } => {
                 variables.extend(projected.iter().copied());
             }
-            Self::OwnerReferencesOwner { owner, referenced }
-            | Self::OwnerAliasesOwner {
-                owner,
+            Self::SourceUnitReferencesSourceUnit {
+                source_unit,
+                referenced,
+            }
+            | Self::SourceUnitAliasesSourceUnit {
+                source_unit,
                 aliased: referenced,
             } => {
-                collect_owner_term_variables(owner, &mut variables);
-                collect_owner_term_variables(referenced, &mut variables);
+                collect_source_unit_term_variables(source_unit, &mut variables);
+                collect_source_unit_term_variables(referenced, &mut variables);
             }
-            Self::ReadsMember { owner, member } => {
-                collect_owner_term_variables(owner, &mut variables);
+            Self::ReadsMember {
+                source_unit,
+                member,
+            } => {
+                collect_source_unit_term_variables(source_unit, &mut variables);
                 collect_string_term_variables(member, &mut variables);
             }
-            Self::ReadsMemberOfOwner {
-                owner,
+            Self::ReadsMemberOfSourceUnit {
+                source_unit,
                 object,
                 member,
             } => {
-                collect_owner_term_variables(owner, &mut variables);
-                collect_owner_term_variables(object, &mut variables);
+                collect_source_unit_term_variables(source_unit, &mut variables);
+                collect_source_unit_term_variables(object, &mut variables);
                 collect_string_term_variables(member, &mut variables);
             }
             Self::ConsumesModuleMember {
-                owner,
+                source_unit,
                 module,
                 member,
             } => {
-                collect_owner_term_variables(owner, &mut variables);
+                collect_source_unit_term_variables(source_unit, &mut variables);
                 collect_string_term_variables(module, &mut variables);
                 collect_string_term_variables(member, &mut variables);
             }
             Self::PassedToCall {
-                owner,
+                source_unit,
                 callee_member,
                 ..
             } => {
-                collect_owner_term_variables(owner, &mut variables);
+                collect_source_unit_term_variables(source_unit, &mut variables);
                 collect_string_term_variables(callee_member, &mut variables);
             }
-            Self::PassedToCallOfOwner {
-                owner,
+            Self::PassedToCallOfSourceUnit {
+                source_unit,
                 callee_object,
                 callee_member,
                 ..
             } => {
-                collect_owner_term_variables(owner, &mut variables);
-                collect_owner_term_variables(callee_object, &mut variables);
+                collect_source_unit_term_variables(source_unit, &mut variables);
+                collect_source_unit_term_variables(callee_object, &mut variables);
                 collect_string_term_variables(callee_member, &mut variables);
             }
-            Self::MakesDecorateCallForOwner {
-                owner,
+            Self::MakesDecorateCallForSourceUnit {
+                source_unit,
                 class_anchor,
                 member,
             } => {
-                collect_owner_term_variables(owner, &mut variables);
-                collect_owner_term_variables(class_anchor, &mut variables);
+                collect_source_unit_term_variables(source_unit, &mut variables);
+                collect_source_unit_term_variables(class_anchor, &mut variables);
                 if let Some(member) = member {
                     collect_string_term_variables(member, &mut variables);
                 }
             }
             Self::IntrinsicAlias {
-                owner,
+                source_unit,
                 property,
                 referenced_by,
             } => {
-                collect_owner_term_variables(owner, &mut variables);
+                collect_source_unit_term_variables(source_unit, &mut variables);
                 collect_string_term_variables(property, &mut variables);
-                collect_owner_term_variables(referenced_by, &mut variables);
+                collect_source_unit_term_variables(referenced_by, &mut variables);
             }
         }
         variables
@@ -225,15 +234,18 @@ impl SelectorAtom {
         variable_map: &BTreeMap<SelectorVariableId, SelectorVariableId>,
     ) -> Self {
         match self {
-            Self::OwnerKind {
-                owner,
+            Self::SourceUnitKind {
+                source_unit,
                 statement_kind,
-            } => Self::OwnerKind {
-                owner: remap_owner_term(owner, variable_map),
+            } => Self::SourceUnitKind {
+                source_unit: remap_source_unit_term(source_unit, variable_map),
                 statement_kind: remap_string_term(statement_kind, variable_map),
             },
-            Self::OwnerDeclaresBinding { owner, binding } => Self::OwnerDeclaresBinding {
-                owner: remap_owner_term(owner, variable_map),
+            Self::SourceUnitDeclaresBinding {
+                source_unit,
+                binding,
+            } => Self::SourceUnitDeclaresBinding {
+                source_unit: remap_source_unit_term(source_unit, variable_map),
                 binding: remap_string_term(binding, variable_map),
             },
             Self::ProjectedAllowedTuples { variables, rows } => Self::ProjectedAllowedTuples {
@@ -243,82 +255,94 @@ impl SelectorAtom {
                     .collect(),
                 rows: rows.clone(),
             },
-            Self::OwnerReferencesOwner { owner, referenced } => Self::OwnerReferencesOwner {
-                owner: remap_owner_term(owner, variable_map),
-                referenced: remap_owner_term(referenced, variable_map),
+            Self::SourceUnitReferencesSourceUnit {
+                source_unit,
+                referenced,
+            } => Self::SourceUnitReferencesSourceUnit {
+                source_unit: remap_source_unit_term(source_unit, variable_map),
+                referenced: remap_source_unit_term(referenced, variable_map),
             },
-            Self::OwnerAliasesOwner { owner, aliased } => Self::OwnerAliasesOwner {
-                owner: remap_owner_term(owner, variable_map),
-                aliased: remap_owner_term(aliased, variable_map),
+            Self::SourceUnitAliasesSourceUnit {
+                source_unit,
+                aliased,
+            } => Self::SourceUnitAliasesSourceUnit {
+                source_unit: remap_source_unit_term(source_unit, variable_map),
+                aliased: remap_source_unit_term(aliased, variable_map),
             },
-            Self::ReadsMember { owner, member } => Self::ReadsMember {
-                owner: remap_owner_term(owner, variable_map),
+            Self::ReadsMember {
+                source_unit,
+                member,
+            } => Self::ReadsMember {
+                source_unit: remap_source_unit_term(source_unit, variable_map),
                 member: remap_string_term(member, variable_map),
             },
-            Self::ReadsMemberOfOwner {
-                owner,
+            Self::ReadsMemberOfSourceUnit {
+                source_unit,
                 object,
                 member,
-            } => Self::ReadsMemberOfOwner {
-                owner: remap_owner_term(owner, variable_map),
-                object: remap_owner_term(object, variable_map),
+            } => Self::ReadsMemberOfSourceUnit {
+                source_unit: remap_source_unit_term(source_unit, variable_map),
+                object: remap_source_unit_term(object, variable_map),
                 member: remap_string_term(member, variable_map),
             },
             Self::ConsumesModuleMember {
-                owner,
+                source_unit,
                 module,
                 member,
             } => Self::ConsumesModuleMember {
-                owner: remap_owner_term(owner, variable_map),
+                source_unit: remap_source_unit_term(source_unit, variable_map),
                 module: remap_string_term(module, variable_map),
                 member: remap_string_term(member, variable_map),
             },
             Self::PassedToCall {
-                owner,
+                source_unit,
                 callee_member,
                 arg_index,
             } => Self::PassedToCall {
-                owner: remap_owner_term(owner, variable_map),
+                source_unit: remap_source_unit_term(source_unit, variable_map),
                 callee_member: remap_string_term(callee_member, variable_map),
                 arg_index: *arg_index,
             },
-            Self::PassedToCallOfOwner {
-                owner,
+            Self::PassedToCallOfSourceUnit {
+                source_unit,
                 callee_object,
                 callee_member,
                 arg_index,
-            } => Self::PassedToCallOfOwner {
-                owner: remap_owner_term(owner, variable_map),
-                callee_object: remap_owner_term(callee_object, variable_map),
+            } => Self::PassedToCallOfSourceUnit {
+                source_unit: remap_source_unit_term(source_unit, variable_map),
+                callee_object: remap_source_unit_term(callee_object, variable_map),
                 callee_member: remap_string_term(callee_member, variable_map),
                 arg_index: *arg_index,
             },
-            Self::MakesDecorateCallForOwner {
-                owner,
+            Self::MakesDecorateCallForSourceUnit {
+                source_unit,
                 class_anchor,
                 member,
-            } => Self::MakesDecorateCallForOwner {
-                owner: remap_owner_term(owner, variable_map),
-                class_anchor: remap_owner_term(class_anchor, variable_map),
+            } => Self::MakesDecorateCallForSourceUnit {
+                source_unit: remap_source_unit_term(source_unit, variable_map),
+                class_anchor: remap_source_unit_term(class_anchor, variable_map),
                 member: member
                     .as_ref()
                     .map(|member| remap_string_term(member, variable_map)),
             },
             Self::IntrinsicAlias {
-                owner,
+                source_unit,
                 property,
                 referenced_by,
             } => Self::IntrinsicAlias {
-                owner: remap_owner_term(owner, variable_map),
+                source_unit: remap_source_unit_term(source_unit, variable_map),
                 property: remap_string_term(property, variable_map),
-                referenced_by: remap_owner_term(referenced_by, variable_map),
+                referenced_by: remap_source_unit_term(referenced_by, variable_map),
             },
         }
     }
 }
 
-fn collect_owner_term_variables(term: &OwnerTerm, variables: &mut BTreeSet<SelectorVariableId>) {
-    if let OwnerTerm::Var { id } = term {
+fn collect_source_unit_term_variables(
+    term: &SourceUnitTerm,
+    variables: &mut BTreeSet<SelectorVariableId>,
+) {
+    if let SourceUnitTerm::Var { id } = term {
         variables.insert(*id);
     }
 }
@@ -338,15 +362,17 @@ fn remap_variable_id(
         .expect("slice atom variable must be present in remap")
 }
 
-fn remap_owner_term(
-    term: &OwnerTerm,
+fn remap_source_unit_term(
+    term: &SourceUnitTerm,
     variable_map: &BTreeMap<SelectorVariableId, SelectorVariableId>,
-) -> OwnerTerm {
+) -> SourceUnitTerm {
     match term {
-        OwnerTerm::Var { id } => OwnerTerm::Var {
+        SourceUnitTerm::Var { id } => SourceUnitTerm::Var {
             id: remap_variable_id(*id, variable_map),
         },
-        OwnerTerm::Const { owner } => OwnerTerm::Const { owner: *owner },
+        SourceUnitTerm::Const { source_unit } => SourceUnitTerm::Const {
+            source_unit: *source_unit,
+        },
     }
 }
 
@@ -366,14 +392,14 @@ fn remap_string_term(
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SelectorProjectedValue {
-    Owner(OwnerId),
+    SourceUnit(SourceUnitId),
     String(String),
 }
 
 impl SelectorProjectedValue {
     pub fn domain(&self) -> VariableDomain {
         match self {
-            Self::Owner(_) => VariableDomain::Owner,
+            Self::SourceUnit(_) => VariableDomain::SourceUnit,
             Self::String(_) => VariableDomain::String,
         }
     }
@@ -385,7 +411,7 @@ pub struct SelectorProgram {
     pub variables: Vec<SelectorVariable>,
     pub targets: Vec<SelectorTarget>,
     pub atoms: Vec<SelectorAtom>,
-    /// Sets of target ids that must land on distinct owners.
+    /// Sets of target ids that must land on distinct source units.
     pub all_different: Vec<Vec<SelectorTargetId>>,
 }
 
@@ -412,14 +438,14 @@ impl SelectorProgram {
 
     pub fn add_target(
         &mut self,
-        owner: SelectorVariableId,
+        source_unit: SelectorVariableId,
         logical_module: impl Into<String>,
         claim: ClaimKind,
     ) -> SelectorTargetId {
         let id = SelectorTargetId(self.targets.len());
         self.targets.push(SelectorTarget {
             id,
-            owner,
+            source_unit,
             logical_module: logical_module.into(),
             claim,
         });
@@ -444,7 +470,7 @@ impl SelectorProgram {
 
         let mut kept_variables = BTreeSet::<SelectorVariableId>::new();
         for target in targets {
-            kept_variables.insert(self.targets[target.0].owner);
+            kept_variables.insert(self.targets[target.0].source_unit);
         }
 
         let mut kept_atoms = BTreeSet::<usize>::new();
@@ -486,11 +512,14 @@ impl SelectorProgram {
             if !targets.contains(&target.id) {
                 continue;
             }
-            let owner = *variable_map
-                .get(&target.owner)
-                .expect("selected target owner variable must be kept");
-            let remapped =
-                program.add_target(owner, target.logical_module.clone(), target.claim.clone());
+            let source_unit = *variable_map
+                .get(&target.source_unit)
+                .expect("selected target source unit variable must be kept");
+            let remapped = program.add_target(
+                source_unit,
+                target.logical_module.clone(),
+                target.claim.clone(),
+            );
             old_to_new_targets.insert(target.id, remapped);
             new_to_old_targets.insert(remapped, target.id);
         }
@@ -532,7 +561,11 @@ impl SelectorProgram {
                     actual: target.id,
                 });
             }
-            self.require_domain(target.owner, VariableDomain::Owner, "selector target owner")?;
+            self.require_domain(
+                target.source_unit,
+                VariableDomain::SourceUnit,
+                "selector target source unit",
+            )?;
         }
         for atom in &self.atoms {
             self.validate_atom(atom)?;
@@ -550,16 +583,22 @@ impl SelectorProgram {
 
     fn validate_atom(&self, atom: &SelectorAtom) -> Result<(), SelectorProgramError> {
         match atom {
-            SelectorAtom::OwnerKind {
-                owner,
+            SelectorAtom::SourceUnitKind {
+                source_unit,
                 statement_kind,
             } => {
-                self.validate_owner_term(owner, "owner_kind.owner")?;
-                self.validate_string_term(statement_kind, "owner_kind.statement_kind")
+                self.validate_source_unit_term(source_unit, "source_unit_kind.source unit")?;
+                self.validate_string_term(statement_kind, "source_unit_kind.statement_kind")
             }
-            SelectorAtom::OwnerDeclaresBinding { owner, binding } => {
-                self.validate_owner_term(owner, "owner_declares_binding.owner")?;
-                self.validate_string_term(binding, "owner_declares_binding.binding")
+            SelectorAtom::SourceUnitDeclaresBinding {
+                source_unit,
+                binding,
+            } => {
+                self.validate_source_unit_term(
+                    source_unit,
+                    "source_unit_declares_binding.source unit",
+                )?;
+                self.validate_string_term(binding, "source_unit_declares_binding.binding")
             }
             SelectorAtom::ProjectedAllowedTuples { variables, rows } => {
                 if variables.is_empty() {
@@ -593,88 +632,124 @@ impl SelectorProgram {
                 }
                 Ok(())
             }
-            SelectorAtom::OwnerReferencesOwner { owner, referenced } => {
-                self.validate_owner_term(owner, "owner_references_owner.owner")?;
-                self.validate_owner_term(referenced, "owner_references_owner.referenced")
+            SelectorAtom::SourceUnitReferencesSourceUnit {
+                source_unit,
+                referenced,
+            } => {
+                self.validate_source_unit_term(
+                    source_unit,
+                    "source_unit_references_source_unit.source unit",
+                )?;
+                self.validate_source_unit_term(
+                    referenced,
+                    "source_unit_references_source_unit.referenced",
+                )
             }
-            SelectorAtom::OwnerAliasesOwner { owner, aliased } => {
-                self.validate_owner_term(owner, "owner_aliases_owner.owner")?;
-                self.validate_owner_term(aliased, "owner_aliases_owner.aliased")
+            SelectorAtom::SourceUnitAliasesSourceUnit {
+                source_unit,
+                aliased,
+            } => {
+                self.validate_source_unit_term(
+                    source_unit,
+                    "source_unit_aliases_source_unit.source unit",
+                )?;
+                self.validate_source_unit_term(aliased, "source_unit_aliases_source_unit.aliased")
             }
-            SelectorAtom::ReadsMember { owner, member } => {
-                self.validate_owner_term(owner, "reads_member.owner")?;
+            SelectorAtom::ReadsMember {
+                source_unit,
+                member,
+            } => {
+                self.validate_source_unit_term(source_unit, "reads_member.source unit")?;
                 self.validate_string_term(member, "reads_member.member")
             }
-            SelectorAtom::ReadsMemberOfOwner {
-                owner,
+            SelectorAtom::ReadsMemberOfSourceUnit {
+                source_unit,
                 object,
                 member,
             } => {
-                self.validate_owner_term(owner, "reads_member_of_owner.owner")?;
-                self.validate_owner_term(object, "reads_member_of_owner.object")?;
-                self.validate_string_term(member, "reads_member_of_owner.member")
+                self.validate_source_unit_term(
+                    source_unit,
+                    "reads_member_of_source_unit.source unit",
+                )?;
+                self.validate_source_unit_term(object, "reads_member_of_source_unit.object")?;
+                self.validate_string_term(member, "reads_member_of_source_unit.member")
             }
             SelectorAtom::ConsumesModuleMember {
-                owner,
+                source_unit,
                 module,
                 member,
             } => {
-                self.validate_owner_term(owner, "consumes_module_member.owner")?;
+                self.validate_source_unit_term(source_unit, "consumes_module_member.source unit")?;
                 self.validate_string_term(module, "consumes_module_member.module")?;
                 self.validate_string_term(member, "consumes_module_member.member")
             }
             SelectorAtom::PassedToCall {
-                owner,
+                source_unit,
                 callee_member,
                 ..
             } => {
-                self.validate_owner_term(owner, "passed_to_call.owner")?;
+                self.validate_source_unit_term(source_unit, "passed_to_call.source unit")?;
                 self.validate_string_term(callee_member, "passed_to_call.callee_member")
             }
-            SelectorAtom::PassedToCallOfOwner {
-                owner,
+            SelectorAtom::PassedToCallOfSourceUnit {
+                source_unit,
                 callee_object,
                 callee_member,
                 ..
             } => {
-                self.validate_owner_term(owner, "passed_to_call_of_owner.owner")?;
-                self.validate_owner_term(callee_object, "passed_to_call_of_owner.callee_object")?;
-                self.validate_string_term(callee_member, "passed_to_call_of_owner.callee_member")
+                self.validate_source_unit_term(
+                    source_unit,
+                    "passed_to_call_of_source_unit.source unit",
+                )?;
+                self.validate_source_unit_term(
+                    callee_object,
+                    "passed_to_call_of_source_unit.callee_object",
+                )?;
+                self.validate_string_term(
+                    callee_member,
+                    "passed_to_call_of_source_unit.callee_member",
+                )
             }
-            SelectorAtom::MakesDecorateCallForOwner {
-                owner,
+            SelectorAtom::MakesDecorateCallForSourceUnit {
+                source_unit,
                 class_anchor,
                 member,
             } => {
-                self.validate_owner_term(owner, "makes_decorate_call_for_owner.owner")?;
-                self.validate_owner_term(
+                self.validate_source_unit_term(
+                    source_unit,
+                    "makes_decorate_call_for_source_unit.source unit",
+                )?;
+                self.validate_source_unit_term(
                     class_anchor,
-                    "makes_decorate_call_for_owner.class_anchor",
+                    "makes_decorate_call_for_source_unit.class_anchor",
                 )?;
                 if let Some(member) = member {
-                    self.validate_string_term(member, "makes_decorate_call_for_owner.member")?;
+                    self.validate_string_term(
+                        member,
+                        "makes_decorate_call_for_source_unit.member",
+                    )?;
                 }
                 Ok(())
             }
             SelectorAtom::IntrinsicAlias {
-                owner,
+                source_unit,
                 property,
                 referenced_by,
             } => {
-                self.validate_owner_term(owner, "intrinsic_alias.owner")?;
+                self.validate_source_unit_term(source_unit, "intrinsic_alias.source unit")?;
                 self.validate_string_term(property, "intrinsic_alias.property")?;
-                self.validate_owner_term(referenced_by, "intrinsic_alias.referenced_by")
+                self.validate_source_unit_term(referenced_by, "intrinsic_alias.referenced_by")
             }
         }
     }
 
-    fn validate_owner_term(
+    fn validate_source_unit_term(
         &self,
-        term: &OwnerTerm,
+        term: &SourceUnitTerm,
         context: &'static str,
     ) -> Result<(), SelectorProgramError> {
-        if let OwnerTerm::Var { id } = term {
-            self.require_domain(*id, VariableDomain::Owner, context)?;
+        if let SourceUnitTerm::Var { id } = term {
+            self.require_domain(*id, VariableDomain::SourceUnit, context)?;
         }
         Ok(())
     }
@@ -775,17 +850,17 @@ pub enum SelectorProgramError {
 /// One chunk fact the program's relation tables are built from.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SelectorFact {
-    Owner {
-        owner: OwnerId,
+    SourceUnit {
+        source_unit: SourceUnitId,
         statement_ordinal: StatementOrdinal,
         statement_kind: String,
     },
     DeclaredBinding {
-        owner: OwnerId,
+        source_unit: SourceUnitId,
         binding: String,
     },
-    OwnerReferencesBinding {
-        owner: OwnerId,
+    SourceUnitReferencesBinding {
+        source_unit: SourceUnitId,
         binding: String,
         edge_kind: String,
     },
@@ -874,7 +949,7 @@ pub enum ClaimOutcome {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedClaim {
-    pub owner: OwnerId,
+    pub source_unit: SourceUnitId,
     pub statement_ordinal: StatementOrdinal,
     pub binding: Option<String>,
 }
@@ -892,18 +967,19 @@ mod tests {
     }
 
     #[test]
-    fn validates_owner_target_and_atom_domains() {
+    fn validates_source_unit_target_and_atom_domains() {
         let mut program = SelectorProgram::default();
-        let owner = program.add_variable(VariableDomain::Owner, Some("@Widget".to_string()));
+        let source_unit =
+            program.add_variable(VariableDomain::SourceUnit, Some("@Widget".to_string()));
         let member = program.add_target(
-            owner,
+            source_unit,
             "runtime/widgets",
             ClaimKind::Binding {
                 export_name: Some("Widget".to_string()),
             },
         );
-        program.add_atom(SelectorAtom::OwnerDeclaresBinding {
-            owner: OwnerTerm::Var { id: owner },
+        program.add_atom(SelectorAtom::SourceUnitDeclaresBinding {
+            source_unit: SourceUnitTerm::Var { id: source_unit },
             binding: const_str("a"),
         });
         program.require_all_different(vec![member, member]);
@@ -912,7 +988,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_non_owner_target_variable() {
+    fn rejects_non_source_unit_target_variable() {
         let mut program = SelectorProgram::default();
         let binding = program.add_variable(VariableDomain::String, None);
         program.add_target(
@@ -924,8 +1000,8 @@ mod tests {
         assert_eq!(
             program.validate(),
             Err(SelectorProgramError::DomainMismatch {
-                context: "selector target owner",
-                expected: VariableDomain::Owner,
+                context: "selector target source unit",
+                expected: VariableDomain::SourceUnit,
                 actual: VariableDomain::String,
             })
         );
@@ -934,38 +1010,43 @@ mod tests {
     #[test]
     fn slice_for_targets_remaps_dense_variable_and_target_ids() {
         let mut program = SelectorProgram::default();
-        let ignored_owner =
-            program.add_variable(VariableDomain::Owner, Some("ignored".to_string()));
-        let kept_owner = program.add_variable(VariableDomain::Owner, Some("kept".to_string()));
-        let referenced_owner =
-            program.add_variable(VariableDomain::Owner, Some("referenced".to_string()));
+        let ignored_source_unit =
+            program.add_variable(VariableDomain::SourceUnit, Some("ignored".to_string()));
+        let kept_source_unit =
+            program.add_variable(VariableDomain::SourceUnit, Some("kept".to_string()));
+        let referenced_source_unit =
+            program.add_variable(VariableDomain::SourceUnit, Some("referenced".to_string()));
         let ignored_target = program.add_target(
-            ignored_owner,
+            ignored_source_unit,
             "ignored/module",
             ClaimKind::Binding {
                 export_name: Some("Ignored".to_string()),
             },
         );
         let kept_target = program.add_target(
-            kept_owner,
+            kept_source_unit,
             "kept/module",
             ClaimKind::Binding {
                 export_name: Some("Kept".to_string()),
             },
         );
-        program.add_atom(SelectorAtom::OwnerDeclaresBinding {
-            owner: OwnerTerm::Var { id: ignored_owner },
+        program.add_atom(SelectorAtom::SourceUnitDeclaresBinding {
+            source_unit: SourceUnitTerm::Var {
+                id: ignored_source_unit,
+            },
             binding: const_str("ignored"),
         });
-        program.add_atom(SelectorAtom::OwnerReferencesOwner {
-            owner: OwnerTerm::Var { id: kept_owner },
-            referenced: OwnerTerm::Var {
-                id: referenced_owner,
+        program.add_atom(SelectorAtom::SourceUnitReferencesSourceUnit {
+            source_unit: SourceUnitTerm::Var {
+                id: kept_source_unit,
+            },
+            referenced: SourceUnitTerm::Var {
+                id: referenced_source_unit,
             },
         });
-        program.add_atom(SelectorAtom::OwnerKind {
-            owner: OwnerTerm::Var {
-                id: referenced_owner,
+        program.add_atom(SelectorAtom::SourceUnitKind {
+            source_unit: SourceUnitTerm::Var {
+                id: referenced_source_unit,
             },
             statement_kind: const_str("function"),
         });
@@ -988,7 +1069,7 @@ mod tests {
         );
         assert_eq!(slice.program.targets.len(), 1);
         assert_eq!(slice.program.targets[0].id, SelectorTargetId(0));
-        assert_eq!(slice.program.targets[0].owner, SelectorVariableId(0));
+        assert_eq!(slice.program.targets[0].source_unit, SelectorVariableId(0));
         assert_eq!(
             slice.new_to_old_targets.get(&SelectorTargetId(0)),
             Some(&kept_target)
@@ -1001,9 +1082,10 @@ mod tests {
     fn slice_for_targets_keeps_all_different_among_selected_targets() {
         let mut program = SelectorProgram::default();
         let [left_target, right_target] = ["Left", "Right"].map(|export_name| {
-            let owner = program.add_variable(VariableDomain::Owner, Some(export_name.to_string()));
+            let source_unit =
+                program.add_variable(VariableDomain::SourceUnit, Some(export_name.to_string()));
             program.add_target(
-                owner,
+                source_unit,
                 "module",
                 ClaimKind::Binding {
                     export_name: Some(export_name.to_string()),

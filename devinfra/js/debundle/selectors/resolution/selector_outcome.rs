@@ -67,7 +67,7 @@ pub enum Entity {
 }
 
 /// Another spec entity an outcome names: the selectors a conflict involves,
-/// the claimers that eliminated alternatives, the earlier owner of a
+/// the claimers that eliminated alternatives, the earlier source unit of a
 /// duplicate claim.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct EntityRef {
@@ -105,11 +105,11 @@ pub enum SelectorKind {
     Annotations,
 }
 
-/// One top-level place a selector matched: the statement's index in the chunk
-/// body and, for a declaration, the minified binding it declares there.
+/// One top-level place a selector matched: its index in `Module.body` and,
+/// for a declaration, the minified binding it declares there.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Candidate {
-    pub owner: usize,
+    pub body_index: usize,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub binding: Option<String>,
 }
@@ -117,8 +117,8 @@ pub struct Candidate {
 /// The top-level statement that declares a binding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Declaration {
-    /// Index of the statement in the chunk body.
-    pub owner: usize,
+    /// Index of the statement in the original `Module.body`.
+    pub body_index: usize,
     pub kind: DeclarationKind,
 }
 
@@ -155,8 +155,8 @@ impl DeclarationKind {
 /// diverges; higher `score` is closer.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct NearMiss {
-    /// Index of the statement in the chunk body.
-    pub owner: usize,
+    /// Index of the statement in the original `Module.body`.
+    pub body_index: usize,
     /// The bindings it declares.
     pub bindings: Vec<String>,
     pub score: usize,
@@ -178,7 +178,7 @@ impl NearMiss {
         };
         format!(
             "body[{}]{declares} (score {}): {}",
-            self.owner, self.score, self.reason
+            self.body_index, self.score, self.reason
         )
     }
 }
@@ -188,21 +188,24 @@ impl NearMiss {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Differentiator {
     /// The candidate's statement.
-    pub owner: usize,
-    /// The statement the anchor is in: `owner`, or the one just before or
-    /// after it when `owner` has none.
-    pub statement: usize,
+    pub candidate_body_index: usize,
+    /// The statement the anchor is in: the candidate itself, or the one just
+    /// before or after it when the candidate has none.
+    pub anchor_body_index: usize,
     pub anchor: String,
 }
 
 impl Differentiator {
     fn render(&self) -> String {
-        let site = match self.statement.cmp(&self.owner) {
+        let site = match self.anchor_body_index.cmp(&self.candidate_body_index) {
             Ordering::Equal => String::new(),
-            Ordering::Less => format!(" in the preceding body[{}]", self.statement),
-            Ordering::Greater => format!(" in the following body[{}]", self.statement),
+            Ordering::Less => format!(" in the preceding body[{}]", self.anchor_body_index),
+            Ordering::Greater => format!(" in the following body[{}]", self.anchor_body_index),
         };
-        format!("body[{}] by its {}{site}", self.owner, self.anchor)
+        format!(
+            "body[{}] by its {}{site}",
+            self.candidate_body_index, self.anchor
+        )
     }
 }
 
@@ -210,16 +213,16 @@ impl Differentiator {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct OwnershipConflict {
     pub selectors: Vec<EntityRef>,
-    /// One entry per distinct owner, including every candidate of the witness.
-    pub owners: Vec<ConflictOwner>,
+    /// One entry per distinct source unit, including every candidate of the witness.
+    pub source_units: Vec<ConflictSourceUnit>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-pub struct ConflictOwner {
-    /// Post-split owner ordinal used by the constraint program.
-    pub owner: usize,
-    /// Original source body index; several declarators can share it.
-    pub statement: usize,
+pub struct ConflictSourceUnit {
+    /// Post-split source unit ordinal used by the constraint program.
+    pub source_unit: usize,
+    /// Original `Module.body` index; several declarators can share it.
+    pub body_index: usize,
     pub bindings: Vec<String>,
 }
 
@@ -227,7 +230,7 @@ pub struct ConflictOwner {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Outcome {
     Resolved {
-        owner: usize,
+        body_index: usize,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         binding: Option<String>,
         resolved_by: ResolvedBy,
@@ -272,7 +275,7 @@ pub enum Outcome {
         claimed_by: EntityRef,
     },
     /// The selector could not be evaluated: it does not parse, uses an
-    /// unsupported construct, or its matches do not map to owners.
+    /// unsupported construct, or its matches do not map to source units.
     Invalid {
         error: String,
     },
@@ -416,12 +419,12 @@ impl Outcome {
         };
         match self {
             Self::Resolved {
-                owner,
+                body_index,
                 binding,
                 resolved_by,
             } => {
                 let target = render_candidate(&Candidate {
-                    owner: *owner,
+                    body_index: *body_index,
                     binding: binding.clone(),
                 });
                 match resolved_by {
@@ -455,24 +458,24 @@ impl Outcome {
                     } else {
                         "blocked by ownership conflict"
                     };
-                    let owners = witness
-                        .owners
+                    let source_units = witness
+                        .source_units
                         .iter()
-                        .map(|owner| {
+                        .map(|source_unit| {
                             format!(
-                                "owner {} at body[{}] ({})",
-                                owner.owner,
-                                owner.statement,
-                                owner.bindings.join(", ")
+                                "source unit {} at body[{}] ({})",
+                                source_unit.source_unit,
+                                source_unit.body_index,
+                                source_unit.bindings.join(", ")
                             )
                         })
                         .collect::<Vec<_>>()
                         .join("; ");
                     format!(
-                        "{role}: {} distinct claims ({}) have only {} candidate owners: {owners}",
+                        "{role}: {} distinct claims ({}) have only {} candidate source units: {source_units}",
                         witness.selectors.len(),
                         render_refs(&witness.selectors),
-                        witness.owners.len()
+                        witness.source_units.len()
                     )
                 }
                 None => format!(
@@ -539,7 +542,7 @@ impl Outcome {
                 "binding {binding:?} (`{}` at body[{}]) is already claimed by {} as `{}`; each \
                  binding may belong to exactly one logical module",
                 declaration.kind.keyword(),
-                declaration.owner,
+                declaration.body_index,
                 claimed_by.logical_module,
                 match &claimed_by.entity {
                     Some(Entity::Export(name)) => name.as_str(),
@@ -556,8 +559,8 @@ impl Outcome {
 
 fn render_candidate(candidate: &Candidate) -> String {
     match &candidate.binding {
-        Some(binding) => format!("`{binding}` (body[{}])", candidate.owner),
-        None => format!("body[{}]", candidate.owner),
+        Some(binding) => format!("`{binding}` (body[{}])", candidate.body_index),
+        None => format!("body[{}]", candidate.body_index),
     }
 }
 

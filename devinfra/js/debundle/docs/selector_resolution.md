@@ -17,7 +17,7 @@ per entity. Every command that resolves selectors calls it, directly or as
 | `spec validate --source-file` (`cli/validate.rs`)                              | one chunk file, with every module file                                                                                                                                 | reports every non-`ok` outcome and lists each matched template's free identifiers                       |
 | `spec match-selector` (`selectors/authoring/match_selector.rs`)                | the probe alone                                                                                                                                                        | reports its outcome                                                                                     |
 | `synthesize-selectors` proof (`selectors/authoring/selector_codemod.rs`)       | the candidate selector alone                                                                                                                                           | proven only when `resolved_by: own_selector` at the intended declaration                                |
-| edit gate, `describe`, `peel` (`selectors/resolution/anonymous_resolution.rs`) | every chunk source the owner graph names, with module members as relational anchors, `source_matches[]`, and anonymous statements                                      | a claimed entity must resolve in one source and match in no other; name pins contribute static claims   |
+| edit gate, `describe`, `peel` (`selectors/resolution/anonymous_resolution.rs`) | every chunk source the dependency graph names, with module members as relational anchors, `source_matches[]`, and anonymous statements                                 | a claimed entity must resolve in one source and match in no other; name pins contribute static claims   |
 
 A command that needs a selector unique on its own resolves it as a spec of one
 entity: its outcome is then its own candidates' verdict.
@@ -39,18 +39,18 @@ The resolve is two halves, so `run` can do the first per chunk in parallel:
    chunk, and a module is scoped to the chunk its tree names; several trees
    may name one chunk.
 2. **Candidates.** The shape matcher (`ChunkResolver`) lists every place a
-   template matches, and each place maps to its owner (a post-split top-level
+   template matches, and each place maps to its source unit (a post-split top-level
    statement) and binding through the chunk's structural analysis. A template
    with no place is `no_match`, one with over `MAX_CANDIDATES_PER_SELECTOR`
    (100, `selectors/resolution/selector_outcome.rs`) is `too_broad`, and a matcher error or a place
-   with no owner (an import specifier declares none) is `invalid` — all before
+   with no source unit (an import specifier declares none) is `invalid` — all before
    any solve. A name pin's places are the top-level declarations of its name
    (of its kind); a pin with none is `no_match`. A `bindings[]` local the
    template uses without declaring (pinning by use site) is placed at each
    non-import top-level declaration of the identifier it bound in that match;
    a match where it bound none, or two identifiers, yields no row.
    An anonymous `source_match` context matches a fixed contiguous statement
-   window. Its row projects only the final statement's owner; context owners
+   window. Its row projects only the final statement's source unit; context source units
    add no claims or `all_different` targets. Free-identifier bindings are
    threaded through the whole window.
 3. **Program.** Name pins and relational selectors lower to relation atoms over
@@ -64,7 +64,7 @@ The resolve is two halves, so `run` can do the first per chunk in parallel:
    relation tables the program's atoms read.
 4. **Decision.** The program splits into groups of targets that interact: an
    atom relates their variables, or `all_different` keeps them distinct and
-   they share a candidate owner or binding. A relational selector's places
+   they share a candidate source unit or binding. A relational selector's places
    are unknown before the solve, so it interacts with every target
    `all_different` keeps it distinct from. A group that is exactly one
    `source_match` or anonymous-statement entity is decided from its own
@@ -172,7 +172,7 @@ decides.
 `all_different` can make a selector unique that is ambiguous on its own: its
 other candidates are claimed by other selectors. After a solve, each unique
 `source_match` or anonymous-statement entity's candidate rows are filtered by dropping every row whose
-owner or binding another `all_different` target's solved value holds. When it
+source unit or binding another `all_different` target's solved value holds. When it
 had several rows and one survives, its outcome is `resolved` with
 `resolved_by: elimination` naming the claimers. When several survive and it
 still resolved, a template that references it picked the place:
@@ -221,8 +221,8 @@ infeasibility, but a successful matching says nothing about the full CSP.
 `selector_conflict.rs` first detects colliding singleton claims, then uses
 iterative augmenting paths to find a maximum bipartite matching. Alternating
 reachability from unmatched claims yields a set of claims with fewer candidate
-owners than claims (a Hall witness). The report includes those selectors and
-their complete owner union; other members of the group are described as blocked.
+source units than claims (a Hall witness). The report includes those selectors and
+their complete source unit union; other members of the group are described as blocked.
 The witness is sufficient, deterministic, and not necessarily minimal. No extra
 CSP solve is performed and diagnostic results never alter solver acceptance.
 
@@ -271,7 +271,7 @@ authoring specs in parallel produces several at once.
    tables in `FactDomains` and `RelationSupportCache`.
 3. Prove it through `debundle run` on a fixture whose chunk also exports and
    uses the anchor, as <../e2e/cross_ref_lowering_test.rs> does: real graphs
-   model `export { … }` and side-effect statements as owners that reference
+   model `export { … }` and side-effect statements as source units that reference
    every binding they touch, which is the discriminating case bare fixtures miss.
 4. Document it in <selectors.md>: a selector kind that is not documented there
    does not exist for authors.

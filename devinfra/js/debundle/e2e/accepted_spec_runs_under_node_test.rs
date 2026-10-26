@@ -30,7 +30,7 @@
 //!
 //! Both modules are imported by entry. The constraining edge
 //! `mod_init → mod_logger (eager_use, promoted)` is present in
-//! the owner graph. Neither rule 1 nor rule 2 of the
+//! the dependency graph. Neither rule 1 nor rule 2 of the
 //! realizability gate fires:
 //!
 //! - Rule 1 needs a constraining-edge SCC. There's no
@@ -79,12 +79,12 @@ export { factory, command, list, readList };
         ],
     ));
     assert_entry_output(&fixture, "1\n");
-    let graph = fixture.owner_graph();
-    let command_owner = owner_for_binding(&graph, "command");
-    let factory_owner = owner_for_binding(&graph, "factory");
+    let graph = fixture.dependency_graph();
+    let command_source_unit = source_unit_for_binding(&graph, "command");
+    let factory_source_unit = source_unit_for_binding(&graph, "factory");
     assert!(graph.edges.iter().any(|edge| {
-        edge.source == command_owner
-            && edge.target == factory_owner
+        edge.source == command_source_unit
+            && edge.target == factory_source_unit
             && edge.edge_kind == DepKind::HoistedUse
             && !edge.constrains_init_order
     }));

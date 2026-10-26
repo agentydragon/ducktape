@@ -194,7 +194,7 @@ export { Acc1, Acc2, A2, B2 };
 /// `isTranscriptionProvider`. The `cross_ref` member then anchors on that readable
 /// name. This only resolves if the cross-ref pass takes the anchor's binding from
 /// the **already-resolved member** (`EBt`, resolved by source_match) rather than
-/// from the owner graph's `export_name` (which is not populated at
+/// from the dependency graph's `export_name` (which is not populated at
 /// member-resolution time) or from the readable name treated as a minified
 /// binding. A regression to either of those shortcuts fails this test.
 #[test]

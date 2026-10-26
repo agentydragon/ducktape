@@ -1,6 +1,6 @@
 ---
 name: debundle_plan_work
-description: Plan JS debundle extraction or existing-module reorganization using read-only graph and source queries. Use for residual proposals, gate-checked decomposition, atomic coverage, selector anchors, and reviewed owner-assignment handoffs. Generic to any debundle target; this skill does not edit the spec.
+description: Plan JS debundle extraction or existing-module reorganization using read-only graph and source queries. Use for residual proposals, gate-checked decomposition, atomic coverage, selector anchors, and reviewed source-unit assignment handoffs. Generic to any debundle target; this skill does not edit the spec.
 ---
 
 # Debundle Plan Work
@@ -9,7 +9,7 @@ If debundle tooling blocks the task, follow
 `references/docs/bug_reproductions.md` before working around it.
 
 Use this skill to plan read-only debundling work from the current
-`owner_graph.json` and spec `modules/` tree. The output is evidence for
+`dependency_graph.json` and spec `modules/` tree. The output is evidence for
 spec edits; this skill does not mutate YAML itself.
 
 ## Shared CLI Workflows
@@ -47,7 +47,7 @@ bazelisk --output_base=/tmp/debundle-cli-bazel \
     The CLI guide's "Refining existing modules" section describes optional
     atomic/SCC coarsening, original-home rejoining, and search budgets.
     Suggested paths are temporary: choose semantic destinations and hand the
-    reviewed owner map to a lane worker for `modules refine`.
+    reviewed source-unit map to a lane worker for `modules refine`.
 - For selector-stabilization planning, run
   `debundle spec selector-debt --group-module-depth N --min-score 70 --format json`
   before proposing worker lanes. Use the grouped rows to choose large,
@@ -60,12 +60,12 @@ bazelisk --output_base=/tmp/debundle-cli-bazel \
   the question.
 - Use `describe` and `inspect-source --id` before recommending any assignment.
 - Keep planning reports distinct from edit batches. `modules refine` accepts
-  reviewed owner-to-module rows for existing non-residual claims; it cannot
+  reviewed source-unit-to-module rows for existing non-residual claims; it cannot
   apply residual groups from `--include-residual` or synthesize selectors.
   Fresh residual claims use `modules apply`; focused binding moves use
   `bindings assign`. See `references/docs/cli.md` for each batch format.
 
-Prefer these commands over grepping generated output. The owner graph is
+Prefer these commands over grepping generated output. The dependency graph is
 the source of truth for cycle gates and residual dependencies; the embedded
 atomic DAG is the source of truth for sets of owners that must move together. The proposal
 queue is a heuristic projection from that DAG, not a serialized fact from

@@ -1,22 +1,22 @@
 //! Declarative inputs shared by compiler and solver tests; no expected outcomes.
 
-use analysis::{OwnerId, StatementOrdinal};
+use analysis::{SourceUnitId, StatementOrdinal};
 use selector_ir::{
-    ClaimKind, OwnerTerm, SelectorAtom, SelectorFact, SelectorFactStore, SelectorProgram,
-    SelectorTargetId, StringTerm, VariableDomain,
+    ClaimKind, SelectorAtom, SelectorFact, SelectorFactStore, SelectorProgram, SelectorTargetId,
+    SourceUnitTerm, StringTerm, VariableDomain,
 };
 
-pub fn owner_fact(owner: usize, ordinal: usize, statement_kind: &str) -> SelectorFact {
-    SelectorFact::Owner {
-        owner: OwnerId(owner),
+pub fn source_unit_fact(source_unit: usize, ordinal: usize, statement_kind: &str) -> SelectorFact {
+    SelectorFact::SourceUnit {
+        source_unit: SourceUnitId(source_unit),
         statement_ordinal: StatementOrdinal(ordinal),
         statement_kind: statement_kind.to_string(),
     }
 }
 
-pub fn declared_binding(owner: usize, binding: &str) -> SelectorFact {
+pub fn declared_binding(source_unit: usize, binding: &str) -> SelectorFact {
     SelectorFact::DeclaredBinding {
-        owner: OwnerId(owner),
+        source_unit: SourceUnitId(source_unit),
         binding: binding.to_string(),
     }
 }
@@ -58,30 +58,36 @@ pub fn broad_specific_targets() -> (
     SelectorTargetId,
 ) {
     let mut program = SelectorProgram::default();
-    let broad_owner = program.add_variable(VariableDomain::Owner, Some("broad".to_string()));
-    let strict_owner = program.add_variable(VariableDomain::Owner, Some("strict".to_string()));
+    let broad_source_unit =
+        program.add_variable(VariableDomain::SourceUnit, Some("broad".to_string()));
+    let strict_source_unit =
+        program.add_variable(VariableDomain::SourceUnit, Some("strict".to_string()));
     let broad_target = program.add_target(
-        broad_owner,
+        broad_source_unit,
         "module",
         ClaimKind::Binding {
             export_name: Some("Broad".to_string()),
         },
     );
     let strict_target = program.add_target(
-        strict_owner,
+        strict_source_unit,
         "module",
         ClaimKind::Binding {
             export_name: Some("Strict".to_string()),
         },
     );
-    program.add_atom(SelectorAtom::OwnerDeclaresBinding {
-        owner: OwnerTerm::Var { id: broad_owner },
+    program.add_atom(SelectorAtom::SourceUnitDeclaresBinding {
+        source_unit: SourceUnitTerm::Var {
+            id: broad_source_unit,
+        },
         binding: StringTerm::Const {
             value: "shared".to_string(),
         },
     });
-    program.add_atom(SelectorAtom::OwnerDeclaresBinding {
-        owner: OwnerTerm::Var { id: strict_owner },
+    program.add_atom(SelectorAtom::SourceUnitDeclaresBinding {
+        source_unit: SourceUnitTerm::Var {
+            id: strict_source_unit,
+        },
         binding: StringTerm::Const {
             value: "specific".to_string(),
         },
@@ -90,8 +96,8 @@ pub fn broad_specific_targets() -> (
 
     let facts = SelectorFactStore {
         facts: vec![
-            owner_fact(10, 0, "var"),
-            owner_fact(20, 1, "var"),
+            source_unit_fact(10, 0, "var"),
+            source_unit_fact(20, 1, "var"),
             declared_binding(10, "shared"),
             declared_binding(20, "shared"),
             declared_binding(20, "specific"),

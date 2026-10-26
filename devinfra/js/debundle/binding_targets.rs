@@ -69,7 +69,7 @@ impl Visit for HoistedVarCollector {
 }
 
 /// The declaration shapes the chunk fact extractor and the shallow manifest
-/// extractor both recognize. Other SWC declarations are not owner anchors.
+/// extractor both recognize. Other SWC declarations are not source_unit anchors.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DeclShape {
     Function,

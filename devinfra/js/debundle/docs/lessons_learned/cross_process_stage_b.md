@@ -1,7 +1,7 @@
 # Cross-process Stage B: why we backed out
 
 A previous design proposed splitting the per-chunk pipeline into two
-Bazel actions: **Stage A** (parse + facts + owner-graph + atomic-
+Bazel actions: **Stage A** (parse + facts + dependency graph + atomic-
 units) emits a cacheable JSON artifact; **Stage B** (the materializer:
 assemble assignment → realizability → lower) reads it as input. Goal:
 spec edits hit only Stage B; Stage A's expensive parse + analysis
@@ -59,7 +59,7 @@ function increment() {
 
 `StatementFactsCollector` records `lazy_reads = {("counter",
 inner_ctxt)}` for the `increment` statement. The downstream owner-
-graph build (`graph/build.rs::build_owner_graph_with`) looks each one up in
+graph build (`graph/build.rs::build_dependency_graph_with`) looks each one up in
 `binding_owner`. `("counter", inner_ctxt)` misses (only
 `("counter", top_level_ctxt)` is keyed), and no edge is emitted —
 the closure's shadow doesn't pollute the realizability graph. This
@@ -86,7 +86,7 @@ consumer needs the change.
 ### Rely on SWC resolver determinism: Stage B re-parses
 
 If Stage B re-parses the chunk, runs `analyze_chunk`, and rebuilds
-the owner graph, then it doesn't need to deserialize Stage A's
+the dependency graph, then it doesn't need to deserialize Stage A's
 `Id`s at all — it produces its own. But that means Stage A's
 cached output is value-less to Stage B: Stage B redoes the parse
 and the fact analysis. At that point Stage A's cache only proves
@@ -107,7 +107,7 @@ doesn't justify it.
 ## What we kept
 
 The composer pattern survived: `compute_chunk_analysis` is a
-clean function that runs parse → facts → owner-graph → atomic-units
+clean function that runs parse → facts → dependency graph → atomic-units
 behind one named call. Its value is **structural readability** —
 the materializer reads more cleanly when chunk analysis is a single
 function call rather than four inline stages — not cross-process

@@ -176,7 +176,7 @@ mod tests {
                 chunk_id: "first".to_string(),
                 counts: ChunkModulesCounts {
                     applied: 0,
-                    selected_owners: 0,
+                    selected_bindings: 0,
                 },
                 final_module_contents: Vec::new(),
                 requested_logical_modules: Vec::new(),

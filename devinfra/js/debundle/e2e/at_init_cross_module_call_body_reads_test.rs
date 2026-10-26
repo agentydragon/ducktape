@@ -22,9 +22,9 @@ fn cross_module_at_init_call_preserves_initialized_body_read() {
     ));
     assert_preserved_entry_output(&fixture, "49\n");
 
-    let graph = fixture.owner_graph();
-    let caller = owner_for_binding(&graph, "result");
-    let initializer = owner_for_binding(&graph, "value");
+    let graph = fixture.dependency_graph();
+    let caller = source_unit_for_binding(&graph, "result");
+    let initializer = source_unit_for_binding(&graph, "value");
     assert!(graph.edges.iter().any(|edge| {
         edge.source == caller
             && edge.target == initializer
@@ -78,9 +78,9 @@ fn intra_module_at_init_call_preserves_initialized_body_read() {
         vec![logical_module("values", &[Member::new("value")])],
     ));
     assert_preserved_entry_output(&fixture, "49\n");
-    let graph = fixture.owner_graph();
-    let caller = owner_for_binding(&graph, "result");
-    let initializer = owner_for_binding(&graph, "value");
+    let graph = fixture.dependency_graph();
+    let caller = source_unit_for_binding(&graph, "result");
+    let initializer = source_unit_for_binding(&graph, "value");
     assert!(graph.edges.iter().any(|edge| {
         edge.source == caller
             && edge.target == initializer

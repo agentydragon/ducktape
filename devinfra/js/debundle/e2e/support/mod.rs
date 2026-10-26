@@ -22,7 +22,7 @@ pub use fixture_spec::{
 };
 pub use fixture_spec::{ChunkRenameEntry, chunk_rename, chunk_rename_with_purity, chunk_renames};
 
-use analysis::OwnerGraphReport;
+use analysis::DependencyGraphReport;
 use artifact::PackageManifest;
 use runfiles::{Runfiles, rlocation};
 use serde::Serialize;
@@ -73,14 +73,14 @@ pub struct RejectedFixture {
 }
 
 impl Fixture {
-    pub fn owner_graph(&self) -> OwnerGraphReport {
-        read_owner_graph(&self.report_root, &self.chunk_id)
+    pub fn dependency_graph(&self) -> DependencyGraphReport {
+        read_dependency_graph(&self.report_root, &self.chunk_id)
     }
 }
 
 impl RejectedFixture {
-    pub fn owner_graph(&self) -> OwnerGraphReport {
-        read_owner_graph(&self.report_root, &self.chunk_id)
+    pub fn dependency_graph(&self) -> DependencyGraphReport {
+        read_dependency_graph(&self.report_root, &self.chunk_id)
     }
 
     /// `cycles.json`: one entry per blocking SCC, with its `modules` and `cut`.
@@ -89,7 +89,7 @@ impl RejectedFixture {
     }
 
     /// `atomic_group_conflicts.json`: one entry per atomic group the spec splits, with its
-    /// `claims` (owner, binding names, module) and `causes`.
+    /// `claims` (source_unit, binding names, module) and `causes`.
     pub fn atomic_group_conflicts(&self) -> Vec<Value> {
         read_json(
             &self
@@ -105,8 +105,8 @@ impl RejectedFixture {
     }
 }
 
-fn read_owner_graph(report_root: &Path, chunk_id: &str) -> OwnerGraphReport {
-    read_json(&report_root.join(chunk_id).join("owner_graph.json"))
+fn read_dependency_graph(report_root: &Path, chunk_id: &str) -> DependencyGraphReport {
+    read_json(&report_root.join(chunk_id).join("dependency_graph.json"))
 }
 
 pub struct DryRunFixture {
@@ -234,7 +234,7 @@ pub fn run_rejection_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
 
 /// Like [`run_rejection_fixture`] but with `debundle run --dry-run`.
 /// Dry-run skips all emitted-JS and accept-path report writes but
-/// still materializes rejection evidence (`owner_graph.json` +
+/// still materializes rejection evidence (`dependency_graph.json` +
 /// `cycles.json` / `atomic_group_conflicts.json`) under the standard
 /// per-chunk report layout.
 pub fn run_dry_run_rejection_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
@@ -799,16 +799,16 @@ pub fn run_synthesize_selectors(modules: &Path, extra: &[&str]) -> std::process:
     out
 }
 
-/// Owner-graph node id that declares `binding`, panicking (with the node dump)
+/// SourceUnit-graph node id that declares `binding`, panicking (with the node dump)
 /// if none does.
-pub fn owner_for_binding<'a>(graph: &'a OwnerGraphReport, binding: &str) -> &'a str {
+pub fn source_unit_for_binding<'a>(graph: &'a DependencyGraphReport, binding: &str) -> &'a str {
     let node = graph
         .nodes
         .iter()
         .find(|node| node.declared_bindings.iter().any(|b| b.binding == binding))
         .unwrap_or_else(|| {
             panic!(
-                "no owner-graph node declares binding `{binding}`; \
+                "no dependency-graph node declares binding `{binding}`; \
                  nodes: {:#?}",
                 graph.nodes,
             )

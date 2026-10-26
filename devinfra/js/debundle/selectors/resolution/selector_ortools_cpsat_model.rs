@@ -18,7 +18,7 @@ use selector_constraint_backend::{
     TargetBindingProjection,
 };
 
-/// A projected variable: an owner or binding variable of a target, whose
+/// A projected variable: a source unit or binding variable of a target, whose
 /// supported values the search reports.
 #[derive(Debug, Clone, Copy)]
 pub struct ProjectionVariable {
@@ -278,7 +278,7 @@ impl SelectorCpModel {
 
         let mut projected = BTreeSet::new();
         for projection in &problem.target_projections {
-            projected.insert(projection.owner_variable);
+            projected.insert(projection.source_unit_variable);
             if let Some(TargetBindingProjection::Variable(binding)) = &projection.binding_projection
             {
                 projected.insert(*binding);

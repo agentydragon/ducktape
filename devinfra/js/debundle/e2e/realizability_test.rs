@@ -312,7 +312,7 @@ console.log(trigger);
 }
 
 #[test]
-fn owner_graph_report_is_written_for_successful_specs() {
+fn dependency_graph_report_is_written_for_successful_specs() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"const A = "a-value";
 const B = "b-value";
@@ -328,17 +328,17 @@ export { A, B, readA, readB };
     ));
     assert_entry_output(&fixture, "a-value b-value\n");
 
-    let graph = fixture.owner_graph();
+    let graph = fixture.dependency_graph();
     assert!(
         graph.nodes.len() >= 4,
-        "owner graph should expose source-owner nodes: {graph:#?}",
+        "dependency graph should expose source-source_unit nodes: {graph:#?}",
     );
     assert!(
         graph
             .nodes
             .iter()
             .any(|node| node.source_location.is_some()),
-        "owner graph should expose source locations for source-owner nodes: {graph:#?}",
+        "dependency graph should expose source locations for source-source_unit nodes: {graph:#?}",
     );
     assert!(
         graph.edges.iter().any(|edge| {
@@ -346,7 +346,7 @@ export { A, B, readA, readB };
                 && edge.binding.as_deref() == Some("B")
                 && !edge.constrains_init_order
         }),
-        "owner graph should expose lazy owner read edges: {graph:#?}",
+        "dependency graph should expose lazy source_unit read edges: {graph:#?}",
     );
     assert!(
         graph
@@ -367,11 +367,11 @@ export { A, B, readA, readB };
     assert!(
         graph.atomic_graph.nodes.iter().any(|atomic_group| {
             atomic_group
-                .owner_ids
+                .source_unit_ids
                 .iter()
-                .all(|owner_id| graph.nodes.iter().any(|node| node.id == *owner_id))
+                .all(|source_unit_id| graph.nodes.iter().any(|node| node.id == *source_unit_id))
         }),
-        "atomic graph should reference owner graph nodes by id: {graph:#?}",
+        "atomic graph should reference dependency graph nodes by id: {graph:#?}",
     );
     assert!(
         graph
@@ -383,19 +383,19 @@ export { A, B, readA, readB };
     );
     assert!(
         graph.atomic_graph.edges.iter().all(|edge| {
-            edge.owner_edge_ids.iter().all(|owner_edge_id| {
+            edge.dependency_edge_ids.iter().all(|dependency_edge_id| {
                 graph
                     .edges
                     .iter()
-                    .any(|owner_edge| owner_edge.id == *owner_edge_id)
+                    .any(|dependency_edge| dependency_edge.id == *dependency_edge_id)
             })
         }),
-        "atomic graph edges should reference owner graph edges by id: {graph:#?}",
+        "atomic graph edges should reference dependency graph edges by id: {graph:#?}",
     );
 }
 
 #[test]
-fn owner_graph_report_identifies_pair_only_residual_atomic_group() {
+fn dependency_graph_report_identifies_pair_only_residual_atomic_group() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"var A = B || "fallback";
 var B = A + "-b";
@@ -407,10 +407,10 @@ export { A, B, Existing };
     ));
     assert_entry_output(&fixture, "fallback fallback-b fallback-b-existing\n");
 
-    let graph = fixture.owner_graph();
+    let graph = fixture.dependency_graph();
     assert!(
         graph.atomic_graph.nodes.iter().any(|atomic_group| {
-            atomic_group.owner_ids.len() == 2
+            atomic_group.source_unit_ids.len() == 2
                 && binding_names(&atomic_group.members) == vec!["A".to_string(), "B".to_string()]
                 && atomic_group
                     .destinations
@@ -422,7 +422,7 @@ export { A, B, Existing };
 }
 
 #[test]
-fn owner_graph_report_leaves_lazy_only_residual_dependency_as_separate_units() {
+fn dependency_graph_report_leaves_lazy_only_residual_dependency_as_separate_units() {
     let mut opts = FixtureOpts::new(
         r#"function Leaf() { return Dep; }
 const Dep = "dep";
@@ -440,10 +440,10 @@ export { Leaf, Dep, Existing };
     let fixture = run_fixture(opts);
     assert_entry_output(&fixture, "existing\n");
 
-    let graph = fixture.owner_graph();
+    let graph = fixture.dependency_graph();
     assert!(
         graph.atomic_graph.nodes.iter().any(|atomic_group| {
-            atomic_group.owner_ids.len() == 1
+            atomic_group.source_unit_ids.len() == 1
                 && atomic_group.members
                     == vec![BindingReport {
                         binding: "Leaf".into(),
@@ -454,9 +454,10 @@ export { Leaf, Dep, Existing };
     );
     assert!(
         graph.atomic_graph.edges.iter().all(|edge| {
-            !edge.owner_edge_ids.iter().any(|owner_edge_id| {
-                graph.edges.iter().any(|owner_edge| {
-                    owner_edge.id == *owner_edge_id && owner_edge.binding.as_deref() == Some("Dep")
+            !edge.dependency_edge_ids.iter().any(|dependency_edge_id| {
+                graph.edges.iter().any(|dependency_edge| {
+                    dependency_edge.id == *dependency_edge_id
+                        && dependency_edge.binding.as_deref() == Some("Dep")
                 })
             })
         }),
@@ -465,7 +466,7 @@ export { Leaf, Dep, Existing };
 }
 
 #[test]
-fn owner_graph_report_collapses_residual_written_binding_with_assigner() {
+fn dependency_graph_report_collapses_residual_written_binding_with_assigner() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"let a = 0;
 function b() {
@@ -479,10 +480,10 @@ export { a, b, existing };
     ));
     assert_entry_output(&fixture, "existing\n");
 
-    let graph = fixture.owner_graph();
+    let graph = fixture.dependency_graph();
     assert!(
         graph.atomic_graph.nodes.iter().any(|atomic_group| {
-            atomic_group.owner_ids.len() == 2
+            atomic_group.source_unit_ids.len() == 2
                 && binding_names(&atomic_group.members) == vec!["a".to_string(), "b".to_string()]
                 && atomic_group
                     .destinations
@@ -725,7 +726,7 @@ export { consume };
 }
 
 #[test]
-fn owner_graph_report_is_written_before_rejection() {
+fn dependency_graph_report_is_written_before_rejection() {
     // S-only cycle: three side-effecting writes interleaved across
     // mod_a (ordinal 0, 2) and mod_b (ordinal 1). The constraining-
     // edge subgraph has a bi-directional sequenced cycle that no
@@ -743,11 +744,11 @@ export { a1, a2, b1 };
         ],
     ));
     assert!(
-        rejected.stderr.contains("owner_graph.json"),
-        "stderr should point at the owner graph report:\n{}",
+        rejected.stderr.contains("dependency_graph.json"),
+        "stderr should point at the dependency graph report:\n{}",
         rejected.stderr,
     );
-    let graph = rejected.owner_graph();
+    let graph = rejected.dependency_graph();
     assert!(
         graph
             .edges
@@ -854,8 +855,8 @@ export { a1, a2, a3, b1, b2, b3 };
 
 #[test]
 fn comma_list_split_does_not_invent_cross_module_cycle() {
-    // Without per-declarator attribution, `stmt_owner` picks A's
-    // owner (mod_x) for the whole `const A = 1, B = X` and
+    // Without per-declarator attribution, `stmt_source_unit` picks A's
+    // source_unit (mod_x) for the whole `const A = 1, B = X` and
     // attributes B's read of X to mod_x — inventing an
     // mod_x → mod_y edge that, combined with the real
     // mod_y → mod_x edge from `Y = a_in_x`, closes a cycle.
@@ -885,7 +886,7 @@ export { A, B, X, Y, a_in_x };
 fn comma_list_split_surfaces_missed_cross_module_cycle() {
     // Real cycle: `B = a_in_x` in mod_y reads mod_x; `fromB = B`
     // in mod_x reads mod_y. Without per-declarator attribution,
-    // pre-fix charges `a_in_x`'s read to mod_x (A's owner) — the
+    // pre-fix charges `a_in_x`'s read to mod_x (A's source_unit) — the
     // mod_y → mod_x edge disappears and validator accepts a spec
     // that TDZs at runtime. Pre-analysis split keeps B's row
     // attributed to mod_y; cycle re-surfaces.

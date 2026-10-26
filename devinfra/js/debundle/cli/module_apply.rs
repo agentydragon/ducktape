@@ -1,4 +1,4 @@
-//! Apply reviewed residual-owner proposals without transient name-pinned YAML.
+//! Apply reviewed residual-source unit proposals without transient name-pinned YAML.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -28,7 +28,7 @@ pub struct ModulesApplyArgs {
     /// Tree config that scopes this graph-backed edit to its chunk's module roots.
     #[arg(long = "tree-config", env = "DEBUNDLE_TREE_CONFIG")]
     tree_config: Option<PathBuf>,
-    /// Current owner graph, used to check proposal identity and the resulting assignment.
+    /// Current dependency graph, used to check proposal identity and the resulting assignment.
     #[arg(long = "graph", env = "DEBUNDLE_GRAPH")]
     graph: PathBuf,
     /// Root for the chunk's source file.
@@ -49,9 +49,9 @@ pub struct ModulesApplyArgs {
 #[serde(deny_unknown_fields)]
 struct ApplyRequest {
     proposal_id: String,
-    /// Expected owner IDs from the reviewed proposal. Prevents an ID reused
-    /// after a graph refresh from silently claiming a different owner set.
-    owner_ids: Vec<String>,
+    /// Expected source unit IDs from the reviewed proposal. Prevents an ID reused
+    /// after a graph refresh from silently claiming a different source unit set.
+    source_unit_ids: Vec<String>,
     module: String,
     readable_names: BTreeMap<String, String>,
     /// Optional per-binding author choice. Omitted bindings use synthesis.
@@ -115,7 +115,7 @@ pub fn run_modules_apply(args: ModulesApplyArgs) -> Result<()> {
     if requests.is_empty() {
         bail!("apply batch is empty");
     }
-    let graph = crate::load_owner_graph_report(&args.graph)?;
+    let graph = crate::load_dependency_graph_report(&args.graph)?;
     let scope = args
         .tree_config
         .as_deref()
@@ -124,7 +124,7 @@ pub fn run_modules_apply(args: ModulesApplyArgs) -> Result<()> {
     let proposals = propose_from_graph(
         &graph,
         &ProposalOptions {
-            owner_graph_path: args.graph.clone(),
+            dependency_graph_path: args.graph.clone(),
             modules_root: args.modules_root.clone(),
             tree_config: args.tree_config.clone(),
             source_root: Some(args.source_root.clone()),
@@ -162,15 +162,15 @@ pub fn run_modules_apply(args: ModulesApplyArgs) -> Result<()> {
                     request.proposal_id
                 )
             })?;
-        if proposal.owner_ids != request.owner_ids {
+        if proposal.source_unit_ids != request.source_unit_ids {
             bail!(
-                "proposal {:?} owner IDs changed; rerun `debundle modules propose`",
+                "proposal {:?} source unit IDs changed; rerun `debundle modules propose`",
                 request.proposal_id
             );
         }
         if !proposal.landable_today
             || proposal.merge_into.is_some()
-            || !proposal.anonymous_statement_owner_ids.is_empty()
+            || !proposal.anonymous_statement_source_unit_ids.is_empty()
         {
             bail!(
                 "proposal {:?} is not a graph-ready binding-only claim; inspect `modules propose` diagnostics",
@@ -198,24 +198,25 @@ pub fn run_modules_apply(args: ModulesApplyArgs) -> Result<()> {
         }
 
         let mut residual_bindings = BTreeSet::new();
-        for owner_id in &proposal.owner_ids {
+        for source_unit_id in &proposal.source_unit_ids {
             let node = graph
                 .nodes
                 .iter()
-                .find(|node| node.id == *owner_id)
-                .with_context(|| format!("proposal owner {owner_id:?} absent from graph"))?;
+                .find(|node| node.id == *source_unit_id)
+                .with_context(|| {
+                    format!("proposal source unit {source_unit_id:?} absent from graph")
+                })?;
             if !graph.is_residual(&node.destination) {
                 continue;
             }
-            let location = node
-                .source_location
-                .as_ref()
-                .with_context(|| format!("residual owner {owner_id:?} has no source location"))?;
+            let location = node.source_location.as_ref().with_context(|| {
+                format!("residual source unit {source_unit_id:?} has no source location")
+            })?;
             let source = args.source_root.join(&location.source_path);
             for binding in &node.declared_bindings {
                 let name = binding.binding.to_string();
                 if !residual_bindings.insert(name.clone()) {
-                    bail!("binding {name:?} is declared by multiple proposal owners");
+                    bail!("binding {name:?} is declared by multiple proposal source units");
                 }
                 let readable = request.readable_names.get(&name).with_context(|| {
                     format!(

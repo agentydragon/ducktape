@@ -33,12 +33,12 @@ Use `debundle <command> --help` for the current command and flag inventory.
 Most commands take these paths, each as a flag or an env var; the flag wins if
 both are set.
 
-| Flag                   | Env var                | Meaning                                                                                                                                                     |
-| ---------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--graph <path>`       | `DEBUNDLE_GRAPH`       | `owner_graph.json` for the chunk being inspected or edited. The graph path implies the chunk; multi-chunk callers point at different graphs per invocation. |
-| `--modules <dir>`      | `DEBUNDLE_MODULES`     | Per-module YAML tree root (the directory under `spec/modules/`).                                                                                            |
-| `--source-root <dir>`  | `DEBUNDLE_SOURCE_ROOT` | Upstream snapshot root containing the original chunk bytes.                                                                                                 |
-| `--tree-config <file>` | `DEBUNDLE_TREE_CONFIG` | For graph-backed `modules` edits and queries, scope an app-level modules tree to the chunk named by `--graph`.                                              |
+| Flag                   | Env var                | Meaning                                                                                                                                                          |
+| ---------------------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--graph <path>`       | `DEBUNDLE_GRAPH`       | `dependency_graph.json` for the chunk being inspected or edited. The graph path implies the chunk; multi-chunk callers point at different graphs per invocation. |
+| `--modules <dir>`      | `DEBUNDLE_MODULES`     | Per-module YAML tree root (the directory under `spec/modules/`).                                                                                                 |
+| `--source-root <dir>`  | `DEBUNDLE_SOURCE_ROOT` | Upstream snapshot root containing the original chunk bytes.                                                                                                      |
+| `--tree-config <file>` | `DEBUNDLE_TREE_CONFIG` | For graph-backed `modules` edits and queries, scope an app-level modules tree to the chunk named by `--graph`.                                                   |
 
 `debundle run --out-root` reads `DEBUNDLE_OUT`. `debundle run
 --tree-source-root` (the spec-tree compile root for source-relative paths in
@@ -50,7 +50,7 @@ Export the env vars once per shell session and subsequent commands run
 without repeating the flags:
 
 ```bash
-export DEBUNDLE_GRAPH=<debundle-output>/reports/tree/<chunk-id>/owner_graph.json
+export DEBUNDLE_GRAPH=<debundle-output>/reports/tree/<chunk-id>/dependency_graph.json
 export DEBUNDLE_MODULES=<spec-root>/<version>/modules
 export DEBUNDLE_SOURCE_ROOT=<debundle-output>/app
 export DEBUNDLE_OUT=<debundle-output-root>
@@ -122,8 +122,8 @@ list. Use the minified form to disambiguate.
 
 `describe` and `inspect-source --id` take any ID kind and dispatch on shape:
 bindings (minified or readable), module paths (`runtime/plugins`) or
-unambiguous module filenames, module ids (`logical:7`), owner ids
-(`owner:42`), atom ids (`atomic:N`), proposal ids, diagnostic ids.
+unambiguous module filenames, module ids (`logical:7`), source-unit IDs
+(`unit:42`), atom ids (`atomic:N`), proposal ids, diagnostic ids.
 
 ## Validate-by-default (mutating commands)
 
@@ -131,7 +131,7 @@ Every command that modifies the spec runs validation **by default** before
 writing changes back to disk. For commands that affect the chunk's
 factorization (anything that moves a binding between modules), that means
 the full realizability + atom-split gate — which requires
-`--graph <owner_graph.json>` unless `--no-verify` is set; for renames, it
+`--graph <dependency_graph.json>` unless `--no-verify` is set; for renames, it
 means name-collision detection; for comment edits, shape preservation only
 (they take `--dry-run` but no `--no-verify`). If validation fails the command
 refuses with a structured diagnostic and **does not modify any file**.
@@ -169,7 +169,7 @@ If the spec is unrealizable, `debundle run` rejects and emits structured
 side outputs (`cycles.json`, `atomic_group_conflicts.json`) under
 `reports/tree/<chunk-id>/`. `debundle run --dry-run` runs pipeline
 parse/facts/gate checks without writing emitted JS or reports; a gate
-rejection still writes `owner_graph.json` plus the rejection evidence, so
+rejection still writes `dependency_graph.json` plus the rejection evidence, so
 the `gate` queries work on the rejection that was just reported.
 
 Selector failures follow the keep-going (default) and `--fail-fast` modes of
@@ -207,14 +207,14 @@ resolve one selector at a time and never solve.
 
 `debundle inspect-source` parses source with the same SWC parser used by
 `spec match-selector`. It can select numbered top-level items directly from a
-file, or resolve a graph/spec ID to its owners:
+file, or resolve a graph/spec ID to its source units:
 
 ```sh
 debundle inspect-source --source-file app.js
 debundle inspect-source --source-root extracted --chunk static/app.js \
   --statements 12..16 --format json
 debundle inspect-source --source-file app.js --around-binding XOe
-debundle inspect-source --id atomic:17 --graph owner_graph.json --modules spec/modules \
+debundle inspect-source --id atomic:17 --graph dependency_graph.json --modules spec/modules \
   --source-root extracted
 debundle inspect-source --id runtime/plugins --view raw --context-statements 1
 ```
@@ -228,16 +228,16 @@ The range, binding, and ID options are mutually exclusive. A missing or
 repeated top-level declaration is an error. `--id` accepts the same IDs as
 `describe` and requires `--graph` and `--modules` (or their environment
 variables). It shows each selected raw item separately, even if selected
-owners are far apart. The graph's post-split owner ordinals are converted to
-raw `body[N]` indices; a multi-declarator item can contain several owners.
+source units are far apart. The graph's post-split source-unit ordinals are converted to
+raw `body[N]` indices; a multi-declarator item can contain several source units.
 Graph/source location mismatches are errors, not silent substitutions.
 
 The labels are raw parsed `Module.body` indices. They use the same `body[N]`
-coordinate that structural selectors report, but they are not owner IDs.
-Direct source-file selection does not require a spec or owner graph. Each
+coordinate that structural selectors report, but they are not source-unit IDs.
+Direct source-file selection does not require a spec or dependency graph. Each
 result includes its half-open UTF-8
 byte span in the original file, one-based byte line/columns (end exclusive),
-declared top-level binding names, selected owner IDs when applicable, and a
+declared top-level binding names, selected source-unit IDs when applicable, and a
 source snippet. `--view pretty` (default) uses SWC's readable rendering;
 `--view raw` uses the original source bytes before truncation. The chosen view
 applies to text and JSON. By default, the command shows at most 32 items,
@@ -275,8 +275,8 @@ Text is the interactive default; pipes default to JSON.
       "outcome": {
         "kind": "ambiguous",
         "candidates": [
-          { "owner": 0, "binding": "a" },
-          { "owner": 1, "binding": "b" }
+          { "body_index": 0, "binding": "a" },
+          { "body_index": 1, "binding": "b" }
         ],
         "truncated": false
       },
@@ -286,11 +286,11 @@ Text is the interactive default; pipes default to JSON.
 }
 ```
 
-`owner` is the matched statement's index in the chunk body.
+`body_index` is the matched statement's index in the chunk body.
 
 A `no_match` of a one-statement template also lists `nearest_unclaimed`: the
 statements no entity claimed that it comes closest to, each with its body
-index (`owner`), the `bindings` it declares, a `score` (higher is closer) and
+index (`body_index`), the `bindings` it declares, a `score` (higher is closer) and
 the first place it diverges. After an upstream bump, the first entry is
 usually the code the selector should now match:
 
@@ -300,8 +300,8 @@ usually the code the selector should now match:
 
 An `unsatisfiable` outcome means an interacting group admits no joint
 assignment. Its `group` identifies the component by its first entity. When
-available, `witness.selectors` names competing claims and `witness.owners`
-lists their complete candidate-owner union. Text distinguishes participants
+available, `witness.selectors` names competing claims and `witness.source_units`
+lists their complete candidate source-unit union. Text distinguishes participants
 in that conflict from other group members blocked by it. A group without a
 witness remains infeasible; the diagnostic explicitly reports that no smaller
 ownership witness was found within its limits.
@@ -373,7 +373,7 @@ selected binding is already claimed in YAML and each row is a direct move:
 - `landable_today: true`
 - non-empty `binding_ids`
 - no `merge_into`
-- no `anonymous_statement_owner_ids`
+- no `anonymous_statement_source_unit_ids`
 
 For fresh residual bindings, use `modules apply` below. Existing-claim proposal
 rows move each `binding_ids[]` entry to `proposed_module_id` or
@@ -382,12 +382,12 @@ array. The rest are rejected:
 
 - `merge_into` rows combine existing source modules: use `modules merge` or
   manual YAML.
-- Rows with `anonymous_statement_owner_ids` need `anonymous_statements:`
+- Rows with `anonymous_statement_source_unit_ids` need `anonymous_statements:`
   edits, which `bindings assign` does not perform.
 - Rows with `status: blocked_residual_dependency` (`landable_today: false`)
   read other residual classes (`other_residual_classes_referenced`), so promoting
   one alone would trip the realizability gate: assign it together with the
-  classes it references, or co-locate the owners manually first.
+  classes it references, or co-locate the source units manually first.
 
 ## Claiming fresh proposals (`modules apply`)
 
@@ -399,8 +399,8 @@ root's exact filesystem spelling; it normalizes only the logical module
 suffix. A destination outside the mapped roots is rejected. Single-chunk
 specs can omit the flag when `--modules` already names that chunk's tree.
 
-`landable_today` means the proposed owner set has no outgoing residual-class
-dependency and its anonymous owners are addressable. It does not guarantee a
+`landable_today` means the proposed source-unit set has no outgoing residual-class
+dependency and its anonymous source units are addressable. It does not guarantee a
 structural selector can be synthesized or that the final edit passes the gate.
 `modules apply` claims reviewed residual bindings with proven `source_matches:`
 selectors. It requires `--graph`, `--modules`, and `--source-root` (or their
@@ -414,14 +414,14 @@ names in that selector.
 [
   {
     "proposal_id": "auto_partition_0007",
-    "owner_ids": ["owner-id-from-the-reviewed-row"],
+    "source_unit_ids": ["owner-id-from-the-reviewed-row"],
     "module": "services/provider",
     "readable_names": { "a": "Provider" }
   }
 ]
 ```
 
-Copy `proposal_id` from `proposed_module_id` and `owner_ids` from the same
+Copy `proposal_id` from `proposed_module_id` and `source_unit_ids` from the same
 current `modules propose --format json` row. Choose the destination and a
 readable name for every residual binding in that row. For extension rows the
 destination must equal `extends_module_id`. Use the same `--size-cap-lines`
@@ -444,7 +444,7 @@ the requested source binding, not merely to some unique declaration:
 ```json
 {
   "proposal_id": "auto_partition_0007",
-  "owner_ids": ["owner-id-from-the-reviewed-row"],
+  "source_unit_ids": ["owner-id-from-the-reviewed-row"],
   "module": "services/provider",
   "readable_names": { "a": "Provider" },
   "selectors": {
@@ -465,34 +465,34 @@ the requested source binding, not merely to some unique declaration:
 modules into the surviving gated same-module seed fragments:
 
 ```sh
-debundle modules decompose --graph owner_graph.json --modules spec/modules \
+debundle modules decompose --graph dependency_graph.json --modules spec/modules \
   --format json
 ```
 
-It keeps existing modules separate, covers every owner in the candidate, checks
+It keeps existing modules separate, covers every source unit in the candidate, checks
 that structural atomic groups stay together, and runs the shared realizability
 gate over the complete candidate. `candidate_is_realizable: true` means that
 candidate passed those checks. A false result includes the gate's cycles or
 cross-module rebinds and any structural atom conflicts; the fragments remain
 diagnostic suggestions and do not form an accepted assignment. By default
-residual owners keep their current destination and are not split into
+residual source units keep their current destination and are not split into
 suggestions, so a candidate can remain invalid when its conflict involves
 residual ownership.
 
-The command does not modify YAML. Review the reported owner and binding IDs,
+The command does not modify YAML. Review the reported source-unit and binding IDs,
 choose semantic module names for each suggested part, and assign the complete
 set of fragments together. Suggested `part-N` paths are temporary review aids,
 not names inferred from the source. This is a conservative seed refinement,
 not a minimal module assignment: its canonical pivot order can leave mutually compatible
 owners in separate fragments. Unlike `modules propose`, decomposition has no
 module-size cap and does not run the greedy cross-module proposer.
-Some fragments may include owners without binding IDs, such as anonymous
-statements; inspect those owners and move them with their `anonymous_statements:`
+Some fragments may include source units without binding IDs, such as anonymous
+statements; inspect those source units and move them with their `anonymous_statements:`
 selectors when applying the reviewed split.
 
 For a faster, more fragmented baseline, pass `--atomic`. This mode skips
 same-module seed contractions and creates one candidate group per structural
-atomic group. If a unit already spans existing module labels, its owners keep
+atomic group. If a unit already spans existing module labels, its source units keep
 those labels and the report remains false with that atom conflict listed. Both
 modes run the same full candidate gate; JSON's `strategy` field identifies the
 selected mode.
@@ -508,7 +508,7 @@ source-backed selector resolution:
 
 ```sh
 debundle modules decompose --atomic --preserve-selector-anchors \
-  --source-root source --graph owner_graph.json --modules spec/modules --format json
+  --source-root source --graph dependency_graph.json --modules spec/modules --format json
 ```
 
 This option requires `--source-root` and resolves current claims through the
@@ -517,8 +517,8 @@ normal joint selector resolver. It coalesces each member with its local
 anonymous statement selector) with local members whose free names are ambiguous
 under module-neutral lookup. The JSON report sets `preserve_selector_anchors`
 and lists each relationship in `selector_anchor_relations`. Each relation has
-`kind`, `module_path`, `source`, `referenced_by`, `source_owner_ids`, and
-`anchor_owner_ids`. `source` is tagged as either
+`kind`, `module_path`, `source`, `referenced_by`, `source_unit_ids`, and
+`anchor_source_unit_ids`. `source` is tagged as either
 `{"kind":"member","name":"Widget"}` or
 `{"kind":"anonymous_statement","index":1}`; the latter index is the
 authored `anonymous_statements[]` selector index. References with one
@@ -532,7 +532,7 @@ cycles, add `--coarsen-blocking-sccs`:
 
 ```sh
 debundle modules decompose --atomic --coarsen-blocking-sccs \
-  --graph owner_graph.json --modules spec/modules --format json
+  --graph dependency_graph.json --modules spec/modules --format json
 ```
 
 This opt-in mode consumes only the blocking SCC module lists returned by the
@@ -550,7 +550,7 @@ top-level coverage, cycle, rebind, and `candidate_is_realizable` fields describe
 the final candidate. A passing result is a gate-accepted assignment, not a claim
 that groups sharing a suggested path belong to one semantic feature. The mode
 does not edit YAML or choose descriptive module names; review `origin_module_paths`
-and owner IDs before assigning the groups in a later spec change.
+and source-unit IDs before assigning the groups in a later spec change.
 
 When structural atoms span candidate module paths, SCC coarsening normally
 stops with `atomic_group_conflicts`. Add `--coarsen-atomic-conflicts` to first
@@ -558,7 +558,7 @@ co-locate the complete candidate groups named by each reported atomic group:
 
 ```sh
 debundle modules decompose --atomic --coarsen-blocking-sccs \
-  --coarsen-atomic-conflicts --graph owner_graph.json --modules spec/modules \
+  --coarsen-atomic-conflicts --graph dependency_graph.json --modules spec/modules \
   --format json
 ```
 
@@ -574,7 +574,7 @@ coarsening as before.
 With `--preserve-selector-anchors --source-root`, the final `coarsening` report
 also includes `naming_collisions`. Each row names a suggested destination and
 readable export name that distinct original modules would both claim there,
-with each resolved source binding and its graph owner IDs. It covers direct
+with each resolved source binding and its source-unit IDs. It covers direct
 members and `source_matches` after the joint selector resolution, and reports
 all such collisions in the final coarsened groups. An empty array means this
 particular name check found none; the read-only planner does not rename members
@@ -619,7 +619,7 @@ To include residual ownership in that baseline, add `--include-residual`:
 
 ```sh
 debundle modules decompose --atomic --include-residual \
-  --graph owner_graph.json --modules spec/modules --format json
+  --graph dependency_graph.json --modules spec/modules --format json
 ```
 
 Each residual body atom gets its own proposed active module. Top-level import
@@ -631,37 +631,37 @@ atomic split is not assumed to be realizable. The suggested
 `decomposition/residual/part-N` paths are temporary names that authors should
 replace after reviewing the source.
 
-## Applying reviewed owner assignments (`modules refine`)
+## Applying reviewed source-unit assignments (`modules refine`)
 
-Use `modules refine` to apply a reviewed owner-to-module batch to claims already
+Use `modules refine` to apply a reviewed source-unit-to-module batch to claims already
 present in the scoped module tree:
 
 ```sh
 debundle modules refine --batch reviewed-owners.json \
-  --graph owner_graph.json --modules spec/modules --source-root source
+  --graph dependency_graph.json --modules spec/modules --source-root source
 ```
 
-The batch is a JSON array of `{ "owner_id": "...", "module": "..." }`
+The batch is a JSON array of `{ "unit_id": "...", "module": "..." }`
 rows. `module` names a destination path; with `--tree-config`, include the
-selected chunk root in that path. Owners omitted from the batch keep their
+selected chunk root in that path. Source units omitted from the batch keep their
 current assignment. Each row moves every existing selector that resolves to
-that owner, including `members:`, grouped `source_matches[].bindings[]`, and
+that source unit, including `members:`, grouped `source_matches[].bindings[]`, and
 `anonymous_statements:` entries. It preserves selector text, binding names,
 annotations, source-match notes, and anonymous-statement comments and notes.
 Module-level `comment:` and `note:` fields stay with their original module.
 
-The command accepts only already-claimed, non-residual owners. Residual,
-unclaimed, import, and export owners cannot be assigned. It rejects duplicate
-owner rows, split/conflicting current claims, destination name or annotation
-collisions, and stale owner graphs. It then resolves every selector in the
-complete scoped post-edit spec and compares every graph owner—including
+The command accepts only already-claimed, non-residual source units. Residual,
+unclaimed, import, and export source units cannot be assigned. It rejects duplicate
+source-unit rows, split/conflicting current claims, destination name or annotation
+collisions, and stale dependency graphs. It then resolves every selector in the
+complete scoped post-edit spec and compares every graph source unit—including
 unchanged and residual owners—to the requested complete assignment. Only after
 that identity check does the shared atomic-group and realizability gate run.
 There is no `--no-verify` mode. `--dry-run` performs the same checks without
 writing YAML; a rejected batch leaves every module document unchanged.
 
 The primitive does not create selectors or choose semantic module names. It
-applies the reviewed owner map as written; inspect the resulting modules and
+applies the reviewed source-unit map as written; inspect the resulting modules and
 run the project extraction gate after an accepted edit.
 
 ## Rejection diagnostics
@@ -670,7 +670,7 @@ When validation refuses a mutating command, the diagnostic names exactly
 what's wrong:
 
 **Atom split** (refused by the realizability gate). Lists each split atom:
-which owners it covers, which modules its members would land in, and the
+which source units it covers, which modules its members would land in, and the
 `DepKind` causes from the group (same data shape as `AtomicGroupConflict`).
 When a sequenced side-effect edge is involved, the existing conflict/cycle
 records also include each impure initializer owner, its binding name, source
@@ -680,7 +680,7 @@ imported fluent chains point to `chunk_export_purity.<chunk>.fluent_exports`.
 Unknown imported constructors point to
 `chunk_export_purity.<defining chunk>.pure_new_exports`.
 The diagnostic does **not** auto-compute the minimal extra-moves completion
-— it names the owners and destinations so the author can read the
+— it names the source units and destinations so the author can read the
 completion off the printed atom membership.
 
 **Name collision** (refused by `bindings rename` or by `bindings assign`
@@ -702,7 +702,7 @@ artifacts to disk as siblings of `--graph` — the default location the
 rejection that was just reported. A subsequent edit that passes the gate
 clears the stale artifacts. `debundle run` (and `run --dry-run`) writes the
 same files under `reports/tree/<chunk>/`, which is the same
-sibling-of-`owner_graph.json` layout.
+sibling-of-`dependency_graph.json` layout.
 
 ## Gate queries
 
@@ -725,11 +725,11 @@ When a binding's role is unclear or a proposal is suspicious:
    owner, home module, atom membership, and incoming/outgoing edges. Add
    `--include-proposals` only when proposer proposal/diagnostic
    annotations are needed.
-2. **`debundle inspect-source --id <sym>`** — inspect the owner's numbered
+2. **`debundle inspect-source --id <sym>`** — inspect the source unit's numbered
    source item. Use `--view raw` for original bytes and
    `--context-statements 1` for neighboring items.
 3. **`debundle cluster <sym>`** — list the module-quotient neighbors of the
-   binding's owner. Useful for "what does this module touch?" questions
+   binding's source unit. Useful for "what does this module touch?" questions
    before deciding a destination.
 
 ## Evidence files
@@ -742,7 +742,7 @@ Typical debundle outputs:
   `rename_queue.json`, `vendor_swaps.json` when those outputs are
   configured
 - per-chunk reports under `reports/tree/<chunk-id>/`: `chunk.json`,
-  `modules.json`, `owner_graph.json`, `export_reentry.json`,
+  `modules.json`, `dependency_graph.json`, `export_reentry.json`,
   `selector_diagnostics.json` when any selector did not resolve or resolved
   with a warning, plus `cycles.json` / `atomic_group_conflicts.json` only when
   validation rejects. `export_reentry.json` is also kept on a dry-run

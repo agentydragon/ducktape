@@ -82,7 +82,7 @@ repeat across modules.
 | `intrinsic_alias`     | aliases `Object.<property>` and is read by `@referenced_by` | `property`, `referenced_by`   |
 
 Each takes an optional `kind:` (`function_declaration`, `class_declaration`,
-`variable_declarator`, …) to disambiguate when several owners stand in the
+`variable_declarator`, …) to disambiguate when several source units stand in the
 relation.
 
 ```yaml
@@ -110,10 +110,10 @@ what a rebuild destroys.
 
 What the relational language cannot express yet: negation, counting/uniqueness,
 transitive reachability, a relational selector kind combined with a shape in
-one member, and sub-owner targets. A template can already name a relationally
+one member, and nested targets within one source unit. A template can already name a relationally
 pinned entity (§ Naming other entities), which covers "has this shape and
 references @Anchor".
-Selectors resolve at owner granularity (one top-level statement), so a property
+Selectors resolve to post-split source units (one declaration or residual statement), so a property
 inside one declaration's object literal — a getter of a returned accessor
 object — is not a place of its own; pin the whole declaration. Those are open
 selector-language work.

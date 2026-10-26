@@ -356,7 +356,7 @@ impl Visit for ConstructorMethodUse {
 /// unresolved call expression. Static member prop names are
 /// `IdentName`s (not `Ident`s) and are not collected; function /
 /// arrow / class / accessor interiors are skipped — their contents
-/// are already covered by the owner's lazy sets, which the
+/// are already covered by the source_unit's lazy sets, which the
 /// `inline_fn` flag pulls into the fallback closure.
 #[derive(Default)]
 pub(crate) struct UnresolvedCallSourceCollector {

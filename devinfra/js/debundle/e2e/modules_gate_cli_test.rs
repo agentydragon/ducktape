@@ -1,4 +1,4 @@
-//! Module edits against owner graphs generated from executable JS/specs.
+//! Module edits against dependency graphs generated from executable JS/specs.
 
 use debundle_e2e_support::GraphFixture;
 use std::fs;
@@ -69,8 +69,8 @@ fn modules_delete_force_accepts_clean_deletion() {
 
 #[test]
 fn edit_gate_resolves_decorator_statement_claims_from_real_source() {
-    // A leading export is not an owner: source statement ordinals must not be
-    // confused with positions in the owner table when resolving the decorator.
+    // A leading export is not an unit: source statement ordinals must not be
+    // confused with positions in the source_unit table when resolving the decorator.
     let fixture = GraphFixture::new(
         r#"export { Co };
 const ignored = 0;

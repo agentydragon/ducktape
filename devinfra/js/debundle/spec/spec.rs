@@ -74,7 +74,7 @@ pub struct TransformSpec {
     /// chunk uses the strictly-conservative analysis paths unless the
     /// spec explicitly opts in.
     #[serde(default)]
-    pub chunk_analysis_options: BTreeMap<String, OwnerGraphOptions>,
+    pub chunk_analysis_options: BTreeMap<String, DependencyGraphOptions>,
     /// Author-asserted contracts for exports, keyed by the *defining*
     /// chunk. Purity assertions seed trusted axioms in the cross-module
     /// purity oracle; callback-factory assertions separately describe
@@ -214,7 +214,7 @@ pub struct ChunkExportPurity {
     pub namespace_independent_members: BTreeMap<String, BTreeSet<String>>,
 }
 
-/// Per-chunk owner-graph build options. Each field defaults to the
+/// Per-chunk dependency-graph build options. Each field defaults to the
 /// strictly-conservative behavior; opt-ins enable conditionally-correct
 /// inferences that hold only when the input satisfies a checkable
 /// precondition (see `devinfra/js/debundle/AGENTS.md` →
@@ -223,11 +223,11 @@ pub struct ChunkExportPurity {
 /// Serves two roles with one type: it's the YAML surface for
 /// `TransformSpec::chunk_analysis_options` (each per-chunk entry
 /// deserializes into this), and it's the input to
-/// `analysis::build_owner_graph_with`. The materializer threads it
+/// `analysis::build_dependency_graph_with`. The materializer threads it
 /// straight through — no per-chunk copy.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct OwnerGraphOptions {
+pub struct DependencyGraphOptions {
     /// Author-certified browser-global data slots whose writes publish a
     /// callback only for use after synchronous chunk initialization. The
     /// slot must be an ordinary inert own data property, or an absent slot
@@ -240,7 +240,7 @@ pub struct OwnerGraphOptions {
     /// Emit the side-effect ordering chain using per-statement
     /// (writes, reads) summaries instead of the adjacent-impure
     /// transitive reduction. See the S-chain block in
-    /// `build_owner_graph_with` and `README.md` →
+    /// `build_dependency_graph_with` and `README.md` →
     /// "Conditionally-correct optimizations". Only sound when the
     /// chunk is free of dynamic dispatch shapes (direct `eval`,
     /// `with`, `Function(...)` constructor, computed
@@ -568,7 +568,7 @@ pub enum VendorLevel {
 /// What [`TransformSpec::unassigned_mode`] means for a chunk's
 /// top-level statements that the YAML doesn't explicitly claim for
 /// any logical module. The atomic-group primitive in
-/// `analysis::atomic_groups` partitions the chunk's owners into
+/// `analysis::atomic_groups` partitions the chunk's source_units into
 /// minimal co-location groups; this enum decides what destination
 /// each *unclaimed* atomic group lands in.
 ///
@@ -899,7 +899,7 @@ pub struct BindingAnnotation {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub no_sync_callback_members: Vec<String>,
     /// Optional human-readable comment emitted above the matched binding's
-    /// owner statement in generated JS.
+    /// source_unit statement in generated JS.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub comment: Option<String>,
     /// Optional YAML-only note. Preserved by spec edits but never emitted.
@@ -1266,7 +1266,7 @@ pub struct MemberSelector {
 
 /// Pin a member by a **cross-reference** to another spec member instead of by
 /// this member's own (re-minify-fragile) minified name. The anchor names another
-/// member by its readable name; the target is resolved through the owner graph as
+/// member by its readable name; the target is resolved through the dependency graph as
 /// the entity standing in the named relation to the anchor's resolved binding —
 /// e.g. a shapeless delegator `function T(x){ return Anchor(x) }` pinned as "the
 /// function that references @Anchor". Exactly one of `references` / `aliases`.
@@ -1279,7 +1279,7 @@ pub struct CrossRefSelector {
     /// The target aliases the anchor member (`const T = Anchor`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub aliases: Option<String>,
-    /// Optional statement-kind constraint disambiguating when several owners
+    /// Optional statement-kind constraint disambiguating when several source_units
     /// stand in the relation to the anchor (e.g. `function_declaration`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<BindingSourceKind>,
@@ -1330,8 +1330,8 @@ impl CrossRefSelector {
 /// codegen helper `function ls(c){ return c.uniqueId }` whose stable identity is
 /// "the function that reads `.uniqueId` off the codegen context" — pinned by the
 /// invariant property name `.uniqueId` (and optionally the object it reads off),
-/// never by the minified `ls`. Resolved through the owner graph's `reads_member`
-/// EDB: the unique declaring owner whose body reads the named member.
+/// never by the minified `ls`. Resolved through the dependency graph's `reads_member`
+/// EDB: the unique declaring source_unit whose body reads the named member.
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq, Ord, PartialOrd)]
 #[serde(deny_unknown_fields)]
 pub struct ReadsMemberSelector {
@@ -1339,13 +1339,13 @@ pub struct ReadsMemberSelector {
     /// is "reads member `.member`".
     pub member: String,
     /// Optional object constraint: the readable `name:` of another member the
-    /// property is read off (`@object.member`). Narrows "the owner that reads
-    /// `.X`" to "the owner that reads `.X` **off `@object`**" — the codegen
+    /// property is read off (`@object.member`). Narrows "the source_unit that reads
+    /// `.X`" to "the source_unit that reads `.X` **off `@object`**" — the codegen
     /// context being the canonical object. Resolved like a `cross_ref` anchor:
     /// the object's already-resolved minified binding rides the relational edge.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub object: Option<String>,
-    /// Optional statement-kind constraint disambiguating when several owners read
+    /// Optional statement-kind constraint disambiguating when several source_units read
     /// the member (e.g. `function_declaration`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<BindingSourceKind>,
@@ -1379,8 +1379,8 @@ impl ReadsMemberSelector {
 /// distinguished only by *how each is consumed*) and shapeless delegators with no
 /// internal anchor. Both `module` (an import specifier) and `member` (an export
 /// name) are re-minify-invariant, so the whole edge survives a bundle rebuild.
-/// Resolved through the owner graph's `member_of_module` EDB: the unique declaring
-/// owner whose body consumes `<module>.<member>`.
+/// Resolved through the dependency graph's `member_of_module` EDB: the unique declaring
+/// source_unit whose body consumes `<module>.<member>`.
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq, Ord, PartialOrd)]
 #[serde(deny_unknown_fields)]
 pub struct MemberOfModuleSelector {
@@ -1391,7 +1391,7 @@ pub struct MemberOfModuleSelector {
     /// The export **name** consumed off the imported binding (`mod.member`).
     /// Required — the other half of the identity.
     pub member: String,
-    /// Optional statement-kind constraint disambiguating when several owners
+    /// Optional statement-kind constraint disambiguating when several source_units
     /// consume the module member (e.g. `class_declaration` for the empty-subclass
     /// cluster).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1424,11 +1424,11 @@ impl MemberOfModuleSelector {
 /// whose only stable identity is an external `registry.register(FooAccessor)`
 /// statement. The target *is the argument*; the call that names it lives elsewhere.
 /// This is the inverse direction of [`MemberOfModuleSelector`], which pins the
-/// owner whose *own* subtree consumes `mod.X` and explicitly cannot reach a target
+/// source_unit whose *own* subtree consumes `mod.X` and explicitly cannot reach a target
 /// distinguished only by such an external registration. `callee_member` (the call's
 /// method name) and the registry's own stable identity are re-minify-invariant, so
-/// the edge survives a bundle rebuild. Resolved through the owner graph's
-/// `passed_to_call` EDB: the unique declaring owner whose binding is the call
+/// the edge survives a bundle rebuild. Resolved through the dependency graph's
+/// `passed_to_call` EDB: the unique declaring source_unit whose binding is the call
 /// argument.
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq, Ord, PartialOrd)]
 #[serde(deny_unknown_fields)]
@@ -1451,7 +1451,7 @@ pub struct PassedToCallSelector {
     /// slot alongside other arguments.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub arg_index: Option<usize>,
-    /// Optional statement-kind constraint disambiguating when several owners are
+    /// Optional statement-kind constraint disambiguating when several source_units are
     /// passed to the callee member (e.g. `class_declaration` for the registry
     /// empty-subclass cluster).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1480,7 +1480,7 @@ impl PassedToCallSelector {
     }
 }
 
-/// `makes_decorate_call` EDB: the unique declaring owner whose binding is the
+/// `makes_decorate_call` EDB: the unique declaring source_unit whose binding is the
 /// **callee** of an esbuild/TypeScript `__decorate`-style decorator application.
 /// The inverse direction of `passed_to_call` (the target *makes* the call rather
 /// than being *passed to* it). The byte-identical-across-modules helper copies have
@@ -1503,7 +1503,7 @@ pub struct MakesDecorateCallSelector {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub member: Option<String>,
     /// Optional statement-kind constraint. The esbuild decorate helper is always a
-    /// `variable_declarator`; the constraint narrows past any non-var owner that
+    /// `variable_declarator`; the constraint narrows past any non-var source_unit that
     /// spuriously shares the class anchor on a full bundle.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<BindingSourceKind>,
@@ -1540,7 +1540,7 @@ impl MakesDecorateCallSelector {
 /// an inverse-`references` edge to the helper. `referenced_by` names that helper —
 /// now a stable `@Name` because `makes_decorate_call` pins it; the intrinsic
 /// `property` is a spec-level method name the bundler does not rewrite. Resolved
-/// through the owner graph's `intrinsic_alias` EDB: the unique declaring owner whose
+/// through the dependency graph's `intrinsic_alias` EDB: the unique declaring source_unit whose
 /// binding is the `Object.<property>` alias referenced by the helper.
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq, Ord, PartialOrd)]
 #[serde(deny_unknown_fields)]

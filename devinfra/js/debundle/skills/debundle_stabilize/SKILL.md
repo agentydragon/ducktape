@@ -76,7 +76,7 @@ zero slack does not establish forward stability.
    § Selector debt).
 
 The per-selector commands read the chunk and module tree directly; they need
-no owner graph or pipeline build. Full `spec validate` and `debundle run` need
+no dependency graph or pipeline build. Full `spec validate` and `debundle run` need
 the Bazel `:debundle` pipeline target with its package roots and repo-root
 source root (`cli.md` § Running the pipeline). Use a per-agent Bazel output
 base under `/tmp` when other agents are building. On NixOS,

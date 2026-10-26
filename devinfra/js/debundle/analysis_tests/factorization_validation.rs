@@ -4,7 +4,7 @@
 
 use std::collections::{BTreeSet, HashMap};
 
-use super::{analyze_facts, build_owner_graph, parse, parse_with_source_map, test_id};
+use super::{analyze_facts, build_dependency_graph, parse, parse_with_source_map, test_id};
 use crate::*;
 use analysis::*;
 
@@ -121,7 +121,7 @@ fn factorization_from_facts(
 ) -> AssignmentAnalysis {
     AssignmentAnalysis::build_with(
         "test_chunk".to_string(),
-        compute_owner_graph_and_atomic_groups_with(facts, OwnerGraphOptions::default())
+        compute_dependency_graph_and_atomic_groups_with(facts, DependencyGraphOptions::default())
             .expect("chunk facts declare a binding twice"),
         bindings,
         logical_modules,
@@ -202,17 +202,17 @@ fn factorization_with_residual_module(
     factorization_from_facts(&facts, bindings, logical_modules, residual)
 }
 
-// --- Owner graph quotient ------------------------------------------------
+// --- Dependency graph quotient ------------------------------------------------
 
 #[test]
-fn owner_graph_report_emits_atomic_graph() {
+fn dependency_graph_report_emits_atomic_graph() {
     let factorization = factorization_with_residual_module(
         "const Leaf = 1; const ResidualUse = Leaf + 1; const Existing = ResidualUse + 1;",
         &["Leaf", "ResidualUse"],
         &["Existing"],
     );
 
-    let report = factorization.owner_graph_report();
+    let report = factorization.dependency_graph_report();
     assert_eq!(report.atomic_graph.nodes.len(), 3);
     assert!(
         report
@@ -229,22 +229,22 @@ fn owner_graph_report_emits_atomic_graph() {
         "Leaf should appear as a residual atomic group: {:#?}",
         report.atomic_graph,
     );
-    let json = serde_json::to_string(&report).expect("serialize OwnerGraphReport");
+    let json = serde_json::to_string(&report).expect("serialize DependencyGraphReport");
     assert!(json.contains(r#""atomic_graph""#));
 }
 
-/// `cli/gate.rs` reads the callee owner off the serialized `owner_graph.json` edge to
+/// `cli/gate.rs` reads the callee owner off the serialized `dependency_graph.json` edge to
 /// drop a promoted edge when callee and caller land in different modules.
 #[test]
-fn owner_graph_report_names_the_callee_owner_on_a_promoted_at_init_edge() {
+fn dependency_graph_report_names_the_callee_source_unit_on_a_promoted_at_init_edge() {
     let factorization = factorization_with_residual_module(
         "const seed = 7; const dep = 42; const result = callee(seed); function callee(x) { return dep + x; }",
         &["seed", "result", "callee", "dep"],
         &[],
     );
 
-    let report = factorization.owner_graph_report();
-    let owner_of = |binding: &str| {
+    let report = factorization.dependency_graph_report();
+    let source_unit_id_for_binding = |binding: &str| {
         report
             .nodes
             .iter()
@@ -257,8 +257,8 @@ fn owner_graph_report_names_the_callee_owner_on_a_promoted_at_init_edge() {
         .edges
         .iter()
         .find(|edge| {
-            edge.source == owner_of("result")
-                && edge.target == owner_of("dep")
+            edge.source == source_unit_id_for_binding("result")
+                && edge.target == source_unit_id_for_binding("dep")
                 && edge.edge_kind == DepKind::EagerUse
         })
         .unwrap_or_else(|| {
@@ -270,7 +270,7 @@ fn owner_graph_report_names_the_callee_owner_on_a_promoted_at_init_edge() {
     assert_eq!(
         promoted.role,
         Some(EdgeRoleReport::PromotedAtInit {
-            callee_owner: owner_of("callee")
+            callee_source_unit: source_unit_id_for_binding("callee")
         }),
     );
 }
@@ -280,7 +280,7 @@ fn atomic_graph_collapses_constraining_eager_cycle() {
     let factorization =
         factorization_with_residual_module("const A = B + 1; const B = A + 1;", &["A", "B"], &[]);
 
-    let report = factorization.owner_graph_report();
+    let report = factorization.dependency_graph_report();
     let cycle_atomic_group = report
         .atomic_graph
         .nodes
@@ -289,7 +289,7 @@ fn atomic_graph_collapses_constraining_eager_cycle() {
             member_bindings(&atomic_group.members) == vec!["A".to_string(), "B".to_string()]
         })
         .expect("A/B eager cycle should be one atomic group");
-    assert_eq!(cycle_atomic_group.owner_ids.len(), 2);
+    assert_eq!(cycle_atomic_group.source_unit_ids.len(), 2);
     assert!(cycle_atomic_group.causes.contains(&DepKind::EagerUse));
 }
 
@@ -301,7 +301,7 @@ fn atomic_graph_preserves_direction_between_atomic_groups() {
         &[],
     );
 
-    let report = factorization.owner_graph_report();
+    let report = factorization.dependency_graph_report();
     assert_eq!(report.atomic_graph.nodes.len(), 2);
     assert_eq!(report.atomic_graph.edges.len(), 1);
     let edge = &report.atomic_graph.edges[0];
@@ -495,8 +495,8 @@ fn validate_returns_empty_linker_order_for_cyclic_spec() {
 fn atomic_groups_for(source: &str) -> Vec<AtomicGroup> {
     let module = parse(source);
     let facts = analyze_facts(&module);
-    let owner_graph = build_owner_graph(&facts).unwrap();
-    compute_atomic_groups(&owner_graph)
+    let dependency_graph = build_dependency_graph(&facts).unwrap();
+    compute_atomic_groups(&dependency_graph)
 }
 
 fn atomic_group_sizes(atomic_groups: &[AtomicGroup]) -> Vec<usize> {
@@ -505,18 +505,18 @@ fn atomic_group_sizes(atomic_groups: &[AtomicGroup]) -> Vec<usize> {
     sizes
 }
 
-fn assert_partitions_all_owners(atomic_groups: &[AtomicGroup], total_owners: usize) {
+fn assert_partitions_all_source_units(atomic_groups: &[AtomicGroup], total_source_units: usize) {
     let summed: usize = atomic_groups.iter().map(|u| u.members.len()).sum();
     assert_eq!(
-        summed, total_owners,
+        summed, total_source_units,
         "atomic groups must cover every owner exactly once; got atomic_groups {atomic_groups:?}",
     );
     let mut seen = BTreeSet::new();
     for atomic_group in atomic_groups {
-        for owner in &atomic_group.members {
+        for source_unit in &atomic_group.members {
             assert!(
-                seen.insert(*owner),
-                "owner {owner:?} appears in more than one atomic group",
+                seen.insert(*source_unit),
+                "owner {source_unit:?} appears in more than one atomic group",
             );
         }
     }
@@ -526,7 +526,7 @@ fn assert_partitions_all_owners(atomic_groups: &[AtomicGroup], total_owners: usi
 fn atomic_groups_singletons_for_independent_owners() {
     // No edges → each owner is its own atomic group.
     let atomic_groups = atomic_groups_for("const A = 1; const B = 2; const C = 3;");
-    assert_partitions_all_owners(&atomic_groups, 3);
+    assert_partitions_all_source_units(&atomic_groups, 3);
     assert_eq!(atomic_group_sizes(&atomic_groups), vec![1, 1, 1]);
 }
 
@@ -535,7 +535,7 @@ fn atomic_groups_eager_use_chain_stays_split() {
     // A → B → C via EagerUse: directed-only edges, no cycle, so
     // each owner remains its own atomic group.
     let atomic_groups = atomic_groups_for("const C = 3; const B = C + 1; const A = B + 1;");
-    assert_partitions_all_owners(&atomic_groups, 3);
+    assert_partitions_all_source_units(&atomic_groups, 3);
     assert_eq!(atomic_group_sizes(&atomic_groups), vec![1, 1, 1]);
 }
 
@@ -547,7 +547,7 @@ fn atomic_groups_lazy_use_cycle_stays_split() {
     let atomic_groups = atomic_groups_for(
         "function helperA() { return B; } function helperB() { return A; } const A = 1; const B = 2;",
     );
-    assert_partitions_all_owners(&atomic_groups, 4);
+    assert_partitions_all_source_units(&atomic_groups, 4);
     assert_eq!(atomic_group_sizes(&atomic_groups), vec![1, 1, 1, 1]);
 }
 
@@ -562,7 +562,7 @@ fn atomic_groups_sequenced_chain_stays_split() {
     let atomic_groups = atomic_groups_for(
         r#"const a1 = (globalThis.tag = "a1", 1); const b1 = (globalThis.tag = "b1", 2); const a2 = (globalThis.tag = "a2", 3);"#,
     );
-    assert_partitions_all_owners(&atomic_groups, 3);
+    assert_partitions_all_source_units(&atomic_groups, 3);
     assert_eq!(atomic_group_sizes(&atomic_groups), vec![1, 1, 1]);
 }
 
@@ -585,7 +585,7 @@ fn atomic_groups_sequenced_plus_reverse_eager_merges() {
     let atomic_groups = atomic_groups_for(
         r#"let A = 1; A = (globalThis.tag = "x", 2); A = (globalThis.tag = "y", 3);"#,
     );
-    assert_partitions_all_owners(&atomic_groups, 3);
+    assert_partitions_all_source_units(&atomic_groups, 3);
     assert_eq!(atomic_group_sizes(&atomic_groups), vec![3]);
 }
 
@@ -595,7 +595,7 @@ fn atomic_groups_lazy_rebind_merges() {
     // edge from B → A. LazyRebind is bidirectional in `G_atomic`,
     // so A and B collapse into one atomic group.
     let atomic_groups = atomic_groups_for("let A = 0; function B() { A = 1; }");
-    assert_partitions_all_owners(&atomic_groups, 2);
+    assert_partitions_all_source_units(&atomic_groups, 2);
     assert_eq!(atomic_group_sizes(&atomic_groups), vec![2]);
 }
 
@@ -604,7 +604,7 @@ fn atomic_groups_lazy_rebind_merges() {
 fn assignment_summary(factorization: &AssignmentAnalysis) -> Vec<(String, String)> {
     let mut out: Vec<(String, String)> = factorization
         .analysis()
-        .owner_graph()
+        .dependency_graph()
         .iter_nodes()
         .map(|node| {
             let declared: Vec<String> = node.declared.iter().map(|id| id.0.to_string()).collect();
@@ -630,7 +630,7 @@ fn assignment_summary(factorization: &AssignmentAnalysis) -> Vec<(String, String
 }
 
 #[test]
-fn assignment_assembly_unclaimed_owners_default_to_residual() {
+fn assignment_assembly_unclaimed_source_units_default_to_residual() {
     let factorization = factorization_for("const A = 1; const B = 2;", &[]);
     let summary = assignment_summary(&factorization);
     assert_eq!(
@@ -711,7 +711,7 @@ fn assignment_assembly_records_conflict_on_split_eager_use_cycle() {
 fn assignment_assembly_records_no_conflict_for_sequenced_only_chain() {
     // Three side-effect statements, source-ordered. Directed
     // Sequenced edges alone form a chain in `G_atomic`, not an
-    // SCC, so every owner is its own atomic group and the spec
+    // SCC, so every source_unit is its own atomic group and the spec
     // can split them across modules without violating
     // co-location. The validator may still flag a module-level
     // cycle when the spec creates one through reverse claims,
@@ -729,9 +729,9 @@ fn assignment_assembly_records_no_conflict_for_sequenced_only_chain() {
 }
 
 #[test]
-fn assignment_assembly_independent_owners_keep_independent_claims() {
+fn assignment_assembly_independent_source_units_keep_independent_claims() {
     // Three eager-use chain: A → B → C, no cycle, three atomic
-    // atomic groups. Each owner's claim takes effect independently.
+    // atomic groups. Each source_unit's claim takes effect independently.
     let factorization = factorization_for(
         "const C = 3; const B = C + 1; const A = B + 1;",
         &[("A", logical(0)), ("B", logical(1)), ("C", logical(0))],

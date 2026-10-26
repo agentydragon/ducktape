@@ -26,7 +26,7 @@ pub enum LocalEffectPolicy {
     /// as a local effect on `X` instead of a globally-ordered side
     /// effect. Opt-in via
     /// `chunk_analysis_options.<chunk>.local_property_effects`; see
-    /// that field's doc (`spec::OwnerGraphOptions`) for the soundness
+    /// that field's doc (`spec::DependencyGraphOptions`) for the soundness
     /// precondition the spec author accepts.
     LocalPropertyWrites,
 }
@@ -59,7 +59,7 @@ pub struct AnalysisAssumptions {
     /// Author-trusted chunk-level opt-in that lets conservative-but-present
     /// syntactic dataflow summaries drive S-chain emission instead of
     /// falling back to opaque barriers. Set from
-    /// `OwnerGraphOptions::trusted_dataflow_summaries`.
+    /// `DependencyGraphOptions::trusted_dataflow_summaries`.
     pub trusted_dataflow_summaries: bool,
     /// Imported callback factories with the return-only callback-flow contract.
     /// Independent of call purity; used only for checked fresh-callback calls.

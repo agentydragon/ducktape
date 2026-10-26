@@ -1,6 +1,6 @@
 ---
 name: debundle_lane_worker
-description: Apply one scoped debundle extraction, owner-assignment refinement, or reorganization task in a worktree. Use for reviewing source and atomic coverage, choosing module boundaries, applying validated spec edits, running adapter gates and regeneration, and committing one reviewable worker branch.
+description: Apply one scoped debundle extraction, source-unit assignment refinement, or reorganization task in a worktree. Use for reviewing source and atomic coverage, choosing module boundaries, applying validated spec edits, running adapter gates and regeneration, and committing one reviewable worker branch.
 ---
 
 # Debundle Lane Worker
@@ -30,7 +30,7 @@ Read other bundled references as needed:
 The orchestrator or project adapter provides:
 
 - worktree root and expected base SHA
-- assignment with owner IDs, binding IDs, proposed destination, and notes
+- assignment with source-unit IDs, binding IDs, proposed destination, and notes
 - `<graph>`, `<modules-dir>`, `<emitted-js-root>`, and optional source root
 - project conventions/taxonomy docs
 - exact gate, regen, uniqueness-check, and commit expectations
@@ -47,20 +47,20 @@ The orchestrator or project adapter provides:
    project conventions.
 5. Apply the assignment using the shared guide's CLI workflows. Use
    `modules apply` for fresh residual binding proposals, `modules refine` for
-   reviewed owner assignments of existing non-residual claims, `bindings assign`
+   reviewed source-unit assignments of existing non-residual claims, `bindings assign`
    for focused binding moves, and `bindings rename` / `modules merge` for their
    respective edits.
    In an app-level multi-chunk spec, pass `--tree-config` to both `modules
 propose` and `modules apply` so each sees only the graph chunk's mapped
    YAML roots.
 
-   For `modules refine`, review the `{owner_id, module}` batch against current
+   For `modules refine`, review the `{source_unit_id, module}` batch against current
    source and graph evidence. Run `--dry-run`, then apply the same reviewed
    batch; both resolve the complete scoped spec and check the full requested
    assignment. Preserve selector text and metadata through the CLI. Residual,
-   unclaimed, import, and export owners are not accepted. Use `--tree-config`
+   unclaimed, import, and export source units are not accepted. Use `--tree-config`
    for a multi-chunk spec and include the selected chunk root in destinations.
-   See `references/docs/cli.md` § Applying reviewed owner assignments.
+   See `references/docs/cli.md` § Applying reviewed source-unit assignments.
 
    For `modules apply`, first run `--dry-run --format json` and inspect each
    `selector_reviews` selector against the intended binding and source. Review

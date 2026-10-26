@@ -2,17 +2,17 @@
 
 Design follow-ups for <../TODO.md>, not a separate priority queue. This note
 tracks reusable debundler purity-analysis work. It excludes
-corpus-specific owner ids, bundle paths, and spec cleanup notes.
+corpus-specific source-unit IDs, bundle paths, and spec cleanup notes.
 
 ## Remaining Generic Follow-Ups
 
 ### Statement-Level Purity Override
 
 `purity: pure` on a member is callsite-oriented: it says calls to that binding
-are safe. It does not assert that the binding's own owner statement is pure.
+are safe. It does not assert that the binding's own source-unit statement is pure.
 
 A separate statement-level override, tentatively `owner_purity: pure`, would
-let an author assert that a specific owner statement is safe when the analyzer
+let an author assert that a specific source-unit statement is safe when the analyzer
 cannot prove it. This should remain rare. Prefer analyzer improvements for
 common expression families.
 

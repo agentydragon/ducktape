@@ -168,7 +168,7 @@ pub(crate) fn collect_declared_names(item: &ModuleItem) -> BTreeSet<Id> {
         // `var` declarations hoist to module scope out of blocks
         // (`try { var impl = ...; } catch { var impl = ...; }`,
         // `if`, loop bodies). The enclosing top-level statement is
-        // the binding's owner.
+        // the binding's source_unit.
         ModuleItem::Stmt(stmt) => hoisted_var_ids(stmt).into_iter().collect(),
         _ => BTreeSet::new(),
     }
