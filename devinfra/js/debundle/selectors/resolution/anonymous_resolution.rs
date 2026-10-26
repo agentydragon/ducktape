@@ -269,10 +269,11 @@ fn resolve_claim_sets(
                                 import_names_by_source
                                     .iter()
                                     .map(|(source_path, import_names)| {
-                                        let evidence = import_names
-                                            .contains(&binding.name)
-                                            .then_some(DirectBindingSourceEvidence::Import)
-                                            .unwrap_or(DirectBindingSourceEvidence::Missing);
+                                        let evidence = if import_names.contains(&binding.name) {
+                                            DirectBindingSourceEvidence::Import
+                                        } else {
+                                            DirectBindingSourceEvidence::Missing
+                                        };
                                         (source_path.clone(), evidence)
                                     })
                                     .collect::<Vec<_>>()
