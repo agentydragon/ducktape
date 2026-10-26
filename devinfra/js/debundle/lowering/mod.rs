@@ -48,8 +48,9 @@ use io::{prepare_output_dir, prune_artifact_to_chunk_ids, write_chunk_report_jso
 use materialize::{
     ChunkContext, ChunkSpec, EmissionChunkOutputs, MaterializeLogicalChunkInputs,
     claim_prepared_chunk, collect_materialized_logical_chunks, finish_logical_chunk,
-    prepare_logical_chunk, resolve_prepared_chunks,
+    prepare_logical_chunk,
 };
+use spec_resolution::solve_projected_chunks;
 
 use util::normalize_optional_relative_dir;
 
@@ -75,18 +76,6 @@ pub struct MaterializeLogicalModulesResult {
     /// name), then fails at the end with the full list. See
     /// [`UnmatchedSpecClaim`].
     pub unmatched_spec_claims: Vec<UnmatchedSpecClaim>,
-}
-
-pub fn validate_logical_module_claims(
-    id: &str,
-    members: &[spec::Member],
-    source_matches: &[spec::SourceMatchClaim],
-    annotations: &BTreeMap<String, spec::BindingAnnotation>,
-) -> Result<()> {
-    let members = plans::build_members(members, source_matches, annotations, id)?;
-    exports::reject_duplicate_export_names("logical_module", id, &members)?;
-    exports::reject_duplicate_member_bindings("logical_module", id, &members)?;
-    Ok(())
 }
 
 /// A `define_logical_module` member whose `binding.name` did not
@@ -384,7 +373,7 @@ pub fn materialize_logical_modules(
         .into_iter()
         .collect::<Result<Vec<_>>>()?;
     let (prepared, projections): (Vec<_>, Vec<_>) = prepared.into_iter().unzip();
-    let resolutions = resolve_prepared_chunks(&prepared, projections)?;
+    let resolutions = solve_projected_chunks(projections)?;
     let claimed = GLOBALS
         .with(|globals| {
             prepared

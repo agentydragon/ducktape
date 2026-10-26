@@ -7,11 +7,10 @@
 use super::outcome_sink::OutcomeSink;
 use crate::anonymous::ResolvedAnonymousStatement;
 use crate::chunk_ast::{TopLevelDecl, binding_declaration};
-use crate::exports::reject_duplicate_member_bindings;
 use crate::imports::{
     ArtifactSourceImportResolutionCache, RuntimeImportFacts, resolve_imported_binding,
 };
-use crate::plans::{LogicalRequest, MemberRequest, ModulePlan};
+use crate::plans::ModulePlan;
 use crate::rebind_fold::RebindFold;
 use crate::util::target_file_for_request;
 use analysis::{BindingKind, ModuleId, OwnerGraphAndUnits, OwnerId, top_level_id};
@@ -21,17 +20,9 @@ use selector_outcome::{
     Declaration, Entity, EntityRef, Outcome, ResolvedBy, SelectorOutcome, SelectorOutcomeReport,
 };
 use selector_resolve::{EntityIndex, EntityOutcome, MemberSelector, Resolution};
+use spec_resolution::{LogicalRequest, MemberRequest, reject_duplicate_member_bindings};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use swc_ecma_ast::*;
-
-/// The explicit requests' entities the selector resolve decides, one module
-/// per request.
-pub(super) struct SelectorModules {
-    pub(super) modules: Vec<selector_resolve::SpecModule>,
-    /// Per request, the index in `request.members` of each member in
-    /// `modules`.
-    resolved_members: Vec<Vec<usize>>,
-}
 
 /// The module path of a `<chunk>::<path>` logical module id.
 fn logical_module_path(request_id: &str) -> String {
@@ -399,17 +390,16 @@ impl ChunkPlanBuilder {
     /// binding no top-level declaration carries was already recorded as an
     /// unmatched claim, and a duplicate claim as its outcome, so neither is
     /// resolved.
-    pub(super) fn selector_modules(
+    pub(super) fn selector_member_indices(
         &self,
         explicit_requests: &[LogicalRequest],
         chunk_top_level_mark: swc_common::Mark,
         declaration_by_name: &HashMap<Id, Vec<usize>>,
-    ) -> SelectorModules {
-        let mut resolved_members = Vec::with_capacity(explicit_requests.len());
-        let modules = explicit_requests
+    ) -> Vec<Vec<usize>> {
+        explicit_requests
             .iter()
             .map(|request| {
-                let (indices, members): (Vec<usize>, Vec<selector_resolve::Member>) = request
+                request
                     .members
                     .iter()
                     .enumerate()
@@ -424,36 +414,10 @@ impl ChunkPlanBuilder {
                                     chunk_top_level_mark,
                                 )))
                     })
-                    .map(|(index, member)| {
-                        (
-                            index,
-                            selector_resolve::Member {
-                                export_name: member.export_name.clone(),
-                                selector: member.selector.clone(),
-                            },
-                        )
-                    })
-                    .unzip();
-                resolved_members.push(indices);
-                selector_resolve::SpecModule {
-                    path: request.target_path.clone(),
-                    members,
-                    anonymous_statements: request
-                        .anonymous_statements
-                        .iter()
-                        .enumerate()
-                        .map(|(index, statement)| selector_resolve::AnonymousStatement {
-                            index,
-                            selector: statement.parsed_selector.clone(),
-                        })
-                        .collect(),
-                }
+                    .map(|(index, _)| index)
+                    .collect()
             })
-            .collect();
-        SelectorModules {
-            modules,
-            resolved_members,
-        }
+            .collect()
     }
 
     /// Claims what `resolution` resolved of `selectors`, and records every
@@ -462,8 +426,8 @@ impl ChunkPlanBuilder {
     pub(super) fn claim_resolution(
         &mut self,
         explicit_requests: &[LogicalRequest],
-        selectors: &SelectorModules,
         resolution: Resolution,
+        resolved_members: Vec<Vec<usize>>,
         chunk_top_level_mark: swc_common::Mark,
         chunk_id: &str,
         body: &[ModuleItem],
@@ -502,7 +466,7 @@ impl ChunkPlanBuilder {
                     )?;
                 }
                 EntityIndex::Member(member_index) => {
-                    let member = &request.members[selectors.resolved_members[index][member_index]];
+                    let member = &request.members[resolved_members[index][member_index]];
                     let binding = binding.with_context(|| {
                         format!(
                             "logical_module {}: global selector solver resolved member `{}` to \

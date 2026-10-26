@@ -2081,10 +2081,11 @@ dependencies:
   `OwnerGraphAndUnits` derived from those facts.
 - **Materialization** (spec-dependent): assemble the assignment from the
   spec's binding claims, run the realizability gate, lower to ESM. This is
-  `lowering::materialize_logical_modules`; per chunk it runs
-  `prepare_logical_chunk`, then `resolve_prepared_chunks` (selector
-  resolution, joint across chunks), then `finish_logical_chunk` (chunk
-  analysis, assignment assembly, the gate, lowering).
+  `lowering::materialize_logical_modules`; `spec_resolution` compiles claims
+  into requests, projects each chunk's eligible entities, and solves the
+  projections jointly. Lowering prepares assignment state before projection,
+  applies resolved claims afterward, then `finish_logical_chunk` performs
+  chunk analysis, assignment assembly, the gate, and lowering.
 
 The materializer is the composition of both, and chunk analysis is computed
 in memory at one call site in `finish_logical_chunk`. The boundary is

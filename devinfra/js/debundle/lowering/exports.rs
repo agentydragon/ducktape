@@ -4,10 +4,8 @@
 
 use crate::chunk_ast::{TopLevelDecl, binding_names};
 use crate::naturalize::NaturalizedModuleBody;
-use crate::plans::MemberRequest;
 use crate::rename_ledger::{RenameIntent, RenameLedger, RenameOrigin, RenameScope};
 use analysis::{BindingKind, top_level_id};
-use anyhow::{Result, bail};
 use js_ast::{named_export_module_item, named_export_specifier};
 use rustc_hash::FxHashSet;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -183,87 +181,6 @@ impl Visit for TargetedRefCollector<'_> {
     fn visit_jsx_element_name(&mut self, _node: &JSXElementName) {}
 
     fn visit_jsx_attr_name(&mut self, _node: &JSXAttrName) {}
-}
-
-pub(super) fn reject_duplicate_export_names(
-    operation: &str,
-    id: &str,
-    members: &[MemberRequest],
-) -> Result<()> {
-    reject_duplicate_field(operation, id, "exported logical names", members, |m| {
-        &m.export_name
-    })
-}
-
-/// Reject two members of one logical module claiming the same source binding.
-///
-/// Only members with a known binding spelling participate. Relational and
-/// source-match selectors generally carry an empty `binding` until their
-/// post-analysis pass resolves them; grouping those still-empty bindings here
-/// would collapse every unresolved selector member in a module into one bogus
-/// `<unresolved>` claim. Plain `selector.binding` members keep their known
-/// spelling even though ownership is now solver-resolved, so duplicate authored
-/// binding claims still fail before the expensive path.
-pub(super) fn reject_duplicate_member_bindings(
-    operation: &str,
-    id: &str,
-    members: &[MemberRequest],
-) -> Result<()> {
-    let mut by_binding = BTreeMap::<String, Vec<&MemberRequest>>::new();
-    for member in members {
-        if member.binding.is_empty() {
-            continue;
-        }
-        by_binding
-            .entry(member.binding.clone())
-            .or_default()
-            .push(member);
-    }
-    let duplicates = by_binding
-        .into_iter()
-        .filter(|(_, members)| members.len() > 1)
-        .collect::<Vec<_>>();
-    if duplicates.is_empty() {
-        return Ok(());
-    }
-    let mut report = format!("{operation} {id} has duplicate source binding claims:");
-    for (binding, members) in duplicates {
-        report.push_str(&format!(
-            "\n- source binding `{binding}` claimed {} times:",
-            members.len()
-        ));
-        for member in members {
-            report.push_str(&format!(
-                "\n  - export `{}` ({})",
-                member.export_name, member.claim_origin
-            ));
-        }
-    }
-    bail!("{report}");
-}
-
-fn reject_duplicate_field(
-    operation: &str,
-    id: &str,
-    label: &str,
-    members: &[MemberRequest],
-    extract: impl Fn(&MemberRequest) -> &str,
-) -> Result<()> {
-    let mut seen = BTreeSet::new();
-    let mut duplicates = BTreeSet::new();
-    for member in members {
-        let value = extract(member);
-        if !seen.insert(value.to_string()) {
-            duplicates.insert(value.to_string());
-        }
-    }
-    if !duplicates.is_empty() {
-        bail!(
-            "{operation} {id} has duplicate {label}: {}",
-            duplicates.into_iter().collect::<Vec<_>>().join(", ")
-        );
-    }
-    Ok(())
 }
 
 pub(super) fn export_named_for_bindings(

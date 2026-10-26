@@ -28,10 +28,13 @@ use selector_codemod::source_input::resolve_chunk_source_file;
 use selector_outcome::{
     Entity, Outcome, Placement, SelectorKind, SelectorOutcome, SelectorOutcomeReport, Severity,
 };
-use selector_resolve::{AnonymousStatement, Member, MemberSelector, SpecModule};
 use serde::Serialize;
-use source_match::{ParsedSourceMatchSelector, source_match_claim_member_selectors};
+use source_match::source_match_claim_member_selectors;
 use spec::{AnonymousStatementSelector, MemberSelectorSpec};
+use spec_resolution::{
+    anonymous_statement, member_from_source_match, member_from_spec, parse_anonymous_selector,
+    resolve_chunk, spec_module, validate_logical_module_claims,
+};
 
 /// Args for `debundle spec validate`. The spec source and package-root flags
 /// mirror `debundle run` (`--spec` / `--tree-config` + roots) so the same
@@ -222,7 +225,7 @@ fn validate_modules_against_source(
     for path in spec_modules::collect_module_files(modules_root)? {
         let module_path = spec_modules::module_path_from_file(&path, modules_root);
         let module = spec_modules::read_module_file(&path)?;
-        if let Err(error) = lowering::validate_logical_module_claims(
+        if let Err(error) = validate_logical_module_claims(
             &module_path,
             &module.members,
             &module.source_matches,
@@ -247,10 +250,7 @@ fn validate_modules_against_source(
                         (None, MemberSelectorSpec::Binding(binding)) => binding.name.clone(),
                         (None, _) => continue,
                     };
-                    members.push(Member {
-                        export_name,
-                        selector: MemberSelector::from_spec(selector),
-                    });
+                    members.push(member_from_spec(export_name, selector));
                 }
                 Err(error) => outcomes.push(invalid_outcome(
                     chunk,
@@ -264,9 +264,8 @@ fn validate_modules_against_source(
         }
         for claim in &module.source_matches {
             match source_match_claim_member_selectors(&module_path, claim) {
-                Ok(expanded) => members.extend(expanded.into_iter().map(|expanded| Member {
-                    export_name: expanded.export_name,
-                    selector: MemberSelector::SourceMatch(expanded.parsed_selector),
+                Ok(expanded) => members.extend(expanded.into_iter().map(|expanded| {
+                    member_from_source_match(expanded.export_name, expanded.parsed_selector)
                 })),
                 Err(error) => outcomes.push(invalid_outcome(
                     chunk,
@@ -288,15 +287,14 @@ fn validate_modules_against_source(
                 .selector()
                 .map_err(anyhow::Error::from)
                 .and_then(|selector| {
-                    ParsedSourceMatchSelector::parse(
+                    parse_anonymous_selector(
                         &module_path,
                         format!("<source_match needle in {module_path}>"),
                         &selector,
-                        "source_match",
                     )
                 });
             match parsed {
-                Ok(selector) => anonymous_statements.push(AnonymousStatement { index, selector }),
+                Ok(selector) => anonymous_statements.push(anonymous_statement(index, selector)),
                 Err(error) => outcomes.push(invalid_outcome(
                     chunk,
                     &module_path,
@@ -307,13 +305,10 @@ fn validate_modules_against_source(
                 )),
             }
         }
-        modules.push(SpecModule {
-            path: module_path,
-            members,
-            anonymous_statements,
-        });
+        modules.push(spec_module(module_path, members, anonymous_statements));
     }
-    let resolution = selector_resolve::Chunk::analyze(chunk, &parsed.module).resolve(&modules)?;
+    let source_chunk = selector_resolve::Chunk::analyze(chunk, &parsed.module);
+    let resolution = resolve_chunk(&source_chunk, &modules)?;
     outcomes.extend(
         resolution
             .outcomes
