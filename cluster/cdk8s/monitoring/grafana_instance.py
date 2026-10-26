@@ -87,6 +87,7 @@ _FILE_DASHBOARDS = {
         datasources={"DS_LOKI": "Loki", "DS_PROMETHEUS": "Mimir"}, folder="Network"
     ),
     "rugged-power": _FileDashboard(datasources={"DS_PROMETHEUS": "Mimir"}, folder="Nodes & Hardware"),
+    "node-memory": _FileDashboard(datasources={"DS_MIMIR": "Mimir"}, folder="Nodes & Hardware"),
     "cluster-storage-io": _FileDashboard(datasources={"DS_MIMIR": "Mimir", "DS_LOKI": "Loki"}, folder="Storage"),
     "s3-operations": _FileDashboard(datasources={"DS_MIMIR": "Mimir"}, folder="Storage"),
     "cluster-disk-usage": _FileDashboard(datasources={"DS_MIMIR": "Mimir"}, folder="Storage"),

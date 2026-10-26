@@ -209,10 +209,13 @@ def dashboard_variables(dashboard: dict[str, Any]) -> dict[str, str]:
     return values
 
 
-def expand_expression(expression: str, variables: dict[str, str]) -> str:
-    if UNRESOLVED_MACRO.search(expression):
-        raise VerificationError(f"unresolved Grafana macro in expression: {expression}")
-    expanded = expression
+def expand_expression(expression: str, variables: dict[str, str], from_ms: int, to_ms: int) -> str:
+    if to_ms <= from_ms:
+        raise VerificationError(f"invalid dashboard query range: from={from_ms}, to={to_ms}")
+    range_seconds = (to_ms - from_ms) // 1000
+    expanded = re.sub(r"\$\{__range_s\}|\$__range_s(?![A-Za-z0-9_])", str(range_seconds), expression)
+    if UNRESOLVED_MACRO.search(expanded):
+        raise VerificationError(f"unresolved Grafana macro in expression: {expanded}")
     for name, value in sorted(variables.items(), key=lambda item: len(item[0]), reverse=True):
         expanded = expanded.replace("${" + name + "}", value)
         expanded = re.sub(r"\$" + re.escape(name) + r"(?![A-Za-z0-9_])", value, expanded)
@@ -380,7 +383,7 @@ def query_panels(
             expression = target.get("expr")
             if not isinstance(expression, str):
                 raise VerificationError(f"{panel_name(panel)} target {target.get('refId', '?')} has no expr")
-            expanded = expand_expression(expression, variables)
+            expanded = expand_expression(expression, variables, from_ms, to_ms)
             datasource = datasource_for(panel, target, by_name, by_uid)
             query_target = copy.deepcopy(target)
             query_target["expr"] = expanded

@@ -361,6 +361,23 @@ spec:
 apiVersion: grafana.integreatly.org/v1beta1
 kind: GrafanaDashboard
 metadata:
+  name: node-memory
+  namespace: monitoring
+spec:
+  configMapRef:
+    key: node-memory.json
+    name: node-memory-dashboard
+  datasources:
+    - datasourceName: Mimir
+      inputName: DS_MIMIR
+  folder: Nodes & Hardware
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
   name: cluster-storage-io
   namespace: monitoring
 spec:

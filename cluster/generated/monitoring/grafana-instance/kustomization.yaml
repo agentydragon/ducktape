@@ -15,6 +15,10 @@ configMapGenerator:
     namespace: monitoring
     files:
       - rugged-power.json
+  - name: node-memory-dashboard
+    namespace: monitoring
+    files:
+      - node-memory.json
   - name: cluster-storage-io-dashboard
     namespace: monitoring
     files:

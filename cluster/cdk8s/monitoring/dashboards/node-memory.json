@@ -1,0 +1,900 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "How to read Node Memory",
+      "gridPos": {
+        "h": 5,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "The overview compares physical node capacity and Linux `MemAvailable` with running Pod container working sets and declared memory requests. `MemAvailable` is the kernel estimate of RAM available for new workloads; it is not calculated as capacity minus a Grafana working-set total.\n\nThe per-node accounting bars add to node capacity: selected largest Pods, **Other Pods** (all remaining running Pods, including namespaces outside the namespace filter), **Host / unattributed** (node used RAM minus all running Pod working sets), and **Available to Linux** (`MemAvailable`). The host remainder is signed and can be negative when cAdvisor and node memory accounting differ. It can include host processes, runtime memory, and collection/accounting gaps; it is not a pure OS bucket. Pod sizes come from kubelet working-set metrics, deduplicated by node, namespace, Pod, and container.\n\nHistory selects the six largest namespace-filtered Pods by their maximum observed working set across the selected time range (one-minute subquery samples), then holds that membership constant across the graph. Host cache, buffers, slab, and kernel charts are separate overlapping views of node memory and must not be added to the Pod breakdown. The Pod table reports configured container limits only where a current limit series exists; its missing-limit count can mean either no configured limit or a missing kube-state-metrics sample."
+      }
+    },
+    {
+      "id": 2,
+      "type": "row",
+      "title": "Current cluster snapshot",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 3,
+      "title": "Node memory overview",
+      "type": "table",
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 6
+      },
+      "datasource": "${DS_MIMIR}",
+      "description": "One row per node with current physical capacity, MemAvailable, running Pod working sets, declared running-Pod memory requests, MemoryPressure, node used RAM, and the signed host/unattributed remainder. Nodes without current node-exporter memory samples are not synthesized as zero.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "unit": "bytes",
+          "decimals": 1
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Pressure"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "Used RAM",
+            "desc": true
+          }
+        ]
+      },
+      "targets": [
+        {
+          "expr": "max by (node) (node_memory_MemTotal_bytes{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        },
+        {
+          "expr": "max by (node) (node_memory_MemAvailable_bytes{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))",
+          "format": "table",
+          "instant": true,
+          "refId": "B"
+        },
+        {
+          "expr": "(sum by (node) (sum by (node, namespace, pod) (max by (node, namespace, pod, container) (container_memory_working_set_bytes{node=~\"$node\",pod!=\"\",container!=\"\",container!=\"POD\"} and on (namespace, pod) (kube_pod_status_phase{phase=\"Running\"} == 1))))) and on (node) (max by (node) (node_memory_MemTotal_bytes{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"})))",
+          "format": "table",
+          "instant": true,
+          "refId": "C"
+        },
+        {
+          "expr": "(sum by (node) (max by (node, namespace, pod, container) (kube_pod_container_resource_requests{resource=\"memory\",unit=\"byte\",node=~\"$node\"} and on (namespace, pod) (kube_pod_status_phase{phase=\"Running\"} == 1)))) and on (node) (max by (node) (node_memory_MemTotal_bytes{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"})))",
+          "format": "table",
+          "instant": true,
+          "refId": "D"
+        },
+        {
+          "expr": "max by (node) (kube_node_status_condition{condition=\"MemoryPressure\",status=\"true\",node=~\"$node\"} and on (node) (max by (node) (node_memory_MemTotal_bytes{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"})))) or on (node) (0 * max by (node) (kube_node_status_condition{condition=\"MemoryPressure\",status=\"false\",node=~\"$node\"} and on (node) (max by (node) (node_memory_MemTotal_bytes{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"})))))",
+          "format": "table",
+          "instant": true,
+          "refId": "E"
+        },
+        {
+          "expr": "(max by (node) (node_memory_MemTotal_bytes{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))) - (max by (node) (node_memory_MemAvailable_bytes{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"})))",
+          "format": "table",
+          "instant": true,
+          "refId": "F"
+        },
+        {
+          "expr": "((max by (node) (node_memory_MemTotal_bytes{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))) - (max by (node) (node_memory_MemAvailable_bytes{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"})))) - (sum by (node) (sum by (node, namespace, pod) (max by (node, namespace, pod, container) (container_memory_working_set_bytes{node=~\"$node\",pod!=\"\",container!=\"\",container!=\"POD\"} and on (namespace, pod) (kube_pod_status_phase{phase=\"Running\"} == 1)))))",
+          "format": "table",
+          "instant": true,
+          "refId": "G"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "node",
+            "mode": "outerTabular"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time 1": true,
+              "Time 2": true,
+              "Time 3": true,
+              "Time 4": true,
+              "Time 5": true,
+              "Time 6": true,
+              "Time 7": true,
+              "node 2": true,
+              "node 3": true,
+              "node 4": true,
+              "node 5": true,
+              "node 6": true,
+              "node 7": true
+            },
+            "indexByName": {
+              "node": 0,
+              "Value #A": 1,
+              "Value #B": 2,
+              "Value #C": 3,
+              "Value #D": 4,
+              "Value #E": 5,
+              "Value #F": 6,
+              "Value #G": 7
+            },
+            "renameByName": {
+              "Value #A": "Capacity",
+              "Value #B": "Available",
+              "Value #C": "Pod working sets",
+              "Value #D": "Requests",
+              "Value #E": "Pressure",
+              "Value #F": "Used RAM",
+              "Value #G": "Host / other"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "row",
+      "title": "Current per-node accounting",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 16
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 5,
+      "title": "Memory accounting: ${node:text}",
+      "type": "barchart",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 17
+      },
+      "datasource": "${DS_MIMIR}",
+      "description": "One stacked horizontal bar per repeated node. Selected Pods are the six largest over the dashboard time range; Other Pods includes all remaining running Pods across every namespace. Host/unattributed is signed node-used RAM minus all Pod working sets and is not clamped. Available is Linux node_memory_MemAvailable_bytes.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "decimals": 1,
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "xField": "Node",
+        "groupWidth": 0.7,
+        "barWidth": 0.95,
+        "showValue": "never",
+        "stacking": "normal",
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "(label_join(((sum by (node, namespace, pod) (max by (node, namespace, pod, container) (container_memory_working_set_bytes{node=~\"$node\",pod!=\"\",container!=\"\",container!=\"POD\",namespace=~\"$namespace\"} and on (namespace, pod) (kube_pod_status_phase{phase=\"Running\"} == 1)))) and on (node, namespace, pod) topk by (node) (6, max_over_time((sum by (node, namespace, pod) (max by (node, namespace, pod, container) (container_memory_working_set_bytes{node=~\"$node\",pod!=\"\",container!=\"\",container!=\"POD\",namespace=~\"$namespace\"} and on (namespace, pod) (kube_pod_status_phase{phase=\"Running\"} == 1))))[${__range_s}s:1m] @ end()))), \"part\", \"/\", \"namespace\", \"pod\") or label_replace(((sum by (node) (sum by (node, namespace, pod) (max by (node, namespace, pod, container) (container_memory_working_set_bytes{node=~\"$node\",pod!=\"\",container!=\"\",container!=\"POD\"} and on (namespace, pod) (kube_pod_status_phase{phase=\"Running\"} == 1))))) - sum by (node) ((sum by (node, namespace, pod) (max by (node, namespace, pod, container) (container_memory_working_set_bytes{node=~\"$node\",pod!=\"\",container!=\"\",container!=\"POD\",namespace=~\"$namespace\"} and on (namespace, pod) (kube_pod_status_phase{phase=\"Running\"} == 1)))) and on (node, namespace, pod) topk by (node) (6, max_over_time((sum by (node, namespace, pod) (max by (node, namespace, pod, container) (container_memory_working_set_bytes{node=~\"$node\",pod!=\"\",container!=\"\",container!=\"POD\",namespace=~\"$namespace\"} and on (namespace, pod) (kube_pod_status_phase{phase=\"Running\"} == 1))))[${__range_s}s:1m] @ end())))), \"part\", \"Other Pods\", \"node\", \".*\") or label_replace((((max by (node) (node_memory_MemTotal_bytes{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))) - (max by (node) (node_memory_MemAvailable_bytes{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"})))) - (sum by (node) (sum by (node, namespace, pod) (max by (node, namespace, pod, container) (container_memory_working_set_bytes{node=~\"$node\",pod!=\"\",container!=\"\",container!=\"POD\"} and on (namespace, pod) (kube_pod_status_phase{phase=\"Running\"} == 1)))))), \"part\", \"Host / unattributed\", \"node\", \".*\") or label_replace((max by (node) (node_memory_MemAvailable_bytes{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))), \"part\", \"Available to Linux (MemAvailable)\", \"node\", \".*\")) and on (node) (max by (node) (node_memory_MemTotal_bytes{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"})))",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "groupingToMatrix",
+          "options": {
+            "columnField": "part",
+            "rowField": "node",
+            "valueField": "Value",
+            "emptyValue": "null"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {},
+            "indexByName": {
+              "node\\part": 0
+            },
+            "renameByName": {
+              "node\\part": "Node"
+            }
+          }
+        }
+      ],
+      "repeat": "node",
+      "repeatDirection": "h",
+      "maxPerRow": 2,
+      "interval": "1m"
+    },
+    {
+      "id": 6,
+      "title": "Running Pod memory details",
+      "type": "table",
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 25
+      },
+      "datasource": "${DS_MIMIR}",
+      "description": "One row per running Pod, scoped by node and namespace selectors. Working set, declared requests, and configured limits are sums across containers. A blank configured-limit cell means no current aggregate limit series; the adjacent count identifies containers without a current limit series, which may mean either an unset limit or a missing kube-state-metrics sample. Node RAM percentage uses physical node capacity. The outer join keeps Pods with missing requests or limits.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "decimals": 1
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Node RAM %"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Containers without limit"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "Pod working set",
+            "desc": true
+          }
+        ]
+      },
+      "targets": [
+        {
+          "expr": "(label_join(sum by (node, namespace, pod) (max by (node, namespace, pod, container) (container_memory_working_set_bytes{node=~\"$node\",pod!=\"\",container!=\"\",container!=\"POD\",namespace=~\"$namespace\"} and on (namespace, pod) (kube_pod_status_phase{phase=\"Running\"} == 1))), \"pod_key\", \"/\", \"node\", \"namespace\", \"pod\")) and on (node) (max by (node) (node_memory_MemTotal_bytes{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"})))",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        },
+        {
+          "expr": "(label_join(sum by (node, namespace, pod) (max by (node, namespace, pod, container) (kube_pod_container_resource_requests{resource=\"memory\",unit=\"byte\",node=~\"$node\",namespace=~\"$namespace\"} and on (namespace, pod) (kube_pod_status_phase{phase=\"Running\"} == 1))), \"pod_key\", \"/\", \"node\", \"namespace\", \"pod\")) and on (node) (max by (node) (node_memory_MemTotal_bytes{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"})))",
+          "format": "table",
+          "instant": true,
+          "refId": "B"
+        },
+        {
+          "expr": "(label_join(sum by (node, namespace, pod) (max by (node, namespace, pod, container) (kube_pod_container_resource_limits{resource=\"memory\",unit=\"byte\",node=~\"$node\",namespace=~\"$namespace\"} and on (namespace, pod) (kube_pod_status_phase{phase=\"Running\"} == 1)) and on (namespace, pod) (kube_pod_status_phase{phase=\"Running\"} == 1)), \"pod_key\", \"/\", \"node\", \"namespace\", \"pod\")) and on (node) (max by (node) (node_memory_MemTotal_bytes{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"})))",
+          "format": "table",
+          "instant": true,
+          "refId": "C"
+        },
+        {
+          "expr": "(label_join(count by (node, namespace, pod) ((max by (node, namespace, pod, container) (container_memory_working_set_bytes{node=~\"$node\",pod!=\"\",container!=\"\",container!=\"POD\",namespace=~\"$namespace\"} and on (namespace, pod) (kube_pod_status_phase{phase=\"Running\"} == 1))) unless on (node, namespace, pod, container) (max by (node, namespace, pod, container) (kube_pod_container_resource_limits{resource=\"memory\",unit=\"byte\",node=~\"$node\",namespace=~\"$namespace\"} and on (namespace, pod) (kube_pod_status_phase{phase=\"Running\"} == 1)) and on (namespace, pod) (kube_pod_status_phase{phase=\"Running\"} == 1))), \"pod_key\", \"/\", \"node\", \"namespace\", \"pod\")) and on (node) (max by (node) (node_memory_MemTotal_bytes{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"})))",
+          "format": "table",
+          "instant": true,
+          "refId": "D"
+        },
+        {
+          "expr": "label_join(100 * (sum by (node, namespace, pod) (max by (node, namespace, pod, container) (container_memory_working_set_bytes{node=~\"$node\",pod!=\"\",container!=\"\",container!=\"POD\",namespace=~\"$namespace\"} and on (namespace, pod) (kube_pod_status_phase{phase=\"Running\"} == 1)))) / on (node) group_left() (max by (node) (node_memory_MemTotal_bytes{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))), \"pod_key\", \"/\", \"node\", \"namespace\", \"pod\")",
+          "format": "table",
+          "instant": true,
+          "refId": "E"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "pod_key",
+            "mode": "outerTabular"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "pod_key": true,
+              "Time 1": true,
+              "Time 2": true,
+              "Time 3": true,
+              "Time 4": true,
+              "Time 5": true,
+              "node 2": true,
+              "node 3": true,
+              "node 4": true,
+              "node 5": true,
+              "namespace 2": true,
+              "namespace 3": true,
+              "namespace 4": true,
+              "namespace 5": true,
+              "pod 2": true,
+              "pod 3": true,
+              "pod 4": true,
+              "pod 5": true
+            },
+            "indexByName": {
+              "node 1": 0,
+              "namespace 1": 1,
+              "pod 1": 2,
+              "Value #A": 3,
+              "Value #B": 4,
+              "Value #C": 5,
+              "Value #D": 6,
+              "Value #E": 7
+            },
+            "renameByName": {
+              "Value #A": "Pod working set",
+              "Value #B": "Request",
+              "Value #C": "Configured limit",
+              "Value #D": "Containers without limit",
+              "Value #E": "Node RAM %",
+              "node 1": "node",
+              "namespace 1": "namespace",
+              "pod 1": "pod"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "row",
+      "title": "Memory history",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 38
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 8,
+      "title": "Pod + host/unattributed working sets: ${node:text}",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 0,
+        "y": 39
+      },
+      "datasource": "${DS_MIMIR}",
+      "description": "Stacked Pod working sets and signed host/unattributed remainder, with physical node capacity as a non-stacked reference. Largest Pods are selected by maximum one-minute samples over the selected dashboard range and the same membership is held at every graph step. Other Pods includes all running Pod working sets outside the selected named series.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 25,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Node capacity"
+            },
+            "properties": [
+              {
+                "id": "custom.stacking",
+                "value": {
+                  "mode": "none",
+                  "group": "B"
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 2
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "gray"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "calcs": ["lastNotNull", "max"],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "sortBy": "Max",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "((sum by (node, namespace, pod) (max by (node, namespace, pod, container) (container_memory_working_set_bytes{node=~\"$node\",pod!=\"\",container!=\"\",container!=\"POD\",namespace=~\"$namespace\"} and on (namespace, pod) (kube_pod_status_phase{phase=\"Running\"} == 1)))) and on (node, namespace, pod) topk by (node) (6, max_over_time((sum by (node, namespace, pod) (max by (node, namespace, pod, container) (container_memory_working_set_bytes{node=~\"$node\",pod!=\"\",container!=\"\",container!=\"POD\",namespace=~\"$namespace\"} and on (namespace, pod) (kube_pod_status_phase{phase=\"Running\"} == 1))))[${__range_s}s:1m] @ end()))) and on (node) (max by (node) (node_memory_MemTotal_bytes{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"})))",
+          "refId": "A",
+          "legendFormat": "{{namespace}}/{{pod}}"
+        },
+        {
+          "expr": "((sum by (node) (sum by (node, namespace, pod) (max by (node, namespace, pod, container) (container_memory_working_set_bytes{node=~\"$node\",pod!=\"\",container!=\"\",container!=\"POD\"} and on (namespace, pod) (kube_pod_status_phase{phase=\"Running\"} == 1))))) - sum by (node) ((sum by (node, namespace, pod) (max by (node, namespace, pod, container) (container_memory_working_set_bytes{node=~\"$node\",pod!=\"\",container!=\"\",container!=\"POD\",namespace=~\"$namespace\"} and on (namespace, pod) (kube_pod_status_phase{phase=\"Running\"} == 1)))) and on (node, namespace, pod) topk by (node) (6, max_over_time((sum by (node, namespace, pod) (max by (node, namespace, pod, container) (container_memory_working_set_bytes{node=~\"$node\",pod!=\"\",container!=\"\",container!=\"POD\",namespace=~\"$namespace\"} and on (namespace, pod) (kube_pod_status_phase{phase=\"Running\"} == 1))))[${__range_s}s:1m] @ end())))) and on (node) (max by (node) (node_memory_MemTotal_bytes{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"})))",
+          "refId": "B",
+          "legendFormat": "Other Pods"
+        },
+        {
+          "expr": "(((max by (node) (node_memory_MemTotal_bytes{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))) - (max by (node) (node_memory_MemAvailable_bytes{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"})))) - (sum by (node) (sum by (node, namespace, pod) (max by (node, namespace, pod, container) (container_memory_working_set_bytes{node=~\"$node\",pod!=\"\",container!=\"\",container!=\"POD\"} and on (namespace, pod) (kube_pod_status_phase{phase=\"Running\"} == 1)))))) and on (node) (max by (node) (node_memory_MemTotal_bytes{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"})))",
+          "refId": "C",
+          "legendFormat": "Host / unattributed"
+        },
+        {
+          "expr": "max by (node) (node_memory_MemTotal_bytes{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))",
+          "refId": "D",
+          "legendFormat": "Node capacity"
+        }
+      ],
+      "repeat": "node",
+      "repeatDirection": "h",
+      "maxPerRow": 2
+    },
+    {
+      "id": 9,
+      "title": "Linux available RAM history",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 49
+      },
+      "datasource": "${DS_MIMIR}",
+      "description": "node_memory_MemAvailable_bytes, the kernel estimate of memory available to new workloads. This is not calculated as node capacity minus a Grafana container working-set total.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "min": 0,
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "max by (node) (node_memory_MemAvailable_bytes{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))",
+          "refId": "A",
+          "legendFormat": "{{node}}"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "MemoryPressure state (0 = false, 1 = true)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 57
+      },
+      "datasource": "${DS_MIMIR}",
+      "description": "Kubernetes node MemoryPressure condition for nodes with current node-exporter memory samples. The false series is represented as zero only when kube-state-metrics reports the false condition; absent node or condition samples are not synthesized.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "max": 1,
+          "decimals": 0,
+          "custom": {
+            "drawStyle": "stepAfter",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "max by (node) (kube_node_status_condition{condition=\"MemoryPressure\",status=\"true\",node=~\"$node\"} and on (node) (max by (node) (node_memory_MemTotal_bytes{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"})))) or on (node) (0 * max by (node) (kube_node_status_condition{condition=\"MemoryPressure\",status=\"false\",node=~\"$node\"} and on (node) (max by (node) (node_memory_MemTotal_bytes{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"})))))",
+          "refId": "A",
+          "legendFormat": "{{node}}"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "row",
+      "title": "Host memory details \u00b7 overlapping views",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 64
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 12,
+      "title": "Host cache and buffers \u00b7 overlaps Pod accounting",
+      "type": "table",
+      "gridPos": {
+        "h": 11,
+        "w": 24,
+        "x": 0,
+        "y": 65
+      },
+      "datasource": "${DS_MIMIR}",
+      "description": "Current node-exporter cache and buffers gauges. These host views can overlap cAdvisor working sets and are not separate buckets to add to the Pod accounting bars.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "expr": "max by (node) (node_memory_Cached_bytes{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        },
+        {
+          "expr": "max by (node) (node_memory_Buffers_bytes{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))",
+          "format": "table",
+          "instant": true,
+          "refId": "B"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "node",
+            "mode": "outerTabular"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time 1": true,
+              "Time 2": true,
+              "node 2": true
+            },
+            "indexByName": {
+              "node": 0,
+              "Value #A": 1,
+              "Value #B": 2
+            },
+            "renameByName": {
+              "Value #A": "Cached",
+              "Value #B": "Buffers"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "title": "Host slab and kernel memory \u00b7 overlaps Pod accounting",
+      "type": "table",
+      "gridPos": {
+        "h": 11,
+        "w": 24,
+        "x": 0,
+        "y": 76
+      },
+      "datasource": "${DS_MIMIR}",
+      "description": "Current slab, reclaimable and unreclaimable slab, kernel stack, page tables, vmalloc, and per-CPU gauges from node-exporter. Slab contains its reclaimable and unreclaimable components; all these host metrics overlap the broader Pod/host memory accounting and must not be added together as disjoint buckets.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "expr": "max by (node) (node_memory_Slab_bytes{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        },
+        {
+          "expr": "max by (node) (node_memory_SReclaimable_bytes{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))",
+          "format": "table",
+          "instant": true,
+          "refId": "B"
+        },
+        {
+          "expr": "max by (node) (node_memory_SUnreclaim_bytes{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))",
+          "format": "table",
+          "instant": true,
+          "refId": "C"
+        },
+        {
+          "expr": "max by (node) (node_memory_KernelStack_bytes{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))",
+          "format": "table",
+          "instant": true,
+          "refId": "D"
+        },
+        {
+          "expr": "max by (node) (node_memory_PageTables_bytes{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))",
+          "format": "table",
+          "instant": true,
+          "refId": "E"
+        },
+        {
+          "expr": "max by (node) (node_memory_VmallocUsed_bytes{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))",
+          "format": "table",
+          "instant": true,
+          "refId": "F"
+        },
+        {
+          "expr": "max by (node) (node_memory_Percpu_bytes{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))",
+          "format": "table",
+          "instant": true,
+          "refId": "G"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "node",
+            "mode": "outerTabular"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time 1": true,
+              "Time 2": true,
+              "Time 3": true,
+              "Time 4": true,
+              "Time 5": true,
+              "Time 6": true,
+              "Time 7": true,
+              "node 2": true,
+              "node 3": true,
+              "node 4": true,
+              "node 5": true,
+              "node 6": true,
+              "node 7": true
+            },
+            "indexByName": {
+              "node": 0,
+              "Value #A": 1,
+              "Value #B": 2,
+              "Value #C": 3,
+              "Value #D": 4,
+              "Value #E": 5,
+              "Value #F": 6,
+              "Value #G": 7
+            },
+            "renameByName": {
+              "Value #A": "Slab",
+              "Value #B": "Reclaimable slab",
+              "Value #C": "Unreclaimable slab",
+              "Value #D": "Kernel stack",
+              "Value #E": "Page tables",
+              "Value #F": "Vmalloc used",
+              "Value #G": "Per-CPU"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "refresh": "1m",
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": ["cluster", "memory", "nodes", "kubernetes"],
+  "templating": {
+    "list": [
+      {
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": ["$__all"]
+        },
+        "datasource": "${DS_MIMIR}",
+        "definition": "query_result(max by (node) (max by (node) (node_memory_MemTotal_bytes{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"}))))",
+        "includeAll": true,
+        "allValue": ".*",
+        "label": "Node",
+        "multi": true,
+        "name": "node",
+        "query": "query_result(max by (node) (max by (node) (node_memory_MemTotal_bytes{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"}))))",
+        "refresh": 2,
+        "regex": "/node=\"([^\"]+)\"/",
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": ["$__all"]
+        },
+        "datasource": "${DS_MIMIR}",
+        "definition": "query_result(max by (namespace) (container_memory_working_set_bytes{node=~\"$node\",container!=\"\",container!=\"POD\"} and on (namespace, pod) (kube_pod_status_phase{phase=\"Running\"} == 1)))",
+        "includeAll": true,
+        "allValue": ".*",
+        "label": "Namespace focus",
+        "multi": true,
+        "name": "namespace",
+        "query": "query_result(max by (namespace) (container_memory_working_set_bytes{node=~\"$node\",container!=\"\",container!=\"POD\"} and on (namespace, pod) (kube_pod_status_phase{phase=\"Running\"} == 1)))",
+        "refresh": 2,
+        "sort": 1,
+        "type": "query",
+        "regex": "/namespace=\"([^\"]+)\"/"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Node Memory",
+  "uid": "node-memory",
+  "version": 1,
+  "weekStart": ""
+}
