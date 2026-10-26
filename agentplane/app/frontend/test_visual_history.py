@@ -383,7 +383,7 @@ async def test_dispatcher_queued_while_sandbox_wakes(
     await expect(row.locator(".agentplane-command-light")).to_have_count(4)
     await expect(row.get_by_role("button", name="Retry")).to_have_count(0)
     await expect(row.get_by_role("button", name="Cancel")).to_have_count(0)
-    await view.capture(name="wake_composer_placeholder")
+    await view.capture(name=f"{view.capture_name}_wake_composer_placeholder")
     await page.get_by_role("textbox", name="Message").fill("Please wake the Sandbox and continue.")
     await expect(page.get_by_role("button", name="Send")).to_be_enabled()
     await view.capture()
