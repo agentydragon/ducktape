@@ -28,6 +28,12 @@ replacement. Syntax placement must agree with the validated assignment, includin
 whole-statement moves and repeated declarations. Emission consumes an immutable
 validated plan.
 
+When browser output is configured, reconstruction also resolves the HTML module
+entries and preloads against the retained chunks, prepares the bootstrap and
+rewritten HTML, and enumerates copied assets. Invalid loading topology rejects
+the plan before any accepted output is written, including during a dry run.
+The browser writer materializes those decisions without rediscovering entries.
+
 ## Entities
 
 An **entity** is one thing a spec places in a chunk: a module member, a

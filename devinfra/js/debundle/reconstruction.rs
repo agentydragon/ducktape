@@ -13,6 +13,11 @@ use serde::Serialize;
 use validate_emitted_exports::validate_emitted_exports;
 use vendor::{VendorResolutionPlan, validate_partial_swap_consumers, write_planned_vendor_outputs};
 
+#[path = "artifacts/browser_harness_plan.rs"]
+pub mod browser_harness_plan;
+
+use browser_harness_plan::BrowserHarnessPlan;
+
 /// A `define_logical_module` member whose `binding.name` did not
 /// resolve to a top-level declaration in the chunk. Collected across chunks
 /// and rejected at final validation before accepted output is written.
@@ -31,6 +36,7 @@ pub struct ReconstructionPlan {
     files: EmissionFiles,
     vendor: VendorResolutionPlan,
     unresolved_claims: Vec<UnmatchedSpecClaim>,
+    browser_harness: Option<BrowserHarnessPlan>,
 }
 
 impl ReconstructionPlan {
@@ -38,12 +44,19 @@ impl ReconstructionPlan {
         files: EmissionFiles,
         vendor: VendorResolutionPlan,
         unresolved_claims: Vec<UnmatchedSpecClaim>,
-    ) -> Self {
-        Self {
+        browser_options: Option<&spec::EmitBrowserHarnessConfig>,
+    ) -> Result<Self> {
+        let browser_harness = browser_options
+            .map(|options| {
+                BrowserHarnessPlan::prepare(files.files(), &vendor.full_swap_chunk_ids(), options)
+            })
+            .transpose()?;
+        Ok(Self {
             files,
             vendor,
             unresolved_claims,
-        }
+            browser_harness,
+        })
     }
 
     /// Validate the exact reconstructed syntax after all body transformations.
@@ -58,6 +71,7 @@ impl ReconstructionPlan {
             files: self.files,
             vendor: self.vendor,
             excluded_chunk_ids,
+            browser_harness: self.browser_harness,
         })
     }
 }
@@ -68,6 +82,7 @@ pub struct ValidatedPlan {
     files: EmissionFiles,
     vendor: VendorResolutionPlan,
     excluded_chunk_ids: BTreeSet<ChunkId>,
+    browser_harness: Option<BrowserHarnessPlan>,
 }
 
 impl ValidatedPlan {
@@ -77,6 +92,10 @@ impl ValidatedPlan {
 
     pub fn excluded_chunk_ids(&self) -> &BTreeSet<ChunkId> {
         &self.excluded_chunk_ids
+    }
+
+    pub fn browser_harness(&self) -> Option<&BrowserHarnessPlan> {
+        self.browser_harness.as_ref()
     }
 
     /// Write only the replacement assets belonging to this accepted program.

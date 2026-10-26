@@ -234,16 +234,24 @@ rust_test(
 
 rust_library(
     name = "reconstruction",
-    srcs = ["reconstruction.rs"],
+    srcs = [
+        "artifacts/browser_harness_plan.rs",
+        "reconstruction.rs",
+    ],
+    compile_data = ["artifacts/harness_monitor.html"],
     crate_root = "reconstruction.rs",
     edition = "2024",
     deps = [
         ":artifact",
+        ":output_layout",
         ":spec",
         ":validate_emitted_exports",
         ":vendor",
         "@crates//:anyhow",
+        "@crates//:lol_html",
         "@crates//:serde",
+        "@crates//:serde_json",
+        "@crates//:url",
     ],
 )
 
@@ -392,20 +400,16 @@ rust_test(
 rust_library(
     name = "emit_harness",
     srcs = ["artifacts/emit_harness.rs"],
-    compile_data = ["artifacts/harness_monitor.html"],
     crate_root = "artifacts/emit_harness.rs",
     edition = "2024",
     deps = [
         ":artifact",
         ":output_layout",
         ":reconstruction",
-        ":spec",
         ":write_tree",
         "@crates//:anyhow",
-        "@crates//:lol_html",
         "@crates//:serde",
         "@crates//:serde_json",
-        "@crates//:url",
     ],
 )
 

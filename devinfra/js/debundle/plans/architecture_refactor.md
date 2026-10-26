@@ -27,20 +27,20 @@ This table records the agreed architecture vocabulary. The status column
 separates landed representations from target boundaries that still need
 implementation and reader cutover.
 
-| Responsibility                                              | Agreed target vocabulary                           | Status                                                              |
-| ----------------------------------------------------------- | -------------------------------------------------- | ------------------------------------------------------------------- |
-| Parsed program and shared syntax indexes                    | `SourceProgram`                                    | Landed                                                              |
-| Binding identity independent of spelling and placement      | `BindingId`, retaining chunk scope and SWC hygiene | Landed representation; reader coverage continues                    |
-| Identity of an original statement                           | `StatementId`                                      | Required Stage B work                                               |
-| Identity of a movable source fragment                       | `SourceUnitId`                                     | Required Stage B work                                               |
-| Reads, writes, effects, and ordering constraints            | `DependencyGraph` over source units                | Target boundary; active reader cutover                              |
-| Units proven to require co-location                         | `AtomicGroup`                                      | Target boundary; PR #12060                                          |
-| Explicit author contracts and runtime assumptions           | `AnalysisAssumptions`                              | Target boundary; PR #12059                                          |
-| Dense identity for an output module                         | `ModuleId(pub usize)`                              | Landed as one handle with transparent numeric serde representation  |
-| Requested output destinations                               | `ModuleAssignment`                                 | Landed                                                              |
-| Files, imports, exports, replacements, and evaluation order | `ReconstructionPlan`                               | Target boundary                                                     |
-| Plan accepted by the shared validator                       | `ValidatedPlan`                                    | Target boundary; PR #12054 supplies immutable assignment validation |
-| Final lowered files and matching output indexes             | `EmissionFiles`                                    | Current representation                                              |
+| Responsibility                                              | Agreed target vocabulary                           | Status                                                                |
+| ----------------------------------------------------------- | -------------------------------------------------- | --------------------------------------------------------------------- |
+| Parsed program and shared syntax indexes                    | `SourceProgram`                                    | Landed                                                                |
+| Binding identity independent of spelling and placement      | `BindingId`, retaining chunk scope and SWC hygiene | Current SWC identity is chunk scoped; named handle remains Stage B    |
+| Identity of an original statement                           | `StatementId`                                      | Required Stage B work                                                 |
+| Identity of a movable source fragment                       | `SourceUnitId`                                     | Required Stage B work                                                 |
+| Reads, writes, effects, and ordering constraints            | `DependencyGraph` over source units                | Target boundary; active reader cutover                                |
+| Units proven to require co-location                         | `AtomicGroup`                                      | Target boundary; PR #12060                                            |
+| Explicit author contracts and runtime assumptions           | `AnalysisAssumptions`                              | Target boundary; PR #12059                                            |
+| Dense identity for an output module                         | `ModuleId(pub usize)`                              | Landed as one handle with transparent numeric serde representation    |
+| Requested output destinations                               | `ModuleAssignment`                                 | Landed                                                                |
+| Files, imports, exports, replacements, and evaluation order | `ReconstructionPlan`                               | Target boundary                                                       |
+| Plan accepted by the shared validator                       | `ValidatedPlan`                                    | Landed; output syntax and replacements are immutable after acceptance |
+| Final lowered files and matching output indexes             | `EmissionFiles`                                    | Current representation                                                |
 
 Use each name for its responsibility. Keep binding identity, original statement
 identity, movable source-unit identity, atomic groups, and output modules
@@ -85,8 +85,6 @@ distinct `SourceUnitIndex` report arena, and maps `OwnerGraph` to
 `DependencyGraph`; these identities must not be collapsed into `NodeId`.
 Definitions and live consumers must agree without aliases or abandoned readers.
 
-- PR #12054: immutable validated assignment required by lowering; green, with
-  child PR #12061 merged into its branch.
 - PR #12060: atomic-group identity and consumer cutover remain active.
 
 ### C. Source preparation and exact resolution — in progress
@@ -114,7 +112,8 @@ Use one authoritative assignment and a concrete plan for residual placement,
 imports, re-exports, readable names, vendor replacement, and loading topology.
 Emission must not independently rediscover placement or linkage decisions.
 
-- PR #12062: canonical catalogue work belongs to this stage.
+- PR #12067: derive syntax placement from the accepted assignment and verify
+  its agreement with the canonical binding catalogue and whole-statement claims.
 
 ### F. Validation and emission
 

@@ -333,8 +333,13 @@ pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Re
 
     // Freeze the exact final syntax and replacement decisions before any
     // accepted-program output is written. Diagnostic reports may already exist.
-    let validated_plan =
-        ReconstructionPlan::new(emission_files, vendor_plan, unmatched_spec_claims).validate()?;
+    let validated_plan = ReconstructionPlan::new(
+        emission_files,
+        vendor_plan,
+        unmatched_spec_claims,
+        spec.emit_browser_harness.as_ref(),
+    )?
+    .validate()?;
     let emission_files = validated_plan.files();
     let excluded_chunk_ids = validated_plan.excluded_chunk_ids();
 
@@ -375,12 +380,9 @@ pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Re
         })?;
     }
 
-    if !options.dry_run
-        && let Some(cfg) = &spec.emit_browser_harness
-    {
+    if !options.dry_run && validated_plan.browser_harness().is_some() {
         emit_browser_harness(
             &validated_plan,
-            cfg,
             &emitted_chunk_records,
             &decomposition_by_chunk,
         )?;

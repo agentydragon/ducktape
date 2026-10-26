@@ -2589,14 +2589,18 @@ validation, and writing:
   cross-chunk naming, pass-through directive rewrites, vendor residual stripping,
   and dead import/export pruning. All construction paths consult the same vendor
   oracle. Fully swapped chunks are excluded from emission; replacement wrappers
-  and facades remain planned outputs.
+  and facades remain planned outputs. For browser output, prepare the HTML entry
+  and preload targets, bootstrap, rewritten HTML, and asset destinations before
+  final acceptance, including in dry runs.
 - **Validate.** Consume the final `ReconstructionPlan`, checking synthesized
   partial-swap consumers, duplicate public exports, and unresolved claims. Return
   an immutable `ValidatedPlan` only on acceptance. These final checks supplement
   assignment realizability and input-space vendor checks.
 - **Write.** Tree and browser writers require `ValidatedPlan`; vendor assets use
   the same accepted plan. No body transformation runs after validation. Rejection
-  reports are diagnostic output and do not require an accepted plan.
+  reports are diagnostic output and do not require an accepted plan. The browser
+  writer copies the planned assets and writes the prepared HTML and bootstrap;
+  it does not resolve loading topology or parse source HTML.
 
 Preparation returns `SourceProgram`, which owns prepared chunks and their
 matching indexes. Resolution and vendor planning borrow it immutably. Lowering

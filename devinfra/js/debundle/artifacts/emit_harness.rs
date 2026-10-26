@@ -1,62 +1,17 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::{cell::RefCell, rc::Rc};
 
-use anyhow::{Context, Result, bail};
-use lol_html::{RewriteStrSettings, element, end, end_tag, html_content::ContentType, rewrite_str};
-use serde::{Deserialize, Serialize};
-use url::Url;
+use anyhow::{Context, Result};
+use serde::Serialize;
 
 use artifact::{
-    ArtifactChunkRecord, ChunkBundle, ChunkDecompositionOutput, ChunkId, OutputMetrics,
-    chunk_id_for_js_path, get_chunk_entry_path, materialize_artifact_scripts,
-    module_path_from_path, normalize_module_path, path_from_module_path, write_json,
+    ArtifactChunkRecord, ChunkDecompositionOutput, ChunkId, OutputMetrics,
+    materialize_artifact_scripts, module_path_from_path, write_json,
 };
 use output_layout::DebundleOutputLayout;
 use reconstruction::ValidatedPlan;
-use spec::EmitBrowserHarnessConfig;
 use write_tree::write_common_emission_reports;
-
-/// Harness-relative module specifier for a chunk's emitted entry file,
-/// resolved from a snapshot `*.js` script path.
-fn runtime_js_href(artifact: &ChunkBundle, js_path: &str, app_root: &Path) -> Result<String> {
-    let chunk_name = js_path
-        .strip_suffix(".js")
-        .with_context(|| format!("Expected a .js path: {js_path}"))?;
-    let chunk_id = artifact
-        .chunk_table
-        .get(chunk_name)
-        .with_context(|| format!("Unknown chunk: {chunk_name}"))?;
-    let entry_file = get_chunk_entry_path(artifact, chunk_id)
-        .with_context(|| format!("Missing chunk entry file for {chunk_name}"))?;
-    let entry_path = app_root
-        .join(chunk_name.split('/').collect::<PathBuf>())
-        .join(entry_file.split('/').collect::<PathBuf>());
-    Ok(artifact::relative_module_specifier(app_root, &entry_path))
-}
-
-#[derive(Debug, Deserialize)]
-struct AssetSummary {
-    #[serde(rename = "entryPoints")]
-    entry_points: Option<EntryPoints>,
-}
-
-#[derive(Debug, Deserialize)]
-struct EntryPoints {
-    html: Option<String>,
-}
-
-#[derive(Debug, Clone)]
-struct HtmlEntry {
-    path: String,
-}
-
-#[derive(Debug, Clone, Default)]
-struct HtmlEntries {
-    module_scripts: Vec<HtmlEntry>,
-    module_preloads: Vec<HtmlEntry>,
-}
 
 /// `chunk_records` carries the emission set only (the caller drops
 /// records of excluded chunks); the validated plan identifies chunks
@@ -66,60 +21,15 @@ struct HtmlEntries {
 /// snapshot manifest never contained.
 pub fn emit_browser_harness(
     plan: &ValidatedPlan,
-    options: &EmitBrowserHarnessConfig,
     chunk_records: &[ArtifactChunkRecord],
     decomposition_by_chunk: &HashMap<ChunkId, ChunkDecompositionOutput>,
 ) -> Result<()> {
+    let browser = plan
+        .browser_harness()
+        .context("validated program has no browser harness")?;
     let files = plan.files();
     let excluded_chunk_ids = plan.excluded_chunk_ids();
-    let artifact = files.files();
-    let asset_summary_raw = fs::read_to_string(&options.asset_summary_path)
-        .with_context(|| format!("reading {}", options.asset_summary_path.display()))?;
-    let asset_summary_value: serde_json::Value = serde_json::from_str(&asset_summary_raw)?;
-    let asset_summary: AssetSummary = serde_json::from_str(&asset_summary_raw)?;
-    let html_path = asset_summary
-        .entry_points
-        .and_then(|entry_points| entry_points.html)
-        .unwrap_or_else(|| "index.html".to_string());
-    let source_html_path = options
-        .snapshot_root
-        .join(path_from_module_path(&html_path));
-    let source_html = fs::read_to_string(&source_html_path)
-        .with_context(|| format!("reading {}", source_html_path.display()))?;
-    let html_entries = collect_html_entries(&source_html)?;
-    let script_entries = html_entries.module_scripts;
-    let preload_entries = html_entries
-        .module_preloads
-        .into_iter()
-        .filter(|entry| entry.path.ends_with(".js"))
-        .collect::<Vec<_>>();
-    let mut entry_scripts = Vec::<String>::new();
-    for entry in &script_entries {
-        if entry.path.ends_with(".js") && !entry_scripts.contains(&entry.path) {
-            entry_scripts.push(entry.path.clone());
-        }
-    }
-    if entry_scripts.is_empty() {
-        bail!(
-            "No module script entry found in {}",
-            source_html_path.display()
-        );
-    }
-    for path in entry_scripts
-        .iter()
-        .chain(preload_entries.iter().map(|entry| &entry.path))
-    {
-        let chunk_name = chunk_id_for_js_path(path)?;
-        let chunk_id = artifact
-            .chunk_table
-            .get(&chunk_name)
-            .with_context(|| format!("Snapshot manifest does not contain chunk {chunk_name}"))?;
-        if !artifact.has_chunk(chunk_id) || excluded_chunk_ids.contains(&chunk_id) {
-            bail!("Snapshot manifest does not contain chunk {chunk_name}");
-        }
-    }
-
-    let layout = DebundleOutputLayout::new(&options.out_dir);
+    let layout = DebundleOutputLayout::new(&browser.out_dir);
     let app_root = layout.app_root();
     layout.prepare()?;
     let materialized = materialize_artifact_scripts(
@@ -129,21 +39,17 @@ pub fn emit_browser_harness(
         decomposition_by_chunk,
         excluded_chunk_ids,
     )?;
-    let copied_assets = copy_snapshot_assets(&options.snapshot_root, &app_root)?;
-    let bootstrap = build_bootstrap(artifact, &entry_scripts, &app_root)?;
-    let index_html = rewrite_index_html(artifact, &source_html, &app_root)?;
+    let copied_assets =
+        copy_snapshot_assets(&browser.snapshot_root, &app_root, &browser.asset_paths)?;
 
-    fs::write(app_root.join("index.html"), index_html)?;
-    fs::write(app_root.join("bootstrap.js"), bootstrap)?;
+    fs::write(app_root.join("index.html"), &browser.index_html)?;
+    fs::write(app_root.join("bootstrap.js"), &browser.bootstrap)?;
     write_common_emission_reports(&layout, plan, chunk_records, decomposition_by_chunk)?;
     let runtime = HarnessRuntimeReport {
         app_root: format!("../{}", output_layout::APP_DIR),
         copied_assets,
-        entry_scripts,
-        module_preloads: preload_entries
-            .iter()
-            .map(|entry| entry.path.clone())
-            .collect(),
+        entry_scripts: browser.entry_scripts.clone(),
+        module_preloads: browser.module_preloads.clone(),
         generated: HarnessGeneratedManifest {
             bootstrap: module_path_from_path(&PathBuf::from("bootstrap.js")),
             index_html: module_path_from_path(&PathBuf::from("index.html")),
@@ -159,15 +65,15 @@ pub fn emit_browser_harness(
     write_json(
         layout.source_assets_report(),
         &SourceAssetsReport {
-            source_path: module_path_from_path(&options.asset_summary_path),
-            asset_summary: asset_summary_value,
+            source_path: module_path_from_path(&browser.asset_summary_path),
+            asset_summary: &browser.asset_summary,
         },
     )?;
     write_json(
         layout.provenance_report(),
         &ProvenanceReport {
-            source_html_path: module_path_from_path(&source_html_path),
-            source_html,
+            source_html_path: module_path_from_path(&browser.source_html_path),
+            source_html: &browser.source_html,
         },
     )?;
     Ok(())
@@ -194,289 +100,33 @@ struct HarnessOutputReport {
 }
 
 #[derive(Serialize)]
-struct SourceAssetsReport {
+struct SourceAssetsReport<'a> {
     source_path: String,
-    asset_summary: serde_json::Value,
+    asset_summary: &'a serde_json::Value,
 }
 
 #[derive(Serialize)]
-struct ProvenanceReport {
+struct ProvenanceReport<'a> {
     source_html_path: String,
-    source_html: String,
+    source_html: &'a str,
 }
 
-fn build_bootstrap(
-    artifact: &ChunkBundle,
-    entry_scripts: &[String],
-    app_root: &Path,
-) -> Result<String> {
-    let mut lines = vec![
-        "// Generated by //devinfra/js/debundle:debundle.".to_string(),
-        "// Loads original HTML module script entries from split output.".to_string(),
-        String::new(),
-    ];
-    for entry_script in entry_scripts {
-        let href = runtime_js_href(artifact, entry_script, app_root)?;
-        lines.push(format!("import {};", serde_json::to_string(&href)?));
-    }
-    lines.push(String::new());
-    Ok(lines.join("\n"))
-}
-
-fn rewrite_index_html(
-    artifact: &ChunkBundle,
-    source_html: &str,
-    app_root: &Path,
-) -> Result<String> {
-    let comment = "Generated local harness: loads generated runtime JavaScript from the transformed output tree.";
-    let state = Rc::new(RefCell::new(HtmlRewriteState::default()));
-    let first_script_replacement = format!(
-        "{}\n    <script type=\"module\" src=\"./bootstrap.js\"></script>",
-        harness_monitor_script()
-    );
-    let body_script_insertion = format!(
-        "    {}\n    <script type=\"module\" src=\"./bootstrap.js\"></script>\n  ",
-        harness_monitor_script()
-    );
-    let bodyless_script_insertion = format!("{body_script_insertion}</body>");
-    let should_insert_comment = !source_html.contains(comment);
-    let comment_html = format!("\n    <!-- {comment} -->");
-
-    let html = rewrite_str(
-        source_html,
-        RewriteStrSettings::new()
-            .append_element_content_handler(element!("script[type][src]", {
-                let state = Rc::clone(&state);
-                let first_script_replacement = first_script_replacement.clone();
-                move |element| {
-                    if !attribute_eq_ignore_ascii_case(element, "type", "module") {
-                        return Ok(());
-                    }
-                    let src = element
-                        .get_attribute("src")
-                        .context("script tag missing src")?;
-                    let _ = normalize_url_path(&src)?;
-                    let mut state = state.borrow_mut();
-                    if state.script_inserted {
-                        element.remove();
-                    } else {
-                        state.script_inserted = true;
-                        element.replace(&first_script_replacement, ContentType::Html);
-                    }
-                    Ok(())
-                }
-            }))
-            .append_element_content_handler(element!("link[rel][href]", move |element| {
-                if !attribute_contains_token_ignore_ascii_case(element, "rel", "modulepreload") {
-                    return Ok(());
-                }
-                let href = element
-                    .get_attribute("href")
-                    .context("preload tag missing href")?;
-                let path = normalize_url_path(&href)?;
-                if path.ends_with(".js") {
-                    let href = runtime_js_href(artifact, &path, app_root)?;
-                    element.set_attribute("href", &href)?;
-                }
-                Ok(())
-            }))
-            .append_element_content_handler(element!("head", {
-                let state = Rc::clone(&state);
-                move |element| {
-                    if should_insert_comment {
-                        let mut state = state.borrow_mut();
-                        if !state.head_comment_inserted {
-                            state.head_comment_inserted = true;
-                            element.prepend(&comment_html, ContentType::Html);
-                        }
-                    }
-                    Ok(())
-                }
-            }))
-            .append_element_content_handler(element!("body", {
-                let state = Rc::clone(&state);
-                let body_script_insertion = body_script_insertion.clone();
-                move |element| {
-                    state.borrow_mut().body_seen = true;
-                    let state = Rc::clone(&state);
-                    let body_script_insertion = body_script_insertion.clone();
-                    element.on_end_tag(end_tag!(move |end_tag| {
-                        let mut state = state.borrow_mut();
-                        if !state.script_inserted {
-                            state.script_inserted = true;
-                            end_tag.before(&body_script_insertion, ContentType::Html);
-                        }
-                        Ok(())
-                    }))
-                }
-            }))
-            .append_element_content_handler(element!("*", |element| {
-                let rewrites = element
-                    .attributes()
-                    .iter()
-                    .filter_map(|attribute| {
-                        root_absolute_harness_url(&attribute.value())
-                            .map(|value| (attribute.name_preserve_case(), value))
-                    })
-                    .collect::<Vec<_>>();
-                for (name, value) in rewrites {
-                    element.set_attribute(&name, &value)?;
-                }
-                Ok(())
-            }))
-            .append_document_content_handler(end!({
-                let state = Rc::clone(&state);
-                move |document_end| {
-                    let mut state = state.borrow_mut();
-                    if !state.script_inserted && !state.body_seen {
-                        state.script_inserted = true;
-                        document_end
-                            .append(&format!("\n{bodyless_script_insertion}"), ContentType::Html);
-                    }
-                    Ok(())
-                }
-            })),
-    )
-    .context("rewriting index HTML")?;
-
-    if html.ends_with('\n') {
-        Ok(html)
-    } else {
-        Ok(format!("{html}\n"))
-    }
-}
-
-#[derive(Debug, Default)]
-struct HtmlRewriteState {
-    script_inserted: bool,
-    body_seen: bool,
-    head_comment_inserted: bool,
-}
-
-fn collect_html_entries(html: &str) -> Result<HtmlEntries> {
-    let entries = Rc::new(RefCell::new(HtmlEntries::default()));
-    rewrite_str(
-        html,
-        RewriteStrSettings::new()
-            .append_element_content_handler(element!("script[type][src]", {
-                let entries = Rc::clone(&entries);
-                move |element| {
-                    if attribute_eq_ignore_ascii_case(element, "type", "module") {
-                        let src = element
-                            .get_attribute("src")
-                            .context("script tag missing src")?;
-                        entries.borrow_mut().module_scripts.push(HtmlEntry {
-                            path: normalize_url_path(&src)?,
-                        });
-                    }
-                    Ok(())
-                }
-            }))
-            .append_element_content_handler(element!("link[rel][href]", {
-                let entries = Rc::clone(&entries);
-                move |element| {
-                    if attribute_contains_token_ignore_ascii_case(element, "rel", "modulepreload") {
-                        let href = element
-                            .get_attribute("href")
-                            .context("preload tag missing href")?;
-                        entries.borrow_mut().module_preloads.push(HtmlEntry {
-                            path: normalize_url_path(&href)?,
-                        });
-                    }
-                    Ok(())
-                }
-            })),
-    )
-    .context("collecting HTML entry tags")?;
-    Ok(entries.borrow().clone())
-}
-
-fn attribute_eq_ignore_ascii_case(
-    element: &lol_html::html_content::Element<'_, '_>,
-    name: &str,
-    expected: &str,
-) -> bool {
-    element
-        .get_attribute(name)
-        .is_some_and(|value| value.eq_ignore_ascii_case(expected))
-}
-
-fn attribute_contains_token_ignore_ascii_case(
-    element: &lol_html::html_content::Element<'_, '_>,
-    name: &str,
-    expected: &str,
-) -> bool {
-    element
-        .get_attribute(name)
-        .map(|value| {
-            value
-                .split_ascii_whitespace()
-                .any(|part| part.eq_ignore_ascii_case(expected))
-        })
-        .unwrap_or(false)
-}
-
-fn root_absolute_harness_url(value: &str) -> Option<String> {
-    if value.starts_with('/') && !value.starts_with("//") {
-        Some(format!(".{value}"))
-    } else {
-        None
-    }
-}
-
-fn normalize_url_path(url: &str) -> Result<String> {
-    if url.is_empty() {
-        bail!("Expected a snapshot-relative URL, got {url}");
-    }
-    let base = Url::parse("https://debundle.invalid/")
-        .expect("static debundle harness URL base must parse");
-    let parsed = base
-        .join(url)
-        .with_context(|| format!("parsing snapshot-relative URL {url:?}"))?;
-    if parsed.scheme() != "https" || parsed.host_str() != Some("debundle.invalid") {
-        bail!("Expected a snapshot-relative URL, got {url}");
-    }
-    let stripped = parsed.path().strip_prefix('/').unwrap_or(parsed.path());
-    normalize_module_path(stripped)
-}
-
-fn copy_snapshot_assets(snapshot_root: &Path, out_dir: &Path) -> Result<Vec<String>> {
-    let mut copied = Vec::new();
-    copy_snapshot_assets_recursive(snapshot_root, out_dir, Path::new(""), &mut copied)?;
-    Ok(copied)
-}
-
-fn copy_snapshot_assets_recursive(
+fn copy_snapshot_assets(
     snapshot_root: &Path,
     out_dir: &Path,
-    relative_dir: &Path,
-    copied: &mut Vec<String>,
-) -> Result<()> {
-    let absolute_dir = snapshot_root.join(relative_dir);
-    for entry in fs::read_dir(&absolute_dir)? {
-        let entry = entry?;
-        let relative_entry = relative_dir.join(entry.file_name());
-        let relative_posix = module_path_from_path(&relative_entry);
-        let file_type = entry.file_type()?;
-        if file_type.is_dir() {
-            copy_snapshot_assets_recursive(snapshot_root, out_dir, &relative_entry, copied)?;
-            continue;
-        }
-        if !file_type.is_file()
-            || relative_posix.ends_with(".js")
-            || relative_posix.ends_with(".js.map")
-        {
-            continue;
-        }
-        let out_path = out_dir.join(&relative_entry);
+    assets: &[PathBuf],
+) -> Result<Vec<String>> {
+    let mut copied = Vec::with_capacity(assets.len());
+    for relative in assets {
+        let out_path = out_dir.join(relative);
         if let Some(parent) = out_path.parent() {
             fs::create_dir_all(parent)?;
         }
-        copy_output_file(&entry.path(), &out_path)?;
-        copied.push(relative_posix);
+        copy_output_file(&snapshot_root.join(relative), &out_path)?;
+        copied.push(module_path_from_path(relative));
     }
     copied.sort();
-    Ok(())
+    Ok(copied)
 }
 
 fn copy_output_file(source: &Path, target: &Path) -> Result<()> {
@@ -493,10 +143,6 @@ fn make_owner_writable(path: &Path) -> Result<()> {
     permissions.set_mode(permissions.mode() | 0o200);
     fs::set_permissions(path, permissions)?;
     Ok(())
-}
-
-fn harness_monitor_script() -> &'static str {
-    include_str!("harness_monitor.html")
 }
 
 #[cfg(test)]
@@ -519,7 +165,7 @@ mod tests {
         #[cfg(unix)]
         fs::set_permissions(&source_html, fs::Permissions::from_mode(0o555))?;
 
-        let copied = copy_snapshot_assets(&snapshot, &out)?;
+        let copied = copy_snapshot_assets(&snapshot, &out, &[PathBuf::from("index.html")])?;
 
         assert_eq!(copied, vec!["index.html"]);
         fs::write(out.join("index.html"), "<html>rewritten</html>")?;
