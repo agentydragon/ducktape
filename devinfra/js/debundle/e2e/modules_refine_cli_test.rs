@@ -6,26 +6,28 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::process::Command;
 
-fn source_unit_for_binding(fixture: &GraphFixture, binding: &str) -> String {
-    let graph: serde_json::Value =
-        serde_json::from_slice(&fs::read(&fixture.graph).unwrap()).unwrap();
-    graph["nodes"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|node| {
-            node["declared_bindings"]
-                .as_array()
-                .is_some_and(|declared| {
-                    declared
-                        .iter()
-                        .any(|declared| declared["binding"].as_str() == Some(binding))
-                })
+fn source_units_for_binding(fixture: &GraphFixture, binding: &str) -> Vec<String> {
+    fixture
+        .dependency_graph()
+        .nodes
+        .into_iter()
+        .filter(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|declared| declared.binding.as_ref() == binding)
         })
-        .unwrap_or_else(|| panic!("no graph source_unit declares {binding:?}"))["id"]
-        .as_str()
-        .unwrap()
-        .to_string()
+        .map(|node| node.id)
+        .collect()
+}
+
+fn source_unit_for_binding(fixture: &GraphFixture, binding: &str) -> String {
+    let mut units = source_units_for_binding(fixture, binding);
+    assert_eq!(
+        units.len(),
+        1,
+        "expected one declaration site for {binding:?}"
+    );
+    units.pop().unwrap()
 }
 
 fn write_batch(value: serde_json::Value) -> tempfile::TempDir {
@@ -802,4 +804,76 @@ fn source_match_claim_with_declared_sibling_references_survives_split() {
         batch.path().join("refine.json").to_str().unwrap(),
     ]);
     fixture.assert_runs("ready\n");
+}
+
+#[test]
+fn refining_a_local_binding_preserves_an_import_claim() {
+    let fixture = GraphFixture::with_dependency(
+        "import { value as a } from './dependency.js';\nconst b = 2;\nconsole.log(a, b);\n",
+        "export const value = 1;\n",
+        &[
+            (
+                "imports.yaml",
+                "members: [{selector: {binding: {name: a, kind: import_specifier}}}]\n",
+            ),
+            (
+                "values.yaml",
+                "members: [{selector: {binding: {name: b}}}]\n",
+            ),
+        ],
+    );
+    let import_path = fixture.modules.join("imports.yaml");
+    let import_claim = fs::read(&import_path).unwrap();
+    let batch = write_batch(json!([{
+        "unit_id": source_unit_for_binding(&fixture, "b"),
+        "module": "moved/value",
+    }]));
+    fixture.assert_success(&[
+        "modules",
+        "refine",
+        "--batch",
+        batch.path().join("refine.json").to_str().unwrap(),
+    ]);
+    assert_eq!(fs::read(import_path).unwrap(), import_claim);
+    assert!(!fixture.modules.join("values.yaml").exists());
+    fixture.assert_runs("1 2\n");
+}
+
+#[test]
+fn both_edit_commands_move_all_sites_of_one_var_binding() {
+    for command in ["assign", "refine"] {
+        let fixture = GraphFixture::new(
+            "var a = 1;\nvar a = a + 1;\nconsole.log(a);\n",
+            &[(
+                "values.yaml",
+                "members: [{selector: {binding: {name: a}}}]\n",
+            )],
+        );
+        let declarations = source_units_for_binding(&fixture, "a");
+        assert_eq!(declarations.len(), 2);
+        if command == "assign" {
+            fixture.assert_success(&["bindings", "assign", "a:moved/value"]);
+        } else {
+            let batch = write_batch(json!(
+                declarations
+                    .into_iter()
+                    .map(|id| { json!({"unit_id": id, "module": "moved/value"}) })
+                    .collect::<Vec<_>>()
+            ));
+            fixture.assert_success(&[
+                "modules",
+                "refine",
+                "--batch",
+                batch.path().join("refine.json").to_str().unwrap(),
+            ]);
+        }
+        assert!(!fixture.modules.join("values.yaml").exists());
+        let destination: serde_yaml::Value =
+            serde_yaml::from_slice(&fs::read(fixture.modules.join("moved/value.yaml")).unwrap())
+                .unwrap();
+        let members = destination["members"].as_sequence().unwrap();
+        assert_eq!(members.len(), 1);
+        assert_eq!(members[0]["selector"]["binding"]["name"], "a");
+        fixture.assert_runs("2\n");
+    }
 }
