@@ -762,7 +762,7 @@ fn detect_atomic_group_conflicts(
         }
         let claims: Vec<ConflictingClaim> = resolved
             .into_iter()
-            .map(|(owner, module)| {
+            .map(|(source_unit, module)| {
                 let binding_names: Vec<swc_atoms::Atom> = report
                     .nodes
                     .get(source_unit.0)
