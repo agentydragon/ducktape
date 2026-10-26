@@ -60,7 +60,7 @@ pub(crate) fn build_dependency_graph_report(
         nodes,
         purity_causes,
         edges,
-        quotient: DependencyGraphQuotientReport {
+        quotient: ModuleQuotientReport {
             nodes: quotient_nodes,
             edges: quotient_edges,
             sccs: quotient_sccs,
