@@ -2647,6 +2647,21 @@ consumes its source bundle; a pass-through run instead converts it directly to
 `EmissionFiles`, reusing the indexes without rebuilding them. The mutable indexed
 file container is private to these phase types.
 
+For each materialized chunk, `StructuralChunkAnalysis` retains the shared
+top-level item views, static statement facts, and value-flow results independently
+of author assertions. `spec_resolution` gives this layer to the joint selector
+solver, then transfers it to `compute_chunk_analysis`. That pass combines it
+with `AnalysisInputs`: explicit `AnalysisAssumptions`, imported summaries, and
+analysis policy. Imported summaries may themselves depend on contracts declared
+for their source chunks. These inputs remain distinct from inferred facts.
+Semantic passes may revisit the retained AST views; reuse does not imply a
+single AST traversal for the entire pipeline.
+
+Read-only source inspection uses `PreparedSource` and the shared parser without
+constructing the semantic dependency graph. Analyses of transformed syntax,
+including vendor pruning, operate on that syntax rather than reusing facts
+about the original input.
+
 During assignment construction, `ChunkPlanBuilder::bindings_catalogue` is the
 authoritative destination of each declared or imported binding. Its spelling
 index stores binding identities and resolves destinations through the catalogue.

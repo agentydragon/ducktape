@@ -82,8 +82,8 @@ pub struct ChunkAnalysisOutput {
 /// admission scan, then derive the dependency graph + structural atomic
 /// groups. Selector resolution uses that same structural layer before
 /// semantic member annotations can be projected to concrete bindings,
-/// so materialization keeps one source-text walk and one final owner
-/// graph.
+/// so materialization reuses the structural analysis when building the final
+/// dependency graph.
 ///
 /// Returns `Err` if the chunk has top-level `await` (the realizability
 /// theorem does not cover async modules — see docs/design.md A2) or

@@ -74,11 +74,10 @@ impl Visit for TopLevelAwaitFinder {
 ///
 /// **Sharing**: materialization computes this layer once and feeds it
 /// to selector resolution and then to [`analyze_chunk_with_policy`]
-/// (via `chunk_analysis::compute_chunk_analysis`), so the source-text walk
-/// happens once per chunk. `vendor::strip` calls [`analyze_vendor_prune_chunk`] on
-/// its own: it reparses the emitted chunk file from disk and mutates it
-/// (`split_top_level_var_decls`, `strip_export_specifiers`) before
-/// analyzing, so the materializer's layer does not describe its module.
+/// (via `chunk_analysis::compute_chunk_analysis`). Semantic passes may revisit
+/// the retained item views. `vendor::strip` calls [`analyze_vendor_prune_chunk`]
+/// on transformed output syntax, for which the materializer's original facts
+/// do not apply.
 pub fn analyze_chunk_structural<'a, F>(
     module: &'a Module,
     source_path: Option<&str>,

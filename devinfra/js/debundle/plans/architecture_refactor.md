@@ -90,14 +90,6 @@ commands through the same resolved facts. Commands share successful matches
 and remaining mismatches. A partial or ambiguous resolution remains visibly
 incomplete in every consumer and cannot appear as complete acceptance.
 
-### D. Semantic facts and assumptions — in progress
-
-Consolidate value flow, callback timing, effects, and dependency construction
-behind explicit inputs and results. Separate inferred facts from author
-assertions and cheap inspection from expensive analysis. Share immutable facts
-between reconstruction and authoring without making cheap inspection pay for
-expensive analysis.
-
 ### E. Assignment and reconstruction planning — in progress
 
 Use one authoritative assignment and a concrete plan for residual placement,
