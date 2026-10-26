@@ -6,14 +6,14 @@ use std::collections::{BTreeMap, HashMap};
 
 use analysis::{BindingKind, ModuleId};
 use anyhow::{Context, Result, bail, ensure};
-use gate::{ChunkFactorization, ValidatedAssignment};
+use gate::{AssignmentAnalysis, ValidatedAssignment};
 use js_ast::body_indices_for_statement_ordinals;
 use swc_ecma_ast::{Id, ModuleItem};
 
 /// Immutable placement instructions tied to the assignment that produced them.
 /// Only projection from a validated assignment constructs this type.
 pub(super) struct EmissionPlacement<'a> {
-    factorization: &'a ChunkFactorization,
+    factorization: &'a AssignmentAnalysis,
     bindings: HashMap<Id, usize>,
     statements: BTreeMap<usize, usize>,
 }
@@ -108,7 +108,7 @@ impl<'a> EmissionPlacement<'a> {
         })
     }
 
-    pub(super) fn factorization(&self) -> &ChunkFactorization {
+    pub(super) fn factorization(&self) -> &AssignmentAnalysis {
         self.factorization
     }
     pub(super) fn bindings(&self) -> &HashMap<Id, usize> {

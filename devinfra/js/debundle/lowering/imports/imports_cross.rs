@@ -14,7 +14,7 @@ use crate::imports::EntryExport;
 use crate::rename_ledger::{RenameIntent, RenameLedger, RenameOrigin, RenameScope};
 use analysis::{ModuleId, top_level_id};
 use anyhow::{Result, bail};
-use gate::ChunkFactorization;
+use gate::AssignmentAnalysis;
 use js_ast::import_decl_module_item;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use swc_ecma_ast::*;
@@ -64,7 +64,7 @@ impl ImportLocalRenameSink<'_> {
 pub(crate) fn cross_module_imports_for_plan(
     from_file: &str,
     imports_by_provider: BTreeMap<usize, BTreeMap<String, String>>,
-    factorization: &ChunkFactorization,
+    factorization: &AssignmentAnalysis,
     sink: &mut ImportLocalRenameSink<'_>,
 ) -> Vec<(ModuleId, ModuleItem)> {
     imports_by_provider
@@ -110,7 +110,7 @@ pub(crate) fn cross_module_imports_for_plan(
 pub(crate) fn phantom_side_effect_imports(
     from_file: &str,
     phantom_providers: BTreeSet<usize>,
-    factorization: &ChunkFactorization,
+    factorization: &AssignmentAnalysis,
 ) -> Vec<(ModuleId, ModuleItem)> {
     phantom_providers
         .into_iter()

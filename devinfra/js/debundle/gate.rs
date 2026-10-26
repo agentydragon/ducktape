@@ -5,29 +5,29 @@
 //! ESM import emission and linker-order reasoning, validate
 //! realizability (`realizability`, `validation`), and assemble the
 //! per-chunk factorization state (`chunk_analysis`,
-//! `chunk_factorization`). The shared ESM import ordering consumed by
+//! `assignment_analysis`). The shared ESM import ordering consumed by
 //! both the gate's simulator and the emitter lives in
 //! `esm_import_order`.
 
-mod chunk_factorization;
+mod assignment_analysis;
+mod assignment_inputs;
 mod counted_digraph;
 mod esm_import_order;
-mod factorization_inputs;
 mod realizability;
 mod report_builders;
 mod validation;
 
-pub use chunk_factorization::{ChunkFactorization, ValidatedAssignment};
+pub use assignment_analysis::{AssignmentAnalysis, ValidatedAssignment};
+pub use assignment_inputs::AssignmentInputs;
 pub use esm_import_order::EsmImportOrder;
-pub use factorization_inputs::FactorizationInputs;
 pub use realizability::{
     LadderDecision, ModuleAssignmentDelta, RealizabilityIndex, RealizabilityVerdict, SccDiagnosis,
     SccRejection, check_realizability, check_realizability_touching,
     simulated_evaluation_post_order,
 };
 pub use validation::{
-    BlockingSccEntry, CycleEdge, CycleReport, FactorizationReport,
-    render_atomic_group_conflict_summary, render_cycle_summary, validate_factorization,
+    AssignmentReport, BlockingSccEntry, CycleEdge, CycleReport,
+    render_atomic_group_conflict_summary, render_cycle_summary, validate_assignment,
 };
 
 #[cfg(test)]

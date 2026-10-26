@@ -43,7 +43,7 @@ use artifact::{
 };
 use chunk_analysis::{ChunkAnalysisOutput, DynamicImportTarget, compute_chunk_analysis};
 use gate::{
-    ChunkFactorization, ValidatedAssignment, render_atomic_group_conflict_summary,
+    AssignmentAnalysis, ValidatedAssignment, render_atomic_group_conflict_summary,
     render_cycle_summary,
 };
 use js_ast::{ParsedJsModule, statement_ordinal_for_body_index};
@@ -610,7 +610,7 @@ pub(super) fn finish_logical_chunk(
             )
         })
         .collect();
-    let factorization = ChunkFactorization::build_with(
+    let factorization = AssignmentAnalysis::build_with(
         chunk_id.to_string(),
         precomputed,
         bindings_catalogue,
@@ -767,7 +767,7 @@ fn project_factorization_modules_with_sentinel(
                     )
                 })
                 .collect(),
-            // ChunkFactorization's owner graph uses post-comma-list-split
+            // AssignmentAnalysis's owner graph uses post-comma-list-split
             // `StatementOrdinal`s; convert body indices here so the
             // destination override targets the right owner node (an
             // anon body item is always a single post-split position,
@@ -1044,7 +1044,7 @@ fn pattern_binds_name(pattern: &Pat, binding: &str) -> bool {
 fn validate_and_emit_reports<'a>(
     chunk_id: &str,
     report_emission: &ReportEmission,
-    factorization: &'a ChunkFactorization,
+    factorization: &'a AssignmentAnalysis,
     export_reentry_report: &ExportReentryReport,
 ) -> Result<ValidatedAssignment<'a>> {
     let validation = factorization.validate_for_emission();
@@ -1150,7 +1150,7 @@ fn validate_and_emit_reports<'a>(
 /// resulting JSON is deterministic across runs.
 fn build_final_module_report(
     module_plans: &[ModulePlan],
-    factorization: &ChunkFactorization,
+    factorization: &AssignmentAnalysis,
     chunk_top_level_mark: swc_common::Mark,
 ) -> Vec<FinalModuleContent> {
     module_plans
@@ -1182,7 +1182,7 @@ fn build_final_module_report(
 
 fn build_directory_dependency_facts(
     chunk_id: &str,
-    factorization: &ChunkFactorization,
+    factorization: &AssignmentAnalysis,
 ) -> Vec<DirectoryDependencyFact> {
     let mut facts = Vec::new();
     for edge in factorization.analysis().owner_graph().iter_edges() {
@@ -1223,7 +1223,7 @@ fn build_directory_dependency_facts(
 
 fn module_output_file(
     chunk_id: &str,
-    factorization: &ChunkFactorization,
+    factorization: &AssignmentAnalysis,
     module: ModuleId,
 ) -> Option<String> {
     factorization

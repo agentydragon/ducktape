@@ -1398,7 +1398,7 @@ fn validate_decomposition_candidate(
     let (assignments, paths_by_module_id) =
         candidate_module_assignments(candidate_owner_modules, residual_path)?;
     let assignment = ModuleAssignment::from_assignments(assignments, ModuleId(0));
-    let gate_report = gate::validate_factorization(&owner_graph, &assignment, &|module_id| {
+    let gate_report = gate::validate_assignment(&owner_graph, &assignment, &|module_id| {
         paths_by_module_id
             .get(&module_id)
             .cloned()

@@ -26,7 +26,7 @@
 //!
 //! The kernel's cycle gate is the realizability primitive itself
 //! (`gate::check_realizability(&OwnerGraph, &ModuleAssignment)` — the same
-//! predicate the materializer's `validate_factorization` computes),
+//! predicate the materializer's `validate_assignment` computes),
 //! evaluated at **module** granularity under the kernel's projection
 //! by checking whether a speculative merge's post-merge module `M`
 //! has no clause-2 or clause-3 violation touching `M`.
@@ -2023,7 +2023,7 @@ pub fn build_seed_quotient(
     //      assembled assignment. Catches asymmetric I-cycles and mutual
     //      constraining cycles that no individual contraction created
     //      on its own, so `modules propose` and the materializer's
-    //      `validate_factorization` agree on whether a spec is
+    //      `validate_assignment` agree on whether a spec is
     //      realizable. One O(|V|+|E|) call.
     let verdict = q.realizability_verdict();
     if !verdict.is_realizable() {

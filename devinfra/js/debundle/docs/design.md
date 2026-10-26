@@ -19,7 +19,7 @@
 > `import` / `export` declarations. There is no init-wrapper
 > machinery, no closure pass, no implicit binding pulls — every
 > owned binding is named explicitly in the spec, and `Imported`
-> bindings flow through `FactorizationInputs.bindings` /
+> bindings flow through `AssignmentInputs.bindings` /
 > `BindingKind::Imported`, carrying the single re-exporting module
 > and public name that claimed it. Anonymous (empty-`declared`)
 > top-level statements have no name to address as a member; a
@@ -544,7 +544,7 @@ verdict ("Emit-side responsibilities").
 The predicate has two forms:
 
 1. **The pure function `check_realizability`**, `O(N + M)` per call. The
-   validator (`validate_factorization`) calls it on the spec's actual
+   validator (`validate_assignment`) calls it on the spec's actual
    assignment; a non-empty verdict stops materialization.
 2. **`RealizabilityIndex`**, a stateful index over a working assignment for
    callers that ask many hypothetical questions — the peel kernel
@@ -1293,7 +1293,7 @@ Phase-2 evaluation order matching the constraining-edge linearization;
 Pass 2 (below) checks that it does.
 
 The materializer computes the source-import order on
-`esm_import_order::EsmImportOrder` (held by `ChunkFactorization`)
+`esm_import_order::EsmImportOrder` (held by `AssignmentAnalysis`)
 to drive this. The algorithm:
 
 1. Compute SCCs of the full quotient `I ∪ S` via Tarjan.
@@ -1397,7 +1397,7 @@ evaluates without TDZ.
 
 Because Lemma 2 is implemented in the materializer and the
 gate's simulator decides asymmetric I-SCCs precisely, the
-validator (`validate_factorization` in
+validator (`validate_assignment` in
 `validation.rs`) and read-only planner
 checks share the realizability primitive's verdict — a
 `peelable_now` proposal is a peel the gate accepts and Node will
@@ -1850,7 +1850,7 @@ appears first (DFS goes deepest into the first import). The
 resulting DFS post-order is `L`. ∎
 
 **Implementation.** `esm_import_order::EsmImportOrder` (held on
-`ChunkFactorization`, see "Lemma 2: entry-side import ordering"
+`AssignmentAnalysis`, see "Lemma 2: entry-side import ordering"
 above) computes `L` from the constraining-edge subgraph's toposort,
 reversed within each `I ∪ S` SCC so that the cycle dependent is
 imported first and DFS unwinds through the dependency.
@@ -2059,7 +2059,7 @@ chunk, not a vertex of any chunk's owner graph.
 
 The natural lift — union every chunk's I-graph, with `Imported` bindings
 contributing cross-chunk edges, and require the union to pass the gate — is
-not implemented: `validate_factorization` takes one chunk's owner graph, so a
+not implemented: `validate_assignment` takes one chunk's owner graph, so a
 cycle among user chunks (two code-split chunks importing each other) is
 outside its view. In practice vendor chunks are leaves — they don't import
 from us — so they add no edges into user chunks; a vendor chunk that
@@ -2076,7 +2076,7 @@ dependencies:
   `(source bytes, analysis hints, OwnerGraphOptions)`. The composer
   is `chunk_analysis::compute_chunk_analysis`, returning a
   `chunk_analysis::ChunkAnalysisOutput` — distinct from the `gate`
-  crate's `FactorizationInputs` — that bundles `ChunkFactAnalysis` (facts +
+  crate's `AssignmentInputs` — that bundles `ChunkFactAnalysis` (facts +
   top-level-await detection + redundant-hint warnings) with the
   `OwnerGraphAndAtomicGroups` derived from those facts.
 - **Materialization** (spec-dependent): assemble the assignment from the
@@ -2111,10 +2111,10 @@ diagnostic paths. They differ only in _where_ the cycle appears
 requires. Both reject the same broad property: "some pair (or set)
 of bindings is forced to co-locate, and the spec splits them."
 
-| Atom class       | Where the cycle lives                                                 | Detector                                         | Diagnostic                                                                                                    |
-| ---------------- | --------------------------------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
-| **Structural**   | SCC of `G_atomic` on the **owner graph** — independent of any spec    | `compute_atomic_groups`                          | `AtomicGroupConflict` — names the group's owners + the modules the spec routes them to + the `DepKind` causes |
-| **Spec-induced** | SCC of `I ∪ S` on the **module quotient** under the spec's assignment | `check_realizability` + `validate_factorization` | `CycleReport` — names the binding pair(s) on each cut edge, the source and target modules, and the edge kind  |
+| Atom class       | Where the cycle lives                                                 | Detector                                      | Diagnostic                                                                                                    |
+| ---------------- | --------------------------------------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| **Structural**   | SCC of `G_atomic` on the **owner graph** — independent of any spec    | `compute_atomic_groups`                       | `AtomicGroupConflict` — names the group's owners + the modules the spec routes them to + the `DepKind` causes |
+| **Spec-induced** | SCC of `I ∪ S` on the **module quotient** under the spec's assignment | `check_realizability` + `validate_assignment` | `CycleReport` — names the binding pair(s) on each cut edge, the source and target modules, and the edge kind  |
 
 `G_atomic` over owners is acyclic-by-quotient on the chunker's
 original output: bundlers can't emit JavaScript that TDZs at runtime
@@ -2737,7 +2737,7 @@ An owner with no declared binding belongs to the residual module unless a
 module claims it through `anonymous_statements`.
 `assignment_assembly::compute_owner_claims` resolves those claims (each module's
 `anonymous_statement_ordinals`) into the assignment that
-`ChunkFactorization::build_with` quotients by, so the gate sees the module dep
+`AssignmentAnalysis::build_with` quotients by, so the gate sees the module dep
 graph the materializer will emit. Without that resolution, an anon owner with a
 constraining in-edge from a peeled named owner would create a fake
 cross-module edge, and the validator would reject a spec whose closure the
@@ -3148,21 +3148,21 @@ the dep graph captures that read without special-case logic. If the spec also
 gives `mod_a` an at-init read of something in `mod_b`, the cycle is mutual and
 rejected.
 
-## FactorizationInputs + ChunkFactorization: owner graph plus quotient
+## AssignmentInputs + AssignmentAnalysis: owner graph plus quotient
 
 The runtime data structures the validator and emitter both consume are a pair:
-the `gate` crate's per-chunk `FactorizationInputs` (inputs + IR; distinct from
+the `gate` crate's per-chunk `AssignmentInputs` (inputs + IR; distinct from
 `chunk_analysis::ChunkAnalysisOutput`, the spec-independent composer output) and a
-`ChunkFactorization` wrapping it (assignment + derived realizability views).
+`AssignmentAnalysis` wrapping it (assignment + derived realizability views).
 Together they carry the chunk's statement facts, the binding catalogue, the
 explicit logical modules, the owner graph, and the module dep graph derived by
 quotienting that owner graph under the spec assignment.
 
-Statement facts feed the owner graph (stored on `FactorizationInputs`), and the
+Statement facts feed the owner graph (stored on `AssignmentInputs`), and the
 module dep graph is a quotient of that owner graph under the current spec
-assignment (stored on `ChunkFactorization`).
+assignment (stored on `AssignmentAnalysis`).
 
-`ChunkFactorization::validate_for_emission` returns a `ValidatedAssignment` only
+`AssignmentAnalysis::validate_for_emission` returns a `ValidatedAssignment` only
 when atomic-group, schedule, and cross-destination rebinding checks pass. Lowering
 requires this immutable borrow of the checked assignment. Assignment inputs and
 derived graph views are private and exposed only through immutable accessors, so
@@ -3225,11 +3225,11 @@ re-export module).
 
 ### Rejected: one assignment-optional chunk IR
 
-Folding `ChunkFactorization` into `FactorizationInputs` as one IR with optional
+Folding `AssignmentAnalysis` into `AssignmentInputs` as one IR with optional
 assignment state looks like it removes a layer, but the two-layer shape is
-already in place: `FactorizationInputs` is the assignment-free IR, `ChunkFactorization`
-adds the applied assignment, and `validate()` derives `FactorizationReport` from
-it. Removing the `Arc<FactorizationInputs>` boundary touches the whole
+already in place: `AssignmentInputs` is the assignment-free IR, `AssignmentAnalysis`
+adds the applied assignment, and `validate()` derives `AssignmentReport` from
+it. Removing the `Arc<AssignmentInputs>` boundary touches the whole
 materializer/emitter path for no behavior change, so the layers stay.
 
 ### Identifiers are typed, not stringly-typed
@@ -3338,7 +3338,7 @@ rosters live in the directories, not here):
 - <../graph/> — owner graph, `ModuleQuotient`, and the canonical I-graph
   builders.
 - <../realizability/mod.rs> — the realizability gate (`check_realizability`).
-- <../validation.rs> — `validate_factorization`: renders the verdict as cycle
+- <../validation.rs> — `validate_assignment`: renders the verdict as cycle
   reports.
 - <../lowering/> — main splitting transform.
 - <../atomic_groups.rs> — owner-level hard colocation groups.

@@ -118,8 +118,8 @@ fn factorization_from_facts(
     bindings: HashMap<swc_ecma_ast::Id, BindingKind>,
     logical_modules: Vec<PlannedModule>,
     default_destination: ModuleId,
-) -> ChunkFactorization {
-    ChunkFactorization::build_with(
+) -> AssignmentAnalysis {
+    AssignmentAnalysis::build_with(
         "test_chunk".to_string(),
         compute_owner_graph_and_atomic_groups_with(facts, OwnerGraphOptions::default())
             .expect("chunk facts declare a binding twice"),
@@ -130,7 +130,7 @@ fn factorization_from_facts(
     )
 }
 
-fn factorization_for(source: &str, ownership: &[(&str, ModuleId)]) -> ChunkFactorization {
+fn factorization_for(source: &str, ownership: &[(&str, ModuleId)]) -> AssignmentAnalysis {
     let module = parse(source);
     let facts = analyze_facts(&module);
     let mut max_idx: Option<usize> = None;
@@ -171,7 +171,7 @@ fn factorization_with_residual_module(
     source: &str,
     residual_bindings: &[&str],
     logical_bindings: &[&str],
-) -> ChunkFactorization {
+) -> AssignmentAnalysis {
     let module = parse(source);
     let facts = analyze_facts(&module);
     let residual = logical(0);
@@ -446,7 +446,7 @@ fn split_comma_list_assigns_per_declarator_source_ranges() {
     }
 }
 
-// --- linker_order in FactorizationReport --------------------------------------
+// --- linker_order in AssignmentReport --------------------------------------
 
 #[test]
 fn validate_surfaces_linker_order_for_acyclic_spec() {
@@ -601,7 +601,7 @@ fn atomic_groups_lazy_rebind_merges() {
 
 // --- Factor assembly -----------------------------------------------------
 
-fn assignment_summary(factorization: &ChunkFactorization) -> Vec<(String, String)> {
+fn assignment_summary(factorization: &AssignmentAnalysis) -> Vec<(String, String)> {
     let mut out: Vec<(String, String)> = factorization
         .analysis()
         .owner_graph()

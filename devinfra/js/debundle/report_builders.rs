@@ -1,4 +1,4 @@
-//! Owner-graph report builders: project a [`ChunkFactorization`]
+//! Owner-graph report builders: project a [`AssignmentAnalysis`]
 //! into the wire-format `OwnerGraphReport` family defined in
 //! `analysis::reports::schema`. The wire-stable key codecs
 //! (`owner_key`, `module_key`, …) live in `analysis::reports`.
@@ -18,7 +18,7 @@ use analysis::{
     QuotientEdgeReport, QuotientSccReport,
 };
 
-use crate::chunk_factorization::ChunkFactorization;
+use crate::assignment_analysis::AssignmentAnalysis;
 
 #[derive(Debug, Clone, Default)]
 struct AtomicEdgeAccumulator {
@@ -27,7 +27,7 @@ struct AtomicEdgeAccumulator {
     constrains_init_order: bool,
 }
 
-pub(crate) fn build_owner_graph_report(factorization: &ChunkFactorization) -> OwnerGraphReport {
+pub(crate) fn build_owner_graph_report(factorization: &AssignmentAnalysis) -> OwnerGraphReport {
     // The three sub-reports below — `(quotient_nodes, quotient_edges)`,
     // `nodes` + `edges`, and `atomic_graph` — share no mutable state
     // and individually account for tens of seconds on chunks with
@@ -117,7 +117,7 @@ fn attach_cause_refs(
 /// rayon `join` split four ways without an explicit `scope` and keeps
 /// the assignment-of()/export-name-for()/etc.\ touches paired in cache.
 fn build_owner_nodes_and_edges(
-    factorization: &ChunkFactorization,
+    factorization: &AssignmentAnalysis,
 ) -> (Vec<OwnerGraphNodeReport>, Vec<OwnerGraphEdgeReport>) {
     let assignment = factorization.assignment();
     let owner_graph = factorization.analysis().owner_graph();
@@ -149,7 +149,7 @@ fn build_owner_nodes_and_edges(
     (nodes, edges)
 }
 
-fn binding_reports<'a, I>(factorization: &ChunkFactorization, bindings: I) -> Vec<BindingReport>
+fn binding_reports<'a, I>(factorization: &AssignmentAnalysis, bindings: I) -> Vec<BindingReport>
 where
     I: IntoIterator<Item = &'a Id>,
 {
@@ -162,7 +162,7 @@ where
         .collect()
 }
 
-fn build_quotient_node_reports(factorization: &ChunkFactorization) -> Vec<ModuleEntry> {
+fn build_quotient_node_reports(factorization: &AssignmentAnalysis) -> Vec<ModuleEntry> {
     let mut modules = BTreeSet::<ModuleId>::new();
     for idx in 0..factorization.analysis().logical_modules().len() {
         modules.insert(ModuleId(idx));
@@ -180,7 +180,7 @@ fn build_quotient_node_reports(factorization: &ChunkFactorization) -> Vec<Module
         .collect()
 }
 
-fn build_quotient_edge_reports(factorization: &ChunkFactorization) -> Vec<QuotientEdgeReport> {
+fn build_quotient_edge_reports(factorization: &AssignmentAnalysis) -> Vec<QuotientEdgeReport> {
     // Use a `HashMap` for the per-(from,to) accumulator — quotient
     // edges count in the tens of thousands and `BTreeMap::entry` is
     // `O(log n)` per insert. The output ordering still has to match
@@ -234,7 +234,7 @@ struct QuotientEdgeAccumulator {
 }
 
 fn build_atomic_group_report(
-    factorization: &ChunkFactorization,
+    factorization: &AssignmentAnalysis,
     idx: usize,
     atomic_group: &AtomicGroup,
 ) -> AtomicGroupReport {
@@ -286,7 +286,7 @@ fn build_atomic_group_report(
     }
 }
 
-fn build_atomic_graph_report(factorization: &ChunkFactorization) -> AtomicGraphReport {
+fn build_atomic_graph_report(factorization: &AssignmentAnalysis) -> AtomicGraphReport {
     let owner_graph = factorization.analysis().owner_graph();
     let mut atomic_groups = factorization.atomic_groups().to_vec();
     atomic_groups.sort_by_key(|atomic_group| {
@@ -365,7 +365,7 @@ fn build_atomic_graph_report(factorization: &ChunkFactorization) -> AtomicGraphR
 }
 
 fn build_quotient_scc_reports(
-    factorization: &ChunkFactorization,
+    factorization: &AssignmentAnalysis,
     quotient_nodes: &[ModuleEntry],
     quotient_edges: &[QuotientEdgeReport],
 ) -> Vec<QuotientSccReport> {
@@ -447,10 +447,10 @@ fn quotient_edge_indices_by_source(
 
 /// True iff `id` refers to a logical module whose `residual` flag is
 /// set — the chunk's catch-all destination synthesized before
-/// `ChunkFactorization::build_with`. Used by the destination
+/// `AssignmentAnalysis::build_with`. Used by the destination
 /// projection in reports to gate residual-only predicates without
 /// string-matching module ids or labels.
-fn is_residual_destination(factorization: &ChunkFactorization, id: ModuleId) -> bool {
+fn is_residual_destination(factorization: &AssignmentAnalysis, id: ModuleId) -> bool {
     factorization
         .analysis()
         .logical_module(id)
@@ -472,7 +472,7 @@ fn edge_role_report(role: EdgeRole) -> Option<EdgeRoleReport> {
 
 /// Build the module-table entry for `id`: the single place its
 /// canonical [`spec::ModulePath`] and residual flag are recorded.
-fn module_entry(factorization: &ChunkFactorization, id: ModuleId) -> ModuleEntry {
+fn module_entry(factorization: &AssignmentAnalysis, id: ModuleId) -> ModuleEntry {
     ModuleEntry {
         key: module_key(id),
         path: factorization.analysis().module_path(id),

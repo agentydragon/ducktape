@@ -8,23 +8,23 @@ use analysis::graph::{build_module_quotient, chunk_constraining_module_edges};
 use analysis::module_assignment::ModuleAssignment;
 use analysis::{ModuleId, ModuleQuotient, OwnerGraphReport, PlannedModule};
 
-use crate::FactorizationInputs;
+use crate::AssignmentInputs;
 use crate::esm_import_order::EsmImportOrder;
-use crate::validation::{FactorizationReport, validate_factorization};
+use crate::validation::{AssignmentReport, validate_assignment};
 
 /// Per-chunk factorization output: the spec's assignment of the
 /// owner graph, plus the realizability views derived from it
 /// (`dep_graph`, `linker_order`, `assembly_conflicts`) and small
 /// caches downstream consumers consult on the hot path.
 ///
-/// Holds a reference to the [`FactorizationInputs`] it was factorized
+/// Holds a reference to the [`AssignmentInputs`] it was factorized
 /// from (`analysis`); report emission and downstream emit code reach
 /// inputs (`bindings`, `logical_modules`, etc.) through `analysis()`.
 /// Fields are private so the assignment cannot change independently of its
 /// cached quotient, SCCs, and import order.
 #[derive(Debug, Clone)]
-pub struct ChunkFactorization {
-    analysis: Arc<FactorizationInputs>,
+pub struct AssignmentAnalysis {
+    analysis: Arc<AssignmentInputs>,
     /// Module assignment per owner — the spec's assignment of the
     /// owner graph. Stored separately from the IR so the IR stays
     /// immutable across validation/report construction.
@@ -57,22 +57,22 @@ pub struct ChunkFactorization {
 /// passed. The borrow prevents changing the assignment while lowering uses it.
 #[derive(Debug)]
 pub struct ValidatedAssignment<'a> {
-    factorization: &'a ChunkFactorization,
-    report: FactorizationReport,
+    factorization: &'a AssignmentAnalysis,
+    report: AssignmentReport,
 }
 
 impl ValidatedAssignment<'_> {
-    pub fn factorization(&self) -> &ChunkFactorization {
+    pub fn factorization(&self) -> &AssignmentAnalysis {
         self.factorization
     }
 
-    pub fn report(&self) -> &FactorizationReport {
+    pub fn report(&self) -> &AssignmentReport {
         &self.report
     }
 }
 
-impl ChunkFactorization {
-    pub fn analysis(&self) -> &FactorizationInputs {
+impl AssignmentAnalysis {
+    pub fn analysis(&self) -> &AssignmentInputs {
         &self.analysis
     }
 
@@ -136,7 +136,7 @@ impl ChunkFactorization {
             &canonical_edges.i_successors,
             &extra_nodes,
         );
-        let analysis = Arc::new(FactorizationInputs::build(
+        let analysis = Arc::new(AssignmentInputs::build(
             chunk_id,
             owner_graph,
             bindings,
@@ -172,9 +172,9 @@ impl ChunkFactorization {
 
     /// Run SCC analysis over the dep graph. Spec authors consume the
     /// resulting report to fix any cycles or atomic-group conflicts.
-    pub fn validate(&self) -> FactorizationReport {
+    pub fn validate(&self) -> AssignmentReport {
         let mut report =
-            validate_factorization(self.analysis.owner_graph(), &self.assignment, &|id| {
+            validate_assignment(self.analysis.owner_graph(), &self.assignment, &|id| {
                 self.analysis.module_path(id)
             });
         report.atomic_group_conflicts = self.assembly_conflicts.clone();
@@ -187,7 +187,7 @@ impl ChunkFactorization {
         report
     }
 
-    pub fn validate_for_emission(&self) -> Result<ValidatedAssignment<'_>, FactorizationReport> {
+    pub fn validate_for_emission(&self) -> Result<ValidatedAssignment<'_>, AssignmentReport> {
         let report = self.validate();
         if !report.atomic_group_conflicts.is_empty()
             || !report.cycles.is_empty()

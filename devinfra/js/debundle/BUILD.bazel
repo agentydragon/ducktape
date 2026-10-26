@@ -517,10 +517,10 @@ rust_library(
     srcs = [
         "analysis_tests/factorization_validation.rs",
         "analysis_tests/mod.rs",
-        "chunk_factorization.rs",
+        "assignment_analysis.rs",
+        "assignment_inputs.rs",
         "counted_digraph.rs",
         "esm_import_order.rs",
-        "factorization_inputs.rs",
         "gate.rs",
         "realizability/condensation_order.rs",
         "realizability/condensation_order_proptest.rs",

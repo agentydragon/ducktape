@@ -7,7 +7,7 @@ use crate::imports::{RuntimeImportFacts, RuntimeImportInfo};
 use analysis::{BindingKind, ModuleId};
 use anyhow::{Context, Result};
 use artifact::{ArtifactIndexes, ArtifactSourceImportResolver, ChunkBundle};
-use gate::ChunkFactorization;
+use gate::AssignmentAnalysis;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use swc_ecma_ast::*;
 
@@ -112,7 +112,7 @@ impl<'a> ArtifactSourceImportResolutionCache<'a> {
 }
 
 pub(crate) fn collect_imported_reexports_by_module(
-    factorization: &ChunkFactorization,
+    factorization: &AssignmentAnalysis,
     module_count: usize,
 ) -> Vec<Vec<ImportedReexport>> {
     let mut by_module: Vec<Vec<ImportedReexport>> = (0..module_count).map(|_| Vec::new()).collect();
@@ -154,7 +154,7 @@ pub(crate) fn collect_imported_reexports_by_module(
 pub(crate) fn plan_module_reference_needs<'a>(
     module_index: usize,
     body_facts: &NaturalizedBodyFacts,
-    factorization: &ChunkFactorization,
+    factorization: &AssignmentAnalysis,
     declaration_by_name: &HashMap<Id, Vec<usize>>,
     binding_assignment: &HashMap<Id, usize>,
     entry_exports_by_original_local: &HashMap<Id, EntryExport>,
@@ -233,7 +233,7 @@ pub(crate) fn plan_module_reference_needs<'a>(
 /// is redundant — entry is always reachable.
 fn collect_phantom_side_effect_providers(
     module_index: usize,
-    factorization: &ChunkFactorization,
+    factorization: &AssignmentAnalysis,
     cross_module_imports_by_provider: &BTreeMap<usize, BTreeMap<String, String>>,
     phantom_side_effect_providers: &mut BTreeSet<usize>,
 ) {

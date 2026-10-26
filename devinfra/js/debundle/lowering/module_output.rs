@@ -28,7 +28,7 @@ use anyhow::{Result, bail};
 use artifact::{
     ChunkId, FileMetadata, FileRole, JsFile, JsFileBody, SelectedModuleLowering, join_module_path,
 };
-use gate::ChunkFactorization;
+use gate::AssignmentAnalysis;
 use js_ast::{ParsedJsModule, format_comment_block_lines, set_str_value, str_value};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use swc_ecma_ast::*;
@@ -39,7 +39,7 @@ const LOWERING_FILE_PRAGMA: &str =
 const LOWERING_GENERATOR_HEADER: &str = "// @ducktape-generator selected_module_lowering";
 
 struct ModuleOutputContext<'a> {
-    factorization: &'a ChunkFactorization,
+    factorization: &'a AssignmentAnalysis,
     runtime_ast: &'a ParsedJsModule,
     chunk_top_level_mark: swc_common::Mark,
     chunk_id: &'a str,
@@ -51,7 +51,7 @@ pub(super) struct ModuleEmissionInputs<'a> {
     pub(super) index: usize,
     pub(super) plan: &'a ModulePlan,
     pub(super) naturalized: NaturalizedModuleBody,
-    pub(super) factorization: &'a ChunkFactorization,
+    pub(super) factorization: &'a AssignmentAnalysis,
     pub(super) declaration_by_name: &'a HashMap<Id, Vec<usize>>,
     pub(super) binding_assignment: &'a HashMap<Id, usize>,
     pub(super) runtime_import_facts: &'a RuntimeImportFacts,

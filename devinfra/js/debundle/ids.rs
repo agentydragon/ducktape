@@ -21,7 +21,7 @@ pub fn top_level_id(sym: &str, top_level_mark: Mark) -> Id {
 /// Its dense index points into the schedule's `logical_modules` list.
 /// The residual catch-all is a logical module flagged `residual: true`,
 /// synthesized by the materializer
-/// before `ChunkFactorization::build_with` for chunks that need a default
+/// before `AssignmentAnalysis::build_with` for chunks that need a default
 /// destination (every `InlineInEntry` and `CatchallFile` chunk; the
 /// `MiniFactors` synthesizer handles assignments itself).
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize)]
@@ -132,7 +132,7 @@ pub struct PlannedModule {
     /// Source-chunk top-level statement ordinals this module claims
     /// as anonymous-statement members (owners with empty
     /// `declared_bindings` that the spec resolves by AST shape via
-    /// `spec::LogicalModule::anonymous_statements`). ChunkFactorization uses
+    /// `spec::LogicalModule::anonymous_statements`). AssignmentAnalysis uses
     /// these to override the otherwise-residual destination of those
     /// owners so cross-destination/cycle checks see the closure as
     /// the materializer will emit it.

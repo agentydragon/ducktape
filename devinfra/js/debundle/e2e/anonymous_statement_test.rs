@@ -642,7 +642,7 @@ export { X, Existing };
 // post-split statement ordinal N + (number of extra splits in
 // body[..N]).
 //
-// Without the conversion, the ChunkFactorization's destination override
+// Without the conversion, the AssignmentAnalysis's destination override
 // (which keys off `statement_ordinal`) targets the wrong owner
 // node — the materializer still emits the right body item into
 // the right module, but the realizability check sees a stale

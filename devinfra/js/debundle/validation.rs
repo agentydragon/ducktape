@@ -15,11 +15,11 @@ use analysis::{DepKind, ModuleId, OwnerGraph, Purity, SequencedOwnerCause, State
 
 /// Result of validating a module dep graph.
 #[derive(Debug, Clone, Serialize)]
-pub struct FactorizationReport {
+pub struct AssignmentReport {
     pub cycles: Vec<CycleReport>,
     /// Atomic factor groups the spec splits across destination
     /// modules — unrealizable by construction. Populated from
-    /// `ChunkFactorization::assembly_conflicts`; the materializer rejects any
+    /// `AssignmentAnalysis::assembly_conflicts`; the materializer rejects any
     /// spec with a non-empty list before emitting code.
     pub atomic_group_conflicts: Vec<AtomicGroupConflict>,
     /// Topological linearization of `I ∪ S` rooted at the entry,
@@ -141,7 +141,7 @@ pub struct CycleEdge {
     /// that issued the read). `None` when the source owner is an
     /// anonymous statement with no declared bindings — diagnostics
     /// fall back to `<anon stmt #{statement_ordinal}>` in that case.
-    /// Populated by [`validate_factorization`] from the owner graph,
+    /// Populated by [`validate_assignment`] from the owner graph,
     /// so cycle reports name *both* ends of each cut edge by binding,
     /// not only the module pair.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -345,15 +345,15 @@ fn cut_pairs_count(cut: &[CycleEdge]) -> usize {
 /// particular, an asymmetric I-cycle that Lemma 2's source-import
 /// reversal rescues never appears here, even when another SCC in the
 /// same chunk is genuinely unrealizable.
-pub fn validate_factorization(
+pub fn validate_assignment(
     owner_graph: &OwnerGraph,
     assignment: &ModuleAssignment,
     module_path: &dyn Fn(ModuleId) -> ModulePath,
-) -> FactorizationReport {
+) -> AssignmentReport {
     let verdict = check_realizability(owner_graph, assignment);
     let cross_rebinds = render_cross_rebinds(owner_graph, &verdict, module_path);
     if verdict.unrealizable_sccs.is_empty() {
-        return FactorizationReport {
+        return AssignmentReport {
             cycles: Vec::new(),
             atomic_group_conflicts: Vec::new(),
             linker_order: Vec::new(),
@@ -423,7 +423,7 @@ pub fn validate_factorization(
             }
         })
         .collect();
-    FactorizationReport {
+    AssignmentReport {
         cycles,
         atomic_group_conflicts: Vec::new(),
         linker_order: Vec::new(),
@@ -432,7 +432,7 @@ pub fn validate_factorization(
 }
 
 /// Render the verdict's clause-2 cross-rebind diagnoses as
-/// human-readable lines for [`FactorizationReport::cross_rebinds`].
+/// human-readable lines for [`AssignmentReport::cross_rebinds`].
 fn render_cross_rebinds(
     owner_graph: &OwnerGraph,
     verdict: &RealizabilityVerdict,

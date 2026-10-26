@@ -7,7 +7,7 @@
 //! against the on-disk spec:
 //!
 //! 1. **No cross-module init-order cycles** — `check_realizability` /
-//!    `validate_factorization` over the post-edit assignment.
+//!    `validate_assignment` over the post-edit assignment.
 //! 2. **No atom-split** — every `AtomicGroup` (constraining-edge SCC of
 //!    the owner graph) maps to a single destination module under the
 //!    post-edit assignment. Splitting a member off into a different
@@ -46,7 +46,7 @@ use std::path::{Path, PathBuf};
 
 use ::gate::{
     BlockingSccEntry, render_atomic_group_conflict_summary, render_cycle_summary,
-    validate_factorization,
+    validate_assignment,
 };
 use analysis::{
     AtomicGroup, AtomicGroupConflict, AtomicGroupConflictReport, ConflictingClaim,
@@ -508,7 +508,7 @@ fn gate_post_edit_assignment_with_expected(
 
     // The gate algorithm walks edges + assignment, not declared sets:
     // `from_report` leaves `declared` empty, which is fine for
-    // `check_realizability`/`validate_factorization` (both consume the
+    // `check_realizability`/`validate_assignment` (both consume the
     // assignment we build below, not the per-owner declared field).
     let owner_graph = OwnerGraph::from_report(&owner_graph_report)
         .with_context(|| format!("reconstructing owner graph {}", owner_graph_path.display()))?;
@@ -665,7 +665,7 @@ fn gate_post_edit_assignment_with_expected(
     }
 
     // Check 2 — module-quotient cycles.
-    let report = validate_factorization(&owner_graph, &assignment, &module_path);
+    let report = validate_assignment(&owner_graph, &assignment, &module_path);
     if !report.cycles.is_empty() {
         let blocking_sccs = BlockingSccEntry::from_cycle_reports(&report.cycles);
         write_rejection_artifact(
