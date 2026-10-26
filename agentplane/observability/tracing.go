@@ -250,14 +250,7 @@ func HTTPHandler(next http.Handler) http.Handler {
 			}
 			span.End()
 		}()
-		instrumentedRequest := request.Clone(ctx)
-		next.ServeHTTP(response, instrumentedRequest)
-		if route := instrumentedRequest.Pattern; route != "" {
-			if separator := strings.IndexByte(route, ' '); separator >= 0 {
-				route = route[separator+1:]
-			}
-			span.SetAttributes(attribute.String("http.route", route))
-		}
+		next.ServeHTTP(response, request.WithContext(ctx))
 	})
 }
 
