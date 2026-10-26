@@ -13,9 +13,9 @@ use analysis::reports::schema::LineRange;
 use analysis::reports::{atomic_group_key, module_id_from_key, module_key, owner_key};
 use analysis::{
     AtomicGraphReport, AtomicGroup, AtomicGroupEdgeReport, AtomicGroupReport, BindingReport,
-    DepKind, EdgeRoleReport, ModuleEntry, ModuleId, ModuleKey,
-    OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphQuotientReport, OwnerGraphReport, Purity,
-    PurityCauseReport, QuotientEdgeReport, QuotientSccReport,
+    DepKind, EdgeRoleReport, ModuleEntry, ModuleId, ModuleKey, OwnerGraphEdgeReport,
+    OwnerGraphNodeReport, OwnerGraphQuotientReport, OwnerGraphReport, Purity, PurityCauseReport,
+    QuotientEdgeReport, QuotientSccReport,
 };
 
 use crate::chunk_factorization::ChunkFactorization;

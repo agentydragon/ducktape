@@ -13,9 +13,7 @@ use crate::imports::{
 use crate::plans::ModulePlan;
 use crate::rebind_fold::RebindFold;
 use crate::util::target_file_for_request;
-use analysis::{
-    BindingKind, ModuleId, OwnerGraphAndAtomicGroups, OwnerId, top_level_id,
-};
+use analysis::{BindingKind, ModuleId, OwnerGraphAndAtomicGroups, OwnerId, top_level_id};
 use anyhow::{Context, Result, bail};
 use js_ast::body_index_for_statement_ordinal;
 use selector_outcome::{
