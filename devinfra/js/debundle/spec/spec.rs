@@ -1098,14 +1098,14 @@ pub enum SourceMatchIdentifierMode {
 /// catch-all path.
 pub const DEFAULT_RESIDUAL_MODULE_PATH: &str = "residual/unhandled";
 
-/// Module path components that hold the spec's residual catch-all
+/// Authored module-path namespace for the residual catch-all
 /// (default emit target [`DEFAULT_RESIDUAL_MODULE_PATH`]
 /// per `UnassignedMode::CatchallFile`). Files under any
 /// directory whose top-level segment is `residual/` are treated as
 /// "the still-to-be-factorized pile". Detection is by module-path
 /// prefix only (matches both the default and any spec author's
 /// custom `residual/<other>.yaml`).
-pub fn is_residual_module_path(module_path: &str) -> bool {
+pub fn is_residual_namespace_path(module_path: &str) -> bool {
     module_path == "residual" || module_path.starts_with("residual/")
 }
 
@@ -1193,7 +1193,7 @@ impl std::error::Error for ModulePathError {}
 
 #[cfg(test)]
 mod module_path_tests {
-    use super::{ModulePath, is_residual_module_path};
+    use super::{ModulePath, is_residual_namespace_path};
 
     #[test]
     fn chunk_prefixed_and_clean_spellings_parse_equal() {
@@ -1215,15 +1215,15 @@ mod module_path_tests {
     }
 
     #[test]
-    fn is_residual_module_path_matches_residual_subtree_only() {
-        assert!(is_residual_module_path("residual"));
-        assert!(is_residual_module_path("residual/unhandled"));
-        assert!(is_residual_module_path("residual/custom/sub"));
-        assert!(!is_residual_module_path("ui/sidebar"));
+    fn is_residual_namespace_path_matches_residual_subtree_only() {
+        assert!(is_residual_namespace_path("residual"));
+        assert!(is_residual_namespace_path("residual/unhandled"));
+        assert!(is_residual_namespace_path("residual/custom/sub"));
+        assert!(!is_residual_namespace_path("ui/sidebar"));
         // The substring "residual" inside a path segment shouldn't
         // match — only the top-level segment counts.
-        assert!(!is_residual_module_path("ui/residual"));
-        assert!(!is_residual_module_path("residualish/foo"));
+        assert!(!is_residual_namespace_path("ui/residual"));
+        assert!(!is_residual_namespace_path("residualish/foo"));
     }
 
     #[test]

@@ -162,8 +162,8 @@ underlying number.
 
 Module identity is **interned** on the wire. `dependency_graph.json` (a.k.a.
 `module_graph`) carries exactly one module table — `module_graph.nodes`,
-a list of `ModuleEntry { key, path, residual }` — and the table is the
-**single source of truth** for each module's path and residual flag.
+a list of `ModuleEntry { key, path, kind }` — and the table is the
+**single source of truth** for each module's path and destination kind.
 Everything that points at a module carries only the interned
 `ModuleKey` (`"logical:N"`):
 
@@ -176,10 +176,12 @@ Everything that points at a module carries only the interned
 | `atomic_graph.nodes[].destinations[]`     | `ModuleKey`   |
 
 There is no second encoding of a module: a reference is a key, the path
-and residual flag live once in the table, and a consumer resolves a key
-via `DependencyGraphReport::module(key)` / `is_residual(key)`. Residual-ness is
-read from the table's authoritative `residual` flag, never inferred from a
-key string.
+and destination kind live once in the table, and a consumer resolves a key
+via `DependencyGraphReport::module(key)` / `is_unassigned_or_entry(key)`.
+`kind` is `entry` for the physical entry destination, `specified` for an
+explicit planned output, or `unassigned` for a planned output receiving
+unclaimed source units. The authored `residual/` path namespace does not
+determine the destination kind.
 
 ## Shared purity causes
 

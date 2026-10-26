@@ -209,7 +209,7 @@ fn empty_dependency_graph_report_includes_entry_destination() {
     let entry = &report.quotient.nodes[0];
     assert_eq!(entry.key.as_str(), "logical:0");
     assert_eq!(entry.path.as_str(), "anon_residual_sentinel");
-    assert!(entry.residual);
+    assert_eq!(entry.kind, ModuleDestinationKind::Entry);
 }
 
 #[test]
@@ -222,6 +222,19 @@ fn dependency_graph_report_emits_atomic_graph() {
 
     let report = assignment_analysis.dependency_graph_report();
     assert_eq!(report.atomic_graph.nodes.len(), 3);
+    assert_eq!(
+        report
+            .quotient
+            .nodes
+            .iter()
+            .map(|entry| entry.kind)
+            .collect::<Vec<_>>(),
+        vec![
+            ModuleDestinationKind::Unassigned,
+            ModuleDestinationKind::Specified,
+            ModuleDestinationKind::Entry,
+        ]
+    );
     assert!(
         report
             .atomic_graph
@@ -232,13 +245,16 @@ fn dependency_graph_report_emits_atomic_graph() {
                     && atomic_group
                         .destinations
                         .iter()
-                        .any(|destination| report.is_residual(destination))
+                        .any(|destination| report.is_unassigned_or_entry(destination))
             ),
         "Leaf should appear as a residual atomic group: {:#?}",
         report.atomic_graph,
     );
     let json = serde_json::to_string(&report).expect("serialize DependencyGraphReport");
     assert!(json.contains(r#""atomic_graph""#));
+    assert!(json.contains(r#""kind":"entry""#));
+    assert!(json.contains(r#""kind":"unassigned""#));
+    assert!(json.contains(r#""kind":"specified""#));
 }
 
 /// `cli/gate.rs` reads the callee source unit off the serialized `dependency_graph.json` edge to

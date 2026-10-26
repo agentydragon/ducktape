@@ -19,14 +19,14 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use analysis::{DependencyGraphReport, SourceUnitId, StatementKind};
+use analysis::{DependencyGraphReport, ModuleDestinationKind, SourceUnitId, StatementKind};
 use anonymous_resolution::resolve_source_claims;
 use anyhow::{Context, Result, anyhow, bail};
 use serde::Deserialize;
 
 use spec::{
     AnonymousStatement, BindingAnnotation, LogicalModule, Member, ModulePath, SourceMatchBinding,
-    SourceMatchBindingDetail, SourceMatchClaim, is_residual_module_path,
+    SourceMatchBindingDetail, SourceMatchClaim, is_residual_namespace_path,
 };
 use spec_modules::{collect_module_files, module_path_from_file, read_module_file};
 use spec_tree::ModuleTreeScope;
@@ -1009,7 +1009,7 @@ pub fn run_source_unit_refine(
                 )
             })?;
         anyhow::ensure!(
-            !is_residual_module_path(current_module.as_str()),
+            !is_residual_namespace_path(current_module.as_str()),
             "source unit {:?} is claimed from a residual module and cannot be moved",
             assignment.unit_id
         );
@@ -1019,7 +1019,7 @@ pub fn run_source_unit_refine(
             canonical_module_path(&assignment.module)?
         };
         anyhow::ensure!(
-            !is_residual_module_path(&destination),
+            !is_residual_namespace_path(&destination),
             "destination {:?} is a reserved residual path",
             destination
         );
@@ -1406,7 +1406,7 @@ fn check_graph_source_unit_destinations(
             .with_context(|| {
                 format!("source unit {:?} has an unknown graph destination", node.id)
             })?;
-        let expected = if graph_destination.residual {
+        let expected = if graph_destination.kind != ModuleDestinationKind::Specified {
             None
         } else {
             Some(graph_destination.path.as_str().to_string())
@@ -1584,7 +1584,7 @@ fn drained_source_modules(docs: &ModuleDocs, move_sources: &BTreeSet<String>) ->
     move_sources
         .iter()
         .filter(|mp| {
-            if is_residual_module_path(mp) {
+            if is_residual_namespace_path(mp) {
                 return false;
             }
             let Some((_, doc)) = docs.get(*mp) else {

@@ -18,7 +18,7 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use serde::Serialize;
 
-use spec::is_residual_module_path;
+use spec::is_residual_namespace_path;
 use spec_modules::{ModuleFile, collect_module_files, module_path_from_file, read_module_file};
 
 /// Member-count buckets per the 2026-05-26 real-spec survey.
@@ -111,10 +111,10 @@ pub fn compute_spec_stats(modules_root: &Path) -> Result<SpecStats> {
             .map(|claim| claim.bindings.len())
             .sum::<usize>();
         let member_count = module.members.len() + source_match_binding_count;
-        let is_residual = is_residual_module_path(&path);
+        let is_residual_namespace = is_residual_namespace_path(&path);
 
         modules.total += 1;
-        if is_residual {
+        if is_residual_namespace {
             modules.residual += 1;
         }
         // "Empty" matches the `modules delete` predicate: no claims,

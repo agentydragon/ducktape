@@ -206,7 +206,7 @@ pub fn run_modules_apply(args: ModulesApplyArgs) -> Result<()> {
                 .with_context(|| {
                     format!("proposal source unit {source_unit_id:?} absent from graph")
                 })?;
-            if !graph.is_residual(&node.destination) {
+            if !graph.is_unassigned_or_entry(&node.destination) {
                 continue;
             }
             let location = node.source_location.as_ref().with_context(|| {

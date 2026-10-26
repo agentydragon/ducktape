@@ -415,7 +415,7 @@ export { A, B, Existing };
                 && atomic_group
                     .destinations
                     .iter()
-                    .any(|destination| graph.is_residual(destination))
+                    .any(|destination| graph.is_unassigned_or_entry(destination))
         }),
         "atomic graph should collapse the residual A/B eager cycle into one atomic group: {graph:#?}",
     );
@@ -488,7 +488,7 @@ export { a, b, existing };
                 && atomic_group
                     .destinations
                     .iter()
-                    .any(|destination| graph.is_residual(destination))
+                    .any(|destination| graph.is_unassigned_or_entry(destination))
         }),
         "written residual binding a should share an atomic group with assigner b: {graph:#?}",
     );

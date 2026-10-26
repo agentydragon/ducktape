@@ -139,7 +139,7 @@ pub fn run_scc(args: SccArgs) -> Result<()> {
     for scc in &graph.quotient.sccs {
         let is_cycle = scc.is_cycle;
         let is_singleton = scc.modules.len() == 1;
-        let touches_residual = scc.modules.iter().any(|m| graph.is_residual(m));
+        let touches_residual = scc.modules.iter().any(|m| graph.is_unassigned_or_entry(m));
         if args.cycles_only && !is_cycle {
             continue;
         }

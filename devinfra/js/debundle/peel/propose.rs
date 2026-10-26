@@ -45,8 +45,8 @@ use anyhow::{Context, Result};
 use serde::Serialize;
 
 use analysis::{
-    DependencyGraph, DependencyGraphReport, LineRange, ModuleAssignment, ModuleId, SourceUnitClass,
-    SourceUnitReport, StatementKind,
+    DependencyGraph, DependencyGraphReport, LineRange, ModuleAssignment, ModuleDestinationKind,
+    ModuleId, SourceUnitClass, SourceUnitReport, StatementKind,
 };
 use anonymous_resolution::{
     ModuleNeutralReferenceMeaning, ResolvedLocalMemberOrigin, ResolvedLocalMemberReference,
@@ -577,14 +577,14 @@ fn decompose_modules(
         .quotient
         .nodes
         .iter()
-        .find(|module| module.residual)
+        .find(|module| module.kind != ModuleDestinationKind::Specified)
         .map(|module| module.path.clone())
         .context("dependency graph has no residual module for decomposition validation")?;
     let include_residual = strategy == ModuleDecompositionStrategy::AtomicIncludingResidual;
 
     let mut module_source_units: BTreeMap<ModulePath, Vec<usize>> = BTreeMap::new();
     for (source_unit_idx, node) in graph.nodes.iter().enumerate() {
-        if include_residual || !graph.is_residual(&node.destination) {
+        if include_residual || !graph.is_unassigned_or_entry(&node.destination) {
             module_source_units
                 .entry(source_unit_modules[source_unit_idx].clone())
                 .or_default()
@@ -2085,7 +2085,7 @@ fn propose_with_context(
         .nodes
         .iter()
         .enumerate()
-        .filter(|(_, node)| graph.is_residual(&node.destination))
+        .filter(|(_, node)| graph.is_unassigned_or_entry(&node.destination))
         .map(|(i, _)| i)
         .collect();
 
@@ -2093,7 +2093,7 @@ fn propose_with_context(
         .nodes
         .iter()
         .enumerate()
-        .filter(|(_, node)| !graph.is_residual(&node.destination))
+        .filter(|(_, node)| !graph.is_unassigned_or_entry(&node.destination))
         .map(|(i, node)| Ok((i, active_module_label(node, active_claims, graph)?)))
         .collect::<Result<_>>()?;
 
@@ -2222,7 +2222,7 @@ fn active_module_label(
 fn spec_module_groups(graph: &DependencyGraphReport) -> Vec<SpecModuleGroup> {
     let mut groups: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for node in &graph.nodes {
-        if graph.is_residual(&node.destination) {
+        if graph.is_unassigned_or_entry(&node.destination) {
             continue;
         }
         groups
@@ -2262,7 +2262,7 @@ fn class_proposal_lines(
     }
     quotient
         .class_members(c)
-        .filter(|o| graph.is_residual(&graph.nodes[o.0].destination))
+        .filter(|o| graph.is_unassigned_or_entry(&graph.nodes[o.0].destination))
         .map(|o| graph.nodes[o.0].line_count())
         .sum()
 }
@@ -2312,7 +2312,7 @@ fn emit_proposals(
         let n_labels = labels.map(|s| s.len()).unwrap_or(0);
         let has_residual_origin = quotient
             .class_members(c)
-            .any(|o| graph.is_residual(&graph.nodes[o.0].destination));
+            .any(|o| graph.is_unassigned_or_entry(&graph.nodes[o.0].destination));
         if n_labels == 0 {
             // Pure residual class. Always emit (fresh-module).
             candidate_classes.push(c);
@@ -2610,7 +2610,7 @@ fn build_proposal(
         all_source_unit_idxs
             .iter()
             .copied()
-            .filter(|&idx| graph.is_residual(&graph.nodes[idx].destination))
+            .filter(|&idx| graph.is_unassigned_or_entry(&graph.nodes[idx].destination))
             .collect()
     } else {
         all_source_unit_idxs.clone()

@@ -25,7 +25,7 @@ use serde::Deserialize;
 
 use spec::{
     AnonymousStatementSelector, BindingSourceKind, Member, MemberSelectorSpec, ModulePath,
-    SourceMatchClaim, TransformSpec, is_residual_module_path,
+    SourceMatchClaim, TransformSpec, is_residual_namespace_path,
 };
 
 /// The on-disk module and the logical module share one canonical schema.
@@ -206,7 +206,7 @@ pub fn load_active_claims(modules_root: &Path) -> Result<BTreeMap<String, Module
     let mut claims = BTreeMap::new();
     for path in collect_module_files(modules_root)? {
         let raw_path = module_path_from_file(&path, modules_root);
-        if is_residual_module_path(&raw_path) {
+        if is_residual_namespace_path(&raw_path) {
             continue;
         }
         let module_path = ModulePath::parse(&raw_path, "")

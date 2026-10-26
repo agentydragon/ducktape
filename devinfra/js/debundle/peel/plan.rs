@@ -502,7 +502,7 @@ pub fn run_atomic_groups_report(args: &AtomicGroupsArgs) -> Result<AtomicGroupsR
             atomic_group
                 .destinations
                 .iter()
-                .any(|destination| graph.is_residual(destination))
+                .any(|destination| graph.is_unassigned_or_entry(destination))
         });
     }
     if args.readable_only {
@@ -603,7 +603,7 @@ pub fn run_graph_summary_report(args: &GraphSummaryArgs) -> Result<GraphSummaryR
             atomic_group
                 .destinations
                 .iter()
-                .any(|destination| graph.is_residual(destination))
+                .any(|destination| graph.is_unassigned_or_entry(destination))
         })
         .map(|atomic_group| AtomicGroupSummary {
             atomic_group_id: atomic_group.id.clone(),
@@ -630,7 +630,7 @@ pub fn run_graph_summary_report(args: &GraphSummaryArgs) -> Result<GraphSummaryR
                 atomic_group
                     .destinations
                     .iter()
-                    .any(|destination| graph.is_residual(destination))
+                    .any(|destination| graph.is_unassigned_or_entry(destination))
             })
             .count(),
         atomic_edge_count: graph.atomic_graph.edges.len(),

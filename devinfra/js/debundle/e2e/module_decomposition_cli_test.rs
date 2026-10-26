@@ -929,7 +929,7 @@ fn coarsening_atomic_conflicts_keeps_residual_import_and_export_declarations() {
         .quotient
         .nodes
         .iter()
-        .find(|module| module.residual)
+        .find(|module| module.kind == analysis::ModuleDestinationKind::Entry)
         .unwrap()
         .path
         .to_string();
@@ -983,7 +983,7 @@ fn atomic_residual_mode_moves_body_atoms_but_keeps_entry_imports_and_exports() {
         .quotient
         .nodes
         .iter()
-        .find(|module| module.residual)
+        .find(|module| module.kind == analysis::ModuleDestinationKind::Entry)
         .expect("residual entry module")
         .path
         .to_string();
@@ -1103,7 +1103,7 @@ fn coarsens_only_gate_blocking_sccs_and_the_reported_assignment_runs() {
         .quotient
         .nodes
         .iter()
-        .find(|module| module.residual)
+        .find(|module| module.kind == analysis::ModuleDestinationKind::Entry)
         .expect("the fixture has an entry module")
         .path
         .to_string();
@@ -1169,7 +1169,7 @@ fn coarsening_an_entry_scc_keeps_import_and_export_source_units_at_the_entry_pat
         .quotient
         .nodes
         .iter()
-        .find(|module| module.residual)
+        .find(|module| module.kind == analysis::ModuleDestinationKind::Entry)
         .expect("the fixture has an entry module")
         .path
         .to_string();
