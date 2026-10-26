@@ -6,6 +6,7 @@ import { recallColorClass } from "../lib/colors";
 import { formatAge, formatStatsWithCI } from "../lib/formatters";
 import { useRunModal } from "../lib/runModalContext";
 import type { ExampleKind, Split } from "../lib/types";
+import { RelativeTime } from "../../../../util/frontend/relative_time";
 import BackButton from "./BackButton";
 import Breadcrumb from "./Breadcrumb";
 import RunsBrowser from "./RunsBrowser";
@@ -49,7 +50,9 @@ export default function DefinitionDetail({ data }: Props): JSX.Element {
             {data.image_digest}
           </Text>
           <Text c="dimmed">{data.agent_type}</Text>
-          <Text c="dimmed">{formatAge(data.created_at)}</Text>
+          <Text c="dimmed">
+            <RelativeTime value={new Date(data.created_at)} format={(value) => ({ text: formatAge(value) })} />
+          </Text>
         </Group>
       </Paper>
 

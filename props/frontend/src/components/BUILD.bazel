@@ -222,6 +222,7 @@ ts_library(
         "//props/frontend/src/lib:formatters",
         "//props/frontend/src/lib:runModalContext",
         "//props/frontend/src/lib:types",
+        "//util/frontend:relative_time",
     ],
 )
 
@@ -261,6 +262,7 @@ ts_library(
         "//props/frontend/src/lib:status",
         "//props/frontend/src/lib:toast",
         "//props/frontend/src/lib:types",
+        "//util/frontend:relative_time",
     ],
 )
 

@@ -17,8 +17,7 @@ export function shortDate(value: string | null | undefined): string | null {
 }
 
 /** A timestamp in a concise, human-readable form with the full date and time as `title`. */
-export function formatTimestamp(value: string, nowMs: number = Date.now()): TimestampDisplay {
-  const date = parseTimestamp(value);
+export function formatTimestamp(date: Date, nowMs: number = Date.now()): TimestampDisplay {
   const now = new Date(nowMs);
   return {
     text: formatDistanceStrict(date, now, { addSuffix: true, roundingMethod: "round" }),

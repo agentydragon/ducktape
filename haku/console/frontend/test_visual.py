@@ -88,6 +88,11 @@ async def test_capability_request(
         await _park_pointer(view)
         await view.capture()
 
+        await view.page.get_by_title("Full", exact=True).click()
+        await expect(view.page.get_by_text("Requested", exact=True)).to_be_visible()
+        await _park_pointer(view)
+        await view.capture(f"capability_request_detailed_{color_scheme}")
+
 
 async def test_not_found(visual: VisualHarness, color_scheme: Literal["light", "dark"], capture_name: str) -> None:
     async with _fixture(visual, "not-found", color_scheme, width=900, height=600, capture_name=capture_name) as view:

@@ -17,6 +17,7 @@ import type { ConsoleNavigationView, ConsoleView } from "./routing";
 import { SUCCESS_COLOR } from "./theme";
 import { formatTimestamp } from "./time";
 import { useVariant, VariantControl } from "./variant_control";
+import { RelativeTime } from "../../../util/frontend/relative_time";
 
 export interface ShellChromeProps {
   // Capability request panel open-state, parent-controlled so a new bridge request can
@@ -133,7 +134,6 @@ function ScreenshotPanel({ sharing, onWithdraw }: { sharing: boolean; onWithdraw
 // panel's job is to make re-authentication a deliberate gesture — a tab that runs out mid-task
 // navigates itself to Authentik and takes the framed Haku UI's unsaved state with it.
 function SessionPanel({ expiresAt, onReauthenticate }: { expiresAt: Date; onReauthenticate: () => void }) {
-  const expiry = formatTimestamp(expiresAt.toISOString());
   return (
     <section className="haku-shell-card haku-shell-side-panel" aria-label="Console session">
       <Stack gap="xs">
@@ -141,8 +141,8 @@ function SessionPanel({ expiresAt, onReauthenticate }: { expiresAt: Date; onReau
           <Text fw={600} size="sm">
             Console session
           </Text>
-          <Badge color="orange" variant="light" title={expiry.title}>
-            Ends {expiry.text}
+          <Badge color="orange" variant="light">
+            Ends <RelativeTime value={expiresAt} format={formatTimestamp} />
           </Badge>
         </Group>
         <Text size="xs" c="dimmed">
@@ -171,7 +171,6 @@ function GeolocationApprovalCard({
   const [variant, setVariant] = useVariant("compact");
   const armed = useArmed(`geo-card:${approval.id}`);
   const detailed = variant === "detailed";
-  const requested = formatTimestamp(approval.createdAt);
   return (
     <section className="haku-shell-card">
       <Stack gap="sm">
@@ -195,7 +194,7 @@ function GeolocationApprovalCard({
         {detailed && (
           <div className="haku-shell-fields">
             <Field label="Requested">
-              <span title={requested.title}>{requested.text}</span>
+              <RelativeTime value={new Date(approval.createdAt)} format={formatTimestamp} />
             </Field>
             {approval.options && (
               <Field label="Options">
@@ -233,7 +232,6 @@ function ScreenshotApprovalCard({
   onDeny: () => void;
 }) {
   const armed = useArmed(`shot-card:${approval.id}`);
-  const requested = formatTimestamp(approval.createdAt);
   return (
     <section className="haku-shell-card">
       <Stack gap="sm">
@@ -243,8 +241,8 @@ function ScreenshotApprovalCard({
               {SCREENSHOT_APPROVAL_TITLE}
             </Text>
             <Text size="xs">{SCREENSHOT_APPROVAL_BODY}</Text>
-            <Text size="xs" c="dimmed" title={requested.title}>
-              Requested {requested.text}
+            <Text size="xs" c="dimmed">
+              Requested <RelativeTime value={new Date(approval.createdAt)} format={formatTimestamp} />
             </Text>
           </Stack>
           <Badge color={deciding ? "blue" : "yellow"} variant="light" style={{ flexShrink: 0 }}>

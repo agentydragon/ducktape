@@ -79,5 +79,6 @@ ts_library(
         "//props/frontend/src/lib:colors",
         "//props/frontend/src/lib:formatters",
         "//props/frontend/src/lib:types",
+        "//util/frontend:relative_time",
     ],
 )

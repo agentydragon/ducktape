@@ -1,6 +1,7 @@
 import type { JSX } from "react";
 import { Field } from "./field";
 import { formatTimestamp } from "./time";
+import { RelativeTime } from "../../../util/frontend/relative_time";
 
 /** The provenance a tool call carries that isn't about *what it does* — who asked, the exact
  * request time, and the canonical id. Rarely needed while triaging, so it rides behind one
@@ -19,7 +20,6 @@ export function ToolCallMeta({
   createdAt: string | null;
   toolCallId: string;
 }): JSX.Element {
-  const requested = createdAt ? formatTimestamp(createdAt) : null;
   return (
     <details className="haku-shell-disclosure">
       <summary>Metadata</summary>
@@ -28,9 +28,9 @@ export function ToolCallMeta({
           {serverId}.{toolName}
         </Field>
         <Field label="Caller">{callerDisplayName}</Field>
-        {requested && (
+        {createdAt && (
           <Field label="Requested">
-            <span title={requested.title}>{requested.text}</span>
+            <RelativeTime value={new Date(createdAt)} format={formatTimestamp} />
           </Field>
         )}
         <Field label="Tool call id" mono>

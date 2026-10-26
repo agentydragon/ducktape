@@ -546,6 +546,7 @@ ts_library(
         ":format_time",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//util/frontend:relative_time",
     ],
 )
 
