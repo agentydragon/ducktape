@@ -171,6 +171,7 @@ rust_library(
         ":selector_resolve",
         ":source_match",
         ":spec",
+        ":spec_resolution",
         "@crates//:anyhow",
         "@crates//:swc_common",
         "@crates//:swc_ecma_ast",
@@ -846,6 +847,7 @@ rust_library(
         ":selector_resolve",
         ":source_match",
         ":spec",
+        ":spec_resolution",
         ":vendor",
         "@crates//:anyhow",
         "@crates//:rayon",
@@ -999,6 +1001,7 @@ rust_library(
         ":source_match",
         ":spec",
         ":spec_modules",
+        ":spec_resolution",
         ":spec_stats",
         ":spec_tree",
         ":yaml_edit",
@@ -1243,6 +1246,20 @@ rust_library(
         "@crates//:anyhow",
         "@crates//:rayon",
         "@crates//:swc_ecma_ast",
+    ],
+)
+
+rust_library(
+    name = "spec_resolution",
+    srcs = ["spec_resolution.rs"],
+    crate_root = "spec_resolution.rs",
+    edition = "2024",
+    deps = [
+        ":analysis",
+        ":selector_resolve",
+        ":source_match",
+        ":spec",
+        "@crates//:anyhow",
     ],
 )
 

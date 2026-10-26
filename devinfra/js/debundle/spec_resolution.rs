@@ -1,0 +1,712 @@
+//! Compile spec claims into request types and resolve those requests against source chunks.
+
+use analysis::facts::StructuralChunkAnalysis;
+use analysis::{AnalysisAssumptions, KnownEffect};
+use anyhow::{Result, bail};
+use selector_resolve::{
+    AnonymousStatement, Chunk, Member, MemberSelector, Projection, Resolution, SpecModule,
+};
+use source_match::ParsedSourceMatchSelector;
+use spec::{InitializerPurity, LogicalModule, MemberEffect, MemberPurity, UnassignedMode};
+use std::collections::{BTreeMap, BTreeSet};
+
+#[derive(Debug, Clone)]
+pub struct LogicalRequest {
+    pub id: String,
+    pub target_path: String,
+    pub residual: bool,
+    pub members: Vec<MemberRequest>,
+    /// Anonymous-statement members the spec asked to co-move into
+    /// this module. Lowering claims their resolved source ordinals into
+    /// its output plan.
+    pub anonymous_statements: Vec<AnonymousStatementRequest>,
+    /// Module-level human-readable comment from the spec. Emitted
+    /// at the top of the generated module file, before any imports.
+    /// See [`spec::LogicalModule::comment`].
+    pub comment: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AnonymousStatementRequest {
+    pub parsed_selector: source_match::ParsedSourceMatchSelector,
+    /// Optional `comment:` text from the anonymous statement spec
+    /// entry. `note:` is not emitted; it remains YAML scratch
+    /// metadata.
+    pub comment: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct MemberRequest {
+    pub binding: String,
+    pub export_name: String,
+    /// Whether the spec explicitly assigned this public name (as opposed to
+    /// the implicit binding-name default).
+    pub explicit_export_name: bool,
+    /// How the member names its declaration. Every selector but an import
+    /// specifier name pin resolves through the global selector solver.
+    pub selector: MemberSelector,
+    /// Spec-level purity annotation. `Pure` asserts that calls to the
+    /// bound function have no observable side effects — the validator
+    /// trusts the annotation and drops S edges for `<binding>(...)`
+    /// call sites. `Default` means "not annotated, fall back to
+    /// inferred classification". An author-trust contract; see
+    /// <docs/purity_soundness.md> "Declared purity" and docs/design.md A9.
+    pub purity: MemberPurity,
+    /// Trust annotation for this binding's variable initializer only; it does
+    /// not affect later uses of the resulting value.
+    pub initializer_purity: InitializerPurity,
+    /// Spec-level local-effect annotation. `TypescriptDecorateHelper`
+    /// asserts that recognized calls to the bound helper mutate only
+    /// their target class/prototype, so the analyzer can model a local
+    /// effect edge instead of a global side-effect-order edge.
+    pub effect: MemberEffect,
+    /// Property names on the bound value whose member calls
+    /// (`<binding>.<prop>(args)` / `<binding>?.<prop>(args)`) the author
+    /// asserts have no observable side effects beyond evaluating their
+    /// arguments. Same author-trust contract as `purity: pure` — see
+    /// <docs/purity_soundness.md> "Declared purity". Empty when the spec doesn't carry a
+    /// `pure_members` entry for this member.
+    pub pure_members: Vec<String>,
+    /// Property names on the bound value whose calls do not
+    /// synchronously invoke callback arguments. The call may still be
+    /// impure; this only narrows callback-body at-init promotion.
+    pub no_sync_callback_members: Vec<String>,
+    /// Per-binding human-readable comment from `annotations:`. Emitted as a
+    /// `// ...` block above the binding's owner statement in the generated
+    /// module body.
+    pub comment: Option<String>,
+    /// YAML-only note carried through request expansion for conflict checks
+    /// and diagnostics. It never emits into generated JS.
+    pub note: Option<String>,
+    /// Short spec-facing description of how this member claim was authored.
+    /// Used only in diagnostics after source-match selectors have resolved to
+    /// concrete source bindings.
+    pub claim_origin: String,
+}
+
+impl MemberRequest {
+    /// Whether this member's ownership is intentionally unknown until chunk
+    /// analysis facts are available and the global selector solver runs.
+    ///
+    /// Plain binding selectors keep their binding spelling for assumptions and
+    /// duplicate diagnostics, but ownership is read back from the solver.
+    pub fn resolves_after_chunk_analysis(&self) -> bool {
+        !self.selector.is_import_specifier()
+    }
+
+    /// Extend `assumptions` with this member's spec-level trust assertions
+    /// (purity, pure_members, effect). Spec annotations carried on any
+    /// member form (logical-module member, chunk_renames member)
+    /// propagate the same way — they are semantic trust assertions,
+    /// not ownership claims; binding patches routed through
+    /// chunk_renames still do not force proposer grouping.
+    pub fn has_analysis_assumptions(&self) -> bool {
+        self.purity != MemberPurity::Default
+            || self.initializer_purity != InitializerPurity::Default
+            || self.effect != MemberEffect::Default
+            || !self.pure_members.is_empty()
+            || !self.no_sync_callback_members.is_empty()
+    }
+
+    pub fn collect_assumptions_for_binding(
+        &self,
+        assumptions: &mut AnalysisAssumptions,
+        binding: &str,
+    ) {
+        if self.initializer_purity == InitializerPurity::Pure {
+            assumptions
+                .declared_pure_initializers
+                .insert(binding.to_string());
+        }
+        if self.purity == MemberPurity::Pure {
+            assumptions.declared_pure.insert(binding.to_string());
+        }
+        if self.purity == MemberPurity::PureNew {
+            assumptions.declared_pure_new.insert(binding.to_string());
+        }
+        if !self.pure_members.is_empty() {
+            assumptions
+                .declared_pure_members
+                .entry(binding.to_string())
+                .or_default()
+                .extend(self.pure_members.iter().cloned());
+        }
+        if !self.no_sync_callback_members.is_empty() {
+            assumptions
+                .no_sync_callback_members
+                .entry(binding.to_string())
+                .or_default()
+                .extend(self.no_sync_callback_members.iter().cloned());
+        }
+        if let Some(effect) = known_effect_from_member_effect(self.effect) {
+            assumptions
+                .known_effects
+                .insert(binding.to_string(), effect);
+        }
+    }
+}
+
+pub fn logical_requests_for_chunk(
+    chunk_logical_modules: Option<&BTreeMap<String, LogicalModule>>,
+    chunk_unassigned_mode: &UnassignedMode,
+    chunk_id: &str,
+) -> Result<Vec<LogicalRequest>> {
+    let mut requests = Vec::new();
+    let catchall_target = chunk_unassigned_mode
+        .catchall_file_target()
+        .map(str::to_string);
+    let mut explicit_module_at_catchall = false;
+    if let Some(by_target_path) = chunk_logical_modules {
+        for (target_path, module) in by_target_path {
+            let id = format!("{chunk_id}::{target_path}");
+            let members = build_members(
+                &module.members,
+                &module.source_matches,
+                &module.annotations,
+                &id,
+            )?;
+            reject_duplicate_export_names("logical_module", &id, &members)?;
+            reject_duplicate_member_bindings("logical_module", &id, &members)?;
+            let anonymous_statements = module
+                .anonymous_statements
+                .iter()
+                .map(|stmt| {
+                    let selector = stmt.selector()?;
+                    let parsed_selector = parse_anonymous_selector(
+                        &id,
+                        format!("<anonymous source_match in {id}>"),
+                        &selector,
+                    )?;
+                    Ok(AnonymousStatementRequest {
+                        parsed_selector,
+                        comment: stmt.comment.clone(),
+                    })
+                })
+                .collect::<Result<Vec<_>>>()?;
+            if catchall_target.as_deref() == Some(target_path.as_str()) {
+                explicit_module_at_catchall = true;
+            }
+            requests.push(LogicalRequest {
+                id,
+                target_path: target_path.clone(),
+                residual: false,
+                members,
+                anonymous_statements,
+                comment: module.comment.clone(),
+            });
+        }
+    }
+    // Synthesize a memberless catchall-file request when the chunk's
+    // `unassigned_mode` is `CatchallFile` and no explicit logical
+    // module already claims the catchall target. When an explicit
+    // module *is* at the catchall target, the residual sweep in
+    // `materialize_logical_chunk` will append unclaimed bindings to
+    // that explicit plan instead.
+    if let Some(target_path) = catchall_target
+        && !explicit_module_at_catchall
+    {
+        requests.push(LogicalRequest {
+            id: format!("{chunk_id}::residual"),
+            target_path,
+            residual: true,
+            members: Vec::new(),
+            anonymous_statements: Vec::new(),
+            comment: None,
+        });
+    }
+    Ok(requests)
+}
+
+pub fn build_members(
+    members: &[spec::Member],
+    source_matches: &[spec::SourceMatchClaim],
+    annotations: &BTreeMap<String, spec::BindingAnnotation>,
+    request_id: &str,
+) -> Result<Vec<MemberRequest>> {
+    let mut requests = members
+        .iter()
+        .map(|m| {
+            let selected = m.selector.selected()?;
+            let kind_label = selected.selector_kind_label();
+            // A solver-resolved member's public export name can't default to a
+            // binding name — the binding isn't known until the selector resolves
+            // — so `name:` is required. The kind label colors the message.
+            let require_name = || {
+                m.name.clone().ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "logical_module {request_id}: members[].selector.{kind_label} requires \
+                         `name:` because the public export name cannot default to a binding name \
+                         until the selector is resolved"
+                    )
+                })
+            };
+            let binding = match &selected {
+                spec::MemberSelectorSpec::Binding(binding) => binding.name.clone(),
+                _ => String::new(),
+            };
+            let export_name = match &selected {
+                spec::MemberSelectorSpec::Binding(binding) => {
+                    m.name.clone().unwrap_or_else(|| binding.name.clone())
+                }
+                _ => require_name()?,
+            };
+            let claim_origin = match &selected {
+                spec::MemberSelectorSpec::Binding(_) => {
+                    format!(
+                        "members[].selector.binding as `{}`",
+                        m.name.as_deref().unwrap_or(&binding)
+                    )
+                }
+                _ => format!(
+                    "members[].selector.{kind_label} as `{}`",
+                    m.name.as_deref().unwrap_or("<unnamed>")
+                ),
+            };
+            let selector = member_from_spec(export_name.clone(), selected).selector;
+            Ok(MemberRequest {
+                binding,
+                export_name,
+                explicit_export_name: m.name.is_some(),
+                selector,
+                purity: MemberPurity::Default,
+                initializer_purity: InitializerPurity::Default,
+                effect: MemberEffect::Default,
+                pure_members: Vec::new(),
+                no_sync_callback_members: Vec::new(),
+                comment: None,
+                note: None,
+                claim_origin,
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    for claim in source_matches {
+        for expanded in source_match::source_match_claim_member_selectors(request_id, claim)? {
+            let source_match::BindingGroupMemberSelector {
+                export_name,
+                parsed_selector,
+            } = expanded;
+            let claim_origin = match &parsed_selector.selector().target_binding {
+                Some(target) => format!("source_matches[].bindings[`{target}`]"),
+                None => "source_matches[]".to_string(),
+            };
+            let selector = member_from_source_match(export_name.clone(), parsed_selector).selector;
+            requests.push(MemberRequest {
+                binding: String::new(),
+                export_name,
+                explicit_export_name: true,
+                selector,
+                purity: MemberPurity::Default,
+                initializer_purity: InitializerPurity::Default,
+                effect: MemberEffect::Default,
+                pure_members: Vec::new(),
+                no_sync_callback_members: Vec::new(),
+                comment: None,
+                note: None,
+                claim_origin,
+            });
+        }
+    }
+
+    apply_binding_annotations(request_id, &mut requests, annotations)?;
+    Ok(requests)
+}
+
+fn apply_binding_annotations(
+    request_id: &str,
+    requests: &mut [MemberRequest],
+    annotations: &BTreeMap<String, spec::BindingAnnotation>,
+) -> Result<()> {
+    let mut by_export_name = BTreeMap::<String, Vec<usize>>::new();
+    for (idx, request) in requests.iter().enumerate() {
+        by_export_name
+            .entry(request.export_name.clone())
+            .or_default()
+            .push(idx);
+    }
+
+    for (export_name, annotation) in annotations {
+        let Some(indices) = by_export_name.get(export_name) else {
+            bail!(
+                "logical_module {request_id}: annotations key `{export_name}` does not match \
+                 any member name or source_matches[].bindings name"
+            );
+        };
+        if indices.len() != 1 {
+            bail!(
+                "logical_module {request_id}: annotations key `{export_name}` is ambiguous \
+                 because that readable binding name is claimed {} times",
+                indices.len()
+            );
+        }
+        merge_binding_annotation(
+            request_id,
+            export_name,
+            &mut requests[indices[0]],
+            annotation,
+        )?;
+    }
+    Ok(())
+}
+
+fn merge_binding_annotation(
+    request_id: &str,
+    export_name: &str,
+    request: &mut MemberRequest,
+    annotation: &spec::BindingAnnotation,
+) -> Result<()> {
+    if annotation.purity != MemberPurity::Default {
+        if request.purity != MemberPurity::Default && request.purity != annotation.purity {
+            bail_annotation_conflict(request_id, export_name, "purity")?;
+        }
+        request.purity = annotation.purity;
+    }
+
+    if annotation.initializer_purity != InitializerPurity::Default {
+        if request.initializer_purity != InitializerPurity::Default
+            && request.initializer_purity != annotation.initializer_purity
+        {
+            bail_annotation_conflict(request_id, export_name, "initializer_purity")?;
+        }
+        request.initializer_purity = annotation.initializer_purity;
+    }
+
+    if annotation.effect != MemberEffect::Default {
+        if request.effect != MemberEffect::Default && request.effect != annotation.effect {
+            bail_annotation_conflict(request_id, export_name, "effect")?;
+        }
+        request.effect = annotation.effect;
+    }
+
+    if !annotation.pure_members.is_empty() {
+        if !request.pure_members.is_empty() && request.pure_members != annotation.pure_members {
+            bail_annotation_conflict(request_id, export_name, "pure_members")?;
+        }
+        request.pure_members = annotation.pure_members.clone();
+    }
+
+    if !annotation.no_sync_callback_members.is_empty() {
+        if !request.no_sync_callback_members.is_empty()
+            && request.no_sync_callback_members != annotation.no_sync_callback_members
+        {
+            bail_annotation_conflict(request_id, export_name, "no_sync_callback_members")?;
+        }
+        request.no_sync_callback_members = annotation.no_sync_callback_members.clone();
+    }
+
+    if let Some(comment) = &annotation.comment {
+        if let Some(existing) = &request.comment
+            && existing != comment
+        {
+            bail_annotation_conflict(request_id, export_name, "comment")?;
+        }
+        request.comment = Some(comment.clone());
+    }
+
+    if let Some(note) = &annotation.note {
+        if let Some(existing) = &request.note
+            && existing != note
+        {
+            bail_annotation_conflict(request_id, export_name, "note")?;
+        }
+        request.note = Some(note.clone());
+    }
+
+    Ok(())
+}
+
+fn bail_annotation_conflict(request_id: &str, export_name: &str, field: &str) -> Result<()> {
+    bail!(
+        "logical_module {request_id}: annotations.{export_name}.{field} conflicts with \
+         metadata already declared on the member"
+    )
+}
+
+pub fn known_effect_from_member_effect(effect: MemberEffect) -> Option<KnownEffect> {
+    match effect {
+        MemberEffect::Default => None,
+        MemberEffect::TypescriptDecorateHelper => Some(KnownEffect::TypescriptDecorateHelper),
+        MemberEffect::TypescriptMetadataDecorateHelper => {
+            Some(KnownEffect::TypescriptMetadataDecorateHelper)
+        }
+        MemberEffect::TypescriptMetadataDecorateHelperWithMemberDecorators => {
+            Some(KnownEffect::TypescriptMetadataDecorateHelperWithMemberDecorators)
+        }
+        MemberEffect::TypescriptMetadataDecorateHelperThreeArgs => {
+            Some(KnownEffect::TypescriptMetadataDecorateHelperThreeArgs)
+        }
+    }
+}
+
+/// Convert one parsed selector into the selector engine's module member.
+pub fn member_from_spec(export_name: String, selector: spec::MemberSelectorSpec) -> Member {
+    member_from_selector(export_name, MemberSelector::from_spec(selector))
+}
+
+/// Convert one compiled selector into the selector engine's module member.
+pub fn member_from_selector(export_name: String, selector: MemberSelector) -> Member {
+    Member {
+        export_name,
+        selector,
+    }
+}
+
+/// Convert one expanded source-match binding into the selector engine's module
+/// member.
+pub fn member_from_source_match(
+    export_name: String,
+    selector: ParsedSourceMatchSelector,
+) -> Member {
+    member_from_selector(export_name, MemberSelector::SourceMatch(selector))
+}
+
+/// Parse an anonymous source selector with the shared selector conventions.
+pub fn parse_anonymous_selector(
+    request_id: &str,
+    description: impl Into<String>,
+    selector: &spec::AnonymousStatementSelector,
+) -> Result<ParsedSourceMatchSelector> {
+    Ok(ParsedSourceMatchSelector::parse(
+        request_id,
+        description.into(),
+        selector,
+        "source_match",
+    )?)
+}
+
+/// Build a selector-engine anonymous statement from its authored index.
+pub fn anonymous_statement(
+    index: usize,
+    selector: ParsedSourceMatchSelector,
+) -> AnonymousStatement {
+    AnonymousStatement { index, selector }
+}
+
+/// Construct one selector-engine module from compiled members and anonymous
+/// statements.
+pub fn spec_module(
+    path: String,
+    members: Vec<Member>,
+    anonymous_statements: Vec<AnonymousStatement>,
+) -> SpecModule {
+    SpecModule {
+        path,
+        members,
+        anonymous_statements,
+    }
+}
+
+/// The projected selectors and original request indices for one source chunk.
+pub struct ProjectedChunk<'a> {
+    chunk: Chunk<'a>,
+    modules: Vec<SpecModule>,
+    projection: Projection,
+    resolved_members: Vec<Vec<usize>>,
+}
+
+/// The selector result, source structure, and request indices lowering needs
+/// to apply the resolved ownership claims.
+pub struct ResolvedChunk<'a> {
+    pub resolution: Resolution,
+    pub resolved_members: Vec<Vec<usize>>,
+    pub structural_analysis: StructuralChunkAnalysis<'a>,
+}
+
+/// Compile requests into selector-engine modules and project them against one
+/// source chunk. `resolved_members` identifies which request members are
+/// eligible after lowering has accounted for duplicate and unmatched pins.
+pub fn project_chunk<'a>(
+    chunk: Chunk<'a>,
+    requests: &[LogicalRequest],
+    resolved_members: Vec<Vec<usize>>,
+) -> Result<ProjectedChunk<'a>> {
+    if requests.len() != resolved_members.len() {
+        bail!(
+            "selector request/module count mismatch: {} requests, {} member-index lists",
+            requests.len(),
+            resolved_members.len()
+        );
+    }
+    let modules = requests
+        .iter()
+        .zip(&resolved_members)
+        .map(|(request, member_indices)| {
+            let members = member_indices
+                .iter()
+                .map(|index| {
+                    let member = request.members.get(*index).ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "logical_module {}: selector member index {} is out of range",
+                            request.id,
+                            index
+                        )
+                    })?;
+                    Ok(member_from_selector(
+                        member.export_name.clone(),
+                        member.selector.clone(),
+                    ))
+                })
+                .collect::<Result<Vec<_>>>()?;
+            let anonymous_statements = request
+                .anonymous_statements
+                .iter()
+                .enumerate()
+                .map(|(index, statement)| {
+                    anonymous_statement(index, statement.parsed_selector.clone())
+                })
+                .collect();
+            Ok(spec_module(
+                request.target_path.clone(),
+                members,
+                anonymous_statements,
+            ))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let projection = chunk.project(&modules)?;
+    Ok(ProjectedChunk {
+        chunk,
+        modules,
+        projection,
+        resolved_members,
+    })
+}
+
+/// Solve projections for all chunks together and return per-chunk results in
+/// the same order as the input.
+pub fn solve_projected_chunks<'a>(
+    chunks: Vec<ProjectedChunk<'a>>,
+) -> Result<Vec<ResolvedChunk<'a>>> {
+    let mut source_chunks = Vec::with_capacity(chunks.len());
+    let mut modules = Vec::with_capacity(chunks.len());
+    let mut projections = Vec::with_capacity(chunks.len());
+    let mut resolved_members = Vec::with_capacity(chunks.len());
+    for ProjectedChunk {
+        chunk,
+        modules: chunk_modules,
+        projection,
+        resolved_members: member_indices,
+    } in chunks
+    {
+        source_chunks.push(chunk);
+        modules.push(chunk_modules);
+        projections.push(projection);
+        resolved_members.push(member_indices);
+    }
+    let resolutions = selector_resolve::solve(
+        source_chunks
+            .iter()
+            .zip(&modules)
+            .zip(projections)
+            .map(|((chunk, modules), projection)| (chunk, modules.as_slice(), projection))
+            .collect(),
+    )?;
+    Ok(resolutions
+        .into_iter()
+        .zip(resolved_members)
+        .zip(source_chunks)
+        .map(|((resolution, resolved_members), chunk)| ResolvedChunk {
+            resolution,
+            resolved_members,
+            structural_analysis: chunk.into_structural(),
+        })
+        .collect())
+}
+
+/// Resolve a single set of compiled modules through the shared exact solver.
+pub fn resolve_chunk(chunk: &Chunk<'_>, modules: &[SpecModule]) -> Result<Resolution> {
+    let mut resolutions = resolve_chunks(&[(chunk, modules)])?;
+    Ok(resolutions.remove(0))
+}
+
+/// Resolve the same compiled modules against multiple source chunks together.
+pub fn resolve_chunks(chunks: &[(&Chunk<'_>, &[SpecModule])]) -> Result<Vec<Resolution>> {
+    selector_resolve::resolve(chunks)
+}
+
+/// Validate request construction and duplicate claims for one authored module.
+pub fn validate_logical_module_claims(
+    id: &str,
+    members: &[spec::Member],
+    source_matches: &[spec::SourceMatchClaim],
+    annotations: &BTreeMap<String, spec::BindingAnnotation>,
+) -> Result<()> {
+    let members = build_members(members, source_matches, annotations, id)?;
+    reject_duplicate_export_names("logical_module", id, &members)?;
+    reject_duplicate_member_bindings("logical_module", id, &members)?;
+    Ok(())
+}
+
+/// Reject repeated exported names in one logical-module request.
+pub fn reject_duplicate_export_names(
+    operation: &str,
+    id: &str,
+    members: &[MemberRequest],
+) -> Result<()> {
+    reject_duplicate_field(operation, id, "exported logical names", members, |member| {
+        &member.export_name
+    })
+}
+
+/// Reject duplicate source-binding claims whose binding spelling is known
+/// before selector resolution.
+pub fn reject_duplicate_member_bindings(
+    operation: &str,
+    id: &str,
+    members: &[MemberRequest],
+) -> Result<()> {
+    let mut by_binding = BTreeMap::<String, Vec<&MemberRequest>>::new();
+    for member in members {
+        if member.binding.is_empty() {
+            continue;
+        }
+        by_binding
+            .entry(member.binding.clone())
+            .or_default()
+            .push(member);
+    }
+    let duplicates = by_binding
+        .into_iter()
+        .filter(|(_, members)| members.len() > 1)
+        .collect::<Vec<_>>();
+    if duplicates.is_empty() {
+        return Ok(());
+    }
+    let mut report = format!("{operation} {id} has duplicate source binding claims:");
+    for (binding, members) in duplicates {
+        report.push_str(&format!(
+            "\n- source binding `{binding}` claimed {} times:",
+            members.len()
+        ));
+        for member in members {
+            report.push_str(&format!(
+                "\n  - export `{}` ({})",
+                member.export_name, member.claim_origin
+            ));
+        }
+    }
+    bail!("{report}");
+}
+
+fn reject_duplicate_field(
+    operation: &str,
+    id: &str,
+    label: &str,
+    members: &[MemberRequest],
+    extract: impl Fn(&MemberRequest) -> &str,
+) -> Result<()> {
+    let mut seen = BTreeSet::new();
+    let mut duplicates = BTreeSet::new();
+    for member in members {
+        let value = extract(member);
+        if !seen.insert(value.to_string()) {
+            duplicates.insert(value.to_string());
+        }
+    }
+    if !duplicates.is_empty() {
+        bail!(
+            "{operation} {id} has duplicate {label}: {}",
+            duplicates.into_iter().collect::<Vec<_>>().join(", ")
+        );
+    }
+    Ok(())
+}

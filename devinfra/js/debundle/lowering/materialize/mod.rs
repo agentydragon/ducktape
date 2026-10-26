@@ -10,8 +10,7 @@ mod plan_builder;
 use std::io::Write;
 
 pub(super) use apply::{EmissionChunkOutputs, collect_materialized_logical_chunks};
-use plan_builder::{ChunkPlan, ChunkPlanBuilder, ExplicitRequestContext, SelectorModules};
-use selector_resolve::Resolution;
+use plan_builder::{ChunkPlan, ChunkPlanBuilder, ExplicitRequestContext};
 
 use super::io::write_chunk_report_json;
 use super::util::{render_atomic_unit_cause_guidance, target_file_for_request};
@@ -24,17 +23,14 @@ use crate::lower::{
 };
 use crate::naturalize::collect_plan_export_rename_intents;
 use crate::placement::EmissionPlacement;
-use crate::plans::{
-    LogicalRequest, MemberRequest, ModulePlan, known_effect_from_member_effect,
-    logical_requests_for_chunk,
-};
+use crate::plans::ModulePlan;
 use crate::rebind_fold::compute_rebind_folds;
 use crate::rename_ledger::{RenameLedger, SealValidation};
 use crate::{
     ChunkModulesCounts, ChunkModulesReport, ExportReentryReport, FinalModuleContent,
     ReportEmission, RequestedLogicalModule,
 };
-use analysis::facts::ExportReentryPolicy;
+use analysis::facts::{ExportReentryPolicy, StructuralChunkAnalysis};
 use analysis::{
     AnalysisAssumptions, AnalysisInputs, LocalEffectPolicy, ModuleId, OwnerGraphAndUnits,
     OwnerGraphOptions, PlannedModule, top_level_id,
@@ -56,6 +52,10 @@ use output_layout::{
     SELECTOR_DIAGNOSTICS_REPORT,
 };
 use spec::{ChunkRenames, InitializerPurity, LogicalModule, MemberPurity, UnassignedMode};
+use spec_resolution::{
+    LogicalRequest, MemberRequest, ProjectedChunk, ResolvedChunk, known_effect_from_member_effect,
+    logical_requests_for_chunk, project_chunk,
+};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use swc_ecma_ast::*;
 
@@ -137,9 +137,8 @@ pub(super) struct MaterializedLogicalChunk {
     pub(super) unmatched_spec_claims: Vec<crate::UnmatchedSpecClaim>,
 }
 
-/// A chunk up to the selector resolve, which every chunk shares: its plan
-/// with everything claimed that does not need the resolve, and its selector
-/// entities.
+/// Lowering state prepared before the shared spec-resolution service projects
+/// and solves selector entities.
 pub(super) struct PreparedLogicalChunk<'a> {
     context: ChunkContext<'a>,
     spec: ChunkSpec<'a>,
@@ -153,16 +152,22 @@ pub(super) struct PreparedLogicalChunk<'a> {
     requests: Vec<LogicalRequest>,
     explicit_requests: Vec<LogicalRequest>,
     builder: ChunkPlanBuilder,
-    selectors: selector_resolve::Chunk<'a>,
-    selector_modules: SelectorModules,
     declared_assumptions: AnalysisAssumptions,
 }
 
-/// Plans `inputs`' chunk up to the selector resolve and projects its
-/// selector entities.
+/// A prepared chunk after exact selector resolution has claimed its selected
+/// members and anonymous statements. The structural facts are retained for the
+/// hint-sensitive analysis that follows claim application.
+pub(super) struct ClaimedLogicalChunk<'a> {
+    prepared: PreparedLogicalChunk<'a>,
+    structural_analysis: StructuralChunkAnalysis<'a>,
+}
+
+/// Prepare one chunk's lowering state and project its eligible selector
+/// requests through the shared spec-resolution service.
 pub(super) fn prepare_logical_chunk(
     inputs: MaterializeLogicalChunkInputs<'_>,
-) -> Result<(PreparedLogicalChunk<'_>, selector_resolve::Projection)> {
+) -> Result<(PreparedLogicalChunk<'_>, ProjectedChunk<'_>)> {
     let MaterializeLogicalChunkInputs { context, spec } = inputs;
     let ChunkContext {
         artifact,
@@ -272,13 +277,13 @@ pub(super) fn prepare_logical_chunk(
     // over the hint-free structural facts.
     let selectors =
         selector_resolve::Chunk::new(chunk_id, &runtime_ast.module, structural_analysis);
-    let selector_modules = builder.selector_modules(
+    let resolved_members = builder.selector_member_indices(
         &explicit_requests,
         chunk_top_level_mark,
         &ast_analysis.declaration_by_name,
     );
     emit_debundle_progress(chunk_id, "project_selectors", "start");
-    let projection = selectors.project(&selector_modules.modules)?;
+    let projected = project_chunk(selectors, &explicit_requests, resolved_members)?;
     emit_debundle_progress(chunk_id, "project_selectors", "end");
     Ok((
         PreparedLogicalChunk {
@@ -294,46 +299,28 @@ pub(super) fn prepare_logical_chunk(
             requests,
             explicit_requests,
             builder,
-            selectors,
-            selector_modules,
             declared_assumptions: AnalysisAssumptions::default(),
         },
-        projection,
+        projected,
     ))
-}
-
-/// Resolves every prepared chunk's selector entities as one program: one
-/// resolution per chunk, in order.
-pub(super) fn resolve_prepared_chunks(
-    chunks: &[PreparedLogicalChunk<'_>],
-    projections: Vec<selector_resolve::Projection>,
-) -> Result<Vec<Resolution>> {
-    selector_resolve::solve(
-        chunks
-            .iter()
-            .zip(projections)
-            .map(|(chunk, projection)| {
-                (
-                    &chunk.selectors,
-                    chunk.selector_modules.modules.as_slice(),
-                    projection,
-                )
-            })
-            .collect(),
-    )
 }
 
 /// Resolve source-selected bindings before the cross-chunk purity oracle runs.
 /// The same resolved hints are later used by this chunk's owner analysis.
-pub(super) fn claim_prepared_chunk(
-    mut prepared: PreparedLogicalChunk<'_>,
-    resolution: Resolution,
-) -> Result<PreparedLogicalChunk<'_>> {
+pub(super) fn claim_prepared_chunk<'a>(
+    mut prepared: PreparedLogicalChunk<'a>,
+    resolved: ResolvedChunk<'a>,
+) -> Result<ClaimedLogicalChunk<'a>> {
+    let ResolvedChunk {
+        resolution,
+        resolved_members,
+        structural_analysis,
+    } = resolved;
     let chunk_top_level_mark = prepared.runtime_ast.top_level_mark;
     prepared.builder.claim_resolution(
         &prepared.explicit_requests,
-        &prepared.selector_modules,
         resolution,
+        resolved_members,
         chunk_top_level_mark,
         prepared.context.chunk_id,
         &prepared.runtime_ast.module.body,
@@ -352,23 +339,30 @@ pub(super) fn claim_prepared_chunk(
         prepared.spec.chunk_renames.get(prepared.context.chunk_id),
         &prepared.runtime_ast.module,
     )?;
-    Ok(prepared)
+    Ok(ClaimedLogicalChunk {
+        prepared,
+        structural_analysis,
+    })
 }
 
-impl PreparedLogicalChunk<'_> {
+impl ClaimedLogicalChunk<'_> {
     pub(super) fn declared_pure_new(&self) -> (&str, &BTreeSet<String>) {
         (
-            self.context.chunk_id,
-            &self.declared_assumptions.declared_pure_new,
+            self.prepared.context.chunk_id,
+            &self.prepared.declared_assumptions.declared_pure_new,
         )
     }
 }
 
 /// Analyze, plan and lower a chunk whose selector claims are already resolved.
 pub(super) fn finish_logical_chunk(
-    prepared: PreparedLogicalChunk<'_>,
+    claimed: ClaimedLogicalChunk<'_>,
     cross_module_purities: &super::cross_module::CrossModulePurities,
 ) -> Result<MaterializedLogicalChunk> {
+    let ClaimedLogicalChunk {
+        prepared,
+        structural_analysis,
+    } = claimed;
     let PreparedLogicalChunk {
         context,
         spec,
@@ -381,7 +375,6 @@ pub(super) fn finish_logical_chunk(
         ast_analysis,
         requests,
         mut builder,
-        selectors,
         declared_assumptions,
         ..
     } = prepared;
@@ -409,7 +402,6 @@ pub(super) fn finish_logical_chunk(
         pre_existing_public_export_names,
         ..
     } = ast_analysis;
-    let structural_analysis = selectors.into_structural();
     let chunk_top_level_mark = runtime_ast.top_level_mark;
     // Fetched before hints assembly: `local_property_effects` selects
     // the facts pass's local-effect policy, which travels in the hints.

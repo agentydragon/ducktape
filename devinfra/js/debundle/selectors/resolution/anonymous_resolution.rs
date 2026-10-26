@@ -13,11 +13,12 @@ use analysis::{OwnerGraphReport, OwnerId, StatementKind};
 use anyhow::{Context, Result, bail};
 use selector_outcome::{Candidate, Outcome, SelectorOutcome, Severity};
 pub use selector_resolve::ModuleNeutralReferenceMeaning;
-use selector_resolve::{
-    AnonymousStatement, EntityIndex, Member, MemberSelector, SourceMatchReferenceOrigin, SpecModule,
-};
-use source_match::ParsedSourceMatchSelector;
+use selector_resolve::{EntityIndex, SourceMatchReferenceOrigin, SpecModule};
 use spec::{AnonymousStatementSelector, MemberSelectorSpec, SourceMatchClaim};
+use spec_resolution::{
+    anonymous_statement, member_from_source_match, member_from_spec, parse_anonymous_selector,
+    resolve_chunks, spec_module as build_spec_module,
+};
 use swc_common::{EqIgnoreSpan, SyntaxContext};
 use swc_ecma_ast::{Ident, ModuleItem, Number, Str};
 use swc_ecma_visit::{Visit, VisitWith};
@@ -189,7 +190,7 @@ fn resolve_claim_sets(
                         selector_resolve::Chunk::analyze(source_path, &parsed.module)
                     })
                     .collect::<Vec<_>>();
-                let resolutions = selector_resolve::resolve(
+                let resolutions = resolve_chunks(
                     &chunks
                         .iter()
                         .map(|chunk| (chunk, modules.as_slice()))
@@ -346,17 +347,14 @@ fn spec_module(claims: &SourceClaimSet<'_>) -> Result<SpecModule> {
     let mut members = claims
         .member_selectors
         .iter()
-        .map(|(name, selector)| Member {
-            export_name: name.clone(),
-            selector: MemberSelector::from_spec(selector.clone()),
-        })
+        .map(|(name, selector)| member_from_spec(name.clone(), selector.clone()))
         .collect::<Vec<_>>();
     for claim in claims.source_matches {
         for expanded in source_match::source_match_claim_member_selectors(&request_id, claim)? {
-            members.push(Member {
-                export_name: expanded.export_name,
-                selector: MemberSelector::SourceMatch(expanded.parsed_selector),
-            });
+            members.push(member_from_source_match(
+                expanded.export_name,
+                expanded.parsed_selector,
+            ));
         }
     }
     let anonymous_statements = claims
@@ -364,22 +362,17 @@ fn spec_module(claims: &SourceClaimSet<'_>) -> Result<SpecModule> {
         .iter()
         .enumerate()
         .map(|(index, selector)| {
-            Ok(AnonymousStatement {
+            Ok(anonymous_statement(
                 index,
-                selector: ParsedSourceMatchSelector::parse(
+                parse_anonymous_selector(
                     &request_id,
                     format!("<source_match needle in {request_id}>"),
                     selector,
-                    "source_match",
                 )?,
-            })
+            ))
         })
         .collect::<Result<_>>()?;
-    Ok(SpecModule {
-        path: request_id,
-        members,
-        anonymous_statements,
-    })
+    Ok(build_spec_module(request_id, members, anonymous_statements))
 }
 
 struct SourceOutcome<'s> {

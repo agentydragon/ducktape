@@ -50,8 +50,9 @@ use io::{prepare_output_dir, prune_artifact_to_chunk_ids, write_chunk_report_jso
 use materialize::{
     ChunkContext, ChunkSpec, EmissionChunkOutputs, MaterializeLogicalChunkInputs,
     claim_prepared_chunk, collect_materialized_logical_chunks, finish_logical_chunk,
-    prepare_logical_chunk, resolve_prepared_chunks,
+    prepare_logical_chunk,
 };
+use spec_resolution::solve_projected_chunks;
 
 use util::normalize_optional_relative_dir;
 
@@ -373,7 +374,7 @@ pub fn materialize_logical_modules(
         .into_iter()
         .collect::<Result<Vec<_>>>()?;
     let (prepared, projections): (Vec<_>, Vec<_>) = prepared.into_iter().unzip();
-    let resolutions = resolve_prepared_chunks(&prepared, projections)?;
+    let resolutions = solve_projected_chunks(projections)?;
     let claimed = GLOBALS
         .with(|globals| {
             prepared
