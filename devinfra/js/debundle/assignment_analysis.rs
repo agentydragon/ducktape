@@ -7,7 +7,7 @@ use analysis::atomic_groups::{AtomicGroup, DependencyGraphAndAtomicGroups};
 use analysis::graph::{build_module_quotient, chunk_constraining_module_edges};
 use analysis::module_assignment::ModuleAssignment;
 use analysis::{
-    BindingCatalogue, BindingScopeError, ChunkId, ModuleId, ModuleQuotient, DependencyGraphReport,
+    BindingCatalogue, BindingScopeError, ChunkId, DependencyGraphReport, ModuleId, ModuleQuotient,
     PlannedModule,
 };
 

@@ -33,10 +33,10 @@ use spec_tree::ModuleTreeScope;
 use yaml_edit::write_yaml_atomic;
 
 use crate::edit_gate::{
-    Gate, SourceUnitClaimProjection, SourceUnitModuleAssignments, ProjectedBindingKind,
-    gate_post_edit_assignment_with_expected_source_unit_modules,
-    source_unit_module_assignments_from_projection, post_edit_spec_from_docs, project_source_unit_claims,
-    source_claim_sets_from_post_spec,
+    Gate, ProjectedBindingKind, SourceUnitClaimProjection, SourceUnitModuleAssignments,
+    gate_post_edit_assignment_with_expected_source_unit_modules, post_edit_spec_from_docs,
+    project_source_unit_claims, source_claim_sets_from_post_spec,
+    source_unit_module_assignments_from_projection,
 };
 use crate::outcome::{GateOutcome, MutationOutcome};
 
@@ -932,7 +932,11 @@ pub fn run_source_unit_refine(
         &claim_projection,
         scope.as_ref(),
     )?;
-    check_graph_source_unit_destinations(&dependency_graph, &current_source_unit_modules, scope.as_ref())?;
+    check_graph_source_unit_destinations(
+        &dependency_graph,
+        &current_source_unit_modules,
+        scope.as_ref(),
+    )?;
 
     let mut source_unit_index_by_id = BTreeMap::<String, SourceUnitId>::new();
     for (index, node) in dependency_graph.nodes.iter().enumerate() {
@@ -1355,7 +1359,9 @@ fn source_unit_claim_locations(
                 source_unit_id: dependency_graph
                     .nodes
                     .get(source_unit.0)
-                    .with_context(|| format!("anonymous source unit index {} is absent", source_unit.0))?
+                    .with_context(|| {
+                        format!("anonymous source unit index {} is absent", source_unit.0)
+                    })?
                     .id
                     .clone(),
                 physical_module: module_path.clone(),
@@ -1397,7 +1403,9 @@ fn check_graph_source_unit_destinations(
     for node in &dependency_graph.nodes {
         let graph_destination = dependency_graph
             .module(&node.destination)
-            .with_context(|| format!("source unit {:?} has an unknown graph destination", node.id))?;
+            .with_context(|| {
+                format!("source unit {:?} has an unknown graph destination", node.id)
+            })?;
         let expected = if graph_destination.residual {
             None
         } else {
@@ -1420,7 +1428,9 @@ fn check_graph_source_unit_destinations(
                 };
                 ModulePath::parse(logical, "")
                     .map(|path| path.as_str().to_string())
-                    .map_err(|err| anyhow!("invalid logical module path in source unit spec: {err}"))
+                    .map_err(|err| {
+                        anyhow!("invalid logical module path in source unit spec: {err}")
+                    })
             })
             .transpose()?;
         anyhow::ensure!(

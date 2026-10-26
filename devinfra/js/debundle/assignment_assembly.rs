@@ -79,9 +79,12 @@ pub fn assemble_assignment(
     }
     let mut conflicts = Vec::<AtomicGroupConflict>::new();
     for atomic_group in atomic_groups {
-        if let Some(conflict) =
-            detect_atomic_group_conflict(atomic_group, &claims, dependency_graph, default_destination)
-        {
+        if let Some(conflict) = detect_atomic_group_conflict(
+            atomic_group,
+            &claims,
+            dependency_graph,
+            default_destination,
+        ) {
             conflicts.push(conflict);
         }
     }
@@ -139,7 +142,12 @@ fn detect_atomic_group_conflict(
     let resolved: Vec<(SourceUnitId, ModuleId)> = atomic_group
         .members
         .iter()
-        .map(|source_unit| (*source_unit, claims[source_unit.0].unwrap_or(default_destination)))
+        .map(|source_unit| {
+            (
+                *source_unit,
+                claims[source_unit.0].unwrap_or(default_destination),
+            )
+        })
         .collect();
     let mut first: Option<ModuleId> = None;
     let mut has_distinct = false;

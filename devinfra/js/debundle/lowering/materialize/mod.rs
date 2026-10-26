@@ -32,8 +32,8 @@ use crate::{
 };
 use analysis::facts::{ExportReentryPolicy, StructuralChunkAnalysis};
 use analysis::{
-    AnalysisAssumptions, AnalysisInputs, BindingId, LocalEffectPolicy, ModuleId, ModuleRole,
-    DependencyGraphAndAtomicGroups, DependencyGraphOptions, PlannedModule, top_level_id,
+    AnalysisAssumptions, AnalysisInputs, BindingId, DependencyGraphAndAtomicGroups,
+    DependencyGraphOptions, LocalEffectPolicy, ModuleId, ModuleRole, PlannedModule, top_level_id,
 };
 use anyhow::{Context, Result, bail};
 use artifact::{
@@ -48,7 +48,7 @@ use gate::{
 };
 use js_ast::{ParsedJsModule, statement_ordinal_for_body_index};
 use output_layout::{
-    ATOMIC_GROUP_CONFLICTS_REPORT, CYCLES_REPORT, EXPORT_REENTRY_REPORT, DEPENDENCY_GRAPH_REPORT,
+    ATOMIC_GROUP_CONFLICTS_REPORT, CYCLES_REPORT, DEPENDENCY_GRAPH_REPORT, EXPORT_REENTRY_REPORT,
     SELECTOR_DIAGNOSTICS_REPORT,
 };
 use spec::{ChunkRenames, InitializerPurity, LogicalModule, MemberPurity, UnassignedMode};
@@ -519,8 +519,9 @@ pub(super) fn finish_logical_chunk(
         }
         inputs.assumptions.trusted_dataflow_summaries =
             dependency_graph_options.trusted_dataflow_summaries;
-        inputs.assumptions.deferred_global_publications =
-            dependency_graph_options.deferred_global_publications.clone();
+        inputs.assumptions.deferred_global_publications = dependency_graph_options
+            .deferred_global_publications
+            .clone();
         inputs
     };
     // Chunk analysis: hint-sensitive facts, dependency graph, and structural

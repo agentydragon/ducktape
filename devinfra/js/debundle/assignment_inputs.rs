@@ -15,8 +15,8 @@ use swc_ecma_ast::Id;
 
 use analysis::reports::source_unit_key;
 use analysis::{
-    BindingCatalogue, BindingId, BindingKind, BindingScopeError, ChunkId, LocalBindings, ModuleId,
-    DependencyGraph, PlannedModule,
+    BindingCatalogue, BindingId, BindingKind, BindingScopeError, ChunkId, DependencyGraph,
+    LocalBindings, ModuleId, PlannedModule,
 };
 
 /// Per-chunk inputs + IR + input-derived caches.
@@ -63,7 +63,8 @@ impl AssignmentInputs {
         chunk_renames: &HashMap<Id, Atom>,
     ) -> Result<Self, BindingScopeError> {
         let local_bindings = binding_catalogue.local_view(chunk_identity)?;
-        let source_unit_report_ids_by_binding = build_source_unit_report_ids_by_binding(&dependency_graph);
+        let source_unit_report_ids_by_binding =
+            build_source_unit_report_ids_by_binding(&dependency_graph);
         let binding_lookup_by_id =
             build_binding_lookup_by_id(local_bindings.as_map(), chunk_renames, &logical_modules);
         Ok(Self {
@@ -185,7 +186,9 @@ impl AssignmentInputs {
 /// the `Vec<String>` shape accommodates the rare cases where the same
 /// hygiene-identity ends up on multiple source units (anonymous statements
 /// that share a synthetic source unit).
-fn build_source_unit_report_ids_by_binding(dependency_graph: &DependencyGraph) -> HashMap<Id, Vec<String>> {
+fn build_source_unit_report_ids_by_binding(
+    dependency_graph: &DependencyGraph,
+) -> HashMap<Id, Vec<String>> {
     let mut by_binding: HashMap<Id, BTreeSet<String>> = HashMap::new();
     for node in dependency_graph.iter_nodes() {
         let report_id = source_unit_key(node.id);

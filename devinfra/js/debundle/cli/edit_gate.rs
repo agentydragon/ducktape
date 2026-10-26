@@ -50,7 +50,8 @@ use ::gate::{
 };
 use analysis::{
     AtomicGroup, AtomicGroupConflict, AtomicGroupConflictReport, ConflictingClaim, DepKind,
-    ModuleAssignment, ModuleId, DependencyGraph, DependencyGraphReport, SourceUnitId, compute_atomic_groups,
+    DependencyGraph, DependencyGraphReport, ModuleAssignment, ModuleId, SourceUnitId,
+    compute_atomic_groups,
 };
 use anonymous_resolution::{ResolvedSourceClaims, SourceClaimSet, resolve_source_claims};
 use anyhow::{Context, Result, bail};
@@ -419,7 +420,11 @@ impl LocalBindingIndex {
         let mut pending = vec![start];
         if let Some(neighbors_by_source_unit) = self.co_declaration_neighbors.get(binding_name) {
             while let Some(source_unit) = pending.pop() {
-                for next in neighbors_by_source_unit.get(&source_unit).into_iter().flatten() {
+                for next in neighbors_by_source_unit
+                    .get(&source_unit)
+                    .into_iter()
+                    .flatten()
+                {
                     if candidates.contains(next) && reached.insert(*next) {
                         pending.push(*next);
                     }
@@ -556,7 +561,9 @@ fn record_local_binding_claim(
 ) {
     match &resolution {
         LocalBindingResolution::Resolved(source_units) => {
-            module_projection.source_units.extend(source_units.iter().copied());
+            module_projection
+                .source_units
+                .extend(source_units.iter().copied());
         }
         LocalBindingResolution::Missing | LocalBindingResolution::Ambiguous(_) => {
             projection
@@ -606,7 +613,12 @@ pub fn source_unit_module_assignments_from_projection(
             ModulePath::parse(&raw_path, "")?.as_str().to_string()
         };
         for source_unit in &projected.source_units {
-            assign_source_unit_module(&mut assignments, dependency_graph_report, *source_unit, &module_path)?;
+            assign_source_unit_module(
+                &mut assignments,
+                dependency_graph_report,
+                *source_unit,
+                &module_path,
+            )?;
         }
     }
     Ok(assignments)
@@ -618,12 +630,15 @@ fn assign_source_unit_module(
     source_unit: SourceUnitId,
     module_path: &str,
 ) -> Result<()> {
-    let node = dependency_graph_report.nodes.get(source_unit.0).with_context(|| {
-        format!(
-            "resolved source unit index {} is absent from dependency_graph.json",
-            source_unit.0
-        )
-    })?;
+    let node = dependency_graph_report
+        .nodes
+        .get(source_unit.0)
+        .with_context(|| {
+            format!(
+                "resolved source unit index {} is absent from dependency_graph.json",
+                source_unit.0
+            )
+        })?;
     let destination = assignments.get_mut(&node.id).with_context(|| {
         format!(
             "resolved source unit {:?} is absent from dependency_graph.json",
@@ -766,8 +781,13 @@ fn gate_post_edit_assignment_with_expected(
     // `from_report` leaves `declared` empty, which is fine for
     // `check_realizability`/`validate_assignment` (both consume the
     // assignment we build below, not the per-source-unit declared field).
-    let dependency_graph = DependencyGraph::from_report(&dependency_graph_report)
-        .with_context(|| format!("reconstructing dependency graph {}", dependency_graph_path.display()))?;
+    let dependency_graph =
+        DependencyGraph::from_report(&dependency_graph_report).with_context(|| {
+            format!(
+                "reconstructing dependency graph {}",
+                dependency_graph_path.display()
+            )
+        })?;
 
     // Source-backed claims resolve to the chunk-top bindings and anonymous
     // source units they claim. A claim the gate cannot resolve (missing chunk
@@ -781,7 +801,8 @@ fn gate_post_edit_assignment_with_expected(
         source_root,
         &claim_sets,
     )?;
-    let claim_projection = project_source_unit_claims(&dependency_graph_report, post_spec, &resolved_claims)?;
+    let claim_projection =
+        project_source_unit_claims(&dependency_graph_report, post_spec, &resolved_claims)?;
     if let Some(expected_source_unit_modules) = expected_source_unit_modules {
         let actual_source_unit_modules = source_unit_module_assignments_from_projection(
             &dependency_graph_report,
@@ -796,7 +817,8 @@ fn gate_post_edit_assignment_with_expected(
                 .chain(expected_source_unit_modules.keys())
                 .collect::<BTreeSet<_>>();
             let first_mismatch = source_unit_ids.into_iter().find(|source_unit_id| {
-                actual_source_unit_modules.get(*source_unit_id) != expected_source_unit_modules.get(*source_unit_id)
+                actual_source_unit_modules.get(*source_unit_id)
+                    != expected_source_unit_modules.get(*source_unit_id)
             });
             if let Some(source_unit_id) = first_mismatch {
                 bail!(
@@ -805,7 +827,9 @@ fn gate_post_edit_assignment_with_expected(
                     actual_source_unit_modules.get(source_unit_id)
                 );
             }
-            bail!("post-edit source unit assignment does not match the reviewed complete candidate");
+            bail!(
+                "post-edit source unit assignment does not match the reviewed complete candidate"
+            );
         }
     }
     for target in expected {
@@ -886,8 +910,11 @@ fn gate_post_edit_assignment_with_expected(
             &conflicts,
         )?;
         remove_rejection_artifact(dependency_graph_path, output_layout::CYCLES_REPORT)?;
-        let summary =
-            render_atomic_group_conflict_summary(&atomic_conflicts, &module_path, &dependency_graph);
+        let summary = render_atomic_group_conflict_summary(
+            &atomic_conflicts,
+            &module_path,
+            &dependency_graph,
+        );
         eprintln!("error: post-edit spec splits one or more atomic groups:\n{summary}");
         return Err(GateRejection {
             report: GateRejectionReport::AtomSplit { conflicts },

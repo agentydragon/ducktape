@@ -14,7 +14,7 @@ use crate::plans::ModulePlan;
 use crate::rebind_fold::RebindFold;
 use crate::util::target_file_for_request;
 use analysis::{
-    BindingCatalogue, BindingKind, ChunkId, ModuleId, ModuleRole, DependencyGraphAndAtomicGroups,
+    BindingCatalogue, BindingKind, ChunkId, DependencyGraphAndAtomicGroups, ModuleId, ModuleRole,
     SourceUnitId, top_level_id,
 };
 use anyhow::{Context, Result, bail};
@@ -343,7 +343,7 @@ impl ChunkPlanBuilder {
     ) -> Result<()> {
         if let Some(existing) = self
             .anonymous_ordinal_assignment
-            .get(&claim.ordinal)
+            .get(&claim.body_index)
             .copied()
         {
             let existing_id: String = self
@@ -356,23 +356,23 @@ impl ChunkPlanBuilder {
                  statement at body index {} already claimed by module {}; each anonymous \
                  statement may belong to at most one logical module.",
                 request_id,
-                claim.ordinal,
+                claim.body_index,
                 existing_id,
             );
         }
         self.anonymous_ordinal_assignment
-            .insert(claim.ordinal, module_index);
+            .insert(claim.body_index, module_index);
         let plan = self.module_plans.get_mut(module_index).with_context(|| {
             format!(
                 "logical_module {request_id}: anonymous statement resolved before its module plan existed"
             )
         })?;
-        plan.anonymous_statement_ordinals.push(claim.ordinal);
+        plan.anonymous_statement_ordinals.push(claim.body_index);
         plan.anonymous_statement_ordinals.sort_unstable();
         plan.anonymous_statement_ordinals.dedup();
         if let Some(comment) = &claim.comment {
             plan.anonymous_statement_comments
-                .insert(claim.ordinal, comment.clone());
+                .insert(claim.body_index, comment.clone());
         }
         Ok(())
     }
@@ -440,7 +440,7 @@ impl ChunkPlanBuilder {
         {
             let request = &explicit_requests[index];
             let Outcome::Resolved {
-                source_unit,
+                body_index,
                 binding,
                 resolved_by,
             } = outcome.outcome.clone()
@@ -454,7 +454,7 @@ impl ChunkPlanBuilder {
                         index,
                         &request.id,
                         &ResolvedAnonymousStatement {
-                            ordinal: source_unit,
+                            body_index,
                             comment: request.anonymous_statements[statement_index]
                                 .comment
                                 .clone(),
@@ -466,7 +466,7 @@ impl ChunkPlanBuilder {
                     let binding = binding.with_context(|| {
                         format!(
                             "logical_module {}: global selector solver resolved member `{}` to \
-                             body item {source_unit} without a single declared binding",
+                             body item {body_index} without a single declared binding",
                             request.id, member.export_name,
                         )
                     })?;
@@ -735,14 +735,22 @@ impl ChunkPlanBuilder {
                 let sibling_id = top_level_id(sibling, chunk_top_level_mark);
                 match owned_destination(&self.bindings_catalogue, &sibling_id) {
                     None => {
-                        self.bindings_catalogue
-                            .insert(sibling_id, BindingKind::Owned { module: owner_module_id });
+                        self.bindings_catalogue.insert(
+                            sibling_id,
+                            BindingKind::Owned {
+                                module: owner_module_id,
+                            },
+                        );
                         let plan = &mut self.module_plans[owner_index];
                         plan.bindings.insert(sibling.clone(), sibling.clone());
                     }
                     Some(other_index) if Some(other_index) == self.residual_plan_index => {
-                        self.bindings_catalogue
-                            .insert(sibling_id, BindingKind::Owned { module: owner_module_id });
+                        self.bindings_catalogue.insert(
+                            sibling_id,
+                            BindingKind::Owned {
+                                module: owner_module_id,
+                            },
+                        );
                         self.module_plans[other_index].bindings.remove(sibling);
                         let plan = &mut self.module_plans[owner_index];
                         plan.bindings.insert(sibling.clone(), sibling.clone());
@@ -952,8 +960,12 @@ impl ChunkPlanBuilder {
                                 .bindings
                                 .entry(name.clone())
                                 .or_insert_with(|| name.clone());
-                            self.bindings_catalogue
-                                .insert(id.clone(), BindingKind::Owned { module: owner_module_id });
+                            self.bindings_catalogue.insert(
+                                id.clone(),
+                                BindingKind::Owned {
+                                    module: owner_module_id,
+                                },
+                            );
                         }
                     }
                 }
@@ -1140,7 +1152,8 @@ impl ChunkPlanBuilder {
                 }
             }
             if names.is_empty() {
-                let Some(stmt_ord) = source_unit_statement_ordinal.get(&source_unit).copied() else {
+                let Some(stmt_ord) = source_unit_statement_ordinal.get(&source_unit).copied()
+                else {
                     return true;
                 };
                 let Some(body_idx) = body_index_for_statement_ordinal(body, stmt_ord) else {
@@ -1157,7 +1170,13 @@ impl ChunkPlanBuilder {
 
         let mut unclaimed_atomic_groups: Vec<&BTreeSet<SourceUnitId>> = atomic_groups
             .iter()
-            .filter(|atomic_group| atomic_group.members.iter().copied().all(is_source_unit_unclaimed))
+            .filter(|atomic_group| {
+                atomic_group
+                    .members
+                    .iter()
+                    .copied()
+                    .all(is_source_unit_unclaimed)
+            })
             .map(|atomic_group| &atomic_group.members)
             .collect();
         // Stable iteration order: smallest SourceUnitId first.
@@ -1176,7 +1195,8 @@ impl ChunkPlanBuilder {
                     .map(Vec::as_slice)
                     .unwrap_or(&[]);
                 if names.is_empty() {
-                    let Some(stmt_ord) = source_unit_statement_ordinal.get(source_unit).copied() else {
+                    let Some(stmt_ord) = source_unit_statement_ordinal.get(source_unit).copied()
+                    else {
                         continue;
                     };
                     let Some(body_idx) = body_index_for_statement_ordinal(body, stmt_ord) else {

@@ -14,8 +14,8 @@ use crate::{StatementFacts, StatementKind, StatementOrdinal};
 // to be the canonical path for external callers.
 pub use spec::DependencyGraphOptions;
 
-use super::edge::{EdgeReason, EdgeRole, DependencyEdge, DependencyEdgeId};
-use super::dependency_graph::{DependencyGraph, SourceUnitId, SourceUnit};
+use super::dependency_graph::{DependencyGraph, SourceUnit, SourceUnitId};
+use super::edge::{DependencyEdge, DependencyEdgeId, EdgeReason, EdgeRole};
 
 /// Multiple declarations of one binding are supported only when every site
 /// declares `var`. Other duplicate declaration shapes remain rejected.
@@ -372,7 +372,8 @@ fn emit_s_chain(
     // touching every cell — they get edges to every prior impure
     // source unit and become a barrier for subsequent statements.
     let mut last_writer: BTreeMap<EffectCell, SourceUnitId> = BTreeMap::new();
-    let mut readers_since_last_write: BTreeMap<EffectCell, BTreeSet<SourceUnitId>> = BTreeMap::new();
+    let mut readers_since_last_write: BTreeMap<EffectCell, BTreeSet<SourceUnitId>> =
+        BTreeMap::new();
     let mut prior_impure_source_units: Vec<SourceUnitId> = Vec::new();
     let mut opaque_barrier: Option<SourceUnitId> = None;
     for stmt in facts.iter().filter(|s| !s.purity.is_pure()) {
@@ -685,17 +686,19 @@ fn promote_at_init_calls(
     //    inline function expression. At-init callers inherit these
     //    roots transitively through the call graph and expand them
     //    via [`UnresolvedCallFallback`].
-    let fallback_roots_of =
-        |sources: &BTreeSet<Id>, inline_fn: bool, self_source_unit: SourceUnitId| -> BTreeSet<SourceUnitId> {
-            let mut roots: BTreeSet<SourceUnitId> = sources
-                .iter()
-                .filter_map(|id| binding_source_unit.get(id).copied())
-                .collect();
-            if inline_fn {
-                roots.insert(self_source_unit);
-            }
-            roots
-        };
+    let fallback_roots_of = |sources: &BTreeSet<Id>,
+                             inline_fn: bool,
+                             self_source_unit: SourceUnitId|
+     -> BTreeSet<SourceUnitId> {
+        let mut roots: BTreeSet<SourceUnitId> = sources
+            .iter()
+            .filter_map(|id| binding_source_unit.get(id).copied())
+            .collect();
+        if inline_fn {
+            roots.insert(self_source_unit);
+        }
+        roots
+    };
     let source_unit_first_order_roots = |stmt: &StatementFacts| -> BTreeSet<SourceUnitId> {
         let source_unit = SourceUnitId(stmt.ordinal.0);
         let mut roots = fallback_roots_of(
@@ -797,7 +800,9 @@ fn promote_at_init_calls(
             needs_caller_values |= first_order_unresolved_sources(stmt)
                 .iter()
                 .chain(first_order_calls(stmt).iter())
-                .any(|id| stmt.local_bindings.contains(id) && !binding_source_unit.contains_key(id));
+                .any(|id| {
+                    stmt.local_bindings.contains(id) && !binding_source_unit.contains_key(id)
+                });
             for id in first_order_reads(stmt) {
                 if binding_source_unit.contains_key(id) && !target_is_hoisted(id) {
                     reads.insert(id.clone());
@@ -863,14 +868,20 @@ fn promote_at_init_calls(
                 if caller == target_source_unit {
                     continue;
                 }
-                if direct_eager_bindings.insert((caller, target_source_unit, target_binding.clone())) {
+                if direct_eager_bindings.insert((
+                    caller,
+                    target_source_unit,
+                    target_binding.clone(),
+                )) {
                     raw_edges.push((
                         caller,
                         target_source_unit,
                         EdgeReason::eager_use(stmt.ordinal, target_binding.clone()),
                     ));
                 }
-                if caller < target_source_unit && temporal_sequence_pairs.insert((target_source_unit, caller)) {
+                if caller < target_source_unit
+                    && temporal_sequence_pairs.insert((target_source_unit, caller))
+                {
                     raw_edges.push((
                         target_source_unit,
                         caller,
@@ -892,7 +903,9 @@ fn promote_at_init_calls(
                     continue;
                 };
                 let callee_source_unit = SourceUnitId(callee_ordinal.0);
-                if caller == target_source_unit || !emitted.insert((target_source_unit, callee_source_unit)) {
+                if caller == target_source_unit
+                    || !emitted.insert((target_source_unit, callee_source_unit))
+                {
                     continue;
                 }
                 raw_edges.push((
@@ -1038,7 +1051,9 @@ fn promote_at_init_calls(
                 let Some(target_source_unit) = binding_source_unit.get(target_binding) else {
                     continue;
                 };
-                if caller == *target_source_unit || !promoted_read_targets.insert(*target_source_unit) {
+                if caller == *target_source_unit
+                    || !promoted_read_targets.insert(*target_source_unit)
+                {
                     continue;
                 }
                 raw_edges.push((

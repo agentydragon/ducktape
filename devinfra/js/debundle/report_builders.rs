@@ -13,9 +13,9 @@ use analysis::reports::schema::LineRange;
 use analysis::reports::{atomic_group_key, module_id_from_key, module_key, source_unit_key};
 use analysis::{
     AtomicGraphReport, AtomicGroup, AtomicGroupEdgeReport, AtomicGroupReport, BindingId,
-    BindingReport, DepKind, EdgeRoleReport, ModuleEntry, ModuleId, ModuleKey, ModuleRole,
-    DependencyEdgeReport, SourceUnitReport, ModuleQuotientReport, DependencyGraphReport, Purity,
-    PurityCauseReport, QuotientEdgeReport, QuotientSccReport,
+    BindingReport, DepKind, DependencyEdgeReport, DependencyGraphReport, EdgeRoleReport,
+    ModuleEntry, ModuleId, ModuleKey, ModuleQuotientReport, ModuleRole, Purity, PurityCauseReport,
+    QuotientEdgeReport, QuotientSccReport, SourceUnitReport,
 };
 
 use crate::assignment_analysis::AssignmentAnalysis;
@@ -27,7 +27,9 @@ struct AtomicEdgeAccumulator {
     constrains_init_order: bool,
 }
 
-pub(crate) fn build_dependency_graph_report(factorization: &AssignmentAnalysis) -> DependencyGraphReport {
+pub(crate) fn build_dependency_graph_report(
+    factorization: &AssignmentAnalysis,
+) -> DependencyGraphReport {
     // The three sub-reports below — `(quotient_nodes, quotient_edges)`,
     // `nodes` + `edges`, and `atomic_graph` — share no mutable state
     // and individually account for tens of seconds on chunks with
@@ -259,7 +261,11 @@ fn build_atomic_group_report(
     let mut max_ordinal = 0usize;
     for source_unit_id in &atomic_group.members {
         source_unit_ids.push(source_unit_key(*source_unit_id));
-        if let Some(node) = factorization.analysis().dependency_graph().node(*source_unit_id) {
+        if let Some(node) = factorization
+            .analysis()
+            .dependency_graph()
+            .node(*source_unit_id)
+        {
             if node.declared.is_empty() {
                 anonymous_statement_source_unit_ids.push(source_unit_key(*source_unit_id));
             }
@@ -336,8 +342,14 @@ fn build_atomic_graph_report(factorization: &AssignmentAnalysis) -> AtomicGraphR
             continue;
         }
         let (Some(from_group), Some(to_group)) = (
-            atomic_group_by_source_unit.get(edge.from.0).copied().flatten(),
-            atomic_group_by_source_unit.get(edge.to.0).copied().flatten(),
+            atomic_group_by_source_unit
+                .get(edge.from.0)
+                .copied()
+                .flatten(),
+            atomic_group_by_source_unit
+                .get(edge.to.0)
+                .copied()
+                .flatten(),
         ) else {
             continue;
         };
