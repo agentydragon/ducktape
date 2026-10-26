@@ -22,23 +22,11 @@ the spec, design docs, or code. Documents outside this plan must not link here.
 
 ## Remaining work
 
-### 1. Commit and publish this plan
-
-Establish the reviewable ledger before implementation. Record PRs and validation
-evidence while work is in progress; remove entries when their work lands.
-
-### 2. Remove redundant helpers
-
-Audit helpers that merely return constants, duplicate constructors, or forward an
-unchanged expression. Remove those that add no invariant or meaningful operation,
-including `declarator_hole_name`. Update callers and retain useful explanation at
-the owning constant or operation. Do not indiscriminately inline small helpers.
-
 ### 3. Finish terminology adoption
 
-- Use `AssignmentInputs` and `AssignmentAnalysis` consistently in fields,
-  accessors, locals, comments, and current docs. Name the module quotient as such.
-  Keep factorization terminology only where it describes the actual operation.
+PR #12129 carries the remaining report/namespace cutover and current-schema skill
+recipes.
+
 - Distinguish the authored residual namespace, the unassigned destination policy,
   and the physical entry destination. Trace readers before deciding the wire
   representation; preserve semantics through any paired public/private cutover.
@@ -47,6 +35,8 @@ the owning constant or operation. Do not indiscriminately inline small helpers.
   mechanically.
 
 ### 4. Separate responsibility clusters
+
+PRs #12131 and #12130 carry the execution-analysis and artifact splits.
 
 - `facts/sync_effects.rs`: separate abstract-value representation, execution
   indexing/collection, and interpretation. Keep their algorithms and analysis
