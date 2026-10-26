@@ -36,7 +36,6 @@ def publish(source: Path, destination: Path, digest: str) -> None:
             shutil.copyfileobj(original, target)
             target.flush()
             os.fsync(target.fileno())
-        os.utime(temporary, ns=(0, 0))
         temporary.replace(destination)
     finally:
         temporary.unlink(missing_ok=True)
