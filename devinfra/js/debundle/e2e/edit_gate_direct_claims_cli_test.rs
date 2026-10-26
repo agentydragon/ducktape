@@ -83,6 +83,22 @@ fn import_specifier_source_claims_cover_each_import_form() {
 }
 
 #[test]
+fn mixed_untyped_local_and_typed_import_claims_use_direct_source_gate() {
+    let fixture = GraphFixture::new(
+        "const live = 1;\nimport { dep } from \"external-package\";\nconsole.log(live, dep);\n",
+        &[("alpha.yaml", "members: []\n"), EMPTY],
+    );
+    fs::write(
+        fixture.modules.join("alpha.yaml"),
+        "members: [{selector: {binding: {name: live}}}, {selector: {binding: {name: dep, kind: import_specifier}}}]\n",
+    )
+    .unwrap();
+
+    let report = fixture.json(MERGE);
+    assert_eq!(report["gate"], "passed", "{report}");
+}
+
+#[test]
 fn mismatched_local_source_kind_is_rejected_without_writes() {
     let fixture = GraphFixture::new(
         "const live = 1;\nconsole.log(live);\n",
