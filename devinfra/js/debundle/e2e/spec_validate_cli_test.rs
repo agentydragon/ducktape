@@ -75,7 +75,10 @@ fn validate_clean_spec_reports_no_problems() {
 console.log(renderCard(" ok "));
 export { renderCard };
 "#,
-        vec![logical_module("owners/card", &[Member::new("renderCard")])],
+        vec![logical_module(
+            "source_units/card",
+            &[Member::new("renderCard")],
+        )],
     );
     let fixture = write_validate_fixture_spec(opts);
 
@@ -149,7 +152,10 @@ fn validate_spec_ignores_source_only_environment_defaults() {
 }
 export { renderCard };
 "#,
-        vec![logical_module("owners/card", &[Member::new("renderCard")])],
+        vec![logical_module(
+            "source_units/card",
+            &[Member::new("renderCard")],
+        )],
     );
     let fixture = write_validate_fixture_spec(opts);
     let bin = debundler_path();
@@ -208,8 +214,8 @@ fn validate_source_only_json_reports_every_source_selector_failure() {
     assert_eq!(
         ambiguous["outcome"]["candidates"],
         json!([
-            {"owner": 0, "binding": "leftPanel"},
-            {"owner": 1, "binding": "rightPanel"},
+            {"body_index": 0, "binding": "leftPanel"},
+            {"body_index": 1, "binding": "rightPanel"},
         ])
     );
 }
@@ -323,11 +329,11 @@ sideEffect("shared");
         ambiguous["outcome"],
         json!({
             "kind": "ambiguous",
-            "candidates": [{"owner": 0}, {"owner": 1}],
+            "candidates": [{"body_index": 0}, {"body_index": 1}],
             "truncated": false,
             "differentiators": [
-                {"owner": 0, "statement": 1, "anchor": "string literal \"shared\""},
-                {"owner": 1, "statement": 0, "anchor": "string literal \"shared\""},
+                {"candidate_body_index": 0, "anchor_body_index": 1, "anchor": "string literal \"shared\""},
+                {"candidate_body_index": 1, "anchor_body_index": 0, "anchor": "string literal \"shared\""},
             ],
         })
     );
@@ -395,8 +401,8 @@ const leftTwo = renderPanel("shared"), rightTwo = renderPanel("shared");
         assert_eq!(
             record["outcome"]["candidates"],
             json!([
-                {"owner": 0, "binding": bindings[0]},
-                {"owner": 1, "binding": bindings[1]},
+                {"body_index": 0, "binding": bindings[0]},
+                {"body_index": 1, "binding": bindings[1]},
             ])
         );
     }

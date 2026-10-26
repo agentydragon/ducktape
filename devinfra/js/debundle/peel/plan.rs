@@ -1,7 +1,7 @@
 //! Agent-facing read-only peel-planning workbench.
 //!
 //! These subcommands are for agents maintaining a debundle spec. They expose
-//! stable JSON operations over the owner graph and spec tree instead of
+//! stable JSON operations over the dependency graph and spec tree instead of
 //! human-oriented "views".
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -21,8 +21,8 @@ use clap::{Args as ClapArgs, ValueEnum};
 use serde::Serialize;
 
 use analysis::{
-    AtomicGroupEdgeReport, AtomicGroupReport, BindingReport, OwnerGraphEdgeReport,
-    OwnerGraphNodeReport, OwnerGraphReport, QuotientEdgeReport, SourceLocation,
+    AtomicGroupEdgeReport, AtomicGroupReport, BindingReport, DependencyEdgeReport,
+    DependencyGraphReport, QuotientEdgeReport, SourceLocation, SourceUnitReport,
 };
 use spec_modules::{
     collect_module_files, default_binding_patches_path, load_binding_patch_members,
@@ -31,9 +31,9 @@ use spec_modules::{
 
 #[derive(Debug, Clone, ClapArgs)]
 pub struct CommonArgs {
-    /// Path to `owner_graph.json` (debundler analysis output).
+    /// Path to `dependency_graph.json` (debundler analysis output).
     #[arg(long = "graph", env = "DEBUNDLE_GRAPH")]
-    pub owner_graph_path: PathBuf,
+    pub dependency_graph_path: PathBuf,
 
     /// Root of emitted-module `*.yaml` spec files.
     #[arg(long = "modules", env = "DEBUNDLE_MODULES")]
@@ -181,7 +181,7 @@ pub struct QueryReport {
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum QueryKind {
-    Owner,
+    SourceUnit,
     Module,
     Binding,
     Proposal,
@@ -192,8 +192,8 @@ pub enum QueryKind {
 /// What `describe` / `inspect-source --id` select owners by; each variant carries its id.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SelectionKind {
-    /// One owner id from `owner_graph.json`.
-    Owner(String),
+    /// One source-unit ID from `dependency_graph.json`.
+    SourceUnit(String),
     /// Every owner claimed by this module path.
     ModulePath(String),
     /// Every owner assigned to this module id.
@@ -202,7 +202,7 @@ pub enum SelectionKind {
     Binding(String),
     /// A proposer proposal by `proposed_module_id`.
     Proposal(String),
-    /// One atomic group id from `owner_graph.json`.
+    /// One atomic group id from `dependency_graph.json`.
     AtomicGroup(String),
     /// One proposer diagnostic by `diagnostic_id`.
     Diagnostic(String),
@@ -211,7 +211,7 @@ pub enum SelectionKind {
 impl SelectionKind {
     fn value(&self) -> &str {
         match self {
-            Self::Owner(v)
+            Self::SourceUnit(v)
             | Self::ModulePath(v)
             | Self::Module(v)
             | Self::Binding(v)
@@ -223,7 +223,7 @@ impl SelectionKind {
 
     fn query_kind(&self) -> QueryKind {
         match self {
-            Self::Owner(_) => QueryKind::Owner,
+            Self::SourceUnit(_) => QueryKind::SourceUnit,
             Self::ModulePath(_) => QueryKind::Module,
             Self::Module(_) => QueryKind::Module,
             Self::Binding(_) => QueryKind::Binding,
@@ -258,19 +258,19 @@ pub struct PlanWorkReport {
 #[derive(Debug, Clone, Serialize)]
 pub struct ExplainReport {
     pub query: QueryReport,
-    pub owner_ids: Vec<String>,
-    pub owners: Vec<OwnerGraphNodeReport>,
-    pub neighbor_owners: Vec<OwnerGraphNodeReport>,
+    pub source_unit_ids: Vec<String>,
+    pub source_units: Vec<SourceUnitReport>,
+    pub neighbor_source_units: Vec<SourceUnitReport>,
     pub bindings: Vec<BindingReport>,
     pub binding_homes: Vec<BindingHomeReport>,
-    pub incoming_edges: Vec<OwnerGraphEdgeReport>,
-    pub outgoing_edges: Vec<OwnerGraphEdgeReport>,
+    pub incoming_edges: Vec<DependencyEdgeReport>,
+    pub outgoing_edges: Vec<DependencyEdgeReport>,
     pub atomic_groups: Vec<AtomicGroupReport>,
     pub incoming_atomic_edges: Vec<AtomicGroupEdgeReport>,
     pub outgoing_atomic_edges: Vec<AtomicGroupEdgeReport>,
     pub quotient_edges: Vec<QuotientEdgeReport>,
     /// Bindings claimed by a module-path selection that do not
-    /// appear in the owner graph. Always empty for other selections.
+    /// appear in the dependency graph. Always empty for other selections.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub unknown_binding_ids: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -308,8 +308,8 @@ pub struct PatchPlanRow {
     pub complete_atomic_group_ids: Vec<String>,
     pub split_atomic_group_ids: Vec<String>,
     pub missing_binding_ids: Vec<String>,
-    pub missing_owner_ids: Vec<String>,
-    pub missing_anonymous_owner_ids: Vec<String>,
+    pub missing_source_unit_ids: Vec<String>,
+    pub missing_anonymous_source_unit_ids: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub matching_proposal_ids: Option<Vec<String>>,
 }
@@ -324,8 +324,8 @@ pub enum PatchPlanStatus {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct GraphSummaryReport {
-    pub owner_count: usize,
-    pub owner_edge_count: usize,
+    pub source_unit_count: usize,
+    pub dependency_edge_count: usize,
     pub atomic_group_count: usize,
     pub residual_atomic_group_count: usize,
     pub atomic_edge_count: usize,
@@ -376,17 +376,17 @@ pub enum BindingHomeSourceKind {
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct SourceSelectionReport {
     pub query: QueryReport,
-    pub owner_ids: Vec<String>,
+    pub source_unit_ids: Vec<String>,
     /// Bindings claimed by a module-path selection that do not
-    /// appear in the owner graph. Always empty for other selections.
+    /// appear in the dependency graph. Always empty for other selections.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub unknown_binding_ids: Vec<String>,
-    pub owners: Vec<SelectedOwnerSource>,
+    pub source_units: Vec<SelectedSourceUnitSource>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-pub struct SelectedOwnerSource {
-    pub owner_id: String,
+pub struct SelectedSourceUnitSource {
+    pub source_unit_id: String,
     pub source_path: String,
     pub resolved_path: String,
     pub statement_ordinal: usize,
@@ -468,7 +468,7 @@ pub fn print_ndjson_list<T: Serialize>(items: &[T], format: OutputFormat) -> Res
 
 pub fn run_plan_work_report(args: &PlanWorkArgs) -> Result<PlanWorkReport> {
     let mut report = propose_from_files(&ProposalOptions {
-        owner_graph_path: args.common.owner_graph_path.clone(),
+        dependency_graph_path: args.common.dependency_graph_path.clone(),
         modules_root: args.common.modules_root.clone(),
         tree_config: args.tree_config.clone(),
         source_root: args.source_root.clone(),
@@ -495,7 +495,7 @@ pub fn run_plan_work_report(args: &PlanWorkArgs) -> Result<PlanWorkReport> {
 }
 
 pub fn run_atomic_groups_report(args: &AtomicGroupsArgs) -> Result<AtomicGroupsReport> {
-    let graph = load_graph(&args.common.owner_graph_path)?;
+    let graph = load_graph(&args.common.dependency_graph_path)?;
     let mut atomic_groups = graph.atomic_graph.nodes.clone();
     if args.residual_only {
         atomic_groups.retain(|atomic_group| {
@@ -535,12 +535,12 @@ pub fn run_atomic_groups_report(args: &AtomicGroupsArgs) -> Result<AtomicGroupsR
 }
 
 pub fn run_patch_plan_report(args: &PatchPlanArgs) -> Result<PatchPlanReport> {
-    let graph = load_graph(&args.common.owner_graph_path)?;
+    let graph = load_graph(&args.common.dependency_graph_path)?;
     let propose = if args.include_proposals {
         Some(propose_from_graph(
             &graph,
             &ProposalOptions {
-                owner_graph_path: args.common.owner_graph_path.clone(),
+                dependency_graph_path: args.common.dependency_graph_path.clone(),
                 modules_root: args.common.modules_root.clone(),
                 tree_config: None,
                 source_root: args.source_root.clone(),
@@ -552,7 +552,7 @@ pub fn run_patch_plan_report(args: &PatchPlanArgs) -> Result<PatchPlanReport> {
     };
     let mut rows = patch_plan_rows(
         &graph,
-        &args.common.owner_graph_path,
+        &args.common.dependency_graph_path,
         &args.common.modules_root,
         args.source_root.as_deref(),
         propose.as_ref(),
@@ -580,12 +580,12 @@ pub fn run_patch_plan_report(args: &PatchPlanArgs) -> Result<PatchPlanReport> {
 }
 
 pub fn run_graph_summary_report(args: &GraphSummaryArgs) -> Result<GraphSummaryReport> {
-    let graph = load_graph(&args.common.owner_graph_path)?;
+    let graph = load_graph(&args.common.dependency_graph_path)?;
     let propose = if args.include_proposals {
         Some(propose_from_graph(
             &graph,
             &ProposalOptions {
-                owner_graph_path: args.common.owner_graph_path.clone(),
+                dependency_graph_path: args.common.dependency_graph_path.clone(),
                 modules_root: args.common.modules_root.clone(),
                 tree_config: None,
                 source_root: args.source_root.clone(),
@@ -619,8 +619,8 @@ pub fn run_graph_summary_report(args: &GraphSummaryArgs) -> Result<GraphSummaryR
     });
     apply_limit(&mut largest_residual_atomic_groups, args.limit);
     Ok(GraphSummaryReport {
-        owner_count: graph.nodes.len(),
-        owner_edge_count: graph.edges.len(),
+        source_unit_count: graph.nodes.len(),
+        dependency_edge_count: graph.edges.len(),
         atomic_group_count: graph.atomic_graph.nodes.len(),
         residual_atomic_group_count: graph
             .atomic_graph
@@ -651,7 +651,7 @@ macro_rules! apply_limits {
 }
 
 pub fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
-    let graph = load_graph(&args.common.owner_graph_path)?;
+    let graph = load_graph(&args.common.dependency_graph_path)?;
     let selection = &args.selection;
     let query = query_report(selection);
     let selection_needs_proposals = matches!(
@@ -662,7 +662,7 @@ pub fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
         Some(propose_from_graph(
             &graph,
             &ProposalOptions {
-                owner_graph_path: args.common.owner_graph_path.clone(),
+                dependency_graph_path: args.common.dependency_graph_path.clone(),
                 modules_root: args.common.modules_root.clone(),
                 tree_config: None,
                 source_root: args.source_root.clone(),
@@ -674,9 +674,9 @@ pub fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
     };
     let include_proposal_sections = propose.is_some();
     let ResolvedSelection {
-        owner_ids,
+        source_unit_ids,
         unknown_binding_ids,
-    } = resolve_owner_ids(
+    } = resolve_source_unit_ids(
         selection,
         &graph,
         &args.common,
@@ -684,34 +684,34 @@ pub fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
         args.source_root.as_deref(),
         propose.as_ref(),
     )?;
-    let owner_set: BTreeSet<String> = owner_ids.iter().cloned().collect();
-    let mut owners = owners_for_ids(&graph, &owner_set);
+    let source_unit_set: BTreeSet<String> = source_unit_ids.iter().cloned().collect();
+    let mut source_units = source_units_for_ids(&graph, &source_unit_set);
 
     let mut neighbor_ids = BTreeSet::new();
-    let mut incoming_edges: Vec<OwnerGraphEdgeReport> = graph
+    let mut incoming_edges: Vec<DependencyEdgeReport> = graph
         .edges
         .iter()
-        .filter(|edge| owner_set.contains(&edge.target))
+        .filter(|edge| source_unit_set.contains(&edge.target))
         .inspect(|edge| {
-            if !owner_set.contains(&edge.source) {
+            if !source_unit_set.contains(&edge.source) {
                 neighbor_ids.insert(edge.source.clone());
             }
         })
         .cloned()
         .collect();
-    let mut outgoing_edges: Vec<OwnerGraphEdgeReport> = graph
+    let mut outgoing_edges: Vec<DependencyEdgeReport> = graph
         .edges
         .iter()
-        .filter(|edge| owner_set.contains(&edge.source))
+        .filter(|edge| source_unit_set.contains(&edge.source))
         .inspect(|edge| {
-            if !owner_set.contains(&edge.target) {
+            if !source_unit_set.contains(&edge.target) {
                 neighbor_ids.insert(edge.target.clone());
             }
         })
         .cloned()
         .collect();
-    let mut neighbor_owners = owners_for_ids(&graph, &neighbor_ids);
-    let selected_atomic_group_ids = atomic_group_ids_for_owner_set(&graph, &owner_set);
+    let mut neighbor_source_units = source_units_for_ids(&graph, &neighbor_ids);
+    let selected_atomic_group_ids = atomic_group_ids_for_owner_set(&graph, &source_unit_set);
     let mut atomic_groups = graph
         .atomic_graph
         .nodes
@@ -734,9 +734,9 @@ pub fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
         .cloned()
         .collect();
 
-    let mut bindings: Vec<BindingReport> = owners
+    let mut bindings: Vec<BindingReport> = source_units
         .iter()
-        .flat_map(|owner| owner.declared_bindings.iter().cloned())
+        .flat_map(|source_unit| source_unit.declared_bindings.iter().cloned())
         .collect();
     bindings.sort();
     bindings.dedup();
@@ -746,9 +746,9 @@ pub fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
         .collect();
     let mut binding_homes = binding_homes(&args.common.modules_root, &binding_ids)?;
 
-    let selected_destinations: BTreeSet<analysis::ModuleKey> = owners
+    let selected_destinations: BTreeSet<analysis::ModuleKey> = source_units
         .iter()
-        .map(|owner| owner.destination.clone())
+        .map(|source_unit| source_unit.destination.clone())
         .collect();
     let mut quotient_edges = graph
         .quotient
@@ -766,26 +766,26 @@ pub fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
             propose
                 .proposals
                 .into_iter()
-                .filter(|proposal| overlaps(&proposal.owner_ids, &owner_set))
+                .filter(|proposal| overlaps(&proposal.source_unit_ids, &source_unit_set))
                 .collect(),
             propose
                 .diagnostics
                 .into_iter()
-                .filter(|diagnostic| overlaps(&diagnostic.owner_ids, &owner_set))
+                .filter(|diagnostic| overlaps(&diagnostic.source_unit_ids, &source_unit_set))
                 .collect(),
         )
     } else {
         (Vec::new(), Vec::new())
     };
-    let mut limited_owner_ids = owner_ids;
+    let mut limited_source_unit_ids = source_unit_ids;
 
     let mut sections = BTreeMap::new();
     apply_limits!(
         args.limit,
         sections,
-        (limited_owner_ids, "owner_ids"),
-        (owners, "owners"),
-        (neighbor_owners, "neighbor_owners"),
+        (limited_source_unit_ids, "source_unit_ids"),
+        (source_units, "owners"),
+        (neighbor_source_units, "neighbor_source_units"),
         (bindings, "bindings"),
         (binding_homes, "binding_homes"),
         (incoming_edges, "incoming_edges"),
@@ -800,9 +800,9 @@ pub fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
 
     Ok(ExplainReport {
         query,
-        owner_ids: limited_owner_ids,
-        owners,
-        neighbor_owners,
+        source_unit_ids: limited_source_unit_ids,
+        source_units,
+        neighbor_source_units,
         bindings,
         binding_homes,
         incoming_edges,
@@ -820,13 +820,13 @@ pub fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
 }
 
 pub fn run_source_selection_report(args: &SourceSelectionArgs) -> Result<SourceSelectionReport> {
-    let graph = load_graph(&args.common.owner_graph_path)?;
+    let graph = load_graph(&args.common.dependency_graph_path)?;
     let selection = &args.selection;
     let query = query_report(selection);
     let ResolvedSelection {
-        owner_ids,
+        source_unit_ids,
         unknown_binding_ids,
-    } = resolve_owner_ids(
+    } = resolve_source_unit_ids(
         selection,
         &graph,
         &args.common,
@@ -834,15 +834,15 @@ pub fn run_source_selection_report(args: &SourceSelectionArgs) -> Result<SourceS
         args.source_root.as_deref(),
         None,
     )?;
-    let owner_set: BTreeSet<String> = owner_ids.iter().cloned().collect();
-    let owners = owners_for_ids(&graph, &owner_set);
+    let source_unit_set: BTreeSet<String> = source_unit_ids.iter().cloned().collect();
+    let source_units = source_units_for_ids(&graph, &source_unit_set);
     let mut selected = Vec::new();
     let mut resolved_paths: BTreeMap<String, String> = BTreeMap::new();
-    for owner in owners {
-        let location = owner
+    for source_unit in source_units {
+        let location = source_unit
             .source_location
             .as_ref()
-            .with_context(|| format!("owner {} has no source location", owner.id))?;
+            .with_context(|| format!("owner {} has no source location", source_unit.id))?;
         let source_path = &location.source_path;
         let resolved_path = match resolved_paths.get(source_path) {
             Some(path) => path.clone(),
@@ -850,7 +850,7 @@ pub fn run_source_selection_report(args: &SourceSelectionArgs) -> Result<SourceS
                 let path = resolve_source_file(
                     source_path,
                     args.source_root.as_deref(),
-                    &args.common.owner_graph_path,
+                    &args.common.dependency_graph_path,
                     &args.common.modules_root,
                 )?
                 .display()
@@ -859,30 +859,30 @@ pub fn run_source_selection_report(args: &SourceSelectionArgs) -> Result<SourceS
                 path
             }
         };
-        selected.push(SelectedOwnerSource {
-            owner_id: owner.id.clone(),
+        selected.push(SelectedSourceUnitSource {
+            source_unit_id: source_unit.id.clone(),
             source_path: source_path.clone(),
             resolved_path,
-            statement_ordinal: owner.statement_ordinal.0,
+            statement_ordinal: source_unit.statement_ordinal.0,
             source_location: location.clone(),
         });
     }
     selected.sort_by(|a, b| {
-        (&a.source_path, a.statement_ordinal, &a.owner_id).cmp(&(
+        (&a.source_path, a.statement_ordinal, &a.source_unit_id).cmp(&(
             &b.source_path,
             b.statement_ordinal,
-            &b.owner_id,
+            &b.source_unit_id,
         ))
     });
     Ok(SourceSelectionReport {
         query,
-        owner_ids,
+        source_unit_ids,
         unknown_binding_ids,
-        owners: selected,
+        source_units: selected,
     })
 }
 
-fn load_graph(path: &Path) -> Result<OwnerGraphReport> {
+fn load_graph(path: &Path) -> Result<DependencyGraphReport> {
     serde_json::from_str(
         &fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?,
     )
@@ -932,14 +932,14 @@ fn sort_proposal_diagnostics(diagnostics: &mut [ProposalDiagnostic]) {
                 .source_line_range
                 .map(|range| range[0])
                 .unwrap_or(usize::MAX),
-            diagnostic.owner_ids.len(),
+            diagnostic.source_unit_ids.len(),
             diagnostic.diagnostic_id.clone(),
         )
     });
 }
 
 fn group_atomic_groups_by_destination(
-    graph: &OwnerGraphReport,
+    graph: &DependencyGraphReport,
     atomic_groups: &[AtomicGroupReport],
 ) -> Vec<DestinationGroup> {
     let mut groups: BTreeMap<String, Vec<String>> = BTreeMap::new();
@@ -967,21 +967,21 @@ fn group_atomic_groups_by_destination(
         .collect()
 }
 
-fn owners_for_ids(
-    graph: &OwnerGraphReport,
-    owner_ids: &BTreeSet<String>,
-) -> Vec<OwnerGraphNodeReport> {
+fn source_units_for_ids(
+    graph: &DependencyGraphReport,
+    source_unit_ids: &BTreeSet<String>,
+) -> Vec<SourceUnitReport> {
     graph
         .nodes
         .iter()
-        .filter(|owner| owner_ids.contains(&owner.id))
+        .filter(|source_unit| source_unit_ids.contains(&source_unit.id))
         .cloned()
         .collect()
 }
 
 fn atomic_group_ids_for_owner_set(
-    graph: &OwnerGraphReport,
-    owner_ids: &BTreeSet<String>,
+    graph: &DependencyGraphReport,
+    source_unit_ids: &BTreeSet<String>,
 ) -> BTreeSet<String> {
     graph
         .atomic_graph
@@ -989,26 +989,28 @@ fn atomic_group_ids_for_owner_set(
         .iter()
         .filter(|atomic_group| {
             atomic_group
-                .owner_ids
+                .source_unit_ids
                 .iter()
-                .any(|owner| owner_ids.contains(owner))
+                .any(|source_unit| source_unit_ids.contains(source_unit))
         })
         .map(|atomic_group| atomic_group.id.clone())
         .collect()
 }
 
-fn overlaps(owner_ids: &[String], selected: &BTreeSet<String>) -> bool {
-    owner_ids.iter().any(|owner_id| selected.contains(owner_id))
+fn overlaps(source_unit_ids: &[String], selected: &BTreeSet<String>) -> bool {
+    source_unit_ids
+        .iter()
+        .any(|source_unit_id| selected.contains(source_unit_id))
 }
 
 fn patch_plan_rows(
-    graph: &OwnerGraphReport,
-    owner_graph_path: &Path,
+    graph: &DependencyGraphReport,
+    dependency_graph_path: &Path,
     modules_root: &Path,
     source_root: Option<&Path>,
     propose: Option<&ProposalsReport>,
 ) -> Result<Vec<PatchPlanRow>> {
-    let binding_to_owners = binding_to_owners(graph);
+    let binding_to_source_units = binding_to_source_units(graph);
     let atomic_group_by_owner = atomic_group_by_owner(graph);
     let atomic_group_by_id: BTreeMap<String, &AtomicGroupReport> = graph
         .atomic_graph
@@ -1021,7 +1023,7 @@ fn patch_plan_rows(
     // resolver parses each claimed source file once per call.
     let resolved_by_set = resolve_source_claims(
         graph,
-        owner_graph_path,
+        dependency_graph_path,
         modules_root,
         source_root,
         &patch_sets
@@ -1047,24 +1049,24 @@ fn patch_plan_rows(
             let mut requested_binding_ids: Vec<String> = claimed_bindings.iter().cloned().collect();
             requested_binding_ids.sort();
 
-            let mut requested_owner_ids = BTreeSet::<String>::new();
+            let mut requested_source_unit_ids = BTreeSet::<String>::new();
             let mut unknown_binding_ids = Vec::<String>::new();
             for binding in &requested_binding_ids {
-                if let Some(owner_ids) = binding_to_owners.get(binding) {
-                    requested_owner_ids.extend(owner_ids.iter().cloned());
+                if let Some(source_unit_ids) = binding_to_source_units.get(binding) {
+                    requested_source_unit_ids.extend(source_unit_ids.iter().cloned());
                 } else {
                     unknown_binding_ids.push(binding.clone());
                 }
             }
-            for owner in &resolved.anonymous_owners {
-                if let Some(node) = graph.nodes.get(owner.0) {
-                    requested_owner_ids.insert(node.id.clone());
+            for source_unit in &resolved.anonymous_source_units {
+                if let Some(node) = graph.nodes.get(source_unit.0) {
+                    requested_source_unit_ids.insert(node.id.clone());
                 }
             }
 
             let mut atomic_group_ids: BTreeSet<String> = BTreeSet::new();
-            for owner_id in &requested_owner_ids {
-                if let Some(atomic_group_id) = atomic_group_by_owner.get(owner_id) {
+            for source_unit_id in &requested_source_unit_ids {
+                if let Some(atomic_group_id) = atomic_group_by_owner.get(source_unit_id) {
                     atomic_group_ids.insert(atomic_group_id.clone());
                 }
             }
@@ -1072,8 +1074,8 @@ fn patch_plan_rows(
             let mut complete_atomic_group_ids = Vec::<String>::new();
             let mut split_atomic_group_ids = Vec::<String>::new();
             let mut missing_binding_ids = BTreeSet::<String>::new();
-            let mut missing_owner_ids = BTreeSet::<String>::new();
-            let mut missing_anonymous_owner_ids = BTreeSet::<String>::new();
+            let mut missing_source_unit_ids = BTreeSet::<String>::new();
+            let mut missing_anonymous_source_unit_ids = BTreeSet::<String>::new();
             for atomic_group_id in &atomic_group_ids {
                 let Some(atomic_group) = atomic_group_by_id.get(atomic_group_id) else {
                     continue;
@@ -1084,14 +1086,14 @@ fn patch_plan_rows(
                     .map(|m| m.binding.to_string())
                     .collect();
                 let atomic_group_owners: BTreeSet<String> =
-                    atomic_group.owner_ids.iter().cloned().collect();
+                    atomic_group.source_unit_ids.iter().cloned().collect();
                 let bindings_complete = atomic_group_bindings
                     .iter()
                     .all(|binding| claimed_bindings.contains(binding));
-                let owners_complete = atomic_group_owners
+                let source_units_complete = atomic_group_owners
                     .iter()
-                    .all(|owner_id| requested_owner_ids.contains(owner_id));
-                if bindings_complete && owners_complete {
+                    .all(|source_unit_id| requested_source_unit_ids.contains(source_unit_id));
+                if bindings_complete && source_units_complete {
                     complete_atomic_group_ids.push(atomic_group_id.clone());
                 } else {
                     split_atomic_group_ids.push(atomic_group_id.clone());
@@ -1100,16 +1102,16 @@ fn patch_plan_rows(
                             .into_iter()
                             .filter(|binding| !claimed_bindings.contains(binding)),
                     );
-                    missing_owner_ids.extend(
-                        atomic_group_owners
-                            .into_iter()
-                            .filter(|owner_id| !requested_owner_ids.contains(owner_id)),
-                    );
-                    missing_anonymous_owner_ids.extend(
+                    missing_source_unit_ids.extend(atomic_group_owners.into_iter().filter(
+                        |source_unit_id| !requested_source_unit_ids.contains(source_unit_id),
+                    ));
+                    missing_anonymous_source_unit_ids.extend(
                         atomic_group
-                            .anonymous_statement_owner_ids
+                            .anonymous_statement_source_unit_ids
                             .iter()
-                            .filter(|owner_id| !requested_owner_ids.contains(*owner_id))
+                            .filter(|source_unit_id| {
+                                !requested_source_unit_ids.contains(*source_unit_id)
+                            })
                             .cloned(),
                     );
                 }
@@ -1122,7 +1124,7 @@ fn patch_plan_rows(
                 PatchPlanStatus::CompleteAtomicGroups
             };
             let matching_proposal_ids =
-                propose.map(|propose| matching_proposal_ids(propose, &requested_owner_ids));
+                propose.map(|propose| matching_proposal_ids(propose, &requested_source_unit_ids));
             Ok(PatchPlanRow {
                 path: patch_set.path,
                 file: patch_set.file.display().to_string(),
@@ -1133,8 +1135,10 @@ fn patch_plan_rows(
                 complete_atomic_group_ids,
                 split_atomic_group_ids,
                 missing_binding_ids: missing_binding_ids.into_iter().collect(),
-                missing_owner_ids: missing_owner_ids.into_iter().collect(),
-                missing_anonymous_owner_ids: missing_anonymous_owner_ids.into_iter().collect(),
+                missing_source_unit_ids: missing_source_unit_ids.into_iter().collect(),
+                missing_anonymous_source_unit_ids: missing_anonymous_source_unit_ids
+                    .into_iter()
+                    .collect(),
                 matching_proposal_ids,
             })
         })
@@ -1185,14 +1189,14 @@ fn load_patch_sets(modules_root: &Path) -> Result<Vec<PatchSet>> {
     Ok(sets)
 }
 
-/// Map each declared (minified) binding name to all owner ids that declare it.
+/// Map each declared (minified) binding name to all source-unit IDs that declare it.
 ///
 /// A repeated top-level `var` is one binding with several declaration sites,
-/// and the owner graph retains each site as an owner node. Binding-keyed claims
+/// and the dependency graph retains each site as an source-unit node. Binding-keyed claims
 /// therefore cover every matching owner so a co-declaration atomic group is
 /// reported complete; the selector resolver uses the first site as its single
 /// placement representative.
-fn binding_to_owners(graph: &OwnerGraphReport) -> BTreeMap<String, Vec<String>> {
+fn binding_to_source_units(graph: &DependencyGraphReport) -> BTreeMap<String, Vec<String>> {
     let mut out = BTreeMap::new();
     for node in &graph.nodes {
         for binding in &node.declared_bindings {
@@ -1204,11 +1208,11 @@ fn binding_to_owners(graph: &OwnerGraphReport) -> BTreeMap<String, Vec<String>> 
     out
 }
 
-fn atomic_group_by_owner(graph: &OwnerGraphReport) -> BTreeMap<String, String> {
+fn atomic_group_by_owner(graph: &DependencyGraphReport) -> BTreeMap<String, String> {
     let mut out = BTreeMap::new();
     for atomic_group in &graph.atomic_graph.nodes {
-        for owner_id in &atomic_group.owner_ids {
-            out.insert(owner_id.clone(), atomic_group.id.clone());
+        for source_unit_id in &atomic_group.source_unit_ids {
+            out.insert(source_unit_id.clone(), atomic_group.id.clone());
         }
     }
     out
@@ -1216,17 +1220,18 @@ fn atomic_group_by_owner(graph: &OwnerGraphReport) -> BTreeMap<String, String> {
 
 fn matching_proposal_ids(
     propose: &ProposalsReport,
-    requested_owner_ids: &BTreeSet<String>,
+    requested_source_unit_ids: &BTreeSet<String>,
 ) -> Vec<String> {
-    if requested_owner_ids.is_empty() {
+    if requested_source_unit_ids.is_empty() {
         return Vec::new();
     }
     propose
         .proposals
         .iter()
         .filter(|proposal| {
-            let proposal_owners: BTreeSet<String> = proposal.owner_ids.iter().cloned().collect();
-            requested_owner_ids.is_subset(&proposal_owners)
+            let proposal_source_units: BTreeSet<String> =
+                proposal.source_unit_ids.iter().cloned().collect();
+            requested_source_unit_ids.is_subset(&proposal_source_units)
         })
         .map(|proposal| proposal.proposed_module_id.clone())
         .collect()
@@ -1239,7 +1244,7 @@ fn query_report(selection: &SelectionKind) -> QueryReport {
     }
 }
 
-/// Find every owner node whose `declared_bindings` matches `name`.
+/// Find every source-unit node whose `declared_bindings` matches `name`.
 ///
 /// `name` is compared against both the minified `BindingReport.binding`
 /// and the readable `BindingReport.export_name`. Matches by minified
@@ -1250,17 +1255,17 @@ fn query_report(selection: &SelectionKind) -> QueryReport {
 /// callers can detect ambiguity if they care.
 ///
 /// This is the one shared resolver every CLI verb that accepts a
-/// binding name from the owner graph (`cluster`, `scc --binding`,
+/// binding name from the dependency graph (`cluster`, `scc --binding`,
 /// `describe`, `inspect-source --id`) routes through. Spec-edit verbs
 /// (`bindings rename` / `assign` / `unassign` / `comment`) use
 /// [`crate::binding::resolve_unambiguous`] instead — they need YAML
-/// member positions, not owner-graph node refs.
-pub fn resolve_binding_owners<'a>(
-    graph: &'a OwnerGraphReport,
+/// member positions, not dependency-graph node refs.
+pub fn resolve_binding_source_units<'a>(
+    graph: &'a DependencyGraphReport,
     name: &str,
-) -> Vec<&'a OwnerGraphNodeReport> {
-    let mut by_minified: Vec<&OwnerGraphNodeReport> = Vec::new();
-    let mut by_readable: Vec<&OwnerGraphNodeReport> = Vec::new();
+) -> Vec<&'a SourceUnitReport> {
+    let mut by_minified: Vec<&SourceUnitReport> = Vec::new();
+    let mut by_readable: Vec<&SourceUnitReport> = Vec::new();
     for node in &graph.nodes {
         let mut matched_minified = false;
         let mut matched_readable = false;
@@ -1282,78 +1287,78 @@ pub fn resolve_binding_owners<'a>(
     by_minified
 }
 
-/// Result of resolving a selection to owner ids.
+/// Result of resolving a selection to source-unit IDs.
 /// `unknown_binding_ids` is non-empty only for module-path selections
-/// whose YAML claims bindings the owner graph does not declare.
+/// whose YAML claims bindings the dependency graph does not declare.
 #[derive(Debug, Clone)]
 struct ResolvedSelection {
-    owner_ids: Vec<String>,
+    source_unit_ids: Vec<String>,
     unknown_binding_ids: Vec<String>,
 }
 
-fn resolve_owner_ids(
+fn resolve_source_unit_ids(
     selection: &SelectionKind,
-    graph: &OwnerGraphReport,
+    graph: &DependencyGraphReport,
     common: &CommonArgs,
     size_cap_lines: usize,
     source_root: Option<&Path>,
     propose: Option<&ProposalsReport>,
 ) -> Result<ResolvedSelection> {
     let mut unknown_binding_ids: Vec<String> = Vec::new();
-    let mut owner_ids: Vec<String> = match selection {
-        SelectionKind::Owner(owner_id) => {
-            if graph.nodes.iter().any(|node| node.id == *owner_id) {
-                vec![owner_id.clone()]
+    let mut source_unit_ids: Vec<String> = match selection {
+        SelectionKind::SourceUnit(source_unit_id) => {
+            if graph.nodes.iter().any(|node| node.id == *source_unit_id) {
+                vec![source_unit_id.clone()]
             } else {
-                bail!("owner id {owner_id:?} not found in owner graph");
+                bail!("source-unit ID {source_unit_id:?} not found in dependency graph");
             }
         }
         SelectionKind::ModulePath(module_path) => {
             let (resolved, unknown) =
-                resolve_module_path_owner_ids(graph, common, source_root, module_path)?;
+                resolve_module_path_source_unit_ids(graph, common, source_root, module_path)?;
             unknown_binding_ids = unknown;
             resolved
         }
         SelectionKind::Module(module_id) => {
-            let owner_ids: Vec<String> = graph
+            let source_unit_ids: Vec<String> = graph
                 .nodes
                 .iter()
                 .filter(|node| node.destination.as_str() == *module_id)
                 .map(|node| node.id.clone())
                 .collect();
-            if owner_ids.is_empty()
+            if source_unit_ids.is_empty()
                 && !graph
                     .quotient
                     .nodes
                     .iter()
                     .any(|module| module.key.as_str() == *module_id)
             {
-                bail!("module id {module_id:?} not found in owner graph");
+                bail!("module id {module_id:?} not found in dependency graph");
             }
-            owner_ids
+            source_unit_ids
         }
-        SelectionKind::Binding(binding_id) => resolve_binding_owners(graph, binding_id)
+        SelectionKind::Binding(binding_id) => resolve_binding_source_units(graph, binding_id)
             .into_iter()
             .map(|node| node.id.clone())
             .collect(),
         SelectionKind::Proposal(proposal_id) => {
-            let proposal_owner_ids = if let Some(propose) = propose {
-                owner_ids_for_proposal(propose, proposal_id)
+            let proposal_source_unit_ids = if let Some(propose) = propose {
+                source_unit_ids_for_proposal(propose, proposal_id)
             } else {
                 let propose = propose_from_graph(
                     graph,
                     &ProposalOptions {
-                        owner_graph_path: common.owner_graph_path.clone(),
+                        dependency_graph_path: common.dependency_graph_path.clone(),
                         modules_root: common.modules_root.clone(),
                         tree_config: None,
                         source_root: source_root.map(Path::to_path_buf),
                         size_cap_lines,
                     },
                 )?;
-                owner_ids_for_proposal(&propose, proposal_id)
+                source_unit_ids_for_proposal(&propose, proposal_id)
             };
-            if let Some(owner_ids) = proposal_owner_ids {
-                owner_ids
+            if let Some(source_unit_ids) = proposal_source_unit_ids {
+                source_unit_ids
             } else {
                 bail!(
                     "proposal id {proposal_id:?} not found in current module proposals; run `debundle modules propose` to list current proposal ids"
@@ -1365,26 +1370,26 @@ fn resolve_owner_ids(
             .nodes
             .iter()
             .find(|atomic_group| atomic_group.id == *atomic_group_id)
-            .map(|atomic_group| atomic_group.owner_ids.clone())
+            .map(|atomic_group| atomic_group.source_unit_ids.clone())
             .unwrap_or_default(),
         SelectionKind::Diagnostic(diagnostic_id) => {
-            let diagnostic_owner_ids = if let Some(propose) = propose {
-                owner_ids_for_diagnostic(propose, diagnostic_id)
+            let diagnostic_source_unit_ids = if let Some(propose) = propose {
+                source_unit_ids_for_diagnostic(propose, diagnostic_id)
             } else {
                 let propose = propose_from_graph(
                     graph,
                     &ProposalOptions {
-                        owner_graph_path: common.owner_graph_path.clone(),
+                        dependency_graph_path: common.dependency_graph_path.clone(),
                         modules_root: common.modules_root.clone(),
                         tree_config: None,
                         source_root: source_root.map(Path::to_path_buf),
                         size_cap_lines,
                     },
                 )?;
-                owner_ids_for_diagnostic(&propose, diagnostic_id)
+                source_unit_ids_for_diagnostic(&propose, diagnostic_id)
             };
-            if let Some(owner_ids) = diagnostic_owner_ids {
-                owner_ids
+            if let Some(source_unit_ids) = diagnostic_source_unit_ids {
+                source_unit_ids
             } else {
                 bail!(
                     "diagnostic id {diagnostic_id:?} not found in current module proposal diagnostics; run `debundle modules propose` to list current diagnostic ids"
@@ -1392,23 +1397,23 @@ fn resolve_owner_ids(
             }
         }
     };
-    owner_ids.sort();
-    owner_ids.dedup();
-    if owner_ids.is_empty() {
-        bail!("selection did not resolve to any owner ids");
+    source_unit_ids.sort();
+    source_unit_ids.dedup();
+    if source_unit_ids.is_empty() {
+        bail!("selection did not resolve to any source-unit IDs");
     }
     Ok(ResolvedSelection {
-        owner_ids,
+        source_unit_ids,
         unknown_binding_ids,
     })
 }
 
-/// Resolve a module-path selection to `(owner_ids, unknown_binding_ids)`.
-/// Bindings the YAML claims but the owner graph does not declare are
+/// Resolve a module-path selection to `(source_unit_ids, unknown_binding_ids)`.
+/// Bindings the YAML claims but the dependency graph does not declare are
 /// returned (not swallowed) so callers can surface partial misses;
 /// only the all-unknown case is a hard error.
-fn resolve_module_path_owner_ids(
-    graph: &OwnerGraphReport,
+fn resolve_module_path_source_unit_ids(
+    graph: &DependencyGraphReport,
     common: &CommonArgs,
     source_root: Option<&Path>,
     module_path: &str,
@@ -1420,12 +1425,12 @@ fn resolve_module_path_owner_ids(
         bail!("module {module_path:?} has no members or anonymous_statements; nothing to describe");
     }
 
-    let binding_to_owners = binding_to_owners(graph);
-    let mut owner_ids = BTreeSet::<String>::new();
+    let binding_to_source_units = binding_to_source_units(graph);
+    let mut source_unit_ids = BTreeSet::<String>::new();
     let mut unknown_binding_ids = Vec::<String>::new();
     for binding in &claims.bindings {
-        if let Some(binding_owner_ids) = binding_to_owners.get(binding) {
-            owner_ids.extend(binding_owner_ids.iter().cloned());
+        if let Some(binding_source_unit_ids) = binding_to_source_units.get(binding) {
+            source_unit_ids.extend(binding_source_unit_ids.iter().cloned());
         } else {
             unknown_binding_ids.push(binding.clone());
         }
@@ -1443,7 +1448,7 @@ fn resolve_module_path_owner_ids(
         .with_context(|| format!("module {module_path:?} is not in the modules tree"))?;
     let resolved = resolve_source_claims_of(
         graph,
-        &common.owner_graph_path,
+        &common.dependency_graph_path,
         &common.modules_root,
         source_root,
         &module_files
@@ -1459,41 +1464,47 @@ fn resolve_module_path_owner_ids(
         index,
     )?;
     for binding in &resolved.bindings {
-        if let Some(binding_owner_ids) = binding_to_owners.get(binding) {
-            owner_ids.extend(binding_owner_ids.iter().cloned());
+        if let Some(binding_source_unit_ids) = binding_to_source_units.get(binding) {
+            source_unit_ids.extend(binding_source_unit_ids.iter().cloned());
         } else {
             unknown_binding_ids.push(binding.clone());
         }
     }
-    for owner in &resolved.anonymous_owners {
-        if let Some(node) = graph.nodes.get(owner.0) {
-            owner_ids.insert(node.id.clone());
+    for source_unit in &resolved.anonymous_source_units {
+        if let Some(node) = graph.nodes.get(source_unit.0) {
+            source_unit_ids.insert(node.id.clone());
         }
     }
 
-    if owner_ids.is_empty() && !unknown_binding_ids.is_empty() {
+    if source_unit_ids.is_empty() && !unknown_binding_ids.is_empty() {
         bail!(
-            "module {module_path:?} declares bindings that do not appear in the owner graph: {}",
+            "module {module_path:?} declares bindings that do not appear in the dependency graph: {}",
             unknown_binding_ids.join(", ")
         );
     }
-    Ok((owner_ids.into_iter().collect(), unknown_binding_ids))
+    Ok((source_unit_ids.into_iter().collect(), unknown_binding_ids))
 }
 
-fn owner_ids_for_proposal(propose: &ProposalsReport, proposal_id: &str) -> Option<Vec<String>> {
+fn source_unit_ids_for_proposal(
+    propose: &ProposalsReport,
+    proposal_id: &str,
+) -> Option<Vec<String>> {
     propose
         .proposals
         .iter()
         .find(|proposal| proposal.proposed_module_id == *proposal_id)
-        .map(|proposal| proposal.owner_ids.clone())
+        .map(|proposal| proposal.source_unit_ids.clone())
 }
 
-fn owner_ids_for_diagnostic(propose: &ProposalsReport, diagnostic_id: &str) -> Option<Vec<String>> {
+fn source_unit_ids_for_diagnostic(
+    propose: &ProposalsReport,
+    diagnostic_id: &str,
+) -> Option<Vec<String>> {
     propose
         .diagnostics
         .iter()
         .find(|diagnostic| diagnostic.diagnostic_id == *diagnostic_id)
-        .map(|diagnostic| diagnostic.owner_ids.clone())
+        .map(|diagnostic| diagnostic.source_unit_ids.clone())
 }
 
 fn binding_homes(

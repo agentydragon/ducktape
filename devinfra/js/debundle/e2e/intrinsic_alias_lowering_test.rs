@@ -24,7 +24,7 @@
 //!
 //! These tests drive the real `debundle` binary: the spec carries `intrinsic_alias`
 //! selectors riding a `makes_decorate_call`-pinned helper, the alias facts are
-//! derived from the chunk AST and joined to each alias's declaring owner, and we
+//! derived from the chunk AST and joined to each alias's declaring source_unit, and we
 //! assert the resolved binding lands in the right module under its readable name and
 //! the emitted tree runs under Node with decoration semantics intact. The
 //! fail-closed cases (zero / ambiguous / shadowed `Object`) are exercised as
@@ -214,11 +214,11 @@ fn intrinsic_alias_referenced_by_generic_helper_name_resolves_per_module() {
 /// the helper trio lives in one comma-list declaration, and the decorated class is
 /// the second declarator in a later `const` statement. The `source_match` candidate
 /// reports both the original body index and the matched binding (`targetClass`); the
-/// global solver must bridge by the matched binding's owner, not by the first owner
+/// global solver must bridge by the matched binding's source_unit, not by the first source_unit
 /// split from that body item (`firstValue`), so `makes_decorate_call` can resolve
 /// the helper and `intrinsic_alias` can resolve its companions in the same pass.
 #[test]
-fn intrinsic_alias_chain_uses_source_match_binding_owner_for_split_declarator_anchor() {
+fn intrinsic_alias_chain_uses_source_match_binding_source_unit_for_split_declarator_anchor() {
     let source = r#"var defineAlias = Object.defineProperty,
   descriptorAlias = Object.getOwnPropertyDescriptor,
   decorateHelper = (decorators, target, key, kind) => {
@@ -301,7 +301,7 @@ fn expect_intrinsic_alias_outcome(opts: FixtureOpts<'_>, kind: &str, export: &st
 }
 
 /// **Fail-closed: no matching alias.** A property the trio never aliases
-/// (`getPrototypeOf`) resolves to nothing — the relation picks out zero owners, so
+/// (`getPrototypeOf`) resolves to nothing — the relation picks out zero source_units, so
 /// the spec is rejected rather than guessing.
 #[test]
 fn intrinsic_alias_fails_closed_when_no_alias_matches() {
@@ -401,7 +401,7 @@ fn keep_going_reports_multiple_intrinsic_alias_no_matches() {
 
 /// **Fail-closed: ambiguous referencer.** When one helper reads two *distinct*
 /// `defineProperty` aliases (a contrived shape that does not occur in real esbuild
-/// output), the relation picks out two owners — ambiguous, so the spec is rejected.
+/// output), the relation picks out two source_units — ambiguous, so the spec is rejected.
 #[test]
 fn intrinsic_alias_fails_closed_when_two_aliases_share_property_and_referencer() {
     // The helper `d0` reads BOTH `p0` and `q0`, each a `defineProperty` alias.

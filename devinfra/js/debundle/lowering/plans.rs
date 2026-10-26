@@ -29,7 +29,7 @@ pub(super) struct ModulePlan {
     /// including names equal to the original binding spelling.
     pub(super) spec_named_bindings: BTreeSet<String>,
     /// Source-chunk statement ordinals of anonymous-statement members
-    /// claimed by this module. These owners have empty
+    /// claimed by this module. These source units have empty
     /// `declared_bindings`, so they can't be addressed by name —
     /// the spec resolves them by AST shape (see
     /// [`spec::LogicalModule::anonymous_statements`]). The
@@ -46,7 +46,7 @@ pub(super) struct ModulePlan {
     pub(super) comment: Option<String>,
     /// Local-name → per-member comment text from the spec, for the
     /// bindings this plan claims. Emitted as a `// ...` block above
-    /// the binding's owner statement in the generated module body.
+    /// the binding's source unit statement in the generated module body.
     /// See [`spec::Member::comment`].
     pub(super) binding_comments: BTreeMap<String, String>,
     /// Local-name → short spec-facing origin for each owned binding claim.

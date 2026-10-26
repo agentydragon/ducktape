@@ -1,6 +1,6 @@
 use anyhow::{Result, bail};
 use artifact::{ChunkBundle, ChunkId};
-use output_layout::OWNER_GRAPH_REPORT;
+use output_layout::DEPENDENCY_GRAPH_REPORT;
 use serde::Serialize;
 use std::fs;
 use std::io::BufWriter;
@@ -26,7 +26,7 @@ pub(super) fn write_chunk_report_json<T: Serialize>(
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    if filename == OWNER_GRAPH_REPORT {
+    if filename == DEPENDENCY_GRAPH_REPORT {
         // This side output is large enough on real app chunks that pretty
         // printing meaningfully affects local and remote test artifact size.
         // Keep small human-first reports pretty; keep the graph jq-first.

@@ -1,11 +1,11 @@
 //! `debundle scc` / `debundle cluster`: module-quotient SCC listing
-//! and per-binding neighbor queries over a generated owner graph.
+//! and per-binding neighbor queries over a generated dependency graph.
 
 use anyhow::{Context, Result};
 use clap::Args as ClapArgs;
 use peel::{
     CommonArgs as PeelCommonArgs, OutputFormat, print_ndjson_list, print_report,
-    resolve_binding_owners,
+    resolve_binding_source_units,
 };
 
 /// Args for `debundle scc`.
@@ -101,21 +101,21 @@ pub struct ClusterReport {
     pub outgoing_modules: Vec<ModuleRef>,
 }
 
-/// These queries need one home module, unlike multi-owner selection commands.
-/// Never prefer a minified spelling over another owner's readable spelling.
-fn resolve_one_binding_owner<'a>(
-    graph: &'a analysis::OwnerGraphReport,
+/// These queries need one home module, unlike multi-source unit selection commands.
+/// Never prefer a minified spelling over another source unit's readable spelling.
+fn resolve_one_binding_source_unit<'a>(
+    graph: &'a analysis::DependencyGraphReport,
     sym: &str,
-) -> Result<&'a analysis::OwnerGraphNodeReport> {
-    let owners = resolve_binding_owners(graph, sym);
-    match owners.as_slice() {
-        [owner] => Ok(owner),
-        [] => anyhow::bail!("no owner declares binding {sym:?}"),
+) -> Result<&'a analysis::SourceUnitReport> {
+    let source_units = resolve_binding_source_units(graph, sym);
+    match source_units.as_slice() {
+        [source_unit] => Ok(source_unit),
+        [] => anyhow::bail!("no source unit declares binding {sym:?}"),
         _ => anyhow::bail!(
-            "ambiguous binding {sym:?}: matches owners {}",
-            owners
+            "ambiguous binding {sym:?}: matches source units {}",
+            source_units
                 .iter()
-                .map(|owner| owner.id.as_str())
+                .map(|source_unit| source_unit.id.as_str())
                 .collect::<Vec<_>>()
                 .join(", "),
         ),
@@ -123,14 +123,14 @@ fn resolve_one_binding_owner<'a>(
 }
 
 pub fn run_scc(args: SccArgs) -> Result<()> {
-    let graph = crate::load_owner_graph_report(&args.common.owner_graph_path)?;
-    // If a binding was supplied, find its owner -> destination module
+    let graph = crate::load_dependency_graph_report(&args.common.dependency_graph_path)?;
+    // If a binding was supplied, find its source unit -> destination module
     // first; we restrict SCCs to ones containing that destination.
-    // Uses the shared `resolve_binding_owners` helper so minified and
+    // Uses the shared `resolve_binding_source_units` helper so minified and
     // readable name forms both resolve.
     let restrict_to_module: Option<analysis::ModuleKey> = if let Some(sym) = &args.binding {
-        let owner = resolve_one_binding_owner(&graph, sym)?;
-        Some(owner.destination.clone())
+        let source_unit = resolve_one_binding_source_unit(&graph, sym)?;
+        Some(source_unit.destination.clone())
     } else {
         None
     };
@@ -201,12 +201,12 @@ fn render_scc_text(report: &SccReport, out: &mut String) {
 
 pub fn run_cluster(args: ClusterArgs) -> Result<()> {
     let sym = args.resolve_sym()?;
-    let graph = crate::load_owner_graph_report(&args.common.owner_graph_path)?;
-    // Use the shared `resolve_binding_owners` helper (same code path
+    let graph = crate::load_dependency_graph_report(&args.common.dependency_graph_path)?;
+    // Use the shared `resolve_binding_source_units` helper (same code path
     // `describe` / `inspect-source --id` / `scc --binding` use), so minified
     // and readable names both work.
-    let owner = resolve_one_binding_owner(&graph, sym)?;
-    let home_key = &owner.destination;
+    let source_unit = resolve_one_binding_source_unit(&graph, sym)?;
+    let home_key = &source_unit.destination;
     // Dedup + sort by interned id; carry the path label alongside.
     let mut incoming: std::collections::BTreeMap<String, ModuleRef> =
         std::collections::BTreeMap::new();
@@ -234,7 +234,10 @@ pub fn run_cluster(args: ClusterArgs) -> Result<()> {
 
 /// Pair an interned module key with its human path label, falling back
 /// to the raw key string when the module table has no entry for it.
-fn resolve_module_ref(graph: &analysis::OwnerGraphReport, key: &analysis::ModuleKey) -> ModuleRef {
+fn resolve_module_ref(
+    graph: &analysis::DependencyGraphReport,
+    key: &analysis::ModuleKey,
+) -> ModuleRef {
     ModuleRef {
         id: key.as_str().to_string(),
         label: graph

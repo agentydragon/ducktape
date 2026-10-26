@@ -186,10 +186,10 @@ pub(crate) fn collect_plain_data_bindings(
 }
 
 /// A candidate enum own-key fact. Final binding stability is checked against
-/// the canonical statement-fact rebinds outside `initializer_owner`.
+/// the canonical statement-fact rebinds outside `initializer_source_unit`.
 #[derive(Clone, Debug)]
 pub(crate) struct TsEnumNamedDataCandidate {
-    pub(crate) initializer_owner: crate::StatementOrdinal,
+    pub(crate) initializer_source_unit: crate::StatementOrdinal,
     pub(crate) own_primitive_keys: BTreeSet<String>,
 }
 
@@ -204,11 +204,11 @@ pub(crate) fn collect_ts_enum_named_data_candidates(
         initializer: Option<&'a Expr>,
         kind: VarDeclKind,
         direct: bool,
-        owner: usize,
+        source_unit: usize,
     }
     let plain: BTreeSet<&str> = plain_data_bindings.iter().map(String::as_str).collect();
     let mut declarations: BTreeMap<Id, Vec<Declaration<'_>>> = BTreeMap::new();
-    for (owner, item) in body.iter().enumerate() {
+    for (source_unit, item) in body.iter().enumerate() {
         let declaration = match item.as_module_item() {
             ModuleItem::Stmt(Stmt::Decl(Decl::Var(declaration))) => Some(declaration.as_ref()),
             ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => {
@@ -229,7 +229,7 @@ pub(crate) fn collect_ts_enum_named_data_candidates(
                     initializer: declarator.init.as_deref(),
                     kind: declaration.kind,
                     direct: matches!(&declarator.name, Pat::Ident(_)),
-                    owner,
+                    source_unit,
                 });
             }
         }
@@ -251,7 +251,7 @@ pub(crate) fn collect_ts_enum_named_data_candidates(
                 (
                     binding,
                     TsEnumNamedDataCandidate {
-                        initializer_owner: crate::StatementOrdinal(declaration.owner),
+                        initializer_source_unit: crate::StatementOrdinal(declaration.source_unit),
                         own_primitive_keys: keys,
                     },
                 )

@@ -498,7 +498,7 @@ export { handlerA, handlerB };
 // Two same-arity declarators in one `const a = …, b = …` comma-list that differ
 // only in a deeply-nested value are each pinned, uniquely, by a single-declarator
 // `source_match` asserting that nested anchor — the resolver matches the
-// single-declarator needle against each declarator of the owner, so the nested
+// single-declarator needle against each declarator of the source_unit, so the nested
 // `"GET"` / `"POST"` distinguishes the otherwise-identical siblings. Each resolves
 // to its own module.
 #[test]

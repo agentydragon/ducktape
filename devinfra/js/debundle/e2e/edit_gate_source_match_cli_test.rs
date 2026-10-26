@@ -81,7 +81,7 @@ fn malformed_manual_claim_edits_are_refused_before_unassigning() {
         (
             r#"import { dep } from "external"; const gamma = 3;"#,
             r#"source_matches: [{match: 'import { dep } from "external";', bindings: [{local: dep, name: Dep}]}]"#,
-            "binding `dep` does not map to an owner-graph node",
+            "binding `dep` does not map to a dependency graph node",
         ),
         (
             "const alpha = {}; const gamma = 3; alpha.x = 1; alpha.x = 1;",

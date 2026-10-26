@@ -75,7 +75,7 @@ fn cluster_reports_neighbors_and_accepts_the_binding_flag_alias() {
 }
 
 #[test]
-fn owner_queries_refuse_minified_readable_name_ambiguity() {
+fn source_unit_queries_refuse_minified_readable_name_ambiguity() {
     let fixture = GraphFixture::new(
         "const a = 1; const b = 2;",
         &[
@@ -94,9 +94,7 @@ fn owner_queries_refuse_minified_readable_name_ambiguity() {
         let stderr = String::from_utf8_lossy(&out.stderr);
         assert!(!out.status.success());
         assert!(
-            stderr.contains("ambiguous")
-                && stderr.contains("owner:0")
-                && stderr.contains("owner:1"),
+            stderr.contains("ambiguous") && stderr.contains("unit:0") && stderr.contains("unit:1"),
             "{stderr}"
         );
         assert!(

@@ -1,5 +1,5 @@
 //! A direct top-level eager read of a binding declared by a hoisted
-//! function declaration must NOT emit an `EagerUse` owner edge that
+//! function declaration must NOT emit an `EagerUse` dependency edge that
 //! `constrains_init_order`.
 //!
 //! ECMAScript Phase 1 of module linking (`ModuleDeclarationInstantiation`)
@@ -29,9 +29,9 @@ export { f };
 
     assert_entry_output(&fixture, "from-f\n");
 
-    let graph = fixture.owner_graph();
+    let graph = fixture.dependency_graph();
 
-    let fndecl_owner = graph
+    let fndecl_source_unit = graph
         .nodes
         .iter()
         .find(|node| {
@@ -39,13 +39,13 @@ export { f };
                 .iter()
                 .any(|binding_report| binding_report.binding == "f")
         })
-        .expect("FnDecl owner for `f` should exist in owner graph");
+        .expect("FnDecl source_unit for `f` should exist in dependency graph");
 
     let offending_edges: Vec<_> = graph
         .edges
         .iter()
         .filter(|edge| {
-            edge.target == fndecl_owner.id
+            edge.target == fndecl_source_unit.id
                 && edge.edge_kind == DepKind::EagerUse
                 && edge.binding.as_deref() == Some("f")
                 && edge.constrains_init_order
@@ -54,10 +54,10 @@ export { f };
 
     assert!(
         offending_edges.is_empty(),
-        "no EagerUse edge to a FnDecl owner should constrain init order — \
+        "no EagerUse edge to a FnDecl source_unit should constrain init order — \
          ESM Phase 1 hoists FunctionDeclaration bindings before any \
          module body runs, so a direct top-level read of `f` cannot \
          observe a TDZ. Offending edges: {offending_edges:#?}\n\nFull \
-         owner graph: {graph:#?}",
+         dependency graph: {graph:#?}",
     );
 }

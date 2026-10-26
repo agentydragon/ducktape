@@ -189,7 +189,7 @@ export {};
 }
 
 #[test]
-fn opaque_export_without_private_capture_does_not_widen_to_all_owners() {
+fn opaque_export_without_private_capture_does_not_widen_to_all_source_units() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"export function opaque(callback) { callback?.(); }
 const prefix = new globalThis.Error();

@@ -1,6 +1,6 @@
 //! Repeated top-level `var` declarations share one JavaScript binding and
 //! remain valid, while repeated function declarations are still rejected by
-//! the current owner model.
+//! the current source_unit model.
 
 use debundle_e2e_support::*;
 
@@ -35,7 +35,7 @@ export { pick };
 
 /// Distinct bindings that merely share a name across scopes (a
 /// top-level `dup` and a function-local `dup`) are not duplicates:
-/// the owner table is keyed by hygienic identity, not name.
+/// the source_unit table is keyed by hygienic identity, not name.
 #[test]
 fn same_name_in_inner_scope_is_not_a_duplicate() {
     let fixture = run_fixture(FixtureOpts::new(

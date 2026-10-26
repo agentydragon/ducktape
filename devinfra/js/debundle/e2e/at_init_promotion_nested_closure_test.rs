@@ -1,4 +1,4 @@
-//! Nested-closure rebinds and reads vs. the owner graph.
+//! Nested-closure rebinds and reads vs. the dependency graph.
 //!
 //! Two distinct contracts meet here:
 //!

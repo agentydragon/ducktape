@@ -17,7 +17,7 @@ pub const VENDOR_SWAPS_REPORT: &str = "vendor_swaps.json";
 
 pub const CHUNK_REPORT: &str = "chunk.json";
 pub const MODULES_REPORT: &str = "modules.json";
-pub const OWNER_GRAPH_REPORT: &str = "owner_graph.json";
+pub const DEPENDENCY_GRAPH_REPORT: &str = "dependency_graph.json";
 pub const CYCLES_REPORT: &str = "cycles.json";
 pub const ATOMIC_GROUP_CONFLICTS_REPORT: &str = "atomic_group_conflicts.json";
 pub const SELECTOR_DIAGNOSTICS_REPORT: &str = "selector_diagnostics.json";

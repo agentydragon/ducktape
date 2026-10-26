@@ -7,8 +7,8 @@
 //! The residual-member-rename path needs a `Logical(R)` module, which the
 //! validator treats as a distinct node from `ModuleId::ResidualEntry`. When
 //! the chunk interleaves orphan top-level statements (`console.log(x)` etc.,
-//! owner = `ResidualEntry`) with side-effecting initializers on residual-
-//! owned decls (owner = `Logical(R)`), the S-edge ordering loop produces a
+//! source_unit = `ResidualEntry`) with side-effecting initializers on residual-
+//! owned decls (source_unit = `Logical(R)`), the S-edge ordering loop produces a
 //! 2-module SCC. Both nodes emit into files that evaluate in the chunk's
 //! same init phase — the cycle is a validator artifact, not a real
 //! evaluation hazard, but the gate still rejects.

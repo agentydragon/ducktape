@@ -4,10 +4,10 @@ use petgraph::graphmap::DiGraphMap;
 use crate::ModuleId;
 use crate::module_assignment::ModuleAssignment;
 
-use super::edge::{EdgeRole, OwnerEdge};
-use super::owner_graph::{OwnerGraph, OwnerId};
+use super::dependency_graph::{DependencyGraph, SourceUnitId};
+use super::edge::{DependencyEdge, EdgeRole};
 
-/// The I∪S module dependency graph: the quotient of an [`OwnerGraph`]
+/// The I∪S module dependency graph: the quotient of an [`DependencyGraph`]
 /// by a [`ModuleAssignment`], one edge per directed `(from, to)` module pair.
 ///
 /// Newtype around `petgraph::DiGraphMap<ModuleId, ()>`. Mutation
@@ -74,37 +74,37 @@ pub enum EndpointView {
 ///   `realizability::tests::promoted_edge_in_aggregator_cycle_is_unrealizable`
 ///   for the regression fixture.
 ///
-/// Invariant: every quotient-projecting consumer of the owner graph
+/// Invariant: every quotient-projecting consumer of the dependency graph
 /// MUST route through this function (or [`project_endpoints`], its form
-/// for an owner assignment that is not a materialised [`ModuleAssignment`]) so
+/// for a source unit assignment that is not a materialised [`ModuleAssignment`]) so
 /// the lenient-vs-gate decision stays welded to the edge's [`EdgeRole`]
 /// at one source-level point.
 pub fn assignment_endpoints(
-    edge: &OwnerEdge,
+    edge: &DependencyEdge,
     assignment: &ModuleAssignment,
     view: EndpointView,
 ) -> Option<(ModuleId, ModuleId)> {
-    project_endpoints(edge, assignment.residual(), view, |owner| {
-        assignment.of(owner)
+    project_endpoints(edge, assignment.residual(), view, |source_unit| {
+        assignment.of(source_unit)
     })
 }
 
-/// [`assignment_endpoints`] under an arbitrary owner → module
+/// [`assignment_endpoints`] under an arbitrary source unit → module
 /// assignment `module_of`, with `residual` the assignment's ESM DFS
 /// root. Lets the gate's speculative move overlay project edges under
 /// the post-move assignment without cloning the assignment.
 pub fn project_endpoints(
-    edge: &OwnerEdge,
+    edge: &DependencyEdge,
     residual: ModuleId,
     view: EndpointView,
-    module_of: impl Fn(OwnerId) -> ModuleId,
+    module_of: impl Fn(SourceUnitId) -> ModuleId,
 ) -> Option<(ModuleId, ModuleId)> {
     let from = module_of(edge.from);
     let to = module_of(edge.to);
     if from == to {
         return None;
     }
-    // Fallback-promoted edges (marked by `callee_owner == edge.from`,
+    // Fallback-promoted edges (marked by `callee_source_unit == edge.from`,
     // see `UnresolvedCallFallback`) record "this statement's
     // unresolvable at-init call may invoke chunk functions reading
     // `to`'s bindings". When the caller lands in residual, the
@@ -115,8 +115,8 @@ pub fn project_endpoints(
     // gate's assumed I-topology in sync with the emitter, which
     // emits phantom side-effect imports for moved modules but not
     // for entry.
-    if let EdgeRole::PromotedAtInit { callee_owner } = edge.reason.role
-        && callee_owner == edge.from
+    if let EdgeRole::PromotedAtInit { callee_source_unit } = edge.reason.role
+        && callee_source_unit == edge.from
         && from == residual
     {
         return None;
@@ -132,16 +132,16 @@ pub fn project_endpoints(
     Some((from, to))
 }
 
-/// Quotient the owner graph by `assignment` to build the module
+/// Quotient the dependency graph by `assignment` to build the module
 /// dependency graph consumed by validation and emit. The single
 /// public construction path; validation and reports both go through
 /// this for any non-hypothetical quotient.
 pub fn build_module_quotient(
-    owner_graph: &OwnerGraph,
+    dependency_graph: &DependencyGraph,
     assignment: &ModuleAssignment,
 ) -> ModuleQuotient {
     let mut graph = DiGraphMap::new();
-    for edge in owner_graph.iter_edges() {
+    for edge in dependency_graph.iter_edges() {
         if let Some((from, to)) = assignment_endpoints(edge, assignment, EndpointView::Lenient) {
             graph.add_edge(from, to, ());
         }

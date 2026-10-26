@@ -3,11 +3,11 @@
 > Summary of the design: the debundler takes a bundler-emitted
 > ESM chunk and a path-first logical-module spec, and emits a
 > multi-module ESM bundle observationally equivalent to the
-> input. The primitive analysis product is an owner graph: nodes
+> input. The primitive analysis product is an dependency graph: nodes
 > are top-level owners/statements, and edges are "this owner uses
 > that binding" plus source-order side-effect constraints. A spec
 > is an assignment from owners/bindings to output destinations.
-> The validator quotients the owner graph by that assignment to
+> The validator quotients the dependency graph by that assignment to
 > derive the imports graph `I` plus side-effect ordering graph
 > `S` and runs a two-pass realizability gate: Pass 1 rejects any
 > cycle among the constraining edges (at-init reads and `S`);
@@ -208,7 +208,7 @@ the in-memory representation keys bindings by SWC's
 `Id = (Atom, SyntaxContext)` — the hygiene-aware identity the
 resolver pass mints (`graph/`, `facts/`). Reports and specs spell
 bindings by name (`Atom`-only on the wire; see
-`docs/wire_format.md`); internal owner graph edges, owner
+`docs/wire_format.md`); internal dependency graph edges, owner
 declarations, and per-chunk indexes clone `Id`s into `BTreeMap` /
 `BTreeSet` keys.
 
@@ -315,9 +315,9 @@ The spec induces, for each statement:
   match overrides the default and routes `S` into the claiming
   module.
 
-## Owner graph
+## Dependency graph
 
-The lowest-level scheduling object is the **owner graph**. It is
+The lowest-level scheduling object is the **dependency graph**. It is
 independent of any particular logical-module spec.
 
 An _owner_ is a top-level unit that will move as a unit during
@@ -326,7 +326,7 @@ var-declarator after comma-list splitting, import declaration
 specifier, or residual side-effect statement. The implementation
 preserves this as a first-class data structure and side output.
 
-The micro owner graph is a directed, labeled graph `G = (V, E)`:
+The micro dependency graph is a directed, labeled graph `G = (V, E)`:
 
 - **Vertices:** owners in source order. A declaration owner carries
   `declared`, source location, kind, and any readable rename/spec
@@ -349,7 +349,7 @@ The micro owner graph is a directed, labeled graph `G = (V, E)`:
   they become `S` edges only when their endpoints land in different
   destinations.
 
-The owner graph is the right abstraction for tooling:
+The dependency graph is the right abstraction for tooling:
 
 - "Can this thing be peeled?" is a proposed reassignment of one or
   more owner vertices.
@@ -369,7 +369,7 @@ reasons.
 ## Module dep graphs as quotients
 
 The materializer validates three directed graphs derived from the
-owner graph quotient. Each captures a different scheduling
+dependency graph quotient. Each captures a different scheduling
 constraint; the realizability theorem (next section) is stated over
 their union.
 
@@ -533,7 +533,7 @@ modules") — no cross-destination rebinding write, and the two-pass gate of
 in the `gate` crate (`realizability/`). Every code path that asks "is this
 destination assignment realizable?" reaches it through the same primitive:
 
-> `check_realizability(owner_graph, assignment) → RealizabilityVerdict`
+> `check_realizability(dependency_graph, assignment) → RealizabilityVerdict`
 
 The verdict lists the unrealizable SCCs (each an `SccDiagnosis`, rejected as
 `MutualConstrainingCycle` or `EsmEvaluationTdz`) and the cross-destination
@@ -560,7 +560,7 @@ Differential tests (`realizability/tests.rs`,
 
 ### Invariant: no bespoke parallel walks
 
-No production code answers the validity question by walking the owner graph or
+No production code answers the validity question by walking the dependency graph or
 the quotient with its own algorithm: two algorithms drift, one shared
 implementation cannot. A caller that needs a verdict over a hypothetical
 assignment asks the index. Adjacent diagnostics may read the verdict's
@@ -571,20 +571,20 @@ only.
 
 The peel proposer's kernel (`QuotientGraph` in `peel/quotient.rs`) decides
 every merge with the same primitive as the materializer. It must not
-reimplement the gate over a JSON `OwnerGraphReport` projection: a
+reimplement the gate over a JSON `DependencyGraphReport` projection: a
 constraining-only projection drops `LazyUse` and `HoistedUse` edges and becomes blind to
 asymmetric `(eager forward, lazy back)` I-cycles that the
 `EsmEvaluationSimulator` pass catches.
 
-1. `OwnerGraph::from_report` rebuilds the typed IR from the report, with every
+1. `DependencyGraph::from_report` rebuilds the typed IR from the report, with every
    edge (constraining and lazy) and its original `DepKind`.
-2. `QuotientGraph::from_report` keeps that `OwnerGraph` and builds a
+2. `QuotientGraph::from_report` keeps that `DependencyGraph` and builds a
    `RealizabilityIndex` over the class projection: each class is one
    `ModuleId`, except that classes made only of residual-destined owners
    (and not anchored to an existing module) share the residual
    `ModuleId(0)`. Every committed mutation — `contract`, the
    `is_pre_existing_module` promotion in `set_class_pre_existing_module` —
-   applies the matching `ModuleAssignmentDelta::MoveOwners` to the index.
+   applies the matching `ModuleAssignmentDelta::MoveSourceUnits` to the index.
 3. The speculative queries — the boolean `merge_preserves_invariants` and the
    evidence-producing `would_be_cycles_after_contract` — are one evaluation
    through the index's tier ladder (below). `realizability_verdict()` reads the
@@ -661,7 +661,7 @@ one entry point, two output shapes. Each query reads SCCs touching
 the hypothetical destination only — `O(|cone|)`, not
 `O(|V| + |E|)`. Speculative deltas are single-target by
 construction: a merge contracts two classes into one, so
-`compute_merge_deltas` only ever emits `MoveOwners` deltas
+`compute_merge_deltas` only ever emits `MoveSourceUnits` deltas
 targeting the single post-merge module; the ladder dispatch asserts
 this invariant, and a future non-merge speculative mutation must
 implement a multi-target overlay deliberately rather than inherit
@@ -743,9 +743,9 @@ primitive's clause-3 verdict is sound for the canonical
 `console.log(readB())` shape (top-level call whose body crosses a module
 boundary).
 
-The promotion runs once in `build_owner_graph_with` and is
+The promotion runs once in `build_dependency_graph_with` and is
 assignment-independent: intra-module promoted edges are dropped by the
-quotient automatically, so the same promoted owner graph drives
+quotient automatically, so the same promoted dependency graph drives
 hypothetical planner assignments and the validator's actual one.
 
 The retained call index also records implicit object conversions performed by
@@ -849,7 +849,7 @@ policy.
 
 For each selected chunk, materialization records the decision and every
 independently observed blocker in `export_reentry.json`, beside
-`owner_graph.json`. `global_blockers` names artifact incompleteness, CJS
+`dependency_graph.json`. `global_blockers` names artifact incompleteness, CJS
 interop, and nonordinary static requests across the artifact. The per-target
 `closure_blockers` names non-ESM, top-level-await, CJS, and vendor-affected
 closure chunks; unsupported, unresolved, missing, or non-entry static
@@ -1427,7 +1427,7 @@ execute correctly at runtime (the contract pinned by
 > without simulation.
 >
 > **Implementation.** The implementation computes per-statement
-> facts, builds the owner graph, then quotients that graph by the
+> facts, builds the dependency graph, then quotients that graph by the
 > spec's destination assignment to derive the module dep graph. Each
 > cross-module edge keeps owner-level provenance: the triggering
 > statement, optional binding, and whether the reason is an at-init
@@ -1601,7 +1601,7 @@ output, the Vite ecosystem, and most React/Vue/Angular SPAs.
   initializer has no observable effects and cannot throw, but it does not
   make calls or construction of the resulting value pure. The author must
   audit any synchronous callback behavior. Direct eager reads and
-  callback-body read dependencies remain in the owner graph, so this
+  callback-body read dependencies remain in the dependency graph, so this
   annotation does not suppress their initialization-order constraints.
   Imports, functions, classes, destructuring, uninitialized declarations,
   and ambiguous repeated initialized declarations are rejected.
@@ -1749,7 +1749,7 @@ member names`, it projects onto each importing chunk's local binding
   import — keeps conservative classification. The flag's soundness
   precondition (no cross-destination top-level read of an annotated
   binding's properties textually before the write) is documented on the
-  spec field (`spec::OwnerGraphOptions::local_property_effects`) and is the author's audit obligation, like every entry in
+  spec field (`spec::DependencyGraphOptions::local_property_effects`) and is the author's audit obligation, like every entry in
   this section.
 
 - **A11. Intrinsic integrity: the chunk runs with unmodified
@@ -2055,11 +2055,11 @@ side-effect-ordering hazards."
 The theorem is stated for a single chunk. Real bundles have many chunks
 (entry, code-split routes, vendor bundles), each with its own logical-module
 split. A cross-chunk dependency is an `Imported` binding of the importing
-chunk, not a vertex of any chunk's owner graph.
+chunk, not a vertex of any chunk's dependency graph.
 
 The natural lift — union every chunk's I-graph, with `Imported` bindings
 contributing cross-chunk edges, and require the union to pass the gate — is
-not implemented: `validate_assignment` takes one chunk's owner graph, so a
+not implemented: `validate_assignment` takes one chunk's dependency graph, so a
 cycle among user chunks (two code-split chunks importing each other) is
 outside its view. In practice vendor chunks are leaves — they don't import
 from us — so they add no edges into user chunks; a vendor chunk that
@@ -2072,13 +2072,13 @@ The per-chunk pipeline is two halves with sharply different
 dependencies:
 
 - **Chunk analysis** (spec-independent): parse → per-statement facts →
-  owner graph → structural atomic groups. Pure function of
-  `(source bytes, analysis hints, OwnerGraphOptions)`. The composer
+  dependency graph → structural atomic groups. Pure function of
+  `(source bytes, analysis hints, DependencyGraphOptions)`. The composer
   is `chunk_analysis::compute_chunk_analysis`, returning a
   `chunk_analysis::ChunkAnalysisOutput` — distinct from the `gate`
   crate's `AssignmentInputs` — that bundles `ChunkFactAnalysis` (facts +
   top-level-await detection + redundant-hint warnings) with the
-  `OwnerGraphAndAtomicGroups` derived from those facts.
+  `DependencyGraphAndAtomicGroups` derived from those facts.
 - **Materialization** (spec-dependent): assemble the assignment from the
   spec's binding claims, run the realizability gate, lower to ESM. This is
   `lowering::materialize_logical_modules`; `spec_resolution` compiles claims
@@ -2111,10 +2111,10 @@ diagnostic paths. They differ only in _where_ the cycle appears
 requires. Both reject the same broad property: "some pair (or set)
 of bindings is forced to co-locate, and the spec splits them."
 
-| Atom class       | Where the cycle lives                                                 | Detector                                      | Diagnostic                                                                                                    |
-| ---------------- | --------------------------------------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| **Structural**   | SCC of `G_atomic` on the **owner graph** — independent of any spec    | `compute_atomic_groups`                       | `AtomicGroupConflict` — names the group's owners + the modules the spec routes them to + the `DepKind` causes |
-| **Spec-induced** | SCC of `I ∪ S` on the **module quotient** under the spec's assignment | `check_realizability` + `validate_assignment` | `CycleReport` — names the binding pair(s) on each cut edge, the source and target modules, and the edge kind  |
+| Atom class       | Where the cycle lives                                                   | Detector                                      | Diagnostic                                                                                                    |
+| ---------------- | ----------------------------------------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| **Structural**   | SCC of `G_atomic` on the **dependency graph** — independent of any spec | `compute_atomic_groups`                       | `AtomicGroupConflict` — names the group's owners + the modules the spec routes them to + the `DepKind` causes |
+| **Spec-induced** | SCC of `I ∪ S` on the **module quotient** under the spec's assignment   | `check_realizability` + `validate_assignment` | `CycleReport` — names the binding pair(s) on each cut edge, the source and target modules, and the edge kind  |
 
 `G_atomic` over owners is acyclic-by-quotient on the chunker's
 original output: bundlers can't emit JavaScript that TDZs at runtime
@@ -2146,7 +2146,7 @@ defined by the spec's quotient, not the source bytes.
 
 Why two paths in the implementation: structural conflicts can be
 caught with no module quotient ever built — it's an `O(|V| + |E|)`
-SCC computation on the owner graph that produces a clean blame
+SCC computation on the dependency graph that produces a clean blame
 ("these owners can never split"). Spec-induced cycles require the
 quotient (because they're about the assignment) and produce a more
 nuanced blame (which _binding pairs_ on which _cut edges_ close the
@@ -2171,7 +2171,7 @@ parse chunk
 analyze per-statement facts
   (declared, reads_at_init, reads_lazy, has_side_effect)
   ↓
-build owner graph
+build dependency graph
   (owners, read edges, potential side-effect-order edges)
   ↓
 compute structural atoms = SCC(G_atomic over owners)
@@ -2181,7 +2181,7 @@ apply spec assignment + assemble_assignment
   ├── if any structural atom is split across modules:
   │   reject with AtomicGroupConflict (owner-level blame)
   ↓
-quotient owner graph by dest(owner) → I, R, S
+quotient dependency graph by dest(owner) → I, R, S
   ↓
 validate: realizability gate (Pass 1, then Pass 2) over the quotient
   ↓
@@ -2209,21 +2209,21 @@ showing which graph edges made the split unverifiable.
 
 Five layers, bottom-up:
 
-1. **Owner graph** — fine-grained program facts (`graph/`).
+1. **Dependency graph** — fine-grained program facts (`graph/`).
    One vertex per top-level owner; edges record `EagerUse`,
    `LazyUse`, `HoistedUse`, `EagerRebind`, `LazyRebind`, `DeferredRebind`,
    `CoDeclaration`, `Sequenced`, and the local-effect edges that target-local
    mutation produces. Each
    edge records whether it constrains init/materialization order.
 2. **Atomic graph** — SCC condensation of the constraining-edge
-   subgraph of the owner graph; a DAG of atomic groups
+   subgraph of the dependency graph; a DAG of atomic groups
    (`compute_atomic_groups`). Each group is the smallest set of
    owners a valid module assignment may not split. Surfaced in
-   `owner_graph.json.atomic_graph`.
+   `dependency_graph.json.atomic_graph`.
 3. **Spec assignment** — the author's current mapping of owners
    to modules (the spec's `members:` + `anonymous_statements:`
    plus the residual default).
-4. **Module quotient** — the owner graph projected under the spec's
+4. **Module quotient** — the dependency graph projected under the spec's
    assignment. Cross-module edges are the realizability evidence
    `check_realizability` operates on.
 5. **Module proposals** — DAG-derived advisory recommendations
@@ -2240,7 +2240,7 @@ larger module is genuinely required.
 
 ### Assignment assembly inside `debundle run`
 
-The spec's explicit claims are resolved against the owner graph in
+The spec's explicit claims are resolved against the dependency graph in
 `assignment_assembly.rs`. The rules are deliberately strict:
 
 - Two different logical modules may not claim owners from the same
@@ -2304,7 +2304,7 @@ cycle for earlier effects. If the catchall is the only module, it keeps the
 whole statement sequence. Explicit anonymous claims keep their specified
 destination; the realizability gate rejects any remaining invalid order.
 
-The owner graph is the explicit replacement for hidden closure. It
+The dependency graph is the explicit replacement for hidden closure. It
 records the fine-grained "this owner uses that owner" relation before
 any module-level quotienting. Diagnostics are projections of that
 graph: validation cycles explain why the current explicit assignment
@@ -2315,7 +2315,7 @@ propose`, `atoms`, `coverage`, `describe`, `inspect-source --id`, `scc`,
 behalf of the spec author.
 
 Each materialized chunk has reports under `reports/tree/<chunk_id>/`.
-`owner_graph.json` carries the detailed owner graph, current module quotient,
+`dependency_graph.json` carries the detailed dependency graph, current module quotient,
 and embedded atomic DAG. Compact validation status is folded into
 `chunk.json`; `cycles.json` and `atomic_group_conflicts.json` are emitted only
 for rejection cases.
@@ -2337,7 +2337,7 @@ file attribution maps. A symbol key has the form
 `sequenced` contribute to edge-kind and file counts but not symbol maps. Uses
 within the same directory do not count against that directory boundary. Use
 these reports to judge hierarchy encapsulation and leaky subtree boundaries;
-use the owner graph and source bodies for drill-down.
+use the dependency graph and source bodies for drill-down.
 
 ### Workflow
 
@@ -2345,7 +2345,7 @@ use the owner graph and source bodies for drill-down.
 2. Pipeline runs the validator. The report flags:
    - **Cycles** in the explicit-only assignment, if any.
    - **Atomic-group conflicts** when the spec splits an indivisible unit.
-   - **Atomic DAG facts** in `owner_graph.json` for planning the next peel.
+   - **Atomic DAG facts** in `dependency_graph.json` for planning the next peel.
 3. Spec author resolves: first fix any validation cycles or atomic-group
    conflicts; then use `debundle modules propose`, `atoms`, `coverage`,
    `describe`, and `inspect-source --id` to choose explicit owner sets for new
@@ -2359,10 +2359,10 @@ implicit transformation in the middle.
 
 ## Atomic DAG Planner Data
 
-The same owner graph drives the next-spec workflow. A pipeline that
+The same dependency graph drives the next-spec workflow. A pipeline that
 only reports whether the current spec passed forces spec authors into
 speculative edit/build/test loops. `debundle run` therefore emits the
-atomic-group DAG in `owner_graph.json`, and the top-level read-only
+atomic-group DAG in `dependency_graph.json`, and the top-level read-only
 queries (`debundle modules propose`, `atoms`, `coverage`, `describe`,
 `inspect-source --id`, `scc`, `cluster`, `graph-summary`) compute advisory
 views from that stable graph.
@@ -2409,7 +2409,7 @@ exists precisely when the current assignment is not yet realizable.
 The detailed output is machine-readable, typed, and debundler-owned:
 per chunk, the owner vertices/edges, quotient projections for the
 current assignment, and the `atomic_graph`. The field-level shape is
-the serde schema (`OwnerGraphReport` and siblings in
+the serde schema (`DependencyGraphReport` and siblings in
 <../reports/schema.rs>); this doc does not mirror it. New fields can
 be added without changing the underlying graph transform. Do not add
 top-level `kind` or `schema_version` fields just to mimic an external
@@ -2568,7 +2568,7 @@ Every emitted proposal satisfies:
    rebinding write and no unrealizable quotient SCC. (Residual dependencies and
    anonymous-statement addressability, which decide `landable_today`, are
    reported separately.)
-3. The proof is static and local to the owner graph. It does not rely on
+3. The proof is static and local to the dependency graph. It does not rely on
    emitting JS, running a browser, or observing production-scale behavior.
 
 The generator may be conservative and miss valid modules. It may not emit an
@@ -2672,15 +2672,15 @@ feature/state:
 ```
 
 When a decorator application matches an annotated
-`effect: typescript_decorate_helper`, the owner graph records it as a
+`effect: typescript_decorate_helper`, the dependency graph records it as a
 target-local effect on the class/prototype binding. That makes the
 anonymous statement a required companion of the class owner for
 materialization and factorize. The author still
 materializes it with `anonymous_statements:` because it has no binding
 name, but the atomic-group closure that contains the class also covers
 the anon owner, so a proposal containing the class also contains the
-anonymous owner (listed under `anonymous_statement_owner_ids`, or
-`extension_owner_ids` when it extends an existing module) and the
+anonymous owner (listed under `anonymous_statement_source_unit_ids`, or
+`extension_source_unit_ids` when it extends an existing module) and the
 proposer never proposes the class alone.
 
 The unannotated case — `__decorate(...)`, `register(...)`, and
@@ -2689,7 +2689,7 @@ as target-local because no helper annotation matches — relies on a
 separate route. The proposer's greedy contraction merges a residual
 class into an existing active module when the realizability gate accepts
 the merge, and the merged owners surface as an extension
-(`extends_module_id`, `extension_owner_ids`). The consumer of the proposal
+(`extends_module_id`, `extension_source_unit_ids`). The consumer of the proposal
 reads owner shape (named bindings vs anonymous statements) to decide whether
 to write a `members:` or `anonymous_statements:` entry into the extended
 module's yaml.
@@ -2852,7 +2852,7 @@ Some downstream repos keep a higher-level authoring tree where YAML
 files are laid out like the eventual emitted JavaScript modules. That
 shape is a debundler-owned authoring layer: `debundle` compiles it
 into the same typed flat transform spec in memory, then runs the fixed
-pipeline below. The owner-graph reports are the bridge: they expose
+pipeline below. The dependency graph reports are the bridge: they expose
 source owner ids, readable member names, destinations, and the atomic
 DAG so authoring tools can mostly project and filter
 debundler facts instead of re-analyzing JavaScript or private repo
@@ -2869,7 +2869,7 @@ lowering stage) → `apply_emission_rewrites` →
 optional tree/harness outputs.
 
 Within `materialize_logical_modules`, analysis (chunk AST scan,
-statement facts, owner-graph construction — <../lowering/chunk_ast.rs>,
+statement facts, dependency graph construction — <../lowering/chunk_ast.rs>,
 <../facts/mod.rs>, <../graph/>) feeds the stages that carry design
 invariants:
 
@@ -2882,7 +2882,7 @@ invariants:
    reasons, and runs the realizability gate over the result; a rejection
    aborts the pipeline with the cycle evidence.
 3. **Diagnostics projections** — cycle evidence, atomic-group conflicts,
-   and atomic graph reports are projections of the same owner graph +
+   and atomic graph reports are projections of the same dependency graph +
    quotient, not separate heuristic analyses.
 4. **Source-order emission** — each module's body in source order;
    cross-module imports + source-chunk re-imports; `export { ... }`.
@@ -2925,7 +2925,7 @@ rather than missing features are documented here.
 ### Full swap: callers retain imports for removed chunks
 
 `level: swap` excludes the vendor chunk from the emission set. The
-owner graph never contained vendor chunks; `write_js_tree`, harness
+dependency graph never contained vendor chunks; `write_js_tree`, harness
 emission, the emit-shape check, and chunk reports skip it, and a
 wrapper module is written in its place. Caller imports of the
 excluded chunk are **intentionally left unchanged** in the plain
@@ -2972,7 +2972,7 @@ The residual strip analyzes its post-rewrite module with the shared
 structural, value-flow, purity, and `VendorPrune` local-effect facts.
 Value-flow call augmentation is required for its island reachability;
 `StatementFacts::effects()` supplies its observable binding and global-cell
-writes. The strip does not build an owner graph or consume
+writes. The strip does not build an dependency graph or consume
 `synchronous_calls`, so this analysis entry point omits only synchronous
 call-effect annotation. The split-brain and swap-privacy gates still use the
 same augmented calls, local effects, and cell-write summaries.
@@ -3153,18 +3153,18 @@ the dep graph captures that read without special-case logic. If the spec also
 gives `mod_a` an at-init read of something in `mod_b`, the cycle is mutual and
 rejected.
 
-## AssignmentInputs + AssignmentAnalysis: owner graph plus quotient
+## AssignmentInputs + AssignmentAnalysis: dependency graph plus quotient
 
 The runtime data structures the validator and emitter both consume are a pair:
 the `gate` crate's per-chunk `AssignmentInputs` (inputs + IR; distinct from
 `chunk_analysis::ChunkAnalysisOutput`, the spec-independent composer output) and a
 `AssignmentAnalysis` wrapping it (assignment + derived realizability views).
 Together they carry the chunk's statement facts, the binding catalogue, the
-explicit logical modules, the owner graph, and the module dep graph derived by
-quotienting that owner graph under the spec assignment.
+explicit logical modules, the dependency graph, and the module dep graph derived by
+quotienting that dependency graph under the spec assignment.
 
-Statement facts feed the owner graph (stored on `AssignmentInputs`), and the
-module dep graph is a quotient of that owner graph under the current spec
+Statement facts feed the dependency graph (stored on `AssignmentInputs`), and the
+module dep graph is a quotient of that dependency graph under the current spec
 assignment (stored on `AssignmentAnalysis`).
 
 `AssignmentAnalysis::validate_for_emission` returns a `ValidatedAssignment` only
@@ -3191,7 +3191,7 @@ Conceptually, the analysis + factorization carry:
 - per-statement facts in source order;
 - the binding catalogue;
 - logical modules from the spec;
-- the owner graph;
+- the dependency graph;
 - the module dep graph `I ∪ S`, derived by quotienting the owner
   graph by the spec's owner-to-destination assignment.
 
@@ -3203,7 +3203,7 @@ Everything downstream needs is here:
   residual module unless a module claims the statement through
   `anonymous_statements`.
 - "What owners/statements live in module M" =
-  `owner_graph.nodes.filter(dest(owner) == M)`.
+  `dependency_graph.nodes.filter(dest(owner) == M)`.
 - "What does M export" = bindings whose `Owned.module == M`
   (under their original or rename-pass-rewritten name) plus
   bindings whose `Imported.re_exporter == M` (under
@@ -3214,7 +3214,7 @@ Everything downstream needs is here:
     - If `b` is `Imported { imported_from, imported_name, .. }`:
       `import { imported_name as b } from <imported_from>`.
 - "What can be peeled without backtracking" = candidate assignments
-  whose owner-graph quotient validates, whose cross-destination reads
+  whose dependency graph quotient validates, whose cross-destination reads
   are importable, and whose rebinding writes stay inside one
   destination.
 
@@ -3249,7 +3249,7 @@ A string that identifies a thing of a known kind gets a newtype; untyped
 actual JavaScript identifier _as text_). The identifier types live in
 <../ids.rs> and <../graph/>: `ChunkId` (an index interned by `ChunkTable`),
 `ModuleId` (the in-process dense module handle), `StatementOrdinal`,
-`OwnerId` and `OwnerEdgeId`. A
+`SourceUnitId` and `DependencyEdgeId`. A
 module's public identity is `spec::ModulePath`, never a `ModuleId`
 (<wire_format.md>). Artifact metadata follows the same rule: `FileRole` is a
 typed enum (`entry`, `module`, `runtime` in JSON via snake_case serde). Do not
@@ -3345,7 +3345,7 @@ rosters live in the directories, not here):
 
 - <../pipeline.rs> — fixed transform composition.
 - <../facts/> — `StatementFacts` analyzer (<../facts/analyze.rs>).
-- <../graph/> — owner graph, `ModuleQuotient`, and the canonical I-graph
+- <../graph/> — dependency graph, `ModuleQuotient`, and the canonical I-graph
   builders.
 - <../realizability/mod.rs> — the realizability gate (`check_realizability`).
 - <../validation.rs> — `validate_assignment`: renders the verdict as cycle

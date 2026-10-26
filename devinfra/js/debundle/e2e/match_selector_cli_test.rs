@@ -117,7 +117,7 @@ fn unique_match_reports_the_bound_target() {
         report["outcomes"][0]["outcome"],
         json!({
             "kind": "resolved",
-            "owner": 1,
+            "body_index": 1,
             "binding": "widgetConfig",
             "resolved_by": {"by": "own_selector"},
         }),
@@ -143,7 +143,7 @@ fn split_declarator_match_reports_pre_split_body_index() {
         &["--target-binding", "second", "--no-slack"],
     );
     assert_eq!(outcome(&report)["kind"], "resolved", "{report:#}");
-    assert_eq!(outcome(&report)["owner"], 0);
+    assert_eq!(outcome(&report)["body_index"], 0);
     assert_eq!(outcome(&report)["binding"], "runtimeSecond");
 }
 
@@ -209,13 +209,13 @@ fn ambiguous_match_lists_candidates_in_body_order() {
         json!({
             "kind": "ambiguous",
             "candidates": [
-                {"owner": 0, "binding": "leftPanel"},
-                {"owner": 2, "binding": "rightPanel"},
+                {"body_index": 0, "binding": "leftPanel"},
+                {"body_index": 2, "binding": "rightPanel"},
             ],
             "truncated": false,
             "differentiators": [
-                {"owner": 0, "statement": 0, "anchor": "string literal \"left\""},
-                {"owner": 2, "statement": 2, "anchor": "string literal \"right\""},
+                {"candidate_body_index": 0, "anchor_body_index": 0, "anchor": "string literal \"left\""},
+                {"candidate_body_index": 2, "anchor_body_index": 2, "anchor": "string literal \"right\""},
             ],
         }),
         "{report:#}"

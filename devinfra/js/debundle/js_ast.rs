@@ -400,7 +400,7 @@ fn strip_nth_paren_expr(module: &mut Module, target: usize) {
 }
 
 /// Number of post-comma-list-split positions a top-level body item
-/// produces. Mirrors the owner-graph fact splitter: `var x = ..., y
+/// produces. Mirrors the dependency-graph source-unit view: `var x = ..., y
 /// = ...;` is one body item but two statement ordinals; other
 /// top-level items count as one.
 fn post_split_top_level_count(item: &ModuleItem) -> usize {
@@ -810,7 +810,7 @@ mod tests {
     use swc_common::{DUMMY_SP, Spanned};
 
     #[test]
-    fn batch_owner_ordinals_map_to_raw_body_items() {
+    fn batch_source_unit_ordinals_map_to_raw_body_items() {
         with_swc_globals(|| {
             let parsed = parse_js_module("foo.js", "const a = 1, b = 2; const c = 3;").unwrap();
             assert_eq!(

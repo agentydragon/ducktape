@@ -38,7 +38,7 @@ fn nested_var_reinitializer_does_not_let_split_drop_getter_ordering() {
 
 #[test]
 fn repeated_var_purity_fixture_preserves_original_runtime_order() {
-    // With no owner split the input remains in source order: the first
+    // With no source_unit split the input remains in source order: the first
     // helper call sees the plain object, while only the second fires the
     // accessor installed by the nested var declaration.
     let fixture = run_fixture(FixtureOpts::new(REPEATED_VAR_PURITY_ENTRY, vec![]));

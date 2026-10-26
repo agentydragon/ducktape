@@ -1,13 +1,13 @@
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 
-use crate::report_builders::build_owner_graph_report;
+use crate::report_builders::build_dependency_graph_report;
 use analysis::assignment_assembly::{AtomicGroupConflict, assemble_assignment};
-use analysis::atomic_groups::{AtomicGroup, OwnerGraphAndAtomicGroups};
+use analysis::atomic_groups::{AtomicGroup, DependencyGraphAndAtomicGroups};
 use analysis::graph::{build_module_quotient, chunk_constraining_module_edges};
 use analysis::module_assignment::ModuleAssignment;
 use analysis::{
-    BindingCatalogue, BindingScopeError, ChunkId, ModuleId, ModuleQuotient, OwnerGraphReport,
+    BindingCatalogue, BindingScopeError, ChunkId, ModuleId, ModuleQuotient, DependencyGraphReport,
     PlannedModule,
 };
 
@@ -16,7 +16,7 @@ use crate::esm_import_order::EsmImportOrder;
 use crate::validation::{AssignmentReport, validate_assignment};
 
 /// Per-chunk factorization output: the spec's assignment of the
-/// owner graph, plus the realizability views derived from it
+/// dependency graph, plus the realizability views derived from it
 /// (`dep_graph`, `linker_order`, `assembly_conflicts`) and small
 /// caches downstream consumers consult on the hot path.
 ///
@@ -28,11 +28,11 @@ use crate::validation::{AssignmentReport, validate_assignment};
 #[derive(Debug, Clone)]
 pub struct AssignmentAnalysis {
     analysis: Arc<AssignmentInputs>,
-    /// Module assignment per owner — the spec's assignment of the
-    /// owner graph. Stored separately from the IR so the IR stays
+    /// Module assignment per source unit — the spec's assignment of the
+    /// dependency graph. Stored separately from the IR so the IR stays
     /// immutable across validation/report construction.
     assignment: ModuleAssignment,
-    /// Atomic groups computed from the owner graph's
+    /// Atomic groups computed from the dependency graph's
     /// constraining-edge SCCs. Stored so report emission and
     /// downstream diagnostics reuse the same atomic group grouping that
     /// factor assembly validated.
@@ -91,7 +91,7 @@ impl AssignmentAnalysis {
         &self.dep_graph
     }
 
-    /// Build a factorization from a caller-computed owner graph +
+    /// Build a factorization from a caller-computed dependency graph +
     /// atomic groups (the materializer computes these once per chunk
     /// for atomic-group module synthesis), the binding catalogue, and the
     /// spec-derived logical modules. The catalogue should already have
@@ -102,20 +102,20 @@ impl AssignmentAnalysis {
     pub fn build_with(
         chunk_id: String,
         chunk_identity: ChunkId,
-        precomputed: OwnerGraphAndAtomicGroups,
+        precomputed: DependencyGraphAndAtomicGroups,
         binding_catalogue: BindingCatalogue,
         logical_modules: Vec<PlannedModule>,
         chunk_renames: HashMap<swc_ecma_ast::Id, swc_atoms::Atom>,
         default_destination: ModuleId,
     ) -> Result<Self, BindingScopeError> {
-        let OwnerGraphAndAtomicGroups {
-            owner_graph,
+        let DependencyGraphAndAtomicGroups {
+            dependency_graph,
             atomic_groups,
         } = precomputed;
         let outcome = {
             let local_bindings = binding_catalogue.local_view(chunk_identity)?;
             assemble_assignment(
-                &owner_graph,
+                &dependency_graph,
                 &atomic_groups,
                 &local_bindings,
                 &logical_modules,
@@ -124,7 +124,7 @@ impl AssignmentAnalysis {
         };
         let assignment = outcome.assignment;
         let assembly_conflicts = outcome.conflicts;
-        let dep_graph = build_module_quotient(&owner_graph, &assignment);
+        let dep_graph = build_module_quotient(&dependency_graph, &assignment);
         // Cache the dep-graph SCC partition so downstream consumers
         // (`report_builders::build_quotient_scc_reports`, the validator's
         // verdict path) share one Tarjan walk instead of each
@@ -134,7 +134,7 @@ impl AssignmentAnalysis {
         // `ChunkConstrainingEdgeSet` so the emitter and the gate's
         // simulator share one source of truth — see
         // `graph::chunk_constraining_module_edges` for the invariant doc.
-        let canonical_edges = chunk_constraining_module_edges(&owner_graph, &assignment);
+        let canonical_edges = chunk_constraining_module_edges(&dependency_graph, &assignment);
         // Every logical module needs a deterministic source-order
         // slot for emit stability, even singletons that don't
         // participate in any canonical edge.
@@ -147,7 +147,7 @@ impl AssignmentAnalysis {
         );
         let analysis = Arc::new(AssignmentInputs::build(
             chunk_id,
-            owner_graph,
+            dependency_graph,
             chunk_identity,
             binding_catalogue,
             logical_modules,
@@ -184,7 +184,7 @@ impl AssignmentAnalysis {
     /// resulting report to fix any cycles or atomic-group conflicts.
     pub fn validate(&self) -> AssignmentReport {
         let mut report =
-            validate_assignment(self.analysis.owner_graph(), &self.assignment, &|id| {
+            validate_assignment(self.analysis.dependency_graph(), &self.assignment, &|id| {
                 self.analysis.module_path(id)
             });
         report.atomic_group_conflicts = self.assembly_conflicts.clone();
@@ -211,10 +211,10 @@ impl AssignmentAnalysis {
         })
     }
 
-    /// High-fidelity node-link view of the fine owner graph plus
+    /// High-fidelity node-link view of the fine dependency graph plus
     /// its current module quotient. Written as
-    /// `<chunk_id>/owner_graph.json` for downstream peel tooling.
-    pub fn owner_graph_report(&self) -> OwnerGraphReport {
-        build_owner_graph_report(self)
+    /// `<chunk_id>/dependency_graph.json` for downstream peel tooling.
+    pub fn dependency_graph_report(&self) -> DependencyGraphReport {
+        build_dependency_graph_report(self)
     }
 }

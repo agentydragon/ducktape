@@ -630,7 +630,7 @@ fn vendor_prune_direct_call_local_effect_target(
             .contains(&callee.to_id())
     {
         let first_arg = call.args.first()?;
-        return local_member_owner(&first_arg.expr);
+        return local_member_source_unit(&first_arg.expr);
     }
     let Expr::Member(member) = callee.unwrap_parens() else {
         return None;
@@ -646,7 +646,7 @@ fn vendor_prune_direct_call_local_effect_target(
         return None;
     }
     let first_arg = call.args.first()?;
-    local_member_owner(&first_arg.expr)
+    local_member_source_unit(&first_arg.expr)
 }
 
 fn vendor_prune_for_each_local_effect_target(
@@ -1007,7 +1007,7 @@ fn commonjs_iife_param_effect_expr(
             let AssignTarget::Simple(SimpleAssignTarget::Member(member)) = &assign.left else {
                 return false;
             };
-            let Some(root) = local_member_owner(&member.obj) else {
+            let Some(root) = local_member_source_unit(&member.obj) else {
                 return false;
             };
             if static_member_name(&member.prop).as_deref() == Some("__proto__") {
@@ -1166,10 +1166,10 @@ fn namespace_iife_param_write_expr(expr: &Expr, param: &str, saw_write: &mut boo
     }
 }
 
-fn local_member_owner(expr: &Expr) -> Option<Id> {
+fn local_member_source_unit(expr: &Expr) -> Option<Id> {
     match expr.unwrap_parens() {
         Expr::Ident(ident) => Some(ident.to_id()),
-        Expr::Member(member) => local_member_owner(&member.obj),
+        Expr::Member(member) => local_member_source_unit(&member.obj),
         _ => None,
     }
 }

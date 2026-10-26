@@ -1439,17 +1439,19 @@ fn prove_synthesized_selector(
         members,
         anonymous_statements: Vec::new(),
     }])?;
-    let mut first_owner = usize::MAX;
+    let mut first_body_index = usize::MAX;
     for (member_index, target) in targets.iter().enumerate() {
         let outcome = resolution
             .outcome(0, EntityIndex::Member(member_index))
             .context("a source_match member has an outcome")?;
         match &outcome.outcome {
             Outcome::Resolved {
-                owner,
+                body_index,
                 binding: Some(binding),
                 resolved_by: ResolvedBy::OwnSelector,
-            } if *binding == target.runtime_binding => first_owner = first_owner.min(*owner),
+            } if *binding == target.runtime_binding => {
+                first_body_index = first_body_index.min(*body_index)
+            }
             _ => bail!(
                 "synthesized selector does not prove `{}` as `{}`: {}",
                 target.runtime_binding,
@@ -1458,9 +1460,9 @@ fn prove_synthesized_selector(
             ),
         }
     }
-    if first_owner != decl.body_idx {
+    if first_body_index != decl.body_idx {
         bail!(
-            "synthesized selector matched body index {first_owner} instead of intended {}",
+            "synthesized selector matched body index {first_body_index} instead of intended {}",
             decl.body_idx
         );
     }

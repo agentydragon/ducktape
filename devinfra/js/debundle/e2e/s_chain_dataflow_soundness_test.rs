@@ -2,7 +2,7 @@
 //! (`graph.rs::emit_s_chain`, opt-in via
 //! `chunk_analysis_options.<chunk>.dataflow_aware_s_chain`).
 //!
-//! Each test pins one hole by asserting the owner graph carries the
+//! Each test pins one hole by asserting the dependency graph carries the
 //! `Sequenced` edge the bundle's observable semantics require, plus a
 //! runtime check that the emitted bundle preserves the original output.
 //!
@@ -21,21 +21,21 @@
 //! - **window/self**: only the literal `globalThis` was treated as
 //!   the global object, despite README claiming otherwise.
 
-use analysis::{DepKind, OwnerGraphReport};
+use analysis::{DepKind, DependencyGraphReport};
 use debundle_e2e_support::*;
 
-fn owner_for_ordinal(graph: &OwnerGraphReport, ordinal: usize) -> &str {
+fn source_unit_for_ordinal(graph: &DependencyGraphReport, ordinal: usize) -> &str {
     let node = graph
         .nodes
         .iter()
         .find(|node| node.statement_ordinal.0 == ordinal)
-        .unwrap_or_else(|| panic!("no owner-graph node with ordinal {ordinal}"));
+        .unwrap_or_else(|| panic!("no dependency graph node with ordinal {ordinal}"));
     node.id.as_str()
 }
 
 /// Assert a `Sequenced` edge `later → earlier` exists (the
 /// "earlier must evaluate first" constraint).
-fn assert_sequenced_edge(graph: &OwnerGraphReport, later: &str, earlier: &str) {
+fn assert_sequenced_edge(graph: &DependencyGraphReport, later: &str, earlier: &str) {
     let found = graph
         .edges
         .iter()
@@ -47,7 +47,7 @@ fn assert_sequenced_edge(graph: &OwnerGraphReport, later: &str, earlier: &str) {
     );
 }
 
-fn assert_eager_edge(graph: &OwnerGraphReport, reader: &str, declaration: &str) {
+fn assert_eager_edge(graph: &DependencyGraphReport, reader: &str, declaration: &str) {
     assert!(
         graph.edges.iter().any(|edge| {
             edge.edge_kind == DepKind::EagerUse
@@ -79,16 +79,16 @@ export { snapshot, value };
     colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
     let fixture = run_fixture(colocated);
     assert_preserved_entry_output(&fixture, "0 42\n");
-    let graph = fixture.owner_graph();
+    let graph = fixture.dependency_graph();
     assert_eager_edge(
         &graph,
-        owner_for_ordinal(&graph, 1),
-        owner_for_ordinal(&graph, 0),
+        source_unit_for_ordinal(&graph, 1),
+        source_unit_for_ordinal(&graph, 0),
     );
     assert_sequenced_edge(
         &graph,
-        owner_for_ordinal(&graph, 2),
-        owner_for_ordinal(&graph, 1),
+        source_unit_for_ordinal(&graph, 2),
+        source_unit_for_ordinal(&graph, 1),
     );
 
     let mut split = FixtureOpts::new(
@@ -122,16 +122,16 @@ export { snapshot, value };
     colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
     let fixture = run_fixture(colocated);
     assert_preserved_entry_output(&fixture, "0 42\n");
-    let graph = fixture.owner_graph();
+    let graph = fixture.dependency_graph();
     assert_eager_edge(
         &graph,
-        owner_for_ordinal(&graph, 1),
-        owner_for_ordinal(&graph, 0),
+        source_unit_for_ordinal(&graph, 1),
+        source_unit_for_ordinal(&graph, 0),
     );
     assert_sequenced_edge(
         &graph,
-        owner_for_ordinal(&graph, 2),
-        owner_for_ordinal(&graph, 1),
+        source_unit_for_ordinal(&graph, 2),
+        source_unit_for_ordinal(&graph, 1),
     );
 
     let mut split = FixtureOpts::new(
@@ -165,11 +165,11 @@ export { snapshot, value };
     colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
     let fixture = run_fixture(colocated);
     assert_preserved_entry_output(&fixture, "true 42\n");
-    let graph = fixture.owner_graph();
+    let graph = fixture.dependency_graph();
     assert_sequenced_edge(
         &graph,
-        owner_for_ordinal(&graph, 2),
-        owner_for_ordinal(&graph, 1),
+        source_unit_for_ordinal(&graph, 2),
+        source_unit_for_ordinal(&graph, 1),
     );
 
     let mut split = FixtureOpts::new(
@@ -205,11 +205,11 @@ export { snapshot, limit };
         .with_dataflow_aware_s_chain(),
     );
     assert_entry_output(&fixture, "firstL\n");
-    let graph = fixture.owner_graph();
+    let graph = fixture.dependency_graph();
     assert_sequenced_edge(
         &graph,
-        owner_for_binding(&graph, "limit"),
-        owner_for_binding(&graph, "snapshot"),
+        source_unit_for_binding(&graph, "limit"),
+        source_unit_for_binding(&graph, "snapshot"),
     );
 }
 
@@ -239,12 +239,12 @@ export { seed, base };
         .with_dataflow_aware_s_chain(),
     );
     assert_entry_output(&fixture, "one\ntwos\n");
-    let graph = fixture.owner_graph();
+    let graph = fixture.dependency_graph();
     // ordinals: 0 = seed, 1 = log("one"), 2 = base, 3 = log(base)
     assert_sequenced_edge(
         &graph,
-        owner_for_ordinal(&graph, 3),
-        owner_for_ordinal(&graph, 1),
+        source_unit_for_ordinal(&graph, 3),
+        source_unit_for_ordinal(&graph, 1),
     );
 }
 
@@ -270,12 +270,12 @@ export { got };
         .with_dataflow_aware_s_chain(),
     );
     assert_entry_output(&fixture, "ready\n");
-    let graph = fixture.owner_graph();
+    let graph = fixture.dependency_graph();
     // ordinals: 0 = setup decl, 1 = setup(), 2 = got, 3 = log
     assert_sequenced_edge(
         &graph,
-        owner_for_binding(&graph, "got"),
-        owner_for_ordinal(&graph, 1),
+        source_unit_for_binding(&graph, "got"),
+        source_unit_for_ordinal(&graph, 1),
     );
 }
 
@@ -304,12 +304,12 @@ export { registry, snap };
         .with_dataflow_aware_s_chain(),
     );
     assert_entry_output(&fixture, "on\n");
-    let graph = fixture.owner_graph();
+    let graph = fixture.dependency_graph();
     // ordinals: 0 = registry, 1 = member write, 2 = snap, 3 = log
     assert_sequenced_edge(
         &graph,
-        owner_for_binding(&graph, "snap"),
-        owner_for_ordinal(&graph, 1),
+        source_unit_for_binding(&graph, "snap"),
+        source_unit_for_ordinal(&graph, 1),
     );
 }
 
@@ -335,12 +335,12 @@ export { got };
         .with_dataflow_aware_s_chain(),
     );
     assert_entry_output(&fixture, "2\n");
-    let graph = fixture.owner_graph();
+    let graph = fixture.dependency_graph();
     // ordinals: 0 = init, 1 = increment, 2 = got, 3 = log
     assert_sequenced_edge(
         &graph,
-        owner_for_binding(&graph, "got"),
-        owner_for_ordinal(&graph, 1),
+        source_unit_for_binding(&graph, "got"),
+        source_unit_for_ordinal(&graph, 1),
     );
 }
 
@@ -366,12 +366,12 @@ export { g, got };
         .with_dataflow_aware_s_chain(),
     );
     assert_entry_output(&fixture, "x\n");
-    let graph = fixture.owner_graph();
+    let graph = fixture.dependency_graph();
     // ordinals: 0 = g, 1 = tag write, 2 = got, 3 = log
     assert_sequenced_edge(
         &graph,
-        owner_for_binding(&graph, "got"),
-        owner_for_ordinal(&graph, 1),
+        source_unit_for_binding(&graph, "got"),
+        source_unit_for_ordinal(&graph, 1),
     );
 }
 
@@ -396,12 +396,12 @@ export { got };
         .with_dataflow_aware_s_chain(),
     );
     assert_entry_output(&fixture, "w\n");
-    let graph = fixture.owner_graph();
+    let graph = fixture.dependency_graph();
     // ordinals: 0 = boot, 1 = window.tag write, 2 = got, 3 = log
     assert_sequenced_edge(
         &graph,
-        owner_for_binding(&graph, "got"),
-        owner_for_ordinal(&graph, 1),
+        source_unit_for_binding(&graph, "got"),
+        source_unit_for_ordinal(&graph, 1),
     );
 }
 
@@ -432,10 +432,10 @@ export { tagB, got };
         .with_admission_overrides(&["a1_eval"]),
     );
     assert_entry_output(&fixture, "ab t\n");
-    let graph = fixture.owner_graph();
+    let graph = fixture.dependency_graph();
     assert_sequenced_edge(
         &graph,
-        owner_for_binding(&graph, "got"),
-        owner_for_binding(&graph, "tagB"),
+        source_unit_for_binding(&graph, "got"),
+        source_unit_for_binding(&graph, "tagB"),
     );
 }

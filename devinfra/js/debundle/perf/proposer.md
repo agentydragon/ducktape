@@ -11,7 +11,7 @@ The hot boolean merge gate goes through the `RealizabilityIndex`'s tier ladder
 (call tree below).
 
 The reproducible public corpus is the synthetic one from
-`perf/gen_synth_corpus.py` (10k statements, seed 1; 10051 owners / 22019
+`perf/gen_synth_corpus.py` (10k statements, seed 1; 10051 source units / 22019
 edges). Baseline, `-c opt` binaries, one host, 2026-06-11:
 
 | Corpus variant                                          |     Wall | Proposals |
@@ -41,7 +41,7 @@ greedy_merge_to_convergence
 contract / explicit diagnostic query
 └── would_be_cycles_after_contract
     ├── ladder_decision_for_merge          (accept → no evidence)
-    └── realizability_index::verdict_after_moving_owners_touching
+    └── realizability_index::verdict_after_moving_source_units_touching
         └── build_simulator / translate_verdict_with_owner_modules
 ```
 
@@ -75,7 +75,7 @@ python3 devinfra/js/debundle/perf/gen_synth_corpus.py \
 
 devinfra/js/debundle/perf_wrapper.sh --output-dir /tmp/propose-profile -- \
     "$BIN" modules propose \
-    --graph /tmp/synth/out/reports/tree/static/app/owner_graph.json \
+    --graph /tmp/synth/out/reports/tree/static/app/dependency_graph.json \
     --modules /tmp/synth/modules --format json
 ```
 
@@ -143,7 +143,7 @@ corpus or pipeline shape has changed materially.
 Tighten before the next large peel loop:
 
 - Keep stage telemetry complete (index build/rebuild, fused AST
-  analysis, purity, owner-graph construction, atomic-DAG construction,
+  analysis, purity, dependency graph construction, atomic-DAG construction,
   quotient construction, validation, lowering, output writing) — useful
   durations should land in the emitted reports.
 - Add focused regression coverage for `ArtifactIndexes` rebuild

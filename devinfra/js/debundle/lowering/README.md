@@ -3,7 +3,7 @@
 - `mod.rs`: artifact-wide orchestration and the public lowering entry point.
 - `materialize/`: resolve requests and prepare accepted per-chunk plans.
 - `placement.rs`: project binding and whole-statement destinations from the validated assignment and check linkage metadata agrees.
-- `lower.rs`: split syntax according to that immutable placement, construct the residual entry, and dispatch module emission.
+- `lower.rs`: lower the source units according to that immutable placement, construct the residual entry, and dispatch module emission.
   Its plan requires a `ValidatedAssignment` from the shared gate; an unchecked
   assignment cannot enter lowering.
 - `module_output.rs`: emit one logical module's imports, body rewrites, comments, and metadata.

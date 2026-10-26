@@ -1619,7 +1619,7 @@ pub fn var_declarator_alignment(
 
 /// Like [`var_declarator_alignment`], but over **prebuilt** indices, so the
 /// declarator-hole resolver can reuse cached body indices across the
-/// owner × candidate-binding inner loop instead of rebuilding both indices on
+/// source_unit × candidate-binding inner loop instead of rebuilding both indices on
 /// every alignment attempt.
 pub fn var_declarator_alignment_indexed(
     needle: &Index,
@@ -2236,9 +2236,9 @@ pub fn match_fixed_window_sequence_indexed(
 /// the items in source order: every non-target item matches as a whole statement,
 /// and at `target_idx` the match branches over the window item's declarators (each
 /// matched via the single needle declarator, so a target inside a multi-declarator
-/// owner is found). Returns `(target_body_idx, subject_declarator_idx)` for every
+/// source_unit is found). Returns `(target_body_idx, subject_declarator_idx)` for every
 /// full-window match — the caller reads the binding from that declarator and
-/// applies owner-level categoricity. This path is fixed-window (no module-level
+/// applies source-unit-level categoricity. This path is fixed-window (no module-level
 /// `STMT_LIST` holes); a hole-bearing needle item fails closed via the per-item
 /// unsupported scan.
 pub fn match_single_declarator_target_windows_indexed(

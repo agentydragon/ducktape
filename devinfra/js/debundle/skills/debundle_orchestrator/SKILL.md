@@ -31,7 +31,7 @@ Read other bundled references as needed:
 - Send `modules propose` output to `debundle_intake` for seeds.
 - For existing-module reorganization, ask the planner for a source-backed
   `modules decompose` candidate, including selector anchors and optional
-  coarsening/rejoining as needed. Route the reviewed semantic owner map
+  coarsening/rejoining as needed. Route the reviewed semantic source-unit assignment
   directly to a lane worker for `modules refine`; intake consumes proposals,
   not decomposition reports.
 - For selector-stabilization rounds, start with

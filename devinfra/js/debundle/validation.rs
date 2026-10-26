@@ -6,12 +6,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::realizability::{RealizabilityVerdict, SccRejection, check_realizability};
 use analysis::assignment_assembly::AtomicGroupConflict;
-use analysis::graph::{EndpointView, OwnerEdgeId, assignment_endpoints};
+use analysis::graph::{DependencyEdgeId, EndpointView, assignment_endpoints};
 use analysis::module_assignment::ModuleAssignment;
 use spec::ModulePath;
 use swc_atoms::Atom;
 
-use analysis::{DepKind, ModuleId, OwnerGraph, Purity, SequencedOwnerCause, StatementOrdinal};
+use analysis::{
+    DepKind, DependencyGraph, ModuleId, Purity, SequencedSourceUnitCause, StatementOrdinal,
+};
 
 /// Result of validating a module dep graph.
 #[derive(Debug, Clone, Serialize)]
@@ -52,7 +54,7 @@ pub struct CycleReport {
     /// (`at-init` or `side-effect`) reasons whose removal (by
     /// co-locating each binding pair into one module) lifts the
     /// SCC's realizability violation. Derived from the verdict's
-    /// owner-edge provenance per [`SccRejection`] kind:
+    /// source-unit edge provenance per [`SccRejection`] kind:
     ///
     /// - [`SccRejection::MutualConstrainingCycle`]: a near-minimum
     ///   feedback arc set over the SCC's constraining edges,
@@ -79,7 +81,7 @@ pub struct CycleReport {
 /// Trimmed wire shape for `cycles.json` (one entry per blocking SCC).
 ///
 /// The full list of constraining cross-module edges inside the SCC
-/// is recomputable from `owner_graph.json` + this entry's `modules`
+/// is recomputable from `dependency_graph.json` + this entry's `modules`
 /// set, so the wire entry carries only the modules and the cut (a
 /// 1335-module SCC's full evidence is multi-MB; the trimmed entry is
 /// ~100 KB). Consumers that need per-edge evidence re-derive it via
@@ -91,9 +93,9 @@ pub struct BlockingSccEntry {
     /// this index.
     pub id: usize,
     /// Every module in the unrealizable SCC, by canonical
-    /// [`ModulePath`] — the same value as the owner-graph module
+    /// [`ModulePath`] — the same value as the dependency graph module
     /// table's `path`, so consumers join `cycles.json` against
-    /// `owner_graph.json` by resolving destination keys through the
+    /// `dependency_graph.json` by resolving destination keys through the
     /// table (see `docs/wire_format.md` §"one canonical module
     /// identity").
     pub modules: Vec<ModulePath>,
@@ -137,11 +139,11 @@ pub struct CycleEdge {
     /// for sequenced edges (no symbol).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub binding: Option<Atom>,
-    /// Source-side binding (the first declared binding of the owner
-    /// that issued the read). `None` when the source owner is an
+    /// Source-side binding (the first declared binding of the source_unit
+    /// that issued the read). `None` when the source source_unit is an
     /// anonymous statement with no declared bindings — diagnostics
     /// fall back to `<anon stmt #{statement_ordinal}>` in that case.
-    /// Populated by [`validate_assignment`] from the owner graph,
+    /// Populated by [`validate_assignment`] from the dependency graph,
     /// so cycle reports name *both* ends of each cut edge by binding,
     /// not only the module pair.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -154,7 +156,7 @@ pub struct CycleEdge {
     /// inert-but-graph-present (`lazy_use` and `hoisted_use`).
     pub kind: DepKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sequenced_owner: Option<SequencedOwnerCause>,
+    pub sequenced_source_unit: Option<SequencedSourceUnitCause>,
 }
 
 impl CycleEdge {
@@ -288,7 +290,7 @@ pub fn render_cycle_summary(cycles: &[CycleReport]) -> String {
             "  Fix: co-locate each (source, target) binding pair above into one logical module, or break the SCC's back-edges in the spec.\n",
         );
         let causes = sequenced_causes_from_cycle(cycle);
-        render_sequenced_owner_causes(&causes, &mut out);
+        render_sequenced_source_unit_causes(&causes, &mut out);
     }
     out
 }
@@ -340,18 +342,18 @@ fn cut_pairs_count(cut: &[CycleEdge]) -> usize {
 /// The verdict is the single source of truth for *which* SCCs block
 /// materialization (docs/design.md "Realizability primitive" —
 /// "Invariant: no bespoke parallel walks"); this function only
-/// decorates each diagnosis's owner-edge provenance into the
+/// decorates each diagnosis's source-unit edge provenance into the
 /// stringified, binding-pair-labelled rows spec authors read. In
 /// particular, an asymmetric I-cycle that Lemma 2's source-import
 /// reversal rescues never appears here, even when another SCC in the
 /// same chunk is genuinely unrealizable.
 pub fn validate_assignment(
-    owner_graph: &OwnerGraph,
+    dependency_graph: &DependencyGraph,
     assignment: &ModuleAssignment,
     module_path: &dyn Fn(ModuleId) -> ModulePath,
 ) -> AssignmentReport {
-    let verdict = check_realizability(owner_graph, assignment);
-    let cross_rebinds = render_cross_rebinds(owner_graph, &verdict, module_path);
+    let verdict = check_realizability(dependency_graph, assignment);
+    let cross_rebinds = render_cross_rebinds(dependency_graph, &verdict, module_path);
     if verdict.unrealizable_sccs.is_empty() {
         return AssignmentReport {
             cycles: Vec::new(),
@@ -360,13 +362,13 @@ pub fn validate_assignment(
             cross_rebinds,
         };
     }
-    // statement_ordinal → first declared binding of the owner that
+    // statement_ordinal → first declared binding of the source_unit that
     // owns that statement. Used to label the source side of every
     // CycleEdge so diagnostics blame binding pairs, not just module
-    // pairs. An owner may have no declared bindings (anonymous
+    // pairs. An source_unit may have no declared bindings (anonymous
     // statement); we leave `from_binding = None` in that case and let
     // the renderer fall back to a statement-ordinal placeholder.
-    let from_binding_by_ordinal: HashMap<StatementOrdinal, Atom> = owner_graph
+    let from_binding_by_ordinal: HashMap<StatementOrdinal, Atom> = dependency_graph
         .iter_nodes()
         .filter_map(|node| {
             node.declared
@@ -382,27 +384,27 @@ pub fn validate_assignment(
             let (cut, lazy_closure) = match diagnosis.rejection {
                 SccRejection::MutualConstrainingCycle => (
                     compute_realizability_cut(
-                        owner_graph,
+                        dependency_graph,
                         assignment,
-                        &diagnosis.core.constraining_owner_edges,
+                        &diagnosis.core.constraining_dependency_edges,
                         module_path,
                         &from_binding_by_ordinal,
                     ),
                     Vec::new(),
                 ),
-                // The diagnosis's owner edges ARE the cut: the
+                // The diagnosis's source-unit edges ARE the cut: the
                 // simulator surfaced exactly the constraining
                 // `(from, to)` pairs whose post-order check failed.
                 SccRejection::EsmEvaluationTdz => (
                     cycle_edges_for(
-                        owner_graph,
+                        dependency_graph,
                         assignment,
-                        diagnosis.core.constraining_owner_edges.iter().copied(),
+                        diagnosis.core.constraining_dependency_edges.iter().copied(),
                         module_path,
                         &from_binding_by_ordinal,
                     ),
                     nonconstraining_closure_edges(
-                        owner_graph,
+                        dependency_graph,
                         assignment,
                         &diagnosis.core.modules,
                         module_path,
@@ -434,7 +436,7 @@ pub fn validate_assignment(
 /// Render the verdict's clause-2 cross-rebind diagnoses as
 /// human-readable lines for [`AssignmentReport::cross_rebinds`].
 fn render_cross_rebinds(
-    owner_graph: &OwnerGraph,
+    dependency_graph: &DependencyGraph,
     verdict: &RealizabilityVerdict,
     module_path: &dyn Fn(ModuleId) -> ModulePath,
 ) -> Vec<String> {
@@ -442,7 +444,7 @@ fn render_cross_rebinds(
         .cross_rebinds
         .iter()
         .map(|rebind| {
-            let edge = owner_graph.edge(rebind.owner_edge);
+            let edge = dependency_graph.edge(rebind.dependency_edge);
             let binding = match &edge.reason.binding {
                 Some(id) => id.0.to_string(),
                 None => format!("<anon stmt #{}>", edge.reason.statement_ordinal.0),
@@ -458,7 +460,7 @@ fn render_cross_rebinds(
         .collect()
 }
 
-/// Project verdict owner-edge provenance onto rendered [`CycleEdge`]
+/// Project verdict source-unit edge provenance onto rendered [`CycleEdge`]
 /// rows, sorted deterministically
 /// `(from, to, statement_ordinal, binding, kind)` so test snapshots
 /// compare cleanly. Endpoints use the gate view
@@ -466,18 +468,18 @@ fn render_cross_rebinds(
 /// primitive used to produce the edges, so promoted at-init edges
 /// keep their cross-module endpoints.
 fn cycle_edges_for(
-    owner_graph: &OwnerGraph,
+    dependency_graph: &DependencyGraph,
     assignment: &ModuleAssignment,
-    edge_ids: impl IntoIterator<Item = OwnerEdgeId>,
+    edge_ids: impl IntoIterator<Item = DependencyEdgeId>,
     module_path: &dyn Fn(ModuleId) -> ModulePath,
     from_binding_by_ordinal: &HashMap<StatementOrdinal, Atom>,
 ) -> Vec<CycleEdge> {
     let mut out: Vec<CycleEdge> = edge_ids
         .into_iter()
         .map(|edge_id| {
-            let edge = owner_graph.edge(edge_id);
+            let edge = dependency_graph.edge(edge_id);
             let (from, to) = assignment_endpoints(edge, assignment, EndpointView::Gate)
-                .expect("verdict owner-edge provenance is cross-module in the gate view");
+                .expect("verdict source-unit edge provenance is cross-module in the gate view");
             CycleEdge {
                 from: module_path(from),
                 to: module_path(to),
@@ -487,7 +489,10 @@ fn cycle_edges_for(
                     .get(&edge.reason.statement_ordinal)
                     .cloned(),
                 kind: edge.reason.kind,
-                sequenced_owner: analysis::reports::schema::sequenced_edge_cause(owner_graph, edge),
+                sequenced_source_unit: analysis::reports::schema::sequenced_edge_cause(
+                    dependency_graph,
+                    edge,
+                ),
             }
         })
         .collect();
@@ -500,16 +505,16 @@ fn cycle_edges_for(
 /// constraining subgraph alone is acyclic — these are the back-edges
 /// closing the I-cycle the ESM evaluation simulator walked.
 fn nonconstraining_closure_edges(
-    owner_graph: &OwnerGraph,
+    dependency_graph: &DependencyGraph,
     assignment: &ModuleAssignment,
     modules: &BTreeSet<ModuleId>,
     module_path: &dyn Fn(ModuleId) -> ModulePath,
     from_binding_by_ordinal: &HashMap<StatementOrdinal, Atom>,
 ) -> Vec<CycleEdge> {
-    let lazy_edge_ids = owner_graph.iter_edges().filter_map(|edge| {
+    let lazy_edge_ids = dependency_graph.iter_edges().filter_map(|edge| {
         if !matches!(edge.reason.kind, DepKind::LazyUse | DepKind::HoistedUse)
-            || owner_graph.node(edge.from).is_none()
-            || owner_graph.node(edge.to).is_none()
+            || dependency_graph.node(edge.from).is_none()
+            || dependency_graph.node(edge.to).is_none()
         {
             return None;
         }
@@ -517,7 +522,7 @@ fn nonconstraining_closure_edges(
         (modules.contains(&from) && modules.contains(&to)).then_some(edge.id)
     });
     cycle_edges_for(
-        owner_graph,
+        dependency_graph,
         assignment,
         lazy_edge_ids,
         module_path,
@@ -533,7 +538,7 @@ fn nonconstraining_closure_edges(
 pub fn render_atomic_group_conflict_summary(
     conflicts: &[AtomicGroupConflict],
     module_path: &dyn Fn(ModuleId) -> ModulePath,
-    owner_graph: &OwnerGraph,
+    dependency_graph: &DependencyGraph,
 ) -> String {
     let mut out = String::new();
     for (idx, c) in conflicts.iter().enumerate() {
@@ -544,7 +549,7 @@ pub fn render_atomic_group_conflict_summary(
             .members
             .iter()
             .copied()
-            .map(analysis::reports::owner_key)
+            .map(analysis::reports::source_unit_key)
             .collect();
         member_ids.sort();
         let mut conflicting_modules: Vec<String> = c
@@ -576,35 +581,39 @@ pub fn render_atomic_group_conflict_summary(
             };
             out.push_str(&format!(
                 "    - {}{} → {}\n",
-                analysis::reports::owner_key(claim.owner),
+                analysis::reports::source_unit_key(claim.source_unit),
                 names,
                 module_path(claim.module),
             ));
         }
-        let causes = analysis::reports::schema::sequenced_owner_causes(owner_graph, &c.members);
-        render_sequenced_owner_causes(&causes, &mut out);
+        let causes =
+            analysis::reports::schema::sequenced_source_unit_causes(dependency_graph, &c.members);
+        render_sequenced_source_unit_causes(&causes, &mut out);
     }
     out
 }
 
-fn sequenced_causes_from_cycle(cycle: &CycleReport) -> Vec<SequencedOwnerCause> {
+fn sequenced_causes_from_cycle(cycle: &CycleReport) -> Vec<SequencedSourceUnitCause> {
     let mut causes = BTreeMap::new();
     for edge in &cycle.cut {
-        if let Some(cause) = &edge.sequenced_owner {
-            causes.insert(cause.owner_id.clone(), cause.clone());
+        if let Some(cause) = &edge.sequenced_source_unit {
+            causes.insert(cause.source_unit_id.clone(), cause.clone());
         }
     }
     causes.into_values().collect()
 }
 
-pub(crate) fn render_sequenced_owner_causes(causes: &[SequencedOwnerCause], out: &mut String) {
+pub(crate) fn render_sequenced_source_unit_causes(
+    causes: &[SequencedSourceUnitCause],
+    out: &mut String,
+) {
     if causes.is_empty() {
         return;
     }
     out.push_str("  Impure initializers behind side-effect edges:\n");
     for cause in causes {
         let names = if cause.binding_names.is_empty() {
-            cause.owner_id.clone()
+            cause.source_unit_id.clone()
         } else {
             cause
                 .binding_names
@@ -649,14 +658,14 @@ pub(crate) fn render_sequenced_owner_causes(causes: &[SequencedOwnerCause], out:
 /// whose removal makes a [`SccRejection::MutualConstrainingCycle`]
 /// SCC realizable.
 ///
-/// Input is the diagnosis's owner-edge provenance — every
-/// constraining cross-module owner edge inside the SCC, in the gate
-/// view. The algorithm groups the owner edges by their gate-view
+/// Input is the diagnosis's source-unit edge provenance — every
+/// constraining cross-module source_unit edge inside the SCC, in the gate
+/// view. The algorithm groups the source-unit edges by their gate-view
 /// module pair, builds a `DiGraph` with one edge per pair (strongly
 /// connected by construction: the diagnosis's modules are one SCC of
 /// the constraining subgraph), and runs
 /// `petgraph::algo::greedy_feedback_arc_set` (Eades-Lin-Smyth, 1993,
-/// `O(V + E)`). Every FAS-picked pair contributes its owner edges to
+/// `O(V + E)`). Every FAS-picked pair contributes its source-unit edges to
 /// the cut.
 ///
 /// Soundness: removing every FAS pair makes the SCC's constraining
@@ -665,17 +674,17 @@ pub(crate) fn render_sequenced_owner_causes(causes: &[SequencedOwnerCause], out:
 /// realizability theorem. Heuristic-minimum: petgraph's FAS
 /// approximates within a constant factor on dense instances.
 fn compute_realizability_cut(
-    owner_graph: &OwnerGraph,
+    dependency_graph: &DependencyGraph,
     assignment: &ModuleAssignment,
-    constraining_owner_edges: &[OwnerEdgeId],
+    constraining_dependency_edges: &[DependencyEdgeId],
     module_path: &dyn Fn(ModuleId) -> ModulePath,
     from_binding_by_ordinal: &HashMap<StatementOrdinal, Atom>,
 ) -> Vec<CycleEdge> {
-    let mut by_pair: BTreeMap<(ModuleId, ModuleId), Vec<OwnerEdgeId>> = BTreeMap::new();
-    for &edge_id in constraining_owner_edges {
-        let edge = owner_graph.edge(edge_id);
+    let mut by_pair: BTreeMap<(ModuleId, ModuleId), Vec<DependencyEdgeId>> = BTreeMap::new();
+    for &edge_id in constraining_dependency_edges {
+        let edge = dependency_graph.edge(edge_id);
         let (from, to) = assignment_endpoints(edge, assignment, EndpointView::Gate)
-            .expect("verdict owner-edge provenance is cross-module in the gate view");
+            .expect("verdict source-unit edge provenance is cross-module in the gate view");
         by_pair.entry((from, to)).or_default().push(edge_id);
     }
 
@@ -695,12 +704,12 @@ fn compute_realizability_cut(
         pair_graph.add_edge(idx_of[&from], idx_of[&to], (from, to));
     }
 
-    let mut cut_edge_ids: Vec<OwnerEdgeId> = Vec::new();
+    let mut cut_edge_ids: Vec<DependencyEdgeId> = Vec::new();
     for fas_edge in greedy_feedback_arc_set(&pair_graph) {
         cut_edge_ids.extend_from_slice(&by_pair[fas_edge.weight()]);
     }
     cycle_edges_for(
-        owner_graph,
+        dependency_graph,
         assignment,
         cut_edge_ids,
         module_path,

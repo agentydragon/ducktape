@@ -1,4 +1,4 @@
-//! Shared owner-level read closure for conservative analyses.
+//! Shared source-unit-level read closure for conservative analyses.
 //!
 //! Read edges point from a statement to the first declaration site of each
 //! binding it reads eagerly or lazily. Co-declaration edges connect repeated
@@ -15,22 +15,22 @@ use swc_ecma_ast::Id;
 use super::StatementFacts;
 use crate::StatementOrdinal;
 
-/// Owner read closure over one chunk's statement facts.
+/// SourceUnit read closure over one chunk's statement facts.
 ///
 /// The SCC summaries preserve the closure used by graph at-init fallback;
-/// the synchronous owner adjacency also supports incremental traversal for callback analyses
+/// the synchronous source unit adjacency also supports incremental traversal for callback analyses
 /// without materializing a transitive closure for every possible root.
-pub(crate) struct FactsOwnerReadClosure {
-    binding_owner: BTreeMap<Id, StatementOrdinal>,
+pub(crate) struct SourceUnitReadClosure {
+    binding_source_unit: BTreeMap<Id, StatementOrdinal>,
     expanded_lazy_reads: Vec<BTreeSet<Id>>,
     expanded_lazy_rebinds: Vec<BTreeSet<Id>>,
     scc_of: BTreeMap<StatementOrdinal, usize>,
 }
 
-impl FactsOwnerReadClosure {
+impl SourceUnitReadClosure {
     /// Build an adjacency for synchronous callback fallback. The caller
     /// supplies retained callable-prefix reads where coverage is complete;
-    /// other owners keep their whole lazy read set. A lexical read remains an
+    /// other source units keep their whole lazy read set. A lexical read remains an
     /// edge even when its target's body is deferred.
     pub(crate) fn synchronous_adjacency(
         &self,
@@ -39,19 +39,19 @@ impl FactsOwnerReadClosure {
     ) -> Vec<Vec<StatementOrdinal>> {
         let mut adjacency = vec![Vec::new(); facts.len()];
         for fact in facts {
-            let owner = fact.ordinal;
+            let source_unit = fact.ordinal;
             for binding in &fact.declared {
-                if let Some(&representative) = self.binding_owner.get(binding)
-                    && representative != owner
+                if let Some(&representative) = self.binding_source_unit.get(binding)
+                    && representative != source_unit
                 {
-                    adjacency[owner.0].push(representative);
-                    adjacency[representative.0].push(owner);
+                    adjacency[source_unit.0].push(representative);
+                    adjacency[representative.0].push(source_unit);
                 }
             }
-            let lazy = prefix_reads[owner.0].unwrap_or(&fact.reads.lazy);
+            let lazy = prefix_reads[source_unit.0].unwrap_or(&fact.reads.lazy);
             for id in fact.reads.eager.iter().chain(lazy) {
-                if let Some(&target) = self.binding_owner.get(id) {
-                    adjacency[owner.0].push(target);
+                if let Some(&target) = self.binding_source_unit.get(id) {
+                    adjacency[source_unit.0].push(target);
                 }
             }
         }
@@ -63,8 +63,8 @@ impl FactsOwnerReadClosure {
     }
 
     /// Grow a persistent fallback cache using only synchronous read edges.
-    /// Each reached owner is expanded at most once as callback roots grow.
-    pub(crate) fn extend_synchronous_owners(
+    /// Each reached source unit is expanded at most once as callback roots grow.
+    pub(crate) fn extend_synchronous_source_units(
         adjacency: &[Vec<StatementOrdinal>],
         roots: impl IntoIterator<Item = StatementOrdinal>,
         expanded: &mut BTreeSet<StatementOrdinal>,
@@ -77,8 +77,8 @@ impl FactsOwnerReadClosure {
                 pending.push_back(root);
             }
         }
-        while let Some(owner) = pending.pop_front() {
-            for &target in &adjacency[owner.0] {
+        while let Some(source_unit) = pending.pop_front() {
+            for &target in &adjacency[source_unit.0] {
                 if expanded.insert(target) {
                     reached.push(target);
                     pending.push_back(target);
@@ -98,44 +98,44 @@ impl FactsOwnerReadClosure {
                     .push(stmt.ordinal);
             }
         }
-        let binding_owner: BTreeMap<Id, StatementOrdinal> = declaration_sites
+        let binding_source_unit: BTreeMap<Id, StatementOrdinal> = declaration_sites
             .iter()
             .map(|(binding, sites)| (binding.clone(), sites[0]))
             .collect();
 
         let mut read_graph: DiGraphMap<StatementOrdinal, ()> = DiGraphMap::new();
         for stmt in facts {
-            let owner = stmt.ordinal;
-            read_graph.add_node(owner);
+            let source_unit = stmt.ordinal;
+            read_graph.add_node(source_unit);
             for binding in &stmt.declared {
-                if let Some(&representative) = binding_owner.get(binding)
-                    && representative != owner
+                if let Some(&representative) = binding_source_unit.get(binding)
+                    && representative != source_unit
                 {
-                    read_graph.add_edge(owner, representative, ());
-                    read_graph.add_edge(representative, owner, ());
+                    read_graph.add_edge(source_unit, representative, ());
+                    read_graph.add_edge(representative, source_unit, ());
                 }
             }
             for id in stmt.reads.eager.iter().chain(stmt.reads.lazy.iter()) {
-                if let Some(&target) = binding_owner.get(id) {
-                    read_graph.add_edge(owner, target, ());
+                if let Some(&target) = binding_source_unit.get(id) {
+                    read_graph.add_edge(source_unit, target, ());
                 }
             }
         }
 
-        let stmt_by_owner: BTreeMap<StatementOrdinal, &StatementFacts> =
+        let stmt_by_source_unit: BTreeMap<StatementOrdinal, &StatementFacts> =
             facts.iter().map(|stmt| (stmt.ordinal, stmt)).collect();
         let sccs = tarjan_scc(&read_graph);
         let mut scc_of = BTreeMap::new();
         for (idx, scc) in sccs.iter().enumerate() {
-            for owner in scc {
-                scc_of.insert(*owner, idx);
+            for source_unit in scc {
+                scc_of.insert(*source_unit, idx);
             }
         }
 
         // The same transitive IDs can occur on many outgoing SCC edges. Merge
         // their compact indices here, then materialize the ordered ID sets
         // once for the existing closure query API.
-        let binding_ids: Vec<Id> = binding_owner.keys().cloned().collect();
+        let binding_ids: Vec<Id> = binding_source_unit.keys().cloned().collect();
         let binding_indices: BTreeMap<Id, u32> = binding_ids
             .iter()
             .enumerate()
@@ -151,8 +151,8 @@ impl FactsOwnerReadClosure {
         for (scc_idx, scc) in sccs.iter().enumerate() {
             let mut reads = RoaringBitmap::new();
             let mut rebinds = RoaringBitmap::new();
-            for owner in scc {
-                let Some(stmt) = stmt_by_owner.get(owner) else {
+            for source_unit in scc {
+                let Some(stmt) = stmt_by_source_unit.get(source_unit) else {
                     continue;
                 };
                 for id in &stmt.reads.lazy {
@@ -166,8 +166,8 @@ impl FactsOwnerReadClosure {
                     }
                 }
             }
-            for owner in scc {
-                for (_, target, _) in read_graph.edges(*owner) {
+            for source_unit in scc {
+                for (_, target, _) in read_graph.edges(*source_unit) {
                     let Some(&target_scc) = scc_of.get(&target) else {
                         continue;
                     };
@@ -190,7 +190,7 @@ impl FactsOwnerReadClosure {
         let expanded_lazy_rebinds = rebind_bits.into_iter().map(materialize).collect();
 
         Self {
-            binding_owner,
+            binding_source_unit,
             expanded_lazy_reads,
             expanded_lazy_rebinds,
             scc_of,
@@ -198,31 +198,31 @@ impl FactsOwnerReadClosure {
     }
 
     /// Map a chunk-declared binding to its first declaration site.
-    pub(crate) fn owner_for_binding(&self, binding: &Id) -> Option<StatementOrdinal> {
-        self.binding_owner.get(binding).copied()
+    pub(crate) fn source_unit_for_binding(&self, binding: &Id) -> Option<StatementOrdinal> {
+        self.binding_source_unit.get(binding).copied()
     }
 
-    /// Collect declaration owners for bindings, omitting globals and imports
+    /// Collect declaration source units for bindings, omitting globals and imports
     /// that have no declaration site in this chunk.
-    pub(crate) fn owners_for_bindings<'a>(
+    pub(crate) fn source_units_for_bindings<'a>(
         &self,
         bindings: impl IntoIterator<Item = &'a Id>,
     ) -> BTreeSet<StatementOrdinal> {
         bindings
             .into_iter()
-            .filter_map(|binding| self.owner_for_binding(binding))
+            .filter_map(|binding| self.source_unit_for_binding(binding))
             .collect()
     }
 
-    /// Return the transitive lazy reads and rebinds for one owner, retaining
+    /// Return the transitive lazy reads and rebinds for one source unit, retaining
     /// the original graph-builder semantics for unresolved-call promotion.
-    pub(crate) fn lazy_effects_for_owner(
+    pub(crate) fn lazy_effects_for_source_unit(
         &self,
-        owner: StatementOrdinal,
+        source_unit: StatementOrdinal,
     ) -> (&BTreeSet<Id>, &BTreeSet<Id>) {
         static EMPTY: std::sync::OnceLock<BTreeSet<Id>> = std::sync::OnceLock::new();
         let empty = EMPTY.get_or_init(BTreeSet::new);
-        match self.scc_of.get(&owner) {
+        match self.scc_of.get(&source_unit) {
             Some(&idx) => (
                 &self.expanded_lazy_reads[idx],
                 &self.expanded_lazy_rebinds[idx],

@@ -308,14 +308,17 @@ export { runtimeService, runtimeCache };
 "#,
         vec![
             logical_module(
-                "owners/service",
+                "source_units/service",
                 &[Member::renamed("service", "runtimeService")],
             ),
             logical_module(
                 "duplicates/service",
                 &[Member::renamed("serviceAgain", "runtimeService")],
             ),
-            logical_module("owners/cache", &[Member::renamed("cache", "runtimeCache")]),
+            logical_module(
+                "source_units/cache",
+                &[Member::renamed("cache", "runtimeCache")],
+            ),
             logical_module(
                 "duplicates/cache",
                 &[Member::renamed("cacheAgain", "runtimeCache")],
@@ -328,12 +331,12 @@ export { runtimeService, runtimeCache };
     for required in [
         "2 selector outcome(s): duplicate_claim=2",
         "\"runtimeService\" (`const` at body[0])",
-        "owners/service",
+        "source_units/service",
         "as `service`",
         "duplicates/service",
         "as `serviceAgain`",
         "\"runtimeCache\" (`const` at body[1])",
-        "owners/cache",
+        "source_units/cache",
         "as `cache`",
         "duplicates/cache",
         "as `cacheAgain`",

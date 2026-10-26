@@ -2,7 +2,7 @@ pub mod schema;
 
 use std::collections::BTreeSet;
 
-use crate::graph::{OwnerEdgeId, OwnerId};
+use crate::graph::{DependencyEdgeId, SourceUnitId};
 use crate::ids::ModuleId;
 use crate::reports::schema::ModuleKey;
 
@@ -16,26 +16,26 @@ use crate::reports::schema::ModuleKey;
 ///   projection: module names stringified to `ModulePath`, plus FAS
 ///   `cut` / `lazy_closure` decorations.
 /// - [`schema::QuotientSccReport`] — the wire projection: wire-stable
-///   string ids in place of typed [`ModuleId`] / [`OwnerEdgeId`],
+///   string ids in place of typed [`ModuleId`] / [`DependencyEdgeId`],
 ///   covering every dep-graph SCC (not only the unrealizable ones).
 ///
 /// The rendered/wire projections re-encode these two fields with their
 /// own id spelling and decorations, so they point here rather than
 /// re-describing the shape. [`crate::assignment_assembly::AtomicGroupConflict`]
 /// is the atom-level sibling — same "unrealizable, here's why" framing
-/// but a different domain (owners in an atomic group, not modules in an
+/// but a different domain (source units in an atomic group, not modules in an
 /// SCC), so it does not reuse this core.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct SccCore {
     /// Modules participating in the cycle.
     pub modules: BTreeSet<ModuleId>,
-    /// Constraining cross-module owner-edge evidence backing the SCC,
-    /// in stable [`OwnerEdgeId`] order.
-    pub constraining_owner_edges: Vec<OwnerEdgeId>,
+    /// Constraining cross-module dependency-edge evidence backing the SCC,
+    /// in stable [`DependencyEdgeId`] order.
+    pub constraining_dependency_edges: Vec<DependencyEdgeId>,
 }
 
-pub fn owner_key(id: OwnerId) -> String {
-    format!("owner:{}", id.0)
+pub fn source_unit_key(id: SourceUnitId) -> String {
+    format!("unit:{}", id.0)
 }
 
 pub fn module_key(id: ModuleId) -> ModuleKey {

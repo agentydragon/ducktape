@@ -18,7 +18,7 @@
 //!
 //! These tests drive the real `debundle` binary: the spec carries
 //! `makes_decorate_call` selectors, the decorate-call facts are derived from the
-//! chunk AST and joined to each helper callee's declaring owner, and we assert the
+//! chunk AST and joined to each helper callee's declaring source_unit, and we assert the
 //! resolved binding lands in the right module under its readable name and the
 //! emitted tree runs under Node with decoration semantics intact.
 

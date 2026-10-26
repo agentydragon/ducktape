@@ -2,7 +2,7 @@
 //! members, modules, and anonymous statements. The lowering pass
 //! renders the comments as `// ...` lines: module-level at the top
 //! of the generated file (above the lowerer's pragma block),
-//! per-member immediately above the binding's owner statement, and
+//! per-member immediately above the binding's source_unit statement, and
 //! anonymous-statement comments immediately above the matched
 //! side-effecting statement.
 
@@ -27,7 +27,7 @@ fn assert_contains_in_order(code: &str, needles: &[&str]) {
 }
 
 #[test]
-fn single_line_member_comment_lands_above_owner_statement() {
+fn single_line_member_comment_lands_above_source_unit_statement() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"function a() { return "a"; }
 function b() { return "b"; }

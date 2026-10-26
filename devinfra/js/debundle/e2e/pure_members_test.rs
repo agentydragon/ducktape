@@ -164,15 +164,15 @@ export { component, later };
         .with_extra_files(VENDOR_FILE),
     );
 
-    let graph = fixture.owner_graph();
-    let component_owner = owner_for_binding(&graph, "component");
-    let later_owner = owner_for_binding(&graph, "later");
+    let graph = fixture.dependency_graph();
+    let component_source_unit = source_unit_for_binding(&graph, "component");
+    let later_source_unit = source_unit_for_binding(&graph, "later");
     let promoted: Vec<_> = graph
         .edges
         .iter()
         .filter(|edge| {
-            edge.source == component_owner
-                && edge.target == later_owner
+            edge.source == component_source_unit
+                && edge.target == later_source_unit
                 && edge.edge_kind == DepKind::EagerUse
                 && matches!(edge.role, Some(EdgeRoleReport::PromotedAtInit { .. }))
         })
@@ -182,7 +182,7 @@ export { component, later };
         promoted.is_empty(),
         "`ns.forwardRef(() => later)` should not promote the callback \
          body's lazy read of `later` into an at-init eager edge; got \
-         {promoted:#?}\n\nFull owner graph: {graph:#?}",
+         {promoted:#?}\n\nFull dependency graph: {graph:#?}",
     );
     assert_entry_output(&fixture, "object ready\n");
 }

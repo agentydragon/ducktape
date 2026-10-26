@@ -36,8 +36,10 @@ fn analyze_facts(module: &Module) -> Vec<StatementFacts> {
     analyze_facts_with_hints(module, &AnalysisInputs::default())
 }
 
-fn build_owner_graph(facts: &[StatementFacts]) -> Result<OwnerGraph, DuplicateTopLevelDeclaration> {
-    build_owner_graph_with(facts, OwnerGraphOptions::default())
+fn build_dependency_graph(
+    facts: &[StatementFacts],
+) -> Result<DependencyGraph, DuplicateTopLevelDeclaration> {
+    build_dependency_graph_with(facts, DependencyGraphOptions::default())
 }
 
 /// A direct call `f()` at the chunk top level records `f` in the
@@ -84,15 +86,15 @@ fn constructor_summary_excludes_uninvoked_methods() {
     );
     let facts = analyze_facts(&module);
     assert!(facts[2].reads.lazy.contains(&test_id("b")));
-    let graph = build_owner_graph(&facts).expect("owner graph");
+    let graph = build_dependency_graph(&facts).expect("dependency graph");
     assert!(graph.iter_edges().any(|edge| {
-        edge.from == OwnerId(3)
-            && edge.to == OwnerId(0)
+        edge.from == SourceUnitId(3)
+            && edge.to == SourceUnitId(0)
             && matches!(edge.reason.role(), EdgeRole::PromotedAtInit { .. })
     }));
     assert!(!graph.iter_edges().any(|edge| {
-        edge.from == OwnerId(3)
-            && edge.to == OwnerId(1)
+        edge.from == SourceUnitId(3)
+            && edge.to == SourceUnitId(1)
             && matches!(edge.reason.role(), EdgeRole::PromotedAtInit { .. })
     }));
 }
@@ -103,10 +105,10 @@ fn constructor_summary_includes_methods_it_may_call() {
         "const b = 2; class Foo { constructor() { this.used(); } used() { return b; } } const result = new Foo();",
     );
     let facts = analyze_facts(&module);
-    let graph = build_owner_graph(&facts).expect("owner graph");
+    let graph = build_dependency_graph(&facts).expect("dependency graph");
     assert!(graph.iter_edges().any(|edge| {
-        edge.from == OwnerId(2)
-            && edge.to == OwnerId(0)
+        edge.from == SourceUnitId(2)
+            && edge.to == SourceUnitId(0)
             && matches!(edge.reason.role(), EdgeRole::PromotedAtInit { .. })
     }));
 }
@@ -161,7 +163,7 @@ fn vardecl_arrow_body_call_recorded() {
 
 /// A binding rebind inside a function's immediate body
 /// shows up in both `rebinds.lazy` and `rebinds.first_order_lazy`.
-/// At-init promotion and the direct `lazy_rebind` owner edge
+/// At-init promotion and the direct `lazy_rebind` dependency edge
 /// both read from the first-order subset.
 #[test]
 fn first_order_lazy_rebind_in_immediate_body() {
@@ -178,7 +180,7 @@ fn first_order_lazy_rebind_in_immediate_body() {
 /// A binding rebind inside a class method body sits at depth 1
 /// (the method's function body is the immediate body, just like
 /// a bare `function f() { ... }`). Must show up in
-/// `rebinds.first_order_lazy` so the owner-graph emits a
+/// `rebinds.first_order_lazy` so the dependency graph emits a
 /// constraining `LazyRebind` edge for it.
 #[test]
 fn first_order_lazy_rebind_in_class_method_body() {
@@ -353,7 +355,7 @@ fn parent_call_after_nested_await_is_not_first_order() {
     );
     assert!(
         !facts[1].first_order_unresolved_inline_fn,
-        "the post-await reduce call must not trigger whole-owner inline fallback"
+        "the post-await reduce call must not trigger whole-source_unit inline fallback"
     );
 }
 
@@ -456,11 +458,11 @@ fn no_sync_callback_member_hint_suppresses_argument_fallback_roots() {
          as synchronously invoked fallback roots"
     );
 
-    let graph = build_owner_graph(&facts).unwrap();
+    let graph = build_dependency_graph(&facts).unwrap();
     assert!(
         graph.iter_edges().all(|edge| {
-            !(edge.from == OwnerId(3)
-                && edge.to == OwnerId(1)
+            !(edge.from == SourceUnitId(3)
+                && edge.to == SourceUnitId(1)
                 && edge.reason.kind == DepKind::EagerUse)
         }),
         "provider method body reads must not be promoted through \
@@ -504,11 +506,11 @@ fn no_sync_callback_member_hint_suppresses_first_order_argument_fallback_roots()
          seed provider arguments as fallback roots"
     );
 
-    let graph = build_owner_graph(&facts).unwrap();
+    let graph = build_dependency_graph(&facts).unwrap();
     assert!(
         graph.iter_edges().all(|edge| {
-            !(edge.from == OwnerId(4)
-                && edge.to == OwnerId(1)
+            !(edge.from == SourceUnitId(4)
+                && edge.to == SourceUnitId(1)
                 && edge.reason.kind == DepKind::EagerUse)
         }),
         "provider method body reads must not be promoted through boot(): {:#?}",
@@ -645,14 +647,14 @@ console.log("tail");"#,
     assert_eq!(facts[4].local_effects, BTreeSet::from([test_id("C")]));
     assert!(facts[4].purity.is_pure());
 
-    let graph = build_owner_graph(&facts).unwrap();
+    let graph = build_dependency_graph(&facts).unwrap();
     let local_effects: Vec<_> = graph
         .iter_edges()
         .filter(|edge| edge.reason.kind == DepKind::LocalEffect)
         .collect();
     assert_eq!(local_effects.len(), 1);
-    assert_eq!(local_effects[0].from, OwnerId(4));
-    assert_eq!(local_effects[0].to, OwnerId(3));
+    assert_eq!(local_effects[0].from, SourceUnitId(4));
+    assert_eq!(local_effects[0].to, SourceUnitId(3));
     assert_eq!(
         local_effects[0]
             .reason
@@ -664,7 +666,7 @@ console.log("tail");"#,
     assert!(
         graph.iter_edges().all(|edge| {
             edge.reason.kind != DepKind::Sequenced
-                || (edge.from != OwnerId(4) && edge.to != OwnerId(4))
+                || (edge.from != SourceUnitId(4) && edge.to != SourceUnitId(4))
         }),
         "recognized decorate helper must not participate in unrelated global S edges: {:#?}",
         graph.iter_edges().collect::<Vec<_>>(),
@@ -1150,13 +1152,13 @@ fn lazy_class_registration_cannot_suppress_an_eager_callback_source() {
 /// `var`; any other mix is refused, naming the binding and the first two sites.
 #[test]
 fn repeated_declaration_is_refused_unless_every_site_is_var() {
-    build_owner_graph(&analyze_facts(&parse("var pick = 1;\nvar pick = 2;"))).unwrap();
+    build_dependency_graph(&analyze_facts(&parse("var pick = 1;\nvar pick = 2;"))).unwrap();
     for source in [
         "function pick() {}\nfunction pick() {}",
         "var pick = 1;\nfunction pick() {}",
     ] {
         assert_eq!(
-            build_owner_graph(&analyze_facts(&parse(source))).unwrap_err(),
+            build_dependency_graph(&analyze_facts(&parse(source))).unwrap_err(),
             DuplicateTopLevelDeclaration {
                 binding: "pick".into(),
                 first: StatementOrdinal(0),

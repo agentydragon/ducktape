@@ -175,7 +175,7 @@ impl VendorResolutionPlan {
     }
 
     /// Chunks excluded from the emission set: fully-swapped chunks stay
-    /// in the `ChunkBundle` (nothing removes them; the owner graph
+    /// in the `ChunkBundle` (nothing removes them; the dependency graph
     /// never contained vendor chunks) but `write_js_tree` / harness
     /// emission and the emission-output validations skip them.
     pub fn full_swap_chunk_ids(&self) -> BTreeSet<ChunkId> {

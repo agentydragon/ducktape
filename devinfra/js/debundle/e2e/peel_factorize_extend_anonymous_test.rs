@@ -19,7 +19,7 @@
 //! target at all) must NOT be promoted into a single-module
 //! extension.
 
-use analysis::OwnerGraphReport;
+use analysis::DependencyGraphReport;
 use debundle_e2e_support::*;
 use peel::propose::propose;
 use spec::ModulePath;
@@ -41,10 +41,10 @@ fn claims(pairs: &[(&str, &str)]) -> BTreeMap<String, ModulePath> {
 fn build_report_from_source(
     source: &str,
     logical_modules: Vec<LogicalModuleEntry>,
-) -> OwnerGraphReport {
+) -> DependencyGraphReport {
     let mut opts = FixtureOpts::new(source, logical_modules);
     opts.unassigned_mode = unassigned_mode_inline();
-    run_fixture(opts).owner_graph()
+    run_fixture(opts).dependency_graph()
 }
 
 #[test]
@@ -52,9 +52,9 @@ fn extend_existing_module_with_orphaned_decorator_calls() {
     // `features/foo` claims `Foo`. The three property installs
     // are anonymous side-effect statements that read `Foo`
     // eagerly. Their only cross-module constraining edge is to
-    // `Foo`'s owner — i.e., into `features/foo`. The proposer
+    // `Foo`'s source_unit — i.e., into `features/foo`. The proposer
     // must propose extending `features/foo` with those three
-    // owners.
+    // source_units.
     let source = r#"const anchor = "anchor";
 class Foo {
   method() { return this.x; }
@@ -84,9 +84,9 @@ export { anchor, Foo };
             )
         });
     assert_eq!(
-        extension.extension_owner_ids.len(),
+        extension.extension_source_unit_ids.len(),
         3,
-        "extension must list all three anonymous statement owners; got: {extension:#?}",
+        "extension must list all three anonymous statement source_units; got: {extension:#?}",
     );
     assert!(
         extension.binding_ids.is_empty(),
@@ -151,7 +151,7 @@ export { anchor, Foo, Bar };
     let anon_extension = report.proposals.iter().find(|p| {
         p.extends_module_id.is_some()
             && p.binding_ids.is_empty()
-            && !p.extension_owner_ids.is_empty()
+            && !p.extension_source_unit_ids.is_empty()
     });
     assert!(
         anon_extension.is_none(),
@@ -187,7 +187,7 @@ export { anchor, Foo };
         !report.proposals.iter().any(|p| {
             p.extends_module_id.as_deref() == Some("features/foo")
                 && p.binding_ids.is_empty()
-                && !p.extension_owner_ids.is_empty()
+                && !p.extension_source_unit_ids.is_empty()
         }),
         "intra-residual anon must not be misrouted into a `features/foo` extension: {report:#?}",
     );

@@ -148,7 +148,7 @@ pub(crate) fn lazy_visit_class_member<V: LazyBoundary>(v: &mut V, member: &Class
         // No outer descend here — a method body must land at
         // lazy_depth 1, the same as a bare `function f() { ... }`,
         // so rebinds in the immediate body show up in
-        // `rebinds.first_order_lazy` and the owner-graph emits the
+        // `rebinds.first_order_lazy` and the dependency graph emits the
         // constraining `LazyRebind` edge that catches cross-module
         // writes to imported bindings (ESM rejects at runtime).
         ClassMember::Method(method) => {

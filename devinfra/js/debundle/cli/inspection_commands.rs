@@ -18,7 +18,7 @@ use std::path::PathBuf;
 
 /// Args for `debundle describe <id>`.
 ///
-/// `<id>` is dispatched on shape: `owner:NNN`, `atomic:NNN` (an atomic group),
+/// `<id>` is dispatched on shape: `unit:NNN`, `atomic:NNN` (an atomic group),
 /// `diagnostic:...`, `auto_partition_NNNN`/`extend:...`, a module path
 /// (resolves to `<modules>/<id>.yaml`), or otherwise a binding
 /// (minified or readable name).
@@ -60,7 +60,7 @@ pub(super) struct InspectSourceArgs {
     #[arg(long, conflicts_with_all = ["source_file", "chunk", "statements", "around_binding"])]
     pub id: Option<String>,
 
-    /// Owner graph for --id (or DEBUNDLE_GRAPH).
+    /// Dependency graph for --id (or DEBUNDLE_GRAPH).
     #[arg(long, env = "DEBUNDLE_GRAPH")]
     pub graph: Option<PathBuf>,
 
@@ -129,7 +129,7 @@ struct InspectSourceReport {
     #[serde(skip_serializing_if = "Option::is_none")]
     query: Option<peel::plan::QueryReport>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    selected_owner_count: Option<usize>,
+    selected_source_unit_count: Option<usize>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     unknown_binding_ids: Vec<String>,
     index_basis: &'static str,
@@ -155,20 +155,20 @@ struct InspectedStatement {
     end_line: usize,
     end_column: usize,
     bindings: Vec<String>,
-    owner_ids: Vec<String>,
+    source_unit_ids: Vec<String>,
     source: String,
     omitted_source_bytes: usize,
 }
 
 /// Dispatch an `<id>` argument into the [`SelectionKind`] it names. Module
-/// paths and logical module ids resolve through the same owner-graph/spec
+/// paths and logical module ids resolve through the same dependency-graph/spec
 /// claim path as other structured IDs, so binding members and anonymous
 /// statements stay in sync.
 fn dispatch_id_selection(id: &str, modules_root: &std::path::Path) -> Result<SelectionKind> {
     // Prefix-based dispatch covers the structured ID kinds emitted by
     // the analysis crate.
-    if id.starts_with("owner:") {
-        return Ok(SelectionKind::Owner(id.to_string()));
+    if id.starts_with("unit:") {
+        return Ok(SelectionKind::SourceUnit(id.to_string()));
     }
     if id.starts_with("logical:") {
         return Ok(SelectionKind::Module(id.to_string()));
@@ -243,9 +243,9 @@ pub(super) fn run_describe(args: DescribeArgs) -> Result<()> {
 pub(super) fn run_inspect_source(args: InspectSourceArgs) -> Result<()> {
     let mut report = InspectSourceReport {
         query: None,
-        selected_owner_count: None,
+        selected_source_unit_count: None,
         unknown_binding_ids: Vec::new(),
-        index_basis: "zero-based raw parsed Module.body index; not a graph owner ordinal",
+        index_basis: "zero-based raw parsed Module.body index; not a source-unit ordinal",
         view: args.view,
         files: Vec::new(),
         omitted_items: 0,
@@ -256,7 +256,7 @@ pub(super) fn run_inspect_source(args: InspectSourceArgs) -> Result<()> {
         let selection = dispatch_id_selection(id, &modules)?;
         let selected = run_source_selection_report(&SourceSelectionArgs {
             common: PeelCommonArgs {
-                owner_graph_path: graph,
+                dependency_graph_path: graph,
                 modules_root: modules,
             },
             selection,
@@ -264,32 +264,35 @@ pub(super) fn run_inspect_source(args: InspectSourceArgs) -> Result<()> {
             source_root: args.source_root.clone(),
         })?;
         report.query = Some(selected.query);
-        report.selected_owner_count = Some(selected.owner_ids.len());
+        report.selected_source_unit_count = Some(selected.source_unit_ids.len());
         report.unknown_binding_ids = selected.unknown_binding_ids;
-        let mut by_file: BTreeMap<String, Vec<peel::SelectedOwnerSource>> = BTreeMap::new();
-        for owner in selected.owners {
+        let mut by_file: BTreeMap<String, Vec<peel::SelectedSourceUnitSource>> = BTreeMap::new();
+        for source_unit in selected.source_units {
             by_file
-                .entry(owner.resolved_path.clone())
+                .entry(source_unit.resolved_path.clone())
                 .or_default()
-                .push(owner);
+                .push(source_unit);
         }
-        for (path, owners) in by_file {
+        for (path, source_units) in by_file {
             let source = PreparedSource::load(&path)?;
             let mut by_index: BTreeMap<usize, BTreeSet<String>> = BTreeMap::new();
-            let ordinals: Vec<_> = owners.iter().map(|owner| owner.statement_ordinal).collect();
-            for (owner, index) in owners
+            let ordinals: Vec<_> = source_units
                 .iter()
-                .zip(source.body_indices_for_owner_ordinals(&ordinals))
+                .map(|source_unit| source_unit.statement_ordinal)
+                .collect();
+            for (source_unit, index) in source_units
+                .iter()
+                .zip(source.body_indices_for_source_unit_ordinals(&ordinals))
             {
                 let index = index.with_context(|| {
                     format!(
-                        "owner {} ordinal {} is outside parsed source {}; regenerate the owner graph",
-                        owner.owner_id, owner.statement_ordinal, path
+                        "source unit {} ordinal {} is outside parsed source {}; regenerate the dependency graph",
+                        source_unit.source_unit_id, source_unit.statement_ordinal, path
                     )
                 })?;
                 let row = source.statement_coordinates(index)?;
-                let location = &owner.source_location;
-                // A split comma-list owner can start inside its raw item.
+                let location = &source_unit.source_location;
+                // A split comma-list source unit can start inside its raw item.
                 // Its recorded span must still fit within that item's span.
                 let starts_before_item = location.start_line < row.start_line
                     || (location.start_line == row.start_line
@@ -303,8 +306,8 @@ pub(super) fn run_inspect_source(args: InspectSourceArgs) -> Result<()> {
                             .is_some_and(|column| column > row.end_column));
                 if starts_before_item || starts_after_item || location.end_line > row.end_line {
                     bail!(
-                        "owner {} location {:?} does not fit body[{index}] at {}:{}..{}:{} in {}; regenerate the owner graph from this source",
-                        owner.owner_id,
+                        "source unit {} location {:?} does not fit body[{index}] at {}:{}..{}:{} in {}; regenerate the dependency graph from this source",
+                        source_unit.source_unit_id,
                         location,
                         row.start_line,
                         row.start_column,
@@ -316,7 +319,7 @@ pub(super) fn run_inspect_source(args: InspectSourceArgs) -> Result<()> {
                 by_index
                     .entry(index)
                     .or_default()
-                    .insert(owner.owner_id.clone());
+                    .insert(source_unit.source_unit_id.clone());
             }
             append_file(
                 &mut report,
@@ -364,12 +367,12 @@ pub(super) fn run_inspect_source(args: InspectSourceArgs) -> Result<()> {
 fn append_file(
     report: &mut InspectSourceReport,
     source: &PreparedSource,
-    mut owners_by_index: BTreeMap<usize, BTreeSet<String>>,
+    mut source_units_by_index: BTreeMap<usize, BTreeSet<String>>,
     context: usize,
     args: &InspectSourceArgs,
 ) -> Result<()> {
     let mut indices = BTreeSet::new();
-    for index in owners_by_index.keys() {
+    for index in source_units_by_index.keys() {
         indices.extend(
             index.saturating_sub(context)
                 ..=index
@@ -401,7 +404,7 @@ fn append_file(
                 .remove(0);
             Ok(inspected_statement(
                 row,
-                owners_by_index
+                source_units_by_index
                     .remove(&index)
                     .unwrap_or_default()
                     .into_iter()
@@ -430,10 +433,10 @@ fn render_inspect_source_text(report: &InspectSourceReport, out: &mut String) {
     ));
     if let Some(query) = &report.query {
         out.push_str(&format!(
-            "Selection: {:?} {:?} ({} owner(s))\n",
+            "Selection: {:?} {:?} ({} source_unit(s))\n",
             query.kind,
             query.value,
-            report.selected_owner_count.unwrap_or(0)
+            report.selected_source_unit_count.unwrap_or(0)
         ));
     }
     for file in &report.files {
@@ -448,7 +451,7 @@ fn render_inspect_source_text(report: &InspectSourceReport, out: &mut String) {
                 statement.bindings.join(", ")
             };
             out.push_str(&format!(
-                "\nbody[{}] bytes={}..{} location={}:{}..{}:{} bindings=[{}] owners=[{}]\n",
+                "\nbody[{}] bytes={}..{} location={}:{}..{}:{} bindings=[{}] source_units=[{}]\n",
                 statement.index,
                 statement.byte_start,
                 statement.byte_end,
@@ -457,7 +460,7 @@ fn render_inspect_source_text(report: &InspectSourceReport, out: &mut String) {
                 statement.end_line,
                 statement.end_column,
                 bindings,
-                statement.owner_ids.join(", "),
+                statement.source_unit_ids.join(", "),
             ));
             for line in statement.source.lines() {
                 out.push_str("  ");
@@ -486,7 +489,7 @@ fn displayed_statement_count(report: &InspectSourceReport) -> usize {
 
 fn inspected_statement(
     row: StatementRow,
-    owner_ids: Vec<String>,
+    source_unit_ids: Vec<String>,
     view: SourceView,
     max_line_bytes: usize,
 ) -> InspectedStatement {
@@ -504,7 +507,7 @@ fn inspected_statement(
         end_line: row.end_line,
         end_column: row.end_column,
         bindings: row.bindings,
-        owner_ids,
+        source_unit_ids,
         omitted_source_bytes: full_source.len() - source.len(),
         source,
     }
@@ -623,8 +626,8 @@ fn render_graph_summary_text(report: &peel::GraphSummaryReport, out: &mut String
         .unwrap_or_else(|| "skipped".to_string());
     out.push_str(&format!(
         "owners={} edges={} atomic_groups={} residual_atomic_groups={} proposals={} diagnostics={}\n",
-        report.owner_count,
-        report.owner_edge_count,
+        report.source_unit_count,
+        report.dependency_edge_count,
         report.atomic_group_count,
         report.residual_atomic_group_count,
         proposal_count,
@@ -637,7 +640,10 @@ fn render_explain_text(report: &peel::ExplainReport, out: &mut String) {
         "{:?} {:?}\n",
         report.query.kind, report.query.value
     ));
-    out.push_str(&format!("  owners: {}\n", report.owner_ids.join(", ")));
+    out.push_str(&format!(
+        "  owners: {}\n",
+        report.source_unit_ids.join(", ")
+    ));
     out.push_str(&format!(
         "  bindings: {}\n",
         report
@@ -658,7 +664,7 @@ fn render_explain_text(report: &peel::ExplainReport, out: &mut String) {
     }
     if !report.unknown_binding_ids.is_empty() {
         out.push_str(&format!(
-            "  unknown bindings (claimed but absent from owner graph): {}\n",
+            "  unknown bindings (claimed but absent from dependency graph): {}\n",
             report.unknown_binding_ids.join(", ")
         ));
     }

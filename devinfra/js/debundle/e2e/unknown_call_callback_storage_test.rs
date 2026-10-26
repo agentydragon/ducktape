@@ -1,4 +1,4 @@
-//! Callback values retained by globals, objects, and same-owner assignments
+//! Callback values retained by globals, objects, and same-source_unit assignments
 //! remain observable at an opaque call's source prefix.
 
 use debundle_e2e_support::*;
@@ -62,7 +62,7 @@ export { result, later };
     );
 }
 
-const SAME_OWNER_SOURCE: &str = r#"var reader;
+const SAME_SOURCE_UNIT_SOURCE: &str = r#"var reader;
 globalThis.saved = () => reader();
 globalThis.host = () => {
   try { globalThis.saved(); }
@@ -75,8 +75,8 @@ export { outcome, later };
 "#;
 
 #[test]
-fn same_owner_assignment_is_visible_to_unknown_call_callback() {
-    assert_later_is_atomic_with_callsite(SAME_OWNER_SOURCE, &["outcome", "reader"]);
+fn same_source_unit_assignment_is_visible_to_unknown_call_callback() {
+    assert_later_is_atomic_with_callsite(SAME_SOURCE_UNIT_SOURCE, &["outcome", "reader"]);
 }
 
 #[test]

@@ -1,4 +1,4 @@
-//! End-to-end coverage for per-declarator owner split on top-level
+//! End-to-end coverage for per-declarator source_unit split on top-level
 //! comma-lists.
 //!
 //! A top-level `var/let/const a = 1, b = 2;` declares two

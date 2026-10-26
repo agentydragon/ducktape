@@ -180,7 +180,7 @@ confirmed it.
 
 Open usability and scripting-safety findings from exercising the documented
 workflows against a real spec; resolved items are deleted. Corpus-specific
-paths and owner ids belong in the consuming repo.
+paths and source-unit IDs belong in the consuming repo.
 
 ### Planner CLI follow-ups
 
@@ -191,7 +191,7 @@ paths and owner ids belong in the consuming repo.
   rows are the only thing the caller wants.
 - **Concise explain mode.** Proposal/diagnostic structures on
   `describe` are already opt-in (`--include-proposals`), but there is
-  still no compact mode focused on: selected owner identity and source
+  still no compact mode focused on: selected source-unit IDentity and source
   span, atomic-group membership, matching proposal (if any), immediate
   constraining neighbors, and the exact reason the owner is not
   landable today.

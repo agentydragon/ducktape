@@ -7,7 +7,7 @@
 //! try { var impl = detect(); } catch (e) { var impl = fallback(); }
 //! ```
 //!
-//! the statement owns `impl`: readers of `impl` get an owner-graph edge and
+//! the statement owns `impl`: readers of `impl` get a dependency graph edge and
 //! import wiring (otherwise the emitted reader module references a name
 //! that doesn't exist in its scope — runtime `ReferenceError`), and `try {
 //! var Math = shim; } catch {}` counts for the A8 shadowed-globals
@@ -63,7 +63,7 @@ export { reader };
 /// A8 shadowing: `try { var Math = shim; } catch {}` makes every
 /// unqualified `Math.<prop>` in the chunk a read of the shim, not the
 /// global. `Math` is chunk-declared, so `const out = Math.PI` is not
-/// whitelisted-pure and the read gets an eager owner edge into entry,
+/// whitelisted-pure and the read gets an eager dependency edge into entry,
 /// which evaluates last — unrealizable, rejected.
 #[test]
 fn block_hoisted_var_shadowing_whitelisted_global_is_rejected() {

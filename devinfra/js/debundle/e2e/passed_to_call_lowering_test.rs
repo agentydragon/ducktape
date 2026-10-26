@@ -4,14 +4,14 @@
 //! callee (`registry.register(Target)`) — rather than by the target's own body,
 //! its own use sites (`reads_member` / `member_of_module`), or its own minified
 //! name. This is the inverse direction of `member_of_module`: that primitive pins
-//! the owner whose *own* subtree consumes `mod.X` and explicitly cannot reach a
+//! the source_unit whose *own* subtree consumes `mod.X` and explicitly cannot reach a
 //! target distinguished only by an external registration statement (the call site
 //! declares nothing, so its `declares` conjunct excludes it). This primitive closes
 //! that gap.
 //!
 //! These tests drive the real `debundle` binary: the spec carries
 //! `passed_to_call` selectors, the call-argument facts are derived from the chunk
-//! AST and joined to each argument's declaring owner, and we assert the resolved
+//! AST and joined to each argument's declaring source_unit, and we assert the resolved
 //! binding lands in the right module and the emitted tree runs under Node.
 //!
 //! ## The registry-distinguished empty class (the headline case)
@@ -154,7 +154,7 @@ export { host, Widget, Mixin };
 }
 
 /// Fail-closed: a `passed_to_call` whose callee member is the argument of **two**
-/// declaring owners is ambiguous, so it errors rather than guessing one.
+/// declaring source_units is ambiguous, so it errors rather than guessing one.
 #[test]
 fn passed_to_call_ambiguous_fails_closed() {
     expect_rejection_containing_all(
@@ -179,7 +179,7 @@ export { r, A, B };
 }
 
 /// Fail-closed: a `passed_to_call` whose callee member no call passes a declaring
-/// owner to errors rather than silently dropping the claim.
+/// source_unit to errors rather than silently dropping the claim.
 #[test]
 fn passed_to_call_zero_match_fails_closed() {
     expect_rejection_containing_all(
@@ -234,8 +234,8 @@ export { r, A };
 
 /// Fail-closed: the argument naming the target must be a chunk-top declaration.
 /// When the registration passes a non-declared value (a `new X()` expression, not
-/// a bare class binding), no call-argument row names a declaring owner, so the
-/// selector finds nothing and errors — never mis-resolving to an unrelated owner.
+/// a bare class binding), no call-argument row names a declaring source_unit, so the
+/// selector finds nothing and errors — never mis-resolving to an unrelated source_unit.
 #[test]
 fn passed_to_call_non_identifier_argument_fails_closed() {
     expect_rejection_containing_all(

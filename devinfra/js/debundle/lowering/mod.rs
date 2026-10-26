@@ -7,7 +7,7 @@ use serde::Serialize;
 use swc_common::GLOBALS;
 
 use analysis::facts::ExportReentryPolicy;
-use analysis::{OwnerGraphOptions, RedundantPurityHint};
+use analysis::{DependencyGraphOptions, RedundantPurityHint};
 
 use artifact::{
     ArtifactIndexes, ChunkBundle, ChunkId, SelectedModuleLowering, StaticModuleRequest,
@@ -107,7 +107,7 @@ pub struct FinalModuleContent {
     /// Canonical [`spec::ModulePath`] (the report is per-chunk, so
     /// the chunk is implicit).
     pub path: spec::ModulePath,
-    pub owner_ids: Vec<String>,
+    pub source_unit_ids: Vec<String>,
     pub residual: bool,
 }
 
@@ -196,20 +196,20 @@ pub struct ExportReentryTarget {
 pub enum ReportEmission {
     /// No reports.
     None,
-    /// Write every per-chunk report (owner graph, modules report,
+    /// Write every per-chunk report (dependency graph, modules report,
     /// rejection evidence) under this root. The directory is prepared
     /// (must be empty) up front.
     Full(PathBuf),
     /// Write reports only when the realizability gate rejects. Used by
     /// `debundle run --dry-run`: the accept path writes nothing (the
     /// no-output contract), but a rejection still materializes
-    /// `owner_graph.json` + `cycles.json` / `atomic_group_conflicts.json`
+    /// `dependency_graph.json` + `cycles.json` / `atomic_group_conflicts.json`
     /// so the documented `debundle gate list/describe` follow-up works.
     OnRejection(PathBuf),
 }
 
 impl ReportEmission {
-    /// Root for accept-path reports (owner graph, modules report).
+    /// Root for accept-path reports (dependency graph, modules report).
     pub fn full_dir(&self) -> Option<&Path> {
         match self {
             Self::Full(dir) => Some(dir),
@@ -243,7 +243,7 @@ pub struct MaterializeSpecInputs<'a> {
     pub logical_modules: &'a BTreeMap<String, BTreeMap<String, LogicalModule>>,
     pub chunk_renames: &'a BTreeMap<String, ChunkRenames>,
     pub unassigned_mode: &'a BTreeMap<String, UnassignedMode>,
-    pub chunk_analysis_options: &'a BTreeMap<String, OwnerGraphOptions>,
+    pub chunk_analysis_options: &'a BTreeMap<String, DependencyGraphOptions>,
     pub chunk_export_purity: &'a BTreeMap<String, ChunkExportPurity>,
 }
 

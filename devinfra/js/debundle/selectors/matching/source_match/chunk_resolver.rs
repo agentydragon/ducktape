@@ -51,7 +51,7 @@ pub struct ChunkResolver<'m> {
     /// for the whole chunk — the dominant cost of a corpus-wide resolve.
     body_indices: Vec<selector_match::Index>,
     /// One synthetic single-declarator subject index per declarator of every
-    /// var-decl owner, built once. The single-declarator var-decl member path
+    /// var-decl source_unit, built once. The single-declarator var-decl member path
     /// matches its needle against each declarator; without this it re-synthesizes
     /// the item and re-extracts facts for every declarator on every such selector
     /// (the second-worst per-selector cost after declarator holes).
@@ -77,7 +77,7 @@ pub struct ChunkResolver<'m> {
     declarator_tokens: std::collections::HashMap<selector_match::Token, Vec<usize>>,
 }
 
-/// A var-decl owner's single declarator, projected once to a synthetic
+/// A var-decl source_unit's single declarator, projected once to a synthetic
 /// single-declarator subject index. `body_idx`/`declarator_idx` locate the
 /// declarator back in `module.body` for binding extraction on a match.
 struct VarDeclaratorSubject {
@@ -272,7 +272,7 @@ fn matching_body_indices(
 /// A synthetic single-declarator version of a var-decl `item` keeping only
 /// `declarator`, cloned from the real item so span/context stay valid. Matching
 /// the single-declarator needle against this *is* the per-declarator match: a
-/// needle that matches one declarator of a multi-declarator owner is a real match
+/// needle that matches one declarator of a multi-declarator source_unit is a real match
 /// a whole-statement match would miss.
 pub(super) fn single_declarator_item(item: &ModuleItem, declarator: &VarDeclarator) -> ModuleItem {
     let mut cloned = item.clone();
@@ -289,7 +289,7 @@ pub(super) fn single_declarator_item(item: &ModuleItem, declarator: &VarDeclarat
 }
 
 /// Collect every single-declarator var-decl member match: the needle's
-/// declarator against every declarator of every var-decl owner (the per-declarator
+/// declarator against every declarator of every var-decl source_unit (the per-declarator
 /// path). Returns one `MemberBindingMatch` per matched declarator, body-index
 /// ascending (the cached `var_declarator_subjects` are built in body order).
 fn member_matches_var_declarator(
@@ -356,7 +356,7 @@ fn member_matches_var_declarator(
         };
         let item = &chunk.module.body[subject.body_idx];
         let declarator = &item_var_decl(item)
-            .expect("cached var-declarator subject owner is a var-decl")
+            .expect("cached var-declarator subject source_unit is a var-decl")
             .decls[subject.declarator_idx];
         let declared = declared_bindings_for_var_declarator(declarator);
         if selector.target_binding.is_none() && declared.len() != 1 {
@@ -386,7 +386,7 @@ fn member_matches_var_declarator(
 /// matcher without a prebind, preserving the distinction between a declared
 /// target and a free sibling reference that resolves to the same source binding.
 /// Exact mode prebinds the target name to preserve its intentional alpha-coupling.
-/// Both paths return one `MemberBindingMatch` per matched owner, body-index
+/// Both paths return one `MemberBindingMatch` per matched source_unit, body-index
 /// ascending.
 fn member_matches_declarator_hole(
     chunk: &ChunkResolver,
@@ -449,8 +449,8 @@ fn member_matches_declarator_hole(
     )
     .map_err(unsupported_error("source_match resolver"))?;
     let mut matches: Vec<MemberBindingMatch> = Vec::new();
-    // The fixed (non-hole) declarators pin invariant tokens any matching owner
-    // must carry, so the token index narrows the owner scan (the giant
+    // The fixed (non-hole) declarators pin invariant tokens any matching source_unit
+    // must carry, so the token index narrows the source_unit scan (the giant
     // `initBundle` var-decl is the worst case). The `DECLARATORS` holes pin none.
     // This path prebinds the `target_binding` (alpha-coupling the target name to a
     // candidate's binding), so the needle's identifier spellings are **not** required
@@ -461,7 +461,7 @@ fn member_matches_declarator_hole(
             continue;
         };
         // Reuse the cached body index across the candidate-binding inner loop:
-        // every alignment attempt for this owner shares one prebuilt subject index.
+        // every alignment attempt for this source_unit shares one prebuilt subject index.
         let subject_index = &chunk.body_indices[body_idx];
         let alignment = target_binding_candidate_names(candidate_var, target_binding_idx)
             .into_iter()
@@ -507,7 +507,7 @@ fn member_matches_declarator_hole(
 
 /// Collect every multi-statement member match whose target item is a
 /// single-declarator var-decl: per-declarator across contiguous windows (the
-/// target may live in a declarator of a multi-declarator owner), reading the
+/// target may live in a declarator of a multi-declarator source_unit), reading the
 /// matched declarator's binding at `target_binding_idx`. One `MemberBindingMatch`
 /// per matched window (`body_idx` is the target item's position, ascending).
 fn member_matches_single_declarator_target_window(
@@ -576,7 +576,7 @@ fn member_matches_multi(
     let (target_item_idx, target_binding_idx) =
         selector_binding_location(needles, request_id, selector, target_binding)?;
     // A single-declarator var-decl target is matched per-declarator within the
-    // contiguous window (so a target inside a multi-declarator owner is found).
+    // contiguous window (so a target inside a multi-declarator source_unit is found).
     if selector_single_var_declarator(&needles[target_item_idx]).is_some() {
         return member_matches_single_declarator_target_window(
             chunk,
@@ -639,7 +639,7 @@ fn member_matches_multi(
 /// Binding-group branch 2 — a single-statement declarator-hole needle (the
 /// `*-module_*` group, e.g. tooltip's `const DECLARATORS_BEFORE = null, a = …,
 /// DECLARATORS_GAP = null, b = …, DECLARATORS_AFTER = null;`): one plain
-/// (un-prebound) declarator alignment per candidate owner yields every target's
+/// (un-prebound) declarator alignment per candidate source_unit yields every target's
 /// declarator at once.
 fn group_matches_declarator_holes(
     chunk: &ChunkResolver,
@@ -719,8 +719,8 @@ fn group_matches_declarator_holes(
 }
 
 /// Binding-group branch 1 — a single-statement single-declarator needle: match
-/// the declarator across every owner's declarators (a target inside a
-/// multi-declarator owner is found), reading each target's binding from the one
+/// the declarator across every source_unit's declarators (a target inside a
+/// multi-declarator source_unit is found), reading each target's binding from the one
 /// matched declarator.
 fn group_matches_single_declarator(
     chunk: &ChunkResolver,
@@ -776,7 +776,7 @@ fn group_matches_single_declarator(
         };
         let item = &chunk.module.body[subject.body_idx];
         let declarator = &item_var_decl(item)
-            .expect("cached var-declarator subject owner is a var-decl")
+            .expect("cached var-declarator subject source_unit is a var-decl")
             .decls[subject.declarator_idx];
         let declarator_bindings = declared_bindings_for_var_declarator(declarator);
         let mut resolved = BTreeMap::new();
@@ -862,7 +862,7 @@ fn candidate_target_binding(
 }
 
 /// Binding-group branch 3 — a general (multi-statement or non-var) needle: a
-/// single top-level sequence alignment supplies every target's owner statement,
+/// single top-level sequence alignment supplies every target's source_unit statement,
 /// read by declared-binding index.
 fn group_matches_general(
     chunk: &ChunkResolver,
@@ -1070,7 +1070,7 @@ impl ChunkResolver<'_> {
 
     /// Every candidate alignment of a binding-group `source_match` selector,
     /// each carrying per-target body indices so the global selector solve can
-    /// claim the actual owner of every exported binding.
+    /// claim the actual source_unit of every exported binding.
     pub fn member_group_candidates(
         &self,
         request_id: &str,
@@ -1313,7 +1313,7 @@ mod tests {
     }
 
     #[test]
-    fn chunk_resolver_declarator_inside_multi_declarator_owner() {
+    fn chunk_resolver_declarator_inside_multi_declarator_source_unit() {
         js_ast::with_swc_globals(|| {
             // The target init lives in the second declarator of a multi-declarator
             // statement — only declarator-level matching finds it.
@@ -1324,10 +1324,10 @@ mod tests {
     }
 
     #[test]
-    fn chunk_resolver_var_declarator_candidates_include_multi_declarator_owners() {
+    fn chunk_resolver_var_declarator_candidates_include_multi_declarator_source_units() {
         js_ast::with_swc_globals(|| {
             // The same init appears in two declarators (one inside a
-            // multi-declarator owner): both are candidates. A whole-statement match
+            // multi-declarator source_unit): both are candidates. A whole-statement match
             // would miss the multi-declarator one and report a single candidate.
             let chunk = module("const a = 1, b = compute();\nconst c = compute();\n");
             let selector = member("const x = compute();", Some("x"));
@@ -1336,9 +1336,9 @@ mod tests {
     }
 
     #[test]
-    fn chunk_resolver_declarator_hole_member_candidate_per_owner() {
+    fn chunk_resolver_declarator_hole_member_candidate_per_source_unit() {
         js_ast::with_swc_globals(|| {
-            // Two separate var-decl owners each match the hole needle: each is a
+            // Two separate var-decl source_units each match the hole needle: each is a
             // candidate.
             let chunk = module("const a = \"abc\";\nconst b = \"abc\";\n");
             let selector = member(
@@ -1355,7 +1355,7 @@ mod tests {
         js_ast::with_swc_globals(|| {
             // A contiguous two-statement window: a helper function then a
             // single-declarator var-decl target living inside a multi-declarator
-            // owner. Only per-declarator matching within the window finds it.
+            // source_unit. Only per-declarator matching within the window finds it.
             let chunk = module(
                 "function helper(n) { return n + 1; }\n\
                  const lead = 0, theTarget = makeThing(), tail = 1;\n\
@@ -1392,7 +1392,7 @@ mod tests {
             // with the pinned target declarator first (the corpus `const mR =
             // ANYTHING, DECLARATORS = null;` shape). The general multi-statement
             // path applies: the matcher absorbs the hole, and `declared_bindings[0]`
-            // names the anchored-left target owner.
+            // names the anchored-left target source_unit.
             let chunk = module(
                 "function helper(n) { return n; }\n\
                  const theTarget = compute(), extra = 1, more = 2;\n",
@@ -1468,7 +1468,7 @@ mod tests {
     // The exact-mode identifier candidate discriminator must stay a *sound*
     // prefilter: it may prune only declarators/statements that provably cannot
     // match. These tests exercise candidate lists that go through the discriminator
-    // (exact mode, identifier-bearing needles) and assert the correct owner is
+    // (exact mode, identifier-bearing needles) and assert the correct source_unit is
     // still found — i.e. the discriminator never prunes a real match.
 
     #[test]
@@ -1496,7 +1496,7 @@ mod tests {
             // referenced identifier; in exact mode the reference is compared
             // byte-for-byte. The discriminator must keep the declarator whose
             // reference matches (`dep_b`) — a wrongful prune would surface as no
-            // candidate, not a wrong owner.
+            // candidate, not a wrong source_unit.
             let chunk = module("const m = wrap(dep_a);\nconst m2 = wrap(dep_b);\n");
             let selector = exact_member("const m2 = wrap(dep_b);", Some("m2"));
             assert_eq!(member_names(&chunk, &selector), ["m2"]);
@@ -1524,7 +1524,7 @@ mod tests {
         js_ast::with_swc_globals(|| {
             // The declarator-hole path *prebinds* the target name, alpha-coupling it
             // to the candidate's binding — so the exact-mode discriminator must NOT
-            // require the needle's target identifier (`c`) of the subject. The owner
+            // require the needle's target identifier (`c`) of the subject. The source_unit
             // binds `theClass`, not `c`; the prebind path passes
             // `allow_exact_ident = false`, so the match is still found.
             let chunk = module("const p = 1, theClass = \"abc\", q = 2;\nconst other = 5;\n");

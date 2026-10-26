@@ -132,12 +132,12 @@ export { foo, getFoo, alias, result };
         ],
     ));
     assert_preserved_entry_output(&fixture, "1\n");
-    let graph = fixture.owner_graph();
+    let graph = fixture.dependency_graph();
     let result = graph
         .nodes
         .iter()
         .find(|node| node.declared_bindings.iter().any(|b| b.binding == "result"))
-        .expect("result owner");
+        .expect("result source_unit");
     let purity = serde_json::to_value(&result.purity).expect("serialize purity");
     assert_eq!(
         purity["kind"], "pure",

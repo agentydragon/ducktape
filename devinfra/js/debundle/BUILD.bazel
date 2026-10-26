@@ -451,19 +451,19 @@ rust_library(
         "facts/local_effect_targets.rs",
         "facts/local_effects.rs",
         "facts/mod.rs",
-        "facts/owner_read_closure.rs",
         "facts/purity_classification.rs",
         "facts/set_iterables.rs",
+        "facts/source_unit_read_closure.rs",
         "facts/statement_facts.rs",
         "facts/sync_effects.rs",
         "facts/value_flow.rs",
         "facts/value_flow_tests.rs",
         "facts/value_set_tests.rs",
         "graph/build.rs",
+        "graph/dependency_graph.rs",
         "graph/edge.rs",
         "graph/linker_order.rs",
         "graph/mod.rs",
-        "graph/owner_graph.rs",
         "graph/quotient.rs",
         "graph/tests.rs",
         "ids.rs",
@@ -586,7 +586,7 @@ rust_test(
     ],
 )
 
-# Test-only helpers for building owner-graph wire fixtures (the module
+# Test-only helpers for building dependency graph wire fixtures (the module
 # table + interned ModuleKey references). Shared by in-crate tests and
 # the separate integration / e2e test crates so the builders aren't
 # copy-pasted per test module.
@@ -1323,7 +1323,7 @@ rust_binary(
 
 # A faithful, fail-closed projection of a
 # parsed chunk into AST facts (kind/child/str_lit/prop_name/ident_name + the
-# owner-ordinal join). The extractor errors loudly on any construct it has not
+# source-unit-ordinal join). The extractor errors loudly on any construct it has not
 # modeled rather than emitting a silently-incomplete fact set. Seed slice; grows
 # construct-by-construct.
 rust_library(

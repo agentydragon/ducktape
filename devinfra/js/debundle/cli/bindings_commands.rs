@@ -30,7 +30,7 @@ enum BindingsNsCommand {
     /// current comment. An unset comment reads as `null` in JSON (an
     /// empty line in text), distinct from an explicit `comment: ""`.
     /// Member comments emit as JS comment blocks above the binding's
-    /// owner statement. Comments don't affect factorization, so there
+    /// source_unit statement. Comments don't affect factorization, so there
     /// is no `--no-verify`; `--dry-run` previews without writing.
     Comment(BindingCommentArgs),
     /// List every binding in the spec with home module + filters.
@@ -61,13 +61,13 @@ enum BindingsNsCommand {
     /// `anonymous_statements:`. A `source_matches[].bindings[]` move
     /// carries the source template and its claim note; moving only part
     /// of a claim splits that claim across modules. The post-batch gate
-    /// rejects any split of a source statement's atomic owner.
+    /// rejects any split of a source statement's atomic source_unit.
     /// Contract details: docs/cli.md § "Batch atomicity".
     Assign(BindingsAssignArgs),
     /// Remove one or more bindings from their current modules
     /// atomically; they fall through to residual.
     ///
-    /// Residual is the default for an owner no spec module claims.
+    /// Residual is the default for an source_unit no spec module claims.
     /// Same post-batch validation, gate, and drained-source-module
     /// sweep as `bindings assign`. Splitting an atom by unassigning
     /// only some of its members is rejected; unassigning a whole atom

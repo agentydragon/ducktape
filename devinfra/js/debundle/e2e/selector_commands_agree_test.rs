@@ -512,13 +512,13 @@ export { a, b };
         assert_all_commands_agree(&case),
         json!({
             "kind": "ambiguous",
-            "candidates": [{"owner": 0, "binding": "a"}, {"owner": 1, "binding": "b"}],
+            "candidates": [{"body_index": 0, "binding": "a"}, {"body_index": 1, "binding": "b"}],
             "truncated": false,
             // Alike in themselves, each is set apart by its neighbor: only
             // `a` is followed, and only `b` preceded, by a `"shared"` function.
             "differentiators": [
-                {"owner": 0, "statement": 1, "anchor": "string literal \"shared\""},
-                {"owner": 1, "statement": 0, "anchor": "string literal \"shared\""},
+                {"candidate_body_index": 0, "anchor_body_index": 1, "anchor": "string literal \"shared\""},
+                {"candidate_body_index": 1, "anchor_body_index": 0, "anchor": "string literal \"shared\""},
             ],
         })
     );
@@ -667,7 +667,7 @@ fn resolution_by_elimination_is_shared_by_every_spec_command() {
         run["outcome"],
         json!({
             "kind": "resolved",
-            "owner": 0,
+            "body_index": 0,
             "binding": "first",
             "resolved_by": {
                 "by": "elimination",
@@ -710,11 +710,11 @@ fn resolution_by_elimination_is_shared_by_every_spec_command() {
         probe["outcome"],
         json!({
             "kind": "ambiguous",
-            "candidates": [{"owner": 0, "binding": "first"}, {"owner": 1, "binding": "second"}],
+            "candidates": [{"body_index": 0, "binding": "first"}, {"body_index": 1, "binding": "second"}],
             "truncated": false,
             "differentiators": [
-                {"owner": 0, "statement": 0, "anchor": "string literal \"shared\""},
-                {"owner": 1, "statement": 1, "anchor": "string literal \"other\""},
+                {"candidate_body_index": 0, "anchor_body_index": 0, "anchor": "string literal \"shared\""},
+                {"candidate_body_index": 1, "anchor_body_index": 1, "anchor": "string literal \"other\""},
             ],
         }),
         "spec match-selector"
@@ -723,7 +723,7 @@ fn resolution_by_elimination_is_shared_by_every_spec_command() {
     let describe = tree.command(&["describe", "elimination/either", "--format", "json"]);
     assert!(describe.status.success(), "{describe:?}");
     let describe: Value = serde_json::from_slice(&describe.stdout).unwrap();
-    assert_eq!(describe["owner_ids"], json!(["owner:0"]), "describe");
+    assert_eq!(describe["source_unit_ids"], json!(["unit:0"]), "describe");
 
     // The edit gate resolves every module's claims before accepting an edit.
     let unassign = tree.command(&["bindings", "unassign", "third"]);
@@ -778,7 +778,7 @@ fn relational_claims_eliminate_in_graph_backed_commands() {
         run["outcome"],
         json!({
             "kind": "resolved",
-            "owner": 1,
+            "body_index": 1,
             "binding": "first",
             "resolved_by": {
                 "by": "elimination",
@@ -821,7 +821,7 @@ fn relational_claims_eliminate_in_graph_backed_commands() {
     let describe = tree.command(&["describe", "elimination/either", "--format", "json"]);
     assert!(describe.status.success(), "{describe:?}");
     let describe: Value = serde_json::from_slice(&describe.stdout).unwrap();
-    assert_eq!(describe["owner_ids"], json!(["owner:1"]), "describe");
+    assert_eq!(describe["source_unit_ids"], json!(["unit:1"]), "describe");
 
     let unassign = tree.command(&["bindings", "unassign", "marker"]);
     let stderr = String::from_utf8_lossy(&unassign.stderr);
@@ -903,7 +903,7 @@ export { actual, other };
     };
     assert_eq!(
         probe["outcome"],
-        json!({"kind": "resolved", "owner": 0, "binding": "actual", "resolved_by": {"by": "own_selector"}}),
+        json!({"kind": "resolved", "body_index": 0, "binding": "actual", "resolved_by": {"by": "own_selector"}}),
         "{selector}"
     );
 
@@ -913,7 +913,7 @@ export { actual, other };
     assert!(outcomes(&report).is_empty(), "{report:#}");
 }
 
-/// An import specifier declares no top-level owner, so a template matching
+/// An import specifier declares no top-level source_unit, so a template matching
 /// one is invalid in every command rather than claiming the import.
 #[test]
 fn import_specifier_match_is_invalid() {
@@ -927,8 +927,8 @@ fn import_specifier_match_is_invalid() {
         assert_all_commands_agree(&case),
         json!({
             "kind": "invalid",
-            "error": "projection_owner_mapping_error: source_match candidate at body index 0 \
-                      binding `dep` does not map to an owner-graph node",
+            "error": "projection_source_unit_mapping_error: source_match candidate at body index 0 \
+                      binding `dep` does not map to a dependency graph node",
         })
     );
 }
@@ -949,11 +949,11 @@ STMT_LIST;
 function f() { return key + 1; }"#;
     let reader_ambiguous = json!({
         "kind": "ambiguous",
-        "candidates": [{"owner": 1, "binding": "a"}, {"owner": 2, "binding": "b"}],
+        "candidates": [{"body_index": 1, "binding": "a"}, {"body_index": 2, "binding": "b"}],
         "truncated": false,
         "differentiators": [
-            {"owner": 1, "statement": 0, "anchor": "string literal \"anchor-key\""},
-            {"owner": 2, "statement": 1, "anchor": "number literal 1"},
+            {"candidate_body_index": 1, "anchor_body_index": 0, "anchor": "string literal \"anchor-key\""},
+            {"candidate_body_index": 2, "anchor_body_index": 1, "anchor": "number literal 1"},
         ],
     });
 

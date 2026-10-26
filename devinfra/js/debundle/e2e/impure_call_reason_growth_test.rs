@@ -5,7 +5,7 @@ use debundle_e2e_support::*;
 use std::collections::BTreeSet;
 
 fn reachable_assignments<'a>(
-    graph: &'a analysis::OwnerGraphReport,
+    graph: &'a analysis::DependencyGraphReport,
     root: &'a analysis::Purity,
 ) -> Vec<&'a analysis::PurityReason> {
     let mut pending = vec![root];
@@ -54,8 +54,8 @@ fn local_impure_call_reports_its_own_site_once() {
         vec![logical_module("result_module", &[Member::new("result")])],
     ));
 
-    let graph = fixture.owner_graph();
-    let owner = graph
+    let graph = fixture.dependency_graph();
+    let source_unit = graph
         .nodes
         .iter()
         .find(|node| {
@@ -63,8 +63,8 @@ fn local_impure_call_reports_its_own_site_once() {
                 .iter()
                 .any(|binding| binding.binding == "result")
         })
-        .expect("result owner");
-    let purity = serde_json::to_value(&owner.purity).expect("serialize purity");
+        .expect("result source_unit");
+    let purity = serde_json::to_value(&source_unit.purity).expect("serialize purity");
     let reasons = purity["reasons"].as_array().expect("impure call reasons");
     assert_eq!(
         reasons.len(),
@@ -77,7 +77,7 @@ fn local_impure_call_reports_its_own_site_once() {
         graph.purity_causes.len() <= 7,
         "shared causes should stay linear"
     );
-    let assignments = reachable_assignments(&graph, &owner.purity);
+    let assignments = reachable_assignments(&graph, &source_unit.purity);
     assert_eq!(
         assignments
             .iter()
@@ -102,8 +102,8 @@ export { result };
         .with_extra_chunks(&[("static/lib", &lib)]),
     );
 
-    let graph = fixture.owner_graph();
-    let owner = graph
+    let graph = fixture.dependency_graph();
+    let source_unit = graph
         .nodes
         .iter()
         .find(|node| {
@@ -111,8 +111,8 @@ export { result };
                 .iter()
                 .any(|binding| binding.binding == "result")
         })
-        .expect("result owner");
-    let purity = serde_json::to_value(&owner.purity).expect("serialize purity");
+        .expect("result source_unit");
+    let purity = serde_json::to_value(&source_unit.purity).expect("serialize purity");
     let reasons = purity["reasons"].as_array().expect("impure call reasons");
     assert_eq!(
         reasons.len(),
@@ -129,7 +129,7 @@ export { result };
         graph.purity_causes.len() <= 7,
         "shared causes should stay linear"
     );
-    let assignments = reachable_assignments(&graph, &owner.purity);
+    let assignments = reachable_assignments(&graph, &source_unit.purity);
     assert_eq!(
         assignments
             .iter()

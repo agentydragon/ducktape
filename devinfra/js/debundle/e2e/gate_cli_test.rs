@@ -1,13 +1,13 @@
 //! E2e for `debundle gate {list,describe,cut}` against REAL pipeline
 //! artifacts. A spec with a cross-module at-init cycle is rejected by
-//! `debundle run`, which writes `owner_graph.json` + `cycles.json`
+//! `debundle run`, which writes `dependency_graph.json` + `cycles.json`
 //! under the report root; the gate CLI is then exercised against
 //! those files.
 //!
 //! Driving the real materializer (instead of a hand-written JSON
 //! pair) pins the cross-file join contract: `gate describe`'s
-//! evidence recompute resolves each owner's destination `ModuleKey`
-//! through the owner graph's module table to the same canonical
+//! evidence recompute resolves each source_unit's destination `ModuleKey`
+//! through the dependency graph's module table to the same canonical
 //! `ModulePath` the `cycles.json` `modules` entries carry. A
 //! vocabulary drift between the two files (e.g. the historical
 //! `"<chunk_id>::<path>"` spelling leaking into `cycles.json`) makes
@@ -60,7 +60,9 @@ fn rejected_cycle_fixture() -> RejectedFixture {
 }
 
 fn graph_path(rejected: &RejectedFixture) -> PathBuf {
-    rejected.report_root.join("static/app/owner_graph.json")
+    rejected
+        .report_root
+        .join("static/app/dependency_graph.json")
 }
 
 fn gate_json(args: &[&str]) -> serde_json::Value {
@@ -75,7 +77,7 @@ fn gate_json(args: &[&str]) -> serde_json::Value {
 }
 
 #[test]
-fn sequenced_initializer_rejection_names_owner_location_rule_and_escape_hatch() {
+fn sequenced_initializer_rejection_names_source_unit_location_rule_and_escape_hatch() {
     let rejected = rejected_cycle_fixture();
     let cycles: serde_json::Value = read_json(&rejected.report_root.join("static/app/cycles.json"));
     // Which of the two impure initializers is blamed first is not fixed.
@@ -83,13 +85,13 @@ fn sequenced_initializer_rejection_names_owner_location_rule_and_escape_hatch() 
         .as_array()
         .unwrap()
         .iter()
-        .filter_map(|edge| edge.get("sequenced_owner"))
+        .filter_map(|edge| edge.get("sequenced_source_unit"))
         .find(|cause| !cause.is_null())
-        .expect("sequenced cycle edge carries purity owner cause");
+        .expect("sequenced cycle edge carries purity source_unit cause");
     let line = match cause["binding_names"][0].as_str().unwrap() {
         "D" => 4,
         "B" => 2,
-        other => panic!("unexpected sequenced owner {other}: {cause}"),
+        other => panic!("unexpected sequenced source_unit {other}: {cause}"),
     };
     let reason = &cause["purity"]["reasons"][0];
     assert_eq!(reason["rule"], "unknown_call");
@@ -175,7 +177,7 @@ fn gate_describe_recomputes_nonempty_evidence_from_real_artifacts() {
     let evidence = parsed["evidence"].as_array().unwrap();
     assert!(
         !evidence.is_empty(),
-        "evidence recompute joined zero owner-graph edges against the SCC modules — \
+        "evidence recompute joined zero dependency graph edges against the SCC modules — \
          the two files speak different module vocabularies: {parsed}"
     );
     for e in evidence {
@@ -223,7 +225,7 @@ fn gate_describe_recomputes_nonempty_evidence_from_real_artifacts() {
     assert!(
         cut_edges
             .iter()
-            .any(|edge| edge["sequenced_owner"].is_object()),
+            .any(|edge| edge["sequenced_source_unit"].is_object()),
         "fixture must exercise sequencing provenance: {cut}"
     );
     // Both directions of the at-init cycle appear, naming the
@@ -307,7 +309,7 @@ fn gate_unknown_id_fails_cleanly() {
 fn dry_run_rejection_materializes_gate_artifacts() {
     // `debundle run --dry-run` keeps the no-output contract on the
     // accept path, but a gate rejection must still write
-    // owner_graph.json + cycles.json at the standard report location
+    // dependency_graph.json + cycles.json at the standard report location
     // so the documented `gate list/describe` follow-up works on the
     // rejection that was just reported.
     let rejected = run_dry_run_rejection_fixture(cycle_fixture_opts());
@@ -344,7 +346,7 @@ fn dry_run_rejection_materializes_gate_artifacts() {
     assert_eq!(modules, BTreeSet::from(["mod_x", "mod_y"]), "{parsed}");
     assert!(
         !parsed["evidence"].as_array().unwrap().is_empty(),
-        "describe must recompute evidence from the dry-run owner graph: {parsed}"
+        "describe must recompute evidence from the dry-run dependency graph: {parsed}"
     );
 }
 

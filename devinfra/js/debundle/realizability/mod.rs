@@ -16,17 +16,17 @@
 //!
 //! Two access shapes:
 //!
-//! - `check_realizability(owner_graph, assignment) -> Verdict`: pure
+//! - `check_realizability(dependency_graph, assignment) -> Verdict`: pure
 //!   function, from-scratch. The correctness reference and the cold-
 //!   start path. `O(N + M)` per call.
 //! - `RealizabilityIndex`: a stateful index that owns a working
 //!   `ModuleAssignment`; `apply` commits a `ModuleAssignmentDelta` to it and
 //!   `verdict()` reads the current state. A non-mutating overlay query
-//!   answers hypothetical owner moves for planner checks without
+//!   answers hypothetical source unit moves for planner checks without
 //!   applying them.
 //!
-//! Owner-graph edges are fixed, so `apply` only updates quotient
-//! edge buckets incident to moved owners. Full verdicts run SCC over
+//! SourceUnit-graph edges are fixed, so `apply` only updates quotient
+//! edge buckets incident to moved source units. Full verdicts run SCC over
 //! the maintained quotient; candidate verdicts use localized
 //! reachability around the hypothetical destination.
 
@@ -37,9 +37,9 @@ use petgraph::algo::tarjan_scc;
 use petgraph::graphmap::DiGraphMap;
 use rustc_hash::FxHashMap;
 
-use analysis::OwnerId;
+use analysis::SourceUnitId;
 use analysis::graph::{
-    ChunkConstrainingEdgeSet, OwnerEdgeId, OwnerGraph, chunk_constraining_module_edges,
+    ChunkConstrainingEdgeSet, DependencyEdgeId, DependencyGraph, chunk_constraining_module_edges,
 };
 use analysis::ids::ModuleId;
 use analysis::module_assignment::ModuleAssignment;
@@ -62,14 +62,14 @@ pub use incremental_quotient::{LadderDecision, ModuleAssignmentDelta};
 /// proved by the ESM evaluation simulator).
 ///
 /// This is the in-memory consumer of the shared [`SccCore`] shape
-/// (typed `ModuleId`s + `OwnerEdgeId` evidence, no rendering) plus one
+/// (typed `ModuleId`s + `DependencyEdgeId` evidence, no rendering) plus one
 /// decoration — `rejection`. The exact edge set in `core` depends on
 /// `rejection`:
 ///
 /// - [`SccRejection::MutualConstrainingCycle`]: every constraining
-///   cross-module owner edge whose endpoints both fall inside
+///   cross-module source unit edge whose endpoints both fall inside
 ///   `core.modules`.
-/// - [`SccRejection::EsmEvaluationTdz`]: only the owner edges backing
+/// - [`SccRejection::EsmEvaluationTdz`]: only the source unit edges backing
 ///   the constraining `(from, to)` pairs whose simulated post-order
 ///   check failed — the surgical set whose removal (by co-locating the
 ///   binding pair) lifts the violation.
@@ -104,12 +104,12 @@ pub enum SccRejection {
 
 /// Cross-destination rebinding write. ESM imports are read-only in the
 /// importing module, so any such edge violates clause 2. One entry per
-/// owner-edge.
+/// dependency edge.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct CrossRebindEdge {
     pub from: ModuleId,
     pub to: ModuleId,
-    pub owner_edge: OwnerEdgeId,
+    pub dependency_edge: DependencyEdgeId,
 }
 
 /// Verdict on a (current or hypothetical) destination assignment.
@@ -146,9 +146,9 @@ fn reject_entry_dependency(
     verdict: &mut RealizabilityVerdict,
     from: ModuleId,
     residual: ModuleId,
-    mut owner_edges: Vec<OwnerEdgeId>,
+    mut dependency_edges: Vec<DependencyEdgeId>,
 ) {
-    if owner_edges.is_empty()
+    if dependency_edges.is_empty()
         || verdict
             .unrealizable_sccs
             .iter()
@@ -156,11 +156,11 @@ fn reject_entry_dependency(
     {
         return;
     }
-    owner_edges.sort();
+    dependency_edges.sort();
     verdict.unrealizable_sccs.push(SccDiagnosis {
         core: SccCore {
             modules: BTreeSet::from([from, residual]),
-            constraining_owner_edges: owner_edges,
+            constraining_dependency_edges: dependency_edges,
         },
         rejection: SccRejection::EsmEvaluationTdz,
     });
@@ -171,15 +171,15 @@ fn reject_entry_dependency(
 /// correctness reference for the `RealizabilityIndex`'s incremental
 /// backing.
 pub fn check_realizability(
-    owner_graph: &OwnerGraph,
+    dependency_graph: &DependencyGraph,
     assignment: &ModuleAssignment,
 ) -> RealizabilityVerdict {
     // Cross-destination rebinds are a separate clause-2 violation and
     // not part of the I-graph. Collect them in a single pass over
-    // owner edges; the canonical edge set handles everything else.
+    // source unit edges; the canonical edge set handles everything else.
     let mut cross_rebinds = Vec::new();
-    for edge in owner_graph.iter_edges() {
-        if owner_graph.node(edge.from).is_none() || owner_graph.node(edge.to).is_none() {
+    for edge in dependency_graph.iter_edges() {
+        if dependency_graph.node(edge.from).is_none() || dependency_graph.node(edge.to).is_none() {
             continue;
         }
         if !edge.reason.is_rebind() {
@@ -195,7 +195,7 @@ pub fn check_realizability(
         cross_rebinds.push(CrossRebindEdge {
             from,
             to,
-            owner_edge: edge.id,
+            dependency_edge: edge.id,
         });
     }
 
@@ -203,12 +203,12 @@ pub fn check_realizability(
     // contains constraining dependencies for Pass 1, while `i_successors`
     // includes lazy import back-edges for Pass 2's ESM evaluation topology.
     // Sharing the projection does not make the two SCC partitions equivalent.
-    let canonical = chunk_constraining_module_edges(owner_graph, assignment);
+    let canonical = chunk_constraining_module_edges(dependency_graph, assignment);
     verdict_from_canonical(canonical, cross_rebinds, assignment.residual())
 }
 
 /// Run the complete gate over the canonical module projection. The pure
-/// owner-graph path and the incremental hypothetical-move path both use this
+/// dependency graph path and the incremental hypothetical-move path both use this
 /// body, so they cannot drift on remote SCCs or ESM evaluation order.
 fn verdict_from_canonical(
     canonical: ChunkConstrainingEdgeSet,
@@ -238,18 +238,18 @@ fn verdict_from_canonical(
             continue;
         }
         let modules: BTreeSet<ModuleId> = scc.iter().copied().collect();
-        let mut owner_edges: Vec<OwnerEdgeId> = Vec::new();
+        let mut dependency_edges: Vec<DependencyEdgeId> = Vec::new();
         for ((from, to), edges) in &canonical.edges {
             if modules.contains(from) && modules.contains(to) {
-                owner_edges.extend_from_slice(edges);
+                dependency_edges.extend_from_slice(edges);
             }
         }
-        owner_edges.sort();
+        dependency_edges.sort();
         reported.insert(modules.clone());
         verdict.unrealizable_sccs.push(SccDiagnosis {
             core: SccCore {
                 modules,
-                constraining_owner_edges: owner_edges,
+                constraining_dependency_edges: dependency_edges,
             },
             rejection: SccRejection::MutualConstrainingCycle,
         });
@@ -325,15 +325,15 @@ fn verdict_from_canonical(
             if tdz_pairs.is_empty() {
                 continue;
             }
-            let mut owner_edges: Vec<OwnerEdgeId> = Vec::new();
+            let mut dependency_edges: Vec<DependencyEdgeId> = Vec::new();
             for (from, to) in &tdz_pairs {
-                owner_edges.extend_from_slice(canonical.edges_for(*from, *to));
+                dependency_edges.extend_from_slice(canonical.edges_for(*from, *to));
             }
-            owner_edges.sort();
+            dependency_edges.sort();
             verdict.unrealizable_sccs.push(SccDiagnosis {
                 core: SccCore {
                     modules,
-                    constraining_owner_edges: owner_edges,
+                    constraining_dependency_edges: dependency_edges,
                 },
                 rejection: SccRejection::EsmEvaluationTdz,
             });
@@ -354,20 +354,20 @@ fn verdict_from_canonical(
 ///
 /// This is the gate ladder's **reference predicate**
 /// for a speculative merge: a post-merge module `M` is acceptable iff
-/// `check_realizability_touching(owner_graph, post_assignment, M)`
+/// `check_realizability_touching(dependency_graph, post_assignment, M)`
 /// `.is_realizable()`. Pre-existing violations not touching `M` are
 /// intentionally ignored, matching
-/// [`RealizabilityIndex::verdict_after_moving_owners_touching`]'s
+/// [`RealizabilityIndex::verdict_after_moving_source_units_touching`]'s
 /// semantics on both the hot and diagnostic paths.
 ///
 /// Differential-harness / oracle use only — `O(N + M)` per call, far
 /// too slow for the proposer's per-pop gate.
 pub fn check_realizability_touching(
-    owner_graph: &OwnerGraph,
+    dependency_graph: &DependencyGraph,
     assignment: &ModuleAssignment,
     module: ModuleId,
 ) -> RealizabilityVerdict {
-    let full = check_realizability(owner_graph, assignment);
+    let full = check_realizability(dependency_graph, assignment);
     RealizabilityVerdict {
         unrealizable_sccs: full
             .unrealizable_sccs
@@ -389,10 +389,10 @@ pub fn check_realizability_touching(
 /// that compare this prediction against the evaluation order Node
 /// actually produces for the emitted tree.
 pub fn simulated_evaluation_post_order(
-    owner_graph: &OwnerGraph,
+    dependency_graph: &DependencyGraph,
     assignment: &ModuleAssignment,
 ) -> BTreeMap<ModuleId, usize> {
-    let canonical = chunk_constraining_module_edges(owner_graph, assignment);
+    let canonical = chunk_constraining_module_edges(dependency_graph, assignment);
     let constraining_pairs: BTreeSet<(ModuleId, ModuleId)> = canonical.pairs().collect();
     EsmEvaluationSimulator::build(
         &canonical.i_successors,
@@ -407,11 +407,11 @@ pub fn simulated_evaluation_post_order(
 /// "Realizability primitive").
 ///
 /// Each `apply` updates only quotient edge buckets incident to the
-/// moved owners. `verdict()` reads the maintained quotient graph
-/// instead of rebuilding it from owner edges.
+/// moved source units. `verdict()` reads the maintained quotient graph
+/// instead of rebuilding it from source unit edges.
 ///
-/// The index does NOT hold a borrow of `OwnerGraph`. `apply` and every
-/// `*_after_moving_owners*` verdict query take the graph as a
+/// The index does NOT hold a borrow of `DependencyGraph`. `apply` and every
+/// `*_after_moving_source_units*` verdict query take the graph as a
 /// parameter. Storing the borrow would force callers that also own the
 /// graph (e.g., the peel kernel's `QuotientGraph`) into a
 /// self-referential struct; passing the graph per call keeps that
@@ -423,8 +423,11 @@ pub struct RealizabilityIndex {
 }
 
 impl RealizabilityIndex {
-    pub fn from_assignment(owner_graph: &OwnerGraph, assignment: ModuleAssignment) -> Self {
-        let quotient = IncrementalQuotient::new(owner_graph, &assignment);
+    pub fn from_assignment(
+        dependency_graph: &DependencyGraph,
+        assignment: ModuleAssignment,
+    ) -> Self {
+        let quotient = IncrementalQuotient::new(dependency_graph, &assignment);
         Self {
             assignment,
             quotient,
@@ -440,21 +443,21 @@ impl RealizabilityIndex {
 
     /// Commit `delta` to the working assignment and quotient; it cannot
     /// be reverted. Hypothetical moves are answered without mutation by
-    /// [`Self::verdict_after_moving_owners_touching`] and
-    /// [`Self::ladder_decision_after_moving_owners_touching`].
-    pub fn apply(&mut self, owner_graph: &OwnerGraph, delta: ModuleAssignmentDelta) {
-        let ModuleAssignmentDelta::MoveOwners { owners, to } = delta;
-        let impacted_edges = impacted_owner_edges(owner_graph, &owners);
+    /// [`Self::verdict_after_moving_source_units_touching`] and
+    /// [`Self::ladder_decision_after_moving_source_units_touching`].
+    pub fn apply(&mut self, dependency_graph: &DependencyGraph, delta: ModuleAssignmentDelta) {
+        let ModuleAssignmentDelta::MoveSourceUnits { source_units, to } = delta;
+        let impacted_edges = impacted_dependency_edges(dependency_graph, &source_units);
         for edge_id in &impacted_edges {
             self.quotient
-                .remove_current_edge(owner_graph.edge(*edge_id), &self.assignment);
+                .remove_current_edge(dependency_graph.edge(*edge_id), &self.assignment);
         }
-        for owner in owners {
-            self.assignment.set(owner, to);
+        for source_unit in source_units {
+            self.assignment.set(source_unit, to);
         }
         for edge_id in &impacted_edges {
             self.quotient
-                .add_current_edge(owner_graph.edge(*edge_id), &self.assignment);
+                .add_current_edge(dependency_graph.edge(*edge_id), &self.assignment);
         }
     }
 
@@ -472,19 +475,19 @@ impl RealizabilityIndex {
         self.quotient.verdict_touching(module)
     }
 
-    /// Full verdict for a hypothetical owner move. The incident-edge overlay
+    /// Full verdict for a hypothetical source unit move. The incident-edge overlay
     /// changes the canonical module projection without mutating the index;
     /// the shared gate body then checks every SCC, including SCCs remote from
     /// the destination whose ESM import order changes after this move.
-    pub fn verdict_after_moving_owners(
+    pub fn verdict_after_moving_source_units(
         &self,
-        owner_graph: &OwnerGraph,
-        owners: &[OwnerId],
+        dependency_graph: &DependencyGraph,
+        source_units: &[SourceUnitId],
         to: ModuleId,
     ) -> RealizabilityVerdict {
-        let overlay = self
-            .quotient
-            .overlay_for_move(owner_graph, &self.assignment, owners, to);
+        let overlay =
+            self.quotient
+                .overlay_for_move(dependency_graph, &self.assignment, source_units, to);
         let verdict = verdict_from_canonical(
             self.quotient.canonical_with_overlay(&overlay),
             self.quotient.cross_rebinds_with_overlay(&overlay),
@@ -492,10 +495,10 @@ impl RealizabilityIndex {
         );
         if gate_oracle_enabled() {
             let mut post_assignment = self.assignment.clone();
-            for &owner in owners {
-                post_assignment.set(owner, to);
+            for &source_unit in source_units {
+                post_assignment.set(source_unit, to);
             }
-            let reference = check_realizability(owner_graph, &post_assignment);
+            let reference = check_realizability(dependency_graph, &post_assignment);
             assert_eq!(
                 verdict, reference,
                 "DEBUNDLE_GATE_ORACLE: full overlay verdict diverges from the pure reference"
@@ -504,20 +507,20 @@ impl RealizabilityIndex {
         verdict
     }
 
-    /// Verdict for a hypothetical owner move, filtered to the target
+    /// Verdict for a hypothetical source unit move, filtered to the target
     /// module, without mutating the working assignment. This is the
     /// candidate-evaluation fast path: it builds a small quotient
-    /// overlay for the moved owners' incident edges and runs directed
+    /// overlay for the moved source units' incident edges and runs directed
     /// reachability against the effective graph.
-    pub fn verdict_after_moving_owners_touching(
+    pub fn verdict_after_moving_source_units_touching(
         &self,
-        owner_graph: &OwnerGraph,
-        owners: &[OwnerId],
+        dependency_graph: &DependencyGraph,
+        source_units: &[SourceUnitId],
         to: ModuleId,
     ) -> RealizabilityVerdict {
-        let overlay = self
-            .quotient
-            .overlay_for_move(owner_graph, &self.assignment, owners, to);
+        let overlay =
+            self.quotient
+                .overlay_for_move(dependency_graph, &self.assignment, source_units, to);
         let verdict = self.quotient.verdict_with_overlay_touching(to, &overlay);
         if gate_oracle_enabled() {
             // Oracle mode: the boolean tier ladder must agree with
@@ -534,30 +537,30 @@ impl RealizabilityIndex {
         verdict
     }
 
-    /// Tier-laddered decision for a hypothetical owner move, filtered
+    /// Tier-laddered decision for a hypothetical source unit move, filtered
     /// to the target module. Exactly equal to
-    /// `verdict_after_moving_owners_touching(..).is_realizable()` with
+    /// `verdict_after_moving_source_units_touching(..).is_realizable()` with
     /// evidence materialization elided: tiers 0–2 are short-circuits
     /// whose skip conditions are theorems about the predicate, tier 3
     /// runs the shared simulator path. With `DEBUNDLE_GATE_ORACLE`
     /// set, every query is additionally cross-checked against the
     /// pure touching-filtered reference and divergence panics.
-    pub fn ladder_decision_after_moving_owners_touching(
+    pub fn ladder_decision_after_moving_source_units_touching(
         &self,
-        owner_graph: &OwnerGraph,
-        owners: &[OwnerId],
+        dependency_graph: &DependencyGraph,
+        source_units: &[SourceUnitId],
         to: ModuleId,
     ) -> LadderDecision {
-        let overlay = self
-            .quotient
-            .overlay_for_move(owner_graph, &self.assignment, owners, to);
+        let overlay =
+            self.quotient
+                .overlay_for_move(dependency_graph, &self.assignment, source_units, to);
         let decision = self.quotient.ladder_decide(to, &overlay);
         if gate_oracle_enabled() {
             let mut post_assignment = self.assignment.clone();
-            for &owner in owners {
-                post_assignment.set(owner, to);
+            for &source_unit in source_units {
+                post_assignment.set(source_unit, to);
             }
-            let reference = check_realizability_touching(owner_graph, &post_assignment, to);
+            let reference = check_realizability_touching(dependency_graph, &post_assignment, to);
             assert_eq!(
                 decision.accepts(),
                 reference.is_realizable(),
@@ -569,14 +572,14 @@ impl RealizabilityIndex {
     }
 
     /// Boolean form of
-    /// [`Self::ladder_decision_after_moving_owners_touching`].
-    pub fn would_remain_realizable_after_moving_owners_touching(
+    /// [`Self::ladder_decision_after_moving_source_units_touching`].
+    pub fn would_remain_realizable_after_moving_source_units_touching(
         &self,
-        owner_graph: &OwnerGraph,
-        owners: &[OwnerId],
+        dependency_graph: &DependencyGraph,
+        source_units: &[SourceUnitId],
         to: ModuleId,
     ) -> bool {
-        self.ladder_decision_after_moving_owners_touching(owner_graph, owners, to)
+        self.ladder_decision_after_moving_source_units_touching(dependency_graph, source_units, to)
             .accepts()
     }
 
@@ -614,14 +617,17 @@ fn overlay_is_simulator_noop(overlay: Option<&QuotientOverlay>) -> bool {
         && overlay.constraining_removed.is_empty()
 }
 
-/// Edges whose gate-view contribution can change when `owners` move:
-/// those incident to a moved owner. The gate view reads only the
+/// Edges whose gate-view contribution can change when `source units` move:
+/// those incident to a moved source unit. The gate view reads only the
 /// endpoints' modules and the residual, never a promoted edge's callee.
-fn impacted_owner_edges(owner_graph: &OwnerGraph, owners: &[OwnerId]) -> Vec<OwnerEdgeId> {
-    let mut impacted = BTreeSet::<OwnerEdgeId>::new();
-    for owner in owners {
-        impacted.extend(owner_graph.out_edges_of(*owner).iter().copied());
-        impacted.extend(owner_graph.in_edges_of(*owner).iter().copied());
+fn impacted_dependency_edges(
+    dependency_graph: &DependencyGraph,
+    source_units: &[SourceUnitId],
+) -> Vec<DependencyEdgeId> {
+    let mut impacted = BTreeSet::<DependencyEdgeId>::new();
+    for source_unit in source_units {
+        impacted.extend(dependency_graph.out_edges_of(*source_unit).iter().copied());
+        impacted.extend(dependency_graph.in_edges_of(*source_unit).iter().copied());
     }
     impacted.into_iter().collect()
 }

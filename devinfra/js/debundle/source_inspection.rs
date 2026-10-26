@@ -1,7 +1,7 @@
 //! Read-only inspection of the parsed top-level items in a JavaScript source file.
 //!
 //! Item indices are the source module's raw `Module.body` ordinals. They match
-//! selector `body[N]` coordinates, but are not owner IDs or other graph IDs.
+//! selector `body[N]` coordinates, but are not source_unit IDs or other graph IDs.
 
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -66,8 +66,8 @@ impl PreparedSource {
     }
 
     /// Map graph ordinals (after comma-list splitting) to raw parsed items.
-    /// Several owners may share one body item.
-    pub fn body_indices_for_owner_ordinals(&self, ordinals: &[usize]) -> Vec<Option<usize>> {
+    /// Several source_units may share one body item.
+    pub fn body_indices_for_source_unit_ordinals(&self, ordinals: &[usize]) -> Vec<Option<usize>> {
         body_indices_for_statement_ordinals(&self.parsed.module.body, ordinals)
     }
 
@@ -104,7 +104,7 @@ impl PreparedSource {
     /// `context_statements` items on either side.
     ///
     /// A repeated top-level declaration is rejected as ambiguous because this
-    /// helper is intended to identify a source location, not choose an owner.
+    /// helper is intended to identify a source location, not choose an source_unit.
     pub fn statement_rows_around_binding(
         &self,
         name: &str,

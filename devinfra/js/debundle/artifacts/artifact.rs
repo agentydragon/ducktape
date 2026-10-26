@@ -250,7 +250,7 @@ pub struct ArtifactManifest {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ArtifactCounts {
-    pub kept_top_level_declaration_owners: usize,
+    pub kept_top_level_declarations: usize,
     pub top_level_side_effects: usize,
     pub export_aliases: usize,
     pub unresolved_exports: usize,
@@ -295,7 +295,7 @@ pub struct SelectedModuleLowering {
     #[serde(skip)]
     pub cross_chunk_import_aliases: Vec<(String, String)>,
     pub file: String,
-    pub owner_ids: Vec<String>,
+    pub source_unit_ids: Vec<String>,
     pub residual: bool,
     pub target_file: String,
     pub target_path: String,
@@ -377,7 +377,7 @@ pub struct ChunkValidationSummary {
     pub linker_order: Vec<spec::ModulePath>,
 }
 
-/// One semantic owner-edge fact projected onto emitted module files.
+/// One semantic dependency-edge fact projected onto emitted module files.
 #[derive(Debug, Clone)]
 pub struct DirectoryDependencyFact {
     pub source_file: String,
@@ -706,9 +706,9 @@ pub struct ChunkCounts {
     pub dynamic_imports: usize,
     pub export_aliases: usize,
     pub import_declarations: usize,
-    pub kept_top_level_declaration_owners: usize,
+    pub kept_top_level_declarations: usize,
     pub top_level_bindings: usize,
-    pub top_level_declaration_owners: usize,
+    pub top_level_declarations: usize,
     pub top_level_side_effects: usize,
     pub unresolved_exports: usize,
 }
@@ -781,7 +781,7 @@ pub struct KeptTopLevelDeclarationRecord {
 
 /// The three top-level declaration variants we anchor extraction on.
 /// Mirrors the SWC `Decl` arms where `analyze_program_shallow` produces
-/// an `OwnerRecord`.
+/// an `DeclarationRecord`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TopLevelDeclarationKind {

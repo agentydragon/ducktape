@@ -1,16 +1,16 @@
 //! Dataflow-aware S-chain (`dataflow_aware_s_chain`, docs/design.md
-//! "Emission modes"): a `Sequenced` owner edge joins two consecutive impure
+//! "Emission modes"): a `Sequenced` dependency edge joins two consecutive impure
 //! top-level statements only when the earlier one writes a cell the later
 //! one reads or writes.
 //!
-//! Each test builds a fixture, inspects `owner_graph.json::edges`, and
+//! Each test builds a fixture, inspects `dependency_graph.json::edges`, and
 //! asserts that no `Sequenced` edge connects the two non-interacting
 //! statements in either direction. Patterns: disjoint global property
 //! writes; a fresh-local allocation after a global write; independent
 //! cross-module inits of a local class whose constructor only touches
 //! `this`.
 
-use analysis::{DepKind, OwnerGraphReport};
+use analysis::{DepKind, DependencyGraphReport};
 use debundle_e2e_support::*;
 
 fn trusted_dataflow_opts<'a>(
@@ -23,10 +23,10 @@ fn trusted_dataflow_opts<'a>(
 }
 
 fn sequenced_edges_between<'a>(
-    graph: &'a OwnerGraphReport,
+    graph: &'a DependencyGraphReport,
     a: &str,
     b: &str,
-) -> Vec<&'a analysis::OwnerGraphEdgeReport> {
+) -> Vec<&'a analysis::DependencyEdgeReport> {
     graph
         .edges
         .iter()
@@ -62,14 +62,14 @@ export { tagA, tagB };
     );
     assert_entry_output(&fixture, "tag-a tag-b alpha-val beta-val\n");
 
-    let graph = fixture.owner_graph();
-    let owner_a = owner_for_binding(&graph, "tagA");
-    let owner_b = owner_for_binding(&graph, "tagB");
-    let offending = sequenced_edges_between(&graph, owner_a, owner_b);
+    let graph = fixture.dependency_graph();
+    let source_unit_a = source_unit_for_binding(&graph, "tagA");
+    let source_unit_b = source_unit_for_binding(&graph, "tagB");
+    let offending = sequenced_edges_between(&graph, source_unit_a, source_unit_b);
     assert!(
         offending.is_empty(),
-        "no Sequenced edge should link `tagA`'s owner to `tagB`'s \
-         owner: the two statements write disjoint globalThis \
+        "no Sequenced edge should link `tagA`'s source_unit to `tagB`'s \
+         unit: the two statements write disjoint globalThis \
          properties (alpha vs beta) and read no shared state, so \
          their relative order is unobservable to any third party. \
          Offending edges: {offending:#?}\n\nFull graph: {graph:#?}",
@@ -104,10 +104,10 @@ export { tagA, boxedB };
     );
     assert_entry_output(&fixture, "tag-a fresh first\n");
 
-    let graph = fixture.owner_graph();
-    let owner_a = owner_for_binding(&graph, "tagA");
-    let owner_b = owner_for_binding(&graph, "boxedB");
-    let offending = sequenced_edges_between(&graph, owner_a, owner_b);
+    let graph = fixture.dependency_graph();
+    let source_unit_a = source_unit_for_binding(&graph, "tagA");
+    let source_unit_b = source_unit_for_binding(&graph, "boxedB");
+    let offending = sequenced_edges_between(&graph, source_unit_a, source_unit_b);
     assert!(
         offending.is_empty(),
         "no Sequenced edge should link `tagA` to `boxedB`: the \
@@ -146,10 +146,10 @@ export { Holder1, Holder2, instA, instB };
     );
     assert_entry_output(&fixture, "h1 h2\n");
 
-    let graph = fixture.owner_graph();
-    let owner_a = owner_for_binding(&graph, "instA");
-    let owner_b = owner_for_binding(&graph, "instB");
-    assert_kept_sequenced_between(&graph, owner_a, owner_b);
+    let graph = fixture.dependency_graph();
+    let source_unit_a = source_unit_for_binding(&graph, "instA");
+    let source_unit_b = source_unit_for_binding(&graph, "instB");
+    assert_kept_sequenced_between(&graph, source_unit_a, source_unit_b);
 }
 
 #[test]
@@ -159,7 +159,7 @@ fn trusted_constructor_calls_use_dataflow_summary() {
     // specs are separately audited and accept the old dataflow
     // assumption for conservative-but-present summaries: calls/news
     // stay impure, but they do not become barriers against every
-    // prior impure owner. In that trusted mode these two constructor
+    // prior impure source_unit. In that trusted mode these two constructor
     // calls touch disjoint binding cells, so there is no S-edge
     // between them.
     let fixture = run_fixture(trusted_dataflow_opts(
@@ -177,10 +177,10 @@ export { Holder1, Holder2, instA, instB };
     ));
     assert_entry_output(&fixture, "h1 h2\n");
 
-    let graph = fixture.owner_graph();
-    let owner_a = owner_for_binding(&graph, "instA");
-    let owner_b = owner_for_binding(&graph, "instB");
-    let offending = sequenced_edges_between(&graph, owner_a, owner_b);
+    let graph = fixture.dependency_graph();
+    let source_unit_a = source_unit_for_binding(&graph, "instA");
+    let source_unit_b = source_unit_for_binding(&graph, "instB");
+    let offending = sequenced_edges_between(&graph, source_unit_a, source_unit_b);
     assert!(
         offending.is_empty(),
         "trusted dataflow summarization should not add an unrelated S-edge \
@@ -212,10 +212,10 @@ export { tagA, tagB };
     );
     assert_entry_output(&fixture, "tag-a tag-b from-b\n");
 
-    let graph = fixture.owner_graph();
-    let owner_a = owner_for_binding(&graph, "tagA");
-    let owner_b = owner_for_binding(&graph, "tagB");
-    let kept = sequenced_edges_between(&graph, owner_a, owner_b);
+    let graph = fixture.dependency_graph();
+    let source_unit_a = source_unit_for_binding(&graph, "tagA");
+    let source_unit_b = source_unit_for_binding(&graph, "tagB");
+    let kept = sequenced_edges_between(&graph, source_unit_a, source_unit_b);
     assert!(
         !kept.is_empty(),
         "Sequenced edge between `tagA` and `tagB` must be kept: \
@@ -225,13 +225,17 @@ export { tagA, tagB };
 }
 
 /// Helper: assert that the strict adjacent-impure S-edge between
-/// `owner_a` and `owner_b` remains (i.e. the dataflow relaxation
+/// `source_unit_a` and `source_unit_b` remains (i.e. the dataflow relaxation
 /// declined to drop it). Used by the bail-out tests below.
-fn assert_kept_sequenced_between(graph: &OwnerGraphReport, owner_a: &str, owner_b: &str) {
-    let edges = sequenced_edges_between(graph, owner_a, owner_b);
+fn assert_kept_sequenced_between(
+    graph: &DependencyGraphReport,
+    source_unit_a: &str,
+    source_unit_b: &str,
+) {
+    let edges = sequenced_edges_between(graph, source_unit_a, source_unit_b);
     assert!(
         !edges.is_empty(),
-        "expected the strict Sequenced edge between {owner_a} and {owner_b} to be kept — \
+        "expected the strict Sequenced edge between {source_unit_a} and {source_unit_b} to be kept — \
          the second statement contains a shape that should disable dataflow summarization. \
          Graph: {graph:#?}",
     );
@@ -266,11 +270,11 @@ export { tagA, tagB };
     );
     assert_entry_output(&fixture, "tag-a tag-b alpha-val beta-val\n");
 
-    let graph = fixture.owner_graph();
+    let graph = fixture.dependency_graph();
     assert_kept_sequenced_between(
         &graph,
-        owner_for_binding(&graph, "tagA"),
-        owner_for_binding(&graph, "tagB"),
+        source_unit_for_binding(&graph, "tagA"),
+        source_unit_for_binding(&graph, "tagB"),
     );
 }
 
@@ -296,11 +300,11 @@ export { tagA, tagB };
     );
     assert_entry_output(&fixture, "tag-a tag-b alpha-val beta-val\n");
 
-    let graph = fixture.owner_graph();
+    let graph = fixture.dependency_graph();
     assert_kept_sequenced_between(
         &graph,
-        owner_for_binding(&graph, "tagA"),
-        owner_for_binding(&graph, "tagB"),
+        source_unit_for_binding(&graph, "tagA"),
+        source_unit_for_binding(&graph, "tagB"),
     );
 }
 
@@ -326,10 +330,10 @@ export { tagA, tagB };
     );
     assert_entry_output(&fixture, "tag-a tag-b alpha-val beta-val\n");
 
-    let graph = fixture.owner_graph();
+    let graph = fixture.dependency_graph();
     assert_kept_sequenced_between(
         &graph,
-        owner_for_binding(&graph, "tagA"),
-        owner_for_binding(&graph, "fnB"),
+        source_unit_for_binding(&graph, "tagA"),
+        source_unit_for_binding(&graph, "fnB"),
     );
 }

@@ -3,7 +3,7 @@
 The per-chunk JSON files debundle writes under `reports/tree/<chunk_id>/`
 are consumed by:
 
-- spec authors with `jq` poking at cycle / owner-graph / atomic-group reports;
+- spec authors with `jq` poking at cycle / dependency-graph / atomic-group reports;
 - CLI tooling (top-level `debundle modules propose` / `atoms` /
   `coverage` / `describe` / `inspect-source --id` / `scc` / `cluster` /
   `graph-summary`);
@@ -19,7 +19,7 @@ strings), **not** as SWC `Id = (Atom, SyntaxContext)`. The
 
 | File                          | Field carrying binding identity                                                                                                  |
 | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `owner_graph.json`            | `nodes[].declared_bindings[].binding: Atom`, `edges[].binding: Option<Atom>`                                                     |
+| `dependency_graph.json`       | `nodes[].declared_bindings[].binding: Atom`, `edges[].binding: Option<Atom>`                                                     |
 | `cycles.json`                 | `cut[].binding: Option<Atom>`, `cut[].from_binding: Option<Atom>` (evidence is recomputed on demand by `debundle gate describe`) |
 | `atomic_group_conflicts.json` | `claims[].binding_names: Vec<Atom>`                                                                                              |
 
@@ -29,11 +29,11 @@ in memory, but the wire form is the string itself, which is portable.
 
 ## Atomic graph reports
 
-`owner_graph.json.atomic_graph.nodes[]` contains atomic groups. Each node
-represents one SCC of the constraining-edge subgraph over owner nodes; its
-`owner_ids` and `members` identify the source-level owners in that group.
-An owner is a movable source unit, while an atomic group can contain one or
-more owners that the spec must keep in the same module. `atomic_graph.edges[]`
+`dependency_graph.json.atomic_graph.nodes[]` contains atomic groups. Each node
+represents one SCC of the constraining-edge subgraph over source-unit nodes; its
+`source_unit_ids` and `members` identify the source units in that group.
+Each source unit can move between modules, while an atomic group can contain one or
+more source units that the spec must keep in the same module. `atomic_graph.edges[]`
 connects group IDs and retains the direction of constraining edges between
 groups.
 
@@ -45,11 +45,11 @@ there. `describe` reports selected groups under `atomic_groups` as well.
 `largest_residual_atomic_groups`. `coverage` rows use
 `atomic_group_ids`, `complete_atomic_group_ids`, and `split_atomic_group_ids`,
 with statuses `complete_atomic_groups` or `split_atomic_groups` when the
-requested owners cover complete groups or split them.
+requested source units cover complete groups or split them.
 
 Conflicts during `run` are written to `atomic_group_conflicts.json`. The
 analysis and CLI report fields name the groups explicitly, so each row can be
-joined directly to `owner_graph.json.atomic_graph.nodes[].id`.
+joined directly to `dependency_graph.json.atomic_graph.nodes[].id`.
 
 ### Export-reentry diagnostics
 
@@ -86,7 +86,7 @@ not match a chunk-top-level binding (closure-local reads with inner-
 scope marks, globals with `SyntaxContext::empty()`, etc.) **misses the
 lookup and never becomes an edge**.
 
-Consequence: the only `Id`s that survive into the owner graph have
+Consequence: the only `Id`s that survive into the dependency graph have
 `ctxt = top_level_mark.apply_to(empty)`, i.e. they're the chunk-top-
 level bindings the resolver assigned that single shared context to. By
 the time we serialize them, the `ctxt` is _redundant_ — it's the same
@@ -120,12 +120,12 @@ replay and pre-filtering inner-scope reads don't pay for themselves. See
 
 ## Reader audiences
 
-| Consumer                                                                                                                     | Reads                                                            | Cross-process?          |
-| ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- | ----------------------- |
-| Spec author with `jq`                                                                                                        | `owner_graph.json`, `cycles.json`, `atomic_group_conflicts.json` | yes (Atom-only)         |
-| `debundle atoms` / `coverage` / `graph-summary` / `scc` / `cluster` / `describe` / `inspect-source --id` / `modules propose` | `owner_graph.json`, source bytes + spec                          | yes (Atom-only)         |
-| `debundle bindings assign` / `bindings rename` / `modules merge`                                                             | spec YAMLs + `owner_graph.json` (gate)                           | yes                     |
-| Materializer (`debundle run`)                                                                                                | spec + chunk bytes + everything in-process                       | N/A — always in-process |
+| Consumer                                                                                                                     | Reads                                                                 | Cross-process?          |
+| ---------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- | ----------------------- |
+| Spec author with `jq`                                                                                                        | `dependency_graph.json`, `cycles.json`, `atomic_group_conflicts.json` | yes (Atom-only)         |
+| `debundle atoms` / `coverage` / `graph-summary` / `scc` / `cluster` / `describe` / `inspect-source --id` / `modules propose` | `dependency_graph.json`, source bytes + spec                          | yes (Atom-only)         |
+| `debundle bindings assign` / `bindings rename` / `modules merge`                                                             | spec YAMLs + `dependency_graph.json` (gate)                           | yes                     |
+| Materializer (`debundle run`)                                                                                                | spec + chunk bytes + everything in-process                            | N/A — always in-process |
 
 ## Reconstruction recipe
 
@@ -160,7 +160,7 @@ underlying number.
 
 ## Convention: interned module references + a single module table
 
-Module identity is **interned** on the wire. `owner_graph.json` (a.k.a.
+Module identity is **interned** on the wire. `dependency_graph.json` (a.k.a.
 `module_graph`) carries exactly one module table — `module_graph.nodes`,
 a list of `ModuleEntry { key, path, residual }` — and the table is the
 **single source of truth** for each module's path and residual flag.
@@ -177,7 +177,7 @@ Everything that points at a module carries only the interned
 
 There is no second encoding of a module: a reference is a key, the path
 and residual flag live once in the table, and a consumer resolves a key
-via `OwnerGraphReport::module(key)` / `is_residual(key)`. Residual-ness is
+via `DependencyGraphReport::module(key)` / `is_residual(key)`. Residual-ness is
 read from the table's authoritative `residual` flag, never inferred from a
 key string.
 
@@ -185,7 +185,7 @@ key string.
 
 An impure known-function call has one `impure_function_call` reason at the
 call site. Its optional `cause_ref` points to an entry in the same
-`owner_graph.json` file's `purity_causes[]` table. Each entry has an `id`
+`dependency_graph.json` file's `purity_causes[]` table. Each entry has an `id`
 and a `purity` verdict whose reasons may point to further entries. Follow
 these links to inspect the callee's full cause chain; shared callees are
 stored once rather than copied into every caller. A direct reason's
@@ -196,7 +196,7 @@ an impure known-function call. Older reports without the table or
 
 ## Module identity everywhere else: `ModulePath` / `ModuleRef`
 
-Every artifact outside `owner_graph.json` denotes modules by
+Every artifact outside `dependency_graph.json` denotes modules by
 canonical `ModulePath` — never by interned key, and never by the
 in-process `"<chunk_id>::<path>"` spelling (`PlannedModule.id`,
 which exists only in memory). Per-chunk files use the bare path (the
@@ -206,14 +206,14 @@ a `ModuleRef { chunk_id, path }` object.
 | File                          | Module-identity fields                                                                   |
 | ----------------------------- | ---------------------------------------------------------------------------------------- |
 | `cycles.json` (per chunk)     | `modules[]`, `cut[].from`, `cut[].to` — `ModulePath`                                     |
-| `atomic_group_conflicts.json` | `claims[].module` — `ModulePath` (owners are `"owner:N"` strings)                        |
+| `atomic_group_conflicts.json` | `claims[].module` — `ModulePath` (source-unit IDs are `"unit:N"` strings)                |
 | `modules.json` (per chunk)    | `final_module_contents[].path`, `requested_logical_modules[].target_path` — `ModulePath` |
 | tree `index.json` (per dir)   | `modules[]` — `ModuleRef`; per-file rows carry `module: ModuleRef`                       |
 | chunk summary `linker_order`  | `ModulePath`                                                                             |
 | stderr rejection summaries    | every module named in cycle / atom-split / unmatched-claim blocks                        |
 
 Cross-file join recipe (what `debundle gate describe` does): resolve
-each owner's `destination` key through the owner graph's module table
+each source unit's `destination` key through the dependency graph's module table
 to its `path`, then intersect those paths with the SCC's
 `cycles.json` `modules` set. Both sides carry the same canonical
 `ModulePath` values, so the join is plain equality — no prefix

@@ -382,13 +382,13 @@ impl SupportSearch<'_> {
 #[cfg(test)]
 mod tests {
     use selector_test_fixtures::{
-        broad_specific_targets, call_argument_use, declared_binding, owner_fact,
+        broad_specific_targets, call_argument_use, declared_binding, source_unit_fact,
     };
     use std::collections::BTreeSet;
     use std::sync::Mutex;
     use std::thread;
 
-    use analysis::{OwnerId, StatementOrdinal};
+    use analysis::{SourceUnitId, StatementOrdinal};
     use selector_backend_solver::solve_with_backend;
     use selector_constraint_backend::{
         AllDifferentConstraintId, AllowedTupleConstraintId, AllowedTupleRowsId,
@@ -398,8 +398,8 @@ mod tests {
         TargetBindingProjection, TargetProjection,
     };
     use selector_ir::{
-        ClaimKind, ClaimOutcome, OwnerTerm, ResolvedClaim, SelectorAtom, SelectorFactStore,
-        SelectorProgram, SelectorTargetId, StringTerm, VariableDomain,
+        ClaimKind, ClaimOutcome, ResolvedClaim, SelectorAtom, SelectorFactStore, SelectorProgram,
+        SelectorTargetId, SourceUnitTerm, StringTerm, VariableDomain,
     };
 
     use super::*;
@@ -425,7 +425,7 @@ mod tests {
     fn variable(id: usize, values: CompiledVariableDomain) -> CompiledVariable {
         CompiledVariable {
             id: ConstraintVariableId(id),
-            domain: VariableDomain::Owner,
+            domain: VariableDomain::SourceUnit,
             debug_name: Some(format!("v{id}")),
             values,
         }
@@ -446,7 +446,7 @@ mod tests {
     fn shared_domain(id: usize, values: &[i64]) -> CompiledSharedVariableDomain {
         CompiledSharedVariableDomain {
             id: SharedVariableDomainId(id),
-            domain: VariableDomain::Owner,
+            domain: VariableDomain::SourceUnit,
             values: values.iter().copied().map(BackendValueId).collect(),
         }
     }
@@ -485,13 +485,13 @@ mod tests {
         }
     }
 
-    fn projections(owners: &[usize]) -> Vec<TargetProjection> {
-        owners
+    fn projections(source_units: &[usize]) -> Vec<TargetProjection> {
+        source_units
             .iter()
             .enumerate()
-            .map(|(target, owner)| TargetProjection {
+            .map(|(target, source_unit)| TargetProjection {
                 target: SelectorTargetId(target),
-                owner_variable: ConstraintVariableId(*owner),
+                source_unit_variable: ConstraintVariableId(*source_unit),
                 binding_projection: None,
             })
             .collect()
@@ -719,7 +719,7 @@ mod tests {
             variables: vec![dense(0, 1)],
             target_projections: vec![TargetProjection {
                 target: SelectorTargetId(0),
-                owner_variable: ConstraintVariableId(0),
+                source_unit_variable: ConstraintVariableId(0),
                 binding_projection: Some(TargetBindingProjection::Const("minA".to_string())),
             }],
             ..problem()
@@ -944,7 +944,7 @@ mod tests {
             result.outcome_for(broad_target),
             Some(&ClaimOutcome::Unique {
                 claim: ResolvedClaim {
-                    owner: OwnerId(10),
+                    source_unit: SourceUnitId(10),
                     statement_ordinal: StatementOrdinal(0),
                     binding: Some("shared".to_string()),
                 }
@@ -954,7 +954,7 @@ mod tests {
             result.outcome_for(strict_target),
             Some(&ClaimOutcome::Unique {
                 claim: ResolvedClaim {
-                    owner: OwnerId(20),
+                    source_unit: SourceUnitId(20),
                     statement_ordinal: StatementOrdinal(1),
                     binding: Some("specific".to_string()),
                 }
@@ -966,15 +966,16 @@ mod tests {
     fn cpsat_lists_ambiguous_candidates_next_to_unique_target() {
         let mut program = SelectorProgram::default();
         let binding_target = |program: &mut SelectorProgram, binding: &str| {
-            let owner = program.add_variable(VariableDomain::Owner, Some(binding.to_string()));
-            program.add_atom(SelectorAtom::OwnerDeclaresBinding {
-                owner: OwnerTerm::Var { id: owner },
+            let source_unit =
+                program.add_variable(VariableDomain::SourceUnit, Some(binding.to_string()));
+            program.add_atom(SelectorAtom::SourceUnitDeclaresBinding {
+                source_unit: SourceUnitTerm::Var { id: source_unit },
                 binding: StringTerm::Const {
                     value: binding.to_string(),
                 },
             });
             program.add_target(
-                owner,
+                source_unit,
                 "module",
                 ClaimKind::Binding {
                     export_name: Some(binding.to_string()),
@@ -986,12 +987,12 @@ mod tests {
         let many_target = binding_target(&mut program, "many");
 
         let mut facts = SelectorFactStore::default();
-        for (owner, binding) in [(10, "pair"), (20, "pair"), (30, "solo")]
+        for (source_unit, binding) in [(10, "pair"), (20, "pair"), (30, "solo")]
             .into_iter()
-            .chain((40..47).map(|owner| (owner, "many")))
+            .chain((40..47).map(|source_unit| (source_unit, "many")))
         {
-            facts.push(owner_fact(owner, owner, "var"));
-            facts.push(declared_binding(owner, binding));
+            facts.push(source_unit_fact(source_unit, source_unit, "var"));
+            facts.push(declared_binding(source_unit, binding));
         }
 
         let backend = OrToolsCpSatBackend::default();
@@ -1001,7 +1002,7 @@ mod tests {
             result.outcome_for(solo_target),
             Some(&ClaimOutcome::Unique {
                 claim: ResolvedClaim {
-                    owner: OwnerId(30),
+                    source_unit: SourceUnitId(30),
                     statement_ordinal: StatementOrdinal(30),
                     binding: Some("solo".to_string()),
                 }
@@ -1012,15 +1013,18 @@ mod tests {
                 candidates,
                 candidates_truncated: false,
             }) => {
-                let owners = candidates
+                let source_units = candidates
                     .iter()
-                    .map(|candidate| candidate.owner)
+                    .map(|candidate| candidate.source_unit)
                     .collect::<BTreeSet<_>>();
-                assert_eq!(owners, BTreeSet::from([OwnerId(10), OwnerId(20)]));
+                assert_eq!(
+                    source_units,
+                    BTreeSet::from([SourceUnitId(10), SourceUnitId(20)])
+                );
             }
             other => panic!("expected complete ambiguous pair target, got {other:?}"),
         }
-        // Seven owners declare `many`; the solver stops listing them at the cap.
+        // Seven source units declare `many`; the solver stops listing them at the cap.
         match result.outcome_for(many_target) {
             Some(ClaimOutcome::Ambiguous {
                 candidates,
@@ -1033,34 +1037,41 @@ mod tests {
     }
 
     #[test]
-    fn cpsat_solves_passed_to_call_of_owner_allowed_tuple() {
+    fn cpsat_solves_passed_to_call_of_source_unit_allowed_tuple() {
         let mut program = SelectorProgram::default();
-        let registry_owner =
-            program.add_variable(VariableDomain::Owner, Some("registry".to_string()));
-        let widget_owner = program.add_variable(VariableDomain::Owner, Some("widget".to_string()));
+        let registry_source_unit =
+            program.add_variable(VariableDomain::SourceUnit, Some("registry".to_string()));
+        let widget_source_unit =
+            program.add_variable(VariableDomain::SourceUnit, Some("widget".to_string()));
         let registry_target = program.add_target(
-            registry_owner,
+            registry_source_unit,
             "module",
             ClaimKind::Binding {
                 export_name: Some("Registry".to_string()),
             },
         );
         let widget_target = program.add_target(
-            widget_owner,
+            widget_source_unit,
             "module",
             ClaimKind::Binding {
                 export_name: Some("RegisteredWidget".to_string()),
             },
         );
-        program.add_atom(SelectorAtom::OwnerDeclaresBinding {
-            owner: OwnerTerm::Var { id: registry_owner },
+        program.add_atom(SelectorAtom::SourceUnitDeclaresBinding {
+            source_unit: SourceUnitTerm::Var {
+                id: registry_source_unit,
+            },
             binding: StringTerm::Const {
                 value: "registry".to_string(),
             },
         });
-        program.add_atom(SelectorAtom::PassedToCallOfOwner {
-            owner: OwnerTerm::Var { id: widget_owner },
-            callee_object: OwnerTerm::Var { id: registry_owner },
+        program.add_atom(SelectorAtom::PassedToCallOfSourceUnit {
+            source_unit: SourceUnitTerm::Var {
+                id: widget_source_unit,
+            },
+            callee_object: SourceUnitTerm::Var {
+                id: registry_source_unit,
+            },
             callee_member: StringTerm::Const {
                 value: "register".to_string(),
             },
@@ -1069,12 +1080,12 @@ mod tests {
         program.require_all_different(vec![registry_target, widget_target]);
 
         let mut facts = SelectorFactStore::default();
-        facts.push(owner_fact(10, 0, "var_decl"));
+        facts.push(source_unit_fact(10, 0, "var_decl"));
         facts.push(declared_binding(10, "registry"));
-        facts.push(owner_fact(20, 1, "class"));
+        facts.push(source_unit_fact(20, 1, "class"));
         facts.push(declared_binding(20, "Widget"));
         facts.push(call_argument_use("Widget", Some("registry"), "register", 1));
-        facts.push(owner_fact(30, 2, "class"));
+        facts.push(source_unit_fact(30, 2, "class"));
         facts.push(declared_binding(30, "WrongIndex"));
         facts.push(call_argument_use(
             "WrongIndex",
@@ -1082,7 +1093,7 @@ mod tests {
             "register",
             0,
         ));
-        facts.push(owner_fact(40, 3, "class"));
+        facts.push(source_unit_fact(40, 3, "class"));
         facts.push(declared_binding(40, "WrongObject"));
         facts.push(call_argument_use(
             "WrongObject",
@@ -1098,7 +1109,7 @@ mod tests {
             result.outcome_for(registry_target),
             Some(&ClaimOutcome::Unique {
                 claim: ResolvedClaim {
-                    owner: OwnerId(10),
+                    source_unit: SourceUnitId(10),
                     statement_ordinal: StatementOrdinal(0),
                     binding: Some("registry".to_string()),
                 }
@@ -1108,7 +1119,7 @@ mod tests {
             result.outcome_for(widget_target),
             Some(&ClaimOutcome::Unique {
                 claim: ResolvedClaim {
-                    owner: OwnerId(20),
+                    source_unit: SourceUnitId(20),
                     statement_ordinal: StatementOrdinal(1),
                     binding: Some("Widget".to_string()),
                 }

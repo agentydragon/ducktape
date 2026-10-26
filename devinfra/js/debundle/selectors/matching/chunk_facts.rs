@@ -4,7 +4,7 @@
 //! Fail-closed by construction: the walk's only catch-all is a loud
 //! [`Unsupported`] error, so a node type it has not modeled **crashes** rather
 //! than projecting a silently-incomplete fact set — which is what would let a
-//! lowered selector query under-constrain and match the wrong owner. There is
+//! lowered selector query under-constrain and match the wrong source_unit. There is
 //! deliberately no `swc_ecma_visit::Visit` here: its default no-op methods make
 //! a forgotten node type a silent skip, the exact failure the goal forbids.
 //!
@@ -177,7 +177,7 @@ pub struct ChunkFacts {
     pub regex: Vec<(NodeId, String, String)>,
     /// class node -> its super-class expression node (the syntactic `extends`).
     pub super_class: Vec<(NodeId, NodeId)>,
-    /// top-level statement node -> its owner statement ordinal (owner-graph join).
+    /// top-level statement node -> its source_unit statement ordinal (dependency graph join).
     pub top_level: Vec<(NodeId, usize)>,
 }
 
@@ -1278,7 +1278,7 @@ pub fn extract_facts_items(items: &[ModuleItem]) -> Result<ChunkFacts, Unsupport
 /// One `obj.X` member-access derived from a statement's AST facts: the property
 /// name `X`, plus the object identifier when the object is a bare `Ident`
 /// (`ctx.X` ⟹ `object = Some("ctx")`; `foo().X` / `this.X` / `a.b.X` ⟹ `None`).
-/// The owner-graph `reads_member` primitive's EDB row, projected from the same
+/// The dependency graph `reads_member` primitive's EDB row, projected from the same
 /// `Member`→`PropName` structure [`Extractor::member`] records.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MemberReadFact {
@@ -1288,7 +1288,7 @@ pub struct MemberReadFact {
 
 /// The member accesses (`obj.X`, non-computed property) each top-level statement
 /// performs, keyed by the statement's source-order ordinal — the EDB for the
-/// `reads_member` selector primitive (the owner that reads member `.X`).
+/// `reads_member` selector primitive (the source_unit that reads member `.X`).
 ///
 /// Derived from the per-statement AST facts ([`Member`]/[`PropName`]/[`Ident`]
 /// projection). **Per-statement-tolerant** like [`coverage_report`] (and unlike
@@ -1296,7 +1296,7 @@ pub struct MemberReadFact {
 /// statement whose subtree hits an [`Unsupported`] construct contributes no
 /// member-read rows rather than aborting the chunk. That tolerance is sound for a
 /// *selector* primitive — a missing member-read can only make a `reads_member`
-/// selector fail to resolve (fail-closed), never resolve to the wrong owner — and
+/// selector fail to resolve (fail-closed), never resolve to the wrong source_unit — and
 /// it keeps the resolution path robust on real chunks the rest of the pipeline
 /// already lowers. Computed member access (`obj[expr]`) carries no static
 /// property name and contributes nothing.
@@ -1376,7 +1376,7 @@ fn member_reads_of_facts(facts: &ChunkFacts) -> Vec<MemberReadFact> {
 /// One `mod.X` **use-site** derived from a statement's AST facts joined to the
 /// chunk's import table: the import **source module** `mod` resolves to
 /// (`"./codegen"`, `"react"`) and the export `member` consumed off it. The
-/// owner-graph `member_of_module` primitive's EDB row — the first use-site edge,
+/// dependency graph `member_of_module` primitive's EDB row — the first use-site edge,
 /// pinning an entity by *how it is consumed* rather than by its own minified
 /// name. Both labels are re-minify-invariant (module specifiers and export names
 /// are the public API), which is what makes the edge survive a rebuild.
@@ -1433,13 +1433,13 @@ pub fn module_member_uses_by_ordinal(
 /// re-minification cannot rewrite (the callee member name and the registry's own
 /// stable identity are the public API). Unlike [`MemberReadFact`] /
 /// [`ModuleMemberUseFact`], this fact is keyed by the **argument binding name**
-/// (the target's own minified binding), not by the owner that contains the call —
-/// the target is a *separately-declared* owner, and the call site that names it
+/// (the target's own minified binding), not by the source_unit that contains the call —
+/// the target is a *separately-declared* source_unit, and the call site that names it
 /// lives elsewhere (typically an anonymous registration statement).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CallArgumentFact {
     /// The minified binding passed as the argument — the target. Joined to its
-    /// declaring owner via the owner graph's `name_owner`.
+    /// declaring source_unit via the dependency graph's `name_source_unit`.
     pub argument: String,
     /// The callee member name `.method` of the call.
     pub callee_member: String,
@@ -1467,7 +1467,7 @@ pub struct CallArgumentFact {
 /// [`member_reads_by_ordinal`]: a statement whose subtree hits an [`Unsupported`]
 /// construct contributes no rows rather than aborting the chunk — a missing row
 /// can only make a `passed_to_call` selector fail to resolve (fail-closed), never
-/// resolve to the wrong owner. A call with a computed callee (`r[expr](...)`), a
+/// resolve to the wrong source_unit. A call with a computed callee (`r[expr](...)`), a
 /// non-member callee (`register(...)`), or a non-identifier argument (`new X()`,
 /// an object literal, a spread) contributes nothing — those carry no static
 /// argument-binding to pin a target by.
@@ -1564,7 +1564,7 @@ fn call_arguments_of_facts(facts: &ChunkFacts) -> Vec<CallArgumentFact> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DecorateCallFact {
     /// The minified binding of the callee — the decorate helper, the target.
-    /// Joined to its declaring owner via the owner graph's `name_owner`.
+    /// Joined to its declaring source_unit via the dependency graph's `name_source_unit`.
     pub callee: String,
     /// The minified binding of the decorated class: the base of the 2nd argument
     /// `C.prototype` (property/method-decorator form) or the bare 2nd argument `C`
@@ -1600,7 +1600,7 @@ pub struct DecorateCallFact {
 /// [`call_argument_uses`]: a statement whose subtree hits an [`Unsupported`]
 /// construct contributes no rows rather than aborting the chunk — a missing row can
 /// only make a `makes_decorate_call` selector fail to resolve (fail-closed), never
-/// resolve to the wrong owner. Only top-level statements are scanned: an esbuild
+/// resolve to the wrong source_unit. Only top-level statements are scanned: an esbuild
 /// decorator application is always emitted as a bare top-level call adjacent to the
 /// class it decorates.
 pub fn decorate_call_uses(module: &Module) -> Vec<DecorateCallFact> {
@@ -1766,7 +1766,7 @@ fn decorate_class_anchor(
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IntrinsicAliasFact {
     /// The minified binding of the alias — the target. Joined to its declaring
-    /// owner via the owner graph's `name_owner`.
+    /// source_unit via the dependency graph's `name_source_unit`.
     pub binding: String,
     /// The intrinsic property name read off `Object` (`defineProperty`,
     /// `getOwnPropertyDescriptor`). The re-minify-invariant label half of the
@@ -1798,7 +1798,7 @@ pub struct IntrinsicAliasFact {
 /// [`decorate_call_uses`]: a statement whose subtree hits an [`Unsupported`]
 /// construct contributes no rows rather than aborting the chunk — a missing row can
 /// only make an `intrinsic_alias` selector fail to resolve (fail-closed), never
-/// resolve to the wrong owner. Only top-level statements are scanned: the esbuild
+/// resolve to the wrong source_unit. Only top-level statements are scanned: the esbuild
 /// companion aliases are always bare top-level declarations.
 pub fn intrinsic_alias_uses(module: &Module) -> Vec<IntrinsicAliasFact> {
     // Fail-closed: a shadowed/reassigned/imported `Object` defeats the
@@ -2045,7 +2045,7 @@ mod tests {
             );
         }
 
-        // One top-level statement, owner ordinal 0.
+        // One top-level statement, source_unit ordinal 0.
         assert_eq!(facts.top_level.len(), 1);
         assert_eq!(facts.top_level[0].1, 0);
     }

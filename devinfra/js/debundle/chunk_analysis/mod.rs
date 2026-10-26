@@ -2,13 +2,13 @@
 //!
 //! Chunk analysis is independent of module placement. Given a parsed chunk AST,
 //! explicit [`AnalysisInputs`] (including author-certified assumptions), and
-//! per-chunk owner-graph options, it produces:
+//! per-chunk dependency-graph options, it produces:
 //!
 //! - per-statement static facts (declared bindings, eager/lazy reads,
 //!   side-effect summaries, purity classification, top-level-await
 //!   detection);
-//! - the owner graph derived from those facts;
-//! - the structural atomic groups (owner-level SCCs of `G_atomic`),
+//! - the dependency graph derived from those facts;
+//! - the structural atomic groups (source-unit-level SCCs of `G_atomic`),
 //!   which any valid factorization must keep co-located.
 //!
 //! The composer also owns the side-effects that derive purely from
@@ -23,7 +23,7 @@
 //!   `chunk_admission`), including its override notices.
 //!
 //! Analysis results depend on `(chunk_id, module, analysis_inputs,
-//! owner_graph_options)` plus the `source_path` annotation,
+//! dependency_graph_options)` plus the `source_path` annotation,
 //! the line-index callback for source-location resolution, and the
 //! caller-supplied dynamic-import resolver (the A3 admission check
 //! needs "which chunk does this specifier land in", but chunk
@@ -53,33 +53,33 @@ use swc_ecma_ast::Module;
 
 use analysis::AnalysisInputs;
 use analysis::atomic_groups::{
-    OwnerGraphAndAtomicGroups, compute_owner_graph_and_atomic_groups_with,
+    DependencyGraphAndAtomicGroups, compute_dependency_graph_and_atomic_groups_with,
 };
 use analysis::facts::{
     ChunkFactAnalysis, ExportReentryPolicy, StructuralChunkAnalysis, analyze_chunk_with_policy,
 };
-use analysis::graph::OwnerGraphOptions;
+use analysis::graph::DependencyGraphOptions;
 use analysis::purity::{RedundantPureMemberReason, RedundantPurityReason};
 
-/// Output of chunk analysis: per-chunk facts, owner graph, and atomic
+/// Output of chunk analysis: per-chunk facts, dependency graph, and atomic
 /// groups that do not depend on the module assignment.
 #[derive(Debug, Clone)]
 pub struct ChunkAnalysisOutput {
     /// Per-statement static facts plus chunk-wide flags (top-level
     /// await detection, redundant purity / pure-member hints).
     pub fact_analysis: ChunkFactAnalysis,
-    /// Owner graph + structural atomic groups derived from
+    /// Dependency graph + structural atomic groups derived from
     /// `fact_analysis.facts`. Carries no assignment-dependent state; the
     /// atomic groups here are the *structural* class (per docs/design.md
     /// §"Two classes of atom") that any valid factorization must
     /// preserve.
-    pub owner_graph_and_atomic_groups: OwnerGraphAndAtomicGroups,
+    pub dependency_graph_and_atomic_groups: DependencyGraphAndAtomicGroups,
 }
 
 /// Run chunk analysis from a precomputed structural layer: analyze the
 /// chunk's facts, emit any redundant-purity-hint diagnostics, fail fast
 /// if the chunk has top-level `await` or fails the input-chunk
-/// admission scan, then derive the owner graph + structural atomic
+/// admission scan, then derive the dependency graph + structural atomic
 /// groups. Selector resolution uses that same structural layer before
 /// semantic member annotations can be projected to concrete bindings,
 /// so materialization keeps one source-text walk and one final owner
@@ -100,7 +100,7 @@ pub fn compute_chunk_analysis<F>(
     hints: &AnalysisInputs,
     source_path: Option<&str>,
     line_range_for_span: F,
-    owner_graph_options: OwnerGraphOptions,
+    dependency_graph_options: DependencyGraphOptions,
     export_reentry_policy: ExportReentryPolicy,
     resolve_dynamic_import: &dyn Fn(&str) -> DynamicImportTarget,
 ) -> Result<ChunkAnalysisOutput>
@@ -127,15 +127,17 @@ where
     enforce_chunk_admission(
         chunk_id,
         module,
-        owner_graph_options.admission_overrides,
+        dependency_graph_options.admission_overrides,
         resolve_dynamic_import,
     )?;
-    let owner_graph_and_atomic_groups =
-        compute_owner_graph_and_atomic_groups_with(&fact_analysis.facts, owner_graph_options)
-            .with_context(|| format!("building owner graph for chunk {chunk_id}"))?;
+    let dependency_graph_and_atomic_groups = compute_dependency_graph_and_atomic_groups_with(
+        &fact_analysis.facts,
+        dependency_graph_options,
+    )
+    .with_context(|| format!("building dependency graph for chunk {chunk_id}"))?;
     Ok(ChunkAnalysisOutput {
         fact_analysis,
-        owner_graph_and_atomic_groups,
+        dependency_graph_and_atomic_groups,
     })
 }
 

@@ -8,9 +8,9 @@ use serde::Deserialize;
 use output_layout::DebundleOutputLayout;
 use spec::{
     BundledPartialSwapBundle, BundledPartialSwapMark, BundledPartialSwapPackage, ChunkExportPurity,
-    ChunkRenameMember, ChunkRenameSelector, ChunkRenames, EmitBrowserHarnessConfig,
-    LoadJsChunksArgs, LogicalModule, MaterializeLogicalModulesConfig, Member, ModulePath,
-    OwnerGraphOptions, PartialSwapMark, PartialSwapPackage, PartialSwapSymbol, SwapMark,
+    ChunkRenameMember, ChunkRenameSelector, ChunkRenames, DependencyGraphOptions,
+    EmitBrowserHarnessConfig, LoadJsChunksArgs, LogicalModule, MaterializeLogicalModulesConfig,
+    Member, ModulePath, PartialSwapMark, PartialSwapPackage, PartialSwapSymbol, SwapMark,
     SwapVendorChunksConfig, TransformSpec, UnassignedMode, VendorLevel, VendorMark, VendorRole,
     WrapperShape, WriteJsTreeConfig,
 };
@@ -63,7 +63,7 @@ struct AuthoringConfig {
     /// optimizations"). Default empty — each chunk uses the
     /// strictly-conservative analysis path unless it opts in here.
     #[serde(default)]
-    chunk_analysis_options: BTreeMap<String, OwnerGraphOptions>,
+    chunk_analysis_options: BTreeMap<String, DependencyGraphOptions>,
     /// Author-asserted pure exports, keyed by defining chunk. See
     /// `TransformSpec::chunk_export_purity`.
     #[serde(default)]

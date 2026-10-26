@@ -65,15 +65,15 @@ fn initializer_override_keeps_callback_read_dependency() {
         ],
     ));
 
-    let graph = fixture.owner_graph();
-    let caller_owner = owner_for_binding(&graph, "A");
-    let seed_owner = owner_for_binding(&graph, "seed");
+    let graph = fixture.dependency_graph();
+    let caller_source_unit = source_unit_for_binding(&graph, "A");
+    let seed_source_unit = source_unit_for_binding(&graph, "seed");
     let promoted_seed_edges: Vec<_> = graph
         .edges
         .iter()
         .filter(|edge| {
-            edge.source == caller_owner
-                && edge.target == seed_owner
+            edge.source == caller_source_unit
+                && edge.target == seed_source_unit
                 && edge.edge_kind == analysis::DepKind::EagerUse
                 && edge.binding.as_deref() == Some("seed")
                 && matches!(
@@ -85,8 +85,8 @@ fn initializer_override_keeps_callback_read_dependency() {
     assert!(
         !promoted_seed_edges.is_empty(),
         "the initializer annotation must retain callback-body read ordering; \
-         expected a promoted eager edge from the factory owner to `seed`, got \
-         {promoted_seed_edges:#?}\n\nFull owner graph: {graph:#?}",
+         expected a promoted eager edge from the factory source_unit to `seed`, got \
+         {promoted_seed_edges:#?}\n\nFull dependency graph: {graph:#?}",
     );
 }
 

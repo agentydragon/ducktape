@@ -5,8 +5,8 @@
 //! Both verbs run the unified realizability gate (see
 //! [`crate::edit_gate::gate_post_edit_assignment`]) against the
 //! **post-edit** assignment before touching the filesystem. The gate
-//! reconstructs the chunk's `OwnerGraph` from `owner_graph.json`
-//! (via `OwnerGraph::from_report`), builds the post-edit `ModuleAssignment`
+//! reconstructs the chunk's `DependencyGraph` from `dependency_graph.json`
+//! (via `DependencyGraph::from_report`), builds the post-edit `ModuleAssignment`
 //! by mapping each surviving spec module's bindings to a fresh
 //! `ModuleId`, and runs BOTH `validate_assignment` (cross-module
 //! cycles) AND atom-split detection (every `AtomicGroup`'s members
@@ -345,7 +345,7 @@ fn plan_merge(modules_root: &Path, target: &Path, sources: &[&Path]) -> Result<M
         }
         // `members:`, `source_matches:`, and `anonymous_statements:` are all
         // claims; dropping any of them with the deleted source would silently
-        // unclaim their owners on the next `debundle run`. `annotations:` are
+        // unclaim their source_units on the next `debundle run`. `annotations:` are
         // keyed by readable binding name, so conflicting duplicate metadata
         // must be rejected rather than overwritten.
         target_module.members.extend(src_module.members);

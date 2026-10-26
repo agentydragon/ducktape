@@ -128,7 +128,7 @@ pub struct ProgramAnalysis {
     pub imports: Vec<ImportRecord>,
     pub import_local_names: HashSet<String>,
     pub export_aliases: Vec<ExportAliasRecord>,
-    pub owners: Vec<OwnerRecord>,
+    pub declarations: Vec<DeclarationRecord>,
     pub side_effect_count: usize,
     pub dynamic_import_count: usize,
     pub observable_module_effect: bool,
@@ -144,7 +144,7 @@ pub struct ProgramAnalysis {
     pub runtime_facts: ChunkRuntimeFacts,
 }
 
-pub struct OwnerRecord {
+pub struct DeclarationRecord {
     pub line: Option<usize>,
     pub names: Vec<String>,
     pub kind: TopLevelDeclarationKind,
@@ -170,7 +170,7 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
     let mut imports = Vec::new();
     let mut import_local_names = HashSet::new();
     let mut export_aliases = Vec::new();
-    let mut owners = Vec::new();
+    let mut declarations = Vec::new();
     let mut side_effect_count = 0;
     // Fused module-level walk: collects everything that previously
     // required a separate `visit_with` over the whole module
@@ -302,7 +302,7 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
         }
 
         if let Some((kind, names)) = classify_top_level_decl(item) {
-            owners.push(OwnerRecord {
+            declarations.push(DeclarationRecord {
                 line: item_line(&line_index, item),
                 names,
                 kind,
@@ -317,7 +317,7 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
         imports,
         import_local_names,
         export_aliases,
-        owners,
+        declarations,
         side_effect_count,
         dynamic_import_count,
         observable_module_effect,
@@ -338,21 +338,21 @@ pub fn build_chunk_manifest_from_analysis(
         .filter(|alias| {
             alias.local.as_ref().is_some_and(|local| {
                 !analysis
-                    .owners
+                    .declarations
                     .iter()
-                    .any(|owner| owner.names.contains(local))
+                    .any(|declaration| declaration.names.contains(local))
                     && !analysis.import_local_names.contains(local)
             })
         })
         .cloned()
         .collect::<Vec<_>>();
     let kept_top_level_declarations = analysis
-        .owners
+        .declarations
         .iter()
-        .map(|owner| KeptTopLevelDeclarationRecord {
-            line: owner.line,
-            names: owner.names.clone(),
-            kind: owner.kind,
+        .map(|declaration| KeptTopLevelDeclarationRecord {
+            line: declaration.line,
+            names: declaration.names.clone(),
+            kind: declaration.kind,
         })
         .collect::<Vec<_>>();
 
@@ -364,9 +364,13 @@ pub fn build_chunk_manifest_from_analysis(
             dynamic_imports: analysis.dynamic_import_count,
             export_aliases: analysis.export_aliases.len(),
             import_declarations: analysis.imports.len(),
-            kept_top_level_declaration_owners: analysis.owners.len(),
-            top_level_bindings: analysis.owners.iter().map(|owner| owner.names.len()).sum(),
-            top_level_declaration_owners: analysis.owners.len(),
+            kept_top_level_declarations: analysis.declarations.len(),
+            top_level_bindings: analysis
+                .declarations
+                .iter()
+                .map(|declaration| declaration.names.len())
+                .sum(),
+            top_level_declarations: analysis.declarations.len(),
             top_level_side_effects: analysis.side_effect_count,
             unresolved_exports: unresolved_exports.len(),
         },

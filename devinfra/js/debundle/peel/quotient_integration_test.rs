@@ -4,10 +4,10 @@
 
 use std::collections::BTreeMap;
 
-use analysis::{DepKind, ModuleId, OwnerGraphReport};
+use analysis::{DepKind, DependencyGraphReport, ModuleId};
 use report_fixtures::{
-    active_owner, atomic_edge, atomic_group_for, claims, graph_of, owner_edge, promoted_owner_edge,
-    residual_owner, singleton_graph,
+    active_source_unit, atomic_edge, atomic_group_for, claims, graph_of, owner_edge,
+    promoted_owner_edge, residual_owner, singleton_graph,
 };
 
 use crate::propose::{ModuleProposal, propose};
@@ -15,14 +15,14 @@ use crate::quotient::testing::{
     PartitionGroup, greedy_merge_to_convergence_full_scan, module_group,
 };
 use crate::quotient::{
-    ClassId, CycleClassSet, CycleEvidence, OwnerIdx, QuotientGraph, SeedContractionRejected,
+    ClassId, CycleClassSet, CycleEvidence, QuotientGraph, SeedContractionRejected, SourceUnitIdx,
     SpecModuleGroup, build_seed_quotient, greedy_merge_to_convergence,
 };
 
-fn spec_module(module_id: &str, owners: &[&str]) -> SpecModuleGroup {
+fn spec_module(module_id: &str, source_units: &[&str]) -> SpecModuleGroup {
     SpecModuleGroup {
         module_id: module_id.into(),
-        owner_ids: owners.iter().map(|id| (*id).into()).collect(),
+        source_unit_ids: source_units.iter().map(|id| (*id).into()).collect(),
     }
 }
 
@@ -34,59 +34,63 @@ fn spec_module(module_id: &str, owners: &[&str]) -> SpecModuleGroup {
 fn original_home_merge_rejects_remote_tdz() {
     let report = singleton_graph(
         vec![
-            active_owner("owner:0", 1, &["B0"], 5, "ui/m5"),
-            active_owner("owner:1", 2, &["B1"], 5, "ui/m5"),
-            residual_owner("owner:2", 3, &["B2"], 5),
-            residual_owner("owner:3", 4, &["B3"], 5),
-            active_owner("owner:4", 5, &["B4"], 5, "ui/m6"),
-            active_owner("owner:5", 6, &["B5"], 5, "ui/m4"),
-            residual_owner("owner:6", 7, &["B6"], 5),
-            active_owner("owner:7", 8, &["B7"], 5, "ui/m0"),
+            active_source_unit("unit:0", 1, &["B0"], 5, "ui/m5"),
+            active_source_unit("unit:1", 2, &["B1"], 5, "ui/m5"),
+            residual_source_unit("unit:2", 3, &["B2"], 5),
+            residual_source_unit("unit:3", 4, &["B3"], 5),
+            active_source_unit("unit:4", 5, &["B4"], 5, "ui/m6"),
+            active_source_unit("unit:5", 6, &["B5"], 5, "ui/m4"),
+            residual_source_unit("unit:6", 7, &["B6"], 5),
+            active_source_unit("unit:7", 8, &["B7"], 5, "ui/m0"),
         ],
         vec![
-            owner_edge("edge:0", "owner:0", "owner:1", DepKind::Sequenced, true),
-            owner_edge("edge:1", "owner:0", "owner:4", DepKind::LazyUse, false),
-            owner_edge("edge:2", "owner:1", "owner:0", DepKind::LazyUse, false),
-            owner_edge("edge:3", "owner:1", "owner:4", DepKind::LazyUse, false),
-            promoted_owner_edge(
+            dependency_edge("edge:0", "unit:0", "unit:1", DepKind::Sequenced, true),
+            dependency_edge("edge:1", "unit:0", "unit:4", DepKind::LazyUse, false),
+            dependency_edge("edge:2", "unit:1", "unit:0", DepKind::LazyUse, false),
+            dependency_edge("edge:3", "unit:1", "unit:4", DepKind::LazyUse, false),
+            promoted_dependency_edge(
                 "edge:4",
-                "owner:1",
-                "owner:5",
+                "unit:1",
+                "unit:5",
                 DepKind::EagerUse,
                 true,
-                "owner:4",
+                "unit:4",
             ),
-            owner_edge("edge:5", "owner:2", "owner:3", DepKind::LazyUse, false),
-            owner_edge("edge:6", "owner:3", "owner:1", DepKind::EagerUse, true),
-            owner_edge("edge:7", "owner:3", "owner:2", DepKind::LazyUse, false),
-            owner_edge("edge:8", "owner:4", "owner:1", DepKind::EagerUse, true),
-            owner_edge("edge:9", "owner:6", "owner:1", DepKind::LazyUse, false),
-            owner_edge("edge:10", "owner:6", "owner:5", DepKind::Sequenced, true),
-            owner_edge("edge:11", "owner:7", "owner:0", DepKind::EagerUse, true),
+            dependency_edge("edge:5", "unit:2", "unit:3", DepKind::LazyUse, false),
+            dependency_edge("edge:6", "unit:3", "unit:1", DepKind::EagerUse, true),
+            dependency_edge("edge:7", "unit:3", "unit:2", DepKind::LazyUse, false),
+            dependency_edge("edge:8", "unit:4", "unit:1", DepKind::EagerUse, true),
+            dependency_edge("edge:9", "unit:6", "unit:1", DepKind::LazyUse, false),
+            dependency_edge("edge:10", "unit:6", "unit:5", DepKind::Sequenced, true),
+            dependency_edge("edge:11", "unit:7", "unit:0", DepKind::EagerUse, true),
         ],
     );
     let spec = [
-        spec_module("ui/m0", &["owner:7"]),
-        spec_module("ui/m4", &["owner:5"]),
-        spec_module("ui/m5", &["owner:0", "owner:1"]),
-        spec_module("ui/m6", &["owner:4"]),
+        spec_module("ui/m0", &["unit:7"]),
+        spec_module("ui/m4", &["unit:5"]),
+        spec_module("ui/m5", &["unit:0", "unit:1"]),
+        spec_module("ui/m6", &["unit:4"]),
     ];
     let (mut q, _) =
         build_seed_quotient(&report, &report.atomic_graph.nodes, &spec, 10_000).unwrap();
     assert!(q.realizability_verdict().is_realizable());
-    let left = q.class_of(q.owner_idx_of("owner:3").unwrap());
-    let right = q.class_of(q.owner_idx_of("owner:7").unwrap());
+    let left = q.class_of(q.source_unit_index_of("unit:3").unwrap());
+    let right = q.class_of(q.source_unit_index_of("unit:7").unwrap());
     assert!(q.merge_preserves_invariants(left, right));
     let mut post = q.realizability_assignment().clone();
-    let target = post.of(analysis::OwnerId(7));
-    post.set(analysis::OwnerId(3), target);
-    let post_verdict = gate::check_realizability(q.owner_graph(), &post);
+    let target = post.of(analysis::SourceUnitId(7));
+    post.set(analysis::SourceUnitId(3), target);
+    let post_verdict = gate::check_realizability(q.dependency_graph(), &post);
     let index = gate::RealizabilityIndex::from_assignment(
-        q.owner_graph(),
+        q.dependency_graph(),
         q.realizability_assignment().clone(),
     );
     assert_eq!(
-        index.verdict_after_moving_owners(q.owner_graph(), &[analysis::OwnerId(3)], target),
+        index.verdict_after_moving_source_units(
+            q.dependency_graph(),
+            &[analysis::SourceUnitId(3)],
+            target
+        ),
         post_verdict,
     );
     assert_eq!(post_verdict.unrealizable_sccs.len(), 1);
@@ -104,10 +108,10 @@ fn original_home_merge_rejects_remote_tdz() {
 fn group_contraction_commits_one_final_entry_assignment_and_honors_cap() {
     let report = singleton_graph(
         vec![
-            active_owner("owner:a", 1, &["A"], 5, "home"),
-            active_owner("owner:b", 2, &["B"], 5, "home"),
-            residual_owner("owner:entry", 3, &["Entry"], 5),
-            active_owner("owner:outside", 4, &["Outside"], 5, "outside"),
+            active_source_unit("unit:a", 1, &["A"], 5, "home"),
+            active_source_unit("unit:b", 2, &["B"], 5, "home"),
+            residual_source_unit("unit:entry", 3, &["Entry"], 5),
+            active_source_unit("unit:outside", 4, &["Outside"], 5, "outside"),
         ],
         vec![],
     );
@@ -121,7 +125,7 @@ fn group_contraction_commits_one_final_entry_assignment_and_honors_cap() {
     .unwrap();
     assert!(!q.contract_if_preserving(ClassId(0), ClassId(0)));
     assert!(!q.contract_if_preserving(ClassId(0), ClassId(1)));
-    assert_eq!(q.class_of(OwnerIdx(1)), ClassId(1));
+    assert_eq!(q.class_of(SourceUnitIndex(1)), ClassId(1));
 
     let mut q = QuotientGraph::from_report_with_realizable_assignment(
         &report,
@@ -133,10 +137,10 @@ fn group_contraction_commits_one_final_entry_assignment_and_honors_cap() {
     let classes = [ClassId(0), ClassId(1), ClassId(2)];
     assert!(!q.contract_group_if_preserving(&classes));
     assert_eq!(
-        q.realizability_assignment().of(analysis::OwnerId(0)),
+        q.realizability_assignment().of(analysis::SourceUnitId(0)),
         assignments[0]
     );
-    assert_eq!(q.class_of(OwnerIdx(0)), ClassId(0));
+    assert_eq!(q.class_of(SourceUnitIndex(0)), ClassId(0));
 
     let mut q = QuotientGraph::from_report_with_realizable_assignment(
         &report,
@@ -146,16 +150,17 @@ fn group_contraction_commits_one_final_entry_assignment_and_honors_cap() {
     )
     .unwrap();
     assert!(q.contract_group_if_preserving(&classes));
-    for owner in 0..3 {
-        assert_eq!(q.class_of(OwnerIdx(owner)), ClassId(0));
+    for source_unit in 0..3 {
+        assert_eq!(q.class_of(SourceUnitIndex(source_unit)), ClassId(0));
         assert_eq!(
-            q.realizability_assignment().of(analysis::OwnerId(owner)),
+            q.realizability_assignment()
+                .of(analysis::SourceUnitId(source_unit)),
             ModuleId(0)
         );
     }
-    assert_eq!(q.class_of(OwnerIdx(3)), ClassId(3));
+    assert_eq!(q.class_of(SourceUnitIndex(3)), ClassId(3));
     assert_eq!(
-        q.realizability_assignment().of(analysis::OwnerId(3)),
+        q.realizability_assignment().of(analysis::SourceUnitId(3)),
         assignments[3]
     );
     assert!(q.realizability_verdict().is_realizable());
@@ -177,18 +182,18 @@ fn seed_skips_unrealizable_spec_module_contraction_and_reports() {
     // mod_beta (b1 and b2), b1 and b2 would land in one class, and
     // then [a-class, b-class] form a mutual constraining cycle. The
     // gate must reject that contraction.
-    let a1 = residual_owner("owner:a1", 1, &["BindingA1"], 5);
-    let a2 = residual_owner("owner:a2", 2, &["BindingA2"], 5);
-    let b1 = residual_owner("owner:b1", 3, &["BindingB1"], 5);
-    let b2 = residual_owner("owner:b2", 4, &["BindingB2"], 5);
+    let a1 = residual_source_unit("unit:a1", 1, &["BindingA1"], 5);
+    let a2 = residual_source_unit("unit:a2", 2, &["BindingA2"], 5);
+    let b1 = residual_source_unit("unit:b1", 3, &["BindingB1"], 5);
+    let b2 = residual_source_unit("unit:b2", 4, &["BindingB2"], 5);
     let edges = vec![
-        owner_edge("edge:0", "owner:a1", "owner:b1", DepKind::EagerUse, true),
-        owner_edge("edge:1", "owner:b2", "owner:a2", DepKind::EagerUse, true),
+        dependency_edge("edge:0", "unit:a1", "unit:b1", DepKind::EagerUse, true),
+        dependency_edge("edge:1", "unit:b2", "unit:a2", DepKind::EagerUse, true),
     ];
     let report = singleton_graph(vec![a1.clone(), a2.clone(), b1.clone(), b2.clone()], edges);
     let spec = vec![
-        spec_module("mod_alpha", &["owner:a1", "owner:a2"]),
-        spec_module("mod_beta", &["owner:b1", "owner:b2"]),
+        spec_module("mod_alpha", &["unit:a1", "unit:a2"]),
+        spec_module("mod_beta", &["unit:b1", "unit:b2"]),
     ];
     let (q, rejected) =
         build_seed_quotient(&report, &report.atomic_graph.nodes, &spec, 10_000).unwrap();
@@ -217,34 +222,34 @@ fn seed_skips_unrealizable_spec_module_contraction_and_reports() {
     assert_eq!(module_id, "mod_beta");
     assert_eq!(
         rejected_pair,
-        &("owner:b1".to_string(), "owner:b2".to_string()),
+        &("unit:b1".to_string(), "unit:b2".to_string()),
         "rejection should point at the b1<->b2 contraction",
     );
     assert!(!cycle.is_empty(), "cycle evidence must be non-empty");
     // The cycle evidence must mention both alpha-class owners and
     // the b1-class — the cycle the proposed contraction would join.
-    let evidence_owners: Vec<&str> = cycle
+    let evidence_source_units: Vec<&str> = cycle
         .cycles
         .iter()
-        .flat_map(|c| c.owner_ids.iter().map(String::as_str))
+        .flat_map(|c| c.source_unit_ids.iter().map(String::as_str))
         .collect();
     assert!(
-        evidence_owners.contains(&"owner:a1") && evidence_owners.contains(&"owner:a2"),
-        "cycle evidence should include alpha owners: {evidence_owners:?}",
+        evidence_source_units.contains(&"unit:a1") && evidence_source_units.contains(&"unit:a2"),
+        "cycle evidence should include alpha owners: {evidence_source_units:?}",
     );
     assert!(
-        evidence_owners.contains(&"owner:b1") || evidence_owners.contains(&"owner:b2"),
-        "cycle evidence should include at least one beta owner: {evidence_owners:?}",
+        evidence_source_units.contains(&"unit:b1") || evidence_source_units.contains(&"unit:b2"),
+        "cycle evidence should include at least one beta unit: {evidence_source_units:?}",
     );
 
     // mod_alpha did apply — a1 and a2 share a class.
-    let a1_idx = q.owner_idx_of("owner:a1").unwrap();
-    let a2_idx = q.owner_idx_of("owner:a2").unwrap();
+    let a1_idx = q.source_unit_index_of("unit:a1").unwrap();
+    let a2_idx = q.source_unit_index_of("unit:a2").unwrap();
     assert_eq!(q.class_of(a1_idx), q.class_of(a2_idx));
     // mod_beta did NOT apply — b1 and b2 are still in distinct
     // classes (the kernel never silently merged them).
-    let b1_idx = q.owner_idx_of("owner:b1").unwrap();
-    let b2_idx = q.owner_idx_of("owner:b2").unwrap();
+    let b1_idx = q.source_unit_index_of("unit:b1").unwrap();
+    let b2_idx = q.source_unit_index_of("unit:b2").unwrap();
     assert_ne!(q.class_of(b1_idx), q.class_of(b2_idx));
 }
 
@@ -262,13 +267,13 @@ fn seed_skips_unrealizable_spec_module_contraction_and_reports() {
 /// could not seed.
 #[test]
 fn seed_co_locates_constraining_cycle_atomic_group() {
-    let a = residual_owner("owner:a", 1, &["BindingA"], 5);
-    let b = residual_owner("owner:b", 2, &["BindingB"], 5);
-    let c = residual_owner("owner:c", 3, &["BindingC"], 5);
+    let a = residual_source_unit("unit:a", 1, &["BindingA"], 5);
+    let b = residual_source_unit("unit:b", 2, &["BindingB"], 5);
+    let c = residual_source_unit("unit:c", 3, &["BindingC"], 5);
     let edges = vec![
-        owner_edge("edge:0", "owner:a", "owner:b", DepKind::EagerUse, true),
-        owner_edge("edge:1", "owner:b", "owner:c", DepKind::EagerUse, true),
-        owner_edge("edge:2", "owner:c", "owner:a", DepKind::EagerUse, true),
+        dependency_edge("edge:0", "unit:a", "unit:b", DepKind::EagerUse, true),
+        dependency_edge("edge:1", "unit:b", "unit:c", DepKind::EagerUse, true),
+        dependency_edge("edge:2", "unit:c", "unit:a", DepKind::EagerUse, true),
     ];
     let atomic_group = atomic_group_for("atomic:0", &[&a, &b, &c]);
     let report = graph_of(
@@ -285,9 +290,9 @@ fn seed_co_locates_constraining_cycle_atomic_group() {
          delta-free no-ops under the module-level predicate and must \
          not be rejected: {rejected:?}",
     );
-    let a_idx = q.owner_idx_of("owner:a").unwrap();
-    let b_idx = q.owner_idx_of("owner:b").unwrap();
-    let c_idx = q.owner_idx_of("owner:c").unwrap();
+    let a_idx = q.source_unit_index_of("unit:a").unwrap();
+    let b_idx = q.source_unit_index_of("unit:b").unwrap();
+    let c_idx = q.source_unit_index_of("unit:c").unwrap();
     assert_eq!(q.class_of(a_idx), q.class_of(b_idx));
     assert_eq!(q.class_of(b_idx), q.class_of(c_idx));
 }
@@ -297,40 +302,40 @@ fn seed_co_locates_constraining_cycle_atomic_group() {
 /// must remain rejected, with evidence naming the eager reader.
 #[test]
 fn merge_cannot_hide_an_existing_entry_dependency() {
-    let x = active_owner("owner:x", 1, &["BindingX"], 10, "ui/x");
-    let r = residual_owner("owner:r", 2, &["BindingR"], 5);
-    let h = residual_owner("owner:h", 3, &["BindingH"], 5);
+    let x = active_source_unit("unit:x", 1, &["BindingX"], 10, "ui/x");
+    let r = residual_source_unit("unit:r", 2, &["BindingR"], 5);
+    let h = residual_source_unit("unit:h", 3, &["BindingH"], 5);
     let edges = vec![
-        owner_edge("edge:0", "owner:x", "owner:r", DepKind::EagerUse, true),
-        owner_edge("edge:1", "owner:r", "owner:h", DepKind::LazyUse, false),
+        dependency_edge("edge:0", "unit:x", "unit:r", DepKind::EagerUse, true),
+        dependency_edge("edge:1", "unit:r", "unit:h", DepKind::LazyUse, false),
     ];
     let report = singleton_graph(vec![x.clone(), r.clone(), h.clone()], edges);
     let groups = vec![module_group(vec![0])];
     let (mut q, group_ids) =
         QuotientGraph::from_report_with_partition(&report, 10_000, &groups).unwrap();
     let cx = group_ids[0];
-    let ch = q.class_of(q.owner_idx_of("owner:h").unwrap());
+    let ch = q.class_of(q.source_unit_index_of("unit:h").unwrap());
 
     // The source graph is acyclic, but entry's implicit import closes the
     // runtime cycle before the merge. The merge still leaves x -> r in place.
     assert!(!q.realizability_verdict().is_realizable());
     assert!(
         !q.merge_preserves_invariants(cx, ch),
-        "merging owner:h into ui/x closes the asymmetric I-cycle \
+        "merging unit:h into ui/x closes the asymmetric I-cycle \
          {{ui/x, residual}} with a TDZ'ing constraining pair; the \
          boolean gate must reject",
     );
     let evidence = q
         .would_be_cycles_after_contract(cx, ch)
         .expect("diagnostic gate must surface the Pass-2 rejection");
-    let evidence_owners: Vec<&str> = evidence
+    let evidence_source_units: Vec<&str> = evidence
         .cycles
         .iter()
-        .flat_map(|cycle| cycle.owner_ids.iter().map(String::as_str))
+        .flat_map(|cycle| cycle.source_unit_ids.iter().map(String::as_str))
         .collect();
     assert!(
-        evidence_owners.contains(&"owner:x"),
-        "evidence must mention the eager reader: {evidence_owners:?}",
+        evidence_source_units.contains(&"unit:x"),
+        "evidence must mention the eager reader: {evidence_source_units:?}",
     );
     assert!(
         q.contract(cx, ch).is_err(),
@@ -339,48 +344,48 @@ fn merge_cannot_hide_an_existing_entry_dependency() {
 }
 
 #[test]
-fn post_seed_reports_each_unrealizable_scc_in_owner_id_order() {
+fn post_seed_reports_each_unrealizable_scc_in_source_unit_id_order() {
     // Two independent mutual-eager module pairs, (c, d) before (a, b)
     // in the report. Every spec module is one owner, so no seed
     // contraction is refused and only the post-seed gate sees the
-    // cycles. The report orders them by owner ids, not by class ids.
-    let owners = [
-        active_owner("owner:c", 1, &["BindingC"], 5, "mod_c"),
-        active_owner("owner:d", 2, &["BindingD"], 5, "mod_d"),
-        active_owner("owner:a", 3, &["BindingA"], 5, "mod_a"),
-        active_owner("owner:b", 4, &["BindingB"], 5, "mod_b"),
+    // cycles. The report orders them by source-unit IDs, not by class ids.
+    let source_units = [
+        active_source_unit("unit:c", 1, &["BindingC"], 5, "mod_c"),
+        active_source_unit("unit:d", 2, &["BindingD"], 5, "mod_d"),
+        active_source_unit("unit:a", 3, &["BindingA"], 5, "mod_a"),
+        active_source_unit("unit:b", 4, &["BindingB"], 5, "mod_b"),
     ];
     let edges = vec![
-        owner_edge("edge:0", "owner:c", "owner:d", DepKind::EagerUse, true),
-        owner_edge("edge:1", "owner:d", "owner:c", DepKind::EagerUse, true),
-        owner_edge("edge:2", "owner:a", "owner:b", DepKind::EagerUse, true),
-        owner_edge("edge:3", "owner:b", "owner:a", DepKind::EagerUse, true),
+        dependency_edge("edge:0", "unit:c", "unit:d", DepKind::EagerUse, true),
+        dependency_edge("edge:1", "unit:d", "unit:c", DepKind::EagerUse, true),
+        dependency_edge("edge:2", "unit:a", "unit:b", DepKind::EagerUse, true),
+        dependency_edge("edge:3", "unit:b", "unit:a", DepKind::EagerUse, true),
     ];
-    let atomic_groups = owners
+    let atomic_groups = source_units
         .iter()
         .enumerate()
-        .map(|(i, owner)| atomic_group_for(&format!("atomic:{i}"), &[owner]))
+        .map(|(i, source_unit)| atomic_group_for(&format!("atomic:{i}"), &[source_unit]))
         .collect();
-    let spec: Vec<SpecModuleGroup> = owners
+    let spec: Vec<SpecModuleGroup> = source_units
         .iter()
-        .map(|owner| SpecModuleGroup {
-            module_id: owner.destination.as_str().to_string(),
-            owner_ids: vec![owner.id.clone()],
+        .map(|source_unit| SpecModuleGroup {
+            module_id: source_unit.destination.as_str().to_string(),
+            source_unit_ids: vec![source_unit.id.clone()],
         })
         .collect();
-    let report = graph_of(owners.to_vec(), edges, atomic_groups, vec![]);
+    let report = graph_of(source_units.to_vec(), edges, atomic_groups, vec![]);
 
     let (_q, rejected) =
         build_seed_quotient(&report, &report.atomic_graph.nodes, &spec, 10_000).unwrap();
 
-    let scc = |owner_ids: [&str; 2], classes: [usize; 2]| {
-        let owner_ids = owner_ids.map(String::from).to_vec();
+    let scc = |source_unit_ids: [&str; 2], classes: [usize; 2]| {
+        let source_unit_ids = source_unit_ids.map(String::from).to_vec();
         SeedContractionRejected::PostSeedUnrealizableScc {
-            owner_ids: owner_ids.clone(),
+            source_unit_ids: source_unit_ids.clone(),
             cycle: CycleEvidence {
                 cycles: vec![CycleClassSet {
                     classes: classes.map(ClassId).to_vec(),
-                    owner_ids,
+                    source_unit_ids,
                 }],
             },
         }
@@ -388,8 +393,8 @@ fn post_seed_reports_each_unrealizable_scc_in_owner_id_order() {
     assert_eq!(
         rejected,
         vec![
-            scc(["owner:a", "owner:b"], [2, 3]),
-            scc(["owner:c", "owner:d"], [0, 1]),
+            scc(["unit:a", "unit:b"], [2, 3]),
+            scc(["unit:c", "unit:d"], [0, 1]),
         ],
     );
 }
@@ -407,23 +412,23 @@ fn post_seed_reports_each_unrealizable_scc_in_owner_id_order() {
 //
 // All fixtures below use `from_report_with_partition`, the
 // constructor that takes per-group metadata (lines + the
-// pre-existing-module bit). Owners not in any group remain singletons
+// pre-existing-module bit). SourceUnits not in any group remain singletons
 // with their per-owner residual flag derived from the report.
 
 #[test]
 fn greedy_absorbs_tiny_named_helper_into_unique_consumer() {
-    // Pre-existing module M = {owner:a (BindingA)}. Residual
-    // owner:helper (BindingHelper) is read only by owner:a via an
+    // Pre-existing module M = {unit:a (BindingA)}. Residual
+    // unit:helper (BindingHelper) is read only by unit:a via an
     // EagerUse edge. Its unique consumer is the only module
     // neighbor, so greedy should absorb it.
-    let a = active_owner("owner:a", 1, &["BindingA"], 10, "ui/x");
-    let helper = residual_owner("owner:helper", 2, &["BindingHelper"], 5);
+    let a = active_source_unit("unit:a", 1, &["BindingA"], 10, "ui/x");
+    let helper = residual_source_unit("unit:helper", 2, &["BindingHelper"], 5);
     let report = graph_of(
         vec![a.clone(), helper.clone()],
-        vec![owner_edge(
+        vec![dependency_edge(
             "edge:0",
-            "owner:a",
-            "owner:helper",
+            "unit:a",
+            "unit:helper",
             DepKind::EagerUse,
             true,
         )],
@@ -440,26 +445,26 @@ fn greedy_absorbs_tiny_named_helper_into_unique_consumer() {
     let contractions = greedy_merge_to_convergence(&mut q);
 
     assert_eq!(contractions.len(), 1, "got: {contractions:?}");
-    let a_idx = q.owner_idx_of("owner:a").unwrap();
-    let helper_idx = q.owner_idx_of("owner:helper").unwrap();
+    let a_idx = q.source_unit_index_of("unit:a").unwrap();
+    let helper_idx = q.source_unit_index_of("unit:helper").unwrap();
     assert_eq!(q.class_of(a_idx), q.class_of(helper_idx));
     assert_eq!(q.class_of(a_idx), group_ids[0]);
 }
 
 #[test]
 fn greedy_terminates_at_convergence() {
-    let a = active_owner("owner:a", 1, &["BindingA"], 10, "ui/x");
-    let h1 = residual_owner("owner:h1", 2, &["BindingH1"], 5);
-    let h2 = residual_owner("owner:h2", 3, &["BindingH2"], 5);
-    let h3 = residual_owner("owner:h3", 4, &["BindingH3"], 5);
+    let a = active_source_unit("unit:a", 1, &["BindingA"], 10, "ui/x");
+    let h1 = residual_source_unit("unit:h1", 2, &["BindingH1"], 5);
+    let h2 = residual_source_unit("unit:h2", 3, &["BindingH2"], 5);
+    let h3 = residual_source_unit("unit:h3", 4, &["BindingH3"], 5);
     // Start realizable: residual helpers depend on the emitted module,
     // not vice versa. Each contraction preserves that entry-last invariant.
     let report = singleton_graph(
         vec![a.clone(), h1.clone(), h2.clone(), h3.clone()],
         vec![
-            owner_edge("edge:0", "owner:h1", "owner:a", DepKind::EagerUse, true),
-            owner_edge("edge:1", "owner:h2", "owner:a", DepKind::EagerUse, true),
-            owner_edge("edge:2", "owner:h3", "owner:a", DepKind::EagerUse, true),
+            dependency_edge("edge:0", "unit:h1", "unit:a", DepKind::EagerUse, true),
+            dependency_edge("edge:1", "unit:h2", "unit:a", DepKind::EagerUse, true),
+            dependency_edge("edge:2", "unit:h3", "unit:a", DepKind::EagerUse, true),
         ],
     );
 
@@ -492,15 +497,15 @@ fn greedy_terminates_at_convergence() {
 fn greedy_merges_three_clusters_until_the_size_cap() {
     // Three pre-existing-module clusters of 20 + 20 + 10 lines, all
     // mutually coupled by EagerUse edges.
-    let a = active_owner("owner:a", 1, &["BindingA"], 20, "ui/a");
-    let b = active_owner("owner:b", 2, &["BindingB"], 20, "ui/b");
-    let c = active_owner("owner:c", 3, &["BindingC"], 10, "ui/c");
+    let a = active_source_unit("unit:a", 1, &["BindingA"], 20, "ui/a");
+    let b = active_source_unit("unit:b", 2, &["BindingB"], 20, "ui/b");
+    let c = active_source_unit("unit:c", 3, &["BindingC"], 10, "ui/c");
     let report = graph_of(
         vec![a.clone(), b.clone(), c.clone()],
         vec![
-            owner_edge("edge:ab", "owner:a", "owner:b", DepKind::EagerUse, true),
-            owner_edge("edge:bc", "owner:b", "owner:c", DepKind::EagerUse, true),
-            owner_edge("edge:ac", "owner:a", "owner:c", DepKind::EagerUse, true),
+            dependency_edge("edge:ab", "unit:a", "unit:b", DepKind::EagerUse, true),
+            dependency_edge("edge:bc", "unit:b", "unit:c", DepKind::EagerUse, true),
+            dependency_edge("edge:ac", "unit:a", "unit:c", DepKind::EagerUse, true),
         ],
         vec![
             atomic_group_for("atomic:a", &[&a]),
@@ -516,12 +521,12 @@ fn greedy_merges_three_clusters_until_the_size_cap() {
     ];
     for (cap, expected_contractions, expected_classes) in [
         // Everything fits: all three collapse through two contractions.
-        (150, 2, vec![vec!["owner:a", "owner:b", "owner:c"]]),
+        (150, 2, vec![vec!["unit:a", "unit:b", "unit:c"]]),
         // Candidates are (a, b)=40 lines, (a, c)=30 (cycle-creating, so
         // rejected) and (b, c)=30. (b, c) wins the tie-break on result
         // size, and folding `a` into the 30-line survivor would total 50,
         // over the cap.
-        (40, 1, vec![vec!["owner:a"], vec!["owner:b", "owner:c"]]),
+        (40, 1, vec![vec!["unit:a"], vec!["unit:b", "unit:c"]]),
     ] {
         let (mut q, _) = QuotientGraph::from_report_with_partition(&report, cap, &groups).unwrap();
         let contractions = greedy_merge_to_convergence(&mut q);
@@ -531,11 +536,11 @@ fn greedy_merges_three_clusters_until_the_size_cap() {
             "cap {cap}: {contractions:?}",
         );
         let mut classes = BTreeMap::<ClassId, Vec<&str>>::new();
-        for owner in ["owner:a", "owner:b", "owner:c"] {
+        for source_unit in ["unit:a", "unit:b", "unit:c"] {
             classes
-                .entry(q.class_of(q.owner_idx_of(owner).unwrap()))
+                .entry(q.class_of(q.source_unit_index_of(source_unit).unwrap()))
                 .or_default()
-                .push(owner);
+                .push(source_unit);
         }
         assert_eq!(
             classes.into_values().collect::<Vec<_>>(),
@@ -552,13 +557,13 @@ fn greedy_resolves_realizability_cycle_by_merging() {
     // edge alone doesn't cycle, but the symmetric coupling makes
     // them a strong merge candidate; after merge the post-merge
     // quotient is realizable (intra-class self-loop).
-    let a = active_owner("owner:a", 1, &["BindingA"], 10, "ui/a");
-    let b = active_owner("owner:b", 2, &["BindingB"], 10, "ui/b");
+    let a = active_source_unit("unit:a", 1, &["BindingA"], 10, "ui/a");
+    let b = active_source_unit("unit:b", 2, &["BindingB"], 10, "ui/b");
     let report = graph_of(
         vec![a.clone(), b.clone()],
         vec![
-            owner_edge("edge:ab", "owner:a", "owner:b", DepKind::EagerUse, true),
-            owner_edge("edge:ba", "owner:b", "owner:a", DepKind::LazyUse, false),
+            dependency_edge("edge:ab", "unit:a", "unit:b", DepKind::EagerUse, true),
+            dependency_edge("edge:ba", "unit:b", "unit:a", DepKind::LazyUse, false),
         ],
         vec![
             atomic_group_for("atomic:a", &[&a]),
@@ -574,8 +579,8 @@ fn greedy_resolves_realizability_cycle_by_merging() {
         1,
         "asymmetric coupling between two modules should merge: {contractions:?}",
     );
-    let a_idx = q.owner_idx_of("owner:a").unwrap();
-    let b_idx = q.owner_idx_of("owner:b").unwrap();
+    let a_idx = q.source_unit_index_of("unit:a").unwrap();
+    let b_idx = q.source_unit_index_of("unit:b").unwrap();
     assert_eq!(q.class_of(a_idx), q.class_of(b_idx));
     // Post-merge quotient: no remaining cross-class cycles.
     let verdict = q.realizability_verdict();
@@ -586,29 +591,29 @@ fn greedy_resolves_realizability_cycle_by_merging() {
 }
 
 #[test]
-fn merge_absorbs_residual_owner_with_only_intra_deps() {
+fn merge_absorbs_residual_source_unit_with_only_intra_deps() {
     // mod_a + mod_b mutually coupled; residual `helper` reads from
     // both. Assert the merge proposal's operands include
-    // `owner:helper`.
-    let a = active_owner("owner:a", 1, &["BindingA"], 10, "ui/a");
-    let b = active_owner("owner:b", 2, &["BindingB"], 10, "ui/b");
-    let helper = residual_owner("owner:helper", 3, &["BindingHelper"], 5);
+    // `unit:helper`.
+    let a = active_source_unit("unit:a", 1, &["BindingA"], 10, "ui/a");
+    let b = active_source_unit("unit:b", 2, &["BindingB"], 10, "ui/b");
+    let helper = residual_source_unit("unit:helper", 3, &["BindingHelper"], 5);
     let report = graph_of(
         vec![a.clone(), b.clone(), helper.clone()],
         vec![
-            owner_edge("edge:ab", "owner:a", "owner:b", DepKind::EagerUse, true),
-            owner_edge("edge:ba", "owner:b", "owner:a", DepKind::EagerUse, true),
-            owner_edge(
+            dependency_edge("edge:ab", "unit:a", "unit:b", DepKind::EagerUse, true),
+            dependency_edge("edge:ba", "unit:b", "unit:a", DepKind::EagerUse, true),
+            dependency_edge(
                 "edge:helper_a",
-                "owner:helper",
-                "owner:a",
+                "unit:helper",
+                "unit:a",
                 DepKind::EagerUse,
                 true,
             ),
-            owner_edge(
+            dependency_edge(
                 "edge:helper_b",
-                "owner:helper",
-                "owner:b",
+                "unit:helper",
+                "unit:b",
                 DepKind::EagerUse,
                 true,
             ),
@@ -646,9 +651,9 @@ fn merge_absorbs_residual_owner_with_only_intra_deps() {
     // an extension owner — `merge + extend` semantics.
     assert!(
         merge
-            .extension_owner_ids
-            .contains(&"owner:helper".to_string()),
-        "merge proposal should list owner:helper as an extension owner: {merge:?}",
+            .extension_source_unit_ids
+            .contains(&"unit:helper".to_string()),
+        "merge proposal should list unit:helper as an extension unit: {merge:?}",
     );
 }
 
@@ -689,25 +694,13 @@ fn pass3_diagnostic_walk_never_commits_a_merge() {
     // diagnostic walk. A constraining cycle among residual owners alone
     // yields no rejection: the contractions collapse it into one
     // residual class and same-class edges are skipped silently.
-    let foo = active_owner("owner:foo", 1, &["Foo"], 5, "mod_alpha");
-    let bar = residual_owner("owner:bar", 2, &["Bar"], 5);
-    let helper = residual_owner("owner:helper", 3, &["Helper"], 5);
+    let foo = active_source_unit("unit:foo", 1, &["Foo"], 5, "mod_alpha");
+    let bar = residual_source_unit("unit:bar", 2, &["Bar"], 5);
+    let helper = residual_source_unit("unit:helper", 3, &["Helper"], 5);
     let edges = vec![
-        owner_edge("edge:0", "owner:bar", "owner:foo", DepKind::EagerUse, true),
-        owner_edge(
-            "edge:1",
-            "owner:foo",
-            "owner:helper",
-            DepKind::EagerUse,
-            true,
-        ),
-        owner_edge(
-            "edge:2",
-            "owner:helper",
-            "owner:bar",
-            DepKind::EagerUse,
-            true,
-        ),
+        dependency_edge("edge:0", "unit:bar", "unit:foo", DepKind::EagerUse, true),
+        dependency_edge("edge:1", "unit:foo", "unit:helper", DepKind::EagerUse, true),
+        dependency_edge("edge:2", "unit:helper", "unit:bar", DepKind::EagerUse, true),
     ];
     let report = graph_of(
         vec![foo.clone(), bar.clone(), helper.clone()],
@@ -723,7 +716,7 @@ fn pass3_diagnostic_walk_never_commits_a_merge() {
             atomic_edge("atomic_edge:c", "atomic:helper", "atomic:bar"),
         ],
     );
-    let spec = vec![spec_module("mod_alpha", &["owner:foo"])];
+    let spec = vec![spec_module("mod_alpha", &["unit:foo"])];
     let (q, rejected) =
         build_seed_quotient(&report, &report.atomic_graph.nodes, &spec, 10_000).unwrap();
 
@@ -753,18 +746,18 @@ fn pass3_diagnostic_walk_never_commits_a_merge() {
             !cycle.is_empty(),
             "AtomicReachability rejection must carry cycle evidence: {r:?}"
         );
-        let (src_owner, tgt_owner) = rejected_pair;
+        let (src_source_unit, tgt_source_unit) = rejected_pair;
         let src_idx = q
-            .owner_idx_of(src_owner)
-            .unwrap_or_else(|| panic!("rejected source owner {src_owner} must be in graph"));
+            .source_unit_index_of(src_source_unit)
+            .unwrap_or_else(|| panic!("rejected source owner {src_source_unit} must be in graph"));
         let tgt_idx = q
-            .owner_idx_of(tgt_owner)
-            .unwrap_or_else(|| panic!("rejected target owner {tgt_owner} must be in graph"));
+            .source_unit_index_of(tgt_source_unit)
+            .unwrap_or_else(|| panic!("rejected target owner {tgt_source_unit} must be in graph"));
         assert_ne!(
             q.class_of(src_idx),
             q.class_of(tgt_idx),
             "diagnostic walk must NOT have committed the rejected merge of \
-             {src_owner} and {tgt_owner}; they must remain in distinct classes",
+             {src_source_unit} and {tgt_source_unit}; they must remain in distinct classes",
         );
     }
 
@@ -784,17 +777,17 @@ fn pass3_diagnostic_walk_never_commits_a_merge() {
 // every planner verdict must match the materializer verdict on the
 // same input.
 
-/// Build an `OwnerGraph` + `ModuleAssignment` from a report + spec module
+/// Build a `DependencyGraph` + `ModuleAssignment` from a report + spec module
 /// list. The assignment assigns each owner to the module derived from
 /// its `destination.id`; residual destinations land on the residual
 /// `ModuleId`. Used by the planner-vs-materializer cross-check tests.
-fn owner_graph_and_assignment_from_spec(
-    report: &analysis::OwnerGraphReport,
+fn dependency_graph_and_assignment_from_spec(
+    report: &analysis::DependencyGraphReport,
     spec: &[SpecModuleGroup],
-) -> (analysis::OwnerGraph, analysis::ModuleAssignment) {
+) -> (analysis::DependencyGraph, analysis::ModuleAssignment) {
     use std::collections::HashMap;
-    let owner_graph = analysis::OwnerGraph::from_report(report).unwrap();
-    let owner_index: HashMap<&str, usize> = report
+    let dependency_graph = analysis::DependencyGraph::from_report(report).unwrap();
+    let source_unit_index: HashMap<&str, usize> = report
         .nodes
         .iter()
         .enumerate()
@@ -814,18 +807,18 @@ fn owner_graph_and_assignment_from_spec(
                 m
             });
     }
-    // Owner→ModuleId: by default residual; spec modules override.
-    let mut of: Vec<analysis::ModuleId> = vec![residual; owner_graph.num_nodes()];
+    // SourceUnit→ModuleId: by default residual; spec modules override.
+    let mut of: Vec<analysis::ModuleId> = vec![residual; dependency_graph.num_nodes()];
     for module in spec {
         let mid = spec_module_ids[module.module_id.as_str()];
-        for owner_id in &module.owner_ids {
-            if let Some(&o) = owner_index.get(owner_id.as_str()) {
+        for source_unit_id in &module.source_unit_ids {
+            if let Some(&o) = source_unit_index.get(source_unit_id.as_str()) {
                 of[o] = mid;
             }
         }
     }
     let assignment = analysis::ModuleAssignment::from_assignments(of, residual);
-    (owner_graph, assignment)
+    (dependency_graph, assignment)
 }
 
 #[test]
@@ -843,7 +836,7 @@ fn planner_and_materializer_agree_on_corpus() {
 
     struct Case {
         label: &'static str,
-        report: analysis::OwnerGraphReport,
+        report: analysis::DependencyGraphReport,
         spec: Vec<SpecModuleGroup>,
     }
 
@@ -858,21 +851,21 @@ fn planner_and_materializer_agree_on_corpus() {
 
     // Case 2: single module, no cross-module edges.
     {
-        let a = active_owner("owner:a", 1, &["BindingA"], 5, "mod_solo");
-        let b = active_owner("owner:b", 2, &["BindingB"], 5, "mod_solo");
+        let a = active_source_unit("unit:a", 1, &["BindingA"], 5, "mod_solo");
+        let b = active_source_unit("unit:b", 2, &["BindingB"], 5, "mod_solo");
         cases.push(Case {
             label: "single_module_intra_edges",
             report: singleton_graph(
                 vec![a.clone(), b.clone()],
-                vec![owner_edge(
+                vec![dependency_edge(
                     "edge:0",
-                    "owner:a",
-                    "owner:b",
+                    "unit:a",
+                    "unit:b",
                     analysis::DepKind::EagerUse,
                     true,
                 )],
             ),
-            spec: vec![spec_module("mod_solo", &["owner:a", "owner:b"])],
+            spec: vec![spec_module("mod_solo", &["unit:a", "unit:b"])],
         });
     }
 
@@ -882,26 +875,26 @@ fn planner_and_materializer_agree_on_corpus() {
     // modules, residual reaches the SCC only via a non-residual
     // mediator. The SCC's constraining edge TDZs at runtime.
     {
-        let entry = residual_owner("owner:entry", 0, &[], 1);
-        let dep_value = active_owner("owner:dep_value", 1, &["BindingDepValue"], 5, "mod_dep");
+        let entry = residual_source_unit("unit:entry", 0, &[], 1);
+        let dep_value = active_source_unit("unit:dep_value", 1, &["BindingDepValue"], 5, "mod_dep");
         let lazy_reader =
-            active_owner("owner:lazy_reader", 2, &["BindingLazyReader"], 5, "mod_dep");
-        let cross_value = active_owner(
-            "owner:cross_value",
+            active_source_unit("unit:lazy_reader", 2, &["BindingLazyReader"], 5, "mod_dep");
+        let cross_value = active_source_unit(
+            "unit:cross_value",
             3,
             &["BindingCrossValue"],
             5,
             "mod_dependent",
         );
-        let mediator_helper = active_owner(
-            "owner:mediator_helper",
+        let mediator_helper = active_source_unit(
+            "unit:mediator_helper",
             4,
             &["BindingMediatorHelper"],
             5,
             "mod_mediator",
         );
-        let mediator_init = active_owner(
-            "owner:mediator_init",
+        let mediator_init = active_source_unit(
+            "unit:mediator_init",
             5,
             &["BindingMediatorInit"],
             5,
@@ -919,49 +912,49 @@ fn planner_and_materializer_agree_on_corpus() {
                     mediator_init.clone(),
                 ],
                 vec![
-                    owner_edge(
+                    dependency_edge(
                         "edge:entry_mediator",
-                        "owner:entry",
-                        "owner:mediator_init",
+                        "unit:entry",
+                        "unit:mediator_init",
                         analysis::DepKind::EagerUse,
                         true,
                     ),
-                    owner_edge(
+                    dependency_edge(
                         "edge:mediator_dep",
-                        "owner:mediator_helper",
-                        "owner:dep_value",
+                        "unit:mediator_helper",
+                        "unit:dep_value",
                         analysis::DepKind::LazyUse,
                         false,
                     ),
-                    owner_edge(
+                    dependency_edge(
                         "edge:mediator_intra",
-                        "owner:mediator_init",
-                        "owner:mediator_helper",
+                        "unit:mediator_init",
+                        "unit:mediator_helper",
                         analysis::DepKind::EagerUse,
                         true,
                     ),
-                    owner_edge(
+                    dependency_edge(
                         "edge:dependent_dep",
-                        "owner:cross_value",
-                        "owner:dep_value",
+                        "unit:cross_value",
+                        "unit:dep_value",
                         analysis::DepKind::EagerUse,
                         true,
                     ),
-                    owner_edge(
+                    dependency_edge(
                         "edge:dep_back",
-                        "owner:lazy_reader",
-                        "owner:cross_value",
+                        "unit:lazy_reader",
+                        "unit:cross_value",
                         analysis::DepKind::LazyUse,
                         false,
                     ),
                 ],
             ),
             spec: vec![
-                spec_module("mod_dep", &["owner:dep_value", "owner:lazy_reader"]),
-                spec_module("mod_dependent", &["owner:cross_value"]),
+                spec_module("mod_dep", &["unit:dep_value", "unit:lazy_reader"]),
+                spec_module("mod_dependent", &["unit:cross_value"]),
                 spec_module(
                     "mod_mediator",
-                    &["owner:mediator_helper", "owner:mediator_init"],
+                    &["unit:mediator_helper", "unit:mediator_init"],
                 ),
             ],
         });
@@ -969,24 +962,24 @@ fn planner_and_materializer_agree_on_corpus() {
 
     // Case 4: mutual constraining cycle.
     {
-        let a1 = residual_owner("owner:a1", 1, &["BindingA1"], 5);
-        let b1 = residual_owner("owner:b1", 2, &["BindingB1"], 5);
+        let a1 = residual_source_unit("unit:a1", 1, &["BindingA1"], 5);
+        let b1 = residual_source_unit("unit:b1", 2, &["BindingB1"], 5);
         cases.push(Case {
             label: "mutual_constraining_cycle",
             report: singleton_graph(
                 vec![a1.clone(), b1.clone()],
                 vec![
-                    owner_edge(
+                    dependency_edge(
                         "edge:fwd",
-                        "owner:a1",
-                        "owner:b1",
+                        "unit:a1",
+                        "unit:b1",
                         analysis::DepKind::EagerUse,
                         true,
                     ),
-                    owner_edge(
+                    dependency_edge(
                         "edge:back",
-                        "owner:b1",
-                        "owner:a1",
+                        "unit:b1",
+                        "unit:a1",
                         analysis::DepKind::EagerUse,
                         true,
                     ),
@@ -1004,32 +997,32 @@ fn planner_and_materializer_agree_on_corpus() {
 
     // Case 5: lazy-only cross-module edges.
     {
-        let alpha = active_owner("owner:alpha", 1, &["BindingAlpha"], 5, "mod_alpha");
-        let beta = active_owner("owner:beta", 2, &["BindingBeta"], 5, "mod_beta");
+        let alpha = active_source_unit("unit:alpha", 1, &["BindingAlpha"], 5, "mod_alpha");
+        let beta = active_source_unit("unit:beta", 2, &["BindingBeta"], 5, "mod_beta");
         cases.push(Case {
             label: "lazy_only_cross_module",
             report: singleton_graph(
                 vec![alpha.clone(), beta.clone()],
                 vec![
-                    owner_edge(
+                    dependency_edge(
                         "edge:0",
-                        "owner:alpha",
-                        "owner:beta",
+                        "unit:alpha",
+                        "unit:beta",
                         analysis::DepKind::LazyUse,
                         false,
                     ),
-                    owner_edge(
+                    dependency_edge(
                         "edge:1",
-                        "owner:beta",
-                        "owner:alpha",
+                        "unit:beta",
+                        "unit:alpha",
                         analysis::DepKind::LazyUse,
                         false,
                     ),
                 ],
             ),
             spec: vec![
-                spec_module("mod_alpha", &["owner:alpha"]),
-                spec_module("mod_beta", &["owner:beta"]),
+                spec_module("mod_alpha", &["unit:alpha"]),
+                spec_module("mod_beta", &["unit:beta"]),
             ],
         });
     }
@@ -1037,9 +1030,9 @@ fn planner_and_materializer_agree_on_corpus() {
     let mut materializer_unrealizable_labels = Vec::new();
     for case in &cases {
         // Materializer-side.
-        let (owner_graph, assignment) =
-            owner_graph_and_assignment_from_spec(&case.report, &case.spec);
-        let verdict = gate::check_realizability(&owner_graph, &assignment);
+        let (dependency_graph, assignment) =
+            dependency_graph_and_assignment_from_spec(&case.report, &case.spec);
+        let verdict = gate::check_realizability(&dependency_graph, &assignment);
         let materializer_unrealizable = !verdict.is_realizable();
 
         // Planner-side.
@@ -1087,7 +1080,7 @@ fn planner_and_materializer_agree_on_corpus() {
 /// independent quotients are constructed (one for each driver) so
 /// the comparison is over isolated graphs.
 fn build_fixture(
-    report: &OwnerGraphReport,
+    report: &DependencyGraphReport,
     groups: &[PartitionGroup],
     cap_lines: usize,
 ) -> (QuotientGraph, QuotientGraph) {
@@ -1098,17 +1091,17 @@ fn build_fixture(
 
 /// Fixture 1: chain. One pre-existing module a; orphans b → c → d → e
 /// chain backward into a. Greedy should absorb them sequentially.
-fn fixture_chain() -> (OwnerGraphReport, Vec<PartitionGroup>) {
-    let a = active_owner("owner:a", 1, &["BindingA"], 10, "ui/x");
-    let b = residual_owner("owner:b", 2, &["BindingB"], 5);
-    let c = residual_owner("owner:c", 3, &["BindingC"], 5);
-    let d = residual_owner("owner:d", 4, &["BindingD"], 5);
-    let e = residual_owner("owner:e", 5, &["BindingE"], 5);
+fn fixture_chain() -> (DependencyGraphReport, Vec<PartitionGroup>) {
+    let a = active_source_unit("unit:a", 1, &["BindingA"], 10, "ui/x");
+    let b = residual_source_unit("unit:b", 2, &["BindingB"], 5);
+    let c = residual_source_unit("unit:c", 3, &["BindingC"], 5);
+    let d = residual_source_unit("unit:d", 4, &["BindingD"], 5);
+    let e = residual_source_unit("unit:e", 5, &["BindingE"], 5);
     let edges = vec![
-        owner_edge("edge:0", "owner:b", "owner:a", DepKind::EagerUse, true),
-        owner_edge("edge:1", "owner:c", "owner:b", DepKind::EagerUse, true),
-        owner_edge("edge:2", "owner:d", "owner:c", DepKind::EagerUse, true),
-        owner_edge("edge:3", "owner:e", "owner:d", DepKind::EagerUse, true),
+        dependency_edge("edge:0", "unit:b", "unit:a", DepKind::EagerUse, true),
+        dependency_edge("edge:1", "unit:c", "unit:b", DepKind::EagerUse, true),
+        dependency_edge("edge:2", "unit:d", "unit:c", DepKind::EagerUse, true),
+        dependency_edge("edge:3", "unit:e", "unit:d", DepKind::EagerUse, true),
     ];
     let report = singleton_graph(
         vec![a.clone(), b.clone(), c.clone(), d.clone(), e.clone()],
@@ -1121,17 +1114,17 @@ fn fixture_chain() -> (OwnerGraphReport, Vec<PartitionGroup>) {
 /// Fixture 2: star topology. One pre-existing module a; orphans b,
 /// c, d, e each connect ONLY to a (no inter-orphan edges). Greedy
 /// absorbs each in some deterministic order.
-fn fixture_star() -> (OwnerGraphReport, Vec<PartitionGroup>) {
-    let a = active_owner("owner:a", 1, &["BindingA"], 10, "ui/x");
-    let b = residual_owner("owner:b", 2, &["BindingB"], 5);
-    let c = residual_owner("owner:c", 3, &["BindingC"], 5);
-    let d = residual_owner("owner:d", 4, &["BindingD"], 5);
-    let e = residual_owner("owner:e", 5, &["BindingE"], 5);
+fn fixture_star() -> (DependencyGraphReport, Vec<PartitionGroup>) {
+    let a = active_source_unit("unit:a", 1, &["BindingA"], 10, "ui/x");
+    let b = residual_source_unit("unit:b", 2, &["BindingB"], 5);
+    let c = residual_source_unit("unit:c", 3, &["BindingC"], 5);
+    let d = residual_source_unit("unit:d", 4, &["BindingD"], 5);
+    let e = residual_source_unit("unit:e", 5, &["BindingE"], 5);
     let edges = vec![
-        owner_edge("edge:0", "owner:b", "owner:a", DepKind::EagerUse, true),
-        owner_edge("edge:1", "owner:c", "owner:a", DepKind::EagerUse, true),
-        owner_edge("edge:2", "owner:d", "owner:a", DepKind::EagerUse, true),
-        owner_edge("edge:3", "owner:e", "owner:a", DepKind::EagerUse, true),
+        dependency_edge("edge:0", "unit:b", "unit:a", DepKind::EagerUse, true),
+        dependency_edge("edge:1", "unit:c", "unit:a", DepKind::EagerUse, true),
+        dependency_edge("edge:2", "unit:d", "unit:a", DepKind::EagerUse, true),
+        dependency_edge("edge:3", "unit:e", "unit:a", DepKind::EagerUse, true),
     ];
     let report = singleton_graph(
         vec![a.clone(), b.clone(), c.clone(), d.clone(), e.clone()],
@@ -1145,19 +1138,19 @@ fn fixture_star() -> (OwnerGraphReport, Vec<PartitionGroup>) {
 /// (no constraining cycle — eager reads in one direction only, even
 /// though both directions exist on the I-graph). The greedy must
 /// either merge the two modules or leave them alone deterministically.
-fn fixture_mutual_eager() -> (OwnerGraphReport, Vec<PartitionGroup>) {
-    let a = active_owner("owner:a", 1, &["BindingA"], 10, "ui/x");
-    let b = active_owner("owner:b", 2, &["BindingB"], 10, "ui/y");
-    let h1 = residual_owner("owner:h1", 3, &["BindingH1"], 5);
-    let h2 = residual_owner("owner:h2", 4, &["BindingH2"], 5);
+fn fixture_mutual_eager() -> (DependencyGraphReport, Vec<PartitionGroup>) {
+    let a = active_source_unit("unit:a", 1, &["BindingA"], 10, "ui/x");
+    let b = active_source_unit("unit:b", 2, &["BindingB"], 10, "ui/y");
+    let h1 = residual_source_unit("unit:h1", 3, &["BindingH1"], 5);
+    let h2 = residual_source_unit("unit:h2", 4, &["BindingH2"], 5);
     let edges = vec![
         // h1 reads a (constraining); h2 reads b (constraining).
-        owner_edge("edge:0", "owner:h1", "owner:a", DepKind::EagerUse, true),
-        owner_edge("edge:1", "owner:h2", "owner:b", DepKind::EagerUse, true),
+        dependency_edge("edge:0", "unit:h1", "unit:a", DepKind::EagerUse, true),
+        dependency_edge("edge:1", "unit:h2", "unit:b", DepKind::EagerUse, true),
         // Cross-module non-constraining lazy edges (a ↔ b) — present
         // for coupling, not for constraining adjacency.
-        owner_edge("edge:2", "owner:a", "owner:b", DepKind::LazyUse, false),
-        owner_edge("edge:3", "owner:b", "owner:a", DepKind::LazyUse, false),
+        dependency_edge("edge:2", "unit:a", "unit:b", DepKind::LazyUse, false),
+        dependency_edge("edge:3", "unit:b", "unit:a", DepKind::LazyUse, false),
     ];
     let report = singleton_graph(vec![a.clone(), b.clone(), h1.clone(), h2.clone()], edges);
     let groups = vec![module_group(vec![0]), module_group(vec![1])];
@@ -1168,15 +1161,15 @@ fn fixture_mutual_eager() -> (OwnerGraphReport, Vec<PartitionGroup>) {
 /// contracting one pair, dissolving the other side of the cycle.
 /// Two modules a, b with constraining edges a → b and b → a (via
 /// helpers); greedy should pick one merge.
-fn fixture_asymmetric_cycle() -> (OwnerGraphReport, Vec<PartitionGroup>) {
-    let a = active_owner("owner:a", 1, &["BindingA"], 10, "ui/x");
-    let b = active_owner("owner:b", 2, &["BindingB"], 10, "ui/y");
-    let h = residual_owner("owner:h", 3, &["BindingH"], 5);
+fn fixture_asymmetric_cycle() -> (DependencyGraphReport, Vec<PartitionGroup>) {
+    let a = active_source_unit("unit:a", 1, &["BindingA"], 10, "ui/x");
+    let b = active_source_unit("unit:b", 2, &["BindingB"], 10, "ui/y");
+    let h = residual_source_unit("unit:h", 3, &["BindingH"], 5);
     let edges = vec![
         // a → h → b is the forward path; b → a directly closes the
         // cycle. h is an orphan with a unique extension target (a).
-        owner_edge("edge:0", "owner:a", "owner:h", DepKind::EagerUse, true),
-        owner_edge("edge:1", "owner:h", "owner:b", DepKind::EagerUse, true),
+        dependency_edge("edge:0", "unit:a", "unit:h", DepKind::EagerUse, true),
+        dependency_edge("edge:1", "unit:h", "unit:b", DepKind::EagerUse, true),
     ];
     let report = singleton_graph(vec![a.clone(), b.clone(), h.clone()], edges);
     let groups = vec![module_group(vec![0]), module_group(vec![1])];
@@ -1189,17 +1182,17 @@ fn fixture_asymmetric_cycle() -> (OwnerGraphReport, Vec<PartitionGroup>) {
 /// pointing to one of the modules. Tests coupling-drift handling:
 /// once one orphan is absorbed, its absorber's coupling vs. the
 /// other modules may shift.
-fn fixture_fully_connected_small() -> (OwnerGraphReport, Vec<PartitionGroup>) {
-    let a = active_owner("owner:a", 1, &["BindingA"], 10, "ui/x");
-    let b = active_owner("owner:b", 2, &["BindingB"], 10, "ui/y");
-    let c = active_owner("owner:c", 3, &["BindingC"], 10, "ui/z");
-    let oa = residual_owner("owner:oa", 4, &["BindingOA"], 5);
-    let ob = residual_owner("owner:ob", 5, &["BindingOB"], 5);
-    let oc = residual_owner("owner:oc", 6, &["BindingOC"], 5);
+fn fixture_fully_connected_small() -> (DependencyGraphReport, Vec<PartitionGroup>) {
+    let a = active_source_unit("unit:a", 1, &["BindingA"], 10, "ui/x");
+    let b = active_source_unit("unit:b", 2, &["BindingB"], 10, "ui/y");
+    let c = active_source_unit("unit:c", 3, &["BindingC"], 10, "ui/z");
+    let oa = residual_source_unit("unit:oa", 4, &["BindingOA"], 5);
+    let ob = residual_source_unit("unit:ob", 5, &["BindingOB"], 5);
+    let oc = residual_source_unit("unit:oc", 6, &["BindingOC"], 5);
     let edges = vec![
-        owner_edge("edge:0", "owner:oa", "owner:a", DepKind::EagerUse, true),
-        owner_edge("edge:1", "owner:ob", "owner:b", DepKind::EagerUse, true),
-        owner_edge("edge:2", "owner:oc", "owner:c", DepKind::EagerUse, true),
+        dependency_edge("edge:0", "unit:oa", "unit:a", DepKind::EagerUse, true),
+        dependency_edge("edge:1", "unit:ob", "unit:b", DepKind::EagerUse, true),
+        dependency_edge("edge:2", "unit:oc", "unit:c", DepKind::EagerUse, true),
     ];
     let report = singleton_graph(
         vec![
@@ -1220,7 +1213,7 @@ fn fixture_fully_connected_small() -> (OwnerGraphReport, Vec<PartitionGroup>) {
     (report, groups)
 }
 
-type Fixture = (OwnerGraphReport, Vec<PartitionGroup>);
+type Fixture = (DependencyGraphReport, Vec<PartitionGroup>);
 type FixtureBuilder = fn() -> Fixture;
 
 #[test]
@@ -1257,29 +1250,29 @@ fn gate_bypassing_assignment_cycle_surfaces_and_recovers() {
     // cycle stays visible to the realizability projection (an
     // all-residual fixture would collapse into one module and hide
     // it).
-    let a = active_owner("owner:a", 1, &["BindingA"], 5, "ui/a");
-    let b = active_owner("owner:b", 2, &["BindingB"], 5, "ui/b");
-    let c = active_owner("owner:c", 3, &["BindingC"], 5, "ui/c");
+    let a = active_source_unit("unit:a", 1, &["BindingA"], 5, "ui/a");
+    let b = active_source_unit("unit:b", 2, &["BindingB"], 5, "ui/b");
+    let c = active_source_unit("unit:c", 3, &["BindingC"], 5, "ui/c");
     let report = singleton_graph(
         vec![a.clone(), b.clone(), c.clone()],
         vec![
-            owner_edge("edge:0", "owner:a", "owner:b", DepKind::EagerUse, true),
-            owner_edge("edge:1", "owner:b", "owner:c", DepKind::EagerUse, true),
+            dependency_edge("edge:0", "unit:a", "unit:b", DepKind::EagerUse, true),
+            dependency_edge("edge:1", "unit:b", "unit:c", DepKind::EagerUse, true),
         ],
     );
     let (mut q, group_classes) = QuotientGraph::from_report_with_partition(
         &report,
         10_000,
         &[PartitionGroup {
-            owner_idxs: vec![OwnerIdx(0), OwnerIdx(2)],
+            source_unit_idxs: vec![SourceUnitIndex(0), SourceUnitIndex(2)],
             is_pre_existing_module: false,
         }],
     )
     .unwrap();
     let merged = group_classes[0];
-    let b_class = q.class_of(OwnerIdx(1));
-    assert_eq!(q.class_of(OwnerIdx(0)), merged);
-    assert_eq!(q.class_of(OwnerIdx(2)), merged);
+    let b_class = q.class_of(SourceUnitIndex(1));
+    assert_eq!(q.class_of(SourceUnitIndex(0)), merged);
+    assert_eq!(q.class_of(SourceUnitIndex(2)), merged);
 
     // The cycle is visible to the kernel's verdict.
     assert!(
@@ -1292,7 +1285,7 @@ fn gate_bypassing_assignment_cycle_surfaces_and_recovers() {
     // the contraction is permitted and the kernel returns to a
     // realizable, cycle-free state.
     let survivor = q.contract(merged, b_class).expect("cycle-dissolving merge");
-    assert_eq!(q.class_of(OwnerIdx(1)), survivor);
+    assert_eq!(q.class_of(SourceUnitIndex(1)), survivor);
     assert!(
         q.realizability_verdict().is_realizable(),
         "dissolving the cycle must restore realizability",

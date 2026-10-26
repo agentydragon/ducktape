@@ -20,7 +20,7 @@ debundle inspect-source --source-file chunk.js --statements 41..42 --format text
 ```
 
 The labels are zero-based top-level statement indices in the parsed file. A
-multi-declarator declaration is one statement. These are not owner IDs from a
+multi-declarator declaration is one statement. These are not source-unit IDs from a
 prepared pipeline graph. Inspect the same source file you will pass to the
 explanation command; indices can change when the source changes. The original
 locations and pretty-printed statements let you check the selected boundaries.

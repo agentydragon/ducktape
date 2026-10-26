@@ -50,19 +50,19 @@ fn keep_going_writes_machine_readable_selector_outcomes() {
     assert_eq!(
         ambiguous["outcome"]["candidates"],
         json!([
-            {"owner": 1, "binding": "decoratePrimary"},
-            {"owner": 2, "binding": "decorateSecondary"},
+            {"body_index": 1, "binding": "decoratePrimary"},
+            {"body_index": 2, "binding": "decorateSecondary"},
         ])
     );
     assert_eq!(ambiguous["outcome"]["truncated"], false);
     let differentiators = ambiguous["outcome"]["differentiators"].as_array().unwrap();
     assert_eq!(differentiators.len(), 2, "{ambiguous:#}");
-    for (differentiator, (owner, statement, token)) in differentiators
+    for (differentiator, (candidate_body_index, anchor_body_index, token)) in differentiators
         .iter()
         .zip([(1, 0, ".trim"), (2, 1, "\"shared\"")])
     {
-        assert_eq!(differentiator["owner"], owner);
-        assert_eq!(differentiator["statement"], statement);
+        assert_eq!(differentiator["candidate_body_index"], candidate_body_index);
+        assert_eq!(differentiator["anchor_body_index"], anchor_body_index);
         assert!(
             differentiator["anchor"].as_str().unwrap().contains(token),
             "{differentiator:#}"
@@ -76,7 +76,7 @@ fn keep_going_writes_machine_readable_selector_outcomes() {
     assert_eq!(duplicate["outcome"]["binding"], "renderCard");
     assert_eq!(
         duplicate["outcome"]["declaration"],
-        json!({"owner": 0, "kind": "function"}),
+        json!({"body_index": 0, "kind": "function"}),
         "{duplicate:#}"
     );
     let mut sites = [
@@ -86,7 +86,11 @@ fn keep_going_writes_machine_readable_selector_outcomes() {
             .unwrap(),
     ];
     sites.sort_unstable();
-    assert_eq!(sites, ["duplicates/card", "owners/card"], "{duplicate:#}");
+    assert_eq!(
+        sites,
+        ["duplicates/card", "source_units/card"],
+        "{duplicate:#}"
+    );
 
     let anon = find_anon_outcome(&outcomes, "console.warn");
     assert_eq!(anon["outcome"]["kind"], "no_match");
@@ -211,7 +215,7 @@ fn keep_going_reports_every_selector_of_an_infeasible_pair_with_a_witness() {
             2
         );
         assert_eq!(
-            record["outcome"]["witness"]["owners"]
+            record["outcome"]["witness"]["source_units"]
                 .as_array()
                 .unwrap()
                 .len(),

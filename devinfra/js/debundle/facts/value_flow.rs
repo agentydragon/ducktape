@@ -659,7 +659,7 @@ pub(crate) struct ChunkValueFlow {
     params: BTreeMap<u32, Vec<Option<Id>>>,
     /// Callable identity to its chunk-top declaration binding, if any.
     canonical: BTreeMap<ValueOrigin, Id>,
-    pub(crate) callable_owner: BTreeMap<ValueOrigin, StatementOrdinal>,
+    pub(crate) callable_source_unit: BTreeMap<ValueOrigin, StatementOrdinal>,
 }
 
 impl ChunkValueFlow {
@@ -714,9 +714,9 @@ impl ChunkValueFlow {
         // property's facts grow. Reusing it avoids rescanning all per-property
         // sets and deduplicating the same value across many properties here.
         for (object, values) in &self.property_unions {
-            let owner = origins.id(ValueOrigin::Object(*object));
+            let source_unit = origins.id(ValueOrigin::Object(*object));
             for value in values {
-                reverse[origins.id(value).0 as usize].push(owner);
+                reverse[origins.id(value).0 as usize].push(source_unit);
             }
         }
         for predecessors in &mut reverse {
@@ -912,7 +912,7 @@ impl ChunkValueFlow {
                 let mut pass = FlowPass {
                     flow: &mut flow,
                     changed: &mut changed,
-                    owner: StatementOrdinal(ordinal),
+                    source_unit: StatementOrdinal(ordinal),
                     current_function: None,
                 };
                 item.as_module_item().visit_with(&mut pass);
@@ -1422,7 +1422,7 @@ enum FlowEvent {
     ClassDeclaration {
         id: Id,
         origin: ValueOrigin,
-        owner: StatementOrdinal,
+        source_unit: StatementOrdinal,
     },
     Variable {
         id: Id,
@@ -1456,7 +1456,7 @@ enum FlowEvent {
     FunctionMetadata {
         function: u32,
         params: Vec<Option<Id>>,
-        owner: StatementOrdinal,
+        source_unit: StatementOrdinal,
     },
     Return {
         function: u32,
@@ -1489,11 +1489,11 @@ impl FlowProgram {
             declared_ids: BTreeSet::new(),
             events: Vec::new(),
             origins: BTreeSet::from([ValueOrigin::Unknown]),
-            owner: StatementOrdinal(0),
+            source_unit: StatementOrdinal(0),
             current_function: None,
         };
         for (ordinal, item) in body.iter().enumerate() {
-            collector.owner = StatementOrdinal(ordinal);
+            collector.source_unit = StatementOrdinal(ordinal);
             item.as_module_item().visit_with(&mut collector);
         }
         Self {
@@ -1534,7 +1534,7 @@ struct FlowProgramCollector {
     declared_ids: BTreeSet<Id>,
     events: Vec<FlowEvent>,
     origins: BTreeSet<ValueOrigin>,
-    owner: StatementOrdinal,
+    source_unit: StatementOrdinal,
     current_function: Option<u32>,
 }
 
@@ -1559,7 +1559,7 @@ impl Visit for FlowProgramCollector {
         self.events.push(FlowEvent::ClassDeclaration {
             id,
             origin,
-            owner: self.owner,
+            source_unit: self.source_unit,
         });
         node.class.visit_with(self);
     }
@@ -1668,7 +1668,7 @@ impl Visit for FlowProgramCollector {
                     _ => None,
                 })
                 .collect(),
-            owner: self.owner,
+            source_unit: self.source_unit,
         });
         let previous = self.current_function.replace(function);
         node.visit_children_with(self);
@@ -1688,7 +1688,7 @@ impl Visit for FlowProgramCollector {
                     _ => None,
                 })
                 .collect(),
-            owner: self.owner,
+            source_unit: self.source_unit,
         });
         let previous = self.current_function.replace(function);
         if let ArrowFunctionBody::Expr(expr) = node.body.as_ref() {
@@ -1825,12 +1825,19 @@ impl FlowSolver {
                 let values = self.flow.singleton_value(origin);
                 self.merge_binding(id, values, &mut changed);
             }
-            FlowEvent::ClassDeclaration { id, origin, owner } => {
+            FlowEvent::ClassDeclaration {
+                id,
+                origin,
+                source_unit,
+            } => {
                 self.flow
                     .canonical
                     .entry(origin)
                     .or_insert_with(|| id.clone());
-                self.flow.callable_owner.entry(origin).or_insert(owner);
+                self.flow
+                    .callable_source_unit
+                    .entry(origin)
+                    .or_insert(source_unit);
                 let values = self.flow.singleton_value(origin);
                 self.merge_binding(id, values, &mut changed);
             }
@@ -1906,7 +1913,7 @@ impl FlowSolver {
             FlowEvent::FunctionMetadata {
                 function,
                 params,
-                owner,
+                source_unit,
             } => {
                 if let std::collections::btree_map::Entry::Vacant(entry) =
                     self.flow.params.entry(function)
@@ -1915,9 +1922,9 @@ impl FlowSolver {
                     self.round_zero_new_parameters.insert(function);
                 }
                 self.flow
-                    .callable_owner
+                    .callable_source_unit
                     .entry(ValueOrigin::Function(function))
-                    .or_insert(owner);
+                    .or_insert(source_unit);
             }
             FlowEvent::Return { function, value } => {
                 let values = self
@@ -2112,7 +2119,7 @@ fn object_prop(prop: &PropName) -> Option<String> {
 struct FlowPass<'a> {
     flow: &'a mut ChunkValueFlow,
     changed: &'a mut bool,
-    owner: StatementOrdinal,
+    source_unit: StatementOrdinal,
     current_function: Option<u32>,
 }
 
@@ -2142,9 +2149,9 @@ impl FlowPass<'_> {
 
     fn visit_function_body(&mut self, function: u32, visit: impl FnOnce(&mut Self)) {
         self.flow
-            .callable_owner
+            .callable_source_unit
             .entry(ValueOrigin::Function(function))
-            .or_insert(self.owner);
+            .or_insert(self.source_unit);
         let previous = self.current_function.replace(function);
         visit(self);
         self.current_function = previous;
@@ -2171,7 +2178,10 @@ impl Visit for FlowPass<'_> {
             .canonical
             .entry(value)
             .or_insert_with(|| node.ident.to_id());
-        self.flow.callable_owner.entry(value).or_insert(self.owner);
+        self.flow
+            .callable_source_unit
+            .entry(value)
+            .or_insert(self.source_unit);
         let values = self.flow.singleton_value(value);
         self.merge_binding(node.ident.to_id(), values);
         node.class.visit_with(self);
