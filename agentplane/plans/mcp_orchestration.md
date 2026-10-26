@@ -282,8 +282,8 @@ Asked one at a time; each open one has a default the plan assumes.
    UTC,** as a transitional path: the `orchestration` group, with the Dispatcher and History trusting its executor
    until each backend rule lands. Rejected for now: building the caller rule types in the Dispatcher and History
    first.
-2. **Launcher grants.** Default: a launch requests all of them on the new Sandbox, shown on the card. Alternative:
-   none by default, each requested explicitly.
+2. **Launcher grants on every launch. Accepted by the operator, 2026-10-26 23:47 UTC:** a launch writes all of them
+   on the new Sandbox, shown on the card. Rejected: an opt-in flag per launch, and an approval for every command.
 3. **The preset catalog in the executor's settings.** Default: yes, rendered from the same definition as the app's.
    Alternative: launch takes concrete fields with no catalog to read, and the caller learns templates and sets
    elsewhere.

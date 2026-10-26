@@ -455,8 +455,9 @@ outcomes. Operations no backend can grant a caller yet run as the operator's act
 worker enough. Each moves to its backend rule as `THREAD_CREATE_AUTHORIZATION`, `THREAD_READ_POLICY` and
 `AGENT_SANDBOX_LAUNCH` land. Its turn reads (`read_turns`, `wait_for_turn`) wait on `HISTORY_READ_FOLLOW_API` and
 are not built on today's reads. The operator accepted the operator's-act path as transitional (2026-10-26 23:37 UTC),
-so the Dispatcher and History may trust the group's executor until then. **Question for review:** the plan's remaining
-decisions, next the default launcher grants. No implementation until the operator accepts the plan.
+so the Dispatcher and History may trust the group's executor until then, and a launch writes launcher grants on every
+worker (23:47 UTC). **Question for review:** the plan's remaining decisions, next the preset catalog in the executor's
+settings. No implementation until the operator accepts the plan.
 
 ### `RUNNER_HARNESS_OBJECTS_DESIGN` — decide process diagnostics and placement policy
 
