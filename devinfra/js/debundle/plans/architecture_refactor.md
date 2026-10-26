@@ -131,21 +131,12 @@ services. Cut over spec/report vocabulary and all public and downstream consumer
 together. Handlers should be thin, assistance deterministic, and edits validated
 before writing.
 
-The following serialized or report-facing names still use older factor/cell
-vocabulary and need an explicit reader cutover. Internal type renames do not
-rename these fields:
+Update specs, reports, documentation, and actual consumers together whenever a
+wire interface changes. Do not make it a side effect of an internal rename or
+leave a second vocabulary through compatibility shims.
 
-- `factorize_proposals` and `factorize_diagnostics` in explain reports and their
-  limits sections.
-- `edges_to_other_residual_cells`, `other_residual_cells_referenced`, and the
-  associated landability-note text. The proposer works on quotient classes;
-  existing consumers still read cell terminology.
-- `UnassignedMode::MiniFactors`, serialized as `mini_factors`; the agreed target
-  is `PerAtomicGroup`, serialized as `per_atomic_group`.
-
-Any wire change updates specs, reports, documentation, and actual consumers
-together. Do not make it a side effect of an internal rename or leave a second
-vocabulary through compatibility shims.
+- PR #12071: rename the unassigned decomposition policy to `PerAtomicGroup`,
+  serialized as `per_atomic_group`, with matching synthesis and output paths.
 
 ### H. Documentation and closure
 

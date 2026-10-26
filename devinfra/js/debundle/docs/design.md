@@ -2374,10 +2374,10 @@ rendering proposal rows.
 `debundle modules propose` labels each proposal owner set with a status:
 
 - **`peelable_now`** — this closed atomic-DAG owner set has no outgoing
-  constraining edges into other residual cells; it can be promoted on
+  constraining edges into other residual classes; it can be promoted on
   its own.
 - **`blocked_residual_dependency`** — the cell reads other residual
-  cells (`edges_to_other_residual_cells > 0`); promoting it alone would
+  cells (`edges_to_other_residual_classes > 0`); promoting it alone would
   route those reads through `residual_entry`, so the referenced cells
   must land first or together.
 

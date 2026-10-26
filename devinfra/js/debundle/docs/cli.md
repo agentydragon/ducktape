@@ -84,6 +84,9 @@ selection itself is a proposal/diagnostic id or `--include-proposals` is
 passed (it is expensive on large graphs), and proposal-derived JSON fields
 are omitted when the proposer is skipped.
 
+Description proposal fields and residual dependency names are defined in
+<../SPEC.md#authoring-reports>; truncation metadata uses the same section names.
+
 The mutating verbs (`bindings assign`, `bindings unassign`,
 `bindings rename`, `modules merge`, `modules delete`) take the same
 `--format` flag with the same tty/pipe default. Under `text` they print a
@@ -382,9 +385,9 @@ array. The rest are rejected:
 - Rows with `anonymous_statement_owner_ids` need `anonymous_statements:`
   edits, which `bindings assign` does not perform.
 - Rows with `status: blocked_residual_dependency` (`landable_today: false`)
-  read other residual cells (`other_residual_cells_referenced`), so promoting
+  read other residual classes (`other_residual_classes_referenced`), so promoting
   one alone would trip the realizability gate: assign it together with the
-  cells it references, or co-locate the owners manually first.
+  classes it references, or co-locate the owners manually first.
 
 ## Claiming fresh proposals (`modules apply`)
 
@@ -396,7 +399,7 @@ root's exact filesystem spelling; it normalizes only the logical module
 suffix. A destination outside the mapped roots is rejected. Single-chunk
 specs can omit the flag when `--modules` already names that chunk's tree.
 
-`landable_today` means the proposed owner set has no outgoing residual-cell
+`landable_today` means the proposed owner set has no outgoing residual-class
 dependency and its anonymous owners are addressable. It does not guarantee a
 structural selector can be synthesized or that the final edit passes the gate.
 `modules apply` claims reviewed residual bindings with proven `source_matches:`

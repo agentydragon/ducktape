@@ -65,7 +65,7 @@ enum ModulesNsCommand {
     /// `landability_notes` from full-JS-AST selector uniqueness.
     /// `landable_today` is `false` both for proposals with unaddressable
     /// anonymous statements and for `blocked_residual_dependency`
-    /// proposals (outgoing constraining edges into other residual cells)
+    /// proposals (outgoing constraining edges into other residual classes)
     /// — the latter need their closure grown or manual co-location
     /// before they can land.
     Propose(PlanWorkArgs),

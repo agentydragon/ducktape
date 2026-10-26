@@ -222,7 +222,7 @@ export { anchor, consumer_a, consumer_b };
 fn blocked_residual_dependency_proposals_are_not_landable_today() {
     // `consumer` reads `dep` at init (constraining edge). Under a size
     // cap that admits each singleton but refuses the combined closure,
-    // the quotient keeps them as separate residual cells, so
+    // the quotient keeps them as separate residual classes, so
     // `consumer`'s cell retains an outgoing constraining edge into
     // `dep`'s cell. Promoting `consumer` alone would route the read
     // through `residual_entry` and trip the realizability gate —

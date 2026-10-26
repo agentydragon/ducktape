@@ -487,15 +487,15 @@ fn describe_joins_graph_and_spec_context_and_runs_the_proposer_only_on_request()
     );
     assert_eq!(report["binding_homes"][0]["source_kind"], "binding_patch");
     assert_eq!(report["atomic_groups"][0]["id"], "atomic:0");
-    assert!(report.get("factorize_proposals").is_none());
-    assert!(report.get("factorize_diagnostics").is_none());
+    assert!(report.get("module_proposals").is_none());
+    assert!(report.get("module_proposal_diagnostics").is_none());
 
     let report = fixture.json(&["describe", "ZZ", "--include-proposals"]);
     assert_eq!(
-        report["factorize_proposals"][0]["proposed_module_id"],
+        report["module_proposals"][0]["proposed_module_id"],
         "auto_partition_0000"
     );
-    assert!(report["factorize_diagnostics"].is_array());
+    assert!(report["module_proposal_diagnostics"].is_array());
 }
 
 #[test]

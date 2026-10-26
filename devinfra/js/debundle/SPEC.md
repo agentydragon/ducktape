@@ -34,6 +34,13 @@ rewritten HTML, and enumerates copied assets. Invalid loading topology rejects
 the plan before any accepted output is written, including during a dry run.
 The browser writer materializes those decisions without rediscovering entries.
 
+## Authoring reports
+
+Description reports include `module_proposals` and `module_proposal_diagnostics`
+only when proposal analysis runs. Their limits sections use the same field names.
+Proposals name their outgoing residual quotient-class dependencies with
+`edges_to_other_residual_classes` and `other_residual_classes_referenced`.
+
 ## Entities
 
 An **entity** is one thing a spec places in a chunk: a module member, a

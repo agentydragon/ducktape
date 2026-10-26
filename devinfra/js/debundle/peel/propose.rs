@@ -9,8 +9,8 @@
 //!   outgoing constraining edges from each cell to active-claimed
 //!   binding modules (safe references — active modules materialize
 //!   before residual_entry).
-//! - `internal_edges`, `edges_to_other_residual_cells`,
-//!   `other_residual_cells_referenced`: cell-graph relationship
+//! - `internal_edges`, `edges_to_other_residual_classes`,
+//!   `other_residual_classes_referenced`: quotient-class relationship
 //!   counts derived from the assignment the analyzer chose.
 //!
 //! Diagnostics come through separately. A diagnostic is not a module
@@ -334,15 +334,15 @@ pub struct ModuleProposal {
     pub source_line_range: Option<[usize; 2]>,
     pub ordinal_span: usize,
     pub internal_edges: usize,
-    /// Edges from this cell to OTHER residual cells. Cycle-risk
+    /// Edges from this cell to OTHER residual classes. Cycle-risk
     /// edges: promoting this cell to active while the pointed-at
-    /// residual cells stay residual would create `<this>` →
+    /// residual classes stay residual would create `<this>` →
     /// `residual_entry` reads, which the cycle gate will reject.
-    pub edges_to_other_residual_cells: usize,
-    /// Other residual cells (by proposed_module_id) this cell's
+    pub edges_to_other_residual_classes: usize,
+    /// Other residual classes (by proposed_module_id) this cell's
     /// outgoing constraining edges target.
-    pub other_residual_cells_referenced: Vec<String>,
-    /// Pre-resolution carrier for `other_residual_cells_referenced`:
+    pub other_residual_classes_referenced: Vec<String>,
+    /// Pre-resolution carrier for `other_residual_classes_referenced`:
     /// the candidate indices (pre-sort `candidate_classes` positions)
     /// this cell's outgoing constraining edges target. `emit_proposals`
     /// resolves these to each target candidate's ACTUAL final
@@ -373,14 +373,14 @@ pub struct ModuleProposal {
     pub landability_notes: Vec<String>,
     /// Proposal verdict for this closed atomic-group owner set.
     /// `PeelableNow` when the cell has no outgoing edges into other
-    /// residual cells; `BlockedResidualDependency` when it does
+    /// residual classes; `BlockedResidualDependency` when it does
     /// (promoting it alone would route reads through
     /// `residual_entry`, which the cycle gate rejects — the
-    /// referenced cells must land first or together).
+    /// referenced classes must land first or together).
     pub status: PeelCandidateStatus,
     /// `true` when the proposal is graph-ready for a spec edit:
     /// `status` is `PeelableNow` (no outgoing constraining edges into
-    /// other residual cells) AND every anonymous owner is addressable.
+    /// other residual classes) AND every anonymous owner is addressable.
     /// Selector synthesis and the post-edit gate can still reject it.
     /// `modules apply` rejects rows where this is `false`;
     /// blocked-residual proposals need their closure grown (land the
@@ -2418,7 +2418,7 @@ fn emit_proposals(
             .collect();
         referenced.sort();
         referenced.dedup();
-        proposal.other_residual_cells_referenced = referenced;
+        proposal.other_residual_classes_referenced = referenced;
         proposal.residual_target_candidate_idxs = Vec::new();
     }
     out
@@ -2640,7 +2640,7 @@ fn build_proposal(
         mut notes,
     } = anonymous_addressability(&owner_idxs, graph, context);
     // Status reflects the cell-graph reality: outgoing constraining
-    // edges into other residual cells mean this cell cannot be
+    // edges into other residual classes mean this cell cannot be
     // promoted alone (the reads would route through residual_entry).
     let status = if edges.to_residual > 0 {
         PeelCandidateStatus::BlockedResidualDependency
@@ -2652,7 +2652,8 @@ fn build_proposal(
     // be landed alone, so it must not claim `landable_today`.
     if status == PeelCandidateStatus::BlockedResidualDependency {
         notes.push(
-            "reads other residual cells; land the referenced cells first or together".to_string(),
+            "reads other residual classes; land the referenced classes first or together"
+                .to_string(),
         );
     }
     let landable_today = addressable && status == PeelCandidateStatus::PeelableNow;
@@ -2665,8 +2666,8 @@ fn build_proposal(
         source_line_range: line_range.into_array(),
         ordinal_span: max_ordinal.saturating_sub(min_ordinal),
         internal_edges: edges.internal,
-        edges_to_other_residual_cells: edges.to_residual,
-        other_residual_cells_referenced: Vec::new(),
+        edges_to_other_residual_classes: edges.to_residual,
+        other_residual_classes_referenced: Vec::new(),
         residual_target_candidate_idxs,
         edges_to_active_modules: edges.to_active,
         active_modules_referenced,
@@ -2868,7 +2869,7 @@ mod tests {
         );
     }
 
-    // A constraining owner edge between two residual cells that the
+    // A constraining owner edge between two residual classes that the
     // quotient does NOT merge (no atomic-DAG edge, so pass-3
     // reachability never contracts them and the greedy refuses
     // orphan↔orphan merges) leaves the source cell blocked: landing it
@@ -2899,13 +2900,13 @@ mod tests {
             blocked.status,
             PeelCandidateStatus::BlockedResidualDependency
         );
-        assert_eq!(blocked.edges_to_other_residual_cells, 1);
+        assert_eq!(blocked.edges_to_other_residual_classes, 1);
         assert!(!blocked.landable_today, "{blocked:?}");
         assert!(
             blocked
                 .landability_notes
                 .iter()
-                .any(|note| note.contains("other residual cells")),
+                .any(|note| note.contains("other residual classes")),
             "expected cross-residual note: {blocked:?}",
         );
         let peelable = report
@@ -2963,7 +2964,7 @@ mod tests {
         assert_eq!(peelable["status"], "peelable_now");
         assert_eq!(blocked["owner_ids"], serde_json::json!(["a"]));
         assert_eq!(
-            blocked["other_residual_cells_referenced"],
+            blocked["other_residual_classes_referenced"],
             serde_json::json!([peelable["proposed_module_id"]]),
         );
     }
@@ -3110,7 +3111,7 @@ mod tests {
         // extension — so its sole cross-class residual reference must
         // resolve to the extension's actual id, `features/foo`.
         assert_eq!(
-            consumer.other_residual_cells_referenced,
+            consumer.other_residual_classes_referenced,
             vec!["extend:features/foo".to_string()],
             "consumer's cross-reference must resolve to the extension's real id \
              (`extend:features/foo`), not a dangling `auto_partition_*`: {report:#?}",
@@ -3132,7 +3133,7 @@ mod tests {
             .map(|p| p.proposed_module_id.as_str())
             .collect();
         for proposal in &report.proposals {
-            for referenced in &proposal.other_residual_cells_referenced {
+            for referenced in &proposal.other_residual_classes_referenced {
                 assert!(
                     emitted_ids.contains(referenced.as_str()),
                     "cross-reference `{referenced}` must name an emitted proposal id, but none \

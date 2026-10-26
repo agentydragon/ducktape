@@ -274,9 +274,9 @@ pub struct ExplainReport {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub unknown_binding_ids: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub factorize_proposals: Option<Vec<ModuleProposal>>,
+    pub module_proposals: Option<Vec<ModuleProposal>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub factorize_diagnostics: Option<Vec<ProposalDiagnostic>>,
+    pub module_proposal_diagnostics: Option<Vec<ProposalDiagnostic>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limits: Option<LimitReport>,
 }
@@ -475,7 +475,7 @@ pub fn run_plan_work_report(args: &PlanWorkArgs) -> Result<PlanWorkReport> {
         size_cap_lines: args.size_cap_lines,
     })?;
     let mut sections = BTreeMap::new();
-    sort_factorize_diagnostics(&mut report.diagnostics);
+    sort_proposal_diagnostics(&mut report.diagnostics);
     apply_limit_with_metadata(
         &mut report.proposals,
         args.limit,
@@ -654,11 +654,11 @@ pub fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
     let graph = load_graph(&args.common.owner_graph_path)?;
     let selection = &args.selection;
     let query = query_report(selection);
-    let selection_needs_factorize = matches!(
+    let selection_needs_proposals = matches!(
         selection,
         SelectionKind::Proposal(_) | SelectionKind::Diagnostic(_)
     );
-    let propose = if args.include_proposals || selection_needs_factorize {
+    let propose = if args.include_proposals || selection_needs_proposals {
         Some(propose_from_graph(
             &graph,
             &ProposalOptions {
@@ -672,7 +672,7 @@ pub fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
     } else {
         None
     };
-    let include_factorize_sections = propose.is_some();
+    let include_proposal_sections = propose.is_some();
     let ResolvedSelection {
         owner_ids,
         unknown_binding_ids,
@@ -761,7 +761,7 @@ pub fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
         .cloned()
         .collect();
 
-    let (mut factorize_proposals, mut factorize_diagnostics) = if let Some(propose) = propose {
+    let (mut module_proposals, mut module_proposal_diagnostics) = if let Some(propose) = propose {
         (
             propose
                 .proposals
@@ -794,8 +794,8 @@ pub fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
         (incoming_atomic_edges, "incoming_atomic_edges"),
         (outgoing_atomic_edges, "outgoing_atomic_edges"),
         (quotient_edges, "quotient_edges"),
-        (factorize_proposals, "factorize_proposals"),
-        (factorize_diagnostics, "factorize_diagnostics"),
+        (module_proposals, "module_proposals"),
+        (module_proposal_diagnostics, "module_proposal_diagnostics"),
     );
 
     Ok(ExplainReport {
@@ -812,8 +812,9 @@ pub fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
         outgoing_atomic_edges,
         quotient_edges,
         unknown_binding_ids,
-        factorize_proposals: include_factorize_sections.then_some(factorize_proposals),
-        factorize_diagnostics: include_factorize_sections.then_some(factorize_diagnostics),
+        module_proposals: include_proposal_sections.then_some(module_proposals),
+        module_proposal_diagnostics: include_proposal_sections
+            .then_some(module_proposal_diagnostics),
         limits: limit_report(args.limit, sections),
     })
 }
@@ -923,7 +924,7 @@ fn limit_report(
     (limit > 0).then_some(LimitReport { limit, sections })
 }
 
-fn sort_factorize_diagnostics(diagnostics: &mut [ProposalDiagnostic]) {
+fn sort_proposal_diagnostics(diagnostics: &mut [ProposalDiagnostic]) {
     diagnostics.sort_by_key(|diagnostic| {
         (
             diagnostic.reason,
