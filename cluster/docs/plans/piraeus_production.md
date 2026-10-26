@@ -35,16 +35,15 @@ Seaweed-reduction work, and the separate Wyrm2/NixOS phase.
 Track this separately in [#11753](https://github.com/agentydragon/ducktape/issues/11753).
 Owner decisions, 2026-10-24: small single-writer Seaweed consumers move to
 `piraeus-ssd-2-autodiskful`. CLIProxyAPI, Claude session sync, GitHub API proxy
-capture and Matrix media have moved; their old Seaweed claims stay unmounted
-(unpruned) as backups until the owner releases them. The Haku UI WALs stay on
+capture and Matrix media have moved, and their old Seaweed claims were deleted
+on 2026-10-26 with owner approval. The Haku UI WALs stay on
 Seaweed until Haku UI is retired. Forgejo's shared Git volume and Grocy's backup
 destinations stay on Seaweed.
 
 Before more consumers move, run primary-node loss with quorum suspend-io, resync
 and expansion on the class. Review Matrix and GitHub API capture's RWX needs
 before choosing RWO for similar apps, and inventory direct S3 consumers as well
-as PVCs. Remove old claims only after acceptance and reclaim their Seaweed
-storage through the normal cleanup/vacuum procedure.
+as PVCs. Keep a moved consumer's old claim until the owner releases it.
 
 Goal, owner 2026-10-24: multi-writer (RWX) storage on Piraeus eventually, so
 Forgejo-style shared volumes can leave Seaweed too. Candidates are linstor-csi's
