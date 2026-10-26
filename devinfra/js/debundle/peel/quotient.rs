@@ -233,7 +233,7 @@ pub struct QuotientGraph {
     source_unit_ids: Vec<String>,
     /// Reverse index for `source_unit_ids`: source_unit-id string → `SourceUnitIndex`.
     /// Built once at construction; `source_unit_ids` is never mutated after
-    /// that, so this stays in sync. Backs `source_unit_idx_of` so callers
+    /// that, so this stays in sync. Backs `source_unit_index_of` so callers
     /// avoid an O(n) linear scan per lookup in the proposer.
     source_unit_id_to_index: FxHashMap<String, SourceUnitIndex>,
     /// SourceUnitIndex → current class. Dense, indexed by `SourceUnitIndex.0`.
@@ -641,7 +641,7 @@ impl QuotientGraph {
     /// Look up the source_unit index for a stable source_unit-id string. Returns
     /// `None` for ids not present in the source report. O(1) via the
     /// `source_unit_id_to_index` FxHashMap.
-    pub fn source_unit_idx_of(&self, source_unit_id: &str) -> Option<SourceUnitIndex> {
+    pub fn source_unit_index_of(&self, source_unit_id: &str) -> Option<SourceUnitIndex> {
         self.source_unit_id_to_index.get(source_unit_id).copied()
     }
 
@@ -1022,7 +1022,7 @@ impl QuotientGraph {
         let source_unit_modules: Vec<ModuleId> = (0..source_unit_count)
             .map(|i| {
                 let id = SourceUnitId(i);
-                if owners_set.contains(&id) {
+                if source_units_set.contains(&id) {
                     post_module
                 } else {
                     self.realizability_index.assignment().of(id)
@@ -2126,7 +2126,7 @@ fn source_unit_pair(q: &QuotientGraph, a: SourceUnitIndex, b: SourceUnitIndex) -
 fn resolve_source_unit_idxs(q: &QuotientGraph, source_unit_ids: &[String]) -> Vec<SourceUnitIndex> {
     let mut idxs: Vec<SourceUnitIndex> = source_unit_ids
         .iter()
-        .filter_map(|id| q.source_unit_idx_of(id))
+        .filter_map(|id| q.source_unit_index_of(id))
         .collect();
     idxs.sort();
     idxs
@@ -2137,7 +2137,7 @@ fn lowest_source_unit_idx<'a>(
     source_unit_ids: impl Iterator<Item = &'a str>,
 ) -> Option<SourceUnitIndex> {
     source_unit_ids
-        .filter_map(|id| q.source_unit_idx_of(id))
+        .filter_map(|id| q.source_unit_index_of(id))
         .min()
 }
 

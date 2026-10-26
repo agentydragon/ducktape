@@ -618,7 +618,7 @@ fn decompose_modules(
                     let mut fragments_by_class: BTreeMap<ClassId, Vec<usize>> = BTreeMap::new();
                     for &source_unit_idx in source_unit_indices {
                         let source_unit = quotient
-                            .source_unit_idx_of(&graph.nodes[source_unit_idx].id)
+                            .source_unit_index_of(&graph.nodes[source_unit_idx].id)
                             .with_context(|| {
                                 format!(
                                     "source unit {} disappeared from seed quotient",

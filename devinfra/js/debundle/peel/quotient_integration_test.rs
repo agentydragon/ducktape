@@ -6,8 +6,8 @@ use std::collections::BTreeMap;
 
 use analysis::{DepKind, DependencyGraphReport, ModuleId};
 use report_fixtures::{
-    active_source_unit, atomic_edge, atomic_group_for, claims, graph_of, owner_edge,
-    promoted_owner_edge, residual_owner, singleton_graph,
+    active_source_unit, atomic_edge, atomic_group_for, claims, dependency_edge, graph_of,
+    promoted_dependency_edge, residual_source_unit, singleton_graph,
 };
 
 use crate::propose::{ModuleProposal, propose};
@@ -15,7 +15,7 @@ use crate::quotient::testing::{
     PartitionGroup, greedy_merge_to_convergence_full_scan, module_group,
 };
 use crate::quotient::{
-    ClassId, CycleClassSet, CycleEvidence, QuotientGraph, SeedContractionRejected, SourceUnitIdx,
+    ClassId, CycleClassSet, CycleEvidence, QuotientGraph, SeedContractionRejected, SourceUnitIndex,
     SpecModuleGroup, build_seed_quotient, greedy_merge_to_convergence,
 };
 

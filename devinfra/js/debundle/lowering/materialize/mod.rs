@@ -679,7 +679,7 @@ pub(super) fn finish_logical_chunk(
         chunk_id: chunk_id.to_string(),
         counts: ChunkModulesCounts {
             applied: applied.len(),
-            selected_owners: placement.bindings().len(),
+            selected_bindings: placement.bindings().len(),
         },
         final_module_contents: final_modules,
         requested_logical_modules: requests

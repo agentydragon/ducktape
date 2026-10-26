@@ -13,13 +13,13 @@ The proposer is a renderer over `peel::quotient::QuotientGraph`:
    Each forced contraction is gated by `merge_preserves_invariants`.
 2. `greedy_merge_to_convergence` extends the quotient by merging
    classes that the gate still accepts. It can extend an existing
-   module with residual owners, merge existing modules, or do both in
+   module with residual source units, merge existing modules, or do both in
    one proposal when the output class contains absorbed residual
-   owners.
+   source units.
 3. `emit_proposals` walks the surviving quotient classes and renders
    `ModuleProposal` rows plus diagnostics.
 
-`QuotientGraph` is the single source of truth for which owners are in
+`QuotientGraph` is the single source of truth for which source units are in
 each proposed class.
 
 ## Seed Rejections
@@ -32,7 +32,7 @@ proposal.
 Current rejection kinds:
 
 - `atomic_group`: an atomic group could not be represented as one quotient class.
-- `spec_module`: an active spec module's declared owners could not be
+- `spec_module`: an active spec module's declared source units could not be
   represented as one class.
 - `atomic_reachability`: an atomic-DAG reachability closure edge would
   have created an unrealizable quotient.
@@ -61,9 +61,9 @@ full-scan sequence across representative fixtures.
 
 `ModuleProposal` rows distinguish:
 
-- fresh residual owner sets, claimable with `modules apply` when the row
+- fresh residual source-unit sets, claimable with `modules apply` when the row
   is graph-ready and selector synthesis proves the reviewed claims;
-- extension rows, where residual owners can be moved into an existing
+- extension rows, where residual source units can be moved into an existing
   module;
 - `merge_into` rows, where two or more active modules should be merged
   or manually co-located before assignment.
