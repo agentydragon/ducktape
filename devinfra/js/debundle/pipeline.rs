@@ -4,7 +4,6 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use clap::Args as ClapArgs;
-use serde::Serialize;
 
 use artifact::load_js_chunks;
 use artifact::{ChunkDecompositionOutput, ChunkId};
@@ -495,6 +494,7 @@ fn path_is_within(path: &Path, root: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde::Serialize;
     use spec::SwapVendorChunksConfig;
     use std::collections::BTreeMap;
 

@@ -952,7 +952,6 @@ rust_library(
         ":write_tree",
         "@crates//:anyhow",
         "@crates//:clap",
-        "@crates//:serde",
         "@crates//:serde_json",
         "@crates//:serde_yaml",
     ],
@@ -962,7 +961,10 @@ rust_test(
     name = "pipeline_test",
     crate = ":pipeline",
     edition = "2024",
-    deps = ["@crates//:tempfile"],
+    deps = [
+        "@crates//:serde",
+        "@crates//:tempfile",
+    ],
 )
 
 rust_library(
