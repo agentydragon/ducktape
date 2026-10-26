@@ -27,7 +27,8 @@ What an orchestrating caller does, with the working tool names of the [tool surf
 4. **Follow it.** `orchestration__get_session` says whether the Session is working or idle and where its queued
    commands are. `orchestration__wait_for_turn` waits up to the instance's direct-tool wait (30 s on staging) for
    the running turn to end. `orchestration__read_turns` returns completed turns' final assistant messages and
-   outcomes, paging further back on request.
+   outcomes, paging further back on request. These two wait on History's
+   [read and follow API](#reading-turns-depends-on-historys-read-and-follow-design), which is not designed yet.
 5. **Answer and steer.** A worker that needs something ends its turn saying so. The caller reads that in step 4 and
    answers with `orchestration__submit_input`, or stops a turn going wrong with `orchestration__interrupt_turn`.
 6. **Finish.** Launched with idle suspend and wake-on-send, the worker suspends once idle and a later input wakes
@@ -180,16 +181,16 @@ account cannot, so on its own it does not close any gap in the table above.
 
 Working names; the group key and Action names are open.
 
-| Action                                                                      | What it does                                                                                                                  | Calls                                                           | Default decision           |
-| --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | -------------------------- |
-| `list_launch_presets`                                                       | The reviewed presets, resolved to concrete launch and Session fields                                                          | the executor's copy of the preset catalog                       | Auto, by a Flux-owned rule |
-| `launch_sandbox`                                                            | Create a Session Sandbox from concrete fields, idle suspend and wake-on-send included; write `launcher_grants`                | Kubernetes, through the Sandbox request builder the app uses    | The operator, every time   |
-| `open_session`                                                              | Open a Session with its spec and setup script, under a Session ID the caller mints                                            | Dispatcher `OpenSession`                                        | Launcher grant             |
-| `submit_input`, `interrupt_turn`, `change_model`, `change_reasoning_effort` | One Dispatcher command each, keyed by a caller-chosen `command_id`                                                            | Dispatcher                                                      | Launcher grant             |
-| `get_session`                                                               | The Sandbox's `Ready` condition, the Session's listing fields and its Dispatches                                              | Kubernetes, History `FindSessions`, Dispatcher `ListDispatches` | Launcher grant             |
-| `list_sessions`                                                             | A Sandbox's Sessions with the [agreed listing fields](multiagent_communication.md#sandbox-session-discovery-and-provisioning) | History                                                         | Launcher grant             |
-| `read_turns`                                                                | Completed turns' final assistant messages and outcomes, newest first, paged back                                              | History fold reads                                              | Launcher grant             |
-| `wait_for_turn`                                                             | Wait, up to the instance's wait limit, for the running turn to end                                                            | History's summary watch now, the follow API once it exists      | Launcher grant             |
+| Action                                                                      | What it does                                                                                                                  | Calls                                                                                                     | Default decision           |
+| --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | -------------------------- |
+| `list_launch_presets`                                                       | The reviewed presets, resolved to concrete launch and Session fields                                                          | the executor's copy of the preset catalog                                                                 | Auto, by a Flux-owned rule |
+| `launch_sandbox`                                                            | Create a Session Sandbox from concrete fields, idle suspend and wake-on-send included; write `launcher_grants`                | Kubernetes, through the Sandbox request builder the app uses                                              | The operator, every time   |
+| `open_session`                                                              | Open a Session with its spec and setup script, under a Session ID the caller mints                                            | Dispatcher `OpenSession`                                                                                  | Launcher grant             |
+| `submit_input`, `interrupt_turn`, `change_model`, `change_reasoning_effort` | One Dispatcher command each, keyed by a caller-chosen `command_id`                                                            | Dispatcher                                                                                                | Launcher grant             |
+| `get_session`                                                               | The Sandbox's `Ready` condition, the Session's listing fields and its Dispatches                                              | Kubernetes, History `FindSessions`, Dispatcher `ListDispatches`                                           | Launcher grant             |
+| `list_sessions`                                                             | A Sandbox's Sessions with the [agreed listing fields](multiagent_communication.md#sandbox-session-discovery-and-provisioning) | History                                                                                                   | Launcher grant             |
+| `read_turns`                                                                | Completed turns' final assistant messages and outcomes, newest first, paged back                                              | History's read and follow API, [once designed](#reading-turns-depends-on-historys-read-and-follow-design) | Launcher grant             |
+| `wait_for_turn`                                                             | Wait, up to the instance's wait limit, for the running turn to end                                                            | The same API                                                                                              | Launcher grant             |
 
 The same tools reach a Sandbox the caller did not launch, such as the operator's own Haku: each call then waits for
 the operator, unless a Flux-owned rule grants that Sandbox's tag.
@@ -206,6 +207,24 @@ app state ([dependency rule](../docs/service_boundaries.md)).
 
 Not in v1: suspend, resume and delete. Idle suspend and wake-on-send cover a worker's cost, and deleting stays an
 operator act in the app.
+
+### Reading turns depends on History's read and follow design
+
+How History's gRPC reads and watches should work is open
+([`HISTORY_READ_FOLLOW_DESIGN`](task_dag.md#history_read_follow_design--read-and-follow-one-sessions-history), operator
+2026-10-26: "there is still an open issue about how exactly reads/watches from history service via grpc should
+work"). This plan takes that design as a prerequisite, not as settled: `read_turns` and `wait_for_turn` are built on
+whatever API it chooses, and are not built on today's paged reads and payload-free summary watch in the meantime,
+which would add one more follow loop for that design to move ([#11817](https://github.com/agentydragon/ducktape/issues/11817)
+is what such a loop got wrong for titles). What an orchestrator needs from it, as input to that design:
+
+- start at the tail, or a number of completed turns back, rather than at a raw cursor;
+- select kinds, so a reader gets turn completions and final assistant messages without every delta;
+- a bounded wait for the next turn end that a caller with a 30 s tool budget can call repeatedly without a gap or
+  duplicate between calls.
+
+Until then a caller sees progress through `get_session` (idle or working, Dispatch states), and a worker reports
+results where its own grants let it write.
 
 ## Where this departs from current rules
 
@@ -237,16 +256,15 @@ Each phase is independently useful; P1's parts are separate PRs.
   1. The executor kind with `list_launch_presets` and `launch_sandbox`, writing launcher grants; the preset catalog
      rendered into its settings; Sandbox, PolicySet and PolicyBinding `create` for its account.
   2. `open_session` and the four commands; the executor's account in the Dispatcher's callers and wake callers.
-  3. `get_session`, `list_sessions`, `read_turns` and `wait_for_turn` over today's History reads and summary watch;
-     the executor's account among History's readers.
+  3. `get_session` and `list_sessions` over History's existing Session lookups and the Dispatcher's reads; the
+     executor's account among History's readers.
 
-  Acceptance is a k3s system test: a test caller launches (approved by the test), opens, submits, waits and reads
-  the outcome; a second account's same calls stay on the human path; a recreated same-name Sandbox does not match
-  the old grant; deleting the Sandbox removes its grants.
+  Acceptance is a k3s system test: a test caller launches (approved by the test), opens, submits and sees the
+  Session go idle; a second account's same calls stay on the human path; a recreated same-name Sandbox does not
+  match the old grant; deleting the Sandbox removes its grants.
 
-- **P2, follow instead of poll.** `wait_for_turn` and `read_turns` move to the
-  [read and follow API](task_dag.md#history_read_follow_design--read-and-follow-one-sessions-history) with a kind
-  filter, so they carry turn outcomes and final messages rather than every delta.
+- **P2, reading turns, after `HISTORY_READ_FOLLOW_API`.** `read_turns` and `wait_for_turn` on the reviewed read and
+  follow API. Acceptance adds waiting for and reading a turn's outcome, and a wait that spans several calls.
 - **P3, backend grants, one operation at a time.** As `THREAD_CREATE_AUTHORIZATION`,
   `DISPATCHER_SEND_AUTHORIZATION_GENERALIZE` and `THREAD_READ_POLICY` land, the executor calls as the caller,
   launcher grants write the backend rule types, and its Dispatcher and History entries go; `send_message` joins the

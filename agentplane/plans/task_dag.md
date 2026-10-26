@@ -453,7 +453,8 @@ an MCP Connection or an in-cluster orchestrator launch Session Sandboxes, open S
 outcomes. Operations no backend can grant a caller yet run as the operator's act, authorized by the Action Decision
 (the operator offered approval-gated Actions, 23:21), with Sandbox-owned launcher grants making one approval per
 worker enough. Each moves to its backend rule as `THREAD_CREATE_AUTHORIZATION`, `THREAD_READ_POLICY` and
-`AGENT_SANDBOX_LAUNCH` land. **Question for review:** the plan's decisions, first whether the Dispatcher and History
+`AGENT_SANDBOX_LAUNCH` land. Its turn reads (`read_turns`, `wait_for_turn`) wait on `HISTORY_READ_FOLLOW_API` and
+are not built on today's reads. **Question for review:** the plan's decisions, first whether the Dispatcher and History
 may trust the group's executor until then. No implementation until the operator accepts the plan.
 
 ### `RUNNER_HARNESS_OBJECTS_DESIGN` — decide process diagnostics and placement policy
@@ -1461,6 +1462,7 @@ flowchart TD
     HISTORY_READ_FOLLOW_API --> THREAD_TITLE_GENERATION
     HISTORY_READ_FOLLOW_API -. browser watch .-> HISTORY_READS_FACADE
     HISTORY_READ_FOLLOW_API -. possible consumer .-> SESSION_ACTIVITY_STREAM
+    HISTORY_READ_FOLLOW_API -. turn reads .-> MCP_ORCHESTRATION_DESIGN[Decision: orchestration from MCP, section 3]
     HISTORY_READ_FOLLOW_DESIGN -. related .- NOTIFICATION_COMMAND_OUTCOME_DESIGN
     HISTORY_READ_FOLLOW_API -. a feed it must authorize .-> THREAD_READ_POLICY
 ```
@@ -1479,6 +1481,9 @@ so consumers stop building follow loops on `WatchSessionSummaries`. The loops to
 - the Notification Service scans raw history for its own command's admission and confirmation
   (`NOTIFICATION_COMMAND_OUTCOME_DESIGN`);
 - `SESSION_ACTIVITY_STREAM` would re-read a summary after every `changed`;
+- the planned orchestration turn reads (`MCP_ORCHESTRATION_DESIGN`) need a start at the tail or a number of turns
+  back, a kind filter for turn completions and final assistant messages, and a bounded wait for the next turn end
+  that a 30 s tool call can repeat without a gap ([needs](mcp_orchestration.md#reading-turns-depends-on-historys-read-and-follow-design));
 - the browser follows Threads through Electric shapes over the fold tables.
 
 Decide what a follow carries (raw runner entries, fold entities or both, and whether a caller selects kinds
