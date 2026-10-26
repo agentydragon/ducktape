@@ -1499,7 +1499,8 @@ approved transport direction (section 13). Callers stay the configured reader ac
 [thread sync plan](thread_sync/README.md) holds Electric's open work and the second-implementation
 candidates, and #11817 asks for that comparison without a parallel sync path unless a concrete gap needs one.
 
-**Question for review:** which consumers the first version serves (the backend ones only, or the browser
+[History read and follow](history_read_follow.md) proposes raw entries with a kind filter for the backend readers,
+the browser staying on Electric. **Question for review:** which consumers the first version serves (the backend ones only, or the browser
 too), and whether it follows raw entries, fold entities or both. Exit: a reviewed API (proto sketch,
 start, resume and end semantics, settlement and epoch behavior, bounds) and the consumers that move to it.
 

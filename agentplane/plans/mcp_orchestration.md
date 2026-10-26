@@ -216,12 +216,11 @@ How History's gRPC reads and watches should work is open
 work"). This plan takes that design as a prerequisite, not as settled: `read_turns` and `wait_for_turn` are built on
 whatever API it chooses, and are not built on today's paged reads and payload-free summary watch in the meantime,
 which would add one more follow loop for that design to move ([#11817](https://github.com/agentydragon/ducktape/issues/11817)
-is what such a loop got wrong for titles). What an orchestrator needs from it, as input to that design:
-
-- start at the tail, or a number of completed turns back, rather than at a raw cursor;
-- select kinds, so a reader gets turn completions and final assistant messages without every delta;
-- a bounded wait for the next turn end that a caller with a 30 s tool budget can call repeatedly without a gap or
-  duplicate between calls.
+is what such a loop got wrong for titles). What an orchestrator needs from it: a start a number of turns back, a kind
+filter for turn completions and final assistant messages, and a bounded wait for the next turn end that a caller with a
+30 s tool budget can repeat without a gap or duplicate. [History read and follow](history_read_follow.md) proposes one
+call for that design and
+[how these two tools build on it](history_read_follow.md#what-the-orchestration-executor-builds-on-it).
 
 Until then a caller sees progress through `get_session` (idle or working, Dispatch states), and a worker reports
 results where its own grants let it write.
