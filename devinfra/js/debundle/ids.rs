@@ -215,7 +215,6 @@ impl BindingCatalogue {
     pub fn local_view(&self, chunk_id: ChunkId) -> Result<LocalBindings<'_>, BindingScopeError> {
         self.check_chunk(chunk_id)?;
         Ok(LocalBindings {
-            chunk_id: self.chunk_id,
             bindings_by_swc_id: &self.bindings_by_swc_id,
         })
     }
@@ -236,15 +235,10 @@ impl BindingCatalogue {
 /// chunk-scope check.
 #[derive(Debug, Clone, Copy)]
 pub struct LocalBindings<'a> {
-    chunk_id: ChunkId,
     bindings_by_swc_id: &'a HashMap<Id, BindingKind>,
 }
 
 impl LocalBindings<'_> {
-    pub fn chunk_id(&self) -> ChunkId {
-        self.chunk_id
-    }
-
     pub fn as_map(&self) -> &HashMap<Id, BindingKind> {
         self.bindings_by_swc_id
     }
@@ -273,6 +267,8 @@ mod binding_id_tests {
                     },
                 )]),
             );
+            let local_view = catalogue.local_view(chunk_a).unwrap();
+            assert!(local_view.as_map().contains_key(&swc_id_a));
 
             assert_eq!(
                 catalogue
@@ -301,7 +297,6 @@ mod binding_id_tests {
                 }
             );
             assert!(catalogue.local_view(chunk_b).is_err());
-            assert_eq!(catalogue.local_view(chunk_a).unwrap().chunk_id(), chunk_a);
         });
     }
 }
