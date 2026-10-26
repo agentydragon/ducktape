@@ -217,6 +217,15 @@ spec:
   rsyncTLS:
     copyMethod: Direct
     destinationPVC: grocy-config-ovh-backup
+    moverAffinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: topology.kubernetes.io/zone
+                  operator: In
+                  values:
+                    - hil-ovh
     moverSecurityContext:
       fsGroup: 1000
       runAsGroup: 1000

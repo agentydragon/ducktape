@@ -16,6 +16,11 @@ from cdk8s_plus_34 import k8s
 from volsync_replicationdestination_crds.backube.volsync import (
     ReplicationDestinationSpecRsyncTls,
     ReplicationDestinationSpecRsyncTlsCopyMethod,
+    ReplicationDestinationSpecRsyncTlsMoverAffinity,
+    ReplicationDestinationSpecRsyncTlsMoverAffinityNodeAffinity,
+    ReplicationDestinationSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution,
+    ReplicationDestinationSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms,
+    ReplicationDestinationSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions,
     ReplicationDestinationSpecRsyncTlsMoverSecurityContext,
     ReplicationDestinationSpecRsyncTlsMoverSecurityContextSeccompProfile,
 )
@@ -27,7 +32,7 @@ from volsync_replicationsource_crds.backube.volsync import (
     ReplicationSourceSpecTrigger,
 )
 
-from cluster.cdk8s import cilium, namespaces
+from cluster.cdk8s import cilium, namespaces, node_scheduling
 from cluster.cdk8s.authentik import app as authentik  # `app` is the cdk8s App parameter here
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
@@ -206,6 +211,27 @@ def _destination_mover_security_context() -> ReplicationDestinationSpecRsyncTlsM
     )
 
 
+def _destination_mover_affinity() -> ReplicationDestinationSpecRsyncTlsMoverAffinity:
+    """Keeps the destination mover on an OVH node. The backup PVs predate the SeaweedFS
+    StorageClasses' allowedTopologies, so they carry no node affinity of their own and the
+    scheduler would otherwise place the mover on a home node without the SeaweedFS CSI driver."""
+    return ReplicationDestinationSpecRsyncTlsMoverAffinity(
+        node_affinity=ReplicationDestinationSpecRsyncTlsMoverAffinityNodeAffinity(
+            required_during_scheduling_ignored_during_execution=ReplicationDestinationSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution(
+                node_selector_terms=[
+                    ReplicationDestinationSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms(
+                        match_expressions=[
+                            ReplicationDestinationSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
+                                key=node_scheduling.ZONE_LABEL, operator="In", values=[node_scheduling.HIL_OVH_ZONE]
+                            )
+                        ]
+                    )
+                ]
+            )
+        )
+    )
+
+
 def _source_mover_security_context() -> ReplicationSourceSpecRsyncTlsMoverSecurityContext:
     return ReplicationSourceSpecRsyncTlsMoverSecurityContext(
         run_as_user=_MOVER_UID,
@@ -304,6 +330,7 @@ def household_chart(app: App, *, household: str) -> Chart:
             copy_method=ReplicationDestinationSpecRsyncTlsCopyMethod.DIRECT,
             service_type="ClusterIP",
             mover_security_context=_destination_mover_security_context(),
+            mover_affinity=_destination_mover_affinity(),
         ),
     )
     ReplicationSource(
