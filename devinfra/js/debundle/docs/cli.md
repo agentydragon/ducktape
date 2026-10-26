@@ -37,7 +37,7 @@ both are set.
 | ---------------------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `--graph <path>`       | `DEBUNDLE_GRAPH`       | `dependency_graph.json` for the chunk being inspected or edited. The graph path implies the chunk; multi-chunk callers point at different graphs per invocation. |
 | `--modules <dir>`      | `DEBUNDLE_MODULES`     | Per-module YAML tree root (the directory under `spec/modules/`).                                                                                                 |
-| `--source-root <dir>`  | `DEBUNDLE_SOURCE_ROOT` | Upstream snapshot root containing the original chunk bytes.                                                                                                      |
+| `--source-root <dir>`  | `DEBUNDLE_SOURCE_ROOT` | Upstream snapshot root containing the original chunk bytes, used to resolve source-backed selectors and typed binding pins.                                      |
 | `--tree-config <file>` | `DEBUNDLE_TREE_CONFIG` | For graph-backed `modules` edits and queries, scope an app-level modules tree to the chunk named by `--graph`.                                                   |
 
 `debundle run --out-root` reads `DEBUNDLE_OUT`. `debundle run
@@ -130,11 +130,21 @@ unambiguous module filenames, module ids (`logical:7`), source-unit IDs
 Every command that modifies the spec runs validation **by default** before
 writing changes back to disk. For commands that affect the chunk's
 factorization (anything that moves a binding between modules), that means
-the full realizability + atom-split gate — which requires
-`--graph <dependency_graph.json>` unless `--no-verify` is set; for renames, it
-means name-collision detection; for comment edits, shape preservation only
-(they take `--dry-run` but no `--no-verify`). If validation fails the command
-refuses with a structured diagnostic and **does not modify any file**.
+the post-edit claim checks followed by the full realizability + atom-split
+gate — which requires `--graph <dependency_graph.json>` unless `--no-verify` is set.
+Direct local claims must identify graph source units, typed `kind` pins must match
+one source chunk (a repeated declaration may satisfy the kind at any site),
+and `import_specifier` pins must name a named import. Pass `--source-root` when
+the graph's relative source paths are not otherwise resolvable. Renames run
+name-collision detection; comment edits run shape preservation only (they take
+`--dry-run` but no `--no-verify`). If validation fails the command refuses
+with a structured diagnostic and **does not modify any file**.
+
+For these edit commands, a JSON result of `gate: "passed"` means the
+post-edit source-claim, assignment, and realizability checks passed. It does
+not mean the full reconstruction was accepted: `debundle run` remains the
+end-to-end acceptance path and checks vendor boundaries, exports,
+reconstruction, and browser planning.
 
 On spec-edit commands:
 
