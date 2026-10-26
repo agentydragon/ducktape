@@ -159,6 +159,16 @@ still open:
   between seal and execute" contract is convention-held; making
   non-execute passes take `&Module` would let the compiler enforce it.
 
+## Import re-export claims
+
+Logical-module member claims for default and namespace import locals are
+unsupported by `resolve_imported_binding` in `lowering/imports/imports_runtime.rs`.
+For example, a claim for `a` with `kind: import_specifier` over
+`import a from "./dependency.js"` resolves as a source claim but fails during
+materialization. Extend import resolution and re-export construction with neutral
+CLI/Node cases for both forms. Source-kind acceptance alone does not prove
+reconstruction support.
+
 ## Suspected bugs
 
 Findings from a read-only code review (2026-09-30), each with where to look and

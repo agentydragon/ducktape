@@ -75,46 +75,21 @@ acceptance evidence rather than a fresh extraction or performance run. Other
 registered captures without current controls remain unverified; historical
 rejections remain recorded as prior outcomes, not regressions.
 
-### B. Names and identity — in progress
-
-Replace the synthetic entry `PlannedModule` with an explicit entry destination.
-Keep the physical evaluation root separate from `ModuleRole::Unassigned`, which
-classifies assignment policy. `SourceUnitClass` provides the declaration-based
-classification used by routing, placement, reports, and authoring.
-
 ### C. Source preparation and exact resolution — in progress
 
-Give parsing, structural indexes, and resolution clear ownership. Extract
-reusable structural resolution from lowering and route inspection and edit
-commands through the same resolved facts. Commands share successful matches
-and remaining mismatches. A partial or ambiguous resolution remains visibly
-incomplete in every consumer and cannot appear as complete acceptance.
-
-### E. Assignment and reconstruction planning — in progress
-
-Use one authoritative assignment and a concrete plan for residual placement,
-imports, re-exports, readable names, vendor replacement, and loading topology.
-Emission must not independently rediscover placement or linkage decisions.
-
-### F. Validation and emission — in progress
-
-Concrete syntax, loading topology, replacement assets, and the combined vendor
-manifest belong to the immutable accepted plan. Complete the authoring-path
-acceptance audit: ordinary runs and edit tools must share acceptance rules, and
-emitted linkage must match the validated plan. Retain post-emission safeguards until their construction
-paths and equivalent validation are proven; the partial-swap post-strip
-preconditions remain documented with that safeguard in `docs/design.md`.
+Land the remaining direct-claim source checks (PR #12095). The real CLI/Node
+controls for preserving imports and moving repeated declarations are landed.
+Both use the shared typed claim projection. Keep source/assignment gate
+acceptance distinct from full reconstruction acceptance; the latter also checks
+reconstructed exports, replacement consumers, and loading construction.
 
 ### G. Authoring, CLI, and wire readers
 
-Route proposals, decomposition, refinement, edits, and diagnostics through shared
-services. Cut over spec/report vocabulary and all public and downstream consumers
-together. Handlers should be thin, assistance deterministic, and edits validated
-before writing.
-
-Update specs, reports, documentation, and actual consumers together whenever a
-wire interface changes. Do not make it a side effect of an internal rename or
-leave a second vocabulary through compatibility shims.
+Finish the paired downstream reader/pin PR for `dependency_graph.json`, unit
+IDs, assignment batches, and proposal counts. Its existing regeneration and
+browser/runtime controls must remain green. Preserve existing structural-rule
+findings separately from extraction acceptance; do not change rule exemptions
+or baselines to make a mechanical reader cutover appear green.
 
 ### H. Documentation and closure
 

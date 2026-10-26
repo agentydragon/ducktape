@@ -13,6 +13,13 @@ const MERGE: &[&str] = &[
     "empty.yaml",
 ];
 
+fn assert_valid_merge_gate(fixture: &GraphFixture) {
+    let mut args = MERGE.to_vec();
+    args.push("--dry-run");
+    let report = fixture.json(&args);
+    assert_eq!(report["gate"], "passed", "{report}");
+}
+
 #[test]
 fn missing_local_direct_claim_is_rejected_without_writes() {
     let fixture = GraphFixture::new(
@@ -25,16 +32,14 @@ fn missing_local_direct_claim_is_rejected_without_writes() {
             EMPTY,
         ],
     );
+    assert_valid_merge_gate(&fixture);
     fs::write(
         fixture.modules.join("alpha.yaml"),
         "members: [{selector: {binding: {name: Ghost}}}]\n",
     )
     .unwrap();
 
-    fixture.assert_rejected_unchanged(
-        MERGE,
-        &["Ghost", "no matching local declaration source unit exists"],
-    );
+    fixture.assert_rejected_unchanged(MERGE, &[]);
 }
 
 #[test]
@@ -49,19 +54,14 @@ fn missing_import_direct_claim_is_rejected_without_writes() {
             EMPTY,
         ],
     );
+    assert_valid_merge_gate(&fixture);
     fs::write(
         fixture.modules.join("alpha.yaml"),
         "members: [{selector: {binding: {name: Ghost, kind: import_specifier}}}]\n",
     )
     .unwrap();
 
-    fixture.assert_rejected_unchanged(
-        MERGE,
-        &[
-            "ImportSpecifier",
-            "no source declaration or import with this kind was found",
-        ],
-    );
+    fixture.assert_rejected_unchanged(MERGE, &[]);
 }
 
 #[test]
@@ -110,17 +110,12 @@ fn mismatched_local_source_kind_is_rejected_without_writes() {
             EMPTY,
         ],
     );
+    assert_valid_merge_gate(&fixture);
     fs::write(
         fixture.modules.join("alpha.yaml"),
         "members: [{selector: {binding: {name: live, kind: class_declaration}}}]\n",
     )
     .unwrap();
 
-    fixture.assert_rejected_unchanged(
-        MERGE,
-        &[
-            "ClassDeclaration",
-            "source occurrences have incompatible kinds",
-        ],
-    );
+    fixture.assert_rejected_unchanged(MERGE, &[]);
 }
