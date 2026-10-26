@@ -224,13 +224,13 @@ fn resolve_claim_sets(
                             })
                             .collect::<Vec<_>>()
                     });
-                    let import_kinds_by_source = (!needs_local_declarations).then(|| {
+                    let import_names_by_source = (!needs_local_declarations).then(|| {
                         parsed_by_source
                             .iter()
                             .map(|(source_path, parsed)| {
                                 (
                                     source_path.clone(),
-                                    selector_resolve::import_specifier_kinds(&parsed.module),
+                                    selector_resolve::import_specifier_names(&parsed.module),
                                 )
                             })
                             .collect::<BTreeMap<_, _>>()
@@ -263,16 +263,15 @@ fn resolve_claim_sets(
                                     })
                                     .collect::<Vec<_>>()
                             } else {
-                                let import_kinds_by_source = import_kinds_by_source
+                                let import_names_by_source = import_names_by_source
                                     .as_ref()
                                     .expect("import index exists without local declarations");
-                                import_kinds_by_source
+                                import_names_by_source
                                     .iter()
-                                    .map(|(source_path, import_kinds)| {
-                                        let evidence = import_kinds
-                                            .get(&binding.name)
-                                            .copied()
-                                            .map(DirectBindingSourceEvidence::Import)
+                                    .map(|(source_path, import_names)| {
+                                        let evidence = import_names
+                                            .contains(&binding.name)
+                                            .then_some(DirectBindingSourceEvidence::Import)
                                             .unwrap_or(DirectBindingSourceEvidence::Missing);
                                         (source_path.clone(), evidence)
                                     })
@@ -489,7 +488,7 @@ fn direct_binding_evidence_matches(
     evidence: &DirectBindingSourceEvidence,
 ) -> bool {
     match (expected_kind, evidence) {
-        (BindingSourceKind::ImportSpecifier, DirectBindingSourceEvidence::Import(_)) => true,
+        (BindingSourceKind::ImportSpecifier, DirectBindingSourceEvidence::Import) => true,
         (BindingSourceKind::ImportSpecifier, _) => false,
         (
             _,
