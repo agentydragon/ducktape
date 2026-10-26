@@ -1834,8 +1834,8 @@ mod tests {
     use analysis::{DepKind, SourceUnitReport};
     use peel::propose::propose;
     use report_fixtures::{
-        active_source_unit, atomic_edge, atomic_group_for, claims, graph_of, no_claims, dependency_edge,
-        residual_source_unit,
+        active_source_unit, atomic_edge, atomic_group_for, claims, dependency_edge, graph_of,
+        no_claims, residual_source_unit,
     };
 
     #[test]

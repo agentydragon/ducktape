@@ -96,7 +96,7 @@ pub struct ChunkModulesReport {
 #[derive(Debug, Clone, Serialize)]
 pub struct ChunkModulesCounts {
     pub applied: usize,
-    pub selected_owners: usize,
+    pub selected_bindings: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]

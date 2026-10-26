@@ -3,10 +3,11 @@
 > Summary of the design: the debundler takes a bundler-emitted
 > ESM chunk and a path-first logical-module spec, and emits a
 > multi-module ESM bundle observationally equivalent to the
-> input. The primitive analysis product is an dependency graph: nodes
-> are top-level owners/statements, and edges are "this owner uses
-> that binding" plus source-order side-effect constraints. A spec
-> is an assignment from owners/bindings to output destinations.
+> input. The primitive analysis product is a dependency graph whose
+> source-unit nodes are built from top-level statements. Its edges
+> record "this source unit uses that binding" plus source-order
+> side-effect constraints. The spec assigns bindings and anonymous
+> statements to output destinations.
 > The validator quotients the dependency graph by that assignment to
 > derive the imports graph `I` plus side-effect ordering graph
 > `S` and runs a two-pass realizability gate: Pass 1 rejects any
@@ -42,9 +43,10 @@ scaffolding.
 A bundler erases module boundaries; the debundler reconstructs them.
 This design treats reconstruction as a **graph quotient and
 scheduling problem**. The flat chunk gives us a total order over
-top-level owners/statements and a granular use graph between them.
-The spec assigns owners to output destinations. Collapsing all
-owners with the same destination yields a module dep graph; the
+top-level statements and a granular dependency graph between source
+units derived from them. Binding claims and anonymous-statement
+selectors determine each source unit's output destination. Collapsing
+source units with the same destination yields a module dep graph; the
 validator checks that this quotient graph admits an ESM evaluation
 order observationally equivalent to the input.
 
@@ -208,7 +210,7 @@ the in-memory representation keys bindings by SWC's
 `Id = (Atom, SyntaxContext)` — the hygiene-aware identity the
 resolver pass mints (`graph/`, `facts/`). Reports and specs spell
 bindings by name (`Atom`-only on the wire; see
-`docs/wire_format.md`); internal dependency graph edges, owner
+`docs/wire_format.md`); internal dependency graph edges, source-unit
 declarations, and per-chunk indexes clone `Id`s into `BTreeMap` /
 `BTreeSet` keys.
 

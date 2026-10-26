@@ -28,8 +28,8 @@ use gate::{
     check_realizability_touching,
 };
 use report_fixtures::{
-    active_source_unit, atomic_group_for, dependency_graph_report, graph_of,
-    promoted_dependency_edge, residual_source_unit,
+    active_source_unit, atomic_group_for, dependency_edge, graph_of, promoted_dependency_edge,
+    residual_source_unit,
 };
 
 use crate::quotient::testing::{greedy_step, module_group};
