@@ -4,7 +4,7 @@
 //! [`ModuleKey`] (`"logical:N"`) and each module's canonical
 //! [`spec::ModulePath`] + destination kind live once in the module table
 //! (`ModuleQuotientReport::nodes`, a list of [`ModuleEntry`]). Tests
-//! across several crates build that table — and the owner/edge/atomic-group
+//! across several crates build that table — and the source-unit/edge/atomic-group
 //! report nodes around it — the same way, so the builders live here
 //! instead of being copy-pasted per test module.
 //!
@@ -82,9 +82,9 @@ pub fn claims(pairs: &[(&str, &str)]) -> BTreeMap<String, ModulePath> {
 
 /// SourceUnit node with an explicit destination. The source location is
 /// synthesized from the ordinal (`start_line = ordinal * 100`) so
-/// distinct owners never overlap. Prefer [`residual_source_unit`] /
+/// distinct source units never overlap. Prefer [`residual_source_unit`] /
 /// [`active_source_unit`] when the destination is one of the common cases —
-/// this 5-arg form is the only `owner` builder, so call sites always
+/// this 5-arg form is the only general source-unit builder, so call sites always
 /// spell the destination decision.
 pub fn source_unit(
     id: &str,
@@ -107,7 +107,7 @@ pub fn source_unit(
     )
 }
 
-/// Fully-explicit owner-node core: callers control the declared
+/// Fully explicit source-unit node: callers control the declared
 /// bindings (e.g. renamed exports via [`member`]) and the exact
 /// source location.
 pub fn source_unit_report(
@@ -128,7 +128,7 @@ pub fn source_unit_report(
     }
 }
 
-/// [`owner`] destined for the residual catch-all.
+/// A source unit destined for the test's physical-entry sentinel.
 pub fn residual_source_unit(
     id: &str,
     ordinal: usize,
@@ -138,7 +138,7 @@ pub fn residual_source_unit(
     source_unit(id, ordinal, bindings, lines, module_ref("residual"))
 }
 
-/// [`owner`] destined for an active (spec-claimed) module.
+/// A source unit destined for an active (spec-claimed) module.
 pub fn active_source_unit(
     id: &str,
     ordinal: usize,
@@ -249,7 +249,7 @@ pub fn atomic_edge_for_dependency_edge(
 }
 
 /// Assemble a full `DependencyGraphReport` wire fixture. The module table
-/// is derived from the distinct owner destinations.
+/// is derived from the distinct source-unit destinations.
 pub fn graph_of(
     nodes: Vec<SourceUnitReport>,
     edges: Vec<DependencyEdgeReport>,
@@ -274,7 +274,7 @@ pub fn graph_of(
     }
 }
 
-/// An dependency graph whose atomic groups are one-per-owner, in owner order.
+/// A dependency graph whose atomic groups are one per source unit, in source-unit order.
 /// Atomic edges stay empty: tests exercising that distinct graph provide it explicitly.
 pub fn singleton_graph(
     source_units: Vec<SourceUnitReport>,

@@ -107,6 +107,7 @@ pub struct FinalModuleContent {
     /// the chunk is implicit).
     pub path: spec::ModulePath,
     pub source_unit_ids: Vec<String>,
+    /// True for a planned output with `ModuleRole::Unassigned`, never entry.
     pub residual: bool,
 }
 
@@ -114,6 +115,8 @@ pub struct FinalModuleContent {
 pub struct RequestedLogicalModule {
     /// Canonical [`spec::ModulePath`] of the requested target.
     pub target_path: spec::ModulePath,
+    /// True for the synthesized memberless catchall request, not for an
+    /// explicit module later assigned `ModuleRole::Unassigned`.
     pub residual: bool,
 }
 

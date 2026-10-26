@@ -9,7 +9,7 @@
 //! simulator in any I-graph SCC that carries a constraining edge). Clause 1
 //! (importability) is policy that lives in
 //! `materialize_logical_modules` per "Emit-side responsibilities":
-//! residual-entry bindings are importable by construction via the
+//! entry bindings are importable by construction via the
 //! auto-grown export pass. Callers that need a private-read blocker
 //! (the proposer's `BlockedResidualDependency`) layer it on top of the
 //! verdict; it is not part of the realizability primitive.
@@ -145,21 +145,20 @@ impl RealizabilityVerdict {
 fn reject_entry_dependency(
     verdict: &mut RealizabilityVerdict,
     from: ModuleId,
-    residual: ModuleId,
+    entry_module_id: ModuleId,
     mut dependency_edges: Vec<DependencyEdgeId>,
 ) {
     if dependency_edges.is_empty()
-        || verdict
-            .unrealizable_sccs
-            .iter()
-            .any(|scc| scc.core.modules.contains(&from) && scc.core.modules.contains(&residual))
+        || verdict.unrealizable_sccs.iter().any(|scc| {
+            scc.core.modules.contains(&from) && scc.core.modules.contains(&entry_module_id)
+        })
     {
         return;
     }
     dependency_edges.sort();
     verdict.unrealizable_sccs.push(SccDiagnosis {
         core: SccCore {
-            modules: BTreeSet::from([from, residual]),
+            modules: BTreeSet::from([from, entry_module_id]),
             constraining_dependency_edges: dependency_edges,
         },
         rejection: SccRejection::EsmEvaluationTdz,
@@ -217,7 +216,7 @@ pub fn check_realizability(
 fn verdict_from_canonical(
     canonical: ChunkConstrainingEdgeSet,
     cross_rebinds: Vec<CrossRebindEdge>,
-    residual: ModuleId,
+    entry_module_id: ModuleId,
 ) -> RealizabilityVerdict {
     let mut verdict = RealizabilityVerdict {
         unrealizable_sccs: Vec::new(),
@@ -320,8 +319,11 @@ fn verdict_from_canonical(
 
     if !candidate_sccs.is_empty() {
         let constraining_pairs: BTreeSet<(ModuleId, ModuleId)> = canonical.pairs().collect();
-        let simulation =
-            EsmEvaluationSimulator::build(&canonical.i_successors, &constraining_pairs, residual);
+        let simulation = EsmEvaluationSimulator::build(
+            &canonical.i_successors,
+            &constraining_pairs,
+            entry_module_id,
+        );
         for modules in candidate_sccs {
             let tdz_pairs: Vec<(ModuleId, ModuleId)> = simulation
                 .tdz_pairs(&modules, &constraining_pairs)
@@ -345,7 +347,7 @@ fn verdict_from_canonical(
     }
 
     for (&(from, to), edges) in &canonical.edges {
-        if to == residual {
+        if to == entry_module_id {
             reject_entry_dependency(&mut verdict, from, to, edges.clone());
         }
     }
@@ -388,7 +390,7 @@ pub fn check_realizability_touching(
 
 /// Simulator-predicted ECMA-262 Phase-2 evaluation post-order for a
 /// assignment's emitted module tree: lower index = body evaluates
-/// earlier; modules unreachable from residual are absent. Exposed for
+/// earlier; modules unreachable from entry are absent. Exposed for
 /// Node-differential pins (`e2e/simulator_node_differential_sweep_test`)
 /// that compare this prediction against the evaluation order Node
 /// actually produces for the emitted tree.
@@ -623,7 +625,7 @@ fn overlay_is_simulator_noop(overlay: Option<&QuotientOverlay>) -> bool {
 
 /// Edges whose gate-view contribution can change when `source units` move:
 /// those incident to a moved source unit. The gate view reads only the
-/// endpoints' modules and the residual, never a promoted edge's callee.
+/// endpoints' modules and the entry, never a promoted edge's callee.
 fn impacted_dependency_edges(
     dependency_graph: &DependencyGraph,
     source_units: &[SourceUnitId],

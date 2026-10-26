@@ -95,7 +95,7 @@ pub struct ModuleDecompositionReport {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub selector_anchor_relations: Option<Vec<ModuleDecompositionSelectorAnchor>>,
     /// True only when the candidate preserves whole structural atoms and
-    /// passes the shared factorization gate over the complete dependency graph.
+    /// passes the shared assignment gate over the complete dependency graph.
     pub candidate_is_realizable: bool,
     pub coverage_complete: bool,
     pub source_unit_count: usize,
@@ -105,7 +105,7 @@ pub struct ModuleDecompositionReport {
     pub modules: Vec<ModuleDecomposition>,
     /// Structural atoms that the candidate would assign to multiple modules.
     pub atomic_group_conflicts: Vec<ModuleDecompositionAtomicConflict>,
-    /// The exact cycle and rebinding result from the shared factorization gate.
+    /// The exact cycle and rebinding result from the shared assignment gate.
     pub cycles: Vec<gate::CycleReport>,
     pub cross_rebinds: Vec<String>,
     /// Present only when the caller explicitly requested SCC coarsening.

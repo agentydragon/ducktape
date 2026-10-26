@@ -76,7 +76,7 @@ pub struct AtomicGroupsArgs {
     #[arg(long, default_value_t = 0)]
     pub limit: usize,
 
-    /// Filter to atomic groups containing at least one residual owner.
+    /// Filter to atomic groups containing at least one residual source unit.
     #[arg(long = "residual-only")]
     pub residual_only: bool,
 
@@ -198,7 +198,7 @@ pub enum SelectionKind {
     ModulePath(String),
     /// Every source unit assigned to this module ID.
     Module(String),
-    /// The owner that declares this input binding id.
+    /// The source unit that declares this input binding id.
     Binding(String),
     /// A proposer proposal by `proposed_module_id`.
     Proposal(String),
@@ -711,7 +711,7 @@ pub fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
         .cloned()
         .collect();
     let mut neighbor_source_units = source_units_for_ids(&graph, &neighbor_ids);
-    let selected_atomic_group_ids = atomic_group_ids_for_owner_set(&graph, &source_unit_set);
+    let selected_atomic_group_ids = atomic_group_ids_for_source_unit_set(&graph, &source_unit_set);
     let mut atomic_groups = graph
         .atomic_graph
         .nodes
@@ -842,7 +842,7 @@ pub fn run_source_selection_report(args: &SourceSelectionArgs) -> Result<SourceS
         let location = source_unit
             .source_location
             .as_ref()
-            .with_context(|| format!("owner {} has no source location", source_unit.id))?;
+            .with_context(|| format!("source unit {} has no source location", source_unit.id))?;
         let source_path = &location.source_path;
         let resolved_path = match resolved_paths.get(source_path) {
             Some(path) => path.clone(),
@@ -979,7 +979,7 @@ fn source_units_for_ids(
         .collect()
 }
 
-fn atomic_group_ids_for_owner_set(
+fn atomic_group_ids_for_source_unit_set(
     graph: &DependencyGraphReport,
     source_unit_ids: &BTreeSet<String>,
 ) -> BTreeSet<String> {
@@ -1011,7 +1011,7 @@ fn patch_plan_rows(
     propose: Option<&ProposalsReport>,
 ) -> Result<Vec<PatchPlanRow>> {
     let binding_to_source_units = binding_to_source_units(graph);
-    let atomic_group_by_owner = atomic_group_by_owner(graph);
+    let atomic_group_by_source_unit = atomic_group_by_source_unit(graph);
     let atomic_group_by_id: BTreeMap<String, &AtomicGroupReport> = graph
         .atomic_graph
         .nodes
@@ -1066,7 +1066,7 @@ fn patch_plan_rows(
 
             let mut atomic_group_ids: BTreeSet<String> = BTreeSet::new();
             for source_unit_id in &requested_source_unit_ids {
-                if let Some(atomic_group_id) = atomic_group_by_owner.get(source_unit_id) {
+                if let Some(atomic_group_id) = atomic_group_by_source_unit.get(source_unit_id) {
                     atomic_group_ids.insert(atomic_group_id.clone());
                 }
             }
@@ -1085,12 +1085,12 @@ fn patch_plan_rows(
                     .iter()
                     .map(|m| m.binding.to_string())
                     .collect();
-                let atomic_group_owners: BTreeSet<String> =
+                let atomic_group_source_units: BTreeSet<String> =
                     atomic_group.source_unit_ids.iter().cloned().collect();
                 let bindings_complete = atomic_group_bindings
                     .iter()
                     .all(|binding| claimed_bindings.contains(binding));
-                let source_units_complete = atomic_group_owners
+                let source_units_complete = atomic_group_source_units
                     .iter()
                     .all(|source_unit_id| requested_source_unit_ids.contains(source_unit_id));
                 if bindings_complete && source_units_complete {
@@ -1102,7 +1102,7 @@ fn patch_plan_rows(
                             .into_iter()
                             .filter(|binding| !claimed_bindings.contains(binding)),
                     );
-                    missing_source_unit_ids.extend(atomic_group_owners.into_iter().filter(
+                    missing_source_unit_ids.extend(atomic_group_source_units.into_iter().filter(
                         |source_unit_id| !requested_source_unit_ids.contains(source_unit_id),
                     ));
                     missing_anonymous_source_unit_ids.extend(
@@ -1192,8 +1192,8 @@ fn load_patch_sets(modules_root: &Path) -> Result<Vec<PatchSet>> {
 /// Map each declared (minified) binding name to all source-unit IDs that declare it.
 ///
 /// A repeated top-level `var` is one binding with several declaration sites,
-/// and the dependency graph retains each site as an source-unit node. Binding-keyed claims
-/// therefore cover every matching owner so a co-declaration atomic group is
+/// and the dependency graph retains each site as a source-unit node. Binding-keyed claims
+/// therefore cover every matching source unit so a co-declaration atomic group is
 /// reported complete; the selector resolver uses the first site as its single
 /// placement representative.
 fn binding_to_source_units(graph: &DependencyGraphReport) -> BTreeMap<String, Vec<String>> {
@@ -1208,7 +1208,7 @@ fn binding_to_source_units(graph: &DependencyGraphReport) -> BTreeMap<String, Ve
     out
 }
 
-fn atomic_group_by_owner(graph: &DependencyGraphReport) -> BTreeMap<String, String> {
+fn atomic_group_by_source_unit(graph: &DependencyGraphReport) -> BTreeMap<String, String> {
     let mut out = BTreeMap::new();
     for atomic_group in &graph.atomic_graph.nodes {
         for source_unit_id in &atomic_group.source_unit_ids {

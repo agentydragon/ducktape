@@ -18,18 +18,18 @@ use crate::esm_import_order::EsmImportOrder;
 /// The simulator models the **same** import-ordering decisions the
 /// materializer makes, via the shared `EsmImportOrder` (the single
 /// source of truth both sides consume — see `esm_import_order`):
-///   - residual (= the chunk's emitted entry file) imports **every**
+///   - the chunk's emitted entry file imports **every**
 ///     emitted logical module — binding imports for binding-owning
 ///     plans, side-effect-only imports for binding-less plans — in
 ///     `EsmImportOrder::sort_entry_imports` order (Lemma 2's
 ///     source-import order). See `lowering::lower_chunk`.
 ///   - every other module's intra-chunk imports (cross-module
-///     binding imports, phantom side-effect imports, residual-entry
+///     binding imports, phantom side-effect imports, entry-binding
 ///     import — one merged list) follow
 ///     `EsmImportOrder::sort_module_imports` (dependency-first
 ///     linker order). See `lowering::lower_chunk::lower_single_plan`.
 ///
-/// It then walks DFS from residual, records the post-order
+/// It then walks DFS from entry, records the post-order
 /// evaluation index per module, and verifies every cross-module
 /// constraining edge `(M, X)` evaluates the target `X` before the
 /// source `M`. Equivalent to asking whether the emitted ESM bundle
@@ -37,9 +37,9 @@ use crate::esm_import_order::EsmImportOrder;
 /// the candidate SCC.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub(super) struct EsmEvaluationSimulator {
-    /// Post-order index per module after DFS from residual. Lower
+    /// Post-order index per module after DFS from entry. Lower
     /// index = earlier post-order = body evaluates earlier. Modules
-    /// unreachable from residual are absent — ESM doesn't load them,
+    /// unreachable from entry are absent — ESM doesn't load them,
     /// so the simulator skips constraining-edge checks involving
     /// them.
     pub(super) post_order: BTreeMap<ModuleId, usize>,
@@ -57,22 +57,23 @@ impl EsmEvaluationSimulator {
     pub(super) fn build(
         i_successors: &BTreeMap<ModuleId, BTreeSet<ModuleId>>,
         constraining_pairs: &BTreeSet<(ModuleId, ModuleId)>,
-        residual: ModuleId,
+        entry_module_id: ModuleId,
     ) -> Self {
         // The simulator's module universe: every module that appears
-        // in the I-graph (plus residual itself). The emitted entry
+        // in the I-graph (plus entry itself). The emitted entry
         // imports every logical module; modules with no I-edges are
         // DFS dead-ends that cannot affect any other module's
         // post-order, so restricting the universe to I-graph
         // participants is exact.
         let mut nodes: BTreeSet<ModuleId> = BTreeSet::new();
-        nodes.insert(residual);
+        nodes.insert(entry_module_id);
         for (from, succs) in i_successors {
             nodes.insert(*from);
             nodes.extend(succs.iter().copied());
         }
         let import_order = EsmImportOrder::build(constraining_pairs, i_successors, &nodes);
-        let post_order = simulate_esm_post_order(residual, i_successors, &nodes, &import_order);
+        let post_order =
+            simulate_esm_post_order(entry_module_id, i_successors, &nodes, &import_order);
         Self { post_order }
     }
 
@@ -83,7 +84,7 @@ impl EsmEvaluationSimulator {
     /// callers use for diagnostics; an empty iterator means Lemma 2
     /// rescues the SCC.
     ///
-    /// Endpoints unreachable from residual are skipped — ESM never
+    /// Endpoints unreachable from entry are skipped — ESM never
     /// loads them, so they can't fire a TDZ at runtime.
     pub(super) fn tdz_pairs<'a>(
         &'a self,
@@ -107,17 +108,17 @@ impl EsmEvaluationSimulator {
     }
 }
 
-/// Simulate ECMA-262 Phase-2 DFS from `residual`. Returns a
+/// Simulate ECMA-262 Phase-2 DFS from `entry_module_id`. Returns a
 /// `post_order` map: lower index = earlier post-order = body
 /// evaluates earlier.
 ///
 /// Import ordering per visitor (the shared `EsmImportOrder` rules):
-///   - At `residual`: fan out to **every** module in `nodes`
+///   - At `entry_module_id`: fan out to **every** module in `nodes`
 ///     (the emitted entry imports every logical module), in
 ///     `sort_entry_imports` order (Lemma 2-aware).
 ///   - Elsewhere: that module's I-successors in
 ///     `sort_module_imports` order (dependency-first; mirrors the
-///     merged cross/phantom/residual-entry import list the emitter
+///     merged cross/phantom/entry-binding import list the emitter
 ///     renders in `lowering::lower_chunk::lower_single_plan`).
 ///
 /// Cycle no-op: a back-edge to a module already on the link-DFS
@@ -125,18 +126,18 @@ impl EsmEvaluationSimulator {
 /// already in its `discovered` set, which covers both back-edges
 /// (discovered-but-not-finished) and cross-edges (already finished).
 pub(super) fn simulate_esm_post_order(
-    residual: ModuleId,
+    entry_module_id: ModuleId,
     i_successors: &BTreeMap<ModuleId, BTreeSet<ModuleId>>,
     nodes: &BTreeSet<ModuleId>,
     import_order: &EsmImportOrder,
 ) -> BTreeMap<ModuleId, usize> {
     let graph = EsmIGraph {
         i_successors,
-        residual,
+        entry_module_id,
         nodes,
         import_order,
     };
-    let mut dfs = DfsPostOrder::new(&graph, residual);
+    let mut dfs = DfsPostOrder::new(&graph, entry_module_id);
     let mut post_order: BTreeMap<ModuleId, usize> = BTreeMap::new();
     while let Some(node) = dfs.next(&graph) {
         let idx = post_order.len();
@@ -146,7 +147,7 @@ pub(super) fn simulate_esm_post_order(
 }
 
 /// Petgraph view over `i_successors` that bakes in the ECMA-262
-/// import-order sort from the shared `EsmImportOrder`: residual fans
+/// import-order sort from the shared `EsmImportOrder`: entry fans
 /// out to every module in `nodes` in entry-import order, every other
 /// module to its I-successors in module-import order. Neighbors are
 /// yielded in REVERSE sort-key order so that `DfsPostOrder`'s
@@ -154,11 +155,11 @@ pub(super) fn simulate_esm_post_order(
 /// first.
 pub(super) struct EsmIGraph<'a> {
     pub(super) i_successors: &'a BTreeMap<ModuleId, BTreeSet<ModuleId>>,
-    pub(super) residual: ModuleId,
+    pub(super) entry_module_id: ModuleId,
     /// The simulator's module universe (see
-    /// `EsmEvaluationSimulator::build`). Residual's neighbor set —
+    /// `EsmEvaluationSimulator::build`). Entry's neighbor set —
     /// the emitted entry imports every logical module, not only the
-    /// ones residual's own statements reference.
+    /// ones entry's own statements reference.
     pub(super) nodes: &'a BTreeSet<ModuleId>,
     pub(super) import_order: &'a EsmImportOrder,
 }
@@ -192,15 +193,15 @@ impl IntoNeighbors for &EsmIGraph<'_> {
     type Neighbors = std::vec::IntoIter<ModuleId>;
 
     fn neighbors(self, node: ModuleId) -> Self::Neighbors {
-        let mut succs: Vec<ModuleId> = if node == self.residual {
+        let mut succs: Vec<ModuleId> = if node == self.entry_module_id {
             // The emitted entry imports EVERY logical module
             // (binding-owning plans via named imports, binding-less
             // plans via side-effect-only imports), not just the
-            // modules residual's own statements reference.
+            // modules entry's own statements reference.
             self.nodes
                 .iter()
                 .copied()
-                .filter(|m| *m != self.residual)
+                .filter(|m| *m != self.entry_module_id)
                 .collect()
         } else {
             self.i_successors
@@ -212,7 +213,7 @@ impl IntoNeighbors for &EsmIGraph<'_> {
         // DfsPostOrder pushes neighbors in iteration order and visits
         // the top of the stack next, so the LAST-yielded neighbor is
         // descended into first.
-        if node == self.residual {
+        if node == self.entry_module_id {
             succs.sort_by_key(|m| std::cmp::Reverse(self.import_order.entry_import_sort_key(*m)));
         } else if succs.len() >= 64 {
             // Large import lists otherwise repeat the position-map lookup

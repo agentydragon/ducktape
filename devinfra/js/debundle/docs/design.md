@@ -286,9 +286,12 @@ parallel side-channel to express re-export semantics.
 Let the input _chunk_ be a sequence of top-level statements
 `S_1, ..., S_n` in source order. Let the spec be a partial map
 `owner: binding → ModuleId` (over bindings of kind `Owned`);
-bindings without an explicit owner default to the _residual_
-module (a synthesized `PlannedModule` with the `Unassigned` role that
-holds whatever is left over).
+bindings without an explicit owner follow `unassigned_mode`. They can remain in
+the physical entry destination (`inline_in_entry`), land in a catchall file
+plan (`catchall_file`), or be assigned to generated plans
+(`per_atomic_group`). The entry destination is not a synthesized
+`PlannedModule`; `ModuleRole::Unassigned` describes a planned output, not the
+entry.
 
 For each statement `S`:
 
@@ -319,18 +322,17 @@ For each statement `S`:
 
 The spec induces, for each statement:
 
-- **`home(S) ∈ Modules`** — the module a statement is emitted
+- **`home(S) ∈ Modules`** — the destination a statement is emitted
   into. For statements with `declared(S) ≠ ∅`, `home(S)` is the
-  spec's `owner` of any name in `declared(S)`. (We require all
-  names in `declared(S)` to share an owner; comma-list var-decls
-  with split owners are split into separate var-decls before this
+  resolved destination of any name in `declared(S)`, including
+  `unassigned_mode` routing for names without a spec owner. (We require all
+  names in `declared(S)` to share a resolved destination; comma-list var-decls
+  with split destinations are split into separate var-decls before this
   step.) For statements with `declared(S) = ∅` (bare expressions,
-  side-effecting statements), `home(S)` defaults to the residual
-  module **unless** the spec claims `S` via an
-  `anonymous_statements` shape selector on some logical module
-  (see §"Anonymous-statement selectors"); a single shape-selector
-  match overrides the default and routes `S` into the claiming
-  module.
+  side-effecting statements), `home(S)` is the entry destination unless
+  the spec claims `S` via an `anonymous_statements` shape selector on a
+  logical module (see §"Anonymous-statement selectors") or
+  `unassigned_mode` routes it into a catchall or generated atomic-group plan.
 
 ## Dependency graph
 
@@ -660,7 +662,8 @@ post-merge module — or escalates:
   reject is exactly the `MutualConstrainingCycle` clause of the
   full verdict; a pass establishes Pass 1 is clean and escalates.
 - **Entry-last guard.** Before any I-SCC vacuity shortcut, reject an
-  effective constraining edge into residual that touches the queried module.
+  effective constraining edge into the entry destination that touches the
+  queried module.
   Entry evaluates last, including when its implicit import is the only return
   edge. This reads the maintained edge counts plus the overlay delta; it does
   not add universal fan-out to the I-condensation.
@@ -1031,9 +1034,9 @@ calling statement gets promoted `EagerUse` edges to every collected
 target — rebind targets included (order-only: write legality is
 separately enforced by the direct `LazyRebind`/`DeferredRebind`
 edge from the statement lexically containing the write).
-Fallback edges sourced in residual are dropped during assignment
-projection: residual is the ESM DFS root and evaluates last, so an
-at-init call from residual code cannot observe a TDZ, and the
+Fallback edges sourced in entry are dropped during assignment
+projection: entry is the ESM DFS root and evaluates last, so an
+at-init call from entry code cannot observe a TDZ, and the
 emitter emits no entry-side phantom imports the gate could
 otherwise assume.
 
@@ -1361,18 +1364,18 @@ decide that:
    for binding-owning plans, side-effect-only
    `import "./<plan>.js";` for binding-less plans (anonymous-
    statement-only modules) — in `source_import_position` order.
-   ESM DFS therefore always enters a non-residual SCC at its
+   ESM DFS therefore always enters an SCC without entry at its
    most-dependent member (Lemma 2's intra-SCC reversal) before
    any mediator's dependency-first imports can reach it. This is
-   why a non-residual mediator reaching into an SCC does NOT
+   why a mediator outside entry reaching into an SCC does NOT
    reject: the entry's own import of the SCC's dependent wins
    the race (pinned by
    `e2e/mediator_reaches_asymmetric_cycle_test` and
    `e2e/asymmetric_non_residual_cycle_test`).
-2. **Residual in the cycle, with a constraining edge whose
-   target is residual, always TDZs.** Residual is the ESM DFS
+2. **Entry in the cycle, with a constraining edge whose
+   target is entry, always TDZs.** Entry is the ESM DFS
    root — post-order evaluates every other cycle member first,
-   then residual. A constraining read of residual's
+   then entry. A constraining read of entry's
    `class`/`const`/`let` bindings TDZs. ESM hoists every
    `import` above any statement, so no source-order trick fixes
    it.
@@ -1387,8 +1390,8 @@ verdict by:
 2. Pass 2: Tarjan over the full I-graph (constraining ∪ lazy).
    For every multi-module SCC carrying at least one constraining
    edge, run an in-process **ESM evaluation simulator** rooted at
-   residual:
-   - At residual, fan out to EVERY module in the I-graph (the
+   entry:
+   - At entry, fan out to EVERY module in the I-graph (the
      entry's universal per-plan imports), in entry-import order
      (`EsmImportOrder::sort_entry_imports` — Lemma 2's intra-SCC
      reverse of constraining linker order).
@@ -1471,7 +1474,7 @@ execute correctly at runtime (the contract pinned by
 
 Here "spec assignment" means whatever the validator sees: every
 declared binding either has an explicit `owner` from the spec or
-defaults to the entry destination (see [Spec explicitness
+follows the chunk's `unassigned_mode` (see [Spec explicitness
 and diagnostics](#spec-explicitness-and-diagnostics)).
 There is no implicit transformation between the spec and the
 assignment the theorem reasons about.
@@ -1898,11 +1901,11 @@ clause-3 rule does not accept, so every spec the materializer
 reaches `lower_chunk` for has an `L` Lemma 2 can realize.
 
 The remaining principled gap is the `(at-init forward, lazy back)`
-shape **where residual itself is a cycle member**. Lemma 2's
-"unwind through the dependency" fails there — residual is the ESM
+shape **where entry itself is a cycle member**. Lemma 2's
+"unwind through the dependency" fails there — entry is the ESM
 DFS root, so post-order evaluates every other cycle member first,
-and a constraining read into residual TDZs. The primitive's
-tightened rule rejects this shape outright (see the residual-in-
+and a constraining read into entry TDZs. The primitive's
+tightened rule rejects this shape outright (see the entry-in-
 cycle carve-out under "Lemma 2: entry-side import ordering"); the
 emitter never sees one.
 
@@ -2256,7 +2259,7 @@ Five layers, bottom-up:
    `dependency_graph.json.atomic_graph`.
 3. **Spec assignment** — the author's current mapping of source units
    to modules (the spec's `members:` + `anonymous_statements:`
-   plus the residual default).
+   plus the routing of unclaimed source units under `unassigned_mode`).
 4. **Module quotient** — the dependency graph projected under the spec's
    assignment. Cross-module edges are the realizability evidence
    `check_realizability` operates on.
@@ -2319,15 +2322,17 @@ The trade-off doesn't pay off in practice:
    `O(num_bindings)` size — closure isn't saving spec size,
    just hiding which binding ended up where.
 
-**Design rule.** The spec is fully explicit. Every owned binding
-has its `owner` named in the spec or defaults to
-the entry destination. Empty-`declared` (anonymous) statements
-default to the entry destination unless explicitly claimed by a logical
-module's `anonymous_statements` shape selector. There is no
-implicit pulling: when an atomic group or planner proposal includes
-anonymous statements, the spec author copies their source into
-`anonymous_statements` (one entry per claimed statement); the
-materializer never silently co-moves an anonymous statement into a peeled module.
+**Design rule.** The spec's ownership claims are explicit. Every owned binding
+is named in a logical module or routed by `unassigned_mode`: to the entry,
+the catchall file, or a generated per-atomic-group module.
+Empty-`declared` (anonymous) statements default to the entry destination
+unless explicitly claimed by a logical module's `anonymous_statements`
+shape selector or routed to a catchall or generated atomic-group plan.
+There is no implicit pulling into an explicitly named logical module: when an
+atomic group or planner proposal includes anonymous statements, the spec author
+copies their source into `anonymous_statements` (one entry per claimed
+statement). `per_atomic_group` may place an unclaimed whole atomic group,
+including anonymous statements, into a generated plan.
 When a chunk has no explicit logical modules, `inline_in_entry` keeps the
 whole statement sequence in the entry. In `catchall_file`, unclaimed named
 bindings land in the catchall. Anonymous source units in a catchall atomic group and
@@ -3252,8 +3257,8 @@ Everything downstream needs is here:
 - `home(stmt)`: for statements with `declared(stmt) ≠ ∅`, look
   up any declared name in `bindings` — its `Owned.module` is
   `home`. For statements with empty `declared`, `home` is the
-  residual module unless a module claims the statement through
-  `anonymous_statements`.
+  entry destination unless a module claims the statement through
+  `anonymous_statements` or `unassigned_mode` routes it elsewhere.
 - "What source units/statements live in module M" =
   `dependency_graph.nodes.filter(dest(source_unit) == M)`.
 - "What does M export" = bindings whose `Owned.module == M`

@@ -147,13 +147,13 @@ fn large_module_import_neighbors_match_the_shared_emitter_order() {
     use super::esm_simulator::EsmIGraph;
     use crate::esm_import_order::EsmImportOrder;
 
-    let residual = ModuleId(0);
+    let entry_module_id = ModuleId(0);
     let importer = ModuleId(1);
     let targets: BTreeSet<ModuleId> = (2..=97).map(ModuleId).collect();
     let nodes: BTreeSet<ModuleId> = targets
         .iter()
         .copied()
-        .chain([residual, importer])
+        .chain([entry_module_id, importer])
         .collect();
     let i_successors = BTreeMap::from([
         (importer, targets.clone()),
@@ -170,7 +170,7 @@ fn large_module_import_neighbors_match_the_shared_emitter_order() {
     let import_order = EsmImportOrder::build(&constraining_pairs, &i_successors, &nodes);
     let graph = EsmIGraph {
         i_successors: &i_successors,
-        residual,
+        entry_module_id,
         nodes: &nodes,
         import_order: &import_order,
     };
@@ -722,7 +722,7 @@ fn assert_cached_simulator_matches_rebuild(index: &RealizabilityIndex, label: &s
     let constraining_pairs: BTreeSet<(ModuleId, ModuleId)> =
         quotient.constraining_buckets.keys().copied().collect();
     let rebuilt =
-        EsmEvaluationSimulator::build(&i_successors, &constraining_pairs, quotient.residual);
+        EsmEvaluationSimulator::build(&i_successors, &constraining_pairs, quotient.entry_module_id);
     // Force the cache to populate (verdict() takes the base path).
     let cached = quotient.base_simulator().clone();
     assert_eq!(

@@ -167,6 +167,7 @@ pub struct ModuleDecompositionMetrics {
     pub module: ModuleRef,
     pub loc: usize,
     pub exported_symbol_count: usize,
+    /// Planned output with `ModuleRole::Unassigned`, not the physical entry.
     pub is_residual: bool,
 }
 

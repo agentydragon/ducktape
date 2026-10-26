@@ -14,6 +14,8 @@ use std::collections::{BTreeMap, BTreeSet};
 pub struct LogicalRequest {
     pub id: String,
     pub target_path: String,
+    /// True only for a synthesized memberless catchall-file request; an
+    /// explicit request at the catchall target remains false.
     pub residual: bool,
     pub members: Vec<MemberRequest>,
     /// Anonymous-statement members the spec asked to co-move into

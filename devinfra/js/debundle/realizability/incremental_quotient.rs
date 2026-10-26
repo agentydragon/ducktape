@@ -275,10 +275,10 @@ pub(super) fn increment_delta(
 /// `IncrementalQuotient::add_current_edge` does for the committed state.
 pub(super) fn edge_contribution(
     edge: &DependencyEdge,
-    residual: ModuleId,
+    entry_module_id: ModuleId,
     module_of: impl Fn(SourceUnitId) -> ModuleId,
 ) -> Option<EdgeContribution> {
-    let (from, to) = project_endpoints(edge, residual, EndpointView::Gate, module_of)?;
+    let (from, to) = project_endpoints(edge, entry_module_id, EndpointView::Gate, module_of)?;
     let kind = if edge.reason.is_rebind() {
         EdgeContributionKind::Rebind
     } else {
@@ -447,12 +447,12 @@ pub(super) struct IncrementalQuotient {
     pub(super) constraining_graph: CountedDiGraph<ModuleId>,
     pub(super) constraining_buckets: BTreeMap<(ModuleId, ModuleId), ConstrainingBucket>,
     pub(super) cross_rebinds: BTreeMap<DependencyEdgeId, CrossRebindEdge>,
-    /// Chunk's residual module — the ESM DFS root. The Lemma 2
+    /// Chunk's entry destination — the ESM DFS root. The Lemma 2
     /// simulator that decides candidate asymmetric I-SCCs needs to
     /// know which module gets the source_import_position reversal
-    /// (residual) vs which use plain linker_position
+    /// (entry) vs which use plain linker_position
     /// (every other module).
-    pub(super) residual: ModuleId,
+    pub(super) entry_module_id: ModuleId,
     /// Lazily-computed base `EsmEvaluationSimulator` for the current
     /// committed I-graph / constraining-buckets state. Invalidated on
     /// every `add_current_edge` / `remove_current_edge` that mutates
@@ -491,7 +491,7 @@ impl IncrementalQuotient {
             constraining_graph: CountedDiGraph::new(),
             constraining_buckets: BTreeMap::new(),
             cross_rebinds: BTreeMap::new(),
-            residual: assignment.entry_destination().module_id(),
+            entry_module_id: assignment.entry_destination().module_id(),
             cached_base_simulator: RefCell::new(None),
             cached_base_i_successors: RefCell::new(None),
             cached_base_constraining_pairs: RefCell::new(None),
@@ -522,7 +522,7 @@ impl IncrementalQuotient {
 
     /// Borrow the base simulator, building it on demand if the cache
     /// is empty. The simulator is a function of `(i_graph,
-    /// constraining_buckets, residual)` — all of which are stable
+    /// constraining_buckets, entry_module_id)` — all of which are stable
     /// between mutating calls — so the cached instance is reused
     /// across queries that don't apply an overlay.
     pub(super) fn base_simulator(&self) -> std::cell::Ref<'_, EsmEvaluationSimulator> {
@@ -533,7 +533,7 @@ impl IncrementalQuotient {
                 *slot = Some(EsmEvaluationSimulator::build(
                     &i_successors,
                     &constraining_pairs,
-                    self.residual,
+                    self.entry_module_id,
                 ));
             }
         }
@@ -893,23 +893,23 @@ impl IncrementalQuotient {
     ) {
         let sources: BTreeSet<_> = self
             .constraining_graph
-            .predecessors(self.residual)
+            .predecessors(self.entry_module_id)
             .chain(overlay.into_iter().flat_map(|o| {
                 o.constraining_added
                     .keys()
-                    .filter_map(|&(from, to)| (to == self.residual).then_some(from))
+                    .filter_map(|&(from, to)| (to == self.entry_module_id).then_some(from))
             }))
-            .filter(|from| touching.is_none_or(|m| m == *from || m == self.residual))
+            .filter(|from| touching.is_none_or(|m| m == *from || m == self.entry_module_id))
             .collect();
         for from in sources {
-            let pair = (from, self.residual);
+            let pair = (from, self.entry_module_id);
             let edges = match overlay {
                 Some(o) => self
                     .constraining_bucket_with_overlay(pair, o)
                     .evidence_edges(),
                 None => self.constraining_buckets[&pair].evidence_edges(),
             };
-            super::reject_entry_dependency(verdict, from, self.residual, edges);
+            super::reject_entry_dependency(verdict, from, self.entry_module_id, edges);
         }
     }
 
@@ -1029,21 +1029,22 @@ impl IncrementalQuotient {
         // The source I-graph omits entry's universal imports. Its singleton
         // SCC fast path cannot justify accepting a dependency into entry.
         let effective = |from| {
-            self.constraining_graph.edge_count(from, self.residual) as isize
+            self.constraining_graph
+                .edge_count(from, self.entry_module_id) as isize
                 + overlay
                     .constraining_delta
-                    .get(&(from, self.residual))
+                    .get(&(from, self.entry_module_id))
                     .copied()
                     .unwrap_or(0)
         };
-        let entry_dependency = if module == self.residual {
+        let entry_dependency = if module == self.entry_module_id {
             self.constraining_graph
-                .predecessors(self.residual)
+                .predecessors(self.entry_module_id)
                 .chain(
                     overlay
                         .constraining_added
                         .keys()
-                        .filter_map(|&(from, to)| (to == self.residual).then_some(from)),
+                        .filter_map(|&(from, to)| (to == self.entry_module_id).then_some(from)),
                 )
                 .any(|from| effective(from) > 0)
         } else {
@@ -1140,7 +1141,7 @@ impl IncrementalQuotient {
         overlay: Option<&QuotientOverlay>,
     ) -> EsmEvaluationSimulator {
         let (i_successors, constraining_pairs) = self.effective_simulator_inputs(overlay);
-        EsmEvaluationSimulator::build(&i_successors, &constraining_pairs, self.residual)
+        EsmEvaluationSimulator::build(&i_successors, &constraining_pairs, self.entry_module_id)
     }
 
     /// Materialize `(i_successors, constraining_pairs)` — the inputs
@@ -1218,11 +1219,11 @@ impl IncrementalQuotient {
         let mut overlay = QuotientOverlay::default();
         for edge_id in impacted_edges {
             let edge = dependency_graph.edge(edge_id);
-            // Both sides take `project_endpoints`' gate view, so a residual
+            // Both sides take `project_endpoints`' gate view, so an entry
             // caller's fallback-promoted edge contributes nothing to either:
-            // the overlay never adds a residual -> target edge the gate lacks
+            // the overlay never adds an entry -> target edge the gate lacks
             // when the target moves, nor cancels a real edge on the same
-            // module pair when the caller leaves residual.
+            // module pair when the caller leaves entry.
             let current = edge_contribution(
                 edge,
                 assignment.entry_destination().module_id(),

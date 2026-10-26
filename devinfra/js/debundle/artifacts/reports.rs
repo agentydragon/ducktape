@@ -140,6 +140,8 @@ pub struct SelectedModuleLowering {
     pub cross_chunk_import_aliases: Vec<(String, String)>,
     pub file: String,
     pub source_unit_ids: Vec<String>,
+    /// Planned output with `ModuleRole::Unassigned`; the physical entry is
+    /// represented separately by `FileRole::Entry`.
     pub residual: bool,
     pub target_file: String,
     pub target_path: String,
