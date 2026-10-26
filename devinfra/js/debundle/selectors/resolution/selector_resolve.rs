@@ -2702,6 +2702,16 @@ fn import_bindings(module: &Module) -> HashMap<String, ImportBinding> {
         .collect()
 }
 
+/// Import local names and forms without constructing structural chunk
+/// analysis. The direct-claim edit gate uses this when import pins are the
+/// only selectors that need source evidence.
+pub fn import_specifier_kinds(module: &Module) -> HashMap<String, ImportSpecifierKind> {
+    import_bindings(module)
+        .into_iter()
+        .map(|(local, binding)| (local, binding.kind))
+        .collect()
+}
+
 /// The chunk facts `program`'s tables are built from: every statement's source unit,
 /// kind and declared bindings, its references to other statements' bindings,
 /// and the relation facts only the relational selectors in `program` read.
