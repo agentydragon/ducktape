@@ -2937,10 +2937,10 @@ tripwire: lowering can synthesize consumer directives inside
 materialized module bodies (`BindingKind::Imported` re-export
 imports, `export … from` re-exports in moved bodies) that have no
 live rewrite at the construction site and that the plan-time gate —
-which enumerates input-space directives — cannot see. Retiring it
-requires construction-site coverage plus fixtures first (see
-ARCHITECTURE_BACKLOG.md "Post-strip consumer scan retirement
-condition").
+which enumerates input-space directives — cannot see. Retiring the scan
+requires those construction paths to consult the `VendorResolutionPlan`
+(rewrite or reject before output) and fixtures proving the synthesized
+directive shapes fail without the post-strip check.
 
 Over-restriction is the accepted failure mode for both gates: a
 namespace consumer that happens to read only non-swapped members is

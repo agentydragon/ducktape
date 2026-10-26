@@ -13,11 +13,9 @@ plans and evidence live here:
 - <plans/relational_selectors.md> — the remaining selector-language work.
 - <plans/automated_spec_workflows.md> — single-input selector authoring and
   diagnostic workflows.
-- <plans/factor_vocabulary_rename.md> — internal naming and wire-format decisions.
 - <plans/module_proposals.md> — proposal metadata and granularity follow-ups.
 - <plans/purity_analysis.md> — purity annotation and redundant-hint follow-ups.
-- <ARCHITECTURE_BACKLOG.md> — deeper refactors, urgent only when they block this
-  queue.
+- <ARCHITECTURE_BACKLOG.md> — unrelated deferred integrity and test/spec items.
 - `perf/` — measured performance notes. Update from real
   profiles before major matcher/index rewrites.
 

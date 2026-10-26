@@ -328,9 +328,9 @@ fn make_namespace_reexport(source: &str, exported: &str) -> ModuleItem {
 /// re-exports in moved bodies, `BindingKind::Imported` re-export
 /// imports) — shapes with no live rewrite at the construction site,
 /// invisible to the plan-time gate's input-space enumeration. Retire it
-/// only after those construction paths consult the plan and fixtures
-/// pin the synthesized-directive shapes (ARCHITECTURE_BACKLOG.md
-/// "Post-strip consumer scan retirement condition").
+/// only after those construction paths consult the plan (rewrite or
+/// reject before output) and fixtures prove the synthesized-directive
+/// shapes fail without this post-strip check.
 ///
 /// Scan every retained file of every chunk and bail with a precise
 /// diagnostic on the first surviving consumer. Over-restriction is the

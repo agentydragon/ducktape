@@ -201,4 +201,3 @@ stripping or string surgery.
   these wire formats serialize evidence for.
 - `docs/lessons_learned/cross_process_stage_b.md` — why we don't
   serialize pre-filter facts.
-- `ARCHITECTURE_BACKLOG.md` — current architectural backlog.
