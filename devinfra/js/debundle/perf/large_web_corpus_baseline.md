@@ -42,3 +42,34 @@ only the generated provenance comment from owner IDs to source-unit IDs. After
 normalizing that exact comment line, every JavaScript file is byte-identical to
 the baseline. No JavaScript files are missing or extra. Report wire changes are
 outside this JavaScript comparison.
+
+## Combined refactor control
+
+Public validation revision `c1270ac48858e2e80a4f02d73fe920e0ef0ce7f5` has the
+same Git tree as PR #12095 head `ce18b232fef566b9b2fb82b17abe740ae602b400`.
+It includes the merged identity, assignment, entry-destination, reconstruction,
+and authoring changes. Its optimized build passed in invocation
+`f3c5f64d-35e8-4b7d-8736-0a0325a4813b`; all 175 public tests, including packaged
+skill checks, passed in `eca81922-0918-4a16-9c6b-7479797f15c6`.
+
+The same frozen baseline executable and staged inputs were run again immediately
+before three candidate extractions:
+
+| Executable         | Wall time |      Peak RSS |
+| ------------------ | --------: | ------------: |
+| Baseline reference |  121.37 s | 3,635,220 KiB |
+| Candidate 1        |  120.82 s | 3,896,684 KiB |
+| Candidate 2        |  119.59 s | 3,900,412 KiB |
+| Candidate 3        |  119.32 s | 3,899,680 KiB |
+
+Candidate median wall time is 119.59 s. The baseline's fresh 121.37 s reference
+also differs from its earlier 106.25 s median, so comparisons across these
+batches cannot establish a causal speed change. No wall-time slowdown appears
+against the contemporaneous reference. Candidate peak RSS is below the earlier
+baseline measurements; the single fresh baseline reference used less memory.
+
+Every extraction succeeded. The fresh baseline reproduces all 3,475 original
+JavaScript files byte for byte. Each candidate has the same JavaScript paths;
+3,389 files differ only in the exact generated provenance comment described
+above. After normalizing that line, all JavaScript is byte-identical. No
+JavaScript files are missing or extra.

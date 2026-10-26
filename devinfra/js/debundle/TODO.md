@@ -161,13 +161,11 @@ still open:
 
 ## Import re-export claims
 
-Logical-module member claims for default and namespace import locals are
-unsupported by `resolve_imported_binding` in `lowering/imports/imports_runtime.rs`.
-For example, a claim for `a` with `kind: import_specifier` over
-`import a from "./dependency.js"` resolves as a source claim but fails during
-materialization. Extend import resolution and re-export construction with neutral
-CLI/Node cases for both forms. Source-kind acceptance alone does not prove
-reconstruction support.
+Extend `resolve_imported_binding` in `lowering/imports/imports_runtime.rs` to
+support default and namespace import member re-exports (<SPEC.md> § Entities).
+Add neutral CLI/Node cases for both forms; a minimal default case is
+`import a from "./dependency.js"` with a member claim for `a` carrying
+`kind: import_specifier`.
 
 ## Suspected bugs
 

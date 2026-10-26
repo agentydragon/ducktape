@@ -60,13 +60,18 @@ source deterministically and does not infer semantic module names.
 
 An **entity** is one thing a spec places in a chunk: a module member, a
 `source_matches[].bindings[]` entry, or an `anonymous_statements[]` entry. Each
-entity's selector names the places it may occupy: a top-level declaration (by the
-minified binding it declares) or one top-level statement.
+entity's selector names the places it may occupy: a top-level declaration or
+import binding, or one top-level statement.
 
 An entity is scoped to its module's chunk, and only that chunk's places are its
 candidates. In a tree spec, each module tree names the chunk its modules are
 scoped to; several trees may name the same chunk, and their modules then share
 it as if authored in one tree.
+
+`selector.binding.kind: import_specifier` names an imported local. Source checks
+recognize named, default, and namespace imports. Logical-module member
+re-exports currently materialize named imported locals only; member claims for
+default and namespace imported locals remain unsupported during reconstruction.
 
 ## Repeated `var` declarations
 
