@@ -203,7 +203,7 @@ Postgres [`jsonb`](https://www.postgresql.org/docs/18/datatype-json.html) gives 
 
 Importing the same snapshot twice must be idempotent. Importing successive versions of an appended transcript must not multiply the current operation count. Do not identify events by content alone: two identical tool calls are two operations. Nor is a native session ID alone a sufficient physical source key when sessions are copied or resumed on another machine. Those rules, current-version selection, and harness-specific interpretation are the substantive new code.
 
-SQLite state is included in archival regardless of query schema. A first SQL projection can index JSONL session operations and inventory the SQLite images; extracting selected harness database tables later does not change whether those files were preserved.
+SQLite state is included in archival regardless of query schema. A first SQL projection can index JSONL session operations and inventory the SQLite images; extracting selected harness database tables later does not change whether those files were preserved. Codex's SQLite history omits information present in its raw journals; the [capture contract](../cluster/k8s/session-backup/README.md#why-codex-session-files-remain-included) records the observed gaps and comparison limits.
 
 ### Relative integration work
 

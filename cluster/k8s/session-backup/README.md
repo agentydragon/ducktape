@@ -51,6 +51,35 @@ If a SQLite capture fails, the raw-file backup still runs and the service exits 
 failure so the error remains visible. Such a run must not be treated as a complete
 consistent database backup.
 
+### Why Codex session files remain included
+
+Preserve `sessions/**/*.jsonl` alongside SQLite originals and consistent images.
+The SQLite history is a projection of the journal, and cannot replace it for complete
+archival. Checked on wyrm2 with Codex CLI 0.162.1 on 2026-10-25 using read-only schema
+inspection and a record-type/field comparison of one completed paginated session.
+
+| Journal data                                       | Difference from the sampled SQLite history                                                                                                                                                                                                                                   |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `response_item` reasoning: `encrypted_content`     | The projected `reasoning` item contained `summary` and `content`, without the encrypted payload.                                                                                                                                                                             |
+| `response_item` compaction: `encrypted_content`    | The journal contained an encrypted compaction record with no corresponding projected item in this session.                                                                                                                                                                   |
+| `turn_context`                                     | Detailed per-turn model, effort, approval, filesystem sandbox, permission profile, and collaboration settings were absent from the projected items. Some current thread settings exist separately in `state_5.sqlite`; they do not preserve these original per-turn records. |
+| `world_state`                                      | The journal's `full`/`state` record was absent from the projected items.                                                                                                                                                                                                     |
+| `token_usage_record` and `event_msg`/`token_count` | Per-response/turn usage records and rate-limit details were absent from the projected items. `state_5.sqlite` has cumulative `threads.tokens_used`; that aggregate does not preserve these events.                                                                           |
+| `session_meta` and raw response envelopes          | Base instructions, runtime workspace roots, context-window metadata, and original response-record fields/order are not represented by the projected reasoning and assistant-message items. Selected thread metadata is stored separately.                                    |
+
+`state_5.sqlite` stores thread metadata and `threads.rollout_path` pointing at the
+journal. `thread_history_1.sqlite` stores projected turns/items and projection offsets
+(`thread_history_projection_state.next_rollout_byte_offset` and
+`next_rollout_ordinal`). The inspected `logs_2.sqlite` schema stores diagnostic logs;
+`memories_1.sqlite` stores generated memories/summaries and job state. Neither schema
+establishes a complete journal copy.
+
+These observations establish missing information in the sampled history projection,
+not an exhaustive comparison of every session or every JSON/log value in every
+database. Diagnostic logs may duplicate individual fields incidentally. SQLite
+schemas and projection behavior can change between Codex versions; keep the raw
+journals so future parsers can recover information the current projection omits.
+
 ### Restore
 
 Select the source workstation's repository credentials, inspect snapshots with
