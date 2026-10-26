@@ -66,16 +66,12 @@ pub fn binding(name: &str) -> BindingReport {
 }
 
 /// Active-claims map (binding name → canonical module path) from clean
-/// spec paths. [`no_claims`] is the empty case.
+/// spec paths.
 pub fn claims(pairs: &[(&str, &str)]) -> BTreeMap<String, ModulePath> {
     pairs
         .iter()
         .map(|(binding, path)| (binding.to_string(), ModulePath::parse(path, "").unwrap()))
         .collect()
-}
-
-pub fn no_claims() -> BTreeMap<String, ModulePath> {
-    BTreeMap::new()
 }
 
 /// SourceUnit node with an explicit destination. The source location is

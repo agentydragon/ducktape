@@ -666,8 +666,9 @@ fn hole_switch_case(case: &SwitchCase, kept: &BTreeSet<AnchorSpan>) -> SwitchCas
     holed
 }
 
-/// A `DECLARATORS_<pos> = null` declarator hole absorbing a run of non-target
-/// declarators in a binding-group selector.
+/// A declarator hole absorbing a run of non-target declarators. Synthesis uses
+/// the plain `DECLARATORS` keyword: positional suffixes accepted by the matcher
+/// affect hint text only, not equality binding.
 pub(crate) fn declarator_hole(name: &str) -> VarDeclarator {
     VarDeclarator {
         span: DUMMY_SP,

@@ -582,7 +582,7 @@ impl ShapeIndex {
     }
 
     fn posting(&self, feature: &ShapeFeature) -> &CandidateSet {
-        static EMPTY: LazyLock<CandidateSet> = LazyLock::new(CandidateSet::empty);
+        static EMPTY: LazyLock<CandidateSet> = LazyLock::new(CandidateSet::default);
         self.postings
             .get(feature)
             .unwrap_or_else(|| LazyLock::force(&EMPTY))
@@ -692,7 +692,7 @@ impl ShapeIndex {
         let seed = remaining.first()?;
         let mut covered = self.posting(&seed.feature).clone();
         let mut chosen: Vec<ScoredFeature> = vec![remaining.remove(0)];
-        let mut scratch = CandidateSet::empty();
+        let mut scratch = CandidateSet::default();
 
         while covered.len() > 1 {
             // The feature that shrinks the candidate set the most; ranked by
@@ -809,7 +809,7 @@ impl ShapeIndex {
         let seed = remaining.first()?;
         let mut covered = self.posting(&seed.feature).clone();
         let mut chosen: Vec<ScoredFeature> = vec![remaining.remove(0)];
-        let mut scratch = CandidateSet::empty();
+        let mut scratch = CandidateSet::default();
 
         while covered.len() > 1 {
             // The value feature that shrinks the candidate set the most; ranked by

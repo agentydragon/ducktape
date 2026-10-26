@@ -11,10 +11,6 @@ mod chunk_constraining_module_edges_tests {
     use crate::module_assignment::ModuleAssignment;
     use crate::{AnalysisInputs, DependencyGraph, SourceUnitId, facts::analyze_chunk};
 
-    fn module_id(index: usize) -> ModuleId {
-        ModuleId(index)
-    }
-
     fn parse_facts(source: &str) -> Vec<crate::StatementFacts> {
         let module = raw_js_test_support::parse(source);
         analyze_chunk(&module, &AnalysisInputs::default(), None, |_| None).facts
@@ -52,14 +48,14 @@ mod chunk_constraining_module_edges_tests {
         let dependency_graph = parse_and_build(source);
         let mut assignment = ModuleAssignment::new(
             &dependency_graph,
-            crate::EntryDestination::from_module_id(module_id(0)),
+            crate::EntryDestination::from_module_id(ModuleId(0)),
         );
-        assignment.set(SourceUnitId(1), module_id(1));
+        assignment.set(SourceUnitId(1), ModuleId(1));
         let canonical = chunk_constraining_module_edges(&dependency_graph, &assignment);
         let pairs: BTreeSet<(ModuleId, ModuleId)> = canonical.pairs().collect();
         assert_eq!(
             pairs,
-            BTreeSet::from([(module_id(1), module_id(0))]),
+            BTreeSet::from([(ModuleId(1), ModuleId(0))]),
             "eager cross-module read `b = a + 1` must contribute mod_1 → mod_0"
         );
     }
@@ -73,7 +69,7 @@ mod chunk_constraining_module_edges_tests {
         // Both source units in module 0 → no cross-module edges.
         let assignment = ModuleAssignment::new(
             &dependency_graph,
-            crate::EntryDestination::from_module_id(module_id(0)),
+            crate::EntryDestination::from_module_id(ModuleId(0)),
         );
         let canonical = chunk_constraining_module_edges(&dependency_graph, &assignment);
         assert!(canonical.edges.is_empty());
@@ -89,22 +85,22 @@ mod chunk_constraining_module_edges_tests {
         let dependency_graph = parse_and_build(source);
         let mut assignment = ModuleAssignment::new(
             &dependency_graph,
-            crate::EntryDestination::from_module_id(module_id(0)),
+            crate::EntryDestination::from_module_id(ModuleId(0)),
         );
-        assignment.set(SourceUnitId(1), module_id(1));
+        assignment.set(SourceUnitId(1), ModuleId(1));
         let canonical = chunk_constraining_module_edges(&dependency_graph, &assignment);
-        let extra: BTreeSet<ModuleId> = BTreeSet::from([module_id(5), module_id(0)]);
+        let extra: BTreeSet<ModuleId> = BTreeSet::from([ModuleId(5), ModuleId(0)]);
         let order = chunk_source_import_order_from_adjacency(
             canonical.pairs(),
             &canonical.i_successors,
             &extra,
         );
         assert!(
-            order.contains(&module_id(5)),
+            order.contains(&ModuleId(5)),
             "extra node must be included; got {order:?}"
         );
-        assert!(order.contains(&module_id(0)));
-        assert!(order.contains(&module_id(1)));
+        assert!(order.contains(&ModuleId(0)));
+        assert!(order.contains(&ModuleId(1)));
     }
 }
 

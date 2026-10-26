@@ -34,7 +34,7 @@ use swc_ecma_visit::{VisitMut, VisitMutWith};
 
 // Hole keyword spellings come from `source_match_holes` so the minimizer
 // emits exactly the tokens the matcher resolves.
-use source_match_holes::{DECLARATORS_HOLE_KEYWORD, STMT_LIST_HOLE_KEYWORD};
+use source_match_holes::STMT_LIST_HOLE_KEYWORD;
 
 // The selector minimizer is split by form: the AST-holing engine (`render`),
 // the regex-over-string-literal anchors (`regex_anchor`), and the per-form
@@ -1566,15 +1566,6 @@ fn matched_body_indices(
             .map(|candidate| candidate.body_idx)
             .collect(),
     )
-}
-
-/// The declarator-run hole for a binding-group selector. The matcher treats every
-/// `DECLARATORS` / `DECLARATORS_*` run hole identically -- the positional suffix
-/// is not equality-binding, only used in human-facing hint text -- so the
-/// renderer always emits the plain keyword. Suffixed forms remain accepted on
-/// input.
-fn declarator_hole_name() -> &'static str {
-    DECLARATORS_HOLE_KEYWORD
 }
 
 struct SynthesizedCandidateInput<'a> {

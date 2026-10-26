@@ -91,10 +91,6 @@ impl CandidateSet {
         }
     }
 
-    pub fn empty() -> Self {
-        Self::default()
-    }
-
     /// Append a body index strictly greater than every index appended so far. The
     /// index builders walk body items in order, so each posting list is produced
     /// already ascending and unique; `RoaringBitmap::push` appends in O(1) under

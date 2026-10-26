@@ -19,10 +19,6 @@ fn logical(idx: usize) -> TestDestination {
     TestDestination::Planned(ModuleId(idx))
 }
 
-fn residual() -> TestDestination {
-    TestDestination::Entry
-}
-
 fn render(id: ModuleId) -> spec::ModulePath {
     spec::ModulePath::parse(&format!("mod_{}", id.0), "").unwrap()
 }
@@ -44,7 +40,7 @@ fn member_bindings(members: &[BindingReport]) -> Vec<String> {
 fn cross_destination_lazy_write_is_rejected() {
     let assignment_analysis = assignment_analysis_for(
         "let A = 0; function B() { A = 1; }",
-        &[("A", logical(0)), ("B", residual())],
+        &[("A", logical(0)), ("B", TestDestination::Entry)],
     );
     let report = assignment_analysis.validate();
     assert_eq!(

@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::{Context, Result};
 use readoff_render::kept_spans_for_anchor_sets;
-use source_match_holes::AST_CONTAINS_STRING_PREDICATE;
+use source_match_holes::{AST_CONTAINS_STRING_PREDICATE, DECLARATORS_HOLE_KEYWORD};
 use swc_common::{DUMMY_SP, Spanned, SyntaxContext};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
@@ -17,7 +17,7 @@ use crate::render::{
 };
 use crate::{
     ChunkSelectorIndex, IndexedDeclaration, SpecializedSelector, SynthesizedTargetBinding,
-    declarator_hole_name, prove_synthesized_selector,
+    prove_synthesized_selector,
 };
 
 /// Find a single retained string literal underneath enough call wrappers that
@@ -85,11 +85,11 @@ fn descendant_string_selector(
     })));
     let mut decls = Vec::new();
     if target_slot > 0 {
-        decls.push(declarator_hole(declarator_hole_name()));
+        decls.push(declarator_hole(DECLARATORS_HOLE_KEYWORD));
     }
     decls.push(selected);
     if target_slot + 1 < var.decls.len() {
-        decls.push(declarator_hole(declarator_hole_name()));
+        decls.push(declarator_hole(DECLARATORS_HOLE_KEYWORD));
     }
     let mut holed_var = var.clone();
     holed_var.declare = false;

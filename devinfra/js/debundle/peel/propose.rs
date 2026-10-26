@@ -2873,7 +2873,7 @@ mod tests {
     use analysis::{DepKind, StatementKind};
     use report_fixtures::{
         active_source_unit, atomic_edge, atomic_group_for, claims, dependency_edge, graph_of,
-        module_ref, no_claims, residual_source_unit, source_unit,
+        module_ref, residual_source_unit, source_unit,
     };
 
     #[test]
@@ -2889,7 +2889,7 @@ mod tests {
             ],
             vec![],
         );
-        let report = propose(&graph, &no_claims(), 10_000).unwrap();
+        let report = propose(&graph, &BTreeMap::new(), 10_000).unwrap();
         assert_eq!(report.residual_source_unit_count, 2);
         assert_eq!(report.proposals.len(), 2);
         assert!(
@@ -2942,7 +2942,7 @@ mod tests {
             ],
             vec![],
         );
-        let report = propose(&graph, &no_claims(), 10_000).unwrap();
+        let report = propose(&graph, &BTreeMap::new(), 10_000).unwrap();
         let blocked = report
             .proposals
             .iter()
@@ -3002,7 +3002,8 @@ mod tests {
             ],
             vec![],
         );
-        let json = serde_json::to_value(propose(&graph, &no_claims(), 10_000).unwrap()).unwrap();
+        let json =
+            serde_json::to_value(propose(&graph, &BTreeMap::new(), 10_000).unwrap()).unwrap();
         let proposal = |binding: &str| {
             json["proposals"]
                 .as_array()
@@ -3211,7 +3212,7 @@ mod tests {
             ],
             vec![],
         );
-        let report = propose(&graph, &no_claims(), 10_000).unwrap();
+        let report = propose(&graph, &BTreeMap::new(), 10_000).unwrap();
         let proposal = report
             .proposals
             .iter()
@@ -3283,7 +3284,7 @@ mod tests {
             .retain(|entry| entry.key != a.destination);
         assert!(graph.module(&a.destination).is_none());
 
-        let result = propose(&graph, &no_claims(), 10_000);
+        let result = propose(&graph, &BTreeMap::new(), 10_000);
         let err = result.expect_err("missing destination must be a clean error, not a panic");
         let message = format!("{err:#}");
         assert!(
@@ -3302,7 +3303,7 @@ mod tests {
             vec![atomic_group_for("atomic:0", &[&import])],
             vec![],
         );
-        let report = propose(&graph, &no_claims(), 10_000).unwrap();
+        let report = propose(&graph, &BTreeMap::new(), 10_000).unwrap();
         let proposal = report.proposals.first().expect("anonymous proposal");
         assert_eq!(
             proposal.anonymous_statement_source_unit_ids,
@@ -3334,7 +3335,7 @@ mod tests {
         );
         let report = propose_with_context(
             &graph,
-            &no_claims(),
+            &BTreeMap::new(),
             10_000,
             ProposalContext {
                 addressable_anonymous_source_unit_ids: Some(BTreeSet::from([
@@ -3367,7 +3368,7 @@ mod tests {
             ],
             vec![atomic_edge("atomic_edge:0", "atomic:0", "atomic:1")],
         );
-        let report = propose(&graph, &no_claims(), 5).unwrap();
+        let report = propose(&graph, &BTreeMap::new(), 5).unwrap();
         assert!(
             report.proposals.is_empty(),
             "oversized source units should not appear as proposals: {report:#?}",

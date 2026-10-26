@@ -61,7 +61,7 @@ use crate::render::{
 };
 use crate::{
     ChunkSelectorIndex, IndexedDeclaration, SpecializedSelector, SynthesizedTargetBinding,
-    declarator_hole_name, matched_body_indices, prove_synthesized_selector, single_ident_pat_name,
+    matched_body_indices, prove_synthesized_selector, single_ident_pat_name,
 };
 
 // Keep whole-declaration proof work bounded even when its AST is enormous.
@@ -883,7 +883,7 @@ fn render_var_slots(
             continue;
         }
         if skipped_run {
-            decls.push(declarator_hole(declarator_hole_name()));
+            decls.push(declarator_hole(DECLARATORS_HOLE_KEYWORD));
             skipped_run = false;
         }
         let name = single_ident_pat_name(&declarator.name)
@@ -903,7 +903,7 @@ fn render_var_slots(
         decls.push(holed);
     }
     if skipped_run {
-        decls.push(declarator_hole(declarator_hole_name()));
+        decls.push(declarator_hole(DECLARATORS_HOLE_KEYWORD));
     }
     let mut holed_var = var.clone();
     holed_var.declare = false;

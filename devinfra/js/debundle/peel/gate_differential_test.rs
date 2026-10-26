@@ -37,10 +37,6 @@ use crate::quotient::{ClassId, QuotientGraph, SpecModuleGroup, build_seed_quotie
 
 const CAP_LINES: usize = 10_000;
 
-fn module_id(index: usize) -> ModuleId {
-    ModuleId(index)
-}
-
 // ---------------------------------------------------------------------
 // Independent reference projection.
 //
@@ -85,9 +81,9 @@ fn reference_class_modules(
     let mut next = 1usize;
     for class in q.iter_classes() {
         let module = if class_maps_to_residual(q, residual_ids, class) {
-            module_id(0)
+            ModuleId(0)
         } else {
-            let module = module_id(next);
+            let module = ModuleId(next);
             next += 1;
             module
         };
@@ -115,15 +111,15 @@ fn reference_post_module(
             .chain(q.class_members(loser))
             .all(|source_unit| residual_ids.contains(q.source_unit_id(source_unit)))
     {
-        return module_id(0);
+        return ModuleId(0);
     }
     // Mixed or pre-existing: reuse the winner's non-residual slot,
     // else the loser's, else mint a fresh id (the gate-residual
     // promotion transition).
     [pre_modules[&winner], pre_modules[&loser]]
         .into_iter()
-        .find(|module| *module != module_id(0))
-        .unwrap_or(module_id(next_fresh))
+        .find(|module| *module != ModuleId(0))
+        .unwrap_or(ModuleId(next_fresh))
 }
 
 /// SourceUnit-indexed assignment from a class → module map, with the
@@ -133,7 +129,7 @@ fn reference_assignment(
     class_modules: &BTreeMap<ClassId, ModuleId>,
     overlay: Option<(ClassId, ClassId, ModuleId)>,
 ) -> ModuleAssignment {
-    let residual = module_id(0);
+    let residual = ModuleId(0);
     let mut of = vec![residual; q.dependency_graph().num_nodes()];
     for class in q.iter_classes() {
         let module = match overlay {

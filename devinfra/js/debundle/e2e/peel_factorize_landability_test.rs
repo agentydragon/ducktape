@@ -8,14 +8,8 @@
 
 use debundle_e2e_support::*;
 use peel::propose::{PeelCandidateStatus, ProposalsReport, propose};
-use spec::{MemberEffect, ModulePath};
+use spec::MemberEffect;
 use std::collections::BTreeMap;
-
-/// Empty active-claims map: these fixtures all start from a fully
-/// residual graph (no pre-existing spec modules).
-fn no_claims() -> BTreeMap<String, ModulePath> {
-    BTreeMap::new()
-}
 
 /// Run `debundle` on `source` with `modules` claimed and every other
 /// binding inlined in the residual entry.
@@ -28,7 +22,7 @@ fn residual_fixture(source: &str, modules: Vec<LogicalModuleEntry>) -> Fixture {
 fn factorize_residual(source: &str, modules: Vec<LogicalModuleEntry>) -> ProposalsReport {
     propose(
         &residual_fixture(source, modules).dependency_graph(),
-        &no_claims(),
+        &BTreeMap::new(),
         10_000,
     )
     .unwrap()
@@ -241,7 +235,7 @@ export { anchor, dep, consumer };
         vec![logical_module("anchors/anchor", &[Member::new("anchor")])],
     )
     .dependency_graph();
-    let report = propose(&graph, &no_claims(), 1).unwrap();
+    let report = propose(&graph, &BTreeMap::new(), 1).unwrap();
 
     let blocked = report
         .proposals

@@ -1845,7 +1845,7 @@ mod tests {
     use peel::propose::propose;
     use report_fixtures::{
         active_source_unit, atomic_edge, atomic_group_for, claims, dependency_edge, graph_of,
-        no_claims, residual_source_unit,
+        residual_source_unit,
     };
 
     #[test]
@@ -1962,7 +1962,7 @@ mod tests {
         let moves = propose_as_batch(
             residual_source_unit("unit:a", 1, &["BindingA"], 10),
             residual_source_unit("unit:b", 2, &["BindingB"], 10),
-            &no_claims(),
+            &BTreeMap::new(),
         )
         .unwrap();
         assert_eq!(
@@ -1990,7 +1990,7 @@ mod tests {
         propose_as_batch(
             residual_source_unit("unit:a", 1, &["BindingA"], 10),
             residual_source_unit("unit:anon", 2, &[], 5),
-            &no_claims(),
+            &BTreeMap::new(),
         )
         .unwrap_err();
     }
