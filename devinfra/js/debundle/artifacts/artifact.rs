@@ -631,6 +631,7 @@ pub fn list_chunk_file_paths(chunk: &JsChunk) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::paths::JsListEntry;
 
     #[test]
     fn entry_selection_uses_present_files_and_stable_fallback_order() {

@@ -11,6 +11,8 @@ use super::MaterializedLogicalChunk;
 use crate::{ChunkModulesCounts, ChunkModulesReport};
 #[cfg(test)]
 use artifact::ChunkTable;
+#[cfg(test)]
+use artifact::reports::ChunkValidationSummary;
 
 /// Files finalized by lowering, together with decomposition metadata for
 /// lowered chunks. Pass-through chunks retain their original position.
