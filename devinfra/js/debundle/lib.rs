@@ -44,8 +44,9 @@ pub use facts::{
 pub use graph::{
     ChunkConstrainingEdgeSet, DepKind, DependencyEdge, DependencyEdgeId, DependencyGraph,
     DependencyGraphOptions, DuplicateTopLevelDeclaration, EdgeReason, EdgeRole, ModuleQuotient,
-    SourceUnit, SourceUnitId, UnresolvedDependencyEdgeEndpoint, build_dependency_graph_with,
-    build_module_quotient, chunk_constraining_module_edges, position_lookup,
+    SourceUnit, SourceUnitClass, SourceUnitId, UnresolvedDependencyEdgeEndpoint,
+    build_dependency_graph_with, build_module_quotient, chunk_constraining_module_edges,
+    position_lookup,
 };
 pub use ids::{
     BindingCatalogue, BindingId, BindingKind, BindingScopeError, ChunkId, ChunkTable,

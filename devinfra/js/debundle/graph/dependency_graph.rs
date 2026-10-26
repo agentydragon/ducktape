@@ -52,6 +52,29 @@ pub struct SourceUnit {
     pub purity: Purity,
 }
 
+/// Declaration-based classification, independent of syntax kind and destination.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum SourceUnitClass {
+    BindingDeclaration,
+    AnonymousStatement,
+}
+
+impl SourceUnitClass {
+    pub(crate) fn from_declared_bindings(bindings: impl IntoIterator) -> Self {
+        if bindings.into_iter().next().is_some() {
+            Self::BindingDeclaration
+        } else {
+            Self::AnonymousStatement
+        }
+    }
+}
+
+impl SourceUnit {
+    pub fn class(&self) -> SourceUnitClass {
+        SourceUnitClass::from_declared_bindings(&self.declared)
+    }
+}
+
 impl DependencyGraph {
     /// Iterate `&DependencyEdge` in `DependencyEdgeId` order. Each row is one
     /// reason — multiple reasons between the same `(from, to)` pair

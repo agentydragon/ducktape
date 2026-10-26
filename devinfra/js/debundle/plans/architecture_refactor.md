@@ -35,11 +35,11 @@ implementation and reader cutover.
 | Identity of a movable source fragment                       | `SourceUnitId`                                     | Landed; dependency-graph vertex identity                              |
 | Source position of a movable fragment                       | `SourceUnitOrdinal`                                | Landed; post-split coordinate distinct from graph identity            |
 | Reads, writes, effects, and ordering constraints            | `DependencyGraph` over source units                | Target boundary; active reader cutover                                |
-| Units proven to require co-location                         | `AtomicGroup`                                      | Target boundary; PR #12060                                            |
-| Explicit author contracts and runtime assumptions           | `AnalysisAssumptions`                              | Target boundary; PR #12059                                            |
+| Units proven to require co-location                         | `AtomicGroup`                                      | Landed                                                                |
+| Explicit author contracts and runtime assumptions           | `AnalysisAssumptions`                              | Landed                                                                |
 | Dense identity for an output module                         | `ModuleId(pub usize)`                              | Landed as one handle with transparent numeric serde representation    |
 | Requested output destinations                               | `ModuleAssignment`                                 | Landed                                                                |
-| Files, imports, exports, replacements, and evaluation order | `ReconstructionPlan`                               | Target boundary                                                       |
+| Files, imports, exports, replacements, and evaluation order | `ReconstructionPlan`                               | Landed; concrete syntax, loading, replacements, and manifest          |
 | Plan accepted by the shared validator                       | `ValidatedPlan`                                    | Landed; output syntax and replacements are immutable after acceptance |
 | Final lowered files and matching output indexes             | `EmissionFiles`                                    | Current representation                                                |
 
@@ -77,21 +77,10 @@ rejections remain recorded as prior outcomes, not regressions.
 
 ### B. Names and identity — in progress
 
-Land one independent concept per PR. `BindingId` now pairs the interned chunk
-identity with the full hygiene-aware SWC `Id`; `BindingCatalogue` keeps the
-existing per-chunk SWC-ID map without rekeying it. Remaining identity work
-distinguishes original statement identity, movable source-unit identity,
-anonymous-unit classification, residual placement, atomic grouping, and
-destination module identity. The graph uses `SourceUnitId` for vertex identity
-and `SourceUnitIndex` for the separate report-row arena. `SourceUnitOrdinal`
-identifies a post-split source position, while `StatementId` identifies an
-original parsed `Module.body` item. Keep these identities distinct from module
-IDs and each other. Definitions and live consumers must agree without aliases
-or abandoned readers.
-
-- PR #12060: atomic-group identity and consumer cutover remain active.
-- Binding identity: runtime-only `BindingId` and the scoped catalogue reader
-  cutover are landed; report/spec wire values remain unchanged.
+Replace the synthetic entry `PlannedModule` with an explicit entry destination.
+Keep the physical evaluation root separate from `ModuleRole::Unassigned`, which
+classifies assignment policy. `SourceUnitClass` provides the declaration-based
+classification used by routing, placement, reports, and authoring.
 
 ### C. Source preparation and exact resolution — in progress
 
@@ -109,17 +98,11 @@ assertions and cheap inspection from expensive analysis. Share immutable facts
 between reconstruction and authoring without making cheap inspection pay for
 expensive analysis.
 
-- PR #12059: make analysis assumptions explicit and keep inferred facts distinct
-  from author assertions.
-
 ### E. Assignment and reconstruction planning — in progress
 
 Use one authoritative assignment and a concrete plan for residual placement,
 imports, re-exports, readable names, vendor replacement, and loading topology.
 Emission must not independently rediscover placement or linkage decisions.
-
-- PR #12067: derive syntax placement from the accepted assignment and verify
-  its agreement with the canonical binding catalogue and whole-statement claims.
 
 ### F. Validation and emission — in progress
 

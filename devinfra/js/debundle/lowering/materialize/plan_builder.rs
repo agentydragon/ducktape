@@ -15,7 +15,7 @@ use crate::rebind_fold::RebindFold;
 use crate::util::target_file_for_request;
 use analysis::{
     BindingCatalogue, BindingKind, ChunkId, DependencyGraphAndAtomicGroups, ModuleId, ModuleRole,
-    SourceUnitId, top_level_id,
+    SourceUnitClass, SourceUnitId, top_level_id,
 };
 use anyhow::{Context, Result, bail};
 use js_ast::statement_for_source_unit_ordinal;
@@ -993,13 +993,13 @@ impl ChunkPlanBuilder {
         let mut body_indices = BTreeSet::new();
         let mut catchall_source_units = BTreeSet::new();
         for node in graph.iter_nodes() {
-            if !node.declared.is_empty()
+            if node.class() == SourceUnitClass::BindingDeclaration
                 && node.declared.iter().all(|binding| {
                     owned_destination(&self.bindings_catalogue, binding) == Some(index)
                 })
             {
                 catchall_source_units.insert(node.id);
-            } else if node.declared.is_empty()
+            } else if node.class() == SourceUnitClass::AnonymousStatement
                 && let Some(body_index) =
                     statement_for_source_unit_ordinal(body, node.statement_ordinal)
                 && self.whole_statement_assignment.get(&body_index) == Some(&index)
@@ -1013,7 +1013,7 @@ impl ChunkPlanBuilder {
                 let Some(node) = graph.node(source_unit_id) else {
                     return false;
                 };
-                if node.declared.is_empty() {
+                if node.class() == SourceUnitClass::AnonymousStatement {
                     let Some(body_index) =
                         statement_for_source_unit_ordinal(body, node.statement_ordinal)
                     else {
@@ -1037,7 +1037,7 @@ impl ChunkPlanBuilder {
                 let Some(node) = graph.node(source_unit_id) else {
                     continue;
                 };
-                if node.declared.is_empty()
+                if node.class() == SourceUnitClass::AnonymousStatement
                     && let Some(body_index) =
                         statement_for_source_unit_ordinal(body, node.statement_ordinal)
                     && self
@@ -1063,7 +1063,7 @@ impl ChunkPlanBuilder {
                 let Some(node) = graph.node(edge.to) else {
                     continue;
                 };
-                if !node.declared.is_empty() {
+                if node.class() == SourceUnitClass::BindingDeclaration {
                     continue;
                 }
                 let Some(body_index) =
@@ -1087,7 +1087,10 @@ impl ChunkPlanBuilder {
         // With no other module to order against, keep the complete chunk in
         // its catchall file, including independent trailing statements.
         if self.module_plans.len() == 1 {
-            for node in graph.iter_nodes().filter(|node| node.declared.is_empty()) {
+            for node in graph
+                .iter_nodes()
+                .filter(|node| node.class() == SourceUnitClass::AnonymousStatement)
+            {
                 if let Some(body_index) =
                     statement_for_source_unit_ordinal(body, node.statement_ordinal)
                 {

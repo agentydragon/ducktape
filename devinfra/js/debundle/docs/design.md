@@ -345,6 +345,13 @@ preserves each source unit as a first-class node and report row.
 `SourceUnitId` identifies the graph vertex (`unit:N`); `SourceUnitIndex`
 indexes the report-row arena used by quotient analysis and is distinct.
 
+`SourceUnitClass` distinguishes binding declarations from anonymous statements
+using the graph's canonical declaration set. It is independent of syntactic
+`StatementKind`, module assignment, and `ModuleRole`. Routing, placement, and
+reports query this classification without storing a second anonymous flag.
+Anonymous classification alone does not establish selector addressability;
+import/export source units retain their separate authoring restrictions.
+
 The micro dependency graph is a directed, labeled graph `G = (V, E)`:
 
 - **Vertices:** source units in source order. A declaration source unit carries

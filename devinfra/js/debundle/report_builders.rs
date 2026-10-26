@@ -15,7 +15,7 @@ use analysis::{
     AtomicGraphReport, AtomicGroup, AtomicGroupEdgeReport, AtomicGroupReport, BindingId,
     BindingReport, DepKind, DependencyEdgeReport, DependencyGraphReport, EdgeRoleReport,
     ModuleEntry, ModuleId, ModuleKey, ModuleQuotientReport, ModuleRole, Purity, PurityCauseReport,
-    QuotientEdgeReport, QuotientSccReport, SourceUnitReport,
+    QuotientEdgeReport, QuotientSccReport, SourceUnitClass, SourceUnitReport,
 };
 
 use crate::assignment_analysis::AssignmentAnalysis;
@@ -266,7 +266,7 @@ fn build_atomic_group_report(
             .dependency_graph()
             .node(*source_unit_id)
         {
-            if node.declared.is_empty() {
+            if node.class() == SourceUnitClass::AnonymousStatement {
                 anonymous_statement_source_unit_ids.push(source_unit_key(*source_unit_id));
             }
             members.extend(binding_reports(factorization, node.declared.iter()));

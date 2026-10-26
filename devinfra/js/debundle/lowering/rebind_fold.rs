@@ -26,7 +26,7 @@ use std::collections::HashMap;
 use swc_ecma_ast::Id;
 
 use analysis::atomic_groups::DependencyGraphAndAtomicGroups;
-use analysis::graph::DepKind;
+use analysis::graph::{DepKind, SourceUnitClass};
 
 /// One rebind-fold decision: a binding that should be (re)routed
 /// from its current plan to `dest`.
@@ -96,7 +96,7 @@ pub fn compute_rebind_folds(
             let Some(node) = dependency_graph.node(source_unit_id) else {
                 continue;
             };
-            if node.declared.is_empty() {
+            if node.class() == SourceUnitClass::AnonymousStatement {
                 // Anonymous statements don't appear in `binding_assignment`;
                 // their routing is via `whole_statement_assignment`. They
                 // can't be the carrier of a rebind cause anyway — a rebind

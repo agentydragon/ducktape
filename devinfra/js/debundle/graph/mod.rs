@@ -30,7 +30,7 @@ pub use build::{
     DependencyGraphOptions, DuplicateTopLevelDeclaration, build_dependency_graph_with,
 };
 pub use dependency_graph::{
-    DependencyGraph, SourceUnit, SourceUnitId, UnresolvedDependencyEdgeEndpoint,
+    DependencyGraph, SourceUnit, SourceUnitClass, SourceUnitId, UnresolvedDependencyEdgeEndpoint,
 };
 pub use edge::{DepKind, DependencyEdge, DependencyEdgeId, EdgeReason, EdgeRole};
 pub use linker_order::{

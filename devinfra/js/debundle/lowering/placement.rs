@@ -5,7 +5,7 @@
 use source_identity::{SourceUnitOrdinal, StatementId};
 use std::collections::{BTreeMap, HashMap};
 
-use analysis::{BindingKind, ChunkId, ModuleId};
+use analysis::{BindingKind, ChunkId, ModuleId, SourceUnitClass};
 use anyhow::{Context, Result, bail, ensure};
 use gate::{AssignmentAnalysis, ValidatedAssignment};
 use js_ast::statements_for_source_unit_ordinals;
@@ -68,7 +68,8 @@ impl<'a> EmissionPlacement<'a> {
                         "reconstruction: whole-statement claim at body index {body_index} spans differently assigned source units"
                     );
                 }
-            } else if unit.declared.is_empty() && destination != residual {
+            } else if unit.class() == SourceUnitClass::AnonymousStatement && destination != residual
+            {
                 bail!(
                     "reconstruction: source unit {} targets module {} without a whole-statement plan",
                     unit.id.0,

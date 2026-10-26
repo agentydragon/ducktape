@@ -5,7 +5,7 @@ use swc_atoms::Atom;
 use crate::assignment_assembly::AtomicGroupConflict;
 use crate::ids::ModuleId;
 use crate::purity::Purity;
-use crate::{DepKind, StatementKind};
+use crate::{DepKind, SourceUnitClass, StatementKind};
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SourceLocation {
@@ -137,6 +137,10 @@ pub struct SourceUnitReport {
 }
 
 impl SourceUnitReport {
+    pub fn class(&self) -> SourceUnitClass {
+        SourceUnitClass::from_declared_bindings(&self.declared_bindings)
+    }
+
     /// Inclusive line span of the source unit's statement; 0 without a
     /// source location.
     pub fn line_count(&self) -> usize {

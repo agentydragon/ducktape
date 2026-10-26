@@ -10,7 +10,7 @@ use std::fs;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::{Path, PathBuf};
 
-use analysis::{DependencyGraphReport, SourceUnitId, StatementKind};
+use analysis::{DependencyGraphReport, SourceUnitClass, SourceUnitId, StatementKind};
 use anyhow::{Context, Result, bail};
 use selector_outcome::{Candidate, Outcome, SelectorOutcome, Severity};
 pub use selector_resolve::ModuleNeutralReferenceMeaning;
@@ -162,8 +162,8 @@ fn resolve_claim_sets(
         let mut anonymous_source_unit_by_source_ordinal =
             HashMap::<(String, usize), SourceUnitId>::new();
         for (idx, node) in graph.nodes.iter().enumerate() {
-            if let (true, Some(location)) =
-                (node.declared_bindings.is_empty(), &node.source_location)
+            if let (SourceUnitClass::AnonymousStatement, Some(location)) =
+                (node.class(), &node.source_location)
             {
                 anonymous_source_unit_by_source_ordinal.insert(
                     (location.source_path.clone(), node.statement_ordinal.0),
@@ -509,7 +509,7 @@ fn addressable_anonymous_statement_source_unit_ids_in_globals(
     let mut source_unit_by_source_ordinal = HashMap::<(String, usize), &str>::new();
     let mut source_paths = BTreeSet::<String>::new();
     for node in &graph.nodes {
-        if !node.declared_bindings.is_empty()
+        if node.class() == SourceUnitClass::BindingDeclaration
             || matches!(
                 node.statement_kind,
                 StatementKind::Import | StatementKind::Export

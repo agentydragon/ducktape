@@ -45,7 +45,7 @@ use anyhow::{Context, Result};
 use serde::Serialize;
 
 use analysis::{
-    DependencyGraph, DependencyGraphReport, LineRange, ModuleAssignment, ModuleId,
+    DependencyGraph, DependencyGraphReport, LineRange, ModuleAssignment, ModuleId, SourceUnitClass,
     SourceUnitReport, StatementKind,
 };
 use anonymous_resolution::{
@@ -2622,7 +2622,7 @@ fn build_proposal(
     for &source_unit_idx in &source_unit_idxs {
         let node = &graph.nodes[source_unit_idx];
         source_unit_ids.push(node.id.clone());
-        if node.declared_bindings.is_empty() {
+        if node.class() == SourceUnitClass::AnonymousStatement {
             anonymous_source_unit_ids.push(node.id.clone());
         }
         for binding in &node.declared_bindings {
@@ -2736,7 +2736,7 @@ fn anonymous_addressability(
     let mut notes = BTreeSet::<String>::new();
     for &idx in source_unit_idxs {
         let node = &graph.nodes[idx];
-        if !node.declared_bindings.is_empty() {
+        if node.class() == SourceUnitClass::BindingDeclaration {
             continue;
         }
         if matches!(
