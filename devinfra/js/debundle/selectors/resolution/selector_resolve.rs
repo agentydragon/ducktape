@@ -12,7 +12,7 @@ mod selector_conflict;
 
 use source_identity::SourceUnitOrdinal;
 use std::cell::OnceCell;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use analysis::facts::StructuralChunkAnalysis;
 use analysis::{DepKind, SourceUnitId, StatementKind};
@@ -58,13 +58,6 @@ struct Places {
     imports: HashMap<String, ImportBinding>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ImportSpecifierKind {
-    Named,
-    Default,
-    Namespace,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DirectBindingSourceEvidence {
     Local {
@@ -72,14 +65,13 @@ pub enum DirectBindingSourceEvidence {
         /// any site has the requested kind.
         declaration_sites: Vec<(SourceUnitOrdinal, StatementKind)>,
     },
-    Import(ImportSpecifierKind),
+    Import,
     Missing,
 }
 
 #[derive(Debug, Clone)]
 struct ImportBinding {
     source: String,
-    kind: ImportSpecifierKind,
 }
 
 /// One logical module's entities.
@@ -581,8 +573,8 @@ impl<'m> Chunk<'m> {
             return places
                 .imports
                 .get(&binding.name)
-                .map_or(DirectBindingSourceEvidence::Missing, |import| {
-                    DirectBindingSourceEvidence::Import(import.kind)
+                .map_or(DirectBindingSourceEvidence::Missing, |_| {
+                    DirectBindingSourceEvidence::Import
                 });
         }
 
@@ -597,8 +589,8 @@ impl<'m> Chunk<'m> {
         places
             .imports
             .get(&binding.name)
-            .map_or(DirectBindingSourceEvidence::Missing, |import| {
-                DirectBindingSourceEvidence::Import(import.kind)
+            .map_or(DirectBindingSourceEvidence::Missing, |_| {
+                DirectBindingSourceEvidence::Import
             })
     }
 
@@ -2675,20 +2667,15 @@ fn import_bindings(module: &Module) -> HashMap<String, ImportBinding> {
         .flat_map(|import| {
             let source = js_ast::str_value(&import.src);
             import.specifiers.iter().map(move |specifier| {
-                let (local, kind) = match specifier {
-                    ImportSpecifier::Named(named) => (&named.local, ImportSpecifierKind::Named),
-                    ImportSpecifier::Default(default) => {
-                        (&default.local, ImportSpecifierKind::Default)
-                    }
-                    ImportSpecifier::Namespace(namespace) => {
-                        (&namespace.local, ImportSpecifierKind::Namespace)
-                    }
+                let local = match specifier {
+                    ImportSpecifier::Named(named) => &named.local,
+                    ImportSpecifier::Default(default) => &default.local,
+                    ImportSpecifier::Namespace(namespace) => &namespace.local,
                 };
                 (
                     local.sym.to_string(),
                     ImportBinding {
                         source: source.clone(),
-                        kind,
                     },
                 )
             })
@@ -2696,14 +2683,11 @@ fn import_bindings(module: &Module) -> HashMap<String, ImportBinding> {
         .collect()
 }
 
-/// Import local names and forms without constructing structural chunk
+/// Import local names without constructing structural chunk
 /// analysis. The direct-claim edit gate uses this when import pins are the
 /// only selectors that need source evidence.
-pub fn import_specifier_kinds(module: &Module) -> HashMap<String, ImportSpecifierKind> {
-    import_bindings(module)
-        .into_iter()
-        .map(|(local, binding)| (local, binding.kind))
-        .collect()
+pub fn import_specifier_names(module: &Module) -> HashSet<String> {
+    import_bindings(module).into_keys().collect()
 }
 
 /// The chunk facts `program`'s tables are built from: every statement's source unit,
