@@ -914,6 +914,13 @@ http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "ht
 
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
 
+# Restic's real CLI for offline workstation backup/restore regression tests.
+http_file(
+    name = "restic_linux_amd64",
+    sha256 = "f415415624dcc452f2a02b8c33641791a8c6d6d3b65bbb3543fcf9a25151585c",
+    urls = ["https://github.com/restic/restic/releases/download/v0.19.1/restic_0.19.1_linux_amd64.bz2"],
+)
+
 # Test-only local Kubernetes control-plane binaries used by Agentplane's envtest fixture.
 # Pin the archive so tests do not download assets at runtime.
 http_archive(

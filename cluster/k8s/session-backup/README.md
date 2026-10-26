@@ -22,24 +22,46 @@ That shared file is decryptable on all three workstations, so any of them can re
 another workstation's repository. Escrow `restic_password` in the user's password
 manager before enabling the client backup timer.
 
-The client-side SQLite backup tree is
-`${XDG_CACHE_HOME}/ducktape/ai-session-backup-sqlite`. To restore, select the source
-workstation's repository credentials, inspect snapshots with `restic snapshots`, and
-inspect a chosen snapshot with `restic ls <snapshot-id>`. Restore it to a temporary
-directory with `restic restore <snapshot-id> --target <temporary-directory>`. Because
-the client backs up an absolute path, inspect the restored tree (typically
-`home/<user>/.cache/ducktape/ai-session-backup-sqlite`, or the actual configured XDG
-cache path beneath `home/<user>`) and copy that directory to
-`${XDG_CACHE_HOME}/ducktape/ai-session-backup-sqlite` on the chosen workstation.
-Confirm the path with `restic ls` before replacing local files.
+The first workstation timer run captures the complete Claude and Codex directories,
+including credentials, configuration, caches, transcripts, subagents, original SQLite
+files, and their sidecars. Later runs add incremental snapshots every 15 minutes;
+unchanged captures create no new snapshot. The roots respect `CLAUDE_CONFIG_DIR`,
+`CODEX_HOME`, and the Home Manager XDG configuration. Captured history stays in the
+append-only repository even after a harness deletes its local files.
 
-The first workstation timer run uploads its current Claude and Codex session trees in
-full; later runs add incremental snapshots. The client excludes Claude's
-`~/.claude/.credentials.json`, Codex's `auth.json`, `config.toml`, `cache/`, and
-`plugin-cache/` under the configured `CODEX_HOME` (by default `~/.codex`), and
-live SQLite database files. It uses SQLite's online backup API to copy those
-databases into `${XDG_CACHE_HOME}/ducktape/ai-session-backup-sqlite`, which is
-included in the snapshot.
+The client also scans both trees for SQLite file headers, regardless of filename or
+subdirectory, and uses SQLite's online backup API to create consistent database images
+under `${XDG_STATE_HOME}/ducktape/ai-session-backup-sqlite`. Each image is a consistent
+copy of one database; the complete directory capture is not an atomic filesystem
+snapshot. Original database files and WALs remain included as raw files and may be
+inconsistent when captured during writes. The supplemental images provide the
+consistent database restore path.
+
+Staging persists across runs, and unchanged images and manifests retain their metadata.
+`manifest.json` records each successfully captured database's source path, relative
+image path, and SHA-256 digest, plus any capture errors. A disappeared or failed source
+keeps its previous staged image, but is absent from the manifest's current successes.
+If a SQLite capture fails, the raw-file backup still runs and the service exits with a
+failure so the error remains visible. Such a run must not be treated as a complete
+consistent database backup.
+
+### Restore
+
+Select the source workstation's repository credentials, inspect snapshots with
+`restic snapshots`, and inspect the selected snapshot with `restic ls <snapshot-id>`.
+Restore into a temporary directory using
+`restic restore <snapshot-id> --target <temporary-directory>` before replacing local
+files. Paths below the workstation home are stored relative to that home: typically
+`.claude`, `.codex`, and `.local/state/ducktape/ai-session-backup-sqlite`. Configured
+roots outside the home retain their absolute hierarchy; confirm paths with `restic ls`.
+
+For a database restore, stop the harness and preserve the destination's existing files
+separately. Find its source-to-image mapping in the restored `manifest.json`, verify
+the image digest and SQLite integrity, and copy the consistent image to the intended
+database path. Keep raw captured or existing `-wal`, `-shm`, and `-journal` sidecars
+separate from that replacement; replaying them against a different database image can
+corrupt it. Restore the other original files from the raw trees. Review manifest errors
+and historical snapshots if a desired database is absent from the selected manifest.
 
 The client Restic encryption passphrase is `restic_password`. Keep it separate from
 `restic_rest_password_<host>`, which authenticates to this server. The latter values

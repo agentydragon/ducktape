@@ -91,6 +91,7 @@ in
     ./modules/github-api-proxy.nix
     ./modules/sops-env.nix
     ./services/activitywatch.nix
+    ./services/session-backup.nix
     ./opencode
     ./modules/gnome-shell-keybindings.nix
     ./modules/flameshot-screenshots.nix
