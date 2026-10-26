@@ -182,19 +182,21 @@ fn resolve_claim_sets(
     {
         return Ok(resolved);
     }
-    let import_only_direct_claims = !claim_sets.is_empty()
-        && claim_sets
-            .iter()
-            .any(|claims| !claims.member_selectors.is_empty())
+    let direct_binding_claims = !claim_sets.is_empty()
+        && claim_sets.iter().any(|claims| {
+            claims.member_selectors.iter().any(|(_, selector)| {
+                matches!(selector, MemberSelectorSpec::Binding(binding) if binding.kind.is_some())
+            })
+        })
         && claim_sets.iter().all(|claims| {
             claims.anonymous_selectors.is_empty()
                 && claims.source_matches.is_empty()
-                && claims.member_selectors.iter().all(|(_, selector)| {
-                    matches!(selector, MemberSelectorSpec::Binding(binding)
-                        if binding.kind == Some(BindingSourceKind::ImportSpecifier))
-                })
+                && claims
+                    .member_selectors
+                    .iter()
+                    .all(|(_, selector)| matches!(selector, MemberSelectorSpec::Binding(_)))
         });
-    if import_only_direct_claims {
+    if direct_binding_claims {
         let no_sources = "spec contains typed direct, source-backed, or relational binding claims, but \
              dependency_graph.json has no source_location data; cannot resolve selectors";
         return js_ast::with_swc_globals(|| {
@@ -205,15 +207,34 @@ fn resolve_claim_sets(
                 source_root,
                 no_sources,
                 |parsed_by_source| {
-                    let import_kinds_by_source = parsed_by_source
-                        .iter()
-                        .map(|(source_path, parsed)| {
-                            (
-                                source_path.clone(),
-                                selector_resolve::import_specifier_kinds(&parsed.module),
-                            )
+                    let needs_local_declarations = claim_sets.iter().any(|claims| {
+                        claims.member_selectors.iter().any(|(_, selector)| {
+                            matches!(selector, MemberSelectorSpec::Binding(binding)
+                                if binding.kind.is_some_and(|kind| kind != BindingSourceKind::ImportSpecifier))
                         })
-                        .collect::<BTreeMap<_, _>>();
+                    });
+                    // Import-only claims need only the parsed import index. When
+                    // typed local claims are present, the canonical Chunk
+                    // declaration index supplies both local and import evidence.
+                    let chunks = needs_local_declarations.then(|| {
+                        parsed_by_source
+                            .iter()
+                            .map(|(source_path, parsed)| {
+                                selector_resolve::Chunk::analyze(source_path, &parsed.module)
+                            })
+                            .collect::<Vec<_>>()
+                    });
+                    let import_kinds_by_source = (!needs_local_declarations).then(|| {
+                        parsed_by_source
+                            .iter()
+                            .map(|(source_path, parsed)| {
+                                (
+                                    source_path.clone(),
+                                    selector_resolve::import_specifier_kinds(&parsed.module),
+                                )
+                            })
+                            .collect::<BTreeMap<_, _>>()
+                    });
                     for (module_index, claims) in claim_sets.iter().enumerate() {
                         let Ok(set) = &mut resolved[module_index] else {
                             continue;
@@ -227,20 +248,36 @@ fn resolve_claim_sets(
                             let MemberSelectorSpec::Binding(binding) = selector else {
                                 continue;
                             };
-                            let expected_kind = binding
-                                .kind
-                                .expect("the import-only path requires typed selectors");
-                            let observations = import_kinds_by_source
-                                .iter()
-                                .map(|(source_path, import_kinds)| {
-                                    let evidence = import_kinds
-                                        .get(&binding.name)
-                                        .copied()
-                                        .map(DirectBindingSourceEvidence::Import)
-                                        .unwrap_or(DirectBindingSourceEvidence::Missing);
-                                    (source_path.clone(), evidence)
-                                })
-                                .collect::<Vec<_>>();
+                            let Some(expected_kind) = binding.kind else {
+                                continue;
+                            };
+                            let observations = if let Some(chunks) = &chunks {
+                                parsed_by_source
+                                    .iter()
+                                    .zip(chunks)
+                                    .map(|((source_path, _), chunk)| {
+                                        (
+                                            source_path.clone(),
+                                            chunk.direct_binding_source_evidence(binding),
+                                        )
+                                    })
+                                    .collect::<Vec<_>>()
+                            } else {
+                                let import_kinds_by_source = import_kinds_by_source
+                                    .as_ref()
+                                    .expect("import index exists without local declarations");
+                                import_kinds_by_source
+                                    .iter()
+                                    .map(|(source_path, import_kinds)| {
+                                        let evidence = import_kinds
+                                            .get(&binding.name)
+                                            .copied()
+                                            .map(DirectBindingSourceEvidence::Import)
+                                            .unwrap_or(DirectBindingSourceEvidence::Missing);
+                                        (source_path.clone(), evidence)
+                                    })
+                                    .collect::<Vec<_>>()
+                            };
                             set.claims.direct_binding_checks[member_index] =
                                 Some(resolve_direct_binding_source(expected_kind, observations));
                         }
@@ -428,14 +465,11 @@ fn resolve_direct_binding_source(
         .collect::<Vec<_>>();
     let resolution = match (found.is_empty(), matching_sources.as_slice()) {
         (true, _) => DirectBindingSourceResolution::Missing,
-        (false, [source_path]) if found.len() == 1 => DirectBindingSourceResolution::Matched {
+        (false, [source_path]) => DirectBindingSourceResolution::Matched {
             source_path: source_path.clone(),
         },
         (false, matches) if !matches.is_empty() => DirectBindingSourceResolution::Ambiguous {
-            source_paths: found
-                .iter()
-                .map(|(source_path, _)| (*source_path).clone())
-                .collect(),
+            source_paths: matches.to_vec(),
         },
         (false, _) => DirectBindingSourceResolution::WrongKind {
             observed: found

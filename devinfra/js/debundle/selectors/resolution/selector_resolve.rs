@@ -53,7 +53,7 @@ struct Places {
     source_unit_by_body_and_binding: BTreeMap<(usize, String), SourceUnitId>,
     /// Each top-level binding name's declaring statements, with their kind.
     /// Repeated `var` declarations intentionally retain every site here.
-    declarations: BTreeMap<String, Vec<(SourceUnitId, StatementKind)>>,
+    declarations: BTreeMap<String, Vec<(SourceUnitId, SourceUnitOrdinal, StatementKind)>>,
     /// Chunk import bindings, indexed once with the declaration sites.
     imports: HashMap<String, ImportBinding>,
 }
@@ -68,12 +68,9 @@ pub enum ImportSpecifierKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DirectBindingSourceEvidence {
     Local {
-        /// The first declaration site in source order, matching the canonical
-        /// name-pin place representative.
-        representative: (usize, StatementKind),
         /// All sites remain available because a kind pin is satisfied when
         /// any site has the requested kind.
-        declaration_sites: Vec<(usize, StatementKind)>,
+        declaration_sites: Vec<(SourceUnitOrdinal, StatementKind)>,
     },
     Import(ImportSpecifierKind),
     Missing,
@@ -548,7 +545,11 @@ impl<'m> Chunk<'m> {
                         .declarations
                         .entry(binding.0.as_str().to_string())
                         .or_default()
-                        .push((SourceUnitId(statement.ordinal.0), statement.kind));
+                        .push((
+                            SourceUnitId(statement.ordinal.0),
+                            statement.ordinal,
+                            statement.kind,
+                        ));
                 }
                 let Some(body_idx) =
                     statement_for_source_unit_ordinal(&self.module.body, statement.ordinal)
@@ -588,16 +589,10 @@ impl<'m> Chunk<'m> {
         if let Some(declarations) = places.declarations.get(&binding.name) {
             let mut declaration_sites = declarations
                 .iter()
-                .map(|(owner, kind)| (owner.0, *kind))
+                .map(|(_, ordinal, kind)| (*ordinal, *kind))
                 .collect::<Vec<_>>();
             declaration_sites.sort_by_key(|(statement_ordinal, _)| *statement_ordinal);
-            let representative = *declaration_sites
-                .first()
-                .expect("a declaration map entry has at least one site");
-            return DirectBindingSourceEvidence::Local {
-                representative,
-                declaration_sites,
-            };
+            return DirectBindingSourceEvidence::Local { declaration_sites };
         }
         places
             .imports
@@ -1307,8 +1302,8 @@ impl<'c, 'm> Resolve<'c, 'm> {
                         // graph co-locates every other site with it.
                         declarations
                             .iter()
-                            .find(|(_, kind)| *kind != StatementKind::Import)
-                            .map(|(source_unit, _)| Place {
+                            .find(|(_, _, kind)| *kind != StatementKind::Import)
+                            .map(|(source_unit, _, _)| Place {
                                 source_unit: *source_unit,
                                 binding: Some(name.clone()),
                             })
@@ -1783,13 +1778,13 @@ impl<'c, 'm> Resolve<'c, 'm> {
                 let places = declarations
                     .get(pin.name.as_str())
                     .and_then(|declarations| {
-                        let has_matching_site = declarations.iter().any(|(_, kind)| {
+                        let has_matching_site = declarations.iter().any(|(_, _, kind)| {
                             pin.kind
                                 .is_none_or(|pinned| statement_kind_for_spec(pinned) == *kind)
                         });
                         has_matching_site.then(|| declarations.first()).flatten()
                     })
-                    .map(|(source_unit, _)| Place {
+                    .map(|(source_unit, _, _)| Place {
                         source_unit: *source_unit,
                         binding: Some(pin.name.clone()),
                     })
@@ -2476,7 +2471,7 @@ fn member_place(
         .declarations
         .get(&binding)
         .and_then(|declarations| declarations.first())
-        .map(|(source_unit, _)| *source_unit)
+        .map(|(source_unit, _, _)| *source_unit)
         .unwrap_or(matched_source_unit);
     Ok(Place {
         source_unit,
