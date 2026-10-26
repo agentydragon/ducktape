@@ -1,8 +1,8 @@
 //! `ChunkPlanBuilder` owns the per-chunk mutable state that
 //! `materialize_logical_chunk` threads across its eight phases. Each phase is a
-//! method on the builder, so the shared lookup (`bindings_catalogue` +
-//! `binding_assignment`) lives behind the builder's encapsulation rather than
-//! being open-coded per phase.
+//! method on the builder. `bindings_catalogue` is the authoritative binding
+//! destination state; owned-only lookup maps are derived when a downstream
+//! analysis needs that projection.
 
 use super::outcome_sink::OutcomeSink;
 use crate::anonymous::ResolvedAnonymousStatement;
@@ -61,6 +61,7 @@ fn member_outcome(
 /// construction phase.
 pub(super) struct ChunkPlan {
     pub(super) module_plans: Vec<ModulePlan>,
+    /// Owned-only projection of `bindings_catalogue`, derived at finalization.
     pub(super) binding_assignment: HashMap<Id, usize>,
     pub(super) bindings_catalogue: HashMap<Id, BindingKind>,
     pub(super) anonymous_ordinal_assignment: BTreeMap<usize, usize>,
@@ -80,27 +81,22 @@ pub(super) struct ExplicitRequestContext<'a> {
 
 /// Builds a `ChunkPlan` from spec requests and chunk AST analysis.
 ///
-/// Owns the five mutable maps (`binding_assignment`,
-/// `bindings_catalogue`, `anonymous_ordinal_assignment`, `module_plans`,
-/// `residual_plan_index`) that the previous shape passed through every
-/// helper as `&mut` arguments. All duplicate-claim / cross-claim
-/// invariants on the canonical state live behind the builder's
-/// methods.
+/// Owns canonical binding destinations, anonymous statement destinations, and
+/// module export/name plans. All duplicate-claim / cross-claim invariants live
+/// behind the builder's methods. Owned binding destinations are never maintained
+/// in a second mutable map.
 pub(super) struct ChunkPlanBuilder {
-    /// Per-binding-`Id` index into `module_plans`. Authoritative
-    /// source of "which logical module owns this binding".
-    binding_assignment: HashMap<Id, usize>,
     /// Per-source-body-index → `module_plans` index, for anonymous
     /// (non-declared) top-level statements claimed by spec
     /// `anonymous_statements` entries.
     anonymous_ordinal_assignment: BTreeMap<usize, usize>,
     /// The plans being constructed, in append order. Final indices
-    /// stable: `binding_assignment` and `anonymous_ordinal_assignment`
+    /// stable: binding destinations and `anonymous_ordinal_assignment`
     /// hold positional references.
     module_plans: Vec<ModulePlan>,
-    /// `BindingKind` view of every claimed binding (Owned vs Imported).
-    /// Owned entries duplicate `binding_assignment`'s mapping in a
-    /// different shape; Imported entries are exclusive to this map.
+    /// Authoritative destination of every claimed binding, including imported
+    /// bindings claimed only for re-export. Module plans retain export/name
+    /// decisions; syntax placement reads this catalogue.
     bindings_catalogue: HashMap<Id, BindingKind>,
     /// Index into `module_plans` of the "catchall" plan that
     /// unclaimed bindings sweep into, when one exists. `None` when
@@ -121,14 +117,15 @@ pub(super) struct ChunkPlanBuilder {
     /// key is constructed via `top_level_id(name,
     /// chunk_top_level_mark)`, so the `name` alone uniquely
     /// identifies the catalogue entry within a chunk; we mirror
-    /// inserts into this index and look up by `&str` to keep
-    /// duplicate detection O(1) per member.
+    /// binding identities in this index and look up by `&str` to keep
+    /// duplicate detection O(1) per member. Destinations are always read from
+    /// the canonical catalogue, never copied into this spelling index.
     ///
     /// Only consulted during `add_explicit_request`; later phases
     /// (destructure siblings, residual sweep) append without
     /// name-collision checks. The map is dropped by
     /// `drop_explicit_request_scratch`.
-    catalogue_index_by_name: HashMap<String, BindingKind>,
+    catalogue_index_by_name: HashMap<String, Id>,
     /// Name-keyed duplicate-check scratch for binding selectors that have a
     /// known source binding spelling but whose ownership is claimed after chunk
     /// analysis through the global solver.
@@ -148,7 +145,6 @@ pub(super) struct ChunkPlanBuilder {
 impl ChunkPlanBuilder {
     pub(super) fn new(fail_fast: bool, list_template_identifiers: bool) -> Self {
         Self {
-            binding_assignment: HashMap::new(),
             anonymous_ordinal_assignment: BTreeMap::new(),
             module_plans: Vec::new(),
             bindings_catalogue: HashMap::new(),
@@ -183,8 +179,10 @@ impl ChunkPlanBuilder {
         let mut duplicate_bindings = BTreeSet::<String>::new();
         for member in &request.members {
             if !member.binding.is_empty() {
-                if let Some(existing_kind) =
-                    self.catalogue_index_by_name.get(member.binding.as_str())
+                if let Some(existing_kind) = self
+                    .catalogue_index_by_name
+                    .get(member.binding.as_str())
+                    .map(|id| &self.bindings_catalogue[id])
                 {
                     let duplicate = self.duplicate_claim_for(
                         existing_kind,
@@ -270,12 +268,10 @@ impl ChunkPlanBuilder {
                     re_exporter: module_id,
                     public_name: member.export_name.as_str().into(),
                 };
+                let binding_id = top_level_id(&member.binding, ctx.chunk_top_level_mark);
                 self.catalogue_index_by_name
-                    .insert(member.binding.clone(), kind.clone());
-                self.bindings_catalogue.insert(
-                    top_level_id(&member.binding, ctx.chunk_top_level_mark),
-                    kind,
-                );
+                    .insert(member.binding.clone(), binding_id.clone());
+                self.bindings_catalogue.insert(binding_id, kind);
             } else {
                 bindings.insert(member.binding.clone(), member.export_name.clone());
             }
@@ -283,10 +279,9 @@ impl ChunkPlanBuilder {
         for (binding, export_name) in &bindings {
             let binding_id = top_level_id(binding, ctx.chunk_top_level_mark);
             if ctx.declaration_by_name.contains_key(&binding_id) {
-                self.binding_assignment.insert(binding_id.clone(), index);
                 let kind = BindingKind::Owned { module: module_id };
                 self.catalogue_index_by_name
-                    .insert(binding.clone(), kind.clone());
+                    .insert(binding.clone(), binding_id.clone());
                 self.bindings_catalogue.insert(binding_id, kind);
             } else {
                 // The spec claimed a binding name that does not
@@ -646,7 +641,11 @@ impl ChunkPlanBuilder {
             return Ok(());
         }
         let module_id = ModuleId(index);
-        if let Some(existing_kind) = self.catalogue_index_by_name.get(binding) {
+        if let Some(existing_kind) = self
+            .catalogue_index_by_name
+            .get(binding)
+            .map(|id| &self.bindings_catalogue[id])
+        {
             if let Some(report) = self.same_module_duplicate_source_binding_report(
                 existing_kind,
                 binding,
@@ -671,16 +670,15 @@ impl ChunkPlanBuilder {
         // it out: overwrite its assignment and prune the residual plan's export
         // list, so the residual module doesn't keep `export { <binding> }` for a
         // declaration that now lives in the explicit module.
-        if let Some(prev) = self.binding_assignment.get(&binding_id).copied()
+        if let Some(prev) = owned_destination(&self.bindings_catalogue, &binding_id)
             && Some(prev) == self.residual_plan_index
             && let Some(residual_idx) = self.residual_plan_index
         {
             self.module_plans[residual_idx].bindings.remove(binding);
         }
-        self.binding_assignment.insert(binding_id.clone(), index);
         let kind = BindingKind::Owned { module: module_id };
         self.catalogue_index_by_name
-            .insert(binding.to_string(), kind.clone());
+            .insert(binding.to_string(), binding_id.clone());
         self.bindings_catalogue.insert(binding_id, kind);
         let plan = &mut self.module_plans[index];
         plan.bindings
@@ -761,7 +759,7 @@ impl ChunkPlanBuilder {
     ) -> Result<()> {
         for (claimed_name, sibling_set) in destructure_siblings {
             let claimed_id = top_level_id(claimed_name, chunk_top_level_mark);
-            let Some(&owner_index) = self.binding_assignment.get(&claimed_id) else {
+            let Some(owner_index) = owned_destination(&self.bindings_catalogue, &claimed_id) else {
                 continue;
             };
             let owner_id = ModuleId(owner_index);
@@ -770,18 +768,14 @@ impl ChunkPlanBuilder {
                     continue;
                 }
                 let sibling_id = top_level_id(sibling, chunk_top_level_mark);
-                match self.binding_assignment.get(&sibling_id).copied() {
+                match owned_destination(&self.bindings_catalogue, &sibling_id) {
                     None => {
-                        self.binding_assignment
-                            .insert(sibling_id.clone(), owner_index);
                         self.bindings_catalogue
                             .insert(sibling_id, BindingKind::Owned { module: owner_id });
                         let plan = &mut self.module_plans[owner_index];
                         plan.bindings.insert(sibling.clone(), sibling.clone());
                     }
                     Some(other_index) if Some(other_index) == self.residual_plan_index => {
-                        self.binding_assignment
-                            .insert(sibling_id.clone(), owner_index);
                         self.bindings_catalogue
                             .insert(sibling_id, BindingKind::Owned { module: owner_id });
                         self.module_plans[other_index].bindings.remove(sibling);
@@ -823,7 +817,7 @@ impl ChunkPlanBuilder {
             };
             let module = ModuleId(plan_index);
             for (name, id) in &decl.bindings {
-                if let Some(existing) = self.binding_assignment.get(id).copied() {
+                if let Some(existing) = owned_destination(&self.bindings_catalogue, id) {
                     if Some(existing) != self.residual_plan_index {
                         continue;
                     }
@@ -831,7 +825,6 @@ impl ChunkPlanBuilder {
                         self.module_plans[residual_index].bindings.remove(name);
                     }
                 }
-                self.binding_assignment.insert(id.clone(), plan_index);
                 self.module_plans[plan_index]
                     .bindings
                     .entry(name.clone())
@@ -866,7 +859,7 @@ impl ChunkPlanBuilder {
             let assigned_destinations = decl
                 .bindings
                 .iter()
-                .filter_map(|(_, id)| self.binding_assignment.get(id).copied())
+                .filter_map(|(_, id)| owned_destination(&self.bindings_catalogue, id))
                 .chain(
                     self.anonymous_ordinal_assignment
                         .get(&decl.ordinal)
@@ -879,7 +872,7 @@ impl ChunkPlanBuilder {
             let missing_bindings = decl
                 .bindings
                 .iter()
-                .filter(|(_, id)| !self.binding_assignment.contains_key(id))
+                .filter(|(_, id)| owned_destination(&self.bindings_catalogue, id).is_none())
                 .map(|(name, _)| name.as_str())
                 .collect::<Vec<_>>();
             if !missing_bindings.is_empty() {
@@ -945,8 +938,7 @@ impl ChunkPlanBuilder {
             let mut residual_bindings = HashMap::<String, String>::new();
             for decl in declarations {
                 for (name, id) in &decl.bindings {
-                    if !self.binding_assignment.contains_key(id) {
-                        self.binding_assignment.insert(id.clone(), residual_index);
+                    if owned_destination(&self.bindings_catalogue, id).is_none() {
                         residual_bindings.insert(name.clone(), name.clone());
                         self.bindings_catalogue.insert(
                             id.clone(),
@@ -992,8 +984,7 @@ impl ChunkPlanBuilder {
                 owner_plan.explicit = false;
                 for decl in declarations {
                     for (name, id) in &decl.bindings {
-                        if !self.binding_assignment.contains_key(id) {
-                            self.binding_assignment.insert(id.clone(), owner_index);
+                        if owned_destination(&self.bindings_catalogue, id).is_none() {
                             owner_plan
                                 .bindings
                                 .entry(name.clone())
@@ -1027,10 +1018,9 @@ impl ChunkPlanBuilder {
         let mut catchall_owners = BTreeSet::new();
         for node in graph.iter_nodes() {
             if !node.declared.is_empty()
-                && node
-                    .declared
-                    .iter()
-                    .all(|binding| self.binding_assignment.get(binding) == Some(&index))
+                && node.declared.iter().all(|binding| {
+                    owned_destination(&self.bindings_catalogue, binding) == Some(index)
+                })
             {
                 catchall_owners.insert(node.id);
             } else if node.declared.is_empty()
@@ -1058,10 +1048,9 @@ impl ChunkPlanBuilder {
                         .get(&body_index)
                         .is_none_or(|&assigned| assigned == index);
                 }
-                let in_catchall = node
-                    .declared
-                    .iter()
-                    .all(|binding| self.binding_assignment.get(binding) == Some(&index));
+                let in_catchall = node.declared.iter().all(|binding| {
+                    owned_destination(&self.bindings_catalogue, binding) == Some(index)
+                });
                 has_catchall_binding |= in_catchall;
                 in_catchall
             });
@@ -1165,10 +1154,10 @@ impl ChunkPlanBuilder {
         }
 
         let residual_plan_index = self.residual_plan_index;
-        let binding_assignment = &self.binding_assignment;
+        let bindings_catalogue = &self.bindings_catalogue;
         let anonymous_ordinal_assignment = &self.anonymous_ordinal_assignment;
         // A unit member counts as unclaimed iff every declared binding
-        // is either absent from `binding_assignment` or assigned to
+        // has no owned destination in `bindings_catalogue` or is assigned to
         // the residual plan (if any); anonymous owners must similarly
         // be unassigned or routed via residual. If any member is
         // claimed by an explicit (non-residual) plan, the spec author
@@ -1181,7 +1170,7 @@ impl ChunkPlanBuilder {
                 .map(Vec::as_slice)
                 .unwrap_or(&[]);
             for id in names {
-                match binding_assignment.get(id).copied() {
+                match owned_destination(bindings_catalogue, id) {
                     None => continue,
                     Some(idx) if Some(idx) == residual_plan_index => continue,
                     Some(_) => return false,
@@ -1243,13 +1232,12 @@ impl ChunkPlanBuilder {
                     // synthesized plan. The residual plan's
                     // bindings/anonymous-ordinal maps are pruned so it
                     // doesn't double-claim members.
-                    if let Some(prev) = self.binding_assignment.get(name).copied()
+                    if let Some(prev) = owned_destination(&self.bindings_catalogue, name)
                         && Some(prev) == residual_plan_index
                         && let Some(residual_idx) = residual_plan_index
                     {
                         self.module_plans[residual_idx].bindings.remove(&name_str);
                     }
-                    self.binding_assignment.insert(name.clone(), synthetic_idx);
                     self.bindings_catalogue.insert(
                         name.clone(),
                         BindingKind::Owned {
@@ -1281,7 +1269,7 @@ impl ChunkPlanBuilder {
     ///
     /// Each fold reroutes a single binding from its previous plan
     /// (if any) to the cycle's explicit destination. The
-    /// `bindings_catalogue` mirrors the new owner, and bindings
+    /// `bindings_catalogue` records the new destination, and bindings
     /// that were previously parked at the residual plan are pruned
     /// from that plan's binding list so the residual doesn't
     /// double-claim them.
@@ -1299,7 +1287,6 @@ impl ChunkPlanBuilder {
         } in folds
         {
             let name = binding.0.as_ref().to_string();
-            self.binding_assignment.insert(binding.clone(), dest);
             self.bindings_catalogue.insert(
                 binding,
                 BindingKind::Owned {
@@ -1316,10 +1303,16 @@ impl ChunkPlanBuilder {
         }
     }
 
-    /// Borrow access to the current binding assignment so the rebind-fold
-    /// composer can compute folds without mutating the builder.
-    pub(super) fn binding_assignment(&self) -> &HashMap<Id, usize> {
-        &self.binding_assignment
+    /// Derive the owned-only view required by rebind analysis and lowering.
+    /// This is a snapshot, never independently mutated construction state.
+    pub(super) fn owned_binding_destinations(&self) -> HashMap<Id, usize> {
+        self.bindings_catalogue
+            .iter()
+            .filter_map(|(id, kind)| match kind {
+                BindingKind::Owned { module } => Some((id.clone(), module.0)),
+                BindingKind::Imported { .. } => None,
+            })
+            .collect()
     }
 
     /// The residual landing-site plan index, if one was created by the residual
@@ -1334,13 +1327,24 @@ impl ChunkPlanBuilder {
     }
 
     pub(super) fn finalize(self) -> Result<ChunkPlan> {
+        let binding_assignment = self.owned_binding_destinations();
         self.outcomes.finish()?;
         Ok(ChunkPlan {
             module_plans: self.module_plans,
-            binding_assignment: self.binding_assignment,
+            binding_assignment,
             bindings_catalogue: self.bindings_catalogue,
             anonymous_ordinal_assignment: self.anonymous_ordinal_assignment,
             unmatched_spec_claims: self.unmatched_spec_claims,
         })
+    }
+}
+
+/// Read owned destinations from the same catalogue that records imported
+/// re-export claims. Borrow the field rather than the whole builder, allowing
+/// callers to update a disjoint module export plan while consulting placement.
+fn owned_destination(bindings: &HashMap<Id, BindingKind>, id: &Id) -> Option<usize> {
+    match bindings.get(id) {
+        Some(BindingKind::Owned { module }) => Some(module.0),
+        Some(BindingKind::Imported { .. }) | None => None,
     }
 }

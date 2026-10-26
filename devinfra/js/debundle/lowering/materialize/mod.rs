@@ -701,7 +701,7 @@ fn apply_rebind_folds_from_chunk_analysis(
 ) {
     let folds = compute_rebind_folds(
         precomputed,
-        builder.binding_assignment(),
+        &builder.owned_binding_destinations(),
         builder.residual_plan_index(),
     );
     builder.apply_rebind_folds(folds);
