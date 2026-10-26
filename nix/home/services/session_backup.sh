@@ -19,9 +19,11 @@ snapshot_status=0
 # Hook-generated runtime/build state; see home_session_dir and write_session_bazelrc
 # in devinfra/claude/claude_hook/main.rs. Keep this out of both capture paths.
 claude_session_env="$claude_home/session-env"
+codex_worktrees="$codex_home/worktrees"
 "$python" "$snapshot_script" --output "$staging_dir" \
   --root claude "$claude_home" --root codex "$codex_home" \
-  --exclude-directory "$claude_session_env" || snapshot_status=$?
+  --exclude-directory "$claude_session_env" \
+  --exclude-directory "$codex_worktrees" || snapshot_status=$?
 
 if ! "$restic" snapshots --latest 1 >/dev/null 2>&1; then
   "$restic" init
@@ -34,7 +36,9 @@ backup_path() {
 
 "$restic" backup --host "$host" --tag ai-sessions --skip-if-unchanged \
   --exclude "$claude_session_env" \
-  --exclude "$staging_dir/images/claude/*/session-env" -- \
+  --exclude "$codex_worktrees" \
+  --exclude "$staging_dir/images/claude/*/session-env" \
+  --exclude "$staging_dir/images/codex/*/worktrees" -- \
   "$(backup_path "$claude_home")" \
   "$(backup_path "$codex_home")" \
   "$(backup_path "$staging_dir")"
