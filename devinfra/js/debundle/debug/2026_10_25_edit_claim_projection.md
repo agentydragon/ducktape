@@ -263,26 +263,27 @@ edit gate now rejects unresolved graph claims and typed source mismatches before
 the realizability and atom-split checks. `--no-verify` still skips the edit
 gate.
 
-On the neutral fixture and `devel` base `4558a6e2e6`, the final Bazel CLI
-build succeeded (invocation `66a7956d-def2-4b83-9bd5-dde11c80c267`). These
-existing dry-run controls then reported against that build:
+On the neutral fixture and rebased `devel` base `fbd4c5241e`, the four
+existing focused CLI e2e targets passed (BuildBuddy invocation
+`9b2f26d1-d2aa-4e29-9aaa-b65e9521bfba`). These real CLI dry-run controls then
+reported against the same source snapshot:
 
 - A valid named-import claim remained accepted while merging its local peer
-  (invocation `31f9c231-aee7-4f3e-9649-6a6466fb5529`, `gate=passed`). The
+  (invocation `6529dcec-8a42-4e57-b4d1-027dd4c76786`, `gate=passed`). The
   command supplied `--source-root` so the graph's relative source path could
   be read.
 - A stale local direct claim was rejected because no owner matched it
-  (invocation `de3dcc0f-4285-444a-98f6-738761dcf101`).
+  (invocation `75449ffd-8227-4a6e-980f-00d24cd2a765`).
 - A stale `import_specifier` claim was rejected because no matching import
-  existed in source (invocation `4e75123f-3bf6-4f92-a730-557de84f6b00`).
+  existed in source (invocation `1d9be0ff-c1c3-49db-9ae3-53b0fdbbe42c`).
 - A local binding pinned as `class_declaration` was rejected when source showed
-  a variable declaration (invocation `a70ea64e-fd32-4a6a-bf62-afcde4736f24`).
+  a variable declaration (invocation `2d6aec97-4bc3-42e0-80a9-a0a9eec3d254`).
 - Repeated-`var` assignment still passed (invocation
-  `e14a618f-c89d-4025-90cb-888ceae4cdf6`) and moving both co-declaration
+  `786b0a22-13af-4596-a94f-4320cf522bb2`) and moving both co-declaration
   owners through `modules refine` still passed (invocation
-  `a33ddf81-07f1-40ea-a3ae-c09e1c1f3214`, two owners reassigned).
+  `8838c028-c8f1-4184-92cb-fee83bde3c93`, two owners reassigned).
 - The same stale-import edit with `--no-verify --dry-run` reported
-  `gate=skipped` (invocation `930248e9-2b07-4979-9f2a-92c77806c747`).
+  `gate=skipped` (invocation `be5f8095-62af-475e-ae2e-cec669506252`).
 
 Relative `source_location.source_path` values may need `--source-root` for
 typed direct claim checks. Without it, an initial valid-import dry run could

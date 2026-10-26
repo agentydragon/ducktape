@@ -183,6 +183,74 @@ fn resolve_claim_sets(
     {
         return Ok(resolved);
     }
+    let import_only_direct_claims = !claim_sets.is_empty()
+        && claim_sets
+            .iter()
+            .any(|claims| !claims.member_selectors.is_empty())
+        && claim_sets.iter().all(|claims| {
+            claims.anonymous_selectors.is_empty()
+                && claims.source_matches.is_empty()
+                && claims.member_selectors.iter().all(|(_, selector)| {
+                    matches!(selector, MemberSelectorSpec::Binding(binding)
+                        if binding.kind == Some(BindingSourceKind::ImportSpecifier))
+                })
+        });
+    if import_only_direct_claims {
+        let no_sources = "spec contains typed direct, source-backed, or relational binding claims, but \
+             dependency_graph.json has no source_location data; cannot resolve selectors";
+        return js_ast::with_swc_globals(|| {
+            with_source_modules(
+                graph,
+                dependency_graph_path,
+                modules_root,
+                source_root,
+                no_sources,
+                |parsed_by_source| {
+                    let import_kinds_by_source = parsed_by_source
+                        .iter()
+                        .map(|(source_path, parsed)| {
+                            (
+                                source_path.clone(),
+                                selector_resolve::import_specifier_kinds(&parsed.module),
+                            )
+                        })
+                        .collect::<BTreeMap<_, _>>();
+                    for (module_index, claims) in claim_sets.iter().enumerate() {
+                        let Ok(set) = &mut resolved[module_index] else {
+                            continue;
+                        };
+                        set.claims
+                            .direct_binding_checks
+                            .resize(claims.member_selectors.len(), None);
+                        for (member_index, (_, selector)) in
+                            claims.member_selectors.iter().enumerate()
+                        {
+                            let MemberSelectorSpec::Binding(binding) = selector else {
+                                continue;
+                            };
+                            let expected_kind = binding
+                                .kind
+                                .expect("the import-only path requires typed selectors");
+                            let observations = import_kinds_by_source
+                                .iter()
+                                .map(|(source_path, import_kinds)| {
+                                    let evidence = import_kinds
+                                        .get(&binding.name)
+                                        .copied()
+                                        .map(DirectBindingSourceEvidence::Import)
+                                        .unwrap_or(DirectBindingSourceEvidence::Missing);
+                                    (source_path.clone(), evidence)
+                                })
+                                .collect::<Vec<_>>();
+                            set.claims.direct_binding_checks[member_index] =
+                                Some(resolve_direct_binding_source(expected_kind, observations));
+                        }
+                    }
+                    Ok(resolved)
+                },
+            )
+        });
+    }
     js_ast::with_swc_globals(|| {
         let modules = claim_sets
             .iter()
