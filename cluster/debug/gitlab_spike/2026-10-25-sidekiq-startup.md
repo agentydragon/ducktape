@@ -1,5 +1,7 @@
 # Sidekiq tuning: startup retries and memory, 2026-10-25
 
+[Follow-up: boot-only reproduction proves image-file waiting can dominate startup](2026-10-26-startup-io.md).
+
 ## Conclusions
 
 - The long rollout was repeated startup attempts, not an observed successful

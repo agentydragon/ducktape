@@ -1,0 +1,252 @@
+{
+  "date": "2026-10-26",
+  "image": "registry.gitlab.com/gitlab-org/build/cng/gitlab-webservice-ee:v19.5.1",
+  "image_id": "sha256:6a74e05a2e16446d6e5394d33aa1cef22279541092132bddeff43cc73658ae13",
+  "experiments": {
+    "warm": {
+      "node": "ovh-ns102453",
+      "wall_seconds": 87.57,
+      "cpu_user_seconds": 74.28,
+      "cpu_system_seconds": 6.22,
+      "completed": true
+    },
+    "ssd": {
+      "node": "ovh-ns104963",
+      "wall_seconds": 81.25,
+      "cpu_user_seconds": 70.92,
+      "cpu_system_seconds": 5.67,
+      "completed": true,
+      "caveat": "Image just pulled/unpacked; zero physical read_bytes during measured boot. Not a controlled cold-SSD versus cold-HDD comparison."
+    },
+    "hdd": {
+      "node": "ovh-ns103656",
+      "observed_seconds_before_interruption": 491.22,
+      "cpu_user_seconds": 5.13,
+      "cpu_system_seconds": 2.27,
+      "completed": false,
+      "termination": "Investigator SIGINT; kubectl exit code 130. GNU time Exit status line does not establish successful boot."
+    }
+  },
+  "completed_profile_counters": {
+    "warm": {
+      "bootsnap": {
+        "hit": 32349,
+        "revalidated": 0,
+        "miss": 0,
+        "stale": 0
+      },
+      "gc": {
+        "count": 130,
+        "time": 10375,
+        "major_gc_count": 24,
+        "minor_gc_count": 106,
+        "total_allocated_objects": 47176132,
+        "heap_live_slots": 7185188
+      },
+      "io": {
+        "rchar": 157250661,
+        "wchar": 4840564,
+        "syscr": 139652,
+        "syscw": 839,
+        "read_bytes": 19783680,
+        "write_bytes": 8515584,
+        "cancelled_write_bytes": 0
+      }
+    },
+    "ssd": {
+      "bootsnap": {
+        "hit": 32337,
+        "revalidated": 0,
+        "miss": 1,
+        "stale": 11
+      },
+      "gc": {
+        "count": 136,
+        "time": 11547,
+        "major_gc_count": 28,
+        "minor_gc_count": 108,
+        "total_allocated_objects": 47352041,
+        "heap_live_slots": 6978997
+      },
+      "io": {
+        "rchar": 155690199,
+        "wchar": 108699524,
+        "syscr": 139586,
+        "syscw": 9387,
+        "read_bytes": 0,
+        "write_bytes": 112840704,
+        "cancelled_write_bytes": 102301696
+      }
+    }
+  },
+  "hdd_process_snapshots": [
+    {
+      "captured_at": "2026-10-26 00:26:49 UTC",
+      "pid": 53,
+      "status": ["State:\tD (disk sleep)\n", "VmRSS:\t   55428 kB\n", "Threads:\t2\n"],
+      "wait_channel": "folio_wait_bit_common.llvm.10094773383771009939",
+      "io": {
+        "rchar": 10559880,
+        "wchar": 8,
+        "syscr": 5999,
+        "syscw": 1,
+        "read_bytes": 4689920,
+        "write_bytes": 0,
+        "cancelled_write_bytes": 0
+      },
+      "cpu_runtime_ns": 5085268311,
+      "runqueue_delay_ns": 297953998,
+      "timeslices": 1857,
+      "cpu_user_ticks": 355,
+      "cpu_system_ticks": 152,
+      "start_ticks": 21447920,
+      "node_io_pressure": "some avg10=92.16 avg60=85.39 avg300=79.77 total=12968933380\nfull avg10=40.21 avg60=41.24 avg300=39.99 total=7828664104\n",
+      "node_cpu_pressure": "some avg10=22.99 avg60=18.66 avg300=18.17 total=29524462415\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0\n"
+    },
+    {
+      "captured_at": "2026-10-26 00:28:51 UTC",
+      "pid": 53,
+      "status": ["State:\tD (disk sleep)\n", "VmRSS:\t   84308 kB\n", "Threads:\t2\n"],
+      "wait_channel": "folio_wait_bit_common.llvm.10094773383771009939",
+      "io": {
+        "rchar": 13484303,
+        "wchar": 672165,
+        "syscr": 6854,
+        "syscw": 56,
+        "read_bytes": 11902976,
+        "write_bytes": 675840,
+        "cancelled_write_bytes": 0
+      },
+      "cpu_runtime_ns": 6078228311,
+      "runqueue_delay_ns": 468823089,
+      "timeslices": 2729,
+      "cpu_user_ticks": 431,
+      "cpu_system_ticks": 176,
+      "start_ticks": 21447920,
+      "node_io_pressure": "some avg10=80.61 avg60=82.32 avg300=80.63 total=13069660278\nfull avg10=38.39 avg60=37.51 avg300=39.41 total=7876499645\n",
+      "node_cpu_pressure": "some avg10=20.50 avg60=22.28 avg300=19.34 total=29550867062\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0\n"
+    },
+    {
+      "captured_at": "2026-10-26 00:30:34 UTC",
+      "pid": 53,
+      "status": ["State:\tD (disk sleep)\n", "VmRSS:\t  107884 kB\n", "Threads:\t2\n"],
+      "wait_channel": "folio_wait_bit_common.llvm.10094773383771009939",
+      "io": {
+        "rchar": 15794411,
+        "wchar": 1344497,
+        "syscr": 7672,
+        "syscw": 111,
+        "read_bytes": 14954496,
+        "write_bytes": 1351680,
+        "cancelled_write_bytes": 0
+      },
+      "cpu_runtime_ns": 6508922362,
+      "runqueue_delay_ns": 637620471,
+      "timeslices": 3532,
+      "cpu_user_ticks": 457,
+      "cpu_system_ticks": 193,
+      "start_ticks": 21447920,
+      "node_io_pressure": "some avg10=89.31 avg60=84.89 avg300=81.80 total=13157373364\nfull avg10=32.47 avg60=34.48 avg300=38.00 total=7913071288\n",
+      "node_cpu_pressure": "some avg10=28.39 avg60=25.19 avg300=20.92 total=29576505499\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0\n"
+    },
+    {
+      "captured_at": "2026-10-26 00:31:15 UTC",
+      "pid": 53,
+      "status": ["State:\tD (disk sleep)\n", "VmRSS:\t  112720 kB\n", "Threads:\t2\n"],
+      "wait_channel": "folio_wait_bit_common.llvm.10094773383771009939",
+      "io": {
+        "rchar": 16271863,
+        "wchar": 1344497,
+        "syscr": 7837,
+        "syscw": 111,
+        "read_bytes": 24010752,
+        "write_bytes": 1351680,
+        "cancelled_write_bytes": 0
+      },
+      "cpu_runtime_ns": 6597956399,
+      "runqueue_delay_ns": 695369429,
+      "timeslices": 3824,
+      "cpu_user_ticks": 461,
+      "cpu_system_ticks": 198,
+      "start_ticks": 21447920,
+      "node_io_pressure": "some avg10=94.03 avg60=88.55 avg300=83.14 total=13194954788\nfull avg10=38.82 avg60=36.29 avg300=37.96 total=7928726034\n",
+      "node_cpu_pressure": "some avg10=22.44 avg60=24.36 avg300=21.32 total=29586434159\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0\n"
+    },
+    {
+      "captured_at": "2026-10-26 00:33:35 UTC",
+      "pid": 53,
+      "status": ["State:\tD (disk sleep)\n", "VmRSS:\t  117480 kB\n", "Threads:\t2\n"],
+      "wait_channel": "folio_wait_bit_common.llvm.10094773383771009939",
+      "io": {
+        "rchar": 18409125,
+        "wchar": 1344497,
+        "syscr": 8695,
+        "syscw": 111,
+        "read_bytes": 27209728,
+        "write_bytes": 1351680,
+        "cancelled_write_bytes": 0
+      },
+      "cpu_runtime_ns": 7016208693,
+      "runqueue_delay_ns": 883081700,
+      "timeslices": 4849,
+      "cpu_user_ticks": 489,
+      "cpu_system_ticks": 213,
+      "start_ticks": 21447920,
+      "node_io_pressure": "some avg10=94.74 avg60=93.09 avg300=86.88 total=13325652485\nfull avg10=46.85 avg60=41.03 avg300=38.86 total=7985560497\n",
+      "node_cpu_pressure": "some avg10=17.25 avg60=21.89 avg300=21.75 total=29618836836\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0\n"
+    }
+  ],
+  "blocked_file_targets": [
+    "/srv/gitlab/vendor/bundle/ruby/3.3.0/gems/activerecord-7.2.3.1/lib/arel/visitors/sqlite.rb",
+    "/srv/gitlab/bootsnap/bootsnap/compile-cache-iseq/05/1520c28365eae6",
+    "/srv/gitlab/vendor/bundle/ruby/3.3.0/gems/omniauth-github-2.0.1/lib/omniauth/strategies/github.rb",
+    "/srv/gitlab/bootsnap/bootsnap/compile-cache-iseq/f8/cee62471bc3930"
+  ],
+  "hdd_interrupt_backtrace_excerpt": [
+    "Bootsnap::CompileCache::ISeq::Compiler#storage_to_output -> RubyVM::InstructionSequence.load_from_binary",
+    "ActiveRecord::SecurePassword",
+    "Bundler::Runtime#require",
+    "/srv/gitlab/config/application.rb:22: Bundler.require(*Rails.groups)",
+    "Puma::Configuration#load_rackup -> Rack::Builder.parse_file"
+  ],
+  "production_pods_after": [
+    {
+      "name": "gitlab-spike-webservice-default-d74cd56bc-6p4r2",
+      "node": "ovh-ns103711",
+      "containers": [
+        {
+          "name": "gitlab-workhorse",
+          "ready": true,
+          "restartCount": 0
+        },
+        {
+          "name": "webservice",
+          "ready": true,
+          "restartCount": 1
+        }
+      ]
+    },
+    {
+      "name": "gitlab-spike-webservice-default-d74cd56bc-9h8vz",
+      "node": "ovh-ns102453",
+      "containers": [
+        {
+          "name": "gitlab-workhorse",
+          "ready": true,
+          "restartCount": 0
+        },
+        {
+          "name": "webservice",
+          "ready": true,
+          "restartCount": 0
+        }
+      ]
+    }
+  ],
+  "cleanup": {
+    "diagnostic_pods_deleted": ["gitlab-startup-profile-hdd", "gitlab-startup-profile-ssd"],
+    "production_toolkit_and_profile_files_removed": true,
+    "private_metrics_directories_cleaned_by_ensure": true,
+    "mimir_port_forward_stopped": true
+  }
+}

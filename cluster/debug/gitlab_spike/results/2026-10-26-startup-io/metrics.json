@@ -1,0 +1,917 @@
+{
+  "readers-during-hdd": {
+    "status": "success",
+    "data": {
+      "resultType": "vector",
+      "result": [
+        {
+          "metric": {
+            "container": "compute",
+            "namespace": "agentplane-staging",
+            "node": "ovh-ns103656",
+            "pod": "virt-launcher-finance-agent-vm-1-wdh49"
+          },
+          "value": [1792974461.693, "101552196.56584525"]
+        },
+        {
+          "metric": {
+            "container": "linstor-csi",
+            "namespace": "piraeus-datastore",
+            "node": "ovh-ns103656",
+            "pod": "linstor-csi-node-s7mhv"
+          },
+          "value": [1792974461.693, "121166.00675196933"]
+        },
+        {
+          "metric": {
+            "container": "volume",
+            "namespace": "seaweedfs",
+            "node": "ovh-ns103656",
+            "pod": "seaweedfs-volume-hdd-piraeus-103656-0"
+          },
+          "value": [1792974461.693, "114104.62593797044"]
+        },
+        {
+          "metric": {
+            "container": "stalwart",
+            "namespace": "haku-mailbox",
+            "node": "ovh-ns103656",
+            "pod": "haku-mailbox-79d6489997-92cl2"
+          },
+          "value": [1792974461.693, "47514.8451442673"]
+        },
+        {
+          "metric": {
+            "container": "lvm-collector",
+            "namespace": "piraeus-datastore",
+            "node": "ovh-ns103656",
+            "pod": "piraeus-lvm-metrics-ovh-ns103656-vfqrf"
+          },
+          "value": [1792974461.693, "26617.927785223994"]
+        },
+        {
+          "metric": {
+            "container": "webservice",
+            "namespace": "gitlab-spike",
+            "node": "ovh-ns103656",
+            "pod": "gitlab-startup-profile-hdd"
+          },
+          "value": [1792974461.693, "26006.14789174741"]
+        },
+        {
+          "metric": {
+            "container": "langfuse-valkey-ovh",
+            "namespace": "langfuse",
+            "node": "ovh-ns103656",
+            "pod": "langfuse-valkey-ovh-0"
+          },
+          "value": [1792974461.693, "20322.734619024093"]
+        },
+        {
+          "metric": {
+            "container": "gitlab-valkey",
+            "namespace": "gitlab-spike",
+            "node": "ovh-ns103656",
+            "pod": "gitlab-valkey-1"
+          },
+          "value": [1792974461.693, "17285.588202531213"]
+        },
+        {
+          "metric": {
+            "container": "linstor-satellite",
+            "namespace": "piraeus-datastore",
+            "node": "ovh-ns103656",
+            "pod": "linstor-satellite.ovh-ns103656-rlrnd"
+          },
+          "value": [1792974461.693, "15896.750881389815"]
+        },
+        {
+          "metric": {
+            "container": "tana-desktop",
+            "namespace": "tana-mcp",
+            "node": "ovh-ns103656",
+            "pod": "tana-mcp-6c6686cffd-plmb4"
+          },
+          "value": [1792974461.693, "5922.6080889090645"]
+        },
+        {
+          "metric": {
+            "container": "manager",
+            "namespace": "flux-system",
+            "node": "ovh-ns103656",
+            "pod": "source-controller-fd785cbbb-h7xjh"
+          },
+          "value": [1792974461.693, "1581.4087214388692"]
+        },
+        {
+          "metric": {
+            "container": "loki",
+            "namespace": "loki",
+            "node": "ovh-ns103656",
+            "pod": "loki-write-1"
+          },
+          "value": [1792974461.693, "174.47680387120408"]
+        }
+      ]
+    }
+  },
+  "writers-during-hdd": {
+    "status": "success",
+    "data": {
+      "resultType": "vector",
+      "result": [
+        {
+          "metric": {
+            "container": "clickhouse",
+            "namespace": "clickhouse",
+            "node": "ovh-ns103656",
+            "pod": "chi-clickhouse-default-0-1-0"
+          },
+          "value": [1792974461.79, "3954666.864320688"]
+        },
+        {
+          "metric": {
+            "container": "volume",
+            "namespace": "seaweedfs",
+            "node": "ovh-ns103656",
+            "pod": "seaweedfs-volume-hdd-piraeus-103656-0"
+          },
+          "value": [1792974461.79, "3711637.3536489466"]
+        },
+        {
+          "metric": {
+            "container": "loki",
+            "namespace": "loki",
+            "node": "ovh-ns103656",
+            "pod": "loki-write-1"
+          },
+          "value": [1792974461.79, "2724106.338841109"]
+        },
+        {
+          "metric": {
+            "container": "manager",
+            "namespace": "flux-system",
+            "node": "ovh-ns103656",
+            "pod": "source-controller-fd785cbbb-h7xjh"
+          },
+          "value": [1792974461.79, "1560513.9381194322"]
+        },
+        {
+          "metric": {
+            "container": "ingester",
+            "namespace": "monitoring",
+            "node": "ovh-ns103656",
+            "pod": "mimir-ingester-1"
+          },
+          "value": [1792974461.79, "875012.3068434944"]
+        },
+        {
+          "metric": {
+            "container": "langfuse-valkey-ovh",
+            "namespace": "langfuse",
+            "node": "ovh-ns103656",
+            "pod": "langfuse-valkey-ovh-0"
+          },
+          "value": [1792974461.79, "67227.9491194721"]
+        },
+        {
+          "metric": {
+            "container": "gitlab-valkey",
+            "namespace": "gitlab-spike",
+            "node": "ovh-ns103656",
+            "pod": "gitlab-valkey-1"
+          },
+          "value": [1792974461.79, "43784.307172909015"]
+        },
+        {
+          "metric": {
+            "container": "tempo",
+            "namespace": "monitoring",
+            "node": "ovh-ns103656",
+            "pod": "tempo-0"
+          },
+          "value": [1792974461.79, "26628.92416827243"]
+        },
+        {
+          "metric": {
+            "container": "ruler",
+            "namespace": "monitoring",
+            "node": "ovh-ns103656",
+            "pod": "mimir-ruler-5f4c4c6d8b-kjjm8"
+          },
+          "value": [1792974461.79, "24461.76559881223"]
+        },
+        {
+          "metric": {
+            "container": "compute",
+            "namespace": "agentplane-staging",
+            "node": "ovh-ns103656",
+            "pod": "virt-launcher-finance-agent-vm-1-wdh49"
+          },
+          "value": [1792974461.79, "15392.165784579034"]
+        },
+        {
+          "metric": {
+            "container": "alloy",
+            "namespace": "monitoring",
+            "node": "ovh-ns103656",
+            "pod": "alloy-node-cgglt"
+          },
+          "value": [1792974461.79, "15044.547771380265"]
+        },
+        {
+          "metric": {
+            "container": "virtiofs-state",
+            "namespace": "agentplane-staging",
+            "node": "ovh-ns103656",
+            "pod": "virt-launcher-finance-agent-vm-1-wdh49"
+          },
+          "value": [1792974461.79, "11743.58365958793"]
+        }
+      ]
+    }
+  },
+  "disk-busy-during-hdd": {
+    "status": "success",
+    "data": {
+      "resultType": "vector",
+      "result": [
+        {
+          "metric": {
+            "container": "node-exporter",
+            "device": "sda",
+            "endpoint": "http-metrics",
+            "instance": "10.42.0.13:9100",
+            "job": "node-exporter",
+            "namespace": "monitoring",
+            "pod": "prometheus-node-exporter-xm7c7",
+            "service": "prometheus-node-exporter"
+          },
+          "value": [1792974462.055, "0.9064833333333354"]
+        },
+        {
+          "metric": {
+            "container": "node-exporter",
+            "device": "sdb",
+            "endpoint": "http-metrics",
+            "instance": "10.42.0.13:9100",
+            "job": "node-exporter",
+            "namespace": "monitoring",
+            "pod": "prometheus-node-exporter-xm7c7",
+            "service": "prometheus-node-exporter"
+          },
+          "value": [1792974462.055, "0.182633333333312"]
+        }
+      ]
+    }
+  },
+  "disk-read-latency-during-hdd": {
+    "status": "success",
+    "data": {
+      "resultType": "vector",
+      "result": [
+        {
+          "metric": {
+            "container": "node-exporter",
+            "device": "sda",
+            "endpoint": "http-metrics",
+            "instance": "10.42.0.13:9100",
+            "job": "node-exporter",
+            "namespace": "monitoring",
+            "pod": "prometheus-node-exporter-xm7c7",
+            "service": "prometheus-node-exporter"
+          },
+          "value": [1792974462.142, "0.09604948149966258"]
+        },
+        {
+          "metric": {
+            "container": "node-exporter",
+            "device": "sdb",
+            "endpoint": "http-metrics",
+            "instance": "10.42.0.13:9100",
+            "job": "node-exporter",
+            "namespace": "monitoring",
+            "pod": "prometheus-node-exporter-xm7c7",
+            "service": "prometheus-node-exporter"
+          },
+          "value": [1792974462.142, "0.010421834061139336"]
+        }
+      ]
+    }
+  },
+  "disk-write-latency-during-hdd": {
+    "status": "success",
+    "data": {
+      "resultType": "vector",
+      "result": [
+        {
+          "metric": {
+            "container": "node-exporter",
+            "device": "sda",
+            "endpoint": "http-metrics",
+            "instance": "10.42.0.13:9100",
+            "job": "node-exporter",
+            "namespace": "monitoring",
+            "pod": "prometheus-node-exporter-xm7c7",
+            "service": "prometheus-node-exporter"
+          },
+          "value": [1792974462.214, "0.12215561193669143"]
+        },
+        {
+          "metric": {
+            "container": "node-exporter",
+            "device": "sdb",
+            "endpoint": "http-metrics",
+            "instance": "10.42.0.13:9100",
+            "job": "node-exporter",
+            "namespace": "monitoring",
+            "pod": "prometheus-node-exporter-xm7c7",
+            "service": "prometheus-node-exporter"
+          },
+          "value": [1792974462.214, "0.048687400318971924"]
+        }
+      ]
+    }
+  },
+  "vm-io-devices": {
+    "status": "success",
+    "data": {
+      "resultType": "vector",
+      "result": [
+        {
+          "metric": {
+            "device": "/dev/sda",
+            "node": "ovh-ns103656",
+            "pod": "virt-launcher-finance-agent-vm-1-wdh49"
+          },
+          "value": [1792974492.854, "104335213.50886783"]
+        },
+        {
+          "metric": {
+            "device": "/dev/sdb",
+            "node": "ovh-ns103656",
+            "pod": "virt-launcher-finance-agent-vm-1-wdh49"
+          },
+          "value": [1792974492.854, "0"]
+        },
+        {
+          "metric": {
+            "device": "/dev/dm-16",
+            "node": "ovh-ns103656",
+            "pod": "virt-launcher-finance-agent-vm-1-wdh49"
+          },
+          "value": [1792974492.854, "0"]
+        },
+        {
+          "metric": {
+            "device": "/dev/dm-1",
+            "node": "ovh-ns103656",
+            "pod": "virt-launcher-finance-agent-vm-1-wdh49"
+          },
+          "value": [1792974492.854, "0"]
+        },
+        {
+          "metric": {
+            "device": "/dev/drbd1090",
+            "node": "ovh-ns103656",
+            "pod": "virt-launcher-finance-agent-vm-1-wdh49"
+          },
+          "value": [1792974492.854, "0"]
+        },
+        {
+          "metric": {
+            "device": "/dev/dm-2",
+            "node": "ovh-ns103656",
+            "pod": "virt-launcher-finance-agent-vm-1-wdh49"
+          },
+          "value": [1792974492.854, "0"]
+        }
+      ]
+    }
+  },
+  "host-var-filesystems": {
+    "status": "success",
+    "data": {
+      "resultType": "vector",
+      "result": [
+        {
+          "metric": {
+            "__name__": "node_filesystem_size_bytes",
+            "container": "node-exporter",
+            "device": "/dev/nvme0n1p7",
+            "endpoint": "http-metrics",
+            "fstype": "xfs",
+            "instance": "10.42.0.17:9100",
+            "job": "node-exporter",
+            "mountpoint": "/var",
+            "namespace": "monitoring",
+            "pod": "prometheus-node-exporter-4nc57",
+            "service": "prometheus-node-exporter"
+          },
+          "value": [1792974773.81, "34292629504"]
+        },
+        {
+          "metric": {
+            "__name__": "node_filesystem_size_bytes",
+            "container": "node-exporter",
+            "device": "/dev/sda5",
+            "endpoint": "http-metrics",
+            "fstype": "xfs",
+            "instance": "10.42.0.13:9100",
+            "job": "node-exporter",
+            "mountpoint": "/var",
+            "namespace": "monitoring",
+            "pod": "prometheus-node-exporter-xm7c7",
+            "service": "prometheus-node-exporter"
+          },
+          "value": [1792974773.81, "34292629504"]
+        }
+      ]
+    }
+  },
+  "historical-sidekiq-original": {
+    "reads": {
+      "status": "success",
+      "data": {
+        "resultType": "vector",
+        "result": [
+          {
+            "metric": {
+              "container": "virt-handler",
+              "device": "/dev/sda",
+              "namespace": "kubevirt",
+              "pod": "virt-handler-ct6wq"
+            },
+            "value": [1792961280, "11504923.677111436"]
+          },
+          {
+            "metric": {
+              "container": "compute",
+              "device": "/dev/sda",
+              "namespace": "agentplane-staging",
+              "pod": "virt-launcher-finance-agent-vm-1-glnwv"
+            },
+            "value": [1792961280, "961190.5212285758"]
+          },
+          {
+            "metric": {
+              "container": "sidekiq",
+              "device": "/dev/sda",
+              "namespace": "gitlab-spike",
+              "pod": "gitlab-spike-sidekiq-all-in-1-v2-7c5f87986d-bnnzf"
+            },
+            "value": [1792961280, "448491.52"]
+          },
+          {
+            "metric": {
+              "container": "volume",
+              "device": "/dev/dm-2",
+              "namespace": "seaweedfs",
+              "pod": "seaweedfs-volume-hdd-piraeus-103656-0"
+            },
+            "value": [1792961280, "341427.0063778171"]
+          },
+          {
+            "metric": {
+              "container": "volume",
+              "device": "/dev/dm-1",
+              "namespace": "seaweedfs",
+              "pod": "seaweedfs-volume-hdd-piraeus-103656-0"
+            },
+            "value": [1792961280, "341427.0063778171"]
+          },
+          {
+            "metric": {
+              "container": "volume",
+              "device": "/dev/dm-4",
+              "namespace": "seaweedfs",
+              "pod": "seaweedfs-volume-hdd-piraeus-103656-0"
+            },
+            "value": [1792961280, "341427.0063778171"]
+          },
+          {
+            "metric": {
+              "container": "volume",
+              "device": "/dev/drbd1039",
+              "namespace": "seaweedfs",
+              "pod": "seaweedfs-volume-hdd-piraeus-103656-0"
+            },
+            "value": [1792961280, "341427.0063778171"]
+          },
+          {
+            "metric": {
+              "container": "volume",
+              "device": "/dev/sdb",
+              "namespace": "seaweedfs",
+              "pod": "seaweedfs-volume-hdd-piraeus-103656-0"
+            },
+            "value": [1792961280, "341427.0063778171"]
+          }
+        ]
+      }
+    },
+    "writes": {
+      "status": "success",
+      "data": {
+        "resultType": "vector",
+        "result": [
+          {
+            "metric": {
+              "container": "manager",
+              "device": "/dev/sda",
+              "namespace": "flux-system",
+              "pod": "source-controller-fd785cbbb-h7xjh"
+            },
+            "value": [1792961280, "2214115.057798119"]
+          },
+          {
+            "metric": {
+              "container": "loki",
+              "device": "/dev/dm-2",
+              "namespace": "loki",
+              "pod": "loki-write-1"
+            },
+            "value": [1792961280, "216942.36444444445"]
+          },
+          {
+            "metric": {
+              "container": "loki",
+              "device": "/dev/drbd1055",
+              "namespace": "loki",
+              "pod": "loki-write-1"
+            },
+            "value": [1792961280, "216942.36444444445"]
+          },
+          {
+            "metric": {
+              "container": "loki",
+              "device": "/dev/dm-1",
+              "namespace": "loki",
+              "pod": "loki-write-1"
+            },
+            "value": [1792961280, "216942.36444444445"]
+          },
+          {
+            "metric": {
+              "container": "loki",
+              "device": "/dev/dm-11",
+              "namespace": "loki",
+              "pod": "loki-write-1"
+            },
+            "value": [1792961280, "216942.36444444445"]
+          },
+          {
+            "metric": {
+              "container": "loki",
+              "device": "/dev/sdb",
+              "namespace": "loki",
+              "pod": "loki-write-1"
+            },
+            "value": [1792961280, "216942.36444444445"]
+          },
+          {
+            "metric": {
+              "container": "volume",
+              "device": "/dev/drbd1039",
+              "namespace": "seaweedfs",
+              "pod": "seaweedfs-volume-hdd-piraeus-103656-0"
+            },
+            "value": [1792961280, "206020.74711571183"]
+          },
+          {
+            "metric": {
+              "container": "volume",
+              "device": "/dev/sdb",
+              "namespace": "seaweedfs",
+              "pod": "seaweedfs-volume-hdd-piraeus-103656-0"
+            },
+            "value": [1792961280, "206020.74711571183"]
+          }
+        ]
+      }
+    }
+  },
+  "historical-puma-original": {
+    "reads": {
+      "status": "success",
+      "data": {
+        "resultType": "vector",
+        "result": [
+          {
+            "metric": {
+              "container": "volume",
+              "device": "/dev/sdb",
+              "namespace": "seaweedfs",
+              "pod": "seaweedfs-volume-hdd-piraeus-103656-0"
+            },
+            "value": [1792967400, "1367600.4836599145"]
+          },
+          {
+            "metric": {
+              "container": "volume",
+              "device": "/dev/dm-1",
+              "namespace": "seaweedfs",
+              "pod": "seaweedfs-volume-hdd-piraeus-103656-0"
+            },
+            "value": [1792967400, "1367600.4836599145"]
+          },
+          {
+            "metric": {
+              "container": "volume",
+              "device": "/dev/dm-2",
+              "namespace": "seaweedfs",
+              "pod": "seaweedfs-volume-hdd-piraeus-103656-0"
+            },
+            "value": [1792967400, "1367600.4836599145"]
+          },
+          {
+            "metric": {
+              "container": "volume",
+              "device": "/dev/drbd1039",
+              "namespace": "seaweedfs",
+              "pod": "seaweedfs-volume-hdd-piraeus-103656-0"
+            },
+            "value": [1792967400, "1367600.4836599145"]
+          },
+          {
+            "metric": {
+              "container": "volume",
+              "device": "/dev/dm-4",
+              "namespace": "seaweedfs",
+              "pod": "seaweedfs-volume-hdd-piraeus-103656-0"
+            },
+            "value": [1792967400, "1367600.4836599145"]
+          },
+          {
+            "metric": {
+              "container": "webservice",
+              "device": "/dev/sda",
+              "namespace": "gitlab-spike",
+              "pod": "gitlab-spike-webservice-default-6cd7fd8955-clkf4"
+            },
+            "value": [1792967400, "644237.8672901085"]
+          },
+          {
+            "metric": {
+              "container": "compute",
+              "device": "/dev/sda",
+              "namespace": "agentplane-staging",
+              "pod": "virt-launcher-finance-agent-vm-1-x2gtp"
+            },
+            "value": [1792967400, "29038.163746728853"]
+          },
+          {
+            "metric": {
+              "container": "lvm-collector",
+              "device": "/dev/sdb",
+              "namespace": "piraeus-datastore",
+              "pod": "piraeus-lvm-metrics-ovh-ns103656-vfqrf"
+            },
+            "value": [1792967400, "24949.831644134618"]
+          }
+        ]
+      }
+    },
+    "writes": {
+      "status": "success",
+      "data": {
+        "resultType": "vector",
+        "result": [
+          {
+            "metric": {
+              "container": "manager",
+              "device": "/dev/sda",
+              "namespace": "flux-system",
+              "pod": "source-controller-fd785cbbb-h7xjh"
+            },
+            "value": [1792967400, "2088539.2794466813"]
+          },
+          {
+            "metric": {
+              "container": "volume",
+              "device": "/dev/sdb",
+              "namespace": "seaweedfs",
+              "pod": "seaweedfs-volume-hdd-piraeus-103656-0"
+            },
+            "value": [1792967400, "1609891.5740480018"]
+          },
+          {
+            "metric": {
+              "container": "volume",
+              "device": "/dev/dm-1",
+              "namespace": "seaweedfs",
+              "pod": "seaweedfs-volume-hdd-piraeus-103656-0"
+            },
+            "value": [1792967400, "1609891.5740480018"]
+          },
+          {
+            "metric": {
+              "container": "volume",
+              "device": "/dev/drbd1039",
+              "namespace": "seaweedfs",
+              "pod": "seaweedfs-volume-hdd-piraeus-103656-0"
+            },
+            "value": [1792967400, "1609891.5740480018"]
+          },
+          {
+            "metric": {
+              "container": "volume",
+              "device": "/dev/dm-2",
+              "namespace": "seaweedfs",
+              "pod": "seaweedfs-volume-hdd-piraeus-103656-0"
+            },
+            "value": [1792967400, "1609891.5740480018"]
+          },
+          {
+            "metric": {
+              "container": "volume",
+              "device": "/dev/dm-4",
+              "namespace": "seaweedfs",
+              "pod": "seaweedfs-volume-hdd-piraeus-103656-0"
+            },
+            "value": [1792967400, "1609891.5740480018"]
+          },
+          {
+            "metric": {
+              "container": "loki",
+              "device": "/dev/sdb",
+              "namespace": "loki",
+              "pod": "loki-write-1"
+            },
+            "value": [1792967400, "423174.9467035408"]
+          },
+          {
+            "metric": {
+              "container": "loki",
+              "device": "/dev/dm-2",
+              "namespace": "loki",
+              "pod": "loki-write-1"
+            },
+            "value": [1792967400, "423174.9467035408"]
+          }
+        ]
+      }
+    }
+  },
+  "historical-puma-startup-probe": {
+    "reads": {
+      "status": "success",
+      "data": {
+        "resultType": "vector",
+        "result": [
+          {
+            "metric": {
+              "container": "volume",
+              "device": "/dev/dm-2",
+              "namespace": "seaweedfs",
+              "pod": "seaweedfs-volume-hdd-piraeus-103711-0"
+            },
+            "value": [1792970400, "7974778.830136976"]
+          },
+          {
+            "metric": {
+              "container": "volume",
+              "device": "/dev/dm-1",
+              "namespace": "seaweedfs",
+              "pod": "seaweedfs-volume-hdd-piraeus-103711-0"
+            },
+            "value": [1792970400, "7974778.830136976"]
+          },
+          {
+            "metric": {
+              "container": "volume",
+              "device": "/dev/sdb",
+              "namespace": "seaweedfs",
+              "pod": "seaweedfs-volume-hdd-piraeus-103711-0"
+            },
+            "value": [1792970400, "7974778.830136976"]
+          },
+          {
+            "metric": {
+              "container": "volume",
+              "device": "/dev/dm-4",
+              "namespace": "seaweedfs",
+              "pod": "seaweedfs-volume-hdd-piraeus-103711-0"
+            },
+            "value": [1792970400, "7974778.830136976"]
+          },
+          {
+            "metric": {
+              "container": "volume",
+              "device": "/dev/drbd1024",
+              "namespace": "seaweedfs",
+              "pod": "seaweedfs-volume-hdd-piraeus-103711-0"
+            },
+            "value": [1792970400, "7974778.830136976"]
+          },
+          {
+            "metric": {
+              "container": "linstor-satellite",
+              "namespace": "piraeus-datastore",
+              "pod": "linstor-satellite.ovh-ns103711-5czqd"
+            },
+            "value": [1792970400, "702952.0672969426"]
+          },
+          {
+            "metric": {
+              "container": "webservice",
+              "device": "/dev/sda",
+              "namespace": "gitlab-spike",
+              "pod": "gitlab-spike-webservice-default-d74cd56bc-6p4r2"
+            },
+            "value": [1792970400, "641770.7521553832"]
+          },
+          {
+            "metric": {
+              "container": "linstor-satellite",
+              "device": "/dev/sdb",
+              "namespace": "piraeus-datastore",
+              "pod": "linstor-satellite.ovh-ns103711-5czqd"
+            },
+            "value": [1792970400, "30625.730174307213"]
+          }
+        ]
+      }
+    },
+    "writes": {
+      "status": "success",
+      "data": {
+        "resultType": "vector",
+        "result": [
+          {
+            "metric": {
+              "container": "clickhouse",
+              "device": "/dev/drbd1057",
+              "namespace": "clickhouse",
+              "pod": "chi-clickhouse-default-0-0-0"
+            },
+            "value": [1792970400, "669345.0196263968"]
+          },
+          {
+            "metric": {
+              "container": "clickhouse",
+              "device": "/dev/dm-2",
+              "namespace": "clickhouse",
+              "pod": "chi-clickhouse-default-0-0-0"
+            },
+            "value": [1792970400, "669345.0196263968"]
+          },
+          {
+            "metric": {
+              "container": "clickhouse",
+              "device": "/dev/dm-1",
+              "namespace": "clickhouse",
+              "pod": "chi-clickhouse-default-0-0-0"
+            },
+            "value": [1792970400, "669345.0196263968"]
+          },
+          {
+            "metric": {
+              "container": "clickhouse",
+              "device": "/dev/dm-5",
+              "namespace": "clickhouse",
+              "pod": "chi-clickhouse-default-0-0-0"
+            },
+            "value": [1792970400, "669345.0196263968"]
+          },
+          {
+            "metric": {
+              "container": "clickhouse",
+              "device": "/dev/sdb",
+              "namespace": "clickhouse",
+              "pod": "chi-clickhouse-default-0-0-0"
+            },
+            "value": [1792970400, "669345.0196263968"]
+          },
+          {
+            "metric": {
+              "container": "loki",
+              "device": "/dev/dm-9",
+              "namespace": "loki",
+              "pod": "loki-write-0"
+            },
+            "value": [1792970400, "443353.08803526236"]
+          },
+          {
+            "metric": {
+              "container": "loki",
+              "device": "/dev/dm-1",
+              "namespace": "loki",
+              "pod": "loki-write-0"
+            },
+            "value": [1792970400, "443353.08803526236"]
+          },
+          {
+            "metric": {
+              "container": "loki",
+              "device": "/dev/dm-2",
+              "namespace": "loki",
+              "pod": "loki-write-0"
+            },
+            "value": [1792970400, "443353.08803526236"]
+          }
+        ]
+      }
+    }
+  }
+}

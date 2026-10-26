@@ -1,0 +1,41 @@
+==================================
+  Mode: wall(1000)
+  Samples: 72648 (7.39% miss rate)
+  GC: 11649 (16.03%)
+==================================
+     TOTAL    (pct)     SAMPLES    (pct)     FRAME
+      9533  (13.1%)        9533  (13.1%)     (marking)
+      3970   (5.5%)        3970   (5.5%)     PG::Connection#exec_params
+      2824   (3.9%)        2818   (3.9%)     Set#add
+      2672   (3.7%)        2672   (3.7%)     RubyVM::InstructionSequence.load_from_binary
+      2113   (2.9%)        2113   (2.9%)     (sweeping)
+     60751  (83.6%)        2034   (2.8%)     Kernel.require
+      1543   (2.1%)        1543   (2.1%)     Symbol#to_s
+      1101   (1.5%)        1076   (1.5%)     Hash#delete
+      8638  (11.9%)         972   (1.3%)     Module#class_eval
+     60508  (83.3%)         970   (1.3%)     Array#each
+      3779   (5.2%)         961   (1.3%)     Bootsnap::CompileCache::Native.fetch
+       970   (1.3%)         954   (1.3%)     Module#define_method
+      2585   (3.6%)         852   (1.2%)     Mustermann::AST::Translator#decorator_for
+      1735   (2.4%)         844   (1.2%)     Enumerable#map
+      2662   (3.7%)         784   (1.1%)     Enumerable#inject
+       783   (1.1%)         783   (1.1%)     Module#public_instance_methods
+      1834   (2.5%)         752   (1.0%)     Array#map!
+      5534   (7.6%)         657   (0.9%)     Enumerable#each_entry
+      1042   (1.4%)         656   (0.9%)     Module#module_eval
+       574   (0.8%)         574   (0.8%)     Regexp#initialize
+       573   (0.8%)         562   (0.8%)     Array#-
+       554   (0.8%)         554   (0.8%)     File.directory?
+       563   (0.8%)         534   (0.7%)     Marshal.load
+       735   (1.0%)         521   (0.7%)     ActionDispatch::Journey::Path::Pattern#offsets
+      8725  (12.0%)         519   (0.7%)     Array#map
+       748   (1.0%)         503   (0.7%)     ActionDispatch::Journey::Path::Pattern::AnchoredRegexp#accept
+       479   (0.7%)         479   (0.7%)     Module#ancestors
+       473   (0.7%)         473   (0.7%)     Regexp#to_s
+     11806  (16.3%)         420   (0.6%)     Class#new
+       406   (0.6%)         405   (0.6%)     String#sub!
+       832   (1.1%)         398   (0.5%)     Psych::Parser#_native_parse
+       510   (0.7%)         376   (0.5%)     String#gsub!
+       363   (0.5%)         363   (0.5%)     Regexp#match?
+       362   (0.5%)         362   (0.5%)     Module#append_features
+       398   (0.5%)         326   (0.4%)     String#gsub

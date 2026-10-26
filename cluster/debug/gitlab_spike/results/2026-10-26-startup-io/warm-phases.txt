@@ -1,0 +1,103 @@
+{"version":1.2,"mode":"wall","interval":1000,"samples":77460,"gc_samples":10562,"missed_samples":6768,"metadata":{}}
+TOP INCLUSIVE FRAMES (overlap; do not add)
+66783 0 block in <main> /tmp/profile-puma.rb:8
+66783 0 StackProf.run <cfunc>:
+66783 0 <main> /tmp/profile-puma.rb:
+66620 2293 Kernel.require <cfunc>:
+66620 40 block (2 levels) in replace_require /usr/lib/ruby/3.3.0/bundled_gems.rb:61
+66438 1101 Array#each <cfunc>:
+65962 0 Puma::Configuration#load_rackup /srv/gitlab/vendor/bundle/ruby/3.3.0/gems/puma-8.0.2/lib/puma/configuration.rb:469
+65962 0 Puma::Configuration#app /srv/gitlab/vendor/bundle/ruby/3.3.0/gems/puma-8.0.2/lib/puma/configuration.rb:322
+65960 0 Rack::Builder.parse_file /srv/gitlab/vendor/bundle/ruby/3.3.0/gems/rack-2.2.23/lib/rack/builder.rb:64
+65958 0 Rack::Builder.load_file /srv/gitlab/vendor/bundle/ruby/3.3.0/gems/rack-2.2.23/lib/rack/builder.rb:93
+65958 0 Rack::Builder.new_from_string /srv/gitlab/vendor/bundle/ruby/3.3.0/gems/rack-2.2.23/lib/rack/builder.rb:112
+65790 37 Kernel#eval <cfunc>:
+65788 0 block in <main> /srv/gitlab/config.ru:1
+65788 0 <top (required)> /srv/gitlab/config/environment.rb:
+62141 0 Rails::Initializable#run_initializers /srv/gitlab/vendor/bundle/ruby/3.3.0/gems/railties-7.2.3.1/lib/rails/initializable.rb:58
+62141 0 Rails::Application#initialize! /srv/gitlab/vendor/bundle/ruby/3.3.0/gems/railties-7.2.3.1/lib/rails/application.rb:433
+62138 1 Method#call <cfunc>:
+62138 1 TSort.each_strongly_connected_component /srv/gitlab/vendor/bundle/ruby/3.3.0/gems/tsort-0.2.0/lib/tsort.rb:345
+62138 0 Array#each <cfunc>:
+62138 0 TSort#tsort_each /srv/gitlab/vendor/bundle/ruby/3.3.0/gems/tsort-0.2.0/lib/tsort.rb:205
+62138 0 TSort.tsort_each /srv/gitlab/vendor/bundle/ruby/3.3.0/gems/tsort-0.2.0/lib/tsort.rb:226
+62137 4 TSort.each_strongly_connected_component_from /srv/gitlab/vendor/bundle/ruby/3.3.0/gems/tsort-0.2.0/lib/tsort.rb:411
+62086 3 BasicObject#instance_exec <cfunc>:
+62082 1 Rails::Initializable::Initializer#run /srv/gitlab/vendor/bundle/ruby/3.3.0/gems/railties-7.2.3.1/lib/rails/initializable.rb:31
+62078 25 Rails::Initializable::Collection#tsort_each_child /srv/gitlab/vendor/bundle/ruby/3.3.0/gems/railties-7.2.3.1/lib/rails/initializable.rb:49
+32616 0 block in <module:Finisher> /srv/gitlab/vendor/bundle/ruby/3.3.0/gems/railties-7.2.3.1/lib/rails/application/finisher.rb:77
+27026 134 Thread::Mutex#synchronize <cfunc>:
+24768 43 Kernel#require /srv/gitlab/vendor/bundle/ruby/3.3.0/gems/zeitwerk-2.6.18/lib/zeitwerk/kernel.rb:23
+24304 51 Kernel#require /srv/gitlab/vendor/bundle/ruby/3.3.0/gems/bootsnap-1.26.0/lib/bootsnap/load_path_cache/core_ext/kernel_require.rb:8
+19723 143 Hash#each <cfunc>:
+18546 61 Zeitwerk::Loader::Helpers#ls /srv/gitlab/vendor/bundle/ruby/3.3.0/gems/zeitwerk-2.6.18/lib/zeitwerk/loader/helpers.rb:15
+17865 0 Zeitwerk::Loader::EagerLoad#eager_load /srv/gitlab/vendor/bundle/ruby/3.3.0/gems/zeitwerk-2.6.18/lib/zeitwerk/loader/eager_load.rb:9
+17862 27 Zeitwerk::Loader::EagerLoad#actual_eager_load_dir /srv/gitlab/vendor/bundle/ruby/3.3.0/gems/zeitwerk-2.6.18/lib/zeitwerk/loader/eager_load.rb:160
+17817 0 Zeitwerk::Loader.eager_load_all /srv/gitlab/vendor/bundle/ruby/3.3.0/gems/zeitwerk-2.6.18/lib/zeitwerk/loader.rb:410
+17559 112 Module#const_get <cfunc>:
+16527 2 Zeitwerk::Cref#get /srv/gitlab/vendor/bundle/ruby/3.3.0/gems/zeitwerk-2.6.18/lib/zeitwerk/cref.rb:90
+16126 0 ActiveSupport::Notifications.instrument /srv/gitlab/vendor/bundle/ruby/3.3.0/gems/activesupport-7.2.3.1/lib/active_support/notifications.rb:208
+14596 0 Rails::Engine#load_config_initializer /srv/gitlab/vendor/bundle/ruby/3.3.0/gems/railties-7.2.3.1/lib/rails/engine.rb:687
+14592 0 block in <class:Engine> /srv/gitlab/vendor/bundle/ruby/3.3.0/gems/railties-7.2.3.1/lib/rails/engine.rb:640
+14591 0 block (2 levels) in <class:Engine> /srv/gitlab/vendor/bundle/ruby/3.3.0/gems/railties-7.2.3.1/lib/rails/engine.rb:641
+12833 1 AbstractController.eager_load! /srv/gitlab/vendor/bundle/ruby/3.3.0/gems/actionpack-7.2.3.1/lib/abstract_controller.rb:27
+12639 0 AbstractController::Base.eager_load! /srv/gitlab/vendor/bundle/ruby/3.3.0/gems/actionpack-7.2.3.1/lib/abstract_controller/base.rb:130
+12306 7 ActionView::Rendering::ClassMethods#eager_load! /srv/gitlab/vendor/bundle/ruby/3.3.0/gems/actionview-7.2.3.1/lib/action_view/rendering.rb:76
+12201 0 Kernel#load <cfunc>:
+12159 4 ActionController::Flash::ClassMethods#action_methods /srv/gitlab/vendor/bundle/ruby/3.3.0/gems/actionpack-7.2.3.1/lib/action_controller/metal/flash.rb:47
+12139 8 AbstractController::UrlFor::ClassMethods#action_methods /srv/gitlab/vendor/bundle/ruby/3.3.0/gems/actionpack-7.2.3.1/lib/abstract_controller/url_for.rb:28
+11174 71 BasicObject#instance_eval <cfunc>:
+10565 1 (garbage collection) :
+10441 0 <main> /srv/gitlab/config/initializers/zz_metrics.rb:1
+10437 0 Gitlab::Metrics.initialize_slis! /srv/gitlab/lib/gitlab/metrics.rb:105
+10321 0 Gitlab::Metrics::RequestsRackMiddleware.initialize_slis! /srv/gitlab/lib/gitlab/metrics/requests_rack_middleware.rb:50
+10302 17 Gitlab::Metrics::RailsSlis.initialize_request_slis! /srv/gitlab/lib/gitlab/metrics/rails_slis.rb:7
+10046 394 Class#new <cfunc>:
+9405 0 ActiveSupport::LazyLoadHooks#with_execution_control /srv/gitlab/vendor/bundle/ruby/3.3.0/gems/activesupport-7.2.3.1/lib/active_support/lazy_load_hooks.rb:83
+9405 1 ActiveSupport::LazyLoadHooks#execute_hook /srv/gitlab/vendor/bundle/ruby/3.3.0/gems/activesupport-7.2.3.1/lib/active_support/lazy_load_hooks.rb:91
+9357 246 Hash#each_key <cfunc>:
+9357 0 Gitlab::Metrics::RailsSlis.possible_api_labels /srv/gitlab/lib/gitlab/metrics/rails_slis.rb:63
+9357 0 Gitlab::Metrics::RailsSlis.possible_request_labels /srv/gitlab/lib/gitlab/metrics/rails_slis.rb:47
+9354 3 Gitlab::Metrics::RailsSlis.all_api_labels /srv/gitlab/lib/gitlab/metrics/rails_slis.rb:75
+9351 0 ActiveSupport::LazyLoadHooks#run_load_hooks /srv/gitlab/vendor/bundle/ruby/3.3.0/gems/activesupport-7.2.3.1/lib/active_support/lazy_load_hooks.rb:75
+9345 0 Gitlab::RequestEndpoints.all_api_endpoints /srv/gitlab/lib/gitlab/request_endpoints.rb:6
+9190 961 Module#class_eval <cfunc>:
+9095 1 Set#each /usr/lib/ruby/3.3.0/set.rb:499
+8306 8306 (marking) :
+7830 517 Array#map <cfunc>:
+APPLICATION INITIALIZER FRAMES (overlap; do not add)
+10441 0 <main> /srv/gitlab/config/initializers/zz_metrics.rb:1
+6777 0 block in <main> /srv/gitlab/config/initializers/postgres_partitioning.rb:167
+6390 6 InjectEnterpriseEditionModule#each_extension_for /srv/gitlab/config/initializers/0_inject_enterprise_edition_module.rb:52
+6382 8 InjectEnterpriseEditionModule#prepend_mod_with /srv/gitlab/config/initializers/0_inject_enterprise_edition_module.rb:6
+5849 2 InjectEnterpriseEditionModule#prepend_module /srv/gitlab/config/initializers/0_inject_enterprise_edition_module.rb:44
+4854 5 GrapeRouterPatternPatch#initialize /srv/gitlab/config/initializers/grape_router_pattern_patch.rb:29
+2761 1 InjectEnterpriseEditionModule#prepend_mod /srv/gitlab/config/initializers/0_inject_enterprise_edition_module.rb:24
+1363 0 <main> /srv/gitlab/config/initializers/internal_events.rb:1
+1128 0 <main> /srv/gitlab/config/initializers/7_prometheus_metrics.rb:1
+594 1 block in <main> /srv/gitlab/config/initializers/postgres_partitioning.rb:9
+562 3 InjectEnterpriseEditionModule#const_get_maybe_false /srv/gitlab/config/initializers/0_inject_enterprise_edition_module.rb:64
+433 0 <main> /srv/gitlab/config/initializers/devise_dynamic_password_length_validation.rb:1
+375 0 <main> /srv/gitlab/config/initializers/tanuki_emoji.rb:1
+167 0 <main> /srv/gitlab/config/initializers/0_inject_feature_flags.rb:1
+164 0 LocalCacheRegistryCleanupWithEnsure#call /srv/gitlab/config/initializers/fix_local_cache_middleware.rb:9
+136 0 <main> /srv/gitlab/config/initializers/load_balancing.rb:1
+128 0 block (2 levels) in <main> /srv/gitlab/config/initializers/8_devise.rb:171
+101 0 StateMachinesMachineConfigurationPatch#initial_state= /srv/gitlab/config/initializers/state_machines_patch.rb:11
+71 0 ActionDispatch::Journey::Router#find_routes /srv/gitlab/config/initializers/action_dispatch_journey_router.rb:11
+58 0 <main> /srv/gitlab/config/initializers/gitlab_database_data_isolation.rb:1
+50 0 <main> /srv/gitlab/config/initializers/1_postgresql_only.rb:1
+47 0 ActiveRecord::Relation#build_arel /srv/gitlab/config/initializers/postgresql_cte.rb:102
+42 0 <main> /srv/gitlab/config/initializers/1_database_single_connection.rb:1
+39 1 <main> /srv/gitlab/config/initializers/1_settings.rb:1
+39 0 <main> /srv/gitlab/config/initializers/declarative_policy.rb:1
+39 0 block in <main> /srv/gitlab/config/initializers/declarative_policy.rb:28
+36 0 <main> /srv/gitlab/config/initializers/fill_shards.rb:1
+29 0 PostgreSQLAdapterCustomTypes#initialize_type_map /srv/gitlab/config/initializers/0_postgresql_types.rb:7
+26 0 <main> /srv/gitlab/config/initializers/7_redis.rb:1
+23 0 <main> /srv/gitlab/config/initializers/action_mailer_hooks.rb:1
+22 0 <main> /srv/gitlab/config/initializers/session_store.rb:1
+20 0 <main> /srv/gitlab/config/initializers/grape_validators.rb:1
+19 0 block in <main> /srv/gitlab/config/initializers/7_redis.rb:46
+15 0 <main> /srv/gitlab/config/initializers/sentry.rb:1
+13 0 <main> /srv/gitlab/config/initializers/asset_proxy_settings.rb:1
