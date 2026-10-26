@@ -1,0 +1,438 @@
+{
+  "helm_generation": 6,
+  "helm_conditions": [
+    {
+      "lastTransitionTime": "2026-10-25T23:26:46Z",
+      "message": "Helm upgrade succeeded for release gitlab-spike/gitlab-spike.v14 with chart gitlab@10.5.1",
+      "observedGeneration": 6,
+      "reason": "UpgradeSucceeded",
+      "status": "True",
+      "type": "Ready"
+    },
+    {
+      "lastTransitionTime": "2026-10-25T23:26:46Z",
+      "message": "Helm upgrade succeeded for release gitlab-spike/gitlab-spike.v14 with chart gitlab@10.5.1",
+      "observedGeneration": 6,
+      "reason": "UpgradeSucceeded",
+      "status": "True",
+      "type": "Released"
+    }
+  ],
+  "helm_history": [
+    {
+      "action": "upgrade",
+      "apiVersion": "v2",
+      "appVersion": "v19.5.1",
+      "chartName": "gitlab",
+      "chartVersion": "10.5.1",
+      "configDigest": "sha256:099861ed747ba7ec1b561d40ca90f7e676fd95da140b367d9aba3f2ec4a0c4bc",
+      "digest": "sha256:d2dddaed180809e6b7b4427b5181a9b24380bd533458d2a78dfa234c7b77aa8e",
+      "firstDeployed": "2026-10-25T06:53:32Z",
+      "lastDeployed": "2026-10-25T23:15:57Z",
+      "name": "gitlab-spike",
+      "namespace": "gitlab-spike",
+      "status": "deployed",
+      "version": 14
+    },
+    {
+      "apiVersion": "v2",
+      "appVersion": "v19.5.1",
+      "chartName": "gitlab",
+      "chartVersion": "10.5.1",
+      "configDigest": "sha256:bad8a492fea986775784c13a34b3a3ef8e8e2fbac707342ac067b0403baec718",
+      "digest": "sha256:82153d414962ac7d3a9d95f229f0fff99cb218825253b5f2b7c968894b9db5ca",
+      "firstDeployed": "2026-10-25T06:53:32Z",
+      "lastDeployed": "2026-10-25T22:57:01Z",
+      "name": "gitlab-spike",
+      "namespace": "gitlab-spike",
+      "status": "superseded",
+      "version": 13
+    }
+  ],
+  "flux_revision": "latest@sha256:770912e9fa60a947e714ef5f07192bf2fd519f2e8cdbedb81d9e796eee9dd111",
+  "flux_conditions": [
+    {
+      "lastTransitionTime": "2026-10-25T23:56:47Z",
+      "message": "Applied revision: latest@sha256:770912e9fa60a947e714ef5f07192bf2fd519f2e8cdbedb81d9e796eee9dd111",
+      "observedGeneration": 1,
+      "reason": "ReconciliationSucceeded",
+      "status": "True",
+      "type": "Ready"
+    },
+    {
+      "lastTransitionTime": "2026-10-25T23:56:47Z",
+      "message": "Health check passed in 213.050861ms",
+      "observedGeneration": 1,
+      "reason": "Succeeded",
+      "status": "True",
+      "type": "Healthy"
+    }
+  ],
+  "pods": [
+    {
+      "name": "gitlab-spike-webservice-default-d74cd56bc-6p4r2",
+      "created": "2026-10-25T23:16:48Z",
+      "node": "ovh-ns103711",
+      "conditions": [
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-10-25T23:16:51Z",
+          "observedGeneration": 1,
+          "status": "True",
+          "type": "PodReadyToStartContainers"
+        },
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-10-25T23:17:05Z",
+          "observedGeneration": 1,
+          "status": "True",
+          "type": "Initialized"
+        },
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-10-25T23:25:19Z",
+          "observedGeneration": 1,
+          "status": "True",
+          "type": "Ready"
+        },
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-10-25T23:25:19Z",
+          "observedGeneration": 1,
+          "status": "True",
+          "type": "ContainersReady"
+        },
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-10-25T23:16:48Z",
+          "observedGeneration": 1,
+          "status": "True",
+          "type": "PodScheduled"
+        }
+      ],
+      "containers": [
+        {
+          "name": "gitlab-workhorse",
+          "ready": true,
+          "restartCount": 0,
+          "state": {
+            "running": {
+              "startedAt": "2026-10-25T23:17:06Z"
+            }
+          },
+          "lastState": {}
+        },
+        {
+          "name": "webservice",
+          "ready": true,
+          "restartCount": 1,
+          "state": {
+            "running": {
+              "startedAt": "2026-10-25T23:22:35Z"
+            }
+          },
+          "lastState": {
+            "terminated": {
+              "containerID": "containerd://1c27ed0df9691a10cba0ac2ddad59303a6d4c4d96437a2b2d04c506080ebb550",
+              "exitCode": 137,
+              "finishedAt": "2026-10-25T23:22:34Z",
+              "reason": "Error",
+              "startedAt": "2026-10-25T23:17:06Z"
+            }
+          }
+        }
+      ],
+      "puma_env": {
+        "WORKER_PROCESSES": "1",
+        "PUMA_THREADS_MIN": "4",
+        "PUMA_THREADS_MAX": "4"
+      },
+      "native_puma_logs": [
+        {
+          "timestamp": "2026-10-25T23:22:41.086Z",
+          "pid": 25,
+          "message": "*  Min threads: 4"
+        },
+        {
+          "timestamp": "2026-10-25T23:22:41.086Z",
+          "pid": 25,
+          "message": "*  Max threads: 4"
+        },
+        {
+          "timestamp": "2026-10-25T23:22:41.086Z",
+          "pid": 25,
+          "message": "*      Workers: 1"
+        },
+        {
+          "component": "gitlab",
+          "subcomponent": "puma.stdout",
+          "timestamp": "2026-10-25T23:25:15.787Z",
+          "pid": 25,
+          "message": "- Worker 0 (PID: 87) booted in 1.08s, phase: 0"
+        }
+      ],
+      "process_memory": [
+        {
+          "pid": 25,
+          "role": "puma_parent",
+          "memory_kib": {
+            "Rss": 1462580,
+            "Pss": 1100146,
+            "Pss_Anon": 1083154,
+            "Pss_File": 15432,
+            "Pss_Shmem": 1560,
+            "Shared_Clean": 45608,
+            "Shared_Dirty": 663796,
+            "Private_Clean": 360,
+            "Private_Dirty": 752816
+          }
+        },
+        {
+          "pid": 28,
+          "role": "logger",
+          "memory_kib": {
+            "Rss": 8716,
+            "Pss": 7730,
+            "Pss_Anon": 6752,
+            "Pss_File": 978,
+            "Pss_Shmem": 0,
+            "Shared_Clean": 1964,
+            "Shared_Dirty": 0,
+            "Private_Clean": 0,
+            "Private_Dirty": 6752
+          }
+        },
+        {
+          "pid": 83,
+          "role": "metrics_server",
+          "memory_kib": {
+            "Rss": 67212,
+            "Pss": 52651,
+            "Pss_Anon": 49584,
+            "Pss_File": 3051,
+            "Pss_Shmem": 16,
+            "Shared_Clean": 17568,
+            "Shared_Dirty": 0,
+            "Private_Clean": 56,
+            "Private_Dirty": 49588
+          }
+        },
+        {
+          "pid": 87,
+          "role": "puma_worker",
+          "memory_kib": {
+            "Rss": 1540308,
+            "Pss": 1187600,
+            "Pss_Anon": 1177794,
+            "Pss_File": 8022,
+            "Pss_Shmem": 1784,
+            "Shared_Clean": 28636,
+            "Shared_Dirty": 663788,
+            "Private_Clean": 324,
+            "Private_Dirty": 847560
+          }
+        }
+      ]
+    },
+    {
+      "name": "gitlab-spike-webservice-default-d74cd56bc-9h8vz",
+      "created": "2026-10-25T23:25:19Z",
+      "node": "ovh-ns102453",
+      "conditions": [
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-10-25T23:25:20Z",
+          "observedGeneration": 1,
+          "status": "True",
+          "type": "PodReadyToStartContainers"
+        },
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-10-25T23:25:28Z",
+          "observedGeneration": 1,
+          "status": "True",
+          "type": "Initialized"
+        },
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-10-25T23:26:44Z",
+          "observedGeneration": 1,
+          "status": "True",
+          "type": "Ready"
+        },
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-10-25T23:26:44Z",
+          "observedGeneration": 1,
+          "status": "True",
+          "type": "ContainersReady"
+        },
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-10-25T23:25:19Z",
+          "observedGeneration": 1,
+          "status": "True",
+          "type": "PodScheduled"
+        }
+      ],
+      "containers": [
+        {
+          "name": "gitlab-workhorse",
+          "ready": true,
+          "restartCount": 0,
+          "state": {
+            "running": {
+              "startedAt": "2026-10-25T23:25:29Z"
+            }
+          },
+          "lastState": {}
+        },
+        {
+          "name": "webservice",
+          "ready": true,
+          "restartCount": 0,
+          "state": {
+            "running": {
+              "startedAt": "2026-10-25T23:25:28Z"
+            }
+          },
+          "lastState": {}
+        }
+      ],
+      "puma_env": {
+        "WORKER_PROCESSES": "1",
+        "PUMA_THREADS_MIN": "4",
+        "PUMA_THREADS_MAX": "4"
+      },
+      "native_puma_logs": [
+        {
+          "timestamp": "2026-10-25T23:25:33.219Z",
+          "pid": 25,
+          "message": "*  Min threads: 4"
+        },
+        {
+          "timestamp": "2026-10-25T23:25:33.219Z",
+          "pid": 25,
+          "message": "*  Max threads: 4"
+        },
+        {
+          "timestamp": "2026-10-25T23:25:33.219Z",
+          "pid": 25,
+          "message": "*      Workers: 1"
+        },
+        {
+          "component": "gitlab",
+          "subcomponent": "puma.stdout",
+          "timestamp": "2026-10-25T23:26:44.869Z",
+          "pid": 25,
+          "message": "- Worker 0 (PID: 87) booted in 0.75s, phase: 0"
+        }
+      ],
+      "process_memory": [
+        {
+          "pid": 25,
+          "role": "puma_parent",
+          "memory_kib": {
+            "Rss": 1473320,
+            "Pss": 1112379,
+            "Pss_Anon": 1095806,
+            "Pss_File": 15009,
+            "Pss_Shmem": 1564,
+            "Shared_Clean": 45492,
+            "Shared_Dirty": 660340,
+            "Private_Clean": 312,
+            "Private_Dirty": 767176
+          }
+        },
+        {
+          "pid": 28,
+          "role": "logger",
+          "memory_kib": {
+            "Rss": 8892,
+            "Pss": 7580,
+            "Pss_Anon": 6928,
+            "Pss_File": 652,
+            "Pss_Shmem": 0,
+            "Shared_Clean": 1964,
+            "Shared_Dirty": 0,
+            "Private_Clean": 0,
+            "Private_Dirty": 6928
+          }
+        },
+        {
+          "pid": 83,
+          "role": "metrics_server",
+          "memory_kib": {
+            "Rss": 69432,
+            "Pss": 54751,
+            "Pss_Anon": 51832,
+            "Pss_File": 2903,
+            "Pss_Shmem": 16,
+            "Shared_Clean": 17460,
+            "Shared_Dirty": 0,
+            "Private_Clean": 136,
+            "Private_Dirty": 51836
+          }
+        },
+        {
+          "pid": 87,
+          "role": "puma_worker",
+          "memory_kib": {
+            "Rss": 1526692,
+            "Pss": 1175638,
+            "Pss_Anon": 1166222,
+            "Pss_File": 7732,
+            "Pss_Shmem": 1684,
+            "Shared_Clean": 28444,
+            "Shared_Dirty": 660340,
+            "Private_Clean": 308,
+            "Private_Dirty": 837600
+          }
+        }
+      ]
+    }
+  ],
+  "startup_termination_events": [
+    {
+      "reason": "Killing",
+      "message": "Container webservice failed startup probe, will be restarted",
+      "count": 1,
+      "firstTimestamp": "2026-10-25T23:22:04Z",
+      "lastTimestamp": "2026-10-25T23:22:04Z"
+    }
+  ],
+  "pods_at_observation_end": [
+    {
+      "name": "gitlab-spike-webservice-default-d74cd56bc-6p4r2",
+      "ready": "True",
+      "containers": [
+        {
+          "name": "gitlab-workhorse",
+          "ready": true,
+          "restartCount": 0
+        },
+        {
+          "name": "webservice",
+          "ready": true,
+          "restartCount": 1
+        }
+      ]
+    },
+    {
+      "name": "gitlab-spike-webservice-default-d74cd56bc-9h8vz",
+      "ready": "True",
+      "containers": [
+        {
+          "name": "gitlab-workhorse",
+          "ready": true,
+          "restartCount": 0
+        },
+        {
+          "name": "webservice",
+          "ready": true,
+          "restartCount": 0
+        }
+      ]
+    }
+  ]
+}
