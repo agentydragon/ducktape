@@ -2603,8 +2603,13 @@ validation, and writing:
   partial-swap consumers, duplicate public exports, and unresolved claims. Return
   an immutable `ValidatedPlan` only on acceptance. These final checks supplement
   assignment realizability and input-space vendor checks.
-- **Write.** Tree and browser writers require `ValidatedPlan`; vendor assets use
-  the same accepted plan. No body transformation runs after validation. Rejection
+- **Write.** Tree and browser writers require `ValidatedPlan`; vendor assets and
+  their combined manifest use the same accepted plan. The manifest's destination
+  and resolution records are frozen before acceptance, including the rewrite
+  counts from lowering and pass-through construction. The accepted plan writes
+  assets followed by that manifest under the existing vendor write gate; an empty
+  report or absent manifest destination emits no manifest. No body transformation
+  runs after validation. Rejection
   reports are diagnostic output and do not require an accepted plan. The browser
   writer copies the planned assets and writes the prepared HTML and bootstrap;
   it does not resolve loading topology or parse source HTML.
@@ -3047,7 +3052,7 @@ declaration in the chunk is recorded as an `UnmatchedSpecClaim`
 (<../lowering/materialize/plan_builder.rs>); lowering continues as if the
 member were absent, so the claim neither moves the binding nor adds an export.
 Final validation rejects the full list across chunks before writing the accepted
-JS tree, browser harness, or vendor assets (<../reconstruction.rs>). Diagnostic
+JS tree, browser harness, vendor assets, or their manifest (<../reconstruction.rs>). Diagnostic
 reports remain available for inspection. The named destination would otherwise
 be one export short.
 

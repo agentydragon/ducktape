@@ -4,6 +4,23 @@ use serde::Serialize;
 
 use spec::{PartialSwapKind, WrapperShape};
 
+/// Combined manifest of the replacements in one reconstructed program.
+#[derive(Debug, Default, Serialize)]
+pub struct VendorSwapsReport {
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub full: BTreeMap<String, VendorResolution>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub partial: BTreeMap<String, ChunkPartialSwapResolution>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub bundled_partial: BTreeMap<String, ChunkBundledPartialSwapResolution>,
+}
+
+impl VendorSwapsReport {
+    pub fn is_empty(&self) -> bool {
+        self.full.is_empty() && self.partial.is_empty() && self.bundled_partial.is_empty()
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct VendorResolution {
     pub chunk_id: String,

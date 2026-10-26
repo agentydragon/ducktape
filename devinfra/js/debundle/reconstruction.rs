@@ -6,17 +6,40 @@
 //! no mutation path, so emission cannot change the program after validation.
 
 use std::collections::BTreeSet;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Result, bail};
-use artifact::{ChunkId, EmissionFiles};
+use artifact::{ChunkId, EmissionFiles, write_json};
 use serde::Serialize;
 use validate_emitted_exports::validate_emitted_exports;
-use vendor::{VendorResolutionPlan, validate_partial_swap_consumers, write_planned_vendor_outputs};
+use vendor::{
+    VendorResolutionPlan, VendorSwapsReport, validate_partial_swap_consumers,
+    write_planned_vendor_outputs,
+};
 
 #[path = "artifacts/browser_harness_plan.rs"]
 pub mod browser_harness_plan;
 
 use browser_harness_plan::BrowserHarnessPlan;
+
+/// The manifest and destination frozen alongside the program they describe.
+pub struct VendorManifestOutput {
+    path: PathBuf,
+    report: VendorSwapsReport,
+}
+
+impl VendorManifestOutput {
+    /// No manifest is emitted without a destination or any replacements.
+    pub fn prepare(path: Option<&Path>, report: VendorSwapsReport) -> Option<Self> {
+        if report.is_empty() {
+            return None;
+        }
+        Some(Self {
+            path: path?.to_path_buf(),
+            report,
+        })
+    }
+}
 
 /// A `define_logical_module` member whose `binding.name` did not
 /// resolve to a top-level declaration in the chunk. Collected across chunks
@@ -35,6 +58,7 @@ pub struct UnmatchedSpecClaim {
 pub struct ReconstructionPlan {
     files: EmissionFiles,
     vendor: VendorResolutionPlan,
+    vendor_manifest: Option<VendorManifestOutput>,
     unresolved_claims: Vec<UnmatchedSpecClaim>,
     browser_harness: Option<BrowserHarnessPlan>,
 }
@@ -45,6 +69,7 @@ impl ReconstructionPlan {
         vendor: VendorResolutionPlan,
         unresolved_claims: Vec<UnmatchedSpecClaim>,
         browser_options: Option<&spec::EmitBrowserHarnessConfig>,
+        vendor_manifest: Option<VendorManifestOutput>,
     ) -> Result<Self> {
         let browser_harness = browser_options
             .map(|options| {
@@ -54,6 +79,7 @@ impl ReconstructionPlan {
         Ok(Self {
             files,
             vendor,
+            vendor_manifest,
             unresolved_claims,
             browser_harness,
         })
@@ -70,6 +96,7 @@ impl ReconstructionPlan {
         Ok(ValidatedPlan {
             files: self.files,
             vendor: self.vendor,
+            vendor_manifest: self.vendor_manifest,
             excluded_chunk_ids,
             browser_harness: self.browser_harness,
         })
@@ -81,6 +108,7 @@ impl ReconstructionPlan {
 pub struct ValidatedPlan {
     files: EmissionFiles,
     vendor: VendorResolutionPlan,
+    vendor_manifest: Option<VendorManifestOutput>,
     excluded_chunk_ids: BTreeSet<ChunkId>,
     browser_harness: Option<BrowserHarnessPlan>,
 }
@@ -98,9 +126,13 @@ impl ValidatedPlan {
         self.browser_harness.as_ref()
     }
 
-    /// Write only the replacement assets belonging to this accepted program.
+    /// Write the replacement assets and manifest belonging to this accepted program.
     pub fn write_vendor_outputs(&self) -> Result<()> {
-        write_planned_vendor_outputs(&self.vendor)
+        write_planned_vendor_outputs(&self.vendor)?;
+        if let Some(manifest) = &self.vendor_manifest {
+            write_json(&manifest.path, &manifest.report)?;
+        }
+        Ok(())
     }
 }
 

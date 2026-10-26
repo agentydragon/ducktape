@@ -7,7 +7,6 @@ use clap::Args as ClapArgs;
 use serde::Serialize;
 
 use artifact::load_js_chunks;
-use artifact::write_json;
 use artifact::{ChunkDecompositionOutput, ChunkId};
 use emit_harness::emit_browser_harness;
 use lowering::{
@@ -17,14 +16,13 @@ use lowering::{
 use prepare_chunks::prepare_js_chunks;
 use prune_dead_imports::prune_dead_import_specifiers;
 use prune_module_exports::prune_unimported_module_exports;
-use reconstruction::{ReconstructionPlan, UnmatchedSpecClaim};
+use reconstruction::{ReconstructionPlan, UnmatchedSpecClaim, VendorManifestOutput};
 use spec::TransformSpec;
 use spec_modules::read_flat_transform_spec;
 use spec_tree::{CompileSpecTreeOptions, compile_spec_tree};
 use vendor::{
-    ChunkBundledPartialSwapResolution, ChunkPartialSwapResolution, VendorPlanOptions,
-    VendorResolution, apply_emission_rewrites_in_place, build_partial_swap_resolutions,
-    build_vendor_resolution_plan,
+    VendorPlanOptions, VendorSwapsReport, apply_emission_rewrites_in_place,
+    build_partial_swap_resolutions, build_vendor_resolution_plan,
 };
 use write_tree::{WriteTreeInput, write_js_tree};
 
@@ -338,6 +336,7 @@ pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Re
         vendor_plan,
         unmatched_spec_claims,
         spec.emit_browser_harness.as_ref(),
+        VendorManifestOutput::prepare(swap_cfg.output_manifest_path.as_deref(), vendor_report),
     )?
     .validate()?;
     let emission_files = validated_plan.files();
@@ -349,11 +348,6 @@ pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Re
     if write_vendor_outputs {
         validated_plan.write_vendor_outputs()?;
     }
-    write_vendor_swaps_report(
-        write_vendor_outputs,
-        spec.swap_vendor_chunks.output_manifest_path.as_deref(),
-        &vendor_report,
-    )?;
 
     // Chunk records of the emission set: records of excluded
     // (fully-swapped) chunks are dropped from the emitted reports.
@@ -441,33 +435,6 @@ fn merge_rewrite_counts(
     for (key, count) in counts {
         *merged.entry(key).or_insert(0) += count;
     }
-}
-
-#[derive(Debug, Default, Serialize)]
-struct VendorSwapsReport {
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    full: BTreeMap<String, VendorResolution>,
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    partial: BTreeMap<String, ChunkPartialSwapResolution>,
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    bundled_partial: BTreeMap<String, ChunkBundledPartialSwapResolution>,
-}
-
-fn write_vendor_swaps_report(
-    write: bool,
-    path: Option<&Path>,
-    report: &VendorSwapsReport,
-) -> Result<()> {
-    if !write {
-        return Ok(());
-    }
-    if report.full.is_empty() && report.partial.is_empty() && report.bundled_partial.is_empty() {
-        return Ok(());
-    }
-    let Some(path) = path else {
-        return Ok(());
-    };
-    write_json(path, report)
 }
 
 fn preflight_output_roots(spec: &TransformSpec) -> Result<()> {

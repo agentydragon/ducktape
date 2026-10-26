@@ -115,12 +115,12 @@ Emission must not independently rediscover placement or linkage decisions.
 - PR #12067: derive syntax placement from the accepted assignment and verify
   its agreement with the canonical binding catalogue and whole-statement claims.
 
-### F. Validation and emission
+### F. Validation and emission — in progress
 
-Validate the concrete plan and require the validated plan at emission boundaries.
-Keep AST lowering, final consistency checks, and output writing distinct. Ordinary
-runs and edit tools must share acceptance rules, and emitted linkage must match
-the validated plan. Retain post-emission safeguards until their construction
+Concrete syntax, loading topology, replacement assets, and the combined vendor
+manifest belong to the immutable accepted plan. Complete the authoring-path
+acceptance audit: ordinary runs and edit tools must share acceptance rules, and
+emitted linkage must match the validated plan. Retain post-emission safeguards until their construction
 paths and equivalent validation are proven; the partial-swap post-strip
 preconditions remain documented with that safeguard in `docs/design.md`.
 
