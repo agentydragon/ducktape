@@ -14,7 +14,7 @@ use swc_ecma_ast::{Id, ModuleItem};
 /// Immutable placement instructions tied to the assignment that produced them.
 /// Only projection from a validated assignment constructs this type.
 pub(super) struct EmissionPlacement<'a> {
-    factorization: &'a AssignmentAnalysis,
+    assignment_analysis: &'a AssignmentAnalysis,
     bindings: HashMap<Id, usize>,
     statements: BTreeMap<StatementId, usize>,
 }
@@ -27,9 +27,9 @@ impl<'a> EmissionPlacement<'a> {
         module_count: usize,
         requested_statements: &BTreeMap<StatementId, usize>,
     ) -> Result<Self> {
-        let factorization = validated.factorization();
-        let graph = factorization.analysis().dependency_graph();
-        let assignment = factorization.assignment();
+        let assignment_analysis = validated.assignment_analysis();
+        let graph = assignment_analysis.inputs().dependency_graph();
+        let assignment = assignment_analysis.assignment();
         let residual = assignment.entry_destination().module_id();
         let ordinals: Vec<SourceUnitOrdinal> = graph
             .iter_nodes()
@@ -79,7 +79,9 @@ impl<'a> EmissionPlacement<'a> {
         }
         // Import construction reads this catalogue too. Prove its binding
         // destinations agree with syntax placement, including shared var sites.
-        let local_bindings = factorization.analysis().local_bindings(chunk_identity)?;
+        let local_bindings = assignment_analysis
+            .inputs()
+            .local_bindings(chunk_identity)?;
         for (binding, kind) in local_bindings.as_map() {
             if let BindingKind::Owned { module } = kind {
                 ensure!(
@@ -106,14 +108,14 @@ impl<'a> EmissionPlacement<'a> {
             .map(|(binding, destination)| (binding, destination.0))
             .collect();
         Ok(Self {
-            factorization,
+            assignment_analysis,
             bindings,
             statements,
         })
     }
 
-    pub(super) fn factorization(&self) -> &AssignmentAnalysis {
-        self.factorization
+    pub(super) fn assignment_analysis(&self) -> &AssignmentAnalysis {
+        self.assignment_analysis
     }
     pub(super) fn bindings(&self) -> &HashMap<Id, usize> {
         &self.bindings

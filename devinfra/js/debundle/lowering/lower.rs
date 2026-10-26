@@ -158,7 +158,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         module_plans,
         placement,
     } = plan;
-    let factorization = placement.factorization();
+    let assignment_analysis = placement.assignment_analysis();
     let binding_assignment = placement.bindings();
     let whole_statement_assignment = placement.statements();
     let LowerChunkSpecFacts {
@@ -328,7 +328,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
     // The gate's evaluation simulator sorts residual's DFS
     // neighbors with the same call, so the emitted entry order and
     // the simulated order are structurally identical.
-    factorization
+    assignment_analysis
         .import_order()
         .sort_entry_imports(&mut entry_imports);
     let entry_imports: Vec<ModuleItem> = entry_imports.into_iter().map(|(_, it)| it).collect();
@@ -566,15 +566,20 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
             chunk_top_level_mark,
         ));
     }
-    let local_bindings = factorization.analysis().local_bindings(chunk_id_interned)?;
+    let local_bindings = assignment_analysis
+        .inputs()
+        .local_bindings(chunk_id_interned)?;
     trim_dead_named_specifiers(&mut entry_body, local_bindings.as_map());
     let entry_exports_by_original_local = collect_entry_exports_by_original_local(
         &entry_body,
         &entry_binding_renames,
         chunk_top_level_mark,
     );
-    let imported_reexports_by_module =
-        collect_imported_reexports_by_module(factorization, chunk_id_interned, module_plans.len())?;
+    let imported_reexports_by_module = collect_imported_reexports_by_module(
+        assignment_analysis,
+        chunk_id_interned,
+        module_plans.len(),
+    )?;
     let source_import_cache = Mutex::new(ArtifactSourceImportResolutionCache::new(
         artifact,
         artifact_indexes,
@@ -641,7 +646,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
                         index,
                         plan,
                         naturalized: module,
-                        factorization,
+                        assignment_analysis,
                         declaration_by_name,
                         binding_assignment,
                         runtime_import_facts,

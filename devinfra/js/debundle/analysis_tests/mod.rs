@@ -6,7 +6,7 @@ use raw_js_test_support::{parse, parse_with_source_map};
 use swc_common::SyntaxContext;
 use swc_ecma_ast::*;
 
-mod factorization_validation;
+mod assignment_validation;
 
 /// Construct an `Id` for a test fixture binding using
 /// `SyntaxContext::empty()`. Real chunks would use the chunk's

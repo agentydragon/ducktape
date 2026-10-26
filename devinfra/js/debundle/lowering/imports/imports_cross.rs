@@ -64,14 +64,14 @@ impl ImportLocalRenameSink<'_> {
 pub(crate) fn cross_module_imports_for_plan(
     from_file: &str,
     imports_by_provider: BTreeMap<usize, BTreeMap<String, String>>,
-    factorization: &AssignmentAnalysis,
+    assignment_analysis: &AssignmentAnalysis,
     sink: &mut ImportLocalRenameSink<'_>,
 ) -> Vec<(ModuleId, ModuleItem)> {
     imports_by_provider
         .into_iter()
         .filter_map(|(provider_index, bindings)| {
-            factorization
-                .analysis()
+            assignment_analysis
+                .inputs()
                 .planned_module(ModuleId(provider_index))
                 .map(|provider| {
                     let mut minted = BTreeMap::new();
@@ -110,13 +110,13 @@ pub(crate) fn cross_module_imports_for_plan(
 pub(crate) fn phantom_side_effect_imports(
     from_file: &str,
     phantom_providers: BTreeSet<usize>,
-    factorization: &AssignmentAnalysis,
+    assignment_analysis: &AssignmentAnalysis,
 ) -> Vec<(ModuleId, ModuleItem)> {
     phantom_providers
         .into_iter()
         .filter_map(|provider_index| {
-            let provider = factorization
-                .analysis()
+            let provider = assignment_analysis
+                .inputs()
                 .planned_module(ModuleId(provider_index))?;
             let source = super::import_emit::relative_source(from_file, &provider.target_file);
             Some((

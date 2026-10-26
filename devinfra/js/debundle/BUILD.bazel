@@ -527,7 +527,7 @@ rust_test(
 rust_library(
     name = "gate",
     srcs = [
-        "analysis_tests/factorization_validation.rs",
+        "analysis_tests/assignment_validation.rs",
         "analysis_tests/mod.rs",
         "assignment_analysis.rs",
         "assignment_inputs.rs",

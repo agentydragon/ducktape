@@ -20,7 +20,7 @@
 > `import` / `export` declarations. There is no init-wrapper
 > machinery, no closure pass, no implicit binding pulls — every
 > owned binding is named explicitly in the spec, and `Imported`
-> bindings flow through `AssignmentInputs.bindings` /
+> bindings flow through `AssignmentInputs::binding_catalogue` /
 > `BindingKind::Imported`, carrying the single re-exporting module
 > and public name that claimed it. Anonymous (empty-`declared`)
 > top-level statements have no name to address as a member; a
@@ -3214,7 +3214,10 @@ quotienting that dependency graph under the spec assignment.
 
 Statement facts feed the dependency graph (stored on `AssignmentInputs`), and the
 module dep graph is a quotient of that dependency graph under the current spec
-assignment (stored on `AssignmentAnalysis`).
+assignment (stored on `AssignmentAnalysis`). `AssignmentAnalysis::inputs()`
+returns the shared inputs; `module_quotient()` and `module_quotient_sccs()` expose
+the derived module graph. `ValidatedAssignment::assignment_analysis()` retains
+the accepted analysis while lowering projects its emission placement.
 
 `AssignmentAnalysis::validate_for_emission` returns a `ValidatedAssignment` only
 when atomic-group, schedule, and cross-destination rebinding checks pass. Lowering
@@ -3234,7 +3237,7 @@ Same-chunk graph and AST algorithms use a borrowed local map only after checking
 the chunk scope. These are runtime identities; report and spec wire values keep
 their existing shapes.
 
-Conceptually, the analysis + factorization carry:
+Together, the assignment inputs and analysis carry:
 
 - chunk identity;
 - per-statement facts in source order;

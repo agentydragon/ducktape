@@ -113,12 +113,14 @@ impl<'a> ArtifactSourceImportResolutionCache<'a> {
 }
 
 pub(crate) fn collect_imported_reexports_by_module(
-    factorization: &AssignmentAnalysis,
+    assignment_analysis: &AssignmentAnalysis,
     chunk_identity: ChunkId,
     module_count: usize,
 ) -> Result<Vec<Vec<ImportedReexport>>> {
     let mut by_module: Vec<Vec<ImportedReexport>> = (0..module_count).map(|_| Vec::new()).collect();
-    let local_bindings = factorization.analysis().local_bindings(chunk_identity)?;
+    let local_bindings = assignment_analysis
+        .inputs()
+        .local_bindings(chunk_identity)?;
     // Stable iteration order on the checked per-chunk catalogue (HashMap): the
     // recorded sequence determines the emit order of
     // `import { ... }` statements per module body and we want that
@@ -156,7 +158,7 @@ pub(crate) fn collect_imported_reexports_by_module(
 pub(crate) fn plan_module_reference_needs<'a>(
     module_index: usize,
     body_facts: &NaturalizedBodyFacts,
-    factorization: &AssignmentAnalysis,
+    assignment_analysis: &AssignmentAnalysis,
     declaration_by_name: &HashMap<Id, Vec<StatementId>>,
     binding_assignment: &HashMap<Id, usize>,
     entry_exports_by_original_local: &HashMap<Id, EntryExport>,
@@ -170,13 +172,15 @@ pub(crate) fn plan_module_reference_needs<'a>(
         let body_id = reference.emitted_id();
         let name_str = body_id.0.as_ref();
         let binding_id = BindingId::new(
-            factorization.analysis().chunk_identity(),
+            assignment_analysis.inputs().chunk_identity(),
             original_id.clone(),
         );
-        if let Some(ModuleId(provider_index)) = factorization.analysis().owner_of(&binding_id)? {
+        if let Some(ModuleId(provider_index)) =
+            assignment_analysis.inputs().owner_of(&binding_id)?
+        {
             if provider_index != module_index
-                && let Some(provider) = factorization
-                    .analysis()
+                && let Some(provider) = assignment_analysis
+                    .inputs()
                     .planned_module(ModuleId(provider_index))
                 && let Some(exported_name) = provider.rename_map.get(original_id)
             {
@@ -214,7 +218,7 @@ pub(crate) fn plan_module_reference_needs<'a>(
 
     collect_phantom_side_effect_providers(
         module_index,
-        factorization,
+        assignment_analysis,
         &needs.cross_module_imports_by_provider,
         &mut needs.phantom_side_effect_providers,
     );
@@ -239,14 +243,17 @@ pub(crate) fn plan_module_reference_needs<'a>(
 /// is redundant — entry is always reachable.
 fn collect_phantom_side_effect_providers(
     module_index: usize,
-    factorization: &AssignmentAnalysis,
+    assignment_analysis: &AssignmentAnalysis,
     cross_module_imports_by_provider: &BTreeMap<usize, BTreeMap<String, String>>,
     phantom_side_effect_providers: &mut BTreeSet<usize>,
 ) {
     let module_id = ModuleId(module_index);
-    let residual = factorization.assignment().entry_destination().module_id();
-    let dependency_graph = factorization.analysis().dependency_graph();
-    for (source_unit_id, source_unit_module) in factorization.assignment().iter() {
+    let residual = assignment_analysis
+        .assignment()
+        .entry_destination()
+        .module_id();
+    let dependency_graph = assignment_analysis.inputs().dependency_graph();
+    for (source_unit_id, source_unit_module) in assignment_analysis.assignment().iter() {
         if source_unit_module != module_id {
             continue;
         }
@@ -255,7 +262,7 @@ fn collect_phantom_side_effect_providers(
             if !edge.reason.constrains_init_order() {
                 continue;
             }
-            let target_module = factorization.assignment().of(edge.to);
+            let target_module = assignment_analysis.assignment().of(edge.to);
             if target_module == module_id || target_module == residual {
                 continue;
             }

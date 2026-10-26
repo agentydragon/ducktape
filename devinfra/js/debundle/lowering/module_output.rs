@@ -40,7 +40,7 @@ const LOWERING_FILE_PRAGMA: &str =
 const LOWERING_GENERATOR_HEADER: &str = "// @ducktape-generator selected_module_lowering";
 
 struct ModuleOutputContext<'a> {
-    factorization: &'a AssignmentAnalysis,
+    assignment_analysis: &'a AssignmentAnalysis,
     runtime_ast: &'a ParsedJsModule,
     chunk_id_interned: ChunkId,
     chunk_top_level_mark: swc_common::Mark,
@@ -53,7 +53,7 @@ pub(super) struct ModuleEmissionInputs<'a> {
     pub(super) index: usize,
     pub(super) plan: &'a ModulePlan,
     pub(super) naturalized: NaturalizedModuleBody,
-    pub(super) factorization: &'a AssignmentAnalysis,
+    pub(super) assignment_analysis: &'a AssignmentAnalysis,
     pub(super) declaration_by_name: &'a HashMap<Id, Vec<StatementId>>,
     pub(super) binding_assignment: &'a HashMap<Id, usize>,
     pub(super) runtime_import_facts: &'a RuntimeImportFacts,
@@ -85,7 +85,7 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
         index,
         plan,
         naturalized,
-        factorization,
+        assignment_analysis,
         declaration_by_name,
         binding_assignment,
         runtime_import_facts,
@@ -116,7 +116,7 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
     } = plan_module_reference_needs(
         index,
         &body_facts,
-        factorization,
+        assignment_analysis,
         declaration_by_name,
         binding_assignment,
         entry_exports_by_original_local,
@@ -151,7 +151,7 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
     let mut intra_chunk_imports = cross_module_imports_for_plan(
         &plan.target_file,
         cross_module_imports_by_provider,
-        factorization,
+        assignment_analysis,
         &mut import_rename_sink,
     );
     // Phantom side-effect imports surface at-init-promotion-derived
@@ -161,7 +161,7 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
     intra_chunk_imports.extend(phantom_side_effect_imports(
         &plan.target_file,
         phantom_side_effect_providers,
-        factorization,
+        assignment_analysis,
     ));
     let residual_entry_import_items = residual_entry_imports_for_moved_body(
         &plan.id,
@@ -264,7 +264,10 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
     // (always the ESM DFS root, so its slot
     // in the list is a runtime no-op, but it still gets its shared-
     // ordering position for determinism).
-    let entry_module_id = factorization.assignment().entry_destination().module_id();
+    let entry_module_id = assignment_analysis
+        .assignment()
+        .entry_destination()
+        .module_id();
     intra_chunk_imports.extend(
         residual_entry_import_items
             .into_iter()
@@ -275,7 +278,7 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
     // uses for this module's DFS neighbor order. Runtime re-imports
     // (other source chunks) follow; they're outside the per-chunk
     // I-graph the gate reasons about.
-    factorization
+    assignment_analysis
         .import_order()
         .sort_module_imports(&mut intra_chunk_imports);
     let mut combined: Vec<ModuleItem> = intra_chunk_imports
@@ -362,7 +365,7 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
         }
     }
     // ImportSpecifier-bound members (`BindingKind::Imported` in
-    // `factorization.analysis().binding_catalogue()`): for each `Imported` binding whose
+    // `assignment_analysis.inputs().binding_catalogue()`): for each `Imported` binding whose
     // `re_exported_by` map names this module, emit a re-import
     // (using the local name as the alias) plus mirror the
     // public-name export. Per-destination relative paths are
@@ -426,7 +429,7 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
         ));
     }
     let output_context = ModuleOutputContext {
-        factorization,
+        assignment_analysis,
         runtime_ast,
         chunk_id_interned,
         chunk_top_level_mark,
@@ -475,8 +478,8 @@ fn build_module_output(
         })
         .collect();
     let source_unit_ids = context
-        .factorization
-        .analysis()
+        .assignment_analysis
+        .inputs()
         .source_unit_report_ids_for_bindings(binding_ids.iter())
         .expect("module report bindings belong to the analysis chunk");
     // Module-level `comment:` from the spec lands at the very top of

@@ -8,7 +8,7 @@
 //!    locations, and top-level await (`facts`, `purity`).
 //! 2. Build a fine-grained dependency graph over those facts (`graph`,
 //!    `atomic_groups`).
-//! 3. Map source_units to destination modules from the spec (`assignment`,
+//! 3. Map source_units to destination modules from the spec (`module_assignment`,
 //!    `assignment_assembly`).
 //! 4. Emit stable graph reports from that same graph model (`reports`).
 //!

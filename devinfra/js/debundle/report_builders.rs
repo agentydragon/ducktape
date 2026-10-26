@@ -28,7 +28,7 @@ struct AtomicEdgeAccumulator {
 }
 
 pub(crate) fn build_dependency_graph_report(
-    factorization: &AssignmentAnalysis,
+    assignment_analysis: &AssignmentAnalysis,
 ) -> DependencyGraphReport {
     // The three sub-reports below — `(quotient_nodes, quotient_edges)`,
     // `nodes` + `edges`, and `atomic_graph` — share no mutable state
@@ -40,23 +40,24 @@ pub(crate) fn build_dependency_graph_report(
     let (quotient_pair, (nodes_edges, atomic_graph)) = rayon::join(
         || {
             rayon::join(
-                || build_quotient_node_reports(factorization),
-                || build_quotient_edge_reports(factorization),
+                || build_quotient_node_reports(assignment_analysis),
+                || build_quotient_edge_reports(assignment_analysis),
             )
         },
         || {
             rayon::join(
-                || build_source_unit_nodes_and_edges(factorization),
-                || build_atomic_graph_report(factorization),
+                || build_source_unit_nodes_and_edges(assignment_analysis),
+                || build_atomic_graph_report(assignment_analysis),
             )
         },
     );
     let (quotient_nodes, quotient_edges) = quotient_pair;
     let (mut nodes, edges) = nodes_edges;
     let purity_causes = collect_purity_causes(&mut nodes);
-    let quotient_sccs = build_quotient_scc_reports(factorization, &quotient_nodes, &quotient_edges);
+    let quotient_sccs =
+        build_quotient_scc_reports(assignment_analysis, &quotient_nodes, &quotient_edges);
     DependencyGraphReport {
-        chunk_id: factorization.analysis().chunk_id().to_string(),
+        chunk_id: assignment_analysis.inputs().chunk_id().to_string(),
         nodes,
         purity_causes,
         edges,
@@ -119,17 +120,17 @@ fn attach_cause_refs(
 /// rayon `join` split four ways without an explicit `scope` and keeps
 /// the assignment-of()/export-name-for()/etc.\ touches paired in cache.
 fn build_source_unit_nodes_and_edges(
-    factorization: &AssignmentAnalysis,
+    assignment_analysis: &AssignmentAnalysis,
 ) -> (Vec<SourceUnitReport>, Vec<DependencyEdgeReport>) {
-    let assignment = factorization.assignment();
-    let dependency_graph = factorization.analysis().dependency_graph();
+    let assignment = assignment_analysis.assignment();
+    let dependency_graph = assignment_analysis.inputs().dependency_graph();
     let nodes = dependency_graph
         .iter_nodes()
         .map(|node| SourceUnitReport {
             id: source_unit_key(node.id),
             statement_ordinal: node.statement_ordinal,
             source_location: node.source_location.clone(),
-            declared_bindings: binding_reports(factorization, node.declared.iter()),
+            declared_bindings: binding_reports(assignment_analysis, node.declared.iter()),
             statement_kind: node.kind,
             purity: node.purity.clone(),
             destination: module_key(assignment.of(node.id)),
@@ -151,7 +152,10 @@ fn build_source_unit_nodes_and_edges(
     (nodes, edges)
 }
 
-fn binding_reports<'a, I>(factorization: &AssignmentAnalysis, bindings: I) -> Vec<BindingReport>
+fn binding_reports<'a, I>(
+    assignment_analysis: &AssignmentAnalysis,
+    bindings: I,
+) -> Vec<BindingReport>
 where
     I: IntoIterator<Item = &'a Id>,
 {
@@ -159,10 +163,10 @@ where
         .into_iter()
         .map(|id| BindingReport {
             binding: id.0.clone(),
-            export_name: factorization
-                .analysis()
+            export_name: assignment_analysis
+                .inputs()
                 .export_name_for(&BindingId::new(
-                    factorization.analysis().chunk_identity(),
+                    assignment_analysis.inputs().chunk_identity(),
                     id.clone(),
                 ))
                 .expect("dependency graph bindings belong to the analysis chunk"),
@@ -170,26 +174,33 @@ where
         .collect()
 }
 
-fn build_quotient_node_reports(factorization: &AssignmentAnalysis) -> Vec<ModuleEntry> {
+fn build_quotient_node_reports(assignment_analysis: &AssignmentAnalysis) -> Vec<ModuleEntry> {
     let mut modules = BTreeSet::<ModuleId>::new();
-    for idx in 0..factorization.analysis().planned_modules().len() {
+    for idx in 0..assignment_analysis.inputs().planned_modules().len() {
         modules.insert(ModuleId(idx));
     }
-    modules.insert(factorization.assignment().entry_destination().module_id());
-    for (_, module) in factorization.assignment().iter() {
+    modules.insert(
+        assignment_analysis
+            .assignment()
+            .entry_destination()
+            .module_id(),
+    );
+    for (_, module) in assignment_analysis.assignment().iter() {
         modules.insert(module);
     }
-    for (from, to) in factorization.dep_graph().all_edges() {
+    for (from, to) in assignment_analysis.module_quotient().all_edges() {
         modules.insert(from);
         modules.insert(to);
     }
     modules
         .into_iter()
-        .map(|id| module_entry(factorization, id))
+        .map(|id| module_entry(assignment_analysis, id))
         .collect()
 }
 
-fn build_quotient_edge_reports(factorization: &AssignmentAnalysis) -> Vec<QuotientEdgeReport> {
+fn build_quotient_edge_reports(
+    assignment_analysis: &AssignmentAnalysis,
+) -> Vec<QuotientEdgeReport> {
     // Use a `HashMap` for the per-(from,to) accumulator — quotient
     // edges count in the tens of thousands and `BTreeMap::entry` is
     // `O(log n)` per insert. The output ordering still has to match
@@ -198,8 +209,8 @@ fn build_quotient_edge_reports(factorization: &AssignmentAnalysis) -> Vec<Quotie
     // `BTreeSet` per pair (small — at most one entry per `DepKind`
     // variant) so the final `edge_kinds: Vec<DepKind>` stays sorted
     // without a per-pair sort.
-    let assignment = factorization.assignment();
-    let dependency_graph = factorization.analysis().dependency_graph();
+    let assignment = assignment_analysis.assignment();
+    let dependency_graph = assignment_analysis.inputs().dependency_graph();
     let mut accum: HashMap<(ModuleId, ModuleId), QuotientEdgeAccumulator> =
         HashMap::with_capacity(dependency_graph.num_edges());
     let mut seen_side_effect_module_pairs: HashSet<(ModuleId, ModuleId)> = HashSet::new();
@@ -243,7 +254,7 @@ struct QuotientEdgeAccumulator {
 }
 
 fn build_atomic_group_report(
-    factorization: &AssignmentAnalysis,
+    assignment_analysis: &AssignmentAnalysis,
     idx: usize,
     atomic_group: &AtomicGroup,
 ) -> AtomicGroupReport {
@@ -262,21 +273,21 @@ fn build_atomic_group_report(
     let mut max_ordinal = 0usize;
     for source_unit_id in &atomic_group.members {
         source_unit_ids.push(source_unit_key(*source_unit_id));
-        if let Some(node) = factorization
-            .analysis()
+        if let Some(node) = assignment_analysis
+            .inputs()
             .dependency_graph()
             .node(*source_unit_id)
         {
             if node.class() == SourceUnitClass::AnonymousStatement {
                 anonymous_statement_source_unit_ids.push(source_unit_key(*source_unit_id));
             }
-            members.extend(binding_reports(factorization, node.declared.iter()));
+            members.extend(binding_reports(assignment_analysis, node.declared.iter()));
             if let Some(location) = &node.source_location {
                 line_range.expand(location);
             }
             min_ordinal = min_ordinal.min(node.statement_ordinal.0);
             max_ordinal = max_ordinal.max(node.statement_ordinal.0);
-            let destination = module_key(factorization.assignment().of(*source_unit_id));
+            let destination = module_key(assignment_analysis.assignment().of(*source_unit_id));
             if !destinations.contains(&destination) {
                 destinations.push(destination);
             }
@@ -299,9 +310,9 @@ fn build_atomic_group_report(
     }
 }
 
-fn build_atomic_graph_report(factorization: &AssignmentAnalysis) -> AtomicGraphReport {
-    let dependency_graph = factorization.analysis().dependency_graph();
-    let mut atomic_groups = factorization.atomic_groups().to_vec();
+fn build_atomic_graph_report(assignment_analysis: &AssignmentAnalysis) -> AtomicGraphReport {
+    let dependency_graph = assignment_analysis.inputs().dependency_graph();
+    let mut atomic_groups = assignment_analysis.atomic_groups().to_vec();
     atomic_groups.sort_by_key(|atomic_group| {
         atomic_group
             .members
@@ -328,7 +339,9 @@ fn build_atomic_graph_report(factorization: &AssignmentAnalysis) -> AtomicGraphR
     let nodes = atomic_groups
         .par_iter()
         .enumerate()
-        .map(|(idx, atomic_group)| build_atomic_group_report(factorization, idx, atomic_group))
+        .map(|(idx, atomic_group)| {
+            build_atomic_group_report(assignment_analysis, idx, atomic_group)
+        })
         .collect();
 
     // Per-(from_group, to_group) accumulator: HashMap keyed by the
@@ -384,15 +397,18 @@ fn build_atomic_graph_report(factorization: &AssignmentAnalysis) -> AtomicGraphR
 }
 
 fn build_quotient_scc_reports(
-    factorization: &AssignmentAnalysis,
+    assignment_analysis: &AssignmentAnalysis,
     quotient_nodes: &[ModuleEntry],
     quotient_edges: &[QuotientEdgeReport],
 ) -> Vec<QuotientSccReport> {
     let quotient_edges_by_source = quotient_edge_indices_by_source(quotient_edges);
     let mut sccs = Vec::new();
-    for scc in factorization.dep_graph_sccs() {
+    for scc in assignment_analysis.module_quotient_sccs() {
         let is_cycle = scc.len() > 1
-            || (scc.len() == 1 && factorization.dep_graph().contains_edge(scc[0], scc[0]));
+            || (scc.len() == 1
+                && assignment_analysis
+                    .module_quotient()
+                    .contains_edge(scc[0], scc[0]));
         if !is_cycle {
             continue;
         }
@@ -468,10 +484,13 @@ fn quotient_edge_indices_by_source(
 /// `Unassigned` policy role. The report schema projects this classification
 /// to its legacy `residual` flag; that flag does not identify the physical
 /// DFS root.
-fn is_unassigned_destination(factorization: &AssignmentAnalysis, id: ModuleId) -> bool {
-    id == factorization.assignment().entry_destination().module_id()
-        || factorization
-            .analysis()
+fn is_unassigned_destination(assignment_analysis: &AssignmentAnalysis, id: ModuleId) -> bool {
+    id == assignment_analysis
+        .assignment()
+        .entry_destination()
+        .module_id()
+        || assignment_analysis
+            .inputs()
             .planned_module(id)
             .is_some_and(|module| module.role == ModuleRole::Unassigned)
 }
@@ -491,10 +510,10 @@ fn edge_role_report(role: EdgeRole) -> Option<EdgeRoleReport> {
 
 /// Build the module-table entry for `id`: the single place its
 /// canonical [`spec::ModulePath`] and residual flag are recorded.
-fn module_entry(factorization: &AssignmentAnalysis, id: ModuleId) -> ModuleEntry {
+fn module_entry(assignment_analysis: &AssignmentAnalysis, id: ModuleId) -> ModuleEntry {
     ModuleEntry {
         key: module_key(id),
-        path: factorization.module_path(id),
-        residual: is_unassigned_destination(factorization, id),
+        path: assignment_analysis.module_path(id),
+        residual: is_unassigned_destination(assignment_analysis, id),
     }
 }

@@ -39,14 +39,14 @@ fn member_bindings(members: &[BindingReport]) -> Vec<String> {
 /// LazyRebind atomic-group split: declarer and assigner of a
 /// mutable binding must materialize together. `assignment_assembly`
 /// records this as an `atomic_group_conflicts` entry on the
-/// factorization; the materializer bails on any non-empty list.
+/// assignment analysis; the materializer bails on any non-empty list.
 #[test]
 fn cross_destination_lazy_write_is_rejected() {
-    let factorization = factorization_for(
+    let assignment_analysis = assignment_analysis_for(
         "let A = 0; function B() { A = 1; }",
         &[("A", logical(0)), ("B", residual())],
     );
-    let report = factorization.validate();
+    let report = assignment_analysis.validate();
     assert_eq!(
         report.atomic_group_conflicts.len(),
         1,
@@ -77,21 +77,21 @@ fn distinct_claim_modules(conflict: &AtomicGroupConflict) -> Vec<ModuleId> {
 
 #[test]
 fn same_destination_lazy_write_is_allowed() {
-    let factorization = factorization_for(
+    let assignment_analysis = assignment_analysis_for(
         "let A = 0; function B() { A = 1; }",
         &[("A", logical(0)), ("B", logical(0))],
     );
 
-    let report = factorization.validate();
+    let report = assignment_analysis.validate();
     assert!(
         report.atomic_group_conflicts.is_empty(),
         "same-destination rebinding writes should stay local to the emitted module: {report:?}",
     );
 }
 
-// --- Factorization helpers -----------------------------------------------
+// --- Assignment-analysis helpers -----------------------------------------------
 
-fn factorization_from_facts(
+fn assignment_analysis_from_facts(
     facts: &[StatementFacts],
     bindings: HashMap<swc_ecma_ast::Id, BindingKind>,
     planned_modules: Vec<PlannedModule>,
@@ -126,7 +126,10 @@ fn assignment_analysis_rejects_a_catalogue_from_another_chunk() {
     assert!(result.is_err(), "wrong-chunk catalogues must be rejected");
 }
 
-fn factorization_for(source: &str, ownership: &[(&str, TestDestination)]) -> AssignmentAnalysis {
+fn assignment_analysis_for(
+    source: &str,
+    ownership: &[(&str, TestDestination)],
+) -> AssignmentAnalysis {
     let module = parse(source);
     let facts = analyze_facts(&module);
     let max_idx = ownership
@@ -155,10 +158,10 @@ fn factorization_for(source: &str, ownership: &[(&str, TestDestination)]) -> Ass
             anonymous_source_unit_ordinals: Vec::new(),
         })
         .collect();
-    factorization_from_facts(&facts, bindings, planned_modules, entry_destination)
+    assignment_analysis_from_facts(&facts, bindings, planned_modules, entry_destination)
 }
 
-fn factorization_with_residual_module(
+fn assignment_analysis_with_unassigned_module(
     source: &str,
     residual_bindings: &[&str],
     logical_bindings: &[&str],
@@ -191,21 +194,21 @@ fn factorization_with_residual_module(
         },
     ];
     let entry_destination = EntryDestination::after_planned_modules(logical_modules.len());
-    factorization_from_facts(&facts, bindings, logical_modules, entry_destination)
+    assignment_analysis_from_facts(&facts, bindings, logical_modules, entry_destination)
 }
 
 // --- dependency graph quotient ------------------------------------------------
 
 #[test]
 fn empty_dependency_graph_report_includes_entry_destination() {
-    let factorization = factorization_from_facts(
+    let assignment_analysis = assignment_analysis_from_facts(
         &[],
         HashMap::new(),
         Vec::new(),
         EntryDestination::after_planned_modules(0),
     );
 
-    let report = factorization.dependency_graph_report();
+    let report = assignment_analysis.dependency_graph_report();
     assert_eq!(report.quotient.nodes.len(), 1);
     let entry = &report.quotient.nodes[0];
     assert_eq!(entry.key.as_str(), "logical:0");
@@ -215,13 +218,13 @@ fn empty_dependency_graph_report_includes_entry_destination() {
 
 #[test]
 fn dependency_graph_report_emits_atomic_graph() {
-    let factorization = factorization_with_residual_module(
+    let assignment_analysis = assignment_analysis_with_unassigned_module(
         "const Leaf = 1; const ResidualUse = Leaf + 1; const Existing = ResidualUse + 1;",
         &["Leaf", "ResidualUse"],
         &["Existing"],
     );
 
-    let report = factorization.dependency_graph_report();
+    let report = assignment_analysis.dependency_graph_report();
     assert_eq!(report.atomic_graph.nodes.len(), 3);
     assert!(
         report
@@ -246,13 +249,13 @@ fn dependency_graph_report_emits_atomic_graph() {
 /// drop a promoted edge when callee and caller land in different modules.
 #[test]
 fn dependency_graph_report_names_the_callee_source_unit_on_a_promoted_at_init_edge() {
-    let factorization = factorization_with_residual_module(
+    let assignment_analysis = assignment_analysis_with_unassigned_module(
         "const seed = 7; const dep = 42; const result = callee(seed); function callee(x) { return dep + x; }",
         &["seed", "result", "callee", "dep"],
         &[],
     );
 
-    let report = factorization.dependency_graph_report();
+    let report = assignment_analysis.dependency_graph_report();
     let source_unit_of = |binding: &str| {
         report
             .nodes
@@ -286,10 +289,13 @@ fn dependency_graph_report_names_the_callee_source_unit_on_a_promoted_at_init_ed
 
 #[test]
 fn atomic_graph_collapses_constraining_eager_cycle() {
-    let factorization =
-        factorization_with_residual_module("const A = B + 1; const B = A + 1;", &["A", "B"], &[]);
+    let assignment_analysis = assignment_analysis_with_unassigned_module(
+        "const A = B + 1; const B = A + 1;",
+        &["A", "B"],
+        &[],
+    );
 
-    let report = factorization.dependency_graph_report();
+    let report = assignment_analysis.dependency_graph_report();
     let cycle_atomic_group = report
         .atomic_graph
         .nodes
@@ -304,13 +310,13 @@ fn atomic_graph_collapses_constraining_eager_cycle() {
 
 #[test]
 fn atomic_graph_preserves_direction_between_atomic_groups() {
-    let factorization = factorization_with_residual_module(
+    let assignment_analysis = assignment_analysis_with_unassigned_module(
         "const Leaf = 1; const ResidualUse = Leaf + 1;",
         &["Leaf", "ResidualUse"],
         &[],
     );
 
-    let report = factorization.dependency_graph_report();
+    let report = assignment_analysis.dependency_graph_report();
     assert_eq!(report.atomic_graph.nodes.len(), 2);
     assert_eq!(report.atomic_graph.edges.len(), 1);
     let edge = &report.atomic_graph.edges[0];
@@ -461,11 +467,11 @@ fn split_comma_list_assigns_per_declarator_source_ranges() {
 fn validate_surfaces_linker_order_for_acyclic_spec() {
     // mod_0 reads B from mod_1 at-init → mod_1 must precede
     // mod_0 in the linker's evaluation order.
-    let factorization = factorization_for(
+    let assignment_analysis = assignment_analysis_for(
         "const B = 42; const A = B + 1;",
         &[("A", logical(0)), ("B", logical(1))],
     );
-    let report = factorization.validate();
+    let report = assignment_analysis.validate();
     let order = &report.linker_order;
     let pos = |name: &str| -> usize {
         order
@@ -486,11 +492,11 @@ fn validate_returns_empty_linker_order_for_cyclic_spec() {
     // routing of the validator (docs/design.md "Realizability
     // primitive"), the case has to actually produce a cycle in
     // the constraining-edge subgraph — mutual at-init reads do.
-    let factorization = factorization_for(
+    let assignment_analysis = assignment_analysis_for(
         "const A = B + 1; const B = A + 1;",
         &[("A", logical(0)), ("B", logical(1))],
     );
-    let report = factorization.validate();
+    let report = assignment_analysis.validate();
     assert!(!report.cycles.is_empty(), "expected a cycle in {report:?}",);
     assert!(
         report.linker_order.is_empty(),
@@ -610,9 +616,9 @@ fn atomic_groups_lazy_rebind_merges() {
 
 // --- Factor assembly -----------------------------------------------------
 
-fn assignment_summary(factorization: &AssignmentAnalysis) -> Vec<(String, String)> {
-    let mut out: Vec<(String, String)> = factorization
-        .analysis()
+fn assignment_summary(assignment_analysis: &AssignmentAnalysis) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = assignment_analysis
+        .inputs()
         .dependency_graph()
         .iter_nodes()
         .map(|node| {
@@ -622,14 +628,18 @@ fn assignment_summary(factorization: &AssignmentAnalysis) -> Vec<(String, String
             } else {
                 declared.join(",")
             };
-            let dest = factorization.assignment().of(node.id);
+            let dest = assignment_analysis.assignment().of(node.id);
             // The legacy residual report projection renders as
             // `<residual>` so this summary stays stable across index
             // changes; specified modules use their `mod_<idx>` label.
             let idx = dest.0;
-            let label = if dest == factorization.assignment().entry_destination().module_id()
-                || factorization
-                    .analysis()
+            let label = if dest
+                == assignment_analysis
+                    .assignment()
+                    .entry_destination()
+                    .module_id()
+                || assignment_analysis
+                    .inputs()
                     .planned_module(ModuleId(idx))
                     .is_some_and(|module| module.role == ModuleRole::Unassigned)
             {
@@ -646,8 +656,8 @@ fn assignment_summary(factorization: &AssignmentAnalysis) -> Vec<(String, String
 
 #[test]
 fn assignment_assembly_unclaimed_source_units_default_to_residual() {
-    let factorization = factorization_for("const A = 1; const B = 2;", &[]);
-    let summary = assignment_summary(&factorization);
+    let assignment_analysis = assignment_analysis_for("const A = 1; const B = 2;", &[]);
+    let summary = assignment_summary(&assignment_analysis);
     assert_eq!(
         summary,
         vec![
@@ -668,9 +678,9 @@ fn assignment_assembly_single_claim_with_unclaimed_atomic_group_members_is_a_con
     // them in the first place. `debundle coverage` may flag the
     // split the atomic group as an advisory edit, but assignment_assembly refuses
     // to silently move B for the user.
-    let factorization =
-        factorization_for("const A = B + 1; const B = A + 1;", &[("A", logical(0))]);
-    let report = factorization.validate();
+    let assignment_analysis =
+        assignment_analysis_for("const A = B + 1; const B = A + 1;", &[("A", logical(0))]);
+    let report = assignment_analysis.validate();
     assert_eq!(
         report.atomic_group_conflicts.len(),
         1,
@@ -688,11 +698,11 @@ fn assignment_assembly_concordant_claims_within_atomic_group_are_fine() {
     // Both members of the same atomic group claimed for the same
     // module — that's the spec author being explicit, not a
     // conflict.
-    let factorization = factorization_for(
+    let assignment_analysis = assignment_analysis_for(
         "const A = B + 1; const B = A + 1;",
         &[("A", logical(0)), ("B", logical(0))],
     );
-    let summary = assignment_summary(&factorization);
+    let summary = assignment_summary(&assignment_analysis);
     assert_eq!(
         summary,
         vec![
@@ -704,11 +714,11 @@ fn assignment_assembly_concordant_claims_within_atomic_group_are_fine() {
 
 #[test]
 fn assignment_assembly_records_conflict_on_split_eager_use_cycle() {
-    let factorization = factorization_for(
+    let assignment_analysis = assignment_analysis_for(
         "const A = B + 1; const B = A + 1;",
         &[("A", logical(0)), ("B", logical(1))],
     );
-    let report = factorization.validate();
+    let report = assignment_analysis.validate();
     assert_eq!(
         report.atomic_group_conflicts.len(),
         1,
@@ -731,11 +741,11 @@ fn assignment_assembly_records_no_conflict_for_sequenced_only_chain() {
     // cycle when the spec creates one through reverse claims,
     // but assignment_assembly itself does not panic / record a
     // conflict here.
-    let factorization = factorization_for(
+    let assignment_analysis = assignment_analysis_for(
         r#"const a1 = (globalThis.tag = "a1", 1); const b1 = (globalThis.tag = "b1", 2); const a2 = (globalThis.tag = "a2", 3);"#,
         &[("a1", logical(0)), ("b1", logical(1)), ("a2", logical(0))],
     );
-    let report = factorization.validate();
+    let report = assignment_analysis.validate();
     assert!(
         report.atomic_group_conflicts.is_empty(),
         "Sequenced-only chains never force co-location: {report:?}",
@@ -746,11 +756,11 @@ fn assignment_assembly_records_no_conflict_for_sequenced_only_chain() {
 fn assignment_assembly_independent_source_units_keep_independent_claims() {
     // Three eager-use chain: A → B → C, no cycle, three atomic
     // atomic groups. Each source unit's claim takes effect independently.
-    let factorization = factorization_for(
+    let assignment_analysis = assignment_analysis_for(
         "const C = 3; const B = C + 1; const A = B + 1;",
         &[("A", logical(0)), ("B", logical(1)), ("C", logical(0))],
     );
-    let summary = assignment_summary(&factorization);
+    let summary = assignment_summary(&assignment_analysis);
     assert_eq!(
         summary,
         vec![

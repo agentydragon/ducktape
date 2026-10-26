@@ -90,7 +90,7 @@
 //!   post-split bodies its targets must avoid don't exist yet — its
 //!   intents are re-collected into the two body-validating ledgers
 //!   below). It cannot merge downstream: its sealed Chunk projection is
-//!   an input to plan building and factorization, which run before the
+//!   an input to plan building and assignment analysis, which run before the
 //!   post-split bodies exist.
 //! - **Entry ledger** (`lower_chunk`): the chunk_renames entries staying
 //!   in entry plus entry import-local mints (`Chunk` scope) AND the
@@ -259,7 +259,7 @@ pub enum RenameScope {
     Chunk,
     /// Module-wide renames within one emitted logical module. The identity
     /// is the same [`ModuleId`] (index into the finalized `module_plans`
-    /// list) that `binding_assignment` and the factorization assignment use
+    /// list) that `binding_assignment` and the assignment analysis assignment use
     /// to identify a binding's deriving module.
     Module(ModuleId),
     /// Scope-local renames derived by one function-like node.
