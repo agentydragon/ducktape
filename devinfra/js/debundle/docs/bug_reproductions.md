@@ -41,3 +41,19 @@ contract: emitted exports, source shape, file layout, or runtime behavior.
 If the private failure cannot genuinely be reproduced with a synthetic
 fixture, explain that limit in the PR, add coverage at the next useful level,
 and smoke-test the private corpus.
+
+## Downstream acceptance and stricter checks
+
+Before changing acceptance, compare the candidate and a working engine against
+the same downstream source/spec pair. Record successful, rejected, and unverified
+controls separately with their source, spec, and tool revisions. Classify a new
+rejection as a spec conflict, an analysis defect, or unsupported reconstruction;
+land the diagnostics and repair capabilities before enabling stricter checks.
+
+Allow at most two hours of focused repair for a downstream conflict, stopping
+sooner when a deep redesign becomes clear. If repair exceeds that budget, defer
+the stricter change with its synthetic reproduction, downstream impact, and
+remaining work. Continue independent refactoring. Keep the downstream repository
+on its working pin until the candidate engine and repaired specs validate
+together. Never weaken validation or change rule exemptions or baselines to
+make a mechanical cutover appear green.

@@ -1402,6 +1402,11 @@ verdict by:
      `post_order[X] < post_order[M]`. Any violation = TDZ at
      runtime → reject the SCC.
 
+SCC results belong to the graph used to compute them. Reuse between the gate,
+module quotient reports, and other graph walks requires identical edge sets
+and isolated-node handling; sharing a vertex type or a Tarjan implementation
+does not establish that equivalence.
+
 The source I-graph omits entry's implicit imports of every emitted module.
 Independently of its SCCs, reject every constraining dependency **into entry**:
 entry evaluates last, so that dependency cannot be satisfied. The pure reference,
