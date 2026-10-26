@@ -30,7 +30,7 @@ impl<'a> EmissionPlacement<'a> {
         let assignment_analysis = validated.assignment_analysis();
         let graph = assignment_analysis.inputs().dependency_graph();
         let assignment = assignment_analysis.assignment();
-        let residual = assignment.entry_destination().module_id();
+        let entry_module_id = assignment.entry_destination().module_id();
         let ordinals: Vec<SourceUnitOrdinal> = graph
             .iter_nodes()
             .map(|unit| unit.statement_ordinal)
@@ -47,7 +47,7 @@ impl<'a> EmissionPlacement<'a> {
             })?;
             let destination = assignment.of(unit.id);
             ensure!(
-                destination == residual || destination.0 < module_count,
+                destination == entry_module_id || destination.0 < module_count,
                 "reconstruction: source unit {} targets unknown module {}",
                 unit.id.0,
                 destination.0
@@ -68,7 +68,8 @@ impl<'a> EmissionPlacement<'a> {
                         "reconstruction: whole-statement claim at body index {body_index} spans differently assigned source units"
                     );
                 }
-            } else if unit.class() == SourceUnitClass::AnonymousStatement && destination != residual
+            } else if unit.class() == SourceUnitClass::AnonymousStatement
+                && destination != entry_module_id
             {
                 bail!(
                     "reconstruction: source unit {} targets module {} without a whole-statement plan",
@@ -97,14 +98,14 @@ impl<'a> EmissionPlacement<'a> {
                 "reconstruction: whole-statement claim at body index {body_index} has no source unit"
             ))?;
             ensure!(
-                *destination != residual && destination.0 == requested,
+                *destination != entry_module_id && destination.0 == requested,
                 "reconstruction: whole-statement claim at body index {body_index} disagrees with its validated destination"
             );
             statements.insert(body_index, destination.0);
         }
         let bindings = binding_destinations
             .into_iter()
-            .filter(|(_, destination)| *destination != residual)
+            .filter(|(_, destination)| *destination != entry_module_id)
             .map(|(binding, destination)| (binding, destination.0))
             .collect();
         Ok(Self {
