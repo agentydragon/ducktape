@@ -28,13 +28,17 @@ Public implementation PRs #12125, #12127, #12129, #12130, and #12131 have
 landed with their required CI green. Combined public suite, optimized build, and
 JavaScript-equivalence evidence live in `perf/large_web_corpus_baseline.md`.
 
-- Finish Gaffer regeneration and the established browser/runtime controls against
-  the final merged engine pin, publish the paired pin update, and track its merge.
-- Record rejected and unverified registered corpus controls separately. Preserve
-  existing structural metric findings, rules, exemptions, and baselines.
-- Audit the final tree for redundant wrappers, terminology drift, misplaced
-  responsibilities, stale docs, and transitional interfaces. Resolve findings
-  within this scope before declaring completion.
+The final audit corrections are in PR #12138. The paired downstream pin update
+is open: producer and metrics builds succeeded, the normal writer executed
+locally with no generated-JavaScript diff, and all six established runtime
+controls passed. Its acceptance record separates historical rejected and
+unverified registered-corpus results from the fresh exact-pin checks. Existing
+structural metric findings, rules, exemptions, and baselines are unchanged.
+
+- Land PR #12138 after its final-head CI passes.
+- Land the paired downstream pin update. Track its hosted CI limitation in that
+  PR separately from the successful direct Bazel validation.
+- Delete this ledger after these final merge gates are met.
 
 ## Completion criteria
 
