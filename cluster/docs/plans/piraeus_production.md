@@ -7,27 +7,18 @@ Remove completed work from this plan as it lands. The deployed design is in
 [Piraeus block storage](../piraeus.md); node maintenance follows the
 [node runbook](../runbooks/piraeus_node_roll.md).
 
-## Status, 2026-10-24
+## Status, 2026-10-26
 
 Every OVH Talos node (`ovh-ns1001419`, `ovh-ns104952`, `ovh-ns104963`,
 `ovh-ns103656`, `ovh-ns103711`, `ovh-ns102453`) and the OptiPlex run the split
 system layout and a whole-data-disk Piraeus pool, and Terraform state matches
-their live configuration. No live OVH application reads a local-path volume.
-Seaweed is still re-replicating the HDD volumes left single-copy by the
-`ovh-ns102453` reimage onto that node's new server; confirm every HDD volume is
-back to two copies before the next HDD maintenance.
+their live configuration. The OVH local-path classes and their records are gone,
+and a `volume.fix.replication` dry-run finds no SeaweedFS volume short of two
+copies after the `ovh-ns102453` reimage. Parked manifests under `cluster/parked/`
+still name OVH local-path classes; repoint them to Piraeus on revival.
 
-Remaining: finish retiring the OVH local-path layer, close the operational gaps below,
-the replicated-class and Seaweed-reduction work, and the separate Wyrm2/NixOS phase.
-
-## Retire OVH local-path
-
-The OVH local-path classes are gone. One record remains: the Released
-OptiPlex Piraeus PV for
-`home-assistant/volsync-dst-optiplex-migration-ha-piraeus-restore-cache`.
-
-Parked manifests under `cluster/parked/` still name OVH local-path classes;
-repoint them to Piraeus on revival.
+Remaining: close the operational gaps below, the replicated-class and
+Seaweed-reduction work, and the separate Wyrm2/NixOS phase.
 
 ## Operational gaps
 

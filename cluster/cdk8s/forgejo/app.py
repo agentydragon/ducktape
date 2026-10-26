@@ -318,7 +318,7 @@ def _values(storage: s3.PrivateBucket) -> dict[str, object]:
             # migration cutover. (The old gitea-shared-storage PVC has the chart's
             # helm.sh/resource-policy:keep annotation, so it survives as a rollback.)
             "create": False,
-            # git repos on the SeaweedFS SSD tier (Phase 3, ovh_storage_tiering.md).
+            # git repos on the SeaweedFS SSD tier.
             # Migrated from forgejo-git-rwx (HDD) via VolSync rsync-TLS; read-zero-downtime
             # rolling repoint.
             "claimName": _GIT_CLAIM,

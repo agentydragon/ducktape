@@ -307,7 +307,7 @@ def seaweed(scope: Construct) -> Seaweed:
                     )
                 ),
             ),
-            # SSD and HDD tiering -- cluster/docs/plans/ovh_storage_tiering.md. volumeTopology is the
+            # SSD and HDD tiering. volumeTopology is the
             # sole volume-server source: the operator reconciles ONLY these groups
             # (all-or-nothing -- it does NOT also honor a flat spec.volume, which we
             # deliberately omit). Each group requires dataCenter + rack and is fully
@@ -325,8 +325,7 @@ def seaweed(scope: Construct) -> Seaweed:
                 # 001 (same-rack, 2 nodes) needs >=2 nodes per rack, and a faithful per-rack
                 # split would strand the singleton H109A09 (102453, the 3.6 TB disk) with no
                 # bulk. Single-node tolerance is the accepted posture -- see
-                # defaultReplication above; the split + repl 010 sketch stays in
-                # cluster/docs/plans/ovh_storage_tiering.md as an option, not a plan.
+                # defaultReplication above.
                 #
                 # Slots are independent of bytes: tiny or partial collection volumes still
                 # consume slots. 2000 leaves room for growth; minFreeSpacePercent remains the

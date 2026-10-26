@@ -170,6 +170,19 @@ OVH reallocates a Kimsufi IP:
 3. Re-apply. The new `static_host_map` propagates.
 4. Restart Nebula on lighthouses + roaming hosts.
 
+## Control-plane add or remove
+
+CP membership is the host's `role` in `nebula-mesh.json` (leave `lighthouse`,
+`relay` and `cert_groups` alone). The Talos machine type in `ovh-nodes.tf`, the
+etcd metrics scrape EndpointSlice in
+`cluster/generated/platform-monitoring/platform-monitoring.k8s.yaml` (without it
+`ControlPlaneLeasePutLatency` alerts point nowhere) and the `api.allegedly.works`
+A records in `cluster/generated/external-dns-records/` derive from it; run
+`bb run //cluster/cdk8s:generate_manifests` after the edit. If the anchor node
+moves, update `primary_controlplane_ip` in `cluster/terraform/main/infrastructure.tf`
+in the same change; the `talos_machine_bootstrap` and `talos_cluster_kubeconfig`
+resources ignore changes to it.
+
 ## Validation
 
 `bazel test //cluster/validation:test_nebula_mesh` enforces:

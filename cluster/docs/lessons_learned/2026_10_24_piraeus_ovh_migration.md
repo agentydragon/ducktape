@@ -53,5 +53,5 @@ Released and orphaned local-path records accumulated on every wiped node: 35 wer
 deleted on 2026-10-24 after checking each was Released, or Bound with no consumer
 and no GitOps declaration. Claim names reused by replacement claims make a
 Released PV look in use; compare the PV's `claimRef.uid` with the current claim
-before trusting a name match. Remaining claim-default and StorageClass cleanup is
-in the [production plan](../plans/piraeus_production.md#retire-ovh-local-path).
+before trusting a name match. The OVH local-path classes were removed on
+2026-10-25 once no claim used them.

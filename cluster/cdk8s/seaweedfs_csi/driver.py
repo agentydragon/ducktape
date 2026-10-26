@@ -261,7 +261,7 @@ def chart(app: App) -> Chart:
             "SeaweedFS CSI (RWX, distributed) pinned to the SSD volume tier. diskType=ssd maps to "
             "`weed mount -disk=ssd`, so volumes land only on ssd-tagged volume servers (the OVH NVMe "
             "topology group). Reserved for fsync/latency-critical RWX data (Forgejo git). The default "
-            "seaweedfs-ovh class is media-blind (HDD bulk). See cluster/docs/plans/ovh_storage_tiering.md."
+            "seaweedfs-ovh class is media-blind (HDD bulk)."
         ),
         # CSI v1.4.30 maps `diskType` to `weed mount -disk` and passes `replication` through
         # (verified against pkg/driver/mounter.go).

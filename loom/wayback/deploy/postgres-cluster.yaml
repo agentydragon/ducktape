@@ -14,10 +14,8 @@ spec:
       isolationCheck:
         enabled: false
 
-  # OVH-HA profile (cnpg_conventions R2): two instances on separate OVH kimsufi nodes.
-  # Scaled 1 → 2 ahead of the Stage 2 CP reshuffle so it has a re-clone source and rides
-  # Case A eviction instead of being destroyed with its node
-  # (cluster/docs/plans/ovh_storage_tiering.md).
+  # OVH-HA profile (cnpg_conventions R2): two instances on separate OVH kimsufi nodes,
+  # so a node roll leaves a re-clone source.
   affinity:
     nodeSelector:
       topology.kubernetes.io/zone: hil-ovh

@@ -1,6 +1,6 @@
 # SeaweedFS `volumeTopology` migration + operator upgrade (2026-07-04)
 
-Lessons from Stage 1 of the OVH storage tiering (<../plans/ovh_storage_tiering.md>) —
+Lessons from Stage 1 of the OVH storage tiering —
 splitting the flat SeaweedFS volume layer into `hdd`/`ssd` `volumeTopology` groups and
 upgrading the operator. The stale-mount-cache incident that the evacuation caused has its
 own writeup: <2026_07_04_seaweedfs_stale_mount_cache_after_evacuation.md>.

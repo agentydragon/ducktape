@@ -7,7 +7,7 @@ The live follow-up is in <../../../cluster/debug/nebula_inter_node_perf/>.
 ## Symptom
 
 Single-stream transfers over the pod network between OVH nodes are slow and lossy.
-Surfaced during the OVH data-disk mount rename (`plans/ovh_storage_tiering.md`): SeaweedFS
+Surfaced during the OVH data-disk mount rename: SeaweedFS
 `volume.move` between KS-5 nodes ran at **~32 MB/s (~256 Mbps)** and `volumeServer.evacuate`
 kept aborting on transient gRPC errors mid-move (had to wrap it in a retry loop).
 

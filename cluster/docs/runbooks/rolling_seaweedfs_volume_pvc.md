@@ -125,8 +125,8 @@ policy nominally says.
 
 The steps above **roll** a PVC — the volume-server pod keeps its identity, so its
 hostname keeps resolving. **Deleting a volume server outright** (removing its
-StatefulSet, e.g. retiring the flat servers or reprovisioning a node in Stage 2 of
-the tiering plan) is different and bit us on 2026-07-04: long-lived `weed mount`
+StatefulSet, e.g. retiring the flat servers or reprovisioning a node) is
+different and bit us on 2026-07-04: long-lived `weed mount`
 FUSE clients cache each volume's location and only re-resolve gracefully when the
 old server is **alive** and returns "volume not found". A **deleted** server (DNS
 `no such host`) leaves the cache permanently stale → reads I/O-error → git `mmap`

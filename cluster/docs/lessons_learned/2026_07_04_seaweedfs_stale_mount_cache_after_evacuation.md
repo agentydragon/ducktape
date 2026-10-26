@@ -94,5 +94,5 @@ deploy/forgejo`, stale errors dropped to 0, `ls-remote` went 8/8, and a real
 
 - Volume-server retirement runbook updated with the "keep the emptied server alive,
   refresh clients, then delete" sequence: <../runbooks/rolling_seaweedfs_volume_pvc.md>.
-- The OVH tiering plan's Stage 2 (which retires/moves volume servers again) carries
-  the same gotcha: <../plans/ovh_storage_tiering.md>.
+- The Piraeus node runbook carries the same gotcha for volume-server retirement:
+  <../runbooks/piraeus_node_roll.md#seaweed-volume-servers>.

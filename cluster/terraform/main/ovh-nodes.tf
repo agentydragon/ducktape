@@ -377,8 +377,8 @@ locals {
         # ExternalIP / providerID when `--cloud-provider=external` is in the kubelet
         # extraArgs (see `kimsufi_cloud_provider_external_enabled_nodes` below); the
         # CCM transformation matches on `region=hil` set here.
-        # `storage.allegedly.works/tier` drives the media-scoped local-path-ovh-{hdd,ssd} SCs
-        # (cluster/generated/local-path-provisioner); see cluster/docs/plans/ovh_storage_tiering.md.
+        # `storage.allegedly.works/tier` pins media-specific workloads (ClickHouse) and is
+        # exported as a node metric label by kube-state-metrics.
         # piraeus-ready selects the node's Piraeus satellite and raw-device pool.
         nodeLabels = {
           "topology.kubernetes.io/region"         = "hil"
@@ -408,8 +408,8 @@ locals {
           "user.max_user_namespaces" = "1048576"
         }
         # Topology labels set explicitly — no CCM for OVH bare metal.
-        # `storage.allegedly.works/tier` drives the media-scoped local-path-ovh-{hdd,ssd} SCs
-        # (cluster/generated/local-path-provisioner); see cluster/docs/plans/ovh_storage_tiering.md.
+        # `storage.allegedly.works/tier` pins media-specific workloads (ClickHouse) and is
+        # exported as a node metric label by kube-state-metrics.
         nodeLabels = {
           "topology.kubernetes.io/region"         = "hil"
           "topology.kubernetes.io/zone"           = v.zone
@@ -536,8 +536,8 @@ locals {
         # ExternalIP / providerID when `--cloud-provider=external` is in the kubelet
         # extraArgs (see `kimsufi_cloud_provider_external_enabled_nodes` below); the
         # CCM transformation matches on `region=hil` set here.
-        # `storage.allegedly.works/tier` drives the media-scoped local-path-ovh-{hdd,ssd} SCs
-        # (cluster/generated/local-path-provisioner); see cluster/docs/plans/ovh_storage_tiering.md.
+        # `storage.allegedly.works/tier` pins media-specific workloads (ClickHouse) and is
+        # exported as a node metric label by kube-state-metrics.
         nodeLabels = {
           "topology.kubernetes.io/region" = "hil"
           "topology.kubernetes.io/zone"   = v.zone

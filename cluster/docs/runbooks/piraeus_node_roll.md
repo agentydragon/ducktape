@@ -124,6 +124,14 @@ rate-limit moves and require two healthy destination copies per affected volume
 outside the outage set before final retirement. Never delete surplus replicas
 as an automatic part of the readiness check.
 
+The hourly `replication-repair` AdminScript (<../../cdk8s/seaweedfs/cluster.py>)
+runs copy-only `volume.fix.replication -apply -doDelete=false`. Before a planned
+volume-server outage, set its `suspend: true` in Git and wait for any active Job
+to finish; restore it once placement is stable. Without `-doDelete=false` (the
+value attached to the flag), an applied repair also deletes surplus and
+misplaced replicas. `volumeServer.evacuate` aborts on the first transient gRPC
+error over the overlay, so rerun it until the source shows zero volumes.
+
 For SeaweedFS 4.46, `volume.fix.replication` can exit with `lock is lost` after
 the client loses its renewable admin-lock state. Treat that command error
 separately from the Job deadline: inspect Pod termination and logs, and do not

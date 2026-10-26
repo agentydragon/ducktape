@@ -19,11 +19,10 @@ def chart(app: App) -> Chart:
         vpa=Vpa.DISABLED,
         annotations={
             "description": (
-                "SeaweedFS object store on the OVH Kimsufi nodes, backed by the\n"
-                "Talos-declared UserVolumeConfig data disk on each node. Replication\n"
+                "SeaweedFS object store on the OVH Kimsufi nodes, backed by a\n"
+                "node-local Piraeus volume on each node. Replication\n"
                 'strategy "001" (one copy on a different node, same rack).\n'
-                "See cluster/docs/kimsufi_provisioning.md and\n"
-                "cluster/docs/plans/ovh_storage_tiering.md.\n"
+                "See cluster/docs/piraeus.md.\n"
             )
         },
     )

@@ -211,8 +211,7 @@ can drop onto the leader (.13) at any time and spike its fsync queue.
    `gaffer-private`, and the CronJob's `augur` namespace does not exist.
 5. **Structural fix: etcd belongs on NVMe — done 2026-09-18.** The NVMe KS-GAME nodes
    were promoted into the quorum, and the SYS-1 NVMe node was added as the third voter;
-   the former HDD control-plane node was demoted to a worker. The staged topology work
-   is recorded in <../plans/ovh_storage_tiering.md>. Defrag and worker-first placement
+   the former HDD control-plane node was demoted to a worker. Defrag and worker-first placement
    remain useful operational safeguards, but the HDD quorum blocker is closed.
 
 ## Centralizing the Terraform CR runner template

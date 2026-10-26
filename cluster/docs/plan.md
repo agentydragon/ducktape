@@ -2,7 +2,7 @@
 
 **Status**: OVH/Kimsufi Talos control-plane and worker nodes, plus NixOS/Proxmox
 workers and roaming laptops. Cilium Gateway API, Route 53 DNS automation,
-Authentik SSO. Authentik runs on CloudNativePG `local-path`.
+Authentik SSO. Authentik runs on CloudNativePG `piraeus-ssd-local`.
 
 Standing decisions and invariants: <decisions.md>.
 
@@ -69,27 +69,9 @@ editing a route.
       supposed to survive node-rotation incidents, they should live on
       off-cluster object storage (B2 / R2 / OVH Object Storage / etc.)
       rather than home-hardware SeaweedFS.
-- [ ] **Eliminate per-node hostname references** in repo files
-      (`cluster/cdk8s/local_path_provisioner.py`'s `nodePathMap`,
-      `nebula-mesh.json` keys, etc.). Every node rename today requires editing
-      a fixed list of files; ideally local-path-provisioner could match OVH
-      nodes via a node-label selector (e.g. `topology.kubernetes.io/zone:
-hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
-      Investigate: does Rancher local-path-provisioner support label-based
-      node selection in `nodePathMap`? If not, consider a small mutating
-      controller or a different provisioner. Same idea could apply to the
-      Nebula mesh roster (derive entries from cluster Node labels rather than
-      a static JSON).
-- [ ] **Rename Terraform local-map keys** in `cluster/terraform/main/ovh-nodes.tf`
-      and `cluster/terraform/main/nebula.tf` to match the renamed hostnames.
-      Keys currently leak role/index (`kimsufi_cp0`, `kimsufi_worker0/1`,
-      `ks_game_worker0/1`) even though hostnames are now `ovh-ns102453`,
-      `ovh-ns103656`, `ovh-ns103711`, `ovh-ns104952`, `ovh-ns104963`. Naive edit
-      forces destroy+recreate of every `for_each`-keyed resource — including
-      `null_resource.install_talos_kimsufi` (which would `dd` the Talos image).
-      Use `tofu state mv` (~8 ops per node) to rekey without recreation. No
-      downtime if done correctly; defer until all five hostname renames are
-      stable.
+- [ ] **Derive the Nebula mesh roster from cluster Node labels** instead of the
+      static `nebula-mesh.json`, so a node rename stops requiring edits to a fixed
+      list of files.
 - [ ] **Test CNPG full self-recovery from node failure** in a controlled setup.
       During the 2026-06-02 OVH node renames (see
       `debug/2026-06-02-tofu-apply-hangs-from-rugged-mtu.md`) we deleted
@@ -104,15 +86,6 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       never got to creating the PVC before the next restart. Worth reproducing
       without API server pressure: kill one CNPG replica's PVC + pod cleanly,
       observe self-heal vs needing nudging.
-- [ ] **Replace Kimsufi worker_0** with the second new KS-5 from order #7958582
-      once it's delivered. Sequence: cordon + drain `talos-kimsufi-worker-0`,
-      `talosctl shutdown` the cancelled `ns103656` server, `kubectl delete node`,
-      `tofu state rm` the 9 worker_0 entries, set `var.kimsufi_service_name` to
-      the new server name, targeted `tofu apply`. Then update
-      `nebula-mesh.json:static_host_map` with the new public IP for `10.42.0.13`.
-      See <kimsufi_provisioning.md> §5 (path B already executed for worker_1 from
-      the same order — `ns103711.ip-147-135-39.us` joined as
-      `talos-kimsufi-worker-1` on 2026-05-15).
 - [ ] **Re-key admin-only SOPS files to include user keys** — admin age key
       lives only on wyrm2. `.sops.yaml` rules say
       `secrets/nebula/ca.sops.key` and `k8s/tofu-state/db/credentials.sops.yaml` (among
@@ -182,15 +155,6 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       or a different architecture before wiring Authentik to use it. Re-measure steady-state
       Postgres connections afterward before deciding whether any DB limit or
       worker-concurrency changes are still needed.
-- [ ] Consider OpenEBS LVM on Talos nodes; Talos has `machine.disks` or `machine.volumes`.
-      Would allow firecracker fast-clone on OVH workers.
-- [ ] Trial SeaweedFS with both the upstream operator and CSI driver. Deploy the
-      Seaweed cluster via `seaweedfs-operator`, then install the CSI driver as a
-      separate Flux `HelmRelease` pointed at the operator-created filer service.
-      Keep the StorageClass non-default, test with disposable PVCs first, and
-      evaluate S3/object usage separately from FUSE/PVC usage. Do not use it for
-      CNPG or core infra unless the trial proves recovery, upgrades, and node
-      restarts are boring.
 - [ ] Enable systemd watchdog for kubelet on NixOS workers (`WatchdogSec=` in kubelet
       service unit) — restarts kubelet if it deadlocks
 - [ ] Confirm DCGM/Mimir captures run-up telemetry over a full RTX 5090 fall-off cycle
