@@ -149,7 +149,7 @@ fn large_module_import_neighbors_match_the_shared_emitter_order() {
 
     let residual = ModuleId(0);
     let importer = ModuleId(1);
-    let targets: BTreeSet<ModuleId> = (2..=97).map(module_id).collect();
+    let targets: BTreeSet<ModuleId> = (2..=97).map(ModuleId).collect();
     let nodes: BTreeSet<ModuleId> = targets
         .iter()
         .copied()
