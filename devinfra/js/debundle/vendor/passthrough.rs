@@ -31,10 +31,8 @@ use std::collections::BTreeMap;
 use swc_ecma_ast::*;
 use swc_ecma_visit::{VisitMut, VisitMutWith};
 
-use artifact::{
-    ArtifactIndexes, ChunkId, ChunkTable, ImportReferenceKind, join_module_path,
-    module_path_dirname, relative_module_path,
-};
+use artifact::paths::{join_module_path, module_path_dirname, relative_module_path};
+use artifact::{ArtifactIndexes, ChunkId, ChunkTable, ImportReferenceKind};
 use binding_targets::module_export_name;
 use js_ast::{set_str_value, str_value};
 use spec::PartialSwapKind;

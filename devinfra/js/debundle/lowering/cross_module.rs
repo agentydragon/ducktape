@@ -17,9 +17,8 @@ use analysis::cross_module_purity::{
 };
 use analysis::purity::Purity;
 use anyhow::{Context, Result};
-use artifact::{
-    ArtifactIndexes, ChunkBundle, ChunkId, ExportAliasRecord, ImportRecord, ImportSpecifierKind,
-};
+use artifact::reports::{ExportAliasRecord, ImportRecord, ImportSpecifierKind};
+use artifact::{ArtifactIndexes, ChunkBundle, ChunkId};
 use js_ast::ParsedJsModule;
 use program_analysis::analyze_program_shallow;
 use spec::ChunkExportPurity;
@@ -438,9 +437,10 @@ pub(super) fn collect_cross_module_imported_purities(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use artifact::reports::{ChunkAnalysisReport, ChunkFileRecord};
     use artifact::{
-        ChunkAnalysisReport, ChunkArtifact, ChunkBundle, ChunkFileRecord, ChunkMetadata,
-        ChunkTable, FileMetadata, FileRole, JsChunk, JsFile, JsFileBody,
+        ChunkArtifact, ChunkBundle, ChunkMetadata, ChunkTable, FileMetadata, FileRole, JsChunk,
+        JsFile, JsFileBody,
     };
 
     fn test_bundle(chunks: &[(&str, &str)]) -> ChunkBundle {

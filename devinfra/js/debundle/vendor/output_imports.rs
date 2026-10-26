@@ -1,8 +1,8 @@
 //! Resolve vendor imports in emitted-output coordinates, including materialized chunk paths.
-use artifact::{
-    ArtifactIndexes, ChunkId, ChunkTable, join_module_path, module_path_dirname,
-    normalize_module_path, relative_module_specifier,
+use artifact::paths::{
+    join_module_path, module_path_dirname, normalize_module_path, relative_module_specifier,
 };
+use artifact::{ArtifactIndexes, ChunkId, ChunkTable};
 use std::collections::HashMap;
 use std::path::Path;
 

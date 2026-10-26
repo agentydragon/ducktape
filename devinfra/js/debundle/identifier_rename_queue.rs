@@ -50,7 +50,8 @@ use swc_ecma_ast::{
 };
 use swc_ecma_visit::{Visit, VisitWith};
 
-use artifact::{ChunkBundle, ChunkDecompositionOutput, ChunkId, EmissionFiles};
+use artifact::reports::ChunkDecompositionOutput;
+use artifact::{ChunkBundle, ChunkId, EmissionFiles};
 use js_ast::ParsedJsModule;
 
 /// One entry in the priority queue: a still-unrenamed top-level symbol

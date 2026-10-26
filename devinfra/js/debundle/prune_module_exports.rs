@@ -34,7 +34,8 @@
 use binding_targets::module_export_name;
 use std::collections::BTreeSet;
 
-use artifact::{ChunkBundle, FileRole, JsFile, join_module_path, module_path_dirname};
+use artifact::paths::{join_module_path, module_path_dirname};
+use artifact::{ChunkBundle, FileRole, JsFile};
 use swc_ecma_ast::*;
 
 pub fn prune_unimported_module_exports(bundle: &mut ChunkBundle) {

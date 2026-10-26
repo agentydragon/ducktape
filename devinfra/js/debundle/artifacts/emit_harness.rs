@@ -5,10 +5,11 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use serde::Serialize;
 
-use artifact::{
-    ArtifactChunkRecord, ChunkDecompositionOutput, ChunkId, OutputMetrics,
-    materialize_artifact_scripts, module_path_from_path, write_json,
-};
+use artifact::ChunkId;
+use artifact::metrics::OutputMetrics;
+use artifact::paths::module_path_from_path;
+use artifact::reports::{ArtifactChunkRecord, ChunkDecompositionOutput, write_json};
+use artifact::script_output::materialize_artifact_scripts;
 use output_layout::DebundleOutputLayout;
 use reconstruction::ValidatedPlan;
 use write_tree::write_common_emission_reports;

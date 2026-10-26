@@ -23,7 +23,7 @@ pub use fixture_spec::{
 pub use fixture_spec::{ChunkRenameEntry, chunk_rename, chunk_rename_with_purity, chunk_renames};
 
 use analysis::DependencyGraphReport;
-use artifact::PackageManifest;
+use artifact::reports::PackageManifest;
 use runfiles::{Runfiles, rlocation};
 use serde::Serialize;
 use serde::de::DeserializeOwned;

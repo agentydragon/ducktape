@@ -37,11 +37,9 @@ use analysis::{
     PlannedModule, top_level_id,
 };
 use anyhow::{Context, Result, bail};
-use artifact::{
-    ArtifactIndexes, ChunkBundle, ChunkId, ChunkValidationSummary, DirectoryDependencyFact,
-    FileRole, JsFile, SelectedModuleLowering, get_chunk_entry_path, join_module_path,
-    normalize_module_path,
-};
+use artifact::paths::{join_module_path, normalize_module_path};
+use artifact::reports::{ChunkValidationSummary, DirectoryDependencyFact, SelectedModuleLowering};
+use artifact::{ArtifactIndexes, ChunkBundle, ChunkId, FileRole, JsFile, get_chunk_entry_path};
 use chunk_analysis::{ChunkAnalysisOutput, DynamicImportTarget, compute_chunk_analysis};
 use gate::{
     AssignmentAnalysis, ValidatedAssignment, render_atomic_group_conflict_summary,

@@ -10,7 +10,7 @@ use crate::imports::{
     runtime_reimport_named_specifier, runtime_reimport_specifier,
 };
 use anyhow::{Result, bail};
-use artifact::{
+use artifact::paths::{
     join_module_path, module_path_dirname, normalize_relative_module_specifier,
     relative_module_path,
 };

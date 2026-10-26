@@ -9,10 +9,9 @@ use swc_common::GLOBALS;
 use analysis::facts::ExportReentryPolicy;
 use analysis::{DependencyGraphOptions, RedundantPurityHint};
 
-use artifact::{
-    ArtifactIndexes, ChunkBundle, ChunkId, SelectedModuleLowering, StaticModuleRequest,
-    StaticModuleRequestMode, normalize_module_path,
-};
+use artifact::paths::normalize_module_path;
+use artifact::reports::{SelectedModuleLowering, StaticModuleRequest, StaticModuleRequestMode};
+use artifact::{ArtifactIndexes, ChunkBundle, ChunkId};
 
 use output_layout::MODULES_REPORT;
 use reconstruction::UnmatchedSpecClaim;
@@ -535,7 +534,7 @@ fn collect_closure_blockers(
         let chunk = artifact.chunk(source)?;
         let runtime = &chunk.analysis.runtime_facts;
         let source_name = artifact.chunk_table.name(source).to_string();
-        if runtime.module_kind != artifact::ChunkModuleKind::Esm {
+        if runtime.module_kind != artifact::reports::ChunkModuleKind::Esm {
             blockers.push(ExportReentryClosureBlocker::NonEsmChunk {
                 source_chunk: source_name.clone(),
             });

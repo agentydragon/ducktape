@@ -10,7 +10,8 @@ use crate::rename_ledger::{
 use crate::visitors::{IdentifierRenamer, RenameCaptureProbe};
 use analysis::top_level_id;
 use anyhow::{Context, Result};
-use artifact::{ArtifactIndexes, ChunkBundle, SelectedModuleLowering};
+use artifact::reports::SelectedModuleLowering;
+use artifact::{ArtifactIndexes, ChunkBundle};
 use binding_targets::module_export_name;
 use js_ast::is_binding_identifier;
 use std::collections::{BTreeMap, BTreeSet};

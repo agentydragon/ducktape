@@ -3,11 +3,13 @@ use std::path::Path;
 
 use anyhow::{Result, bail};
 
-use artifact::{
-    ArtifactChunkRecord, ArtifactCounts, ArtifactManifest, ChunkDecompositionOutput, ChunkId,
-    ChunksReport, DecompositionMetrics, PackageManifest, RootLogicalModulesSummary,
-    SelectedModuleLowering, materialize_artifact_scripts, write_json,
+use artifact::ChunkId;
+use artifact::metrics::DecompositionMetrics;
+use artifact::reports::{
+    ArtifactChunkRecord, ArtifactCounts, ArtifactManifest, ChunkDecompositionOutput, ChunksReport,
+    PackageManifest, RootLogicalModulesSummary, SelectedModuleLowering, write_json,
 };
+use artifact::script_output::materialize_artifact_scripts;
 use identifier_rename_queue::compute_identifier_rename_queue;
 use output_layout::DebundleOutputLayout;
 use reconstruction::ValidatedPlan;

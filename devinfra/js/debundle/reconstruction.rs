@@ -9,7 +9,8 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Result, bail};
-use artifact::{ChunkId, EmissionFiles, write_json};
+use artifact::reports::write_json;
+use artifact::{ChunkId, EmissionFiles};
 use serde::Serialize;
 use validate_emitted_exports::validate_emitted_exports;
 use vendor::{
