@@ -22,8 +22,8 @@ use selector_outcome::{
     Declaration, Entity, EntityRef, Outcome, ResolvedBy, SelectorOutcome, SelectorOutcomeReport,
 };
 use selector_resolve::{EntityIndex, EntityOutcome, MemberSelector, Resolution};
-use spec_resolution::{LogicalRequest, MemberRequest, reject_duplicate_member_bindings};
 use source_identity::{SourceUnitOrdinal, StatementId};
+use spec_resolution::{LogicalRequest, MemberRequest, reject_duplicate_member_bindings};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use swc_ecma_ast::*;
 

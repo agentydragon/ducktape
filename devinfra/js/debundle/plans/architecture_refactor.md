@@ -31,8 +31,9 @@ implementation and reader cutover.
 | ----------------------------------------------------------- | -------------------------------------------------- | --------------------------------------------------------------------- |
 | Parsed program and shared syntax indexes                    | `SourceProgram`                                    | Landed                                                                |
 | Binding identity independent of spelling and placement      | `BindingId`, retaining chunk scope and SWC hygiene | Current SWC identity is chunk scoped; named handle remains Stage B    |
-| Identity of an original statement                           | `StatementId`                                      | Required Stage B work                                                 |
+| Identity of an original statement                           | `StatementId`                                      | Landed; original parsed body item                                     |
 | Identity of a movable source fragment                       | `SourceUnitId`                                     | Required Stage B work                                                 |
+| Source position of a movable fragment                       | `SourceUnitOrdinal`                                | Landed; post-split coordinate distinct from graph identity            |
 | Reads, writes, effects, and ordering constraints            | `DependencyGraph` over source units                | Target boundary; active reader cutover                                |
 | Units proven to require co-location                         | `AtomicGroup`                                      | Target boundary; PR #12060                                            |
 | Explicit author contracts and runtime assumptions           | `AnalysisAssumptions`                              | Target boundary; PR #12059                                            |
