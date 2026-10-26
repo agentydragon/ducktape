@@ -507,7 +507,7 @@ fn rejects_stale_selection_without_writing_any_claim() {
             "--size-cap-lines",
             "1",
         ],
-        &["source_unit IDs changed"],
+        &["source unit IDs changed"],
     );
 }
 

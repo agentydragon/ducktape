@@ -515,6 +515,11 @@ fn describe_limit_truncates_each_section_and_reports_its_total() {
         sections["source_unit_ids"],
         json!({"total": 1, "emitted": 1, "truncated": false})
     );
+    assert_eq!(
+        sections["source_units"]["emitted"],
+        report["source_units"].as_array().unwrap().len()
+    );
+    assert!(sections.get("owners").is_none());
 }
 
 #[test]

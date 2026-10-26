@@ -730,7 +730,7 @@ pub fn gate_post_edit_assignment(
     )
 }
 
-/// Run the normal gate and prove the entire resolved post-edit source unit assignment
+/// Run the normal gate and prove the entire resolved post-edit source-unit assignment
 /// is exactly the reviewed assignment, including source units that remain residual.
 pub fn gate_post_edit_assignment_with_expected_source_unit_modules(
     dependency_graph_path: &Path,

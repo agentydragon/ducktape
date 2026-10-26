@@ -22,7 +22,7 @@ JSON-on-stdout / structured-diagnostic-on-stderr convention.
   [Claiming fresh proposals](#claiming-fresh-proposals-modules-apply), and
   <spec_editing.md>.
 - Reorganize existing modules: [Plan a module assignment](#refining-existing-modules-modules-decompose),
-  then [apply reviewed owner assignments](#applying-reviewed-owner-assignments-modules-refine).
+  then [apply reviewed source-unit assignments](#applying-reviewed-source-unit-assignments-modules-refine).
 - Diagnose a rejected edit: [Rejection diagnostics](#rejection-diagnostics)
   and [Gate queries](#gate-queries).
 
@@ -414,7 +414,7 @@ names in that selector.
 [
   {
     "proposal_id": "auto_partition_0007",
-    "source_unit_ids": ["owner-id-from-the-reviewed-row"],
+    "source_unit_ids": ["unit-id-from-the-reviewed-row"],
     "module": "services/provider",
     "readable_names": { "a": "Provider" }
   }
@@ -426,7 +426,7 @@ current `modules propose --format json` row. Choose the destination and a
 readable name for every residual binding in that row. For extension rows the
 destination must equal `extends_module_id`. Use the same `--size-cap-lines`
 value as `modules propose` if it was overridden. The command rejects stale
-owner sets, merges, anonymous-owner rows, unprovable or name-pinned selectors,
+source-unit sets, merges, anonymous-statement rows, unprovable or name-pinned selectors,
 and failed post-edit gates before writing any YAML. `--dry-run --format json`
 reports each selector in `selector_reviews`, including its source-match claim
 or relational selector, provenance, and rebuild-anchor review warning. It
@@ -444,7 +444,7 @@ the requested source binding, not merely to some unique declaration:
 ```json
 {
   "proposal_id": "auto_partition_0007",
-  "source_unit_ids": ["owner-id-from-the-reviewed-row"],
+  "source_unit_ids": ["unit-id-from-the-reviewed-row"],
   "module": "services/provider",
   "readable_names": { "a": "Provider" },
   "selectors": {
@@ -484,7 +484,7 @@ choose semantic module names for each suggested part, and assign the complete
 set of fragments together. Suggested `part-N` paths are temporary review aids,
 not names inferred from the source. This is a conservative seed refinement,
 not a minimal module assignment: its canonical pivot order can leave mutually compatible
-owners in separate fragments. Unlike `modules propose`, decomposition has no
+source units in separate fragments. Unlike `modules propose`, decomposition has no
 module-size cap and does not run the greedy cross-module proposer.
 Some fragments may include source units without binding IDs, such as anonymous
 statements; inspect those source units and move them with their `anonymous_statements:`
@@ -584,7 +584,7 @@ decomposition omits this field.
 To retain as many original semantic homes as the accepted assignment permits,
 add `--rejoin-original-modules` to the SCC coarsening command. This requires
 `--coarsen-blocking-sccs` and starts only after its complete candidate passes
-the shared gate. It contracts whole candidate groups when every owner in both
+the shared gate. It contracts whole candidate groups when every source unit in both
 groups came from the same original module. Each proposed contraction passes the
 full shared realizability gate on its hypothetical complete assignment. Groups
 that already combine different original homes remain intact. The final complete
@@ -637,7 +637,7 @@ Use `modules refine` to apply a reviewed source-unit-to-module batch to claims a
 present in the scoped module tree:
 
 ```sh
-debundle modules refine --batch reviewed-owners.json \
+debundle modules refine --batch reviewed-source-units.json \
   --graph dependency_graph.json --modules spec/modules --source-root source
 ```
 
@@ -655,7 +655,7 @@ unclaimed, import, and export source units cannot be assigned. It rejects duplic
 source-unit rows, split/conflicting current claims, destination name or annotation
 collisions, and stale dependency graphs. It then resolves every selector in the
 complete scoped post-edit spec and compares every graph source unit—including
-unchanged and residual owners—to the requested complete assignment. Only after
+unchanged and residual source units—to the requested complete assignment. Only after
 that identity check does the shared atomic-group and realizability gate run.
 There is no `--no-verify` mode. `--dry-run` performs the same checks without
 writing YAML; a rejected batch leaves every module document unchanged.
@@ -673,7 +673,7 @@ what's wrong:
 which source units it covers, which modules its members would land in, and the
 `DepKind` causes from the group (same data shape as `AtomicGroupConflict`).
 When a sequenced side-effect edge is involved, the existing conflict/cycle
-records also include each impure initializer owner, its binding name, source
+records also include each impure initializer source unit, its binding name, source
 path and 1-based line/column, plus the `PurityRule`, optional detail, and any
 author guidance. Unknown calls point to the member-level `purity` annotation;
 imported fluent chains point to `chunk_export_purity.<chunk>.fluent_exports`.
@@ -722,7 +722,7 @@ the clean state: zero blocking SCCs, exit 0.
 When a binding's role is unclear or a proposal is suspicious:
 
 1. **`debundle describe <sym>`** — graph + spec context: the binding's
-   owner, home module, atom membership, and incoming/outgoing edges. Add
+   source unit, home module, atom membership, and incoming/outgoing edges. Add
    `--include-proposals` only when proposer proposal/diagnostic
    annotations are needed.
 2. **`debundle inspect-source --id <sym>`** — inspect the source unit's numbered

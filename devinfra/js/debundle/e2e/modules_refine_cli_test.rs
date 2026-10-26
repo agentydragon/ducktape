@@ -369,7 +369,7 @@ fn rejects_unclaimed_scaffolding_and_duplicate_source_unit_rows() {
             "--batch",
             duplicate_batch.path().join("refine.json").to_str().unwrap(),
         ],
-        &["source unit assignment batch repeats"],
+        &["source-unit assignment batch repeats"],
     );
 }
 

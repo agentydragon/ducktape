@@ -190,7 +190,7 @@ and a `purity` verdict whose reasons may point to further entries. Follow
 these links to inspect the callee's full cause chain; shared callees are
 stored once rather than copied into every caller. A direct reason's
 `source_location` names the source file where that reason arose, including
-when the call crosses chunks. The table is absent when no owner references
+when the call crosses chunks. The table is absent when no source unit references
 an impure known-function call. Older reports without the table or
 `cause_ref` still deserialize.
 
