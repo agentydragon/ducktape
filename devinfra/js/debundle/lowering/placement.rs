@@ -30,7 +30,7 @@ impl<'a> EmissionPlacement<'a> {
         let factorization = validated.factorization();
         let graph = factorization.analysis().dependency_graph();
         let assignment = factorization.assignment();
-        let residual = assignment.residual();
+        let residual = assignment.entry_destination().module_id();
         let ordinals: Vec<SourceUnitOrdinal> = graph
             .iter_nodes()
             .map(|unit| unit.statement_ordinal)

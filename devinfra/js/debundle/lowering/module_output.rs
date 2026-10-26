@@ -140,7 +140,7 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
         ledger: &mut import_ledger,
     };
     // All intra-chunk imports (cross-module binding imports, phantom
-    // side-effect imports, and the residual-entry import) are
+    // side-effect imports, and the entry-destination import) are
     // collected as `(target ModuleId, decl)` pairs and ordered by ONE
     // shared rule — `EsmImportOrder::sort_module_imports` — below.
     // The realizability gate's evaluation simulator sorts this
@@ -260,15 +260,15 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
             &imported_overrides,
         )
     }?;
-    // The residual-entry import targets the chunk's residual module
-    // (the emitted entry file — always the ESM DFS root, so its slot
+    // The entry-destination import targets the chunk's emitted entry file
+    // (always the ESM DFS root, so its slot
     // in the list is a runtime no-op, but it still gets its shared-
     // ordering position for determinism).
-    let residual_module = factorization.assignment().residual();
+    let entry_module_id = factorization.assignment().entry_destination().module_id();
     intra_chunk_imports.extend(
         residual_entry_import_items
             .into_iter()
-            .map(|item| (residual_module, item)),
+            .map(|item| (entry_module_id, item)),
     );
     // ONE ordering for every intra-chunk import — the same
     // `EsmImportOrder::sort_module_imports` the gate's simulator

@@ -18,17 +18,35 @@ pub fn top_level_id(sym: &str, top_level_mark: Mark) -> Id {
     )
 }
 
-/// Identity of a module the graph/schedule analysis reasons about.
-/// Its dense index points into the schedule's `logical_modules` list.
-/// A default-assignment output is a logical module with
-/// [`ModuleRole::Unassigned`],
-/// synthesized by the materializer
-/// before `AssignmentAnalysis::build_with` for chunks that need a default
-/// destination (every `InlineInEntry` and `CatchallFile` chunk; the
-/// `PerAtomicGroup` synthesizer handles assignments itself).
+/// Identity of a destination in the module-quotient graph and schedule.
+/// Planned outputs use dense indices into `planned_modules`; a materialized
+/// analysis wraps the entry destination in [`EntryDestination`] after those
+/// outputs. Generic quotient projections may use other dense destination IDs.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize)]
 #[serde(transparent)]
 pub struct ModuleId(pub usize);
+
+/// Destination used for unclaimed source units and as the ESM DFS root.
+/// In a materialized chunk this follows all planned output modules; generic
+/// quotient projections may use any dense module identity as their root.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct EntryDestination(ModuleId);
+
+impl EntryDestination {
+    /// Construct a destination for a generic assignment or projected graph.
+    pub fn from_module_id(module_id: ModuleId) -> Self {
+        Self(module_id)
+    }
+
+    /// Construct the destination immediately following the planned outputs.
+    pub fn after_planned_modules(planned_module_count: usize) -> Self {
+        Self(ModuleId(planned_module_count))
+    }
+
+    pub fn module_id(self) -> ModuleId {
+        self.0
+    }
+}
 
 /// Interned chunk identifier. Created by `ChunkTable::intern` during chunk
 /// loading and used throughout the pipeline in place of `String` chunk names.
@@ -75,14 +93,14 @@ impl ChunkTable {
 #[derive(Debug, Clone)]
 pub enum BindingKind {
     /// Declared by a top-level `var/let/const/function/class` in this
-    /// chunk; the spec assigns it to a logical module (or the
-    /// residual entry). `module` is the owning logical module — named
-    /// `module` (not `source_unit`) to avoid colliding with the "source_unit =
-    /// dependency graph node" sense of `source_unit` used throughout the crate.
+    /// chunk; an explicit spec claim assigns it to a planned output,
+    /// while unclaimed bindings use the entry destination. The field is
+    /// named `module` to distinguish it from `source_unit`, the crate's term
+    /// for a dependency-graph node.
     Owned { module: ModuleId },
     /// Introduced by an `import { imported_name as <local> } from
     /// "<source>"` in the chunk's top-level body. The value lives in
-    /// another chunk; exactly one logical module re-exports it under
+    /// another chunk; exactly one planned output re-exports it under
     /// its chosen public name (the spec's duplicate-claim check
     /// rejects two modules claiming the same import).
     Imported {
@@ -112,9 +130,9 @@ pub enum ModuleRole {
     Specified,
     /// A destination used by the default policy for source owners that
     /// were not assigned by an explicit module request. This includes the
-    /// catch-all, generated atomic-group outputs, and the anonymous sentinel;
-    /// it describes assignment policy, not the physical DFS root selected by
-    /// [`crate::ModuleAssignment::residual`].
+    /// catch-all and generated atomic-group outputs. It describes assignment
+    /// policy, not the physical DFS root selected by
+    /// [`crate::ModuleAssignment::entry_destination`].
     Unassigned,
 }
 
@@ -308,9 +326,10 @@ pub struct PlannedModule {
     pub target_file: String,
     /// This policy role distinguishes explicitly specified destinations from
     /// outputs that receive unassigned source units. It is independent of the
-    /// physical DFS root selected by [`crate::ModuleAssignment::residual`]. Reports
-    /// project `Unassigned` to their legacy residual boolean, including for
-    /// generated atomic-group outputs.
+    /// physical DFS root selected by
+    /// [`crate::ModuleAssignment::entry_destination`]. Reports project
+    /// `Unassigned` to their legacy residual boolean, including for generated
+    /// atomic-group outputs.
     pub role: ModuleRole,
     /// Local-name → exported-name map for the bindings this module
     /// owns. Empty when the module re-exports only imported

@@ -1,12 +1,12 @@
 //! Per-chunk analysis state: inputs, IR, and input-derived caches.
 //!
 //! [`AssignmentInputs`] is what's known about a chunk before propose
-//! runs — the spec-supplied logical modules, the binding catalogue,
+//! runs — the planned output modules, the binding catalogue,
 //! the dependency graph derived from the chunk facts, and the small
 //! lookup caches that depend only on inputs. The propose algorithm
-//! consumes an `AssignmentInputs` plus a default destination to produce a
+//! consumes an `AssignmentInputs` plus an entry destination to produce a
 //! [`crate::AssignmentAnalysis`] — the assignment-and-derived state
-//! that depends on which logical-module assignment the spec chose.
+//! that depends on which output-module assignment the spec chose.
 
 use std::collections::{BTreeSet, HashMap};
 
@@ -34,7 +34,7 @@ pub struct AssignmentInputs {
     /// retained by `binding_catalogue` and checked at construction.
     chunk_id: String,
     binding_catalogue: BindingCatalogue,
-    logical_modules: Vec<PlannedModule>,
+    planned_modules: Vec<PlannedModule>,
     dependency_graph: DependencyGraph,
     source_unit_report_ids_by_binding: HashMap<Id, Vec<String>>,
     binding_lookup_by_id: HashMap<Id, BindingLookupInfo>,
@@ -59,18 +59,18 @@ impl AssignmentInputs {
         dependency_graph: DependencyGraph,
         chunk_identity: ChunkId,
         binding_catalogue: BindingCatalogue,
-        logical_modules: Vec<PlannedModule>,
+        planned_modules: Vec<PlannedModule>,
         chunk_renames: &HashMap<Id, Atom>,
     ) -> Result<Self, BindingScopeError> {
         let local_bindings = binding_catalogue.local_view(chunk_identity)?;
         let source_unit_report_ids_by_binding =
             build_source_unit_report_ids_by_binding(&dependency_graph);
         let binding_lookup_by_id =
-            build_binding_lookup_by_id(local_bindings.as_map(), chunk_renames, &logical_modules);
+            build_binding_lookup_by_id(local_bindings.as_map(), chunk_renames, &planned_modules);
         Ok(Self {
             chunk_id,
             binding_catalogue,
-            logical_modules,
+            planned_modules,
             dependency_graph,
             source_unit_report_ids_by_binding,
             binding_lookup_by_id,
@@ -100,8 +100,8 @@ impl AssignmentInputs {
         self.binding_catalogue.local_view(chunk_identity)
     }
 
-    pub fn logical_modules(&self) -> &[PlannedModule] {
-        &self.logical_modules
+    pub fn planned_modules(&self) -> &[PlannedModule] {
+        &self.planned_modules
     }
 
     pub fn dependency_graph(&self) -> &DependencyGraph {
@@ -127,23 +127,23 @@ impl AssignmentInputs {
     /// `PlannedModule.id` (`"<chunk_id>::<path>"`) down to the clean
     /// path; panics on an out-of-range id or unparseable identity —
     /// both are pipeline bugs, not user errors.
-    pub fn module_path(&self, id: ModuleId) -> spec::ModulePath {
+    pub fn planned_module_path(&self, id: ModuleId) -> spec::ModulePath {
         let idx = id.0;
-        let module = self.logical_modules.get(idx).unwrap_or_else(|| {
+        let module = self.planned_modules.get(idx).unwrap_or_else(|| {
             panic!(
-                "ModuleId logical:{idx} out of range ({} logical modules)",
-                self.logical_modules.len()
+                "ModuleId logical:{idx} out of range ({} planned output modules)",
+                self.planned_modules.len()
             )
         });
         spec::ModulePath::parse(&module.id, &self.chunk_id).unwrap_or_else(|e| {
             panic!(
-                "logical module logical:{idx} has unparseable identity {:?}: {e}",
+                "planned output logical:{idx} has unparseable identity {:?}: {e}",
                 module.id
             )
         })
     }
 
-    /// Which logical module owns a binding, if any.
+    /// Which planned output or entry destination owns a binding, if any.
     /// Returns `None` for names that aren't `Owned` in this analysis
     /// (e.g. globals, imported bindings, names not in the spec).
     pub fn owner_of(&self, binding: &BindingId) -> Result<Option<ModuleId>, BindingScopeError> {
@@ -156,9 +156,9 @@ impl AssignmentInputs {
             }))
     }
 
-    /// Lookup a logical module by its dense identity.
-    pub fn logical_module(&self, id: ModuleId) -> Option<&PlannedModule> {
-        self.logical_modules.get(id.0)
+    /// Lookup a planned output module by its dense identity.
+    pub fn planned_module(&self, id: ModuleId) -> Option<&PlannedModule> {
+        self.planned_modules.get(id.0)
     }
 
     pub fn source_unit_report_ids_for_bindings<'a>(
@@ -207,24 +207,24 @@ fn build_source_unit_report_ids_by_binding(
 
 /// Pre-compute per-binding lookup data so reporting and reference
 /// planning avoid repeated walks over `bindings`, `chunk_renames`, and
-/// logical-module rename maps.
+/// planned-output rename maps.
 ///
 /// Export-name resolution rule:
-/// - `Owned { Logical(idx) }` -> `logical_modules[idx].rename_map[id]`
+/// - `Owned { module: ModuleId(idx) }` -> `planned_modules[idx].rename_map[id]`
 ///   if present, else the binding's own name.
 /// - Everything else -> `chunk_renames[id]` if present, else the
 ///   binding's own name.
 fn build_binding_lookup_by_id(
     bindings: &HashMap<Id, BindingKind>,
     chunk_renames: &HashMap<Id, Atom>,
-    logical_modules: &[PlannedModule],
+    planned_modules: &[PlannedModule],
 ) -> HashMap<Id, BindingLookupInfo> {
     let mut out = HashMap::with_capacity(bindings.len() + chunk_renames.len());
     for (id, kind) in bindings {
         let export_name = match kind {
             BindingKind::Owned {
                 module: ModuleId(idx),
-            } => logical_modules
+            } => planned_modules
                 .get(*idx)
                 .and_then(|module| module.rename_map.get(id))
                 .cloned()

@@ -491,7 +491,7 @@ impl IncrementalQuotient {
             constraining_graph: CountedDiGraph::new(),
             constraining_buckets: BTreeMap::new(),
             cross_rebinds: BTreeMap::new(),
-            residual: assignment.residual(),
+            residual: assignment.entry_destination().module_id(),
             cached_base_simulator: RefCell::new(None),
             cached_base_i_successors: RefCell::new(None),
             cached_base_constraining_pairs: RefCell::new(None),
@@ -1223,16 +1223,22 @@ impl IncrementalQuotient {
             // the overlay never adds a residual -> target edge the gate lacks
             // when the target moves, nor cancels a real edge on the same
             // module pair when the caller leaves residual.
-            let current = edge_contribution(edge, assignment.residual(), |source_unit| {
-                assignment.of(source_unit)
-            });
-            let next = edge_contribution(edge, assignment.residual(), |source_unit| {
-                if source_units.contains(&source_unit) {
-                    to
-                } else {
-                    assignment.of(source_unit)
-                }
-            });
+            let current = edge_contribution(
+                edge,
+                assignment.entry_destination().module_id(),
+                |source_unit| assignment.of(source_unit),
+            );
+            let next = edge_contribution(
+                edge,
+                assignment.entry_destination().module_id(),
+                |source_unit| {
+                    if source_units.contains(&source_unit) {
+                        to
+                    } else {
+                        assignment.of(source_unit)
+                    }
+                },
+            );
             if current == next {
                 continue;
             }

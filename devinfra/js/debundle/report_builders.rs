@@ -172,9 +172,10 @@ where
 
 fn build_quotient_node_reports(factorization: &AssignmentAnalysis) -> Vec<ModuleEntry> {
     let mut modules = BTreeSet::<ModuleId>::new();
-    for idx in 0..factorization.analysis().logical_modules().len() {
+    for idx in 0..factorization.analysis().planned_modules().len() {
         modules.insert(ModuleId(idx));
     }
+    modules.insert(factorization.assignment().entry_destination().module_id());
     for (_, module) in factorization.assignment().iter() {
         modules.insert(module);
     }
@@ -463,14 +464,16 @@ fn quotient_edge_indices_by_source(
     by_source
 }
 
-/// True iff `id` refers to a logical module with the `Unassigned` policy
-/// role. The report schema projects this classification to its legacy
-/// `residual` flag; it does not identify the physical DFS root.
+/// True iff `id` is the entry destination or a planned output with the
+/// `Unassigned` policy role. The report schema projects this classification
+/// to its legacy `residual` flag; that flag does not identify the physical
+/// DFS root.
 fn is_unassigned_destination(factorization: &AssignmentAnalysis, id: ModuleId) -> bool {
-    factorization
-        .analysis()
-        .logical_module(id)
-        .is_some_and(|module| module.role == ModuleRole::Unassigned)
+    id == factorization.assignment().entry_destination().module_id()
+        || factorization
+            .analysis()
+            .planned_module(id)
+            .is_some_and(|module| module.role == ModuleRole::Unassigned)
 }
 
 /// Map a typed [`EdgeRole`] to its wire-format projection. `None`
@@ -491,7 +494,7 @@ fn edge_role_report(role: EdgeRole) -> Option<EdgeRoleReport> {
 fn module_entry(factorization: &AssignmentAnalysis, id: ModuleId) -> ModuleEntry {
     ModuleEntry {
         key: module_key(id),
-        path: factorization.analysis().module_path(id),
+        path: factorization.module_path(id),
         residual: is_unassigned_destination(factorization, id),
     }
 }

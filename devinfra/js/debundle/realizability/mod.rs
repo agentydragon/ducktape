@@ -204,7 +204,11 @@ pub fn check_realizability(
     // includes lazy import back-edges for Pass 2's ESM evaluation topology.
     // Sharing the projection does not make the two SCC partitions equivalent.
     let canonical = chunk_constraining_module_edges(dependency_graph, assignment);
-    verdict_from_canonical(canonical, cross_rebinds, assignment.residual())
+    verdict_from_canonical(
+        canonical,
+        cross_rebinds,
+        assignment.entry_destination().module_id(),
+    )
 }
 
 /// Run the complete gate over the canonical module projection. The pure
@@ -397,7 +401,7 @@ pub fn simulated_evaluation_post_order(
     EsmEvaluationSimulator::build(
         &canonical.i_successors,
         &constraining_pairs,
-        assignment.residual(),
+        assignment.entry_destination().module_id(),
     )
     .post_order
 }
@@ -491,7 +495,7 @@ impl RealizabilityIndex {
         let verdict = verdict_from_canonical(
             self.quotient.canonical_with_overlay(&overlay),
             self.quotient.cross_rebinds_with_overlay(&overlay),
-            self.assignment.residual(),
+            self.assignment.entry_destination().module_id(),
         );
         if gate_oracle_enabled() {
             let mut post_assignment = self.assignment.clone();

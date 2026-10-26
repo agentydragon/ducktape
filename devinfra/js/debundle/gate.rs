@@ -17,7 +17,9 @@ mod realizability;
 mod report_builders;
 mod validation;
 
-pub use assignment_analysis::{AssignmentAnalysis, ValidatedAssignment};
+pub use assignment_analysis::{
+    AssignmentAnalysis, AssignmentAnalysisBuildError, ValidatedAssignment,
+};
 pub use assignment_inputs::AssignmentInputs;
 pub use esm_import_order::EsmImportOrder;
 pub use realizability::{

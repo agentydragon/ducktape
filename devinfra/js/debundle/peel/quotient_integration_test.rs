@@ -817,7 +817,10 @@ fn dependency_graph_and_assignment_from_spec(
             }
         }
     }
-    let assignment = analysis::ModuleAssignment::from_assignments(of, residual);
+    let assignment = analysis::ModuleAssignment::from_assignments(
+        of,
+        analysis::EntryDestination::from_module_id(residual),
+    );
     (dependency_graph, assignment)
 }
 

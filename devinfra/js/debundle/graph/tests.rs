@@ -50,7 +50,10 @@ mod chunk_constraining_module_edges_tests {
     fn eager_cross_module_edge_included() {
         let source = "const a = 1; const b = a + 1;";
         let dependency_graph = parse_and_build(source);
-        let mut assignment = ModuleAssignment::new(&dependency_graph, module_id(0));
+        let mut assignment = ModuleAssignment::new(
+            &dependency_graph,
+            crate::EntryDestination::from_module_id(module_id(0)),
+        );
         assignment.set(SourceUnitId(1), module_id(1));
         let canonical = chunk_constraining_module_edges(&dependency_graph, &assignment);
         let pairs: BTreeSet<(ModuleId, ModuleId)> = canonical.pairs().collect();
@@ -68,7 +71,10 @@ mod chunk_constraining_module_edges_tests {
         let source = "const a = 1; const b = a + 1;";
         let dependency_graph = parse_and_build(source);
         // Both source units in module 0 → no cross-module edges.
-        let assignment = ModuleAssignment::new(&dependency_graph, module_id(0));
+        let assignment = ModuleAssignment::new(
+            &dependency_graph,
+            crate::EntryDestination::from_module_id(module_id(0)),
+        );
         let canonical = chunk_constraining_module_edges(&dependency_graph, &assignment);
         assert!(canonical.edges.is_empty());
     }
@@ -81,7 +87,10 @@ mod chunk_constraining_module_edges_tests {
         // Simple two-module DAG.
         let source = "const a = 1; const b = a + 1;";
         let dependency_graph = parse_and_build(source);
-        let mut assignment = ModuleAssignment::new(&dependency_graph, module_id(0));
+        let mut assignment = ModuleAssignment::new(
+            &dependency_graph,
+            crate::EntryDestination::from_module_id(module_id(0)),
+        );
         assignment.set(SourceUnitId(1), module_id(1));
         let canonical = chunk_constraining_module_edges(&dependency_graph, &assignment);
         let extra: BTreeSet<ModuleId> = BTreeSet::from([module_id(5), module_id(0)]);

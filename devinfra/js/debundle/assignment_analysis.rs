@@ -1,19 +1,34 @@
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 
+use thiserror::Error;
+
 use crate::report_builders::build_dependency_graph_report;
 use analysis::assignment_assembly::{AtomicGroupConflict, assemble_assignment};
 use analysis::atomic_groups::{AtomicGroup, DependencyGraphAndAtomicGroups};
 use analysis::graph::{build_module_quotient, chunk_constraining_module_edges};
 use analysis::module_assignment::ModuleAssignment;
 use analysis::{
-    BindingCatalogue, BindingScopeError, ChunkId, DependencyGraphReport, ModuleId, ModuleQuotient,
-    PlannedModule,
+    BindingCatalogue, BindingScopeError, ChunkId, DependencyGraphReport, EntryDestination,
+    ModuleId, ModuleQuotient, PlannedModule,
 };
 
 use crate::AssignmentInputs;
 use crate::esm_import_order::EsmImportOrder;
 use crate::validation::{AssignmentReport, validate_assignment};
+
+#[derive(Debug, Error)]
+pub enum AssignmentAnalysisBuildError {
+    #[error(transparent)]
+    BindingScope(#[from] BindingScopeError),
+    #[error(
+        "entry destination logical:{entry} must follow the {planned_module_count} planned output modules"
+    )]
+    InvalidEntryDestination {
+        entry: usize,
+        planned_module_count: usize,
+    },
+}
 
 /// Per-chunk factorization output: the spec's assignment of the
 /// dependency graph, plus the realizability views derived from it
@@ -22,7 +37,7 @@ use crate::validation::{AssignmentReport, validate_assignment};
 ///
 /// Holds a reference to the [`AssignmentInputs`] it was factorized
 /// from (`analysis`); report emission and downstream emit code reach
-/// inputs (`bindings`, `logical_modules`, etc.) through `analysis()`.
+/// inputs (`bindings`, `planned_modules`, etc.) through `analysis()`.
 /// Fields are private so the assignment cannot change independently of its
 /// cached quotient, SCCs, and import order.
 #[derive(Debug, Clone)]
@@ -91,10 +106,23 @@ impl AssignmentAnalysis {
         &self.dep_graph
     }
 
+    /// Canonical report path for a destination. Real output paths come from
+    /// their `PlannedModule`; the entry keeps the historic report label at
+    /// this serialization boundary without becoming a planned output.
+    pub fn module_path(&self, id: ModuleId) -> spec::ModulePath {
+        if id == self.assignment.entry_destination().module_id() {
+            let report_id = format!("{}::anon_residual_sentinel", self.analysis.chunk_id());
+            return spec::ModulePath::parse(&report_id, self.analysis.chunk_id())
+                .expect("entry destination report path is canonical");
+        }
+        self.analysis.planned_module_path(id)
+    }
+
     /// Build a factorization from a caller-computed dependency graph +
     /// atomic groups (the materializer computes these once per chunk
     /// for atomic-group module synthesis), the binding catalogue, and the
-    /// spec-derived logical modules. The catalogue should already have
+    /// real planned output modules. The entry destination follows those
+    /// modules in this analysis. The catalogue should already have
     /// every `Owned` binding the spec assigned and every `Imported`
     /// binding the spec re-exports. `chunk_identity` must match the
     /// catalogue's interned source chunk; `chunk_id` remains the diagnostic
@@ -104,10 +132,17 @@ impl AssignmentAnalysis {
         chunk_identity: ChunkId,
         precomputed: DependencyGraphAndAtomicGroups,
         binding_catalogue: BindingCatalogue,
-        logical_modules: Vec<PlannedModule>,
+        planned_modules: Vec<PlannedModule>,
         chunk_renames: HashMap<swc_ecma_ast::Id, swc_atoms::Atom>,
-        default_destination: ModuleId,
-    ) -> Result<Self, BindingScopeError> {
+        entry_destination: EntryDestination,
+    ) -> Result<Self, AssignmentAnalysisBuildError> {
+        let entry_module_id = entry_destination.module_id();
+        if entry_module_id != ModuleId(planned_modules.len()) {
+            return Err(AssignmentAnalysisBuildError::InvalidEntryDestination {
+                entry: entry_module_id.0,
+                planned_module_count: planned_modules.len(),
+            });
+        }
         let DependencyGraphAndAtomicGroups {
             dependency_graph,
             atomic_groups,
@@ -118,8 +153,8 @@ impl AssignmentAnalysis {
                 &dependency_graph,
                 &atomic_groups,
                 &local_bindings,
-                &logical_modules,
-                default_destination,
+                &planned_modules,
+                entry_destination,
             )
         };
         let assignment = outcome.assignment;
@@ -135,10 +170,12 @@ impl AssignmentAnalysis {
         // simulator share one source of truth — see
         // `graph::chunk_constraining_module_edges` for the invariant doc.
         let canonical_edges = chunk_constraining_module_edges(&dependency_graph, &assignment);
-        // Every logical module needs a deterministic source-order
-        // slot for emit stability, even singletons that don't
+        // Every output module and the entry destination need a deterministic
+        // source-order slot for emit stability, even singletons that don't
         // participate in any canonical edge.
-        let extra_nodes: BTreeSet<ModuleId> = (0..logical_modules.len()).map(ModuleId).collect();
+        let mut extra_nodes: BTreeSet<ModuleId> =
+            (0..planned_modules.len()).map(ModuleId).collect();
+        extra_nodes.insert(entry_module_id);
         let constraining_pairs: BTreeSet<(ModuleId, ModuleId)> = canonical_edges.pairs().collect();
         let import_order = EsmImportOrder::build(
             &constraining_pairs,
@@ -150,7 +187,7 @@ impl AssignmentAnalysis {
             dependency_graph,
             chunk_identity,
             binding_catalogue,
-            logical_modules,
+            planned_modules,
             &chunk_renames,
         )?);
         Ok(Self {
@@ -185,14 +222,14 @@ impl AssignmentAnalysis {
     pub fn validate(&self) -> AssignmentReport {
         let mut report =
             validate_assignment(self.analysis.dependency_graph(), &self.assignment, &|id| {
-                self.analysis.module_path(id)
+                self.module_path(id)
             });
         report.atomic_group_conflicts = self.assembly_conflicts.clone();
         report.linker_order = self
             .import_order
             .linker_order()
             .iter()
-            .map(|id| self.analysis.module_path(*id))
+            .map(|id| self.module_path(*id))
             .collect();
         report
     }

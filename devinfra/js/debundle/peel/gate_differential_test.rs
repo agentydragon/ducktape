@@ -144,7 +144,7 @@ fn reference_assignment(
             of[source_unit.0] = module;
         }
     }
-    ModuleAssignment::from_assignments(of, residual)
+    ModuleAssignment::from_assignments(of, analysis::EntryDestination::from_module_id(residual))
 }
 
 /// The index's committed verdict must agree with a from-scratch

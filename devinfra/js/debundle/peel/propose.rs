@@ -1420,7 +1420,10 @@ fn validate_decomposition_candidate(
         .context("reconstructing the dependency graph for decomposition validation")?;
     let (assignments, paths_by_module_id) =
         candidate_module_assignments(candidate_source_unit_modules, residual_path)?;
-    let assignment = ModuleAssignment::from_assignments(assignments, ModuleId(0));
+    let assignment = ModuleAssignment::from_assignments(
+        assignments,
+        analysis::EntryDestination::from_module_id(ModuleId(0)),
+    );
     let gate_report = gate::validate_assignment(&dependency_graph, &assignment, &|module_id| {
         paths_by_module_id
             .get(&module_id)

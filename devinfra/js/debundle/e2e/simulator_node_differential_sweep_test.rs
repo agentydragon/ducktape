@@ -27,8 +27,8 @@ struct SweepCase {
     name: &'static str,
     source: &'static str,
     /// `(module name, member bindings)`, alphabetical by module name.
-    /// The pipeline indexes logical-module plans in spec-map order
-    /// (alphabetical by target path) with the residual sentinel last;
+    /// The pipeline indexes planned output modules in spec-map order
+    /// (alphabetical by target path), with the entry destination after them;
     /// the hand-built assignment below mirrors that numbering so the
     /// simulator's `ModuleId` tie-breaks match the emitted tree's.
     modules: &'static [(&'static str, &'static [&'static str])],
@@ -124,10 +124,13 @@ fn parse_and_build(source: &str) -> DependencyGraph {
 
 /// Build the assignment matching the case's spec assignment:
 /// module index = position in the (alphabetical) module list,
-/// residual = the sentinel index after every named module.
+/// entry = the destination index after every planned output module.
 fn assignment_for(dependency_graph: &DependencyGraph, case: &SweepCase) -> ModuleAssignment {
     let residual = ModuleId(case.modules.len());
-    let mut assignment = ModuleAssignment::new(dependency_graph, residual);
+    let mut assignment = ModuleAssignment::new(
+        dependency_graph,
+        analysis::EntryDestination::from_module_id(residual),
+    );
     for (index, (module_name, bindings)) in case.modules.iter().enumerate() {
         for binding in *bindings {
             let source_unit = dependency_graph

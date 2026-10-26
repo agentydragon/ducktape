@@ -110,9 +110,8 @@ impl DependencyGraphReport {
         self.quotient.nodes.iter().find(|entry| &entry.key == key)
     }
 
-    /// Whether `key` denotes the residual catch-all, per the module
-    /// table's authoritative `residual` flag. Unknown keys are not
-    /// residual.
+    /// Whether `key` has the residual policy flag in the module table.
+    /// Unknown keys are not residual.
     pub fn is_residual(&self, key: &ModuleKey) -> bool {
         self.module(key).is_some_and(|entry| entry.residual)
     }
@@ -209,9 +208,10 @@ impl EdgeRoleReport {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModuleQuotientReport {
-    /// The module table: one [`ModuleEntry`] per logical module. The
-    /// single source of truth for each module's path + residual flag;
-    /// every other reference is a [`ModuleKey`] into this list.
+    /// The module table: one [`ModuleEntry`] per planned output plus the
+    /// entry destination. It is the single source of truth for each
+    /// destination's path and residual-policy flag; every other reference is
+    /// a [`ModuleKey`] into this list.
     pub nodes: Vec<ModuleEntry>,
     pub edges: Vec<QuotientEdgeReport>,
     pub sccs: Vec<QuotientSccReport>,
@@ -390,15 +390,15 @@ impl AtomicGroupConflictReport {
     }
 }
 
-/// Interned reference to a logical module.
+/// Interned reference to a planned output or entry destination.
 ///
-/// This is the **one** encoding of module identity on the dependency-graph
-/// wire. Everything that points at a module — a source unit's
+/// This is the **one** encoding of destination identity on the dependency-graph
+/// wire. Everything that points at a destination — a source unit's
 /// `destination`, a quotient edge's endpoints, an SCC's members, an
 /// atomic group's `destinations` — carries a `ModuleKey`, never a
 /// path or a parallel label. The key resolves to a [`ModuleEntry`] in
 /// the module table (`ModuleQuotientReport::nodes`), which is the
-/// sole place a module's `path` and `residual` flag are stored.
+/// sole place a destination's `path` and `residual` policy flag are stored.
 ///
 /// The key is `module_key(ModuleId)` — `"logical:N"` — so it stays
 /// compact and stable; the human-readable path lives once, in the
@@ -419,9 +419,9 @@ impl std::fmt::Display for ModuleKey {
     }
 }
 
-/// One entry in the module table (`ModuleQuotientReport::nodes`).
+/// One entry in the destination table (`ModuleQuotientReport::nodes`).
 /// The single source of truth mapping a [`ModuleKey`] to its canonical
-/// path and residual flag. No other wire field duplicates `path` or
+/// path and residual-policy flag. No other wire field duplicates `path` or
 /// `residual`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ModuleEntry {
@@ -429,8 +429,9 @@ pub struct ModuleEntry {
     /// Canonical module identity/destination path (see
     /// [`spec::ModulePath`]).
     pub path: spec::ModulePath,
-    /// `true` for the synthesized residual catch-all. Authoritative —
-    /// not derivable from `path` (a spec author may legitimately name
-    /// a non-residual module `residual/...`).
+    /// `true` for the entry destination or a planned output with the
+    /// `Unassigned` policy role. Authoritative — not derivable from `path`
+    /// (a spec author may legitimately name another destination
+    /// `residual/...`).
     pub residual: bool,
 }
