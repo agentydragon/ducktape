@@ -487,10 +487,11 @@ fn destination_kind(
     assignment_analysis: &AssignmentAnalysis,
     id: ModuleId,
 ) -> ModuleDestinationKind {
-    if id == assignment_analysis
-        .assignment()
-        .entry_destination()
-        .module_id()
+    if id
+        == assignment_analysis
+            .assignment()
+            .entry_destination()
+            .module_id()
     {
         return ModuleDestinationKind::Entry;
     }

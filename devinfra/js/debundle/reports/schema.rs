@@ -216,7 +216,7 @@ impl EdgeRoleReport {
 pub struct ModuleQuotientReport {
     /// The module table: one [`ModuleEntry`] per planned output plus the
     /// entry destination. It is the single source of truth for each
-    /// destination's path and residual-policy flag; every other reference is
+    /// destination's path and kind; every other reference is
     /// a [`ModuleKey`] into this list.
     pub nodes: Vec<ModuleEntry>,
     pub edges: Vec<QuotientEdgeReport>,
