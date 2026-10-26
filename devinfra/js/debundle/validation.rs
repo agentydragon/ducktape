@@ -1,3 +1,4 @@
+use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use petgraph::algo::greedy_feedback_arc_set;
@@ -11,9 +12,7 @@ use analysis::module_assignment::ModuleAssignment;
 use spec::ModulePath;
 use swc_atoms::Atom;
 
-use analysis::{
-    DepKind, DependencyGraph, ModuleId, Purity, SequencedSourceUnitCause, StatementOrdinal,
-};
+use analysis::{DepKind, DependencyGraph, ModuleId, Purity, SequencedSourceUnitCause};
 
 /// Result of validating a module dep graph.
 #[derive(Debug, Clone, Serialize)]
@@ -134,7 +133,7 @@ pub struct CycleEdge {
     pub from: ModulePath,
     /// Target module, by canonical [`ModulePath`].
     pub to: ModulePath,
-    pub statement_ordinal: StatementOrdinal,
+    pub statement_ordinal: SourceUnitOrdinal,
     /// Target binding being read (declared in `to`'s module). `None`
     /// for sequenced edges (no symbol).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -368,7 +367,7 @@ pub fn validate_assignment(
     // pairs. An source_unit may have no declared bindings (anonymous
     // statement); we leave `from_binding = None` in that case and let
     // the renderer fall back to a statement-ordinal placeholder.
-    let from_binding_by_ordinal: HashMap<StatementOrdinal, Atom> = dependency_graph
+    let from_binding_by_ordinal: HashMap<SourceUnitOrdinal, Atom> = dependency_graph
         .iter_nodes()
         .filter_map(|node| {
             node.declared
@@ -472,7 +471,7 @@ fn cycle_edges_for(
     assignment: &ModuleAssignment,
     edge_ids: impl IntoIterator<Item = DependencyEdgeId>,
     module_path: &dyn Fn(ModuleId) -> ModulePath,
-    from_binding_by_ordinal: &HashMap<StatementOrdinal, Atom>,
+    from_binding_by_ordinal: &HashMap<SourceUnitOrdinal, Atom>,
 ) -> Vec<CycleEdge> {
     let mut out: Vec<CycleEdge> = edge_ids
         .into_iter()
@@ -509,7 +508,7 @@ fn nonconstraining_closure_edges(
     assignment: &ModuleAssignment,
     modules: &BTreeSet<ModuleId>,
     module_path: &dyn Fn(ModuleId) -> ModulePath,
-    from_binding_by_ordinal: &HashMap<StatementOrdinal, Atom>,
+    from_binding_by_ordinal: &HashMap<SourceUnitOrdinal, Atom>,
 ) -> Vec<CycleEdge> {
     let lazy_edge_ids = dependency_graph.iter_edges().filter_map(|edge| {
         if !matches!(edge.reason.kind, DepKind::LazyUse | DepKind::HoistedUse)
@@ -678,7 +677,7 @@ fn compute_realizability_cut(
     assignment: &ModuleAssignment,
     constraining_dependency_edges: &[DependencyEdgeId],
     module_path: &dyn Fn(ModuleId) -> ModulePath,
-    from_binding_by_ordinal: &HashMap<StatementOrdinal, Atom>,
+    from_binding_by_ordinal: &HashMap<SourceUnitOrdinal, Atom>,
 ) -> Vec<CycleEdge> {
     let mut by_pair: BTreeMap<(ModuleId, ModuleId), Vec<DependencyEdgeId>> = BTreeMap::new();
     for &edge_id in constraining_dependency_edges {

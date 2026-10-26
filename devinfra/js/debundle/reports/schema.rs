@@ -1,10 +1,11 @@
 use serde::{Deserialize, Serialize};
+use source_identity::SourceUnitOrdinal;
 use swc_atoms::Atom;
 
 use crate::assignment_assembly::AtomicGroupConflict;
 use crate::ids::ModuleId;
 use crate::purity::Purity;
-use crate::{DepKind, StatementKind, StatementOrdinal};
+use crate::{DepKind, StatementKind};
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SourceLocation {
@@ -120,7 +121,7 @@ impl DependencyGraphReport {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SourceUnitReport {
     pub id: String,
-    pub statement_ordinal: StatementOrdinal,
+    pub statement_ordinal: SourceUnitOrdinal,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_location: Option<SourceLocation>,
     pub declared_bindings: Vec<BindingReport>,
@@ -155,7 +156,7 @@ pub struct DependencyEdgeReport {
     pub edge_kind: DepKind,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub binding: Option<Atom>,
-    pub statement_ordinal: StatementOrdinal,
+    pub statement_ordinal: SourceUnitOrdinal,
     pub constrains_init_order: bool,
     /// Role the edge was emitted with. Mirrors `EdgeReason::role`
     /// (see `crate::EdgeRole`) through the wire format so the peel

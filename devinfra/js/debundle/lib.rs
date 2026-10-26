@@ -49,7 +49,7 @@ pub use graph::{
 };
 pub use ids::{
     BindingCatalogue, BindingId, BindingKind, BindingScopeError, ChunkId, ChunkTable,
-    LocalBindings, ModuleId, ModuleRole, PlannedModule, StatementOrdinal, top_level_id,
+    LocalBindings, ModuleId, ModuleRole, PlannedModule, top_level_id,
 };
 pub use module_assignment::ModuleAssignment;
 pub use purity::{

@@ -11,6 +11,7 @@ use peel::{
 };
 use selector_codemod::source_input::resolve_chunk_source_file;
 use serde::Serialize;
+use source_identity::SourceUnitOrdinal;
 use source_inspection::{PreparedSource, StatementRange, StatementRow};
 use spec_modules::{collect_module_files, module_path_from_file};
 use std::collections::{BTreeMap, BTreeSet};
@@ -278,7 +279,7 @@ pub(super) fn run_inspect_source(args: InspectSourceArgs) -> Result<()> {
             let mut by_index: BTreeMap<usize, BTreeSet<String>> = BTreeMap::new();
             let ordinals: Vec<_> = source_units
                 .iter()
-                .map(|source_unit| source_unit.statement_ordinal)
+                .map(|source_unit| SourceUnitOrdinal(source_unit.statement_ordinal))
                 .collect();
             for (source_unit, index) in source_units
                 .iter()
@@ -290,6 +291,7 @@ pub(super) fn run_inspect_source(args: InspectSourceArgs) -> Result<()> {
                         source_unit.source_unit_id, source_unit.statement_ordinal, path
                     )
                 })?;
+                let index = index.0;
                 let row = source.statement_coordinates(index)?;
                 let location = &source_unit.source_location;
                 // A split comma-list source unit can start inside its raw item.

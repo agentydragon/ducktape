@@ -2,12 +2,13 @@
 //! Requested whole-statement moves are checked against that assignment before
 //! becoming emission instructions; binding destinations are read from source units.
 
+use source_identity::{SourceUnitOrdinal, StatementId};
 use std::collections::{BTreeMap, HashMap};
 
 use analysis::{BindingKind, ChunkId, ModuleId};
 use anyhow::{Context, Result, bail, ensure};
 use gate::{AssignmentAnalysis, ValidatedAssignment};
-use js_ast::body_indices_for_statement_ordinals;
+use js_ast::statements_for_source_unit_ordinals;
 use swc_ecma_ast::{Id, ModuleItem};
 
 /// Immutable placement instructions tied to the assignment that produced them.
@@ -15,7 +16,7 @@ use swc_ecma_ast::{Id, ModuleItem};
 pub(super) struct EmissionPlacement<'a> {
     factorization: &'a AssignmentAnalysis,
     bindings: HashMap<Id, usize>,
-    statements: BTreeMap<usize, usize>,
+    statements: BTreeMap<StatementId, usize>,
 }
 
 impl<'a> EmissionPlacement<'a> {
@@ -24,19 +25,19 @@ impl<'a> EmissionPlacement<'a> {
         chunk_identity: ChunkId,
         body: &[ModuleItem],
         module_count: usize,
-        requested_statements: &BTreeMap<usize, usize>,
+        requested_statements: &BTreeMap<StatementId, usize>,
     ) -> Result<Self> {
         let factorization = validated.factorization();
         let graph = factorization.analysis().dependency_graph();
         let assignment = factorization.assignment();
         let residual = assignment.residual();
-        let ordinals: Vec<usize> = graph
+        let ordinals: Vec<SourceUnitOrdinal> = graph
             .iter_nodes()
-            .map(|unit| unit.statement_ordinal.0)
+            .map(|unit| unit.statement_ordinal)
             .collect();
-        let body_indices = body_indices_for_statement_ordinals(body, &ordinals);
+        let body_indices = statements_for_source_unit_ordinals(body, &ordinals);
         let mut binding_destinations = HashMap::<Id, ModuleId>::new();
-        let mut statement_destinations = BTreeMap::<usize, ModuleId>::new();
+        let mut statement_destinations = BTreeMap::<StatementId, ModuleId>::new();
         for (unit, body_index) in graph.iter_nodes().zip(body_indices) {
             let body_index = body_index.with_context(|| {
                 format!(
@@ -116,7 +117,7 @@ impl<'a> EmissionPlacement<'a> {
     pub(super) fn bindings(&self) -> &HashMap<Id, usize> {
         &self.bindings
     }
-    pub(super) fn statements(&self) -> &BTreeMap<usize, usize> {
+    pub(super) fn statements(&self) -> &BTreeMap<StatementId, usize> {
         &self.statements
     }
 }

@@ -636,8 +636,8 @@ export { X, Existing };
 // earlier comma-list var-decl in the chunk shifts the count.
 //
 // `facts::top_level_item_views` splits a top-level
-// `var a = …, b = …;` into two post-split owners with
-// consecutive `StatementOrdinal` values. A subsequent anonymous
+// `var a = …, b = …;` into two post-split source units with
+// consecutive `SourceUnitOrdinal` values. A subsequent anonymous
 // statement at pre-split body index N therefore lives at
 // post-split statement ordinal N + (number of extra splits in
 // body[..N]).

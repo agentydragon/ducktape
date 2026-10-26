@@ -5,11 +5,12 @@
 //! compiled problem, calls a backend, and decodes the backend's assignment into
 //! the existing materializer-facing `SolverResult`.
 
+use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
 
-use analysis::{SourceUnitId, StatementOrdinal};
+use analysis::SourceUnitId;
 use selector_constraint_backend::{
     BackendAssignment, BackendAssignmentCoverage, BackendAssignmentError, BackendSolveResult,
     BackendSolveStatus, BackendVariableAssignment, CompiledSelectorProblem, ConstraintValue,
@@ -449,7 +450,7 @@ fn unsatisfiable_result(program: &SelectorProgram) -> SolverResult {
 
 #[derive(Debug, Default)]
 struct MaterializationFacts {
-    statement_ordinal_by_unit: BTreeMap<SourceUnitId, StatementOrdinal>,
+    statement_ordinal_by_unit: BTreeMap<SourceUnitId, SourceUnitOrdinal>,
     bindings_by_unit: BTreeMap<SourceUnitId, BTreeSet<String>>,
 }
 
@@ -495,7 +496,7 @@ impl MaterializationFacts {
 mod tests {
     use std::convert::Infallible;
 
-    use analysis::{SourceUnitId, StatementOrdinal};
+    use analysis::SourceUnitId;
     use selector_constraint_backend::ConstraintValue;
     use selector_constraint_backend::{
         BackendAssignment, BackendAssignmentCoverage, BackendSolveResult, BackendSolveStatus,
@@ -576,7 +577,7 @@ mod tests {
     fn source_unit_fact(source_unit: SourceUnitId, ordinal: usize, kind: &str) -> SelectorFact {
         SelectorFact::SourceUnit {
             source_unit,
-            statement_ordinal: StatementOrdinal(ordinal),
+            statement_ordinal: SourceUnitOrdinal(ordinal),
             statement_kind: kind.to_string(),
         }
     }
@@ -680,7 +681,7 @@ mod tests {
         ClaimOutcome::Unique {
             claim: ResolvedClaim {
                 source_unit: SourceUnitId(1),
-                statement_ordinal: StatementOrdinal(10),
+                statement_ordinal: SourceUnitOrdinal(10),
                 binding: Some("minA".to_string()),
             },
         }

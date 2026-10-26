@@ -1,6 +1,8 @@
 //! Call-site execution effects. Function values and function bodies are
 //! deliberately separate: returning a closure never executes that closure.
 
+use source_identity::SourceUnitOrdinal;
+
 use super::statement_facts::SynchronousCalls;
 use super::value_flow::{Values as FlowValues, static_prop as static_string_prop};
 use super::*;
@@ -490,7 +492,7 @@ fn fresh_value_writes(
     facts: &NamespaceValueFacts,
     factory_imports: &BTreeSet<Id>,
     factory_members: &BTreeMap<Id, BTreeSet<String>>,
-) -> (BTreeSet<StatementOrdinal>, BTreeSet<StatementOrdinal>) {
+) -> (BTreeSet<SourceUnitOrdinal>, BTreeSet<SourceUnitOrdinal>) {
     let mut active: Option<(Id, FreshValue)> = None;
     let mut writes = BTreeSet::new();
     let mut instance_field_writes = BTreeSet::new();
@@ -545,7 +547,7 @@ fn fresh_value_writes(
                         }
                 }) =>
             {
-                writes.insert(StatementOrdinal(ordinal));
+                writes.insert(SourceUnitOrdinal(ordinal));
                 if active
                     .as_ref()
                     .is_some_and(|(_, value)| matches!(value, FreshValue::Instance(_)))
@@ -553,7 +555,7 @@ fn fresh_value_writes(
                     // A constructorless local class defined this own data
                     // field before the adjacent write. An inherited setter
                     // cannot observe the assignment.
-                    instance_field_writes.insert(StatementOrdinal(ordinal));
+                    instance_field_writes.insert(SourceUnitOrdinal(ordinal));
                 }
             }
             _ => active = None,
@@ -1672,7 +1674,7 @@ struct Call {
     args: Vec<ValueExpr>,
     span: Span,
     caller: Option<u32>,
-    owner: StatementOrdinal,
+    owner: SourceUnitOrdinal,
     plain_object_sources: bool,
     no_sync_arguments: bool,
     no_reentry_candidate: bool,
@@ -1780,7 +1782,7 @@ struct CallbackResultWrite {
 
 #[derive(Debug, Clone)]
 struct Callable {
-    owner: StatementOrdinal,
+    owner: SourceUnitOrdinal,
     created_after_parent_await: bool,
     params: Vec<Parameter>,
     reads: BTreeSet<Id>,
@@ -1998,7 +2000,7 @@ fn local_constructor(class: &Class) -> Option<LocalConstructor> {
 impl Default for Callable {
     fn default() -> Self {
         Self {
-            owner: StatementOrdinal(0),
+            owner: SourceUnitOrdinal(0),
             created_after_parent_await: false,
             params: Vec::new(),
             reads: BTreeSet::new(),
@@ -2139,7 +2141,7 @@ fn intrinsic_write_target(member: &MemberExpr) -> ValueExpr {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct FreshErrorWriteSite {
-    owner: StatementOrdinal,
+    owner: SourceUnitOrdinal,
     callable: Option<u32>,
     receiver: Id,
     property: String,
@@ -2274,7 +2276,7 @@ fn confined_prepublication_alias(
     index: &ExecutionIndex,
     key: u32,
     alias: &Id,
-    first_publication: StatementOrdinal,
+    first_publication: SourceUnitOrdinal,
     protected: &BTreeSet<String>,
 ) -> bool {
     let Some(callable) = index.callables.get(&key) else {
@@ -2514,7 +2516,7 @@ impl NamespacePrivacy {
 }
 
 struct ExecutionIndex {
-    owner: StatementOrdinal,
+    owner: SourceUnitOrdinal,
     current: Option<u32>,
     allowed_local_member_receiver: Option<u32>,
     past_await: bool,
@@ -2526,7 +2528,7 @@ struct ExecutionIndex {
     callables: BTreeMap<u32, Callable>,
     local_constructors: BTreeMap<u32, LocalConstructor>,
     class_values: BTreeMap<u32, ClassValueFacts>,
-    class_owners: BTreeMap<u32, StatementOrdinal>,
+    class_owners: BTreeMap<u32, SourceUnitOrdinal>,
     class_bindings: BTreeMap<u32, Id>,
     class_ids: BTreeSet<Id>,
     other_class_uses: BTreeSet<Id>,
@@ -2554,24 +2556,24 @@ struct ExecutionIndex {
     intrinsic_mutation_receivers: Vec<ValueExpr>,
     destructuring_source: Option<ValueExpr>,
     destructuring_member_writes: Vec<DestructuringMemberWrite>,
-    setter_owners: BTreeMap<Option<String>, BTreeSet<StatementOrdinal>>,
+    setter_owners: BTreeMap<Option<String>, BTreeSet<SourceUnitOrdinal>>,
     hoisted_nested_functions: BTreeSet<u32>,
     owner_callable_prefix_reads: Vec<Option<BTreeSet<Id>>>,
-    unindexed_accessor_owners: BTreeSet<StatementOrdinal>,
+    unindexed_accessor_owners: BTreeSet<SourceUnitOrdinal>,
     top_calls: Vec<Vec<Call>>,
     top_property_writes: Vec<Vec<(Option<Id>, Option<String>)>>,
-    fresh_instance_field_writes: BTreeSet<StatementOrdinal>,
+    fresh_instance_field_writes: BTreeSet<SourceUnitOrdinal>,
     top_dynamic_property_receivers: Vec<Vec<ValueExpr>>,
     top_assignments: Vec<Vec<(Id, ValueExpr)>>,
     top_definite_initializers: Vec<BTreeSet<Id>>,
-    const_call_owners: BTreeSet<StatementOrdinal>,
+    const_call_owners: BTreeSet<SourceUnitOrdinal>,
     top_member_value_writes: Vec<Vec<(Id, Option<String>, ValueExpr)>>,
     top_callback_result_writes: Vec<Vec<CallbackResultWrite>>,
     top_exported_values: Vec<Vec<ValueExpr>>,
     top_metadata_decorations: Vec<Option<MetadataDecorateCall>>,
     deferred_global_candidates: Vec<Option<DeferredGlobalPublication>>,
     discarded_sync_iifes: Vec<Option<u32>>,
-    deferred_global_certificates: BTreeSet<StatementOrdinal>,
+    deferred_global_certificates: BTreeSet<SourceUnitOrdinal>,
     deferred_global_requested: bool,
     global_slot_mentions: BTreeMap<String, usize>,
     dynamic_global_member: bool,
@@ -2580,12 +2582,12 @@ struct ExecutionIndex {
     hoisted_bindings: BTreeMap<Id, u32>,
     exported_hoisted_functions: BTreeSet<u32>,
     global_object_names: BTreeSet<&'static str>,
-    hoisted_function_owners: BTreeSet<StatementOrdinal>,
-    exported_declaration_owners: BTreeSet<StatementOrdinal>,
+    hoisted_function_owners: BTreeSet<SourceUnitOrdinal>,
+    exported_declaration_owners: BTreeSet<SourceUnitOrdinal>,
     exported_bindings: BTreeSet<Id>,
-    linkage_owners: BTreeSet<StatementOrdinal>,
-    dynamic_scope_owners: BTreeSet<StatementOrdinal>,
-    opaque_top: BTreeSet<StatementOrdinal>,
+    linkage_owners: BTreeSet<SourceUnitOrdinal>,
+    dynamic_scope_owners: BTreeSet<SourceUnitOrdinal>,
+    opaque_top: BTreeSet<SourceUnitOrdinal>,
     no_sync_callback_members: BTreeMap<String, BTreeSet<String>>,
     callback_factory_imports: BTreeSet<Id>,
     inline_callback_factory_imports: BTreeSet<Id>,
@@ -2599,7 +2601,7 @@ struct ExecutionIndex {
 impl Default for ExecutionIndex {
     fn default() -> Self {
         Self {
-            owner: StatementOrdinal(0),
+            owner: SourceUnitOrdinal(0),
             current: None,
             allowed_local_member_receiver: None,
             past_await: false,
@@ -2786,7 +2788,7 @@ impl ExecutionIndex {
                 index.discarded_sync_iifes[ordinal] =
                     discarded_synchronous_iife(item.as_module_item());
             }
-            index.owner = StatementOrdinal(ordinal);
+            index.owner = SourceUnitOrdinal(ordinal);
             index.past_await = false;
             index.may_skip_await_depth = 0;
             index.conditional_depth = 0;
@@ -3007,7 +3009,7 @@ impl ExecutionIndex {
                 }
             };
             for (owner, writes) in index.top_callback_result_writes.iter().enumerate() {
-                count_writes(StatementOrdinal(owner), None, writes);
+                count_writes(SourceUnitOrdinal(owner), None, writes);
             }
             for (key, callable) in &index.callables {
                 count_writes(callable.owner, Some(*key), &callable.callback_result_writes);
@@ -3056,11 +3058,11 @@ impl ExecutionIndex {
                 .top_property_writes
                 .iter()
                 .enumerate()
-                .filter(|(owner, _)| !writes.contains(&StatementOrdinal(*owner)))
+                .filter(|(owner, _)| !writes.contains(&SourceUnitOrdinal(*owner)))
                 .flat_map(|(owner, writes)| {
                     writes
                         .iter()
-                        .map(move |write| (StatementOrdinal(owner), write))
+                        .map(move |write| (SourceUnitOrdinal(owner), write))
                 })
                 .any(|(owner, (receiver, property))| {
                     receiver.as_ref().is_some_and(|receiver| {
@@ -3090,11 +3092,11 @@ impl ExecutionIndex {
                 .top_callback_result_writes
                 .iter()
                 .enumerate()
-                .filter(|(owner, _)| !writes.contains(&StatementOrdinal(*owner)))
+                .filter(|(owner, _)| !writes.contains(&SourceUnitOrdinal(*owner)))
                 .flat_map(|(owner, writes)| {
                     writes
                         .iter()
-                        .map(move |write| (StatementOrdinal(owner), write))
+                        .map(move |write| (SourceUnitOrdinal(owner), write))
                 })
                 .any(|(owner, write)| {
                     (is_mutation_receiver(&write.receiver)
@@ -3256,8 +3258,8 @@ impl ExecutionIndex {
                             .is_some_and(|slots| slots.contains(&candidate.property))
                     })
                 })
-                .map(StatementOrdinal)
-                .unwrap_or(StatementOrdinal(0));
+                .map(SourceUnitOrdinal)
+                .unwrap_or(SourceUnitOrdinal(0));
             let protected: BTreeSet<String> = hints
                 .assumptions
                 .deferred_global_publications
@@ -3349,7 +3351,7 @@ impl ExecutionIndex {
                     }
                     index
                         .deferred_global_certificates
-                        .insert(StatementOrdinal(owner));
+                        .insert(SourceUnitOrdinal(owner));
                 }
             }
         }
@@ -4907,7 +4909,7 @@ struct Outcome {
     effects: SynchronousCalls,
     returns: Values,
     complete: bool,
-    executed_owners: BTreeSet<StatementOrdinal>,
+    executed_owners: BTreeSet<SourceUnitOrdinal>,
     unknown_call: bool,
 }
 
@@ -4916,8 +4918,8 @@ struct ReachabilityState {
     unknown_call_seen: bool,
     incomplete: bool,
     revision: u64,
-    expanded: BTreeSet<StatementOrdinal>,
-    owners: BTreeSet<StatementOrdinal>,
+    expanded: BTreeSet<SourceUnitOrdinal>,
+    owners: BTreeSet<SourceUnitOrdinal>,
 }
 
 /// Callback roots retained by a fallback stay escaped for the rest of the
@@ -4925,7 +4927,7 @@ struct ReachabilityState {
 /// checked against the current prefix when the summary is applied.
 #[derive(Default)]
 struct CallbackFallbackSummary {
-    expanded: BTreeSet<StatementOrdinal>,
+    expanded: BTreeSet<SourceUnitOrdinal>,
     incomplete_expanded: bool,
     reads: BTreeSet<Id>,
     rebinds: BTreeSet<Id>,
@@ -4940,10 +4942,10 @@ type InvocationSignature = (
     bool,
     u64,
     u64,
-    Option<StatementOrdinal>,
+    Option<SourceUnitOrdinal>,
 );
 
-type ActiveInvocation = (u32, Option<StatementOrdinal>);
+type ActiveInvocation = (u32, Option<SourceUnitOrdinal>);
 
 // Callable cycles can keep changing their argument/capture snapshots and thus
 // evade the state-specific memoization key. Bound recursive analysis separately
@@ -4966,22 +4968,22 @@ struct Executor<'a> {
     /// Stable own primitive fields, admitted using canonical rebind facts.
     enum_data_members: BTreeMap<Id, BTreeSet<String>>,
     top_bindings: BTreeSet<Id>,
-    binding_owner: BTreeMap<Id, StatementOrdinal>,
+    binding_owner: BTreeMap<Id, SourceUnitOrdinal>,
     source_unit_read_closure: SourceUnitReadClosure,
-    synchronous_owner_adjacency: Vec<Vec<StatementOrdinal>>,
+    synchronous_owner_adjacency: Vec<Vec<SourceUnitOrdinal>>,
     synchronous_owner_reads: Vec<Option<&'a BTreeSet<Id>>>,
-    class_member_effects: BTreeMap<StatementOrdinal, (BTreeSet<Id>, BTreeSet<Id>)>,
+    class_member_effects: BTreeMap<SourceUnitOrdinal, (BTreeSet<Id>, BTreeSet<Id>)>,
     class_superclasses: BTreeMap<u32, Values>,
     active_class_member_promotions: BTreeSet<u32>,
-    exported_owners: BTreeSet<StatementOrdinal>,
-    prior_reachability_roots: Option<BTreeSet<StatementOrdinal>>,
-    current_top_owner: Option<StatementOrdinal>,
+    exported_owners: BTreeSet<SourceUnitOrdinal>,
+    prior_reachability_roots: Option<BTreeSet<SourceUnitOrdinal>>,
+    current_top_owner: Option<SourceUnitOrdinal>,
     /// Owners executed while building a certified unpublished instance graph.
     /// Their synchronous effects still run; execution alone does not expose
     /// the wrapper or the classes' deferred callable members to the host.
-    private_constructor_result_owners: BTreeSet<StatementOrdinal>,
-    prior_effect_owners: BTreeSet<StatementOrdinal>,
-    accepted_deferred_global_writes: BTreeSet<StatementOrdinal>,
+    private_constructor_result_owners: BTreeSet<SourceUnitOrdinal>,
+    prior_effect_owners: BTreeSet<SourceUnitOrdinal>,
+    accepted_deferred_global_writes: BTreeSet<SourceUnitOrdinal>,
     frozen_namespace_calls: BTreeSet<CallSite>,
     reachability: ReachabilityState,
     mutable_captures: BTreeSet<Id>,
@@ -5010,7 +5012,7 @@ struct Executor<'a> {
     callback_fallback: CallbackFallbackSummary,
     fallback_outcome: Outcome,
     fallback_callback_sizes: Option<(usize, usize)>,
-    fallback_local_owners: BTreeSet<StatementOrdinal>,
+    fallback_local_owners: BTreeSet<SourceUnitOrdinal>,
     capture_contexts: BTreeMap<Arc<Context>, usize>,
     callback_sets: BTreeMap<Arc<Values>, usize>,
     active: BTreeSet<ActiveInvocation>,
@@ -5019,7 +5021,7 @@ struct Executor<'a> {
 
 #[derive(Clone, Copy)]
 struct ValidatedMetadataDecoration {
-    target_owner: StatementOrdinal,
+    target_owner: SourceUnitOrdinal,
 }
 
 impl Executor<'_> {
@@ -5087,7 +5089,7 @@ impl Executor<'_> {
             })
     }
 
-    fn accepts_deferred_global_write(&mut self, owner: StatementOrdinal, env: &Context) -> bool {
+    fn accepts_deferred_global_write(&mut self, owner: SourceUnitOrdinal, env: &Context) -> bool {
         if !self.index.deferred_global_certificates.contains(&owner) {
             return false;
         }
@@ -5404,7 +5406,7 @@ impl Executor<'_> {
         args: &[ValueExpr],
         env: &Context,
         captures: &Context,
-        owner: StatementOrdinal,
+        owner: SourceUnitOrdinal,
     ) -> bool {
         let ValueExpr::Binding(id) = callee else {
             return false;
@@ -5586,7 +5588,7 @@ impl Executor<'_> {
         &mut self,
         application: &MetadataDecorateCall,
         _validated: ValidatedMetadataDecoration,
-        owner: StatementOrdinal,
+        owner: SourceUnitOrdinal,
         outcome: &mut Outcome,
     ) {
         // The author certifies the helper's dispatch and every decorator's
@@ -5607,14 +5609,14 @@ impl Executor<'_> {
         self.apply_rebind_effects(&outcome.effects.rebinds);
     }
 
-    fn all_owners(&self) -> impl Iterator<Item = StatementOrdinal> + '_ {
+    fn all_owners(&self) -> impl Iterator<Item = SourceUnitOrdinal> + '_ {
         self.facts.iter().map(|fact| fact.ordinal)
     }
 
     fn promote_lazy_owner(
         &self,
-        owner: StatementOrdinal,
-        effect_owner: StatementOrdinal,
+        owner: SourceUnitOrdinal,
+        effect_owner: SourceUnitOrdinal,
         outcome: &mut Outcome,
     ) {
         let fact = &self.facts[owner.0];
@@ -5638,7 +5640,7 @@ impl Executor<'_> {
         &self,
         reads: &BTreeSet<Id>,
         rebinds: &BTreeSet<Id>,
-        effect_owner: StatementOrdinal,
+        effect_owner: SourceUnitOrdinal,
         outcome: &mut Outcome,
     ) {
         // Large fallback summaries are already sorted. Building and merging
@@ -5686,7 +5688,7 @@ impl Executor<'_> {
         }
     }
 
-    fn roots_for_owner(&self, owner: StatementOrdinal) -> BTreeSet<StatementOrdinal> {
+    fn roots_for_owner(&self, owner: SourceUnitOrdinal) -> BTreeSet<SourceUnitOrdinal> {
         let mut roots = BTreeSet::from([owner]);
         if let Some(fact) = self.facts.get(owner.0) {
             roots.extend(self.source_unit_read_closure.source_units_for_bindings(
@@ -5845,10 +5847,10 @@ impl Executor<'_> {
     fn fact_roots(
         &self,
         fact: &StatementFacts,
-        metadata_target: Option<StatementOrdinal>,
-        private_constructor_result_owners: &BTreeSet<StatementOrdinal>,
+        metadata_target: Option<SourceUnitOrdinal>,
+        private_constructor_result_owners: &BTreeSet<SourceUnitOrdinal>,
         frozen_namespace: Option<&FrozenNamespaceProof>,
-    ) -> BTreeSet<StatementOrdinal> {
+    ) -> BTreeSet<SourceUnitOrdinal> {
         let mut roots = BTreeSet::new();
         // Storing a known callable in an author-certified inert global data
         // slot does not make that callable executable during this prefix.
@@ -6049,7 +6051,7 @@ impl Executor<'_> {
     fn closed_local_constructor_factory_result(
         &self,
         fact: &StatementFacts,
-    ) -> Option<BTreeSet<StatementOrdinal>> {
+    ) -> Option<BTreeSet<SourceUnitOrdinal>> {
         if !matches!(fact.kind, StatementKind::VarDecl)
             || fact.declared.len() != 1
             || self.reachability.incomplete
@@ -6328,7 +6330,7 @@ impl Executor<'_> {
 
     fn extend_reachable_owners(
         &mut self,
-        roots: impl IntoIterator<Item = StatementOrdinal>,
+        roots: impl IntoIterator<Item = SourceUnitOrdinal>,
     ) -> bool {
         let before = self.reachability.owners.len();
         // A reachable callback can read only its synchronous prefix while the
@@ -6363,7 +6365,7 @@ impl Executor<'_> {
         self.prior_reachability_roots = None;
     }
 
-    fn note_unknown_execution(&mut self, owner: StatementOrdinal) {
+    fn note_unknown_execution(&mut self, owner: SourceUnitOrdinal) {
         // Exports expose live capabilities only to code that can reenter the
         // module. Builtin iteration without such reentry remains precise.
         if self.export_reentry_enabled {
@@ -6399,7 +6401,7 @@ impl Executor<'_> {
         }
     }
 
-    fn record_executed_owner(&mut self, owner: StatementOrdinal) {
+    fn record_executed_owner(&mut self, owner: SourceUnitOrdinal) {
         if self.private_constructor_result_owners.contains(&owner) {
             return;
         }
@@ -6413,7 +6415,7 @@ impl Executor<'_> {
     fn promote_property_writes(
         &self,
         writes: &[(Option<Id>, Option<String>)],
-        owner: StatementOrdinal,
+        owner: SourceUnitOrdinal,
         outcome: &mut Outcome,
     ) {
         if writes.is_empty() {
@@ -6507,7 +6509,7 @@ impl Executor<'_> {
         }
     }
 
-    fn may_be_available_accessor_owner(&self, candidate: StatementOrdinal) -> bool {
+    fn may_be_available_accessor_owner(&self, candidate: SourceUnitOrdinal) -> bool {
         if self.reachability.incomplete {
             // Direct eval and `with` can manufacture references to lexical
             // values outside the statically known read closure.
@@ -6773,7 +6775,7 @@ impl Executor<'_> {
         writes: &[CallbackResultWrite],
         env: &Context,
         captures: &Context,
-        owner: StatementOrdinal,
+        owner: SourceUnitOrdinal,
         outcome: &mut Outcome,
         certified_data_receivers: &BTreeSet<u32>,
     ) {
@@ -7223,7 +7225,7 @@ impl Executor<'_> {
     fn promote_captured_superclass(
         &mut self,
         key: u32,
-        owner: StatementOrdinal,
+        owner: SourceUnitOrdinal,
         outcome: &mut Outcome,
     ) {
         let Some(class) = self.index.class_values.get(&key) else {
@@ -7429,7 +7431,7 @@ impl Executor<'_> {
         }
     }
 
-    fn apply_rebind_effects(&mut self, rebinds: &BTreeSet<(Id, StatementOrdinal)>) {
+    fn apply_rebind_effects(&mut self, rebinds: &BTreeSet<(Id, SourceUnitOrdinal)>) {
         for (id, _) in rebinds {
             if !self.top_bindings.contains(id) {
                 continue;
@@ -7447,7 +7449,7 @@ impl Executor<'_> {
 
     fn bounded_invocation_fallback(
         &mut self,
-        owner: StatementOrdinal,
+        owner: SourceUnitOrdinal,
         args: &[Values],
         captured: &Context,
     ) -> Outcome {

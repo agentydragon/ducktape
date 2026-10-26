@@ -31,8 +31,9 @@ implementation and reader cutover.
 | ----------------------------------------------------------- | -------------------------------------------------- | --------------------------------------------------------------------- |
 | Parsed program and shared syntax indexes                    | `SourceProgram`                                    | Landed                                                                |
 | Binding identity independent of spelling and placement      | `BindingId`, retaining chunk scope and SWC hygiene | Landed                                                                |
-| Identity of an original statement                           | `StatementId`                                      | Required Stage B work                                                 |
-| Identity of a movable source fragment                       | `SourceUnitId`                                     | Required Stage B work                                                 |
+| Identity of an original statement                           | `StatementId`                                      | Landed; original parsed body item                                     |
+| Identity of a movable source fragment                       | `SourceUnitId`                                     | Landed; dependency-graph vertex identity                              |
+| Source position of a movable fragment                       | `SourceUnitOrdinal`                                | Landed; post-split coordinate distinct from graph identity            |
 | Reads, writes, effects, and ordering constraints            | `DependencyGraph` over source units                | Target boundary; active reader cutover                                |
 | Units proven to require co-location                         | `AtomicGroup`                                      | Target boundary; PR #12060                                            |
 | Explicit author contracts and runtime assumptions           | `AnalysisAssumptions`                              | Target boundary; PR #12059                                            |
@@ -81,12 +82,12 @@ identity with the full hygiene-aware SWC `Id`; `BindingCatalogue` keeps the
 existing per-chunk SWC-ID map without rekeying it. Remaining identity work
 distinguishes original statement identity, movable source-unit identity,
 anonymous-unit classification, residual placement, atomic grouping, and
-destination module identity. Replace residual sentinels and implicit
-anonymous-unit classification with explicit types. Active owner-graph cutover
-maps `OwnerId` to `SourceUnitId`, keeps a distinct `SourceUnitIndex` report
-arena, and maps `OwnerGraph` to `DependencyGraph`; these identities must not be
-collapsed into `NodeId`. Definitions and live consumers must agree without
-aliases or abandoned readers.
+destination module identity. The graph uses `SourceUnitId` for vertex identity
+and `SourceUnitIndex` for the separate report-row arena. `SourceUnitOrdinal`
+identifies a post-split source position, while `StatementId` identifies an
+original parsed `Module.body` item. Keep these identities distinct from module
+IDs and each other. Definitions and live consumers must agree without aliases
+or abandoned readers.
 
 - PR #12060: atomic-group identity and consumer cutover remain active.
 - Binding identity: runtime-only `BindingId` and the scoped catalogue reader

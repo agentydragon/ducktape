@@ -172,7 +172,7 @@ fn factorization_for(source: &str, ownership: &[(&str, ModuleId)]) -> Assignment
             target_file: format!("mod_{i}.js"),
             role: ModuleRole::Specified,
             rename_map: HashMap::new(),
-            anonymous_statement_ordinals: Vec::new(),
+            anonymous_source_unit_ordinals: Vec::new(),
         })
         .collect();
     logical_modules.push(PlannedModule {
@@ -180,7 +180,7 @@ fn factorization_for(source: &str, ownership: &[(&str, ModuleId)]) -> Assignment
         target_file: "residual/unhandled.js".to_string(),
         role: ModuleRole::Unassigned,
         rename_map: HashMap::new(),
-        anonymous_statement_ordinals: Vec::new(),
+        anonymous_source_unit_ordinals: Vec::new(),
     });
     factorization_from_facts(&facts, bindings, logical_modules, ModuleId(residual_idx))
 }
@@ -207,14 +207,14 @@ fn factorization_with_residual_module(
             target_file: "residual/unhandled.js".to_string(),
             role: ModuleRole::Unassigned,
             rename_map: HashMap::new(),
-            anonymous_statement_ordinals: Vec::new(),
+            anonymous_source_unit_ordinals: Vec::new(),
         },
         PlannedModule {
             id: "mod_1".to_string(),
             target_file: "mod_1.js".to_string(),
             role: ModuleRole::Specified,
             rename_map: HashMap::new(),
-            anonymous_statement_ordinals: Vec::new(),
+            anonymous_source_unit_ordinals: Vec::new(),
         },
     ];
     factorization_from_facts(&facts, bindings, logical_modules, residual)

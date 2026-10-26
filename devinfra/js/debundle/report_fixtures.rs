@@ -13,13 +13,13 @@
 //! recovers the path by parsing the key and derives `residual` from
 //! [`spec::is_residual_module_path`].
 
+use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeMap, BTreeSet};
 
 use analysis::{
     AtomicGraphReport, AtomicGroupEdgeReport, AtomicGroupReport, BindingReport, DepKind,
     DependencyEdgeReport, DependencyGraphReport, EdgeRoleReport, LineRange, ModuleEntry, ModuleKey,
     ModuleQuotientReport, Purity, SourceLocation, SourceUnitReport, StatementKind,
-    StatementOrdinal,
 };
 use spec::{ModulePath, is_residual_module_path};
 
@@ -117,7 +117,7 @@ pub fn source_unit_report(
 ) -> SourceUnitReport {
     SourceUnitReport {
         id: id.to_string(),
-        statement_ordinal: StatementOrdinal(ordinal),
+        statement_ordinal: SourceUnitOrdinal(ordinal),
         source_location,
         declared_bindings,
         statement_kind: StatementKind::VarDecl,
@@ -161,7 +161,7 @@ pub fn dependency_edge(
         target: target.to_string(),
         edge_kind: kind,
         binding: None,
-        statement_ordinal: StatementOrdinal(0),
+        statement_ordinal: SourceUnitOrdinal(0),
         constrains_init_order: constrains,
         role: None,
     }

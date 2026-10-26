@@ -1,4 +1,5 @@
 use super::*;
+use source_identity::SourceUnitOrdinal;
 
 /// Inline mutation bodies whose receiver is fresh during this call. Later
 /// escapes or member writes do not invalidate this call-time proof. This is
@@ -8,7 +9,7 @@ pub(super) fn fresh_mutation_callables(
     facts: &[StatementFacts],
     has_dynamic_scope: bool,
 ) -> BTreeSet<u32> {
-    let mut writers = BTreeMap::<Id, BTreeSet<StatementOrdinal>>::new();
+    let mut writers = BTreeMap::<Id, BTreeSet<SourceUnitOrdinal>>::new();
     for fact in facts {
         for id in fact
             .declared
@@ -42,7 +43,7 @@ pub(super) fn fresh_mutation_callables(
             && (has_dynamic_scope
                 || declaration.kind != VarDeclKind::Var
                 || writers.get(&binding.id.to_id())
-                    != Some(&BTreeSet::from([StatementOrdinal(ordinal)])))
+                    != Some(&BTreeSet::from([SourceUnitOrdinal(ordinal)])))
         {
             continue;
         }

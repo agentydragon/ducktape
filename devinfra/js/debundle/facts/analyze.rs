@@ -1,5 +1,6 @@
 use super::*;
 use serde::Serialize;
+use source_identity::SourceUnitOrdinal;
 
 /// Controls only whether the source module's export surface contributes
 /// synthetic execution roots to unknown-call fallback.
@@ -104,7 +105,7 @@ where
                 let mut finder = TopLevelAwaitFinder::default();
                 item.visit_with(&mut finder);
                 if finder.found {
-                    top_level_await = Some(StatementOrdinal(ordinal));
+                    top_level_await = Some(SourceUnitOrdinal(ordinal));
                 }
             }
             let kind = classify_item(item);
@@ -135,7 +136,7 @@ where
                 })
             });
             StructuralStatementFacts {
-                ordinal: StatementOrdinal(ordinal),
+                ordinal: SourceUnitOrdinal(ordinal),
                 source_location,
                 kind,
                 var_declared: collector

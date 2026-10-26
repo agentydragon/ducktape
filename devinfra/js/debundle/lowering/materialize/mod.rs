@@ -46,7 +46,7 @@ use gate::{
     AssignmentAnalysis, ValidatedAssignment, render_atomic_group_conflict_summary,
     render_cycle_summary,
 };
-use js_ast::{ParsedJsModule, statement_ordinal_for_body_index};
+use js_ast::{ParsedJsModule, source_unit_ordinal_for_statement};
 use output_layout::{
     ATOMIC_GROUP_CONFLICTS_REPORT, CYCLES_REPORT, DEPENDENCY_GRAPH_REPORT, EXPORT_REENTRY_REPORT,
     SELECTOR_DIAGNOSTICS_REPORT,
@@ -569,7 +569,7 @@ pub(super) fn finish_logical_chunk(
     let ChunkPlan {
         module_plans,
         bindings_catalogue,
-        anonymous_ordinal_assignment,
+        whole_statement_assignment,
         unmatched_spec_claims,
     } = builder.finalize(chunk_id_interned)?;
     // Plan structure is final — collect the explicit rename contributors
@@ -632,7 +632,7 @@ pub(super) fn finish_logical_chunk(
         chunk_id_interned,
         &runtime_ast.module.body,
         module_plans.len(),
-        &anonymous_ordinal_assignment,
+        &whole_statement_assignment,
     )?;
 
     let lowered = lower_chunk(LowerChunkInputs {
@@ -775,15 +775,15 @@ fn project_factorization_modules_with_sentinel(
                 })
                 .collect(),
             // AssignmentAnalysis's dependency graph uses post-comma-list-split
-            // `StatementOrdinal`s; convert body indices here so the
-            // destination override targets the right source unit node (an
-            // anon body item is always a single post-split position,
-            // but earlier comma-list var-decls in the chunk shift the
-            // count).
-            anonymous_statement_ordinals: plan
-                .anonymous_statement_ordinals
+            // `SourceUnitOrdinal`s; convert each `StatementId` (the original
+            // `Module.body` position) here so the destination override targets
+            // the corresponding source unit. Anonymous body items are single
+            // post-split positions, but earlier comma-list declarations shift
+            // the source-unit ordinal.
+            anonymous_source_unit_ordinals: plan
+                .anonymous_statements
                 .iter()
-                .map(|body_idx| statement_ordinal_for_body_index(body, *body_idx))
+                .map(|body_idx| source_unit_ordinal_for_statement(body, *body_idx))
                 .collect(),
         })
         .collect();
@@ -797,7 +797,7 @@ fn project_factorization_modules_with_sentinel(
         target_file: sentinel_residual_target,
         role: ModuleRole::Unassigned,
         rename_map: HashMap::new(),
-        anonymous_statement_ordinals: Vec::new(),
+        anonymous_source_unit_ordinals: Vec::new(),
     });
     Ok((logical_modules, ModuleId(sentinel_idx)))
 }

@@ -105,6 +105,8 @@ mod from_report_tests {
     //! `DependencyEdgeReport.role`; the peel planner reconstructs it
     //! here. Both ends must agree so the planner's gate runs the same
     //! cross-module-at-init filter the materializer's gate does.
+    use source_identity::SourceUnitOrdinal;
+
     use crate::purity::Purity;
     use crate::reports::schema::{
         AtomicGraphReport, DependencyEdgeReport, DependencyGraphReport, EdgeRoleReport,
@@ -112,13 +114,12 @@ mod from_report_tests {
     };
     use crate::{
         DepKind, DependencyEdgeId, DependencyGraph, EdgeRole, SourceUnitId, StatementKind,
-        StatementOrdinal,
     };
 
     fn node(id: &str, ordinal: usize) -> SourceUnitReport {
         SourceUnitReport {
             id: id.to_string(),
-            statement_ordinal: StatementOrdinal(ordinal),
+            statement_ordinal: SourceUnitOrdinal(ordinal),
             source_location: None,
             declared_bindings: Vec::new(),
             statement_kind: StatementKind::VarDecl,
@@ -140,7 +141,7 @@ mod from_report_tests {
                 target: target.to_string(),
                 edge_kind: DepKind::EagerUse,
                 binding: None,
-                statement_ordinal: StatementOrdinal(1),
+                statement_ordinal: SourceUnitOrdinal(1),
                 constrains_init_order: true,
                 role,
             }],

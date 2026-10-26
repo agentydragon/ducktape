@@ -384,11 +384,12 @@ mod tests {
     use selector_test_fixtures::{
         broad_specific_targets, call_argument_use, declared_binding, source_unit_fact,
     };
+    use source_identity::SourceUnitOrdinal;
     use std::collections::BTreeSet;
     use std::sync::Mutex;
     use std::thread;
 
-    use analysis::{SourceUnitId, StatementOrdinal};
+    use analysis::SourceUnitId;
     use selector_backend_solver::solve_with_backend;
     use selector_constraint_backend::{
         AllDifferentConstraintId, AllowedTupleConstraintId, AllowedTupleRowsId,
@@ -945,7 +946,7 @@ mod tests {
             Some(&ClaimOutcome::Unique {
                 claim: ResolvedClaim {
                     source_unit: SourceUnitId(10),
-                    statement_ordinal: StatementOrdinal(0),
+                    statement_ordinal: SourceUnitOrdinal(0),
                     binding: Some("shared".to_string()),
                 }
             })
@@ -955,7 +956,7 @@ mod tests {
             Some(&ClaimOutcome::Unique {
                 claim: ResolvedClaim {
                     source_unit: SourceUnitId(20),
-                    statement_ordinal: StatementOrdinal(1),
+                    statement_ordinal: SourceUnitOrdinal(1),
                     binding: Some("specific".to_string()),
                 }
             })
@@ -1003,7 +1004,7 @@ mod tests {
             Some(&ClaimOutcome::Unique {
                 claim: ResolvedClaim {
                     source_unit: SourceUnitId(30),
-                    statement_ordinal: StatementOrdinal(30),
+                    statement_ordinal: SourceUnitOrdinal(30),
                     binding: Some("solo".to_string()),
                 }
             })
@@ -1110,7 +1111,7 @@ mod tests {
             Some(&ClaimOutcome::Unique {
                 claim: ResolvedClaim {
                     source_unit: SourceUnitId(10),
-                    statement_ordinal: StatementOrdinal(0),
+                    statement_ordinal: SourceUnitOrdinal(0),
                     binding: Some("registry".to_string()),
                 }
             })
@@ -1120,7 +1121,7 @@ mod tests {
             Some(&ClaimOutcome::Unique {
                 claim: ResolvedClaim {
                     source_unit: SourceUnitId(20),
-                    statement_ordinal: StatementOrdinal(1),
+                    statement_ordinal: SourceUnitOrdinal(1),
                     binding: Some("Widget".to_string()),
                 }
             })

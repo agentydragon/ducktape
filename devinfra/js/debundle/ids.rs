@@ -1,3 +1,4 @@
+use source_identity::SourceUnitOrdinal;
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
@@ -28,14 +29,6 @@ pub fn top_level_id(sym: &str, top_level_mark: Mark) -> Id {
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize)]
 #[serde(transparent)]
 pub struct ModuleId(pub usize);
-
-/// Position of a top-level statement after comma-list declarations are split
-/// into one statement per declarator. This is not the original `Module.body`
-/// index; use an explicit body-index mapping when raw source coordinates are
-/// needed.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct StatementOrdinal(pub usize);
 
 /// Interned chunk identifier. Created by `ChunkTable::intern` during chunk
 /// loading and used throughout the pipeline in place of `String` chunk names.
@@ -335,5 +328,5 @@ pub struct PlannedModule {
     /// these to override the otherwise-residual destination of those
     /// source_units so cross-destination/cycle checks see the closure as
     /// the materializer will emit it.
-    pub anonymous_statement_ordinals: Vec<usize>,
+    pub anonymous_source_unit_ordinals: Vec<SourceUnitOrdinal>,
 }

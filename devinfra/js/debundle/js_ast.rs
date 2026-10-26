@@ -1,3 +1,4 @@
+use source_identity::{SourceUnitOrdinal, StatementId};
 use std::collections::BTreeMap;
 
 use anyhow::{Result, bail};
@@ -431,23 +432,31 @@ pub fn var_decl_kind_str(kind: VarDeclKind) -> &'static str {
 }
 
 /// Convert a pre-split body index to the first post-split
-/// `StatementOrdinal` value for that body item.
-pub fn statement_ordinal_for_body_index(body: &[ModuleItem], body_idx: usize) -> usize {
-    body[..body_idx]
-        .iter()
-        .map(post_split_top_level_count)
-        .sum()
+/// `SourceUnitOrdinal` value for that body item.
+pub fn source_unit_ordinal_for_statement(
+    body: &[ModuleItem],
+    statement: StatementId,
+) -> SourceUnitOrdinal {
+    SourceUnitOrdinal(
+        body[..statement.0]
+            .iter()
+            .map(post_split_top_level_count)
+            .sum(),
+    )
 }
 
-/// Inverse of [`statement_ordinal_for_body_index`]: the pre-split body index
+/// Inverse of [`source_unit_ordinal_for_statement`]: the pre-split body index
 /// of the body item that produced post-split statement ordinal `stmt_ordinal`,
 /// or `None` past the end of the body.
-pub fn body_index_for_statement_ordinal(body: &[ModuleItem], stmt_ordinal: usize) -> Option<usize> {
+pub fn statement_for_source_unit_ordinal(
+    body: &[ModuleItem],
+    ordinal: SourceUnitOrdinal,
+) -> Option<StatementId> {
     let mut running = 0usize;
     for (idx, item) in body.iter().enumerate() {
         let count = post_split_top_level_count(item);
-        if stmt_ordinal < running + count {
-            return Some(idx);
+        if ordinal.0 < running + count {
+            return Some(StatementId(idx));
         }
         running += count;
     }
@@ -456,10 +465,10 @@ pub fn body_index_for_statement_ordinal(body: &[ModuleItem], stmt_ordinal: usize
 
 /// Map many post-split ordinals in one pass over the raw body. The input
 /// ordinals may be unordered and several may point into one comma-list item.
-pub fn body_indices_for_statement_ordinals(
+pub fn statements_for_source_unit_ordinals(
     body: &[ModuleItem],
-    ordinals: &[usize],
-) -> Vec<Option<usize>> {
+    ordinals: &[SourceUnitOrdinal],
+) -> Vec<Option<StatementId>> {
     let mut sorted: Vec<_> = ordinals.iter().copied().enumerate().collect();
     sorted.sort_by_key(|(_, ordinal)| *ordinal);
     let mut indices = vec![None; ordinals.len()];
@@ -468,14 +477,14 @@ pub fn body_indices_for_statement_ordinals(
     for (position, ordinal) in sorted {
         while let Some(item) = body.get(body_index) {
             let after_item = next_ordinal.saturating_add(post_split_top_level_count(item));
-            if ordinal < after_item {
+            if ordinal.0 < after_item {
                 break;
             }
             next_ordinal = after_item;
             body_index += 1;
         }
         if body_index < body.len() {
-            indices[position] = Some(body_index);
+            indices[position] = Some(StatementId(body_index));
         }
     }
     indices
@@ -814,8 +823,21 @@ mod tests {
         with_swc_globals(|| {
             let parsed = parse_js_module("foo.js", "const a = 1, b = 2; const c = 3;").unwrap();
             assert_eq!(
-                body_indices_for_statement_ordinals(&parsed.module.body, &[2, 0, 1, 9]),
-                vec![Some(1), Some(0), Some(0), None]
+                statements_for_source_unit_ordinals(
+                    &parsed.module.body,
+                    &[
+                        SourceUnitOrdinal(2),
+                        SourceUnitOrdinal(0),
+                        SourceUnitOrdinal(1),
+                        SourceUnitOrdinal(9)
+                    ]
+                ),
+                vec![
+                    Some(StatementId(1)),
+                    Some(StatementId(0)),
+                    Some(StatementId(0)),
+                    None
+                ]
             );
         });
     }

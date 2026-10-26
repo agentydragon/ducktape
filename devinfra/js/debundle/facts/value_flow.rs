@@ -7,6 +7,7 @@
 //! the other. This is context-insensitive; it makes no claim about values from
 //! other chunks.
 
+use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::sync::Arc;
 #[cfg(test)]
@@ -21,7 +22,6 @@ use super::{
     lazy_visit_function, lazy_visit_getter_prop, lazy_visit_if_stmt, lazy_visit_may_skip,
     lazy_visit_method_prop, lazy_visit_setter_prop,
 };
-use crate::StatementOrdinal;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum ValueOrigin {
@@ -659,7 +659,7 @@ pub(crate) struct ChunkValueFlow {
     params: BTreeMap<u32, Vec<Option<Id>>>,
     /// Callable identity to its chunk-top declaration binding, if any.
     canonical: BTreeMap<ValueOrigin, Id>,
-    pub(crate) callable_source_unit: BTreeMap<ValueOrigin, StatementOrdinal>,
+    pub(crate) callable_source_unit: BTreeMap<ValueOrigin, SourceUnitOrdinal>,
 }
 
 impl ChunkValueFlow {
@@ -912,7 +912,7 @@ impl ChunkValueFlow {
                 let mut pass = FlowPass {
                     flow: &mut flow,
                     changed: &mut changed,
-                    source_unit: StatementOrdinal(ordinal),
+                    source_unit: SourceUnitOrdinal(ordinal),
                     current_function: None,
                 };
                 item.as_module_item().visit_with(&mut pass);
@@ -1422,7 +1422,7 @@ enum FlowEvent {
     ClassDeclaration {
         id: Id,
         origin: ValueOrigin,
-        source_unit: StatementOrdinal,
+        source_unit: SourceUnitOrdinal,
     },
     Variable {
         id: Id,
@@ -1456,7 +1456,7 @@ enum FlowEvent {
     FunctionMetadata {
         function: u32,
         params: Vec<Option<Id>>,
-        source_unit: StatementOrdinal,
+        source_unit: SourceUnitOrdinal,
     },
     Return {
         function: u32,
@@ -1489,11 +1489,11 @@ impl FlowProgram {
             declared_ids: BTreeSet::new(),
             events: Vec::new(),
             origins: BTreeSet::from([ValueOrigin::Unknown]),
-            source_unit: StatementOrdinal(0),
+            source_unit: SourceUnitOrdinal(0),
             current_function: None,
         };
         for (ordinal, item) in body.iter().enumerate() {
-            collector.source_unit = StatementOrdinal(ordinal);
+            collector.source_unit = SourceUnitOrdinal(ordinal);
             item.as_module_item().visit_with(&mut collector);
         }
         Self {
@@ -1534,7 +1534,7 @@ struct FlowProgramCollector {
     declared_ids: BTreeSet<Id>,
     events: Vec<FlowEvent>,
     origins: BTreeSet<ValueOrigin>,
-    source_unit: StatementOrdinal,
+    source_unit: SourceUnitOrdinal,
     current_function: Option<u32>,
 }
 
@@ -2119,7 +2119,7 @@ fn object_prop(prop: &PropName) -> Option<String> {
 struct FlowPass<'a> {
     flow: &'a mut ChunkValueFlow,
     changed: &'a mut bool,
-    source_unit: StatementOrdinal,
+    source_unit: SourceUnitOrdinal,
     current_function: Option<u32>,
 }
 

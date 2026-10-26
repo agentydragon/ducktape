@@ -9,6 +9,7 @@ pub(super) use binding_targets::{
     declaration_name_strings as declaration_names,
 };
 use selector_outcome::{Declaration, DeclarationKind};
+use source_identity::StatementId;
 
 use crate::imports::{RuntimeImportFacts, RuntimeImportInfo, record_runtime_imports};
 use anyhow::{Context, Result, bail};
@@ -17,7 +18,7 @@ use swc_ecma_ast::*;
 
 #[derive(Debug, Clone)]
 pub(super) struct TopLevelDecl {
-    pub(super) ordinal: usize,
+    pub(super) statement: StatementId,
     pub(super) bindings: Vec<(String, Id)>,
     pub(super) exported: bool,
 }
@@ -29,7 +30,7 @@ pub(super) struct ChunkAstAnalysis {
     /// `var` may redeclare the same hygienic Id at several sites; consumers that
     /// need one body_index choose a representative explicitly instead of losing the
     /// earlier sites to `HashMap::collect`'s last-write behavior.
-    pub(super) declaration_by_name: HashMap<Id, Vec<usize>>,
+    pub(super) declaration_by_name: HashMap<Id, Vec<StatementId>>,
     /// Sibling sets for top-level destructuring declarators only.
     /// For a destructuring declarator like `const { x, y } = obj`
     /// both `x` and `y` map to the set `{x, y}`. Plain
@@ -84,7 +85,7 @@ pub(super) fn analyze_chunk_ast(module: &Module) -> ChunkAstAnalysis {
                     .extend(bindings.iter().map(|(name, _)| name.clone()));
             }
             declarations.push(TopLevelDecl {
-                ordinal,
+                statement: StatementId(ordinal),
                 bindings,
                 exported,
             });
@@ -97,13 +98,13 @@ pub(super) fn analyze_chunk_ast(module: &Module) -> ChunkAstAnalysis {
             &mut pre_existing_public_export_names,
         );
     }
-    let mut declaration_by_name = HashMap::<Id, Vec<usize>>::new();
+    let mut declaration_by_name = HashMap::<Id, Vec<StatementId>>::new();
     for decl in &declarations {
         for (_, id) in &decl.bindings {
             declaration_by_name
                 .entry(id.clone())
                 .or_default()
-                .push(decl.ordinal);
+                .push(decl.statement);
         }
     }
     ChunkAstAnalysis {
@@ -153,7 +154,7 @@ pub(super) fn record_destructure_sibling_groups(
 /// whose wire format names a single declaration.
 pub(super) fn binding_declaration(
     body: &[ModuleItem],
-    declaration_by_name: &HashMap<Id, Vec<usize>>,
+    declaration_by_name: &HashMap<Id, Vec<StatementId>>,
     binding: &Id,
 ) -> Result<Declaration> {
     let body_index = match declaration_by_name
@@ -161,27 +162,28 @@ pub(super) fn binding_declaration(
         .and_then(|sites| sites.first())
     {
         Some(&ordinal) => ordinal,
-        None => body
-            .iter()
-            .position(|item| {
-                let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
-                    return false;
-                };
-                import.specifiers.iter().any(|specifier| {
-                    let local = match specifier {
-                        ImportSpecifier::Named(named) => &named.local,
-                        ImportSpecifier::Default(default) => &default.local,
-                        ImportSpecifier::Namespace(namespace) => &namespace.local,
+        None => StatementId(
+            body.iter()
+                .position(|item| {
+                    let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
+                        return false;
                     };
-                    local.to_id() == *binding
+                    import.specifiers.iter().any(|specifier| {
+                        let local = match specifier {
+                            ImportSpecifier::Named(named) => &named.local,
+                            ImportSpecifier::Default(default) => &default.local,
+                            ImportSpecifier::Namespace(namespace) => &namespace.local,
+                        };
+                        local.to_id() == *binding
+                    })
                 })
-            })
-            .with_context(|| format!("no top-level statement declares `{}`", binding.0))?,
+                .with_context(|| format!("no top-level statement declares `{}`", binding.0))?,
+        ),
     };
-    let decl = match &body[body_index] {
+    let decl = match &body[body_index.0] {
         ModuleItem::ModuleDecl(ModuleDecl::Import(_)) => {
             return Ok(Declaration {
-                body_index,
+                body_index: body_index.0,
                 kind: DeclarationKind::Import,
             });
         }
@@ -190,7 +192,7 @@ pub(super) fn binding_declaration(
         // A `var` hoisted out of a block, loop or `try`.
         ModuleItem::Stmt(_) => {
             return Ok(Declaration {
-                body_index,
+                body_index: body_index.0,
                 kind: DeclarationKind::Var,
             });
         }
@@ -208,7 +210,10 @@ pub(super) fn binding_declaration(
         Decl::Using(_) => DeclarationKind::Using,
         _ => bail!("body[{body_index}] is a TypeScript declaration"),
     };
-    Ok(Declaration { body_index, kind })
+    Ok(Declaration {
+        body_index: body_index.0,
+        kind,
+    })
 }
 
 /// Pick up `export { foo, bar as baz }` (no `from`) — i.e. re-exports

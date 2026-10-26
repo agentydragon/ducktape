@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
+use source_identity::SourceUnitOrdinal;
 use swc_ecma_ast::Id;
 
-use crate::{ModuleId, StatementOrdinal};
+use crate::ModuleId;
 
 use super::dependency_graph::SourceUnitId;
 
@@ -89,13 +90,13 @@ impl EdgeRole {
 #[derive(Debug, Clone)]
 pub struct EdgeReason {
     pub kind: DepKind,
-    pub statement_ordinal: StatementOrdinal,
+    pub statement_ordinal: SourceUnitOrdinal,
     pub binding: Option<Id>,
     pub(crate) role: EdgeRole,
 }
 
 impl EdgeReason {
-    pub(crate) fn eager_use(so: StatementOrdinal, b: Id) -> Self {
+    pub(crate) fn eager_use(so: SourceUnitOrdinal, b: Id) -> Self {
         Self {
             kind: DepKind::EagerUse,
             statement_ordinal: so,
@@ -103,7 +104,7 @@ impl EdgeReason {
             role: EdgeRole::Direct,
         }
     }
-    pub(crate) fn lazy_use(so: StatementOrdinal, b: Id) -> Self {
+    pub(crate) fn lazy_use(so: SourceUnitOrdinal, b: Id) -> Self {
         Self {
             kind: DepKind::LazyUse,
             statement_ordinal: so,
@@ -111,7 +112,7 @@ impl EdgeReason {
             role: EdgeRole::Direct,
         }
     }
-    pub(crate) fn hoisted_use(so: StatementOrdinal, b: Id) -> Self {
+    pub(crate) fn hoisted_use(so: SourceUnitOrdinal, b: Id) -> Self {
         Self {
             kind: DepKind::HoistedUse,
             statement_ordinal: so,
@@ -119,7 +120,7 @@ impl EdgeReason {
             role: EdgeRole::Direct,
         }
     }
-    pub(crate) fn eager_rebind(so: StatementOrdinal, b: Id) -> Self {
+    pub(crate) fn eager_rebind(so: SourceUnitOrdinal, b: Id) -> Self {
         Self {
             kind: DepKind::EagerRebind,
             statement_ordinal: so,
@@ -127,7 +128,7 @@ impl EdgeReason {
             role: EdgeRole::Direct,
         }
     }
-    pub(crate) fn lazy_rebind(so: StatementOrdinal, b: Id) -> Self {
+    pub(crate) fn lazy_rebind(so: SourceUnitOrdinal, b: Id) -> Self {
         Self {
             kind: DepKind::LazyRebind,
             statement_ordinal: so,
@@ -135,7 +136,7 @@ impl EdgeReason {
             role: EdgeRole::Direct,
         }
     }
-    pub(crate) fn deferred_rebind(so: StatementOrdinal, b: Id) -> Self {
+    pub(crate) fn deferred_rebind(so: SourceUnitOrdinal, b: Id) -> Self {
         Self {
             kind: DepKind::DeferredRebind,
             statement_ordinal: so,
@@ -143,7 +144,7 @@ impl EdgeReason {
             role: EdgeRole::Direct,
         }
     }
-    pub(crate) fn co_declaration(so: StatementOrdinal, b: Id) -> Self {
+    pub(crate) fn co_declaration(so: SourceUnitOrdinal, b: Id) -> Self {
         Self {
             kind: DepKind::CoDeclaration,
             statement_ordinal: so,
@@ -151,7 +152,7 @@ impl EdgeReason {
             role: EdgeRole::Direct,
         }
     }
-    pub(crate) fn sequenced(so: StatementOrdinal) -> Self {
+    pub(crate) fn sequenced(so: SourceUnitOrdinal) -> Self {
         Self {
             kind: DepKind::Sequenced,
             statement_ordinal: so,
@@ -159,7 +160,7 @@ impl EdgeReason {
             role: EdgeRole::Direct,
         }
     }
-    pub(crate) fn local_effect(so: StatementOrdinal, b: Id) -> Self {
+    pub(crate) fn local_effect(so: SourceUnitOrdinal, b: Id) -> Self {
         Self {
             kind: DepKind::LocalEffect,
             statement_ordinal: so,
@@ -186,7 +187,7 @@ impl EdgeReason {
     /// sufficient for the gate. Source-of-truth construction from
     /// `StatementFacts` still goes through the kind-specific helpers
     /// above.
-    pub fn synthetic(kind: DepKind, statement_ordinal: StatementOrdinal, role: EdgeRole) -> Self {
+    pub fn synthetic(kind: DepKind, statement_ordinal: SourceUnitOrdinal, role: EdgeRole) -> Self {
         Self {
             kind,
             statement_ordinal,
@@ -206,7 +207,7 @@ impl EdgeReason {
     pub fn binding(&self) -> Option<&Id> {
         self.binding.as_ref()
     }
-    pub fn statement_ordinal(&self) -> StatementOrdinal {
+    pub fn statement_ordinal(&self) -> SourceUnitOrdinal {
         self.statement_ordinal
     }
     pub fn is_rebind(&self) -> bool {

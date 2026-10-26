@@ -15,12 +15,21 @@ exports_files([
 ])
 
 rust_library(
+    name = "source_identity",
+    srcs = ["source_identity.rs"],
+    crate_root = "source_identity.rs",
+    edition = "2024",
+    deps = ["@crates//:serde"],
+)
+
+rust_library(
     name = "js_ast",
     srcs = ["js_ast.rs"],
     crate_root = "js_ast.rs",
     edition = "2024",
     deps = [
         ":binding_targets",
+        ":source_identity",
         "@crates//:anyhow",
         "@crates//:swc_atoms",
         "@crates//:swc_common",
@@ -46,6 +55,7 @@ rust_library(
     deps = [
         ":binding_targets",
         ":js_ast",
+        ":source_identity",
         "@crates//:anyhow",
         "@crates//:serde",
         "@crates//:swc_common",
@@ -169,6 +179,7 @@ rust_library(
         ":js_ast",
         ":selector_outcome",
         ":selector_resolve",
+        ":source_identity",
         ":source_match",
         ":spec",
         ":spec_resolution",
@@ -489,6 +500,7 @@ rust_library(
     deps = [
         ":binding_targets",
         ":js_ast",
+        ":source_identity",
         ":spec",
         "@crates//:petgraph",
         "@crates//:roaring",
@@ -535,6 +547,7 @@ rust_library(
     edition = "2024",
     deps = [
         ":analysis",
+        ":source_identity",
         ":spec",
         "@crates//:petgraph",
         "@crates//:rayon",
@@ -598,6 +611,7 @@ rust_library(
     edition = "2024",
     deps = [
         ":analysis",
+        ":source_identity",
         ":spec",
     ],
 )
@@ -849,6 +863,7 @@ rust_library(
         ":reconstruction",
         ":selector_outcome",
         ":selector_resolve",
+        ":source_identity",
         ":source_match",
         ":spec",
         ":spec_resolution",
@@ -1003,6 +1018,7 @@ rust_library(
         ":selector_debt",
         ":selector_outcome",
         ":selector_resolve",
+        ":source_identity",
         ":source_inspection",
         ":source_match",
         ":spec",
@@ -1037,6 +1053,7 @@ rust_library(
     edition = "2024",
     deps = [
         ":analysis",
+        ":source_identity",
         "@crates//:thiserror",
     ],
 )
@@ -1076,6 +1093,7 @@ rust_library(
         ":analysis",
         ":selector_constraint_backend",
         ":selector_ir",
+        ":source_identity",
     ],
 )
 
@@ -1088,6 +1106,7 @@ rust_library(
     deps = [
         ":analysis",
         ":selector_ir",
+        ":source_identity",
     ],
 )
 
@@ -1114,6 +1133,7 @@ rust_library(
         ":selector_constraint_backend",
         ":selector_constraint_model_builder",
         ":selector_ir",
+        ":source_identity",
     ],
 )
 
@@ -1198,6 +1218,7 @@ rust_library(
         ":sat_parameters_rust_proto",
         ":selector_constraint_backend",
         ":selector_ortools_cpsat_model",
+        ":source_identity",
         "@crates//:thiserror",
     ],
 )
@@ -1247,6 +1268,7 @@ rust_library(
         ":selector_outcome",
         ":selector_runtime",
         ":shape_index",
+        ":source_identity",
         ":source_match",
         ":spec",
         "@crates//:anyhow",
@@ -1333,6 +1355,7 @@ rust_library(
     edition = "2024",
     deps = [
         ":js_ast",
+        ":source_identity",
         "@crates//:strum",
         "@crates//:swc_ecma_ast",
     ],

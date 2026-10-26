@@ -3,6 +3,7 @@
 //! Item indices are the source module's raw `Module.body` ordinals. They match
 //! selector `body[N]` coordinates, but are not source_unit IDs or other graph IDs.
 
+use source_identity::{SourceUnitOrdinal, StatementId};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
@@ -15,8 +16,8 @@ use swc_ecma_ast::{
 
 use binding_targets::declaration_name_strings;
 use js_ast::{
-    ParsedJsModule, body_indices_for_statement_ordinals, emit_module_source,
-    parse_js_module_consuming,
+    ParsedJsModule, emit_module_source, parse_js_module_consuming,
+    statements_for_source_unit_ordinals,
 };
 
 /// A parsed JavaScript source file together with its original text and path.
@@ -67,8 +68,11 @@ impl PreparedSource {
 
     /// Map graph ordinals (after comma-list splitting) to raw parsed items.
     /// Several source_units may share one body item.
-    pub fn body_indices_for_source_unit_ordinals(&self, ordinals: &[usize]) -> Vec<Option<usize>> {
-        body_indices_for_statement_ordinals(&self.parsed.module.body, ordinals)
+    pub fn body_indices_for_source_unit_ordinals(
+        &self,
+        ordinals: &[SourceUnitOrdinal],
+    ) -> Vec<Option<StatementId>> {
+        statements_for_source_unit_ordinals(&self.parsed.module.body, ordinals)
     }
 
     /// Return statements in the requested inclusive range, or all statements

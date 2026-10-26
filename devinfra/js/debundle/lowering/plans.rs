@@ -2,6 +2,8 @@
 //! construction lives in `spec_resolution`.
 
 use analysis::ModuleRole;
+use source_identity::StatementId;
+
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 #[derive(Debug, Clone)]
@@ -28,18 +30,18 @@ pub(super) struct ModulePlan {
     /// Source bindings whose public names came explicitly from the spec,
     /// including names equal to the original binding spelling.
     pub(super) spec_named_bindings: BTreeSet<String>,
-    /// Source-chunk statement ordinals of anonymous-statement members
+    /// Original source statements of anonymous-statement members
     /// claimed by this module. These source units have empty
     /// `declared_bindings`, so they can't be addressed by name —
     /// the spec resolves them by AST shape (see
     /// [`spec::LogicalModule::anonymous_statements`]). The
     /// materializer routes each such statement into this module's
     /// body in source order, alongside the named members.
-    pub(super) anonymous_statement_ordinals: Vec<usize>,
+    pub(super) anonymous_statements: Vec<StatementId>,
     /// Source-chunk body index → anonymous-statement comment text.
     /// Emitted as a `// ...` block immediately above the matched
     /// statement in the generated module body.
-    pub(super) anonymous_statement_comments: BTreeMap<usize, String>,
+    pub(super) anonymous_statement_comments: BTreeMap<StatementId, String>,
     /// Module-level human-readable comment from the spec, if any.
     /// Emitted at the top of the generated module file, before
     /// imports. See [`spec::LogicalModule::comment`].

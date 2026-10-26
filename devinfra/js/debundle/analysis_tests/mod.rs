@@ -1,3 +1,4 @@
+use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeMap, BTreeSet};
 
 use analysis::*;
@@ -1161,8 +1162,8 @@ fn repeated_declaration_is_refused_unless_every_site_is_var() {
             build_dependency_graph(&analyze_facts(&parse(source))).unwrap_err(),
             DuplicateTopLevelDeclaration {
                 binding: "pick".into(),
-                first: StatementOrdinal(0),
-                second: StatementOrdinal(1),
+                first: SourceUnitOrdinal(0),
+                second: SourceUnitOrdinal(1),
             },
             "{source}"
         );

@@ -1,15 +1,16 @@
 //! Declarative inputs shared by compiler and solver tests; no expected outcomes.
 
-use analysis::{SourceUnitId, StatementOrdinal};
+use analysis::SourceUnitId;
 use selector_ir::{
     ClaimKind, SelectorAtom, SelectorFact, SelectorFactStore, SelectorProgram, SelectorTargetId,
     SourceUnitTerm, StringTerm, VariableDomain,
 };
+use source_identity::SourceUnitOrdinal;
 
 pub fn source_unit_fact(source_unit: usize, ordinal: usize, statement_kind: &str) -> SelectorFact {
     SelectorFact::SourceUnit {
         source_unit: SourceUnitId(source_unit),
-        statement_ordinal: StatementOrdinal(ordinal),
+        statement_ordinal: SourceUnitOrdinal(ordinal),
         statement_kind: statement_kind.to_string(),
     }
 }
@@ -23,7 +24,7 @@ pub fn declared_binding(source_unit: usize, binding: &str) -> SelectorFact {
 
 pub fn member_read(ordinal: usize, object: Option<&str>, member: &str) -> SelectorFact {
     SelectorFact::MemberRead {
-        statement_ordinal: StatementOrdinal(ordinal),
+        statement_ordinal: SourceUnitOrdinal(ordinal),
         object: object.map(str::to_string),
         member: member.to_string(),
     }
@@ -31,7 +32,7 @@ pub fn member_read(ordinal: usize, object: Option<&str>, member: &str) -> Select
 
 pub fn module_member_use(ordinal: usize, module: &str, member: &str) -> SelectorFact {
     SelectorFact::ModuleMemberUse {
-        statement_ordinal: StatementOrdinal(ordinal),
+        statement_ordinal: SourceUnitOrdinal(ordinal),
         module: module.to_string(),
         member: member.to_string(),
     }
