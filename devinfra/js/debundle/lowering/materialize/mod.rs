@@ -33,7 +33,8 @@ use crate::{
 use analysis::facts::{ExportReentryPolicy, StructuralChunkAnalysis};
 use analysis::{
     AnalysisAssumptions, AnalysisInputs, BindingId, DependencyGraphAndAtomicGroups,
-    DependencyGraphOptions, LocalEffectPolicy, ModuleId, ModuleRole, PlannedModule, top_level_id,
+    DependencyGraphOptions, EntryDestination, LocalEffectPolicy, ModuleId, ModuleRole,
+    PlannedModule, top_level_id,
 };
 use anyhow::{Context, Result, bail};
 use artifact::{
@@ -592,15 +593,11 @@ pub(super) fn finish_logical_chunk(
         ledger.seal(&SealValidation::default())
     }?;
     let chunk_renames_map = sealed_renames.chunk_renames_by_name();
-    let (logical_modules, default_destination) = project_factorization_modules_with_sentinel(
+    let (planned_modules, entry_destination) = project_factorization_modules(
         &module_plans,
         &runtime_ast.module.body,
         chunk_top_level_mark,
-        chunk_id,
-        target_dir,
-        &target_file,
-        chunk_unassigned_mode.catchall_file_target(),
-    )?;
+    );
     let redundant_purity_hints = analysis.redundant_purity_hints;
     let factorization_chunk_renames: HashMap<Id, swc_atoms::Atom> = chunk_renames_map
         .iter()
@@ -616,9 +613,9 @@ pub(super) fn finish_logical_chunk(
         chunk_id_interned,
         precomputed,
         bindings_catalogue,
-        logical_modules,
+        planned_modules,
         factorization_chunk_renames,
-        default_destination,
+        entry_destination,
     )?;
     let validated_assignment = validate_and_emit_reports(
         chunk_id,
@@ -677,7 +674,16 @@ pub(super) fn finish_logical_chunk(
         chunk_id_interned,
         chunk_top_level_mark,
     );
-    let directory_dependency_facts = build_directory_dependency_facts(chunk_id, &factorization);
+    let entry_destination_report_target_file = chunk_unassigned_mode
+        .catchall_file_target()
+        .map(|target| target_file_for_request(target_dir, target))
+        .transpose()?
+        .unwrap_or_else(|| target_file.clone());
+    let directory_dependency_facts = build_directory_dependency_facts(
+        chunk_id,
+        &entry_destination_report_target_file,
+        &factorization,
+    );
     let validation = ChunkValidationSummary {
         linker_order: validated_assignment.report().linker_order.clone(),
     };
@@ -739,26 +745,15 @@ fn apply_rebind_folds_from_chunk_analysis(
     builder.apply_rebind_folds(folds);
 }
 
-/// Build the `PlannedModule` list the proposer
-/// consumes from the per-chunk `ModulePlan`s, then append the
-/// "anon residual" sentinel that holds the assignment's default
-/// destination.
-///
-/// The assignment's default destination is a factorization-only sentinel
-/// appended past `module_plans.len()`. The emit loop never writes it as a
-/// file. In `catchall_file` mode, plan construction routes the anonymous
-/// source units required by catchall atomicity or side-effect order there; other
-/// independent source units remain in the sentinel and are emitted in the entry.
-fn project_factorization_modules_with_sentinel(
+/// Project the materializer's real output plans into the analysis view. The
+/// entry is a typed destination after the planned outputs, not a fabricated
+/// `PlannedModule`; its wire label is chosen only when constructing reports.
+fn project_factorization_modules(
     module_plans: &[ModulePlan],
     body: &[ModuleItem],
     chunk_top_level_mark: swc_common::Mark,
-    chunk_id: &str,
-    target_dir: &str,
-    target_file: &str,
-    catchall_target_for_overflow: Option<&str>,
-) -> Result<(Vec<PlannedModule>, ModuleId)> {
-    let mut logical_modules: Vec<PlannedModule> = module_plans
+) -> (Vec<PlannedModule>, EntryDestination) {
+    let planned_modules: Vec<PlannedModule> = module_plans
         .iter()
         .map(|plan| PlannedModule {
             id: plan.id.clone(),
@@ -775,7 +770,7 @@ fn project_factorization_modules_with_sentinel(
                 })
                 .collect(),
             // AssignmentAnalysis's dependency graph uses post-comma-list-split
-            // `SourceUnitOrdinal`s; convert each `StatementId` (the original
+            // `SourceUnitOrdinals`; convert each `StatementId` (the original
             // `Module.body` position) here so the destination override targets
             // the corresponding source unit. Anonymous body items are single
             // post-split positions, but earlier comma-list declarations shift
@@ -787,19 +782,8 @@ fn project_factorization_modules_with_sentinel(
                 .collect(),
         })
         .collect();
-    let sentinel_residual_target = catchall_target_for_overflow
-        .map(|t| target_file_for_request(target_dir, t))
-        .transpose()?
-        .unwrap_or_else(|| target_file.to_string());
-    let sentinel_idx = logical_modules.len();
-    logical_modules.push(PlannedModule {
-        id: format!("{chunk_id}::anon_residual_sentinel"),
-        target_file: sentinel_residual_target,
-        role: ModuleRole::Unassigned,
-        rename_map: HashMap::new(),
-        anonymous_source_unit_ordinals: Vec::new(),
-    });
-    Ok((logical_modules, ModuleId(sentinel_idx)))
+    let entry_destination = EntryDestination::after_planned_modules(planned_modules.len());
+    (planned_modules, entry_destination)
 }
 
 /// Collect `AnalysisAssumptions` from binding annotations. These are semantic
@@ -1092,7 +1076,7 @@ fn validate_and_emit_reports<'a>(
             // against the dependency graph without string surgery.
             let wire = ::analysis::AtomicGroupConflictReport::from_conflicts(
                 &factorization_report.atomic_group_conflicts,
-                &|id| factorization.analysis().module_path(id),
+                &|id| factorization.module_path(id),
                 factorization.analysis().dependency_graph(),
             );
             write_chunk_report_json(
@@ -1104,7 +1088,7 @@ fn validate_and_emit_reports<'a>(
         }
         let summary = render_atomic_group_conflict_summary(
             &factorization_report.atomic_group_conflicts,
-            &|id| factorization.analysis().module_path(id),
+            &|id| factorization.module_path(id),
             factorization.analysis().dependency_graph(),
         );
         let causes =
@@ -1193,6 +1177,7 @@ fn build_final_module_report(
 
 fn build_directory_dependency_facts(
     chunk_id: &str,
+    entry_destination_report_target_file: &str,
     factorization: &AssignmentAnalysis,
 ) -> Vec<DirectoryDependencyFact> {
     let mut facts = Vec::new();
@@ -1202,10 +1187,20 @@ fn build_directory_dependency_facts(
         if source_module == target_module {
             continue;
         }
-        let Some(source_file) = module_output_file(chunk_id, factorization, source_module) else {
+        let Some(source_file) = module_output_file(
+            chunk_id,
+            entry_destination_report_target_file,
+            factorization,
+            source_module,
+        ) else {
             continue;
         };
-        let Some(target_file) = module_output_file(chunk_id, factorization, target_module) else {
+        let Some(target_file) = module_output_file(
+            chunk_id,
+            entry_destination_report_target_file,
+            factorization,
+            target_module,
+        ) else {
             continue;
         };
         let symbol = edge.reason.binding().map(|id| {
@@ -1240,11 +1235,18 @@ fn build_directory_dependency_facts(
 
 fn module_output_file(
     chunk_id: &str,
+    entry_destination_report_target_file: &str,
     factorization: &AssignmentAnalysis,
     module: ModuleId,
 ) -> Option<String> {
+    if module == factorization.assignment().entry_destination().module_id() {
+        return Some(join_module_path(&[
+            chunk_id,
+            entry_destination_report_target_file,
+        ]));
+    }
     factorization
         .analysis()
-        .logical_module(module)
-        .map(|logical| join_module_path(&[chunk_id, &logical.target_file]))
+        .planned_module(module)
+        .map(|planned| join_module_path(&[chunk_id, &planned.target_file]))
 }

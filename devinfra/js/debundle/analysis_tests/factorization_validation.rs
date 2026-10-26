@@ -8,30 +8,23 @@ use super::{analyze_facts, build_dependency_graph, parse, parse_with_source_map,
 use crate::*;
 use analysis::*;
 
-/// Test-only convenience for constructing `ModuleId` values from a
-/// raw logical index (the `logical` free function is not part of the
-/// crate's public API).
-fn logical(idx: usize) -> ModuleId {
-    ModuleId(idx)
+#[derive(Debug, Clone, Copy)]
+enum TestDestination {
+    Planned(ModuleId),
+    Entry,
 }
 
-/// logical module always sits at the highest index appended by
-/// `factorization_for` / `factorization_with_residual_module`. Tests use this
-/// instead of the historical `ModuleId::ResidualEntry` literal.
-fn residual() -> ModuleId {
-    ModuleId(usize::MAX)
+/// Test-only convenience for constructing a planned output identity.
+fn logical(idx: usize) -> TestDestination {
+    TestDestination::Planned(ModuleId(idx))
 }
 
-/// Canonical-path renderer for test assignments: the residual
-/// sentinel renders as `residual`, named modules as `mod_<idx>`.
+fn residual() -> TestDestination {
+    TestDestination::Entry
+}
+
 fn render(id: ModuleId) -> spec::ModulePath {
-    let idx = id.0;
-    let raw = if idx == usize::MAX {
-        "residual".to_string()
-    } else {
-        format!("mod_{idx}")
-    };
-    spec::ModulePath::parse(&raw, "").unwrap()
+    spec::ModulePath::parse(&format!("mod_{}", id.0), "").unwrap()
 }
 
 fn member_bindings(members: &[BindingReport]) -> Vec<String> {
@@ -60,8 +53,7 @@ fn cross_destination_lazy_write_is_rejected() {
         "expected one atomic-group conflict (A and B share a LazyRebind atomic group but the spec splits them): {report:?}",
     );
     let conflict = &report.atomic_group_conflicts[0];
-    // Residual is now the synthesized logical module at index 1
-    // (the explicit `mod_0` is at index 0).
+    // The entry destination follows the one planned output module.
     assert_eq!(
         distinct_claim_modules(conflict),
         vec![ModuleId(0), ModuleId(1)],
@@ -99,25 +91,11 @@ fn same_destination_lazy_write_is_allowed() {
 
 // --- Factorization helpers -----------------------------------------------
 
-/// Resolve a sentinel `residual()` ModuleId to the real residual
-/// logical-module index. Helper for `factorization_for`: in the new
-/// no-variant world the residual is just a logical module, so
-/// tests that used to write `ModuleId::ResidualEntry` now write
-/// `residual()` (a `usize::MAX`-indexed sentinel) and let the
-/// builder remap it.
-fn resolve_test_module_id(id: ModuleId, residual_idx: usize) -> ModuleId {
-    if id.0 == usize::MAX {
-        ModuleId(residual_idx)
-    } else {
-        id
-    }
-}
-
 fn factorization_from_facts(
     facts: &[StatementFacts],
     bindings: HashMap<swc_ecma_ast::Id, BindingKind>,
-    logical_modules: Vec<PlannedModule>,
-    default_destination: ModuleId,
+    planned_modules: Vec<PlannedModule>,
+    entry_destination: EntryDestination,
 ) -> AssignmentAnalysis {
     AssignmentAnalysis::build_with(
         "test_chunk".to_string(),
@@ -125,9 +103,9 @@ fn factorization_from_facts(
         compute_dependency_graph_and_atomic_groups_with(facts, DependencyGraphOptions::default())
             .expect("chunk facts declare a binding twice"),
         BindingCatalogue::new(ChunkId(0), bindings),
-        logical_modules,
+        planned_modules,
         HashMap::new(),
-        default_destination,
+        entry_destination,
     )
     .expect("test bindings belong to test_chunk")
 }
@@ -142,31 +120,33 @@ fn assignment_analysis_rejects_a_catalogue_from_another_chunk() {
         BindingCatalogue::new(ChunkId(0), HashMap::new()),
         Vec::new(),
         HashMap::new(),
-        ModuleId(0),
+        EntryDestination::after_planned_modules(0),
     );
 
     assert!(result.is_err(), "wrong-chunk catalogues must be rejected");
 }
 
-fn factorization_for(source: &str, ownership: &[(&str, ModuleId)]) -> AssignmentAnalysis {
+fn factorization_for(source: &str, ownership: &[(&str, TestDestination)]) -> AssignmentAnalysis {
     let module = parse(source);
     let facts = analyze_facts(&module);
-    let mut max_idx: Option<usize> = None;
-    for (_, id) in ownership {
-        let i = id.0;
-        if i == usize::MAX {
-            continue;
-        }
-        max_idx = Some(max_idx.map_or(i, |m| m.max(i)));
-    }
-    let explicit_count = max_idx.map_or(0, |i| i + 1);
-    let residual_idx = explicit_count;
+    let max_idx = ownership
+        .iter()
+        .filter_map(|(_, destination)| match destination {
+            TestDestination::Planned(id) => Some(id.0),
+            TestDestination::Entry => None,
+        })
+        .max();
+    let planned_module_count = max_idx.map_or(0, |i| i + 1);
+    let entry_destination = EntryDestination::after_planned_modules(planned_module_count);
     let mut bindings = HashMap::new();
-    for (name, id) in ownership {
-        let resolved = resolve_test_module_id(*id, residual_idx);
-        bindings.insert(test_id(name), BindingKind::Owned { module: resolved });
+    for (name, destination) in ownership {
+        let module_id = match destination {
+            TestDestination::Planned(id) => *id,
+            TestDestination::Entry => entry_destination.module_id(),
+        };
+        bindings.insert(test_id(name), BindingKind::Owned { module: module_id });
     }
-    let mut logical_modules: Vec<PlannedModule> = (0..explicit_count)
+    let planned_modules = (0..planned_module_count)
         .map(|i| PlannedModule {
             id: format!("mod_{i}"),
             target_file: format!("mod_{i}.js"),
@@ -175,14 +155,7 @@ fn factorization_for(source: &str, ownership: &[(&str, ModuleId)]) -> Assignment
             anonymous_source_unit_ordinals: Vec::new(),
         })
         .collect();
-    logical_modules.push(PlannedModule {
-        id: "residual".to_string(),
-        target_file: "residual/unhandled.js".to_string(),
-        role: ModuleRole::Unassigned,
-        rename_map: HashMap::new(),
-        anonymous_source_unit_ordinals: Vec::new(),
-    });
-    factorization_from_facts(&facts, bindings, logical_modules, ModuleId(residual_idx))
+    factorization_from_facts(&facts, bindings, planned_modules, entry_destination)
 }
 
 fn factorization_with_residual_module(
@@ -192,8 +165,8 @@ fn factorization_with_residual_module(
 ) -> AssignmentAnalysis {
     let module = parse(source);
     let facts = analyze_facts(&module);
-    let residual = logical(0);
-    let logical = logical(1);
+    let residual = ModuleId(0);
+    let logical = ModuleId(1);
     let mut bindings = HashMap::new();
     for name in residual_bindings {
         bindings.insert(test_id(name), BindingKind::Owned { module: residual });
@@ -217,10 +190,28 @@ fn factorization_with_residual_module(
             anonymous_source_unit_ordinals: Vec::new(),
         },
     ];
-    factorization_from_facts(&facts, bindings, logical_modules, residual)
+    let entry_destination = EntryDestination::after_planned_modules(logical_modules.len());
+    factorization_from_facts(&facts, bindings, logical_modules, entry_destination)
 }
 
 // --- dependency graph quotient ------------------------------------------------
+
+#[test]
+fn empty_dependency_graph_report_includes_entry_destination() {
+    let factorization = factorization_from_facts(
+        &[],
+        HashMap::new(),
+        Vec::new(),
+        EntryDestination::after_planned_modules(0),
+    );
+
+    let report = factorization.dependency_graph_report();
+    assert_eq!(report.quotient.nodes.len(), 1);
+    let entry = &report.quotient.nodes[0];
+    assert_eq!(entry.key.as_str(), "logical:0");
+    assert_eq!(entry.path.as_str(), "anon_residual_sentinel");
+    assert!(entry.residual);
+}
 
 #[test]
 fn dependency_graph_report_emits_atomic_graph() {
@@ -636,9 +627,15 @@ fn assignment_summary(factorization: &AssignmentAnalysis) -> Vec<(String, String
             // `<residual>` so this summary stays stable across index
             // changes; specified modules use their `mod_<idx>` label.
             let idx = dest.0;
-            let label = match factorization.analysis().logical_module(ModuleId(idx)) {
-                Some(m) if m.role == ModuleRole::Unassigned => "<residual>".to_string(),
-                _ => render(dest).to_string(),
+            let label = if dest == factorization.assignment().entry_destination().module_id()
+                || factorization
+                    .analysis()
+                    .planned_module(ModuleId(idx))
+                    .is_some_and(|module| module.role == ModuleRole::Unassigned)
+            {
+                "<residual>".to_string()
+            } else {
+                render(dest).to_string()
             };
             (key, label)
         })
@@ -679,8 +676,7 @@ fn assignment_assembly_single_claim_with_unclaimed_atomic_group_members_is_a_con
         1,
         "expected the half-claimed EagerUse cycle to surface as an atomic-group conflict: {report:?}",
     );
-    // Residual is the synthesized logical module appended after
-    // the explicit `mod_0`.
+    // The entry destination follows the one planned output module.
     assert_eq!(
         distinct_claim_modules(&report.atomic_group_conflicts[0]),
         vec![ModuleId(0), ModuleId(1)],

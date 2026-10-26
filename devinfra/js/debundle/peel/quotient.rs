@@ -349,7 +349,7 @@ fn project_classes(
             .iter()
             .map(|c| class_module_id.get(c).copied().unwrap_or(residual_module))
             .collect(),
-        residual_module,
+        analysis::EntryDestination::from_module_id(residual_module),
     );
     (
         RealizabilityIndex::from_assignment(dependency_graph, assignment),
@@ -521,8 +521,10 @@ impl QuotientGraph {
 
         let dependency_graph = DependencyGraph::from_report(report)
             .context("reconstructing dependency graph for candidate assignment")?;
-        let assignment =
-            ModuleAssignment::from_assignments(source_unit_modules.to_vec(), residual_module);
+        let assignment = ModuleAssignment::from_assignments(
+            source_unit_modules.to_vec(),
+            analysis::EntryDestination::from_module_id(residual_module),
+        );
         let verdict = gate::check_realizability(&dependency_graph, &assignment);
         anyhow::ensure!(
             verdict.is_realizable(),

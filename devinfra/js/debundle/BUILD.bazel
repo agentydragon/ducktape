@@ -555,6 +555,7 @@ rust_library(
         "@crates//:serde",
         "@crates//:swc_atoms",
         "@crates//:swc_ecma_ast",
+        "@crates//:thiserror",
     ],
 )
 

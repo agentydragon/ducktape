@@ -177,7 +177,7 @@ pub(crate) fn plan_module_reference_needs<'a>(
             if provider_index != module_index
                 && let Some(provider) = factorization
                     .analysis()
-                    .logical_module(ModuleId(provider_index))
+                    .planned_module(ModuleId(provider_index))
                 && let Some(exported_name) = provider.rename_map.get(original_id)
             {
                 needs
@@ -244,7 +244,7 @@ fn collect_phantom_side_effect_providers(
     phantom_side_effect_providers: &mut BTreeSet<usize>,
 ) {
     let module_id = ModuleId(module_index);
-    let residual = factorization.assignment().residual();
+    let residual = factorization.assignment().entry_destination().module_id();
     let dependency_graph = factorization.analysis().dependency_graph();
     for (source_unit_id, source_unit_module) in factorization.assignment().iter() {
         if source_unit_module != module_id {

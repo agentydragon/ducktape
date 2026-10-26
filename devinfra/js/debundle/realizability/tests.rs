@@ -105,7 +105,10 @@ fn full_overlay_verdict_matches_pure_gate_across_typed_moves() {
         let assignments = (0..names.len())
             .map(|i| module_id((i * 3 + seed) % 5))
             .collect();
-        let assignment = ModuleAssignment::from_assignments(assignments, module_id(0));
+        let assignment = ModuleAssignment::from_assignments(
+            assignments,
+            analysis::EntryDestination::from_module_id(module_id(0)),
+        );
         let mut index = RealizabilityIndex::from_assignment(&graph, assignment);
         for step in 0..12usize {
             let first = (step * 5 + seed) % names.len();
@@ -195,7 +198,10 @@ fn acyclic_cross_module_at_init_read_is_realizable() {
     // SourceUnit 0: const a = 1 → module 1.
     // SourceUnit 1: const b = a + 1 → module 2.
     // Edge source_unit_1 → source_unit_0 (eager_use of `a`).
-    let mut assignment = ModuleAssignment::new(&dependency_graph, module_id(0));
+    let mut assignment = ModuleAssignment::new(
+        &dependency_graph,
+        analysis::EntryDestination::from_module_id(module_id(0)),
+    );
     assignment.set(SourceUnitId(0), module_id(1));
     assignment.set(SourceUnitId(1), module_id(2));
     let verdict = check_realizability(&dependency_graph, &assignment);
@@ -219,7 +225,10 @@ fn constraining_cycle_across_two_modules_is_unrealizable() {
     // what clause 3 rejects.
     let source = "const a = b + 1; const b = a + 1;";
     let dependency_graph = parse_and_build(source);
-    let mut assignment = ModuleAssignment::new(&dependency_graph, module_id(0));
+    let mut assignment = ModuleAssignment::new(
+        &dependency_graph,
+        analysis::EntryDestination::from_module_id(module_id(0)),
+    );
     assignment.set(SourceUnitId(1), module_id(1));
     let verdict = check_realizability(&dependency_graph, &assignment);
     assert!(
@@ -248,7 +257,10 @@ fn touching_filter_keeps_only_diagnoses_involving_the_queried_module() {
     // is an unrelated clean module 3.
     let source = "const a = b + 1; const b = a + 1; const c = 1;";
     let dependency_graph = parse_and_build(source);
-    let mut assignment = ModuleAssignment::new(&dependency_graph, module_id(0));
+    let mut assignment = ModuleAssignment::new(
+        &dependency_graph,
+        analysis::EntryDestination::from_module_id(module_id(0)),
+    );
     assignment.set(SourceUnitId(0), module_id(1));
     assignment.set(SourceUnitId(1), module_id(2));
     assignment.set(SourceUnitId(2), module_id(3));
@@ -275,7 +287,10 @@ fn touching_filter_keeps_only_cross_rebinds_at_the_queried_module() {
     // (mod 2, unrelated).
     let source = "let a = 1; a = 2; const z = 3;";
     let dependency_graph = parse_and_build(source);
-    let mut assignment = ModuleAssignment::new(&dependency_graph, module_id(0));
+    let mut assignment = ModuleAssignment::new(
+        &dependency_graph,
+        analysis::EntryDestination::from_module_id(module_id(0)),
+    );
     assignment.set(SourceUnitId(1), module_id(1));
     assignment.set(SourceUnitId(2), module_id(2));
     let full = check_realizability(&dependency_graph, &assignment);
@@ -304,7 +319,10 @@ fn touching_filter_keeps_only_cross_rebinds_at_the_queried_module() {
 fn pure_lazy_cycle_is_realizable() {
     let source = "function a() { return b(); } function b() { return a(); }";
     let dependency_graph = parse_and_build(source);
-    let mut assignment = ModuleAssignment::new(&dependency_graph, module_id(0));
+    let mut assignment = ModuleAssignment::new(
+        &dependency_graph,
+        analysis::EntryDestination::from_module_id(module_id(0)),
+    );
     assignment.set(SourceUnitId(1), module_id(1));
     let verdict = check_realizability(&dependency_graph, &assignment);
     assert!(
@@ -325,7 +343,10 @@ fn namespace_aggregator_with_pure_subs_is_realizable() {
     // source_unit_3: console.log(ids)
     let source = "const sub1 = { foo: 1 }; const sub2 = { bar: 2 }; const ids = {...sub1, ...sub2}; console.log(ids);";
     let dependency_graph = parse_and_build(source);
-    let mut assignment = ModuleAssignment::new(&dependency_graph, module_id(0));
+    let mut assignment = ModuleAssignment::new(
+        &dependency_graph,
+        analysis::EntryDestination::from_module_id(module_id(0)),
+    );
     assignment.set(SourceUnitId(0), module_id(1)); // sub1 → mod_sub1
     assignment.set(SourceUnitId(1), module_id(2)); // sub2 → mod_sub2
     assignment.set(SourceUnitId(2), module_id(3)); // ids  → mod_ids
@@ -367,7 +388,10 @@ fn promoted_edge_in_aggregator_cycle_is_unrealizable() {
     // source_unit_4: const consumed = ids              (residual)
     let source = "const seed = \"S\"; const readSeed = () => seed; const sub1 = { foo: readSeed() }; const ids = sub1.foo + \"x\"; const consumed = ids; console.log(consumed);";
     let dependency_graph = parse_and_build(source);
-    let mut assignment = ModuleAssignment::new(&dependency_graph, module_id(0));
+    let mut assignment = ModuleAssignment::new(
+        &dependency_graph,
+        analysis::EntryDestination::from_module_id(module_id(0)),
+    );
     assignment.set(SourceUnitId(1), module_id(1)); // readSeed → mod_helpers
     assignment.set(SourceUnitId(2), module_id(2)); // sub1 → mod_sub1
     assignment.set(SourceUnitId(3), module_id(3)); // ids → mod_ids
@@ -388,7 +412,10 @@ fn promoted_edge_in_aggregator_cycle_is_unrealizable() {
 fn single_module_is_always_realizable() {
     let source = "const a = 1; const b = a + 1; const c = a * b;";
     let dependency_graph = parse_and_build(source);
-    let assignment = ModuleAssignment::new(&dependency_graph, module_id(0));
+    let assignment = ModuleAssignment::new(
+        &dependency_graph,
+        analysis::EntryDestination::from_module_id(module_id(0)),
+    );
     let verdict = check_realizability(&dependency_graph, &assignment);
     assert!(verdict.is_realizable());
 }
@@ -490,7 +517,10 @@ fn incremental_index_matches_pure_verdict_after_each_committed_move() {
     ];
     for (label, source, moves) in rows {
         let dependency_graph = parse_and_build(source);
-        let baseline = ModuleAssignment::new(&dependency_graph, module_id(0));
+        let baseline = ModuleAssignment::new(
+            &dependency_graph,
+            analysis::EntryDestination::from_module_id(module_id(0)),
+        );
         let mut explicit = baseline.clone();
         let mut index = RealizabilityIndex::from_assignment(&dependency_graph, baseline);
         assert_eq!(
@@ -779,7 +809,10 @@ fn incremental_simulator_matches_rebuild_after_each_delta() {
     ];
     for fixture in fixtures {
         let dependency_graph = parse_and_build(fixture.source);
-        let baseline = ModuleAssignment::new(&dependency_graph, module_id(0));
+        let baseline = ModuleAssignment::new(
+            &dependency_graph,
+            analysis::EntryDestination::from_module_id(module_id(0)),
+        );
         let mut index = RealizabilityIndex::from_assignment(&dependency_graph, baseline);
         assert_cached_simulator_matches_rebuild(&index, fixture.label, "initial");
         for (source_unit_indices, dest) in &fixture.deltas {
@@ -853,7 +886,10 @@ fn ladder_tier0_delta_free_move_accepts_on_clean_state() {
     let dependency_graph = parse_and_build(source);
     let index = RealizabilityIndex::from_assignment(
         &dependency_graph,
-        ModuleAssignment::new(&dependency_graph, module_id(0)),
+        ModuleAssignment::new(
+            &dependency_graph,
+            analysis::EntryDestination::from_module_id(module_id(0)),
+        ),
     );
     // SourceUnit 1 already lives in module 0 — the move is delta-free.
     let decision =
@@ -868,7 +904,10 @@ fn ladder_tier0_delta_free_move_rejects_on_dirty_pre_state() {
     // the pre-state touching verdict is dirty).
     let source = "const a = b + 1; const b = a + 1;";
     let dependency_graph = parse_and_build(source);
-    let mut assignment = ModuleAssignment::new(&dependency_graph, module_id(0));
+    let mut assignment = ModuleAssignment::new(
+        &dependency_graph,
+        analysis::EntryDestination::from_module_id(module_id(0)),
+    );
     assignment.set(SourceUnitId(0), module_id(1));
     assignment.set(SourceUnitId(1), module_id(2));
     let index = RealizabilityIndex::from_assignment(&dependency_graph, assignment);
@@ -885,7 +924,10 @@ fn ladder_tier1_rejects_constraining_cycle_move() {
     let dependency_graph = parse_and_build(source);
     let index = RealizabilityIndex::from_assignment(
         &dependency_graph,
-        ModuleAssignment::new(&dependency_graph, module_id(0)),
+        ModuleAssignment::new(
+            &dependency_graph,
+            analysis::EntryDestination::from_module_id(module_id(0)),
+        ),
     );
     let decision =
         assert_ladder_matches_verdict(&index, &dependency_graph, &[SourceUnitId(1)], module_id(1));
@@ -900,7 +942,10 @@ fn ladder_tier1_rejects_cross_rebind_move() {
     let dependency_graph = parse_and_build(source);
     let index = RealizabilityIndex::from_assignment(
         &dependency_graph,
-        ModuleAssignment::new(&dependency_graph, module_id(0)),
+        ModuleAssignment::new(
+            &dependency_graph,
+            analysis::EntryDestination::from_module_id(module_id(0)),
+        ),
     );
     let decision =
         assert_ladder_matches_verdict(&index, &dependency_graph, &[SourceUnitId(1)], module_id(1));
@@ -916,7 +961,10 @@ fn ladder_tier2_accepts_acyclic_cross_module_move() {
     let dependency_graph = parse_and_build(source);
     let index = RealizabilityIndex::from_assignment(
         &dependency_graph,
-        ModuleAssignment::new(&dependency_graph, module_id(0)),
+        ModuleAssignment::new(
+            &dependency_graph,
+            analysis::EntryDestination::from_module_id(module_id(0)),
+        ),
     );
     let decision =
         assert_ladder_matches_verdict(&index, &dependency_graph, &[SourceUnitId(0)], module_id(1));
@@ -931,7 +979,10 @@ fn ladder_tier2_accepts_pure_lazy_cycle_move() {
     let dependency_graph = parse_and_build(source);
     let index = RealizabilityIndex::from_assignment(
         &dependency_graph,
-        ModuleAssignment::new(&dependency_graph, module_id(0)),
+        ModuleAssignment::new(
+            &dependency_graph,
+            analysis::EntryDestination::from_module_id(module_id(0)),
+        ),
     );
     let decision =
         assert_ladder_matches_verdict(&index, &dependency_graph, &[SourceUnitId(1)], module_id(1));
@@ -947,7 +998,10 @@ fn ladder_tier3_accepts_lemma_two_rescued_move() {
     // rescues (Lemma 2).
     let source = "const dep_value = \"alpha\"; const cross_value = dep_value + \"-beta\"; function lazy_reader() { return cross_value; } console.log(dep_value, cross_value, lazy_reader());";
     let dependency_graph = parse_and_build(source);
-    let mut assignment = ModuleAssignment::new(&dependency_graph, module_id(0));
+    let mut assignment = ModuleAssignment::new(
+        &dependency_graph,
+        analysis::EntryDestination::from_module_id(module_id(0)),
+    );
     assignment.set(SourceUnitId(0), module_id(1));
     assignment.set(SourceUnitId(2), module_id(1));
     let index = RealizabilityIndex::from_assignment(&dependency_graph, assignment);
@@ -967,7 +1021,10 @@ fn ladder_rejects_entry_tdz_before_simulation() {
     let dependency_graph = parse_and_build(source);
     let index = RealizabilityIndex::from_assignment(
         &dependency_graph,
-        ModuleAssignment::new(&dependency_graph, module_id(0)),
+        ModuleAssignment::new(
+            &dependency_graph,
+            analysis::EntryDestination::from_module_id(module_id(0)),
+        ),
     );
     let decision =
         assert_ladder_matches_verdict(&index, &dependency_graph, &[SourceUnitId(1)], module_id(1));
@@ -984,7 +1041,10 @@ fn ladder_matches_verdict_across_applied_moves() {
     let dependency_graph = parse_and_build(source);
     let mut index = RealizabilityIndex::from_assignment(
         &dependency_graph,
-        ModuleAssignment::new(&dependency_graph, module_id(0)),
+        ModuleAssignment::new(
+            &dependency_graph,
+            analysis::EntryDestination::from_module_id(module_id(0)),
+        ),
     );
     let sweep = |index: &RealizabilityIndex| {
         for source_unit in 0..dependency_graph.num_nodes() {
@@ -1071,7 +1131,10 @@ fn assignment_with(
     dependency_graph: &DependencyGraph,
     assignments: &[(usize, usize)],
 ) -> ModuleAssignment {
-    let mut assignment = ModuleAssignment::new(dependency_graph, module_id(0));
+    let mut assignment = ModuleAssignment::new(
+        dependency_graph,
+        analysis::EntryDestination::from_module_id(module_id(0)),
+    );
     for &(source_unit, module) in assignments {
         assignment.set(SourceUnitId(source_unit), module_id(module));
     }
@@ -1151,7 +1214,10 @@ fn move_overlay_matches_committed_and_pure_on_promoted_edge_graphs() {
 #[test]
 fn entry_dependency_is_rejected_by_reference_overlay_and_committed_gates() {
     let graph = parse_and_build("const a = 1; const b = a + 1;");
-    let mut assignment = ModuleAssignment::new(&graph, module_id(0));
+    let mut assignment = ModuleAssignment::new(
+        &graph,
+        analysis::EntryDestination::from_module_id(module_id(0)),
+    );
     let mut index = RealizabilityIndex::from_assignment(&graph, assignment.clone());
     let decision = assert_ladder_matches_verdict(&index, &graph, &[SourceUnitId(1)], module_id(1));
     assert_eq!(decision, LadderDecision::EntryDependencyReject);

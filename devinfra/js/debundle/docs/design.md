@@ -249,7 +249,7 @@ made it, plus the metadata downstream stages need:
 pub enum BindingKind {
     /// Declared by a top-level `var/let/const/function/class` in
     /// this chunk. The spec assigns each owned binding to a
-    /// logical module (the residual module when unclaimed).
+    /// planned output (the entry destination when unclaimed).
     Owned { module: ModuleId },
     /// Introduced by an `import { imported_name as <name> } from "<chunk>"`
     /// at the chunk's top. The value lives in `imported_from`;
@@ -388,7 +388,7 @@ The dependency graph is the right abstraction for tooling:
 
 The emitted module graph is a **quotient** of this graph: choose a
 destination function `dest(source_unit)` from spec assignments (defaulting
-to the residual module), merge source units with the same destination, drop
+to the entry destination), merge source units with the same destination, drop
 intra-destination edges, and aggregate all cross-destination edge
 reasons.
 
@@ -402,12 +402,14 @@ their union.
 The vertex set in every case is
 
 ```
-V = Modules
+V = planned output destinations ∪ {entry destination}
 ```
 
-— the set of logical modules, including the synthesized residual module
-that holds unowned bindings. Other chunks are not vertices: a cross-chunk
-import is an `Imported` binding of an import-declaration source unit.
+`ModuleId` indexes planned outputs. The separate `EntryDestination` follows
+those outputs in a materialized chunk and receives unclaimed source units; it
+is not a fabricated `PlannedModule`. Other chunks are not vertices: a
+cross-chunk import is an `Imported` binding of an import-declaration source
+unit.
 
 ### I — the imports graph (the linker's view)
 
@@ -468,7 +470,7 @@ evaluates before `M`.
 
 An `S` edge carries no binding, so the emitter realizes it as a
 side-effect-only `import "./<M'>.js"` in `M` (a phantom import) unless `M`
-already imports a binding from `M'` or `M'` is the residual module. The
+already imports a binding from `M'` or `M'` is the entry destination. The
 materializer orders those imports so the linker's DFS lands on a
 linearization of the constraining edges ("Lemma 2: entry-side import
 ordering"); acyclicity of the constraining subgraph `R ∪ S` guarantees one
@@ -1464,7 +1466,7 @@ execute correctly at runtime (the contract pinned by
 
 Here "spec assignment" means whatever the validator sees: every
 declared binding either has an explicit `owner` from the spec or
-defaults to the residual module (see [Spec explicitness
+defaults to the entry destination (see [Spec explicitness
 and diagnostics](#spec-explicitness-and-diagnostics)).
 There is no implicit transformation between the spec and the
 assignment the theorem reasons about.
@@ -2028,7 +2030,7 @@ mod_a:                                      mod_b:
   // lazy read of B closes the I-cycle mod_a → mod_b
 ```
 
-The residual module calls `readB()` at top level and re-exports `A`, `B` and
+The entry destination's emitted file calls `readB()` at top level and re-exports `A`, `B` and
 `readB`.
 
 The constraining subgraph holds only `(mod_b, mod_a)` and is acyclic, so
@@ -2045,7 +2047,7 @@ Pass 2's simulator reproduces that order and accepts; the e2e test
 of the same shape under Node.
 
 Pass 2 rejects the same cycle shape when the target of the constraining edge
-is the residual module: residual is the DFS root, so it evaluates last and a
+is the entry destination: it is the DFS root, so it evaluates last and a
 constraining read into it TDZs (<../e2e/pass_two_tdz_cut_diagnosis_test.rs>,
 <../e2e/runtime_tdz_on_imported_class_test.rs>). The realizable fix is then
 to colocate the read's binding with its reader. This is the canonical
@@ -2274,7 +2276,8 @@ The spec's explicit claims are resolved against the dependency graph in
   atomic group.
 - A module claim that only covers part of an atomic group is a
   conflict, not an implicit request to move the rest.
-- Unclaimed source units default to the synthesized residual module.
+- Unclaimed source units default to the typed entry destination, after the
+  planned output modules.
 - The materializer consumes only the final explicit assignment; it
   does not silently co-move extra source units on behalf of the author.
 
@@ -2313,8 +2316,8 @@ The trade-off doesn't pay off in practice:
 
 **Design rule.** The spec is fully explicit. Every owned binding
 has its `owner` named in the spec or defaults to
-the residual module. Empty-`declared` (anonymous) statements
-default to the residual module unless explicitly claimed by a logical
+the entry destination. Empty-`declared` (anonymous) statements
+default to the entry destination unless explicitly claimed by a logical
 module's `anonymous_statements` shape selector. There is no
 implicit pulling: when an atomic group or planner proposal includes
 anonymous statements, the spec author copies their source into
@@ -2352,8 +2355,7 @@ under `reports/` and per-file/per-directory reports are mirrored under
 `reports/tree/` next to the chunk reports. `reports/output.json` and
 `reports/tree/<chunk_id>/chunk.json` include `output_metrics` computed from the
 exact rendered JS written to disk: total bytes/lines/files, top-level entry
-bytes/lines/files, named-module bytes/lines/files, residual module
-bytes/lines/files, and the largest JS sinks. Peeling tools should use these
+bytes/lines/files, named-module bytes/lines/files, residual-module bytes/lines/files, and the largest JS sinks. Peeling tools should use these
 fields for progress reporting instead of rescanning output trees.
 
 The mirrored `reports/tree/**/index.json` files project the semantic
@@ -2765,7 +2767,7 @@ zero-match diagnostic the spec author can fix.
 
 ### Claimed anonymous source units in the assignment
 
-An anonymous source unit belongs to the residual module unless a
+An anonymous source unit belongs to the entry destination unless a
 module claims it through `anonymous_statements`.
 `assignment_assembly::compute_source_unit_claims` resolves those claims (each module's
 `anonymous_statement_ordinals`) into the assignment that
@@ -2825,7 +2827,7 @@ logical_modules:
 emits three modules — each declaring exactly its claimed
 declarator with the original kind (`const`/`let`/`var`) and any
 `export` directive preserved. Unclaimed siblings stay in the
-residual module as a (possibly single-declarator) comma-list.
+entry destination as a (possibly single-declarator) comma-list.
 Source-order side effects across declarators are preserved by the
 ESM linker, which evaluates the destination modules in source
 order. See <../e2e/comma_list_owner_split_test.rs> for the full
@@ -2902,7 +2904,7 @@ invariants:
 
 1. **Binding assignment** → a per-binding `ModuleId`
    (`BindingKind::Owned`) from the spec's explicit member list. Bindings
-   with no spec entry default to the residual module; nothing pulls
+   with no spec entry default to the entry destination; nothing pulls
    implicitly. (See [Spec explicitness](#spec-explicitness-and-diagnostics).)
 2. **Quotient + validation** (<../graph/>, <../realizability/mod.rs>,
    <../validation.rs>) — collapses source units by destination, aggregates edge
@@ -3157,7 +3159,7 @@ init, and class declarations are TDZ-prone. If `mod_a` also reads anything
 owned by `mod_b` at module top, the cycle is mutual and Pass 1 rejects it. If
 `mod_a`'s read is lazy (inside a function body), the cycle is asymmetric and
 Pass 2 decides: it accepts when the emitted import order evaluates `mod_a`
-before `mod_b`, and rejects when `mod_a` is the residual module, which as the
+before `mod_b`, and rejects when `mod_a` is the entry destination, which as the
 DFS root evaluates last — `class B extends A` would throw
 `ReferenceError: Cannot access 'A' before initialization`.
 

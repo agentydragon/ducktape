@@ -879,7 +879,10 @@ fn gate_post_edit_assignment_with_expected(
             of[source_unit.0] = mid;
         }
     }
-    let assignment = ModuleAssignment::from_assignments(of, residual);
+    let assignment = ModuleAssignment::from_assignments(
+        of,
+        analysis::EntryDestination::from_module_id(residual),
+    );
 
     let module_path = |m: ModuleId| {
         module_path_by_id.get(&m).cloned().unwrap_or_else(|| {

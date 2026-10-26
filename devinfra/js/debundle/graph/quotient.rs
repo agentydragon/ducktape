@@ -84,9 +84,12 @@ pub fn assignment_endpoints(
     assignment: &ModuleAssignment,
     view: EndpointView,
 ) -> Option<(ModuleId, ModuleId)> {
-    project_endpoints(edge, assignment.residual(), view, |source_unit| {
-        assignment.of(source_unit)
-    })
+    project_endpoints(
+        edge,
+        assignment.entry_destination().module_id(),
+        view,
+        |source_unit| assignment.of(source_unit),
+    )
 }
 
 /// [`assignment_endpoints`] under an arbitrary source unit → module

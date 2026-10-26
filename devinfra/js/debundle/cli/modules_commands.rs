@@ -222,7 +222,7 @@ struct ModulesListArgs {
 
     /// Include each module's `anonymous_statement_count` in text output,
     /// alongside `member_count` (JSON always carries it). Surfaces the
-    /// residual sentinel's side-effect drift over time.
+    /// default entry's anonymous side-effect count over time.
     #[arg(long = "with-anonymous")]
     pub with_anonymous: bool,
 
