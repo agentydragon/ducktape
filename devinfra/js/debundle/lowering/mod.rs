@@ -80,18 +80,6 @@ pub struct MaterializeLogicalModulesResult {
     pub unmatched_spec_claims: Vec<UnmatchedSpecClaim>,
 }
 
-pub fn validate_logical_module_claims(
-    id: &str,
-    members: &[spec::Member],
-    source_matches: &[spec::SourceMatchClaim],
-    annotations: &BTreeMap<String, spec::BindingAnnotation>,
-) -> Result<()> {
-    let members = plans::build_members(members, source_matches, annotations, id)?;
-    exports::reject_duplicate_export_names("logical_module", id, &members)?;
-    exports::reject_duplicate_member_bindings("logical_module", id, &members)?;
-    Ok(())
-}
-
 #[derive(Debug, Clone, Serialize)]
 pub struct ChunkModulesReport {
     pub chunk_id: String,
