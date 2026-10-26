@@ -6,10 +6,10 @@ use std::path::{Path, PathBuf};
 use std::{cell::RefCell, rc::Rc};
 
 use anyhow::{Context, Result, bail};
-use artifact::{
-    ChunkBundle, ChunkId, chunk_id_for_js_path, get_chunk_entry_path, module_path_from_path,
-    normalize_module_path, path_from_module_path,
+use artifact::paths::{
+    chunk_id_for_js_path, module_path_from_path, normalize_module_path, path_from_module_path,
 };
+use artifact::{ChunkBundle, ChunkId, get_chunk_entry_path};
 use lol_html::{RewriteStrSettings, element, end, end_tag, html_content::ContentType, rewrite_str};
 use output_layout::DebundleOutputLayout;
 use serde::Deserialize;
@@ -142,7 +142,10 @@ fn runtime_js_href(artifact: &ChunkBundle, js_path: &str, app_root: &Path) -> Re
     let entry_path = app_root
         .join(chunk_name.split('/').collect::<PathBuf>())
         .join(entry_file.split('/').collect::<PathBuf>());
-    Ok(artifact::relative_module_specifier(app_root, &entry_path))
+    Ok(artifact::paths::relative_module_specifier(
+        app_root,
+        &entry_path,
+    ))
 }
 
 #[derive(Debug, Deserialize)]

@@ -5,10 +5,10 @@ use rayon::prelude::*;
 use swc_common::GLOBALS;
 
 use analysis::ChunkId;
+use artifact::reports::{ArtifactChunkRecord, ArtifactCounts, ChunkAnalysisReport};
 use artifact::{
-    ArtifactChunkRecord, ArtifactCounts, CANONICAL_CHUNK_ENTRY_FILE, ChunkAnalysisReport,
-    ChunkArtifact, ChunkBundle, ChunkMetadata, FileMetadata, FileRole, JsChunk, JsFile, JsFileBody,
-    LoadedJsChunks, SourceProgram,
+    CANONICAL_CHUNK_ENTRY_FILE, ChunkArtifact, ChunkBundle, ChunkMetadata, FileMetadata, FileRole,
+    JsChunk, JsFile, JsFileBody, LoadedJsChunks, SourceProgram,
 };
 use js_ast::{ParsedJsModule, parse_js_module_consuming};
 use program_analysis::{analyze_program_shallow, build_chunk_manifest_from_analysis};

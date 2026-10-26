@@ -5,9 +5,10 @@ use swc_common::{Spanned, SyntaxContext};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
-use artifact::{
+use artifact::FileRole;
+use artifact::reports::{
     ChunkAnalysisReport, ChunkCounts, ChunkFileRecord, ChunkModuleKind, ChunkRuntimeFacts,
-    ExportAliasRecord, FileRole, ImportRecord, ImportSpecifierKind, ImportSpecifierRecord,
+    ExportAliasRecord, ImportRecord, ImportSpecifierKind, ImportSpecifierRecord,
     KeptTopLevelDeclarationRecord, StaticModuleRequest, StaticModuleRequestMode,
     TopLevelDeclarationKind,
 };

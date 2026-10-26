@@ -3,7 +3,7 @@
 //! still resolve correctly after the body is moved from the source
 //! chunk to a per-module target file.
 
-use artifact::{
+use artifact::paths::{
     join_module_path, module_path_dirname, normalize_module_path, relative_module_path,
 };
 use js_ast::{set_str_value, str_value};

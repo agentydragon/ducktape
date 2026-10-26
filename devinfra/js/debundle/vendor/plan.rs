@@ -27,9 +27,9 @@ use serde_json::Value;
 use swc_common::GLOBALS;
 use swc_ecma_ast::{ImportSpecifier, ModuleDecl, ModuleItem};
 
+use artifact::paths::{join_module_path, manifest_relative_path};
 use artifact::{
-    ArtifactIndexes, ChunkBundle, ChunkId, get_chunk_entry_path, join_module_path,
-    list_chunk_file_paths, manifest_relative_path,
+    ArtifactIndexes, ChunkBundle, ChunkId, get_chunk_entry_path, list_chunk_file_paths,
 };
 use binding_targets::module_export_name;
 use js_ast::parse_js_module;
@@ -206,7 +206,7 @@ impl VendorResolutionPlan {
             return false;
         }
         self.bundled_partial_swaps.get(&chunk).is_none_or(|swap| {
-            swap.bundle_runtime.module_kind == artifact::ChunkModuleKind::Esm
+            swap.bundle_runtime.module_kind == artifact::reports::ChunkModuleKind::Esm
                 && !swap.bundle_runtime.has_top_level_await
                 && swap.bundle_runtime.static_requests.is_empty()
         })
@@ -330,7 +330,7 @@ pub(crate) struct ChunkBundledPartialSwapPlan {
     pub(crate) assets: PlannedBundledAssets,
     /// Captured once while preparing the replacement bundle, alongside export
     /// validation. Reentry analysis must not reparse or rescan this source.
-    bundle_runtime: artifact::ChunkRuntimeFacts,
+    bundle_runtime: artifact::reports::ChunkRuntimeFacts,
     /// Wire-facing resolution skeleton (zero-initialized rewrite counts).
     pub(crate) resolution: ChunkBundledPartialSwapResolution,
 }

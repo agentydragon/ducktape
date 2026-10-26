@@ -37,7 +37,8 @@
 
 use std::collections::HashSet;
 
-use artifact::{ChunkBundle, JsFile, join_module_path, module_path_dirname};
+use artifact::paths::{join_module_path, module_path_dirname};
+use artifact::{ChunkBundle, JsFile};
 use swc_atoms::Atom;
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};

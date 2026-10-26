@@ -26,9 +26,9 @@ use crate::rewrite_runtime::rewrite_runtime_sources_for_target;
 use crate::visitors::IdentifierRenamer;
 use analysis::{BindingId, ModuleId, ModuleRole, top_level_id};
 use anyhow::{Result, bail};
-use artifact::{
-    ChunkId, FileMetadata, FileRole, JsFile, JsFileBody, SelectedModuleLowering, join_module_path,
-};
+use artifact::paths::join_module_path;
+use artifact::reports::SelectedModuleLowering;
+use artifact::{ChunkId, FileMetadata, FileRole, JsFile, JsFileBody};
 use gate::AssignmentAnalysis;
 use js_ast::{ParsedJsModule, format_comment_block_lines, set_str_value, str_value};
 use std::collections::{BTreeMap, BTreeSet, HashMap};

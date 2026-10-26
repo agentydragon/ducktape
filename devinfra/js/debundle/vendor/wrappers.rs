@@ -7,7 +7,7 @@ use serde_json::Value;
 use swc_common::{DUMMY_SP, SyntaxContext};
 use swc_ecma_ast::*;
 
-use artifact::path_from_module_path;
+use artifact::paths::path_from_module_path;
 use binding_targets::module_export_name;
 use js_ast::{
     ParsedJsModule, emit_js_module, import_decl_module_item, is_binding_identifier,

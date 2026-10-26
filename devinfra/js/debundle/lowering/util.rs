@@ -1,7 +1,7 @@
 use crate::chunk_ast::{binding_ids, declaration_ids};
 use analysis::{AtomicGroupConflict, DepKind};
 use anyhow::Result;
-use artifact::{join_module_path, normalize_module_path};
+use artifact::paths::{join_module_path, normalize_module_path};
 use std::collections::{BTreeSet, HashMap};
 use swc_common::DUMMY_SP;
 use swc_ecma_ast::*;

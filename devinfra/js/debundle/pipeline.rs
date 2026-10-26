@@ -5,8 +5,9 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 use clap::Args as ClapArgs;
 
+use artifact::ChunkId;
 use artifact::load_js_chunks;
-use artifact::{ChunkDecompositionOutput, ChunkId};
+use artifact::reports::ChunkDecompositionOutput;
 use emit_harness::emit_browser_harness;
 use lowering::{
     MaterializeLogicalModulesOptions, MaterializeSpecInputs, ReportEmission,
@@ -213,7 +214,7 @@ pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Re
 
     let processed_chunk_names: BTreeSet<String> = materialise_chunk_ids.iter().cloned().collect();
     let mut module_count: usize = 0;
-    let mut selected_lowerings: Vec<artifact::SelectedModuleLowering> = Vec::new();
+    let mut selected_lowerings: Vec<artifact::reports::SelectedModuleLowering> = Vec::new();
     let mut decomposition_by_chunk: HashMap<ChunkId, ChunkDecompositionOutput> = HashMap::new();
     // Spec member claims whose `binding.name` did not resolve to a
     // top-level declaration in the source chunk. Collected across
