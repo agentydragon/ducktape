@@ -143,7 +143,7 @@ metadata:
   namespace: session-backup
 spec:
   hostnames:
-    - restic.allegedly.works
+    - ai-session-backups.allegedly.works
   parentRefs:
     - name: cluster-gateway
       namespace: gateway-system

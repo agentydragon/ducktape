@@ -1,7 +1,7 @@
 # AI session backup server
 
 This namespace serves the workstations' Restic repositories over HTTPS at
-`restic.allegedly.works`. The Rest Server requires HTTP Basic authentication and runs
+`ai-session-backups.allegedly.works`. The Rest Server requires HTTP Basic authentication and runs
 with `--append-only --private-repos`.
 
 ## Workstation contract
@@ -9,7 +9,7 @@ with `--append-only --private-repos`.
 Use a repository URL with the source workstation's username as its first path segment:
 
 ```text
-rest:https://restic.allegedly.works/<username>
+rest:https://ai-session-backups.allegedly.works/<username>
 ```
 
 Restic can also use a subrepository below that path. Set

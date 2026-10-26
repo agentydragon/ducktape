@@ -20,7 +20,7 @@ let
   backupScript = pkgs.writeShellScript "ai-session-backup" ''
     set -euo pipefail
 
-    export RESTIC_REPOSITORY=${lib.escapeShellArg "rest:https://restic.allegedly.works/${host}"}
+    export RESTIC_REPOSITORY=${lib.escapeShellArg "rest:https://ai-session-backups.allegedly.works/${host}"}
     export RESTIC_REST_USERNAME="$(cat ${config.sops.secrets.ai_session_backup_rest_username.path})"
     export RESTIC_REST_PASSWORD="$(cat ${config.sops.secrets.ai_session_backup_rest_password.path})"
     export RESTIC_PASSWORD_FILE=${lib.escapeShellArg config.sops.secrets.ai_session_backup_restic_password.path}

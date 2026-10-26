@@ -41,7 +41,7 @@ from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = NAMESPACE = "session-backup"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/{NAME}"
-HOSTNAME = "restic.allegedly.works"
+HOSTNAME = "ai-session-backups.allegedly.works"
 _DATA_CLAIM = "session-backup-data"
 _REST_SERVER_AUTH = "session-backup-rest-server-auth"
 _BUCKET = "session-backup-backups"
