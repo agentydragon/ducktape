@@ -105,7 +105,6 @@ go_test(
         "//agentplane/action_service/store",
         "//agentplane/testing/kubeapiserver",
         "//agentplane/workload_auth/go/auth",
-        "@com_github_google_uuid//:uuid",
         "@io_k8s_api//core/v1:core",
         "@io_k8s_apimachinery//pkg/api/errors",
         "@io_k8s_apimachinery//pkg/api/resource",

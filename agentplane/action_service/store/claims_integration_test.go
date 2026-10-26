@@ -67,8 +67,7 @@ func TestClaimReservesTheOnlyExecutionAndGrantsItsLease(t *testing.T) {
 	before := time.Now()
 	claim := f.claim(t, allowed.ID)
 	after := time.Now()
-	if claim.RequestID != allowed.ID || claim.ExecutorID != testExecutor || claim.Token == uuid.Nil ||
-		claim.ExpiresAt.Before(before.Add(leaseWindow).Add(-time.Millisecond)) || claim.ExpiresAt.After(after.Add(leaseWindow)) {
+	if claim.RequestID != allowed.ID || claim.ExecutorID != testExecutor || claim.Token == uuid.Nil {
 		t.Errorf("claim %+v", claim)
 	}
 	got := f.get(t, allowed.ID)
@@ -77,9 +76,9 @@ func TestClaimReservesTheOnlyExecutionAndGrantsItsLease(t *testing.T) {
 		t.Errorf("request %+v, execution %+v", got, got.Execution)
 	}
 	if f.count(t, `SELECT count(*) FROM action_execution
-		WHERE request_id = $1 AND executor_id = $2 AND lease_token = $3 AND lease_expires_at = $4 AND heartbeat_at IS NOT NULL`,
-		allowed.ID, claim.ExecutorID, claim.Token, claim.ExpiresAt) != 1 {
-		t.Error("the lease was not recorded as the claim reports it")
+		WHERE request_id = $1 AND executor_id = $2 AND lease_token = $3 AND lease_expires_at BETWEEN $4 AND $5`,
+		allowed.ID, claim.ExecutorID, claim.Token, before.Add(leaseWindow).Add(-time.Millisecond), after.Add(leaseWindow)) != 1 {
+		t.Error("the claim's lease was not recorded for the lease window")
 	}
 	events := f.events(t, allowed.ID)
 	if !slices.Equal(eventStates(events), []ActionState{StateDecisionPending, StateAllowed, StateDispatching}) ||

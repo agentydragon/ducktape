@@ -67,8 +67,7 @@ type Executor struct {
 	// current is the session Executions are pinned to; nil while there is none.
 	current   *session
 	available bool
-	tools     map[string]tool
-	// actions are tools' definitions, as the catalog holds them.
+	// actions are the offered tools' definitions, as the catalog holds them.
 	actions map[string]catalog.ActionDefinition
 	// state, reason, detail, discovered, retryAt and failures are the group's health; see action_servicepb.McpHealth.
 	// A zero time is none.
@@ -316,7 +315,7 @@ func (e *Executor) offer(tools map[string]tool) {
 	for name, tool := range tools {
 		e.actions[name] = tool.definition
 	}
-	e.tools, e.available = tools, true
+	e.available = true
 	if e.availableSince.IsZero() {
 		e.availableSince = now
 	}
@@ -329,7 +328,7 @@ func (e *Executor) offer(tools map[string]tool) {
 // hold mu.
 func (e *Executor) withdraw(reason *action_servicepb.McpUnavailableReason, detail string) {
 	e.forgetStableFailures(time.Now())
-	e.tools, e.actions, e.available, e.availableSince = nil, nil, false, time.Time{}
+	e.actions, e.available, e.availableSince = nil, false, time.Time{}
 	e.state, e.reason, e.detail = action_servicepb.McpLifecycle_MCP_LIFECYCLE_DISCONNECTED, reason, nil
 	if detail != "" {
 		if utf8.RuneCountInString(detail) > detailLimit {

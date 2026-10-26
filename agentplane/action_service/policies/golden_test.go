@@ -164,7 +164,8 @@ func TestProviderDecidesAccordingToFixture(t *testing.T) {
 					t.Errorf("the store refuses the vote: %v", err)
 				}
 			case NoOpinion:
-				got = decisionOutcome{Verdict: "no_opinion", ReasonCode: NoMatchReason, ReasonDescription: &decision.ReasonDescription}
+				// Python's reason code for no opinion; nothing records one.
+				got = decisionOutcome{Verdict: "no_opinion", ReasonCode: "no_auto_approve_match", ReasonDescription: &decision.ReasonDescription}
 			}
 			if !reflect.DeepEqual(got, vector.Outcome) {
 				t.Errorf("fixture says\n%s\nGo got\n%s", asJSON(t, vector.Outcome), asJSON(t, got))

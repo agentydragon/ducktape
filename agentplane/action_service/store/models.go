@@ -281,14 +281,11 @@ type Lease struct {
 type ExecutionClaim struct {
 	RequestID uuid.UUID
 	Lease
-	// ExpiresAt is when the lease lapses unless HeartbeatExecution renews it.
-	ExpiresAt time.Time
 }
 
 // ExecutionRequest is the payload handed to the one executor dispatch, as stored.
 type ExecutionRequest struct {
-	RequestID uuid.UUID
-	Action    ActionIdentity
+	Action ActionIdentity
 	// Arguments is a JSON object.
 	Arguments json.RawMessage
 	Caller    ServiceAccount

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -306,6 +307,8 @@ type executor struct {
 
 	mu   sync.Mutex
 	runs []store.ExecutionRequest
+	// ranIDs are the runs' request IDs, in the same order.
+	ranIDs []uuid.UUID
 }
 
 func (e *executor) Route(store.ActionIdentity) (Executor, bool) {
@@ -316,6 +319,7 @@ func (e *executor) Route(store.ActionIdentity) (Executor, bool) {
 func (e *executor) Execute(ctx context.Context, request store.ExecutionRequest, lease *Lease) (store.ExecutionOutcome, error) {
 	e.mu.Lock()
 	e.runs = append(e.runs, request)
+	e.ranIDs = append(e.ranIDs, lease.claim.RequestID)
 	e.mu.Unlock()
 	return e.step(ctx, request, lease)
 }
@@ -324,11 +328,7 @@ func (e *executor) Execute(ctx context.Context, request store.ExecutionRequest, 
 func (e *executor) ran() []uuid.UUID {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	ids := make([]uuid.UUID, len(e.runs))
-	for i, request := range e.runs {
-		ids[i] = request.RequestID
-	}
-	return ids
+	return slices.Clone(e.ranIDs)
 }
 
 var echoed = json.RawMessage(`{"echo": true}`)
@@ -345,8 +345,8 @@ type gate struct {
 
 func newGate() *gate { return &gate{started: make(chan uuid.UUID, 16), release: make(chan struct{})} }
 
-func (g *gate) step(ctx context.Context, request store.ExecutionRequest, _ *Lease) (store.ExecutionOutcome, error) {
-	g.started <- request.RequestID
+func (g *gate) step(ctx context.Context, request store.ExecutionRequest, lease *Lease) (store.ExecutionOutcome, error) {
+	g.started <- lease.claim.RequestID
 	select {
 	case <-g.release:
 		return succeed(ctx, request, nil)

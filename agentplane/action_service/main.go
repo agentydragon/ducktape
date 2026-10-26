@@ -264,13 +264,16 @@ func newRoutes(httpFacade http.Handler) (*http.ServeMux, error) {
 	return routes, nil
 }
 
+// policyWatchPeriod is how long the API server holds each policy watch open; nothing auto-decides once a watch has
+// missed reader.StaleAfterCycles of these.
+const policyWatchPeriod = 300 * time.Second
+
 // serve answers on listener, runs the dispatch worker, supervises the MCP groups' sessions, refreshes the linked
 // tokens, delivers Web Push and keeps the policy index until ctx ends or the listener fails. gRPC and the HTTP routes
 // share the listener. The worker, the MCP groups, the refreshes and Web Push delivery drain from then on, beside the
 // listener's shutdown, and serve returns once they have and the policy watches have stopped.
 func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
-	watchPeriod := c.policyWatchPeriod()
-	policy := informer.NewIndex(reader.StaleAfterCycles*watchPeriod, c.CallerServiceAccountNamespaces)
+	policy := informer.NewIndex(reader.StaleAfterCycles*policyWatchPeriod, c.CallerServiceAccountNamespaces)
 	admission, err := gate(c, d, policy)
 	if err != nil {
 		return err
@@ -336,14 +339,12 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 	if err != nil {
 		return err
 	}
-	visibility, err := policies.NewVisibility(
-		c.GitHubVisibility.APIBaseURL, time.Duration(c.GitHubVisibility.CacheTTLSeconds*float64(time.Second)),
-	)
+	visibility, err := policies.NewVisibility(policies.GitHubAPIBaseURL, policies.VisibilityTTL)
 	if err != nil {
 		return err
 	}
 
-	policyInformer, err := informer.New(d.Kube, policy, c.PolicyNamespace, watchPeriod)
+	policyInformer, err := informer.New(d.Kube, policy, c.PolicyNamespace, policyWatchPeriod)
 	if err != nil {
 		return err
 	}
