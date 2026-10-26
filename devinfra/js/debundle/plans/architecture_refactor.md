@@ -75,14 +75,6 @@ acceptance evidence rather than a fresh extraction or performance run. Other
 registered captures without current controls remain unverified; historical
 rejections remain recorded as prior outcomes, not regressions.
 
-### C. Source preparation and exact resolution — in progress
-
-Land the remaining direct-claim source checks (PR #12095). The real CLI/Node
-controls for preserving imports and moving repeated declarations are landed.
-Both use the shared typed claim projection. Keep source/assignment gate
-acceptance distinct from full reconstruction acceptance; the latter also checks
-reconstructed exports, replacement consumers, and loading construction.
-
 ### G. Authoring, CLI, and wire readers
 
 Finish the paired downstream reader/pin PR for `dependency_graph.json`, unit
