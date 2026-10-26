@@ -1,3 +1,4 @@
+use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeSet, HashMap};
 use std::fmt;
 
@@ -5,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use swc_ecma_ast::Id;
 
 use crate::purity::Purity;
-use crate::{SourceLocation, StatementKind, StatementOrdinal};
+use crate::{SourceLocation, StatementKind};
 
 use super::edge::{DependencyEdge, DependencyEdgeId, EdgeReason, EdgeRole};
 
@@ -44,7 +45,7 @@ pub struct DependencyGraph {
 #[derive(Debug, Clone)]
 pub struct SourceUnit {
     pub id: SourceUnitId,
-    pub statement_ordinal: StatementOrdinal,
+    pub statement_ordinal: SourceUnitOrdinal,
     pub source_location: Option<SourceLocation>,
     pub declared: BTreeSet<Id>,
     pub kind: StatementKind,

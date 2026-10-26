@@ -8,6 +8,7 @@ use analysis::{BindingKind, ModuleId};
 use anyhow::{Context, Result};
 use artifact::{ArtifactIndexes, ArtifactSourceImportResolver, ChunkBundle};
 use gate::AssignmentAnalysis;
+use source_identity::StatementId;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use swc_ecma_ast::*;
 
@@ -155,7 +156,7 @@ pub(crate) fn plan_module_reference_needs<'a>(
     module_index: usize,
     body_facts: &NaturalizedBodyFacts,
     factorization: &AssignmentAnalysis,
-    declaration_by_name: &HashMap<Id, Vec<usize>>,
+    declaration_by_name: &HashMap<Id, Vec<StatementId>>,
     binding_assignment: &HashMap<Id, usize>,
     entry_exports_by_original_local: &HashMap<Id, EntryExport>,
     runtime_imports: &'a RuntimeImportFacts,

@@ -189,7 +189,7 @@ pub(crate) fn collect_plain_data_bindings(
 /// the canonical statement-fact rebinds outside `initializer_source_unit`.
 #[derive(Clone, Debug)]
 pub(crate) struct TsEnumNamedDataCandidate {
-    pub(crate) initializer_source_unit: crate::StatementOrdinal,
+    pub(crate) initializer_source_unit: source_identity::SourceUnitOrdinal,
     pub(crate) own_primitive_keys: BTreeSet<String>,
 }
 
@@ -251,7 +251,9 @@ pub(crate) fn collect_ts_enum_named_data_candidates(
                 (
                     binding,
                     TsEnumNamedDataCandidate {
-                        initializer_source_unit: crate::StatementOrdinal(declaration.source_unit),
+                        initializer_source_unit: source_identity::SourceUnitOrdinal(
+                            declaration.source_unit,
+                        ),
                         own_primitive_keys: keys,
                     },
                 )

@@ -10,13 +10,14 @@
 
 mod selector_conflict;
 
+use source_identity::SourceUnitOrdinal;
 use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use analysis::facts::StructuralChunkAnalysis;
-use analysis::{DepKind, SourceUnitId, StatementKind, StatementOrdinal};
+use analysis::{DepKind, SourceUnitId, StatementKind};
 use anyhow::{Context, Result, bail};
-use js_ast::body_index_for_statement_ordinal;
+use js_ast::statement_for_source_unit_ordinal;
 use rayon::prelude::*;
 use selector_ir::{
     ClaimOutcome, ResolvedClaim, SelectorAtom, SelectorFact, SelectorFactStore, SelectorProgram,
@@ -520,16 +521,16 @@ impl<'m> Chunk<'m> {
                         .push((SourceUnitId(statement.ordinal.0), statement.kind));
                 }
                 let Some(body_idx) =
-                    body_index_for_statement_ordinal(&self.module.body, statement.ordinal.0)
+                    statement_for_source_unit_ordinal(&self.module.body, statement.ordinal)
                 else {
                     continue;
                 };
                 let source_unit = SourceUnitId(statement.ordinal.0);
-                places.source_unit_by_body.insert(body_idx, source_unit);
+                places.source_unit_by_body.insert(body_idx.0, source_unit);
                 for binding in &statement.declared {
                     places
                         .source_unit_by_body_and_binding
-                        .insert((body_idx, binding.0.as_str().to_string()), source_unit);
+                        .insert((body_idx.0, binding.0.as_str().to_string()), source_unit);
                 }
             }
             places
@@ -868,7 +869,7 @@ impl Projection {
     fn decide_alone(&self, group: &BTreeSet<SelectorTargetId>) -> Option<Vec<SolverClaim>> {
         let claim = |place: &Place| ResolvedClaim {
             source_unit: place.source_unit,
-            statement_ordinal: StatementOrdinal(place.source_unit.0),
+            statement_ordinal: SourceUnitOrdinal(place.source_unit.0),
             binding: place.binding.clone(),
         };
         if let Some(entity) = self.projected.iter().find(|entity| {
@@ -1950,11 +1951,12 @@ impl Projection {
                     .map(|(source_unit, bindings)| {
                         Ok(ConflictSourceUnit {
                             source_unit: source_unit.0,
-                            body_index: body_index_for_statement_ordinal(
+                            body_index: statement_for_source_unit_ordinal(
                                 &module.body,
-                                source_unit.0,
+                                SourceUnitOrdinal(source_unit.0),
                             )
-                            .context("conflict source unit has no source statement")?,
+                            .context("conflict source unit has no source statement")?
+                            .0,
                             bindings: bindings.into_iter().collect(),
                         })
                     })
@@ -2512,14 +2514,15 @@ fn elimination_claimers(
 /// A solver claim as a candidate place: its source body index and binding.
 fn claim_candidate(module: &Module, claim: &ResolvedClaim) -> Result<Candidate> {
     Ok(Candidate {
-        body_index: body_index_for_statement_ordinal(&module.body, claim.statement_ordinal.0)
+        body_index: statement_for_source_unit_ordinal(&module.body, claim.statement_ordinal)
             .with_context(|| {
                 format!(
                     "global selector solver claimed post-split ordinal {} which has no source \
                      body item",
                     claim.statement_ordinal.0
                 )
-            })?,
+            })?
+            .0,
         binding: claim.binding.clone(),
     })
 }
@@ -2730,7 +2733,7 @@ fn selector_fact_store(program: &SelectorProgram, chunk: &Chunk<'_>) -> Selector
         for (ordinal, member_reads) in chunk_facts::member_reads_by_ordinal(module) {
             for read in member_reads {
                 store.push(SelectorFact::MemberRead {
-                    statement_ordinal: StatementOrdinal(ordinal),
+                    statement_ordinal: SourceUnitOrdinal(ordinal),
                     object: read.object,
                     member: read.member,
                 });
@@ -2747,7 +2750,7 @@ fn selector_fact_store(program: &SelectorProgram, chunk: &Chunk<'_>) -> Selector
         {
             for use_site in uses {
                 store.push(SelectorFact::ModuleMemberUse {
-                    statement_ordinal: StatementOrdinal(ordinal),
+                    statement_ordinal: SourceUnitOrdinal(ordinal),
                     module: use_site.module,
                     member: use_site.member,
                 });

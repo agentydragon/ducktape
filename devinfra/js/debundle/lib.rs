@@ -48,7 +48,7 @@ pub use graph::{
     build_module_quotient, chunk_constraining_module_edges, position_lookup,
 };
 pub use ids::{
-    BindingKind, ChunkId, ChunkTable, ModuleId, ModuleRole, PlannedModule, StatementOrdinal,
+    BindingKind, ChunkId, ChunkTable, ModuleId, ModuleRole, PlannedModule,
     top_level_id,
 };
 pub use module_assignment::ModuleAssignment;

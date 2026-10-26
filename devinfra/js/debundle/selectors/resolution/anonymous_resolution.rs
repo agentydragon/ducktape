@@ -3,6 +3,7 @@
 //! Resolve source-backed and relational module claims against the same chunk
 //! sources and selector solver as `debundle run`.
 
+use source_identity::StatementId;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::env;
 use std::fs;
@@ -302,7 +303,9 @@ fn claim_entity(
     }
     match entity {
         EntityIndex::AnonymousStatement(index) => {
-            let ordinal = js_ast::statement_ordinal_for_body_index(&source.module.body, place);
+            let ordinal =
+                js_ast::source_unit_ordinal_for_statement(&source.module.body, StatementId(place))
+                    .0;
             let source_unit = anonymous_source_unit_by_source_ordinal
                 .get(&(source.source_path.clone(), ordinal))
                 .copied()
@@ -533,8 +536,11 @@ fn addressable_anonymous_statement_source_unit_ids_in_globals(
         )?;
         let unique_body_indices = unique_body_indices(&parsed.module.body);
         for body_idx in unique_body_indices {
-            let statement_ordinal =
-                js_ast::statement_ordinal_for_body_index(&parsed.module.body, body_idx);
+            let statement_ordinal = js_ast::source_unit_ordinal_for_statement(
+                &parsed.module.body,
+                StatementId(body_idx),
+            )
+            .0;
             if let Some(source_unit_id) =
                 source_unit_by_source_ordinal.get(&(source_path.clone(), statement_ordinal))
             {

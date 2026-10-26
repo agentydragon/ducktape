@@ -1,10 +1,11 @@
 //! Lowering from selector IR plus facts into a compact finite-domain problem.
 
+use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
 
-use analysis::{SourceUnitId, StatementOrdinal};
+use analysis::SourceUnitId;
 use selector_constraint_backend::{
     AllowedTupleRowsId, BackendValueId, BindingProjection, CompiledSelectorProblem,
     CompiledSelectorProblemBuilder, CompiledSelectorProblemError, ConstraintValue,
@@ -1138,15 +1139,15 @@ struct FactDomains {
     source_units: BTreeSet<SourceUnitId>,
     strings: BTreeSet<String>,
     source_unit_kinds: BTreeSet<(SourceUnitId, String)>,
-    source_unit_statement_ordinals: BTreeSet<(SourceUnitId, StatementOrdinal)>,
+    source_unit_statement_ordinals: BTreeSet<(SourceUnitId, SourceUnitOrdinal)>,
     declared_bindings: BTreeSet<(SourceUnitId, String)>,
     raw_source_unit_references_binding: BTreeSet<(SourceUnitId, String, String)>,
     references_unit: BTreeSet<(SourceUnitId, SourceUnitId)>,
     aliases_unit: BTreeSet<(SourceUnitId, SourceUnitId)>,
-    raw_member_reads: BTreeSet<(StatementOrdinal, Option<String>, String)>,
+    raw_member_reads: BTreeSet<(SourceUnitOrdinal, Option<String>, String)>,
     member_reads: BTreeSet<(SourceUnitId, String)>,
     reads_member_of_unit: BTreeSet<(SourceUnitId, SourceUnitId, String)>,
-    raw_module_member_uses: BTreeSet<(StatementOrdinal, String, String)>,
+    raw_module_member_uses: BTreeSet<(SourceUnitOrdinal, String, String)>,
     module_member_uses: BTreeSet<(SourceUnitId, String, String)>,
     raw_call_arguments: BTreeSet<(String, Option<String>, String, usize)>,
     call_arguments: BTreeSet<(SourceUnitId, String, usize)>,

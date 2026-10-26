@@ -186,6 +186,22 @@ Two consequences are central to debundling:
 
 ## Definitions
 
+### Source coordinates and graph identities
+
+`StatementId` identifies an original item in a chunk's parsed `Module.body`.
+`SourceUnitOrdinal` identifies a position after comma declarations are split into
+movable source units. A single original statement can produce several source
+units; converting back to a statement is therefore many-to-one. AST placement
+and anonymous-statement comments use `StatementId`; dependency facts and planned
+anonymous-unit claims use `SourceUnitOrdinal`.
+
+Both coordinates are scoped to one chunk. `SourceUnitId` identifies a vertex in
+one dependency graph. Its numeric value can match the source ordinal during
+initial graph construction, but report reconstruction can allocate vertices in a
+different order. Readers must use the vertex's stored source ordinal when they
+need a source position. The conversion helpers in `js_ast` make the statement to
+source-unit mapping explicit; the numeric report representation is unchanged.
+
 ### Bindings, names, and keys
 
 A _binding_ is a named slot in a chunk's top-level lexical scope. Two
@@ -198,11 +214,10 @@ syntactic positions introduce a binding into that scope:
    introduces `X` as an _imported binding_. `X` is a local alias
    for an export of another chunk; the value lives elsewhere.
 
-Within a single chunk's top-level scope, a name `X` is introduced
-_at most once_ — JavaScript rejects duplicate top-level
-declarations, and a redeclaration through an import is a
-SyntaxError. So the pair `(chunk_id, name)` is a one-to-one
-identifier for a binding.
+Within a chunk's resolved top-level scope, one name identifies one binding.
+A `var` binding can have several declaration sites; lexical declarations and
+imports cannot redeclare an existing top-level binding. The pair
+`(chunk_id, name)` therefore identifies a binding, not a declaration site.
 
 That pair is the conceptual _binding key_ at repo/tool boundaries.
 Inside a single chunk analysis, the chunk is already contextual, so
@@ -327,6 +342,8 @@ emission: a function declaration, class declaration, single
 var-declarator after comma-list splitting, import declaration
 specifier, or residual side-effect statement. The dependency graph
 preserves each source unit as a first-class node and report row.
+`SourceUnitId` identifies the graph vertex (`unit:N`); `SourceUnitIndex`
+indexes the report-row arena used by quotient analysis and is distinct.
 
 The micro dependency graph is a directed, labeled graph `G = (V, E)`:
 
@@ -3246,7 +3263,7 @@ A string that identifies a thing of a known kind gets a newtype; untyped
 `String` is reserved for free-form text (error messages, log lines, the
 actual JavaScript identifier _as text_). The identifier types live in
 <../ids.rs> and <../graph/>: `ChunkId` (an index interned by `ChunkTable`),
-`ModuleId` (the in-process dense module handle), `StatementOrdinal`,
+`ModuleId` (the in-process dense module handle), `SourceUnitOrdinal`,
 `SourceUnitId` and `DependencyEdgeId`. A
 module's public identity is `spec::ModulePath`, never a `ModuleId`
 (<wire_format.md>). Artifact metadata follows the same rule: `FileRole` is a

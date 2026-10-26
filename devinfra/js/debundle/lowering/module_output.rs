@@ -1,6 +1,7 @@
 //! Emit one accepted logical-module plan. Chunk selection and entry construction stay in
 //! `lower`; this phase owns per-module imports, sealed renames, comments, and output metadata.
 
+use source_identity::StatementId;
 use std::sync::Mutex;
 
 use swc_common::{BytePos, DUMMY_SP, Spanned};
@@ -52,7 +53,7 @@ pub(super) struct ModuleEmissionInputs<'a> {
     pub(super) plan: &'a ModulePlan,
     pub(super) naturalized: NaturalizedModuleBody,
     pub(super) factorization: &'a AssignmentAnalysis,
-    pub(super) declaration_by_name: &'a HashMap<Id, Vec<usize>>,
+    pub(super) declaration_by_name: &'a HashMap<Id, Vec<StatementId>>,
     pub(super) binding_assignment: &'a HashMap<Id, usize>,
     pub(super) runtime_import_facts: &'a RuntimeImportFacts,
     pub(super) entry_exports_by_original_local: &'a HashMap<Id, EntryExport>,
@@ -559,7 +560,7 @@ fn anonymous_statement_comments_by_span(
             if comment.is_empty() {
                 return None;
             }
-            let lo = runtime_ast.module.body.get(*body_idx)?.span().lo();
+            let lo = runtime_ast.module.body.get(body_idx.0)?.span().lo();
             if lo == BytePos(0) {
                 return None;
             }

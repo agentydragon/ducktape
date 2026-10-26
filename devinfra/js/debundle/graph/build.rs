@@ -1,3 +1,4 @@
+use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
 
@@ -6,7 +7,7 @@ use petgraph::graphmap::DiGraphMap;
 use swc_ecma_ast::Id;
 
 use crate::facts::{EffectCell, SourceUnitReadClosure};
-use crate::{StatementFacts, StatementKind, StatementOrdinal};
+use crate::{StatementFacts, StatementKind};
 
 // `DependencyGraphOptions` lives in `spec/spec.rs` — both the spec YAML surface
 // and the graph-build API consume the same type. Re-exported from
@@ -22,8 +23,8 @@ use super::edge::{DependencyEdge, DependencyEdgeId, EdgeReason, EdgeRole};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DuplicateTopLevelDeclaration {
     pub binding: swc_atoms::Atom,
-    pub first: StatementOrdinal,
-    pub second: StatementOrdinal,
+    pub first: SourceUnitOrdinal,
+    pub second: SourceUnitOrdinal,
 }
 
 impl fmt::Display for DuplicateTopLevelDeclaration {
@@ -84,8 +85,8 @@ pub fn build_dependency_graph_with(
                 if !facts[source_unit.0].var_declared.contains(binding) {
                     return Err(DuplicateTopLevelDeclaration {
                         binding: binding.0.clone(),
-                        first: StatementOrdinal(sites[0].0),
-                        second: StatementOrdinal(sites[1].0),
+                        first: SourceUnitOrdinal(sites[0].0),
+                        second: SourceUnitOrdinal(sites[1].0),
                     });
                 }
             }
@@ -102,12 +103,12 @@ pub fn build_dependency_graph_with(
             raw_edges.push((
                 source_unit,
                 sites[0],
-                EdgeReason::co_declaration(StatementOrdinal(source_unit.0), binding.clone()),
+                EdgeReason::co_declaration(SourceUnitOrdinal(source_unit.0), binding.clone()),
             ));
             raw_edges.push((
                 sites[0],
                 source_unit,
-                EdgeReason::co_declaration(StatementOrdinal(sites[0].0), binding.clone()),
+                EdgeReason::co_declaration(SourceUnitOrdinal(sites[0].0), binding.clone()),
             ));
         }
     }
@@ -140,8 +141,8 @@ pub fn build_dependency_graph_with(
     let push_binding_edge = |raw_edges: &mut Vec<(SourceUnitId, SourceUnitId, EdgeReason)>,
                              from: SourceUnitId,
                              binding: &Id,
-                             make_reason: fn(StatementOrdinal, Id) -> EdgeReason,
-                             statement_ordinal: StatementOrdinal| {
+                             make_reason: fn(SourceUnitOrdinal, Id) -> EdgeReason,
+                             statement_ordinal: SourceUnitOrdinal| {
         let Some(to) = binding_source_unit.get(binding) else {
             return; // not declared in this chunk (global, ImportSpecifier, never-declared)
         };
@@ -283,7 +284,7 @@ pub fn build_dependency_graph_with(
             raw_edges.push((
                 pair[1],
                 pair[0],
-                EdgeReason::sequenced(StatementOrdinal(pair[1].0)),
+                EdgeReason::sequenced(SourceUnitOrdinal(pair[1].0)),
             ));
         }
     }
@@ -607,7 +608,7 @@ fn promote_at_init_calls(
                 raw_edges.push((
                     later,
                     earlier,
-                    EdgeReason::sequenced(StatementOrdinal(later.0)),
+                    EdgeReason::sequenced(SourceUnitOrdinal(later.0)),
                 ));
             }
         }
@@ -620,7 +621,7 @@ fn promote_at_init_calls(
                 raw_edges.push((
                     reader,
                     previous_writer,
-                    EdgeReason::sequenced(StatementOrdinal(reader.0)),
+                    EdgeReason::sequenced(SourceUnitOrdinal(reader.0)),
                 ));
             }
             if let Some(&next_writer) = writers
@@ -635,7 +636,7 @@ fn promote_at_init_calls(
                 raw_edges.push((
                     next_writer,
                     reader,
-                    EdgeReason::sequenced(StatementOrdinal(next_writer.0)),
+                    EdgeReason::sequenced(SourceUnitOrdinal(next_writer.0)),
                 ));
             }
         }
@@ -885,7 +886,7 @@ fn promote_at_init_calls(
                     raw_edges.push((
                         target_source_unit,
                         caller,
-                        EdgeReason::sequenced(StatementOrdinal(target_source_unit.0)),
+                        EdgeReason::sequenced(SourceUnitOrdinal(target_source_unit.0)),
                     ));
                 }
             }
@@ -1032,7 +1033,7 @@ fn promote_at_init_calls(
         }
         let fallback = fallback.get_or_insert_with(|| UnresolvedCallFallback::build(facts));
         for root in fallback_roots {
-            let (closure_reads, closure_rebinds) = fallback.closures_for(StatementOrdinal(root.0));
+            let (closure_reads, closure_rebinds) = fallback.closures_for(SourceUnitOrdinal(root.0));
             // Rebind targets get an *order* constraint only (EagerUse,
             // not EagerRebind): assignment to a TDZ-locked binding
             // throws until its statement runs, so the target must
@@ -1104,7 +1105,7 @@ impl UnresolvedCallFallback {
         }
     }
 
-    fn closures_for(&self, source_unit: StatementOrdinal) -> (&BTreeSet<Id>, &BTreeSet<Id>) {
+    fn closures_for(&self, source_unit: SourceUnitOrdinal) -> (&BTreeSet<Id>, &BTreeSet<Id>) {
         self.closure.lazy_effects_for_source_unit(source_unit)
     }
 }

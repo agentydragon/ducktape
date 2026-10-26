@@ -1,3 +1,4 @@
+use source_identity::SourceUnitOrdinal;
 mod chunk_constraining_module_edges_tests {
     //! Regression coverage for [`chunk_constraining_module_edges`]'s
     //! filter rule. The canonical edge set must match what the
@@ -112,13 +113,12 @@ mod from_report_tests {
     };
     use crate::{
         DepKind, DependencyEdgeId, DependencyGraph, EdgeRole, SourceUnitId, StatementKind,
-        StatementOrdinal,
     };
 
     fn node(id: &str, ordinal: usize) -> SourceUnitReport {
         SourceUnitReport {
             id: id.to_string(),
-            statement_ordinal: StatementOrdinal(ordinal),
+            statement_ordinal: SourceUnitOrdinal(ordinal),
             source_location: None,
             declared_bindings: Vec::new(),
             statement_kind: StatementKind::VarDecl,
@@ -140,7 +140,7 @@ mod from_report_tests {
                 target: target.to_string(),
                 edge_kind: DepKind::EagerUse,
                 binding: None,
-                statement_ordinal: StatementOrdinal(1),
+                statement_ordinal: SourceUnitOrdinal(1),
                 constrains_init_order: true,
                 role,
             }],

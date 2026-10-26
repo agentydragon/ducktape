@@ -25,13 +25,13 @@
 //! arbitrary cycles, of which a single SCC can contain exponentially
 //! many.
 
+use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
 use ::gate::{BlockingSccEntry, CycleEdge};
 use analysis::{
     DepKind, DependencyGraphReport, EdgeRoleReport, ModuleKey, Purity, SequencedSourceUnitCause,
-    StatementOrdinal,
 };
 use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, Subcommand};
@@ -457,7 +457,7 @@ fn recompute_evidence(
     // Statement ordinal -> first declared binding of any source unit
     // declaring at that ordinal. The materializer indexes by ordinal
     // (not source unit) when labeling the source side; we match that here.
-    let from_binding_by_ordinal: HashMap<StatementOrdinal, Atom> = graph
+    let from_binding_by_ordinal: HashMap<SourceUnitOrdinal, Atom> = graph
         .nodes
         .iter()
         .filter_map(|n| {

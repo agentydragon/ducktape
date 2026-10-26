@@ -117,10 +117,10 @@ fn compute_source_unit_claims(
     }
     for (idx, module) in logical_modules.iter().enumerate() {
         let dest = ModuleId(idx);
-        for ordinal in &module.anonymous_statement_ordinals {
+        for ordinal in &module.anonymous_source_unit_ordinals {
             if let Some(node) = dependency_graph
                 .iter_nodes()
-                .find(|n| n.statement_ordinal.0 == *ordinal)
+                .find(|n| n.statement_ordinal == *ordinal)
             {
                 claims[node.id.0] = Some(dest);
             }

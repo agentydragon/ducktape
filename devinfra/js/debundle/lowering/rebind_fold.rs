@@ -98,7 +98,7 @@ pub fn compute_rebind_folds(
             };
             if node.declared.is_empty() {
                 // Anonymous statements don't appear in `binding_assignment`;
-                // their routing is via `anonymous_ordinal_assignment`. They
+                // their routing is via `whole_statement_assignment`. They
                 // can't be the carrier of a rebind cause anyway — a rebind
                 // edge needs a declared target — so skipping them is safe.
                 continue;

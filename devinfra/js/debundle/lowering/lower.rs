@@ -4,6 +4,7 @@
 //! level planning and gate checks that wrap this live in `materialize/`.
 
 use js_ast::import_decl_module_item;
+use source_identity::StatementId;
 use std::sync::Mutex;
 
 use super::module_output::{LoweredModuleOutput, ModuleEmissionInputs, emit_module};
@@ -78,7 +79,7 @@ pub(super) struct LowerChunkContext<'a> {
 pub(super) struct LowerChunkAst<'a> {
     pub(super) runtime_ast: &'a ParsedJsModule,
     pub(super) declarations: &'a [TopLevelDecl],
-    pub(super) declaration_by_name: &'a HashMap<Id, Vec<usize>>,
+    pub(super) declaration_by_name: &'a HashMap<Id, Vec<StatementId>>,
     pub(super) chunk_top_level_mark: swc_common::Mark,
 }
 
@@ -159,7 +160,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
     } = plan;
     let factorization = placement.factorization();
     let binding_assignment = placement.bindings();
-    let anonymous_ordinal_assignment = placement.statements();
+    let whole_statement_assignment = placement.statements();
     let LowerChunkSpecFacts {
         runtime_import_facts,
         sealed_renames,
@@ -170,11 +171,8 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
     let is_module_owned = |name: &str| -> bool {
         binding_assignment.contains_key(&top_level_id(name, chunk_top_level_mark))
     };
-    let selected_ordinals = compute_selected_ordinals(
-        declarations,
-        binding_assignment,
-        anonymous_ordinal_assignment,
-    );
+    let selected_statements =
+        compute_selected_statements(declarations, binding_assignment, whole_statement_assignment);
 
     let mut selected_by_module = vec![Vec::<ModuleItem>::new(); module_plans.len()];
     let mut selected_exports_by_module =
@@ -188,8 +186,8 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
     let mut entry_body = Vec::new();
     split_entry_body(
         &runtime_ast.module.body,
-        &selected_ordinals,
-        anonymous_ordinal_assignment,
+        &selected_statements,
+        whole_statement_assignment,
         binding_assignment,
         &mut entry_body,
         &mut selected_by_module,
@@ -683,25 +681,25 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
     })
 }
 
-fn compute_selected_ordinals(
+fn compute_selected_statements(
     declarations: &[TopLevelDecl],
     binding_assignment: &HashMap<Id, usize>,
-    anonymous_ordinal_assignment: &BTreeMap<usize, usize>,
-) -> BTreeSet<usize> {
-    let mut selected_ordinals = BTreeSet::new();
+    whole_statement_assignment: &BTreeMap<StatementId, usize>,
+) -> BTreeSet<StatementId> {
+    let mut selected_statements = BTreeSet::new();
     for decl in declarations {
         if decl
             .bindings
             .iter()
             .any(|(_, id)| binding_assignment.contains_key(id))
         {
-            selected_ordinals.insert(decl.ordinal);
+            selected_statements.insert(decl.statement);
         }
     }
-    for ordinal in anonymous_ordinal_assignment.keys() {
-        selected_ordinals.insert(*ordinal);
+    for ordinal in whole_statement_assignment.keys() {
+        selected_statements.insert(*ordinal);
     }
-    selected_ordinals
+    selected_statements
 }
 
 fn plan_selected_exports(
@@ -727,18 +725,19 @@ fn plan_selected_exports(
 
 fn split_entry_body(
     body: &[ModuleItem],
-    selected_ordinals: &BTreeSet<usize>,
-    anonymous_ordinal_assignment: &BTreeMap<usize, usize>,
+    selected_statements: &BTreeSet<StatementId>,
+    whole_statement_assignment: &BTreeMap<StatementId, usize>,
     binding_assignment: &HashMap<Id, usize>,
     entry_body: &mut Vec<ModuleItem>,
     selected_by_module: &mut [Vec<ModuleItem>],
 ) {
-    for (ordinal, item) in body.iter().enumerate() {
-        if !selected_ordinals.contains(&ordinal) {
+    for (index, item) in body.iter().enumerate() {
+        let ordinal = StatementId(index);
+        if !selected_statements.contains(&ordinal) {
             entry_body.push(item.clone());
             continue;
         }
-        if let Some(module_index) = anonymous_ordinal_assignment.get(&ordinal).copied() {
+        if let Some(module_index) = whole_statement_assignment.get(&ordinal).copied() {
             selected_by_module[module_index].push(item.clone());
             // Local named exports define the source chunk's public surface.
             // An anonymous claim may move their source directive alongside

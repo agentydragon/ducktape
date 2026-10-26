@@ -4,9 +4,10 @@
 //! a [`SelectorFactStore`]; `selector_backend_solver` returns one
 //! [`ClaimOutcome`] per target in a [`SolverResult`].
 
+use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeMap, BTreeSet};
 
-use analysis::{SourceUnitId, StatementOrdinal};
+use analysis::SourceUnitId;
 
 /// Dense id of a solver variable in a [`SelectorProgram`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -852,7 +853,7 @@ pub enum SelectorProgramError {
 pub enum SelectorFact {
     SourceUnit {
         source_unit: SourceUnitId,
-        statement_ordinal: StatementOrdinal,
+        statement_ordinal: SourceUnitOrdinal,
         statement_kind: String,
     },
     DeclaredBinding {
@@ -865,12 +866,12 @@ pub enum SelectorFact {
         edge_kind: String,
     },
     MemberRead {
-        statement_ordinal: StatementOrdinal,
+        statement_ordinal: SourceUnitOrdinal,
         object: Option<String>,
         member: String,
     },
     ModuleMemberUse {
-        statement_ordinal: StatementOrdinal,
+        statement_ordinal: SourceUnitOrdinal,
         module: String,
         member: String,
     },
@@ -950,7 +951,7 @@ pub enum ClaimOutcome {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedClaim {
     pub source_unit: SourceUnitId,
-    pub statement_ordinal: StatementOrdinal,
+    pub statement_ordinal: SourceUnitOrdinal,
     pub binding: Option<String>,
 }
 

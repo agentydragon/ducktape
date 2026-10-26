@@ -21,7 +21,8 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use js_ast::statement_ordinal_for_body_index;
+use js_ast::source_unit_ordinal_for_statement;
+use source_identity::StatementId;
 use swc_ecma_ast::{
     ArrayPat, ArrowFunctionBody, AssignTarget, AssignTargetPat, BlockStmt, Callee, Class,
     ClassMember, Decl, DefaultDecl, Expr, ExprOrSpread, ForHead, Function, FunctionBody,
@@ -1269,7 +1270,7 @@ impl Extractor {
 pub fn extract_facts_items(items: &[ModuleItem]) -> Result<ChunkFacts, Unsupported> {
     let mut extractor = Extractor::default();
     for (body_idx, item) in items.iter().enumerate() {
-        let ordinal = statement_ordinal_for_body_index(items, body_idx);
+        let ordinal = source_unit_ordinal_for_statement(items, StatementId(body_idx)).0;
         extractor.module_item(item, ordinal)?;
     }
     Ok(extractor.facts)
@@ -1303,7 +1304,7 @@ pub struct MemberReadFact {
 pub fn member_reads_by_ordinal(module: &Module) -> BTreeMap<usize, Vec<MemberReadFact>> {
     let mut by_ordinal: BTreeMap<usize, Vec<MemberReadFact>> = BTreeMap::new();
     for (body_idx, item) in module.body.iter().enumerate() {
-        let ordinal = statement_ordinal_for_body_index(&module.body, body_idx);
+        let ordinal = source_unit_ordinal_for_statement(&module.body, StatementId(body_idx)).0;
         let mut extractor = Extractor::default();
         // A statement with an unmodeled construct yields no member-read rows
         // (fail-closed for the selector), never a wrong row — so skip it.
@@ -1978,7 +1979,7 @@ pub fn coverage_report(module: &Module) -> CoverageReport {
     let mut report = CoverageReport::default();
     for (body_idx, item) in module.body.iter().enumerate() {
         report.total += 1;
-        let ordinal = statement_ordinal_for_body_index(&module.body, body_idx);
+        let ordinal = source_unit_ordinal_for_statement(&module.body, StatementId(body_idx)).0;
         let mut extractor = Extractor::default();
         match extractor.module_item(item, ordinal) {
             Ok(_) => report.covered += 1,

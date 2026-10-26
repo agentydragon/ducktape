@@ -5,6 +5,7 @@
 //! declaration sites bidirectionally, so a closure rooted at any site reaches
 //! the complete declaration unit.
 
+use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use petgraph::algo::tarjan_scc;
@@ -13,7 +14,6 @@ use roaring::RoaringBitmap;
 use swc_ecma_ast::Id;
 
 use super::StatementFacts;
-use crate::StatementOrdinal;
 
 /// SourceUnit read closure over one chunk's statement facts.
 ///
@@ -21,10 +21,10 @@ use crate::StatementOrdinal;
 /// the synchronous source unit adjacency also supports incremental traversal for callback analyses
 /// without materializing a transitive closure for every possible root.
 pub(crate) struct SourceUnitReadClosure {
-    binding_source_unit: BTreeMap<Id, StatementOrdinal>,
+    binding_source_unit: BTreeMap<Id, SourceUnitOrdinal>,
     expanded_lazy_reads: Vec<BTreeSet<Id>>,
     expanded_lazy_rebinds: Vec<BTreeSet<Id>>,
-    scc_of: BTreeMap<StatementOrdinal, usize>,
+    scc_of: BTreeMap<SourceUnitOrdinal, usize>,
 }
 
 impl SourceUnitReadClosure {
@@ -36,7 +36,7 @@ impl SourceUnitReadClosure {
         &self,
         facts: &[StatementFacts],
         prefix_reads: &[Option<&BTreeSet<Id>>],
-    ) -> Vec<Vec<StatementOrdinal>> {
+    ) -> Vec<Vec<SourceUnitOrdinal>> {
         let mut adjacency = vec![Vec::new(); facts.len()];
         for fact in facts {
             let source_unit = fact.ordinal;
@@ -65,10 +65,10 @@ impl SourceUnitReadClosure {
     /// Grow a persistent fallback cache using only synchronous read edges.
     /// Each reached source unit is expanded at most once as callback roots grow.
     pub(crate) fn extend_synchronous_source_units(
-        adjacency: &[Vec<StatementOrdinal>],
-        roots: impl IntoIterator<Item = StatementOrdinal>,
-        expanded: &mut BTreeSet<StatementOrdinal>,
-    ) -> Vec<StatementOrdinal> {
+        adjacency: &[Vec<SourceUnitOrdinal>],
+        roots: impl IntoIterator<Item = SourceUnitOrdinal>,
+        expanded: &mut BTreeSet<SourceUnitOrdinal>,
+    ) -> Vec<SourceUnitOrdinal> {
         let mut pending = VecDeque::new();
         let mut reached = Vec::new();
         for root in roots {
@@ -89,7 +89,7 @@ impl SourceUnitReadClosure {
     }
 
     pub(crate) fn new(facts: &[StatementFacts]) -> Self {
-        let mut declaration_sites = BTreeMap::<Id, Vec<StatementOrdinal>>::new();
+        let mut declaration_sites = BTreeMap::<Id, Vec<SourceUnitOrdinal>>::new();
         for stmt in facts {
             for binding in &stmt.declared {
                 declaration_sites
@@ -98,12 +98,12 @@ impl SourceUnitReadClosure {
                     .push(stmt.ordinal);
             }
         }
-        let binding_source_unit: BTreeMap<Id, StatementOrdinal> = declaration_sites
+        let binding_source_unit: BTreeMap<Id, SourceUnitOrdinal> = declaration_sites
             .iter()
             .map(|(binding, sites)| (binding.clone(), sites[0]))
             .collect();
 
-        let mut read_graph: DiGraphMap<StatementOrdinal, ()> = DiGraphMap::new();
+        let mut read_graph: DiGraphMap<SourceUnitOrdinal, ()> = DiGraphMap::new();
         for stmt in facts {
             let source_unit = stmt.ordinal;
             read_graph.add_node(source_unit);
@@ -122,7 +122,7 @@ impl SourceUnitReadClosure {
             }
         }
 
-        let stmt_by_source_unit: BTreeMap<StatementOrdinal, &StatementFacts> =
+        let stmt_by_source_unit: BTreeMap<SourceUnitOrdinal, &StatementFacts> =
             facts.iter().map(|stmt| (stmt.ordinal, stmt)).collect();
         let sccs = tarjan_scc(&read_graph);
         let mut scc_of = BTreeMap::new();
@@ -198,7 +198,7 @@ impl SourceUnitReadClosure {
     }
 
     /// Map a chunk-declared binding to its first declaration site.
-    pub(crate) fn source_unit_for_binding(&self, binding: &Id) -> Option<StatementOrdinal> {
+    pub(crate) fn source_unit_for_binding(&self, binding: &Id) -> Option<SourceUnitOrdinal> {
         self.binding_source_unit.get(binding).copied()
     }
 
@@ -207,7 +207,7 @@ impl SourceUnitReadClosure {
     pub(crate) fn source_units_for_bindings<'a>(
         &self,
         bindings: impl IntoIterator<Item = &'a Id>,
-    ) -> BTreeSet<StatementOrdinal> {
+    ) -> BTreeSet<SourceUnitOrdinal> {
         bindings
             .into_iter()
             .filter_map(|binding| self.source_unit_for_binding(binding))
@@ -218,7 +218,7 @@ impl SourceUnitReadClosure {
     /// the original graph-builder semantics for unresolved-call promotion.
     pub(crate) fn lazy_effects_for_source_unit(
         &self,
-        source_unit: StatementOrdinal,
+        source_unit: SourceUnitOrdinal,
     ) -> (&BTreeSet<Id>, &BTreeSet<Id>) {
         static EMPTY: std::sync::OnceLock<BTreeSet<Id>> = std::sync::OnceLock::new();
         let empty = EMPTY.get_or_init(BTreeSet::new);
