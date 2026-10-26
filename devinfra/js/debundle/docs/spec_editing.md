@@ -339,6 +339,9 @@ A successful edit gate covers source claims, the post-merge assignment, and
 realizability checks. It does not establish complete reconstruction
 acceptance; `debundle run` remains the end-to-end acceptance path for vendor
 boundaries, exports, reconstruction, and browser planning.
+The source-claim check recognizes named, default, and namespace imports as
+import specifiers, while module emission currently supports moving named
+imports only (`lowering/imports/imports_runtime.rs`).
 
 ## Comments and notes
 

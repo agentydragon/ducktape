@@ -84,7 +84,6 @@ struct ImportBinding {
     source: String,
     kind: ImportSpecifierKind,
 }
-}
 
 /// One logical module's entities.
 #[derive(Debug, Clone)]
