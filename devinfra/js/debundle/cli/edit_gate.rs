@@ -1031,7 +1031,9 @@ fn reject_unresolved_projected_claims(projection: &SourceUnitClaimProjection) ->
                 "no matching local declaration source unit exists".to_string()
             }
             LocalBindingResolution::Ambiguous(source_units) => {
-                format!("local name resolves to ambiguous declaration source units {source_units:?}")
+                format!(
+                    "local name resolves to ambiguous declaration source units {source_units:?}"
+                )
             }
             LocalBindingResolution::Resolved(_) => continue,
         };

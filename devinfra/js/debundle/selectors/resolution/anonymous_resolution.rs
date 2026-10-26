@@ -15,8 +15,7 @@ use anyhow::{Context, Result, bail};
 use selector_outcome::{Candidate, Outcome, SelectorOutcome, Severity};
 pub use selector_resolve::ModuleNeutralReferenceMeaning;
 use selector_resolve::{
-    DirectBindingSourceEvidence, EntityIndex, ImportSpecifierKind, SourceMatchReferenceOrigin,
-    SpecModule,
+    DirectBindingSourceEvidence, EntityIndex, SourceMatchReferenceOrigin, SpecModule,
 };
 use spec::{AnonymousStatementSelector, BindingSourceKind, MemberSelectorSpec, SourceMatchClaim};
 use spec_resolution::{
@@ -456,10 +455,7 @@ fn direct_binding_evidence_matches(
     evidence: &DirectBindingSourceEvidence,
 ) -> bool {
     match (expected_kind, evidence) {
-        (
-            BindingSourceKind::ImportSpecifier,
-            DirectBindingSourceEvidence::Import(ImportSpecifierKind::Named),
-        ) => true,
+        (BindingSourceKind::ImportSpecifier, DirectBindingSourceEvidence::Import(_)) => true,
         (BindingSourceKind::ImportSpecifier, _) => false,
         (
             _,

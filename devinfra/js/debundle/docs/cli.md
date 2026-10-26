@@ -134,7 +134,7 @@ the post-edit claim checks followed by the full realizability + atom-split
 gate — which requires `--graph <dependency_graph.json>` unless `--no-verify` is set.
 Direct local claims must identify graph source units, typed `kind` pins must match
 one source chunk (a repeated declaration may satisfy the kind at any site),
-and `import_specifier` pins must name a named import. Pass `--source-root` when
+and `import_specifier` pins must name an import specifier. Pass `--source-root` when
 the graph's relative source paths are not otherwise resolvable. Renames run
 name-collision detection; comment edits run shape preservation only (they take
 `--dry-run` but no `--no-verify`). If validation fails the command refuses
@@ -144,7 +144,9 @@ For these edit commands, a JSON result of `gate: "passed"` means the
 post-edit source-claim, assignment, and realizability checks passed. It does
 not mean the full reconstruction was accepted: `debundle run` remains the
 end-to-end acceptance path and checks vendor boundaries, exports,
-reconstruction, and browser planning.
+reconstruction, and browser planning. The source-claim check recognizes named,
+default, and namespace imports as import specifiers, while module emission
+currently supports moving named imports only (`lowering/imports/imports_runtime.rs`).
 
 On spec-edit commands:
 
