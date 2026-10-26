@@ -24,7 +24,9 @@ Unresolved claims prevent acceptance. A run may write diagnostic reports for a
 rejected spec, but writes the reconstructed JS tree, browser harness, and vendor
 assets only after final program validation. Final checks inspect the exact
 reconstructed syntax, including synthesized imports and exports and vendor
-replacement. Emission consumes an immutable validated plan.
+replacement. Syntax placement must agree with the validated assignment, including
+whole-statement moves and repeated declarations. Emission consumes an immutable
+validated plan.
 
 ## Entities
 

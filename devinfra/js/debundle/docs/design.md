@@ -2607,9 +2607,12 @@ file container is private to these phase types.
 During assignment construction, `ChunkPlanBuilder::bindings_catalogue` is the
 authoritative destination of each declared or imported binding. Its spelling
 index stores binding identities and resolves destinations through the catalogue.
-Module plans carry export names and comments. Rebind analysis and lowering obtain
-an owned-only destination projection when needed; each construction update changes
-the catalogue once.
+Module plans carry export names and comments. Rebind analysis obtains an
+owned-only destination projection when needed; each construction update changes
+the catalogue once. After realizability validation, `EmissionPlacement` derives
+binding and whole-statement placement from the accepted `ModuleAssignment` and
+checks that declaration sites, import metadata, and whole-statement requests agree.
+Lowering consumes that immutable placement and its associated graph.
 
 `EmissionFiles` owns reconstructed syntax while body transformations are still
 allowed. Its output-path indexes are built once after lowering changes entry and

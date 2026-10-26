@@ -29,6 +29,7 @@ use crate::imports::{
     collect_entry_exports_by_original_local, collect_imported_reexports_by_module,
 };
 use crate::naturalize::NaturalizedModuleBody;
+use crate::placement::EmissionPlacement;
 use crate::plans::ModulePlan;
 use crate::rename_ledger::{
     RenameIntent, RenameLedger, RenameOrigin, RenameScope, ScopeOccupancy, SealValidation,
@@ -41,7 +42,6 @@ use artifact::{
     ArtifactIndexes, ChunkBundle, ChunkId, FileMetadata, FileRole, JsFile, JsFileBody,
     SelectedModuleLowering,
 };
-use gate::ValidatedAssignment;
 use js_ast::ParsedJsModule;
 use rayon::prelude::*;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -87,12 +87,7 @@ pub(super) struct LowerChunkAst<'a> {
 /// Held in `LowerChunkInputs::plan`.
 pub(super) struct LowerChunkPlan<'a> {
     pub(super) module_plans: &'a [ModulePlan],
-    pub(super) binding_assignment: &'a HashMap<Id, usize>,
-    /// Top-level statement ordinal → module_plan index for owners
-    /// the spec claimed as anonymous-statement members. See
-    /// `ModulePlan::anonymous_statement_ordinals`.
-    pub(super) anonymous_ordinal_assignment: &'a BTreeMap<usize, usize>,
-    pub(super) validated_assignment: &'a ValidatedAssignment<'a>,
+    pub(super) placement: &'a EmissionPlacement<'a>,
 }
 
 /// Spec-derived + chunk-AST-derived facts the lowerer consults at
@@ -160,11 +155,11 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
     } = ast;
     let LowerChunkPlan {
         module_plans,
-        binding_assignment,
-        anonymous_ordinal_assignment,
-        validated_assignment,
+        placement,
     } = plan;
-    let factorization = validated_assignment.factorization();
+    let factorization = placement.factorization();
+    let binding_assignment = placement.bindings();
+    let anonymous_ordinal_assignment = placement.statements();
     let LowerChunkSpecFacts {
         runtime_import_facts,
         sealed_renames,

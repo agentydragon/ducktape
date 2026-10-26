@@ -23,6 +23,7 @@ use crate::lower::{
     LoweredChunk, lower_chunk,
 };
 use crate::naturalize::collect_plan_export_rename_intents;
+use crate::placement::EmissionPlacement;
 use crate::plans::{
     LogicalRequest, MemberRequest, ModulePlan, known_effect_from_member_effect,
     logical_requests_for_chunk,
@@ -546,7 +547,6 @@ pub(super) fn finish_logical_chunk(
     // owned state from here on.
     let ChunkPlan {
         module_plans,
-        binding_assignment,
         bindings_catalogue,
         anonymous_ordinal_assignment,
         unmatched_spec_claims,
@@ -605,6 +605,13 @@ pub(super) fn finish_logical_chunk(
         &export_reentry_reports[&chunk_id_interned],
     )?;
 
+    let placement = EmissionPlacement::from_validated(
+        &validated_assignment,
+        &runtime_ast.module.body,
+        module_plans.len(),
+        &anonymous_ordinal_assignment,
+    )?;
+
     let lowered = lower_chunk(LowerChunkInputs {
         context: LowerChunkContext {
             artifact,
@@ -624,9 +631,7 @@ pub(super) fn finish_logical_chunk(
         },
         plan: LowerChunkPlan {
             module_plans: &module_plans,
-            binding_assignment: &binding_assignment,
-            anonymous_ordinal_assignment: &anonymous_ordinal_assignment,
-            validated_assignment: &validated_assignment,
+            placement: &placement,
         },
         spec_facts: LowerChunkSpecFacts {
             runtime_import_facts: &runtime_import_facts,
@@ -653,7 +658,7 @@ pub(super) fn finish_logical_chunk(
         chunk_id: chunk_id.to_string(),
         counts: ChunkModulesCounts {
             applied: applied.len(),
-            selected_owners: binding_assignment.len(),
+            selected_owners: placement.bindings().len(),
         },
         final_module_contents: final_modules,
         requested_logical_modules: requests

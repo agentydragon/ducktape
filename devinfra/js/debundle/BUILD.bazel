@@ -820,6 +820,7 @@ rust_library(
         "lowering/mod.rs",
         "lowering/module_output.rs",
         "lowering/naturalize.rs",
+        "lowering/placement.rs",
         "lowering/plans.rs",
         "lowering/rebind_fold.rs",
         "lowering/rename_ledger.rs",

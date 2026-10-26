@@ -31,6 +31,7 @@ mod lower;
 mod materialize;
 mod module_output;
 mod naturalize;
+mod placement;
 mod plans;
 mod rebind_fold;
 pub mod rename_ledger;

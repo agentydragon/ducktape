@@ -61,8 +61,6 @@ fn member_outcome(
 /// construction phase.
 pub(super) struct ChunkPlan {
     pub(super) module_plans: Vec<ModulePlan>,
-    /// Owned-only projection of `bindings_catalogue`, derived at finalization.
-    pub(super) binding_assignment: HashMap<Id, usize>,
     pub(super) bindings_catalogue: HashMap<Id, BindingKind>,
     pub(super) anonymous_ordinal_assignment: BTreeMap<usize, usize>,
     pub(super) unmatched_spec_claims: Vec<crate::UnmatchedSpecClaim>,
@@ -1303,7 +1301,7 @@ impl ChunkPlanBuilder {
         }
     }
 
-    /// Derive the owned-only view required by rebind analysis and lowering.
+    /// Derive the owned-only view required by rebind analysis.
     /// This is a snapshot, never independently mutated construction state.
     pub(super) fn owned_binding_destinations(&self) -> HashMap<Id, usize> {
         self.bindings_catalogue
@@ -1327,11 +1325,9 @@ impl ChunkPlanBuilder {
     }
 
     pub(super) fn finalize(self) -> Result<ChunkPlan> {
-        let binding_assignment = self.owned_binding_destinations();
         self.outcomes.finish()?;
         Ok(ChunkPlan {
             module_plans: self.module_plans,
-            binding_assignment,
             bindings_catalogue: self.bindings_catalogue,
             anonymous_ordinal_assignment: self.anonymous_ordinal_assignment,
             unmatched_spec_claims: self.unmatched_spec_claims,
