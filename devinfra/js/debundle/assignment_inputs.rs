@@ -14,7 +14,10 @@ use swc_atoms::Atom;
 use swc_ecma_ast::Id;
 
 use analysis::reports::owner_key;
-use analysis::{BindingKind, ModuleId, OwnerGraph, PlannedModule};
+use analysis::{
+    BindingCatalogue, BindingId, BindingKind, BindingScopeError, ChunkId, LocalBindings, ModuleId,
+    OwnerGraph, PlannedModule,
+};
 
 /// Per-chunk inputs + IR + input-derived caches.
 ///
@@ -27,8 +30,10 @@ use analysis::{BindingKind, ModuleId, OwnerGraph, PlannedModule};
 /// accessors below.
 #[derive(Debug, Clone)]
 pub struct AssignmentInputs {
+    /// Diagnostic name used in errors and reports. The actual program scope is
+    /// retained by `binding_catalogue` and checked at construction.
     chunk_id: String,
-    bindings: HashMap<Id, BindingKind>,
+    binding_catalogue: BindingCatalogue,
     logical_modules: Vec<PlannedModule>,
     owner_graph: OwnerGraph,
     owner_report_ids_by_binding: HashMap<Id, Vec<String>>,
@@ -39,9 +44,6 @@ pub struct AssignmentInputs {
 struct BindingLookupInfo {
     /// Exported name when it differs from the local binding name.
     export_name: Option<Atom>,
-    /// Owning logical module for `Owned` bindings. Imported/global names
-    /// are absent.
-    owner: Option<ModuleId>,
 }
 
 impl AssignmentInputs {
@@ -55,33 +57,46 @@ impl AssignmentInputs {
     pub fn build(
         chunk_id: String,
         owner_graph: OwnerGraph,
-        bindings: HashMap<Id, BindingKind>,
+        chunk_identity: ChunkId,
+        binding_catalogue: BindingCatalogue,
         logical_modules: Vec<PlannedModule>,
         chunk_renames: &HashMap<Id, Atom>,
-    ) -> Self {
+    ) -> Result<Self, BindingScopeError> {
+        let local_bindings = binding_catalogue.local_view(chunk_identity)?;
         let owner_report_ids_by_binding = build_owner_report_ids_by_binding(&owner_graph);
         let binding_lookup_by_id =
-            build_binding_lookup_by_id(&bindings, chunk_renames, &logical_modules);
-        Self {
+            build_binding_lookup_by_id(local_bindings.as_map(), chunk_renames, &logical_modules);
+        Ok(Self {
             chunk_id,
-            bindings,
+            binding_catalogue,
             logical_modules,
             owner_graph,
             owner_report_ids_by_binding,
             binding_lookup_by_id,
-        }
+        })
     }
 
     pub fn chunk_id(&self) -> &str {
         &self.chunk_id
     }
 
-    /// All top-level bindings of the chunk indexed by local name.
-    /// Iteration order is undefined; consumers that need a
-    /// deterministic order (emit sites, error messages) must sort
-    /// the keys themselves.
-    pub fn bindings(&self) -> &HashMap<Id, BindingKind> {
-        &self.bindings
+    pub fn chunk_identity(&self) -> ChunkId {
+        self.binding_catalogue.chunk_id()
+    }
+
+    /// The per-chunk catalogue, whose lookups require a complete `BindingId`.
+    pub fn binding_catalogue(&self) -> &BindingCatalogue {
+        &self.binding_catalogue
+    }
+
+    /// Local binding map for same-chunk algorithms after verifying that the
+    /// requested scope is this analysis's source chunk. Iteration order is
+    /// undefined; consumers requiring deterministic output must sort keys.
+    pub fn local_bindings(
+        &self,
+        chunk_identity: ChunkId,
+    ) -> Result<LocalBindings<'_>, BindingScopeError> {
+        self.binding_catalogue.local_view(chunk_identity)
     }
 
     pub fn logical_modules(&self) -> &[PlannedModule] {
@@ -95,11 +110,13 @@ impl AssignmentInputs {
     /// Pre-computed export name for a chunk binding, falling back
     /// to the binding's own name. Hot-path replacement for the
     /// previous `bindings` / `chunk_renames` / `rename_map` walk.
-    pub fn export_name_for(&self, binding: &Id) -> Atom {
-        self.binding_lookup_by_id
-            .get(binding)
+    pub fn export_name_for(&self, binding: &BindingId) -> Result<Atom, BindingScopeError> {
+        self.binding_catalogue.check_binding_id(binding)?;
+        Ok(self
+            .binding_lookup_by_id
+            .get(binding.swc_id())
             .and_then(|info| info.export_name.clone())
-            .unwrap_or_else(|| binding.0.clone())
+            .unwrap_or_else(|| binding.swc_id().0.clone()))
     }
 
     /// Canonical module identity for `id` — the [`spec::ModulePath`]
@@ -128,10 +145,14 @@ impl AssignmentInputs {
     /// Which logical module owns a binding, if any.
     /// Returns `None` for names that aren't `Owned` in this analysis
     /// (e.g. globals, imported bindings, names not in the spec).
-    pub fn owner_of(&self, binding: &Id) -> Option<ModuleId> {
-        self.binding_lookup_by_id
-            .get(binding)
-            .and_then(|info| info.owner)
+    pub fn owner_of(&self, binding: &BindingId) -> Result<Option<ModuleId>, BindingScopeError> {
+        Ok(self
+            .binding_catalogue
+            .get(binding)?
+            .and_then(|kind| match kind {
+                BindingKind::Owned { module } => Some(*module),
+                BindingKind::Imported { .. } => None,
+            }))
     }
 
     /// Lookup a logical module by its dense identity.
@@ -141,14 +162,20 @@ impl AssignmentInputs {
 
     pub fn owner_report_ids_for_bindings<'a>(
         &self,
-        ids: impl IntoIterator<Item = &'a Id>,
-    ) -> Vec<String> {
-        ids.into_iter()
-            .filter_map(|id| self.owner_report_ids_by_binding.get(id))
-            .flat_map(|ids| ids.iter().cloned())
+        ids: impl IntoIterator<Item = &'a BindingId>,
+    ) -> Result<Vec<String>, BindingScopeError> {
+        let mut report_ids = Vec::new();
+        for id in ids {
+            self.binding_catalogue.check_binding_id(id)?;
+            if let Some(ids) = self.owner_report_ids_by_binding.get(id.swc_id()) {
+                report_ids.extend(ids.iter().cloned());
+            }
+        }
+        Ok(report_ids
+            .into_iter()
             .collect::<BTreeSet<_>>()
             .into_iter()
-            .collect()
+            .collect())
     }
 }
 
@@ -191,10 +218,6 @@ fn build_binding_lookup_by_id(
 ) -> HashMap<Id, BindingLookupInfo> {
     let mut out = HashMap::with_capacity(bindings.len() + chunk_renames.len());
     for (id, kind) in bindings {
-        let owner = match kind {
-            BindingKind::Owned { module } => Some(*module),
-            BindingKind::Imported { .. } => None,
-        };
         let export_name = match kind {
             BindingKind::Owned {
                 module: ModuleId(idx),
@@ -209,8 +232,8 @@ fn build_binding_lookup_by_id(
                 .unwrap_or_else(|| id.0.clone()),
         };
         let export_name = (export_name != id.0).then_some(export_name);
-        if owner.is_some() || export_name.is_some() {
-            out.insert(id.clone(), BindingLookupInfo { export_name, owner });
+        if export_name.is_some() {
+            out.insert(id.clone(), BindingLookupInfo { export_name });
         }
     }
     // Cover bindings that only show up in `chunk_renames` (no

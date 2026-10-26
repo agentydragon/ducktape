@@ -3177,8 +3177,13 @@ available to diagnostics without constructing an emission capability. This check
 the assignment and shared import order; vendor consumer and final export checks
 still run on the emitted files.
 
-Both are keyed per-chunk; the chunk is contextual within the
-analysis, so binding keys collapse to just `name`.
+`BindingId` carries the interned source `ChunkId` together with the full SWC
+`Id` (symbol and `SyntaxContext`). `BindingCatalogue` stores that chunk identity
+once beside the existing `HashMap<Id, BindingKind>`; it does not rekey every
+binding. Identity lookups take a `BindingId` and reject a different chunk.
+Same-chunk graph and AST algorithms use a borrowed local map only after checking
+the chunk scope. These are runtime identities; report and spec wire values keep
+their existing shapes.
 
 Conceptually, the analysis + factorization carry:
 

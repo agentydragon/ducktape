@@ -32,7 +32,7 @@ use crate::{
 };
 use analysis::facts::{ExportReentryPolicy, StructuralChunkAnalysis};
 use analysis::{
-    AnalysisAssumptions, AnalysisInputs, LocalEffectPolicy, ModuleId, ModuleRole,
+    AnalysisAssumptions, AnalysisInputs, BindingId, LocalEffectPolicy, ModuleId, ModuleRole,
     OwnerGraphAndAtomicGroups, OwnerGraphOptions, PlannedModule, top_level_id,
 };
 use anyhow::{Context, Result, bail};
@@ -570,7 +570,7 @@ pub(super) fn finish_logical_chunk(
         bindings_catalogue,
         anonymous_ordinal_assignment,
         unmatched_spec_claims,
-    } = builder.finalize()?;
+    } = builder.finalize(chunk_id_interned)?;
     // Plan structure is final — collect the explicit rename contributors
     // into the chunk's rename ledger and seal it. Seal hard-errors when
     // same-priority intents disagree on one binding's target; the sealed
@@ -612,12 +612,13 @@ pub(super) fn finish_logical_chunk(
         .collect();
     let factorization = AssignmentAnalysis::build_with(
         chunk_id.to_string(),
+        chunk_id_interned,
         precomputed,
         bindings_catalogue,
         logical_modules,
         factorization_chunk_renames,
         default_destination,
-    );
+    )?;
     let validated_assignment = validate_and_emit_reports(
         chunk_id,
         report_emission,
@@ -627,6 +628,7 @@ pub(super) fn finish_logical_chunk(
 
     let placement = EmissionPlacement::from_validated(
         &validated_assignment,
+        chunk_id_interned,
         &runtime_ast.module.body,
         module_plans.len(),
         &anonymous_ordinal_assignment,
@@ -668,8 +670,12 @@ pub(super) fn finish_logical_chunk(
         vendor_reference_rewrites,
     } = lowered;
 
-    let final_modules =
-        build_final_module_report(&module_plans, &factorization, chunk_top_level_mark);
+    let final_modules = build_final_module_report(
+        &module_plans,
+        &factorization,
+        chunk_id_interned,
+        chunk_top_level_mark,
+    );
     let directory_dependency_facts = build_directory_dependency_facts(chunk_id, &factorization);
     let validation = ChunkValidationSummary {
         linker_order: validated_assignment.report().linker_order.clone(),
@@ -1151,6 +1157,7 @@ fn validate_and_emit_reports<'a>(
 fn build_final_module_report(
     module_plans: &[ModulePlan],
     factorization: &AssignmentAnalysis,
+    chunk_identity: ChunkId,
     chunk_top_level_mark: swc_common::Mark,
 ) -> Vec<FinalModuleContent> {
     module_plans
@@ -1160,13 +1167,16 @@ fn build_final_module_report(
             sorted.sort_by(|a, b| a.0.cmp(b.0));
             let binding_names: Vec<String> = sorted.iter().map(|(k, _)| (*k).clone()).collect();
             let member_names: Vec<String> = sorted.iter().map(|(_, v)| (*v).clone()).collect();
-            let binding_ids: Vec<Id> = binding_names
+            let binding_ids: Vec<BindingId> = binding_names
                 .iter()
-                .map(|name| top_level_id(name, chunk_top_level_mark))
+                .map(|name| {
+                    BindingId::new(chunk_identity, top_level_id(name, chunk_top_level_mark))
+                })
                 .collect();
             let owner_ids = factorization
                 .analysis()
-                .owner_report_ids_for_bindings(binding_ids.iter());
+                .owner_report_ids_for_bindings(binding_ids.iter())
+                .expect("module report bindings belong to the analysis chunk");
             FinalModuleContent {
                 binding_names,
                 file: plan.target_file.clone(),
@@ -1201,7 +1211,13 @@ fn build_directory_dependency_facts(
             format!(
                 "{}#{}",
                 target_file,
-                factorization.analysis().export_name_for(id)
+                factorization
+                    .analysis()
+                    .export_name_for(&BindingId::new(
+                        factorization.analysis().chunk_identity(),
+                        id.clone(),
+                    ))
+                    .expect("owner graph edge bindings belong to the analysis chunk")
             )
         });
         facts.push(DirectoryDependencyFact {

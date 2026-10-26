@@ -749,7 +749,7 @@ fn promote_at_init_calls(
     }
 
     // 3. Per-owner seeds: own reads.lazy / rebinds.lazy resolved to
-    //    BindingId. Filters out targets whose owner is a function
+    //    SWC Ids. Filters out targets whose owner is a function
     //    declaration — function bindings are hoisted at module
     //    instantiation (Phase 1 of ESM linking), so a cross-module
     //    read of a function never observes a TDZ. Promoting such

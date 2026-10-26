@@ -9,16 +9,14 @@
 //! an authoring decision surfaced by `debundle coverage`.
 //! See `docs/design.md` §"Assignment assembly inside `debundle run`".
 
-use std::collections::{BTreeSet, HashMap};
-
-use serde::Serialize;
-use swc_atoms::Atom;
-use swc_ecma_ast::Id;
+use std::collections::BTreeSet;
 
 use crate::atomic_groups::AtomicGroup;
 use crate::graph::{DepKind, OwnerGraph, OwnerId};
-use crate::ids::{BindingKind, ModuleId, PlannedModule};
+use crate::ids::{BindingKind, LocalBindings, ModuleId, PlannedModule};
 use crate::module_assignment::ModuleAssignment;
+use serde::Serialize;
+use swc_atoms::Atom;
 
 /// One owner's claimed destination inside a conflicting atomic
 /// group. Listed inside an [`AtomicGroupConflict`].
@@ -68,7 +66,7 @@ pub struct AssemblyOutcome {
 pub fn assemble_assignment(
     owner_graph: &OwnerGraph,
     atomic_groups: &[AtomicGroup],
-    bindings: &HashMap<Id, BindingKind>,
+    bindings: &LocalBindings<'_>,
     logical_modules: &[PlannedModule],
     default_destination: ModuleId,
 ) -> AssemblyOutcome {
@@ -96,16 +94,19 @@ pub fn assemble_assignment(
 /// One [`ModuleId`] slot per owner; `None` means no explicit claim.
 fn compute_owner_claims(
     owner_graph: &OwnerGraph,
-    bindings: &HashMap<Id, BindingKind>,
+    bindings: &LocalBindings<'_>,
     logical_modules: &[PlannedModule],
 ) -> Vec<Option<ModuleId>> {
     let mut claims = vec![None; owner_graph.num_nodes()];
     for node in owner_graph.iter_nodes() {
         for binding_id in &node.declared {
-            let claim = bindings.get(binding_id).and_then(|kind| match kind {
-                BindingKind::Owned { module: dest } => Some(*dest),
-                _ => None,
-            });
+            let claim = bindings
+                .as_map()
+                .get(binding_id)
+                .and_then(|kind| match kind {
+                    BindingKind::Owned { module: dest } => Some(*dest),
+                    _ => None,
+                });
             if let Some(dest) = claim {
                 claims[node.id.0] = Some(dest);
                 break;

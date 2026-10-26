@@ -6,7 +6,10 @@ use analysis::assignment_assembly::{AtomicGroupConflict, assemble_assignment};
 use analysis::atomic_groups::{AtomicGroup, OwnerGraphAndAtomicGroups};
 use analysis::graph::{build_module_quotient, chunk_constraining_module_edges};
 use analysis::module_assignment::ModuleAssignment;
-use analysis::{ModuleId, ModuleQuotient, OwnerGraphReport, PlannedModule};
+use analysis::{
+    BindingCatalogue, BindingScopeError, ChunkId, ModuleId, ModuleQuotient, OwnerGraphReport,
+    PlannedModule,
+};
 
 use crate::AssignmentInputs;
 use crate::esm_import_order::EsmImportOrder;
@@ -91,28 +94,34 @@ impl AssignmentAnalysis {
     /// Build a factorization from a caller-computed owner graph +
     /// atomic groups (the materializer computes these once per chunk
     /// for atomic-group module synthesis), the binding catalogue, and the
-    /// spec-derived logical modules. `bindings` should already have
+    /// spec-derived logical modules. The catalogue should already have
     /// every `Owned` binding the spec assigned and every `Imported`
-    /// binding the spec re-exports.
+    /// binding the spec re-exports. `chunk_identity` must match the
+    /// catalogue's interned source chunk; `chunk_id` remains the diagnostic
+    /// name.
     pub fn build_with(
         chunk_id: String,
+        chunk_identity: ChunkId,
         precomputed: OwnerGraphAndAtomicGroups,
-        bindings: HashMap<swc_ecma_ast::Id, analysis::BindingKind>,
+        binding_catalogue: BindingCatalogue,
         logical_modules: Vec<PlannedModule>,
         chunk_renames: HashMap<swc_ecma_ast::Id, swc_atoms::Atom>,
         default_destination: ModuleId,
-    ) -> Self {
+    ) -> Result<Self, BindingScopeError> {
         let OwnerGraphAndAtomicGroups {
             owner_graph,
             atomic_groups,
         } = precomputed;
-        let outcome = assemble_assignment(
-            &owner_graph,
-            &atomic_groups,
-            &bindings,
-            &logical_modules,
-            default_destination,
-        );
+        let outcome = {
+            let local_bindings = binding_catalogue.local_view(chunk_identity)?;
+            assemble_assignment(
+                &owner_graph,
+                &atomic_groups,
+                &local_bindings,
+                &logical_modules,
+                default_destination,
+            )
+        };
         let assignment = outcome.assignment;
         let assembly_conflicts = outcome.conflicts;
         let dep_graph = build_module_quotient(&owner_graph, &assignment);
@@ -139,11 +148,12 @@ impl AssignmentAnalysis {
         let analysis = Arc::new(AssignmentInputs::build(
             chunk_id,
             owner_graph,
-            bindings,
+            chunk_identity,
+            binding_catalogue,
             logical_modules,
             &chunk_renames,
-        ));
-        Self {
+        )?);
+        Ok(Self {
             analysis,
             assignment,
             atomic_groups,
@@ -151,7 +161,7 @@ impl AssignmentAnalysis {
             dep_graph,
             dep_graph_sccs,
             import_order,
-        }
+        })
     }
 
     /// SCC partition of `dep_graph` (the module quotient), in

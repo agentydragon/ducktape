@@ -14,7 +14,8 @@ use crate::plans::ModulePlan;
 use crate::rebind_fold::RebindFold;
 use crate::util::target_file_for_request;
 use analysis::{
-    BindingKind, ModuleId, ModuleRole, OwnerGraphAndAtomicGroups, OwnerId, top_level_id,
+    BindingCatalogue, BindingKind, ChunkId, ModuleId, ModuleRole, OwnerGraphAndAtomicGroups,
+    OwnerId, top_level_id,
 };
 use anyhow::{Context, Result, bail};
 use js_ast::body_index_for_statement_ordinal;
@@ -54,7 +55,7 @@ fn member_outcome(
 /// construction phase.
 pub(super) struct ChunkPlan {
     pub(super) module_plans: Vec<ModulePlan>,
-    pub(super) bindings_catalogue: HashMap<Id, BindingKind>,
+    pub(super) bindings_catalogue: BindingCatalogue,
     pub(super) anonymous_ordinal_assignment: BTreeMap<usize, usize>,
     pub(super) unmatched_spec_claims: Vec<crate::UnmatchedSpecClaim>,
 }
@@ -1288,11 +1289,11 @@ impl ChunkPlanBuilder {
         self.outcomes.report()
     }
 
-    pub(super) fn finalize(self) -> Result<ChunkPlan> {
+    pub(super) fn finalize(self, chunk_id: ChunkId) -> Result<ChunkPlan> {
         self.outcomes.finish()?;
         Ok(ChunkPlan {
             module_plans: self.module_plans,
-            bindings_catalogue: self.bindings_catalogue,
+            bindings_catalogue: BindingCatalogue::new(chunk_id, self.bindings_catalogue),
             anonymous_ordinal_assignment: self.anonymous_ordinal_assignment,
             unmatched_spec_claims: self.unmatched_spec_claims,
         })

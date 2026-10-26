@@ -30,7 +30,7 @@ implementation and reader cutover.
 | Responsibility                                              | Agreed target vocabulary                           | Status                                                                |
 | ----------------------------------------------------------- | -------------------------------------------------- | --------------------------------------------------------------------- |
 | Parsed program and shared syntax indexes                    | `SourceProgram`                                    | Landed                                                                |
-| Binding identity independent of spelling and placement      | `BindingId`, retaining chunk scope and SWC hygiene | Current SWC identity is chunk scoped; named handle remains Stage B    |
+| Binding identity independent of spelling and placement      | `BindingId`, retaining chunk scope and SWC hygiene | Landed                                                                |
 | Identity of an original statement                           | `StatementId`                                      | Required Stage B work                                                 |
 | Identity of a movable source fragment                       | `SourceUnitId`                                     | Required Stage B work                                                 |
 | Reads, writes, effects, and ordering constraints            | `DependencyGraph` over source units                | Target boundary; active reader cutover                                |
@@ -76,16 +76,21 @@ rejections remain recorded as prior outcomes, not regressions.
 
 ### B. Names and identity — in progress
 
-Land one independent concept per PR. Distinguish binding identity, original
-statement identity, movable source-unit identity, anonymous-unit classification,
-residual placement, atomic grouping, and destination module identity. Replace
-residual sentinels and implicit anonymous-unit classification with explicit
-types. Active owner-graph cutover maps `OwnerId` to `SourceUnitId`, keeps a
-distinct `SourceUnitIndex` report arena, and maps `OwnerGraph` to
-`DependencyGraph`; these identities must not be collapsed into `NodeId`.
-Definitions and live consumers must agree without aliases or abandoned readers.
+Land one independent concept per PR. `BindingId` now pairs the interned chunk
+identity with the full hygiene-aware SWC `Id`; `BindingCatalogue` keeps the
+existing per-chunk SWC-ID map without rekeying it. Remaining identity work
+distinguishes original statement identity, movable source-unit identity,
+anonymous-unit classification, residual placement, atomic grouping, and
+destination module identity. Replace residual sentinels and implicit
+anonymous-unit classification with explicit types. Active owner-graph cutover
+maps `OwnerId` to `SourceUnitId`, keeps a distinct `SourceUnitIndex` report
+arena, and maps `OwnerGraph` to `DependencyGraph`; these identities must not be
+collapsed into `NodeId`. Definitions and live consumers must agree without
+aliases or abandoned readers.
 
 - PR #12060: atomic-group identity and consumer cutover remain active.
+- Binding identity: runtime-only `BindingId` and the scoped catalogue reader
+  cutover are landed; report/spec wire values remain unchanged.
 
 ### C. Source preparation and exact resolution — in progress
 

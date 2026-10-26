@@ -568,14 +568,15 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
             chunk_top_level_mark,
         ));
     }
-    trim_dead_named_specifiers(&mut entry_body, factorization.analysis().bindings());
+    let local_bindings = factorization.analysis().local_bindings(chunk_id_interned)?;
+    trim_dead_named_specifiers(&mut entry_body, local_bindings.as_map());
     let entry_exports_by_original_local = collect_entry_exports_by_original_local(
         &entry_body,
         &entry_binding_renames,
         chunk_top_level_mark,
     );
     let imported_reexports_by_module =
-        collect_imported_reexports_by_module(factorization, module_plans.len());
+        collect_imported_reexports_by_module(factorization, chunk_id_interned, module_plans.len())?;
     let source_import_cache = Mutex::new(ArtifactSourceImportResolutionCache::new(
         artifact,
         artifact_indexes,

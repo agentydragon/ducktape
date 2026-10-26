@@ -48,8 +48,8 @@ pub use graph::{
     chunk_constraining_module_edges, position_lookup,
 };
 pub use ids::{
-    BindingKind, ChunkId, ChunkTable, ModuleId, ModuleRole, PlannedModule, StatementOrdinal,
-    top_level_id,
+    BindingCatalogue, BindingId, BindingKind, BindingScopeError, ChunkId, ChunkTable,
+    LocalBindings, ModuleId, ModuleRole, PlannedModule, StatementOrdinal, top_level_id,
 };
 pub use module_assignment::ModuleAssignment;
 pub use purity::{

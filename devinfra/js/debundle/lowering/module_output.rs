@@ -23,7 +23,7 @@ use crate::plans::ModulePlan;
 use crate::rename_ledger::{RenameLedger, RenameScope, ScopeOccupancy, SealValidation};
 use crate::rewrite_runtime::rewrite_runtime_sources_for_target;
 use crate::visitors::IdentifierRenamer;
-use analysis::{ModuleId, ModuleRole, top_level_id};
+use analysis::{BindingId, ModuleId, ModuleRole, top_level_id};
 use anyhow::{Result, bail};
 use artifact::{
     ChunkId, FileMetadata, FileRole, JsFile, JsFileBody, SelectedModuleLowering, join_module_path,
@@ -41,6 +41,7 @@ const LOWERING_GENERATOR_HEADER: &str = "// @ducktape-generator selected_module_
 struct ModuleOutputContext<'a> {
     factorization: &'a AssignmentAnalysis,
     runtime_ast: &'a ParsedJsModule,
+    chunk_id_interned: ChunkId,
     chunk_top_level_mark: swc_common::Mark,
     chunk_id: &'a str,
     entry_file: &'a str,
@@ -119,7 +120,7 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
         binding_assignment,
         entry_exports_by_original_local,
         runtime_import_facts,
-    );
+    )?;
     // Import-local mints for this plan's body flow through a per-plan
     // ledger (scope: this plan's `Module`, origin: `ImportInduced`);
     // the ledger's taken-name set is seeded with every name bound
@@ -360,7 +361,7 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
         }
     }
     // ImportSpecifier-bound members (`BindingKind::Imported` in
-    // `factorization.analysis().bindings()`): for each `Imported` binding whose
+    // `factorization.analysis().binding_catalogue()`): for each `Imported` binding whose
     // `re_exported_by` map names this module, emit a re-import
     // (using the local name as the alias) plus mirror the
     // public-name export. Per-destination relative paths are
@@ -426,6 +427,7 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
     let output_context = ModuleOutputContext {
         factorization,
         runtime_ast,
+        chunk_id_interned,
         chunk_top_level_mark,
         chunk_id,
         entry_file,
@@ -462,14 +464,20 @@ fn build_module_output(
         .filter(|(binding, _)| plan.spec_named_bindings.contains(binding.as_str()))
         .map(|(_, exported)| (*exported).clone())
         .collect();
-    let binding_ids: Vec<Id> = binding_names
+    let binding_ids: Vec<BindingId> = binding_names
         .iter()
-        .map(|name| top_level_id(name, context.chunk_top_level_mark))
+        .map(|name| {
+            BindingId::new(
+                context.chunk_id_interned,
+                top_level_id(name, context.chunk_top_level_mark),
+            )
+        })
         .collect();
     let owner_ids = context
         .factorization
         .analysis()
-        .owner_report_ids_for_bindings(binding_ids.iter());
+        .owner_report_ids_for_bindings(binding_ids.iter())
+        .expect("module report bindings belong to the analysis chunk");
     // Module-level `comment:` from the spec lands at the very top of
     // the emitted file (above the lowerer's pragma block), separated
     // from the pragmas by a blank `//` line so the human-readable

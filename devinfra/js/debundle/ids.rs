@@ -122,6 +122,190 @@ pub enum ModuleRole {
     Unassigned,
 }
 
+/// Identity of a binding within the parsed program.
+///
+/// The SWC `Id` retains both the symbol and its `SyntaxContext`; `chunk_id`
+/// distinguishes equal SWC identities from different source chunks. This is a
+/// runtime identity and is intentionally not serialized into reports or specs.
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+pub struct BindingId {
+    chunk_id: ChunkId,
+    swc_id: Id,
+}
+
+impl BindingId {
+    pub fn new(chunk_id: ChunkId, swc_id: Id) -> Self {
+        Self { chunk_id, swc_id }
+    }
+
+    pub fn chunk_id(&self) -> ChunkId {
+        self.chunk_id
+    }
+
+    pub fn swc_id(&self) -> &Id {
+        &self.swc_id
+    }
+}
+
+/// Error returned when a binding identity or local catalogue view belongs to
+/// a different chunk than the catalogue's scope.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub struct BindingScopeError {
+    expected: ChunkId,
+    actual: ChunkId,
+}
+
+impl BindingScopeError {
+    pub fn expected_chunk(&self) -> ChunkId {
+        self.expected
+    }
+
+    pub fn actual_chunk(&self) -> ChunkId {
+        self.actual
+    }
+}
+
+impl std::fmt::Display for BindingScopeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "binding belongs to chunk {}, but catalogue is scoped to chunk {}",
+            self.actual.0, self.expected.0
+        )
+    }
+}
+
+impl std::error::Error for BindingScopeError {}
+
+/// Per-chunk binding metadata, keyed by the original hygiene-aware SWC ID.
+///
+/// The chunk identity is stored once for the whole catalogue, avoiding a
+/// chunk-ID rekeying of every local binding. External identity lookups use
+/// [`BindingId`]; same-chunk graph and AST algorithms obtain a checked local
+/// view with [`BindingCatalogue::local_view`].
+#[derive(Debug, Clone)]
+pub struct BindingCatalogue {
+    chunk_id: ChunkId,
+    bindings_by_swc_id: HashMap<Id, BindingKind>,
+}
+
+impl BindingCatalogue {
+    pub fn new(chunk_id: ChunkId, bindings_by_swc_id: HashMap<Id, BindingKind>) -> Self {
+        Self {
+            chunk_id,
+            bindings_by_swc_id,
+        }
+    }
+
+    pub fn chunk_id(&self) -> ChunkId {
+        self.chunk_id
+    }
+
+    /// Look up a program-scoped identity, rejecting IDs from another chunk.
+    pub fn get(&self, binding_id: &BindingId) -> Result<Option<&BindingKind>, BindingScopeError> {
+        self.check_binding_id(binding_id)?;
+        Ok(self.bindings_by_swc_id.get(binding_id.swc_id()))
+    }
+
+    pub fn check_binding_id(&self, binding_id: &BindingId) -> Result<(), BindingScopeError> {
+        self.check_chunk(binding_id.chunk_id)
+    }
+
+    /// Borrow the local SWC-ID map after checking the caller's chunk scope.
+    pub fn local_view(&self, chunk_id: ChunkId) -> Result<LocalBindings<'_>, BindingScopeError> {
+        self.check_chunk(chunk_id)?;
+        Ok(LocalBindings {
+            chunk_id: self.chunk_id,
+            bindings_by_swc_id: &self.bindings_by_swc_id,
+        })
+    }
+
+    fn check_chunk(&self, chunk_id: ChunkId) -> Result<(), BindingScopeError> {
+        if chunk_id == self.chunk_id {
+            Ok(())
+        } else {
+            Err(BindingScopeError {
+                expected: self.chunk_id,
+                actual: chunk_id,
+            })
+        }
+    }
+}
+
+/// Borrowed view of a catalogue's SWC-ID map, available only after an explicit
+/// chunk-scope check.
+#[derive(Debug, Clone, Copy)]
+pub struct LocalBindings<'a> {
+    chunk_id: ChunkId,
+    bindings_by_swc_id: &'a HashMap<Id, BindingKind>,
+}
+
+impl LocalBindings<'_> {
+    pub fn chunk_id(&self) -> ChunkId {
+        self.chunk_id
+    }
+
+    pub fn as_map(&self) -> &HashMap<Id, BindingKind> {
+        self.bindings_by_swc_id
+    }
+}
+
+#[cfg(test)]
+mod binding_id_tests {
+    use super::*;
+    use swc_common::{GLOBALS, Globals};
+
+    #[test]
+    fn catalogue_checks_chunk_and_keeps_swc_hygiene() {
+        GLOBALS.set(&Globals::new(), || {
+            let chunk_a = ChunkId(3);
+            let chunk_b = ChunkId(4);
+            let ctxt_a = SyntaxContext::empty().apply_mark(Mark::new());
+            let ctxt_b = SyntaxContext::empty().apply_mark(Mark::new());
+            let swc_id_a = (Atom::from("same"), ctxt_a);
+            let swc_id_b = (Atom::from("same"), ctxt_b);
+            let catalogue = BindingCatalogue::new(
+                chunk_a,
+                HashMap::from([(
+                    swc_id_a.clone(),
+                    BindingKind::Owned {
+                        module: ModuleId(0),
+                    },
+                )]),
+            );
+
+            assert_eq!(
+                catalogue
+                    .get(&BindingId::new(chunk_a, swc_id_a.clone()))
+                    .unwrap()
+                    .map(|kind| match kind {
+                        BindingKind::Owned { module } => *module,
+                        BindingKind::Imported { .. } => panic!("unexpected imported binding"),
+                    }),
+                Some(ModuleId(0))
+            );
+            assert!(
+                catalogue
+                    .get(&BindingId::new(chunk_a, swc_id_b))
+                    .unwrap()
+                    .is_none(),
+                "equal names with different syntax contexts are different bindings"
+            );
+            assert_eq!(
+                catalogue
+                    .get(&BindingId::new(chunk_b, swc_id_a))
+                    .unwrap_err(),
+                BindingScopeError {
+                    expected: chunk_a,
+                    actual: chunk_b,
+                }
+            );
+            assert!(catalogue.local_view(chunk_b).is_err());
+            assert_eq!(catalogue.local_view(chunk_a).unwrap().chunk_id(), chunk_a);
+        });
+    }
+}
+
 /// A planned module produced from the spec for the current chunk.
 /// Projection of `ModulePlan` carrying the fields downstream emit
 /// helpers consume (`cross_module_imports_for_body`,

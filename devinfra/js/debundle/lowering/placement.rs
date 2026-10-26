@@ -4,7 +4,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use analysis::{BindingKind, ModuleId};
+use analysis::{BindingKind, ChunkId, ModuleId};
 use anyhow::{Context, Result, bail, ensure};
 use gate::{AssignmentAnalysis, ValidatedAssignment};
 use js_ast::body_indices_for_statement_ordinals;
@@ -21,6 +21,7 @@ pub(super) struct EmissionPlacement<'a> {
 impl<'a> EmissionPlacement<'a> {
     pub(super) fn from_validated(
         validated: &'a ValidatedAssignment<'_>,
+        chunk_identity: ChunkId,
         body: &[ModuleItem],
         module_count: usize,
         requested_statements: &BTreeMap<usize, usize>,
@@ -76,7 +77,8 @@ impl<'a> EmissionPlacement<'a> {
         }
         // Import construction reads this catalogue too. Prove its binding
         // destinations agree with syntax placement, including shared var sites.
-        for (binding, kind) in factorization.analysis().bindings() {
+        let local_bindings = factorization.analysis().local_bindings(chunk_identity)?;
+        for (binding, kind) in local_bindings.as_map() {
             if let BindingKind::Owned { module } = kind {
                 ensure!(
                     binding_destinations.get(binding) == Some(module),

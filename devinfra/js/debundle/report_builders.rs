@@ -12,10 +12,10 @@ use analysis::graph::EdgeRole;
 use analysis::reports::schema::LineRange;
 use analysis::reports::{atomic_group_key, module_id_from_key, module_key, owner_key};
 use analysis::{
-    AtomicGraphReport, AtomicGroup, AtomicGroupEdgeReport, AtomicGroupReport, BindingReport,
-    DepKind, EdgeRoleReport, ModuleEntry, ModuleId, ModuleKey, ModuleRole, OwnerGraphEdgeReport,
-    OwnerGraphNodeReport, OwnerGraphQuotientReport, OwnerGraphReport, Purity, PurityCauseReport,
-    QuotientEdgeReport, QuotientSccReport,
+    AtomicGraphReport, AtomicGroup, AtomicGroupEdgeReport, AtomicGroupReport, BindingId,
+    BindingReport, DepKind, EdgeRoleReport, ModuleEntry, ModuleId, ModuleKey, ModuleRole,
+    OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphQuotientReport, OwnerGraphReport, Purity,
+    PurityCauseReport, QuotientEdgeReport, QuotientSccReport,
 };
 
 use crate::assignment_analysis::AssignmentAnalysis;
@@ -157,7 +157,13 @@ where
         .into_iter()
         .map(|id| BindingReport {
             binding: id.0.clone(),
-            export_name: factorization.analysis().export_name_for(id),
+            export_name: factorization
+                .analysis()
+                .export_name_for(&BindingId::new(
+                    factorization.analysis().chunk_identity(),
+                    id.clone(),
+                ))
+                .expect("owner graph bindings belong to the analysis chunk"),
         })
         .collect()
 }

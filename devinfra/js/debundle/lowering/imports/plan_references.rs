@@ -4,7 +4,7 @@
 
 use crate::body_facts::NaturalizedBodyFacts;
 use crate::imports::{RuntimeImportFacts, RuntimeImportInfo};
-use analysis::{BindingKind, ModuleId};
+use analysis::{BindingId, BindingKind, ChunkId, ModuleId};
 use anyhow::{Context, Result};
 use artifact::{ArtifactIndexes, ArtifactSourceImportResolver, ChunkBundle};
 use gate::AssignmentAnalysis;
@@ -113,15 +113,16 @@ impl<'a> ArtifactSourceImportResolutionCache<'a> {
 
 pub(crate) fn collect_imported_reexports_by_module(
     factorization: &AssignmentAnalysis,
+    chunk_identity: ChunkId,
     module_count: usize,
-) -> Vec<Vec<ImportedReexport>> {
+) -> Result<Vec<Vec<ImportedReexport>>> {
     let mut by_module: Vec<Vec<ImportedReexport>> = (0..module_count).map(|_| Vec::new()).collect();
-    // Stable iteration order on `factorization.analysis().bindings()` (HashMap): the
+    let local_bindings = factorization.analysis().local_bindings(chunk_identity)?;
+    // Stable iteration order on the checked per-chunk catalogue (HashMap): the
     // recorded sequence determines the emit order of
     // `import { ... }` statements per module body and we want that
     // source-level shape pinned.
-    let mut sorted_bindings: Vec<(&Id, &BindingKind)> =
-        factorization.analysis().bindings().iter().collect();
+    let mut sorted_bindings: Vec<(&Id, &BindingKind)> = local_bindings.as_map().iter().collect();
     sorted_bindings.sort_by(|a, b| a.0.0.cmp(&b.0.0));
     for (id, kind) in sorted_bindings {
         // The body of this loop refers to the sym-typed `local` name
@@ -148,7 +149,7 @@ pub(crate) fn collect_imported_reexports_by_module(
             public_name: public_name.to_string(),
         });
     }
-    by_module
+    Ok(by_module)
 }
 
 pub(crate) fn plan_module_reference_needs<'a>(
@@ -159,7 +160,7 @@ pub(crate) fn plan_module_reference_needs<'a>(
     binding_assignment: &HashMap<Id, usize>,
     entry_exports_by_original_local: &HashMap<Id, EntryExport>,
     runtime_imports: &'a RuntimeImportFacts,
-) -> ModuleReferenceNeeds<'a> {
+) -> Result<ModuleReferenceNeeds<'a>> {
     let mut needs = ModuleReferenceNeeds::default();
     for reference in body_facts.binding_uses() {
         let Some(original_id) = reference.source_id() else {
@@ -167,7 +168,11 @@ pub(crate) fn plan_module_reference_needs<'a>(
         };
         let body_id = reference.emitted_id();
         let name_str = body_id.0.as_ref();
-        if let Some(ModuleId(provider_index)) = factorization.analysis().owner_of(original_id) {
+        let binding_id = BindingId::new(
+            factorization.analysis().chunk_identity(),
+            original_id.clone(),
+        );
+        if let Some(ModuleId(provider_index)) = factorization.analysis().owner_of(&binding_id)? {
             if provider_index != module_index
                 && let Some(provider) = factorization
                     .analysis()
@@ -213,7 +218,7 @@ pub(crate) fn plan_module_reference_needs<'a>(
         &mut needs.phantom_side_effect_providers,
     );
 
-    needs
+    Ok(needs)
 }
 
 /// Phantom side-effect providers (Lemma 2's emit-side fix):

@@ -121,13 +121,31 @@ fn factorization_from_facts(
 ) -> AssignmentAnalysis {
     AssignmentAnalysis::build_with(
         "test_chunk".to_string(),
+        ChunkId(0),
         compute_owner_graph_and_atomic_groups_with(facts, OwnerGraphOptions::default())
             .expect("chunk facts declare a binding twice"),
-        bindings,
+        BindingCatalogue::new(ChunkId(0), bindings),
         logical_modules,
         HashMap::new(),
         default_destination,
     )
+    .expect("test bindings belong to test_chunk")
+}
+
+#[test]
+fn assignment_analysis_rejects_a_catalogue_from_another_chunk() {
+    let result = AssignmentAnalysis::build_with(
+        "diagnostic_chunk_name".to_string(),
+        ChunkId(1),
+        compute_owner_graph_and_atomic_groups_with(&[], OwnerGraphOptions::default())
+            .expect("empty facts are valid"),
+        BindingCatalogue::new(ChunkId(0), HashMap::new()),
+        Vec::new(),
+        HashMap::new(),
+        ModuleId(0),
+    );
+
+    assert!(result.is_err(), "wrong-chunk catalogues must be rejected");
 }
 
 fn factorization_for(source: &str, ownership: &[(&str, ModuleId)]) -> AssignmentAnalysis {
