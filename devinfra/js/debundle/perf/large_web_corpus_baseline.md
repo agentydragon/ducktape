@@ -73,3 +73,20 @@ JavaScript files byte for byte. Each candidate has the same JavaScript paths;
 3,389 files differ only in the exact generated provenance comment described
 above. After normalizing that line, all JavaScript is byte-identical. No
 JavaScript files are missing or extra.
+
+## Implementation cleanup control
+
+Validation revision `6e85c2b8a914362c7dd709f9152b75bedda57666` combines the
+assignment/helper cleanup, destination-kind report cutover, execution-analysis
+split, and artifact/report/metrics split. Its Debundle code, tests, BUILD files,
+and README match merged revision `1c9bda5eb15b546da9bbc9d4adbda3ddce493352`;
+only the burn-down plan differs.
+
+All 175 public tests passed in invocation
+`f8b6de6a-d5fb-47cf-a40b-457d8809a292`, including the packaged skill checks.
+The optimized binary built in `c50f8824-8087-4739-96d3-a36a435481bd`. A fresh
+extraction used the same frozen source, spec, package roots, and working
+directory as the combined refactor control above, changing only the executable
+and output destination. Every one of its 3,475 JavaScript files is byte-identical
+to that control without normalization; no JavaScript files are missing or extra.
+Timing was not measured in this control.
