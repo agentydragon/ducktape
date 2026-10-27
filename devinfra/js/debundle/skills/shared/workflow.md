@@ -84,6 +84,11 @@ exception: they operate deliberately on the shared integration branch.
 Do not modify the upstream bundle during reverse-engineering work. Project
 conventions take precedence over generic guidance.
 
+Before a Git-based remote gate, stage newly authored spec, source and fixture
+files, or verify that the runner explicitly includes them. Check that the logged
+input snapshot contains those files; a run with omitted inputs does not validate
+the change.
+
 ## Failure Routing
 
 - Environment failure: find one working command and broadcast it.
