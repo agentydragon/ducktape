@@ -5,6 +5,12 @@ type ProductScenario = ProductProjectionSummaryRequest["scenario"];
 type ProductPropertyPurchase = NonNullable<ProductScenario["propertyPurchase"]>;
 type ProductPropertyFinancing = NonNullable<ProductPropertyPurchase["financing"]>;
 type ProductLifecycleEvent = NonNullable<ProductPropertyPurchase["lifecycleEvents"]>[number];
+type ProductSleeveWeight = NonNullable<NonNullable<ProductScenario["fundingPolicy"]>["sleeveWeights"]>[number];
+type LifecycleInputEvent =
+  | { _id: string; kind: "set_rented_fraction"; month: number; rentedFractionPct: number }
+  | { _id: string; kind: "set_primary_residence"; month: number; livesHere: boolean }
+  | { _id: string; kind: "capital_improvement"; month: number; amount: number }
+  | { _id: string; kind: "property_sale"; month: number; closingCostPct: number };
 
 // Rollout count is NOT a product-input field: it is a top-level control shared across the
 // product and calibration tabs (see `rolloutCountDefault` and the `?n=` URL param). Both tabs
@@ -54,7 +60,7 @@ export const LIFECYCLE_KINDS = [
   { value: "set_primary_residence", label: "Set primary home" },
   { value: "capital_improvement", label: "Capital improvement" },
   { value: "property_sale", label: "Sell property" },
-];
+] as const satisfies readonly { value: ProductLifecycleEvent["kind"]; label: string }[];
 
 export const FAN_PERCENTILES = [5, 25, 50, 75, 95];
 export const TERMINAL_DISTRIBUTION_PERCENTILES = Array.from({ length: 101 }, (_value, percentile) => percentile);
@@ -442,10 +448,6 @@ export function resolveVariant(baseInput, overrides) {
   return { ...baseInput, ...overrides };
 }
 
-function regenerateLifecycleIds(events) {
-  return Array.isArray(events) ? events.map((event) => ({ ...event, _id: nextLifecycleEventId() })) : [];
-}
-
 // Lifecycle-event `_id`s are UI-only React keys; drop them from anything we persist so two scenarios
 // that share a lifecycle plan don't also share (colliding) keys after a decode.
 function stripLifecycleIds(obj) {
@@ -454,19 +456,158 @@ function stripLifecycleIds(obj) {
   return { ...obj, propertyLifecycleEvents: events.map(({ _id, ...rest }) => rest) };
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value != null && typeof value === "object" && !Array.isArray(value);
+}
+
+type ScenarioInputFieldKind =
+  | "number"
+  | "nullableNumber"
+  | "boolean"
+  | "nullableString"
+  | "spendIndex"
+  | "financingKind"
+  | "sleeveWeights"
+  | "lifecycleEvents";
+
+const SCENARIO_INPUT_FIELD_KINDS = {
+  horizonMonths: "number",
+  monthlySpend: "number",
+  spendIndex: "spendIndex",
+  sleeveWeights: "sleeveWeights",
+  cashFloor: "number",
+  cashCeiling: "number",
+  cashBandIndexToInflation: "boolean",
+  peLnwFloor: "number",
+  peIndexFloorToInflation: "boolean",
+  monthlyRent: "number",
+  rentalLocationId: "nullableString",
+  propertyId: "nullableString",
+  livesHere: "boolean",
+  financingKind: "financingKind",
+  downPaymentPct: "number",
+  mortgageTermMonths: "number",
+  annualRatePct: "number",
+  annualInsurancePct: "number",
+  annualMaintenancePct: "number",
+  rentalFullPropertyMonthly: "nullableNumber",
+  rentalFractionRentedPct: "number",
+  rentalVacancyPct: "number",
+  useRentalManagement: "boolean",
+  managementFeePct: "number",
+  leasingFeeMonths: "number",
+  avgTenancyMonths: "number",
+  propertyLifecycleEvents: "lifecycleEvents",
+} satisfies Record<keyof typeof DEFAULT_PRODUCT_INPUT_BASE, ScenarioInputFieldKind>;
+
+const SCENARIO_SPEND_INDEXES = ["none", "inflation"] as const satisfies readonly ProductScenario["spendIndex"][];
+const SCENARIO_FINANCING_KINDS = ["cash", "mortgage"] as const satisfies readonly ProductPropertyFinancing["kind"][];
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function isPositiveInteger(value: unknown): value is number {
+  return isFiniteNumber(value) && Number.isInteger(value) && value > 0;
+}
+
+function parseLifecycleEvent(value: unknown): LifecycleInputEvent | null {
+  if (!isRecord(value) || !isPositiveInteger(value.month)) return null;
+  const month = value.month;
+  switch (value.kind) {
+    case "set_rented_fraction":
+      return isFiniteNumber(value.rentedFractionPct)
+        ? { _id: nextLifecycleEventId(), kind: value.kind, month, rentedFractionPct: value.rentedFractionPct }
+        : null;
+    case "set_primary_residence":
+      return typeof value.livesHere === "boolean"
+        ? { _id: nextLifecycleEventId(), kind: value.kind, month, livesHere: value.livesHere }
+        : null;
+    case "capital_improvement":
+      return isFiniteNumber(value.amount)
+        ? { _id: nextLifecycleEventId(), kind: value.kind, month, amount: value.amount }
+        : null;
+    case "property_sale":
+      return isFiniteNumber(value.closingCostPct)
+        ? { _id: nextLifecycleEventId(), kind: value.kind, month, closingCostPct: value.closingCostPct }
+        : null;
+    default:
+      return null;
+  }
+}
+
+function parseLifecycleEvents(value: unknown): LifecycleInputEvent[] | null {
+  if (!Array.isArray(value)) return null;
+  const events: LifecycleInputEvent[] = [];
+  for (const rawEvent of value) {
+    const event = parseLifecycleEvent(rawEvent);
+    if (event == null) return null;
+    events.push(event);
+  }
+  return events;
+}
+
+function isSleeveWeight(value: unknown): value is ProductSleeveWeight {
+  if (!isRecord(value) || !isFiniteNumber(value.weight) || !Number.isInteger(value.weight) || value.weight < 0) {
+    return false;
+  }
+  if (value.kind === "security") return typeof value.symbol === "string";
+  if (value.kind === "managed_portfolio") return typeof value.portfolioId === "string";
+  return false;
+}
+
+function isScenarioInputFieldValue(kind: ScenarioInputFieldKind, value: unknown): boolean {
+  switch (kind) {
+    case "number":
+      return isFiniteNumber(value);
+    case "nullableNumber":
+      return value == null || isFiniteNumber(value);
+    case "boolean":
+      return typeof value === "boolean";
+    case "nullableString":
+      return value == null || typeof value === "string";
+    case "spendIndex":
+      return SCENARIO_SPEND_INDEXES.some((option) => option === value);
+    case "financingKind":
+      return SCENARIO_FINANCING_KINDS.some((option) => option === value);
+    case "sleeveWeights":
+      return value == null || (Array.isArray(value) && value.every(isSleeveWeight));
+    case "lifecycleEvents":
+      return parseLifecycleEvents(value) != null;
+  }
+}
+
+function parseScenarioInputFields(raw: Record<string, unknown>): Record<string, unknown> | null {
+  const parsed: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    // Older v3 links serialized this shared tab control in the scenario too. The app now owns it
+    // in `?h=`, so accept a well-formed legacy value but keep the current default on the input.
+    if (key === "horizonMonths" && isFiniteNumber(value)) continue;
+    if (!Object.prototype.hasOwnProperty.call(SCENARIO_INPUT_FIELD_KINDS, key)) return null;
+    const kind = SCENARIO_INPUT_FIELD_KINDS[key as keyof typeof SCENARIO_INPUT_FIELD_KINDS];
+    if (kind === "lifecycleEvents") {
+      const events = parseLifecycleEvents(value);
+      if (events == null) return null;
+      parsed[key] = events;
+    } else {
+      if (!isScenarioInputFieldValue(kind, value)) return null;
+      parsed[key] = value;
+    }
+  }
+  return parsed;
+}
+
 function deserializeBaseInput(raw, defaults) {
-  const merged = { ...defaults, ...(raw && typeof raw === "object" ? raw : {}) };
-  merged.propertyLifecycleEvents = regenerateLifecycleIds(raw?.propertyLifecycleEvents);
-  return merged;
+  if (raw != null && !isRecord(raw)) return null;
+  const rawInput = raw == null ? {} : parseScenarioInputFields(raw);
+  if (rawInput == null) return null;
+  return { ...defaults, ...rawInput };
 }
 
 function deserializeOverrides(raw) {
-  if (!raw || typeof raw !== "object") return {};
-  const overrides = { ...raw };
-  if ("propertyLifecycleEvents" in overrides) {
-    overrides.propertyLifecycleEvents = regenerateLifecycleIds(raw.propertyLifecycleEvents);
-  }
-  return overrides;
+  if (raw == null) return {};
+  if (!isRecord(raw)) return null;
+  return parseScenarioInputFields(raw);
 }
 
 // Bump when the `?scenarios=` payload shape changes; an unrecognized version falls back to a
@@ -483,20 +624,27 @@ function decodeScenarioSet(packed, bootstrap) {
     if (error instanceof SyntaxError) return null;
     throw error;
   }
-  if (payload?.v !== SCENARIO_SET_VERSION || !payload.base) return null;
+  if (!isRecord(payload) || payload.v !== SCENARIO_SET_VERSION || !isRecord(payload.base)) return null;
   const defaults = productInputDefaults(bootstrap);
+  const input = deserializeBaseInput(payload.base.input, defaults);
+  if (input == null) return null;
   const base = {
     label: typeof payload.base.label === "string" && payload.base.label !== "" ? payload.base.label : "Base",
-    input: deserializeBaseInput(payload.base.input, defaults),
+    input,
   };
-  const variants = (Array.isArray(payload.variants) ? payload.variants : [])
-    .slice(0, MAX_VARIANTS)
-    .map((raw, index) =>
+  const rawVariants = Array.isArray(payload.variants) ? payload.variants : [];
+  const variants = [];
+  for (const [index, raw] of rawVariants.slice(0, MAX_VARIANTS).entries()) {
+    const variant = isRecord(raw) ? raw : {};
+    const overrides = deserializeOverrides(variant.overrides);
+    if (overrides == null) return null;
+    variants.push(
       makeVariant(
-        typeof raw?.label === "string" && raw.label !== "" ? raw.label : defaultVariantLabel(index),
-        deserializeOverrides(raw?.overrides)
+        typeof variant.label === "string" && variant.label !== "" ? variant.label : defaultVariantLabel(index),
+        overrides
       )
     );
+  }
   return { base, variants, activeId: "base" };
 }
 

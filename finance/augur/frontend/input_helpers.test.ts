@@ -120,6 +120,29 @@ test("a malformed ?scenarios= blob falls back to a base with no variants", () =>
   expect(decoded.base.input.monthlySpend).toBe(productInputDefaults(bootstrap).monthlySpend);
 });
 
+test("a malformed nested lifecycle value rejects the scenario set", () => {
+  const params = new URLSearchParams();
+  params.set(
+    "scenarios",
+    JSON.stringify({
+      v: 3,
+      base: {
+        label: "Edited",
+        input: {
+          monthlySpend: 4200,
+          propertyLifecycleEvents: [{ kind: "property_sale", month: "later", closingCostPct: 6 }],
+        },
+      },
+      variants: [],
+    })
+  );
+
+  const decoded = scenarioSetFromSearch(params.toString(), bootstrap);
+  expect(decoded.base.label).toBe("Base");
+  expect(decoded.base.input.monthlySpend).toBe(productInputDefaults(bootstrap).monthlySpend);
+  expect(decoded.variants).toHaveLength(0);
+});
+
 test("an unrecognized ?scenarios= version falls back to a base with no variants", () => {
   const params = new URLSearchParams();
   params.set("scenarios", JSON.stringify({ v: 999, base: { label: "x", input: {} }, variants: [] }));
