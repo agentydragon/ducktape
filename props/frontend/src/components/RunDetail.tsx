@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@mantine/core";
 import { toast } from "../lib/toast";
 import BackButton from "./BackButton";
@@ -113,75 +113,114 @@ export default function RunDetail({
   const [loadingLogs, setLoadingLogs] = useState(false);
   const [activeLogTab, setActiveLogTab] = useState<LogTab>("llm");
 
-  // Refs keep the lazy-load guard synchronous between the first request and React's next render.
+  // Lazy resources are guarded by run generation so old in-flight work cannot block a new run.
+  const requestControllerRef = useRef(new AbortController());
   const snapshotDetailRef = useRef(snapshotDetail);
   snapshotDetailRef.current = snapshotDetail;
-  const loadingSnapshotRef = useRef(loadingSnapshot);
-  loadingSnapshotRef.current = loadingSnapshot;
-  const loadingLLMRequestsRef = useRef(false);
-  const loadingLogsRef = useRef(false);
+  const loadingSnapshotSignalRef = useRef<AbortSignal | null>(null);
+  const loadingLLMRequestsSignalRef = useRef<AbortSignal | null>(null);
+  const loadingLogsSignalRef = useRef<AbortSignal | null>(null);
 
-  const loadSnapshotData = useCallback(async (criticRun: AgentRunDetail) => {
-    if (getAgentType(criticRun) !== "critic") return;
-
-    const config = criticRun.type_config as CriticTypeConfig;
-    const snapshotSlug = config.example.snapshot_slug;
-
-    loadingSnapshotRef.current = true;
-    setLoadingSnapshot(true);
-    try {
-      // Fetch snapshot detail filtered to this example's recall scope.
-      const exampleKind = config.example.kind;
-      const filesHash = exampleKind === "file_set" ? config.example.files_hash : undefined;
-      const loadedSnapshotDetail = await fetchSnapshotDetail(snapshotSlug, exampleKind, filesHash);
-      setSnapshotDetail(loadedSnapshotDetail);
-
-      // Collect files mentioned in critique issues or ground truth.
-      const allFilePaths = new Set<string>();
-
-      for (const issue of getReportedIssues(criticRun)) {
-        for (const location of issue.occurrences.flatMap((occurrence) => occurrence.locations)) {
-          allFilePaths.add(location.file);
-        }
-      }
-
-      for (const tp of loadedSnapshotDetail.true_positives) {
-        for (const occurrence of tp.occurrences) {
-          for (const location of occurrence.locations) {
-            allFilePaths.add(location.file);
-          }
-        }
-      }
-      for (const fp of loadedSnapshotDetail.false_positives) {
-        for (const occurrence of fp.occurrences) {
-          for (const location of occurrence.locations) {
-            allFilePaths.add(location.file);
-          }
-        }
-      }
-
-      const newContents = new Map<string, FileContentResponse>();
-      if (allFilePaths.size === 0) {
-        setFileContents(newContents);
-        return;
-      }
-
-      const response = await fetchSnapshotFiles(snapshotSlug, Array.from(allFilePaths));
-      for (const content of response.files) {
-        newContents.set(content.path, content);
-      }
-      for (const missingPath of response.missing) {
-        console.error(`Failed to fetch file ${missingPath}: file missing from snapshot`);
-      }
-      setFileContents(newContents);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to load snapshot data";
-      toast.error(message);
-    } finally {
-      loadingSnapshotRef.current = false;
-      setLoadingSnapshot(false);
-    }
+  const isCurrentRequest = useCallback((signal: AbortSignal) => {
+    return signal === requestControllerRef.current.signal && !signal.aborted;
   }, []);
+
+  useLayoutEffect(() => {
+    const controller = new AbortController();
+    requestControllerRef.current = controller;
+    snapshotDetailRef.current = initialSnapshotDetail ?? null;
+    loadingSnapshotSignalRef.current = null;
+    loadingLLMRequestsSignalRef.current = null;
+    loadingLogsSignalRef.current = null;
+
+    setLoad(initialRun ? { status: "loaded", run: initialRun } : { status: "loading" });
+    setSnapshotDetail(initialSnapshotDetail ?? null);
+    setFileContents(new Map(initialFileContents ?? []));
+    setLoadingSnapshot(false);
+    setLlmRequests(initialLLMRequests ?? []);
+    setLoadingLLMRequests(false);
+    setContainerLogs(null);
+    setLoadingLogs(false);
+    setActiveLogTab("llm");
+
+    return () => controller.abort();
+  }, [runId, initialRun, initialSnapshotDetail, initialFileContents, initialLLMRequests]);
+
+  const currentRequest = useCallback(() => requestControllerRef.current.signal, []);
+
+  const loadSnapshotData = useCallback(
+    async (criticRun: AgentRunDetail) => {
+      if (getAgentType(criticRun) !== "critic") return;
+
+      const signal = currentRequest();
+      if (!isCurrentRequest(signal) || loadingSnapshotSignalRef.current === signal) return;
+
+      const config = criticRun.type_config as CriticTypeConfig;
+      const snapshotSlug = config.example.snapshot_slug;
+
+      loadingSnapshotSignalRef.current = signal;
+      setLoadingSnapshot(true);
+      try {
+        // Fetch snapshot detail filtered to this example's recall scope.
+        const exampleKind = config.example.kind;
+        const filesHash = exampleKind === "file_set" ? config.example.files_hash : undefined;
+        const loadedSnapshotDetail = await fetchSnapshotDetail(snapshotSlug, exampleKind, filesHash, signal);
+        if (!isCurrentRequest(signal)) return;
+        setSnapshotDetail(loadedSnapshotDetail);
+
+        // Collect files mentioned in critique issues or ground truth.
+        const allFilePaths = new Set<string>();
+
+        for (const issue of getReportedIssues(criticRun)) {
+          for (const location of issue.occurrences.flatMap((occurrence) => occurrence.locations)) {
+            allFilePaths.add(location.file);
+          }
+        }
+
+        for (const tp of loadedSnapshotDetail.true_positives) {
+          for (const occurrence of tp.occurrences) {
+            for (const location of occurrence.locations) {
+              allFilePaths.add(location.file);
+            }
+          }
+        }
+        for (const fp of loadedSnapshotDetail.false_positives) {
+          for (const occurrence of fp.occurrences) {
+            for (const location of occurrence.locations) {
+              allFilePaths.add(location.file);
+            }
+          }
+        }
+
+        const newContents = new Map<string, FileContentResponse>();
+        if (allFilePaths.size === 0) {
+          setFileContents(newContents);
+          return;
+        }
+
+        const response = await fetchSnapshotFiles(snapshotSlug, Array.from(allFilePaths), signal);
+        if (!isCurrentRequest(signal)) return;
+        for (const content of response.files) {
+          newContents.set(content.path, content);
+        }
+        for (const missingPath of response.missing) {
+          console.error(`Failed to fetch file ${missingPath}: file missing from snapshot`);
+        }
+        setFileContents(newContents);
+      } catch (error) {
+        if (isCurrentRequest(signal)) {
+          const message = error instanceof Error ? error.message : "Failed to load snapshot data";
+          toast.error(message);
+        }
+      } finally {
+        if (isCurrentRequest(signal) && loadingSnapshotSignalRef.current === signal) {
+          loadingSnapshotSignalRef.current = null;
+          setLoadingSnapshot(false);
+        }
+      }
+    },
+    [currentRequest, isCurrentRequest]
+  );
 
   const loadSnapshotDataInBackground = useCallback(
     (criticRun: AgentRunDetail) => {
@@ -190,7 +229,7 @@ export default function RunDetail({
         getAgentType(criticRun) === "critic" &&
         reportedIssues.length > 0 &&
         !snapshotDetailRef.current &&
-        !loadingSnapshotRef.current
+        loadingSnapshotSignalRef.current !== requestControllerRef.current.signal
       ) {
         void loadSnapshotData(criticRun);
       }
@@ -199,50 +238,67 @@ export default function RunDetail({
   );
 
   const loadData = useCallback(async () => {
+    const signal = currentRequest();
+    if (!isCurrentRequest(signal)) return;
     setLoad({ status: "loading" });
     try {
-      const fetchedRun = await fetchRun(runId);
+      const fetchedRun = await fetchRun(runId, signal);
+      if (!isCurrentRequest(signal)) return;
       setLoad({ status: "loaded", run: fetchedRun });
       // Snapshot and file hydration stays in the background so metadata, logs, and LLM requests appear first.
       loadSnapshotDataInBackground(fetchedRun);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to load run";
-      setLoad({ status: "error", message });
-      toast.error(message);
+      if (isCurrentRequest(signal)) {
+        const message = error instanceof Error ? error.message : "Failed to load run";
+        setLoad({ status: "error", message });
+        toast.error(message);
+      }
     }
-  }, [runId, loadSnapshotDataInBackground]);
+  }, [runId, currentRequest, isCurrentRequest, loadSnapshotDataInBackground]);
 
   const loadLLMRequests = useCallback(async () => {
-    if (loadingLLMRequestsRef.current) return;
-    loadingLLMRequestsRef.current = true;
+    const signal = currentRequest();
+    if (!isCurrentRequest(signal) || loadingLLMRequestsSignalRef.current === signal) return;
+    loadingLLMRequestsSignalRef.current = signal;
     setLoadingLLMRequests(true);
     try {
-      const response = await fetchLLMRequests(runId);
+      const response = await fetchLLMRequests(runId, signal);
+      if (!isCurrentRequest(signal)) return;
       setLlmRequests(response.requests);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to load LLM requests";
-      toast.error(message);
+      if (isCurrentRequest(signal)) {
+        const message = error instanceof Error ? error.message : "Failed to load LLM requests";
+        toast.error(message);
+      }
     } finally {
-      loadingLLMRequestsRef.current = false;
-      setLoadingLLMRequests(false);
+      if (isCurrentRequest(signal) && loadingLLMRequestsSignalRef.current === signal) {
+        loadingLLMRequestsSignalRef.current = null;
+        setLoadingLLMRequests(false);
+      }
     }
-  }, [runId]);
+  }, [runId, currentRequest, isCurrentRequest]);
 
   const loadLogs = useCallback(async () => {
-    if (loadingLogsRef.current) return;
-    loadingLogsRef.current = true;
+    const signal = currentRequest();
+    if (!isCurrentRequest(signal) || loadingLogsSignalRef.current === signal) return;
+    loadingLogsSignalRef.current = signal;
     setLoadingLogs(true);
     try {
-      const response = await fetchRunLogs(runId);
+      const response = await fetchRunLogs(runId, signal);
+      if (!isCurrentRequest(signal)) return;
       setContainerLogs(response.logs);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to load logs";
-      toast.error(message);
+      if (isCurrentRequest(signal)) {
+        const message = error instanceof Error ? error.message : "Failed to load logs";
+        toast.error(message);
+      }
     } finally {
-      loadingLogsRef.current = false;
-      setLoadingLogs(false);
+      if (isCurrentRequest(signal) && loadingLogsSignalRef.current === signal) {
+        loadingLogsSignalRef.current = null;
+        setLoadingLogs(false);
+      }
     }
-  }, [runId]);
+  }, [runId, currentRequest, isCurrentRequest]);
 
   useEffect(() => {
     // Seeded visual tests skip all requests; otherwise load run metadata and LLM requests independently.
@@ -250,7 +306,7 @@ export default function RunDetail({
 
     void loadData();
     void loadLLMRequests();
-  }, [initialRun, loadData, loadLLMRequests]);
+  }, [initialRun, initialSnapshotDetail, initialFileContents, initialLLMRequests, loadData, loadLLMRequests]);
 
   return (
     <div className="bg-white dark:bg-gray-900 rounded-lg shadow dark:shadow-gray-950/30">

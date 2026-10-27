@@ -1,5 +1,7 @@
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("//devinfra/js:ts_library.bzl", "ts_library")
+load("//devinfra/js:vitest.bzl", "check_vitest_specs")
+load("//props/frontend:vitest.bzl", "props_vitest_test")
 
 package(default_visibility = [
     "//props/frontend:__pkg__",
@@ -286,6 +288,22 @@ ts_library(
     ],
 )
 
+props_vitest_test(
+    name = "RunDetail_test",
+    srcs = ["RunDetail.test.tsx"],
+    deps = [
+        ":RunDetail",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
+        "//props/frontend/src/lib:client",
+        "//props/frontend/src/lib:toast",
+    ],
+)
+
 ts_library(
     name = "RunTriggerModal",
     srcs = ["RunTriggerModal.tsx"],
@@ -301,3 +319,5 @@ ts_library(
         "//props/frontend/src/lib:types",
     ],
 )
+
+check_vitest_specs()
