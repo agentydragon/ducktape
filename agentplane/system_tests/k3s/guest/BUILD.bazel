@@ -75,12 +75,17 @@ pkg_tar(
     package_dir = "/etc",
 )
 
+pkg_files(
+    name = "root_acpi_file",
+    srcs = ["acpi_poweroff"],
+    attributes = pkg_attributes(mode = "0755"),
+    renames = {"acpi_poweroff": "poweroff"},
+)
+
 pkg_tar(
     name = "root_acpi",
-    srcs = ["acpi_poweroff"],
-    mode = "0755",
+    srcs = [":root_acpi_file"],
     package_dir = "/etc/acpi",
-    remap_paths = {"acpi_poweroff": "poweroff"},
 )
 
 pkg_files(
