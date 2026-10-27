@@ -227,14 +227,43 @@ concern, not proof that GitHub webhook delivery itself is at fault. Diagnose web
 matching, inbox persistence and notice dispatch separately. Do not reopen waived broad provider
 outage/refresh exercises; test the specific recovery contract with controlled missing webhooks.
 
+**Current coverage:** PR mergeability has service-side reconciliation after [#12274](https://github.com/agentydragon/ducktape/pull/12274).
+Active PR subscriptions refresh shared observations on the configured `github.freshness_seconds`
+deadline (600 seconds by default), and settled mergeability changes produce durable, deduplicated
+inbox entries even without another webhook. Access failures and rate-limit backoff can extend that
+interval. Refreshing head associations alone does not synthesize missed CI/check, comment or review
+notices; their broader recovery contract remains the decision below. Intermediate changes that
+revert between reads are not recovered by state polling.
+
+The [2026-10-27 live exercise](../debug/github_mergeability_live_acceptance_20261027.md) also found a
+separate correctness gap: a received base push can be followed by GitHub returning an old definite
+mergeability result, suppressing early retries until periodic repair; the PR response's base SHA can
+lag the actual branch tip. Correcting that existing contract does not wait for the broader recovery decision.
+
 ```mermaid
 flowchart LR
+    GITHUB_MERGEABILITY_FRESHNESS[Ready: fresh post-change mergeability observations]
     GITHUB_NOTICE_RELIABILITY_DESIGN[Decision: eventual-state recovery vs agent fallback]
     GITHUB_NOTIFICATION_RECOVERY[Blocked: selected reconciliation or reminder mechanism]
     GITHUB_SHEPHERD_GUIDANCE[Blocked: after the reliability decision; fallback-check wording]
     GITHUB_NOTICE_RELIABILITY_DESIGN --> GITHUB_NOTIFICATION_RECOVERY
     GITHUB_NOTICE_RELIABILITY_DESIGN --> GITHUB_SHEPHERD_GUIDANCE
 ```
+
+### `GITHUB_MERGEABILITY_FRESHNESS` — handle stale definite GitHub results after a change
+
+**Ready; found in the 2026-10-27 live acceptance exercise.** Ensure a head/base change cannot settle
+monitoring for the ordinary freshness interval merely because GitHub initially returns an old
+non-null answer. Persist the required follow-up across worker restarts, preserve access/error
+backoff and generation fences, and source revision labels from the actual relevant refs rather than
+assuming the PR response's base SHA is the current branch tip. Keep pending/settling observations
+separate from source failures, and do not emit a transition for an obsolete pair of revisions.
+
+Exit: controlled GitHub responses cover a stale definite answer followed by the current answer,
+lagging PR base metadata, duplicate/reordered invalidations and durable follow-up. Repeat the
+bounded base-only conflict/resolution and late-subscriber live exercise with current SHA labels;
+record its actual latency and harness receipt. This repairs the shipped mergeability contract;
+it does not select a broader GitHub replay/reminder mechanism.
 
 ### `GITHUB_NOTICE_RELIABILITY_DESIGN` — delivery guarantee and fallback
 
@@ -276,7 +305,8 @@ asked not just to subscribe to GitHub while waiting (e.g. for CI) but to back th
 a fallback check after N minutes, in case the webhook never delivers. Treat notifications as prompts
 to inspect authoritative current PR state, not evidence that the latest head passed or that silence
 means no progress. Document the chosen fallback deadline/ownership and how an agent notices
-unreliable monitoring. State who runs reminders and that notices do not start a stopped harness.
+unreliable monitoring. State who runs reminders. Notices can start a stopped harness in a running
+Sandbox; a suspended Sandbox requires explicit resume or its configured wake-on-message authority.
 Guidance accompanies the selected reliability behavior; it must not advertise a polling/reminder
 guarantee before that mechanism exists.
 
