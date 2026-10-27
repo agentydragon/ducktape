@@ -275,7 +275,16 @@ func eventIdentityView(event store.EventIdentity) (*notificationspb.EventIdentit
 		return &notificationspb.EventIdentity{Provider: &notificationspb.EventIdentity_GithubMergeability{
 			GithubMergeability: &notificationspb.GitHubMergeabilityEvent{
 				AppId: event.AppID, RepositoryId: event.RepositoryID,
-				PullRequestNumber: event.PullRequestNumber, Sequence: event.Sequence,
+				PullRequestNumber: event.PullRequestNumber,
+				Observation:       &notificationspb.GitHubMergeabilityEvent_Sequence{Sequence: event.Sequence},
+			},
+		}}, nil
+	case store.GitHubMergeabilitySnapshotEvent:
+		return &notificationspb.EventIdentity{Provider: &notificationspb.EventIdentity_GithubMergeability{
+			GithubMergeability: &notificationspb.GitHubMergeabilityEvent{
+				AppId: event.AppID, RepositoryId: event.RepositoryID,
+				PullRequestNumber: event.PullRequestNumber,
+				Observation:       &notificationspb.GitHubMergeabilityEvent_SnapshotVersion{SnapshotVersion: event.Version},
 			},
 		}}, nil
 	case store.MessageEvent:

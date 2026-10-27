@@ -201,8 +201,16 @@ func inboxEntryLine(entry *notificationspb.InboxEntry) string {
 			identity += " " + strconv.Quote(action)
 		}
 	case *notificationspb.EventIdentity_GithubMergeability:
-		identity = fmt.Sprintf("github PR #%d mergeability sequence %d",
-			provider.GithubMergeability.GetPullRequestNumber(), provider.GithubMergeability.GetSequence())
+		switch observation := provider.GithubMergeability.GetObservation().(type) {
+		case *notificationspb.GitHubMergeabilityEvent_Sequence:
+			identity = fmt.Sprintf("github PR #%d mergeability sequence %d",
+				provider.GithubMergeability.GetPullRequestNumber(), observation.Sequence)
+		case *notificationspb.GitHubMergeabilityEvent_SnapshotVersion:
+			identity = fmt.Sprintf("github PR #%d mergeability snapshot version %d",
+				provider.GithubMergeability.GetPullRequestNumber(), observation.SnapshotVersion)
+		default:
+			identity = "unknown event"
+		}
 	case *notificationspb.EventIdentity_Message:
 		sender := provider.Message.GetSender()
 		identity = fmt.Sprintf("message %s from %s/%s", provider.Message.GetMessageId(), sender.GetNamespace(), sender.GetName())

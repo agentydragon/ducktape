@@ -5,6 +5,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -44,10 +45,32 @@ func TestMergeabilitySelectorAndIdentityMapThroughTheAPI(t *testing.T) {
 	}
 	want := &notificationspb.EventIdentity{Provider: &notificationspb.EventIdentity_GithubMergeability{
 		GithubMergeability: &notificationspb.GitHubMergeabilityEvent{
-			AppId: 11, RepositoryId: 22, PullRequestNumber: 7, Sequence: 3,
+			AppId: 11, RepositoryId: 22, PullRequestNumber: 7,
+			Observation: &notificationspb.GitHubMergeabilityEvent_Sequence{Sequence: 3},
 		},
 	}}
 	if !proto.Equal(identity, want) {
 		t.Errorf("identity view = %v, want %v", identity, want)
+	}
+
+	snapshot, err := eventIdentityView(store.GitHubMergeabilitySnapshotEvent{
+		AppID: 11, RepositoryID: 22, PullRequestNumber: 7, Version: 4,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantSnapshot := &notificationspb.EventIdentity{Provider: &notificationspb.EventIdentity_GithubMergeability{
+		GithubMergeability: &notificationspb.GitHubMergeabilityEvent{
+			AppId: 11, RepositoryId: 22, PullRequestNumber: 7,
+			Observation: &notificationspb.GitHubMergeabilityEvent_SnapshotVersion{SnapshotVersion: 4},
+		},
+	}}
+	if !proto.Equal(snapshot, wantSnapshot) {
+		t.Errorf("snapshot identity view = %v, want %v", snapshot, wantSnapshot)
+	}
+
+	var conflicting notificationspb.EventIdentity
+	if err := protojson.Unmarshal([]byte(`{"githubMergeability":{"appId":"11","repositoryId":"22","pullRequestNumber":"7","sequence":"3","snapshotVersion":"4"}}`), &conflicting); err == nil {
+		t.Fatal("decoded a mergeability identity with both observation discriminators")
 	}
 }

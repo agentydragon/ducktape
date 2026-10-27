@@ -89,13 +89,18 @@ func (s *Store) observePullRequest(ctx context.Context, tx *sql.Tx, subject GitH
 		settled = observation.Mergeability
 	}
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO github_pull_request (repository_id, number, base_ref, head_sha, base_sha, state, mergeability, last_settled_mergeability)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		INSERT INTO github_pull_request AS p (repository_id, number, base_ref, head_sha, base_sha, state, mergeability, last_settled_mergeability, observed_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		ON CONFLICT (repository_id, number) DO UPDATE SET base_ref = EXCLUDED.base_ref,
 			head_sha = EXCLUDED.head_sha, base_sha = EXCLUDED.base_sha, state = EXCLUDED.state,
-			mergeability = EXCLUDED.mergeability, last_settled_mergeability = EXCLUDED.last_settled_mergeability`,
+			mergeability = EXCLUDED.mergeability, last_settled_mergeability = EXCLUDED.last_settled_mergeability,
+			observed_at = EXCLUDED.observed_at,
+			snapshot_version = p.snapshot_version + CASE WHEN
+				(p.base_ref, p.head_sha, p.base_sha, p.state, p.mergeability) IS DISTINCT FROM
+				(EXCLUDED.base_ref, EXCLUDED.head_sha, EXCLUDED.base_sha, EXCLUDED.state, EXCLUDED.mergeability)
+				THEN 1 ELSE 0 END`,
 		subject.RepositoryID, number, observation.BaseRef, observation.HeadSHA, observation.BaseSHA,
-		observation.State, observation.Mergeability, settled); err != nil {
+		observation.State, observation.Mergeability, settled, at); err != nil {
 		return err
 	}
 	if pending {
@@ -119,14 +124,9 @@ func (s *Store) observePullRequest(ctx context.Context, tx *sql.Tx, subject GitH
 	if err != nil {
 		return err
 	}
-	var sequence int64
-	if err := tx.QueryRowContext(ctx, `INSERT INTO github_mergeability_event
-		(app_id, installation_id, repository_id, pull_request_number, payload) VALUES ($1, $2, $3, $4, $5::jsonb)
-		RETURNING sequence`, access.AppID, access.InstallationID, subject.RepositoryID, number, string(payload)).Scan(&sequence); err != nil {
-		return err
-	}
-	if _, err := tx.ExecContext(ctx, `UPDATE github_pull_request SET event_sequence = $3 WHERE repository_id = $1 AND number = $2`,
-		subject.RepositoryID, number, sequence); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO github_mergeability_event
+		(app_id, installation_id, repository_id, pull_request_number, payload) VALUES ($1, $2, $3, $4, $5::jsonb)`,
+		access.AppID, access.InstallationID, subject.RepositoryID, number, string(payload)); err != nil {
 		return err
 	}
 	if err := wakeGitHubInboxes(ctx, tx, access.AppID); err != nil {
@@ -135,8 +135,8 @@ func (s *Store) observePullRequest(ctx context.Context, tx *sql.Tx, subject GitH
 	return notify(ctx, tx)
 }
 
-// invalidateMergeability also fences a first observation whose base branch is not known yet. The wakeup
-// already performed by ingress is not enough: a fresh subject would otherwise suppress the API read.
+// invalidateMergeability fences first observations and in-flight reads whose base may have changed.
+// The saved base is authoritative only while no refresh is running; a retarget may race that read.
 func invalidateMergeability(ctx context.Context, tx *sql.Tx, ingest GitHubIngest) error {
 	for _, subject := range ingest.Subjects {
 		switch {
@@ -153,7 +153,8 @@ func invalidateMergeability(ctx context.Context, tx *sql.Tx, ingest GitHubIngest
 				SET generation = generation + 1, last_success_at = NULL,
 					next_attempt = CASE WHEN error IS NOT NULL THEN next_attempt END, claim = NULL, claim_until = NULL
 				WHERE s.repository_id = $1 AND s.kind = 'pull_request' AND (
-					NOT EXISTS (SELECT 1 FROM github_pull_request p WHERE p.repository_id = s.repository_id AND p.number::text = s.subject_key)
+					s.claim IS NOT NULL
+					OR NOT EXISTS (SELECT 1 FROM github_pull_request p WHERE p.repository_id = s.repository_id AND p.number::text = s.subject_key)
 					OR EXISTS (SELECT 1 FROM github_pull_request p WHERE p.repository_id = s.repository_id
 						AND p.number::text = s.subject_key AND p.state = 'OPEN' AND p.base_ref = $2))`,
 				subject.RepositoryID, subject.Key); err != nil {
@@ -195,12 +196,21 @@ func (s *Store) recordMergeability(ctx context.Context, tx *sql.Tx, inboxID uuid
 	if !selected {
 		return 0, false, nil
 	}
-	var currentSequence int64
+	number, err := strconv.ParseInt(recording.Subject.Key, 10, 64)
+	if err != nil {
+		return 0, false, err
+	}
+	var version int64
 	var state GitHubPullRequestState
-	var mergeability GitHubMergeableState
-	err := tx.QueryRowContext(ctx, `SELECT event_sequence, state, mergeability FROM github_pull_request
-		WHERE repository_id = $1 AND number::text = $2`, recording.Subject.RepositoryID, recording.Subject.Key).
-		Scan(&currentSequence, &state, &mergeability)
+	var snapshot mergeabilityPayload
+	snapshot.PullRequestNumber = number
+	snapshot.PreviousMergeability = GitHubMergeabilityUnknown
+	err = tx.QueryRowContext(ctx, `SELECT p.snapshot_version, p.state, p.mergeability,
+		p.base_ref, p.head_sha, p.base_sha, p.observed_at, r.full_name
+		FROM github_pull_request p JOIN github_repository r USING (repository_id)
+		WHERE p.repository_id = $1 AND p.number = $2`, recording.Subject.RepositoryID, number).
+		Scan(&version, &state, &snapshot.Mergeability, &snapshot.BaseRef, &snapshot.HeadSHA,
+			&snapshot.BaseSHA, &snapshot.ObservedAt, &snapshot.Repository)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, false, nil
 	}
@@ -218,12 +228,10 @@ func (s *Store) recordMergeability(ctx context.Context, tx *sql.Tx, inboxID uuid
 	if access == nil {
 		return 0, false, errors.New("mergeability recording needs its repository access")
 	}
-	initialConflict := !initialized && state == GitHubPullRequestOpen && mergeability == GitHubConflicting
 	rows, err := tx.QueryContext(ctx, `SELECT sequence, payload FROM github_mergeability_event
-		WHERE app_id = $1 AND installation_id = $2 AND repository_id = $3 AND pull_request_number::text = $4
-			AND (sequence > $5 OR ($6 AND sequence = $7)) ORDER BY sequence LIMIT $8`,
-		access.AppID, access.InstallationID, recording.Subject.RepositoryID, recording.Subject.Key,
-		after, initialConflict, currentSequence, GitHubDeliveryPageSize)
+		WHERE app_id = $1 AND installation_id = $2 AND repository_id = $3 AND pull_request_number = $4
+			AND sequence > $5 ORDER BY sequence LIMIT $6`,
+		access.AppID, access.InstallationID, recording.Subject.RepositoryID, number, after, GitHubDeliveryPageSize)
 	if err != nil {
 		return 0, false, err
 	}
@@ -243,10 +251,6 @@ func (s *Store) recordMergeability(ctx context.Context, tx *sql.Tx, inboxID uuid
 	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
 		return 0, false, err
 	}
-	number, err := strconv.ParseInt(recording.Subject.Key, 10, 64)
-	if err != nil {
-		return 0, false, err
-	}
 	for _, e := range events {
 		identity := GitHubMergeabilityEvent{AppID: access.AppID, RepositoryID: access.RepositoryID, PullRequestNumber: number, Sequence: e.sequence}
 		if err := s.AppendEvent(ctx, tx, inboxID, recording.SubscriptionID, identity, e.payload); err != nil {
@@ -254,8 +258,22 @@ func (s *Store) recordMergeability(ctx context.Context, tx *sql.Tx, inboxID uuid
 		}
 		after = max(after, e.sequence)
 	}
-	initialized = initialized || state != GitHubPullRequestOpen || mergeability != GitHubMergeabilityUnknown
+	count := len(events)
+	if !initialized && count == 0 && state == GitHubPullRequestOpen && snapshot.Mergeability == GitHubConflicting {
+		payload, err := json.Marshal(snapshot)
+		if err != nil {
+			return 0, false, err
+		}
+		identity := GitHubMergeabilitySnapshotEvent{
+			AppID: access.AppID, RepositoryID: access.RepositoryID, PullRequestNumber: number, Version: version,
+		}
+		if err := s.AppendEvent(ctx, tx, inboxID, recording.SubscriptionID, identity, payload); err != nil {
+			return 0, false, fmt.Errorf("append mergeability snapshot: %w", err)
+		}
+		count++
+	}
+	initialized = initialized || count > 0 || state != GitHubPullRequestOpen || snapshot.Mergeability != GitHubMergeabilityUnknown
 	_, err = tx.ExecContext(ctx, `UPDATE subscription SET github_mergeability_after_sequence = $2,
 		github_mergeability_initialized = $3 WHERE id = $1`, recording.SubscriptionID, after, initialized)
-	return len(events), len(events) == GitHubDeliveryPageSize, err
+	return count, len(events) == GitHubDeliveryPageSize, err
 }

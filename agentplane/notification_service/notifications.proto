@@ -289,8 +289,8 @@ message ActionsSource {
 
 // Activity on one GitHub subject. Webhook events are delivered from the service's GitHub App; generated
 // observations such as mergeability changes are produced by the service. Webhook deliveries from before the
-// subscription was created are not delivered. An initial conflicted mergeability event can use a cached current
-// observation made before creation.
+// subscription was created are not delivered. A subscriber joining an already-conflicted pull request may receive
+// a snapshot of a cached current observation made before creation; this is not replay of transition history.
 message GitHubSource {
   // `owner/name`, at most 200 characters.
   string repository = 1;
@@ -484,8 +484,9 @@ message InboxEntry {
   int64 cursor = 1;
   // Which event this is. One event can match several subscriptions, and is one entry.
   EventIdentity event = 2;
-  // The provider's own JSON for the event: an Action event's `sequence`, `state`, `at` and `actor`, or the full
-  // GitHub webhook body. A message's is what its sender wrote: `body`, and `from_session` when given.
+  // The provider's own JSON for the event: an Action event's `sequence`, `state`, `at` and `actor`, a GitHub
+  // webhook body or generated mergeability observation. A message's is what its sender wrote: `body`, and
+  // `from_session` when given.
   google.protobuf.Struct payload = 3;
   // UUIDs of the subscriptions the event matched; none for a message.
   repeated string subscription_ids = 4;
@@ -518,13 +519,22 @@ message GitHubEvent {
   optional string action = 5;
 }
 
-// One Agentplane-generated mergeability observation, identified by its durable globally increasing sequence
-// rather than a webhook UUID.
+// One Agentplane-generated mergeability observation, identified by exactly one observation discriminator, never
+// by a webhook UUID. A subscriber joining an already-conflicted pull request receives its current snapshot
+// version. Transitions observed after subscription, including the first conflict from UNKNOWN, use the durable
+// globally increasing sequence.
 message GitHubMergeabilityEvent {
   int64 app_id = 1;
   int64 repository_id = 2;
   int64 pull_request_number = 3;
-  int64 sequence = 4;
+  oneof observation {
+    // A durable, globally increasing transition-event sequence, including a first conflict observed after
+    // subscription.
+    int64 sequence = 4;
+    // Version of an already-conflicted snapshot sent to a joining subscriber; increases when relevant state
+    // changes.
+    int64 snapshot_version = 5;
+  }
 }
 
 message MessageEvent {

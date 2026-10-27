@@ -18,17 +18,18 @@ type storedPullRequestObservation struct {
 	state                   GitHubPullRequestState
 	mergeability            GitHubMergeableState
 	lastSettledMergeability GitHubMergeableState
-	eventSequence           int64
+	snapshotVersion         int64
+	observedAt              time.Time
 }
 
 func (g githubFixture) pullRequestObservation(t *testing.T, number int64) storedPullRequestObservation {
 	t.Helper()
 	var observation storedPullRequestObservation
 	if err := g.db.QueryRowContext(t.Context(), `SELECT base_ref, head_sha, base_sha, state, mergeability,
-		last_settled_mergeability, event_sequence
+		last_settled_mergeability, snapshot_version, observed_at
 		FROM github_pull_request WHERE repository_id = $1 AND number = $2`, g.repository, number).Scan(
 		&observation.baseRef, &observation.headSHA, &observation.baseSHA, &observation.state, &observation.mergeability,
-		&observation.lastSettledMergeability, &observation.eventSequence,
+		&observation.lastSettledMergeability, &observation.snapshotVersion, &observation.observedAt,
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -102,6 +103,17 @@ func mergeabilityEntries(t *testing.T, g githubFixture) []Entry {
 	return entries
 }
 
+func mergeabilitySnapshotEntries(t *testing.T, g githubFixture, inboxID uuid.UUID) []Entry {
+	t.Helper()
+	var entries []Entry
+	for _, entry := range g.read(t, inboxID, 0).Entries {
+		if _, ok := entry.Event.(GitHubMergeabilitySnapshotEvent); ok {
+			entries = append(entries, entry)
+		}
+	}
+	return entries
+}
+
 func sequencesForSubscription(t *testing.T, entries []Entry, subscription uuid.UUID) []int64 {
 	t.Helper()
 	var sequences []int64
@@ -116,6 +128,13 @@ func sequencesForSubscription(t *testing.T, entries []Entry, subscription uuid.U
 		sequences = append(sequences, event.Sequence)
 	}
 	return sequences
+}
+
+func (g githubFixture) reconcileSubscription(t *testing.T, sub githubSubscription) {
+	t.Helper()
+	if err := g.reconcile(t, g.claimInbox(t, sub.InboxID), sub); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestPendingMergeabilityRetrySurvivesStateReconstructionAndKeepsLastResult(t *testing.T) {
@@ -137,7 +156,7 @@ func TestPendingMergeabilityRetrySurvivesStateReconstructionAndKeepsLastResult(t
 	stored := g.pullRequestObservation(t, 7)
 	if stored.baseRef != "main" || stored.headSHA != commitC || stored.baseSHA != commitB ||
 		stored.state != GitHubPullRequestOpen || stored.mergeability != GitHubMergeabilityUnknown ||
-		stored.lastSettledMergeability != GitHubConflicting || stored.eventSequence != firstSequence[0] {
+		stored.lastSettledMergeability != GitHubConflicting || stored.snapshotVersion != 2 {
 		t.Errorf("pending observation = %+v, want updated revisions, UNKNOWN state, preserved conflict and sequence", stored)
 	}
 
@@ -262,30 +281,128 @@ func TestMergeabilityTransitionsUseDefaultFiltersAndDeduplicateSubscribers(t *te
 	}
 }
 
-func TestNewSubscriberToCachedConflictGetsOnlyTheCurrentConflict(t *testing.T) {
+func TestLateSubscriberGetsCurrentConflictSnapshotAfterHeadChanges(t *testing.T) {
 	g := newGitHubFixture(t)
 	seed := g.follow(t, g.source(PullRequestSubject{Number: 7}), "seed")
-	for _, observation := range []GitHubPullRequestObservation{
-		{BaseRef: "main", HeadSHA: commitA, BaseSHA: commitB, State: GitHubPullRequestOpen, Mergeability: GitHubConflicting},
-		{BaseRef: "main", HeadSHA: commitB, BaseSHA: commitB, State: GitHubPullRequestOpen, Mergeability: GitHubMergeable},
-		{BaseRef: "main", HeadSHA: commitC, BaseSHA: commitB, State: GitHubPullRequestOpen, Mergeability: GitHubConflicting},
-	} {
-		g.observePullRequest(t, seed, observation)
-		g.reconcileAll(t, seed)
+	g.observePullRequest(t, seed, GitHubPullRequestObservation{
+		BaseRef: "main", HeadSHA: commitA, BaseSHA: commitB,
+		State: GitHubPullRequestOpen, Mergeability: GitHubConflicting,
+	})
+	g.reconcileAll(t, seed)
+	oldVersion := g.pullRequestObservation(t, 7).snapshotVersion
+	g.observePullRequest(t, seed, GitHubPullRequestObservation{
+		BaseRef: "main", HeadSHA: commitC, BaseSHA: commitB,
+		State: GitHubPullRequestOpen, Mergeability: GitHubConflicting,
+	})
+	current := g.pullRequestObservation(t, 7)
+	if current.snapshotVersion != oldVersion+1 || current.headSHA != commitC {
+		t.Fatalf("current snapshot = %+v, want a new version for head %s", current, commitC)
 	}
-	allSequences := g.mergeabilitySequences(t, 7)
-	if len(allSequences) != 3 {
-		t.Fatalf("seed transition sequences = %v, want three", allSequences)
+	if got := g.mergeabilitySequences(t, 7); len(got) != 1 {
+		t.Fatalf("same conflict at a new head generated transition sequences %v, want only the original conflict", got)
 	}
 
-	newSubscriber := g.follow(t, g.source(PullRequestSubject{Number: 7}), "late-subscriber")
-	g.reconcileAll(t, newSubscriber)
-	entries := mergeabilityEntries(t, g)
-	if got := sequencesForSubscription(t, entries, seed.ID); !slices.Equal(got, allSequences) {
-		t.Errorf("seed received sequences %v, want %v", got, allSequences)
+	destination := g.destination
+	destination.Name = "late-subscriber"
+	newSubscriber := g.followIn(t, destination, g.source(PullRequestSubject{Number: 7}), "late-subscriber")
+	g.reconcileSubscription(t, newSubscriber)
+	allEntries := g.read(t, newSubscriber.InboxID, 0).Entries
+	if len(allEntries) != 1 {
+		t.Fatalf("new subscriber received %d total entries, want only the current snapshot", len(allEntries))
 	}
-	if got := sequencesForSubscription(t, entries, newSubscriber.ID); !slices.Equal(got, []int64{allSequences[2]}) {
-		t.Errorf("new subscriber received sequences %v, want only current conflict %d", got, allSequences[2])
+	entries := mergeabilitySnapshotEntries(t, g, newSubscriber.InboxID)
+	if len(entries) != 1 {
+		t.Fatalf("new subscriber snapshot entries = %v, want one current conflict snapshot", entries)
+	}
+	event, ok := entries[0].Event.(GitHubMergeabilitySnapshotEvent)
+	if !ok || event.Version != current.snapshotVersion || event.AppID != g.app || event.RepositoryID != g.repository || event.PullRequestNumber != 7 {
+		t.Errorf("snapshot event = %#v, want current snapshot version %d", entries[0].Event, current.snapshotVersion)
+	}
+	var payload struct {
+		HeadSHA      string               `json:"headSha"`
+		Mergeability GitHubMergeableState `json:"mergeability"`
+	}
+	if err := json.Unmarshal(entries[0].Payload, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.HeadSHA != commitC || payload.Mergeability != GitHubConflicting {
+		t.Errorf("current conflict payload = head %s / %s, want head %s / CONFLICTING", payload.HeadSHA, payload.Mergeability, commitC)
+	}
+	if got := sequencesForSubscription(t, mergeabilityEntries(t, g), newSubscriber.ID); len(got) != 0 {
+		t.Errorf("late subscriber replayed transition history %v", got)
+	}
+}
+
+func TestNewInstallationGetsInitialConflictSnapshot(t *testing.T) {
+	g := newGitHubFixture(t)
+	seed := g.follow(t, g.source(PullRequestSubject{Number: 7}), "seed")
+	observation := GitHubPullRequestObservation{
+		BaseRef: "main", HeadSHA: commitA, BaseSHA: commitB,
+		State: GitHubPullRequestOpen, Mergeability: GitHubConflicting,
+	}
+	g.observePullRequest(t, seed, observation)
+	g.reconcileAll(t, seed)
+	version := g.pullRequestObservation(t, 7).snapshotVersion
+
+	// A new installation identity gets its own access fence and must observe the current conflict.
+	g.installation += 100
+	destination := g.destination
+	destination.Name = "new-installation-subscriber"
+	recreated := g.followIn(t, destination, g.source(PullRequestSubject{Number: 7}), "recreated")
+	g.observePullRequest(t, recreated, observation)
+	g.reconcileSubscription(t, recreated)
+	if got := len(g.read(t, recreated.InboxID, 0).Entries); got != 1 {
+		t.Fatalf("new installation received %d total entries, want only the current snapshot", got)
+	}
+	entries := mergeabilitySnapshotEntries(t, g, recreated.InboxID)
+	if len(entries) != 1 {
+		t.Fatalf("new installation snapshot entries = %v, want one", entries)
+	}
+	event, ok := entries[0].Event.(GitHubMergeabilitySnapshotEvent)
+	if !ok || event.Version != version {
+		t.Errorf("new installation snapshot event = %#v, want shared current version %d", entries[0].Event, version)
+	}
+}
+
+func TestIdenticalObservationKeepsSnapshotVersionAndOverlappingSubscribersDeduplicate(t *testing.T) {
+	g := newGitHubFixture(t)
+	seed := g.follow(t, g.source(PullRequestSubject{Number: 7}), "seed")
+	observation := GitHubPullRequestObservation{
+		BaseRef: "main", HeadSHA: commitA, BaseSHA: commitB,
+		State: GitHubPullRequestOpen, Mergeability: GitHubConflicting,
+	}
+	g.observePullRequest(t, seed, observation)
+	g.reconcileAll(t, seed)
+	before := g.pullRequestObservation(t, 7)
+
+	first := g.follow(t, g.source(PullRequestSubject{Number: 7}), "late-overlap-one")
+	second := g.follow(t, g.source(PullRequestSubject{Number: 7}), "late-overlap-two")
+	// Age the stored timestamp so the next identical API read proves observed_at is refreshed.
+	g.exec(t, `UPDATE github_pull_request SET observed_at = now() - interval '1 hour'
+		WHERE repository_id = $1 AND number = 7`, g.repository)
+	g.observePullRequest(t, first, observation)
+	after := g.pullRequestObservation(t, 7)
+	if after.snapshotVersion != before.snapshotVersion {
+		t.Errorf("identical settled observation version = %d, want unchanged version %d", after.snapshotVersion, before.snapshotVersion)
+	}
+	if !after.observedAt.After(before.observedAt) {
+		t.Errorf("identical settled observation observed_at = %v, want later than %v", after.observedAt, before.observedAt)
+	}
+	if got := g.mergeabilitySequences(t, 7); len(got) != 1 {
+		t.Errorf("identical settled observation transition history = %v, want only the initial conflict", got)
+	}
+
+	g.reconcileAll(t, first, second)
+	entries := mergeabilitySnapshotEntries(t, g, g.inbox)
+	if len(entries) != 1 {
+		t.Fatalf("overlapping initial snapshot entries = %v, want one deduplicated entry", entries)
+	}
+	if want := sortedIDs(first.ID, second.ID); !slices.Equal(entries[0].SubscriptionIDs, want) {
+		t.Errorf("snapshot subscription IDs = %v, want %v", entries[0].SubscriptionIDs, want)
+	}
+	event, ok := entries[0].Event.(GitHubMergeabilitySnapshotEvent)
+	if !ok || event.Version != before.snapshotVersion {
+		t.Errorf("deduplicated snapshot identity = %#v, want version %d", entries[0].Event, before.snapshotVersion)
 	}
 }
 
@@ -373,6 +490,38 @@ func TestBaseBranchPushPreservesPullRequestRefreshFailureBackoff(t *testing.T) {
 	}
 }
 
+func TestRetargetedPullRequestBasePushFencesInFlightRefresh(t *testing.T) {
+	g := newGitHubFixture(t)
+	sub := g.follow(t, g.source(PullRequestSubject{Number: 7}), "follow")
+	g.observePullRequest(t, sub, GitHubPullRequestObservation{
+		BaseRef: "main", HeadSHA: commitA, BaseSHA: commitB,
+		State: GitHubPullRequestOpen, Mergeability: GitHubMergeable,
+	})
+	// The PR webhook schedules a refresh, but the saved snapshot still names main.
+	g.deliver(t, "pull_request", onPullRequest(7), action("edited"))
+	lease, err := g.state.Acquire(t.Context(), sub.Subject)
+	if err != nil || lease == nil {
+		t.Fatalf("retarget refresh lease = %v, %v", lease, err)
+	}
+	// A release push arrives while the API read is in flight and the read discovers the retarget.
+	g.deliver(t, "push", onBranch("release"), atCommit(commitC))
+	err = g.state.Succeed(t.Context(), *lease, GitHubSuccess{
+		Fences: []GitHubAccessFence{g.validate(t, g.access())},
+		PullRequest: &GitHubPullRequestObservation{
+			BaseRef: "release", HeadSHA: commitA, BaseSHA: commitB,
+			State: GitHubPullRequestOpen, Mergeability: GitHubMergeable,
+		},
+	})
+	var deferred *RefreshDeferredError
+	if !errors.As(err, &deferred) {
+		t.Fatalf("stale result for retargeted base was accepted: error=%v; want a fenced refresh", err)
+	}
+	stored := g.pullRequestObservation(t, 7)
+	if stored.baseRef != "main" || stored.snapshotVersion != 1 {
+		t.Errorf("stale retargeted result changed snapshot: %+v", stored)
+	}
+}
+
 func TestUnrelatedBranchPushDoesNotInvalidatePullRequestRefresh(t *testing.T) {
 	g := newGitHubFixture(t)
 	sub := g.follow(t, g.source(PullRequestSubject{Number: 7}), "follow")
@@ -413,7 +562,7 @@ func TestTerminalPullRequestsDoNotEmitMergeabilityEventsOrRetry(t *testing.T) {
 			})
 			stored := g.pullRequestObservation(t, 7)
 			if stored.state != terminal.state || stored.mergeability != GitHubMergeabilityUnknown ||
-				stored.lastSettledMergeability != GitHubMergeabilityUnknown || stored.eventSequence != 0 {
+				stored.lastSettledMergeability != GitHubMergeabilityUnknown || stored.snapshotVersion != 1 {
 				t.Errorf("initial terminal observation = %+v, want persisted %s state with no settled result or event", stored, terminal.state)
 			}
 			if retry := g.pullRequestRetryAt(t, sub); retry.Valid {
@@ -452,7 +601,7 @@ func TestTerminalPullRequestsDoNotEmitMergeabilityEventsOrRetry(t *testing.T) {
 			})
 			stored := g.pullRequestObservation(t, 7)
 			if stored.state != terminal.state || stored.mergeability != GitHubMergeabilityUnknown ||
-				stored.lastSettledMergeability != GitHubConflicting || stored.eventSequence != openSequences[0] {
+				stored.lastSettledMergeability != GitHubConflicting || stored.snapshotVersion != 3 {
 				t.Errorf("terminal transition observation = %+v, want %s, UNKNOWN and retained conflict", stored, terminal.state)
 			}
 			if retry := g.pullRequestRetryAt(t, sub); retry.Valid {

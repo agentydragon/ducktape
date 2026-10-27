@@ -267,11 +267,24 @@ func TestMergeabilityEventFilterHasNoActionsAndInboxSummaryNamesItsPullRequest(t
 	line := inboxEntryLine(&notificationspb.InboxEntry{
 		Cursor: 5,
 		Event: &notificationspb.EventIdentity{Provider: &notificationspb.EventIdentity_GithubMergeability{
-			GithubMergeability: &notificationspb.GitHubMergeabilityEvent{PullRequestNumber: 7, Sequence: 3},
+			GithubMergeability: &notificationspb.GitHubMergeabilityEvent{
+				PullRequestNumber: 7, Observation: &notificationspb.GitHubMergeabilityEvent_Sequence{Sequence: 3},
+			},
 		}},
 	})
 	if want := "entry 5  github PR #7 mergeability sequence 3"; line != want {
 		t.Errorf("summary = %q, want %q", line, want)
+	}
+	snapshot := inboxEntryLine(&notificationspb.InboxEntry{
+		Cursor: 6,
+		Event: &notificationspb.EventIdentity{Provider: &notificationspb.EventIdentity_GithubMergeability{
+			GithubMergeability: &notificationspb.GitHubMergeabilityEvent{
+				PullRequestNumber: 7, Observation: &notificationspb.GitHubMergeabilityEvent_SnapshotVersion{SnapshotVersion: 4},
+			},
+		}},
+	})
+	if want := "entry 6  github PR #7 mergeability snapshot version 4"; snapshot != want {
+		t.Errorf("snapshot summary = %q, want %q", snapshot, want)
 	}
 }
 

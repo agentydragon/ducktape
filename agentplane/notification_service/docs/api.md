@@ -69,15 +69,19 @@ event can match multiple subscriptions. Payload content remains provider-defined
 
 Pull-request subscriptions include the Agentplane-generated `mergeability_changed` selector by
 default. Selecting it explicitly replaces the defaults and accepts no `actions` filter. The service
-records an initial observation only when the pull request is conflicted, then records later changes
-to either mergeable or conflicted; it creates no inbox entry while the result is pending. The first
-conflicted event may use a cached current observation made before subscription creation, so its
-`observedAt` can predate the subscription. The service
-monitors both the pull-request head and base, and retries pending mergeability checks, so an agent can
-end its turn after confirming the subscription and reading current state. These entries use
-`event.githubMergeability` with `appId`, `repositoryId`, `pullRequestNumber`, and a durable globally
-increasing `sequence`, not a GitHub webhook delivery UUID. Their payload uses camelCase fields
-`repository`, `pullRequestNumber`, `baseRef`, `headSha`, `baseSha`, `previousMergeability` (`UNKNOWN` for the initial observation), `mergeability` (`MERGEABLE` or `CONFLICTING`), and `observedAt` (timestamp).
+records mergeability observations when the pull request is conflicted and later changes to either
+mergeable or conflicted; it creates no inbox entry while the result is pending. A subscriber joining a
+PR that is already conflicted receives a snapshot of current state, which may use a cached observation
+made before subscription creation, so its `observedAt` can predate the subscription. A conflict
+observed after subscription is a transition, including the first transition from unknown. The service
+monitors both the pull-request head and base,
+and retries pending mergeability checks, so an agent can end its turn after confirming the subscription
+and reading current state. Both snapshots and transitions use `event.githubMergeability` with `appId`,
+`repositoryId`, and `pullRequestNumber`; its `observation` oneof contains `snapshotVersion` for a
+current conflicted snapshot sent to a joining subscriber or `sequence` for a transition observed after
+subscription. A snapshot version increases when relevant current state changes; transition sequences
+are durable and globally increasing. Neither is a GitHub webhook delivery UUID. Payloads use camelCase fields
+`repository`, `pullRequestNumber`, `baseRef`, `headSha`, `baseSha`, `previousMergeability` (`UNKNOWN` for an initial snapshot or a first observed transition from unknown), `mergeability` (`MERGEABLE` or `CONFLICTING`), and `observedAt` (timestamp).
 
 A `source` with neither field set is rejected as `INVALID_ARGUMENT`. A service without the GitHub App refuses
 a `github` source with `PERMISSION_DENIED`; no route lists enabled providers. Inbox cursors,

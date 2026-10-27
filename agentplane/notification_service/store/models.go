@@ -111,7 +111,7 @@ type EventFilter struct {
 }
 
 // EventIdentity names an entry's event within its source, which is how a redelivery is told from a new event:
-// an ActionsEvent, a GitHubEvent, a GitHubMergeabilityEvent or a MessageEvent.
+// an ActionsEvent, a GitHubEvent, a GitHubMergeabilityEvent, a GitHubMergeabilitySnapshotEvent or a MessageEvent.
 type EventIdentity interface{ isEventIdentity() }
 
 type ActionsEvent struct {
@@ -136,16 +136,26 @@ type GitHubMergeabilityEvent struct {
 	Sequence          int64
 }
 
+// GitHubMergeabilitySnapshotEvent identifies a current conflicted snapshot sent to a joining subscriber. Version
+// changes when the snapshot's relevant state changes.
+type GitHubMergeabilitySnapshotEvent struct {
+	AppID             int64
+	RepositoryID      int64
+	PullRequestNumber int64
+	Version           int64
+}
+
 // MessageEvent is a message a workload sent to the inbox, with the sender the service authenticated.
 type MessageEvent struct {
 	MessageID uuid.UUID
 	Sender    ServiceAccount
 }
 
-func (ActionsEvent) isEventIdentity()            {}
-func (GitHubEvent) isEventIdentity()             {}
-func (GitHubMergeabilityEvent) isEventIdentity() {}
-func (MessageEvent) isEventIdentity()            {}
+func (ActionsEvent) isEventIdentity()                    {}
+func (GitHubEvent) isEventIdentity()                     {}
+func (GitHubMergeabilityEvent) isEventIdentity()         {}
+func (GitHubMergeabilitySnapshotEvent) isEventIdentity() {}
+func (MessageEvent) isEventIdentity()                    {}
 
 var (
 	repositoryPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
@@ -470,6 +480,16 @@ func (e GitHubMergeabilityEvent) MarshalJSON() ([]byte, error) {
 	}{"github_mergeability", e.AppID, e.RepositoryID, e.PullRequestNumber, e.Sequence})
 }
 
+func (e GitHubMergeabilitySnapshotEvent) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		Provider          string `json:"provider"`
+		AppID             int64  `json:"app_id"`
+		RepositoryID      int64  `json:"repository_id"`
+		PullRequestNumber int64  `json:"pull_request_number"`
+		SnapshotVersion   int64  `json:"snapshot_version"`
+	}{"github_mergeability_snapshot", e.AppID, e.RepositoryID, e.PullRequestNumber, e.Version})
+}
+
 type serviceAccountJSON struct {
 	Namespace string `json:"namespace"`
 	Name      string `json:"name"`
@@ -714,6 +734,29 @@ func DecodeEventIdentity(data []byte) (EventIdentity, error) {
 		return GitHubMergeabilityEvent{
 			AppID: *wire.AppID, RepositoryID: *wire.RepositoryID,
 			PullRequestNumber: *wire.PullRequestNumber, Sequence: *wire.Sequence,
+		}, nil
+	case "github_mergeability_snapshot":
+		var wire struct {
+			Provider          string `json:"provider"`
+			AppID             *int64 `json:"app_id"`
+			RepositoryID      *int64 `json:"repository_id"`
+			PullRequestNumber *int64 `json:"pull_request_number"`
+			SnapshotVersion   *int64 `json:"snapshot_version"`
+		}
+		if err := decode(data, &wire); err != nil {
+			return nil, err
+		}
+		if err := errors.Join(
+			required("app_id", wire.AppID != nil),
+			required("repository_id", wire.RepositoryID != nil),
+			required("pull_request_number", wire.PullRequestNumber != nil),
+			required("snapshot_version", wire.SnapshotVersion != nil),
+		); err != nil {
+			return nil, err
+		}
+		return GitHubMergeabilitySnapshotEvent{
+			AppID: *wire.AppID, RepositoryID: *wire.RepositoryID,
+			PullRequestNumber: *wire.PullRequestNumber, Version: *wire.SnapshotVersion,
 		}, nil
 	case "message":
 		var wire struct {

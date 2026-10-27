@@ -55,6 +55,7 @@ go_test(
         "github_integration_test.go",
         "github_matching_integration_test.go",
         "github_mergeability_integration_test.go",
+        "github_mergeability_retention_integration_test.go",
         "github_reconcile_integration_test.go",
         "github_record_integration_test.go",
         "github_state_integration_test.go",

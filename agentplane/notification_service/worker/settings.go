@@ -10,7 +10,8 @@ import (
 // Settings are the worker's tunables, as the service's settings file holds them: the service's config embeds
 // this struct under the keys its mapstructure tags name.
 type Settings struct {
-	// GitHubDeliveryRetentionDays bounds raw receipt replay and delivery-ID deduplication; nil retains receipts indefinitely.
+	// GitHubDeliveryRetentionDays bounds raw receipts and generated mergeability history; nil retains both
+	// indefinitely.
 	GitHubDeliveryRetentionDays *int           `mapstructure:"github_delivery_retention_days"`
 	NoticeDebounce              NoticeDebounce `mapstructure:"notice_debounce"`
 	// StaleInboxConfirmationSeconds is the wait between the first lookup that finds an inbox's Sandbox gone or

@@ -28,9 +28,12 @@ Acknowledgement may already have advanced and entries newer than the coverage sn
    identity in `event`, the `subscriptionIds` it matched, and retained provider content in
    `payload`. An Action event is `event.actions` with `requestId` and `sequence`; that sequence is
    separate from the inbox cursor. A GitHub webhook event is `event.github`. An Agentplane-generated
-   pull-request mergeability observation is `event.githubMergeability`, with the PR number and its
-   durable globally increasing sequence and no webhook delivery ID. Its payload describes the observed base and head SHAs,
-   mergeable state, and observation time. A message from another agent is `event.message`, with
+   pull-request mergeability observation is `event.githubMergeability`, with the PR number and an
+   `observation` oneof: `snapshotVersion` identifies a current conflicted snapshot sent to a joining
+   subscriber; `sequence` identifies a transition observed after subscription, including a first
+   conflict from unknown. Transition sequences are durable and globally increasing. Neither has a
+   webhook delivery ID. Its payload describes the observed base and head SHAs, mergeability
+   state, and observation time. A message from another agent is `event.message`, with
    `messageId` and the `sender` ServiceAccount the service authenticated, and no `subscriptionIds`; its
    `payload` is the `body` and, when the sender gave one, `from_session`, an unverified label for the
    Session it wrote from. Reply only through a send of your own

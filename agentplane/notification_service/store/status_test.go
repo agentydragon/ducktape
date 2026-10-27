@@ -128,6 +128,12 @@ func TestEntriesAreSummarizedByTheirLifecycleFieldsOnly(t *testing.T) {
 			"GitHub PR #7 mergeability · sequence 3",
 		},
 		{
+			"an initial mergeability snapshot shows its pull request and version",
+			GitHubMergeabilitySnapshotEvent{AppID: 11, RepositoryID: 22, PullRequestNumber: 7, Version: 4},
+			`{"mergeability": "CONFLICTING"}`,
+			"GitHub PR #7 mergeability snapshot · version 4",
+		},
+		{
 			"a check run's conclusion",
 			GitHubEvent{Event: EventCheckRun, Action: action("completed")},
 			`{"check_run": {"conclusion": "failure", "output": "private"}}`,
@@ -166,10 +172,11 @@ func TestEntriesAreSummarizedByTheirLifecycleFieldsOnly(t *testing.T) {
 
 func TestAnEntrySaysWhichKindOfSourceItCameFrom(t *testing.T) {
 	for event, want := range map[EventIdentity]EntryProvider{
-		ActionsEvent{RequestID: uuid.New(), Sequence: 1}:           EntryFromActions,
-		GitHubEvent{Event: EventPush}:                              EntryFromGitHub,
-		GitHubMergeabilityEvent{PullRequestNumber: 7, Sequence: 1}: EntryFromGitHub,
-		MessageEvent{MessageID: uuid.New()}:                        EntryFromMessage,
+		ActionsEvent{RequestID: uuid.New(), Sequence: 1}:                  EntryFromActions,
+		GitHubEvent{Event: EventPush}:                                     EntryFromGitHub,
+		GitHubMergeabilityEvent{PullRequestNumber: 7, Sequence: 1}:        EntryFromGitHub,
+		GitHubMergeabilitySnapshotEvent{PullRequestNumber: 7, Version: 1}: EntryFromGitHub,
+		MessageEvent{MessageID: uuid.New()}:                               EntryFromMessage,
 	} {
 		got, err := summarize(1, event, []byte(`{}`), time.Time{})
 		if err != nil {

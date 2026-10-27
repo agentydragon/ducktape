@@ -61,6 +61,24 @@ func TestAMergeabilityObservationIdentityIsReadBackWithoutAWebhookDeliveryID(t *
 	}
 }
 
+func TestAMergeabilitySnapshotIdentityUsesItsOwnProviderAndVersion(t *testing.T) {
+	sent := GitHubMergeabilitySnapshotEvent{AppID: 11, RepositoryID: 22, PullRequestNumber: 7, Version: 4}
+	stored, err := json.Marshal(sent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"provider":"github_mergeability_snapshot","app_id":11,"repository_id":22,"pull_request_number":7,"snapshot_version":4}`
+	requireEqual(t, string(stored), want)
+	read, err := DecodeEventIdentity(stored)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireEqual(t, read, EventIdentity(sent))
+	if _, err := DecodeEventIdentity([]byte(`{"provider":"github_mergeability_snapshot","app_id":11,"repository_id":22,"pull_request_number":7}`)); err == nil {
+		t.Fatal("decoded a snapshot identity without its version")
+	}
+}
+
 func TestMergeabilityChangedIsAPullRequestOnlyActionlessSelector(t *testing.T) {
 	pr := GitHubSource{Repository: "test-owner/test-repo", Subject: PullRequestSubject{Number: 7}}
 	for _, subject := range []GitHubSubject{PullRequestSubject{Number: 7}} {
