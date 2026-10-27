@@ -8,6 +8,7 @@ import type {
   TransactionPeriodId,
   TransactionsView,
 } from "./types";
+import { decodeSpendConfiguration, decodeSpendTransactions, decodeSpendView } from "./wire";
 
 export function useSpendData({
   activeTab,
@@ -41,7 +42,7 @@ export function useSpendData({
     events.addEventListener("view", (event) => {
       try {
         if (mounted) {
-          const snapshot: SpendView = JSON.parse(event.data);
+          const snapshot = decodeSpendView(event.data);
           authProbe?.abort();
           setView(snapshot);
           setError(null);
@@ -49,7 +50,10 @@ export function useSpendData({
           setViewRevision((revision) => revision + 1);
         }
       } catch (cause) {
-        if (mounted) setError(cause instanceof Error ? cause.message : "Could not read live update");
+        if (mounted) {
+          setConnectionState("Invalid update");
+          setError(cause instanceof Error ? cause.message : "Could not read live update");
+        }
       }
     });
     events.onopen = () => {
@@ -111,7 +115,7 @@ export function useSpendData({
           return;
         }
         if (!response.ok) throw new Error(`Configuration request returned ${response.status}`);
-        const data: SpendConfiguration = await response.json();
+        const data = decodeSpendConfiguration(await response.text());
         if (mounted) setConfiguration(data);
       } catch (cause) {
         if (mounted) setConfigurationError(cause instanceof Error ? cause.message : "Configuration request failed");
@@ -143,7 +147,7 @@ export function useSpendData({
           return;
         }
         if (!response.ok) throw new Error(`Transactions request returned ${response.status}`);
-        const data: TransactionsView = await response.json();
+        const data = decodeSpendTransactions(await response.text());
         if (!controller.signal.aborted) setTransactions(data);
       } catch (cause) {
         if (!controller.signal.aborted) {
