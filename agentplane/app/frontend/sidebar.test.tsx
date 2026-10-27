@@ -6,7 +6,7 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import type { SandboxView, ThreadView } from "./client";
-import { RoutedThreadsLiveProvider, type ThreadsSnapshot } from "./live";
+import { RoutedThreadsLiveProvider, type ThreadsSnapshot } from "./threads/live";
 import { Sidebar } from "./sidebar";
 import { scrollCapture } from "./threads/scroll_diagnostics";
 import { ConnectionIndicator, DEGRADED_AFTER_MS } from "./stream_status";

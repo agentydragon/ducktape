@@ -11,7 +11,7 @@ owns local delivery, retries, and command outcome presentation. `thread_sync.ts`
 defines the view-facing contract, and `electric_sync.tsx` implements it with
 Electric. `thread_cards.tsx` renders bodies and cards, while `thread_evidence.tsx`
 owns their lazy evidence paging. History rows, local commands, disclosures, Thread
-status, title, and chronological debug belong to this feature. The shared sidebar
+status, title, chronological debug, and the shell's shared Thread listing stream belong to this feature. The shared sidebar
 shell, API client, Sandbox status model, and generic rendering components stay in
 the parent frontend package.
 

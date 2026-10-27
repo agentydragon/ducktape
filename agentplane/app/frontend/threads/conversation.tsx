@@ -16,7 +16,7 @@ import {
 } from "../client";
 import { decimalBigInt, useThreadSync, type ThreadEntity, type ThreadWindow } from "./thread_sync";
 import { historyRows } from "./history_rows";
-import { useRequiredThreadsLive } from "../live";
+import { useRequiredThreadsLive } from "./live";
 import { useOptionalStreamStatus } from "../stream_status";
 import { RetainedDisclosureProvider } from "./retained_disclosures";
 import { pendingSentMessage } from "./thread_cards";

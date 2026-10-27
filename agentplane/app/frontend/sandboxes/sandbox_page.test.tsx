@@ -16,7 +16,8 @@ import {
 } from "../client";
 import { LANGFUSE_SEARCH_SETTINGS } from "../langfuse_search_fixture";
 import type * as LiveModule from "../live";
-import type { Live, SandboxSnapshot } from "../live";
+import type { Live } from "../live";
+import type { SandboxSnapshot } from "./live";
 import { SandboxRoute } from "../app";
 import { SandboxPage } from "./sandbox_page";
 import { TopbarContext } from "../topbar";

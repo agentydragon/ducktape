@@ -220,6 +220,7 @@ ts_library(
     deps = [
         ":chronological_debug",
         ":history_rows",
+        ":live",
         ":retained_disclosures",
         ":thread_cards",
         ":thread_commands",
@@ -254,6 +255,7 @@ ts_library(
         ":chronological_debug",
         ":conversation",
         ":conversation_css",
+        ":live",
         ":page_css",
         ":thread_notices",
         ":thread_status",
@@ -270,6 +272,7 @@ ts_library(
         "//agentplane/app/frontend:tab_metadata",
         "//agentplane/app/frontend:topbar",
         "//agentplane/app/frontend:tracing",
+        "//agentplane/app/frontend/sandboxes:live",
     ],
 )
 
@@ -290,6 +293,7 @@ agentplane_vitest_test(
     deps = [
         ":history_row_views",
         ":history_rows",
+        ":live",
         ":local_commands",
         ":page",
         ":retained_disclosures",
@@ -311,6 +315,7 @@ agentplane_vitest_test(
         "//agentplane/app/frontend:test_model_catalog",
         "//agentplane/app/frontend:topbar",
         "//agentplane/app/frontend:watch_fixture",
+        "//agentplane/app/frontend/sandboxes:live",
         "//agentplane/proto:command_pb",
         "//agentplane/proto:event_log_pb",
         "//agentplane/proto:event_pb",
@@ -687,6 +692,7 @@ ts_library(
     ],
     tsconfig = TSCONFIG,
     deps = [
+        ":live",
         ":thread_groups",
         ":thread_list_css",
         ":thread_notices",
@@ -711,6 +717,7 @@ agentplane_vitest_test(
     srcs = ["home.test.tsx"],
     deps = [
         ":home",
+        ":live",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
@@ -751,6 +758,19 @@ ts_library(
         "//agentplane/app/frontend:format_time",
         "//agentplane/app/frontend:live_stream",
         "//agentplane/app/frontend:notification_types",
+    ],
+)
+
+ts_library(
+    name = "live",
+    srcs = ["live.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/react-router",
+        "//agentplane/app/frontend:live",
+        "//agentplane/app/frontend:schema",
     ],
 )
 

@@ -100,6 +100,7 @@ ts_library(
     deps = [
         ":idle_suspend",
         ":lifecycle",
+        ":live",
         ":sandbox_name",
         ":wake_on_send",
         "//:node_modules/@mantine/core",
@@ -142,6 +143,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":decision_groups",
+        ":live",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -235,6 +237,7 @@ ts_library(
     deps = [
         ":egress",
         ":lifecycle",
+        ":live",
         ":new_session_form",
         ":policy_bindings",
         ":sandbox_console",
@@ -266,6 +269,7 @@ agentplane_vitest_test(
     name = "sandbox_page_test",
     srcs = ["sandbox_page.test.tsx"],
     deps = [
+        ":live",
         ":sandbox_page",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -297,6 +301,18 @@ agentplane_vitest_test(
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:test_model_catalog",
         "//agentplane/app/frontend/actions:action_client",
+    ],
+)
+
+ts_library(
+    name = "live",
+    srcs = ["live.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/app/frontend:live",
+        "//agentplane/app/frontend:schema",
     ],
 )
 
