@@ -24,6 +24,7 @@ import type {
   SustainabilitySource,
   SustainabilityView,
 } from "./types";
+import { decodeSustainabilityDashboard } from "./wire";
 import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
 
 type AccountCoverage = NonNullable<SustainabilityView["account_coverage"]>[number];
@@ -697,7 +698,7 @@ export function SustainabilityPage() {
           return;
         }
         if (!response.ok) throw new Error(`Sustainability request returned ${response.status}`);
-        const data: SustainabilityDashboard = await response.json();
+        const data = decodeSustainabilityDashboard(await response.text());
         if (!controller.signal.aborted) {
           setDashboard(data);
         }
