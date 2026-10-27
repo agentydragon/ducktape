@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import itertools
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 import pytest
 import pytest_bazel
@@ -220,9 +220,9 @@ def test_anyof_nested_is_permitted():
 
 @pytest.mark.parametrize("location", ["property", "items", "defs"])
 def test_nested_anyof_variants_are_validated(location: str) -> None:
-    invalid = {"type": "object", "properties": {"value": {"type": "string"}}, "required": ["value"]}
+    invalid: dict[str, Any] = {"type": "object", "properties": {"value": {"type": "string"}}, "required": ["value"]}
     union = {"anyOf": [{"type": "string"}, invalid]}
-    schema = {"type": "object", "properties": {}, "additionalProperties": False}
+    schema: dict[str, Any] = {"type": "object", "properties": {}, "additionalProperties": False}
     if location == "property":
         schema["properties"]["item"] = union
         schema["required"] = ["item"]
