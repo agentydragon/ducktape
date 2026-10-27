@@ -957,7 +957,7 @@ function withDormantSession(thread: ThreadView): ThreadView {
   return thread.id === RUNNING_THREAD
     ? {
         ...thread,
-        name: "Dormant harness session",
+        name: "Dormant harness thread",
         feed_status: "active",
         harness_state: "HARNESS_STATE_STOPPED",
         active_turn_id: null,
@@ -3240,7 +3240,7 @@ function projectQueuedSession(): void {
   const projected: ThreadView = {
     ...source,
     id: sessionId,
-    name: "Queued opening session",
+    name: "Queued opening thread",
     created_at: ago(0),
     last_cursor: 0,
     last_event_at: ago(0),

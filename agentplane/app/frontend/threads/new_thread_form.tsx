@@ -18,21 +18,21 @@ import { SessionSpecSchema, type SessionSpec } from "../../../proto/runner_pb";
 type LoadedPresetDefaults = { preset: string | null; defaults: SessionDefaults | null };
 
 /**
- * What a new Session is launched with. It starts from the Sandbox's preset and the operator edits it
- * for this one Session, so its state outlives the panel it is shown in being closed.
+ * What a new Thread is created with. It starts from the Sandbox's preset and the operator edits it
+ * for this one Thread, so its state outlives the panel it is shown in being closed.
  */
-export function NewSessionForm({
+export function NewThreadForm({
   presetName,
   unavailableReason,
   creating,
-  onStart,
+  onCreate,
   onClose,
   onError,
 }: {
   presetName: string | null;
   unavailableReason: string | null;
   creating: boolean;
-  onStart: (spec: SessionSpec, setupScript: string) => void;
+  onCreate: (spec: SessionSpec, setupScript: string) => void;
   onClose: () => void;
   onError: (message: string) => void;
 }): JSX.Element {
@@ -42,7 +42,7 @@ export function NewSessionForm({
   const [setupScript, setSetupScript] = useState("");
   const [inheritsDefaults, setInheritsDefaults] = useState(false);
   const [presetDefaults, setPresetDefaults] = useState<LoadedPresetDefaults | null>(null);
-  // Launch-form offerings; existing threads retain their harness and model.
+  // Create-form offerings; existing threads retain their harness and model.
   const [harness, setHarness] = useState<Harness>("HARNESS_CLAUDE");
   const [modelCatalog, setModelCatalog] = useState<ModelCatalog | null>(null);
   const models = useMemo(() => (modelCatalog ? modelsForHarness(modelCatalog, harness) : []), [modelCatalog, harness]);
@@ -123,18 +123,18 @@ export function NewSessionForm({
 
   const efforts = models.find((option) => option.model === model)?.reasoning_efforts ?? [];
   const disabledReason = creating
-    ? "A session is being opened. Wait for this attempt to finish."
+    ? "A thread is being created. Wait for this attempt to finish."
     : (unavailableReason ??
       (!model
         ? modelCatalog === null
           ? "Waiting for the model catalog to load."
           : models.length === 0
             ? "No models are available for the selected harness."
-            : "Select a model before starting a session."
+            : "Select a model before creating a thread."
         : null));
 
   return (
-    <Paper withBorder p="md" radius="md" role="group" aria-label="New session">
+    <Paper withBorder p="md" radius="md" role="group" aria-label="New thread">
       <Stack>
         <Group align="flex-end">
           <Select
@@ -206,7 +206,7 @@ export function NewSessionForm({
                 disabled={disabledReason !== null}
                 onClick={() =>
                   model &&
-                  onStart(
+                  onCreate(
                     fromJson(SessionSpecSchema, {
                       harness,
                       cwd: cwdTemplate, // The app resolves {session_id} before it opens the Session.
@@ -218,7 +218,7 @@ export function NewSessionForm({
                   )
                 }
               >
-                {creating ? "Creating session…" : "Start session"}
+                {creating ? "Creating thread…" : "Create thread"}
               </Button>
             </span>
           </Tooltip>

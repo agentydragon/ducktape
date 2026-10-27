@@ -248,7 +248,7 @@ it("offers a Grafana trace link from the thread menu when configured", async () 
   if (!menuButton) throw new Error("Missing thread actions menu");
   await act(async () => menuButton.click());
   const link = [...document.querySelectorAll('[role="menuitem"]')].find((node) =>
-    node.textContent?.includes("Find Session traces in Grafana")
+    node.textContent?.includes("Find Thread traces in Grafana")
   );
   expect(link).toBeInstanceOf(HTMLAnchorElement);
   expect(new URL((link as HTMLAnchorElement).href).searchParams.get("panes")).toContain("span.session.id");
@@ -292,7 +292,7 @@ it("hides the Grafana trace link from the thread menu when unconfigured", async 
   await act(async () => menuButton.click());
   expect(
     [...document.querySelectorAll('[role="menuitem"]')].some((node) =>
-      node.textContent?.includes("Find Session traces in Grafana")
+      node.textContent?.includes("Find Thread traces in Grafana")
     )
   ).toBe(false);
 });
@@ -305,7 +305,7 @@ it("hides only the Langfuse link when Langfuse search is unconfigured", async ()
   await act(async () => menuButton.click());
   const menuItems = [...document.querySelectorAll('[role="menuitem"]')];
   expect(menuItems.some((node) => node.textContent?.includes("Sandbox LLM traces in Langfuse"))).toBe(false);
-  expect(menuItems.some((node) => node.textContent?.includes("Find Session traces in Grafana"))).toBe(true);
+  expect(menuItems.some((node) => node.textContent?.includes("Find Thread traces in Grafana"))).toBe(true);
 });
 
 function TestLiveProviders({ children }: { children: JSX.Element }): JSX.Element {

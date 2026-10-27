@@ -5,10 +5,10 @@ import type { JSX } from "react";
 import { harnessLabel, type SandboxView, type ThreadView, type TraceSearchSettings } from "../client";
 import { traceSearchUrl } from "../trace_search";
 import { TimeAgo } from "../time_ago";
-import { archiveBlockReason, threadStatusFromSnapshot } from "../threads/thread_status";
-import { ThreadStatusIndicator } from "../threads/thread_status_indicator";
+import { archiveBlockReason, threadStatusFromSnapshot } from "./thread_status";
+import { ThreadStatusIndicator } from "./thread_status_indicator";
 
-/** The one-line note under a Session's name while its setup script has not completed; null once it has, or had none. */
+/** The one-line note under a Thread's name while its setup script has not completed; null once it has, or had none. */
 function setupNote(state: string | null | undefined): { text: string; failed: boolean } | null {
   switch (state) {
     case "SETUP_STATE_UNSPECIFIED":
@@ -28,8 +28,8 @@ function setupNote(state: string | null | undefined): { text: string; failed: bo
   }
 }
 
-/** A Sandbox's Sessions, newest activity as History last projected it. */
-export function SessionsTable({
+/** A Sandbox's Threads, newest activity as History last projected it. */
+export function SandboxThreadsTable({
   threads,
   sandbox,
   traceSearch,
@@ -42,15 +42,15 @@ export function SessionsTable({
   traceSearch: TraceSearchSettings | null;
   /** Whether the snapshot's Thread states are being kept current. */
   fresh: boolean;
-  onOpen: (sessionId: string) => void;
-  onArchive: (sessionId: string, action: "archive" | "unarchive") => void;
+  onOpen: (threadId: string) => void;
+  onArchive: (threadId: string, action: "archive" | "unarchive") => void;
 }): JSX.Element {
   return (
     <Table>
       <Table.Thead>
         <Table.Tr>
           <Table.Th />
-          <Table.Th>Session</Table.Th>
+          <Table.Th>Thread</Table.Th>
           <Table.Th visibleFrom="sm">Harness</Table.Th>
           <Table.Th visibleFrom="sm">Last activity</Table.Th>
           <Table.Th />
@@ -68,7 +68,7 @@ export function SessionsTable({
                 <ThreadStatusIndicator kind={status.kind} label={status.label} />
               </Table.Td>
               <Table.Td>
-                {/* The id is only useful once you're in the session's own detail view (which
+                {/* The id is only useful once you're in the Thread's own detail view (which
                   shows it beside the name); the list links by name where one exists. */}
                 <Button variant="subtle" px="xs" onClick={() => onOpen(thread.id)}>
                   {thread.name ?? thread.id}
@@ -114,7 +114,7 @@ export function SessionsTable({
                           target="_blank"
                           rel="noreferrer"
                         >
-                          Find Session traces in Grafana
+                          Find Thread traces in Grafana
                         </Menu.Item>
                       )}
                       {thread.archived ? (

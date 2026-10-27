@@ -330,7 +330,7 @@ function ConversationBody({
                     target="_blank"
                     rel="noreferrer"
                   >
-                    Find Session traces in Grafana
+                    Find Thread traces in Grafana
                   </Menu.Item>
                 )}
                 {langfuseSearch && sandbox && (
