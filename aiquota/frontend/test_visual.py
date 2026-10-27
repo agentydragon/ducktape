@@ -73,6 +73,15 @@ async def test_live_subscription(visual: VisualHarness) -> None:
         await expect(page.locator(".aiquota-card").first).to_be_visible()
         await expect(page.get_by_role("button", name="Reconnect")).to_be_enabled()
         await expect(page.get_by_role("status")).to_have_text("Quota stream live")
+        await page.evaluate("window.dispatchEvent(new MessageEvent('quota-fixture-view', {data: '{}'}))")
+        await expect(page.get_by_role("status")).to_have_text("Quota stream unavailable")
+        await expect(page.locator(".aiquota-card").first).to_be_visible()
+        await view.capture("live-invalid-update", target=page.locator("#app"))
+        await page.evaluate(
+            "data => window.dispatchEvent(new MessageEvent('quota-fixture-view', {data: JSON.stringify(data)}))",
+            _FIXTURES["hot"],
+        )
+        await expect(page.get_by_role("status")).to_have_text("Quota stream live")
         await page.evaluate("window.dispatchEvent(new Event('quota-fixture-error'))")
         await expect(page.get_by_text("Connection interrupted. Reconnecting to live updates…")).to_be_visible()
         await expect(page.get_by_role("status")).to_have_text("Quota stream unavailable")
