@@ -41,7 +41,11 @@ debundle snapshot verify /tmp/worker-one
 
 `--graph` may also come from `DEBUNDLE_GRAPH`; an explicit flag wins. The
 returned JSON identifies the copied engine, graph, spec/source roots, complete
-modules tree and a `regeneration_argv` array. Execute that argument array
+modules tree, `graph_package_roots` map and a `regeneration_argv` array. For a
+graph-backed query or edit in the snapshot, pass each map entry as the global
+`--graph-package-root NAME=DIR` alongside `--spec-root` and
+`--graph-source-root`. The reserved `__packages_root__` entry relocates the
+shared `--packages-root` directory. Execute `regeneration_argv`
 directly. The replay uses only copied inputs and writes under that worker's
 `output/` directory. To display a shell command:
 

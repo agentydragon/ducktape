@@ -535,6 +535,18 @@ impl GraphProvenance {
     /// The stored argv uses absolute paths and is the source of the effective
     /// options; only declared path arguments are translated.
     pub fn regeneration_recipe(&self, current: &CurrentRoots) -> Result<(Vec<String>, PathBuf)> {
+        for name in current.packages.keys() {
+            anyhow::ensure!(
+                self.roots.packages.contains_key(name),
+                "graph package root {name} was not captured; available names: {}",
+                self.roots
+                    .packages
+                    .keys()
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
         anyhow::ensure!(
             self.generation_command
                 .get(1)
@@ -882,6 +894,13 @@ mod tests {
             mismatch.downcast_ref::<GraphMismatch>().map(|m| &m.reason),
             Some(GraphMismatchReason::File { path, .. }) if path == &moved.join("package.json")
         ));
+        let unknown = provenance
+            .verify(&CurrentRoots {
+                packages: BTreeMap::from([("typo".to_string(), moved)]),
+                ..CurrentRoots::default()
+            })
+            .unwrap_err();
+        assert!(unknown.to_string().contains("was not captured"));
         Ok(())
     }
 
