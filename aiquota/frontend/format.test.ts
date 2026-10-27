@@ -56,7 +56,7 @@ describe("the Python renderers' output", () => {
         reset: formatDuration(reset_seconds),
         pace: formatPace(pace),
         forecast: formatPaceForecast(pace, reset_seconds),
-        tint: tintFor(pace, used_percent, { isShort: is_short }),
+        tint: tintFor(pace, used_percent, is_short),
       }).toEqual(expected);
     });
   }
