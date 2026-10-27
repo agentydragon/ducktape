@@ -101,24 +101,51 @@ Each nested call becomes a cluster round trip instead of a loopback one.
 
 ## AGENTS.md: where the agent operates
 
-**Codex does not load AGENTS.md from where the agent reads, writes or runs.** It loads
-`AGENTS.override.md` or `AGENTS.md` (or a configured fallback name) in every directory from the project
-root (the nearest `.git`, or configured markers) down to the turn environment's cwd, concatenated in
-that order ([agents_md.rs][agents-doc]), through that environment's filesystem, so a central harness
-still reads the Sandbox's files. Before every sampling step it refreshes, but re-reads the repository
-only when the environment selection (ids, cwds, roots) or project trust changed
-([agents_md_manager.rs][agents-cache], [session/mod.rs][agents-step]); a changed result is sent as a new
-fragment that replaces all previous AGENTS.md instructions ([world_state/agents_md.rs][agents-diff]). A
-`cd` inside a command, the paths of an `apply_patch` or a file a cell reads leave the selection alone;
-only a `turn/start` cwd or environment override changes it. `agents_md.rs` is the only AGENTS.md loader
-in `codex-rs/core`.
+**Codex does not load AGENTS.md from where the agent reads, writes or runs.** It sends one user message,
+"# AGENTS.md instructions for `<cwd>`" with the text in `<INSTRUCTIONS>` ([user_instructions.rs][agents-msg]),
+built from two sources ([agents_md.rs][agents-doc]):
+
+- `$CODEX_HOME/AGENTS.override.md` or `AGENTS.md`, read from the harness host's own filesystem
+  ([instructions/mod.rs][agents-global]). The Runner writes neither; Session instructions go in
+  `developerInstructions`.
+- After a `--- project-doc ---` separator, the project chain: `AGENTS.override.md`, else `AGENTS.md`, else a
+  `project_doc_fallback_filenames` name, in every directory from the project root (the nearest `.git`, or
+  `project_root_markers`) down to the turn's cwd, root first. It is read through the turn environment's
+  filesystem ([agents_md.rs][agents-fs]). For a remote exec-server that is its `fs/getMetadata` and
+  `fs/readFile` RPCs, and the cwd and the root search are paths on the exec-server's machine, so a central
+  harness still reads the Sandbox's files. Each environment of a multi-environment turn adds its own
+  chain, labelled "for `<environment>` with root `<cwd>`" ([agents_md.rs][agents-label]). All chains share
+  one `project_doc_max_bytes` budget, 32 KiB by default: the file that crosses it is truncated and later
+  files are dropped ([agents_md.rs][agents-cap]). A project whose `projects.<path>.trust_level` is
+  `untrusted` gets no chain ([agents_md.rs][agents-trust]); Agentplane sets no trust level.
+
+**A turn's cwd** is a thread setting the harness stores, not a shell's working directory. It is the
+default `workdir` of `exec_command`, where the project chain ends, and what the model is told it works in.
+Only the app-server's client changes it: `cwd` on `thread/start`, `thread/resume` or `thread/fork`
+([thread.rs][cwd-thread]), `cwd` or a per-environment cwd on `turn/start`, for that turn and later ones
+([turn.rs][cwd-turn]), and `thread/settings/update` ([thread.rs][cwd-settings]). A `cd` inside a command,
+the paths of an `apply_patch` or a file a cell reads leave it alone. The Runner sends the Session spec's
+`cwd` once, on `thread/start` (`runner/codex/adapter.go`), and a Session's spec never changes
+([runner SPEC](../runner/SPEC.md)), so each Session has one cwd and one chain for its whole life.
+
+Before every sampling step Codex re-reads the global file, but re-reads the project chain only when the
+environment selection (ids, cwds, roots) or project trust changed ([agents_md_manager.rs][agents-cache],
+[session/mod.rs][agents-step]), so a project AGENTS.md edited mid-thread is not picked up. A changed result
+is sent as a new fragment that replaces all previous AGENTS.md instructions
+([world_state/agents_md.rs][agents-diff]). `agents_md.rs` is the only AGENTS.md loader in `codex-rs/core`.
+
+Two other Codex features read these files. Auto-review counts AGENTS.md as trusted
+content that can establish user authorization ([guardian policy][agents-guardian]), and the `/review`
+rubric applies the instruction files scoping each changed file ([review rubric][agents-review]). Since the
+project chain comes from the Sandbox wherever the harness runs, an agent that can write its repository
+can write instructions auto-review would trust; a central harness does not change that.
 
 Nested files are left to the model. Codex's default base instructions and the GPT-5.1 and 5.2 prompts
 say "When working in a subdirectory of CWD, or a directory outside the CWD, check for any AGENTS.md
 files that may be applicable" ([default.md][agents-spec]); no entry in the tag's `models.json`, GPT-6
 included, carries that passage. Code mode changes nothing here: a cell neither moves the turn's cwd nor triggers a load.
 
-**Claude Code does.** At start it loads CLAUDE.md from the cwd upward
+**Claude Code does load by where the agent reads.** At start it loads CLAUDE.md from the cwd upward
 ([docs](https://code.claude.com/docs/en/memory)). In 2.1.252, a file the Read tool reads (text, image
 or notebook), a file the user @-mentions, or a file opened in the IDE becomes a nested-memory trigger.
 Before the next model request Claude Code attaches every CLAUDE.md and path-scoped rule between the cwd
@@ -247,6 +274,16 @@ tool. Claude stays in the Sandbox unless a separate case is made.
 [cm-delegate]: https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/core/src/tools/code_mode/delegate.rs#L36-L42
 [cm-dyn]: https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/features/src/lib.rs#L142-L144
 [agents-doc]: https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/core/src/agents_md.rs#L1-L18
+[agents-msg]: https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/core/src/context/user_instructions.rs#L23-L34
+[agents-global]: https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/codex-home/src/instructions/mod.rs#L40-L60
+[agents-label]: https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/core/src/agents_md.rs#L445-L455
+[agents-cap]: https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/core/src/agents_md.rs#L150-L166
+[agents-trust]: https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/core/src/agents_md.rs#L64-L66
+[cwd-thread]: https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/app-server-protocol/src/protocol/v2/thread.rs#L81
+[cwd-turn]: https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/app-server-protocol/src/protocol/v2/turn.rs#L219-L221
+[cwd-settings]: https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/app-server-protocol/src/protocol/v2/thread.rs#L242-L244
+[agents-guardian]: https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/prompts/templates/guardian/policy_template.md#L6
+[agents-review]: https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/prompts/templates/review/rubric.md#L48
 [agents-cache]: https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/core/src/agents_md_manager.rs#L86-L93
 [agents-step]: https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/core/src/session/mod.rs#L3766-L3775
 [agents-diff]: https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/core/src/context/world_state/agents_md.rs#L11-L13
