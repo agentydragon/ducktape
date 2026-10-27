@@ -6,6 +6,7 @@ import subprocess
 import threading
 import time
 import uuid
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -55,7 +56,7 @@ def test_only_a_missing_rule_is_appended(
 
 
 @pytest.fixture(scope="module")
-def iptables_binary(tmp_path_factory: pytest.TempPathFactory) -> Path:
+def iptables_binary(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Path]:
     work = tmp_path_factory.mktemp("k3s-iptables")
     data_dir = work / "data"
     log_path = work / "k3s.log"
@@ -82,7 +83,12 @@ def iptables_binary(tmp_path_factory: pytest.TempPathFactory) -> Path:
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait()
-    return iptables
+    original_path = os.environ["PATH"]
+    os.environ["PATH"] = f"{iptables.parent}{os.pathsep}{original_path}"
+    try:
+        yield iptables
+    finally:
+        os.environ["PATH"] = original_path
 
 
 def _run_iptables(iptables: Path, *args: str) -> str:
