@@ -93,7 +93,7 @@ the hdd tier (<cnpg_conventions.md> § R2).
 4. All upstream dependencies also pass 1-3
 
 **Proxmox-dependent services** (tolerate downtime by design): Ollama,
-ActivityWatch (central store on wyrm2, `local-path-proxmox`; device-side
+ActivityWatch (central store on wyrm2, `piraeus-hdd-local`; device-side
 importers buffer and re-push through downtime), and — both currently suspended —
 BuildBuddy executor and InvenTree. Not the Nix cache: attic runs pinned to
 `hil-ovh`, `attic-db` is CNPG OVH-HA, and chunks live in OVH SeaweedFS S3.

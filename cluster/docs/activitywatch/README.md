@@ -36,7 +36,7 @@ separate bearer-gated read route. Records from that era, kept for their lessons:
 One pod (`cluster/k8s/activitywatch/`, namespace `activitywatch`, `Recreate`), pinned
 to the Proxmox region next to its PVC: `aw-server` (`git.allegedly.works/ducktape-ci/aw-server`,
 Bazel-built `@ducktape_activitywatch//:image`) with device id `activitywatch-cluster` and
-SQLite at `/data/db.sqlite3` on `activitywatch-data` (`local-path-proxmox`, 10Gi), plus
+SQLite at `/data/db.sqlite3` on `data` (`piraeus-hdd-local` on wyrm2, 10Gi), plus
 two nginx sidecars that are its only auth — aw-server itself has none:
 
 | Port | Container        | Auth              | Allowed                    | Reached via                                   |
@@ -120,9 +120,8 @@ rebuildable by re-importing from the devices' own aw-servers for whatever histor
 still hold.
 
 - The SQLite storage benchmark (#2959, `cluster/debug/sqlite_storage_bench/README.md`) ruled
-  SeaweedFS CSI out for this store; moving off `local-path-proxmox` needs another
-  validated target or a backup strategy. Until then, treat the central DB as node-local
-  state that is rebuilt from the devices, not restored.
+  SeaweedFS CSI out for this store. `piraeus-hdd-local` keeps one copy on wyrm2, so treat
+  the central DB as node-local state that is rebuilt from the devices, not restored.
 - 10Gi is a starting budget, not a retention policy: window/AFK data should fit for a
   long time, but multi-device growth is unbounded and unmeasured now that four devices
   feed it.
