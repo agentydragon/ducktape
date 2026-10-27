@@ -123,7 +123,12 @@ async function dispatch(worker: TestWorker, kind: string, event: TestEvent): Pro
   if (!handler) throw new Error(`service worker did not register ${kind}`);
 
   let work: Promise<unknown> | undefined;
-  handler({ ...event, waitUntil: (promise) => (work = promise) });
+  handler({
+    ...event,
+    waitUntil: (promise) => {
+      work = promise;
+    },
+  });
   await work;
 }
 
