@@ -347,3 +347,36 @@ func TestTheDeployedReaderAccountsJSONEnvironmentIsRead(t *testing.T) {
 		}
 	}
 }
+
+func TestTheSessionDispatcherIsSetExactlyWhenAnOrchestrationGroupCallsIt(t *testing.T) {
+	const orchestration = `action_groups:
+  test-orchestration:
+    title: Test orchestration
+    description: test group description
+    executor: {kind: orchestration_v1, description: test executor, namespace: test-agentplane}
+`
+	const dispatcher = `session_dispatcher:
+  target: test-dispatcher:8080
+  token_file: /test/token
+  request_timeout_s: 15
+`
+	c, err := loadTestConfig(t, requiredFile+orchestration+dispatcher)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := (peer{Target: "test-dispatcher:8080", TokenFile: "/test/token", RequestTimeoutSeconds: 15}); c.SessionDispatcher == nil || *c.SessionDispatcher != want {
+		t.Errorf("session_dispatcher = %+v, want %+v", c.SessionDispatcher, want)
+	}
+	for name, file := range map[string]string{
+		"an orchestration group without it":      orchestration,
+		"it without an orchestration group":      dispatcher,
+		"it without a timeout":                   orchestration + strings.Replace(dispatcher, "  request_timeout_s: 15\n", "", 1),
+		"a group launching in another namespace": strings.Replace(orchestration, "namespace: test-agentplane", "namespace: test-other", 1) + dispatcher,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := loadTestConfig(t, requiredFile+file); err == nil {
+				t.Error("accepted")
+			}
+		})
+	}
+}

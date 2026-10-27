@@ -95,3 +95,25 @@ func TestAStartupCheckRefusesASandboxGroup(t *testing.T) {
 		})
 	}
 }
+
+func TestAnOrchestrationGroupOffersItsActionsAndRunsThem(t *testing.T) {
+	groups := newCatalog(t, `{
+		"test-orchestration": {"title": "t", "description": "d", "direct_tools": ["launch_sandbox"],
+			"executor": {"kind": "orchestration_v1", "description": "e", "namespace": "test-agentplane"}},
+		"test-unknown-tool": {"title": "t", "description": "d", "direct_tools": ["test-unoffered"],
+			"executor": {"kind": "orchestration_v1", "description": "e", "namespace": "test-agentplane"}}
+	}`)
+	if _, err := orchestrationExecutors(groups, kube.Config, nil); err == nil {
+		t.Error("a group whose direct tools name an Action it does not offer was accepted")
+	}
+	groups = newCatalog(t, `{"test-orchestration": {"title": "t", "description": "d", "direct_tools": ["launch_sandbox"],
+		"executor": {"kind": "orchestration_v1", "description": "e", "namespace": "test-agentplane"}}}`)
+	byGroup, err := orchestrationExecutors(groups, kube.Config, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	router := executors{catalog: groups, byGroup: byGroup}
+	if executor, ready := router.Route(store.ActionIdentity{Group: "test-orchestration", Name: "launch_sandbox"}); executor == nil || !ready {
+		t.Errorf("launch_sandbox routes to %v, %t; want the orchestration group's executor, ready", executor, ready)
+	}
+}

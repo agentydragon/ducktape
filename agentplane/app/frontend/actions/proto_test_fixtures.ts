@@ -135,6 +135,8 @@ function executorKind(value: ActionGroupView["executor_kind"]): ProtoExecutorKin
       return ProtoExecutorKind.MCP;
     case "pod":
       return ProtoExecutorKind.POD;
+    case "orchestration_v1":
+      return ProtoExecutorKind.ORCHESTRATION_V1;
     default:
       throw new Error(`Unknown fixture executor kind: ${value}`);
   }

@@ -1,7 +1,6 @@
 package sandbox
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -38,10 +37,6 @@ func NewExecutor(binding catalog.PodBinding, inventory *Inventory) (*Executor, e
 	return &Executor{binding: binding, inventory: inventory, arguments: arguments}, nil
 }
 
-// errInvalidArguments is arguments that do not match their Action's schema. The validator's account of why can
-// quote the arguments back, so it is not kept.
-var errInvalidArguments = errors.New("arguments do not match this Action's schema")
-
 // Execute makes one attempt at request, holding the lease for as long as the attempt takes, which the attempt
 // bounds: an exec ends a little after its script's timeout, so renewal can outlast a lease window, as a clone of a
 // large repository does, but never runs unbounded. A caller no box can be given is refused before the lease is held:
@@ -73,7 +68,7 @@ func (e *Executor) attempt(ctx context.Context, request store.ExecutionRequest) 
 		return worker.Failed("sandbox_unavailable", err.Error()), nil
 	case errors.As(err, &unrun):
 		return worker.Failed("exec_failed", err.Error()), nil
-	case errors.Is(err, errInvalidArguments):
+	case errors.Is(err, catalog.ErrInvalidArguments):
 		return worker.Failed("invalid_arguments", err.Error()), nil
 	}
 	return outcome, err
@@ -120,19 +115,19 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest)
 		if err := e.decode(action, request.Arguments, &args); err != nil {
 			return store.ExecutionOutcome{}, err
 		}
-		return succeeded(e.inventory.Create(ctx, caller, args.Name, args.Template))
+		return worker.Succeeded(e.inventory.Create(ctx, caller, args.Name, args.Template))
 	case actionGetTemplate:
 		var args templateArgs
 		if err := e.decode(action, request.Arguments, &args); err != nil {
 			return store.ExecutionOutcome{}, err
 		}
-		return succeeded(e.inventory.Template(ctx, args.Template))
+		return worker.Succeeded(e.inventory.Template(ctx, args.Template))
 	case actionExec:
 		var args execArgs
 		if err := e.decode(action, request.Arguments, &args); err != nil {
 			return store.ExecutionOutcome{}, err
 		}
-		return succeeded(e.inventory.Run(ctx, caller, args.Name, Script{
+		return worker.Succeeded(e.inventory.Run(ctx, caller, args.Name, Script{
 			Text: args.Script, Cwd: args.Cwd, TimeoutSeconds: int(args.TimeoutSeconds), MaxOutputBytes: int(args.MaxOutputBytes),
 		}))
 	case actionList:
@@ -140,20 +135,20 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest)
 			return store.ExecutionOutcome{}, err
 		}
 		boxes, err := e.inventory.List(ctx, caller)
-		return succeeded(SandboxList{Sandboxes: boxes}, err)
+		return worker.Succeeded(SandboxList{Sandboxes: boxes}, err)
 	case actionGet:
 		var args nameArgs
 		if err := e.decode(action, request.Arguments, &args); err != nil {
 			return store.ExecutionOutcome{}, err
 		}
-		return succeeded(e.inventory.Get(ctx, caller, args.Name))
+		return worker.Succeeded(e.inventory.Get(ctx, caller, args.Name))
 	case actionDispose:
 		var args nameArgs
 		if err := e.decode(action, request.Arguments, &args); err != nil {
 			return store.ExecutionOutcome{}, err
 		}
 		existed, err := e.inventory.Dispose(ctx, caller, args.Name)
-		return succeeded(DisposeResult{Name: args.Name, Existed: existed}, err)
+		return worker.Succeeded(DisposeResult{Name: args.Name, Existed: existed}, err)
 	default:
 		// The catalog admitted it, so this is a roster that grew without a branch here.
 		return worker.Failed("unknown_action", fmt.Sprintf("this executor has no %q", action)), nil
@@ -162,26 +157,5 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest)
 
 // decode reads arguments into args once they match the Action's schema.
 func (e *Executor) decode(action string, arguments json.RawMessage, args any) error {
-	value, err := jsonschema.UnmarshalJSON(bytes.NewReader(arguments))
-	if err == nil {
-		err = e.arguments[action].Validate(value)
-	}
-	if err == nil {
-		err = json.Unmarshal(arguments, args)
-	}
-	if err != nil {
-		return errInvalidArguments
-	}
-	return nil
-}
-
-func succeeded[T any](result T, err error) (store.ExecutionOutcome, error) {
-	if err != nil {
-		return store.ExecutionOutcome{}, err
-	}
-	document, err := json.Marshal(result)
-	if err != nil {
-		return store.ExecutionOutcome{}, err
-	}
-	return store.ExecutionOutcome{State: store.ExecutionSucceeded, Result: document}, nil
+	return catalog.DecodeArguments(e.arguments[action], arguments, args)
 }

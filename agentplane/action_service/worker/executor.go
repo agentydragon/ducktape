@@ -89,3 +89,15 @@ func (d ErrorDocument) Outcome(state store.ExecutionState) store.ExecutionOutcom
 func Failed(kind, message string) store.ExecutionOutcome {
 	return ErrorDocument{Kind: kind, Message: message}.Outcome(store.ExecutionFailed)
 }
+
+// Succeeded is an Execution that succeeded with result as its JSON, or err when the attempt producing it failed.
+func Succeeded[T any](result T, err error) (store.ExecutionOutcome, error) {
+	if err != nil {
+		return store.ExecutionOutcome{}, err
+	}
+	document, err := json.Marshal(result)
+	if err != nil {
+		return store.ExecutionOutcome{}, err
+	}
+	return store.ExecutionOutcome{State: store.ExecutionSucceeded, Result: document}, nil
+}

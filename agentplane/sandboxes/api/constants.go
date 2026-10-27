@@ -5,6 +5,10 @@ import "fmt"
 const (
 	SandboxKind  = "Sandbox"
 	SandboxLabel = "agentplane.allegedly.works/sandbox"
+	// CreateIntentAnnotation is the receipt a Sandbox's creator writes with it, so that its retry of the same create
+	// adopts the Sandbox where another create of the name is refused. Each creator compares it only with its own
+	// receipts. Must equal CREATE_INTENT in agentplane/sandboxes/kubernetes_views.py.
+	CreateIntentAnnotation = "agentplane.allegedly.works/create-intent"
 
 	ConditionRunning         = "Running"
 	ConditionWorkloadReady   = "WorkloadReady"

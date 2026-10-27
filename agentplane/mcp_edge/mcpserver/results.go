@@ -44,7 +44,7 @@ func textResult(text string, structured requestState, isError bool) (*mcp.CallTo
 }
 
 // actionResult is a request's outcome as the tool it ran would have answered: an MCP group's stored CallToolResult
-// relayed, a Sandbox group's result object as structured content, and otherwise a text saying what it waits on or
+// relayed, a Sandbox or orchestration group's result object as structured content, and otherwise a text saying what it waits on or
 // why it has no result, as an error where it never will.
 func actionResult(request *pb.ActionRequest, executor pb.ExecutorKind, maxWaitSeconds float64) (*mcp.CallToolResult, error) {
 	d := &viewDecoder{}
@@ -119,10 +119,10 @@ func succeededResult(stored *structpb.Value, executor pb.ExecutorKind) (*mcp.Cal
 			return nil, fmt.Errorf("stored MCP result: %w", err)
 		}
 		return &result, nil
-	case pb.ExecutorKind_EXECUTOR_KIND_POD:
+	case pb.ExecutorKind_EXECUTOR_KIND_POD, pb.ExecutorKind_EXECUTOR_KIND_ORCHESTRATION_V1:
 		fields := stored.GetStructValue()
 		if fields == nil {
-			return nil, fmt.Errorf("stored Sandbox result is not an object: %v", stored)
+			return nil, fmt.Errorf("stored %v result is not an object: %v", executor, stored)
 		}
 		return structuredResult(fields)
 	default:

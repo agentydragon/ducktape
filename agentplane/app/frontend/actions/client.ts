@@ -263,6 +263,8 @@ function executorKind(value: ProtoExecutorKind): ActionGroupView["executor_kind"
       return "mcp";
     case ProtoExecutorKind.POD:
       return "pod";
+    case ProtoExecutorKind.ORCHESTRATION_V1:
+      return "orchestration_v1";
     default:
       throw new Error(`The Action Service returned an unknown executor kind (${value}).`);
   }

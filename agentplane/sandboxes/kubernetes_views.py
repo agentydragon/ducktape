@@ -19,6 +19,7 @@ from agentplane.proto.sandboxes_pb2 import (
 )
 from agentplane.sandbox_resource import OperatingMode
 
+# Must equal CreateIntentAnnotation in agentplane/sandboxes/api/constants.go.
 CREATE_INTENT = f"{GROUP}/create-intent"
 
 

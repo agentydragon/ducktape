@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -60,6 +61,22 @@ func (a ActionDefinition) CheckArguments(arguments any) error {
 		return fmt.Errorf("input schema: %w", err)
 	}
 	if schema.Validate(arguments) != nil {
+		return ErrInvalidArguments
+	}
+	return nil
+}
+
+// DecodeArguments reads arguments into args once they satisfy schema, a schema CompileSchema compiled; it returns
+// ErrInvalidArguments when they do not.
+func DecodeArguments(schema *jsonschema.Schema, arguments json.RawMessage, args any) error {
+	value, err := jsonschema.UnmarshalJSON(bytes.NewReader(arguments))
+	if err == nil {
+		err = schema.Validate(value)
+	}
+	if err == nil {
+		err = json.Unmarshal(arguments, args)
+	}
+	if err != nil {
 		return ErrInvalidArguments
 	}
 	return nil

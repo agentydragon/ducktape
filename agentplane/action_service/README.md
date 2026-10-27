@@ -305,11 +305,14 @@ retried. Each service replica may own its own current MCP session; the database-
 single-Execution claim and lease token, not the MCP connection, fence dispatch and keep a lost
 attempt from being replayed.
 
-`main.go` builds a supervised `mcpexec.Executor` for each `catalog.MCPBinding` and a
-`sandbox.Executor` for each `catalog.PodBinding`. The MCP executor discovers upstream tools through
+`main.go` builds a supervised `mcpexec.Executor` for each `catalog.MCPBinding`, a
+`sandbox.Executor` for each `catalog.PodBinding` and an `orchestrationv1.Executor` for each
+`catalog.OrchestrationBinding`. The MCP executor discovers upstream tools through
 its Go SDK session; Sandbox Actions come from the configured template roster and are offered after
-startup validation ([sandbox Actions](sandbox/README.md)). Echo is only an explicitly injected test
-executor, never a production default.
+startup validation ([sandbox Actions](sandbox/README.md)). The orchestration Actions launch Session
+Sandboxes and drive their Sessions through the Session Dispatcher, a stopgap that acts with this
+service's own authority on each request's Decision ([orchestration Actions](orchestration_v1/README.md)).
+Echo is only an explicitly injected test executor, never a production default.
 
 An empty catalog starts with no offered actions. An explicitly configured missing/non-file YAML
 path aborts startup rather than silently selecting that empty catalog. Missing bindings and unsupported kinds fail

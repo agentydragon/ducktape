@@ -50,7 +50,7 @@ type ToolAnnotations struct {
 	OpenWorldHint   *bool
 }
 
-// Binding is where a group's Actions run: an MCPBinding or a PodBinding.
+// Binding is where a group's Actions run: an MCPBinding, a PodBinding or an OrchestrationBinding.
 type Binding interface{ isBinding() }
 
 // MCPBinding reaches a reviewed upstream MCP server.
@@ -74,8 +74,22 @@ type PodBinding struct {
 	MaxOutputBytes    int
 }
 
-func (MCPBinding) isBinding() {}
-func (PodBinding) isBinding() {}
+// OrchestrationBinding launches Session Sandboxes and drives their Sessions in this service, on the Decision of each
+// request.
+type OrchestrationBinding struct {
+	// Description is the executor as a caller sees it.
+	Description string
+	// Namespace is where Sandboxes are launched and their launcher grants written.
+	Namespace string
+	// DefaultPolicySets are bound to every Sandbox it launches, beside the ones a launch names.
+	DefaultPolicySets []string
+	// Presets are the reviewed launch presets, a JSON object the executor reads.
+	Presets json.RawMessage
+}
+
+func (MCPBinding) isBinding()           {}
+func (PodBinding) isBinding()           {}
+func (OrchestrationBinding) isBinding() {}
 
 // Group is the unit of discovery and ownership: one executor binding, many Actions.
 type Group struct {
@@ -192,7 +206,8 @@ type groupSettings struct {
 // executorSettings is an executor's settings, decoded as the kind its `kind` names.
 type executorSettings struct{ kind executorKind }
 
-// executorKind is one executor kind's settings: an *mcpExecutorSettings or a *podExecutorSettings.
+// executorKind is one executor kind's settings: an *mcpExecutorSettings, a *podExecutorSettings or an
+// *orchestrationExecutorSettings.
 type executorKind interface {
 	binding() (Binding, error)
 	// unknownKeys are the keys the kind has no field for, `kind` among them. UnmarshalYAML refuses them itself:
@@ -216,8 +231,17 @@ type podExecutorSettings struct {
 	Unknown           map[string]yaml.Node `yaml:",inline"`
 }
 
-func (s *mcpExecutorSettings) unknownKeys() map[string]yaml.Node { return s.Unknown }
-func (s *podExecutorSettings) unknownKeys() map[string]yaml.Node { return s.Unknown }
+type orchestrationExecutorSettings struct {
+	Description       string               `yaml:"description"`
+	Namespace         string               `yaml:"namespace"`
+	DefaultPolicySets []string             `yaml:"default_policy_sets"`
+	Presets           map[string]any       `yaml:"presets"`
+	Unknown           map[string]yaml.Node `yaml:",inline"`
+}
+
+func (s *mcpExecutorSettings) unknownKeys() map[string]yaml.Node           { return s.Unknown }
+func (s *podExecutorSettings) unknownKeys() map[string]yaml.Node           { return s.Unknown }
+func (s *orchestrationExecutorSettings) unknownKeys() map[string]yaml.Node { return s.Unknown }
 
 // UnmarshalYAML decodes node as the executor kind its `kind` names, refusing a key that kind has no field for. Its
 // errors are yaml.TypeErrors, which the decoder reports with its own.
@@ -233,8 +257,12 @@ func (s *executorSettings) UnmarshalYAML(node *yaml.Node) error {
 		s.kind = &mcpExecutorSettings{}
 	case "pod":
 		s.kind = &podExecutorSettings{}
+	case "orchestration_v1":
+		s.kind = &orchestrationExecutorSettings{}
 	default:
-		return &yaml.TypeError{Errors: []string{fmt.Sprintf("line %d: executor kind must be mcp or pod", node.Line)}}
+		return &yaml.TypeError{Errors: []string{
+			fmt.Sprintf("line %d: executor kind must be mcp, pod or orchestration_v1", node.Line),
+		}}
 	}
 	if err := node.Decode(s.kind); err != nil {
 		return err
@@ -386,6 +414,25 @@ func (s *podExecutorSettings) binding() (Binding, error) {
 		Templates:         s.Templates,
 		MaxTimeoutSeconds: timeout,
 		MaxOutputBytes:    output,
+	}, nil
+}
+
+func (s *orchestrationExecutorSettings) binding() (Binding, error) {
+	if err := checkLength("description", s.Description, 1, 2000); err != nil {
+		return nil, err
+	}
+	if s.Namespace == "" {
+		return nil, errors.New("namespace is required")
+	}
+	if slices.Contains(s.DefaultPolicySets, "") {
+		return nil, errors.New("default_policy_sets must name PolicySets")
+	}
+	presets, err := jsonObject(s.Presets)
+	if err != nil {
+		return nil, fmt.Errorf("presets %w", err)
+	}
+	return OrchestrationBinding{
+		Description: s.Description, Namespace: s.Namespace, DefaultPolicySets: s.DefaultPolicySets, Presets: presets,
 	}, nil
 }
 

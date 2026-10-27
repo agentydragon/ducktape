@@ -112,7 +112,7 @@ export interface ActionGroupView {
   key: string;
   title: string;
   description: string;
-  executor_kind: "mcp" | "pod";
+  executor_kind: "mcp" | "pod" | "orchestration_v1";
   executor_description: string;
   available: boolean;
   health: McpHealthView | null;

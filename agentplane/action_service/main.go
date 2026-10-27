@@ -3,8 +3,8 @@
 // policy, `OperatorActionService`'s Decisions and MCP server linkages, `WebPushService`, and the MCP edge's
 // `ConnectionService` until the edge is split out, over gRPC and their HTTP facade under /v1/, the MCP linkage's OAuth
 // callback and Client ID Metadata Document, the agent documentation, the standard gRPC health service and the process's
-// Prometheus metrics at /metrics, runs the dispatch worker, which runs the Actions of the sandbox groups and of the MCP
-// groups, refreshes the linked OAuth tokens, pushes the requests awaiting a Decision to operators' browsers when Web
+// Prometheus metrics at /metrics, runs the dispatch worker, which runs the Actions of the sandbox, orchestration_v1 and
+// MCP groups, refreshes the linked OAuth tokens, pushes the requests awaiting a Decision to operators' browsers when Web
 // Push is configured, and keeps its policy index equal to the API server's.
 package main
 
@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"os"
@@ -32,26 +33,33 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/linkage"
 	"github.com/agentydragon/ducktape/agentplane/action_service/mcpexec"
 	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
+	orchestrationv1 "github.com/agentydragon/ducktape/agentplane/action_service/orchestration_v1"
 	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
 	"github.com/agentydragon/ducktape/agentplane/action_service/push"
 	"github.com/agentydragon/ducktape/agentplane/action_service/sandbox"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/web_push_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
+	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/connections"
 	"github.com/agentydragon/ducktape/agentplane/observability"
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/probes"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
+	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
+	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	_ "github.com/lib/pq"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -182,22 +190,59 @@ func sandboxExecutors(ctx context.Context, groups *catalog.Catalog, kube *rest.C
 		if err := inventory.CheckTemplates(ctx); err != nil {
 			return nil, fmt.Errorf("ActionGroup %s: %w", key, err)
 		}
-		group.Actions = sandbox.Actions(binding)
-		var unoffered []string
-		for tool := range group.DirectTools {
-			if _, offered := group.Actions[tool]; !offered {
-				unoffered = append(unoffered, tool)
-			}
-		}
-		if len(unoffered) > 0 {
-			slices.Sort(unoffered)
-			return nil, fmt.Errorf("ActionGroup %s direct_tools names Actions it does not offer: %q", key, unoffered)
+		if err := offer(key, group, sandbox.Actions(binding)); err != nil {
+			return nil, err
 		}
 		executor, err := sandbox.NewExecutor(binding, inventory)
 		if err != nil {
 			return nil, err
 		}
 		byGroup[key] = executor
+	}
+	return byGroup, nil
+}
+
+// offer gives a group the Actions its executor declares, so a direct tool the roster lacks is a typo found at startup.
+func offer(key string, group *catalog.Group, actions map[string]catalog.ActionDefinition) error {
+	group.Actions = actions
+	var unoffered []string
+	for tool := range group.DirectTools {
+		if _, offered := actions[tool]; !offered {
+			unoffered = append(unoffered, tool)
+		}
+	}
+	if len(unoffered) > 0 {
+		slices.Sort(unoffered)
+		return fmt.Errorf("ActionGroup %s direct_tools names Actions it does not offer: %q", key, unoffered)
+	}
+	return nil
+}
+
+// orchestrationExecutors builds the Executor of each orchestration_v1 group, and gives the group the Actions it
+// offers. They reach the API server through kube and the Session Dispatcher through dispatcher.
+func orchestrationExecutors(groups *catalog.Catalog, kube *rest.Config, dispatcher dispatcherpb.SessionDispatcherClient) (map[string]worker.Executor, error) {
+	scheme := runtime.NewScheme()
+	for _, add := range []func(*runtime.Scheme) error{sandboxapi.AddToScheme, policyapi.AddToScheme} {
+		if err := add(scheme); err != nil {
+			return nil, err
+		}
+	}
+	kubeClient, err := client.New(kube, client.Options{Scheme: scheme})
+	if err != nil {
+		return nil, err
+	}
+	byGroup := map[string]worker.Executor{}
+	for key, group := range groups.Groups() {
+		binding, isOrchestration := group.Executor.(catalog.OrchestrationBinding)
+		if !isOrchestration {
+			continue
+		}
+		if err := offer(key, group, orchestrationv1.Actions()); err != nil {
+			return nil, err
+		}
+		if byGroup[key], err = orchestrationv1.NewExecutor(key, binding, kubeClient, dispatcher); err != nil {
+			return nil, fmt.Errorf("ActionGroup %s: %w", key, err)
+		}
 	}
 	return byGroup, nil
 }
@@ -309,6 +354,20 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 	byGroup, err := sandboxExecutors(ctx, c.ActionGroups, d.Kube)
 	if err != nil {
 		return err
+	}
+	// Set exactly when an orchestration_v1 group is configured.
+	if dispatcher := c.SessionDispatcher; dispatcher != nil {
+		timeout := time.Duration(dispatcher.RequestTimeoutSeconds * float64(time.Second))
+		connection, err := bearer.Dial(dispatcher.Target, dispatcher.TokenFile, timeout)
+		if err != nil {
+			return err
+		}
+		defer connection.Close()
+		orchestrators, err := orchestrationExecutors(c.ActionGroups, d.Kube, dispatcherpb.NewSessionDispatcherClient(connection))
+		if err != nil {
+			return err
+		}
+		maps.Copy(byGroup, orchestrators)
 	}
 	requests := store.New(db)
 	supervisors, err := mcpExecutors(c.ActionGroups, linkages)

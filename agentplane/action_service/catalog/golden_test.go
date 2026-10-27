@@ -90,6 +90,11 @@ func dump(c *Catalog) map[string]any {
 				"templates": binding.Templates, "max_timeout_seconds": binding.MaxTimeoutSeconds,
 				"max_output_bytes": binding.MaxOutputBytes,
 			}
+		case OrchestrationBinding:
+			executor = map[string]any{
+				"kind": "orchestration_v1", "description": binding.Description, "namespace": binding.Namespace,
+				"default_policy_sets": binding.DefaultPolicySets, "presets": binding.Presets,
+			}
 		}
 		actions := map[string]any{}
 		for name, action := range g.Actions {

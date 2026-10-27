@@ -2783,6 +2783,244 @@
      "description": "test group description",
      "direct_tools": null,
      "executor": {
+      "default_policy_sets": null,
+      "description": "test orchestration executor",
+      "kind": "orchestration_v1",
+      "namespace": "test-namespace",
+      "presets": {}
+     },
+     "title": "test group"
+    }
+   },
+   "input": {
+    "test-group": {
+     "description": "test group description",
+     "executor": {
+      "description": "test orchestration executor",
+      "kind": "orchestration_v1",
+      "namespace": "test-namespace"
+     },
+     "title": "test group"
+    }
+   },
+   "name": "orchestration_v1 group with its defaults",
+   "views": [
+    {
+     "actions": [],
+     "available": true,
+     "description": "test group description",
+     "executor_description": "test orchestration executor",
+     "executor_kind": "orchestration_v1",
+     "health": null,
+     "key": "test-group",
+     "title": "test group"
+    }
+   ]
+  },
+  {
+   "accepted_by_go": true,
+   "held": {
+    "test-group": {
+     "actions": {},
+     "available": true,
+     "description": "test group description",
+     "direct_tools": null,
+     "executor": {
+      "default_policy_sets": [
+       "test-policy"
+      ],
+      "description": "test orchestration executor",
+      "kind": "orchestration_v1",
+      "namespace": "test-namespace",
+      "presets": {
+       "test-preset": {
+        "launch": {
+         "template": "test-template"
+        },
+        "open_session": {
+         "spec": {
+          "cwd": "/test",
+          "harness": "HARNESS_CODEX",
+          "model": "test-model"
+         }
+        },
+        "title": "Test preset"
+       }
+      }
+     },
+     "title": "test group"
+    }
+   },
+   "input": {
+    "test-group": {
+     "description": "test group description",
+     "executor": {
+      "default_policy_sets": [
+       "test-policy"
+      ],
+      "description": "test orchestration executor",
+      "kind": "orchestration_v1",
+      "namespace": "test-namespace",
+      "presets": {
+       "test-preset": {
+        "launch": {
+         "template": "test-template"
+        },
+        "open_session": {
+         "spec": {
+          "cwd": "/test",
+          "harness": "HARNESS_CODEX",
+          "model": "test-model"
+         }
+        },
+        "title": "Test preset"
+       }
+      }
+     },
+     "title": "test group"
+    }
+   },
+   "name": "orchestration_v1 group with default policy sets and presets",
+   "views": [
+    {
+     "actions": [],
+     "available": true,
+     "description": "test group description",
+     "executor_description": "test orchestration executor",
+     "executor_kind": "orchestration_v1",
+     "health": null,
+     "key": "test-group",
+     "title": "test group"
+    }
+   ]
+  },
+  {
+   "accepted_by_go": false,
+   "input": {
+    "test-group": {
+     "description": "test group description",
+     "executor": {
+      "description": "test orchestration executor",
+      "kind": "orchestration_v1"
+     },
+     "title": "test group"
+    }
+   },
+   "name": "orchestration_v1 executor without a namespace"
+  },
+  {
+   "accepted_by_go": false,
+   "input": {
+    "test-group": {
+     "description": "test group description",
+     "executor": {
+      "description": "test orchestration executor",
+      "kind": "orchestration_v1",
+      "namespace": "test-namespace",
+      "templates": {
+       "test-template": "a test box"
+      }
+     },
+     "title": "test group"
+    }
+   },
+   "name": "orchestration_v1 executor with a pod field"
+  },
+  {
+   "accepted_by_go": false,
+   "input": {
+    "test-group": {
+     "description": "test group description",
+     "executor": {
+      "config": {},
+      "description": "test orchestration executor",
+      "kind": "orchestration_v1",
+      "namespace": "test-namespace"
+     },
+     "title": "test group"
+    }
+   },
+   "name": "orchestration_v1 executor with an MCP field"
+  },
+  {
+   "accepted_by_go": false,
+   "input": {
+    "test-group": {
+     "description": "test group description",
+     "executor": {
+      "default_policy_sets": [
+       ""
+      ],
+      "description": "test orchestration executor",
+      "kind": "orchestration_v1",
+      "namespace": "test-namespace"
+     },
+     "title": "test group"
+    }
+   },
+   "name": "orchestration_v1 executor with an empty default policy set"
+  },
+  {
+   "accepted_by_go": false,
+   "input": {
+    "test-group": {
+     "description": "test group description",
+     "executor": {
+      "description": "test orchestration executor",
+      "kind": "orchestration_v1",
+      "namespace": "test-namespace",
+      "presets": []
+     },
+     "title": "test group"
+    }
+   },
+   "name": "orchestration_v1 presets that are a list"
+  },
+  {
+   "accepted_by_go": false,
+   "input": {
+    "test-group": {
+     "description": "test group description",
+     "executor": {
+      "description": "test MCP executor",
+      "kind": "mcp",
+      "presets": {}
+     },
+     "title": "test group"
+    }
+   },
+   "name": "MCP executor with an orchestration_v1 field"
+  },
+  {
+   "accepted_by_go": false,
+   "input": {
+    "test-group": {
+     "description": "test group description",
+     "executor": {
+      "default_policy_sets": [
+       "test-policy"
+      ],
+      "description": "test pod executor",
+      "kind": "pod",
+      "namespace": "test-namespace",
+      "templates": {
+       "test-template": "a test box"
+      }
+     },
+     "title": "test group"
+    }
+   },
+   "name": "pod executor with an orchestration_v1 field"
+  },
+  {
+   "accepted_by_go": true,
+   "held": {
+    "test-group": {
+     "actions": {},
+     "available": true,
+     "description": "test group description",
+     "direct_tools": null,
+     "executor": {
       "config": {},
       "description": "test MCP executor",
       "kind": "mcp"
