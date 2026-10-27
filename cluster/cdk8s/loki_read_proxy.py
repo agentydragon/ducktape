@@ -60,7 +60,6 @@ NAMESPACE_ALLOWLIST = (
     "kube-system",
     "kyverno",
     "litellm",
-    "local-path-storage",
     "loki",
     "monitoring",
     "nix-cache",

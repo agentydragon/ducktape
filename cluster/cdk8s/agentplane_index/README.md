@@ -60,5 +60,4 @@ The Flux Kustomization's `Database` health expression requires the extension app
 Removing a `Database` resource retains its database; that does not protect the Cluster or
 its PVCs.
 
-No backup is configured: the index rebuilds from the Git remotes and Ollama. With
-local-path storage the `20Gi` request is no capacity limit.
+No backup is configured: the index rebuilds from the Git remotes and Ollama.

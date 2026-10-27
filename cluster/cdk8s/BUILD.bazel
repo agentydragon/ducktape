@@ -885,7 +885,6 @@ py_library(
         ":artifact_generators",
         ":flux",
         ":helm",
-        ":local_path_provisioner",
         ":manifest_roots",
         ":piraeus",
         ":stateful_infra",
@@ -1367,22 +1366,6 @@ py_library(
 )
 
 py_library(
-    name = "local_path_provisioner",
-    srcs = ["local_path_provisioner.py"],
-    deps = [
-        ":artifact_generators",
-        ":flux",
-        ":helm",
-        ":manifest_roots",
-        ":namespaces",
-        ":node_scheduling",
-        "@pypi//cdk8s",
-        "@pypi//cdk8s_plus_34",
-        "@pypi//constructs",
-    ],
-)
-
-py_library(
     name = "goldilocks",
     srcs = ["goldilocks.py"],
     deps = [
@@ -1596,7 +1579,6 @@ py_library(
         ":kube_api_proxy",
         ":kube_system",
         ":kubectl_passthrough_mcp",
-        ":local_path_provisioner",
         ":loki_read_proxy",
         ":manifest_roots",
         ":mcp_oauth_state",

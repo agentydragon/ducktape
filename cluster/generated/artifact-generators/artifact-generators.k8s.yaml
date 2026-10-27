@@ -173,11 +173,6 @@ spec:
       name: litellm-buildbuddy-sync
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/generated/local-path-provisioner/**"
-          to: "@artifact/cluster/generated/local-path-provisioner/"
-      name: local-path-provisioner
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/generated/reflector/**"
           to: "@artifact/cluster/generated/reflector/"
       name: reflector

@@ -414,12 +414,6 @@ in
   # probe order, so hotplugged disks (and the unused virtio5 slot) shift them
   # across reboots. Proxmox fixes each slot's PCI address (virtio0-4 are
   # 06:0a-06:0e, virtio6-11 are 08:01-08:06).
-  fileSystems."/var/local-path-provisioner" = {
-    device = "/dev/disk/by-path/virtio-pci-0000:06:0a.0"; # virtio0
-    fsType = "ext4";
-    autoFormat = true;
-    autoResize = true;
-  };
   # virtio1: 500GB SSD (local-zfs) — Steam library for the gaming seat.
   # Repurposed from the decommissioned Longhorn disk. Games + Proton prefixes must be
   # on SSD: the small-file prefix I/O crawls on the tank-hdd virtiofs share

@@ -7877,7 +7877,6 @@ spec:
         - haku-ci
         - kyverno
         - litellm
-        - local-path-storage
         - loki
         - monitoring
         - nix-cache
@@ -7912,7 +7911,6 @@ spec:
         - haku-ci
         - kyverno
         - litellm
-        - local-path-storage
         - loki
         - monitoring
         - nix-cache

@@ -37,7 +37,6 @@ _FILESYSTEM = StorageProfileSpecClaimPropertySetsVolumeMode.FILESYSTEM
 _BLOCK = StorageProfileSpecClaimPropertySetsVolumeMode.BLOCK
 # storage class -> (clone strategy, [(access mode, volume mode)])
 _STORAGE_PROFILES = {
-    "local-path-proxmox": ("copy", [("ReadWriteOnce", _FILESYSTEM)]),
     "piraeus-hdd-local": ("copy", [("ReadWriteOnce", _FILESYSTEM)]),
     "seaweedfs-ovh": ("copy", [("ReadWriteMany", _FILESYSTEM), ("ReadWriteOnce", _FILESYSTEM)]),
 }

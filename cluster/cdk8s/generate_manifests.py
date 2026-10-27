@@ -44,7 +44,6 @@ from cluster.cdk8s import (
     kube_api_proxy,
     kube_system,
     kubectl_passthrough_mcp,
-    local_path_provisioner,
     loki_read_proxy,
     mcp_oauth_state,
     metrics_server,
@@ -374,10 +373,6 @@ def generate_manifests(root: Path) -> None:
     crossplane_artifact = artifact("crossplane", crossplane.OUTPUT_DIR)
     crossplane_kustomization = crossplane.crossplane(
         flux_chart, write_directory(root, crossplane_artifact, crossplane.chart), kyverno_kustomization
-    )
-    local_path_provisioner_artifact = artifact("local-path-provisioner", local_path_provisioner.OUTPUT_DIR)
-    local_path_provisioner_kustomization = local_path_provisioner.local_path_provisioner(
-        flux_chart, write_directory(root, local_path_provisioner_artifact, local_path_provisioner.chart)
     )
     monitoring_crds_kustomization = monitoring_flux_kustomizations.monitoring_crds(flux_chart)
     grafana_helmrepository_artifact = artifact("grafana-helmrepository", grafana_helmrepository.OUTPUT_DIR)
@@ -1904,7 +1899,6 @@ def generate_manifests(root: Path) -> None:
         "haku-sandbox": haku_rbac_kustomization,
         "kyverno": kyverno_kustomization,
         "litellm": litellm_kustomization,
-        "local-path-storage": local_path_provisioner_kustomization,
         "loki": loki_kustomization,
         "monitoring": monitoring_namespace_kustomization,
         "nix-cache": nix_cache_kustomization,
@@ -1962,7 +1956,6 @@ def generate_manifests(root: Path) -> None:
             litellm_keys_tf_artifact,
             litellm_crossplane_keys_artifact,
             litellm_buildbuddy_sync_artifact,
-            local_path_provisioner_artifact,
             reflector_artifact,
             seaweedfs_cluster_artifact,
             seaweedfs_operator_artifact,

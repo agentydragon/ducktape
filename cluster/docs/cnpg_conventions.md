@@ -17,7 +17,7 @@ Only these CNPG cluster profiles are permitted:
 | Profile             | Instances | Pin                                      | Storage                                            | Anti-affinity                      |
 | ------------------- | --------- | ---------------------------------------- | -------------------------------------------------- | ---------------------------------- |
 | **OVH-HA**          | 2         | `topology.kubernetes.io/zone: hil-ovh`   | HDD: `piraeus-hdd-local`; SSD: `piraeus-ssd-local` | required, `kubernetes.io/hostname` |
-| **Proxmox-single**  | 1         | `topology.kubernetes.io/region: proxmox` | `local-path-proxmox`                               | n/a                                |
+| **Proxmox-single**  | 1         | `topology.kubernetes.io/region: proxmox` | `piraeus-ssd-local`                                | n/a                                |
 | **Optiplex-single** | 1         | `kubernetes.io/hostname: optiplex`       | `piraeus-ssd-local`                                | n/a                                |
 
 **OVH-HA**: For services co-located with the SeaweedFS cluster on the OVH
@@ -57,7 +57,7 @@ all instances to one site avoids this.
 
 OVH-HA uses `piraeus-ssd-local`, or `piraeus-hdd-local` for an HDD-backed DB.
 Proxmox-single uses
-`local-path-proxmox`. OVH-HA gets
+`piraeus-ssd-local` on wyrm2. OVH-HA gets
 replication at the CNPG level (2 instances on separate nodes);
 Proxmox-single gets replication at the storage level (ZFS on the Proxmox
 host). The selected `ClusterPlacement` keeps the node pin, storage class, and
@@ -109,9 +109,8 @@ Parked clusters (retained in Git; R2/R3 bind again on revival):
 - `Props` (<../../props/deploy/>): suspended 2026-08-20 for a temporary teardown
   (<decisions.md> § "Parked application manifests").
 - Proxmox-single: `firecrawl-db`, `inventree-db`, `tandoor-db` (`x/`). Their
-  manifests still name `local-path`, the chart-default StorageClass retired
-  2026-06-03 (`cdk8s/local_path_provisioner.py`) — re-point to
-  `local-path-proxmox` when reviving.
+  manifests still name the retired `local-path` StorageClass — re-point to
+  `piraeus-ssd-local` when reviving.
 - `wayback-archive-db` (<../../loom/wayback/deploy/>): OVH-HA shape,
   retained in the parked Wayback package, outside the active Flux root.
 

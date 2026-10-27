@@ -156,14 +156,6 @@ resource "proxmox_virtual_environment_vm" "wyrm2" {
   # Data disks — all on NVMe (local-zfs) unless noted.
   # NixOS mounts these by PCI path (nix/nixos/hosts/wyrm2/default.nix); the
   # guest's /dev/vdX letters shift when slots are added or skipped.
-  disk {
-    datastore_id = var.storage
-    interface    = "virtio0"
-    iothread     = true
-    discard      = "on"
-    size         = 500
-    file_format  = "raw"
-  } # local-path provisioner (/var/local-path-provisioner)
   # Repurposed from the decommissioned Longhorn disk (was 100GB, /var/mnt/longhorn).
   # NOTE: the actual grow was applied imperatively via `qm` on atlas (see
   # nix/debug/wyrm2/direct_display_bringup/README.md); this keeps the TF source in sync.

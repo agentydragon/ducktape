@@ -36,7 +36,6 @@ NAMESPACE_DIAGNOSTICS = {
     "haku-ci": AgentReadable.LOGS,
     "kyverno": AgentReadable.LOGS,
     "litellm": AgentReadable.LOGS,
-    "local-path-storage": AgentReadable.LOGS,
     "loki": AgentReadable.LOGS,
     "monitoring": AgentReadable.LOGS,
     "nix-cache": AgentReadable.LOGS,
