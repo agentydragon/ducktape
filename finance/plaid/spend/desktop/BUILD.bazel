@@ -12,6 +12,7 @@ py_library(
     srcs = ["oauth.py"],
     deps = [
         ":credentials",
+        "@pypi//aiohttp",
         "@pypi//httpx",
     ],
 )
@@ -22,6 +23,8 @@ py_test(
     deps = [
         ":oauth",
         "//:conftest",
+        "@pypi//aiohttp",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -117,6 +120,7 @@ py_wheel(
     },
     python_requires = ">=3.14",
     requires = [
+        "aiohttp>=3.14.3",
         "Babel>=2.15.0",
         "ducktape-network-monitor",
         "dbus-next>=0.2.3",

@@ -4,11 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import contextlib
 import hashlib
 import hmac
 import html
-import logging
 import secrets
 import time
 from dataclasses import dataclass
@@ -16,10 +14,9 @@ from http import HTTPStatus
 from urllib.parse import parse_qs, urlencode, urlsplit
 
 import httpx
+from aiohttp import web
 
 from .credentials import SecretServiceTokenStore
-
-logger = logging.getLogger(__name__)
 
 CALLBACK_HOST = "127.0.0.1"
 CALLBACK_PORT = 43821
@@ -75,6 +72,63 @@ def _format_callback_error(callback: CallbackResult) -> str:
     return message
 
 
+def _callback_response(status: HTTPStatus, message: str) -> web.Response:
+    body = (
+        '<!doctype html><html><head><meta charset="utf-8"><title>Plaid Spend</title></head>'
+        f"<body><p>{html.escape(message, quote=False)}</p></body></html>"
+    ).encode()
+    return web.Response(
+        status=status,
+        body=body,
+        headers={
+            "Cache-Control": "no-store",
+            "Connection": "close",
+            "Content-Security-Policy": "default-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+            "Content-Type": "text/html; charset=utf-8",
+        },
+    )
+
+
+def _callback_app(state: str, callback_future: asyncio.Future[CallbackResult]) -> web.Application:
+    async def handle_callback(request: web.Request) -> web.Response:
+        if request.method != "GET":
+            return _callback_response(HTTPStatus.BAD_REQUEST, "Invalid callback request.")
+
+        if request.path != CALLBACK_PATH:
+            return _callback_response(HTTPStatus.NOT_FOUND, "Unknown callback path.")
+
+        query = parse_qs(request.rel_url.raw_query_string, keep_blank_values=True)
+        returned_state = query.get("state", [""])[0]
+        if not hmac.compare_digest(returned_state, state):
+            if not callback_future.done():
+                callback_future.set_exception(RuntimeError("Authentik returned an invalid login state"))
+            return _callback_response(
+                HTTPStatus.BAD_REQUEST, "Login state did not match. Close this tab and try again."
+            )
+
+        callback_error = _callback_error(query)
+        if callback_error is not None:
+            if not callback_future.done():
+                callback_future.set_result(callback_error)
+            return _callback_response(
+                HTTPStatus.OK, f"{_format_callback_error(callback_error)}. You can close this tab."
+            )
+
+        code = query.get("code", [""])[0]
+        if not code:
+            if not callback_future.done():
+                callback_future.set_exception(RuntimeError("Authentik did not return an authorization code"))
+            return _callback_response(HTTPStatus.BAD_REQUEST, "No authorization code was returned.")
+
+        if not callback_future.done():
+            callback_future.set_result(CallbackResult(code=code))
+        return _callback_response(HTTPStatus.OK, "Plaid Spend is connected. You can close this tab.")
+
+    app = web.Application()
+    app.router.add_route("*", "/{path:.*}", handle_callback)
+    return app
+
+
 class Authenticator:
     def __init__(self, config: OAuthConfig, http: httpx.AsyncClient, token_store: SecretServiceTokenStore) -> None:
         self.config = config
@@ -104,85 +158,25 @@ class Authenticator:
         verifier = _random_urlsafe(48)
         challenge = _b64url(hashlib.sha256(verifier.encode("ascii")).digest())
         callback_future: asyncio.Future[CallbackResult] = asyncio.get_running_loop().create_future()
-
-        async def handle_callback(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        runner = web.AppRunner(_callback_app(state, callback_future), access_log=None)
+        try:
             try:
-                request_line = await asyncio.wait_for(reader.readline(), timeout=10)
-                parts = request_line.decode("latin-1").strip().split(" ", 2)
-                if len(parts) != 3 or parts[0] != "GET":
-                    await self._write_callback_response(writer, HTTPStatus.BAD_REQUEST, "Invalid callback request.")
-                    return
+                await runner.setup()
+                site = web.TCPSite(runner, CALLBACK_HOST, CALLBACK_PORT)
+                await site.start()
+            except OSError as exc:
+                raise RuntimeError(f"could not listen on the Plaid Spend sign-in callback at {REDIRECT_URI}") from exc
 
-                request_target = urlsplit(parts[1])
-                if request_target.path != CALLBACK_PATH:
-                    await self._write_callback_response(writer, HTTPStatus.NOT_FOUND, "Unknown callback path.")
-                    return
-
-                # Consume headers before returning a response, but never log the request
-                # line: the callback URL contains the authorization code.
-                while True:
-                    line = await asyncio.wait_for(reader.readline(), timeout=10)
-                    if line in (b"\r\n", b"\n", b""):
-                        break
-
-                query = parse_qs(request_target.query, keep_blank_values=True)
-                returned_state = query.get("state", [""])[0]
-                if not hmac.compare_digest(returned_state, state):
-                    await self._write_callback_response(
-                        writer, HTTPStatus.BAD_REQUEST, "Login state did not match. Close this tab and try again."
-                    )
-                    if not callback_future.done():
-                        callback_future.set_exception(RuntimeError("Authentik returned an invalid login state"))
-                    return
-
-                callback_error = _callback_error(query)
-                if callback_error is not None:
-                    if not callback_future.done():
-                        callback_future.set_result(callback_error)
-                    await self._write_callback_response(
-                        writer, HTTPStatus.OK, f"{_format_callback_error(callback_error)}. You can close this tab."
-                    )
-                    return
-
-                code = query.get("code", [""])[0]
-                if not code:
-                    if not callback_future.done():
-                        callback_future.set_exception(RuntimeError("Authentik did not return an authorization code"))
-                    await self._write_callback_response(
-                        writer, HTTPStatus.BAD_REQUEST, "No authorization code was returned."
-                    )
-                    return
-
-                if not callback_future.done():
-                    callback_future.set_result(CallbackResult(code=code))
-                await self._write_callback_response(
-                    writer, HTTPStatus.OK, "Plaid Spend is connected. You can close this tab."
-                )
-            except (TimeoutError, UnicodeDecodeError, ConnectionError) as exc:
-                if not callback_future.done():
-                    callback_future.set_exception(RuntimeError("Could not receive the local sign-in callback"))
-                logger.debug("OAuth callback connection ended: %s", type(exc).__name__)
-            finally:
-                writer.close()
-                with contextlib.suppress(ConnectionError):
-                    await writer.wait_closed()
-
-        try:
-            server = await asyncio.start_server(handle_callback, CALLBACK_HOST, CALLBACK_PORT)
-        except OSError as exc:
-            raise RuntimeError(f"could not listen on the Plaid Spend sign-in callback at {REDIRECT_URI}") from exc
-
-        authorization_params = {
-            "response_type": "code",
-            "client_id": self.config.client_id,
-            "redirect_uri": REDIRECT_URI,
-            "scope": "openid offline_access",
-            "state": state,
-            "code_challenge": challenge,
-            "code_challenge_method": "S256",
-        }
-        authorization_url = f"{metadata['authorization_endpoint']}?{urlencode(authorization_params)}"
-        try:
+            authorization_params = {
+                "response_type": "code",
+                "client_id": self.config.client_id,
+                "redirect_uri": REDIRECT_URI,
+                "scope": "openid offline_access",
+                "state": state,
+                "code_challenge": challenge,
+                "code_challenge_method": "S256",
+            }
+            authorization_url = f"{metadata['authorization_endpoint']}?{urlencode(authorization_params)}"
             process = await asyncio.create_subprocess_exec(
                 "xdg-open", authorization_url, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL
             )
@@ -191,8 +185,7 @@ class Authenticator:
                 raise RuntimeError("the browser launcher could not open Authentik")
             callback = await asyncio.wait_for(callback_future, timeout=300)
         finally:
-            server.close()
-            await server.wait_closed()
+            await runner.cleanup()
 
         if callback.error:
             raise RuntimeError(_format_callback_error(callback))
@@ -270,24 +263,6 @@ class Authenticator:
             expires_in = 300
         self.access_token = access_token
         self.access_token_expires_at = time.monotonic() + expires_in
-
-    @staticmethod
-    async def _write_callback_response(writer: asyncio.StreamWriter, status: HTTPStatus, message: str) -> None:
-        body = (
-            '<!doctype html><html><head><meta charset="utf-8"><title>Plaid Spend</title></head>'
-            f"<body><p>{html.escape(message, quote=False)}</p></body></html>"
-        ).encode()
-        response = (
-            f"HTTP/1.1 {status.value} {status.phrase}\r\n"
-            "Content-Type: text/html; charset=utf-8\r\n"
-            "Cache-Control: no-store\r\n"
-            "Content-Security-Policy: default-src 'none'; base-uri 'none'; frame-ancestors 'none'\r\n"
-            "Connection: close\r\n"
-            f"Content-Length: {len(body)}\r\n\r\n"
-        ).encode("ascii") + body
-        writer.write(response)
-        await writer.drain()
-
 
 class AuthenticationRequiredError(RuntimeError):
     """Raised when there is no valid refresh credential for the service."""
