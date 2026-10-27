@@ -47,7 +47,6 @@ export type NewSandbox = components["schemas"]["NewSandbox"];
 export type NewSandboxDefaults = components["schemas"]["NewSandboxDefaults"];
 export type ThreadView = components["schemas"]["ThreadView"];
 export type ThreadScope = components["schemas"]["ThreadScopeResponse"];
-export type ThreadEntityView = components["schemas"]["ThreadEntityView"];
 export type EvidencePage = components["schemas"]["EvidencePage"];
 export type NativeFramePage = components["schemas"]["NativeFramePage"];
 export type ObservationPage = components["schemas"]["ObservationPage"];

@@ -563,7 +563,7 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "input-1",
         "entity_kind": "command",
         "input_ref": {
@@ -578,7 +578,7 @@
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 3,
+        "revision_cursor": "3",
         "state": {
          "operation": "submit_input",
          "outcome": "effected",
@@ -592,7 +592,7 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 2,
+        "cursor": "2",
         "entity_id": "input-2",
         "entity_kind": "command",
         "input_ref": {
@@ -607,7 +607,7 @@
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 3,
+        "revision_cursor": "3",
         "state": {
          "operation": "submit_input",
          "outcome": "effected",
@@ -621,7 +621,7 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 3,
+        "cursor": "3",
         "entity_id": "3",
         "entity_kind": "confirmed_input",
         "input_ref": {
@@ -636,7 +636,7 @@
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 3,
+        "revision_cursor": "3",
         "state": {
          "harness_message_id": "message-1",
          "origin_command_ids": [
@@ -650,14 +650,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 4,
+        "cursor": "4",
         "entity_id": "4",
         "entity_kind": "lifecycle",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 4,
+        "revision_cursor": "4",
         "state": {
          "event": {
           "turnStarted": {
@@ -673,14 +673,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 5,
+        "cursor": "5",
         "entity_id": "answer",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 14,
+        "revision_cursor": "14",
         "state": {
          "completion": "text",
          "kind": 1,
@@ -711,7 +711,7 @@
          "projection_epoch": "test-epoch",
          "revision_cursor": "10"
         },
-        "cursor": 6,
+        "cursor": "6",
         "entity_id": "tool-a",
         "entity_kind": "item",
         "input_ref": null,
@@ -726,7 +726,7 @@
         },
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 12,
+        "revision_cursor": "12",
         "state": {
          "completion": "tool",
          "kind": 3,
@@ -741,7 +741,7 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 8,
+        "cursor": "8",
         "entity_id": "tool-b",
         "entity_kind": "item",
         "input_ref": null,
@@ -756,7 +756,7 @@
         },
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 9,
+        "revision_cursor": "9",
         "state": {
          "completion": "tool",
          "kind": 3,
@@ -771,14 +771,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 15,
+        "cursor": "15",
         "entity_id": "model-1",
         "entity_kind": "command",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 16,
+        "revision_cursor": "16",
         "state": {
          "operation": "change_model",
          "outcome": "effected",
@@ -792,14 +792,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 16,
+        "cursor": "16",
         "entity_id": "16",
         "entity_kind": "lifecycle",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 16,
+        "revision_cursor": "16",
         "state": {
          "event": {
           "modelChanged": {
@@ -815,14 +815,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 17,
+        "cursor": "17",
         "entity_id": "17",
         "entity_kind": "lifecycle",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 17,
+        "revision_cursor": "17",
         "state": {
          "event": {
           "turnCompleted": {
@@ -838,14 +838,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 17,
+        "cursor": "17",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 17,
+        "revision_cursor": "17",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -997,7 +997,7 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "input-1",
         "entity_kind": "command",
         "input_ref": {
@@ -1012,7 +1012,7 @@
         "output_ref": null,
         "pending": true,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "operation": "submit_input",
          "outcome": "pending",
@@ -1026,14 +1026,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -1114,7 +1114,7 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 2,
+        "cursor": "2",
         "entity_id": "input-2",
         "entity_kind": "command",
         "input_ref": {
@@ -1129,7 +1129,7 @@
         "output_ref": null,
         "pending": true,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "operation": "submit_input",
          "outcome": "pending",
@@ -1143,14 +1143,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 2,
+        "cursor": "2",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -1257,7 +1257,7 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "input-1",
         "entity_kind": "command",
         "input_ref": {
@@ -1272,7 +1272,7 @@
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 3,
+        "revision_cursor": "3",
         "state": {
          "operation": "submit_input",
          "outcome": "effected",
@@ -1286,7 +1286,7 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 2,
+        "cursor": "2",
         "entity_id": "input-2",
         "entity_kind": "command",
         "input_ref": {
@@ -1301,7 +1301,7 @@
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 3,
+        "revision_cursor": "3",
         "state": {
          "operation": "submit_input",
          "outcome": "effected",
@@ -1315,7 +1315,7 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 3,
+        "cursor": "3",
         "entity_id": "3",
         "entity_kind": "confirmed_input",
         "input_ref": {
@@ -1330,7 +1330,7 @@
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 3,
+        "revision_cursor": "3",
         "state": {
          "harness_message_id": "message-1",
          "origin_command_ids": [
@@ -1344,14 +1344,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 3,
+        "cursor": "3",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 3,
+        "revision_cursor": "3",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -1437,14 +1437,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 4,
+        "cursor": "4",
         "entity_id": "4",
         "entity_kind": "lifecycle",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 4,
+        "revision_cursor": "4",
         "state": {
          "event": {
           "turnStarted": {
@@ -1460,14 +1460,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 4,
+        "cursor": "4",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 4,
+        "revision_cursor": "4",
         "state": {
          "controls": {
           "active_turn_id": "turn-1",
@@ -1538,14 +1538,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 5,
+        "cursor": "5",
         "entity_id": "answer",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 5,
+        "revision_cursor": "5",
         "state": {
          "completion": null,
          "kind": 0,
@@ -1568,14 +1568,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 5,
+        "cursor": "5",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 5,
+        "revision_cursor": "5",
         "state": {
          "controls": {
           "active_turn_id": "turn-1",
@@ -1645,14 +1645,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 6,
+        "cursor": "6",
         "entity_id": "tool-a",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 6,
+        "revision_cursor": "6",
         "state": {
          "completion": null,
          "kind": 3,
@@ -1667,14 +1667,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 6,
+        "cursor": "6",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 6,
+        "revision_cursor": "6",
         "state": {
          "controls": {
           "active_turn_id": "turn-1",
@@ -1753,14 +1753,14 @@
          "projection_epoch": "test-epoch",
          "revision_cursor": "7"
         },
-        "cursor": 6,
+        "cursor": "6",
         "entity_id": "tool-a",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 7,
+        "revision_cursor": "7",
         "state": {
          "completion": null,
          "kind": 3,
@@ -1775,14 +1775,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 7,
+        "cursor": "7",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 7,
+        "revision_cursor": "7",
         "state": {
          "controls": {
           "active_turn_id": "turn-1",
@@ -1852,14 +1852,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 8,
+        "cursor": "8",
         "entity_id": "tool-b",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 8,
+        "revision_cursor": "8",
         "state": {
          "completion": null,
          "kind": 3,
@@ -1874,14 +1874,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 8,
+        "cursor": "8",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 8,
+        "revision_cursor": "8",
         "state": {
          "controls": {
           "active_turn_id": "turn-1",
@@ -1954,7 +1954,7 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 8,
+        "cursor": "8",
         "entity_id": "tool-b",
         "entity_kind": "item",
         "input_ref": null,
@@ -1969,7 +1969,7 @@
         },
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 9,
+        "revision_cursor": "9",
         "state": {
          "completion": "tool",
          "kind": 3,
@@ -1984,14 +1984,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 9,
+        "cursor": "9",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 9,
+        "revision_cursor": "9",
         "state": {
          "controls": {
           "active_turn_id": "turn-1",
@@ -2081,14 +2081,14 @@
          "projection_epoch": "test-epoch",
          "revision_cursor": "10"
         },
-        "cursor": 6,
+        "cursor": "6",
         "entity_id": "tool-a",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 10,
+        "revision_cursor": "10",
         "state": {
          "completion": null,
          "kind": 3,
@@ -2103,14 +2103,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 10,
+        "cursor": "10",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 10,
+        "revision_cursor": "10",
         "state": {
          "controls": {
           "active_turn_id": "turn-1",
@@ -2201,7 +2201,7 @@
          "projection_epoch": "test-epoch",
          "revision_cursor": "10"
         },
-        "cursor": 6,
+        "cursor": "6",
         "entity_id": "tool-a",
         "entity_kind": "item",
         "input_ref": null,
@@ -2216,7 +2216,7 @@
         },
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 11,
+        "revision_cursor": "11",
         "state": {
          "completion": null,
          "kind": 3,
@@ -2231,14 +2231,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 11,
+        "cursor": "11",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 11,
+        "revision_cursor": "11",
         "state": {
          "controls": {
           "active_turn_id": "turn-1",
@@ -2339,7 +2339,7 @@
          "projection_epoch": "test-epoch",
          "revision_cursor": "10"
         },
-        "cursor": 6,
+        "cursor": "6",
         "entity_id": "tool-a",
         "entity_kind": "item",
         "input_ref": null,
@@ -2354,7 +2354,7 @@
         },
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 12,
+        "revision_cursor": "12",
         "state": {
          "completion": "tool",
          "kind": 3,
@@ -2369,14 +2369,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 12,
+        "cursor": "12",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 12,
+        "revision_cursor": "12",
         "state": {
          "controls": {
           "active_turn_id": "turn-1",
@@ -2456,14 +2456,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 5,
+        "cursor": "5",
         "entity_id": "answer",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 13,
+        "revision_cursor": "13",
         "state": {
          "completion": null,
          "kind": 1,
@@ -2486,14 +2486,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 13,
+        "cursor": "13",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 13,
+        "revision_cursor": "13",
         "state": {
          "controls": {
           "active_turn_id": "turn-1",
@@ -2575,14 +2575,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 5,
+        "cursor": "5",
         "entity_id": "answer",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 14,
+        "revision_cursor": "14",
         "state": {
          "completion": "text",
          "kind": 1,
@@ -2605,14 +2605,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 14,
+        "cursor": "14",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 14,
+        "revision_cursor": "14",
         "state": {
          "controls": {
           "active_turn_id": "turn-1",
@@ -2680,14 +2680,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 15,
+        "cursor": "15",
         "entity_id": "model-1",
         "entity_kind": "command",
         "input_ref": null,
         "output_ref": null,
         "pending": true,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 15,
+        "revision_cursor": "15",
         "state": {
          "operation": "change_model",
          "outcome": "pending",
@@ -2701,14 +2701,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 15,
+        "cursor": "15",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 15,
+        "revision_cursor": "15",
         "state": {
          "controls": {
           "active_turn_id": "turn-1",
@@ -2766,14 +2766,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 15,
+        "cursor": "15",
         "entity_id": "model-1",
         "entity_kind": "command",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 16,
+        "revision_cursor": "16",
         "state": {
          "operation": "change_model",
          "outcome": "effected",
@@ -2787,14 +2787,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 16,
+        "cursor": "16",
         "entity_id": "16",
         "entity_kind": "lifecycle",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 16,
+        "revision_cursor": "16",
         "state": {
          "event": {
           "modelChanged": {
@@ -2810,14 +2810,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 16,
+        "cursor": "16",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 16,
+        "revision_cursor": "16",
         "state": {
          "controls": {
           "active_turn_id": "turn-1",
@@ -2869,14 +2869,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 17,
+        "cursor": "17",
         "entity_id": "17",
         "entity_kind": "lifecycle",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 17,
+        "revision_cursor": "17",
         "state": {
          "event": {
           "turnCompleted": {
@@ -2892,14 +2892,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 17,
+        "cursor": "17",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 17,
+        "revision_cursor": "17",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -2970,14 +2970,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "item",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "completion": null,
          "kind": 0,
@@ -3000,14 +3000,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -3092,14 +3092,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "item",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "completion": null,
          "kind": 0,
@@ -3122,14 +3122,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 2,
+        "cursor": "2",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -3214,14 +3214,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "item",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 3,
+        "revision_cursor": "3",
         "state": {
          "completion": "text",
          "kind": 0,
@@ -3244,14 +3244,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 3,
+        "cursor": "3",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 3,
+        "revision_cursor": "3",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -3334,14 +3334,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "item",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "completion": null,
          "kind": 0,
@@ -3364,14 +3364,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -3456,14 +3456,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "item",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "completion": null,
          "kind": 0,
@@ -3486,14 +3486,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 2,
+        "cursor": "2",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -3570,14 +3570,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "item",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 3,
+        "revision_cursor": "3",
         "state": {
          "completion": "text",
          "kind": 0,
@@ -3600,14 +3600,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 3,
+        "cursor": "3",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 3,
+        "revision_cursor": "3",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -3689,14 +3689,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "item",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "completion": "text",
          "kind": 0,
@@ -3719,14 +3719,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -3817,14 +3817,14 @@
          "projection_epoch": "test-epoch",
          "revision_cursor": "1"
         },
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "item",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "completion": null,
          "kind": 0,
@@ -3839,14 +3839,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -3939,14 +3939,14 @@
          "projection_epoch": "test-epoch",
          "revision_cursor": "2"
         },
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "item",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "completion": null,
          "kind": 0,
@@ -3961,14 +3961,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 2,
+        "cursor": "2",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -4061,14 +4061,14 @@
          "projection_epoch": "test-epoch",
          "revision_cursor": "3"
         },
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "item",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 3,
+        "revision_cursor": "3",
         "state": {
          "completion": null,
          "kind": 0,
@@ -4083,14 +4083,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 3,
+        "cursor": "3",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 3,
+        "revision_cursor": "3",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -4181,14 +4181,14 @@
          "projection_epoch": "test-epoch",
          "revision_cursor": "1"
         },
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "item",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "completion": null,
          "kind": 0,
@@ -4203,14 +4203,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -4303,14 +4303,14 @@
          "projection_epoch": "test-epoch",
          "revision_cursor": "2"
         },
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "item",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "completion": null,
          "kind": 0,
@@ -4325,14 +4325,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 2,
+        "cursor": "2",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -4417,14 +4417,14 @@
          "projection_epoch": "test-epoch",
          "revision_cursor": "3"
         },
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "item",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 3,
+        "revision_cursor": "3",
         "state": {
          "completion": null,
          "kind": 0,
@@ -4439,14 +4439,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 3,
+        "cursor": "3",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 3,
+        "revision_cursor": "3",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -4536,14 +4536,14 @@
          "projection_epoch": "test-epoch",
          "revision_cursor": "1"
         },
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "item",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "completion": null,
          "kind": 0,
@@ -4558,14 +4558,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -4648,7 +4648,7 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "item",
         "entity_kind": "item",
         "input_ref": null,
@@ -4663,7 +4663,7 @@
         },
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "completion": null,
          "kind": 0,
@@ -4678,14 +4678,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -4770,7 +4770,7 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "item",
         "entity_kind": "item",
         "input_ref": null,
@@ -4785,7 +4785,7 @@
         },
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "completion": null,
          "kind": 0,
@@ -4800,14 +4800,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 2,
+        "cursor": "2",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -4895,7 +4895,7 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "item",
         "entity_kind": "item",
         "input_ref": null,
@@ -4910,7 +4910,7 @@
         },
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 3,
+        "revision_cursor": "3",
         "state": {
          "completion": "tool",
          "kind": 0,
@@ -4925,14 +4925,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 3,
+        "cursor": "3",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 3,
+        "revision_cursor": "3",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -5015,7 +5015,7 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "item",
         "entity_kind": "item",
         "input_ref": null,
@@ -5030,7 +5030,7 @@
         },
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "completion": null,
          "kind": 0,
@@ -5045,14 +5045,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -5137,7 +5137,7 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "item",
         "entity_kind": "item",
         "input_ref": null,
@@ -5152,7 +5152,7 @@
         },
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "completion": null,
          "kind": 0,
@@ -5167,14 +5167,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 2,
+        "cursor": "2",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -5254,7 +5254,7 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "item",
         "entity_kind": "item",
         "input_ref": null,
@@ -5269,7 +5269,7 @@
         },
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 3,
+        "revision_cursor": "3",
         "state": {
          "completion": "tool",
          "kind": 0,
@@ -5284,14 +5284,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 3,
+        "cursor": "3",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 3,
+        "revision_cursor": "3",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -5376,7 +5376,7 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "item",
         "entity_kind": "item",
         "input_ref": null,
@@ -5391,7 +5391,7 @@
         },
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "completion": "tool",
          "kind": 0,
@@ -5406,14 +5406,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -5483,14 +5483,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "tool",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "completion": null,
          "kind": 3,
@@ -5505,14 +5505,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -5580,7 +5580,7 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "tool",
         "entity_kind": "item",
         "input_ref": null,
@@ -5595,7 +5595,7 @@
         },
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "completion": "tool",
          "kind": 3,
@@ -5610,14 +5610,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 2,
+        "cursor": "2",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -5687,7 +5687,7 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "tool",
         "entity_kind": "item",
         "input_ref": null,
@@ -5702,7 +5702,7 @@
         },
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 3,
+        "revision_cursor": "3",
         "state": {
          "completion": "tool",
          "kind": 3,
@@ -5717,14 +5717,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 3,
+        "cursor": "3",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 3,
+        "revision_cursor": "3",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -5794,14 +5794,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "tool",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "completion": null,
          "kind": 3,
@@ -5816,14 +5816,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -5891,7 +5891,7 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "tool",
         "entity_kind": "item",
         "input_ref": null,
@@ -5906,7 +5906,7 @@
         },
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "completion": "tool",
          "kind": 3,
@@ -5921,14 +5921,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 2,
+        "cursor": "2",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -5998,7 +5998,7 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "tool",
         "entity_kind": "item",
         "input_ref": null,
@@ -6013,7 +6013,7 @@
         },
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 3,
+        "revision_cursor": "3",
         "state": {
          "completion": "tool",
          "kind": 3,
@@ -6028,14 +6028,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 3,
+        "cursor": "3",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 3,
+        "revision_cursor": "3",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -6105,14 +6105,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "tool",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "completion": null,
          "kind": 3,
@@ -6127,14 +6127,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -6202,7 +6202,7 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "tool",
         "entity_kind": "item",
         "input_ref": null,
@@ -6217,7 +6217,7 @@
         },
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "completion": "tool",
          "kind": 3,
@@ -6232,14 +6232,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 2,
+        "cursor": "2",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -6309,7 +6309,7 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "tool",
         "entity_kind": "item",
         "input_ref": null,
@@ -6324,7 +6324,7 @@
         },
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 3,
+        "revision_cursor": "3",
         "state": {
          "completion": "tool",
          "kind": 3,
@@ -6339,14 +6339,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 3,
+        "cursor": "3",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 3,
+        "revision_cursor": "3",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -6416,14 +6416,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "tool",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "completion": null,
          "kind": 3,
@@ -6438,14 +6438,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -6511,7 +6511,7 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "tool",
         "entity_kind": "item",
         "input_ref": null,
@@ -6526,7 +6526,7 @@
         },
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "completion": null,
          "kind": 3,
@@ -6541,14 +6541,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 2,
+        "cursor": "2",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -6655,7 +6655,7 @@
          "projection_epoch": "test-epoch",
          "revision_cursor": "3"
         },
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "tool",
         "entity_kind": "item",
         "input_ref": null,
@@ -6670,7 +6670,7 @@
         },
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 3,
+        "revision_cursor": "3",
         "state": {
          "completion": null,
          "kind": 3,
@@ -6685,14 +6685,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 3,
+        "cursor": "3",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 3,
+        "revision_cursor": "3",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -6772,14 +6772,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "answer",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "completion": null,
          "kind": 1,
@@ -6794,14 +6794,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -6867,14 +6867,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "answer",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "completion": null,
          "kind": 1,
@@ -6897,14 +6897,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 2,
+        "cursor": "2",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -6989,14 +6989,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "answer",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 3,
+        "revision_cursor": "3",
         "state": {
          "completion": null,
          "kind": 1,
@@ -7019,14 +7019,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 3,
+        "cursor": "3",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 3,
+        "revision_cursor": "3",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -7096,14 +7096,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "tool",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "completion": null,
          "kind": 3,
@@ -7118,14 +7118,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -7197,14 +7197,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "tool",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "completion": null,
          "kind": 3,
@@ -7219,14 +7219,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 2,
+        "cursor": "2",
         "entity_id": "unseen",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "completion": null,
          "kind": 0,
@@ -7241,14 +7241,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 2,
+        "cursor": "2",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -7306,14 +7306,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "tool",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "completion": null,
          "kind": 3,
@@ -7328,14 +7328,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -7393,14 +7393,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "tool",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "completion": null,
          "kind": 3,
@@ -7415,14 +7415,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 2,
+        "cursor": "2",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -7473,14 +7473,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "tool",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "completion": null,
          "kind": 3,
@@ -7495,14 +7495,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 3,
+        "cursor": "3",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 3,
+        "revision_cursor": "3",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -7560,14 +7560,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "tool",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "completion": null,
          "kind": 3,
@@ -7582,14 +7582,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -7647,14 +7647,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "tool",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "completion": null,
          "kind": 3,
@@ -7669,14 +7669,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 2,
+        "cursor": "2",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -7727,14 +7727,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "tool",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "completion": null,
          "kind": 3,
@@ -7749,14 +7749,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 3,
+        "cursor": "3",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 3,
+        "revision_cursor": "3",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -7814,14 +7814,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "tool",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "completion": null,
          "kind": 3,
@@ -7836,14 +7836,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -7938,7 +7938,7 @@
          "projection_epoch": "test-epoch",
          "revision_cursor": "2"
         },
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "tool",
         "entity_kind": "item",
         "input_ref": null,
@@ -7953,7 +7953,7 @@
         },
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "completion": null,
          "kind": 3,
@@ -7968,14 +7968,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 2,
+        "cursor": "2",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -8057,7 +8057,7 @@
          "projection_epoch": "test-epoch",
          "revision_cursor": "2"
         },
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "tool",
         "entity_kind": "item",
         "input_ref": null,
@@ -8072,7 +8072,7 @@
         },
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "completion": null,
          "kind": 3,
@@ -8087,14 +8087,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 3,
+        "cursor": "3",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 3,
+        "revision_cursor": "3",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -8175,14 +8175,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "tool",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "completion": null,
          "kind": 3,
@@ -8197,14 +8197,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -8262,14 +8262,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "tool",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "completion": null,
          "kind": 3,
@@ -8284,14 +8284,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 2,
+        "cursor": "2",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -8349,14 +8349,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "tool",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 3,
+        "revision_cursor": "3",
         "state": {
          "completion": null,
          "kind": 3,
@@ -8371,14 +8371,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 3,
+        "cursor": "3",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 3,
+        "revision_cursor": "3",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -8436,14 +8436,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "tool",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "completion": null,
          "kind": 3,
@@ -8458,14 +8458,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -8523,14 +8523,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "tool",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "completion": null,
          "kind": 3,
@@ -8545,14 +8545,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 2,
+        "cursor": "2",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -8610,14 +8610,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "tool",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 3,
+        "revision_cursor": "3",
         "state": {
          "completion": null,
          "kind": 3,
@@ -8632,14 +8632,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 3,
+        "cursor": "3",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 3,
+        "revision_cursor": "3",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -8697,14 +8697,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "tool",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "completion": null,
          "kind": 3,
@@ -8719,14 +8719,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -8784,14 +8784,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "tool",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "completion": null,
          "kind": 3,
@@ -8806,14 +8806,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 2,
+        "cursor": "2",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -8871,14 +8871,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "tool",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 3,
+        "revision_cursor": "3",
         "state": {
          "completion": null,
          "kind": 3,
@@ -8893,14 +8893,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 3,
+        "cursor": "3",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 3,
+        "revision_cursor": "3",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -8958,14 +8958,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "tool",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "completion": null,
          "kind": 3,
@@ -8980,14 +8980,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -9045,14 +9045,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "tool",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "completion": null,
          "kind": 3,
@@ -9067,14 +9067,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 2,
+        "cursor": "2",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -9169,7 +9169,7 @@
          "projection_epoch": "test-epoch",
          "revision_cursor": "3"
         },
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "tool",
         "entity_kind": "item",
         "input_ref": null,
@@ -9184,7 +9184,7 @@
         },
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 3,
+        "revision_cursor": "3",
         "state": {
          "completion": null,
          "kind": 3,
@@ -9199,14 +9199,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 3,
+        "cursor": "3",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 3,
+        "revision_cursor": "3",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -9551,14 +9551,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "1",
         "entity_kind": "lifecycle",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "event": {
           "at": "2027-01-15T08:00:00Z",
@@ -9572,14 +9572,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 2,
+        "cursor": "2",
         "entity_id": "2",
         "entity_kind": "lifecycle",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "event": {
           "at": "2027-01-15T08:00:01.120Z",
@@ -9595,14 +9595,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 3,
+        "cursor": "3",
         "entity_id": "3",
         "entity_kind": "lifecycle",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 3,
+        "revision_cursor": "3",
         "state": {
          "event": {
           "at": "2027-01-15T08:00:02.123456Z",
@@ -9618,14 +9618,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 4,
+        "cursor": "4",
         "entity_id": "4",
         "entity_kind": "lifecycle",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 4,
+        "revision_cursor": "4",
         "state": {
          "event": {
           "at": "2027-01-15T08:00:03.000000001Z",
@@ -9641,14 +9641,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 5,
+        "cursor": "5",
         "entity_id": "5",
         "entity_kind": "lifecycle",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 5,
+        "revision_cursor": "5",
         "state": {
          "event": {
           "at": "2027-01-15T08:00:04Z",
@@ -9664,14 +9664,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 6,
+        "cursor": "6",
         "entity_id": "6",
         "entity_kind": "lifecycle",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 6,
+        "revision_cursor": "6",
         "state": {
          "event": {
           "at": "2027-01-15T08:00:05Z",
@@ -9687,14 +9687,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 7,
+        "cursor": "7",
         "entity_id": "7",
         "entity_kind": "lifecycle",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 7,
+        "revision_cursor": "7",
         "state": {
          "event": {
           "at": "2027-01-15T08:00:06Z",
@@ -9715,14 +9715,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 8,
+        "cursor": "8",
         "entity_id": "8",
         "entity_kind": "lifecycle",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 8,
+        "revision_cursor": "8",
         "state": {
          "event": {
           "at": "2027-01-15T08:00:07Z",
@@ -9739,14 +9739,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 12,
+        "cursor": "12",
         "entity_id": "12",
         "entity_kind": "lifecycle",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 12,
+        "revision_cursor": "12",
         "state": {
          "event": {
           "at": "2027-01-15T08:00:08Z",
@@ -9765,14 +9765,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 13,
+        "cursor": "13",
         "entity_id": "13",
         "entity_kind": "lifecycle",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 13,
+        "revision_cursor": "13",
         "state": {
          "event": {
           "at": "2027-01-15T08:00:09Z",
@@ -9789,14 +9789,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 14,
+        "cursor": "14",
         "entity_id": "14",
         "entity_kind": "lifecycle",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 14,
+        "revision_cursor": "14",
         "state": {
          "event": {
           "at": "2027-01-15T08:00:10Z",
@@ -9810,14 +9810,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 15,
+        "cursor": "15",
         "entity_id": "15",
         "entity_kind": "lifecycle",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 15,
+        "revision_cursor": "15",
         "state": {
          "event": {
           "at": "2027-01-15T08:00:11Z",
@@ -9831,14 +9831,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 16,
+        "cursor": "16",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 16,
+        "revision_cursor": "16",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -9892,14 +9892,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "1",
         "entity_kind": "lifecycle",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "event": {
           "harnessStarted": {}
@@ -9912,14 +9912,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -9971,14 +9971,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 2,
+        "cursor": "2",
         "entity_id": "2",
         "entity_kind": "lifecycle",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "event": {
           "turnStarted": {
@@ -9994,14 +9994,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 2,
+        "cursor": "2",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "controls": {
           "active_turn_id": "turn-1",
@@ -10052,14 +10052,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 3,
+        "cursor": "3",
         "entity_id": "3",
         "entity_kind": "lifecycle",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 3,
+        "revision_cursor": "3",
         "state": {
          "event": {
           "turnStarted": {
@@ -10074,14 +10074,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 3,
+        "cursor": "3",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 3,
+        "revision_cursor": "3",
         "state": {
          "controls": {
           "active_turn_id": "turn-2",
@@ -10132,14 +10132,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 4,
+        "cursor": "4",
         "entity_id": "4",
         "entity_kind": "lifecycle",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 4,
+        "revision_cursor": "4",
         "state": {
          "event": {
           "turnCompleted": {
@@ -10154,14 +10154,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 4,
+        "cursor": "4",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 4,
+        "revision_cursor": "4",
         "state": {
          "controls": {
           "active_turn_id": "turn-2",
@@ -10212,14 +10212,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 5,
+        "cursor": "5",
         "entity_id": "5",
         "entity_kind": "lifecycle",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 5,
+        "revision_cursor": "5",
         "state": {
          "event": {
           "modelChanged": {
@@ -10234,14 +10234,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 5,
+        "cursor": "5",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 5,
+        "revision_cursor": "5",
         "state": {
          "controls": {
           "active_turn_id": "turn-2",
@@ -10293,14 +10293,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 6,
+        "cursor": "6",
         "entity_id": "6",
         "entity_kind": "lifecycle",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 6,
+        "revision_cursor": "6",
         "state": {
          "event": {
           "reasoningEffortChanged": {
@@ -10316,14 +10316,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 6,
+        "cursor": "6",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 6,
+        "revision_cursor": "6",
         "state": {
          "controls": {
           "active_turn_id": "turn-2",
@@ -10389,14 +10389,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 7,
+        "cursor": "7",
         "entity_id": "answer",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 7,
+        "revision_cursor": "7",
         "state": {
          "completion": null,
          "kind": 0,
@@ -10419,14 +10419,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 7,
+        "cursor": "7",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 7,
+        "revision_cursor": "7",
         "state": {
          "controls": {
           "active_turn_id": "turn-2",
@@ -10487,14 +10487,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 8,
+        "cursor": "8",
         "entity_id": "8",
         "entity_kind": "lifecycle",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 8,
+        "revision_cursor": "8",
         "state": {
          "event": {
           "harnessExited": {}
@@ -10507,14 +10507,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 8,
+        "cursor": "8",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 8,
+        "revision_cursor": "8",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -10580,14 +10580,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 9,
+        "cursor": "9",
         "entity_id": "later",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 9,
+        "revision_cursor": "9",
         "state": {
          "completion": null,
          "kind": 0,
@@ -10610,14 +10610,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 9,
+        "cursor": "9",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 9,
+        "revision_cursor": "9",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -10678,14 +10678,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 10,
+        "cursor": "10",
         "entity_id": "10",
         "entity_kind": "lifecycle",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 10,
+        "revision_cursor": "10",
         "state": {
          "event": {
           "harnessLost": {}
@@ -10698,14 +10698,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 10,
+        "cursor": "10",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 10,
+        "revision_cursor": "10",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -10779,7 +10779,7 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "failing",
         "entity_kind": "command",
         "input_ref": {
@@ -10794,7 +10794,7 @@
         "output_ref": null,
         "pending": true,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "operation": "submit_input",
          "outcome": "pending",
@@ -10808,14 +10808,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -10896,7 +10896,7 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 2,
+        "cursor": "2",
         "entity_id": "idle",
         "entity_kind": "command",
         "input_ref": {
@@ -10911,7 +10911,7 @@
         "output_ref": null,
         "pending": true,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "operation": "submit_input",
          "outcome": "pending",
@@ -10925,14 +10925,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 2,
+        "cursor": "2",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -11000,14 +11000,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 3,
+        "cursor": "3",
         "entity_id": "pending-model",
         "entity_kind": "command",
         "input_ref": null,
         "output_ref": null,
         "pending": true,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 3,
+        "revision_cursor": "3",
         "state": {
          "operation": "change_model",
          "outcome": "pending",
@@ -11021,14 +11021,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 3,
+        "cursor": "3",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 3,
+        "revision_cursor": "3",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -11084,14 +11084,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 4,
+        "cursor": "4",
         "entity_id": "effort",
         "entity_kind": "command",
         "input_ref": null,
         "output_ref": null,
         "pending": true,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 4,
+        "revision_cursor": "4",
         "state": {
          "operation": "change_reasoning_effort",
          "outcome": "pending",
@@ -11105,14 +11105,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 4,
+        "cursor": "4",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 4,
+        "revision_cursor": "4",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -11168,14 +11168,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 5,
+        "cursor": "5",
         "entity_id": "stop",
         "entity_kind": "command",
         "input_ref": null,
         "output_ref": null,
         "pending": true,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 5,
+        "revision_cursor": "5",
         "state": {
          "operation": "interrupt_turn",
          "outcome": "pending",
@@ -11189,14 +11189,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 5,
+        "cursor": "5",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 5,
+        "revision_cursor": "5",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -11247,14 +11247,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 6,
+        "cursor": "6",
         "entity_id": "6",
         "entity_kind": "lifecycle",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 6,
+        "revision_cursor": "6",
         "state": {
          "event": {
           "turnStarted": {
@@ -11269,14 +11269,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 6,
+        "cursor": "6",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 6,
+        "revision_cursor": "6",
         "state": {
          "controls": {
           "active_turn_id": "turn-1",
@@ -11328,7 +11328,7 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "failing",
         "entity_kind": "command",
         "input_ref": {
@@ -11343,7 +11343,7 @@
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 7,
+        "revision_cursor": "7",
         "state": {
          "operation": "submit_input",
          "outcome": "failed",
@@ -11357,14 +11357,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 7,
+        "cursor": "7",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 7,
+        "revision_cursor": "7",
         "state": {
          "controls": {
           "active_turn_id": "turn-1",
@@ -11427,7 +11427,7 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 2,
+        "cursor": "2",
         "entity_id": "idle",
         "entity_kind": "command",
         "input_ref": {
@@ -11442,7 +11442,7 @@
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 8,
+        "revision_cursor": "8",
         "state": {
          "operation": "submit_input",
          "outcome": "noop",
@@ -11456,14 +11456,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 8,
+        "cursor": "8",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 8,
+        "revision_cursor": "8",
         "state": {
          "controls": {
           "active_turn_id": "turn-1",
@@ -11534,14 +11534,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 5,
+        "cursor": "5",
         "entity_id": "stop",
         "entity_kind": "command",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 9,
+        "revision_cursor": "9",
         "state": {
          "operation": "interrupt_turn",
          "outcome": "effected",
@@ -11555,14 +11555,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 9,
+        "cursor": "9",
         "entity_id": "9",
         "entity_kind": "lifecycle",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 9,
+        "revision_cursor": "9",
         "state": {
          "event": {
           "turnCompleted": {
@@ -11579,14 +11579,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 9,
+        "cursor": "9",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 9,
+        "revision_cursor": "9",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -11660,7 +11660,7 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "input",
         "entity_kind": "command",
         "input_ref": {
@@ -11675,7 +11675,7 @@
         "output_ref": null,
         "pending": true,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "operation": "submit_input",
          "outcome": "pending",
@@ -11689,14 +11689,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -11788,7 +11788,7 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "input",
         "entity_kind": "command",
         "input_ref": {
@@ -11803,7 +11803,7 @@
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "operation": "submit_input",
          "outcome": "effected",
@@ -11817,7 +11817,7 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 2,
+        "cursor": "2",
         "entity_id": "2",
         "entity_kind": "confirmed_input",
         "input_ref": {
@@ -11832,7 +11832,7 @@
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "harness_message_id": "",
          "origin_command_ids": [
@@ -11845,14 +11845,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 2,
+        "cursor": "2",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -11940,7 +11940,7 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 3,
+        "cursor": "3",
         "entity_id": "3",
         "entity_kind": "confirmed_input",
         "input_ref": {
@@ -11955,7 +11955,7 @@
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 3,
+        "revision_cursor": "3",
         "state": {
          "harness_message_id": "typed-in-terminal",
          "origin_command_ids": []
@@ -11966,14 +11966,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 3,
+        "cursor": "3",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 3,
+        "revision_cursor": "3",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -12056,14 +12056,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "answer",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "completion": null,
          "kind": 0,
@@ -12086,14 +12086,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -12217,14 +12217,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "answer",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 8,
+        "revision_cursor": "8",
         "state": {
          "completion": null,
          "kind": 0,
@@ -12247,14 +12247,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 8,
+        "cursor": "8",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 8,
+        "revision_cursor": "8",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -12348,14 +12348,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "answer",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 9,
+        "revision_cursor": "9",
         "state": {
          "completion": "text",
          "kind": 0,
@@ -12378,14 +12378,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 9,
+        "cursor": "9",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 9,
+        "revision_cursor": "9",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -12468,14 +12468,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "answer",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "completion": null,
          "kind": 0,
@@ -12498,14 +12498,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -12590,14 +12590,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "answer",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "completion": null,
          "kind": 0,
@@ -12620,14 +12620,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 2,
+        "cursor": "2",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -12723,14 +12723,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "answer",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 3,
+        "revision_cursor": "3",
         "state": {
          "completion": null,
          "kind": 0,
@@ -12753,14 +12753,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 3,
+        "cursor": "3",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 3,
+        "revision_cursor": "3",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -12854,14 +12854,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "answer",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "completion": null,
          "kind": 0,
@@ -12884,14 +12884,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -12996,14 +12996,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "answer",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "completion": null,
          "kind": 0,
@@ -13026,14 +13026,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -13137,14 +13137,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "answer",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "completion": null,
          "kind": 0,
@@ -13167,14 +13167,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -13274,14 +13274,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "answer",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "completion": null,
          "kind": 0,
@@ -13304,14 +13304,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -13417,14 +13417,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "answer",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "completion": null,
          "kind": 0,
@@ -13447,14 +13447,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -13518,14 +13518,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 2,
+        "cursor": "2",
         "entity_id": "tool",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "completion": null,
          "kind": 3,
@@ -13540,14 +13540,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 2,
+        "cursor": "2",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -13645,14 +13645,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "answer",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "completion": null,
          "kind": 0,
@@ -13675,14 +13675,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -13746,14 +13746,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 2,
+        "cursor": "2",
         "entity_id": "tool",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "completion": null,
          "kind": 3,
@@ -13768,14 +13768,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 2,
+        "cursor": "2",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -13873,14 +13873,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "answer",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "completion": null,
          "kind": 0,
@@ -13903,14 +13903,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -13974,14 +13974,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 2,
+        "cursor": "2",
         "entity_id": "tool",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "completion": null,
          "kind": 3,
@@ -13996,14 +13996,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 2,
+        "cursor": "2",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -14107,7 +14107,7 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "input",
         "entity_kind": "command",
         "input_ref": {
@@ -14122,7 +14122,7 @@
         "output_ref": null,
         "pending": true,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "operation": "submit_input",
          "outcome": "pending",
@@ -14136,14 +14136,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -14255,7 +14255,7 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "input",
         "entity_kind": "command",
         "input_ref": {
@@ -14270,7 +14270,7 @@
         "output_ref": null,
         "pending": true,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "operation": "submit_input",
          "outcome": "pending",
@@ -14284,14 +14284,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -14355,7 +14355,7 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "input",
         "entity_kind": "command",
         "input_ref": {
@@ -14370,7 +14370,7 @@
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "operation": "submit_input",
          "outcome": "failed",
@@ -14384,14 +14384,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 2,
+        "cursor": "2",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 2,
+        "revision_cursor": "2",
         "state": {
          "controls": {
           "active_turn_id": null,
@@ -14603,14 +14603,14 @@
       "rows": [
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "answer",
         "entity_kind": "item",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "completion": null,
          "kind": 0,
@@ -14633,14 +14633,14 @@
        },
        {
         "arguments_ref": null,
-        "cursor": 1,
+        "cursor": "1",
         "entity_id": "current",
         "entity_kind": "view_state",
         "input_ref": null,
         "output_ref": null,
         "pending": false,
         "projection_epoch": "test-epoch",
-        "revision_cursor": 1,
+        "revision_cursor": "1",
         "state": {
          "controls": {
           "active_turn_id": null,

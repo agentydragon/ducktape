@@ -24,24 +24,21 @@ export type RunContent =
   { kind: "item"; entity: ThreadEntity } | { kind: "reasoning_group"; entities: [ThreadEntity, ...ThreadEntity[]] };
 
 const SETUP_OBSERVATIONS = new Set(["setup_started", "setup_output", "setup_finished", "setup_interrupted"]);
+type LifecycleEntity = Extract<ThreadEntity, { entityKind: "lifecycle" }>;
 
-function setupStep(entity: ThreadEntity): boolean {
-  return (
-    entity.entityKind === "lifecycle" &&
-    "observation" in entity.state &&
-    SETUP_OBSERVATIONS.has(entity.state.observation)
-  );
+function setupStep(entity: ThreadEntity): entity is LifecycleEntity {
+  return entity.entityKind === "lifecycle" && SETUP_OBSERVATIONS.has(entity.state.observation);
 }
 
 export function summarizeSetup(entities: readonly ThreadEntity[]): string {
   const terminal = [...entities]
     .reverse()
-    .find((entity) =>
-      entity.entityKind === "lifecycle" && "observation" in entity.state
-        ? entity.state.observation === "setup_finished" || entity.state.observation === "setup_interrupted"
-        : false
+    .find(
+      (entity): entity is LifecycleEntity =>
+        entity.entityKind === "lifecycle" &&
+        (entity.state.observation === "setup_finished" || entity.state.observation === "setup_interrupted")
     );
-  if (!terminal || !("event" in terminal.state)) return "Thread setup running";
+  if (!terminal) return "Thread setup running";
   const parsed = fromJson(EventSchema, terminal.state.event as JsonValue).observation;
   if (parsed.case === "setupInterrupted") return "Thread setup interrupted";
   if (parsed.case === "setupFinished")
@@ -88,7 +85,7 @@ export function setupProgress(entities: readonly ThreadEntity[]): string[] {
   };
   let terminal = false;
   for (const entity of entities) {
-    if (!setupStep(entity) || !("event" in entity.state)) continue;
+    if (!setupStep(entity)) continue;
     const observation = fromJson(EventSchema, entity.state.event as JsonValue).observation;
     if (observation.case === "setupOutput") {
       const { case: channel, value } = observation.value.stream;
@@ -112,7 +109,7 @@ export function setupProgress(entities: readonly ThreadEntity[]): string[] {
 }
 
 function itemKind(entity: ThreadEntity): ItemKind | null {
-  return entity.entityKind === "item" && "kind" in entity.state ? entity.state.kind : null;
+  return entity.entityKind === "item" ? entity.state.kind : null;
 }
 
 function runStep(entity: ThreadEntity): boolean {
@@ -213,7 +210,7 @@ export function lifecyclePresentation(observation: string, event: unknown): Life
 /** A lifecycle entity plain enough to fold into a group: no alert to show and nothing beyond its
  * one-line label. */
 function groupableLifecycle(entity: ThreadEntity): boolean {
-  if (entity.entityKind !== "lifecycle" || !("observation" in entity.state)) return false;
+  if (entity.entityKind !== "lifecycle") return false;
   const { prominent, diagnostic } = lifecyclePresentation(entity.state.observation, entity.state.event);
   return !prominent && diagnostic === null;
 }
@@ -265,9 +262,7 @@ export function summarizeRun(entities: readonly ThreadEntity[]): string {
 export function summarizeLifecycleGroup(entities: readonly ThreadEntity[]): string {
   return entities
     .map((entity) =>
-      entity.entityKind === "lifecycle" && "observation" in entity.state
-        ? lifecyclePresentation(entity.state.observation, entity.state.event).label
-        : ""
+      entity.entityKind === "lifecycle" ? lifecyclePresentation(entity.state.observation, entity.state.event).label : ""
     )
     .join(", ");
 }

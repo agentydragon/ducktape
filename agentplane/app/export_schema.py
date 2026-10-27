@@ -16,7 +16,6 @@ import grpc
 import httpx
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import CoreV1Api
-from pydantic import TypeAdapter
 
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import create_app
@@ -41,7 +40,6 @@ from agentplane.app.upstream_proxy import UpstreamProxy
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.grpc.calls import dial
 from agentplane.history_service.client import HistoryServiceClient
-from agentplane.history_service.fold.views import ThreadEntityView
 from agentplane.kubernetes_watch import Freshness
 from agentplane.runner.harness import Harness
 from agentplane.runner_gateway.client import SandboxControlClient
@@ -108,10 +106,6 @@ def _openapi_document(api_client: k8s_client.ApiClient, channel: grpc.aio.Channe
     components = document["components"]
     if not isinstance(components, dict) or not isinstance(components.get("schemas"), dict):
         raise ValueError("OpenAPI document has no schema components")
-    # The entity routes stream Electric's rows, so no route declares the model the frontend reads them as.
-    schema = TypeAdapter(ThreadEntityView).json_schema(ref_template="#/components/schemas/{model}")
-    components["schemas"].update(schema.pop("$defs", {}))
-    components["schemas"]["ThreadEntityView"] = schema
     return document
 
 

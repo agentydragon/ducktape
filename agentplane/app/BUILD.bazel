@@ -476,13 +476,11 @@ py_library(
         "//agentplane/egress:decisions_client",
         "//agentplane/grpc:calls",
         "//agentplane/history_service:client",
-        "//agentplane/history_service/fold:views",
         "//agentplane/runner:harness",
         "//agentplane/runner_gateway:client",
         "@pypi//grpcio",
         "@pypi//httpx",
         "@pypi//kubernetes_asyncio",
-        "@pypi//pydantic",
     ],
 )
 

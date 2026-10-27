@@ -31,6 +31,7 @@ import { z } from "zod";
 
 import { displayableError, fetchWithLogin, threadScope, type ThreadScope } from "../client";
 import { backoff, type StreamConnection } from "../live_stream";
+import { zThreadEntityView } from "./thread_entity_view.zod";
 import {
   decimalBigInt,
   type Decimal,
@@ -43,65 +44,6 @@ import {
 
 const decimal: z.ZodType<Decimal> = z.union([z.string().regex(/^-?\d+$/), z.bigint()]);
 type PayloadField = PayloadRef["field"];
-
-const payloadRefSchema = z.object({
-  projection_epoch: z.string(),
-  owner_cursor: z.string(),
-  owner_id: z.string(),
-  field: z.enum(["text", "arguments", "output", "confirmed_input", "command_input"]),
-  revision_cursor: z.string(),
-  generation: z.string(),
-  chunk_count: z.string(),
-});
-
-const stateSchema = z.union([
-  z.object({
-    controls: z.object({
-      applied_model: z.string().nullable(),
-      applied_reasoning_effort: z.string().nullable(),
-      active_turn_id: z.string().nullable(),
-      harness_state: z.string().nullable(),
-    }),
-    operational: z.object({
-      status: z.enum(["active", "ended", "failed"]),
-      last_verified_cursor: z.string(),
-      feed_error: z.object({ cursor: z.string().nullable(), message: z.string() }).nullable(),
-    }),
-  }),
-  z.object({
-    kind: z.number().int(),
-    tool_name: z.string(),
-    completion: z.string().nullable(),
-    tool_succeeded: z.boolean().nullable(),
-    recovery: z.number().nullable(),
-    recovery_reason: z.string().nullable(),
-  }),
-  z.object({ harness_message_id: z.string(), origin_command_ids: z.array(z.string()) }),
-  z.object({ observation: z.string(), event: z.unknown() }),
-  z.object({
-    operation: z.string(),
-    outcome: z.enum(["pending", "effected", "failed", "noop"]),
-    outcome_cursor: z.string().nullable(),
-    outcome_reason: z.string().nullable(),
-    requested_value: z.string().nullable(),
-  }),
-]);
-const entitySchema = z.object({
-  threadId: z.string(),
-  projectionEpoch: z.string(),
-  entityKind: z.enum(["view_state", "item", "confirmed_input", "lifecycle", "command"]),
-  entityId: z.string(),
-  entityIndex: decimal,
-  cursor: decimal,
-  revisionCursor: decimal,
-  pending: z.boolean(),
-  turnId: z.string().nullable(),
-  state: stateSchema,
-  textRef: payloadRefSchema.nullable(),
-  argumentsRef: payloadRefSchema.nullable(),
-  outputRef: payloadRefSchema.nullable(),
-  inputRef: payloadRefSchema.nullable(),
-});
 
 const chunkSchema = z.object({
   ownerId: z.string(),
@@ -134,6 +76,59 @@ const PENDING_COMMANDS: SubsetParams = {
 // Subsets are sent as written: the proxy admits them by their exact form, and Electric's client
 // would otherwise rewrite what it takes for identifiers, `ANY` among them.
 const columns: ColumnMapper = { decode: snakeToCamel, encode: (column) => column };
+
+function snakeColumn(column: string): string {
+  return column.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
+}
+
+function decimalString(value: unknown): string {
+  const scalar = decimal.parse(value);
+  return typeof scalar === "bigint" ? scalar.toString() : scalar;
+}
+
+function threadEntity(row: Row): ThreadEntity {
+  const entityIndex = decimal.parse(row.entityIndex);
+  const wireRow = Object.fromEntries(
+    Object.entries(row)
+      .filter(([column]) => column !== "entityIndex")
+      .map(([column, value]) => [snakeColumn(column), value])
+  );
+  wireRow.cursor = decimalString(row.cursor);
+  wireRow.revision_cursor = decimalString(row.revisionCursor);
+  const view = zThreadEntityView.parse(wireRow);
+  const fields = {
+    threadId: view.thread_id,
+    projectionEpoch: view.projection_epoch,
+    entityId: view.entity_id,
+    entityIndex,
+    cursor: view.cursor,
+    revisionCursor: view.revision_cursor,
+    pending: view.pending,
+    turnId: view.turn_id,
+    textRef: view.text_ref,
+    argumentsRef: view.arguments_ref,
+    outputRef: view.output_ref,
+    inputRef: view.input_ref,
+  };
+  switch (view.entity_kind) {
+    case "view_state":
+      return { ...fields, entityKind: view.entity_kind, state: view.state };
+    case "item":
+      return { ...fields, entityKind: view.entity_kind, state: view.state };
+    case "confirmed_input":
+      return { ...fields, entityKind: view.entity_kind, state: view.state };
+    case "lifecycle":
+      return { ...fields, entityKind: view.entity_kind, state: view.state };
+    case "command":
+      return { ...fields, entityKind: view.entity_kind, state: view.state };
+    default:
+      return assertNever(view);
+  }
+}
+
+function assertNever(_value: never): never {
+  throw new Error("unknown ThreadEntityView variant");
+}
 
 function batches<T>(values: readonly T[], size: number): T[][] {
   return Array.from({ length: Math.ceil(values.length / size) }, (_, index) =>
@@ -738,7 +733,7 @@ class EpochWindow extends Listeners {
         : { where: "entity_index < $1", params: { "1": this.#lowest.toString() }, orderBy: NEWEST_FIRST, limit }
     );
     for (const row of rows) {
-      const index = decimalBigInt(entitySchema.parse(row).entityIndex);
+      const index = decimalBigInt(threadEntity(row).entityIndex);
       if (this.#lowest === null || index < this.#lowest) this.#lowest = index;
     }
     this.#exhausted = rows.length < limit || this.#lowest === 0n;
@@ -793,7 +788,7 @@ class EpochWindow extends Listeners {
         // Every row is new at the tail. A change to one older than the reader has loaded is not
         // its concern: loading that page reads the row as it is by then.
         else if (message.headers.operation === "insert" || this.#rows.has(message.key)) {
-          this.#rows.set(message.key, entitySchema.parse(message.value));
+          this.#rows.set(message.key, threadEntity(message.value));
           changed = true;
         }
       } else if (message.headers.control === "must-refetch") void this.#refetch();

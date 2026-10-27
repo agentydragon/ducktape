@@ -99,7 +99,15 @@ func TestARangeWindowReadsBackTheFoldedStream(t *testing.T) {
 	}
 	// The reply started at cursor 2 and has been revised since.
 	text, _ := reply["text_ref"].(map[string]any)
-	if reply["cursor"] != float64(2) || reply["revision_cursor"].(float64) <= 2 || text["owner_id"] != "test-reply" {
+	revisionCursor, ok := reply["revision_cursor"].(string)
+	if !ok {
+		t.Fatalf("revision cursor has type %T, want string", reply["revision_cursor"])
+	}
+	revision, err := strconv.ParseUint(revisionCursor, 10, 64)
+	if err != nil {
+		t.Fatalf("parse revision cursor %q: %v", revisionCursor, err)
+	}
+	if reply["cursor"] != "2" || revision <= 2 || text["owner_id"] != "test-reply" {
 		t.Fatalf("reply cursor %v revision %v text %v", reply["cursor"], reply["revision_cursor"], reply["text_ref"])
 	}
 }

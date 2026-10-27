@@ -126,7 +126,7 @@ class ContentStore:
         commands = await self._commands(thread_id, [command.command_id])
         if not commands:
             return None
-        entry = await self._archived_entry(thread_id, commands[0].cursor)
+        entry = await self._archived_entry(thread_id, int(commands[0].cursor))
         if entry is None:
             raise ValueError("command summary has no archived admission")
         return _admission(entry, command)
