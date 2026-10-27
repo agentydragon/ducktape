@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/action"
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/google/uuid"
 )
 
@@ -134,18 +135,18 @@ func TestActorsPythonStoredAreReadAndWrittenBack(t *testing.T) {
 			if len(events) != 2 || events[1].Actor == nil {
 				t.Fatalf("events %+v", events)
 			}
-			if _, isCaller := events[1].Actor.(action.CallerActor); isCaller != (vector.Kind == "caller") {
+			if isCaller := events[1].Actor.GetCaller() != nil; isCaller != (vector.Kind == "caller") {
 				t.Errorf("read a %T, want a %s", events[1].Actor, vector.Kind)
 			}
 
 			if vector.Kind != "caller" {
 				return
 			}
-			actor, err := action.DecodeActor(vector.Input)
+			actor, err := action.DecodeStoredActor(vector.Input)
 			if err != nil {
 				t.Fatal(err)
 			}
-			owner := CallerPrincipal{Account: actor.(action.CallerActor).Account}
+			owner := CallerPrincipal{Account: action.ServiceAccount{Namespace: actor.GetCaller().GetNamespace(), Name: actor.GetCaller().GetName()}}
 			written := f.submitInput(t, owner, input("go-"+vector.Name), Admission{RequestID: uuid.New()})
 			if _, err := f.Cancel(t.Context(), written.ID, owner); err != nil {
 				t.Fatal(err)
@@ -210,7 +211,7 @@ func (f fixture) insertAllowedAsPython(t *testing.T, key string) uuid.UUID {
 }
 
 // insertInFlightAsPython writes an allowed request Python then took through the states, with a lapsed lease.
-func (f fixture) insertInFlightAsPython(t *testing.T, key string, states []action.State, lease Lease, failure json.RawMessage) uuid.UUID {
+func (f fixture) insertInFlightAsPython(t *testing.T, key string, states []string, lease Lease, failure json.RawMessage) uuid.UUID {
 	t.Helper()
 	id := f.insertAllowedAsPython(t, key)
 	for i, state := range states {
@@ -231,10 +232,10 @@ func TestExecutionsPythonLeftAreDispatchedSweptAndReconciled(t *testing.T) {
 	f := newFixture(t)
 	queued := f.insertAllowedAsPython(t, "python-queued")
 	lostLease := Lease{ExecutorID: "test-python-executor", Token: uuid.New()}
-	lost := f.insertInFlightAsPython(t, "python-lost", []action.State{action.StateDispatching, action.StateRunning}, lostLease, nil)
+	lost := f.insertInFlightAsPython(t, "python-lost", []string{"dispatching", "running"}, lostLease, nil)
 	sweptLease := Lease{ExecutorID: "test-python-executor", Token: uuid.New()}
 	pythonError := loadGolden(t).UnknownOutcomes[0].Error
-	swept := f.insertInFlightAsPython(t, "python-swept", []action.State{action.StateDispatching, action.StateRunning, action.StateExecutionUnknown}, sweptLease, pythonError)
+	swept := f.insertInFlightAsPython(t, "python-swept", []string{"dispatching", "running", "execution_unknown"}, sweptLease, pythonError)
 
 	if got := f.pendingDispatches(t); !slices.Equal(got, []uuid.UUID{queued}) {
 		t.Fatalf("pending dispatches %v, want only %v", got, queued)
@@ -251,7 +252,7 @@ func TestExecutionsPythonLeftAreDispatchedSweptAndReconciled(t *testing.T) {
 		lease Lease
 	}{"swept by Python": {swept, sweptLease}, "swept by Go": {lost, lostLease}} {
 		f.finish(t, finished.id, finished.lease, ExecutionSucceeded)
-		if got := f.get(t, finished.id); got.State != action.StateSucceeded || got.Execution.ReconciledAt == nil {
+		if got := f.get(t, finished.id); got.State != action_servicepb.ActionState_ACTION_STATE_SUCCEEDED || got.Execution.ReconciledAt == nil {
 			t.Errorf("%s: request %s, execution %+v", name, got.State, got.Execution)
 		}
 	}
@@ -264,16 +265,16 @@ func TestRequestsPythonWroteCanBeDecidedAndCancelled(t *testing.T) {
 
 	pending := f.get(t, toDecide)
 	decided, dispatch, err := f.Decide(t.Context(), toDecide, decision(pending, VerdictAllow, "test-decision"), operator)
-	if err != nil || !dispatch || decided.State != action.StateAllowed || decided.Version != 2 {
+	if err != nil || !dispatch || decided.State != action_servicepb.ActionState_ACTION_STATE_ALLOWED || decided.Version != 2 {
 		t.Fatalf("decision = %+v, dispatch %v, %v", decided, dispatch, err)
 	}
 	cancelled := f.cancel(t, toCancel)
 	if cancelled.Outcome != OutcomeCancelled || cancelled.Request.Version != 2 {
 		t.Errorf("cancellation = %+v", cancelled)
 	}
-	for id, states := range map[uuid.UUID][]action.State{
-		toDecide: {action.StateDecisionPending, action.StateAllowed},
-		toCancel: {action.StateDecisionPending, action.StateCancelled},
+	for id, states := range map[uuid.UUID][]action_servicepb.ActionState{
+		toDecide: {action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING, action_servicepb.ActionState_ACTION_STATE_ALLOWED},
+		toCancel: {action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING, action_servicepb.ActionState_ACTION_STATE_CANCELLED},
 	} {
 		if got := eventStates(f.events(t, id)); !slices.Equal(got, states) {
 			t.Errorf("events of %s = %v, want %v", id, got, states)

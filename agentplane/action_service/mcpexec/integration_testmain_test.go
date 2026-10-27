@@ -307,7 +307,7 @@ func (f fixture) awaitRequest(t *testing.T, id uuid.UUID, condition func(store.A
 }
 
 // await waits until the request is in state, and returns it.
-func (f fixture) await(t *testing.T, id uuid.UUID, state action.State) store.ActionRequest {
+func (f fixture) await(t *testing.T, id uuid.UUID, state action_servicepb.ActionState) store.ActionRequest {
 	t.Helper()
 	return f.awaitRequest(t, id, func(request store.ActionRequest) bool { return request.State == state })
 }

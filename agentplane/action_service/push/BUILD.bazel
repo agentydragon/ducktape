@@ -12,6 +12,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/action_service/push",
     deps = [
         "//agentplane/action",
+        "//agentplane/action_service:action_service_go_proto",
         "//agentplane/action_service/store",
         "//agentplane/observability",
         "//agentplane/postgres/go:postgres",

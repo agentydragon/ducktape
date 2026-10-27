@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/action"
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/google/uuid"
 )
 
@@ -80,14 +80,14 @@ func TestListPagesNewestFirstAfterTheLastSeenRequest(t *testing.T) {
 
 	// The position need not match the filters applied after it.
 	oldest := f.decide(t, newestFirst[3], VerdictDeny)
-	denied := []action.State{action.StateDenied}
+	denied := []action_servicepb.ActionState{action_servicepb.ActionState_ACTION_STATE_DENIED}
 	if got := f.list(t, caller, ListFilter{States: denied, AfterID: &newestFirst[0].ID}); !slices.Equal(ids(got), []uuid.UUID{oldest.ID}) {
 		t.Errorf("denied requests after the newest = %v", ids(got))
 	}
 	if got := f.list(t, caller, ListFilter{States: denied, AfterID: &oldest.ID}); len(got) != 0 {
 		t.Errorf("denied requests after the oldest = %v", ids(got))
 	}
-	if got := f.list(t, caller, ListFilter{States: []action.State{action.StateAllowed, action.StateDenied}}); !slices.Equal(ids(got), []uuid.UUID{oldest.ID}) {
+	if got := f.list(t, caller, ListFilter{States: []action_servicepb.ActionState{action_servicepb.ActionState_ACTION_STATE_ALLOWED, action_servicepb.ActionState_ACTION_STATE_DENIED}}); !slices.Equal(ids(got), []uuid.UUID{oldest.ID}) {
 		t.Errorf("allowed or denied requests = %v", ids(got))
 	}
 	if got := f.list(t, operator, ListFilter{AfterID: &foreign.ID}); !slices.Equal(ids(got), ids(newestFirst)) {
@@ -122,7 +122,7 @@ func TestListRefusesWhatItCannotPage(t *testing.T) {
 		want      error
 	}{
 		"limit below one":        {caller, ListFilter{Limit: &zero}, ErrInvalid},
-		"unknown state":          {caller, ListFilter{States: []action.State{"no_such_state"}}, ErrInvalid},
+		"unknown state":          {caller, ListFilter{States: []action_servicepb.ActionState{99}}, ErrInvalid},
 		"another owner's anchor": {caller, ListFilter{AfterID: &foreign.ID}, ErrNotFound},
 		"unknown anchor":         {caller, ListFilter{AfterID: &unknown}, ErrNotFound},
 	} {
@@ -215,7 +215,7 @@ func TestHistoryHoldsACallersOwnRequestsOnly(t *testing.T) {
 func (f fixture) decidedAt(t *testing.T, key string, admission Admission, verdict Verdict, at time.Time) ActionRequest {
 	t.Helper()
 	request := f.submitInput(t, caller, input(key), admission)
-	if request.State == action.StateDecisionPending {
+	if request.State == action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING {
 		request = f.decide(t, request, verdict)
 	}
 	f.exec(t, `UPDATE action_request SET history_at = $2 WHERE id = $1`, request.ID, at)
@@ -354,7 +354,7 @@ func TestEventsPageBySequence(t *testing.T) {
 	}
 
 	events := f.events(t, request.ID)
-	if got := eventStates(events); !slices.Equal(got, []action.State{action.StateDecisionPending, action.StateAllowed, action.StateCancelled}) {
+	if got := eventStates(events); !slices.Equal(got, []action_servicepb.ActionState{action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING, action_servicepb.ActionState_ACTION_STATE_ALLOWED, action_servicepb.ActionState_ACTION_STATE_CANCELLED}) {
 		t.Fatalf("states = %v", got)
 	}
 	for i, event := range events {
@@ -363,7 +363,7 @@ func TestEventsPageBySequence(t *testing.T) {
 		}
 	}
 	if last := events[2]; last.Sequence != cancelled.Request.Version || !last.At.Equal(cancelled.Request.UpdatedAt) ||
-		last.Actor != (action.CallerActor{Account: caller.Account}) {
+		(last.Actor.GetCaller().GetNamespace() != caller.Account.Namespace || last.Actor.GetCaller().GetName() != caller.Account.Name) {
 		t.Errorf("the cancellation's event = %+v", last)
 	}
 	if events[0].Actor != nil || events[1].Actor != nil {
@@ -404,12 +404,12 @@ func TestVersionsHoldTheReadableRequestsInTheStates(t *testing.T) {
 	foreign := f.submit(t, otherCaller, "versions-foreign")
 	for name, tc := range map[string]struct {
 		principal ReadPrincipal
-		states    []action.State
+		states    []action_servicepb.ActionState
 		want      map[uuid.UUID]int64
 	}{
 		"a caller's every state":    {caller, nil, map[uuid.UUID]int64{pending.ID: pending.Version, denied.ID: denied.Version}},
-		"a caller's pending":        {caller, []action.State{action.StateDecisionPending}, map[uuid.UUID]int64{pending.ID: pending.Version}},
-		"a reader's pending":        {reader, []action.State{action.StateDecisionPending}, map[uuid.UUID]int64{pending.ID: pending.Version, foreign.ID: foreign.Version}},
+		"a caller's pending":        {caller, []action_servicepb.ActionState{action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING}, map[uuid.UUID]int64{pending.ID: pending.Version}},
+		"a reader's pending":        {reader, []action_servicepb.ActionState{action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING}, map[uuid.UUID]int64{pending.ID: pending.Version, foreign.ID: foreign.Version}},
 		"an operator's every state": {operator, nil, map[uuid.UUID]int64{pending.ID: pending.Version, denied.ID: denied.Version, foreign.ID: foreign.Version}},
 	} {
 		got, err := f.Versions(t.Context(), tc.principal, tc.states)
@@ -417,7 +417,7 @@ func TestVersionsHoldTheReadableRequestsInTheStates(t *testing.T) {
 			t.Errorf("%s: %v, %v; want %v", name, got, err, tc.want)
 		}
 	}
-	if _, err := f.Versions(t.Context(), operator, []action.State{"test-unknown-state"}); !errors.Is(err, ErrInvalid) {
+	if _, err := f.Versions(t.Context(), operator, []action_servicepb.ActionState{99}); !errors.Is(err, ErrInvalid) {
 		t.Errorf("an unknown state: %v", err)
 	}
 }

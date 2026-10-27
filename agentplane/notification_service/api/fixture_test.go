@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action"
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/inboxaccess"
 	operatorpb "github.com/agentydragon/ducktape/agentplane/notification_service/notifications_operatorpb"
@@ -441,7 +442,7 @@ func (s testServer) record(t *testing.T, subscription *notificationspb.Subscript
 	var events []store.ActionEvent
 	for sequence := int64(1); sequence <= through; sequence++ {
 		events = append(events, store.ActionEvent{
-			Sequence: sequence, State: action.StateDecisionPending, At: time.Date(2026, 10, 20, 3, 56, 3, 0, time.UTC),
+			Sequence: sequence, State: action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING, At: time.Date(2026, 10, 20, 3, 56, 3, 0, time.UTC),
 		})
 	}
 	if err := s.store.RecordActionEvents(t.Context(), *claim, *due, events); err != nil {

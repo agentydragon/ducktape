@@ -19,5 +19,6 @@ go_test(
     deps = [
         "//agentplane/action_service:action_service_go_proto",
         "//agentplane/proto:sandboxes_go_proto",
+        "@org_golang_google_protobuf//proto",
     ],
 )

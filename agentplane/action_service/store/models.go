@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/agentydragon/ducktape/agentplane/action"
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/google/uuid"
 )
 
@@ -23,7 +24,7 @@ type ActionIdentity struct {
 // ServiceReaderPrincipal read every owner's.
 type ReadPrincipal interface{ isReadPrincipal() }
 
-// Principal is an authenticated caller or operator. A shared action.Actor records its identity on an event.
+// Principal is an authenticated caller or operator. A protobuf Principal records its identity on an event.
 type Principal interface {
 	ReadPrincipal
 	isPrincipal()
@@ -183,7 +184,7 @@ type ActionRequest struct {
 	Description *string
 	// Caller is the ServiceAccount that submitted the request.
 	Caller action.ServiceAccount
-	State  action.State
+	State  action_servicepb.ActionState
 	// Version counts the request's transitions from 1; an Event's sequence is the version it records.
 	Version   int64
 	CreatedAt time.Time
@@ -224,10 +225,10 @@ type Execution struct {
 // Event is one transition of a request.
 type Event struct {
 	Sequence int64
-	State    action.State
+	State    action_servicepb.ActionState
 	At       time.Time
 	// Actor is the cancellation author; nil for every other transition.
-	Actor action.Actor
+	Actor *action_servicepb.Principal
 }
 
 // CancellationOutcome is what cancelling a request did.
@@ -294,11 +295,11 @@ const (
 )
 
 // terminalActionStates is the state of a request whose Execution ended in the key.
-var terminalActionStates = map[ExecutionState]action.State{
-	ExecutionSucceeded: action.StateSucceeded,
-	ExecutionFailed:    action.StateFailed,
-	ExecutionCancelled: action.StateCancelled,
-	ExecutionUnknown:   action.StateExecutionUnknown,
+var terminalActionStates = map[ExecutionState]action_servicepb.ActionState{
+	ExecutionSucceeded: action_servicepb.ActionState_ACTION_STATE_SUCCEEDED,
+	ExecutionFailed:    action_servicepb.ActionState_ACTION_STATE_FAILED,
+	ExecutionCancelled: action_servicepb.ActionState_ACTION_STATE_CANCELLED,
+	ExecutionUnknown:   action_servicepb.ActionState_ACTION_STATE_EXECUTION_UNKNOWN,
 }
 
 // unknownOutcomeError is the `action_execution.error` of an Execution whose outcome could not be observed.

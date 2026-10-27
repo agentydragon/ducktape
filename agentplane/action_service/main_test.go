@@ -267,7 +267,7 @@ func (r running) ended(t *testing.T, id uuid.UUID) store.ActionRequest {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if request.State == action.StateSucceeded || request.State == action.StateFailed {
+		if request.State == action_servicepb.ActionState_ACTION_STATE_SUCCEEDED || request.State == action_servicepb.ActionState_ACTION_STATE_FAILED {
 			return request
 		}
 		select {
@@ -283,7 +283,7 @@ func TestTheServiceFailsAnActionNoExecutorRuns(t *testing.T) {
 	request := service.run(t, action.ServiceAccount{Namespace: "test-namespace", Name: "test-caller"},
 		store.ActionIdentity{Group: "test-group", Name: "test-action"}, `{}`)
 	var failure struct{ Kind string }
-	if err := json.Unmarshal(request.Execution.Error, &failure); err != nil || request.State != action.StateFailed ||
+	if err := json.Unmarshal(request.Execution.Error, &failure); err != nil || request.State != action_servicepb.ActionState_ACTION_STATE_FAILED ||
 		failure.Kind != "*worker.UnsupportedActionError" {
 		t.Errorf("the request is %s with execution error %s, %v", request.State, request.Execution.Error, err)
 	}
@@ -299,7 +299,7 @@ func TestTheServiceRunsASandboxGroupsActions(t *testing.T) {
 	caller := action.ServiceAccount{Namespace: namespace, Name: "test-caller"}
 	request := service.run(t, caller, store.ActionIdentity{Group: "test-sandbox", Name: "create"},
 		`{"name": "test-box", "template": "test-template"}`)
-	if request.State != action.StateSucceeded {
+	if request.State != action_servicepb.ActionState_ACTION_STATE_SUCCEEDED {
 		t.Fatalf("the request is %s with execution error %s", request.State, request.Execution.Error)
 	}
 	pods, err := kube.Clientset.CoreV1().Pods(namespace).List(t.Context(), metav1.ListOptions{})
@@ -372,13 +372,13 @@ func TestTheServiceRunsAnMCPGroupsActionOnceItsServerIsBack(t *testing.T) {
 	})
 	// Another attempt fails after the dispatch was committed: the request still waits.
 	awaitMCPHealth(t, groups, "test-mcp", func(h *action_servicepb.McpHealth) bool { return h.GetFailures() > failures })
-	if request, err := service.store.Get(t.Context(), id, testOperator); err != nil || request.State != action.StateAllowed {
+	if request, err := service.store.Get(t.Context(), id, testOperator); err != nil || request.State != action_servicepb.ActionState_ACTION_STATE_ALLOWED {
 		t.Fatalf("while the server is down the request is %s, %v", request.State, err)
 	}
 
 	down.Store(false)
 	request := service.ended(t, id)
-	if request.State != action.StateSucceeded {
+	if request.State != action_servicepb.ActionState_ACTION_STATE_SUCCEEDED {
 		t.Fatalf("the request is %s with execution error %s", request.State, request.Execution.Error)
 	}
 }
@@ -734,7 +734,7 @@ func TestTheServiceAdmitsASubmissionAgainstItsCatalogOnlyWhileThePolicyIndexAdmi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stored, err := service.store.Get(t.Context(), id, testOperator); err != nil || stored.State != action.StateDecisionPending {
+	if stored, err := service.store.Get(t.Context(), id, testOperator); err != nil || stored.State != action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING {
 		t.Errorf("the submission is stored as %s, %v; want awaiting a decision", stored.State, err)
 	}
 	if got := submitOverHTTP(t, service, token, "test-mcp", "test-http"); got != http.StatusOK {

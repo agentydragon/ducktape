@@ -4,7 +4,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/action"
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
@@ -29,10 +29,10 @@ func TestADrainLetsTheExecutionInFlightFinishAndClaimsNothingNew(t *testing.T) {
 	}
 	close(g.release)
 	r.wait(t)
-	if got := f.get(t, inFlight); got.State != action.StateSucceeded {
+	if got := f.get(t, inFlight); got.State != action_servicepb.ActionState_ACTION_STATE_SUCCEEDED {
 		t.Errorf("the Execution in flight is %s", got.State)
 	}
-	if got := f.get(t, after); got.State != action.StateAllowed || !slices.Equal(e.ran(), []uuid.UUID{inFlight}) {
+	if got := f.get(t, after); got.State != action_servicepb.ActionState_ACTION_STATE_ALLOWED || !slices.Equal(e.ran(), []uuid.UUID{inFlight}) {
 		t.Errorf("a request allowed during the drain is %s; ran %v", got.State, e.ran())
 	}
 }
@@ -48,7 +48,7 @@ func TestADrainFencesAClaimWaitingForItsRequest(t *testing.T) {
 	r.drain()
 	release()
 	r.wait(t)
-	if got := f.get(t, id); got.State != action.StateAllowed || len(e.ran()) != 0 {
+	if got := f.get(t, id); got.State != action_servicepb.ActionState_ACTION_STATE_ALLOWED || len(e.ran()) != 0 {
 		t.Errorf("the request is %s; ran %v", got.State, e.ran())
 	}
 }
@@ -63,7 +63,7 @@ func TestAnExecutionPastTheDrainIsStoppedUnknownAndNeverReplayed(t *testing.T) {
 	g.awaitStarted(t)
 	r.drain()
 	r.wait(t)
-	if got := f.get(t, stopped); got.State != action.StateExecutionUnknown || errorKind(t, got) != string(store.UnknownCoordinatorStopped) {
+	if got := f.get(t, stopped); got.State != action_servicepb.ActionState_ACTION_STATE_EXECUTION_UNKNOWN || errorKind(t, got) != string(store.UnknownCoordinatorStopped) {
 		t.Errorf("the stopped request is %s: %s", got.State, got.Execution.Error)
 	}
 	if pending := f.pending(t); len(pending) != 0 {
@@ -74,8 +74,8 @@ func TestAnExecutionPastTheDrainIsStoppedUnknownAndNeverReplayed(t *testing.T) {
 	next := f.allowed(t, "next")
 	e := &executor{step: succeed}
 	run(t, f.store, e, testTiming(), nil)
-	f.await(t, next, action.StateSucceeded)
-	if got := f.get(t, stopped); got.State != action.StateExecutionUnknown || !slices.Equal(e.ran(), []uuid.UUID{next}) {
+	f.await(t, next, action_servicepb.ActionState_ACTION_STATE_SUCCEEDED)
+	if got := f.get(t, stopped); got.State != action_servicepb.ActionState_ACTION_STATE_EXECUTION_UNKNOWN || !slices.Equal(e.ran(), []uuid.UUID{next}) {
 		t.Errorf("the stopped request is %s; ran %v", got.State, e.ran())
 	}
 }
@@ -97,7 +97,7 @@ func TestConcurrentWorkersRunEachRequestOnce(t *testing.T) {
 
 	release()
 	for _, id := range ids {
-		f.await(t, id, action.StateSucceeded)
+		f.await(t, id, action_servicepb.ActionState_ACTION_STATE_SUCCEEDED)
 	}
 	ran := e.ran()
 	slices.SortFunc(ran, func(a, b uuid.UUID) int { return slices.Compare(a[:], b[:]) })

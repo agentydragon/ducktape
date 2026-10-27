@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action"
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 )
 
 // ErrActionHistoryGap is a read of an Action request's events that skips a sequence the subscription has not
@@ -23,17 +24,17 @@ const actionsReadInterval = 5 * time.Second
 type ActionEvent struct {
 	// Sequence is the event's position in the request's own log, from 1.
 	Sequence int64
-	State    action.State
+	State    action_servicepb.ActionState
 	At       time.Time
 	// Actor is who cancelled the request, or nil for an event nobody caused.
-	Actor action.Actor
+	Actor *action_servicepb.Principal
 }
 
 // The JSON forms below are the ones the Action Service writes and the rows already in the database hold.
 
 // Notification's stored event decoder accepts explicit nulls in the other actor variant's fields. Keep that wire
 // policy local while sharing the resulting actor vocabulary with the Action Service.
-func decodeActionActor(data json.RawMessage) (action.Actor, error) {
+func decodeActionActor(data json.RawMessage) (*action_servicepb.Principal, error) {
 	if data == nil || string(data) == "null" {
 		return nil, nil
 	}
@@ -47,9 +48,9 @@ func decodeActionActor(data json.RawMessage) (action.Actor, error) {
 	}
 	switch {
 	case wire.Account != nil && wire.Issuer == nil && wire.Subject == nil:
-		return action.CallerActor{Account: *wire.Account}, nil
+		return &action_servicepb.Principal{Principal: &action_servicepb.Principal_Caller{Caller: wire.Account.Proto()}}, nil
 	case wire.Account == nil && wire.Issuer != nil && wire.Subject != nil && *wire.Issuer != "" && *wire.Subject != "":
-		return action.OperatorActor{Issuer: *wire.Issuer, Subject: *wire.Subject}, nil
+		return &action_servicepb.Principal{Principal: &action_servicepb.Principal_Operator{Operator: &action_servicepb.Operator{Issuer: *wire.Issuer, Subject: *wire.Subject}}}, nil
 	default:
 		return nil, errors.New("an actor is a caller (account) or an operator (issuer and subject)")
 	}
@@ -58,7 +59,7 @@ func decodeActionActor(data json.RawMessage) (action.Actor, error) {
 func (e *ActionEvent) UnmarshalJSON(data []byte) error {
 	var wire struct {
 		Sequence *int64          `json:"sequence"`
-		State    *action.State   `json:"state"`
+		State    *string         `json:"state"`
 		At       *string         `json:"at"`
 		Actor    json.RawMessage `json:"actor"`
 	}
@@ -70,7 +71,8 @@ func (e *ActionEvent) UnmarshalJSON(data []byte) error {
 	); err != nil {
 		return err
 	}
-	if !wire.State.Valid() {
+	state, known := action.StateFromStored(*wire.State)
+	if !known {
 		return fmt.Errorf("unknown Action state %q", *wire.State)
 	}
 	at, err := time.Parse(time.RFC3339Nano, *wire.At)
@@ -81,7 +83,7 @@ func (e *ActionEvent) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return err
 	}
-	*e = ActionEvent{Sequence: *wire.Sequence, State: *wire.State, At: at.Truncate(time.Microsecond), Actor: actor}
+	*e = ActionEvent{Sequence: *wire.Sequence, State: state, At: at.Truncate(time.Microsecond), Actor: actor}
 	return nil
 }
 
@@ -92,12 +94,20 @@ func (e ActionEvent) MarshalJSON() ([]byte, error) {
 	if e.At.Nanosecond() != 0 {
 		layout += ".000000"
 	}
+	state, known := action.StateStored(e.State)
+	if !known {
+		return nil, fmt.Errorf("unknown Action state %v", e.State)
+	}
+	actor, err := action.EncodeStoredActor(e.Actor)
+	if err != nil {
+		return nil, err
+	}
 	return json.Marshal(struct {
-		Sequence int64        `json:"sequence"`
-		State    action.State `json:"state"`
-		At       string       `json:"at"`
-		Actor    action.Actor `json:"actor"`
-	}{e.Sequence, e.State, e.At.Format(layout + "Z07:00"), e.Actor})
+		Sequence int64           `json:"sequence"`
+		State    string          `json:"state"`
+		At       string          `json:"at"`
+		Actor    json.RawMessage `json:"actor"`
+	}{e.Sequence, state, e.At.Format(layout + "Z07:00"), actor})
 }
 
 // RecordActionEvents records what a read of the Action request an Actions subscription follows returned, in the

@@ -8,7 +8,6 @@ import (
 	"slices"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/google/uuid"
@@ -24,15 +23,17 @@ const (
 )
 
 // inFlight are the states a request leaves to satisfy WATCH_UNTIL_TERMINAL.
-var inFlight = []action.State{action.StateDecisionPending, action.StateAllowed, action.StateDispatching, action.StateRunning}
+var inFlight = []action_servicepb.ActionState{action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING, action_servicepb.ActionState_ACTION_STATE_ALLOWED, action_servicepb.ActionState_ACTION_STATE_DISPATCHING, action_servicepb.ActionState_ACTION_STATE_RUNNING}
 
 // satisfies reads a watch's `until`: whether a receipt in a state ends the watch.
-func satisfies(until action_servicepb.WatchUntil) (func(action.State) bool, error) {
+func satisfies(until action_servicepb.WatchUntil) (func(action_servicepb.ActionState) bool, error) {
 	switch until {
 	case action_servicepb.WatchUntil_WATCH_UNTIL_DECISION:
-		return func(state action.State) bool { return state != action.StateDecisionPending }, nil
+		return func(state action_servicepb.ActionState) bool {
+			return state != action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING
+		}, nil
 	case action_servicepb.WatchUntil_WATCH_UNTIL_UNSPECIFIED, action_servicepb.WatchUntil_WATCH_UNTIL_TERMINAL:
-		return func(state action.State) bool { return !slices.Contains(inFlight, state) }, nil
+		return func(state action_servicepb.ActionState) bool { return !slices.Contains(inFlight, state) }, nil
 	default:
 		return nil, invalidRequest("until %v is not a watch condition", until)
 	}
@@ -168,7 +169,7 @@ type setWatch struct {
 	stream    grpc.ServerStreamingServer[action_servicepb.WatchActionRequestsResponse]
 	principal store.ReadPrincipal
 	// states is the filter; empty selects every state.
-	states []action.State
+	states []action_servicepb.ActionState
 	// shown is the version the client holds of each request in the filtered set.
 	shown map[uuid.UUID]int64
 }
@@ -177,7 +178,7 @@ func (w *setWatch) send(frame *action_servicepb.WatchActionRequestsResponse) err
 	return send(w.ctx, w.service.gate, w.stream, frame)
 }
 
-func (w *setWatch) selects(state action.State) bool {
+func (w *setWatch) selects(state action_servicepb.ActionState) bool {
 	return len(w.states) == 0 || slices.Contains(w.states, state)
 }
 

@@ -7,71 +7,73 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
+	"google.golang.org/protobuf/proto"
 )
 
-func TestStatesRoundTripTheirActionServiceNumbers(t *testing.T) {
-	states := []struct {
-		state State
-		proto action_servicepb.ActionState
+func TestStoredStatesRoundTrip(t *testing.T) {
+	pairs := []struct {
+		state action_servicepb.ActionState
+		text  string
 	}{
-		{StateDecisionPending, action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING},
-		{StateAllowed, action_servicepb.ActionState_ACTION_STATE_ALLOWED},
-		{StateDenied, action_servicepb.ActionState_ACTION_STATE_DENIED},
-		{StateDispatching, action_servicepb.ActionState_ACTION_STATE_DISPATCHING},
-		{StateRunning, action_servicepb.ActionState_ACTION_STATE_RUNNING},
-		{StateSucceeded, action_servicepb.ActionState_ACTION_STATE_SUCCEEDED},
-		{StateFailed, action_servicepb.ActionState_ACTION_STATE_FAILED},
-		{StateCancelled, action_servicepb.ActionState_ACTION_STATE_CANCELLED},
-		{StateExecutionUnknown, action_servicepb.ActionState_ACTION_STATE_EXECUTION_UNKNOWN},
+		{action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING, "decision_pending"},
+		{action_servicepb.ActionState_ACTION_STATE_ALLOWED, "allowed"},
+		{action_servicepb.ActionState_ACTION_STATE_DENIED, "denied"},
+		{action_servicepb.ActionState_ACTION_STATE_DISPATCHING, "dispatching"},
+		{action_servicepb.ActionState_ACTION_STATE_RUNNING, "running"},
+		{action_servicepb.ActionState_ACTION_STATE_SUCCEEDED, "succeeded"},
+		{action_servicepb.ActionState_ACTION_STATE_FAILED, "failed"},
+		{action_servicepb.ActionState_ACTION_STATE_CANCELLED, "cancelled"},
+		{action_servicepb.ActionState_ACTION_STATE_EXECUTION_UNKNOWN, "execution_unknown"},
 	}
-	for _, test := range states {
-		if got, ok := test.state.Proto(); !ok || got != test.proto {
-			t.Errorf("%q.Proto() = %v, %v; want %v, true", test.state, got, ok, test.proto)
+	for _, pair := range pairs {
+		state, ok := StateFromStored(pair.text)
+		if !ok || state != pair.state {
+			t.Errorf("stored %q decoded as %v, %v; want %v", pair.text, state, ok, pair.state)
 		}
-		if got, ok := StateFromProto(test.proto); !ok || got != test.state {
-			t.Errorf("StateFromProto(%v) = %q, %v; want %q, true", test.proto, got, ok, test.state)
-		}
-	}
-	for _, proto := range []action_servicepb.ActionState{
-		action_servicepb.ActionState_ACTION_STATE_UNSPECIFIED,
-		99,
-	} {
-		if got, ok := StateFromProto(proto); ok {
-			t.Errorf("StateFromProto(%v) = %q, true; want unknown", proto, got)
+		if got, ok := StateStored(pair.state); !ok || got != pair.text {
+			t.Errorf("state %v stored as %q, %v; want %q", pair.state, got, ok, pair.text)
 		}
 	}
-	if _, ok := State("future_state").Proto(); ok {
-		t.Error("unknown stored state has a protobuf form")
+	if len(StoredStates()) != len(pairs) {
+		t.Errorf("stored vocabulary has %d states, want %d", len(StoredStates()), len(pairs))
+	}
+	for _, state := range []action_servicepb.ActionState{action_servicepb.ActionState_ACTION_STATE_UNSPECIFIED, 99} {
+		if _, ok := StateStored(state); ok {
+			t.Errorf("accepted state %v", state)
+		}
+	}
+	if _, ok := StateFromStored("future_state"); ok {
+		t.Error("accepted unknown stored state")
 	}
 }
 
-func TestActorProtoPreservesRecordedIdentities(t *testing.T) {
-	actors := []Actor{
-		CallerActor{Account: ServiceAccount{Namespace: "test-namespace", Name: "test-caller"}},
-		OperatorActor{Issuer: "https://issuer.example", Subject: "subject-123"},
+func TestStoredActorRoundTrip(t *testing.T) {
+	actors := []*action_servicepb.Principal{
+		{Principal: &action_servicepb.Principal_Caller{Caller: &sandboxespb.ServiceAccount{Namespace: "test-namespace", Name: "test-caller"}}},
+		{Principal: &action_servicepb.Principal_Operator{Operator: &action_servicepb.Operator{Issuer: "https://issuer.example", Subject: "subject-123"}}},
+		nil,
 	}
 	for _, actor := range actors {
-		principal, err := ActorToProto(actor)
+		encoded, err := EncodeStoredActor(actor)
 		if err != nil {
-			t.Fatalf("ActorToProto(%#v): %v", actor, err)
+			t.Fatal(err)
 		}
-		got, err := ActorFromProto(principal)
-		if err != nil || got != actor {
-			t.Errorf("ActorFromProto(ActorToProto(%#v)) = %#v, %v", actor, got, err)
+		decoded, err := DecodeStoredActor(encoded)
+		if err != nil || !proto.Equal(decoded, actor) {
+			t.Errorf("actor %v encoded as %s decoded as %v, %v", actor, encoded, decoded, err)
 		}
 	}
-
-	for _, principal := range []*action_servicepb.Principal{
+	if got, _ := EncodeStoredActor(nil); string(got) != "null" {
+		t.Errorf("nil actor encoded as %s", got)
+	}
+	for _, actor := range []*action_servicepb.Principal{
 		{},
-		{Principal: &action_servicepb.Principal_Caller{Caller: &sandboxespb.ServiceAccount{Namespace: "", Name: "test-caller"}}},
+		{Principal: &action_servicepb.Principal_Caller{Caller: &sandboxespb.ServiceAccount{Name: "test-caller"}}},
 		{Principal: &action_servicepb.Principal_Operator{Operator: &action_servicepb.Operator{Issuer: "issuer"}}},
 	} {
-		if _, err := ActorFromProto(principal); !errors.Is(err, ErrInvalidActor) {
-			t.Errorf("ActorFromProto(%v) error = %v, want ErrInvalidActor", principal, err)
+		if err := ValidateActor(actor); !errors.Is(err, ErrInvalidActor) {
+			t.Errorf("ValidateActor(%v) = %v", actor, err)
 		}
-	}
-	if _, err := ActorToProto(CallerActor{}); !errors.Is(err, ErrInvalidActor) {
-		t.Errorf("ActorToProto(empty caller) error = %v, want ErrInvalidActor", err)
 	}
 }
 

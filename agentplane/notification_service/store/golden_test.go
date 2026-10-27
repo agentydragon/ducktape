@@ -5,10 +5,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"reflect"
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/action"
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	"google.golang.org/protobuf/proto"
 )
@@ -121,17 +121,17 @@ func TestActionActorDecoderKeepsExplicitNullCompatibility(t *testing.T) {
 	for _, test := range []struct {
 		name string
 		json string
-		want action.Actor
+		want *action_servicepb.Principal
 	}{
 		{
 			name: "caller with null operator fields",
 			json: `{"account":{"namespace":"test-namespace","name":"test-caller"},"issuer":null,"subject":null}`,
-			want: action.CallerActor{Account: action.ServiceAccount{Namespace: "test-namespace", Name: "test-caller"}},
+			want: &action_servicepb.Principal{Principal: &action_servicepb.Principal_Caller{Caller: action.ServiceAccount{Namespace: "test-namespace", Name: "test-caller"}.Proto()}},
 		},
 		{
 			name: "operator with null account",
 			json: `{"account":null,"issuer":"test-issuer","subject":"test-subject"}`,
-			want: action.OperatorActor{Issuer: "test-issuer", Subject: "test-subject"},
+			want: &action_servicepb.Principal{Principal: &action_servicepb.Principal_Operator{Operator: &action_servicepb.Operator{Issuer: "test-issuer", Subject: "test-subject"}}},
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -139,17 +139,17 @@ func TestActionActorDecoderKeepsExplicitNullCompatibility(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !reflect.DeepEqual(actor, test.want) {
+			if !proto.Equal(actor, test.want) {
 				t.Fatalf("actor = %#v, want %#v", actor, test.want)
 			}
-			written, err := json.Marshal(actor)
+			written, err := action.EncodeStoredActor(actor)
 			if err != nil {
 				t.Fatal(err)
 			}
-			switch test.want.(type) {
-			case action.CallerActor:
+			switch {
+			case test.want.GetCaller() != nil:
 				sameJSON(t, written, []byte(`{"account":{"namespace":"test-namespace","name":"test-caller"}}`))
-			case action.OperatorActor:
+			case test.want.GetOperator() != nil:
 				sameJSON(t, written, []byte(`{"issuer":"test-issuer","subject":"test-subject"}`))
 			}
 		})

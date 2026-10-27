@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action"
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/migrations"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
@@ -117,7 +118,7 @@ func (f fixture) get(t *testing.T, id uuid.UUID) store.ActionRequest {
 }
 
 // await waits until the request is in the state, and returns it.
-func (f fixture) await(t *testing.T, id uuid.UUID, state action.State) store.ActionRequest {
+func (f fixture) await(t *testing.T, id uuid.UUID, state action_servicepb.ActionState) store.ActionRequest {
 	t.Helper()
 	deadline := time.After(awaitBound)
 	for {

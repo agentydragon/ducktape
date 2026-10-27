@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/agentydragon/ducktape/agentplane/action"
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 )
@@ -57,8 +58,8 @@ func utc(t *time.Time) *time.Time {
 	return &converted
 }
 
-func decodeRecordedActor(data []byte) (action.Actor, error) {
-	actor, err := action.DecodeActor(data)
+func decodeRecordedActor(data []byte) (*action_servicepb.Principal, error) {
+	actor, err := action.DecodeStoredActor(data)
 	if errors.Is(err, action.ErrInvalidActor) {
 		return nil, invalid("%s", err)
 	}
@@ -77,8 +78,9 @@ func scanRequest(row rowScanner) (requestRow, error) {
 		return requestRow{}, fmt.Errorf("request %s action: %w", r.ID, err)
 	}
 	r.Arguments = arguments
-	r.State = action.State(state)
-	if !r.State.Valid() {
+	var known bool
+	r.State, known = action.StateFromStored(state)
+	if !known {
 		return requestRow{}, fmt.Errorf("request %s has unknown state %q", r.ID, state)
 	}
 	r.CreatedAt, r.UpdatedAt, r.HistoryAt = r.CreatedAt.UTC(), r.UpdatedAt.UTC(), utc(r.HistoryAt)
@@ -217,17 +219,25 @@ func loadExecutions(ctx context.Context, q querier, ids pq.StringArray) (map[uui
 	return executions, rows.Err()
 }
 
+func storedState(state action_servicepb.ActionState) string {
+	text, known := action.StateStored(state)
+	if !known {
+		panic(fmt.Sprintf("unsupported Action state %v", state))
+	}
+	return text
+}
+
 // advance moves the request to state in the caller's transaction as one transition: a version, an Event and the
 // request's first place in history.
-func advance(ctx context.Context, tx *sql.Tx, row *requestRow, state action.State, at time.Time, actor Principal) error {
+func advance(ctx context.Context, tx *sql.Tx, row *requestRow, state action_servicepb.ActionState, at time.Time, actor Principal) error {
 	row.State, row.UpdatedAt = state, at
 	row.Version++
-	if state != action.StateDecisionPending && row.HistoryAt == nil {
+	if state != action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING && row.HistoryAt == nil {
 		row.HistoryAt = &at
 	}
 	if _, err := tx.ExecContext(ctx,
 		`UPDATE action_request SET state = $2, version = $3, updated_at = $4, history_at = $5 WHERE id = $1`,
-		row.ID, state, row.Version, at, row.HistoryAt); err != nil {
+		row.ID, storedState(state), row.Version, at, row.HistoryAt); err != nil {
 		return err
 	}
 	return appendEvent(ctx, tx, *row, actor)
@@ -241,7 +251,7 @@ func appendEvent(ctx context.Context, tx *sql.Tx, row requestRow, actor Principa
 		if err != nil {
 			return err
 		}
-		encoded, err := json.Marshal(recorded)
+		encoded, err := action.EncodeStoredActor(recorded)
 		if err != nil {
 			return err
 		}
@@ -249,18 +259,18 @@ func appendEvent(ctx context.Context, tx *sql.Tx, row requestRow, actor Principa
 	}
 	if _, err := tx.ExecContext(ctx,
 		`INSERT INTO action_event (request_id, sequence, state, at, actor) VALUES ($1, $2, $3, $4, $5::jsonb)`,
-		row.ID, row.Version, row.State, row.UpdatedAt, document); err != nil {
+		row.ID, row.Version, storedState(row.State), row.UpdatedAt, document); err != nil {
 		return err
 	}
 	return notify(ctx, tx, UpdatesChannel, row.ID.String())
 }
 
-func recordedActor(principal Principal) (action.Actor, error) {
+func recordedActor(principal Principal) (*action_servicepb.Principal, error) {
 	switch principal := principal.(type) {
 	case CallerPrincipal:
-		return action.CallerActor{Account: principal.Account}, nil
+		return &action_servicepb.Principal{Principal: &action_servicepb.Principal_Caller{Caller: principal.Account.Proto()}}, nil
 	case OperatorPrincipal:
-		return action.OperatorActor{Issuer: principal.Issuer, Subject: principal.Subject}, nil
+		return &action_servicepb.Principal{Principal: &action_servicepb.Principal_Operator{Operator: &action_servicepb.Operator{Issuer: principal.Issuer, Subject: principal.Subject}}}, nil
 	default:
 		return nil, fmt.Errorf("principal %T cannot author an Action event", principal)
 	}
@@ -331,7 +341,7 @@ func (s *Store) Submit(ctx context.Context, caller CallerPrincipal, input Action
 
 // ListFilter narrows List. Nil and empty fields do not filter.
 type ListFilter struct {
-	States         []action.State
+	States         []action_servicepb.ActionState
 	IdempotencyKey *string
 	// Limit bounds the page; nil returns every match.
 	Limit *int
@@ -344,7 +354,7 @@ type ListFilter struct {
 // reader see every owner's.
 func (s *Store) List(ctx context.Context, principal ReadPrincipal, filter ListFilter) ([]ActionRequest, error) {
 	for _, state := range filter.States {
-		if !state.Valid() {
+		if _, known := action.StateStored(state); !known {
 			return nil, invalid("unknown state %q", state)
 		}
 	}
@@ -358,7 +368,7 @@ func (s *Store) List(ctx context.Context, principal ReadPrincipal, filter ListFi
 		if len(filter.States) > 0 {
 			states := make(pq.StringArray, len(filter.States))
 			for i, state := range filter.States {
-				states[i] = string(state)
+				states[i] = storedState(state)
 			}
 			conditions = append(conditions, "state = ANY("+q.arg(states)+")")
 		}
@@ -388,16 +398,16 @@ func (s *Store) List(ctx context.Context, principal ReadPrincipal, filter ListFi
 
 // Versions returns the version of each request the reader may see in one of states, or in any state when states is
 // empty. Every visible change to a request advances its version, so a watch compares them to find what changed.
-func (s *Store) Versions(ctx context.Context, principal ReadPrincipal, states []action.State) (map[uuid.UUID]int64, error) {
+func (s *Store) Versions(ctx context.Context, principal ReadPrincipal, states []action_servicepb.ActionState) (map[uuid.UUID]int64, error) {
 	var q query
 	conditions := q.readableBy(principal)
 	if len(states) > 0 {
 		values := make(pq.StringArray, len(states))
 		for i, state := range states {
-			if !state.Valid() {
+			if _, known := action.StateStored(state); !known {
 				return nil, invalid("unknown state %q", state)
 			}
-			values[i] = string(state)
+			values[i] = storedState(state)
 		}
 		conditions = append(conditions, "state = ANY("+q.arg(values)+")")
 	}
@@ -592,8 +602,10 @@ func (s *Store) Events(ctx context.Context, id uuid.UUID, principal ReadPrincipa
 			if err := rows.Scan(&event.Sequence, &state, &event.At, &actor); err != nil {
 				return err
 			}
-			event.State, event.At = action.State(state), event.At.UTC()
-			if !event.State.Valid() {
+			var known bool
+			event.State, known = action.StateFromStored(state)
+			event.At = event.At.UTC()
+			if !known {
 				return fmt.Errorf("event %s/%d has unknown state %q", id, event.Sequence, state)
 			}
 			if document := jsonValue(actor); document != nil {

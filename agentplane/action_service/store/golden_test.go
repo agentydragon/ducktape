@@ -9,13 +9,14 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action"
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/google/uuid"
 )
 
 func TestVocabulariesAreThoseOfTheStoredColumns(t *testing.T) {
 	enums := loadGolden(t).Enums
 	for column, want := range map[string][]string{
-		"action_state":    toStrings(action.States()),
+		"action_state":    action.StoredStates(),
 		"execution_state": toStrings(executionStates),
 		"verdict":         {string(VerdictAllow), string(VerdictDeny)},
 		"policy_kind":     toStrings(policyKinds),
@@ -38,9 +39,9 @@ func TestUnknownOutcomeReasonsBelongToStoredVocabulary(t *testing.T) {
 
 func TestTerminalStatesMapToStoredRequestStates(t *testing.T) {
 	vectors := loadGolden(t).TerminalStates
-	got := map[ExecutionState]action.State{}
+	got := map[ExecutionState]action_servicepb.ActionState{}
 	for _, vector := range vectors {
-		got[ExecutionState(vector.ExecutionState)] = action.State(vector.ActionState)
+		got[ExecutionState(vector.ExecutionState)] = mustStateFromStored(t, vector.ActionState)
 	}
 	if !reflect.DeepEqual(got, terminalActionStates) || len(vectors) != len(terminalActionStates) {
 		t.Errorf("stored mapping is %v, the store %v", got, terminalActionStates)
@@ -168,7 +169,7 @@ func TestPolicyEvidenceRoundTripsStoredForms(t *testing.T) {
 func TestActorsRoundTripStoredForms(t *testing.T) {
 	for _, vector := range loadGolden(t).Actors {
 		t.Run(vector.Name, func(t *testing.T) {
-			actor, err := action.DecodeActor(vector.Input)
+			actor, err := action.DecodeStoredActor(vector.Input)
 			if !vector.Valid {
 				if err == nil {
 					t.Errorf("accepted %s", vector.Input)
@@ -178,10 +179,10 @@ func TestActorsRoundTripStoredForms(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, caller := actor.(action.CallerActor); caller != (vector.Kind == "caller") {
+			if caller := actor.GetCaller() != nil; caller != (vector.Kind == "caller") {
 				t.Errorf("read a %T, want a %s", actor, vector.Kind)
 			}
-			written, err := json.Marshal(actor)
+			written, err := action.EncodeStoredActor(actor)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -249,4 +250,13 @@ func TestHistoryCursorsSatisfyStoredContract(t *testing.T) {
 			}
 		})
 	}
+}
+
+func mustStateFromStored(t *testing.T, stored string) action_servicepb.ActionState {
+	t.Helper()
+	state, known := action.StateFromStored(stored)
+	if !known {
+		t.Fatalf("unknown stored Action state %q", stored)
+	}
+	return state
 }

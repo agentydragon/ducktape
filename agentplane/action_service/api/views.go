@@ -89,7 +89,7 @@ func jsonView(field string, document json.RawMessage, view interface{ UnmarshalJ
 }
 
 func requestView(request store.ActionRequest) (*action_servicepb.ActionRequest, error) {
-	state, ok := request.State.Proto()
+	_, ok := action.StateStored(request.State)
 	if !ok {
 		return nil, fmt.Errorf("%w: state %q", errStoredRequest, request.State)
 	}
@@ -109,7 +109,7 @@ func requestView(request store.ActionRequest) (*action_servicepb.ActionRequest, 
 		Id: request.ID.String(), IdempotencyKey: request.IdempotencyKey,
 		Action:    &action_servicepb.ActionIdentity{Group: request.Action.Group, Name: request.Action.Name},
 		Arguments: arguments, Title: request.Title, Description: request.Description,
-		Caller: request.Caller.Proto(), State: state, Version: request.Version,
+		Caller: request.Caller.Proto(), State: request.State, Version: request.Version,
 		CreatedAt: timestamppb.New(request.CreatedAt), UpdatedAt: timestamppb.New(request.UpdatedAt),
 		Decision: decision, Execution: execution,
 	}, nil
@@ -214,31 +214,29 @@ func executionView(execution *store.Execution) (*action_servicepb.Execution, err
 }
 
 func eventView(event store.Event) (*action_servicepb.ActionEvent, error) {
-	state, ok := event.State.Proto()
+	_, ok := action.StateStored(event.State)
 	if !ok {
 		return nil, fmt.Errorf("%w: event state %q", errStoredRequest, event.State)
 	}
 	if event.Sequence > math.MaxInt32 {
 		return nil, fmt.Errorf("%w: event sequence %d", errStoredRequest, event.Sequence)
 	}
-	view := &action_servicepb.ActionEvent{Sequence: int32(event.Sequence), State: state, At: timestamppb.New(event.At)}
-	actor, err := action.ActorToProto(event.Actor)
+	view := &action_servicepb.ActionEvent{Sequence: int32(event.Sequence), State: event.State, At: timestamppb.New(event.At)}
+	err := action.ValidateActor(event.Actor)
 	if err != nil {
 		return nil, fmt.Errorf("%w: event actor: %w", errStoredRequest, err)
 	}
-	view.Actor = actor
+	view.Actor = event.Actor
 	return view, nil
 }
 
 // requestedStates reads a request's state filter; `ACTION_STATE_UNSPECIFIED` and a number the API does not
 // define are malformed.
-func requestedStates(states []action_servicepb.ActionState) ([]action.State, error) {
-	stored := make([]action.State, len(states))
-	for i, state := range states {
-		var known bool
-		if stored[i], known = action.StateFromProto(state); !known {
+func requestedStates(states []action_servicepb.ActionState) ([]action_servicepb.ActionState, error) {
+	for _, state := range states {
+		if _, known := action.StateStored(state); !known {
 			return nil, invalidRequest("state %v is not an action state", state)
 		}
 	}
-	return stored, nil
+	return states, nil
 }

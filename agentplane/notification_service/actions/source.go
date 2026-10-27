@@ -108,12 +108,12 @@ func actionEvent(event *action_servicepb.ActionEvent) (store.ActionEvent, error)
 	if event == nil || event.GetSequence() < 1 || event.GetAt() == nil || event.GetAt().CheckValid() != nil {
 		return store.ActionEvent{}, validationFailure()
 	}
-	state, ok := action.StateFromProto(event.GetState())
-	if !ok {
+	state := event.GetState()
+	if _, ok := action.StateStored(state); !ok {
 		return store.ActionEvent{}, validationFailure()
 	}
-	actor, err := action.ActorFromProto(event.GetActor())
-	if err != nil {
+	actor := event.GetActor()
+	if err := action.ValidateActor(actor); err != nil {
 		return store.ActionEvent{}, validationFailure()
 	}
 	return store.ActionEvent{

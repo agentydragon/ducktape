@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/action"
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/google/uuid"
 )
 
@@ -30,7 +30,7 @@ func TestSubmitStoresAPendingRequestWithItsFirstEvent(t *testing.T) {
 
 	if request.ID != id || request.IdempotencyKey != "pending" || request.Action != body.Action ||
 		request.Title != body.Title || *request.Description != description || request.Caller != caller.Account ||
-		request.State != action.StateDecisionPending || request.Version != 1 ||
+		request.State != action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING || request.Version != 1 ||
 		!request.CreatedAt.Equal(request.UpdatedAt) || request.Decision != nil || request.Execution != nil {
 		t.Errorf("stored %+v", request)
 	}
@@ -39,7 +39,7 @@ func TestSubmitStoresAPendingRequestWithItsFirstEvent(t *testing.T) {
 		t.Errorf("read back %+v, want %+v", got, request)
 	}
 	events := f.events(t, id)
-	want := []Event{{Sequence: 1, State: action.StateDecisionPending, At: request.CreatedAt}}
+	want := []Event{{Sequence: 1, State: action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING, At: request.CreatedAt}}
 	if !reflect.DeepEqual(events, want) {
 		t.Errorf("events = %+v, want %+v", events, want)
 	}
@@ -73,7 +73,7 @@ func TestAnIdempotencyKeyIsSpentWhateverTheEnvelopeSays(t *testing.T) {
 	if _, err := f.Submit(t.Context(), caller, input("spent"), Admission{RequestID: uuid.New()}); conflictReason(err) != ConflictIdempotencyKeyUsed {
 		t.Errorf("resubmitting after a cancellation: %v", err)
 	}
-	if fresh := f.submit(t, caller, "fresh"); fresh.State != action.StateDecisionPending {
+	if fresh := f.submit(t, caller, "fresh"); fresh.State != action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING {
 		t.Errorf("a fresh key started in %s", fresh.State)
 	}
 }
@@ -87,11 +87,11 @@ func TestADecisiveVoteCommitsItsDecisionWithTheInsert(t *testing.T) {
 	description := "matched binding test-binding"
 	for _, test := range []struct {
 		verdict   Verdict
-		state     action.State
+		state     action_servicepb.ActionState
 		execution bool
 	}{
-		{VerdictAllow, action.StateAllowed, true},
-		{VerdictDeny, action.StateDenied, false},
+		{VerdictAllow, action_servicepb.ActionState_ACTION_STATE_ALLOWED, true},
+		{VerdictDeny, action_servicepb.ActionState_ACTION_STATE_DENIED, false},
 	} {
 		t.Run(string(test.verdict), func(t *testing.T) {
 			f := newFixture(t)
@@ -122,7 +122,7 @@ func TestADecisiveVoteCommitsItsDecisionWithTheInsert(t *testing.T) {
 				}
 			}
 			events := f.events(t, request.ID)
-			if got := eventStates(events); !reflect.DeepEqual(got, []action.State{action.StateDecisionPending, test.state}) ||
+			if got := eventStates(events); !reflect.DeepEqual(got, []action_servicepb.ActionState{action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING, test.state}) ||
 				!events[0].At.Equal(events[1].At) || events[1].Sequence != 2 {
 				t.Errorf("events %+v", events)
 			}

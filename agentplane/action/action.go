@@ -1,4 +1,4 @@
-// Package action holds the shared vocabulary and wire codecs for Action requests.
+// Package action holds the stored codecs for the Action Service's protobuf vocabulary.
 package action
 
 import (
@@ -11,79 +11,54 @@ import (
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 )
 
-// State is where an Action request is in its lifecycle.
-type State string
-
-const (
-	StateDecisionPending  State = "decision_pending"
-	StateAllowed          State = "allowed"
-	StateDenied           State = "denied"
-	StateDispatching      State = "dispatching"
-	StateRunning          State = "running"
-	StateSucceeded        State = "succeeded"
-	StateFailed           State = "failed"
-	StateCancelled        State = "cancelled"
-	StateExecutionUnknown State = "execution_unknown"
-)
-
-var stateViews = [...]struct {
-	state State
-	proto action_servicepb.ActionState
+// The Action Service stores states as these legacy text values. Keep the mapping explicit: protobuf enum names
+// and numbers are not a storage format.
+var storedStates = [...]struct {
+	state action_servicepb.ActionState
+	text  string
 }{
-	{StateDecisionPending, action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING},
-	{StateAllowed, action_servicepb.ActionState_ACTION_STATE_ALLOWED},
-	{StateDenied, action_servicepb.ActionState_ACTION_STATE_DENIED},
-	{StateDispatching, action_servicepb.ActionState_ACTION_STATE_DISPATCHING},
-	{StateRunning, action_servicepb.ActionState_ACTION_STATE_RUNNING},
-	{StateSucceeded, action_servicepb.ActionState_ACTION_STATE_SUCCEEDED},
-	{StateFailed, action_servicepb.ActionState_ACTION_STATE_FAILED},
-	{StateCancelled, action_servicepb.ActionState_ACTION_STATE_CANCELLED},
-	{StateExecutionUnknown, action_servicepb.ActionState_ACTION_STATE_EXECUTION_UNKNOWN},
+	{action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING, "decision_pending"},
+	{action_servicepb.ActionState_ACTION_STATE_ALLOWED, "allowed"},
+	{action_servicepb.ActionState_ACTION_STATE_DENIED, "denied"},
+	{action_servicepb.ActionState_ACTION_STATE_DISPATCHING, "dispatching"},
+	{action_servicepb.ActionState_ACTION_STATE_RUNNING, "running"},
+	{action_servicepb.ActionState_ACTION_STATE_SUCCEEDED, "succeeded"},
+	{action_servicepb.ActionState_ACTION_STATE_FAILED, "failed"},
+	{action_servicepb.ActionState_ACTION_STATE_CANCELLED, "cancelled"},
+	{action_servicepb.ActionState_ACTION_STATE_EXECUTION_UNKNOWN, "execution_unknown"},
 }
 
-// ErrInvalidActor marks a well-shaped actor whose identity is incomplete. Storage owners can classify this
-// semantic error without treating malformed JSON or unknown fields as an invalid actor value.
-var ErrInvalidActor = errors.New("invalid Action actor")
-
-func (s State) Valid() bool {
-	for _, known := range stateViews {
-		if s == known.state {
-			return true
-		}
-	}
-	return false
-}
-
-// States returns the states in their stable protobuf vocabulary order.
-func States() []State {
-	states := make([]State, len(stateViews))
-	for i, known := range stateViews {
-		states[i] = known.state
-	}
-	return states
-}
-
-// StateFromProto reads only the Action Service's defined states. Unspecified and future values remain unknown.
-func StateFromProto(state action_servicepb.ActionState) (State, bool) {
-	for _, known := range stateViews {
-		if known.proto == state {
+func StateFromStored(text string) (action_servicepb.ActionState, bool) {
+	for _, known := range storedStates {
+		if text == known.text {
 			return known.state, true
-		}
-	}
-	return "", false
-}
-
-// Proto writes only the Action Service's defined states. A future stored state has no wire form yet.
-func (s State) Proto() (action_servicepb.ActionState, bool) {
-	for _, known := range stateViews {
-		if s == known.state {
-			return known.proto, true
 		}
 	}
 	return action_servicepb.ActionState_ACTION_STATE_UNSPECIFIED, false
 }
 
-// ServiceAccount is a Kubernetes account that owns or authors an Action.
+func StateStored(state action_servicepb.ActionState) (string, bool) {
+	for _, known := range storedStates {
+		if state == known.state {
+			return known.text, true
+		}
+	}
+	return "", false
+}
+
+func StoredStates() []string {
+	states := make([]string, len(storedStates))
+	for i, known := range storedStates {
+		states[i] = known.text
+	}
+	return states
+}
+
+// ErrInvalidActor marks a well-shaped actor whose identity is incomplete. Malformed JSON and unknown fields
+// remain parse errors rather than this semantic error.
+var ErrInvalidActor = errors.New("invalid Action actor")
+
+// ServiceAccount is comparable so ownership checks use namespace/name values, not protobuf pointer identity.
 type ServiceAccount struct {
 	Namespace string `json:"namespace"`
 	Name      string `json:"name"`
@@ -119,24 +94,31 @@ func (a ServiceAccount) Proto() *sandboxespb.ServiceAccount {
 	return &sandboxespb.ServiceAccount{Namespace: a.Namespace, Name: a.Name}
 }
 
-// Actor is who authored a recorded Action event. It grants no read or decision authority.
-type Actor interface{ isActor() }
-
-// CallerActor is the ServiceAccount that requested a cancellation.
-type CallerActor struct {
-	Account ServiceAccount `json:"account"`
+// ValidateActor validates a recorded identity. It grants no read or decision authority.
+func ValidateActor(principal *action_servicepb.Principal) error {
+	if principal == nil {
+		return nil
+	}
+	switch identity := principal.GetPrincipal().(type) {
+	case *action_servicepb.Principal_Caller:
+		if _, err := ServiceAccountFromProto(identity.Caller); err != nil {
+			return fmt.Errorf("invalid caller actor: %w: %v", ErrInvalidActor, err)
+		}
+	case *action_servicepb.Principal_Operator:
+		if identity.Operator == nil || identity.Operator.GetIssuer() == "" || identity.Operator.GetSubject() == "" {
+			return fmt.Errorf("%w: an operator needs an issuer and a subject", ErrInvalidActor)
+		}
+	default:
+		return fmt.Errorf("%w: principal has no caller or operator", ErrInvalidActor)
+	}
+	return nil
 }
 
-// OperatorActor is the verified human who requested a cancellation.
-type OperatorActor struct {
-	Issuer  string `json:"issuer"`
-	Subject string `json:"subject"`
-}
-
-func (CallerActor) isActor()   {}
-func (OperatorActor) isActor() {}
-
-func DecodeActor(data []byte) (Actor, error) {
+// DecodeStoredActor reads the legacy flat JSON document into the canonical protobuf identity.
+func DecodeStoredActor(data []byte) (*action_servicepb.Principal, error) {
+	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+		return nil, nil
+	}
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(data, &fields); err != nil {
 		return nil, err
@@ -153,61 +135,40 @@ func DecodeActor(data []byte) (Actor, error) {
 		if err := decodeFields(wire.Account, &account, "namespace", "name"); err != nil {
 			return nil, err
 		}
-		caller := ServiceAccount(account)
-		if err := caller.Validate(); err != nil {
-			return nil, fmt.Errorf("invalid caller actor: %w: %v", ErrInvalidActor, err)
-		}
-		actor := CallerActor{Account: caller}
-		return actor, nil
+		principal := &action_servicepb.Principal{Principal: &action_servicepb.Principal_Caller{Caller: ServiceAccount(account).Proto()}}
+		return principal, ValidateActor(principal)
 	}
-	var actor OperatorActor
-	if err := decodeFields(data, &actor, "issuer", "subject"); err != nil {
+	var wire struct {
+		Issuer  string `json:"issuer"`
+		Subject string `json:"subject"`
+	}
+	if err := decodeFields(data, &wire, "issuer", "subject"); err != nil {
 		return nil, err
 	}
-	if actor.Issuer == "" || actor.Subject == "" {
-		return nil, fmt.Errorf("%w: an operator needs an issuer and a subject", ErrInvalidActor)
-	}
-	return actor, nil
+	principal := &action_servicepb.Principal{Principal: &action_servicepb.Principal_Operator{Operator: &action_servicepb.Operator{Issuer: wire.Issuer, Subject: wire.Subject}}}
+	return principal, ValidateActor(principal)
 }
 
-func ActorFromProto(principal *action_servicepb.Principal) (Actor, error) {
+// EncodeStoredActor writes the legacy flat JSON document. Nil remains JSON null.
+func EncodeStoredActor(principal *action_servicepb.Principal) ([]byte, error) {
 	if principal == nil {
-		return nil, nil
+		return []byte("null"), nil
 	}
-	if caller := principal.GetCaller(); caller != nil {
-		account, err := ServiceAccountFromProto(caller)
-		if err != nil {
-			return nil, fmt.Errorf("invalid caller actor: %w: %v", ErrInvalidActor, err)
-		}
-		return CallerActor{Account: account}, nil
+	if err := ValidateActor(principal); err != nil {
+		return nil, err
 	}
-	if operator := principal.GetOperator(); operator != nil {
-		if operator.GetIssuer() == "" || operator.GetSubject() == "" {
-			return nil, fmt.Errorf("%w: an operator needs an issuer and a subject", ErrInvalidActor)
-		}
-		return OperatorActor{Issuer: operator.GetIssuer(), Subject: operator.GetSubject()}, nil
-	}
-	return nil, fmt.Errorf("%w: principal has no caller or operator", ErrInvalidActor)
-}
-
-func ActorToProto(actor Actor) (*action_servicepb.Principal, error) {
-	switch actor := actor.(type) {
-	case nil:
-		return nil, nil
-	case CallerActor:
-		if err := actor.Account.Validate(); err != nil {
-			return nil, fmt.Errorf("invalid caller actor: %w: %v", ErrInvalidActor, err)
-		}
-		return &action_servicepb.Principal{Principal: &action_servicepb.Principal_Caller{Caller: actor.Account.Proto()}}, nil
-	case OperatorActor:
-		if actor.Issuer == "" || actor.Subject == "" {
-			return nil, fmt.Errorf("%w: an operator needs an issuer and a subject", ErrInvalidActor)
-		}
-		return &action_servicepb.Principal{Principal: &action_servicepb.Principal_Operator{
-			Operator: &action_servicepb.Operator{Issuer: actor.Issuer, Subject: actor.Subject},
-		}}, nil
+	switch identity := principal.GetPrincipal().(type) {
+	case *action_servicepb.Principal_Caller:
+		return json.Marshal(struct {
+			Account ServiceAccount `json:"account"`
+		}{ServiceAccount{Namespace: identity.Caller.GetNamespace(), Name: identity.Caller.GetName()}})
+	case *action_servicepb.Principal_Operator:
+		return json.Marshal(struct {
+			Issuer  string `json:"issuer"`
+			Subject string `json:"subject"`
+		}{identity.Operator.GetIssuer(), identity.Operator.GetSubject()})
 	default:
-		return nil, fmt.Errorf("unknown Action actor %T", actor)
+		panic("validated principal has unknown variant")
 	}
 }
 

@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/action"
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/google/uuid"
 )
 
@@ -93,8 +93,8 @@ func (s *Store) ClaimExecution(ctx context.Context, id uuid.UUID, executorID str
 		if execution.State != ExecutionPendingDispatch {
 			return nil
 		}
-		if row.State != action.StateAllowed {
-			return &ConflictError{Reason: ConflictNotDispatchable, Message: fmt.Sprintf("cannot dispatch request in %s", row.State)}
+		if row.State != action_servicepb.ActionState_ACTION_STATE_ALLOWED {
+			return &ConflictError{Reason: ConflictNotDispatchable, Message: fmt.Sprintf("cannot dispatch request in %s", storedState(row.State))}
 		}
 		if !canDispatch(row.Action) {
 			return nil
@@ -112,7 +112,7 @@ func (s *Store) ClaimExecution(ctx context.Context, id uuid.UUID, executorID str
 			id, ExecutionDispatching, executorID, started.Token, started.ExpiresAt, at); err != nil {
 			return err
 		}
-		if err := advance(ctx, tx, &row, action.StateDispatching, at, nil); err != nil {
+		if err := advance(ctx, tx, &row, action_servicepb.ActionState_ACTION_STATE_DISPATCHING, at, nil); err != nil {
 			return err
 		}
 		claim = started
@@ -161,10 +161,10 @@ func (s *Store) MarkRunning(ctx context.Context, id uuid.UUID) (ExecutionRequest
 		if err != nil {
 			return err
 		}
-		if row.State != action.StateDispatching || execution.State != ExecutionDispatching {
+		if row.State != action_servicepb.ActionState_ACTION_STATE_DISPATCHING || execution.State != ExecutionDispatching {
 			return &ConflictError{
 				Reason:  ConflictNotStartable,
-				Message: fmt.Sprintf("cannot start execution in %s/%s", row.State, execution.State),
+				Message: fmt.Sprintf("cannot start execution in %s/%s", storedState(row.State), execution.State),
 			}
 		}
 		at := now()
@@ -173,7 +173,7 @@ func (s *Store) MarkRunning(ctx context.Context, id uuid.UUID) (ExecutionRequest
 			id, ExecutionRunning, at); err != nil {
 			return err
 		}
-		if err := advance(ctx, tx, &row, action.StateRunning, at, nil); err != nil {
+		if err := advance(ctx, tx, &row, action_servicepb.ActionState_ACTION_STATE_RUNNING, at, nil); err != nil {
 			return err
 		}
 		payload = ExecutionRequest{RequestID: row.ID, Action: row.Action, Arguments: row.Arguments, Caller: row.Caller}
@@ -279,7 +279,7 @@ func (s *Store) ExpireStaleLeases(ctx context.Context, executorHealthTimeout tim
 				id, ExecutionUnknown, unknownOutcomeError(reason), at); err != nil {
 				return err
 			}
-			if err := advance(ctx, tx, &row, action.StateExecutionUnknown, at, nil); err != nil {
+			if err := advance(ctx, tx, &row, action_servicepb.ActionState_ACTION_STATE_EXECUTION_UNKNOWN, at, nil); err != nil {
 				return err
 			}
 			expired = append(expired, id)

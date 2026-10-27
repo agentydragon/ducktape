@@ -4,10 +4,9 @@ Gaps to close if a workflow needs them; none is committed.
 
 ## Replace legacy model storage representations
 
-Design and migrate Action/Notification model persistence away from legacy JSON-shaped
-representations. Choose typed SQL or binary protobuf storage where appropriate; use new
-migrations with retained-data backfill and rolling read/write compatibility before removing
-the legacy codecs. Keep current stored formats compatible during the shared-protobuf refactor.
+Evaluate typed SQL or binary protobuf storage for Action/Notification models, the migration
+scope, and any data-retention requirements. Keep current stored formats compatible during this
+shared-protobuf refactor.
 
 ## Dynamic Client Registration for MCP OAuth linkage
 

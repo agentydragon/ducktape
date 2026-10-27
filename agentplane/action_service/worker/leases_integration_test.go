@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/action"
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 )
 
@@ -30,7 +30,7 @@ func TestTheSweepEndsALapsedLeaseOfAnyExecutor(t *testing.T) {
 			f.claimElsewhere(t, id, "test-other-executor", -time.Second)
 			e := &executor{step: succeed}
 			run(t, f.store, e, testTiming(), nil)
-			if kind := errorKind(t, f.await(t, id, action.StateExecutionUnknown)); kind != string(reason) {
+			if kind := errorKind(t, f.await(t, id, action_servicepb.ActionState_ACTION_STATE_EXECUTION_UNKNOWN)); kind != string(reason) {
 				t.Errorf("kind %q", kind)
 			}
 			if ran, pending := e.ran(), f.pending(t); len(ran) != 0 || len(pending) != 0 {
@@ -50,12 +50,12 @@ func TestAnExecutionThatOutlivesItsLeaseEndsUnknownAndItsOutcomeReconcilesIt(t *
 	run(t, f.store, &executor{step: g.step}, timing, nil)
 	g.awaitStarted(t)
 	// The worker's own heartbeat says its executor lives: only the lease lapsed.
-	if kind := errorKind(t, f.await(t, id, action.StateExecutionUnknown)); kind != string(store.UnknownLeaseExpired) {
+	if kind := errorKind(t, f.await(t, id, action_servicepb.ActionState_ACTION_STATE_EXECUTION_UNKNOWN)); kind != string(store.UnknownLeaseExpired) {
 		t.Errorf("kind %q", kind)
 	}
 
 	close(g.release)
-	got := f.await(t, id, action.StateSucceeded)
+	got := f.await(t, id, action_servicepb.ActionState_ACTION_STATE_SUCCEEDED)
 	if got.Execution.ReconciledAt == nil {
 		t.Errorf("execution %+v", got.Execution)
 	}
@@ -80,13 +80,13 @@ func TestHoldRenewsTheLeaseSoTheSweepPassesItBy(t *testing.T) {
 	// and the sweep that ends it has passed the held Execution by.
 	sentinel := f.allowed(t, "sentinel")
 	f.claimElsewhere(t, sentinel, "test-other-executor", timing.Lease)
-	f.await(t, sentinel, action.StateExecutionUnknown)
-	if got := f.get(t, id); got.State != action.StateRunning {
+	f.await(t, sentinel, action_servicepb.ActionState_ACTION_STATE_EXECUTION_UNKNOWN)
+	if got := f.get(t, id); got.State != action_servicepb.ActionState_ACTION_STATE_RUNNING {
 		t.Fatalf("the held request is %s", got.State)
 	}
 
 	close(g.release)
-	f.await(t, id, action.StateSucceeded)
+	f.await(t, id, action_servicepb.ActionState_ACTION_STATE_SUCCEEDED)
 }
 
 func TestHoldEndsTheWorkWhenItCannotRenewTheLease(t *testing.T) {
@@ -118,7 +118,7 @@ func TestHoldEndsTheWorkWhenItCannotRenewTheLease(t *testing.T) {
 		t.Fatal("the work outlived a renewal that could not happen")
 	}
 	release()
-	if kind := errorKind(t, f.await(t, id, action.StateExecutionUnknown)); kind != string(store.UnknownAdapterOutcome) {
+	if kind := errorKind(t, f.await(t, id, action_servicepb.ActionState_ACTION_STATE_EXECUTION_UNKNOWN)); kind != string(store.UnknownAdapterOutcome) {
 		t.Errorf("kind %q", kind)
 	}
 }

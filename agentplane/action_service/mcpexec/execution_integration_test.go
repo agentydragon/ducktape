@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -37,7 +36,7 @@ func TestAnAllowedExecutionCallsTheToolOnceAndKeepsItsWholeAnswer(t *testing.T) 
 	}))
 	f, _, _ := offered(t, server, nil, executorTiming(), "test_echo")
 
-	request := f.await(t, f.allowed(t, "test_echo", `{"text": "test text"}`), action.StateSucceeded)
+	request := f.await(t, f.allowed(t, "test_echo", `{"text": "test text"}`), action_servicepb.ActionState_ACTION_STATE_SUCCEEDED)
 	sameJSON(t, request.Execution.Result, json.RawMessage(`{
 		"_meta": {"test": "test-meta"},
 		"content": [{"type": "text", "text": "test text"}, {"type": "image", "data": "dGVzdA==", "mimeType": "image/png"}],
@@ -54,15 +53,15 @@ func TestAToolsErrorResultIsItsAnswerUnlessItCannotTellTheOutcome(t *testing.T) 
 	for _, test := range []struct {
 		name   string
 		answer *mcp.CallToolResult
-		state  action.State
+		state  action_servicepb.ActionState
 	}{
 		{
 			"an error result", &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: "test failure"}}},
-			action.StateSucceeded,
+			action_servicepb.ActionState_ACTION_STATE_SUCCEEDED,
 		},
 		{"an unknown outcome", &mcp.CallToolResult{IsError: true, Content: []mcp.Content{
 			&mcp.TextContent{Text: `{"kind": "execution_unknown", "message": "test"}`},
-		}}, action.StateExecutionUnknown},
+		}}, action_servicepb.ActionState_ACTION_STATE_EXECUTION_UNKNOWN},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			tool := &calls{}
@@ -70,7 +69,7 @@ func TestAToolsErrorResultIsItsAnswerUnlessItCannotTellTheOutcome(t *testing.T) 
 			server.AddTool(&mcp.Tool{Name: "test_tool", InputSchema: objectSchema}, answering(tool, test.answer))
 			f, _, _ := offered(t, server, nil, executorTiming(), "test_tool")
 			request := f.await(t, f.allowed(t, "test_tool", `{}`), test.state)
-			if test.state == action.StateSucceeded {
+			if test.state == action_servicepb.ActionState_ACTION_STATE_SUCCEEDED {
 				sameJSON(t, request.Execution.Result, json.RawMessage(`{"content": [{"type": "text", "text": "test failure"}],
 					"isError": true}`))
 			} else if kind := errorKind(t, request); kind != string(store.UnknownAdapterOutcome) {
@@ -111,7 +110,7 @@ func TestAnExecutionReadsTheToolsAgainBeforeItCallsOne(t *testing.T) {
 			}
 			u.server.Store(second)
 
-			request := f.await(t, f.allowed(t, "test_echo", `{"text": "test text"}`), action.StateFailed)
+			request := f.await(t, f.allowed(t, "test_echo", `{"text": "test text"}`), action_servicepb.ActionState_ACTION_STATE_FAILED)
 			if kind := errorKind(t, request); kind != test.kind {
 				t.Errorf("kind %q, want %q", kind, test.kind)
 			}
@@ -151,13 +150,13 @@ func TestASessionThatFailsUnderACallEndsItUnknownAndIsReplaced(t *testing.T) {
 	// The call's connection breaks: the server may have run the tool, so the Execution cannot tell and is never
 	// replayed.
 	u.http.CloseClientConnections()
-	if kind := errorKind(t, f.await(t, id, action.StateExecutionUnknown)); kind != string(store.UnknownAdapterOutcome) {
+	if kind := errorKind(t, f.await(t, id, action_servicepb.ActionState_ACTION_STATE_EXECUTION_UNKNOWN)); kind != string(store.UnknownAdapterOutcome) {
 		t.Errorf("kind %q", kind)
 	}
 	// The server closes the failed session once the tool it still runs returns.
 	g.open()
 	awaitGroup(t, s.groups, offering("test_echo", "test_hang"))
-	f.await(t, f.allowed(t, "test_echo", `{"text": "test text"}`), action.StateSucceeded)
+	f.await(t, f.allowed(t, "test_echo", `{"text": "test text"}`), action_servicepb.ActionState_ACTION_STATE_SUCCEEDED)
 	close(sessions)
 	var called []string
 	for session := range sessions {
@@ -185,11 +184,11 @@ func TestALeaseLostWhileTheToolsAreReadStopsTheExecutionBeforeTheCall(t *testing
 		`UPDATE action_execution SET lease_expires_at = now() WHERE request_id = $1`, id); err != nil {
 		t.Fatal(err)
 	}
-	f.await(t, id, action.StateExecutionUnknown)
+	f.await(t, id, action_servicepb.ActionState_ACTION_STATE_EXECUTION_UNKNOWN)
 	listing.open()
 	// The worker records the Execution's own outcome over the sweep's once Execute has returned.
 	request := f.awaitRequest(t, id, func(request store.ActionRequest) bool { return request.Execution.ReconciledAt != nil })
-	if request.State != action.StateExecutionUnknown || len(echo.made()) != 0 {
+	if request.State != action_servicepb.ActionState_ACTION_STATE_EXECUTION_UNKNOWN || len(echo.made()) != 0 {
 		t.Errorf("the request is %s and the tool was called %d times", request.State, len(echo.made()))
 	}
 }
@@ -208,7 +207,7 @@ func TestAnExecutionPastItsDeadlineEndsUnknown(t *testing.T) {
 	f, _, _ := offered(t, server, nil, timing, "test_hang")
 
 	// The lease renews for as long as the call runs: only the deadline ends it.
-	request := f.await(t, f.allowed(t, "test_hang", `{}`), action.StateExecutionUnknown)
+	request := f.await(t, f.allowed(t, "test_hang", `{}`), action_servicepb.ActionState_ACTION_STATE_EXECUTION_UNKNOWN)
 	if kind := errorKind(t, request); kind != string(store.UnknownAdapterOutcome) {
 		t.Errorf("kind %q", kind)
 	}
@@ -262,7 +261,7 @@ func TestADrainLetsTheCallInFlightFinishWhileItsLeaseAndItsExecutorAreKeptAlive(
 	if expired, err := f.store.ExpireStaleLeases(t.Context(), time.Second); err != nil || len(expired) != 0 {
 		t.Errorf("the sweep ended %v, %v", expired, err)
 	}
-	if request := f.get(t, id); request.State != action.StateRunning {
+	if request := f.get(t, id); request.State != action_servicepb.ActionState_ACTION_STATE_RUNNING {
 		t.Errorf("the request is %s", request.State)
 	}
 	health := group(t, groups).Health
@@ -276,7 +275,7 @@ func TestADrainLetsTheCallInFlightFinishWhileItsLeaseAndItsExecutorAreKeptAlive(
 	}
 
 	g.open()
-	request := f.await(t, id, action.StateSucceeded)
+	request := f.await(t, id, action_servicepb.ActionState_ACTION_STATE_SUCCEEDED)
 	sameJSON(t, request.Execution.Result, json.RawMessage(`{"content": [{"type": "text", "text": "test text"}]}`))
 	if len(echo.made()) != 1 {
 		t.Errorf("the tool was called %d times", len(echo.made()))

@@ -31,6 +31,7 @@ go_test(
     tags = ["requires_docker"],
     deps = [
         "//agentplane/action",
+        "//agentplane/action_service:action_service_go_proto",
         "//agentplane/action_service/migrations",
         "//agentplane/action_service/store",
         "//agentplane/postgres/go/wakeups",

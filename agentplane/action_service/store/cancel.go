@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/action"
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/google/uuid"
 )
 
@@ -25,20 +25,20 @@ func (s *Store) Cancel(ctx context.Context, id uuid.UUID, principal Principal) (
 			return ErrNotFound
 		}
 		switch row.State {
-		case action.StateCancelled:
+		case action_servicepb.ActionState_ACTION_STATE_CANCELLED:
 			result.Outcome = OutcomeAlreadyCancelled
-		case action.StateDenied, action.StateSucceeded, action.StateFailed:
+		case action_servicepb.ActionState_ACTION_STATE_DENIED, action_servicepb.ActionState_ACTION_STATE_SUCCEEDED, action_servicepb.ActionState_ACTION_STATE_FAILED:
 			result.Outcome = OutcomeAlreadyFinished
-		case action.StateDispatching, action.StateRunning, action.StateExecutionUnknown:
+		case action_servicepb.ActionState_ACTION_STATE_DISPATCHING, action_servicepb.ActionState_ACTION_STATE_RUNNING, action_servicepb.ActionState_ACTION_STATE_EXECUTION_UNKNOWN:
 			result.Outcome = OutcomeTooLate
 		default:
 			at := now()
-			if row.State == action.StateAllowed {
+			if row.State == action_servicepb.ActionState_ACTION_STATE_ALLOWED {
 				if err := cancelPendingDispatch(ctx, tx, id, at); err != nil {
 					return err
 				}
 			}
-			if err := advance(ctx, tx, &row, action.StateCancelled, at, principal); err != nil {
+			if err := advance(ctx, tx, &row, action_servicepb.ActionState_ACTION_STATE_CANCELLED, at, principal); err != nil {
 				return err
 			}
 			result.Outcome = OutcomeCancelled
