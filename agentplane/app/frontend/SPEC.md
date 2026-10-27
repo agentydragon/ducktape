@@ -5,19 +5,19 @@
 When Start session is disabled, hovering it or focusing its wrapper shows the current reason:
 Sandbox availability, an unconfirmed open attempt, opening in progress, or model availability.
 
-## Thread history scrolling
-
 ## Thread names
 
 An operator can set, rename, or clear a Thread name from the thread view. An unnamed Thread displays
 its ID as a placeholder; clearing the name restores that placeholder.
+
+## Thread history scrolling
 
 A thread's conversation can grow long, include messages of different heights, and change while
 someone is reading it. The following are promises to the reader; they do not prescribe how the
 browser loads, stores, or draws the conversation. These guarantees cover the supported Chromium
 browser on desktop and phone.
 
-## Guarantees
+### Guarantees
 
 - **Opening a thread** — including switching from another thread — scrolls to the thread's tail;
   the most recent message is what the reader sees first.
