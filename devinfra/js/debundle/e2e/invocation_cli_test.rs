@@ -53,7 +53,8 @@ fn graph_environment_is_materialized_and_cli_flag_wins() {
     let mut env_only = fixture.process(&["gate", "list", "--print-invocation"]);
     env_only.env("DEBUNDLE_GRAPH", &env_graph);
     let env_record = run_json(&mut env_only);
-    assert_eq!(env_record["mode"], "graph_snapshot_read");
+    assert_eq!(env_record["mode"], "diagnostic_snapshot_read");
+    assert_eq!(env_record["requested_proof"], "diagnostic_snapshot_input");
     assert_eq!(env_record["will_execute"], false);
     assert!(
         env_record["argv"]
@@ -92,6 +93,8 @@ fn graph_environment_is_materialized_and_cli_flag_wins() {
     ]);
     overridden.env("DEBUNDLE_GRAPH", &env_graph);
     let flag_record = run_json(&mut overridden);
+    assert_eq!(flag_record["mode"], "diagnostic_snapshot_read");
+    assert_eq!(flag_record["requested_proof"], "diagnostic_snapshot_input");
     assert!(
         flag_record["argv"]
             .as_array()
@@ -108,6 +111,83 @@ fn graph_environment_is_materialized_and_cli_flag_wins() {
             .iter()
             .any(|value| value == env_graph.to_string_lossy().as_ref())
     );
+}
+
+#[test]
+fn graph_environment_value_starting_with_dash_replays_as_option_value() {
+    let fixture = GraphFixture::new("const a = 1; console.log(a);", &[]);
+
+    let mut env_only = fixture.process(&["gate", "list", "--print-invocation"]);
+    env_only.env("DEBUNDLE_GRAPH", "-graph.json");
+    let record = run_json(&mut env_only);
+    let argv = record["argv"].as_array().unwrap();
+    assert!(argv.iter().any(|value| value == "--graph=-graph.json"));
+    assert_eq!(
+        path_argument(&record, "dependency_graph_path"),
+        "-graph.json"
+    );
+
+    let mut replay = Command::new(argv[0].as_str().unwrap());
+    replay
+        .args(argv[1..].iter().map(|value| value.as_str().unwrap()))
+        .arg("--print-invocation")
+        .current_dir(record["cwd"].as_str().unwrap())
+        .env_remove("DEBUNDLE_GRAPH");
+    let replay_record = run_json(&mut replay);
+    assert_eq!(replay_record["argv"], record["argv"]);
+    assert_eq!(
+        path_argument(&replay_record, "dependency_graph_path"),
+        "-graph.json"
+    );
+}
+
+#[test]
+fn ambient_graph_does_not_misclassify_source_or_diagnostic_reads() {
+    let fixture = GraphFixture::new("const a = 1; console.log(a);", &[]);
+    let temp = TempDir::new().unwrap();
+    let graph = temp.path().join("missing ambient graph.json");
+    let source = temp.path().join("missing source.js");
+
+    let mut inspect_source = fixture.process(&[
+        "inspect-source",
+        "--source-file",
+        source.to_str().unwrap(),
+        "--print-invocation",
+    ]);
+    inspect_source.env("DEBUNDLE_GRAPH", &graph);
+    let inspect_record = run_json(&mut inspect_source);
+    assert_eq!(inspect_record["mode"], "source_snapshot_read");
+    assert_eq!(inspect_record["requested_proof"], "none");
+    assert_eq!(inspect_record["will_execute"], false);
+
+    for (args, expected_mode, expected_proof) in [
+        (
+            vec!["gate", "list", "--print-invocation"],
+            "diagnostic_snapshot_read",
+            "diagnostic_snapshot_input",
+        ),
+        (
+            vec!["gate", "cut", "0", "--print-invocation"],
+            "diagnostic_snapshot_read",
+            "diagnostic_snapshot_input",
+        ),
+        (
+            vec!["gate", "describe", "0", "--print-invocation"],
+            "graph_snapshot_read",
+            "graph_snapshot_input",
+        ),
+    ] {
+        let mut command = fixture.process(&args);
+        command.env("DEBUNDLE_GRAPH", &graph);
+        let record = run_json(&mut command);
+        assert_eq!(record["mode"], expected_mode, "{args:?}");
+        assert_eq!(record["requested_proof"], expected_proof, "{args:?}");
+        assert_eq!(record["will_execute"], false, "{args:?}");
+    }
+
+    assert!(!graph.exists());
+    assert!(!source.exists());
+    assert!(!temp.path().join("cycles.json").exists());
 }
 
 #[test]
