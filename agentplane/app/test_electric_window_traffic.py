@@ -28,6 +28,25 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
 Row = dict[str, Any]
 
 
+@dataclass(frozen=True)
+class _Tail:
+    new_ids: set[str]
+    active: str
+    revision: int
+
+    def entities_caught_up(self, changes: list[Row]) -> bool:
+        return self.new_ids <= {change["value"]["entity_id"] for change in changes} and any(
+            change["value"]["entity_id"] == self.active and int(change["value"]["revision_cursor"]) == self.revision
+            for change in changes
+        )
+
+    def chunks_caught_up(self, changes: list[Row]) -> bool:
+        return self.new_ids <= {change["value"]["owner_id"] for change in changes} and any(
+            change["value"]["owner_id"] == self.active and int(change["value"]["chunk_index"]) == 7
+            for change in changes
+        )
+
+
 @dataclass
 class _Shape:
     client: httpx.AsyncClient
@@ -194,28 +213,9 @@ async def test_fixed_older_window_receives_busy_tail_changes(
                     await record([event_pb2.Event(text_delta=event_pb2.TextDelta(item_id=active, text="y" * 2048))])
                 current = await entities()
                 active_row = next(row for row in current if row.entity_id == active)
+                tail = _Tail(new_ids, active, active_row.revision_cursor)
                 entity_traffic, chunk_traffic = await asyncio.gather(
-                    rows.follow(
-                        stage,
-                        lambda changes, new_ids=new_ids, active=active, revision=active_row.revision_cursor: (
-                            new_ids <= {change["value"]["entity_id"] for change in changes}
-                            and any(
-                                change["value"]["entity_id"] == active
-                                and int(change["value"]["revision_cursor"]) == revision
-                                for change in changes
-                            )
-                        ),
-                    ),
-                    chunks.follow(
-                        stage,
-                        lambda changes, new_ids=new_ids, active=active: (
-                            new_ids <= {change["value"]["owner_id"] for change in changes}
-                            and any(
-                                change["value"]["owner_id"] == active and int(change["value"]["chunk_index"]) == 7
-                                for change in changes
-                            )
-                        ),
-                    ),
+                    rows.follow(stage, tail.entities_caught_up), chunks.follow(stage, tail.chunks_caught_up)
                 )
                 assert entity_traffic["selected_item_changes"] == chunk_traffic["selected_item_changes"] == 0
                 assert entity_traffic["unselected_item_changes"] >= count + 1
