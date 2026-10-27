@@ -300,6 +300,7 @@ func TestStatusConditionsUseOneConnectionLeaseSnapshot(t *testing.T) {
 
 func TestAutosuspendBlockersRequireTheCurrentConnectedIncarnationAndDoNotChurn(t *testing.T) {
 	r, c := runningWithRunner(t)
+	setPodReady(t, c, getPod(t, c), corev1.ConditionTrue)
 	setIdleSuspendAfter(t, c, durationPtr(idleSuspendAfter))
 	setBootstrap(t, c, "echo test-bootstrap")
 	statusClient := &countingStatusClient{Client: r.Client}
