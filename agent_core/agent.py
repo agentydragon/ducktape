@@ -266,6 +266,7 @@ class Agent:
         self._parallel_tool_calls = parallel_tool_calls
         self._tool_policy = tool_policy
         self._transcript: list[TranscriptItem] = []
+        self._response_count = 0
         self._reasoning_effort = reasoning_effort
         self._reasoning_summary = reasoning_summary
         self._dynamic_instructions = dynamic_instructions
@@ -699,7 +700,7 @@ class Agent:
             # Consider storing only non-derivable data (e.g., instructions, tool schemas at each phase)
             # and reconstructing full request from transcript + metadata.
             request_id = uuid4()
-            phase_number = sum(1 for evt in self._transcript if isinstance(evt, Response))
+            phase_number = self._response_count
             prepared_request = self._client.prepare(req)
             for h in self._handlers:
                 h.on_api_request_event(
@@ -733,6 +734,7 @@ class Agent:
                 h.on_response(
                     Response(response_id=resp.id, request_id=request_id, usage=usage, model=self._client.model)
                 )
+            self._response_count += 1
         # Note: Loop termination is controlled by handlers
         # or explicit tool policies (e.g., RequireAnyTool prevents text-only responses)
 

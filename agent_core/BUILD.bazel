@@ -198,6 +198,7 @@ py_test(
         ":agent",
         ":conftest",
         ":events",
+        ":handler",
         ":loop_control",
         "//:conftest",
         "//agent_core/testing:handlers",
