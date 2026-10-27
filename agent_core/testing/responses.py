@@ -2,7 +2,6 @@
 
 Provides declarative test response building:
 - ResponsesFactory: Builds mock ResponsesResult objects
-- GeneratorRunner + openai_mock: Function-based generator mocks
 - GeneratorMock + DecoratorMock: Class-based generator mocks
 - extract_call_output / tool_roundtrip: Typed tool output extraction
 """
@@ -76,80 +75,6 @@ class ResponsesFactory(ItemFactory):
             ),
             output=list(items),
         )
-
-
-# Type for generator that yields responses and receives requests
-MockScriptGen = Generator[ResponsesResult | ResponseOutItem | list[ResponseOutItem] | None, ResponsesRequest]
-
-
-class GeneratorRunner(OpenAIModelProto):
-    """Generator-based OpenAI mock with runtime 1:1 request-response enforcement.
-
-    Use via the @openai_mock decorator for concise test code:
-
-        @openai_mock
-        def mock(factory):
-            req = yield  # Receive first request
-            call = factory.tool_call("my_tool", {"arg": "val"})
-            req = yield call  # Send response, receive next request
-            yield factory.assistant_text("Done")
-
-        agent = await Agent.create(client=mock, ...)
-    """
-
-    model = "test-model"
-
-    def __init__(self, gen: MockScriptGen, factory: ResponsesFactory) -> None:
-        self._factory = factory
-        self._gen = gen
-        # Prime: advance to first yield. next() is equivalent to send(None)
-        # but avoids type issues with Generator's send signature
-        next(self._gen)
-
-    async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
-        """Send request to generator, return wrapped response."""
-        try:
-            result = self._gen.send(req)
-        except StopIteration:
-            raise RuntimeError("Mock exhausted: generator ended but received another request") from None
-
-        return self._wrap(result)
-
-    def _wrap(self, result: ResponsesResult | ResponseOutItem | list[ResponseOutItem] | None) -> ResponsesResult:
-        """Auto-wrap yielded values to ResponsesResult."""
-        if result is None:
-            raise RuntimeError("Generator yielded None when response expected")
-        if isinstance(result, ResponsesResult):
-            return result
-        if isinstance(result, list):
-            return self._factory.make(*result)
-        return self._factory.make(result)
-
-
-# Type alias for generator function that takes factory and returns a mock generator
-MockScriptFn = Callable[[ResponsesFactory], MockScriptGen]
-
-
-def openai_mock(fn: MockScriptFn) -> GeneratorRunner:
-    """Convert a generator function into an OpenAIModelProto mock.
-
-    The generator function should:
-    1. Accept a ResponsesFactory as argument
-    2. Start with `req = yield` to receive the first request
-    3. Yield responses (ResponsesResult, single item, or list of items)
-    4. Receive next request via `req = yield response`
-
-    Example:
-        @openai_mock
-        def mock(factory):
-            req = yield  # First request
-            call = factory.tool_call("my_tool", {"arg": "val"})
-            req = yield call
-            yield factory.assistant_text("Done")
-    """
-    factory = ResponsesFactory("test-model")
-    gen = fn(factory)
-    return GeneratorRunner(gen, factory)
 
 
 def extract_call_output[T](req: ResponsesRequest, call: FunctionCallItem, output_type: type[T]) -> T:
