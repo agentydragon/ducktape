@@ -102,8 +102,8 @@ def js_openapi_zod(name, generator, out = "api/schema.zod.mjs", tsconfig = None,
         fail("js_openapi_zod: a TypeScript out (%s) is compiled, so it needs a tsconfig" % out)
     if tsconfig and not emits_typescript:
         fail("js_openapi_zod: out %s is JavaScript; nothing compiles it, so tsconfig is unused" % out)
-    if config and not config.endswith("openapi-ts.config.mjs"):
-        fail("js_openapi_zod: config must be named openapi-ts.config.mjs for Hey API auto-discovery")
+    if config and config != "openapi-ts.config.mjs":
+        fail("js_openapi_zod: config must be the package-root openapi-ts.config.mjs for Hey API auto-discovery")
 
     json_out = _openapi_json_genrule(name, generator)
     gen_dir = "_" + name + "_hey_api_out"
