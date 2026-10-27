@@ -12,7 +12,7 @@ import {
   useState,
 } from "react";
 
-import { type ThreadEntity, type ThreadWindow } from "./thread_sync";
+import { type ThreadWindow } from "./thread_sync";
 import { rowKey, type HistoryRow } from "./history_rows";
 import { HistoryRowView } from "./history_row_views";
 import { revealEvidenceOnTap } from "./thread_evidence";
