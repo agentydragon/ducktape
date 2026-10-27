@@ -5845,7 +5845,7 @@
       }
     ]
   },
-  "source_devel_commit": "424eefe254c61edba4c9d5eadfe80dc6a0c8bb95",
+  "source_devel_commit": "c5223008de030c30ecbb8b4774754dfd221a2bae",
   "measurement_source_devel_commit": "f24d1e727184d750f299bbe88b89880fe4865687",
   "profile_cases": [
     {
@@ -40426,43 +40426,65 @@
   },
   "attribution": "not collected",
   "validation": {
-    "status": "passed and visually reviewed",
-    "report_sha256": "d951506dcf5f173519f9fc049152f1486e5a297173db78253efdbc6879e8629d",
-    "numeric_checks": "exact head/check SHA association; percentile/count totals; 345 mainline IDs reconcile to target history; all 129 conclusive PR jobs covered; all 15 shard/control cases exactly once; 674 target pages checked against totalCount",
-    "first_browser_attempt": "5b904de0-5d8f-4e29-9ec0-b6ad3d374e09 failed analysis because temporary target main was omitted; corrected before browser execution",
-    "browser_invocation": "5b904de0-5d8f-4e29-9ec0-b6ad3d374e12",
-    "prior_browser_invocation": "5b904de0-5d8f-4e29-9ec0-b6ad3d374e10",
-    "browser_cases": 2,
-    "viewports": [
-      "1280x900",
-      "390x844"
-    ],
-    "checks": [
-      "pinned Chromium on RBE through deterministic_browser_context and VisualPage.capture",
-      "page content readiness",
-      "no document horizontal overflow",
-      "native disclosure opens and closes",
-      "exact formatted report bytes reviewed"
-    ],
-    "screenshots_inspected": [
-      "latency-desktop-overview",
-      "latency-mobile-overview",
-      "latency-desktop-experiments",
-      "latency-desktop-actions-final",
-      "latency-mobile-actions-final"
-    ]
+    "status": "passed numeric, structure and combined desktop/mobile browser review",
+    "prior_snapshot": {
+      "status": "passed and visually reviewed",
+      "report_sha256": "d951506dcf5f173519f9fc049152f1486e5a297173db78253efdbc6879e8629d",
+      "numeric_checks": "exact head/check SHA association; percentile/count totals; 345 mainline IDs reconcile to target history; all 129 conclusive PR jobs covered; all 15 shard/control cases exactly once; 674 target pages checked against totalCount",
+      "first_browser_attempt": "5b904de0-5d8f-4e29-9ec0-b6ad3d374e09 failed analysis because temporary target main was omitted; corrected before browser execution",
+      "browser_invocation": "5b904de0-5d8f-4e29-9ec0-b6ad3d374e12",
+      "prior_browser_invocation": "5b904de0-5d8f-4e29-9ec0-b6ad3d374e10",
+      "browser_cases": 2,
+      "viewports": [
+        "1280x900",
+        "390x844"
+      ],
+      "checks": [
+        "pinned Chromium on RBE through deterministic_browser_context and VisualPage.capture",
+        "page content readiness",
+        "no document horizontal overflow",
+        "native disclosure opens and closes",
+        "exact formatted report bytes reviewed"
+      ],
+      "screenshots_inspected": [
+        "latency-desktop-overview",
+        "latency-mobile-overview",
+        "latency-desktop-experiments",
+        "latency-desktop-actions-final",
+        "latency-mobile-actions-final"
+      ]
+    },
+    "numeric_checks": "PR CI action timestamps and gate order; five baseline XML suites reconcile to case totals; isolated grouped XML has 10/10 cases and both harnesses; source pins and counts checked; new HTML anchors unique; fresh 24h core-job and 90m all-workflow run/job counts reconcile; assigned runner and first-step timestamps checked; half-open clipped occupancy/nearest-rank queues verified; four exact-head job clocks and canceled action timestamps linked",
+    "browser_review": {
+      "runner_invocation": "84c79de3-acb5-49ae-ae7f-6d9e8721a34d",
+      "bazel_invocation": "25416ace-ddcc-4f43-a660-6fc69109b860",
+      "viewports": [
+        "1280x900",
+        "390x844"
+      ],
+      "checks": [
+        "exact HTML bytes copied into browser test data and SHA-256 matched",
+        "h1 visible and content ready",
+        "no document horizontal overflow",
+        "native disclosure opens and closes",
+        "screenshots visually inspected at desktop and mobile"
+      ],
+      "screenshots": [
+        "latency-desktop-overview",
+        "latency-desktop-burst",
+        "latency-desktop-vm-mcp",
+        "latency-desktop-actions",
+        "latency-mobile-overview",
+        "latency-mobile-burst",
+        "latency-mobile-vm-mcp",
+        "latency-mobile-actions"
+      ]
+    },
+    "report_sha256": "4fe7dc358ef56943db66af310c6692ec5f5838d967f19d24a40bb2fe952dafd1"
   },
   "recommendations": [
     {
       "rank": 1,
-      "track": "bounded iptables lock wait",
-      "file": "agentplane/system_tests/k3s/stack.py",
-      "gain": "avoid an observed failed fixture plus repeated attempt when contention recurs; no typical-PR seconds claimed",
-      "proof": "explicit exit-4 xtables lock error and same-source fresh pass",
-      "validation": "real held/released xtables lock; both check and append retain finite fail-closed errors"
-    },
-    {
-      "rank": 2,
       "track": "overlap policy checks and source-artifact build",
       "files": [
         ".github/workflows/nix-wheel-check.yml",
@@ -40480,13 +40502,35 @@
         0,
         0
       ],
-      "validation": "both statuses and cancellation cleanup; every artifact import check preserved; matched GitHub exact-head timing"
+      "validation": "both statuses and cancellation cleanup; every artifact import check preserved; matched GitHub exact-head timing",
+      "fresh_burst": "87 assigned completed PR artifact attempts; 200 clipped runner-minutes; 28-31s prior overlap ceiling, not measured burst saving."
+    },
+    {
+      "rank": 2,
+      "track": "VM critical-path phase spans and targeted reduction",
+      "files": [
+        "agentplane/system_tests/conftest.py",
+        "agentplane/system_tests/test_vm_sandbox_vm.py"
+      ],
+      "mechanism": "Measure Sandbox Ready, launcher and scenario spans on the existing separate Claude, Codex and OOM boot paths; use the largest confirmed removable span to choose a source change.",
+      "opportunity": "71/94 older green heads Bazel-last; 95.5% of fresh busy-window assigned PR Bazel runner time is synchronous remote step. One post-window head had VM action finish 74.12s after MCP. Internal VM removable cost and end-to-end saving unmeasured.",
+      "validation": "One fresh full-target profile with bounded spans, then matched exact-head CI and worker-second comparison; retain independent boot/state coverage."
     },
     {
       "rank": 3,
-      "track": "burst-only independent publication capacity",
-      "expected_s": "0 quiet; observed busy-window Bazel queue p90 up to98s is an opportunity ceiling, not forecast",
-      "boundary": "separate pool/capacity economics and trust unverified; do not cancel release pushes"
+      "track": "conditional separate-runner-capacity pilot",
+      "expected_s": "0 in quiet periods; busy PR Bazel queue p50/p90 130/293s, but gain requires genuinely separate eligible runner capacity and matched queue validation. Visual announce/publish only 5.4% of observed occupied runner-minutes; their removal alone has a small opportunity ceiling.",
+      "boundary": "20 repository-visible concurrent ubuntu-latest jobs is observational, not account plan. Check actual eligible pool/account-wide occupancy and trust before a bounded nonrequired-job pilot; preserve non-cancelling devel pushes."
+    },
+    {
+      "rank": 4,
+      "track": "MCP BFF decision grouping",
+      "file": "agentplane/system_tests/test_mcp.py",
+      "mechanism": "One fresh Sandbox per harness, two separate Action requests and all allow/deny assertions instead of one Sandbox per verdict.",
+      "upper_bound_s": "The two removed denial-case XML durations were 47.263-49.331s across four fresh full runs; net saving unmeasured. On sampled PR head, VM remains later by 74.118s remote worker finish.",
+      "coverage_tradeoff": "Pytest items fall 12 to 10; deny follows allow in the same native Session instead of starting fresh. Keep fresh-session denial smoke if that ordering is required.",
+      "validation": "One isolated uncached full MCP target passed 10/10 with both verdict paths per harness. Retain fresh-session denial smoke, then compare matched warm/cold action plus exact-head CI; fail on state leakage or lost verdict assertion.",
+      "priority_note": "Lower priority: isolated grouped target passes 10/10, but net speedup unmeasured and sampled VM-dominant exact head has zero direct MCP shortening headroom."
     }
   ],
   "not_recommended": [
@@ -40502,6 +40546,677 @@
     {
       "track": "complex artifact affected selection",
       "reason": "deferred behind simpler overlap, limited end-to-end headroom"
+    },
+    {
+      "track": "share VM across Claude, Codex, and OOM cases immediately",
+      "reason": "The current three separate VM launches provide independent guest boot and OOM isolation. Retained logs time Pod Running only, not Sandbox Ready, native turn, or cleanup; coverage tradeoff and net saving are unknown.",
+      "disposition": "First record per-case spans at existing state/event boundaries and decide required independent-boot coverage; no blanket VM-sharing recommendation."
     }
-  ]
+  ],
+  "vm_mcp_followup": {
+    "scope": "Focused post-window selection and temporary source-patch compatibility probe, not a new PR population census. Broad cohorts elsewhere in this file remain the 2026-10-24T04:00Z to 2026-10-27T06:00Z sample.",
+    "window_utc": [
+      "2026-10-27T19:19:35Z",
+      "2026-10-27T21:09:22Z"
+    ],
+    "source_review_devel_commit": "bddd9cd74d9cc1e3aaa80ba2662c633884ab761e",
+    "pr_ci": {
+      "github_run_url": "https://github.com/agentydragon/ducktape/actions/runs/40570475031",
+      "pr_url": "https://github.com/agentydragon/ducktape/pull/12248",
+      "head_sha": "829eb998db815906a83e582ef8ed07591f376dbf",
+      "synthetic_merge_sha": "b2976d93ae3c25075e0e6a4c4d041b4b3036d9e7",
+      "run_attempt": 1,
+      "run_conclusion": "success",
+      "inner_invocation_url": "https://app.buildbuddy.io/invocation/df2e4956-215a-5bd7-9642-ec3e0aa7490c",
+      "selection": "Real single-attempt PR CI for landed iptables change, whose 17 configured target groups include fresh one-run/one-attempt VM and MCP results. Not a random developer or publisher invocation. Test-result group has totalCount=12; group listings may be paginated.",
+      "bazel_invocation_s": 625.162,
+      "bazel_critical_path_s": 618.95,
+      "bazel_critical_path_vm_action_s": 617.91,
+      "vm": {
+        "test_summary_start_utc": "2026-10-27T19:38:16.881Z",
+        "test_summary_stop_utc": "2026-10-27T19:48:08.863Z",
+        "test_summary_duration_s": 591.982,
+        "pytest_s": 548.077,
+        "cases": {
+          "claude_first_includes_stack_s": 275.592,
+          "codex_s": 116.723,
+          "codex_oom_s": 155.411
+        },
+        "stack_markers_s": {
+          "node_ready": 15.2,
+          "images_imported": 91.4,
+          "stack_ready": 133.7
+        },
+        "virt_launcher_pod_running_s": [
+          19.759,
+          19.238,
+          17.073
+        ],
+        "originating_execution": {
+          "queue_before_worker_s": 0.132,
+          "process_start_utc": "2026-10-27T19:38:38.061478Z",
+          "process_stop_utc": "2026-10-27T19:48:30.043954Z",
+          "worker_stop_utc": "2026-10-27T19:48:34.416602Z",
+          "cpu_s": 1116.383,
+          "input_download_bytes": 29369
+        }
+      },
+      "mcp": {
+        "test_summary_start_utc": "2026-10-27T19:38:16.866Z",
+        "test_summary_stop_utc": "2026-10-27T19:46:56.932Z",
+        "test_summary_duration_s": 520.066,
+        "pytest_s": 480.381,
+        "case_count": 12,
+        "cases_after_first_s": 339.0,
+        "denial_cases_s": 48.243,
+        "stack_markers_s": {
+          "node_ready": 9.5,
+          "images_imported": 74.9,
+          "stack_ready": 114.0
+        },
+        "originating_execution": {
+          "queue_before_worker_s": 0.635,
+          "process_start_utc": "2026-10-27T19:38:36.597260Z",
+          "process_stop_utc": "2026-10-27T19:47:16.663355Z",
+          "worker_stop_utc": "2026-10-27T19:47:20.298864Z",
+          "cpu_s": 835.092,
+          "input_download_bytes": 578520271
+        }
+      },
+      "next_action_finish_gap_s": 74.117738,
+      "test_summary_finish_gap_s": 71.931,
+      "required_check_completion_utc": {
+        "precommit": "2026-10-27T19:39:19Z",
+        "artifacts": "2026-10-27T19:43:14Z",
+        "bazel_test_build": "2026-10-27T19:48:54Z"
+      },
+      "interpretation": "VM and MCP targets start within 15ms. Isolated MCP improvement has zero direct Bazel-gate headroom on this head; isolated VM improvement is bounded by the roughly 74s worker-finish gap until MCP becomes next action. Other required checks completed earlier on this head, so they do not tighten this local ceiling if unchanged. End-to-end effect from a source change remains unmeasured."
+    },
+    "merged_deadline_mcp_replays": {
+      "tested_tree_sha": "f0036950097ee1bac22cece2589d8f77d80017f4",
+      "base_repo_metadata_sha": "bf040daee4efe4cb4bb1f367ff5209425eb0ef84",
+      "source_patch_proof": "https://github.com/agentydragon/ducktape/blob/4f4fd6f8b1c3f12c19dd347718c2323ce77b6122/agentplane/debug/2026_10_27_orchestration_wait_deadline_measurement.md",
+      "selection": "Full MCP target with --nocache_test_results: one run in first invocation and two runs in second; 12/12 cases passed in each, one attempt per run; no cached test result in summaries.",
+      "runs": [
+        {
+          "invocation": "402e9a99-9e56-4d2a-81c7-878f122a401b",
+          "run": "1/1",
+          "remote_test_action_s": 783.0,
+          "stack_ready_s": 373.2,
+          "images_imported_s": 339.8,
+          "cases_after_first_s": 337.8,
+          "denial_cases_s": 47.263,
+          "xml_suite_s": 740.501,
+          "pytest_log_s": 740.48
+        },
+        {
+          "invocation": "0a0f8696-8c78-416b-8e9c-a2f4fef05df4",
+          "run": "1/2",
+          "remote_test_action_s": 635.7,
+          "stack_ready_s": 231.9,
+          "images_imported_s": 197.3,
+          "cases_after_first_s": 341.0,
+          "denial_cases_s": 47.313,
+          "xml_suite_s": 601.829,
+          "pytest_log_s": 601.82
+        },
+        {
+          "invocation": "0a0f8696-8c78-416b-8e9c-a2f4fef05df4",
+          "run": "2/2",
+          "remote_test_action_s": 642.7,
+          "stack_ready_s": 216.1,
+          "images_imported_s": 179.2,
+          "cases_after_first_s": 351.1,
+          "denial_cases_s": 49.331,
+          "xml_suite_s": 611.916,
+          "pytest_log_s": 611.91
+        }
+      ]
+    },
+    "source_mechanism": {
+      "stack": "agentplane/system_tests/k3s/stack.py imports OCI layouts one at a time, then waits for Deployments before yielding the session-scoped stack.",
+      "sandbox": "agentplane/system_tests/conftest.py creates, waits Ready, then suspends/deletes each per-case Sandbox.",
+      "vm": "test_vm_sandbox.py runs separate Claude, Codex, and Codex OOM cases. Three virt-launcher Pods in retained CI k3s log confirm repeated VM launches but do not time complete guest readiness, turn, or cleanup.",
+      "mcp": "test_mcp.py has 12 cases; four BFF decision cases are separate allow/deny pytest instances across both harnesses, each opening a fresh Sandbox."
+    },
+    "limits": [
+      "The first XML case includes session stack setup; subtracting stack markers from case time is not an exact phase decomposition.",
+      "Four MCP fresh runs and one PR CI head do not estimate current population p50/p90 or a causal speedup.",
+      "Remote CPU seconds and test action wall time overlap and must not be added to feedback latency.",
+      "Sharding A/B had different workers/snapshot state; 14.585s invocation difference is not treatment effect."
+    ],
+    "mcp_case_group_ranges_s": {
+      "four_bff_decisions": [
+        95.672,
+        102.692
+      ],
+      "two_launcher_scenarios": [
+        109.571,
+        117.434
+      ],
+      "eleven_cases_after_first": [
+        337.78,
+        351.095
+      ]
+    },
+    "bff_grouping_spike": {
+      "invocation_url": "https://app.buildbuddy.io/invocation/7fb14a28-324e-440d-bb23-7f8d8d8acccb",
+      "tested_base_source_sha": "bddd9cd74d9cc1e3aaa80ba2662c633884ab761e",
+      "source_change": "Temporary local patch groups allow and deny verdict loops in one fresh Sandbox and ScriptedAgent per harness; Action request, marker, and decision idempotency key are new for each verdict; all former assertions remain.",
+      "result": "One uncached full-target run passed; 10 pytest cases, zero failures and errors, one attempt.",
+      "pytest_log_s": 414.75,
+      "xml_suite_s": 414.756,
+      "remote_test_action_s": 447.5,
+      "stack_ready_s": 97.9,
+      "grouped_case_s": {
+        "claude": 24.209,
+        "codex": 27.212
+      },
+      "coverage_tradeoff": "Two verdicts are now assertions in each of two harness cases, not four separately reported pytest cases. Deny follows allow in the same native Session instead of a fresh-session deny path.",
+      "inference_limit": "One run confirms compatibility only; older full-target and case durations had different fixture/image state. The 414.75s pytest duration and grouped-case sum are not causal savings. Preserve a separate fresh-session denial smoke if that contract is required."
+    }
+  },
+  "post_window_queue_contention": {
+    "window_utc": [
+      "2026-10-27T19:00:00Z",
+      "2026-10-27T20:30:00Z"
+    ],
+    "all_workflow_lookback_utc": "2026-10-27T17:00:00Z",
+    "all_workflow_collection": {
+      "start": "2026-10-27T17:00:00Z",
+      "end": "2026-10-27T20:30:00Z",
+      "sweep_start": "2026-10-27T20:56:42Z",
+      "sweep_end": "2026-10-27T21:03:30Z",
+      "workflows": "all",
+      "run_count": 1822,
+      "job_count": 3880
+    },
+    "core24_collection": {
+      "start": "2026-10-26T20:30:00Z",
+      "end": "2026-10-27T20:30:00Z",
+      "sweep_start": "2026-10-27T21:04:12Z",
+      "sweep_end": "2026-10-27T21:04:59Z",
+      "workflows": [
+        "ci.yml",
+        "nix-wheel-check.yml",
+        "pre-commit.yml",
+        "trusted-fork-pr-ci.yml"
+      ],
+      "run_count": 1447,
+      "job_count": 2229,
+      "started": "2026-10-27T21:05:11.377146+00:00",
+      "finished": "2026-10-27T21:08:37.256488+00:00",
+      "missing_runs_fetched": 691,
+      "busy_runs_reused": 756,
+      "total_jobs": 4182
+    },
+    "core24_assigned_completed": {
+      "PR Bazel": {
+        "job_attempts": 199,
+        "assigned_complete": 173,
+        "outcomes": {
+          "success": 111,
+          "cancelled": 63,
+          "failure": 25
+        },
+        "queue_s": {
+          "n": 173,
+          "p50": 31.0,
+          "p90": 247.0,
+          "max": 537.0
+        },
+        "occupied_s": {
+          "n": 173,
+          "p50": 217.0,
+          "p90": 756.0,
+          "max": 1540.0
+        }
+      },
+      "PR artifacts": {
+        "job_attempts": 193,
+        "assigned_complete": 172,
+        "outcomes": {
+          "success": 144,
+          "cancelled": 48,
+          "failure": 1
+        },
+        "queue_s": {
+          "n": 172,
+          "p50": 6.0,
+          "p90": 253.0,
+          "max": 556.0
+        },
+        "occupied_s": {
+          "n": 172,
+          "p50": 126.0,
+          "p90": 164.0,
+          "max": 394.0
+        }
+      },
+      "PR pre-commit": {
+        "job_attempts": 287,
+        "assigned_complete": 265,
+        "outcomes": {
+          "success": 242,
+          "cancelled": 38,
+          "failure": 7
+        },
+        "queue_s": {
+          "n": 265,
+          "p50": 3.0,
+          "p90": 198.0,
+          "max": 885.0
+        },
+        "occupied_s": {
+          "n": 265,
+          "p50": 65.0,
+          "p90": 77.0,
+          "max": 126.0
+        }
+      },
+      "trusted-fork Bazel": {
+        "job_attempts": 88,
+        "assigned_complete": 88,
+        "outcomes": {
+          "success": 49,
+          "failure": 12,
+          "cancelled": 27
+        },
+        "queue_s": {
+          "n": 88,
+          "p50": 2.0,
+          "p90": 124.0,
+          "max": 728.0
+        },
+        "occupied_s": {
+          "n": 88,
+          "p50": 270.0,
+          "p90": 1128.0,
+          "max": 1689.0
+        }
+      }
+    },
+    "core24_outside_burst": {
+      "PR Bazel": {
+        "job_attempts": 89,
+        "assigned_complete": 87,
+        "outcomes": {
+          "success": 67,
+          "cancelled": 15,
+          "failure": 7
+        },
+        "queue_s": {
+          "n": 87,
+          "p50": 2.0,
+          "p90": 32.0,
+          "max": 226.0
+        },
+        "occupied_s": {
+          "n": 87,
+          "p50": 133.0,
+          "p90": 657.0,
+          "max": 1382.0
+        }
+      },
+      "PR artifacts": {
+        "job_attempts": 85,
+        "assigned_complete": 85,
+        "outcomes": {
+          "success": 73,
+          "cancelled": 12
+        },
+        "queue_s": {
+          "n": 85,
+          "p50": 2.0,
+          "p90": 3.0,
+          "max": 132.0
+        },
+        "occupied_s": {
+          "n": 85,
+          "p50": 113.0,
+          "p90": 152.0,
+          "max": 222.0
+        }
+      },
+      "PR pre-commit": {
+        "job_attempts": 158,
+        "assigned_complete": 157,
+        "outcomes": {
+          "success": 146,
+          "cancelled": 8,
+          "failure": 4
+        },
+        "queue_s": {
+          "n": 157,
+          "p50": 2.0,
+          "p90": 12.0,
+          "max": 205.0
+        },
+        "occupied_s": {
+          "n": 157,
+          "p50": 65.0,
+          "p90": 78.0,
+          "max": 111.0
+        }
+      },
+      "trusted-fork Bazel": {
+        "job_attempts": 71,
+        "assigned_complete": 71,
+        "outcomes": {
+          "success": 40,
+          "failure": 6,
+          "cancelled": 25
+        },
+        "queue_s": {
+          "n": 71,
+          "p50": 2.0,
+          "p90": 5.0,
+          "max": 55.0
+        },
+        "occupied_s": {
+          "n": 71,
+          "p50": 237.0,
+          "p90": 908.0,
+          "max": 1689.0
+        }
+      }
+    },
+    "core24_busy_burst": {
+      "PR Bazel": {
+        "job_attempts": 110,
+        "assigned_complete": 86,
+        "outcomes": {
+          "success": 44,
+          "cancelled": 48,
+          "failure": 18
+        },
+        "queue_s": {
+          "n": 86,
+          "p50": 130.0,
+          "p90": 293.0,
+          "max": 537.0
+        },
+        "occupied_s": {
+          "n": 86,
+          "p50": 322.0,
+          "p90": 915.0,
+          "max": 1540.0
+        }
+      },
+      "PR artifacts": {
+        "job_attempts": 108,
+        "assigned_complete": 87,
+        "outcomes": {
+          "success": 71,
+          "cancelled": 36,
+          "failure": 1
+        },
+        "queue_s": {
+          "n": 87,
+          "p50": 132.0,
+          "p90": 366.0,
+          "max": 556.0
+        },
+        "occupied_s": {
+          "n": 87,
+          "p50": 138.0,
+          "p90": 188.0,
+          "max": 394.0
+        }
+      },
+      "PR pre-commit": {
+        "job_attempts": 129,
+        "assigned_complete": 108,
+        "outcomes": {
+          "success": 96,
+          "cancelled": 30,
+          "failure": 3
+        },
+        "queue_s": {
+          "n": 108,
+          "p50": 115.0,
+          "p90": 267.0,
+          "max": 885.0
+        },
+        "occupied_s": {
+          "n": 108,
+          "p50": 66.0,
+          "p90": 77.0,
+          "max": 126.0
+        }
+      },
+      "trusted-fork Bazel": {
+        "job_attempts": 17,
+        "assigned_complete": 17,
+        "outcomes": {
+          "failure": 6,
+          "success": 9,
+          "cancelled": 2
+        },
+        "queue_s": {
+          "n": 17,
+          "p50": 124.0,
+          "p90": 675.0,
+          "max": 728.0
+        },
+        "occupied_s": {
+          "n": 17,
+          "p50": 368.0,
+          "p90": 1333.0,
+          "max": 1486.0
+        }
+      }
+    },
+    "all_workflow_busy_run_creation": {
+      "runs": 1321,
+      "jobs_created": 2688,
+      "assigned_complete_jobs_created": 664,
+      "cancelled_unassigned_jobs_created": 247,
+      "still_queued_at_sweep_end": 37
+    },
+    "occupancy": {
+      "method": "Completed positive-runner-ID [started_at,completed_at) intervals clipped to window; 17:00 lookback, so lower bound. Every overlapping assigned job had ubuntu-latest label, GitHub Actions runner group and first step within one second of started_at. Counts reflect this repository only.",
+      "occupied_runner_min": 1703.3333333333333,
+      "peak_repository_visible_jobs": 20,
+      "seconds_at_or_above20": 3653,
+      "seconds_at_or_above20_with_visual_job": 2252,
+      "runner_min_by_workload": {
+        "PR Bazel": 546.3,
+        "trusted fork": 214.4,
+        "PR artifacts": 199.9,
+        "devel publication": 167.1,
+        "PR pre-commit": 115.1,
+        "image build/push": 109.7,
+        "Nix Attic push": 70.5,
+        "visual publish": 69.5,
+        "devel pre-commit": 66.4,
+        "devel Bazel": 60.0,
+        "devel artifacts": 35.8,
+        "other": 25.6,
+        "visual announce": 23.2
+      },
+      "visual_share_of_measured_occupied": 0.05442270058708415,
+      "remote_test_build_step": {
+        "population": "86 assigned completed PR Bazel job attempts created during busy window, successful, failed and cancelled",
+        "occupied_s": 35617,
+        "test_build_lint_step_s": 34008,
+        "step_share_of_occupied": 0.9548249431451273,
+        "step_p50_s": 305,
+        "step_p90_s": 899
+      }
+    },
+    "cases": [
+      {
+        "pr": 12244,
+        "head": "c1c5d90e28be6b677f43697ceadbaa0a463d4a5d",
+        "workflow_created_utc": "2026-10-27T19:34:15Z",
+        "jobs": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/40570304333/job/122422418201",
+            "created": "2026-10-27T19:34:15Z",
+            "assigned": "2026-10-27T19:39:08Z",
+            "completed": "2026-10-27T19:41:06Z",
+            "queue_s": 293.0,
+            "conclusion": "success"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/40570304342/job/122422418765",
+            "created": "2026-10-27T19:34:15Z",
+            "assigned": "2026-10-27T19:35:16Z",
+            "completed": "2026-10-27T19:37:29Z",
+            "queue_s": 61.0,
+            "conclusion": "success"
+          },
+          {
+            "name": "Pre-commit checks",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/40570304368/job/122422418859",
+            "created": "2026-10-27T19:34:15Z",
+            "assigned": "2026-10-27T19:39:21Z",
+            "completed": "2026-10-27T19:40:25Z",
+            "queue_s": 306.0,
+            "conclusion": "success"
+          }
+        ]
+      },
+      {
+        "pr": 12248,
+        "head": "829eb998db815906a83e582ef8ed07591f376dbf",
+        "workflow_created_utc": "2026-10-27T19:35:22Z",
+        "jobs": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/40570475031/job/122422995092",
+            "created": "2026-10-27T19:35:23Z",
+            "assigned": "2026-10-27T19:35:54Z",
+            "completed": "2026-10-27T19:48:54Z",
+            "queue_s": 31.0,
+            "conclusion": "success"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/40570474854/job/122422997886",
+            "created": "2026-10-27T19:35:23Z",
+            "assigned": "2026-10-27T19:41:06Z",
+            "completed": "2026-10-27T19:43:14Z",
+            "queue_s": 343.0,
+            "conclusion": "success"
+          },
+          {
+            "name": "Pre-commit checks",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/40570474934/job/122422999938",
+            "created": "2026-10-27T19:35:23Z",
+            "assigned": "2026-10-27T19:38:20Z",
+            "completed": "2026-10-27T19:39:19Z",
+            "queue_s": 177.0,
+            "conclusion": "success"
+          }
+        ]
+      },
+      {
+        "pr": 12254,
+        "head": "550e794b846d4d629c16b6e7f41c604956682741",
+        "workflow_created_utc": "2026-10-27T19:37:53Z",
+        "jobs": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/40570852262/job/122424319197",
+            "created": "2026-10-27T19:37:55Z",
+            "assigned": "2026-10-27T19:39:28Z",
+            "completed": "2026-10-27T19:40:49Z",
+            "queue_s": 93.0,
+            "conclusion": "success"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/40570851954/job/122424320346",
+            "created": "2026-10-27T19:37:55Z",
+            "assigned": "2026-10-27T19:41:08Z",
+            "completed": "2026-10-27T19:43:19Z",
+            "queue_s": 193.0,
+            "conclusion": "success"
+          },
+          {
+            "name": "Pre-commit checks",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/40570852174/job/122424316354",
+            "created": "2026-10-27T19:37:54Z",
+            "assigned": "2026-10-27T19:41:25Z",
+            "completed": "2026-10-27T19:42:24Z",
+            "queue_s": 211.0,
+            "conclusion": "success"
+          }
+        ]
+      },
+      {
+        "pr": 12270,
+        "head": "50526a19adba67f6195b0873fbb1f434982c3c71",
+        "workflow_created_utc": "2026-10-27T20:08:43Z",
+        "jobs": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/40575392392/job/122440334822",
+            "created": "2026-10-27T20:08:44Z",
+            "assigned": "2026-10-27T20:09:54Z",
+            "completed": "2026-10-27T20:14:03Z",
+            "queue_s": 70.0,
+            "conclusion": "success"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/40575392215/job/122440945270",
+            "created": "2026-10-27T20:09:53Z",
+            "assigned": "2026-10-27T20:16:36Z",
+            "completed": "2026-10-27T20:18:37Z",
+            "queue_s": 403.0,
+            "conclusion": "success"
+          },
+          {
+            "name": "Pre-commit checks",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/40575392145/job/122440838532",
+            "created": "2026-10-27T20:09:40Z",
+            "assigned": "2026-10-27T20:12:49Z",
+            "completed": "2026-10-27T20:13:56Z",
+            "queue_s": 189.0,
+            "conclusion": "success"
+          }
+        ]
+      }
+    ],
+    "limits": [
+      "Job creation time can follow workflow creation; queue is job created to assigned started, not push to green.",
+      "An in-flight queued job exposed a placeholder started_at before assignment; the completed record and Set up job step agree on actual assignment.",
+      "Window statistics use completed assigned attempts; unassigned cancellation/skips and unfinished jobs are reported separately.",
+      "Other repositories and account plan/capacity are not established by a peak of 20 repository-visible runners.",
+      "Visual removal is a capacity opportunity ceiling only; scheduling and eligibility effects are not tested.",
+      "BuildBuddy remote runner allocation, Bazel action queue, and worker CPU are distinct from GitHub job queue and occupancy."
+    ],
+    "source_review_devel_commit": "c5223008de030c30ecbb8b4774754dfd221a2bae",
+    "required_contexts": [
+      "Build artifacts + imports check",
+      "Pre-commit checks",
+      "bazel-ci / Test & Build"
+    ],
+    "workflow_cancellation": {
+      "PR_Bazel": "cancel-in-progress for PR; same PR number group",
+      "devel_publish": "non-cancelling running pushes; pending runs coalesce",
+      "visual_publish": "per source workflow and head SHA; cancel-in-progress true"
+    },
+    "remote_cancellation_case": {
+      "github_job_url": "https://github.com/agentydragon/ducktape/actions/runs/40574978735/job/122438855995",
+      "github_job_step_cancelled_utc": "2026-10-27T20:28:37Z",
+      "github_job_completed_utc": "2026-10-27T20:28:40Z",
+      "declared_build_invocation_cancel_request": "failed at 2026-10-27T20:28:35.711Z",
+      "declared_test_invocation_cancel_request": "acknowledged at 2026-10-27T20:28:35.903Z",
+      "test_invocation_url": "https://app.buildbuddy.io/invocation/e5650420-cea1-5cc0-9029-b6cad3c77625",
+      "test_invocation_status": "DISCONNECTED_INVOCATION_STATUS",
+      "target": "//agentplane/system_tests:test_vm_sandbox_vm",
+      "action_link_type": "NEW (1); same digest also has synthetic cancelled row",
+      "action_queued_utc": "2026-10-27T20:28:44.544Z",
+      "action_execution_started_utc": "2026-10-27T20:28:54.552Z",
+      "action_execution_completed_utc": "2026-10-27T20:37:27.559Z",
+      "worker_completed_utc": "2026-10-27T20:37:32.656Z",
+      "limits": "One newly linked execution continued after request acknowledgment. Same digest may reflect hedge/retry; server reason, exclusive ownership, test verdict and population rate are unresolved. This worker use after GitHub completion is not GitHub runner occupancy or a measured queue cause."
+    }
+  }
 }
