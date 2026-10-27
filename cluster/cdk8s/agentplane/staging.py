@@ -70,6 +70,7 @@ from cluster.cdk8s.agentplane.environment import (
     GitHubAppProps,
     LlmIngressProps,
     McpEdgeProps,
+    OrchestrationProps,
     ReplicaProfile,
     WebPushProps,
 )
@@ -491,6 +492,22 @@ ENV = Environment(
             cilium.egress_via_gateway("grocy-mcp-sf.allegedly.works"),
             EgressRule.to_endpoints(cilium.AUTHENTIK_SERVER_LABELS, 9000, server_names=["auth.allegedly.works"]),
         ],
+        # Every Action but launch_sandbox, which always waits for the operator: the rest are auto-approved for
+        # claude-ai (list_launch_presets) or by a launcher's grants, and answer in one call.
+        orchestration_v1=OrchestrationProps(
+            direct_tools=frozenset(
+                {
+                    "list_launch_presets",
+                    "open_session",
+                    "submit_input",
+                    "interrupt_turn",
+                    "change_model",
+                    "change_reasoning_effort",
+                    "get_session",
+                    "list_sessions",
+                }
+            )
+        ),
     ),
     mcp_edge=McpEdgeProps(
         replicas=ReplicaProfile(

@@ -10,6 +10,7 @@ from more_itertools import one
 
 from agentplane.runner_gateway.settings import Settings
 from cluster.cdk8s.agentplane import (
+    actions,
     app,
     notifications,
     runner_gateway,
@@ -63,6 +64,7 @@ def test_gateway_preserves_services_and_fences_listener_ingress() -> None:
     assert set(settings["dispatcher_callers"]) == {
         f"{staging.ENV.namespace}/{app.NAME}",
         f"{staging.ENV.namespace}/{notifications.NAME}",
+        f"{staging.ENV.namespace}/{actions.NAME}",
     }
     assert f"{staging.ENV.namespace}/{runner_gateway.NAME}" in settings["gateway_callers"]
     assert f"{staging.ENV.namespace}/{app.NAME}" in settings["wake_callers"]

@@ -7,7 +7,7 @@ import yaml
 from more_itertools import one
 
 from agentplane.runner_gateway.settings import Settings
-from cluster.cdk8s.agentplane import app, notifications, runner_gateway, session_dispatcher, staging
+from cluster.cdk8s.agentplane import actions, app, notifications, runner_gateway, session_dispatcher, staging
 from util.settings_contract import env_name
 
 
@@ -21,7 +21,8 @@ def test_dispatcher_sender_identity_and_service_routing(staging_manifests: list[
     settings = yaml.safe_load(resource("ConfigMap", f"{runner_gateway.NAME}-settings")["data"]["settings.yaml"])
     callers = set(settings["dispatcher_callers"])
     wakers = set(settings.get("wake_callers", []))
-    assert callers == {f"{staging.ENV.namespace}/{app.NAME}", f"{staging.ENV.namespace}/{notifications.NAME}"}
+    senders = (app.NAME, notifications.NAME, actions.NAME)
+    assert callers == {f"{staging.ENV.namespace}/{sender}" for sender in senders}
     assert wakers <= callers
     assert {item["name"]: item.get("value") for item in container["env"]}[
         env_name(Settings, "dispatcher_audience")
@@ -36,7 +37,7 @@ def test_dispatcher_sender_identity_and_service_routing(staging_manifests: list[
     assert {item["name"]: item.get("valueFrom") for item in container["env"]}[
         "AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL"
     ] == {"secretKeyRef": {"name": "postgres-session-dispatcher", "key": "uri"}}
-    for sender in (app.NAME, notifications.NAME):
+    for sender in senders:
         sender_pod = resource("Deployment", sender)["spec"]["template"]["spec"]
         assert any(
             source.get("serviceAccountToken", {}).get("audience") == session_dispatcher.TOKEN_AUDIENCE

@@ -22,6 +22,7 @@ from agentplane.action_service.policies.resources import CALLER_LABEL, parse_act
 from agentplane.action_service.sandbox.actions import SANDBOX_GROUP, SandboxAction
 from agentplane.crd_group import GROUP
 from cluster.cdk8s import agent_access_profiles as access, external_creds
+from cluster.cdk8s.agentplane.actions import ORCHESTRATION_GROUP
 from cluster.cdk8s.agentplane.egress import (
     BASIC_POLICY,
     BUILDBUDDY_POLICY,
@@ -69,6 +70,7 @@ MIMIR_READS_POLICY = "mimir-reads"
 # key's Secret grant. The two Action PolicySet reads every preset binds by default live here too.
 GITHUB_IDENTITY_READS_SET = "github-identity-reads"
 SSH_READS_SET = "ssh-reads"
+ORCHESTRATION_PRESETS_SET = "orchestration-presets"
 
 
 def coinbase_egress_rules() -> list[PolicySetSpecRules]:
@@ -708,6 +710,8 @@ def add_staging_action_policies(scope: Construct) -> None:
             GITHUB_ACTIONS_LOGS_POLICY,
             BUILDBUDDY_POLICY,
             MIMIR_READS_POLICY,
+            # claude-ai is the account that launches orchestration_v1 workers.
+            ORCHESTRATION_PRESETS_SET,
             *_ACCOUNT_READ_SETS,
         ],
     )
@@ -844,6 +848,22 @@ def add_staging_action_policies(scope: Construct) -> None:
             },
         ),
         rules=[AutoApproveIf.exact_actions(actions={"ssh": ["list_targets"]})],
+    )
+
+    _policy_set(
+        scope,
+        "orchestration-presets",
+        metadata=ApiObjectMetadata(
+            name=ORCHESTRATION_PRESETS_SET,
+            namespace=_NAMESPACE,
+            annotations={
+                "description": (
+                    "Auto-approves orchestration_v1's list_launch_presets, which only lists the reviewed launch "
+                    "presets; a launch always waits for the operator."
+                )
+            },
+        ),
+        rules=[AutoApproveIf.exact_actions(actions={ORCHESTRATION_GROUP: ["list_launch_presets"]})],
     )
 
     _policy_set(

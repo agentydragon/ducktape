@@ -2371,6 +2371,8 @@ data:
   config.yaml: |
     reader_accounts:
       - namespace: agentplane-staging
+        name: actions
+      - namespace: agentplane-staging
         name: app
       - namespace: agentplane-staging
         name: notifications
@@ -2637,6 +2639,14 @@ spec:
     - fromEndpoints:
         - matchLabels:
             app.kubernetes.io/name: notifications
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: actions
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
         - ports:
@@ -5300,6 +5310,14 @@ data:
         server_url: https://grocy-mcp-sf.allegedly.works/mcp
         use_shared_cimd: true
         redirect_uri: https://agentplane-staging.allegedly.works/mcp-linkage/callback
+    session_dispatcher:
+      target: session-dispatcher.agentplane-staging.svc.cluster.local:8080
+      token_file: /var/run/secrets/actions/dispatcher
+      request_timeout_s: 15
+    history_service:
+      target: history-service.agentplane-staging.svc.cluster.local:8080
+      token_file: /var/run/secrets/actions/history
+      request_timeout_s: 15
     action_groups:
       github:
         title: GitHub MCP
@@ -5408,6 +5426,379 @@ data:
             url: http://google-mcp.google-mcp.svc.cluster.local:8080/calendar/mcp
             auth: static_bearer
             bearer_file: /run/secrets/google-mcp/bearer-token
+      orchestration_v1:
+        title: Orchestration
+        description: "Launch Session Sandboxes and drive their Sessions: open them, send input, interrupt, change model or effort, and read their state. A launch waits for the operator and grants its caller what it names on the new Sandbox."
+        executor:
+          kind: orchestration_v1
+          description: Run by this service, on each request's Decision, with its own authority.
+          namespace: agentplane-staging
+          default_policy_sets:
+            - basic
+            - inference-experiments
+          presets:
+            public-coder:
+              title: Public coder
+              launch:
+                template: runner-ducktape
+                policy_sets:
+                  - basic
+                  - packages
+                  - github-agentydragon-agent
+                  - github-clone
+                  - github-actions-logs
+                  - buildbuddy
+                  - public-coder-pr-visuals
+                  - common-github-read
+                  - github-identity-reads
+                  - ssh-reads
+                  - sandbox-self
+                  - shared-diagnostics
+                  - public-inventory
+                  - cluster-diagnostics
+                  - ducktape-pr-failed-jobs
+                  - send-to-public-coder
+                inbox_tags:
+                  - public-coder
+                bootstrap: |
+                  marker=/state/workspaces/.agentplane-public-coder-ready
+                  mkdir -p /state/workspaces
+                  if [ ! -f "$marker" ]; then
+                    printf '%s\n' 'public-coder workspace initialized' > "$marker"
+                  fi
+              open_session:
+                spec:
+                  harness: HARNESS_CODEX
+                  model: chatgpt-sub/oai-responses/gpt-6-luna
+                  cwd: /state/workspaces/{session_id}
+                  reasoning_effort: medium
+                  instructions: |-
+                    Work as a public-repository coding agent. You will usually work on the public GitHub repository
+                    agentydragon/ducktape. Follow the shared ducktape contribution instructions below.
+
+                    The public-coder preset grants BuildBuddy diagnostics through Agentplane egress. Use its
+                    credential placeholder as the `x-buildbuddy-api-key` header through the proxy when reading
+                    invocation details or logs from the allowed BuildBuddy API host. The proxy substitutes the
+                    cluster-held API key; never read, print, or persist the real key or bypass the proxy.
+
+                    When contributing to the public `agentydragon/ducktape` repository, use the dedicated
+                    `agentydragon-agent` GitHub identity, not the operator's identity. Check the current Agentplane
+                    egress rules before GitHub access. The `github-agentydragon-agent` rule supplies a substituted PAT:
+                    use its exact returned placeholder as an HTTP Basic password for Git push and as a Bearer token
+                    for GitHub API calls through the proxy. Never read, log, or persist the real PAT.
+
+                    Work in a ducktape checkout (not nested inside another repository). Fork to
+                    `agentydragon-agent/ducktape` if the fork does not exist, push the change branch to that fork,
+                    then open a PR from `agentydragon-agent:<branch>` against `agentydragon/ducktape`'s `devel`
+                    branch with the substituted PAT. Never push directly to the upstream repository. Check the
+                    diff for personal data before pushing; public ducktape must contain only generic tooling and
+                    public-safe instructions.
+                setup_script: ""
+            haku:
+              title: Haku
+              launch:
+                template: runner-ducktape
+                policy_sets:
+                  - basic
+                  - forgejo-haku
+                  - packages
+                  - google-readonly
+                  - activitywatch-read
+                  - aiquota-read
+                  - haku-mailbox
+                  - github-clone
+                  - github-agentydragon-agent
+                  - github-actions-logs
+                  - github-reads
+                  - github-identity-reads
+                  - sandbox-self
+                  - home-assistant-reads
+                  - gmail-reads
+                  - google-calendar-reads
+                  - tana-reads
+                  - grocy-sf-reads
+                  - ssh-reads
+                  - kubernetes-inspection-reads
+                  - ducktape-pr-failed-jobs
+                  - shared-diagnostics
+                  - cluster-diagnostics
+                  - haku-sandbox-write
+                  - coinbase
+                  - plaid-diagnostics
+                  - send-to-haku
+                inbox_tags:
+                  - haku
+                bootstrap: ""
+              open_session:
+                spec:
+                  harness: HARNESS_CODEX
+                  model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
+                  cwd: /state/workspaces/{session_id}/haku-state
+                  reasoning_effort: medium
+                  instructions: "You are Haku, the operator's tireless background executive assistant. Your current directory is your haku-state checkout: your durable home for memory, notes, and other agent state. The ducktape checkout is at ../ducktape. Make changes in the checkout of the repository that owns them; never copy another repository into haku-state. Commit and push every persistent change to the owning repository's upstream or authorized fork as you go. A new Thread starts from fresh checkouts. Git auth is already in place. haku-state also holds who you are: read AGENTS.md, SOUL.md and MEMORY.md at its root, then your run procedure at memory/procedures/run.md. Read those, then execute the run procedure end to end."
+                setup_script: |
+                  #!/bin/sh
+                  # The image ships no git identity and the Pod inherits none, so the first `git commit` fails with
+                  # "Please tell me who you are" -- and for Haku that is the last step of a run, after the work. Set
+                  # it before the clones, globally: the setup script and the harness share HOME (the runner forwards
+                  # HOME), so one write covers commits made from either. Matches the identity haku-state's history is
+                  # already written under.
+                  git config --global user.name haku
+                  git config --global user.email haku@allegedly.works
+                  git clone --depth 1 --branch main --single-branch http://haku:agentplane-credential-forgejo-haku@forgejo-http.forgejo.svc.cluster.local:3000/haku/haku-state.git .
+                  git clone --depth 1 --branch devel --single-branch https://github.com/agentydragon/ducktape.git ../ducktape
+            finance-agent:
+              title: Finance agent
+              launch:
+                template: runner-ducktape
+                policy_sets:
+                  - basic
+                  - packages
+                  - aiquota-read
+                  - forgejo-finance-agent
+                  - github-agentydragon-agent
+                  - github-clone
+                  - github-actions-logs
+                  - buildbuddy
+                  - common-github-read
+                  - github-identity-reads
+                  - ssh-reads
+                  - gaffer-private-branch-and-pr-creation
+                  - shared-diagnostics
+                  - public-inventory
+                  - cluster-diagnostics
+                  - coinbase
+                  - spend-policy-config
+                  - plaid-diagnostics
+                  - ducktape-pr-failed-jobs
+                  - send-to-finance-agent
+                inbox_tags:
+                  - finance-agent
+                bootstrap: ""
+              open_session:
+                spec:
+                  harness: HARNESS_CODEX
+                  model: chatgpt-sub/oai-responses/gpt-6-luna
+                  cwd: /state/workspaces/{session_id}/finance-agent
+                  reasoning_effort: medium
+                  instructions: |-
+                    Work as Rai's financial stewardship agent. Answer financial questions and design, build and
+                    maintain analyses, models, spending guardrails, habits and tooling. The current personal priorities
+                    and decisions belong in the private finance-agent checkout, not in this public prompt.
+
+                    Two repos, two roles -- keep them separate:
+
+                    - **finance-agent** (your current working directory, cloned for this Thread)
+                      is your private, durable home: your memory, notes, decisions, work in progress, and private
+                      budget context allowed by the data rules below. Nothing here is meant to be public.
+                    - **ducktape** (`github.com/agentydragon/ducktape`, public) is where generic, reusable tooling goes
+                      -- a pace-tracking library, a Plaid-query helper, a dashboard component -- as ordinary
+                      open-source code with no personal figures or Rai-specific configuration baked in. When needed,
+                      clone it beside your home checkout at `../ducktape`, never inside `finance-agent`. Follow the
+                      shared ducktape contribution instructions below for pushes and PRs.
+
+                    Make changes in the checkout of the repository that owns them; never copy another repository
+                    into `finance-agent`. Commit and push every persistent change, including memory and notes, to
+                    that repository's upstream or fork as you go. A new Thread starts from fresh checkouts, so
+                    uncommitted local files are not durable. At the start of each Thread, read `README.md` and
+                    `AGENTS.md` in the current `finance-agent` checkout, then its dated context, active projects, and
+                    recent memory; personal decisions and current context belong there, not in this public prompt.
+
+                    Private spend configuration is **not** writable through the existing ducktape PR route:
+                    the `agentydragon-agent` GitHub PAT cannot access `agentydragon/gaffer-private`.
+                    GitHub Free does not provide enforceable main-branch rules on this private repository;
+                    granting a collaborator or App `Contents: write` access to the upstream would also permit
+                    direct pushes to main. `Pull requests: write` is not create-only and permits closing PRs.
+                    An HTTP egress path allowlist cannot distinguish Git branch refs inside a push. The
+                    Agentplane GitHub Actions use the owner-linked GitHub credential: reviewed reads for
+                    `gaffer-private` currently auto-approve, while write Actions require individual operator
+                    approval. They can provide approved one-off edits, but not normal Git push/pull. Do not
+                    request broad upstream write access as a shortcut or claim that a private fork is safe
+                    without independently verifying read-only upstream access. The agent may construct and encrypt new private configuration using public SOPS
+                    recipients; publishing requires owner-approved write Actions for specific authorized
+                    work. Follow the approval workflow. Consult private finance-agent project notes for
+                    current decisions.
+
+                    Query live transaction data through the Plaid mirror's read-only SQL endpoint (pgweb).
+                    The finance preset grants pgweb read access through Agentplane egress.
+                    The pgweb Kubernetes Service listens on the default HTTP port 80 and forwards to the container's
+                    unprivileged port 8081. Use the Service hostname and default port;
+                    if a request times out, verify the _live_ Service port (older deployments expose 8081) before
+                    assuming the database is down or debugging Cilium. Send pgweb's placeholder as the HTTP Basic
+                    password for username `plaid`. A read-only connectivity probe is:
+
+                    ```bash
+                    curl -sS -u 'plaid:agentplane-credential-plaid-pgweb' \
+                      --data-urlencode 'query=SELECT 1 AS probe' \
+                      'http://plaid-pgweb.plaid-mcp.svc.cluster.local/api/query'
+                    ```
+
+                    The pgweb query API accepts POST to `/api/query`; the underlying Postgres role can only `SELECT`.
+                    Do not use direct database credentials or bypass the egress proxy. Never commit transaction data,
+                    account numbers, or balances to either repo's git history.
+
+                    The finance preset reads live AIQuota via GET on the internal `aiquota-api` Service
+                    (`aiquota-api.cli-proxy-api.svc.cluster.local:8080/v1/quotas`), using the
+                    `agentplane-credential-aiquota-read` Bearer placeholder; the public hostname may be
+                    unavailable even when the Service is healthy. For historical typed quota/spend
+                    observations, query ClickHouse's HTTP endpoint at
+                    `clickhouse.clickhouse.svc.cluster.local:8123/` with GET and URL-encoded `query=`,
+                    HTTP Basic username `aiquota_history_reader` and password placeholder
+                    `agentplane-credential-clickhouse-aiquota-history-credentials`. This role is restricted
+                    to SELECT on `aiquota.aiquota_windows`, `aiquota.token_activity_daily` and
+                    `aiquota.reset_credits`; it cannot read raw provider bodies or other tenants. Check
+                    current egress rules before either request; no auth token or raw provider payload
+                    belongs in a public repo. The `finance-agent` sandbox
+                    preset grants `aiquota-read`, which covers both routes, to new sandboxes;
+                    verify the actual live `/v1/rules` before using either route. A minimal
+                    read-only history probe is `SELECT count() FROM aiquota.aiquota_windows` via
+                    GET with URL-encoded `query=`.
+                    These typed windows report observed **usage against a Claude cap**, not purchases,
+                    prepaid-credit wallet balances, or net card charges; reconcile separately with Plaid
+                    before recommending a spending cap. The private finance-agent repo holds working
+                    queries and dated findings, not the public prompt.
+
+                    This is analysis and tooling work only. Never attempt to move money, place a trade, or take any
+                    action against a real financial account.
+
+                    The finance preset has a named `get` grant for the **one** spend-policy Secret
+                    `plaid-mcp/plaid-spend-policy`, for live rollout inspection. The source of truth is
+                    `config/plaid-spend/spend-policy.yaml` in the private finance-agent repo. Read IDs
+                    only in process when needed; never print or copy them into notes, analyses, logs,
+                    tool output, or ducktape. The app's configuration endpoint omits account IDs.
+                    Flux reads the private repo through a separate Forgejo account with read access to
+                    that repo only. Its impersonated service account can create Secrets in the isolated
+                    `finance-spend-config` namespace and can get, patch, or update only the named
+                    policy Secret; it cannot delete resources, create namespaces, or manage other
+                    resource kinds. Kubernetes RBAC cannot name-restrict the create verb, so the
+                    namespace is the capability boundary. Ducktape owns the namespace and the
+                    ExternalSecret copy in `plaid-mcp`; Finance Flux has no write access there.
+
+                    Coinbase is separate from the Plaid mirror. The finance preset selects the `coinbase`
+                    PolicySet, which grants `get` on the view-only CDP credential
+                    `agentplane-staging/coinbase-api-credentials` and GET egress to `api.coinbase.com`. The
+                    permitted `api.coinbase.com` GET route does not substitute a
+                    credential: CDP requires a fresh, request-bound ES256 JWT signed in memory by the view-only key.
+                    Use GET `/api/v3/brokerage/accounts` to list balances, paging with `has_next`/`cursor`; public
+                    GET `/v2/prices/<asset>-USD/spot` quotes are separate from personal holdings. Never log or persist
+                    the key, signed JWT, account identifiers, or raw response, and never trade or transfer. Consult
+                    `cluster/cdk8s/agentplane/actions_staging_policies.py` and `cluster/docs/agent_rbac.md` in ducktape
+                    for current grant details, and `finance-agent/runbooks/data-access.md` for the private working recipe.
+
+                    When contributing to the public `agentydragon/ducktape` repository, use the dedicated
+                    `agentydragon-agent` GitHub identity, not the operator's identity. Check the current Agentplane
+                    egress rules before GitHub access. The `github-agentydragon-agent` rule supplies a substituted PAT:
+                    use its exact returned placeholder as an HTTP Basic password for Git push and as a Bearer token
+                    for GitHub API calls through the proxy. Never read, log, or persist the real PAT.
+
+                    Work in a ducktape checkout (not nested inside another repository). Fork to
+                    `agentydragon-agent/ducktape` if the fork does not exist, push the change branch to that fork,
+                    then open a PR from `agentydragon-agent:<branch>` against `agentydragon/ducktape`'s `devel`
+                    branch with the substituted PAT. Never push directly to the upstream repository. Check the
+                    diff for personal data before pushing; public ducktape must contain only generic tooling and
+                    public-safe instructions.
+                setup_script: |
+                  #!/bin/sh
+                  git clone --branch main --single-branch http://finance-agent:agentplane-credential-forgejo-finance-agent@forgejo-http.forgejo.svc.cluster.local:3000/finance-agent/finance-agent.git .
+            public-coder-ducktape:
+              title: Public coder / ducktape
+              launch:
+                template: runner-ducktape
+                policy_sets:
+                  - basic
+                  - packages
+                  - github-agentydragon-agent
+                  - github-clone
+                  - github-actions-logs
+                  - buildbuddy
+                  - public-coder-pr-visuals
+                  - common-github-read
+                  - github-identity-reads
+                  - ssh-reads
+                  - sandbox-self
+                  - shared-diagnostics
+                  - public-inventory
+                  - cluster-diagnostics
+                  - ducktape-pr-failed-jobs
+                  - send-to-public-coder
+                inbox_tags:
+                  - public-coder
+                bootstrap: |
+                  marker=/state/workspaces/.agentplane-public-coder-ready
+                  mkdir -p /state/workspaces
+                  if [ ! -f "$marker" ]; then
+                    printf '%s\n' 'public-coder workspace initialized' > "$marker"
+                  fi
+              open_session:
+                spec:
+                  harness: HARNESS_CODEX
+                  model: chatgpt-sub/oai-responses/gpt-6-luna
+                  cwd: /state/workspaces/{session_id}
+                  reasoning_effort: medium
+                  instructions: |-
+                    Work as a public-repository coding agent. You will usually work on the public GitHub repository
+                    agentydragon/ducktape. Follow the shared ducktape contribution instructions below.
+
+                    The public-coder preset grants BuildBuddy diagnostics through Agentplane egress. Use its
+                    credential placeholder as the `x-buildbuddy-api-key` header through the proxy when reading
+                    invocation details or logs from the allowed BuildBuddy API host. The proxy substitutes the
+                    cluster-held API key; never read, print, or persist the real key or bypass the proxy.
+
+                    When contributing to the public `agentydragon/ducktape` repository, use the dedicated
+                    `agentydragon-agent` GitHub identity, not the operator's identity. Check the current Agentplane
+                    egress rules before GitHub access. The `github-agentydragon-agent` rule supplies a substituted PAT:
+                    use its exact returned placeholder as an HTTP Basic password for Git push and as a Bearer token
+                    for GitHub API calls through the proxy. Never read, log, or persist the real PAT.
+
+                    Work in a ducktape checkout (not nested inside another repository). Fork to
+                    `agentydragon-agent/ducktape` if the fork does not exist, push the change branch to that fork,
+                    then open a PR from `agentydragon-agent:<branch>` against `agentydragon/ducktape`'s `devel`
+                    branch with the substituted PAT. Never push directly to the upstream repository. Check the
+                    diff for personal data before pushing; public ducktape must contain only generic tooling and
+                    public-safe instructions.
+
+                    You are using the ducktape-specific `runner-ducktape` container, built with Nix (not NixOS).
+                    The repository's shared tool set is already on PATH: `bb`, `bbr`, Bazelisk, `pre-commit`,
+                    Ruff, Prettier and its pinned plugins, nixfmt, Buildifier, and the repo-configured Gazelle.
+                    Use these installed tools; do not install standalone substitutes or bypass repository hooks.
+                    Use the checkout's normal commands and configuration, preferring `bbr` for remote builds/tests.
+                    The Thread setup clones `devel` into its own workspace and installs the repo's Git hooks.
+                    The image has neither `nix` nor `direnv`; do not run `direnv allow` here.
+
+                    Outbound access still follows Agentplane egress policy. Check the current rules for credentials
+                    and destinations; tool availability does not imply authenticated BuildBuddy access. Preserve the
+                    sandbox's proxy and CA configuration, and report an unavailable route rather than bypassing it.
+
+                    This is still a container sharing resources with the harness, not a VM with isolated tool
+                    processes. A large local build or indiscriminate process kill can terminate your own session.
+                    Prefer remote execution and target only processes you created when cleaning up.
+                setup_script: |
+                  #!/bin/sh
+                  # Setup runs once per Thread, from its dedicated workspace. Leave an existing checkout
+                  # and its uncommitted changes alone when a Thread is resumed or an operator supplied one.
+                  set -eu
+                  if [ ! -d .git ]; then
+                    if [ -n "$(ls -A)" ]; then
+                      echo 'ducktape setup: nonempty directory is not a checkout; refusing to clone over it' >&2
+                      exit 1
+                    fi
+                    git clone --depth 1 --branch devel --single-branch https://github.com/agentydragon/ducktape.git .
+                  fi
+                  if [ "$(git rev-parse --show-toplevel)" != "$PWD" ]; then
+                    echo 'ducktape setup: expected a checkout rooted in the Thread workspace' >&2
+                    exit 1
+                  fi
+                  # Uses the repository's default_install_hook_types (pre-commit and prepare-commit-msg).
+                  pre-commit install
+        direct_tools:
+          - change_model
+          - change_reasoning_effort
+          - get_session
+          - interrupt_turn
+          - list_launch_presets
+          - list_sessions
+          - open_session
+          - submit_input
 immutable: false
 ---
 apiVersion: v1
@@ -5532,6 +5923,9 @@ spec:
             - mountPath: /run/secrets/google-mcp
               name: secret-google-mcp-bearer
               readOnly: true
+            - mountPath: /var/run/secrets/actions
+              name: peer-tokens
+              readOnly: true
       dnsPolicy: ClusterFirst
       hostNetwork: false
       imagePullSecrets:
@@ -5611,6 +6005,17 @@ spec:
               - key: bearer-token
                 path: bearer-token
             secretName: google-mcp-bearer
+        - name: peer-tokens
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: session-dispatcher
+                  expirationSeconds: 3600
+                  path: dispatcher
+              - serviceAccountToken:
+                  audience: agentplane-history-service
+                  expirationSeconds: 3600
+                  path: history
 ---
 apiVersion: v1
 kind: Service
@@ -5728,6 +6133,27 @@ rules:
       - serviceaccounts
     verbs:
       - get
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - sandboxes
+    verbs:
+      - get
+      - create
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - policysets
+    verbs:
+      - get
+      - create
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - policybindings
+    verbs:
+      - get
+      - create
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -5772,6 +6198,55 @@ subjects:
     kind: ServiceAccount
     name: actions
     namespace: agentplane-staging
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: agentplane-staging-actions-launcher-grants
+spec:
+  failurePolicy: Fail
+  matchConditions:
+    - expression: request.userInfo.username == 'system:serviceaccount:agentplane-staging:actions'
+      name: action-service
+  matchConstraints:
+    resourceRules:
+      - apiGroups:
+          - agentplane.allegedly.works
+        apiVersions:
+          - "*"
+        operations:
+          - CREATE
+        resources:
+          - sandboxes
+          - policysets
+          - policybindings
+  validations:
+    - expression: variables.grant || !object.spec.?policySets.orValue([]).exists(set, set.endsWith('.launcher'))
+      message: A Sandbox this service launches is bound to no launcher grant.
+    - expression: "!variables.grant || (size(variables.owners) == 1 && variables.owners[0].apiVersion.startsWith('agentplane.allegedly.works/') && variables.owners[0].kind == 'Sandbox' && object.metadata.name == variables.owners[0].name + '.launcher')"
+      message: A launcher grant is owned by one Sandbox and named for it.
+    - expression: request.resource.resource != 'policybindings' || object.spec.policySets == [object.metadata.name]
+      message: A launcher grant's PolicyBinding binds only its own PolicySet.
+    - expression: request.resource.resource != 'policysets' || (size(variables.owners) == 1 && object.spec.rules.all(r, (r.type == 'session_inbox_access' && has(r.operations) && r.operations == ['send_message'] && has(r.targets) && !has(r.targets.inboxTags) && !has(r.targets.allSandboxes) && has(r.targets.sandboxes) && size(r.targets.sandboxes) == 1 && has(r.targets.sandboxes[0].uid) && r.targets.sandboxes[0].name == variables.owners[0].name && r.targets.sandboxes[0].uid == variables.owners[0].uid) || (r.type == 'action_auto_approve' && has(r.policy) && r.policy.type == 'argument_schema' && r.policy.actions.all(group, group == 'orchestration_v1') && has(r.policy.schema) && r.policy.schema.all(key, key in ['type', 'required', 'properties']) && has(r.policy.schema.type) && r.policy.schema.type == 'object' && has(r.policy.schema.required) && r.policy.schema.required == ['sandbox'] && has(r.policy.schema.properties) && r.policy.schema.properties.all(key, key == 'sandbox') && has(r.policy.schema.properties.sandbox) && r.policy.schema.properties.sandbox.all(key, key == 'const') && 'const' in r.policy.schema.properties.sandbox && r.policy.schema.properties.sandbox['const'].all(key, key in ['name', 'uid']) && 'name' in r.policy.schema.properties.sandbox['const'] && 'uid' in r.policy.schema.properties.sandbox['const'] && r.policy.schema.properties.sandbox['const'].name == variables.owners[0].name && r.policy.schema.properties.sandbox['const'].uid == variables.owners[0].uid)))
+      message: A launcher grant's rules name only its Sandbox, by name and UID, and only orchestration_v1 Actions.
+  variables:
+    - expression: object.metadata.?ownerReferences.orValue([])
+      name: owners
+    - expression: request.resource.resource != 'sandboxes'
+      name: grant
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: agentplane-staging-actions-launcher-grants
+spec:
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: agentplane-staging
+  policyName: agentplane-staging-actions-launcher-grants
+  validationActions:
+    - Deny
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
@@ -5832,6 +6307,22 @@ spec:
       toPorts:
         - ports:
             - port: "5432"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: runner-gateway
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: history-service
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8080"
               protocol: TCP
     - toFQDNs:
         - matchName: fcm.googleapis.com
@@ -8822,6 +9313,7 @@ spec:
     - github-actions-logs
     - buildbuddy
     - mimir-reads
+    - orchestration-presets
     - github-reads
     - github-identity-reads
     - sandbox-self
@@ -9077,6 +9569,22 @@ spec:
         actions:
           ssh:
             - list_targets
+        type: exact_actions
+      type: action_auto_approve
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  annotations:
+    description: Auto-approves orchestration_v1's list_launch_presets, which only lists the reviewed launch presets; a launch always waits for the operator.
+  name: orchestration-presets
+  namespace: agentplane-staging
+spec:
+  rules:
+    - policy:
+        actions:
+          orchestration_v1:
+            - list_launch_presets
         type: exact_actions
       type: action_auto_approve
 ---

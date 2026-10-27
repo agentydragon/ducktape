@@ -6,6 +6,7 @@ metadata:
 data:
   settings.yaml: |
     dispatcher_callers:
+      - agentplane-staging/actions
       - agentplane-staging/app
       - agentplane-staging/notifications
     gateway_callers:
@@ -13,6 +14,7 @@ data:
       - agentplane-staging/notifications
       - agentplane-staging/runner-gateway
     wake_callers:
+      - agentplane-staging/actions
       - agentplane-staging/app
       - agentplane-staging/notifications
 immutable: false
@@ -403,6 +405,16 @@ spec:
     - fromEndpoints:
         - matchLabels:
             app.kubernetes.io/name: notifications
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+            - port: "8081"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: actions
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
         - ports:

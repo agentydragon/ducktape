@@ -100,6 +100,8 @@ flowchart LR
     app -->|ConnectionService facade + gRPC health| edge
     edge -->|authenticated ActionService gRPC| actions
     notif -->|Action history: gRPC| actions
+    actions -->|orchestration_v1 Session commands: Dispatcher gRPC| gw
+    actions -->|orchestration_v1 Session reads: gRPC| hs
     app -->|gRPC| egress
     app --> electric
     app --> k8s
@@ -108,6 +110,7 @@ flowchart LR
 
     gw --> k8s
     notif --> k8s
+    actions -->|Action Pods, launched Sandboxes and their launcher grants| k8s
     policy --> k8s
     sandboxctl --> k8s
     sandboxctl --> gw

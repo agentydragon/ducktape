@@ -62,10 +62,10 @@ from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 from util.settings_contract import env_name
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
-_NAME = "actions"
+NAME = "actions"
 _ACTIONS_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-action-service"
 _MIGRATE_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-action-service-migrate"
-_LABELS = {"app.kubernetes.io/name": _NAME}
+_LABELS = {"app.kubernetes.io/name": NAME}
 
 # Where the Action Service reads the `oauth_secret_items` of `mcp_oauth_secret`.
 MCP_OAUTH_DIR = "/etc/agentplane-mcp"
@@ -82,7 +82,7 @@ _DEFAULT_MIGRATE_MEMORY_LIMIT = Size.mebibytes(256)
 def service(namespace: str) -> ServiceRef:
     """The Action Service in one environment's namespace."""
     return ServiceRef(
-        name=_NAME, port=Port(name="http", number=8080), pods=Pods(namespace=namespace, labels=tuple(_LABELS.items()))
+        name=NAME, port=Port(name="http", number=8080), pods=Pods(namespace=namespace, labels=tuple(_LABELS.items()))
     )
 
 
@@ -91,7 +91,7 @@ def orchestration_callers(env: Environment) -> dict[ServiceAccountRef, Pods]:
     environment with the orchestration_v1 group."""
     if env.actions.orchestration_v1 is None:
         return {}
-    return {ServiceAccountRef(namespace=env.namespace, name=_NAME): service(env.namespace).pods}
+    return {ServiceAccountRef(namespace=env.namespace, name=NAME): service(env.namespace).pods}
 
 
 def _orchestration_group(env: Environment, props: OrchestrationProps) -> ActionGroup:
@@ -171,7 +171,7 @@ def add_launcher_admission(scope: Construct, namespace: str) -> None:
             match_conditions=[
                 k8s.MatchCondition(
                     name="action-service",
-                    expression=f"request.userInfo.username == 'system:serviceaccount:{namespace}:{_NAME}'",
+                    expression=f"request.userInfo.username == 'system:serviceaccount:{namespace}:{NAME}'",
                 )
             ],
             variables=[
@@ -359,7 +359,7 @@ class Actions(Construct):
         ServiceMonitor(
             self,
             "service-monitor",
-            metadata=ApiObjectMetadata(name=_NAME, namespace=self.env.namespace),
+            metadata=ApiObjectMetadata(name=NAME, namespace=self.env.namespace),
             selector=ServiceMonitorSpecSelector(match_labels=self.service.labels),
             endpoints=[Endpoint.plain(port=self.service.port.name)],
         )
@@ -373,7 +373,7 @@ class Actions(Construct):
             self,
             "token-reviewer",
             name=f"{namespace}-actions-token-reviewer",
-            service_account_name=_NAME,
+            service_account_name=NAME,
             namespace=namespace,
         )
         # The runtime policy and caller watch scopes are independent. Keep the policy
@@ -425,19 +425,19 @@ class Actions(Construct):
         for target_namespace, rules in sorted(rules_by_namespace.items()):
             suffix = "" if target_namespace == namespace else f"-{target_namespace}"
             role = Role(
-                self, f"role{suffix}", metadata=ApiObjectMetadata(name=_NAME, namespace=target_namespace), rules=rules
+                self, f"role{suffix}", metadata=ApiObjectMetadata(name=NAME, namespace=target_namespace), rules=rules
             )
             binding = RoleBinding(
                 self,
                 f"rolebinding{suffix}",
-                metadata=ApiObjectMetadata(name=_NAME, namespace=target_namespace),
+                metadata=ApiObjectMetadata(name=NAME, namespace=target_namespace),
                 role=role,
             )
             subject = (
                 service_account
                 if target_namespace == namespace
                 else ServiceAccount.from_service_account_name(
-                    self, f"service-account-ref-{target_namespace}", _NAME, namespace_name=namespace
+                    self, f"service-account-ref-{target_namespace}", NAME, namespace_name=namespace
                 )
             )
             binding.add_subjects(subject)
@@ -580,7 +580,7 @@ class Actions(Construct):
         https_route(
             self,
             "httproute",
-            metadata=ApiObjectMetadata(name=f"{_NAME}-mcp", namespace=self.env.namespace),
+            metadata=ApiObjectMetadata(name=f"{NAME}-mcp", namespace=self.env.namespace),
             hostnames=[hostname],
             backend=self.service,
             paths=paths,
@@ -593,7 +593,7 @@ class Actions(Construct):
         NetworkPolicy(
             self,
             "networkpolicy",
-            metadata=ApiObjectMetadata(name=_NAME.removeprefix("agentplane-"), namespace=namespace),
+            metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=namespace),
             endpoint_selector=self.service.pods.selector,
             ingress=[
                 *([IngressRule.from_gateway(self.service.pod_port)] if public else []),
