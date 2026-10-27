@@ -1,11 +1,9 @@
 /**
  * Holds this package's formatters to the Python ones they are a port of.
  *
- * `aiquota/render/format.py` and `aiquota/pace.py` are canonical: the CLI and the GNOME popup
- * render from them, and the dashboard is read beside both. The cases are generated from the
- * shared scenarios by `//aiquota/testing:export_web_fixtures_bin`, which records what Python
- * produces for every window in them — so editing one side alone fails here rather than
- * quietly showing a different forecast in the browser than in the terminal.
+ * `aiquota/render/format.py` and `aiquota/pace.py` are canonical. Both JavaScript surfaces
+ * consume `aiquota/shared/presentation.js`; these cases hold its browser adapters to Python's
+ * output for the shared scenarios. The GNOME render test also loads the packaged copy.
  */
 
 import { describe, expect, it } from "vitest";
@@ -17,6 +15,7 @@ import {
   formatPaceForecast,
   formatPrepaidBalance,
   formatWindowLabel,
+  roundHalfToEven,
 } from "./format";
 import cases from "./fixtures/format_cases.json";
 import { computePace, isExhausted, tintFor } from "./pace";
@@ -79,5 +78,22 @@ describe("formatPrepaidBalance", () => {
     [-123, 2, "USD", "-$1.23"],
   ])("matches Python's exact minor-unit rendering for %s %s %s", (amountMinor, exponent, currency, expected) => {
     expect(formatPrepaidBalance(amountMinor, exponent, currency)).toBe(expected);
+  });
+});
+
+describe("Python's ties-to-even rounding", () => {
+  it.each([
+    [2.5, 2],
+    [3.5, 4],
+    [-2.5, -2],
+    [-3.5, -4],
+  ])("rounds %s to %s", (value, expected) => {
+    expect(roundHalfToEven(value)).toBe(expected);
+  });
+
+  it("uses ties-to-even in the shared visible quota formats", () => {
+    expect(displayUsedPercent({ used_percent: 12.5 })).toBe(12);
+    expect(formatPace({ deviation: 12.5, projectedAtReset: 75, secondsToExhaust: null, stable: true })).toBe("+12%");
+    expect(formatDuration(3598.5)).toBe("59m");
   });
 });

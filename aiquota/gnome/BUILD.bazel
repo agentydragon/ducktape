@@ -22,6 +22,15 @@ pkg_files(
     visibility = ["//visibility:public"],
 )
 
+# The extension loads this shared implementation relative to extension.js. Keep
+# the module beside it in the packaged extension while the source lives in the
+# platform-neutral aiquota/shared package.
+pkg_files(
+    name = "shared_presentation_file",
+    srcs = ["//aiquota/shared:presentation.js"],
+    strip_prefix = strip_prefix.files_only(),
+)
+
 # GNOME extension zip distribution. Layout is the standard convention used by
 # `gnome-extensions pack` and `gnome-extensions install --from-file`: the
 # extension's files live at the root of the archive (no UUID-prefixed
@@ -29,7 +38,10 @@ pkg_files(
 # and what the render tests + devkit launcher consume.
 pkg_zip(
     name = "aiquota_zip",
-    srcs = [":extension_files"],
+    srcs = [
+        ":extension_files",
+        ":shared_presentation_file",
+    ],
     out = "aiquota.zip",
     visibility = ["//visibility:public"],
 )

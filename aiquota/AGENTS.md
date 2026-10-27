@@ -17,10 +17,11 @@ signal, window-row layout (label, used %, reset, pace, forecast), header (provid
 error/stale annotations, extra-spend tail), collapsed view while burning extra. Shared
 formatters go in <render/format.py>, ported to JS.
 
-Both JS surfaces reimplement live-countdown formatting and pace math (`format.py`, `pace.py`)
-because they tick every second. The dashboard port (`frontend/{format,pace}.ts`) is gated by
-`format.test.ts` replaying Python-generated cases; the GNOME copy is not — change it and the
-Python together by hand.
+Both JS surfaces compute live countdown and pace locally because they tick every second. They
+share the runtime-neutral implementation in <shared/presentation.js>; the browser adapts its
+snake_case API data in <frontend/{format,pace}.ts>, and the GNOME zip carries the same module
+beside `extension.js`. The browser format test replays Python-generated cases, and the GNOME
+render test loads the packaged extension across the shared scenarios.
 
 Scenarios in `testing/fixtures/*.yaml` feed all three: CLI snapshots (`render/test_human.py`),
 extension renders (`gnome/test_render.py`), dashboard screenshots in both themes

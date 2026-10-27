@@ -30,6 +30,7 @@ ts_library(
     srcs = ["pace.ts"],
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
+    deps = ["//aiquota/shared:presentation"],
 )
 
 ts_library(
@@ -37,7 +38,10 @@ ts_library(
     srcs = ["format.ts"],
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
-    deps = [":pace"],
+    deps = [
+        ":pace",
+        "//aiquota/shared:presentation",
+    ],
 )
 
 ts_library(

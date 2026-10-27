@@ -8,6 +8,25 @@ import { Extension } from "resource:///org/gnome/shell/extensions/extension.js";
 import * as Main from "resource:///org/gnome/shell/ui/main.js";
 import * as PanelMenu from "resource:///org/gnome/shell/ui/panelMenu.js";
 import * as PopupMenu from "resource:///org/gnome/shell/ui/popupMenu.js";
+import {
+  bindingTint as sharedBindingTint,
+  computePace as sharedComputePace,
+  displayUsedPercent as sharedDisplayUsedPercent,
+  elapsedFraction as sharedElapsedFraction,
+  formatAge as sharedFormatAge,
+  formatClock,
+  formatDuration as sharedFormatDuration,
+  formatKnownExpiry,
+  formatMultiplier,
+  formatPace as sharedFormatPace,
+  formatPaceForecast as sharedFormatForecast,
+  formatPeakInterval,
+  formatPrepaidBalance as sharedFormatPrepaidBalance,
+  isExhausted as sharedIsExhausted,
+  roundHalfToEven,
+  tintFor as sharedTintFor,
+  formatWindowLabel,
+} from "./presentation.js";
 
 const STALE_AFTER_SECONDS = 5 * 60;
 const BUS_NAME = "works.allegedly.AiQuota";
@@ -24,13 +43,6 @@ const INTERFACE_INFO = Gio.DBusNodeInfo.new_for_xml(
   </interface></node>`
 ).lookup_interface(INTERFACE_NAME);
 
-// Pace deviation thresholds, in signed percentage points (used% − expected%).
-const PACE_COOL_BELOW = -10;
-const PACE_WARN_ABOVE = 5;
-const PACE_HOT_ABOVE = 15;
-const SHORT_WIN_HOT_PERCENT = 85;
-const STABLE_FRACTION = 0.05;
-
 const TINT_CLASSES = [
   "quota-cool",
   "quota-ok",
@@ -40,8 +52,6 @@ const TINT_CLASSES = [
   "quota-stale",
   "quota-error",
 ];
-const TINT_RANK = { unknown: 0, stale: 0, ok: 1, cool: 1, warn: 2, hot: 3 };
-
 function decodeBytes(bytes) {
   return new TextDecoder().decode(typeof bytes.get_data === "function" ? bytes.get_data() : bytes);
 }
@@ -62,26 +72,7 @@ function unpackNumber(value, fallback = 0) {
 
 function formatDuration(seconds) {
   if (seconds == null || !Number.isFinite(seconds)) return "?";
-  const s = Math.max(0, Math.round(seconds));
-  const d = Math.floor(s / 86400);
-  const h = Math.floor((s % 86400) / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  if (d > 0) return `${d}d${h}h`;
-  if (h > 0) return `${h}h${m}m`;
-  return `${m}m`;
-}
-
-function formatWindowDuration(seconds) {
-  const rounded = Math.round(seconds);
-  if (rounded % 86400 === 0) return `${rounded / 86400}d`;
-  if (rounded % 3600 === 0) return `${rounded / 3600}h`;
-  if (rounded % 60 === 0) return `${rounded / 60}m`;
-  return `${rounded}s`;
-}
-
-function formatWindowLabel(window) {
-  const duration = formatWindowDuration(window.windowSeconds);
-  return window.name ? `${window.name} (${duration})` : duration;
+  return sharedFormatDuration(seconds);
 }
 
 function withLiveReset(state) {
@@ -98,9 +89,7 @@ function isStaleFetch(lastFetch) {
 
 function formatAge(seconds) {
   if (seconds == null || !Number.isFinite(seconds)) return "?";
-  const s = Math.max(0, Math.round(seconds));
-  if (s < 60) return `${s}s`;
-  return formatDuration(s);
+  return sharedFormatAge(seconds);
 }
 
 // Pick the state to render: prefer the latest fetch, but fall back to the
@@ -169,76 +158,41 @@ function computePace({ usedPercent, resetSeconds, windowSeconds }) {
   if (usedPercent == null || resetSeconds == null || windowSeconds == null || windowSeconds <= 0) {
     return null;
   }
-  const elapsedSecs = windowSeconds - resetSeconds;
-  const elapsedFrac = elapsedSecs / windowSeconds;
-  const expectedPercent = elapsedFrac * 100;
-  const deviation = usedPercent - expectedPercent;
-  let projectedAtReset = null;
-  let secondsToExhaust = null;
-  if (elapsedSecs > 0 && usedPercent > 0) {
-    const ratePerSec = usedPercent / elapsedSecs;
-    secondsToExhaust = (100 - usedPercent) / ratePerSec;
-    projectedAtReset = usedPercent + ratePerSec * resetSeconds;
-  }
-  const stable = elapsedFrac > STABLE_FRACTION && elapsedFrac < 1 - STABLE_FRACTION;
-  return { elapsedFrac, deviation, projectedAtReset, secondsToExhaust, stable };
+  return sharedComputePace({ usedPercent, resetSeconds, windowSeconds });
 }
 
 function isExhausted(state) {
-  return state?.usedPercent >= 100;
+  return state?.usedPercent != null && sharedIsExhausted(state);
 }
 
 function formatUsedPercent(state) {
   if (state?.usedPercent == null) return "?";
-  const rounded = Math.round(state.usedPercent);
-  return `${isExhausted(state) ? rounded : Math.min(rounded, 99)}%`;
+  return `${sharedDisplayUsedPercent(state.usedPercent)}%`;
 }
 
 function tintFor({ pace, usedPercent, isShort }) {
-  if (usedPercent == null) return "unknown";
-  if (isShort && usedPercent >= SHORT_WIN_HOT_PERCENT) return "hot";
-  if (!pace || !pace.stable) {
-    if (usedPercent >= 95) return "hot";
-    if (usedPercent >= 80) return "warn";
-    return "ok";
-  }
-  if (pace.deviation >= PACE_HOT_ABOVE) return "hot";
-  if (pace.deviation >= PACE_WARN_ABOVE) return "warn";
-  if (pace.deviation <= PACE_COOL_BELOW) return "cool";
-  return "ok";
+  return sharedTintFor(pace ?? null, usedPercent, isShort);
 }
 
 // Preserve the most urgent tint across every provider-supplied window.
 function bindingTint(tints) {
-  if (tints.length > 1 && tints[0] === "hot") return "hot";
-  return tints.reduce((worst, tint) => (TINT_RANK[tint] > TINT_RANK[worst] ? tint : worst), "unknown");
+  return sharedBindingTint(tints);
 }
 
 function formatPace(pace) {
-  if (!pace || !pace.stable) return null;
-  const sign = pace.deviation >= 0 ? "+" : "−";
-  return `${sign}${Math.abs(Math.round(pace.deviation))}%`;
+  return pace == null ? null : sharedFormatPace(pace);
 }
 
 function formatForecast(pace, resetSeconds) {
-  if (!pace || !pace.stable || pace.projectedAtReset == null) return null;
-  const projected = pace.projectedAtReset;
-  if (projected > 100.5) {
-    const shortfall = resetSeconds - pace.secondsToExhaust;
-    return `exhausts ~${formatDuration(shortfall)} before reset`;
-  }
-  if (projected < 95) {
-    return `leaves ~${Math.round(100 - projected)}% unused at reset`;
-  }
-  return "on pace";
+  return pace == null ? null : sharedFormatForecast(pace, resetSeconds);
 }
 
 function formatCompactDollars(usd) {
   if (usd >= 1000) {
     const k = usd / 1000;
-    return `$${k >= 10 ? Math.round(k) : Math.round(k * 10) / 10}k`;
+    return `$${k >= 10 ? roundHalfToEven(k) : roundHalfToEven(k * 10) / 10}k`;
   }
-  return `$${Math.round(usd)}`;
+  return `$${roundHalfToEven(usd)}`;
 }
 
 // The "currently burning extra" decision lives in the Python view model
@@ -249,14 +203,8 @@ function formatExtraSpend(extra) {
   if (!extra || !extra.is_enabled || !(extra.used_usd > 0)) return null;
   const used = extra.used_usd;
   const limit = extra.monthly_limit_usd;
-  const pct = Math.round(extra.utilization);
-  return `extra $${Math.round(used)}/$${Math.round(limit)} (${pct}%) this month`;
-}
-
-function formatKnownExpiry(expiry) {
-  const date = new Date(expiry);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
+  const pct = roundHalfToEven(extra.utilization);
+  return `extra $${roundHalfToEven(used)}/$${roundHalfToEven(limit)} (${pct}%) this month`;
 }
 
 function formatBankedResets(count, expiries, expiryLookupFailed) {
@@ -282,40 +230,17 @@ function formatPaidCredits(credits, active) {
 function formatPrepaidBalance(balance) {
   if (balance == null) return null;
   if (balance.kind !== "available") return "Claude prepaid balance unavailable";
-  const negative = balance.amount_minor < 0;
-  const amountMinor = BigInt(Math.abs(balance.amount_minor));
-  const scale = 10n ** BigInt(balance.exponent);
-  const whole = (amountMinor / scale).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-  const fraction = balance.exponent > 0 ? `.${(amountMinor % scale).toString().padStart(balance.exponent, "0")}` : "";
-  const amount = `${whole}${fraction}`;
-  const sign = negative ? "-" : "";
-  return balance.currency === "USD"
-    ? `Claude prepaid balance · ${sign}$${amount}`
-    : `Claude prepaid balance · ${sign}${amount} ${balance.currency}`;
+  return `Claude prepaid balance · ${sharedFormatPrepaidBalance(balance.amount_minor, balance.exponent, balance.currency)}`;
 }
 
 // Peak-burn formatting. The policy (is it peak, which windows are next) is
 // decided in aiquota/peak_windows.py and delivered as state.burn; this only
 // formats it. Instants arrive absolute and are shown in the viewer's local
 // zone — the whole point, since vendors publish these in their own.
-function formatMultiplier(value) {
-  return `${value}x`;
-}
-
 function burnChangesAt(burn) {
   const first = burn?.upcoming?.[0];
   if (!first) return null;
   return new Date(burn.in_peak ? first.end : first.start);
-}
-
-function formatClock(date) {
-  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
-}
-
-function formatPeakInterval(interval) {
-  const start = new Date(interval.start);
-  const weekday = start.toLocaleDateString([], { weekday: "short" });
-  return `${weekday} ${formatClock(start)}-${formatClock(new Date(interval.end))}`;
 }
 
 function formatBurnSummary(burn) {
@@ -341,7 +266,7 @@ function clamp01(value) {
 
 function elapsedFraction(state) {
   if (state?.resetSeconds == null || state?.windowSeconds == null || state.windowSeconds <= 0) return null;
-  return clamp01((state.windowSeconds - state.resetSeconds) / state.windowSeconds);
+  return sharedElapsedFraction(state);
 }
 
 function emptyProviderState() {
