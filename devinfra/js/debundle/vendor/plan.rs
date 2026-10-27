@@ -732,7 +732,7 @@ fn resolve_full_swap(job: FullSwapJob, options: &VendorPlanOptions<'_>) -> Resul
         options.package_roots,
         options.packages_root,
     )?;
-    let upstream_code = graph_provenance::read_dependency_to_string(&upstream_path)?;
+    let upstream_code = graph_provenance::read_package_to_string(&job.package, &upstream_path)?;
 
     let wrapper_source = match job.wrapper_shape {
         Some(WrapperShape::NamedFromDefault) => {
@@ -916,7 +916,8 @@ fn plan_partial_swaps(
                 PartialSwapPackageCoords::from(package),
                 any_member_for_package.then_some("kind=member"),
             )?;
-            let upstream_code = graph_provenance::read_dependency_to_string(&upstream_path)?;
+            let upstream_code =
+                graph_provenance::read_package_to_string(package_name, &upstream_path)?;
             let upstream_ast =
                 parse_js_module(&upstream_path.display().to_string(), &upstream_code)?;
             let upstream_exports = collect_exported_names(&upstream_ast.module);

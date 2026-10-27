@@ -17,7 +17,7 @@ pub(super) fn read_installed_package_metadata(
         );
     }
     Ok(serde_json::from_str(
-        &graph_provenance::read_dependency_to_string(&metadata_path)?,
+        &graph_provenance::read_package_to_string(package_name, &metadata_path)?,
     )?)
 }
 
