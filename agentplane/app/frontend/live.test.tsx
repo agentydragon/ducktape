@@ -156,12 +156,11 @@ it("accepts producer-shaped generated schemas, nested snapshots, defaults, nulls
   };
   const egress = parseJsonFrame(zDecisionsSnapshot, JSON.stringify(decisions), "Egress snapshot");
   expect(egress.success).toBe(true);
-  if (egress.success) {
-    expect(Array.isArray(egress.data.decisions)).toBe(true);
-    if (!Array.isArray(egress.data.decisions)) throw new Error("Expected egress decisions");
-    expect(egress.data.decisions).toHaveLength(2);
-    expect(egress.data.decisions[0]).toMatchObject({ reason: "host_not_allowed", substituted: false, address: null });
-  }
+  if (!egress.success) throw new Error(egress.error);
+  expect(Array.isArray(egress.data.decisions)).toBe(true);
+  if (!Array.isArray(egress.data.decisions)) throw new Error("Expected egress decisions");
+  expect(egress.data.decisions).toHaveLength(2);
+  expect(egress.data.decisions[0]).toMatchObject({ reason: "host_not_allowed", substituted: false, address: null });
 });
 
 it.each(["{", JSON.stringify({ sandboxes: [{ name: "partial" }], watch })])(
