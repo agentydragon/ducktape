@@ -3405,13 +3405,14 @@ impl Visit for ExecutionIndex {
             )
             && self.global_object_names.contains(receiver.sym.as_ref())
             && let Some(root) = builtin_global_root(receiver)
+            && let Some(property) = property.value.as_str()
         {
             self.global_membership_candidates.insert(
                 expression.span.into(),
                 GlobalMembershipProbe {
                     root,
                     receiver: receiver.to_id(),
-                    property: property.value.to_string_lossy().into_owned(),
+                    property: property.to_owned(),
                     owner: self.owner,
                 },
             );

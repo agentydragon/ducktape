@@ -79,14 +79,18 @@ fn assert_conservative_probe(
     statements: &[&str],
     expected: &str,
 ) {
-    let mut callbacks: Vec<_> = extra.iter().map(|name| Member::new(*name)).collect();
+    let mut callbacks: Vec<_> = extra.iter().map(|name| Member::new(name)).collect();
     callbacks.extend([Member::new("read"), Member::new("supported")]);
-    let mut colocated_members: Vec<_> = extra.iter().map(|name| Member::new(*name)).collect();
+    let mut colocated_members: Vec<_> = extra.iter().map(|name| Member::new(name)).collect();
     colocated_members.extend([Member::new("read"), Member::new("supported")]);
     colocated_members.push(Member::new("later"));
     let mut all_statements = statements.to_vec();
     all_statements.extend(["globalThis.inspectState = read;", "later = 42;"]);
-    let assertions = [("globalThis", "feature"), ("window", "feature")];
+    let assertions = [
+        ("globalThis", "feature"),
+        ("window", "feature"),
+        ("globalThis", "\u{fffd}"),
+    ];
     let mut colocated = FixtureOpts::new(
         source,
         vec![logical_module_with_anon(
@@ -118,6 +122,7 @@ fn assert_conservative_probe(
 fn unlisted_keys_aliases_and_effectful_receivers_keep_fallback() {
     for (setup, expression, bindings, expected) in [
         ("", "'other' in globalThis", vec![], "42\n"),
+        ("", "'\\ud800' in globalThis", vec![], "42\n"),
         ("", "`feature` in globalThis", vec![], "42\n"),
         ("", "'feature' in global", vec![], "42\n"),
         ("", "'feature' in globalThis.globalThis", vec![], "42\n"),
@@ -168,6 +173,10 @@ fn recognized_root_replacement_and_prototype_mutation_keep_fallback() {
         ),
         (
             "Object.setPrototypeOf(globalThis, new Proxy({}, { has() { console.log(read()); return false; } }));",
+            "'feature' in globalThis",
+        ),
+        (
+            "globalThis.__proto__ = new Proxy({}, { has() { console.log(read()); return false; } });",
             "'feature' in globalThis",
         ),
     ] {

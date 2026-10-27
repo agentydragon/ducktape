@@ -738,7 +738,9 @@ A browser-global name alone establishes none of these facts. Clean native
 host behavior is a strong per-probe author premise, not inferred builtin trust.
 
 Admission requires a listed literal string on the left of `in` and a direct,
-unshadowed listed root on the right (parentheses are transparent). Parameters,
+unshadowed listed root on the right (parentheses are transparent). Keys with
+unpaired surrogate code units cannot match the UTF-8 assertion and keep fallback.
+Parameters,
 block-local bindings, imported roots, aliases, other roots, effectful receivers
 and nonliteral keys keep their conservative protocol behavior. Recognized
 root replacement, prototype writes, mutated Object intrinsics, dynamic global
