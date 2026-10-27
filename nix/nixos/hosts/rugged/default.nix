@@ -40,6 +40,7 @@ in
     ./iio-debug.nix
     ../../modules/rapl-metrics.nix
     ../../modules/attic-substituter.nix
+    ../../modules/piraeus-host.nix
   ];
 
   # Pull substituter for cache.allegedly.works/{main,gaffer}. Reader JWT is
@@ -117,8 +118,17 @@ in
   # Piraeus `ssd` pool: its own LUKS partition behind the shrunk root partition,
   # unlocked after root is mounted by a keyfile on the encrypted root (never in
   # the initrd, which sits unencrypted on the ESP). LINSTOR initializes the opened
-  # device as its LVM PV. `ducktape.piraeusHost` stays off: its DRBD 9.2.16 fails
-  # to build against this host's 7.2 kernel (`struct sockaddr_unsized`, 2026-10-27).
+  # device as its LVM PV.
+  ducktape.piraeusHost = {
+    enable = true;
+    # 26.05's DRBD 9.2.16 fails to build against this host's 7.2 kernel (`struct
+    # sockaddr_unsized`, 2026-10-27). Unstable's 9.3.3 builds; its protocol range
+    # 118-124 overlaps the other satellites' 9.2.16 (118-123).
+    drbdPackage =
+      config.boot.kernelPackages.callPackage
+        "${inputs.nixpkgs-unstable}/pkgs/os-specific/linux/drbd/driver.nix"
+        { };
+  };
   environment.etc.crypttab.text = ''
     piraeus-ssd /dev/disk/by-partlabel/rugged-piraeus /etc/keys/rugged-piraeus.key luks,nofail,x-systemd.device-timeout=10s
   '';
