@@ -3,10 +3,8 @@ package wakeups
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"os"
 	"testing"
-	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	_ "github.com/lib/pq"

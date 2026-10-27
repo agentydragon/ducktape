@@ -3,11 +3,9 @@ package projection
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"net/url"
 	"os"
 	"testing"
-	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/history_service/migrations"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"

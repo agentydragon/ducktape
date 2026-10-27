@@ -1,11 +1,8 @@
 package dispatcher
 
 import (
-	"context"
-	"fmt"
 	"os"
 	"testing"
-	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/migrations"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"

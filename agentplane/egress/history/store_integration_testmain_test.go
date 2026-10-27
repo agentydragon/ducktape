@@ -1,11 +1,8 @@
 package history
 
 import (
-	"context"
-	"fmt"
 	"os"
 	"testing"
-	"time"
 
 	migrations "github.com/agentydragon/ducktape/agentplane/egress/history_migrations"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"

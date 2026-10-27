@@ -1,11 +1,8 @@
 package webhook
 
 import (
-	"context"
-	"fmt"
 	"os"
 	"testing"
-	"time"
 
 	_ "github.com/lib/pq"
 

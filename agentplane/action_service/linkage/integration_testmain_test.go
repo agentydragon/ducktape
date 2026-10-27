@@ -1,9 +1,7 @@
 package linkage_test
 
 import (
-	"context"
 	"database/sql"
-	"fmt"
 	"os"
 	"testing"
 	"time"

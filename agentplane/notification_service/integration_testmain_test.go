@@ -2,10 +2,8 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"testing"
-	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/migrations"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"

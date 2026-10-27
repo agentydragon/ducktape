@@ -3,10 +3,8 @@ package ingress
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"os"
 	"testing"
-	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/history_service/migrations"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
