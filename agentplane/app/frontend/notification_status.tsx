@@ -23,7 +23,8 @@ const SOURCE_FAILURE_KIND = "SOURCE_FAILURE_KIND_";
 const NOTICE_WAIT_REASON = "NOTICE_WAIT_REASON_";
 
 /** An enum value's name without its prefix, as lowercase words: `NOTICE_WAIT_REASON_DEBOUNCING` is "debouncing". */
-function enumWords(name: string, prefix: string): string {
+function enumWords(name: string | { unknown: number }, prefix: string): string {
+  if (typeof name !== "string") return `unknown value ${name.unknown}`;
   return name.slice(prefix.length).toLowerCase().replaceAll("_", " ");
 }
 

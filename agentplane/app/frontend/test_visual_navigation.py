@@ -39,7 +39,7 @@ async def expect_notice_badges(page: Page, *, stale: bool) -> None:
     """The fixture's two unprocessed-count badges and one failed-delivery badge in the sidebar, all
     painted, and faded exactly when the notice stream is down."""
     badges = page.get_by_role("navigation").locator(".agentplane-thread-list-row-notices")
-    for state, count in [("pending", 2), ("error", 1)]:
+    for state, count in [("pending", 2), ("error", 2)]:
         await expect(badges.and_(page.locator(f'[data-state="{state}"]'))).to_have_count(count)
     for badge in await badges.all():
         await expect(badge).to_be_visible()
@@ -47,11 +47,16 @@ async def expect_notice_badges(page: Page, *, stale: bool) -> None:
 
 
 async def test_thread_notice_badges(view: VisualPage, app: AgentplaneFixture) -> None:
-    """Unprocessed-entry counts and a failed delivery on Thread rows; an empty inbox shows nothing."""
+    """Unprocessed counts, failed delivery, and an unknown future delivery state on Thread rows."""
     await app.mount_app("/")
     await view.check(context="fixture ready")
     page = view.page
     await expect_notice_badges(page, stale=False)
+    future = page.get_by_role("navigation").locator(
+        '.agentplane-thread-list-row-notices[aria-label*="Unrecognized notification delivery state 999"]'
+    )
+    await expect(future).to_have_count(1)
+    await expect(future).to_have_attribute("data-state", "error")
     await view.capture(target=page.get_by_role("navigation"))
 
 

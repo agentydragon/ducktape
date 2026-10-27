@@ -1,6 +1,8 @@
 import { fromJson, toJson, type JsonValue } from "@bufbuild/protobuf";
 
 import {
+  NoticeProgress as NoticeProgressValue,
+  NoticeWaitReason as NoticeWaitReasonValue,
   SandboxNotificationStatusSchema,
   SessionNoticeStatesSchema,
   type InboxNoticeStateJson,
@@ -13,29 +15,68 @@ import {
   type SessionNoticeStatesJson,
   type SubscriptionStatusJson,
 } from "../../proto/notification_operator_proto_generated/agentplane/notification_service/notifications_operator_pb";
-import type {
-  InboxJson,
-  GitHubAccessStatusJson,
-  GitHubStatusJson,
-  GitHubSubjectJson,
-  GitHubSubjectStatusJson,
-  SourceJson,
-  SourceFailureKindJson,
+import {
+  SourceFailureKind as SourceFailureKindValue,
+  type InboxJson,
+  type GitHubAccessStatusJson,
+  type GitHubEventFilterJson,
+  GitHubEventName as GitHubEventNameValue,
+  type GitHubEventNameJson,
+  type GitHubSourceJson,
+  type GitHubStatusJson,
+  type GitHubSubjectJson,
+  type GitHubSubjectStatusJson,
+  type SourceJson,
+  type SourceFailureKindJson,
 } from "../../proto/notification_operator_proto_generated/agentplane/notification_service/notifications_pb";
 
 type RequiredJson<T, K extends keyof T> = Omit<T, K> & Required<Pick<T, K>>;
 type Override<T, R> = Omit<T, keyof R> & R;
+type UnknownProtoEnum = { unknown: number };
+type ForwardCompatibleEnum<T extends string> = T | UnknownProtoEnum;
+
+function enumNumbers(values: object): Set<number> {
+  return new Set(Object.values(values).filter((value): value is number => typeof value === "number"));
+}
+
+const enumFieldNumbers = new Map<string, Set<number>>([
+  ["errorKind", enumNumbers(SourceFailureKindValue)],
+  ["event", enumNumbers(GitHubEventNameValue)],
+  ["notice", enumNumbers(NoticeProgressValue)],
+  ["noticeWaitReason", enumNumbers(NoticeWaitReasonValue)],
+]);
+
+/** Preserve numeric values assigned by a newer protobuf writer as an explicit unknown variant.
+ * Generated Protobuf-ES accepts these numeric ProtoJSON enum values while its generated JSON type
+ * describes only the enum names, so normalize them before returning that JSON-shaped API. */
+function preserveUnknownEnums(value: JsonValue): JsonValue {
+  if (Array.isArray(value)) return value.map(preserveUnknownEnums);
+  if (typeof value !== "object" || value === null) return value;
+  const normalized: Record<string, JsonValue> = {};
+  for (const [key, field] of Object.entries(value)) {
+    const knownValues = enumFieldNumbers.get(key);
+    if (knownValues && typeof field === "number" && !knownValues.has(field)) {
+      normalized[key] = { unknown: field };
+    } else {
+      normalized[key] = preserveUnknownEnums(field);
+    }
+  }
+  return normalized;
+}
 
 type InboxView = RequiredJson<
   InboxJson,
   "id" | "sessionId" | "lastCursor" | "acknowledged" | "covered" | "expiredThrough" | "retired"
 >;
 type EntrySummaryView = RequiredJson<InboxEntrySummaryJson, "cursor" | "createdAt" | "provider" | "summary">;
-type GitHubAccessView = RequiredJson<
-  GitHubAccessStatusJson,
-  "appId" | "installationId" | "repositoryId" | "currentlyValid"
+type GitHubAccessView = Override<
+  RequiredJson<GitHubAccessStatusJson, "appId" | "installationId" | "repositoryId" | "currentlyValid">,
+  { errorKind?: SourceFailureKind }
 >;
-type GitHubSubjectStatusView = RequiredJson<GitHubSubjectStatusJson, "repositoryId" | "subject">;
+type GitHubSubjectStatusView = Override<
+  RequiredJson<GitHubSubjectStatusJson, "repositoryId" | "subject">,
+  { errorKind?: SourceFailureKind }
+>;
 type GitHubStatusView = Override<
   RequiredJson<GitHubStatusJson, "access" | "subject">,
   {
@@ -43,22 +84,26 @@ type GitHubStatusView = Override<
     subject: GitHubSubjectStatusView;
   }
 >;
+type GitHubEventFilterView = Override<GitHubEventFilterJson, { event?: ForwardCompatibleEnum<GitHubEventNameJson> }>;
+type GitHubSourceView = Override<GitHubSourceJson, { events?: GitHubEventFilterView[] }>;
 
-export type SourceFailureKind = SourceFailureKindJson;
-export type NoticeWaitReason = NoticeWaitReasonJson;
-export type NoticeProgress = NoticeProgressJson;
+export type SourceFailureKind = ForwardCompatibleEnum<SourceFailureKindJson>;
+export type NoticeWaitReason = ForwardCompatibleEnum<NoticeWaitReasonJson>;
+export type NoticeProgress = ForwardCompatibleEnum<NoticeProgressJson>;
 export type GitHubSubject = GitHubSubjectJson;
-export type Source = SourceJson;
+export type Source = Override<SourceJson, { github?: GitHubSourceView }>;
 export type GitHubAccessStatus = GitHubAccessView;
 export type GitHubSubjectStatus = GitHubSubjectStatusView;
 export type SourceObservation = Pick<
   GitHubAccessStatusJson,
   "lastSuccessAt" | "errorKind" | "error" | "errorSince" | "errorObservedAt" | "retryAt" | "refreshingUntil"
->;
+> & { errorKind?: SourceFailureKind };
 export type SubscriptionStatus = Override<
   RequiredJson<SubscriptionStatusJson, "id" | "source" | "cancelled" | "expiresAt">,
   {
+    source: Source;
     github?: GitHubStatusView;
+    errorKind?: SourceFailureKind;
   }
 >;
 export type InboxStatus = Override<
@@ -75,6 +120,7 @@ export type InboxStatus = Override<
     inbox: InboxView;
     subscriptions: SubscriptionStatus[];
     pendingEntries: EntrySummaryView[];
+    noticeWaitReason?: NoticeWaitReason;
   }
 >;
 export type SandboxNotificationStatus = Override<
@@ -83,9 +129,9 @@ export type SandboxNotificationStatus = Override<
     inboxes: InboxStatus[];
   }
 >;
-export type InboxNoticeState = RequiredJson<
-  InboxNoticeStateJson,
-  "inboxId" | "sessionId" | "queued" | "unacknowledged"
+export type InboxNoticeState = Override<
+  RequiredJson<InboxNoticeStateJson, "inboxId" | "sessionId" | "queued" | "unacknowledged">,
+  { notice?: NoticeProgress; noticeWaitReason?: NoticeWaitReason }
 >;
 export type SessionNoticeStates = Override<
   RequiredJson<SessionNoticeStatesJson, "observedAt" | "inboxes">,
@@ -137,10 +183,13 @@ function requireSandboxMessageFields(message: SandboxNotificationStatusMessage):
 export function decodeSandboxNotificationStatus(data: string): SandboxNotificationStatus {
   const message = fromJson(SandboxNotificationStatusSchema, parseJson(data));
   requireSandboxMessageFields(message);
-  // alwaysEmitImplicit widens to JsonValue, but the generated schema above validated this message and controls its encoding.
-  const json = toJson(SandboxNotificationStatusSchema, message, {
-    alwaysEmitImplicit: true,
-  }) as SandboxNotificationStatusJson;
+  // alwaysEmitImplicit widens to JsonValue; the generated schema above controls its encoding, and
+  // numeric enum values outside this version's generated enum tables are retained as named variants.
+  const json = preserveUnknownEnums(
+    toJson(SandboxNotificationStatusSchema, message, {
+      alwaysEmitImplicit: true,
+    })
+  );
   return json as SandboxNotificationStatus;
 }
 
@@ -148,6 +197,6 @@ export function decodeSandboxNotificationStatus(data: string): SandboxNotificati
 export function decodeSessionNoticeStates(data: string): SessionNoticeStates {
   const message = fromJson(SessionNoticeStatesSchema, parseJson(data));
   requireObservedAt(message);
-  const json = toJson(SessionNoticeStatesSchema, message, { alwaysEmitImplicit: true }) as SessionNoticeStatesJson;
+  const json = preserveUnknownEnums(toJson(SessionNoticeStatesSchema, message, { alwaysEmitImplicit: true }));
   return json as SessionNoticeStates;
 }
