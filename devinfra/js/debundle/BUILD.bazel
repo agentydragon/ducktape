@@ -457,9 +457,9 @@ rust_library(
     edition = "2024",
     deps = [
         "@crates//:anyhow",
+        "@crates//:ring",
         "@crates//:serde",
         "@crates//:serde_json",
-        "@crates//:sha2",
     ],
 )
 

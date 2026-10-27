@@ -1,5 +1,5 @@
 {
-  "checksum": "4ce278ccfd2323c150d67e6d0df567fe168b597969eb75c36e2d59211826ed67",
+  "checksum": "4debc42878a27425b7505f3d8878372327570f3d89cbac1e53245b760968f340",
   "conditions": {
     "aarch64-apple-darwin": [
       "aarch64-apple-darwin"
@@ -11790,6 +11790,10 @@
           {
             "id": "rig 0.42.0",
             "target": "rig"
+          },
+          {
+            "id": "ring 0.17.14",
+            "target": "ring"
           },
           {
             "id": "roaring 0.11.5",
@@ -48158,6 +48162,7 @@
     "relative-path 2.0.1",
     "reqwest 0.13.5",
     "rig 0.42.0",
+    "ring 0.17.14",
     "roaring 0.11.5",
     "rust_decimal 1.43.0",
     "rust_decimal_macros 1.40.0",
