@@ -36,19 +36,6 @@ py_library(
 )
 
 py_library(
-    name = "e2e",
-    srcs = ["e2e.py"],
-    visibility = ["//props:__subpackages__"],
-    deps = [
-        "//openai_utils:model",
-        "//openai_utils/testing:openai_mock",
-        "//props/agents/critic_dev:main",
-        "//props/core:ids",
-        "@pypi//pytest",
-    ],
-)
-
-py_library(
     name = "e2e_container",
     srcs = ["e2e_container.py"],
     visibility = ["//props:__subpackages__"],

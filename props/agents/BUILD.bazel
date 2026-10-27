@@ -84,6 +84,7 @@ py_test(
     ],
     requires_docker = True,
     deps = [
+        ":conftest",
         ":runtime",
         "//:conftest",
         "//props:conftest",
@@ -94,5 +95,15 @@ py_test(
         "//util/testing:undeclared_outputs",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        "//props/testing/fixtures:e2e_container",
+        "//props/testing/fixtures:e2e_infra",
     ],
 )
