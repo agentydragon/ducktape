@@ -262,6 +262,67 @@ fn explicit_roots_allow_relocated_graph_and_spec() {
 }
 
 #[test]
+fn relocated_mismatch_recipe_rebuilds_after_original_inputs_are_removed() {
+    let fixture = GraphFixture::acyclic_pair();
+    let original = fixture.root().to_path_buf();
+    let relocated = TempDir::new().unwrap();
+    copy_tree(&original, relocated.path());
+    fs::remove_dir_all(&original).unwrap();
+    let source = relocated.path().join("snapshot/main.js");
+    let mut source_bytes = fs::read(&source).unwrap();
+    source_bytes.extend_from_slice(b"\n// changed after snapshot\n");
+    fs::write(&source, source_bytes).unwrap();
+    let graph = relocated
+        .path()
+        .join("out/reports/tree/main/dependency_graph.json");
+    let output = std::process::Command::new(debundler_path())
+        .args([
+            "--spec-root",
+            relocated.path().to_str().unwrap(),
+            "--graph-source-root",
+            relocated.path().to_str().unwrap(),
+            "coverage",
+            "--graph",
+            graph.to_str().unwrap(),
+            "--modules",
+            relocated.path().join("modules/main").to_str().unwrap(),
+            "--source-root",
+            relocated.path().join("snapshot").to_str().unwrap(),
+            "--format",
+            "json",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
+    let rejection: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(rejection["mismatch"]["reason"], "file");
+    let command = rejection["mismatch"]["regenerate_command"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|arg| arg.as_str().unwrap().to_string())
+        .collect::<Vec<_>>();
+    assert!(
+        command
+            .iter()
+            .any(|arg| arg == relocated.path().join("out").to_str().unwrap())
+    );
+    assert!(
+        command
+            .iter()
+            .all(|arg| !arg.contains(&*original.to_string_lossy()))
+    );
+    let cwd = rejection["mismatch"]["regenerate_cwd"].as_str().unwrap();
+    assert_eq!(cwd, relocated.path().to_str().unwrap());
+    let replay = std::process::Command::new(&command[0])
+        .args(&command[1..])
+        .current_dir(cwd)
+        .output()
+        .unwrap();
+    assert!(replay.status.success(), "{}", stderr(&replay));
+}
+
+#[test]
 fn env_only_run_records_replayable_absolute_argv_across_cwd() {
     let fixture = GraphFixture::acyclic_pair();
     let out = fixture.root().join("env_out");

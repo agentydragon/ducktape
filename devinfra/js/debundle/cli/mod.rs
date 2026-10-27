@@ -66,6 +66,7 @@ pub(crate) fn verify_graph_compatibility(
         source: graph_source_root.map(std::path::Path::to_path_buf),
         packages: graph_package_roots.clone(),
     };
+    let (regenerate_command, regenerate_cwd) = provenance.regeneration_recipe(&current)?;
     if let Some(directory) = &provenance.modules_directory {
         let base = current
             .spec
@@ -80,8 +81,8 @@ pub(crate) fn verify_graph_compatibility(
                     expected: base,
                     actual: modules,
                 },
-                provenance.generation_command.clone(),
-                Some(provenance.generation_cwd.clone()),
+                regenerate_command.clone(),
+                Some(regenerate_cwd.clone()),
             )
             .into());
         }
@@ -104,8 +105,8 @@ pub(crate) fn verify_graph_compatibility(
                     expected: scopes.iter().map(|scope| base.join(scope)).collect(),
                     actual: modules,
                 },
-                provenance.generation_command.clone(),
-                Some(provenance.generation_cwd.clone()),
+                regenerate_command.clone(),
+                Some(regenerate_cwd.clone()),
             )
             .into());
         }
@@ -126,8 +127,8 @@ pub(crate) fn verify_graph_compatibility(
             if expected != actual {
                 return Err(GraphMismatch::new(
                     GraphMismatchReason::ConfigPath { expected, actual },
-                    provenance.generation_command.clone(),
-                    Some(provenance.generation_cwd.clone()),
+                    regenerate_command.clone(),
+                    Some(regenerate_cwd.clone()),
                 )
                 .into());
             }
@@ -139,8 +140,8 @@ pub(crate) fn verify_graph_compatibility(
                 expected: Vec::new(),
                 actual: graph_provenance::absolute(modules_root)?,
             },
-            provenance.generation_command.clone(),
-            Some(provenance.generation_cwd.clone()),
+            regenerate_command.clone(),
+            Some(regenerate_cwd.clone()),
         )
         .into());
     }
@@ -184,8 +185,8 @@ pub(crate) fn verify_graph_compatibility(
                     expected: canonical_expected,
                     actual: canonical_actual,
                 },
-                provenance.generation_command.clone(),
-                Some(provenance.generation_cwd.clone()),
+                regenerate_command.clone(),
+                Some(regenerate_cwd.clone()),
             )
             .into());
         }
@@ -205,8 +206,8 @@ pub(crate) fn verify_graph_compatibility(
                     expected: source.sha256.clone(),
                     actual,
                 },
-                provenance.generation_command.clone(),
-                Some(provenance.generation_cwd.clone()),
+                regenerate_command.clone(),
+                Some(regenerate_cwd.clone()),
             )
             .into());
         }

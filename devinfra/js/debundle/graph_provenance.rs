@@ -492,7 +492,116 @@ impl GraphProvenance {
         Ok(base.join(path))
     }
 
+    /// Replay the recorded effective run against explicitly relocated roots.
+    /// The stored argv uses absolute paths and is the source of the effective
+    /// options; only declared path arguments are translated.
+    pub fn regeneration_recipe(&self, current: &CurrentRoots) -> Result<(Vec<String>, PathBuf)> {
+        anyhow::ensure!(
+            self.generation_command
+                .get(1)
+                .is_some_and(|arg| arg == "run"),
+            "graph has no replayable debundle run command"
+        );
+        let relocated =
+            current.spec.is_some() || current.source.is_some() || !current.packages.is_empty();
+        let cwd = if relocated {
+            absolute(current.spec.as_deref().unwrap_or(&self.roots.spec))?
+        } else {
+            self.generation_cwd.clone()
+        };
+        let mut argv = self.generation_command.clone();
+        argv[0] = absolute(&std::env::current_exe()?)?
+            .to_string_lossy()
+            .into_owned();
+        let mut index = 2;
+        while index < argv.len() {
+            let flag = argv[index].clone();
+            if matches!(
+                flag.as_str(),
+                "--tree-config"
+                    | "--tree-modules"
+                    | "--tree-vendor-marks"
+                    | "--spec"
+                    | "--tree-source-root"
+                    | "--out-root"
+                    | "--package-root"
+                    | "--packages-root"
+            ) {
+                let value = argv
+                    .get(index + 1)
+                    .with_context(|| format!("missing value for {flag}"))?
+                    .clone();
+                let translated = match flag.as_str() {
+                    "--tree-source-root" => {
+                        absolute(current.source.as_deref().unwrap_or(&self.roots.source))?
+                    }
+                    "--package-root" => {
+                        let (name, root) = value
+                            .split_once('=')
+                            .context("invalid recorded --package-root")?;
+                        let root = current
+                            .packages
+                            .get(name)
+                            .map(PathBuf::as_path)
+                            .unwrap_or(Path::new(root));
+                        argv[index + 1] = format!("{name}={}", absolute(root)?.display());
+                        index += 2;
+                        continue;
+                    }
+                    "--packages-root" => current
+                        .packages
+                        .get("__packages_root__")
+                        .map(PathBuf::as_path)
+                        .map(absolute)
+                        .transpose()?
+                        .unwrap_or(absolute(Path::new(&value))?),
+                    "--out-root" => {
+                        let original = absolute(Path::new(&value))?;
+                        let mapped = self.translate_rooted_path(&original, current)?;
+                        if relocated && mapped == original {
+                            cwd.join("debundle-output")
+                        } else {
+                            mapped
+                        }
+                    }
+                    _ => self.translate_rooted_path(Path::new(&value), current)?,
+                };
+                argv[index + 1] = translated.to_string_lossy().into_owned();
+                index += 2;
+            } else {
+                index += 1;
+            }
+        }
+        Ok((argv, cwd))
+    }
+
+    fn translate_rooted_path(&self, path: &Path, current: &CurrentRoots) -> Result<PathBuf> {
+        let path = absolute(path)?;
+        let mut selected: Option<(usize, PathBuf)> = None;
+        let mut consider = |old: &Path, new: Option<&Path>| -> Result<()> {
+            if let Some(new) = new {
+                if let Ok(relative) = path.strip_prefix(old) {
+                    let depth = old.components().count();
+                    if selected
+                        .as_ref()
+                        .is_none_or(|(previous, _)| depth > *previous)
+                    {
+                        selected = Some((depth, absolute(new)?.join(relative)));
+                    }
+                }
+            }
+            Ok(())
+        };
+        consider(&self.roots.spec, current.spec.as_deref())?;
+        consider(&self.roots.source, current.source.as_deref())?;
+        for (name, old) in &self.roots.packages {
+            consider(old, current.packages.get(name).map(PathBuf::as_path))?;
+        }
+        Ok(selected.map_or(path, |(_, translated)| translated))
+    }
+
     pub fn verify(&self, current: &CurrentRoots) -> Result<()> {
+        let (regenerate_command, regenerate_cwd) = self.regeneration_recipe(current)?;
         let engine = engine_sha256()?;
         if engine != self.engine_sha256 {
             return Err(GraphMismatch::new(
@@ -500,8 +609,8 @@ impl GraphProvenance {
                     expected: self.engine_sha256.clone(),
                     actual: engine,
                 },
-                self.generation_command.clone(),
-                Some(self.generation_cwd.clone()),
+                regenerate_command.clone(),
+                Some(regenerate_cwd.clone()),
             )
             .into());
         }
@@ -514,8 +623,8 @@ impl GraphProvenance {
                         expected: "directory".to_string(),
                         actual: if dir.exists() { "file" } else { "missing" }.to_string(),
                     },
-                    self.generation_command.clone(),
-                    Some(self.generation_cwd.clone()),
+                    regenerate_command.clone(),
+                    Some(regenerate_cwd.clone()),
                 )
                 .into());
             }
@@ -527,8 +636,8 @@ impl GraphProvenance {
                         expected: membership.members.clone(),
                         actual,
                     },
-                    self.generation_command.clone(),
-                    Some(self.generation_cwd.clone()),
+                    regenerate_command.clone(),
+                    Some(regenerate_cwd.clone()),
                 )
                 .into());
             }
@@ -547,8 +656,8 @@ impl GraphProvenance {
                         expected: file.sha256.clone(),
                         actual,
                     },
-                    self.generation_command.clone(),
-                    Some(self.generation_cwd.clone()),
+                    regenerate_command.clone(),
+                    Some(regenerate_cwd.clone()),
                 )
                 .into());
             }
@@ -562,8 +671,8 @@ impl GraphProvenance {
                         expected: "absent".to_string(),
                         actual: "present".to_string(),
                     },
-                    self.generation_command.clone(),
-                    Some(self.generation_cwd.clone()),
+                    regenerate_command.clone(),
+                    Some(regenerate_cwd.clone()),
                 )
                 .into());
             }
