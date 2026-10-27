@@ -2,12 +2,12 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { NativeSelect } from "@mantine/core";
 
 import {
+  type BudgetSnapshotRequest,
   fetchBudgetSnapshot,
   fetchBudgetSummaryCsv,
   fetchBudgetTransactions,
   fetchBudgetTransactionsCsv,
 } from "./client";
-import type { BudgetSnapshotRequest } from "./client";
 import { parseAdjustments, adjustmentsToParams, effectiveSignedAvg, computeTotals } from "./budget_adjustments";
 import { fmtUsd, fmtNumber } from "./lib/format";
 import { toastFetchError } from "./lib/toast";
