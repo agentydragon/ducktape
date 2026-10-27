@@ -333,6 +333,17 @@ impl InputCapture {
 }
 
 pub fn read_bytes(path: &Path) -> Result<Vec<u8>> {
+    read_bytes_with_role(path, ReadRole::Spec)
+}
+
+#[derive(Clone, Copy)]
+enum ReadRole<'a> {
+    Spec,
+    Source,
+    Package(&'a str),
+}
+
+fn read_bytes_with_role(path: &Path, role: ReadRole<'_>) -> Result<Vec<u8>> {
     let bytes = fs::read(path).with_context(|| format!("reading {}", path.display()))?;
     if let Some(state) = active_capture() {
         let mut guard = state.lock().expect("capture lock");
@@ -340,7 +351,11 @@ pub fn read_bytes(path: &Path) -> Result<Vec<u8>> {
             let provenance = guard
                 .as_mut()
                 .context("graph capture ended before input read")?;
-            let (root, relative) = provenance.classify(path)?;
+            let (root, relative) = match role {
+                ReadRole::Spec => provenance.classify_spec(path)?,
+                ReadRole::Source => provenance.classify_source(path)?,
+                ReadRole::Package(name) => provenance.classify_package(name, path)?,
+            };
             let entry = InputFile {
                 root,
                 path: relative,
@@ -369,6 +384,20 @@ pub fn read_to_string(path: &Path) -> Result<String> {
     String::from_utf8(read_bytes(path)?).with_context(|| format!("{} is not UTF-8", path.display()))
 }
 
+/// Source-list and JS chunk reads carry an explicit role when spec and source
+/// roots overlap, so moving only the source root does not silently reuse them.
+pub fn read_source_to_string(path: &Path) -> Result<String> {
+    String::from_utf8(read_bytes_with_role(path, ReadRole::Source)?)
+        .with_context(|| format!("{} is not UTF-8", path.display()))
+}
+
+/// Package reads retain the resolver's semantic package name when multiple
+/// names happen to point at the same physical directory.
+pub fn read_package_to_string(name: &str, path: &Path) -> Result<String> {
+    String::from_utf8(read_bytes_with_role(path, ReadRole::Package(name))?)
+        .with_context(|| format!("{} is not UTF-8", path.display()))
+}
+
 pub fn record_absent(path: &Path) -> Result<()> {
     if let Some(state) = active_capture() {
         let mut guard = state.lock().expect("capture lock");
@@ -376,7 +405,7 @@ pub fn record_absent(path: &Path) -> Result<()> {
             let provenance = guard
                 .as_mut()
                 .context("graph capture ended before absent-input check")?;
-            let (root, path) = provenance.classify(path)?;
+            let (root, path) = provenance.classify_spec(path)?;
             provenance.absent_files.push(InputPath { root, path });
         }
     }
@@ -395,7 +424,7 @@ pub fn record_chunk_source(
             let provenance = guard
                 .as_mut()
                 .context("graph capture ended before source mapping")?;
-            let (root, path) = provenance.classify(input_file)?;
+            let (root, path) = provenance.classify_source(input_file)?;
             provenance.chunk_sources.push(ChunkSource {
                 chunk_id: chunk_id.to_string(),
                 source_path: PathBuf::from(source_path),
@@ -416,7 +445,7 @@ pub fn record_yaml_membership(directory: &Path, members: &[PathBuf]) -> Result<(
             let provenance = guard
                 .as_mut()
                 .context("graph capture ended before YAML membership check")?;
-            let (root, relative_dir) = provenance.classify(directory)?;
+            let (root, relative_dir) = provenance.classify_spec(directory)?;
             let mut relative_members = members
                 .iter()
                 .map(|p| {
@@ -439,27 +468,39 @@ pub fn record_yaml_membership(directory: &Path, members: &[PathBuf]) -> Result<(
 }
 
 impl GraphProvenance {
-    fn classify(&self, path: &Path) -> Result<(InputRoot, PathBuf)> {
+    fn classify_package(&self, name: &str, path: &Path) -> Result<(InputRoot, PathBuf)> {
         let absolute = absolute(path)?;
-        let mut selected: Option<(InputRoot, PathBuf, usize)> = None;
-        let mut consider = |kind: InputRoot, base: &Path| {
-            if let Ok(relative) = absolute.strip_prefix(base) {
-                let depth = base.components().count();
-                if selected
-                    .as_ref()
-                    .is_none_or(|(_, _, previous)| depth > *previous)
-                {
-                    selected = Some((kind, relative.to_path_buf(), depth));
-                }
-            }
-        };
-        consider(InputRoot::Spec, &self.roots.spec);
-        consider(InputRoot::Source, &self.roots.source);
-        for (name, root) in &self.roots.packages {
-            consider(InputRoot::Package(name.clone()), root);
+        let (root_name, root) = self
+            .roots
+            .packages
+            .get_key_value(name)
+            .or_else(|| self.roots.packages.get_key_value("__packages_root__"))
+            .with_context(|| format!("missing captured root for package {name}"))?;
+        let relative = absolute.strip_prefix(root).with_context(|| {
+            format!(
+                "package {name} input {} is outside declared root {}",
+                absolute.display(),
+                root.display()
+            )
+        })?;
+        Ok((
+            InputRoot::Package(root_name.clone()),
+            relative.to_path_buf(),
+        ))
+    }
+
+    fn classify_source(&self, path: &Path) -> Result<(InputRoot, PathBuf)> {
+        let absolute = absolute(path)?;
+        if let Ok(relative) = absolute.strip_prefix(&self.roots.source) {
+            return Ok((InputRoot::Source, relative.to_path_buf()));
         }
-        if let Some((root, relative, _)) = selected {
-            return Ok((root, relative));
+        Ok((InputRoot::Absolute, absolute))
+    }
+
+    fn classify_spec(&self, path: &Path) -> Result<(InputRoot, PathBuf)> {
+        let absolute = absolute(path)?;
+        if let Ok(relative) = absolute.strip_prefix(&self.roots.spec) {
+            return Ok((InputRoot::Spec, relative.to_path_buf()));
         }
         Ok((InputRoot::Absolute, absolute))
     }
@@ -590,15 +631,15 @@ impl GraphProvenance {
         let path = absolute(path)?;
         let mut selected: Option<(usize, PathBuf)> = None;
         let mut consider = |old: &Path, new: Option<&Path>| -> Result<()> {
-            if let Some(new) = new {
-                if let Ok(relative) = path.strip_prefix(old) {
-                    let depth = old.components().count();
-                    if selected
-                        .as_ref()
-                        .is_none_or(|(previous, _)| depth > *previous)
-                    {
-                        selected = Some((depth, absolute(new)?.join(relative)));
-                    }
+            if let Some(new) = new
+                && let Ok(relative) = path.strip_prefix(old)
+            {
+                let depth = old.components().count();
+                if selected
+                    .as_ref()
+                    .is_none_or(|(previous, _)| depth > *previous)
+                {
+                    selected = Some((depth, absolute(new)?.join(relative)));
                 }
             }
             Ok(())
@@ -798,6 +839,84 @@ fn engine_sha256() -> Result<String> {
 mod tests {
     use super::*;
     use std::sync::{Arc, Barrier};
+
+    #[test]
+    fn package_name_role_survives_equal_original_roots() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let package = temp.path().join("shared");
+        fs::create_dir_all(&package)?;
+        let metadata = package.join("package.json");
+        fs::write(&metadata, "{}")?;
+        let roots = ProvenanceRoots {
+            spec: temp.path().to_path_buf(),
+            source: temp.path().to_path_buf(),
+            packages: BTreeMap::from([
+                ("a".to_string(), package.clone()),
+                ("b".to_string(), package.clone()),
+            ]),
+        };
+        let capture = InputCapture::start(
+            roots,
+            None,
+            vec![
+                std::env::current_exe()?.to_string_lossy().into_owned(),
+                "run".to_string(),
+                "--spec".to_string(),
+                temp.path().join("spec.yaml").to_string_lossy().into_owned(),
+            ],
+        )?;
+        assert_eq!(read_package_to_string("b", &metadata)?, "{}");
+        let provenance = capture.finish()?;
+        assert_eq!(
+            provenance.files[0].root,
+            InputRoot::Package("b".to_string())
+        );
+        let moved = temp.path().join("moved");
+        fs::create_dir_all(&moved)?;
+        fs::write(moved.join("package.json"), "{\"changed\":true}")?;
+        let mismatch = provenance
+            .verify(&CurrentRoots {
+                packages: BTreeMap::from([("b".to_string(), moved.clone())]),
+                ..CurrentRoots::default()
+            })
+            .unwrap_err();
+        assert!(matches!(
+            mismatch.downcast_ref::<GraphMismatch>().map(|m| &m.reason),
+            Some(GraphMismatchReason::File { path, .. }) if path == &moved.join("package.json")
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn authored_yaml_keeps_spec_role_inside_deeper_source_root() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let modules = temp.path().join("modules/main");
+        fs::create_dir_all(&modules)?;
+        let yaml = modules.join("a.yaml");
+        fs::write(&yaml, "members: []\n")?;
+        let capture = InputCapture::start(
+            ProvenanceRoots {
+                spec: temp.path().to_path_buf(),
+                source: modules.clone(),
+                packages: BTreeMap::new(),
+            },
+            Some(PathBuf::from("modules")),
+            vec![
+                std::env::current_exe()?.to_string_lossy().into_owned(),
+                "run".to_string(),
+                "--spec".to_string(),
+                temp.path().join("spec.yaml").to_string_lossy().into_owned(),
+            ],
+        )?;
+        read_to_string(&yaml)?;
+        record_yaml_membership(&modules, &[yaml])?;
+        record_absent(&modules.join("b.yaml"))?;
+        let provenance = capture.finish()?;
+        assert_eq!(provenance.files[0].root, InputRoot::Spec);
+        assert_eq!(provenance.yaml_memberships[0].root, InputRoot::Spec);
+        assert_eq!(provenance.absent_files[0].root, InputRoot::Spec);
+        Ok(())
+    }
 
     #[test]
     fn simultaneous_captures_keep_worker_reads_in_their_own_runs() -> Result<()> {

@@ -2427,7 +2427,7 @@ impl ExecutionIndex {
                 let witness = CallbackFactoryWriteWitness {
                     statement_ordinal: *statement_ordinal,
                     receiver_binding: receiver_binding.0.to_string(),
-                    property: (*property).clone(),
+                    property: Some((*property).clone()),
                 };
                 let mut recorded = namespace_member_write_witnesses.borrow_mut();
                 for member in members {
