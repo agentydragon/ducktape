@@ -1,3 +1,5 @@
+import process from "node:process";
+
 import tseslint from "@typescript-eslint/eslint-plugin";
 import tsparser from "@typescript-eslint/parser";
 import react from "eslint-plugin-react";
