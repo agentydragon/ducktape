@@ -125,8 +125,7 @@ in
     # sockaddr_unsized`, 2026-10-27). Unstable's 9.3.3 builds; its protocol range
     # 118-124 overlaps the other satellites' 9.2.16 (118-123).
     drbdPackage =
-      config.boot.kernelPackages.callPackage
-        "${inputs.nixpkgs-unstable}/pkgs/os-specific/linux/drbd/driver.nix"
+      config.boot.kernelPackages.callPackage "${inputs.nixpkgs-unstable}/pkgs/by-name/dr/drbd/driver.nix"
         { };
   };
   environment.etc.crypttab.text = ''
