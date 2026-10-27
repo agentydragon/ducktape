@@ -191,6 +191,7 @@ async def test_start_session_disabled_tooltip(
     await expect(tooltip).to_be_in_viewport(ratio=1)
     await view.capture(target=page.locator("#app"))
     await page.mouse.move(0, 0)
+    await expect(tooltip).to_be_hidden()
     await wrapper.focus()
     await expect(tooltip).to_be_visible()
     await expect(tooltip).to_contain_text(reason)
