@@ -197,6 +197,12 @@ receipt back from what the harness sent the model.
   local-password form in a separate fresh browser that stops at the linkage callback; the BFF then
   validates the unchanged state and completes its own token exchange. The agent then calls the
   protected tool.
+- `test_launcher_drives_only_the_sandbox_it_launched` has an agent launch a Sandbox through the
+  `orchestration_v1` group with grants on it, which the operator approves through the BFF. Its
+  `open_session`, `submit_input` and `get_session` on that incarnation then come back approved by
+  the `<sandbox>.launcher` PolicySet, and the read reports the completed turn. The launched
+  Sandbox's own request for the same read, one naming another UID, and one after the Sandbox is
+  deleted all wait for the operator, who denies them.
 
 These cases read only the operator Secret the k3s target publishes (`AGENTPLANE_OPERATOR_SECRET_PATH`)
 via `kubectl get --raw`, with a kubeconfig naming the k3s fixture's apiserver. No pre-issued cookie is

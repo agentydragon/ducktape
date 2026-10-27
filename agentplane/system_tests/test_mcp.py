@@ -1,7 +1,8 @@
-"""Agents submit MCP-backed Actions with the `agentplane` CLI; an operator links an OAuth-protected MCP
-server through Dex and decides what waits for them. The model is scripted: each turn runs one CLI command,
-whose receipt the scenario reads back from what the harness sent the model. The k3s target runs Dex, the
-MCP servers and the Action groups (`mcp_servers.py`)."""
+"""Agents submit Actions with the `agentplane` CLI: MCP-backed ones, and the orchestration_v1 group's
+launches of Sandboxes they then drive. An operator links an OAuth-protected MCP server through Dex and
+decides what waits for them. The model is scripted: each turn runs one CLI command, whose receipt the
+scenario reads back from what the harness sent the model. The k3s target runs Dex, the MCP servers and
+the Action groups (`mcp_servers.py`)."""
 
 from __future__ import annotations
 
@@ -15,7 +16,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import httpx
 import pytest
@@ -23,7 +24,7 @@ import pytest_bazel
 from google.protobuf import json_format
 from google.protobuf.struct_pb2 import Value
 from more_itertools import one
-from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
+from tenacity import AsyncRetrying, Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.action_service import action_service_pb2, operator_action_service_pb2
 from agentplane.action_service.policies.resources import ACTION_RULE_TYPE, ACTIONS_READY_CONDITION
@@ -35,8 +36,8 @@ from agentplane.crd_group import GROUP, VERSION
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
 from agentplane.proto import runner_pb2
 from agentplane.system_tests import mcp_servers
-from agentplane.system_tests.agent import Agent
-from agentplane.system_tests.conftest import Sandboxes, namespace
+from agentplane.system_tests.agent import RUNNER_ANSWERS_SECONDS, TURN_SECONDS, WORKING_DIRECTORY, Agent
+from agentplane.system_tests.conftest import POD_TEMPLATE, Sandboxes, namespace, suspend_and_delete, wait_until_running
 from agentplane.system_tests.operator_login import (
     LoginBlockedError,
     OperatorCredentials,
@@ -47,7 +48,7 @@ from agentplane.system_tests.operator_login import (
     verify_action_federation,
 )
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
-from agentplane.testing.scripted_model import ScriptedModel, ShellCall, Text
+from agentplane.testing.scripted_model import ModelRequest, ScriptedModel, ShellCall, Text
 
 # `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
 
@@ -56,6 +57,8 @@ from agentplane.testing.scripted_model import ScriptedModel, ShellCall, Text
 POLICY_READY_SECONDS = 120.0
 # Where the runner disk mounts the CLI in a Sandbox Pod (`agentplane/runner/BUILD.bazel`).
 CLI = "/run/agentplane/runner/bin/agentplane"
+# The key of the orchestration_v1 group in every deployment that offers it (cluster/cdk8s/agentplane/actions.py).
+ORCHESTRATION_GROUP = "orchestration_v1"
 
 
 def _assert_echoed(result: Value, message: str) -> None:
@@ -67,6 +70,47 @@ def _assert_echoed(result: Value, message: str) -> None:
         [{"type": "text", "text": f"Echo: {message}"}],
         False,
     )
+
+
+def _command(*args: str) -> str:
+    return shlex.join([CLI, "--json", *args])
+
+
+def _submission(group: str, action: str, arguments: dict[str, Any], *, title: str, wait: bool) -> list[str]:
+    """The `agentplane` arguments that submit one Action request under a fresh key."""
+    return [
+        "actions",
+        "submit",
+        f"{group}/{action}",
+        "--title",
+        title,
+        "--arguments",
+        json.dumps(arguments),
+        "--key",
+        str(uuid4()),
+        *(["--wait"] if wait else []),
+    ]
+
+
+async def _play_cli_turn(model: ScriptedModel[Any], *args: str) -> action_service_pb2.ActionRequest:
+    """Play the model through a turn that runs `agentplane --json ARGS`: the receipt it printed, as the
+    harness reported it to the model."""
+    call_id = f"agentplane-{uuid4().hex[:8]}"
+    request = await model.request()
+    await model.reply(request, ShellCall(call_id=call_id, command=_command(*args)))
+    request = await model.request()
+    await model.reply(request, Text("Done."))
+    return _receipt(request, call_id)
+
+
+def _receipt(request: ModelRequest[Any], call_id: str) -> action_service_pb2.ActionRequest:
+    reported = one(output for output in request.tool_outputs if output.call_id == call_id)
+    # A harness frames the command's output with its own lines; `--json` prints the receipt as one.
+    receipt = action_service_pb2.ActionRequest()
+    json_format.Parse(
+        one(line for block in reported.blocks for line in block.splitlines() if line.startswith("{")), receipt
+    )
+    return receipt
 
 
 @dataclass(frozen=True)
@@ -92,35 +136,18 @@ class ScriptedAgent:
 
     async def run(self, *args: str) -> action_service_pb2.ActionRequest:
         """The receipt `agentplane --json ARGS` printed, as the harness reported it to the model."""
-        call_id = f"agentplane-{uuid4().hex[:8]}"
-        command = shlex.join([CLI, "--json", *args])
         async with asyncio.TaskGroup() as turns:
-            turns.create_task(self.agent.run(f"Run {command}"))
-            request = await self.model.request()
-            await self.model.reply(request, ShellCall(call_id=call_id, command=command))
-            request = await self.model.request()
-            reported = one(output for output in request.tool_outputs if output.call_id == call_id)
-            await self.model.reply(request, Text("Done."))
-        # A harness frames the command's output with its own lines; `--json` prints the receipt as one.
-        receipt = action_service_pb2.ActionRequest()
-        json_format.Parse(
-            one(line for block in reported.blocks for line in block.splitlines() if line.startswith("{")), receipt
-        )
-        return receipt
+            turns.create_task(self.agent.run(f"Run {_command(*args)}"))
+            # The TaskGroup still waits for the turn to complete before this returns.
+            return await _play_cli_turn(self.model, *args)
+
+    async def submit(
+        self, group: str, action: str, arguments: dict[str, Any], *, title: str, wait: bool
+    ) -> action_service_pb2.ActionRequest:
+        return await self.run(*_submission(group, action, arguments, title=title, wait=wait))
 
     async def submit_echo(self, group: str, message: str, *, wait: bool) -> action_service_pb2.ActionRequest:
-        return await self.run(
-            "actions",
-            "submit",
-            f"{group}/{mcp_servers.ECHO}",
-            "--title",
-            "Echo a test marker",
-            "--arguments",
-            json.dumps({"message": message}),
-            "--key",
-            str(uuid4()),
-            *(["--wait"] if wait else []),
-        )
+        return await self.submit(group, mcp_servers.ECHO, {"message": message}, title="Echo a test marker", wait=wait)
 
 
 class KubectlError(Exception):
@@ -464,27 +491,30 @@ async def test_agent_mcp_bff_decision(
         pytest.fail("Stale decision changed the terminal request", pytrace=False)
 
 
-async def _deny_pending(operator_bff: httpx.AsyncClient, request_id: str) -> action_service_pb2.ActionRequest:
-    """Check a request waited for the operator, then close it so nothing lingers undecided."""
+async def _decide_pending(
+    operator_bff: httpx.AsyncClient, request_id: str, verdict: action_service_pb2.Verdict
+) -> action_service_pb2.ActionRequest:
+    """Check a request waited for the operator, then decide it, so nothing lingers undecided."""
     path = f"/upstream/actions/v1/action-requests/{request_id}"
     receipt = _bff_request(await operator_bff.get(path))
     assert receipt.state == action_service_pb2.ACTION_STATE_DECISION_PENDING
     if receipt.HasField("decision"):
         pytest.fail("Request expected on the human path already has a Decision", pytrace=False)
-    denial = operator_action_service_pb2.DecideActionRequestRequest(
-        request_id=str(request_id),
-        verdict=action_service_pb2.VERDICT_DENY,
-        expected_version=receipt.version,
-        idempotency_key=str(uuid4()),
+    decision = operator_action_service_pb2.DecideActionRequestRequest(
+        request_id=str(request_id), verdict=verdict, expected_version=receipt.version, idempotency_key=str(uuid4())
     )
-    denied = await operator_bff.post(
-        f"/upstream/actions/v1/operator/action-requests/{request_id}/decision", json=json_format.MessageToDict(denial)
+    decided = await operator_bff.post(
+        f"/upstream/actions/v1/operator/action-requests/{request_id}/decision", json=json_format.MessageToDict(decision)
     )
-    assert denied.status_code == HTTPStatus.OK
-    denied_request = _bff_decision(denied)
-    assert denied_request.state == action_service_pb2.ACTION_STATE_DENIED
-    assert denied_request.HasField("decision")
-    assert denied_request.decision.verdict == action_service_pb2.VERDICT_DENY
+    assert decided.status_code == HTTPStatus.OK
+    decided_request = _bff_decision(decided)
+    assert decided_request.state == (
+        action_service_pb2.ACTION_STATE_ALLOWED
+        if verdict == action_service_pb2.VERDICT_ALLOW
+        else action_service_pb2.ACTION_STATE_DENIED
+    )
+    assert decided_request.HasField("decision")
+    assert decided_request.decision.verdict == verdict
     return receipt
 
 
@@ -546,13 +576,13 @@ async def test_policy_binding_auto_approves_the_bound_sandbox(
 
     too_long = f"MCP-POLICY-{uuid4()}-" + "x" * 201
     missed = await agent.submit_echo(mcp_servers.EVERYTHING_GROUP, too_long, wait=False)
-    await _deny_pending(operator_bff, missed.id)
+    await _decide_pending(operator_bff, missed.id, action_service_pb2.VERDICT_DENY)
 
     policy_objects.expire_binding(binding_name)
     await _wait_unbound(operator_bff, view, binding_name)
     after_expiry = f"MCP-POLICY-{uuid4()}"
     expired = await agent.submit_echo(mcp_servers.EVERYTHING_GROUP, after_expiry, wait=False)
-    await _deny_pending(operator_bff, expired.id)
+    await _decide_pending(operator_bff, expired.id, action_service_pb2.VERDICT_DENY)
 
 
 async def _wait_unbound(operator_bff: httpx.AsyncClient, sandbox: SandboxView, binding_name: str) -> None:
@@ -573,6 +603,115 @@ async def _wait_unbound(operator_bff: httpx.AsyncClient, sandbox: SandboxView, b
                 raise PolicyBindingPresentError(f"{account}: Action policy not synced: {policy}")
             if binding_name in {effective.binding for effective in policy.auto_approve_if}:
                 raise PolicyBindingPresentError(f"{account} still resolves {binding_name}")
+
+
+async def _launcher_approved(
+    operator_bff: httpx.AsyncClient, receipt: action_service_pb2.ActionRequest, sandbox: str
+) -> None:
+    """The request succeeded on the launcher grant of `sandbox`, with no operator asked."""
+    assert receipt.state == action_service_pb2.ACTION_STATE_SUCCEEDED, receipt
+    decided = _bff_request(await operator_bff.get(f"/upstream/actions/v1/action-requests/{receipt.id}"))
+    assert decided.decision.provider == "action_policy_set"
+    assert decided.decision.policy_evidence.matched.policy_set == f"{sandbox}.launcher"
+
+
+@pytest.mark.scripted_model
+async def test_launcher_drives_only_the_sandbox_it_launched(
+    operator_bff: httpx.AsyncClient,
+    client: Client,
+    sandbox: Sandboxes,
+    harness: runner_pb2.Harness,
+    offered_model: str,
+    scripted: ScriptedUpstream,
+    policy_objects: PolicyObjects,
+) -> None:
+    """An agent launches a Sandbox through orchestration_v1, which waits for the operator; the launch's
+    grants then let that agent open a Session in it, send input and read the turn's outcome without
+    asking again. The launched Sandbox's own account, another incarnation of the name, and the launcher
+    once the Sandbox is deleted still wait for the operator."""
+    launcher_view = await sandbox(f"systest-launcher-{harness}")
+    launcher = await ScriptedAgent.open(client, launcher_view, harness=harness, model=offered_model, upstream=scripted)
+    name = f"systest-launched-{harness}"
+    launch = await launcher.submit(
+        ORCHESTRATION_GROUP,
+        "launch_sandbox",
+        {"name": name, "template": POD_TEMPLATE, "launcher_grants": ["open_session", "submit_input", "get_session"]},
+        title="Launch a test Sandbox",
+        wait=False,
+    )
+    await _decide_pending(operator_bff, launch.id, action_service_pb2.VERDICT_ALLOW)
+    launched = await launcher.run("actions", "wait", str(launch.id))
+    assert launched.state == action_service_pb2.ACTION_STATE_SUCCEEDED, launched
+    target = json_format.MessageToDict(launched.execution.result)["sandbox"]
+    assert target["name"] == name
+    deleted = False
+    try:
+        view = await wait_until_running(client, name)
+        assert str(view.uid) == target["uid"]
+        assert view.pod is not None
+        # The Action Service holds the grant once it acknowledges the binding.
+        policy_objects.wait_actions_ready(f"{name}.launcher")
+
+        session_id = str(uuid4())
+        session = {"sandbox": target, "session_id": session_id}
+        spec = {
+            "harness": runner_pb2.Harness.Name(harness),
+            "model": offered_model,
+            "cwd": WORKING_DIRECTORY,
+            "reasoning_effort": "low",
+        }
+        opened = await launcher.submit(
+            ORCHESTRATION_GROUP, "open_session", {**session, "spec": spec}, title="Open a test Session", wait=True
+        )
+        await _launcher_approved(operator_bff, opened, name)
+        command_id = str(uuid4())
+        sent = await launcher.submit(
+            ORCHESTRATION_GROUP,
+            "submit_input",
+            {**session, "command_id": command_id, "text": "Run the test command."},
+            title="Send test input",
+            wait=True,
+        )
+        await _launcher_approved(operator_bff, sent, name)
+
+        # The launched Sandbox's turn asks for the same read with its own account, which no grant names.
+        own = await _play_cli_turn(
+            scripted.model(view.pod.name, harness),
+            *_submission(ORCHESTRATION_GROUP, "get_session", session, title="Read a test Session", wait=False),
+        )
+        await _decide_pending(operator_bff, own.id, action_service_pb2.VERDICT_DENY)
+        async for attempt in AsyncRetrying(stop=stop_after_delay(TURN_SECONDS), wait=wait_fixed(1), reraise=True):
+            with attempt:
+                thread = await client.wait_for_thread_projection(UUID(session_id), timeout_s=RUNNER_ANSWERS_SECONDS)
+                assert thread.last_turn_status == "TURN_STATUS_COMPLETED", thread
+
+        read = await launcher.submit(
+            ORCHESTRATION_GROUP, "get_session", session, title="Read a test Session", wait=True
+        )
+        await _launcher_approved(operator_bff, read, name)
+        state = json_format.MessageToDict(read.execution.result)
+        assert state["sandbox_ready"]["status"] == "True"
+        assert state["session"]["last_turn_status"] == "TURN_STATUS_COMPLETED"
+        assert [(d["command_id"], d["operation"]) for d in state["dispatches"]] == [
+            (command_id, "OPERATION_SUBMIT_INPUT")
+        ]
+
+        another = {**session, "sandbox": {"name": name, "uid": str(uuid4())}}
+        elsewhere = await launcher.submit(
+            ORCHESTRATION_GROUP, "get_session", another, title="Read a test Session", wait=False
+        )
+        await _decide_pending(operator_bff, elsewhere.id, action_service_pb2.VERDICT_DENY)
+
+        await suspend_and_delete(client, name, view.uid)
+        deleted = True
+        await _wait_unbound(operator_bff, launcher_view, f"{name}.launcher")
+        revoked = await launcher.submit(
+            ORCHESTRATION_GROUP, "get_session", session, title="Read a test Session", wait=False
+        )
+        await _decide_pending(operator_bff, revoked.id, action_service_pb2.VERDICT_DENY)
+    finally:
+        if not deleted:
+            await suspend_and_delete(client, name, UUID(target["uid"]))
 
 
 if __name__ == "__main__":
