@@ -197,11 +197,12 @@ bespoke rule each.
 Where the check runs (operator, 00:18 UTC: "send message, interrupt, open session might end up looking like rbac
 checked on the runner gateway side"): Session commands are checked in the Runner Gateway, whose Dispatcher already
 authorizes the caller of every command; history reads in History; inbox messages stay in Notifications. In the
-Gateway it is either a typed `PolicySet` rule the Gateway watches, as Notifications watches `session_inbox_access`, or
-Kubernetes RBAC itself: verbs such as `open-session`, `submit-input` and `interrupt` on a `sandboxes/sessions`
-subresource, checked with a `SubjectAccessReview` and granted by a Role naming the worker, bound through a
-`kubernetes_role_binding` rule. RBAC brings Kubernetes' own escalation check on who may bind what, but cannot pin a
-UID, so the Gateway would still compare the Sandbox's UID.
+Either way the subject is the caller's ServiceAccount and the object is the Sandbox, never a Session (operator,
+00:37 UTC: "the thing that's the object/subject is a SA / sandbox level"). It could be Kubernetes RBAC, with custom
+verbs such as `open-session`, `submit-input` and `interrupt` on `sandboxes`, checked with a `SubjectAccessReview` and
+granted by a Role naming the worker through a `kubernetes_role_binding` rule: Kubernetes' own check on who may bind
+what comes with it, but a Role cannot pin a UID, so the Gateway still compares it. Or it could be a typed `PolicySet`
+rule over Sandbox targets by name, UID or tag, as `session_inbox_access` selects by inbox tag.
 
 ## Exposure
 
