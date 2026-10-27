@@ -132,6 +132,12 @@ Purpose-based provider policy selectors were a useful improvement in
 in the authoring guide: changing chunk identity can affect relative loader
 behavior and should not be necessary just to address a policy.
 
+Follow-up: [#12310](https://github.com/agentydragon/ducktape/pull/12310)
+proposes `modules merge --batch` for exact-case file moves with one complete
+pre-write gate, and repairs dropped source module notes. Its synthetic and
+hosted checks pass. Consistent path behavior across the other authoring commands
+and identifier-prefix guidance remain open.
+
 ## F — Support recovery of human module boundaries
 
 **Priority:** P2. **Owner:** proposals, authoring CLI and architect workflow.
