@@ -1,4 +1,4 @@
-import { ActionIcon, Box, Button, Flex, Group, Menu, Select, Stack, Text, Textarea } from "@mantine/core";
+import { ActionIcon, Button, Group, Menu, Select, Stack, Text, Textarea } from "@mantine/core";
 import { IconDotsVertical, IconHistory, IconPlayerStop, IconSend } from "../icons";
 import { intlFormatDistance } from "date-fns";
 import { type JSX, type KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
@@ -27,7 +27,6 @@ import { snapshotFresh, threadStatusFromSnapshot } from "./thread_status";
 import { isoTime } from "../format_time";
 import { TimeAgo } from "../time_ago";
 import { NotificationStatus } from "../notification_status";
-import { useThreadNotices } from "./thread_notices";
 import { TopbarActions } from "../topbar";
 import { langfuseSandboxTraceUrl } from "../langfuse_search";
 import { traceSearchUrl } from "../trace_search";

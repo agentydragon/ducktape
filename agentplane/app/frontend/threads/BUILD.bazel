@@ -206,11 +206,9 @@ ts_library(
     deps = [
         ":chronological_debug",
         ":history_rows",
-        ":projected_session_css",
         ":retained_disclosures",
         ":thread_cards",
         ":thread_commands",
-        ":thread_notices",
         ":thread_status",
         ":thread_sync",
         ":thread_tab",
