@@ -7,27 +7,24 @@ import (
 	"fmt"
 
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
+	"github.com/lib/pq"
 	"google.golang.org/protobuf/proto"
 )
 
 const eventKindBatchSize = 512
-
-type eventKindRow struct {
-	sessionID string
-	cursor    int64
-	payload   []byte
-	kind      int32
-}
 
 type eventKindCursor struct {
 	sessionID string
 	cursor    int64
 }
 
-// backfillEventKinds uses one transaction per bounded batch so an interrupted migration can resume
-// from the remaining NULL kinds without retaining a transaction over the whole history table.
+// backfillEventKinds walks session_event in primary-key order, one transaction per bounded batch, so an
+// interrupted migration resumes without retaining a transaction over the whole history table. Selecting
+// on `kind IS NULL` instead lets the planner scan the kind index, whose NULL entries still include every
+// row already rewritten until vacuum removes them: each batch then rereads the whole backfilled prefix.
 func backfillEventKinds(ctx context.Context, db *sql.DB) error {
-	var after *eventKindCursor
+	// Cursors are non-negative, so this key precedes every row.
+	after := eventKindCursor{sessionID: "00000000-0000-0000-0000-000000000000", cursor: -1}
 	for {
 		next, err := backfillEventKindBatch(ctx, db, after)
 		if err != nil {
@@ -36,57 +33,56 @@ func backfillEventKinds(ctx context.Context, db *sql.DB) error {
 		if next == nil {
 			break
 		}
-		after = next
+		after = *next
 	}
-	_, err := db.ExecContext(ctx, "ALTER TABLE session_event ALTER COLUMN kind SET NOT NULL")
-	return err
+	return requireEventKinds(ctx, db)
 }
 
-func backfillEventKindBatch(ctx context.Context, db *sql.DB, after *eventKindCursor) (*eventKindCursor, error) {
+func backfillEventKindBatch(ctx context.Context, db *sql.DB, after eventKindCursor) (*eventKindCursor, error) {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
 	defer tx.Rollback()
 
-	var rows *sql.Rows
-	if after == nil {
-		rows, err = tx.QueryContext(ctx, `SELECT session_id::text, cursor, payload
-			FROM session_event WHERE kind IS NULL ORDER BY session_id, cursor LIMIT $1 FOR UPDATE`, eventKindBatchSize)
-	} else {
-		rows, err = tx.QueryContext(ctx, `SELECT session_id::text, cursor, payload
-			FROM session_event WHERE kind IS NULL AND (session_id, cursor) > ($1, $2)
-			ORDER BY session_id, cursor LIMIT $3 FOR UPDATE`, after.sessionID, after.cursor, eventKindBatchSize)
-	}
+	rows, err := tx.QueryContext(ctx, `SELECT session_id::text, cursor, kind IS NULL, CASE WHEN kind IS NULL THEN payload END
+		FROM session_event WHERE (session_id, cursor) > ($1::uuid, $2)
+		ORDER BY session_id, cursor LIMIT $3 FOR UPDATE`, after.sessionID, after.cursor, eventKindBatchSize)
 	if err != nil {
 		return nil, err
 	}
-	var batch []eventKindRow
+	var last *eventKindCursor
+	var sessionIDs []string
+	var cursors, kinds []int64
 	for rows.Next() {
-		var row eventKindRow
-		if err := rows.Scan(&row.sessionID, &row.cursor, &row.payload); err != nil {
+		var row eventKindCursor
+		var missing bool
+		var payload []byte
+		if err := rows.Scan(&row.sessionID, &row.cursor, &missing, &payload); err != nil {
 			_ = rows.Close()
 			return nil, err
 		}
-		row.kind, err = eventObservationNumber(row.payload)
+		last = &row
+		if !missing {
+			continue
+		}
+		kind, err := eventObservationNumber(payload)
 		if err != nil {
 			_ = rows.Close()
 			return nil, fmt.Errorf("decode session_event %s cursor %d: %w", row.sessionID, row.cursor, err)
 		}
-		batch = append(batch, row)
+		sessionIDs = append(sessionIDs, row.sessionID)
+		cursors = append(cursors, row.cursor)
+		kinds = append(kinds, int64(kind))
 	}
 	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
 		return nil, err
 	}
-	if len(batch) == 0 {
-		if err := tx.Commit(); err != nil {
-			return nil, err
-		}
-		return nil, nil
-	}
-	for _, row := range batch {
-		result, err := tx.ExecContext(ctx, `UPDATE session_event SET kind = $3
-			WHERE session_id = $1 AND cursor = $2 AND kind IS NULL`, row.sessionID, row.cursor, row.kind)
+	if len(sessionIDs) > 0 {
+		result, err := tx.ExecContext(ctx, `UPDATE session_event AS event SET kind = batch.kind
+			FROM unnest($1::uuid[], $2::bigint[], $3::integer[]) AS batch(session_id, cursor, kind)
+			WHERE event.session_id = batch.session_id AND event.cursor = batch.cursor AND event.kind IS NULL`,
+			pq.Array(sessionIDs), pq.Array(cursors), pq.Array(kinds))
 		if err != nil {
 			return nil, err
 		}
@@ -94,15 +90,33 @@ func backfillEventKindBatch(ctx context.Context, db *sql.DB, after *eventKindCur
 		if err != nil {
 			return nil, err
 		}
-		if updated != 1 {
-			return nil, fmt.Errorf("backfill session_event %s cursor %d updated %d rows", row.sessionID, row.cursor, updated)
+		if updated != int64(len(sessionIDs)) {
+			return nil, fmt.Errorf("backfill session_event batch after %s cursor %d updated %d of %d rows",
+				after.sessionID, after.cursor, updated, len(sessionIDs))
 		}
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
-	last := batch[len(batch)-1]
-	return &eventKindCursor{sessionID: last.sessionID, cursor: last.cursor}, nil
+	return last, nil
+}
+
+// requireEventKinds makes kind NOT NULL without scanning the table under SET NOT NULL's ACCESS EXCLUSIVE
+// lock: VALIDATE CONSTRAINT scans while reads and writes continue, and SET NOT NULL then trusts the valid
+// check. Dropping a leftover check first lets an interrupted run start over.
+func requireEventKinds(ctx context.Context, db *sql.DB) error {
+	for _, statement := range []string{
+		"ALTER TABLE session_event DROP CONSTRAINT IF EXISTS session_event_kind_present",
+		"ALTER TABLE session_event ADD CONSTRAINT session_event_kind_present CHECK (kind IS NOT NULL) NOT VALID",
+		"ALTER TABLE session_event VALIDATE CONSTRAINT session_event_kind_present",
+		"ALTER TABLE session_event ALTER COLUMN kind SET NOT NULL",
+		"ALTER TABLE session_event DROP CONSTRAINT session_event_kind_present",
+	} {
+		if _, err := db.ExecContext(ctx, statement); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func eventObservationNumber(payload []byte) (int32, error) {

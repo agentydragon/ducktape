@@ -30,6 +30,7 @@ go_library(
     visibility = ["//agentplane/history_service:__subpackages__"],
     deps = [
         "//agentplane/proto:event_log_go_proto",
+        "@com_github_lib_pq//:pq",
         "@com_github_pressly_goose_v3//:goose",
         "@com_github_pressly_goose_v3//lock",
         "@org_golang_google_protobuf//proto",

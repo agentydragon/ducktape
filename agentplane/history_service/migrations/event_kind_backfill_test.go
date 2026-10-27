@@ -124,7 +124,8 @@ func assertPartialKinds(t *testing.T, ctx context.Context, db *sql.DB, sessionID
 	if len(got) != rowCount {
 		t.Fatalf("got %d kinds, want %d", len(got), rowCount)
 	}
-	for cursor, kind := range got[:rowCount-1] {
+	// The first batch holds cursors 1-512 and commits; the second holds 513 and the malformed 514.
+	for cursor, kind := range got[:eventKindBatchSize] {
 		want := int64(4)
 		if cursor == 1 || cursor == 2 {
 			want = 0
@@ -135,8 +136,10 @@ func assertPartialKinds(t *testing.T, ctx context.Context, db *sql.DB, sessionID
 			t.Errorf("cursor %d kind = %v, want %d before retry", cursor+1, kind, want)
 		}
 	}
-	if got[rowCount-1].Valid {
-		t.Errorf("cursor %d kind = %v, want NULL after failed batch", rowCount, got[rowCount-1])
+	for cursor, kind := range got[eventKindBatchSize:] {
+		if kind.Valid {
+			t.Errorf("cursor %d kind = %v, want NULL after failed batch", eventKindBatchSize+cursor+1, kind)
+		}
 	}
 }
 
