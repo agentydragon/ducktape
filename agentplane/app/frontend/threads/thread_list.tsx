@@ -7,7 +7,10 @@ import { IconArchive, IconArchiveOff, IconSearch } from "../icons";
 import { type JSX, useState } from "react";
 import { Link, useMatch, useNavigate } from "react-router";
 
-import { archiveThread, displayableError, harnessLabel, type SandboxView, type ThreadView } from "../client";
+import { archiveThread, type ThreadView } from "./client";
+import { displayableError } from "../client";
+import { harnessLabel } from "../model_catalog";
+import { type SandboxView } from "../sandboxes/client";
 import { THREAD_PAGE, useRequiredThreadsLive, useThreadListing } from "./live";
 import { MarkGlyph } from "../mark_glyph";
 import { sandboxStatusDetail, sandboxSummary } from "../sandbox_status";

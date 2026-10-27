@@ -173,7 +173,7 @@ py_library(
         ":translation",
         "//openai_utils:client_factory",
         "//openai_utils:model",
-        "//openai_utils:retry",
+        "//openai_utils:requests",
         "//x/sysrw/anthropic:types",
         "//x/sysrw/templates:loader",
         "@pypi//jinja2",

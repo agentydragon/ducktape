@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 import pytest_bazel
+import tiktoken.load
 
 from mcp_infra.testing.naming import build_mcp_function
 from openai_utils.model import FunctionToolParam, OpenAIModelProto, ResponsesRequest
@@ -99,9 +100,15 @@ def cfg_two_iters() -> OptimizerConfig:
     )
 
 
+@pytest.mark.usefixtures("tiktoken_cache")
 async def test_optimize_prompts_two_iterations_async(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, cfg_two_iters: OptimizerConfig, responses_factory
 ):
+    def reject_tokenizer_download(blobpath: str) -> bytes:
+        pytest.fail(f"Tokenizer data must come from runfiles, not a runtime download: {blobpath}")
+
+    monkeypatch.setattr(tiktoken.load, "read_file", reject_tokenizer_download)
+
     # Provide a lightweight runner that avoids Docker and writes deterministic outputs
     class FakeRunner(AgentRunner):
         async def setup(self, task: TaskDefinition, _task_type_config: dict) -> None:

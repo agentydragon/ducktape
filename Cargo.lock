@@ -2700,6 +2700,7 @@ dependencies = [
  "relative-path",
  "reqwest 0.13.5",
  "rig",
+ "ring",
  "roaring",
  "rust_decimal",
  "rust_decimal_macros",

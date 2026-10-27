@@ -68,6 +68,7 @@ anyhow = "^1.0"
 object_store = { version = "^0.14.1", features = ["aws"] }
 sea-orm = { version = "2.0.3", default-features = false, features = ["macros", "runtime-tokio-rustls", "sqlx-postgres", "with-json"] }
 sha2 = "^0.11.0"
+ring = "^0.17.14"
 # rig-core's default `reqwest-rustls` feature pulls aws-lc-rs → aws-lc-sys (needs cmake).
 # Use native-tls instead (system OpenSSL on Linux, no cmake required).
 rig = { version = "^0.42.0", default-features = false, features = ["agent", "derive", "native-tls"] }

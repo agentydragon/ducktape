@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 
-import { api, type FrontendConfig } from "./client";
+import { api } from "./client";
+import type { components } from "./api/schema";
+
+export type FrontendConfig = components["schemas"]["FrontendConfig"];
 
 /** Load browser-safe app settings once per page. An unavailable endpoint hides optional features. */
 export function useFrontendConfig(): FrontendConfig | null {

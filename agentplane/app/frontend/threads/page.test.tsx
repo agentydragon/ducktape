@@ -10,22 +10,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CommandSchema, type Command } from "../../../proto/command_pb";
 import { EventEntrySchema, type EventEntry } from "../../../proto/event_log_pb";
 import { ItemKind, RecoveryDisposition } from "../../../proto/event_pb";
-import type * as ClientModule from "../client";
+import type * as ThreadClientModule from "./client";
+import type * as ModelCatalogModule from "../model_catalog";
+import type * as SandboxClientModule from "../sandboxes/client";
 import { LANGFUSE_SEARCH_SETTINGS } from "../langfuse_search_fixture";
-import {
-  api,
-  submitInput,
-  changeModel,
-  changeReasoningEffort,
-  interruptTurn,
-  getThread,
-  models,
-  resumeSandbox,
-  type LangfuseSearchSettings,
-  type SandboxView,
-  type TraceSearchSettings,
-  type ThreadView,
-} from "../client";
+import { api } from "../client";
+import { submitInput, changeModel, changeReasoningEffort, interruptTurn, getThread, type ThreadView } from "./client";
+import { models } from "../model_catalog";
+import { resumeSandbox, type SandboxView } from "../sandboxes/client";
+import { type LangfuseSearchSettings } from "../langfuse_search";
+import { type TraceSearchSettings } from "../trace_search";
 import { historyRows, rowKey } from "./history_rows";
 import { SandboxesLiveProvider } from "../sandboxes/live";
 import { ThreadsLiveProvider, useRequiredThreadsLive } from "./live";
@@ -52,14 +46,20 @@ import { ThreadSyncContext, type ThreadEntity, type ThreadState, type ThreadSync
 import { TopbarContext } from "../topbar";
 import { type ServedWatch, stubWatchFetch } from "../watch_fixture";
 
-vi.mock("../client", async (importOriginal) => ({
-  ...(await importOriginal<typeof ClientModule>()),
+vi.mock("./client", async (importOriginal) => ({
+  ...(await importOriginal<typeof ThreadClientModule>()),
   submitInput: vi.fn(),
   changeModel: vi.fn(),
   changeReasoningEffort: vi.fn(),
   interruptTurn: vi.fn(),
   getThread: vi.fn(),
+}));
+vi.mock("../model_catalog", async (importOriginal) => ({
+  ...(await importOriginal<typeof ModelCatalogModule>()),
   models: vi.fn(),
+}));
+vi.mock("../sandboxes/client", async (importOriginal) => ({
+  ...(await importOriginal<typeof SandboxClientModule>()),
   resumeSandbox: vi.fn(),
 }));
 

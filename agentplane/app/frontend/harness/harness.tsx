@@ -41,7 +41,9 @@ import {
 } from "../actions/proto_test_fixtures";
 import { sampleConnection } from "../connections/fixture";
 import type { Connection } from "../connections/models";
-import type { BindingView, Decision, DispatchReceipt, PolicySetView, SandboxView, ThreadView } from "../client";
+import { type BindingView, type PolicySetView, type Decision, type SandboxView } from "../sandboxes/client";
+
+import type { DispatchReceipt, ThreadView } from "../threads/client";
 import { ACTION_RENDERERS } from "../actions/rendering/index";
 import type { ActionGroupView, ActionPolicyView, ActionRequestView } from "../actions/client";
 import type { McpLinkageView } from "../mcp_linkage_client";

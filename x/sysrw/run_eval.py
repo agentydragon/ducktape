@@ -17,6 +17,7 @@ import tiktoken
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from openai import AsyncOpenAI
 from openai.types.chat import (
+    ChatCompletion,
     ChatCompletionAssistantMessageParam,
     ChatCompletionMessageCustomToolCall,
     ChatCompletionMessageFunctionToolCall,
@@ -36,7 +37,7 @@ from openai_utils.model import (
     SystemMessage,
     UserMessage,
 )
-from openai_utils.retry import chat_create_with_retries, responses_create_with_retries
+from openai_utils.requests import create_chat_completion, create_responses_result
 from x.sysrw.anthropic.types import Message as AnthropicMessage, MessageRole as AnthropicMessageRole
 from x.sysrw.constants import TOOLS_HEADER
 from x.sysrw.openai_typing import (
@@ -547,6 +548,7 @@ async def run_eval(
             new_assistant_message: ChatAssistantMessage | ResponsesAssistantMessage
             messages_for_grader: list[ChatCompletionMessageParam]
             prev_assistant_index_for_grader: int
+            sample_response: ChatCompletion | ResponsesResult
             sample_request: ChatCompletionCreateParams | ResponseCreateParams
             if isinstance(item, CCRSample):  # CCR
                 # 1) Rewrite system via Node apply script
@@ -595,13 +597,14 @@ async def run_eval(
                     }
                 )
                 try:
-                    sample = await chat_create_with_retries(client, sample_request)
+                    chat_sample = await create_chat_completion(client, sample_request)
                 except Exception as e:
                     counters.sampler_errors += 1
                     msg = {"correlation_id": item.correlation_id, "status": "sampler_error", "error": str(e)}
                     log_event(msg)
                     return None, None
-                new_assistant_message = ChatAssistantMessage(message=sample.choices[0].message)
+                sample_response = chat_sample
+                new_assistant_message = ChatAssistantMessage(message=chat_sample.choices[0].message)
                 # For grader context: convert full Anthropic message list to ChatCompletionMessageParam
                 messages_for_grader = anthropic_messages_to_standard(anthropic_request.messages)
                 prev_assistant_index_for_grader = prev_assistant_index
@@ -630,14 +633,15 @@ async def run_eval(
                     base_request["model"] = SAMPLER_MODEL
                 sample_request = TypeAdapter(ResponseCreateParams).validate_python(base_request)
                 try:
-                    sample = await responses_create_with_retries(client, **sample_request)
+                    responses_sample = await create_responses_result(client, **sample_request)
                 except Exception as e:
                     counters.sampler_errors += 1
                     msg = {"correlation_id": item.correlation_id, "status": "sampler_error", "error": str(e)}
                     log_event(msg)
                     return None, None
+                sample_response = responses_sample
                 new_assistant_message = ResponsesAssistantMessage(
-                    responses_input=responses_input_models, responses_output=sample
+                    responses_input=responses_input_models, responses_output=responses_sample
                 )
                 # For grader context later, build ephemeral CCR-like messages
                 parsed_request_input = parse_response_messages(request_input)
@@ -719,7 +723,7 @@ async def run_eval(
                 }
             )
             try:
-                grade_response = await responses_create_with_retries(client, **grade_request)
+                grade_response = await create_responses_result(client, **grade_request)
             except Exception as e:
                 counters.grader_errors += 1
                 msg = {"correlation_id": item.correlation_id, "status": "grader_error", "error": str(e)}
@@ -736,7 +740,7 @@ async def run_eval(
 
             sample_record = EvalSampleRecord(
                 request=sample_request,
-                response=sample.model_dump(mode="json"),
+                response=sample_response,
                 new_assistant_message=new_assistant_message,
                 correlation_id=item.correlation_id,
                 timestamp=item.timestamp,

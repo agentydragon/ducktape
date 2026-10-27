@@ -1,7 +1,7 @@
 import { Code, Group, Stack, Text } from "@mantine/core";
 import type { JSX, ReactNode } from "react";
 
-import { serviceAccountKey } from "../client";
+import { serviceAccountKey } from "../connections/models";
 import { Disclosure, DisclosureBody } from "../disclosure";
 import { TimeAgo } from "../time_ago";
 import { ClampedBlock, lineCount, TEXT_MAX_HEIGHT_REM } from "../clamped_block";

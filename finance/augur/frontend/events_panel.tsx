@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef } from "react";
 import { fmtQuanta, fmtNumber } from "./lib/format";
 import { ScenarioBadge } from "./scenario_tabs";
+import type { useEventSelection, useVisibleEventKinds } from "./hooks";
 import {
   ROLLOUT_EVENT_COLORS,
   ROLLOUT_EVENT_KIND_ORDER,
@@ -13,6 +14,17 @@ import {
   eventAmount,
 } from "./data_helpers";
 
+type RolloutEvents = Parameters<typeof eventGroupsByMonth>[0];
+type SelectedRolloutEventsPanelProps = Pick<
+  ReturnType<typeof useEventSelection>,
+  "selectedEventMonthIndex" | "hoveredEventMonthIndex" | "onSelectEventMonth" | "onHoverEventMonth"
+> & {
+  events: RolloutEvents;
+  selectedSummary: { seed: number } | null;
+  activeScenario?: React.ComponentProps<typeof ScenarioBadge> | null;
+  loading: boolean;
+};
+
 export function SelectedRolloutEventsPanel({
   events,
   selectedSummary,
@@ -22,9 +34,9 @@ export function SelectedRolloutEventsPanel({
   hoveredEventMonthIndex,
   onSelectEventMonth,
   onHoverEventMonth,
-}) {
+}: SelectedRolloutEventsPanelProps) {
   const groups = useMemo(() => eventGroupsByMonth(events), [events]);
-  const groupRefs = useRef(new Map());
+  const groupRefs = useRef(new Map<number, HTMLTableRowElement>());
 
   useEffect(() => {
     if (selectedEventMonthIndex == null) return;
@@ -33,7 +45,7 @@ export function SelectedRolloutEventsPanel({
 
   if (!selectedSummary) return null;
 
-  const selectMonthFromKeyboard = (keyboardEvent, monthIndex) => {
+  const selectMonthFromKeyboard = (keyboardEvent: React.KeyboardEvent<HTMLTableRowElement>, monthIndex: number) => {
     if (keyboardEvent.key !== "Enter" && keyboardEvent.key !== " ") return;
     keyboardEvent.preventDefault();
     onSelectEventMonth?.(monthIndex);
@@ -152,8 +164,14 @@ export function SelectedRolloutEventsPanel({
   );
 }
 
-export function EventKindLegend({ events, visibility }) {
-  const countsByKind = new Map();
+export function EventKindLegend({
+  events,
+  visibility,
+}: {
+  events: RolloutEvents;
+  visibility: ReturnType<typeof useVisibleEventKinds>;
+}) {
+  const countsByKind = new Map<RolloutEvents[number]["kind"], number>();
   for (const event of events) {
     const kind = event?.kind;
     if (kind == null) continue;

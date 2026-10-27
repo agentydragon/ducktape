@@ -2,8 +2,11 @@ import { ActionIcon, Button, Group, Menu, Stack, Table, Text } from "@mantine/co
 import { IconDotsVertical } from "../icons";
 import type { JSX } from "react";
 
-import { harnessLabel, type SandboxView, type ThreadView, type TraceSearchSettings } from "../client";
-import { traceSearchUrl } from "../trace_search";
+import { harnessLabel } from "../model_catalog";
+import { type SandboxView } from "../sandboxes/client";
+import { type ThreadView } from "./client";
+import { type TraceSearchSettings, traceSearchUrl } from "../trace_search";
+
 import { TimeAgo } from "../time_ago";
 import { archiveBlockReason, threadStatusFromSnapshot } from "./thread_status";
 import { ThreadStatusIndicator } from "./thread_status_indicator";

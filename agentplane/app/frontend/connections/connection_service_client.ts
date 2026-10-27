@@ -2,7 +2,8 @@
 import { create, fromJson, toJson, type JsonObject, type JsonValue } from "@bufbuild/protobuf";
 import { TimestampSchema } from "@bufbuild/protobuf/wkt";
 
-import { fetchWithLogin, HttpError, type CallerServiceAccount } from "../client";
+import { fetchWithLogin, HttpError } from "../client";
+import { type CallerServiceAccount, type Connection, type ConnectionGrant } from "./models";
 import {
   DecideConnectionEnrollmentRequestSchema,
   DecideConnectionEnrollmentResponseSchema,
@@ -26,7 +27,6 @@ import {
 } from "../../../mcp_edge/connection_service_pb";
 import { Verdict } from "../../../action_service/action_service_pb";
 import { ServiceAccountSchema, type ServiceAccount } from "../../../proto/sandboxes_pb";
-import type { Connection, ConnectionGrant } from "./models";
 
 const OPERATOR = "/upstream/connections/v1/operator";
 const MAX_INT64 = 9_223_372_036_854_775_807n;

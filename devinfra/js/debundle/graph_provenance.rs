@@ -12,8 +12,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result, bail};
+use ring::digest::{self, SHA256};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -824,7 +824,7 @@ pub fn absolute(path: &Path) -> Result<PathBuf> {
 }
 
 pub fn sha256(bytes: &[u8]) -> String {
-    hex(&Sha256::digest(bytes))
+    hex(digest::digest(&SHA256, bytes).as_ref())
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -840,7 +840,7 @@ fn hex(bytes: &[u8]) -> String {
 fn engine_sha256() -> Result<String> {
     let file = fs::File::open(std::env::current_exe()?)?;
     let mut reader = BufReader::new(file);
-    let mut hasher = Sha256::new();
+    let mut hasher = digest::Context::new(&SHA256);
     let mut buffer = [0_u8; 64 * 1024];
     loop {
         let count = reader.read(&mut buffer)?;
@@ -849,13 +849,25 @@ fn engine_sha256() -> Result<String> {
         }
         hasher.update(&buffer[..count]);
     }
-    Ok(hex(&hasher.finalize()))
+    Ok(hex(hasher.finish().as_ref()))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::sync::{Arc, Barrier};
+
+    #[test]
+    fn sha256_matches_standard_vectors() {
+        assert_eq!(
+            sha256(b""),
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+        assert_eq!(
+            sha256(b"abc"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+    }
 
     #[test]
     fn package_name_role_survives_equal_original_roots() -> Result<()> {

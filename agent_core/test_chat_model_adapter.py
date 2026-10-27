@@ -4,6 +4,7 @@ import json
 from typing import cast
 
 import httpx2
+import pytest
 import pytest_bazel
 from openai import AsyncOpenAI
 from openai.types.chat.completion_create_params import CompletionCreateParamsNonStreaming
@@ -119,6 +120,46 @@ async def test_chat_adapter_prepares_and_parses_tool_call() -> None:
     assert isinstance(result.output[1], AssistantMessageOut)
     assert isinstance(result.output[2], FunctionCallItem)
     assert result.output[2].call_id == "call_2"
+
+
+async def test_chat_adapter_rejects_custom_tool_call() -> None:
+    def handler(_: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(
+            200,
+            json={
+                "id": "chatcmpl_test",
+                "object": "chat.completion",
+                "created": 1,
+                "model": "chat-model",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {
+                            "role": "assistant",
+                            "tool_calls": [
+                                {
+                                    "id": "call_custom",
+                                    "type": "custom",
+                                    "custom": {"name": "custom_tool", "input": "input"},
+                                }
+                            ],
+                        },
+                        "finish_reason": "tool_calls",
+                    }
+                ],
+            },
+        )
+
+    async with AsyncOpenAI(
+        base_url="http://test/v1",
+        api_key="sk-test",
+        http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handler)),
+    ) as client:
+        model = ChatCompletionsAgentModel(client=client, model="chat-model")
+        prepared = model.prepare(AgentModelRequest(input=[UserMessage.text("hello")]))
+
+        with pytest.raises(ValueError, match="Unsupported chat completion tool call type: 'custom'"):
+            await model.sample(prepared)
 
 
 def test_chat_adapter_adds_kickoff_for_instructions_only_request() -> None:

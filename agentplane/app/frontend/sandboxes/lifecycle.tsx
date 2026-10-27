@@ -7,7 +7,7 @@ import type { JSX } from "react";
 import { ActionIcon, Button, Group, Modal, Stack, Text, Tooltip } from "@mantine/core";
 import { IconPlayerPause, IconPlayerPlay } from "../icons";
 
-import type { SandboxView } from "../client";
+import type { SandboxView } from "./client";
 
 export const DELETE_NEEDS_SUSPENDED = "Suspend the sandbox before deleting it";
 

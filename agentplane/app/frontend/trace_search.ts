@@ -1,4 +1,6 @@
-import type { TraceSearchSettings } from "./client";
+import type { components } from "./api/schema";
+
+export type TraceSearchSettings = components["schemas"]["TraceSearchSettings"];
 
 type TraceTarget = { kind: "sandbox" | "session"; id: string };
 

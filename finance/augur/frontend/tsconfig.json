@@ -15,8 +15,7 @@
     "skipLibCheck": true,
     "noFallthroughCasesInSwitch": true,
     "types": [],
-    "strict": false,
-    "noImplicitAny": false
+    "strict": true
   },
   "include": ["**/*.ts", "**/*.tsx"]
 }

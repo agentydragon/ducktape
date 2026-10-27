@@ -3,10 +3,10 @@ import { type JSX, useEffect, useState } from "react";
 
 import { ActionPolicySection } from "../actions/policy";
 import { BINDING_GRANT_HELP, BindingsTable } from "../bindings_table";
-import { type CallerServiceAccount, displayableError, serviceAccountKey } from "../client";
+import { type CallerServiceAccount, serviceAccountKey, type CallerGrantReader, type CallerGrantView } from "./models";
+import { displayableError } from "../client";
 import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
 import { readCallerGrants } from "./caller_grants_client";
-import type { CallerGrantReader, CallerGrantView } from "./models";
 
 /** Read-only account snapshot. Sandbox pages use the same renderers with their live data. */
 export function CallerGrants({

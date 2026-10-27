@@ -1,4 +1,4 @@
-import type { Decision } from "../client";
+import type { Decision } from "./client";
 
 /** The requests of one outcome to one destination by one method, decided the same way. */
 export interface DecisionGroup {

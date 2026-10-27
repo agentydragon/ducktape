@@ -3,13 +3,14 @@
 ## Decision
 
 Keep the Python loader's digest/daemon-ID guard and per-tag lock for now. A warm
-guard hit avoided a repeated `docker load` in this experiment, but the common
-PostgreSQL session fixture loaded each image only once in its observed test
-action. The measured importers overlapped once Docker layers were warm; there
-is no current evidence that Python's tar implementation is materially faster
-than pinned `rules_oci`. A small follow-up could retain the guard and lock
-while delegating the import to `oci_load`, but this report does not justify a
-production migration or a claim of full-CI time savings.
+guard hit avoided a repeated `docker load` in the manual experiment. A later
+matched full Bazel CI workload observed eight avoided load commands across
+131 PostgreSQL fixture actions, but both arms were censored by remote
+execution/transport failures. The measured importers overlapped once Docker
+layers were warm; there is no current evidence that Python's tar implementation
+is materially faster than pinned `rules_oci`. A small follow-up could retain
+the guard and lock while delegating the import to `oci_load`, but this report
+does not justify a production migration or a claim of full-CI time savings.
 
 This is a bounded comparison on base `6d29199a2f24cadf0d08df589d64da6d65c44652`.
 It changes no loader policy. Go's current tag-presence shortcut remains in
@@ -139,6 +140,101 @@ unpacked. A cross-action CI reliability claim still needs
 evidence that those actions actually share the Docker daemon and lock
 filesystem. No daemon was pruned, and no other job's tags or containers were
 removed.
+
+## Full Bazel CI workload experiment
+
+After the manual comparison, one matched A/B pair ran the normal Bazel CI
+workload. This is the `bazel-ci` workload, not all GitHub jobs or a measure of
+commit-to-green time. Both arms used `bbr test //... --config=ci --keep_going
+--nocache_test_results --test_output=errors`, the usual CI tag filters,
+`jobs=50`, RBE, and the remote build/action caches. The fixed query
+`tests(//...) except attr("tags", "manual|live_openai_api", tests(//...))`
+selected the same 1,545 test labels in each arm; sorted labels had SHA-256
+`dfeecac6df86e4faa56ffa6626cb891d489436522039306d17431a973603bc7d`.
+The [baseline query](https://app.buildbuddy.io/invocation/095038c0-b184-4c89-9d9a-92a98e05da07)
+and [bare-loader query](https://app.buildbuddy.io/invocation/fd333270-9cbf-488b-b8ac-45bf14e66d06)
+record the target selection. Test sharding and retries create more TestRunner
+actions than target labels.
+
+The baseline checked out research commit
+`2de0c87693775f08eae07f46813b9a71968a4729`, with the current Python
+guard, lock, and tar importer. The experiment-only
+[`codex/oci-ci-bare` commit](https://github.com/agentydragon/ducktape/commit/eedd077070453485f08c7aab7285a2e8b5c9989e)
+is its direct child. It supplies the same pinned image layouts through Bazel
+runfiles but calls bare `rules_oci` `oci_load` scripts at actual Python loader
+call sites, removing the guard and lock. The variant patch SHA-256 is
+`73f409a69fee1cd359eaf447533dbd70834184b4e3eb26da06f6b31ef1a0a4bb`.
+The old manual benchmark driver is tagged `manual` and excluded; it does not
+use the variant's script descriptor. Thus this A/B compares a migration,
+including extra `oci_load` graph/runfile inputs, with the existing loader;
+it does not isolate the tar backend alone. Analysis requested 8,203 graph
+targets in A versus 8,241 in B. Focused builds and uncached PostgreSQL
+fixture tests passed on both exact commits before the full runs:
+[A build](https://app.buildbuddy.io/invocation/f14cf28a-1fed-459d-9863-ee4a96481a10),
+[B build](https://app.buildbuddy.io/invocation/8d0f2c21-8d90-4c3f-81f1-cffac6dfb35c),
+[A fixture](https://app.buildbuddy.io/invocation/4585e98c-6b51-488b-9b24-4c27d4535a78),
+and [B fixture](https://app.buildbuddy.io/invocation/a292f5b2-422c-4f78-8a67-f4235c11d087).
+Their 51.6s and 48.4s fixture durations are single observations, not a
+speed estimate.
+
+| Observation                                                      |                                                                     Baseline A |                                                              Bare `oci_load` B |
+| ---------------------------------------------------------------- | -----------------------------------------------------------------------------: | -----------------------------------------------------------------------------: |
+| Full invocation                                                  | [A](https://app.buildbuddy.io/invocation/f18947d6-4396-46c9-a26d-dc00808d0b3b) | [B](https://app.buildbuddy.io/invocation/db96dc31-d48e-4ba6-812e-97e292c29468) |
+| Usable full attempt                                              |                                         A2, terminal but remote-cache-censored |                                       B1, stream closed before terminal result |
+| Selected targets                                                 |                                                                          1,545 |                                                                          1,545 |
+| Completed TestRunner records / distinct labels before cutoff     |                                                                  2,023 / 1,524 |                                                                  1,994 / 1,525 |
+| Bazel elapsed / critical path                                    |                                                           2,206.212s / 647.38s |                                                                    unavailable |
+| Bazel test summary                                               |                      1,521 pass, 1 fails to build, 3 fail remotely, 20 skipped |                                                                    unavailable |
+| TestRunner worker time / CPU, summed over parallel actions       |                                                              61,886s / 40,791s |                                                              48,408s / 38,478s |
+| TestRunner queue / input fetch / execute / output upload, summed |                                                 706 / 15,617 / 36,953 / 3,945s |                                                1,840 / 8,999 / 33,874 / 2,444s |
+| Observed PostgreSQL fixture setup logs / labels                  |                                                                      131 / 115 |                                                                      131 / 115 |
+
+These TestRunner sums are **not** a paired runtime result: B has no terminal
+test summary or Bazel profile, the action counts and retries differ, and
+thousands of actions overlap. The two arms share 1,523 observed TestRunner
+labels, but their action populations are not identical. B's input transfer
+also includes changed graph/runfiles and worker/cache state; it cannot be
+attributed to the importer. A's Bazel critical path is 98.9% one unrelated
+639.94s `//agentplane/system_tests:test_vm_sandbox_vm` test action. Its
+profile and execution metadata are attached to the BuildBuddy invocation.
+
+A's first remote-run attempt lost its BuildBuddy log stream after about
+1,077 test targets and automatically restarted under the same invocation ID.
+Only A2's terminal Bazel result and time window above are used; the wrapper's
+total wall time across attempts is not one trial. A2 failed with
+`REMOTE_CACHE_EVICTED`, including widespread `Lost inputs no longer available
+remotely` errors on non-OCI Go/frontend binaries. B1 also reported lost remote
+inputs and then `stream closed with task still claimed` before Bazel could
+return a final result. The automatically started A3 and B2 attempts were
+stopped promptly, so no later attempt is mixed into these measurements. The
+experiment cannot estimate a full-CI speedup or a loader-caused failure rate.
+
+The existing `container_setup.log` phase logs let us measure the same 115
+PostgreSQL fixture labels in both arms without adding production timers.
+The raw per-action CAS digests are in
+[ci_wide_fixture_logs.tsv](oci_loader_benchmark/ci_wide_fixture_logs.tsv).
+A's logs were uploaded as test artifacts. B1's artifact listing was displaced
+by the automatic retry; its logs were recovered from each completed
+TestRunner's `test.outputs` Tree digest using `bb execution get` and
+`bb download`. Each arm contributed 131 setup logs. A recorded 127 Ryuk, 118
+PostgreSQL 18, and 9 pgvector load starts; one PostgreSQL 18 load was
+interrupted by a test timeout, leaving 117 completions. Four A actions had
+neither Ryuk nor database load lines yet reached PostgreSQL startup, consistent
+with guard hits. B recorded 131, 122, and 9 completed load commands
+respectively, so it issued eight additional load commands. A PostgreSQL 18
+completed load duration had median 17.4s (range 4.8–32.9s); B's median was
+17.0s (1.1–54.2s). PostgreSQL readiness after container start had median
+3.0s in both arms. These are concurrently measured fixture phases, not CI
+critical-path savings, and different VM/cache warmth can move their tails.
+
+The four A guard-hit actions show some daemon/tag state reuse in the observed
+workload. One skipped action used a worker ID that had run the same test in
+the earlier A attempt, supporting sequential worker reuse. This does not
+prove two concurrently running test actions shared a daemon or marker/lock
+filesystem. The full runs did not establish a current cross-action lock
+contention benefit. The August herd explanation remains plausible but is not
+confirmed by this pair. No daemon was pruned; absent tags were never treated
+as proof of cold Docker layers.
 
 ## Next small change
 

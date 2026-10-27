@@ -6,13 +6,29 @@ import {
   TABLE_NUMERIC_HEADER,
   SELECTED_COL_HEADER,
   SELECTED_COL_CELL,
+  type metricFanRows,
   rolloutStatusText,
   endingMetricValue,
+  type terminalMetricSamples,
   terminalPercentileValue,
 } from "./data_helpers";
 
-export function TerminalMetricTable({ result, selectedSummary, selectedMetric }) {
-  if (!result?.terminalMetricPercentiles) return null;
+type MetricOption = Parameters<typeof terminalMetricSamples>[1];
+type ProductMetricFan = NonNullable<Parameters<typeof metricFanRows>[0]>;
+type ProductTerminalDistribution = NonNullable<Parameters<typeof terminalMetricSamples>[0]>;
+type SelectedSummary = NonNullable<Parameters<typeof rolloutStatusText>[0]> & { seed: number };
+type Scenario = { id: string; label: string };
+
+export function TerminalMetricTable({
+  result,
+  selectedSummary,
+  selectedMetric,
+}: {
+  result: ProductMetricFan | ProductTerminalDistribution | null | undefined;
+  selectedSummary: SelectedSummary | null | undefined;
+  selectedMetric: MetricOption;
+}) {
+  if (result == null || !("terminalMetricPercentiles" in result) || !result.terminalMetricPercentiles) return null;
   const currency = { currencyCode: result.currencyCode, currencyQuantum: result.currencyQuantum };
   const percentileRows = FAN_PERCENTILES.map((percentile) => ({
     percentile,
@@ -97,7 +113,17 @@ export function TerminalMetricTable({ result, selectedSummary, selectedMetric })
 // Compact comparison across the scenario set for the metric currently being plotted. The fan
 // endpoint is aggregate-only, so this intentionally reads each scenario's terminal percentile frame
 // instead of per-rollout summaries. Hidden for a lone scenario.
-export function TerminalScenarioComparison({ scenarios, resultsById, metric, activeId }) {
+export function TerminalScenarioComparison({
+  scenarios,
+  resultsById,
+  metric,
+  activeId,
+}: {
+  scenarios: readonly Scenario[];
+  resultsById: ReadonlyMap<string, ProductTerminalDistribution>;
+  metric: MetricOption;
+  activeId: string;
+}) {
   if (scenarios.length <= 1) return null;
   const columns = scenarios.map((scenario, index) => ({
     scenario,

@@ -7,7 +7,7 @@ import {
   fmtQuanta,
   fmtNumber,
 } from "./lib/format";
-import { METRIC_OPTIONS, sleeveKey, type productInputDefaults } from "./input_helpers";
+import { METRIC_OPTIONS, sleeveKey, type LifecycleInputEvent, type productInputDefaults } from "./input_helpers";
 import type {
   CalibrationRunResponse,
   ProductPortfolioResponse,
@@ -116,10 +116,18 @@ export function metricFanRows(result: ProductMetricFan | null | undefined) {
     const rawValue = row.valueQuanta;
     const metricValue = currencyQuantaChartNumber(rawValue, result.currencyQuantum);
     if (!Number.isFinite(monthIndex) || !Number.isFinite(percentile) || !Number.isFinite(metricValue)) continue;
-    if (!byMonth.has(monthIndex)) byMonth.set(monthIndex, new Map());
-    if (!displayValuesByMonth.has(monthIndex)) displayValuesByMonth.set(monthIndex, new Map());
-    byMonth.get(monthIndex).set(percentile, metricValue);
-    displayValuesByMonth.get(monthIndex).set(percentile, rawValue);
+    let monthValues = byMonth.get(monthIndex);
+    if (monthValues == null) {
+      monthValues = new Map();
+      byMonth.set(monthIndex, monthValues);
+    }
+    let monthDisplayValues = displayValuesByMonth.get(monthIndex);
+    if (monthDisplayValues == null) {
+      monthDisplayValues = new Map();
+      displayValuesByMonth.set(monthIndex, monthDisplayValues);
+    }
+    monthValues.set(percentile, metricValue);
+    monthDisplayValues.set(percentile, rawValue);
   }
   return [...byMonth.entries()]
     .sort(([left], [right]) => left - right)
@@ -222,15 +230,19 @@ export function rolloutStatusText(summary: RolloutSummary | null | undefined) {
 }
 
 export function selectedRolloutMetricRows(detail: ProductRolloutResponse | null | undefined, metric: MetricOption) {
-  if (!detail?.rollout?.monthlyMetrics) return [];
-  const ending = detail.rollout.endingMetrics;
-  return rowsFrom(detail.rollout.monthlyMetrics)
+  if (detail == null) return [];
+  const rollout = detail.rollout;
+  if (rollout == null || !rollout.monthlyMetrics) return [];
+  const failed = rollout.failed;
+  const endingSnapshotIndex = rollout.endingMetrics?.snapshotIndex;
+  const endingFailedMonthIndex = rollout.endingMetrics?.failedMonthIndex;
+  return rowsFrom(rollout.monthlyMetrics)
     .map((row) => ({
       monthIndex: Number(row.monthIndex),
       // The stopped post-event book has not observed the next month's market mark.
       year:
-        (detail.rollout.failed && Number(row.monthIndex) === ending.snapshotIndex
-          ? ending.failedMonthIndex
+        (failed && Number(row.monthIndex) === endingSnapshotIndex
+          ? Number(endingFailedMonthIndex)
           : Number(row.monthIndex)) / 12,
       value: currencyQuantaChartNumber(row[metric.chartValue], detail.currencyQuantum),
       currencyQuanta: row[metric.chartValue],
@@ -260,8 +272,12 @@ export function eventGroupsByMonth(events: readonly RolloutEventWithCurrency[]) 
   for (const event of events) {
     const monthIndex = eventMonthIndex(event);
     if (monthIndex == null) continue;
-    if (!groups.has(monthIndex)) groups.set(monthIndex, []);
-    groups.get(monthIndex).push(event);
+    let monthEvents = groups.get(monthIndex);
+    if (monthEvents == null) {
+      monthEvents = [];
+      groups.set(monthIndex, monthEvents);
+    }
+    monthEvents.push(event);
   }
   return [...groups.entries()]
     .sort(([left], [right]) => left - right)
@@ -269,7 +285,8 @@ export function eventGroupsByMonth(events: readonly RolloutEventWithCurrency[]) 
 }
 
 export function eventColor(event: RolloutEvent | null | undefined) {
-  return ROLLOUT_EVENT_COLORS[event?.kind] ?? "#64748b";
+  if (!event) return "#64748b";
+  return ROLLOUT_EVENT_COLORS[event.kind] ?? "#64748b";
 }
 
 export function eventAmount(event: RolloutEvent | null | undefined) {
@@ -657,8 +674,8 @@ export function isPrivateSecurityPosition(
   return position?.asset?.kind === "private_equity";
 }
 
-export function firstSaleMonth(events) {
-  let earliest = null;
+export function firstSaleMonth(events: readonly LifecycleInputEvent[]): number | null {
+  let earliest: number | null = null;
   for (const event of events) {
     if (event.kind === "property_sale" && (earliest == null || event.month < earliest)) {
       earliest = event.month;
@@ -671,7 +688,7 @@ export function firstSaleMonth(events) {
 // after `saleMonth`, plus same-month non-sale events (a SetRentedFraction in the same month
 // as the sale is also illegal). `saleMonth == null` means no sale on the timeline → nothing
 // is post-sale.
-export function isEventPostSale(event, saleMonth) {
+export function isEventPostSale(event: LifecycleInputEvent, saleMonth: number | null): boolean {
   if (saleMonth == null) return false;
   if (event.month > saleMonth) return true;
   return event.month === saleMonth && event.kind !== "property_sale";

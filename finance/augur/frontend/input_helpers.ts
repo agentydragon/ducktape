@@ -11,13 +11,14 @@ type ProductPropertyFinancing = NonNullable<ProductPropertyPurchase["financing"]
 type ProductLifecycleEvent = NonNullable<ProductPropertyPurchase["lifecycleEvents"]>[number];
 type ProductSleeveWeight = NonNullable<NonNullable<ProductScenario["fundingPolicy"]>["sleeveWeights"]>[number];
 export type LifecycleInputEvent =
-  | { _id: string; kind: "set_rented_fraction"; month: number; rentedFractionPct: number }
+  | { _id: string; kind: "set_rented_fraction"; month: number; rentedFractionPct: number | null }
   | { _id: string; kind: "set_primary_residence"; month: number; livesHere: boolean }
-  | { _id: string; kind: "capital_improvement"; month: number; amount: number }
-  | { _id: string; kind: "property_sale"; month: number; closingCostPct: number };
+  | { _id: string; kind: "capital_improvement"; month: number; amount: number | null }
+  | { _id: string; kind: "property_sale"; month: number; closingCostPct: number | null };
 type SleeveWeight = ProductSleeveWeight;
 type WithoutWeight<T> = T extends unknown ? Omit<T, "weight"> : never;
-type SleeveIdentity = WithoutWeight<SleeveWeight>;
+type RequiredKind<T> = T extends { kind?: infer Kind } ? Omit<T, "kind"> & { kind: NonNullable<Kind> } : never;
+type SleeveIdentity = RequiredKind<WithoutWeight<SleeveWeight>>;
 type ProductInput = Omit<
   typeof DEFAULT_PRODUCT_INPUT_BASE,
   | "horizonMonths"
@@ -52,10 +53,10 @@ type ScenarioSet = {
   activeId: string;
 };
 type ProjectionShared = {
-  rolloutCount: number;
+  rolloutCount: number | null;
   firstSeed: number;
   model: string | null;
-  horizonMonths: number;
+  horizonMonths: number | null;
   sellable: readonly SellableRow[] | null | undefined;
 };
 
@@ -176,7 +177,7 @@ export function rolloutCountDefault(bootstrap: Bootstrap) {
   return clampInteger(override ?? DEFAULT_ROLLOUT_COUNT, 1, bootstrap.maxRolloutSamples);
 }
 
-export function clampRolloutCount(value: number, bootstrap: Bootstrap) {
+export function clampRolloutCount(value: number | null, bootstrap: Bootstrap) {
   return clampInteger(value, 1, bootstrap.maxRolloutSamples);
 }
 
@@ -222,7 +223,7 @@ export function horizonMonthsDefault(bootstrap: Bootstrap) {
   return clampInteger(override ?? DEFAULT_PRODUCT_INPUT_BASE.horizonMonths, 1, bootstrap.maxHorizonMonths);
 }
 
-export function clampHorizonMonths(value: number, bootstrap: Bootstrap) {
+export function clampHorizonMonths(value: number | null, bootstrap: Bootstrap) {
   return clampInteger(value, 1, bootstrap.maxHorizonMonths);
 }
 
@@ -372,7 +373,9 @@ export function sleeveKey(sleeve: Partial<SleeveWeight> | null | undefined): str
 // `max(1, ...)` keeps a holding too small to round to 1% inside the target rather than silently
 // outside it — weight 0 means "never sell this", which is not what "you own a little of it" says.
 export function seedSleeveWeights(sellable: readonly SellableRow[] | null | undefined): SleeveWeight[] {
-  const held = (sellable ?? []).filter((row) => BigInt(row.valueQuanta ?? 0) > 0n);
+  const held = (sellable ?? []).filter(
+    (row): row is SellableRow & { valueQuanta: string } => row.valueQuanta != null && BigInt(row.valueQuanta) > 0n
+  );
   const total = held.reduce((sum, row) => sum + BigInt(row.valueQuanta), 0n);
   if (total === 0n) return [];
   return held.map((row) => ({
@@ -390,16 +393,20 @@ export function resolveSleeveWeights(
   sellable: readonly SellableRow[] | null | undefined
 ): SleeveWeight[] {
   if (sleeveWeights == null) return seedSleeveWeights(sellable);
-  return sleeveWeights
-    .filter((sleeve) => sleeveIdentity(sleeve) != null)
-    .map((sleeve) => ({ ...sleeveIdentity(sleeve), weight: Math.max(0, Math.trunc(Number(sleeve.weight) || 0)) }));
+  const resolved: SleeveWeight[] = [];
+  for (const sleeve of sleeveWeights) {
+    const identity = sleeveIdentity(sleeve);
+    if (identity == null) continue;
+    resolved.push({ ...identity, weight: Math.max(0, Math.trunc(Number(sleeve.weight) || 0)) });
+  }
+  return resolved;
 }
 
 export function productScenario(
   input: ProductInput,
   bootstrap: Bootstrap,
   modelId: string | null,
-  horizonMonths: number,
+  horizonMonths: number | null,
   sellable: readonly SellableRow[] | null | undefined
 ): ProductProjectionSummaryRequest["scenario"] {
   const sleeveWeights = resolveSleeveWeights(input.sleeveWeights, sellable);

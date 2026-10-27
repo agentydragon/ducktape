@@ -2,10 +2,15 @@ import React, { useCallback, useMemo, useRef, useState } from "react";
 import { axisCoordinate, fanChartAxis, fmtAxisMetricValue } from "./lib/chart";
 import { currencyQuantaChartNumber, currencyQuantaCompare, fmtQuanta } from "./lib/format";
 import { rowsFrom } from "./lib/frame";
-import { scenarioColor } from "./input_helpers";
+import { type metricScaleFromSearch, scenarioColor } from "./input_helpers";
 import { FAILED_ROLLOUT_COLOR, SELECTED_ROLLOUT_COLOR, terminalMetricSamples } from "./data_helpers";
 
-function terminalPercentilePoints(result, metric) {
+type MetricOption = Parameters<typeof terminalMetricSamples>[1];
+type ProductTerminalDistribution = NonNullable<Parameters<typeof terminalMetricSamples>[0]>;
+type MetricScale = ReturnType<typeof metricScaleFromSearch>;
+type Scenario = { id: string; label: string };
+
+function terminalPercentilePoints(result: ProductTerminalDistribution | null | undefined, metric: MetricOption) {
   if (result?.metric !== metric.value) return [];
   return rowsFrom(result?.terminalMetricPercentiles)
     .filter((row) => row.valueQuanta != null)
@@ -23,7 +28,7 @@ function terminalPercentilePoints(result, metric) {
     .sort((left, right) => left.percentile - right.percentile);
 }
 
-function valueAtPercentile(entry, percentile) {
+function valueAtPercentile(entry: { points: TerminalPoint[] }, percentile: number) {
   const points = entry.points;
   if (points.length === 0) return NaN;
   if (points.length === 1 || percentile <= points[0].percentile) return points[0].value;
@@ -41,7 +46,7 @@ function valueAtPercentile(entry, percentile) {
   return last.value;
 }
 
-function terminalFailedSamplePoints(result, metric) {
+function terminalFailedSamplePoints(result: ProductTerminalDistribution | null | undefined, metric: MetricOption) {
   const samples = terminalMetricSamples(result, metric)
     .slice()
     .sort((left, right) => currencyQuantaCompare(left.currencyQuanta, right.currencyQuanta) || left.seed - right.seed);
@@ -58,6 +63,17 @@ function terminalFailedSamplePoints(result, metric) {
     .filter((point) => point.failed);
 }
 
+type TerminalPoint = ReturnType<typeof terminalPercentilePoints>[number];
+type TerminalFailedPoint = ReturnType<typeof terminalFailedSamplePoints>[number];
+type SeriesEntry = {
+  id: string;
+  label: string;
+  color: string;
+  isActive: boolean;
+  points: TerminalPoint[];
+  failedPoints: TerminalFailedPoint[];
+};
+
 // A click whose nearest line is farther than this (in px, on the Y axis) clears an existing
 // selection instead of selecting. Gated on an existing selection so a first click anywhere still
 // selects the nearest percentile.
@@ -73,12 +89,28 @@ export function TerminalDistributionChart({
   onClear,
   metric,
   metricScale = "linear",
+}: {
+  scenarios: readonly Scenario[];
+  resultsById: ReadonlyMap<string, ProductTerminalDistribution>;
+  activeId: string;
+  selectedPercentile: number | null;
+  loadingPercentile: number | null;
+  onSelectPercentile: (scenarioId: string, percentile: number) => void;
+  onClear: () => void;
+  metric: MetricOption;
+  metricScale?: MetricScale;
 }) {
-  const svgRef = useRef(null);
+  const svgRef = useRef<SVGSVGElement | null>(null);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const [svgWidth, setSvgWidth] = useState<number | null>(null);
-  const [hoverPercentile, setHoverPercentile] = useState(null);
-  const dragVariantRef = useRef({ dragging: false, variantId: null, startX: 0, startY: 0, wasSelected: false });
+  const [hoverPercentile, setHoverPercentile] = useState<number | null>(null);
+  const dragVariantRef = useRef<{
+    dragging: boolean;
+    variantId: string | null;
+    startX: number;
+    startY: number;
+    wasSelected: boolean;
+  }>({ dragging: false, variantId: null, startX: 0, startY: 0, wasSelected: false });
 
   // Callback ref, not a one-shot mount effect: the measured container is gated behind the early
   // `if (series.length === 0) return null` below, so it only mounts once results have loaded. A
@@ -177,10 +209,11 @@ export function TerminalDistributionChart({
   const margin = { left: 82, right: 20, top: 16, bottom: 34 };
   const plotWidth = Math.max(1, svgWidth - margin.left - margin.right);
   const plotHeight = svgHeight - margin.top - margin.bottom;
-  const xAt = (percentile) => margin.left + percentile * plotWidth;
-  const yAt = (value) => margin.top + (1 - (axisCoordinate(yAxis, value) - yAxis.min) / yAxis.range) * plotHeight;
+  const xAt = (percentile: number) => margin.left + percentile * plotWidth;
+  const yAt = (value: number) =>
+    margin.top + (1 - (axisCoordinate(yAxis, value) - yAxis.min) / yAxis.range) * plotHeight;
 
-  const nearestPointIndex = (entry, percentile) => {
+  const nearestPointIndex = (entry: SeriesEntry, percentile: number) => {
     let bestIndex = 0;
     let bestDistance = Infinity;
     for (let index = 0; index < entry.points.length; index += 1) {
@@ -196,10 +229,10 @@ export function TerminalDistributionChart({
   // Pick which variant a click/hover binds to: the line nearest the cursor in Y at the cursor's
   // percentile, breaking ties toward the active variant (drawn on top). `bestDist` is the distance
   // to the genuinely nearest line (pre-tie-break), used by the click-away-to-deselect check.
-  const pickVariant = (percentile, cursorY) => {
-    let best = null;
+  const pickVariant = (percentile: number, cursorY: number) => {
+    let best: SeriesEntry | null = null;
     let bestDist = Infinity;
-    let active = null;
+    let active: SeriesEntry | null = null;
     let activeDist = Infinity;
     for (const entry of series) {
       const dist = Math.abs(cursorY - yAt(valueAtPercentile(entry, percentile)));
@@ -215,14 +248,13 @@ export function TerminalDistributionChart({
     return { entry: active && activeDist - bestDist <= 8 ? active : best, bestDist };
   };
 
-  const localPoint = (event) => {
-    const svg = svgRef.current;
-    const rect = svg.getBoundingClientRect();
+  const localPoint = (event: React.PointerEvent<SVGSVGElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
     const percentile = Math.max(0, Math.min(1, (event.clientX - rect.left - margin.left) / plotWidth));
     return { percentile, cursorY: event.clientY - rect.top };
   };
 
-  const selectAt = (percentile, cursorY, variantId) => {
+  const selectAt = (percentile: number, cursorY: number, variantId: string | null) => {
     const entry = variantId
       ? series.find((candidate) => candidate.id === variantId)
       : pickVariant(percentile, cursorY).entry;
@@ -232,7 +264,7 @@ export function TerminalDistributionChart({
     return entry.id;
   };
 
-  const handlePointerDown = (event) => {
+  const handlePointerDown = (event: React.PointerEvent<SVGSVGElement>) => {
     if (event.clientX < 0) return;
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -258,7 +290,7 @@ export function TerminalDistributionChart({
     };
   };
 
-  const handlePointerMove = (event) => {
+  const handlePointerMove = (event: React.PointerEvent<SVGSVGElement>) => {
     const { percentile, cursorY } = localPoint(event);
     setHoverPercentile(percentile);
     // While dragging, lock to the variant chosen on press and scrub the rank, so the selection
@@ -266,7 +298,7 @@ export function TerminalDistributionChart({
     if (dragVariantRef.current.dragging) selectAt(percentile, cursorY, dragVariantRef.current.variantId);
   };
 
-  const handlePointerUp = (event) => {
+  const handlePointerUp = (event: React.PointerEvent<SVGSVGElement>) => {
     const state = dragVariantRef.current;
     dragVariantRef.current = { dragging: false, variantId: null, startX: 0, startY: 0, wasSelected: false };
     event.currentTarget.releasePointerCapture(event.pointerId);
@@ -282,11 +314,11 @@ export function TerminalDistributionChart({
   const selectedValue =
     activeSeries && selectedFraction != null ? valueAtPercentile(activeSeries, selectedFraction) : NaN;
   const selectedPoint =
-    activeSeries && selectedFraction != null && Number.isFinite(selectedValue)
-      ? { percentile: selectedFraction, rawPercentile: selectedPercentile, value: selectedValue }
+    activeSeries && selectedPercentile != null && Number.isFinite(selectedValue)
+      ? { percentile: selectedPercentile / 100, rawPercentile: selectedPercentile, value: selectedValue }
       : null;
 
-  const moveSelection = (delta) => {
+  const moveSelection = (delta: number) => {
     if (!activeSeries) return;
     const base =
       selectedFraction == null
@@ -297,7 +329,7 @@ export function TerminalDistributionChart({
     const next = Math.max(0, Math.min(activeSeries.points.length - 1, base + delta));
     onSelectPercentile(activeSeries.id, activeSeries.points[next].rawPercentile);
   };
-  const handleKeyDown = (event) => {
+  const handleKeyDown = (event: React.KeyboardEvent<SVGSVGElement>) => {
     const step = event.shiftKey ? 10 : 1;
     if (event.key === "ArrowRight") moveSelection(step);
     else if (event.key === "ArrowLeft") moveSelection(-step);
