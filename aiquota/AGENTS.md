@@ -18,8 +18,8 @@ error/stale annotations, extra-spend tail), collapsed view while burning extra. 
 formatters go in <render/format.py>, ported to JS.
 
 Both JS surfaces compute live countdown and pace locally because they tick every second. They
-share the runtime-neutral implementation in <shared/presentation.js>; the browser adapts its
-snake_case API data in <frontend/{format,pace}.ts>, and the GNOME zip carries the same module
+share the runtime-neutral implementation in <shared/presentation.ts>; the browser adapts its
+snake_case API data in <frontend/format.ts>, and the GNOME zip carries the emitted module
 beside `extension.js`. The browser format test replays Python-generated cases, and the GNOME
 render test loads the packaged extension across the shared scenarios.
 
