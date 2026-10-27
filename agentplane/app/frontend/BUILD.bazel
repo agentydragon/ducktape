@@ -509,8 +509,10 @@ agentplane_vitest_test(
     name = "live_test",
     srcs = ["live.test.tsx"],
     deps = [
+        ":client",
         ":live",
         ":live_schemas_generated",
+        ":live_stream",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
         "//:node_modules/react",
