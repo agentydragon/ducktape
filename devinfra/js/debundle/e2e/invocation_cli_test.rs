@@ -111,6 +111,55 @@ fn graph_environment_is_materialized_and_cli_flag_wins() {
 }
 
 #[test]
+fn ambient_graph_does_not_misclassify_source_or_diagnostic_reads() {
+    let fixture = GraphFixture::new("const a = 1; console.log(a);", &[]);
+    let temp = TempDir::new().unwrap();
+    let graph = temp.path().join("missing ambient graph.json");
+    let source = temp.path().join("missing source.js");
+
+    let mut inspect_source = fixture.process(&[
+        "inspect-source",
+        "--source-file",
+        source.to_str().unwrap(),
+        "--print-invocation",
+    ]);
+    inspect_source.env("DEBUNDLE_GRAPH", &graph);
+    let inspect_record = run_json(&mut inspect_source);
+    assert_eq!(inspect_record["mode"], "source_snapshot_read");
+    assert_eq!(inspect_record["requested_proof"], "none");
+    assert_eq!(inspect_record["will_execute"], false);
+
+    for (args, expected_mode, expected_proof) in [
+        (
+            vec!["gate", "list", "--print-invocation"],
+            "diagnostic_snapshot_read",
+            "diagnostic_snapshot_input",
+        ),
+        (
+            vec!["gate", "cut", "0", "--print-invocation"],
+            "diagnostic_snapshot_read",
+            "diagnostic_snapshot_input",
+        ),
+        (
+            vec!["gate", "describe", "0", "--print-invocation"],
+            "graph_snapshot_read",
+            "graph_snapshot_input",
+        ),
+    ] {
+        let mut command = fixture.process(&args);
+        command.env("DEBUNDLE_GRAPH", &graph);
+        let record = run_json(&mut command);
+        assert_eq!(record["mode"], expected_mode, "{args:?}");
+        assert_eq!(record["requested_proof"], expected_proof, "{args:?}");
+        assert_eq!(record["will_execute"], false, "{args:?}");
+    }
+
+    assert!(!graph.exists());
+    assert!(!source.exists());
+    assert!(!temp.path().join("cycles.json").exists());
+}
+
+#[test]
 fn print_only_reports_tree_roots_without_creating_outputs() {
     let fixture = GraphFixture::new("const a = 1; console.log(a);", &[]);
     let temp = TempDir::new().unwrap();

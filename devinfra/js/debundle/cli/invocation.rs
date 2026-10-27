@@ -452,13 +452,20 @@ fn classify_mode(command: &[String], arguments: &[ResolvedArgument]) -> Invocati
                 InvocationMode::ReadOnlyAnalysis
             }
         }
+        // These commands accept DEBUNDLE_GRAPH for multiple shapes, but the
+        // selected operation determines whether it actually reads the graph.
+        [inspect] if inspect == "inspect-source" && has_argument(arguments, "id") => {
+            InvocationMode::GraphSnapshotRead
+        }
+        [inspect] if inspect == "inspect-source" => InvocationMode::SourceSnapshotRead,
+        [gate, verb] if gate == "gate" && ["list", "cut"].contains(&verb.as_str()) => {
+            InvocationMode::DiagnosticSnapshotRead
+        }
+        [gate, verb] if gate == "gate" && verb == "describe" => InvocationMode::GraphSnapshotRead,
         _ if has_argument(arguments, "dependency_graph_path")
             || has_argument(arguments, "graph") =>
         {
             InvocationMode::GraphSnapshotRead
-        }
-        [gate, _] if gate == "gate" && has_argument(arguments, "cycles_path") => {
-            InvocationMode::DiagnosticSnapshotRead
         }
         _ if has_argument(arguments, "source_root") || has_argument(arguments, "source_file") => {
             InvocationMode::SourceSnapshotRead
