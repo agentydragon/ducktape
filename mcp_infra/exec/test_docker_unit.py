@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -7,8 +8,10 @@ import pytest_bazel
 from fastmcp.client import Client
 from fastmcp.resources.template import match_uri_template
 
+from mcp_infra.exec.docker import container_session
+from mcp_infra.exec.docker.container_session import ContainerSessionState, run_session_container, scoped_container
 from mcp_infra.exec.docker.server import FILE_RESOURCE_URI_TEMPLATE, ContainerExecServer
-from mcp_infra.exec.docker.types import AlwaysSetTo, BindMount, ContainerExecServerConfig
+from mcp_infra.exec.docker.types import AlwaysSetTo, BindMount, ContainerExecServerConfig, ResolvedExecInput
 from mcp_infra.testing.fixtures import make_container_opts
 from util.exec.models import BaseExecResult, Exited, TimedOut
 
@@ -49,13 +52,66 @@ async def test_exec_stdout_stderr_timeout(exec_session) -> None:
 
 async def test_persession_exec_timeout_then_next_ok(exec_session) -> None:
     # Force timeout
-    t1 = await _call_exec(exec_session, ["sh", "-lc", "sleep 3"], timeout_ms=500)
+    t1 = await _call_exec(exec_session, ["sh", "-lc", "printf 'started\\n'; exec sleep 30"], timeout_ms=500)
     assert t1.exit == TimedOut()
+    assert t1.stdout == "started\n"
     # Next call should succeed after restart
     r1 = await _call_exec(exec_session, ["/bin/echo", "ok"])
     assert r1.exit == Exited(exit_code=0)
     assert isinstance(r1.stdout, str)
     assert r1.stdout == "ok\n"
+
+
+async def test_collector_error_propagates(async_docker_client, debian_slim_image, monkeypatch) -> None:
+    async def fail_collect(stream, stdout_buf, stderr_buf):
+        chunk = await stream.read_out()
+        assert chunk is not None
+        assert chunk.data == b"started\n"
+        raise ValueError("collector failed")
+
+    monkeypatch.setattr(container_session, "_collect_from_exec_stream", fail_collect)
+    opts = make_container_opts(debian_slim_image)
+    async with scoped_container(async_docker_client, opts) as container_id:
+        session = ContainerSessionState(async_docker_client, container_id, opts)
+        input = ResolvedExecInput(
+            cmd=["sh", "-lc", "echo started; exec sleep 30"], cwd=None, env=None, user=None, timeout_ms=5000
+        )
+        with pytest.raises(ValueError, match="collector failed"):
+            await run_session_container(session, input.cmd, input)
+
+
+async def test_external_cancellation_closes_stream(async_docker_client, debian_slim_image, monkeypatch) -> None:
+    started = asyncio.Event()
+    closed = asyncio.Event()
+    original_collect = container_session._collect_from_exec_stream
+
+    async def collect_after_first_output(stream, stdout_buf, stderr_buf):
+        original_close = stream.close
+
+        async def close():
+            await original_close()
+            closed.set()
+
+        stream.close = close
+        chunk = await stream.read_out()
+        assert chunk is not None
+        assert chunk.data == b"started\n"
+        started.set()
+        await original_collect(stream, stdout_buf, stderr_buf)
+
+    monkeypatch.setattr(container_session, "_collect_from_exec_stream", collect_after_first_output)
+    opts = make_container_opts(debian_slim_image)
+    async with scoped_container(async_docker_client, opts) as container_id:
+        session = ContainerSessionState(async_docker_client, container_id, opts)
+        input = ResolvedExecInput(
+            cmd=["sh", "-lc", "echo started; exec sleep 30"], cwd=None, env=None, user=None, timeout_ms=60000
+        )
+        task = asyncio.create_task(run_session_container(session, input.cmd, input))
+        await asyncio.wait_for(started.wait(), 10)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert closed.is_set()
 
 
 def test_from_config_roundtrip() -> None:

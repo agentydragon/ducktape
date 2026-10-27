@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any, cast
 
@@ -106,20 +106,6 @@ def make_container_lifespan(config: ContainerExecServerConfig, docker_client: ai
 # ---- Helpers (small, focused) ----------------------------------------------
 
 
-async def _race_with_timeout(work_task: asyncio.Task, timeout_ms: float) -> bool:
-    """Race a work task against a timeout; returns True if the timeout occurred first."""
-    timeout_task = asyncio.create_task(asyncio.sleep(timeout_ms / 1000.0))
-
-    done, pending = await asyncio.wait({timeout_task, work_task}, return_when=asyncio.FIRST_COMPLETED)
-
-    for task in pending:
-        task.cancel()
-        with suppress(asyncio.CancelledError):
-            await task
-
-    return timeout_task in done
-
-
 async def _collect_from_exec_stream(stream, stdout_buf: bytearray, stderr_buf: bytearray) -> None:
     """Read from multiplexed Docker exec stream into separate buffers."""
     while True:
@@ -190,9 +176,14 @@ async def run_session_container(
     stream_start = loop.time()
     stream: Any = exec_obj.start()
 
-    collect_task = asyncio.create_task(_collect_from_exec_stream(stream, stdout_buf, stderr_buf))
     t_collect_begin = loop.time()
-    timed_out = await _race_with_timeout(collect_task, input.timeout_ms)
+    try:
+        async with asyncio.timeout(input.timeout_ms / 1000.0):
+            await _collect_from_exec_stream(stream, stdout_buf, stderr_buf)
+    except TimeoutError:
+        timed_out = True
+    finally:
+        await stream.close()
     t_collect_end = loop.time()
 
     if timed_out:

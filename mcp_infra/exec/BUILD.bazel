@@ -62,6 +62,7 @@ py_test(
         ":conftest",
         "//:conftest",
         "//mcp_infra:conftest",
+        "//mcp_infra/exec/docker:container_session",
         "//mcp_infra/exec/docker:server",
         "//mcp_infra/exec/docker:types",
         "//mcp_infra/testing:fixtures",
