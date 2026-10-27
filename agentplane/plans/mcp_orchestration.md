@@ -196,8 +196,8 @@ bespoke rule each.
 
 Where the check runs (operator, 00:18 UTC: "send message, interrupt, open session might end up looking like rbac
 checked on the runner gateway side"): Session commands are checked in the Runner Gateway, whose Dispatcher already
-authorizes the caller of every command; history reads in History; inbox messages stay in Notifications.
-Either way the subject is the caller's ServiceAccount and the object is the Sandbox, never a Session (operator,
+authorizes the caller of every command; history reads in History; inbox messages stay in Notifications. The
+subject is the caller's ServiceAccount and the object is the Sandbox, never a Session (operator,
 00:37 UTC: "the thing that's the object/subject is a SA / sandbox level"). It could be Kubernetes RBAC, with custom
 verbs such as `open-session`, `submit-input` and `interrupt` on `sandboxes`, checked with a `SubjectAccessReview` and
 granted by a Role naming the worker through a `kubernetes_role_binding` rule: Kubernetes' own check on who may bind
