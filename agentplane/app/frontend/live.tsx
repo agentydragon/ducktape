@@ -12,10 +12,12 @@
  */
 import { createContext, type JSX, type ReactNode, useContext, useEffect, useState } from "react";
 import { useMatch } from "react-router";
+import type { z } from "zod";
 
 import type { components } from "./api/schema";
+import { zSandboxSnapshot, zSandboxesSnapshot, zThreadsSnapshot, zWatchHealth } from "./api/live_schema.zod";
 import { ageAgo } from "./format_time";
-import { followStream, type StreamConnection } from "./live_stream";
+import { followStream, parseJsonFrame, type StreamConnection } from "./live_stream";
 import { type StreamStatus, useStreamStatus } from "./stream_status";
 
 export type WatchHealth = components["schemas"]["WatchHealth"];
@@ -31,6 +33,19 @@ export interface Live<T> {
   health: WatchHealth | null;
   stream: StreamStatus;
 }
+
+type SnapshotSchemas<T> = { snapshot: z.ZodType<T>; health: z.ZodType<WatchHealth> };
+
+/** Runtime validators generated from the Pydantic models that publish these streams. */
+export const liveSchemas = {
+  sandbox: { snapshot: zSandboxSnapshot, health: zWatchHealth },
+  sandboxes: { snapshot: zSandboxesSnapshot, health: zWatchHealth },
+  threads: { snapshot: zThreadsSnapshot, health: zWatchHealth },
+} satisfies {
+  sandbox: SnapshotSchemas<SandboxSnapshot>;
+  sandboxes: SnapshotSchemas<SandboxesSnapshot>;
+  threads: SnapshotSchemas<ThreadsSnapshot>;
+};
 
 export function liveSandboxesUrl(): string {
   return "/live/sandboxes";
@@ -69,38 +84,54 @@ export function liveEgressDecisionsUrl(name: string): string {
 export function useLive<T extends { watch: WatchHealth }>(
   url: string,
   name: string,
+  schemas: SnapshotSchemas<T>,
   /** Why the last snapshot's own content says its data is not moving, where it can. */
   stalledBy: (snapshot: T) => string | null = () => null
 ): Live<T> {
-  const [state, setState] = useState<Pick<Live<T>, "snapshot" | "health">>({ snapshot: null, health: null });
+  const [state, setState] = useState({
+    snapshot: null as T | null,
+    health: null as WatchHealth | null,
+    snapshotError: null as string | null,
+    healthError: null as string | null,
+  });
   const [connection, setConnection] = useState<StreamConnection>(() => ({ phase: "connecting", since: Date.now() }));
   // A different object starts blank; the same one under a different filter does not. Only the path
   // says which this is, so a query-string-only change resets nothing.
   const resource = new URL(url, window.location.origin).pathname;
-  useEffect(() => setState({ snapshot: null, health: null }), [resource]);
+  useEffect(() => setState({ snapshot: null, health: null, snapshotError: null, healthError: null }), [resource]);
   useEffect(
     () =>
       followStream(url, {
         events: {
           snapshot: (message) => {
-            const snapshot = JSON.parse(message.data) as T;
-            setState({ snapshot, health: snapshot.watch });
+            const parsed = parseJsonFrame(schemas.snapshot, message.data, "Snapshot");
+            if (!parsed.success) {
+              setState((current) => ({ ...current, snapshotError: parsed.error }));
+              return parsed.error;
+            }
+            setState({ snapshot: parsed.data, health: parsed.data.watch, snapshotError: null, healthError: null });
           },
           health: (message) => {
-            const health = JSON.parse(message.data) as WatchHealth;
-            setState((current) => ({ ...current, health }));
+            const parsed = parseJsonFrame(schemas.health, message.data, "Health");
+            if (!parsed.success) {
+              setState((current) => ({ ...current, healthError: parsed.error }));
+              return parsed.error;
+            }
+            setState((current) => ({ ...current, health: parsed.data, healthError: null }));
           },
         },
         onConnection: setConnection,
       }),
-    [url]
+    [schemas.snapshot, schemas.health, url]
   );
+  const frameError = state.snapshotError ?? state.healthError;
   const stalled =
-    state.health && !state.health.fresh
+    frameError ??
+    (state.health && !state.health.fresh
       ? `watch stopped moving (${stalest(state.health)})`
-      : state.snapshot && stalledBy(state.snapshot);
+      : state.snapshot && stalledBy(state.snapshot));
   const stream = useStreamStatus(name, connection, stalled);
-  return { ...state, stream };
+  return { snapshot: state.snapshot, health: state.health, stream };
 }
 
 interface ThreadListingState {
@@ -137,8 +168,11 @@ export function ThreadsLiveProvider({
     );
     return () => window.clearTimeout(timer);
   }, [searchInput, listing]);
-  const live = useLive<ThreadsSnapshot>(liveThreadsUrl(listing, openThreadId), "Threads", (snapshot) =>
-    snapshot.updates_connected ? null : "thread updates disconnected; showing the last snapshot"
+  const live = useLive<ThreadsSnapshot>(
+    liveThreadsUrl(listing, openThreadId),
+    "Threads",
+    liveSchemas.threads,
+    (snapshot) => (snapshot.updates_connected ? null : "thread updates disconnected; showing the last snapshot")
   );
   return (
     <ThreadListingContext.Provider value={{ listing, setListing, searchInput, setSearchInput }}>
@@ -167,7 +201,7 @@ export function useRequiredThreadsLive(): Live<ThreadsSnapshot> {
 
 /** One /live/sandboxes connection for thread routes that need current runner availability. */
 export function SandboxesLiveProvider({ children }: { children: ReactNode }): JSX.Element {
-  const live = useLive<SandboxesSnapshot>(liveSandboxesUrl(), "Sandboxes");
+  const live = useLive<SandboxesSnapshot>(liveSandboxesUrl(), "Sandboxes", liveSchemas.sandboxes);
   return <SandboxesLiveContext.Provider value={live}>{children}</SandboxesLiveContext.Provider>;
 }
 

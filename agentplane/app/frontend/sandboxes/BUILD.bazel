@@ -148,6 +148,7 @@ ts_library(
         "//:node_modules/react-router",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:live",
+        "//agentplane/app/frontend:live_schemas_generated",
         "//agentplane/app/frontend:live_stream",
         "//agentplane/app/frontend:stream_status",
         "//agentplane/app/frontend:time_ago",
