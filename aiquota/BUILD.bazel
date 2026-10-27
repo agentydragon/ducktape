@@ -152,7 +152,6 @@ py_library(
         # names it, so the import scan cannot see it.
         "@pypi//itsdangerous",
         "@pypi//prometheus_client",
-        "@pypi//pydantic",
         "@pypi//starlette",
         "@pypi//uvicorn",
         ":settings",
@@ -384,7 +383,10 @@ py_wheel(
 py_library(
     name = "export_schema",
     srcs = ["export_schema.py"],
-    deps = [":api"],
+    deps = [
+        ":api",
+        ":models",
+    ],
 )
 
 py_library(
