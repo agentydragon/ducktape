@@ -104,6 +104,7 @@ const DEFAULT_PRESET_DEFAULTS = {
   reasoning_effort: "low",
 };
 let presetDefaults = { ...DEFAULT_PRESET_DEFAULTS } as Record<string, unknown>;
+let modelCatalogResponse: Promise<Response> | null = null;
 const TRACE_SEARCH_SETTINGS: TraceSearchSettings = {
   grafana_base_url: "https://grafana.test.invalid",
   tempo_datasource_uid: "tempo-test",
@@ -131,6 +132,7 @@ afterEach(async () => {
   rerender = async () => {};
   (live.snapshot.sandbox as SandboxView).binding = null;
   presetDefaults = { ...DEFAULT_PRESET_DEFAULTS };
+  modelCatalogResponse = null;
   traceSearchSettings = TRACE_SEARCH_SETTINGS;
   langfuseSearchSettings = LANGFUSE_SEARCH_SETTINGS;
 });
@@ -201,6 +203,7 @@ async function render(
   fetchMock.mockImplementation((request: Request) => {
     const path = new URL(request.url).pathname;
     if (path === "/models") {
+      if (modelCatalogResponse) return modelCatalogResponse;
       const models = [{ model: "test-model", display_name: "Test Model", reasoning_efforts: TEST_REASONING_EFFORTS }];
       const codexModels = routeNavigation
         ? [{ model: "codex-model", display_name: "Codex Model", reasoning_efforts: TEST_REASONING_EFFORTS }]
@@ -295,6 +298,12 @@ function startSession(): HTMLButtonElement {
   );
   if (!button) throw new Error("Missing start session button");
   return button;
+}
+
+async function startSessionTooltip(): Promise<Element | null> {
+  if (newSession().getAttribute("aria-expanded") !== "true") await act(async () => newSession().click());
+  await act(async () => startSession().parentElement!.focus());
+  return document.querySelector('[role="tooltip"]');
 }
 
 /** Opens the launch form in place, as an operator does, and starts a Session from it. */
@@ -623,6 +632,7 @@ it("keeps retained History Threads visible through ready to suspended with no ru
   expect(sessionStatus("Previously active session")).toBe("Sandbox suspended");
   expect(container.textContent).toContain("New sessions need a ready Sandbox");
   expect(startSession().disabled).toBe(true);
+  expect((await startSessionTooltip())?.textContent).toContain("Resume it or enable wake on send");
   expect(sessions).not.toHaveBeenCalled();
 
   readySandbox.wake_on_send = true;
@@ -671,13 +681,29 @@ it("shows creation progress, prevents duplicate clicks, and does not retry faile
   await launchSession();
   expect(startSession().textContent).toContain("Creating session");
   expect(startSession().disabled).toBe(true);
+  expect((await startSessionTooltip())?.textContent).toContain("A session is being opened");
   await act(async () => startSession().click());
   expect(sessions.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(1);
   await act(async () => fail(Response.json({ detail: "session refused" }, { status: 422 })));
   expect(startSession().disabled).toBe(true);
+  expect((await startSessionTooltip())?.textContent).toContain("Check Open status");
   expect(container.textContent).toContain("session refused");
   expect(container.textContent).toContain("Check Open status");
   expect(onOpenThread).not.toHaveBeenCalled();
+});
+
+it("explains model catalog loading and an empty catalog on the disabled start button", async () => {
+  let deliverCatalog!: (response: Response) => void;
+  modelCatalogResponse = new Promise((resolve) => {
+    deliverCatalog = resolve;
+  });
+  await render(async () => Response.json([]));
+  await act(async () => newSession().click());
+  expect(startSession().disabled).toBe(true);
+  expect((await startSessionTooltip())?.textContent).toContain("Waiting for the model catalog");
+  await act(async () => deliverCatalog(Response.json(testModelCatalog([], []))));
+  expect(startSession().disabled).toBe(true);
+  expect((await startSessionTooltip())?.textContent).toContain("No models are available");
 });
 
 function button(label: string): HTMLButtonElement {

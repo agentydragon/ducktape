@@ -162,6 +162,41 @@ async def test_sandboxes(view: VisualPage, app: AgentplaneFixture) -> None:
 
 
 @DESKTOP_AND_MOBILE
+@pytest.mark.parametrize(
+    ("sandbox", "pending", "reason"),
+    [
+        ("suspended-sandbox", False, "Resume it or enable wake on send"),
+        ("pending-sandbox", False, "ImagePullBackOff"),
+        ("ready-sandbox", True, "Check Open status"),
+    ],
+    ids=["suspended", "not-ready", "unconfirmed-open"],
+)
+async def test_start_session_disabled_tooltip(
+    view: VisualPage, app: AgentplaneFixture, sandbox: str, pending: bool, reason: str
+) -> None:
+    page = view.page
+    if pending:
+        await page.evaluate(
+            "name => sessionStorage.setItem(`agentplane:pending-open:${name}`, 'unconfirmed-session')", sandbox
+        )
+    await app.mount_app(f"/sandboxes/{sandbox}")
+    await page.get_by_role("button", name="New session").click()
+    await expect(page.get_by_role("combobox", name="Model")).not_to_have_value("")
+    button = page.get_by_role("button", name="Start session", exact=True)
+    await expect(button).to_be_disabled()
+    wrapper = button.locator("..")
+    await wrapper.hover()
+    tooltip = page.get_by_role("tooltip")
+    await expect(tooltip).to_contain_text(reason)
+    await expect(tooltip).to_be_in_viewport(ratio=1)
+    await view.capture(target=page.locator("#app"))
+    await page.mouse.move(0, 0)
+    await wrapper.focus()
+    await expect(tooltip).to_be_visible()
+    await expect(tooltip).to_contain_text(reason)
+
+
+@DESKTOP_AND_MOBILE
 async def test_sandbox_start_session_suspended(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.build(Scene.ADD_SUSPENDED_SANDBOXES)
     await app.mount_app("/sandboxes/idle-suspended-sandbox")

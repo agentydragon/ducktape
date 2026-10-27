@@ -1,4 +1,4 @@
-import { Button, Group, Paper, Select, Stack, Textarea, TextInput } from "@mantine/core";
+import { Button, Group, Paper, Select, Stack, Textarea, TextInput, Tooltip } from "@mantine/core";
 import { type JSX, useEffect, useEffectEvent, useMemo, useState } from "react";
 
 import { fromJson, type JsonValue } from "@bufbuild/protobuf";
@@ -23,15 +23,14 @@ type LoadedPresetDefaults = { preset: string | null; defaults: SessionDefaults |
  */
 export function NewSessionForm({
   presetName,
-  startable,
+  unavailableReason,
   creating,
   onStart,
   onClose,
   onError,
 }: {
   presetName: string | null;
-  /** Whether the Sandbox can take a Session now and no earlier Open is still unconfirmed. */
-  startable: boolean;
+  unavailableReason: string | null;
   creating: boolean;
   onStart: (spec: SessionSpec, setupScript: string) => void;
   onClose: () => void;
@@ -123,6 +122,16 @@ export function NewSessionForm({
   useEffect(() => applyPresetDefaults(), [presetName, presetDefaults]);
 
   const efforts = models.find((option) => option.model === model)?.reasoning_efforts ?? [];
+  const disabledReason = creating
+    ? "A session is being opened. Wait for this attempt to finish."
+    : (unavailableReason ??
+      (!model
+        ? modelCatalog === null
+          ? "Waiting for the model catalog to load."
+          : models.length === 0
+            ? "No models are available for the selected harness."
+            : "Select a model before starting a session."
+        : null));
 
   return (
     <Paper withBorder p="md" radius="md" role="group" aria-label="New session">
@@ -180,25 +189,39 @@ export function NewSessionForm({
           <Button variant="default" onClick={onClose}>
             Close
           </Button>
-          <Button
-            loading={creating}
-            disabled={!startable || !model}
-            onClick={() =>
-              model &&
-              onStart(
-                fromJson(SessionSpecSchema, {
-                  harness,
-                  cwd: cwdTemplate, // The app resolves {session_id} before it opens the Session.
-                  model,
-                  reasoningEffort: effort,
-                  instructions,
-                } as JsonValue),
-                setupScript
-              )
-            }
+          <Tooltip
+            label={disabledReason}
+            disabled={disabledReason === null}
+            events={{ hover: true, focus: true, touch: true }}
+            multiline
+            maw="calc(100vw - 32px)"
+            w={340}
+            style={{ whiteSpace: "pre-line" }}
+            withArrow
           >
-            {creating ? "Creating session…" : "Start session"}
-          </Button>
+            {/* Disabled buttons do not receive pointer events; the wrapper owns hover and focus. */}
+            <span style={{ display: "inline-flex" }} tabIndex={disabledReason ? 0 : undefined}>
+              <Button
+                loading={creating}
+                disabled={disabledReason !== null}
+                onClick={() =>
+                  model &&
+                  onStart(
+                    fromJson(SessionSpecSchema, {
+                      harness,
+                      cwd: cwdTemplate, // The app resolves {session_id} before it opens the Session.
+                      model,
+                      reasoningEffort: effort,
+                      instructions,
+                    } as JsonValue),
+                    setupScript
+                  )
+                }
+              >
+                {creating ? "Creating session…" : "Start session"}
+              </Button>
+            </span>
+          </Tooltip>
         </Group>
       </Stack>
     </Paper>

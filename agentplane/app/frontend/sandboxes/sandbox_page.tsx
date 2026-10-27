@@ -126,6 +126,17 @@ export function SandboxPage({
   const threads = Array.isArray(threadListing) ? threadListing : [];
   const ready = sandboxReady(sandbox);
   const canWakeForSession = sandboxSuspended(sandbox) && sandbox?.wake_on_send === true;
+  const sessionUnavailableReason = pendingOpen
+    ? "An earlier session open attempt is unconfirmed. Check Open status before starting another session."
+    : !sandbox
+      ? live.snapshot === null
+        ? "Waiting for Sandbox status to load."
+        : "This Sandbox no longer exists."
+      : !ready && !canWakeForSession
+        ? sandboxSuspended(sandbox)
+          ? "The Sandbox is suspended. Resume it or enable wake on send before starting a session."
+          : `New sessions need a ready Sandbox.\n${sandboxStatusDetail(sandbox)}`
+        : null;
   useEffect(() => {
     if (requestedTab === "console" && sandbox !== null && !vmConsoleAvailable) {
       setSearchParams({}, { replace: true });
@@ -477,7 +488,7 @@ export function SandboxPage({
             <div hidden={!launching}>
               <NewSessionForm
                 presetName={sandbox?.preset ?? null}
-                startable={(ready || canWakeForSession) && !pendingOpen}
+                unavailableReason={sessionUnavailableReason}
                 creating={creatingSession}
                 onStart={(spec, setupScript) => void createSession(spec, setupScript)}
                 onClose={() => setLaunching(false)}

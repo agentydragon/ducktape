@@ -1,4 +1,11 @@
-# Thread history scrolling
+# Agentplane frontend
+
+## Session creation
+
+When Start session is disabled, hovering it or focusing its wrapper shows the current reason:
+Sandbox availability, an unconfirmed open attempt, opening in progress, or model availability.
+
+## Thread history scrolling
 
 ## Thread names
 
