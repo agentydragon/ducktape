@@ -148,6 +148,8 @@ it("returns explicit frame failures for the snapshot stream instead of accepting
   expect(good).toEqual({ success: true, data: { observedAt: "2026-10-27T18:00:00Z", inboxes: [] } });
 
   const bad = decodeSessionNoticeStatesFrame('{"inboxes":[]}');
-  expect(bad.success).toBe(false);
-  if (!bad.success) expect(bad.error).toContain("missing observedAt");
+  expect(bad).toMatchObject({
+    success: false,
+    error: expect.stringContaining("missing observedAt"),
+  });
 });
