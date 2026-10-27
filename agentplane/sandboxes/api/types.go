@@ -2,6 +2,8 @@
 package api
 
 import (
+	"fmt"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kubevirtv1 "kubevirt.io/api/core/v1"
@@ -131,12 +133,63 @@ type QuiesceAttempt struct {
 	AttemptedAt  metav1.Time `json:"attemptedAt"`
 }
 
+// AutosuspendBlockerReason is a current runner fact that keeps the Sandbox from being idle.
+// +kubebuilder:validation:Enum=ActiveTurn;PendingCommand;Setup;Activation;Bootstrap;Admission
+type AutosuspendBlockerReason string
+
+const (
+	AutosuspendBlockerActiveTurn     AutosuspendBlockerReason = "ActiveTurn"
+	AutosuspendBlockerPendingCommand AutosuspendBlockerReason = "PendingCommand"
+	AutosuspendBlockerSetup          AutosuspendBlockerReason = "Setup"
+	AutosuspendBlockerActivation     AutosuspendBlockerReason = "Activation"
+	AutosuspendBlockerBootstrap      AutosuspendBlockerReason = "Bootstrap"
+	AutosuspendBlockerAdmission      AutosuspendBlockerReason = "Admission"
+)
+
+// AutosuspendBlocker is one live reason the controller must wait before suspending a Sandbox.
+type AutosuspendBlocker struct {
+	Reason    AutosuspendBlockerReason `json:"reason"`
+	SessionID *string                  `json:"sessionId,omitempty"`
+}
+
+// ValidateAutosuspendBlockers rejects malformed and duplicate runner Lease facts.
+func ValidateAutosuspendBlockers(blockers []AutosuspendBlocker) error {
+	seen := make(map[string]struct{}, len(blockers))
+	for _, blocker := range blockers {
+		switch blocker.Reason {
+		case AutosuspendBlockerActiveTurn, AutosuspendBlockerPendingCommand, AutosuspendBlockerSetup, AutosuspendBlockerActivation:
+			if blocker.SessionID == nil || *blocker.SessionID == "" {
+				return fmt.Errorf("autosuspend blocker %q requires a session ID", blocker.Reason)
+			}
+		case AutosuspendBlockerBootstrap, AutosuspendBlockerAdmission:
+			if blocker.SessionID != nil {
+				return fmt.Errorf("autosuspend blocker %q cannot have a session ID", blocker.Reason)
+			}
+		default:
+			return fmt.Errorf("unknown autosuspend blocker reason %q", blocker.Reason)
+		}
+		sessionID := ""
+		if blocker.SessionID != nil {
+			sessionID = *blocker.SessionID
+		}
+		key := string(blocker.Reason) + "\x00" + sessionID
+		if _, duplicate := seen[key]; duplicate {
+			return fmt.Errorf("duplicate autosuspend blocker %q", blocker.Reason)
+		}
+		seen[key] = struct{}{}
+	}
+	return nil
+}
+
 // +kubebuilder:validation:XValidation:rule="has(self.suspendedAtWakeGeneration) == (has(self.suspendedBy) && self.suspendedBy == 'Idle')",message="suspendedAtWakeGeneration is set exactly when suspendedBy is Idle"
 type SandboxStatus struct {
 	Volumes     *SandboxVolumes `json:"volumes,omitempty"`
 	Incarnation *Incarnation    `json:"incarnation,omitempty"`
 	// IdleSuspendAt is the controller's next attempt to suspend an idle Sandbox, when one is scheduled.
 	IdleSuspendAt *metav1.Time `json:"idleSuspendAt,omitempty"`
+	// IdleSuspendBlockers are the live runner facts keeping autosuspend from suspending this Sandbox.
+	// +listType=atomic
+	IdleSuspendBlockers []AutosuspendBlocker `json:"idleSuspendBlockers,omitempty"`
 	// The UID of the last incarnation whose runner sealed every Session, kept after it stops.
 	QuiescedIncarnation *string `json:"quiescedIncarnation,omitempty"`
 	// The latest Quiesce request, scoped to its runner incarnation, for the controller's retry deadline.

@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from agentplane.proto import sandboxes_pb2
 from agentplane.runner.harness import Harness
-from agentplane.sandbox_resource import OperatingMode, SuspendedBy
+from agentplane.sandbox_resource import AutosuspendBlockerReason, OperatingMode, SuspendedBy
 from agentplane.subjects import ServiceAccountRef
 
 # Mirrors the CEL floor on `spec.idleSuspendAfter` in agentplane/sandboxes/api/types.go; the CRD is the authority.
@@ -141,6 +141,13 @@ class PodView(BaseModel):
     status: dict[str, object] | None = None
 
 
+class AutosuspendBlocker(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: AutosuspendBlockerReason
+    session_id: str | None
+
+
 class SandboxView(BaseModel):
     """One inventory row: the Sandbox's identity plus what it and its Pod say."""
 
@@ -173,6 +180,9 @@ class SandboxView(BaseModel):
         default=None,
         description="Controller-clock deadline for the next idle suspension attempt; null when no timer runs.",
     )
+    autosuspend_blockers: list[AutosuspendBlocker] = Field(
+        default_factory=list, description="Live runner facts that currently keep the Sandbox from autosuspending."
+    )
     phase: SandboxPhase = Field(
         description="Unspecified means the controller has not reported an effective mode yet. "
         "Quiescing and Tearing down mean deletion was asked for: it seals and waits for its ingress, "
@@ -184,6 +194,13 @@ class SandboxView(BaseModel):
 def sandbox_view(value: sandboxes_pb2.Sandbox) -> SandboxView:
     data = MessageToDict(value, preserving_proto_field_name=True, always_print_fields_with_no_presence=True)
     data["phase"] = SandboxPhase[sandboxes_pb2.SandboxPhase.Name(value.phase).removeprefix("SANDBOX_PHASE_")]
+    data["autosuspend_blockers"] = [
+        {
+            "reason": AutosuspendBlockerReason(blocker.reason),
+            "session_id": blocker.session_id if blocker.HasField("session_id") else None,
+        }
+        for blocker in value.autosuspend_blockers
+    ]
     if data.pop("idle_suspend_after", None) is not None:
         data["idle_suspend_after_seconds"] = round(value.idle_suspend_after.ToTimedelta().total_seconds())
     return SandboxView.model_validate(data)

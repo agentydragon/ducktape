@@ -1453,6 +1453,7 @@ py_test(
         ":conftest",
         ":sandbox_models",
         "//:conftest",
+        "//agentplane:sandbox_resource",
         "//agentplane/proto:sandboxes_pb2",
         "@pypi//protobuf",
         "@pypi//pytest",

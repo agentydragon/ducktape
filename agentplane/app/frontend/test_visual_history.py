@@ -72,6 +72,25 @@ async def test_composer_autosuspend_countdown(view: VisualPage, app: AgentplaneF
     await view.capture()
 
 
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
+async def test_composer_autosuspend_busy(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.build(Scene.AUTOSUSPEND_BUSY)
+    await app.mount_thread(IDLE_THREAD)
+    await view.page.wait_for_selector("[aria-label='Thread history'][data-layout-settled='true']", state="attached")
+    hint = view.page.locator(
+        ".agentplane-composer-autosuspend:visible, .agentplane-composer-autosuspend-mobile:visible"
+    )
+    await expect(hint).to_have_text("Autosuspend waiting: Turn running · +2")
+    await view.capture()
+    await hint.click()
+    details = view.page.get_by_label("Autosuspend blockers")
+    await expect(details).to_be_visible()
+    await expect(details.get_by_role("link", name="Session running a turn", exact=True)).to_be_visible()
+    await expect(details.get_by_role("link", name="Session running setup", exact=True)).to_be_visible()
+    await expect(details).to_contain_text("Sandbox bootstrap running")
+    await view.capture(name="blockers")
+
+
 @pytest.mark.parametrize(
     ("viewport", "color_scheme"),
     [(DESKTOP, "light"), (MOBILE, "light"), (DESKTOP, "dark")],

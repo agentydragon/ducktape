@@ -19,6 +19,7 @@ import (
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	controlpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
 	"github.com/google/uuid"
@@ -56,6 +57,11 @@ type Runner struct {
 	initDone    chan struct{}
 	initErr     error
 }
+
+const (
+	autosuspendBootstrap = "Bootstrap"
+	autosuspendAdmission = "Admission"
+)
 
 func New(config Config) (*Runner, error) {
 	if config.CodexExecutor != nil {
@@ -710,12 +716,14 @@ func (r *Runner) GetStatus(_ context.Context, _ *runnerpb.GetStatusRequest) (*ru
 
 func (r *Runner) facts() (*controlpb.RunnerFacts, error) {
 	sessions := r.inventory()
-	busy, setup := false, false
+	var blockers []*sandboxpb.AutosuspendBlocker
+	setup := false
 	for _, s := range sessions {
-		busy = busy || s.busy()
-		s.mu.Lock()
-		setup = setup || s.setup == runnerpb.SetupState_SETUP_STATE_RUNNING
-		s.mu.Unlock()
+		sessionBlockers := s.autosuspendBlockers()
+		for _, blocker := range sessionBlockers {
+			setup = setup || blocker.GetReason() == autosuspendSetup
+		}
+		blockers = append(blockers, sessionBlockers...)
 	}
 	r.bootstrapMu.Lock()
 	initLog := r.initLog
@@ -732,11 +740,14 @@ func (r *Runner) facts() (*controlpb.RunnerFacts, error) {
 				facts.Bootstrap = controlpb.RunnerFacts_BOOTSTRAP_SUCCEEDED
 			}
 		} else {
-			busy = true
+			blockers = append(blockers, &sandboxpb.AutosuspendBlocker{Reason: autosuspendBootstrap})
 		}
 	}
 	r.mu.Lock()
-	busy = busy || r.admissions > 0
+	if r.admissions > 0 {
+		blockers = append(blockers, &sandboxpb.AutosuspendBlocker{Reason: autosuspendAdmission})
+	}
+	busy := len(blockers) > 0
 	if busy {
 		r.idleSince = nil
 	} else if r.idleSince == nil {
@@ -747,6 +758,17 @@ func (r *Runner) facts() (*controlpb.RunnerFacts, error) {
 	}
 	quiescing := r.quiescing
 	r.mu.Unlock()
+	sort.Slice(blockers, func(i, j int) bool {
+		leftSession, rightSession := blockers[i].SessionId, blockers[j].SessionId
+		if (leftSession != nil) != (rightSession != nil) {
+			return leftSession != nil
+		}
+		if leftSession != nil && *leftSession != *rightSession {
+			return *leftSession < *rightSession
+		}
+		return blockers[i].Reason < blockers[j].Reason
+	})
+	facts.AutosuspendBlockers = blockers
 	if r.store.Lameduck() {
 		facts.QuiesceStage = controlpb.RunnerFacts_QUIESCE_STAGE_QUIESCED
 		flushed := true

@@ -197,6 +197,31 @@ spec:
                   an idle Sandbox, when one is scheduled.
                 format: date-time
                 type: string
+              idleSuspendBlockers:
+                description: IdleSuspendBlockers are the live runner facts keeping
+                  autosuspend from suspending this Sandbox.
+                items:
+                  description: AutosuspendBlocker is one live reason the controller
+                    must wait before suspending a Sandbox.
+                  properties:
+                    reason:
+                      description: AutosuspendBlockerReason is a current runner fact
+                        that keeps the Sandbox from being idle.
+                      enum:
+                      - ActiveTurn
+                      - PendingCommand
+                      - Setup
+                      - Activation
+                      - Bootstrap
+                      - Admission
+                      type: string
+                    sessionId:
+                      type: string
+                  required:
+                  - reason
+                  type: object
+                type: array
+                x-kubernetes-list-type: atomic
               incarnation:
                 description: 'Incarnation is the Pod the Sandbox''s runner currently
                   runs in: its own Pod, or its VM''s

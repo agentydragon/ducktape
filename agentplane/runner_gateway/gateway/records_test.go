@@ -73,3 +73,42 @@ func TestConnectionRecordsRejectForeignObjects(t *testing.T) {
 		}
 	}
 }
+
+func TestConnectionRenewPublishesAndClearsAutosuspendBlockers(t *testing.T) {
+	kube := kubernetesfake.NewSimpleClientset()
+	identity := sandboxreader.Identity{Name: testSandbox, UID: testSandboxUID}
+	records, err := newConnectionRecords(kube.CoordinationV1(), kube.DiscoveryV1(), testNamespace,
+		connectionHolder{name: "test-gateway", ip: "192.0.2.10", port: sandboxapi.ControlServicePort})
+	if err != nil {
+		t.Fatal(err)
+	}
+	epoch, err := records.accept(context.Background(), identity, testPodUID, "test-runner-boot")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessionID := "session-a"
+	busy := &sandboxlease.RunnerFacts{AutosuspendBlockers: []sandboxapi.AutosuspendBlocker{{
+		Reason: sandboxapi.AutosuspendBlockerActiveTurn, SessionID: &sessionID,
+	}}}
+	if err := records.renew(context.Background(), identity, epoch, time.Now(), busy); err != nil {
+		t.Fatal(err)
+	}
+	name := testSandbox + sandboxlease.RunnerLeaseSuffix
+	lease, err := kube.CoordinationV1().Leases(testNamespace).Get(context.Background(), name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lease.Annotations[sandboxlease.AutosuspendBlockersAnnotation] == "" {
+		t.Fatal("busy runner facts were not published on the connection Lease")
+	}
+	if err := records.renew(context.Background(), identity, epoch, time.Now(), &sandboxlease.RunnerFacts{}); err != nil {
+		t.Fatal(err)
+	}
+	lease, err = kube.CoordinationV1().Leases(testNamespace).Get(context.Background(), name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := lease.Annotations[sandboxlease.AutosuspendBlockersAnnotation]; exists {
+		t.Fatalf("idle runner retained blocker annotation: %s", lease.Annotations[sandboxlease.AutosuspendBlockersAnnotation])
+	}
+}

@@ -138,7 +138,10 @@ func (r *connectionRecords) renew(
 		if lease.Annotations == nil {
 			lease.Annotations = make(map[string]string)
 		}
-		for _, key := range []string{sandboxlease.QuiesceStageAnnotation, sandboxlease.IdleSinceAnnotation, sandboxlease.BootstrapAnnotation, sandboxlease.SetupsRunningAnnotation} {
+		for _, key := range []string{
+			sandboxlease.QuiesceStageAnnotation, sandboxlease.IdleSinceAnnotation, sandboxlease.BootstrapAnnotation,
+			sandboxlease.SetupsRunningAnnotation, sandboxlease.AutosuspendBlockersAnnotation,
+		} {
 			delete(lease.Annotations, key)
 		}
 		lease.Spec.RenewTime = &metav1.MicroTime{Time: seenAt.UTC()}

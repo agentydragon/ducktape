@@ -14,5 +14,9 @@ first reconciles a new Sandbox, so readers expose a nullable mode and `Unspecifi
 deriving actual state from `spec.running`. Deletion requires an explicitly reported `Suspended` mode;
 send-triggered wake work stays queued without a wake deadline until a mode is reported.
 
+`status.idleSuspendBlockers` carries the live runner reasons that prevent autosuspension. Inventory
+readers project it as `Sandbox.autosuspend_blockers`; the integration app's `SandboxView` includes the
+same reasons and nullable Session IDs.
+
 `testing/kubernetes.py` seeds a running Sandbox and its Pod (`SandboxCluster`) on an envtest API
 server for integration tests.

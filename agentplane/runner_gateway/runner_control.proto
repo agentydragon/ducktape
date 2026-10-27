@@ -7,6 +7,7 @@ syntax = "proto3";
 package agentplane.runner_gateway;
 
 import "agentplane/proto/grpc_tunnel.proto";
+import "agentplane/proto/sandboxes.proto";
 import "google/protobuf/timestamp.proto";
 
 // Served by the Runner Gateway; the runner opens one `Connect` stream and serves `Runner` on it.
@@ -78,11 +79,11 @@ message RunnerFacts {
   }
 
   QuiesceStage quiesce_stage = 1;
-  // When the whole Sandbox became idle: any Session running a turn or command, or a background process
-  // or attached terminal running, makes it busy. Absent while busy, and from a runner that does not
-  // track it.
+  // When the whole Sandbox became idle: an active turn, pending command, setup, activation, bootstrap
+  // or command admission makes it busy. Absent while busy, and from a runner that does not track it.
   google.protobuf.Timestamp idle_since = 2;
   Bootstrap bootstrap = 3;
   // Some Session's setup script is running. A suspend waits for it to finish.
   bool setups_running = 4;
+  repeated agentplane.proto.AutosuspendBlocker autosuspend_blockers = 5;
 }

@@ -191,9 +191,13 @@
   min-width: 0;
 }
 
-.agentplane-composer-model-activity,
-.agentplane-composer-autosuspend {
+.agentplane-composer-model-activity {
   white-space: nowrap;
+}
+
+.agentplane-composer-autosuspend {
+  max-width: 320px;
+  text-align: right;
 }
 
 .agentplane-composer-autosuspend-mobile {

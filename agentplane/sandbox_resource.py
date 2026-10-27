@@ -58,6 +58,15 @@ class SuspendedBy(StrEnum):
     REQUESTED = "Requested"
 
 
+class AutosuspendBlockerReason(StrEnum):
+    ACTIVE_TURN = "ActiveTurn"
+    PENDING_COMMAND = "PendingCommand"
+    SETUP = "Setup"
+    ACTIVATION = "Activation"
+    BOOTSTRAP = "Bootstrap"
+    ADMISSION = "Admission"
+
+
 def _go_duration(value: object) -> object:
     """`metav1.Duration` is a Go duration string (`1h30m0s`) on the wire."""
     return durationpy.from_str(value) if isinstance(value, str) else value
@@ -97,10 +106,16 @@ class Incarnation(_Wire):
     uid: str
 
 
+class AutosuspendBlocker(_Wire):
+    reason: AutosuspendBlockerReason
+    session_id: str | None = None
+
+
 class Status(_Wire):
     incarnation: Incarnation | None = None
     operating_mode: OperatingMode | None = None
     idle_suspend_at: AwareDatetime | None = None
+    idle_suspend_blockers: list[AutosuspendBlocker] = Field(default_factory=list)
     suspended_by: SuspendedBy | None = None
     suspended_at_wake_generation: int | None = None
     conditions: list[Condition] = Field(default_factory=list)

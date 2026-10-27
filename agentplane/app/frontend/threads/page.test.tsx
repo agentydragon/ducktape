@@ -5,6 +5,7 @@ import { TEST_REASONING_EFFORTS } from "../test_model_catalog";
 import { MantineProvider } from "@mantine/core";
 import { act, type JSX } from "react";
 import { createRoot } from "react-dom/client";
+import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CommandSchema, type Command } from "../../../proto/command_pb";
@@ -314,9 +315,11 @@ it("hides only the Langfuse link when Langfuse search is unconfigured", async ()
 
 function TestLiveProviders({ children }: { children: JSX.Element }): JSX.Element {
   return (
-    <ThreadsLiveProvider openThreadId={null}>
-      <SandboxesLiveProvider>{children}</SandboxesLiveProvider>
-    </ThreadsLiveProvider>
+    <MemoryRouter>
+      <ThreadsLiveProvider openThreadId={null}>
+        <SandboxesLiveProvider>{children}</SandboxesLiveProvider>
+      </ThreadsLiveProvider>
+    </MemoryRouter>
   );
 }
 
@@ -507,6 +510,65 @@ it("reports the autosuspend policy while no idle deadline is active", async () =
   sandboxes = [autosuspendSandbox(null)];
   const container = await render();
   expect(container.querySelector(".agentplane-composer-autosuspend")?.textContent).toBe("Autosuspend after 15m idle");
+});
+
+it("explains every runner blocker and links sessions outside the loaded thread listing", async () => {
+  const unlistedSession = "00000000-0000-4000-8000-000000000099";
+  sandboxes = [
+    {
+      ...autosuspendSandbox(null),
+      autosuspend_blockers: [
+        { reason: "ActiveTurn", session_id: THREAD.id },
+        { reason: "PendingCommand", session_id: unlistedSession },
+        { reason: "Setup", session_id: unlistedSession },
+        { reason: "Activation", session_id: unlistedSession },
+        { reason: "Bootstrap", session_id: null },
+        { reason: "Admission", session_id: null },
+      ],
+    },
+  ];
+  const container = await render();
+  const streams = eventSourceUrls.length;
+  const hint = container.querySelector<HTMLButtonElement>(".agentplane-composer-autosuspend");
+  expect(hint?.textContent).toBe("Autosuspend waiting: Turn running · +5");
+  await act(async () => hint?.click());
+  const details = document.querySelector('[aria-label="Autosuspend blockers"]');
+  expect(details?.textContent).toContain("Setup running");
+  expect(details?.textContent).toContain("Session starting");
+  expect(details?.textContent).toContain("Sandbox bootstrap running");
+  expect(details?.textContent).toContain("Command being admitted");
+  expect(details?.querySelector(`a[href="/threads/${THREAD.id}"]`)?.textContent).toBe(THREAD.name);
+  expect(details?.querySelector(`a[href="/threads/${unlistedSession}"]`)?.textContent).toBe("Session 00000000");
+  expect(eventSourceUrls).toHaveLength(streams);
+});
+
+it.each([
+  ["stale", false, 900, "Autosuspend timing unavailable"],
+  ["disabled", true, null, "Autosuspend off"],
+] as const)("does not present %s blockers as currently preventing autosuspend", async (_case, fresh, after, text) => {
+  inventoryFresh = fresh;
+  sandboxes = [
+    {
+      ...autosuspendSandbox(null),
+      idle_suspend_after_seconds: after,
+      autosuspend_blockers: [{ reason: "ActiveTurn", session_id: THREAD.id }],
+    },
+  ];
+  const hint = (await render()).querySelector(".agentplane-composer-autosuspend");
+  expect(hint?.textContent).toBe(text);
+  expect(hint?.tagName).not.toBe("BUTTON");
+});
+
+it("explains bootstrap work before the Sandbox becomes ready", async () => {
+  sandboxes = [
+    {
+      ...autosuspendSandbox(null),
+      status: { conditions: [{ type: "Ready", status: "False" }] },
+      autosuspend_blockers: [{ reason: "Bootstrap", session_id: null }],
+    },
+  ];
+  const hint = (await render()).querySelector(".agentplane-composer-autosuspend");
+  expect(hint?.textContent).toBe("Autosuspend waiting: Sandbox bootstrap running");
 });
 
 it("reports stale timing as unavailable and does not call a missing loading sandbox disabled", async () => {

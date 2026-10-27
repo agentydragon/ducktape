@@ -67,6 +67,12 @@ message SandboxPod {
   optional string node_name = 7;
 }
 
+// One live fact keeping the Sandbox from being considered idle for autosuspend.
+message AutosuspendBlocker {
+  string reason = 1;
+  optional string session_id = 2;
+}
+
 message Sandbox {
   reserved 3, 6, 7, 10, 11, 12, 13, 17, 18, 19;
   reserved "state", "conditions", "node_name", "kubernetes_grants", "kubernetes_grants_ready",
@@ -91,6 +97,7 @@ message Sandbox {
   optional string suspended_by = 24;
   // Controller-clock deadline for the next idle suspension attempt; absent when no timer runs.
   google.protobuf.Timestamp idle_suspend_at = 25;
+  repeated AutosuspendBlocker autosuspend_blockers = 26;
 }
 
 // Where the Sandbox is in its lifecycle, derived from what the Sandbox Controller records: whether

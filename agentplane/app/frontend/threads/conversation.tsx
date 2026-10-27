@@ -1,7 +1,8 @@
-import { ActionIcon, Button, Group, Menu, Select, Stack, Text } from "@mantine/core";
+import { ActionIcon, Anchor, Button, Group, Menu, Popover, Select, Stack, Text, UnstyledButton } from "@mantine/core";
 import { IconDotsVertical, IconHistory } from "../icons";
 import { intlFormatDistance } from "date-fns";
 import { type JSX, useCallback, useEffect, useState } from "react";
+import { Link } from "react-router";
 
 import {
   displayableError,
@@ -26,7 +27,7 @@ import { installThreadFavicon } from "./thread_favicon";
 import { snapshotFresh, threadStatusFromSnapshot } from "./thread_status";
 import { isoTime } from "../format_time";
 import { TimeAgo } from "../time_ago";
-import { autosuspendHint } from "./sandbox_autosuspend";
+import { AUTOSUSPEND_BLOCKER_LABELS, autosuspendHint } from "./sandbox_autosuspend";
 import { NotificationStatus } from "../notification_status";
 import { TopbarActions } from "../topbar";
 import { langfuseSandboxTraceUrl } from "../langfuse_search";
@@ -113,8 +114,41 @@ function AutosuspendHint({
   hint: ReturnType<typeof autosuspendHint>;
   className: string;
 }): JSX.Element | null {
+  const live = useRequiredThreadsLive();
   if (!hint) return null;
   const title = "Autosuspend waits until all sessions on this Sandbox are idle; new work resets the timer.";
+  if (hint.blockers?.length) {
+    return (
+      <Popover position="top-end" width={320} withinPortal>
+        <Popover.Target>
+          <UnstyledButton className={className} aria-label={hint.text} title="Show what keeps this Sandbox busy">
+            <Text component="span" size="xs" c="dimmed" td="underline">
+              {hint.text}
+            </Text>
+          </UnstyledButton>
+        </Popover.Target>
+        <Popover.Dropdown aria-label="Autosuspend blockers" style={{ overflowWrap: "anywhere" }}>
+          <Stack gap="xs">
+            <Text size="xs">{title}</Text>
+            {hint.blockers.map((blocker) => (
+              <Text key={`${blocker.reason}:${blocker.session_id ?? ""}`} size="xs">
+                {AUTOSUSPEND_BLOCKER_LABELS[blocker.reason]}
+                {blocker.session_id && (
+                  <>
+                    {" · "}
+                    <Anchor component={Link} to={`/threads/${encodeURIComponent(blocker.session_id)}`} size="xs">
+                      {live.snapshot?.threads.find((thread) => thread.id === blocker.session_id)?.name ||
+                        `Session ${blocker.session_id.slice(0, 8)}`}
+                    </Anchor>
+                  </>
+                )}
+              </Text>
+            ))}
+          </Stack>
+        </Popover.Dropdown>
+      </Popover>
+    );
+  }
   return (
     <Text
       className={className}

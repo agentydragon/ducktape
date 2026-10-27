@@ -4,9 +4,22 @@ import { sandboxReady, sandboxSuspended } from "../sandbox_status";
 export interface AutosuspendHint {
   text: string;
   deadline: string | null;
+  blockers?: SandboxView["autosuspend_blockers"];
 }
 
 const SECONDS_PER_MINUTE = 60;
+
+export const AUTOSUSPEND_BLOCKER_LABELS: Record<
+  NonNullable<SandboxView["autosuspend_blockers"]>[number]["reason"],
+  string
+> = {
+  ActiveTurn: "Turn running",
+  PendingCommand: "Command pending",
+  Setup: "Setup running",
+  Activation: "Session starting",
+  Bootstrap: "Sandbox bootstrap running",
+  Admission: "Command being admitted",
+};
 
 function compactDuration(seconds: number): string {
   const minutes = Math.ceil(seconds / SECONDS_PER_MINUTE);
@@ -40,15 +53,31 @@ export function autosuspendHint(sandbox: SandboxView | undefined, fresh: boolean
 
   const suspendAfter = sandbox.idle_suspend_after_seconds;
   if (suspendAfter === null || suspendAfter === undefined) return { text: "Autosuspend off", deadline: null };
-  if (!Number.isFinite(suspendAfter) || suspendAfter < 60 || sandbox.phase !== "Running" || !sandboxReady(sandbox)) {
+  if (!Number.isFinite(suspendAfter) || suspendAfter < 60 || sandbox.phase !== "Running") {
     return { text: "Autosuspend timing unavailable", deadline: null };
   }
 
   const deadline = sandbox.idle_suspend_at;
   if (deadline === null || deadline === undefined) {
-    return { text: `Autosuspend after ${compactDuration(suspendAfter)} idle`, deadline: null };
+    const blockers = sandbox.autosuspend_blockers ?? [];
+    const first = blockers[0];
+    if (first) {
+      const more = blockers.length > 1 ? ` · +${blockers.length - 1}` : "";
+      return {
+        text: `Autosuspend waiting: ${AUTOSUSPEND_BLOCKER_LABELS[first.reason]}${more}`,
+        deadline: null,
+        blockers,
+      };
+    }
+    return {
+      text: sandboxReady(sandbox)
+        ? `Autosuspend after ${compactDuration(suspendAfter)} idle`
+        : "Autosuspend timing unavailable",
+      deadline: null,
+    };
   }
 
+  if (!sandboxReady(sandbox)) return { text: "Autosuspend timing unavailable", deadline: null };
   const deadlineMs = Date.parse(deadline);
   if (!Number.isFinite(deadlineMs)) return { text: "Autosuspend timing unavailable", deadline: null };
   if (deadlineMs <= now) return { text: "Autosuspend pending", deadline };

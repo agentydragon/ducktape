@@ -4,8 +4,14 @@ import pytest
 import pytest_bazel
 from google.protobuf.timestamp_pb2 import Timestamp
 
-from agentplane.app.sandbox_models import SandboxPhase as ViewPhase, sandbox_is_ready, sandbox_view
-from agentplane.proto.sandboxes_pb2 import Sandbox, SandboxPhase, ServiceAccount
+from agentplane.app.sandbox_models import AutosuspendBlocker, SandboxPhase as ViewPhase, sandbox_is_ready, sandbox_view
+from agentplane.proto.sandboxes_pb2 import (
+    AutosuspendBlocker as ProtoAutosuspendBlocker,
+    Sandbox,
+    SandboxPhase,
+    ServiceAccount,
+)
+from agentplane.sandbox_resource import AutosuspendBlockerReason
 
 
 @pytest.mark.parametrize(
@@ -55,6 +61,31 @@ def test_ready_condition_does_not_override_an_unreported_mode() -> None:
     )
 
     assert not sandbox_is_ready(sandbox_view(view))
+
+
+def test_sandbox_http_view_projects_blockers_with_nullable_snake_case_session_ids() -> None:
+    view = Sandbox(
+        name="busy",
+        uid=str(uuid4()),
+        created_at=Timestamp(seconds=1),
+        service_account=ServiceAccount(namespace="test-namespace", name="busy"),
+        phase=SandboxPhase.SANDBOX_PHASE_RUNNING,
+        autosuspend_blockers=[
+            ProtoAutosuspendBlocker(reason="PendingCommand", session_id="session-a"),
+            ProtoAutosuspendBlocker(reason="Bootstrap"),
+        ],
+    )
+
+    result = sandbox_view(view)
+
+    assert result.autosuspend_blockers == [
+        AutosuspendBlocker(reason=AutosuspendBlockerReason.PENDING_COMMAND, session_id="session-a"),
+        AutosuspendBlocker(reason=AutosuspendBlockerReason.BOOTSTRAP, session_id=None),
+    ]
+    assert result.model_dump(mode="json")["autosuspend_blockers"] == [
+        {"reason": "PendingCommand", "session_id": "session-a"},
+        {"reason": "Bootstrap", "session_id": None},
+    ]
 
 
 if __name__ == "__main__":

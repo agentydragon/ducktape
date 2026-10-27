@@ -298,6 +298,96 @@ func TestStatusConditionsUseOneConnectionLeaseSnapshot(t *testing.T) {
 	}
 }
 
+func TestAutosuspendBlockersRequireTheCurrentConnectedIncarnationAndDoNotChurn(t *testing.T) {
+	r, c := runningWithRunner(t)
+	setIdleSuspendAfter(t, c, durationPtr(idleSuspendAfter))
+	setBootstrap(t, c, "echo test-bootstrap")
+	statusClient := &countingStatusClient{Client: r.Client}
+	r.Client = statusClient
+	leaseKey := client.ObjectKey{Namespace: namespace, Name: sandboxName + sandboxlease.RunnerLeaseSuffix}
+	var lease coordinationv1.Lease
+	if err := c.Get(context.Background(), leaseKey, &lease); err != nil {
+		t.Fatal(err)
+	}
+	lease.Annotations[sandboxlease.BootstrapAnnotation] = "running"
+	facts := sandboxlease.RunnerFacts{AutosuspendBlockers: []sandboxapi.AutosuspendBlocker{{
+		Reason: sandboxapi.AutosuspendBlockerBootstrap,
+	}}}
+	blockerAnnotations, err := facts.Annotations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for key, value := range blockerAnnotations {
+		lease.Annotations[key] = value
+	}
+	if err := c.Update(context.Background(), &lease); err != nil {
+		t.Fatal(err)
+	}
+	reconcileOnce(t, r)
+	sandbox := getSandbox(t, c)
+	if got := getReadyCondition(t, c); got.Status != metav1.ConditionFalse || got.Reason != "BootstrapRunning" {
+		t.Fatalf("Ready = %s/%s with a running bootstrap, want False/BootstrapRunning", got.Status, got.Reason)
+	}
+	if len(sandbox.Status.IdleSuspendBlockers) != 1 || sandbox.Status.IdleSuspendBlockers[0].Reason != sandboxapi.AutosuspendBlockerBootstrap {
+		t.Fatalf("blockers = %+v while the current runner is connected during bootstrap", sandbox.Status.IdleSuspendBlockers)
+	}
+	writes, resourceVersion := statusClient.statusUpdates, sandbox.ResourceVersion
+	reconcileOnce(t, r)
+	if unchanged := getSandbox(t, c); statusClient.statusUpdates != writes || unchanged.ResourceVersion != resourceVersion {
+		t.Fatalf("identical blockers caused status churn: updates %d -> %d, resourceVersion %q -> %q", writes, statusClient.statusUpdates, resourceVersion, unchanged.ResourceVersion)
+	}
+
+	if err := c.Get(context.Background(), leaseKey, &lease); err != nil {
+		t.Fatal(err)
+	}
+	lease.Annotations[sandboxlease.PodUIDAnnotation] = "uid-earlier-incarnation"
+	if err := c.Update(context.Background(), &lease); err != nil {
+		t.Fatal(err)
+	}
+	reconcileOnce(t, r)
+	if got := getSandbox(t, c).Status.IdleSuspendBlockers; len(got) != 0 {
+		t.Fatalf("blockers from an earlier incarnation were published: %+v", got)
+	}
+	if got := getCondition(t, c, sandboxapi.ConditionRunnerConnected); got.Status != metav1.ConditionFalse || got.Reason != "AwaitingRunner" {
+		t.Fatalf("RunnerConnected = %s/%s after Lease incarnation changed", got.Status, got.Reason)
+	}
+
+	if err := c.Get(context.Background(), leaseKey, &lease); err != nil {
+		t.Fatal(err)
+	}
+	lease.Annotations[sandboxlease.PodUIDAnnotation] = "uid-pod"
+	if err := c.Update(context.Background(), &lease); err != nil {
+		t.Fatal(err)
+	}
+	r.Now = func() time.Time { return testNow.Add(2 * time.Minute) }
+	reconcileOnce(t, r)
+	if got := getSandbox(t, c).Status.IdleSuspendBlockers; len(got) != 0 {
+		t.Fatalf("expired runner facts were published: %+v", got)
+	}
+	if got := getCondition(t, c, sandboxapi.ConditionRunnerConnected); got.Status != metav1.ConditionFalse || got.Reason != "ConnectionLost" {
+		t.Fatalf("RunnerConnected = %s/%s after Lease expiry", got.Status, got.Reason)
+	}
+
+	r.Now = func() time.Time { return testNow }
+	setIdleSuspendAfter(t, c, nil)
+	reconcileOnce(t, r)
+	if got := getSandbox(t, c).Status.IdleSuspendBlockers; len(got) != 0 {
+		t.Fatalf("disabled autosuspend published blockers: %+v", got)
+	}
+	writes = statusClient.statusUpdates
+	if err := c.Get(context.Background(), leaseKey, &lease); err != nil {
+		t.Fatal(err)
+	}
+	lease.Annotations[sandboxlease.AutosuspendBlockersAnnotation] = `[{"reason":"Admission"}]`
+	if err := c.Update(context.Background(), &lease); err != nil {
+		t.Fatal(err)
+	}
+	reconcileOnce(t, r)
+	if statusClient.statusUpdates != writes {
+		t.Fatal("a blocker-only change wrote Sandbox status while autosuspend was disabled")
+	}
+}
+
 type countingLeaseReader struct {
 	client.Reader
 	leaseGets int

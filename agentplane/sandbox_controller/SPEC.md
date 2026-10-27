@@ -56,6 +56,11 @@ a KubeVirt VirtualMachine, and the state PVC. A Sandbox is its state, running or
   refused or failed quiesce attempt. It is absent while suspension is off, the runner is busy or
   absent, or the Sandbox is stopping, stopped, deleting or blocked. A controller restart restarts
   the idle timer and reports its recomputed deadline.
+- `status.idleSuspendBlockers` reports the current reasons the connected runner is busy: `ActiveTurn`,
+  `PendingCommand`, `Setup` or `Activation`, each with its `sessionId`; `Bootstrap` and `Admission` have
+  no Session. It is empty when autosuspend is off or no current reason is reported. The controller publishes these only from
+  a live Runner Gateway Lease for the current incarnation, and clears them when that connection is
+  absent, expired or belongs to another incarnation.
 - A wake that lands while an idle suspension is being recorded replaces the incarnation: the runner is
   already sealed to new work, and the Sandbox is to run.
 - Each incarnation reads `spec.template` and the template as they are when it starts. Editing

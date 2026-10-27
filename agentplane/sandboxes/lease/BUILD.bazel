@@ -5,7 +5,10 @@ go_library(
     srcs = ["facts.go"],
     importpath = "github.com/agentydragon/ducktape/agentplane/sandboxes/lease",
     visibility = ["//agentplane:__subpackages__"],
-    deps = ["//agentplane/runner_gateway:runner_control_go_proto"],
+    deps = [
+        "//agentplane/runner_gateway:runner_control_go_proto",
+        "//agentplane/sandboxes/api",
+    ],
 )
 
 go_test(
@@ -13,6 +16,7 @@ go_test(
     srcs = ["facts_test.go"],
     embed = [":lease"],
     deps = [
+        "//agentplane/proto:sandboxes_go_proto",
         "//agentplane/runner_gateway:runner_control_go_proto",
         "@org_golang_google_protobuf//types/known/timestamppb",
     ],

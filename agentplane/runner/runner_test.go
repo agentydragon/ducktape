@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -167,6 +168,74 @@ func TestStartupFailureSettlesAdmissionAndReturnsToIdle(t *testing.T) {
 	}
 	if !commandFailed || !launchFailed {
 		t.Fatalf("failed startup did not settle both work and launch: command=%t launch=%t", commandFailed, launchFailed)
+	}
+}
+
+func TestRunnerFactsExposeBusyReasonsAndReturnToIdle(t *testing.T) {
+	proxy := modelConfigServer(t)
+	workspace := t.TempDir()
+	r := newLifecycleRunner(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"))
+	if _, err := r.OpenSession(context.Background(), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
+		t.Fatal(err)
+	}
+	session := r.sessions["session-1"]
+	session.mu.Lock()
+	session.activeTurn = "turn-1"
+	session.pending["command-1"] = true
+	session.setup = runnerpb.SetupState_SETUP_STATE_RUNNING
+	session.activating = true
+	session.mu.Unlock()
+	r.bootstrapMu.Lock()
+	r.initLog = &InitializationLog{events: []*runnerpb.InitializationEvent{{
+		Sequence: 1,
+		Observation: &runnerpb.InitializationEvent_Output{Output: &runnerpb.InitializationOutput{
+			Data: []byte("test-bootstrap-output"),
+		}},
+	}}}
+	r.bootstrapMu.Unlock()
+	r.mu.Lock()
+	r.admissions = 1
+	r.mu.Unlock()
+
+	facts, err := r.facts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, blocker := range facts.AutosuspendBlockers {
+		if blocker.SessionId == nil {
+			got = append(got, blocker.Reason)
+		} else {
+			got = append(got, *blocker.SessionId+":"+blocker.Reason)
+		}
+	}
+	want := []string{
+		"session-1:Activation", "session-1:ActiveTurn", "session-1:PendingCommand", "session-1:Setup",
+		"Admission", "Bootstrap",
+	}
+	if !reflect.DeepEqual(got, want) || !facts.SetupsRunning || facts.IdleSince != nil {
+		t.Fatalf("busy facts = (%v, setups=%t, idleSince=%v), want (%v, true, nil)", got, facts.SetupsRunning, facts.IdleSince, want)
+	}
+
+	session.mu.Lock()
+	session.activeTurn = ""
+	session.pending = map[string]bool{}
+	session.setup = runnerpb.SetupState_SETUP_STATE_NOT_REQUIRED
+	session.activating = false
+	session.mu.Unlock()
+	r.bootstrapMu.Lock()
+	r.initLog = nil
+	r.bootstrapMu.Unlock()
+	r.mu.Lock()
+	r.admissions = 0
+	r.mu.Unlock()
+
+	facts, err = r.facts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(facts.AutosuspendBlockers) != 0 || facts.SetupsRunning || facts.IdleSince == nil {
+		t.Fatalf("idle facts = (%v, setups=%t, idleSince=%v), want no blockers, false, and an idle timestamp", facts.AutosuspendBlockers, facts.SetupsRunning, facts.IdleSince)
 	}
 }
 

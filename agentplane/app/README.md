@@ -392,6 +392,14 @@ long-running tool or an active turn, and is unknown when no qualifying event was
 There is no ingress-side measurement: ingress can authenticate a Sandbox, but not distinguish its
 co-resident Threads.
 
+The composer also shows the Sandbox Controller's next autosuspend deadline, counting down on the
+browser's clock. While runner work prevents idleness, it shows the runner's busy reasons. Opening
+the hint lists every reason and links to the responsible Thread for Session work, including a
+Session outside the current Thread listing. The reasons describe active turns, pending commands,
+setup, activation, bootstrap and command admission; terminals and background processes do not count.
+Stale inventory shows timing as unavailable. These facts use the existing heartbeat, Lease and
+Sandbox watches; browser countdown ticks send no requests.
+
 ## Shutdown
 
 SIGTERM begins a drain as Uvicorn's shutdown starts: `/readyz` answers 503 (`/healthz` stays a

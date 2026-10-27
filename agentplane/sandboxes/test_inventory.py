@@ -68,6 +68,23 @@ async def test_sandbox_is_read_with_its_bootstrap(cluster: SandboxCluster) -> No
     assert [sandbox.name for sandbox in await cluster.inventory.list_sandboxes()] == [SANDBOX]
 
 
+async def test_sandbox_inventory_projects_idle_suspend_blockers(cluster: SandboxCluster) -> None:
+    await cluster.patch_sandbox_status(
+        {
+            "status": {
+                "idleSuspendBlockers": [{"reason": "PendingCommand", "sessionId": "session-a"}, {"reason": "Bootstrap"}]
+            }
+        }
+    )
+
+    view = await cluster.inventory.get(SANDBOX)
+
+    assert [(blocker.reason, blocker.session_id) for blocker in view.autosuspend_blockers] == [
+        ("PendingCommand", "session-a"),
+        ("Bootstrap", None),
+    ]
+
+
 async def test_suspended_sandbox_is_not_resumed(cluster: SandboxCluster) -> None:
     await cluster.patch_sandbox({"spec": {"running": False}})
     await cluster.patch_sandbox_status({"status": {"operatingMode": OperatingMode.SUSPENDED.value}})

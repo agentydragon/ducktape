@@ -82,8 +82,10 @@ message RunnerHeartbeat {
 // Each RunnerHeartbeat carrying it replaces the gateway's record of all the facts.
 message RunnerFacts {
   QuiesceStage quiesce_stage = 1;     // unspecified: not quiescing
-  google.protobuf.Timestamp idle_since = 2;  // absent while the Sandbox is busy
+  google.protobuf.Timestamp idle_since = 2;  // absent while any listed blocker is present
   Bootstrap bootstrap = 3;            // running, succeeded, failed or interrupted
+  bool setups_running = 4;
+  repeated agentplane.proto.AutosuspendBlocker autosuspend_blockers = 5;
 }
 ```
 
@@ -321,6 +323,7 @@ metadata:
     agentplane.allegedly.works/quiesce-stage: draining | flushing | quiesced
     agentplane.allegedly.works/idle-since: <RFC 3339 time the Sandbox became idle; absent while busy>
     agentplane.allegedly.works/bootstrap: running | succeeded | failed | interrupted
+    agentplane.allegedly.works/autosuspend-blockers: '[{"reason":"ActiveTurn","sessionId":"<session>"}]'
 spec:
   holderIdentity: <replica Pod name>
   leaseTransitions: <connection epoch>
@@ -356,8 +359,10 @@ No routing record is kept: runners dial out, so nothing is routed inbound.
 - **Runner facts.** The holder writes the runner's latest `RunnerFacts`, which arrive on
   `RunnerHeartbeat`, into the Lease annotations with the renewal that records liveness, so the idle
   time adds no write. A change of quiesce stage or bootstrap result triggers that write at once. A
-  new connection starts with none, since accepting rewrites the annotations, and the runner
-  republishes after `Welcome`; a runner gone quiet leaves
+  blocker-only change waits for the regular Lease touch; it does not trigger a separate renewal. The
+  Sandbox Controller watches blocker changes and copies them into `status.idleSuspendBlockers` only
+  while the Lease is live and names the current incarnation. A new connection starts with none, since
+  accepting rewrites the annotations, and the runner republishes after `Welcome`; a runner gone quiet leaves
   its last facts, which a reader trusts only while `pod-uid` names the incarnation it reads and the
   Lease is live. A fact value the gateway does not know ends the stream with `INVALID_ARGUMENT`, so a
   runner publishes a new value only after every gateway accepts it.

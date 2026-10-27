@@ -20,11 +20,19 @@ import (
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
+)
+
+const (
+	autosuspendActiveTurn     = "ActiveTurn"
+	autosuspendPendingCommand = "PendingCommand"
+	autosuspendSetup          = "Setup"
+	autosuspendActivation     = "Activation"
 )
 
 // observation wraps one generated observation in the Event vocabulary. The generated
@@ -1280,10 +1288,27 @@ func (s *Session) attached() *runnerpb.Attached {
 	return &runnerpb.Attached{SessionId: s.id, Spec: s.record.Spec(), LastCursor: state.ThroughCursor, HarnessState: harness, ActiveTurnId: state.ActiveTurnID, SetupState: s.setup, LaunchOutcome: s.launch, IncarnationUid: incarnation}
 }
 
-func (s *Session) busy() bool {
+func (s *Session) autosuspendBlockers() []*sandboxpb.AutosuspendBlocker {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.activeTurn != "" || len(s.pending) > 0 || s.setup == runnerpb.SetupState_SETUP_STATE_RUNNING || s.activating
+	var blockers []*sandboxpb.AutosuspendBlocker
+	add := func(reason string) {
+		sessionID := s.id
+		blockers = append(blockers, &sandboxpb.AutosuspendBlocker{Reason: reason, SessionId: &sessionID})
+	}
+	if s.activeTurn != "" {
+		add(autosuspendActiveTurn)
+	}
+	if len(s.pending) > 0 {
+		add(autosuspendPendingCommand)
+	}
+	if s.setup == runnerpb.SetupState_SETUP_STATE_RUNNING {
+		add(autosuspendSetup)
+	}
+	if s.activating {
+		add(autosuspendActivation)
+	}
+	return blockers
 }
 
 func (s *Session) startSetup(script string) {
