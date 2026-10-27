@@ -16,7 +16,7 @@ from hamcrest import anything, assert_that, contains_string, greater_than_or_equ
 from more_itertools import one
 from pydantic import BaseModel
 
-from agent_core.agent import Agent, _sanitize_tool_result
+from agent_core.agent import Agent, _make_strict_function_tool, _sanitize_tool_result
 from agent_core.events import ToolCall, ToolCallOutput
 from agent_core.handler import BaseHandler
 from agent_core.loop_control import Abort, InjectItems, RequireAnyTool
@@ -29,6 +29,20 @@ from agent_core.tool_provider import ImageContent, TextContent, ToolResult
 from mcp_infra.testing.simple_servers import SendMessageInput
 from openai_utils.model import FunctionCallItem, ResponsesRequest, ResponsesResult, UserMessage
 from openai_utils.testing.openai_mock import NoopOpenAIClient, make_mock
+
+
+def test_agent_tool_boundary_validates_nested_union() -> None:
+    object_variant: dict[str, Any] = {"type": "object", "properties": {}}
+    schema = {
+        "type": "object",
+        "properties": {"payload": {"anyOf": [{"type": "string"}, object_variant]}},
+        "required": ["payload"],
+        "additionalProperties": False,
+    }
+    with pytest.raises(ValueError, match="additionalProperties"):
+        _make_strict_function_tool("sample", "sample", schema)
+    object_variant["additionalProperties"] = False
+    assert _make_strict_function_tool("sample", "sample", schema).strict is True
 
 
 @pytest.fixture

@@ -218,6 +218,60 @@ def test_anyof_nested_is_permitted():
     validate_openai_strict_mode_schema(schema_with_nested_anyof, "NestedAnyOfSchema")
 
 
+@pytest.mark.parametrize("location", ["property", "items", "defs"])
+def test_nested_anyof_variants_are_validated(location: str) -> None:
+    invalid = {"type": "object", "properties": {"value": {"type": "string"}}, "required": ["value"]}
+    union = {"anyOf": [{"type": "string"}, invalid]}
+    schema = {"type": "object", "properties": {}, "additionalProperties": False}
+    if location == "property":
+        schema["properties"]["item"] = union
+        schema["required"] = ["item"]
+    elif location == "items":
+        schema["properties"]["items"] = {"type": "array", "items": union}
+        schema["required"] = ["items"]
+    else:
+        schema["properties"]["item"] = {"$ref": "#/$defs/item"}
+        schema["required"] = ["item"]
+        schema["$defs"] = {"item": union}
+
+    with pytest.raises(OpenAIStrictModeValidationError, match="additionalProperties"):
+        validate_openai_strict_mode_schema(schema, "NestedUnion")
+    invalid["additionalProperties"] = False
+    validate_openai_strict_mode_schema(schema, "NestedUnion")
+
+
+def test_empty_object_and_root_union_require_strict_shape() -> None:
+    for schema in ({"type": "object", "properties": {}}, {"type": "object", "anyOf": [{"type": "object"}]}):
+        with pytest.raises(OpenAIStrictModeValidationError):
+            validate_openai_strict_mode_schema(schema)
+
+
+def test_metadata_payloads_are_not_subschemas() -> None:
+    schema = {
+        "type": "object",
+        "properties": {
+            "value": {
+                "type": "string",
+                "default": {"type": "object", "properties": {"field": {"format": "path"}}},
+                "examples": [{"type": "object", "properties": {"field": {"format": "path"}}}],
+            }
+        },
+        "required": ["value"],
+        "additionalProperties": False,
+    }
+    validate_openai_strict_mode_schema(schema)
+
+
+def test_supported_date_and_time_formats() -> None:
+    schema = {
+        "type": "object",
+        "properties": {name: {"type": "string", "format": name} for name in ("date", "time", "duration", "hostname")},
+        "required": ["date", "time", "duration", "hostname"],
+        "additionalProperties": False,
+    }
+    validate_openai_strict_mode_schema(schema)
+
+
 # ---------------------------------------------------------------------------
 # Cross-generator parameterized tests (mock + live)
 # ---------------------------------------------------------------------------

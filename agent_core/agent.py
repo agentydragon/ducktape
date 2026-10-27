@@ -51,6 +51,7 @@ from openai_utils.model import (
     ToolChoice,
     UserMessage,
 )
+from openai_utils.pydantic_strict_mode import validate_openai_strict_mode_schema
 from openai_utils.types import ReasoningEffort, ReasoningSummary, build_reasoning_params
 
 logger = logging.getLogger(__name__)
@@ -88,78 +89,9 @@ class ToolCallOutcome:
     was_aborted: bool = False
 
 
-def _validate_schema_strict_compatible(schema: dict[str, Any], tool_name: str) -> None:
-    """Validate that a JSON schema is compatible with OpenAI's strict mode.
-
-    Strict mode requirements for objects:
-    1. Regular objects with fixed properties: must have "additionalProperties": false and all properties in "required"
-    2. Map objects (dicts): may use "patternProperties" or "additionalProperties" with a schema (not false)
-
-    Recursively checks schema structure for OpenAI strict mode compatibility.
-
-    Raises RuntimeError with specific details if schema is not compatible.
-    """
-
-    def check_subschema(subschema: dict[str, Any], path: str) -> None:
-        schema_type = subschema.get("type")
-
-        if schema_type == "object" or (isinstance(schema_type, list) and "object" in schema_type):
-            # OpenAI strict mode: all objects must have additionalProperties: false
-            # No exemptions for patternProperties or map-like objects
-            if "patternProperties" in subschema:
-                raise RuntimeError(
-                    f"Tool '{tool_name}' at {path}: object uses 'patternProperties' which is not allowed in strict mode. "
-                    f"Refactor dict[str, T] fields to list[{{key: str, value: T}}] or similar fixed structure."
-                )
-
-            if "additionalProperties" not in subschema:
-                raise RuntimeError(
-                    f"Tool '{tool_name}' at {path}: object missing 'additionalProperties'. "
-                    f"Add 'model_config = ConfigDict(extra=\"forbid\")' to the Pydantic model."
-                )
-
-            additional_props = subschema.get("additionalProperties")
-            if additional_props is not False:
-                raise RuntimeError(
-                    f"Tool '{tool_name}' at {path}: 'additionalProperties' must be false, got {additional_props}. "
-                    f"If this is a dict field, refactor to a list of objects with fixed schema."
-                )
-
-            properties = subschema.get("properties", {})
-            required = set(subschema.get("required", []))
-            if missing := set(properties) - required:
-                raise RuntimeError(
-                    f"Tool '{tool_name}' at {path}: all properties must be in 'required'. "
-                    f"Missing: {missing}. "
-                    f"Fix: Remove Field(default=...) or Field(default_factory=...) from Pydantic model."
-                )
-
-            for prop_name, prop_schema in properties.items():
-                check_subschema(prop_schema, f"{path}.properties.{prop_name}")
-
-        if schema_type == "array" or (isinstance(schema_type, list) and "array" in schema_type):
-            items = subschema.get("items")
-            if items and isinstance(items, dict):
-                check_subschema(items, f"{path}.items")
-
-        for key in ["anyOf", "oneOf", "allOf"]:
-            variants = subschema.get(key)
-            if isinstance(variants, list):
-                for i, variant in enumerate(variants):
-                    if isinstance(variant, dict):
-                        check_subschema(variant, f"{path}.{key}[{i}]")
-
-    check_subschema(schema, "$")
-
-    defs = schema.get("$defs", {})
-    for def_name, def_schema in defs.items():
-        if isinstance(def_schema, dict):
-            check_subschema(def_schema, f"$defs.{def_name}")
-
-
 def _make_strict_function_tool(tool_name: str, description: str, input_schema: dict[str, Any]) -> FunctionToolParam:
-    """Create a strict-mode FunctionToolParam, raising RuntimeError if the schema is not strict-compatible."""
-    _validate_schema_strict_compatible(input_schema, tool_name)
+    """Create a strict-mode function tool after validating its input schema."""
+    validate_openai_strict_mode_schema(input_schema, tool_name)
     return FunctionToolParam(name=tool_name, description=description, parameters=input_schema, strict=True)
 
 

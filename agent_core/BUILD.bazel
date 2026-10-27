@@ -74,6 +74,7 @@ py_library(
         ":model",
         ":tool_provider",
         "//openai_utils:model",
+        "//openai_utils:pydantic_strict_mode",
         "//openai_utils:types",
         "@pypi//anyio",
         "@pypi//pydantic",
