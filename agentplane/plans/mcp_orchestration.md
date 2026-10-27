@@ -115,7 +115,7 @@ tap per worker then covers all of that worker's Session commands and reads. The 
 binding like any other.
 
 ```yaml
-# Written by the executor when the operator approves claude-ai's launch of worker-3f2a.
+# Written by the executor when the operator approves claude-ai's launch of worker-3f2a; the subject is the caller.
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
@@ -154,8 +154,10 @@ never inherits a grant meant for its predecessor.
 `create` on PolicySets and PolicyBindings would let the executor write any grant, so a `ValidatingAdmissionPolicy`
 on its service account admits only this shape: one owner reference, to a Sandbox in the same namespace; rules that
 name only that Sandbox's name and UID (the inbox targets, the schema's `const`) and only `orchestration` Actions; a
-binding whose PolicySets share that owner and whose subject is a configured orchestrator account. A bug in the
-executor then cannot grant past the worker it launched.
+binding whose PolicySets share that owner. A bug in the executor then cannot grant past the worker it launched.
+Admission cannot see the Action's caller, so it limits what a grant reaches, not who holds it: the binding's subject
+is always `ExecutionRequest.caller`, the authenticated account that submitted the launch (`claude-ai` through the MCP
+edge, an in-cluster agent's own account through `agentplane actions`), and no argument names it.
 
 ## Exposure
 
