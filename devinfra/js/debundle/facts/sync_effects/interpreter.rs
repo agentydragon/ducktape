@@ -6,6 +6,7 @@ use super::super::value_model::{
 };
 use super::{
     Call, CallKind, Callable, CallbackResultWrite, ExecutionIndex, IntrinsicRoot, LocalConstructor,
+    RetainedCallbackCall,
 };
 use crate::analysis_inputs::AnalysisInputs;
 use crate::facts::ExportReentryPolicy;
@@ -1360,7 +1361,7 @@ impl Executor<'_> {
         class_reads: &mut BTreeSet<Id>,
         allocations: &mut BTreeMap<(u32, usize), usize>,
     ) -> bool {
-        let ValueExpr::New(callee, args) = value else {
+        let ValueExpr::New(callee, args, _) = value else {
             return false;
         };
         let ValueExpr::Binding(class) = callee.as_ref() else {
@@ -1789,7 +1790,32 @@ impl Executor<'_> {
         expressions: &[ValueExpr],
         args: &[Values],
     ) -> Option<Values> {
-        let contract = self.index.retained_callback_calls.get(&site)?;
+        self.retained_callbacks(
+            self.index.retained_callback_calls.get(&site)?,
+            expressions,
+            args,
+        )
+    }
+
+    fn retained_constructor_callbacks(
+        &self,
+        site: CallSite,
+        expressions: &[ValueExpr],
+        args: &[Values],
+    ) -> Option<Values> {
+        self.retained_callbacks(
+            self.index.retained_constructor_calls.get(&site)?,
+            expressions,
+            args,
+        )
+    }
+
+    fn retained_callbacks(
+        &self,
+        contract: &RetainedCallbackCall,
+        expressions: &[ValueExpr],
+        args: &[Values],
+    ) -> Option<Values> {
         if let Some((namespace, member)) = &contract.namespace_member
             && !self
                 .index
@@ -3247,12 +3273,37 @@ impl Executor<'_> {
                 }
                 returns
             }
-            ValueExpr::New(callee, args) => {
+            ValueExpr::New(callee, args, span) => {
                 let targets = self.evaluate(callee, env, captures);
                 let evaluated_args: Vec<_> = args
                     .iter()
                     .map(|arg| self.evaluate(arg, env, captures))
                     .collect();
+                if self.index.retained_constructor_calls.contains_key(span) {
+                    if targets.len() == 1 && targets.contains(&AbstractValue::Unavailable) {
+                        return BTreeSet::from([AbstractValue::Unavailable]);
+                    }
+                    if evaluated_args.iter().any(|values| {
+                        values.len() == 1 && values.contains(&AbstractValue::Unavailable)
+                    }) {
+                        return BTreeSet::from([AbstractValue::Unavailable]);
+                    }
+                    let mut successful_args = evaluated_args.clone();
+                    let mut may_throw = false;
+                    for values in &mut successful_args {
+                        may_throw |= values.remove(&AbstractValue::Unavailable);
+                    }
+                    if let Some(callbacks) =
+                        self.retained_constructor_callbacks(*span, args, &successful_args)
+                    {
+                        let result = self.deferred_callbacks(callbacks);
+                        return if may_throw {
+                            BTreeSet::from([result, AbstractValue::Unavailable])
+                        } else {
+                            BTreeSet::from([result])
+                        };
+                    }
+                }
                 let mut results = Values::new();
                 if self.current_top_owner.is_some_and(|owner| {
                     self.is_proven_map_entry_array(callee, args, env, captures, owner)
@@ -3782,6 +3833,14 @@ impl Executor<'_> {
             && !call.has_spread
             && self
                 .retained_factory_callbacks(call.span.into(), &call.args, &args)
+                .is_some()
+        {
+            return;
+        }
+        if call.kind == CallKind::New
+            && !call.has_spread
+            && self
+                .retained_constructor_callbacks(call.span.into(), &call.args, &args)
                 .is_some()
         {
             return;

@@ -199,6 +199,11 @@ pub struct ChunkExportPurity {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub retained_callback_factory_members:
         BTreeMap<String, BTreeMap<String, Vec<RetainedCallbackSignature>>>,
+    /// Direct imported constructors whose audited construction retains the
+    /// listed callbacks in fresh instance storage without synchronous reentry.
+    /// Independent of constructor purity and ordinary-call factory contracts.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub retained_callback_constructor_exports: BTreeMap<String, Vec<RetainedCallbackSignature>>,
     /// Named exports whose direct calls with checked primitive arguments
     /// cannot synchronously invoke caller/importer/host callbacks or read
     /// importer-owned lexical state. This changes call timing only: provider

@@ -158,7 +158,7 @@ pub(super) enum ValueExpr {
     NonCallable,
     Member(Box<Self>, Option<String>, bool),
     Call(Box<Self>, Vec<Self>, CallSite),
-    New(Box<Self>, Vec<Self>),
+    New(Box<Self>, Vec<Self>, CallSite),
     /// An operator result is primitive on successful evaluation. This is a
     /// value-kind fact, not a purity claim: keep operands so calls and
     /// unavailable reads inside them still flow through the evaluator.
@@ -299,6 +299,7 @@ impl ValueExpr {
                         .iter()
                         .map(|arg| Self::from_expr(&arg.expr))
                         .collect(),
+                    new_expr.span.into(),
                 )
             }
             Expr::Cond(cond) => Self::Alternatives(vec![
@@ -339,7 +340,7 @@ impl ValueExpr {
                 result.insert(id.clone());
             }
             Self::Member(object, _, _) => object.bindings(result),
-            Self::Call(callee, args, _) | Self::New(callee, args) => {
+            Self::Call(callee, args, _) | Self::New(callee, args, _) => {
                 callee.bindings(result);
                 for arg in args {
                     arg.bindings(result);
@@ -389,7 +390,7 @@ impl ValueExpr {
                     || (!Self::is_direct_namespace_member_callee(callee, id)
                         && callee.carries_namespace(id, aliases))
             }
-            Self::New(callee, args) => {
+            Self::New(callee, args, _) => {
                 args.iter()
                     .any(|value| value.carries_namespace(id, aliases))
                     || callee.carries_namespace(id, aliases)
@@ -537,7 +538,7 @@ impl ValueExpr {
                         visiting_classes,
                     ))
             }
-            Self::New(callee, args) => {
+            Self::New(callee, args, _) => {
                 let local_class = facts
                     .resolve_class(callee, &mut BTreeSet::new())
                     .is_some_and(|(_, surface)| surface == ClassSurface::Constructor);
@@ -643,7 +644,7 @@ impl ValueExpr {
                 }
                 matches!(object.as_ref(), Self::Call(callee, _, _)
                     if Self::is_direct_namespace_member_callee(callee, id))
-                    || matches!(object.as_ref(), Self::Unknown | Self::New(_, _))
+                    || matches!(object.as_ref(), Self::Unknown | Self::New(..))
                     || object.may_be_namespace_mutation_receiver(
                         id,
                         aliases,
@@ -656,7 +657,7 @@ impl ValueExpr {
                     .any(|value| value.carries_namespace(id, aliases))
                     || !Self::is_direct_namespace_member_callee(callee, id)
             }
-            Self::New(_, _) | Self::Unknown => true,
+            Self::New(..) | Self::Unknown => true,
             Self::Origin(_) | Self::Undefined | Self::NonCallable => false,
         }
     }
@@ -842,7 +843,7 @@ impl NamespaceValueFacts {
                 visiting.remove(binding);
                 result
             }
-            ValueExpr::New(callee, _) => self
+            ValueExpr::New(callee, _, _) => self
                 .resolve_class(callee, visiting)
                 .filter(|(_, surface)| *surface == ClassSurface::Constructor)
                 .map(|(span, _)| (span, ClassSurface::Instance)),

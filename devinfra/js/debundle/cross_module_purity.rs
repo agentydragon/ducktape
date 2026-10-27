@@ -452,6 +452,13 @@ pub fn resolve_asserted_retained_callback_factories(
     resolve_asserted_members(modules, asserted, "retained_callback_factory_exports")
 }
 
+pub fn resolve_asserted_retained_callback_constructors(
+    modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
+    asserted: &BTreeMap<ModuleKey, BTreeMap<String, Vec<spec::RetainedCallbackSignature>>>,
+) -> BTreeMap<ModuleKey, BTreeMap<String, Vec<spec::RetainedCallbackSignature>>> {
+    resolve_asserted_members(modules, asserted, "retained_callback_constructor_exports")
+}
+
 pub fn resolve_asserted_retained_callback_factory_members(
     modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
     asserted: &BTreeMap<

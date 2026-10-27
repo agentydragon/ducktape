@@ -477,6 +477,15 @@ pub(super) fn finish_logical_chunk(
                 .retained_callback_factories
                 .extend(factories.clone());
         }
+        if let Some(constructors) = cross_module_purities
+            .retained_callback_constructors
+            .get(chunk_id)
+        {
+            inputs
+                .assumptions
+                .retained_callback_constructors
+                .extend(constructors.clone());
+        }
         if let Some(members) = cross_module_purities
             .retained_callback_factory_members
             .get(chunk_id)

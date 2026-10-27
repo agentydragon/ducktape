@@ -490,6 +490,45 @@ contract. Result mutation and later callback invocation/publication retain the
 ordinary synchronous-effect checks. No callback deferral assertion implies
 purity or permission to reorder argument evaluation.
 
+### Retaining callbacks in constructed instances
+
+`retained_callback_constructor_exports` is a separate author assertion for
+direct `new` expressions through named or default imported bindings:
+
+```yaml
+chunk_export_purity:
+  provider:
+    retained_callback_constructor_exports:
+      Box:
+        - { argument_count: 3, callback_arguments: [0, 1] }
+```
+
+It uses the exact signature validation and callback/input-graph audit above.
+Non-callback positions admit only inert primitive syntax. Spreads, namespace
+member constructors, local constructor aliases, uncertain callback values and
+unlisted arities keep conservative timing. This assertion does not apply to
+ordinary calls; factory assertions do not apply to construction.
+
+The author must audit construction, including superclass construction, field
+initializers, default arguments and helpers: none may synchronously invoke,
+inspect, coerce, mutate or publish the supplied callback graphs, or access
+importer-owned lexical state through another capability. The imported
+constructor's identity and construction behavior must remain stable during
+synchronous initialization. The result must be a fresh instance retaining only
+the supplied callback graphs, without preexisting-instance aliases or shared
+callback storage across constructions. Its reachable methods, prototype and
+property surfaces must introduce no unrepresented importer capabilities;
+provider-private helper methods are allowed only under that same audit.
+Proxies, accessors and externally mutable callback-bearing prototypes are
+outside the contract. Intrinsic-integrity premises must also be established.
+
+Recognized callback rebinding, mutation and exposure retain conservative
+timing. Extracting an instance member, invoking it or publishing the instance
+can expose every retained callback and its captures, including graphs returned
+by those callbacks. Argument evaluation and provider-private effects retain
+their normal checks and ordering. The contract does not assert construction
+purity: `pure_new_exports` or `purity: pure_new` requires its own audit.
+
 `chunk_export_purity.<defining chunk>.no_reentry_exports` asserts that direct
 calls of listed named imports cannot synchronously invoke caller-, importer-,
 or host-provided callbacks or read importer-owned lexical state. The author

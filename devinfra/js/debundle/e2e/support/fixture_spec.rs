@@ -950,6 +950,23 @@ impl ChunkExportPurityBuilder {
         self
     }
 
+    pub fn with_retained_callback_constructor(
+        mut self,
+        export: &str,
+        argument_count: usize,
+        callback_arguments: &[usize],
+    ) -> Self {
+        self.purity
+            .retained_callback_constructor_exports
+            .entry(export.to_string())
+            .or_default()
+            .push(spec::RetainedCallbackSignature {
+                argument_count,
+                callback_arguments: callback_arguments.iter().copied().collect(),
+            });
+        self
+    }
+
     pub fn with_no_reentry_members(mut self, export: &str, members: &[&str]) -> Self {
         self.purity.no_reentry_members.insert(
             export.to_string(),

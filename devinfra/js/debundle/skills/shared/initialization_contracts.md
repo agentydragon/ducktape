@@ -36,6 +36,12 @@ supported private callback containers and checked local constructor results;
 inspect SPEC § Synchronous analysis limits before
 adding an assertion for behavior the analyzer already proves.
 
+`retained_callback_constructor_exports` separately covers audited direct imported
+constructors that retain existing or multiple callbacks in fresh instances.
+Read SPEC § Retaining callbacks in constructed instances for the constructor,
+input-graph and reachable-method audits. Ordinary-call factory assertions do
+not cover `new`; constructor purity does not establish callback timing.
+
 ## Purity scope
 
 - `initializer_purity: pure` applies to one selected simple top-level variable

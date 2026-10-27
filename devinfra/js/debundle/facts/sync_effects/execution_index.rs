@@ -1317,7 +1317,7 @@ fn exposes_global_receiver(value: &ValueExpr, names: &BTreeSet<&str>) -> bool {
         ValueExpr::ObjectLiteral(_, properties) => properties
             .iter()
             .any(|(_, value)| exposes_global_receiver(value, names)),
-        ValueExpr::Call(_, args, _) | ValueExpr::New(_, args) => args
+        ValueExpr::Call(_, args, _) | ValueExpr::New(_, args, _) => args
             .iter()
             .any(|value| exposes_global_receiver(value, names)),
         // Operators can inspect or coerce their operands, but their result
@@ -1706,9 +1706,11 @@ struct ExecutionIndex {
     /// old and stronger contracts remains separate.
     audited_factory_members: BTreeMap<Id, BTreeSet<String>>,
     retained_callback_factory_imports: BTreeMap<Id, Vec<spec::RetainedCallbackSignature>>,
+    retained_callback_constructor_imports: BTreeMap<Id, Vec<spec::RetainedCallbackSignature>>,
     retained_callback_factory_members:
         BTreeMap<Id, BTreeMap<String, Vec<spec::RetainedCallbackSignature>>>,
     retained_callback_calls: BTreeMap<CallSite, RetainedCallbackCall>,
+    retained_constructor_calls: BTreeMap<CallSite, RetainedCallbackCall>,
     no_reentry_exports: BTreeSet<Id>,
     no_reentry_members: BTreeMap<Id, BTreeSet<String>>,
     no_reentry_record_members: BTreeMap<Id, BTreeSet<String>>,
@@ -1796,8 +1798,10 @@ impl Default for ExecutionIndex {
             callback_factory_members: BTreeMap::new(),
             audited_factory_members: BTreeMap::new(),
             retained_callback_factory_imports: BTreeMap::new(),
+            retained_callback_constructor_imports: BTreeMap::new(),
             retained_callback_factory_members: BTreeMap::new(),
             retained_callback_calls: BTreeMap::new(),
+            retained_constructor_calls: BTreeMap::new(),
             no_reentry_exports: BTreeSet::new(),
             no_reentry_members: BTreeMap::new(),
             no_reentry_record_members: BTreeMap::new(),
@@ -1954,6 +1958,15 @@ impl ExecutionIndex {
                     {
                         index
                             .retained_callback_factory_imports
+                            .insert(local.to_id(), signatures.clone());
+                    }
+                    if let Some(signatures) = hints
+                        .assumptions
+                        .retained_callback_constructors
+                        .get(local.sym.as_ref())
+                    {
+                        index
+                            .retained_callback_constructor_imports
                             .insert(local.to_id(), signatures.clone());
                     }
                     if let Some(members) = hints
@@ -2775,9 +2788,6 @@ impl ExecutionIndex {
     }
 
     fn retained_callback_call(&self, call: &CallExpr) -> Option<RetainedCallbackCall> {
-        if call.args.iter().any(|argument| argument.spread.is_some()) {
-            return None;
-        }
         let Callee::Expr(callee) = &call.callee else {
             return None;
         };
@@ -2802,11 +2812,34 @@ impl ExecutionIndex {
             }
             _ => return None,
         };
+        Self::retained_callback_invocation(signatures, &call.args, namespace_member)
+    }
+
+    fn retained_constructor_call(&self, allocation: &NewExpr) -> Option<RetainedCallbackCall> {
+        let Expr::Ident(binding) = allocation.callee.unwrap_parens() else {
+            return None;
+        };
+        Self::retained_callback_invocation(
+            self.retained_callback_constructor_imports
+                .get(&binding.to_id())?,
+            allocation.args.as_deref().unwrap_or_default(),
+            None,
+        )
+    }
+
+    fn retained_callback_invocation(
+        signatures: &[spec::RetainedCallbackSignature],
+        args: &[ExprOrSpread],
+        namespace_member: Option<(Id, String)>,
+    ) -> Option<RetainedCallbackCall> {
+        if args.iter().any(|argument| argument.spread.is_some()) {
+            return None;
+        }
         let signatures: Vec<_> = signatures
             .iter()
             .filter(|signature| {
-                signature.argument_count == call.args.len()
-                    && call.args.iter().enumerate().all(|(position, argument)| {
+                signature.argument_count == args.len()
+                    && args.iter().enumerate().all(|(position, argument)| {
                         if signature.callback_arguments.contains(&position) {
                             matches!(
                                 argument.expr.unwrap_parens(),
@@ -4068,7 +4101,31 @@ impl Visit for ExecutionIndex {
         };
         new_expr.callee.visit_with(self);
         self.safe_class_target = previous_target;
-        new_expr.args.visit_with(self);
+        let retained_call = self.retained_constructor_call(new_expr);
+        let callback_arguments: BTreeSet<_> = retained_call
+            .iter()
+            .flat_map(|call| &call.signatures)
+            .flat_map(|signature| signature.callback_arguments.iter().copied())
+            .collect();
+        if let Some(contract) = retained_call {
+            self.retained_constructor_calls
+                .insert(new_expr.span.into(), contract);
+        }
+        for (position, argument) in new_expr
+            .args
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .enumerate()
+        {
+            if callback_arguments.contains(&position) {
+                self.factory_callback_depth += 1;
+                argument.visit_with(self);
+                self.factory_callback_depth -= 1;
+            } else {
+                argument.visit_with(self);
+            }
+        }
         if new_expr
             .args
             .as_deref()
