@@ -20,7 +20,7 @@ import { useRequiredThreadsLive } from "../live";
 import { useOptionalStreamStatus } from "../stream_status";
 import { RetainedDisclosureProvider } from "./retained_disclosures";
 import { pendingSentMessage } from "./thread_cards";
-import { PendingInputMessages, LocalControlCommands, useProjectedCommands } from "./thread_commands";
+import { PendingInputMessages, LocalControlCommands, useThreadCommands } from "./thread_commands";
 import { useOpenChronologicalDebug } from "./chronological_debug";
 import { installThreadFavicon } from "./thread_favicon";
 import { snapshotFresh, threadStatusFromSnapshot } from "./thread_status";
@@ -78,7 +78,7 @@ function ModelActivityHint({
   );
 }
 
-interface ProjectedSessionBodyProps {
+interface ConversationBodyProps {
   threadId: string;
   entities: ThreadEntity[];
   thread: ThreadView;
@@ -94,7 +94,7 @@ interface ProjectedSessionBodyProps {
   sandbox?: SandboxView;
 }
 
-function ProjectedSessionBody({
+function ConversationBody({
   threadId,
   entities,
   thread,
@@ -108,7 +108,7 @@ function ProjectedSessionBody({
   traceSearch,
   langfuseSearch,
   sandbox,
-}: ProjectedSessionBodyProps): JSX.Element {
+}: ConversationBodyProps): JSX.Element {
   const [clock, setClock] = useState(() => Date.now());
   useEffect(() => {
     const timer = window.setInterval(() => setClock(Date.now()), 60_000);
@@ -117,7 +117,7 @@ function ProjectedSessionBody({
   const activityAge = modelActivityAge(thread.last_model_activity_at, Math.max(clock, Date.now()));
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const sync = useThreadSync().useThread();
-  const commands = useProjectedCommands(threadId, entities);
+  const commands = useThreadCommands(threadId, entities);
   const onInputEchoLoaded = useCallback(
     (commandId: string) => commands.store.acknowledgeEcho(commandId),
     [commands.store]
@@ -362,7 +362,7 @@ function ProjectedSessionBody({
   );
 }
 
-export interface SyncedThreadProps {
+export interface ThreadConversationProps {
   threadId: string;
   thread: ThreadView;
   available: boolean;
@@ -376,7 +376,7 @@ export interface SyncedThreadProps {
   sandbox?: SandboxView;
 }
 
-export function SyncedThread({
+export function ThreadConversation({
   threadId,
   thread,
   available,
@@ -388,7 +388,7 @@ export function SyncedThread({
   traceSearch,
   langfuseSearch,
   sandbox,
-}: SyncedThreadProps): JSX.Element {
+}: ThreadConversationProps): JSX.Element {
   const { window: shown, error } = useThreadSync().useThread();
   // A stopped window is not following the thread at all, and its alert says so.
   useOptionalStreamStatus("Thread", shown !== null && shown.error === null ? shown.connection : null);
@@ -410,7 +410,7 @@ export function SyncedThread({
           Catching up thread…
         </p>
       )}
-      <ProjectedSessionBody
+      <ConversationBody
         threadId={threadId}
         entities={shown.caughtUp ? shown.rows : []}
         thread={thread}

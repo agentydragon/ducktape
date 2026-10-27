@@ -226,8 +226,8 @@ ts_library(
 )
 
 ts_library(
-    name = "projected_session_view",
-    srcs = ["projected_session_view.tsx"],
+    name = "conversation",
+    srcs = ["conversation.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":chronological_debug",
@@ -260,14 +260,15 @@ ts_library(
 )
 
 ts_library(
-    name = "projected_session",
-    srcs = ["projected_session.tsx"],
+    name = "page",
+    srcs = ["page.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":chronological_debug",
         ":composer",
-        ":projected_session_css",
-        ":projected_session_view",
+        ":conversation",
+        ":conversation_css",
+        ":page_css",
         ":thread_notices",
         ":thread_status",
         ":thread_status_indicator",
@@ -286,20 +287,25 @@ ts_library(
     ],
 )
 
-# projected_session.tsx imports this stylesheet for the bundler.
+# page.tsx imports these stylesheets for the bundler.
 js_library(
-    name = "projected_session_css",
-    srcs = ["projected_session.css"],
+    name = "page_css",
+    srcs = ["page.css"],
+)
+
+js_library(
+    name = "conversation_css",
+    srcs = ["conversation.css"],
 )
 
 agentplane_vitest_test(
-    name = "projected_session_test",
-    srcs = ["projected_session.test.tsx"],
+    name = "page_test",
+    srcs = ["page.test.tsx"],
     deps = [
         ":history_row_views",
         ":history_rows",
         ":local_commands",
-        ":projected_session",
+        ":page",
         ":retained_disclosures",
         ":thread_entity_fixture",
         ":thread_state_fixture",
@@ -532,8 +538,8 @@ ts_library(
 )
 
 ts_library(
-    name = "thread_store",
-    srcs = ["thread_store.tsx"],
+    name = "electric_sync",
+    srcs = ["electric_sync.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":thread_sync",
@@ -547,10 +553,10 @@ ts_library(
 )
 
 agentplane_vitest_test(
-    name = "thread_store_test",
-    srcs = ["thread_store.test.tsx"],
+    name = "electric_sync_test",
+    srcs = ["electric_sync.test.tsx"],
     deps = [
-        ":thread_store",
+        ":electric_sync",
         ":thread_sync",
         "//:node_modules/@electric-sql/client",
         "//:node_modules/@types/react",

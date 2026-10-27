@@ -865,9 +865,9 @@ ts_library(
         "//agentplane/app/frontend/connections:consent",
         "//agentplane/app/frontend/sandboxes:list",
         "//agentplane/app/frontend/sandboxes:sandbox_page",
+        "//agentplane/app/frontend/threads:electric_sync",
         "//agentplane/app/frontend/threads:home",
-        "//agentplane/app/frontend/threads:projected_session",
-        "//agentplane/app/frontend/threads:thread_store",
+        "//agentplane/app/frontend/threads:page",
         "//agentplane/app/frontend/threads:thread_sync",
     ],
 )

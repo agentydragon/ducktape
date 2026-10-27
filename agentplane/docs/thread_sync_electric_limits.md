@@ -62,7 +62,7 @@ IDs are from <thread_sync_requirements.md>.
    - **drops a shape's rows on `409 must-refetch`**. Keeping them on screen (P5) is the store's
      own code.
 
-   `thread_store.test.tsx` covers the store's handling of each.
+   `electric_sync.test.tsx` covers the store's handling of each.
 
 5. **One Electric instance per replication slot** (O2). Shape logs live in memory or on local disk,
    and there is no shared storage backend. Scaling out means a CDN, or separate instances with
