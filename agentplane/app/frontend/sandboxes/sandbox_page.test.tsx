@@ -693,6 +693,7 @@ it("shows creation progress, prevents duplicate clicks, and does not retry faile
 });
 
 it("explains model catalog loading and an empty catalog on the disabled start button", async () => {
+  presetDefaults = {};
   let deliverCatalog!: (response: Response) => void;
   modelCatalogResponse = new Promise((resolve) => {
     deliverCatalog = resolve;
