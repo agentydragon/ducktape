@@ -22,10 +22,15 @@ jobs:
     steps:
       - name: Check out code
         uses: actions/checkout@v7
+        with:
+          # PR file selection compares the tested merge with its first parent.
+          fetch-depth: 2
 
       - name: Discover changed files for pre-commit
         id: changed-files
-        run: python3 devinfra/ci/precommit_file_selection.py
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 -m devinfra.ci.precommit_file_selection
 
       # ============================================================================
       # ENVIRONMENT SETUP
