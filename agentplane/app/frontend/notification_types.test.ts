@@ -1,6 +1,10 @@
 import { expect, it } from "vitest";
 
-import { decodeSandboxNotificationStatus, decodeSessionNoticeStates } from "./notification_types";
+import {
+  decodeSandboxNotificationStatus,
+  decodeSessionNoticeStates,
+  decodeSessionNoticeStatesFrame,
+} from "./notification_types";
 
 it("decodes notification snapshots as ProtoJSON and materializes implicit defaults", () => {
   const status = decodeSandboxNotificationStatus(
@@ -137,4 +141,13 @@ it("preserves numeric enum values from newer writers as explicit unknown variant
     errorKind: { unknown: 999 },
     source: { github: { events: [{ event: { unknown: 999 } }] } },
   });
+});
+
+it("returns explicit frame failures for the snapshot stream instead of accepting corrupt data", () => {
+  const good = decodeSessionNoticeStatesFrame('{"observedAt":"2026-10-27T18:00:00Z","inboxes":[]}');
+  expect(good).toEqual({ success: true, data: { observedAt: "2026-10-27T18:00:00Z", inboxes: [] } });
+
+  const bad = decodeSessionNoticeStatesFrame('{"inboxes":[]}');
+  expect(bad.success).toBe(false);
+  if (!bad.success) expect(bad.error).toContain("missing observedAt");
 });

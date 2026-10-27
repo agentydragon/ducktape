@@ -1,4 +1,5 @@
 import { fromJson, toJson, type JsonValue } from "@bufbuild/protobuf";
+import type { JsonFrame } from "./live_stream";
 
 import {
   NoticeProgress as NoticeProgressValue,
@@ -202,4 +203,16 @@ export function decodeSessionNoticeStates(data: string): SessionNoticeStates {
   requireObservedAt(message);
   const json = preserveUnknownEnums(toJson(SessionNoticeStatesSchema, message, { alwaysEmitImplicit: true }));
   return json as SessionNoticeStates;
+}
+
+/** Convert generated ProtoJSON validation failures into the stream's explicit invalid-frame result. */
+export function decodeSessionNoticeStatesFrame(data: string): JsonFrame<SessionNoticeStates> {
+  try {
+    return { success: true, data: decodeSessionNoticeStates(data) };
+  } catch (reason) {
+    return {
+      success: false,
+      error: `Invalid thread notification snapshot: ${reason instanceof Error ? reason.message : String(reason)}`,
+    };
+  }
 }
