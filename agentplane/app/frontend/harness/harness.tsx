@@ -973,11 +973,15 @@ function withFailedTurn(thread: ThreadView): ThreadView {
 function autosuspendCountdown(): void {
   const sandbox = SANDBOXES.find((candidate) => candidate.name === "ready-sandbox");
   if (!sandbox) throw new Error("Missing ready Sandbox fixture");
+  sandbox.idle_suspend_after_seconds = 900;
   sandbox.idle_suspend_at = ago(-12 * 60_000);
+  threadEntityRows = interleavedRows;
   mapThread = (thread) =>
     thread.id === IDLE_THREAD
       ? {
           ...thread,
+          name: "Idle thread awaiting autosuspend",
+          active_turn_id: null,
           last_model_activity_at: ago(13 * 60_000 + 25_000),
           idle_since: ago(13 * 60_000 + 5_000),
         }
