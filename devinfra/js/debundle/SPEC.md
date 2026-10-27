@@ -429,6 +429,10 @@ and publication premise still requires the same independent source audit.
 
 ## Audited callback factories
 
+Optional calls retain conservative callee, receiver and argument callback
+effects even when their value and short-circuit behavior cannot be inferred.
+They do not acquire assertions scoped to ordinary direct-call syntax.
+
 `chunk_export_purity.<defining chunk>.callback_factory_exports` lists named
 exports whose calls are audited to defer a single callback argument.
 `callback_factory_members` lists static members on an imported namespace with

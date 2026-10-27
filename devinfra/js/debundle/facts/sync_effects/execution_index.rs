@@ -4230,6 +4230,29 @@ impl Visit for ExecutionIndex {
         let before = self.past_await;
         chain.visit_children_with(self);
         self.past_await = before;
+        if let OptChainBase::Call(call) = chain.base.as_ref() {
+            // Optional invocation can still execute arbitrary callee/receiver
+            // protocols and invoke its arguments. Keep that conservative call
+            // even though value/short-circuit inference stays opaque. Do not
+            // admit the assertions indexed only for ordinary CallExpr syntax.
+            self.record_call(Call {
+                callee: ValueExpr::from_expr(&call.callee),
+                args: call
+                    .args
+                    .iter()
+                    .map(|arg| ValueExpr::from_expr(&arg.expr))
+                    .collect(),
+                kind: CallKind::Call,
+                span: call.span,
+                has_spread: call.args.iter().any(|arg| arg.spread.is_some()),
+                no_reentry_candidate: false,
+                no_reentry_record_candidate: false,
+                no_sync_arguments: false,
+                caller: self.current,
+                owner: self.owner,
+                plain_object_sources: false,
+            });
+        }
         self.mark_opaque();
     }
 
