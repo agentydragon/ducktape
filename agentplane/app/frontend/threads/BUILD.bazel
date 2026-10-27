@@ -234,8 +234,8 @@ ts_library(
     srcs = ["sandbox_autosuspend.ts"],
     tsconfig = TSCONFIG,
     deps = [
-        "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:sandbox_status",
+        "//agentplane/app/frontend/sandboxes:client",
     ],
 )
 

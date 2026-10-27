@@ -1,4 +1,4 @@
-import type { SandboxView } from "../client";
+import type { SandboxView } from "../sandboxes/client";
 import { sandboxReady, sandboxSuspended } from "../sandbox_status";
 
 export interface AutosuspendHint {
