@@ -91,7 +91,9 @@ it("asks for the Session's named commands and applies the rows it is sent", asyn
   expect(watch.url.searchParams.get("filter.sessionId")).toBe(SESSION);
   expect(watch.url.searchParams.getAll("filter.commandIds")).toEqual(["a", "b"]);
   expect(stateOf(store, "a")).toBe(DeliveryState.RUNNER_ADMITTED);
-  expect(store.getSnapshot().commands.find((value) => value.command.commandId === "a")?.dispatch?.updatedAt).toBeDefined();
+  expect(
+    store.getSnapshot().commands.find((value) => value.command.commandId === "a")?.dispatch?.updatedAt
+  ).toBeDefined();
 });
 
 it("calls a command it holds no row for unknown once the watch has caught up, as after Sandbox deletion", async () => {
