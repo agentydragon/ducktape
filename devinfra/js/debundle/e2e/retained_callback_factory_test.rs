@@ -400,6 +400,111 @@ fn returned_callback_identity_cycle_terminates_conservatively() {
     assert_preserved_entry_output(&fixture, "true 42\n");
 }
 
+#[test]
+fn returned_callback_roots_grow_across_captures_and_rebinds_in_one_initializer() {
+    for expression in [
+        "(consume(() => makeReader(first)), consume(() => makeReader(second)))",
+        "(consume(() => makeReader(selected)), selected = second, consume(() => makeReader(selected)))",
+    ] {
+        let source = format!(
+            "import {{ consume }} from './peer.js';\nlet later = 0;\nfunction makeReader(reader) {{ return () => reader(); }}\nconst first = () => 7;\nconst second = () => later;\nlet selected = first;\nconst result = {expression};\nlater = 42;\nconsole.log(result, later);\n"
+        );
+        let names = ["makeReader", "first", "second", "selected", "result"];
+        let all: Vec<_> = names
+            .into_iter()
+            .chain(["later"])
+            .map(Member::new)
+            .collect();
+        let callbacks: Vec<_> = names.into_iter().map(Member::new).collect();
+        let chunks = [(
+            "static/peer",
+            "export function consume(callback) { return Reflect.apply(Reflect.apply(callback, null, []), null, []); }\n",
+        )];
+        let colocated = run_fixture(
+            FixtureOpts::new(
+                &source,
+                vec![logical_module_with_anon("all", &all, &["later = 42;"])],
+            )
+            .with_extra_chunks(&chunks),
+        );
+        assert_preserved_entry_output(&colocated, "0 42\n");
+        assert_eager_read(&colocated, "result", "later");
+        expect_atomic_conflict_rejection(
+            FixtureOpts::new(
+                &source,
+                vec![
+                    logical_module("callbacks/wrapped", &callbacks),
+                    logical_module_with_anon(
+                        "values/later",
+                        &[Member::new("later")],
+                        &["later = 42;"],
+                    ),
+                ],
+            )
+            .with_extra_chunks(&chunks),
+            &["callbacks/wrapped", "values/later"],
+            &[],
+        );
+    }
+}
+
+#[test]
+fn returned_class_superclass_can_reenter_returned_callback_fallback() {
+    let source = "import { consume } from './peer.js';\nlet later = 0;\nfunction Base() { globalThis.observed = consume(() => () => later); }\nclass Derived extends Base {}\nconst result = consume(() => Derived);\nlater = 42;\nconsole.log(globalThis.observed, later);\n";
+    let chunks = [(
+        "static/peer",
+        "export function consume(callback) { const returned = callback(); return returned.prototype ? new returned() : returned(); }\n",
+    )];
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module_with_anon(
+                "all",
+                &[
+                    Member::new("Base"),
+                    Member::new("Derived"),
+                    Member::new("result"),
+                    Member::new("later"),
+                ],
+                &["later = 42;"],
+            )],
+        )
+        .with_extra_chunks(&chunks),
+    );
+    assert_preserved_entry_output(&fixture, "0 42\n");
+    assert_eager_read(&fixture, "result", "later");
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module(
+                    "callbacks/wrapped",
+                    &[
+                        Member::new("Base"),
+                        Member::new("Derived"),
+                        Member::new("result"),
+                    ],
+                ),
+                logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
+            ],
+        )
+        .with_extra_chunks(&chunks),
+        &["callbacks/wrapped", "values/later"],
+        &[],
+    );
+}
+
+#[test]
+fn returned_callback_effects_are_applied_at_each_initialization_prefix() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "import { consume } from './peer.js';\nlet later = 0;\nfunction callback() { return () => later; }\nconst first = consume(callback);\nlater = 42;\nconst second = consume(callback);\nconsole.log(first, second);\n",
+        vec![logical_module_with_anon("all", &[Member::new("callback"), Member::new("first"), Member::new("second"), Member::new("later")], &["later = 42;"])],
+    ).with_extra_chunks(&[("static/peer", "export function consume(callback) { return Reflect.apply(Reflect.apply(callback, null, []), null, []); }\n")]));
+    assert_preserved_entry_output(&fixture, "0 42\n");
+    assert_eager_read(&fixture, "first", "later");
+    assert_eager_read(&fixture, "second", "later");
+}
+
 fn assert_callable_surface_split(source: &str, names: &[&'static str], writes: &[&str]) {
     let all: Vec<_> = names
         .iter()

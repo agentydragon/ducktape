@@ -146,6 +146,10 @@ struct Executor<'a> {
     fallback_outcome: Outcome,
     fallback_callback_sizes: Option<(usize, usize)>,
     fallback_local_owners: BTreeSet<SourceUnitOrdinal>,
+    /// Returned callable source closures are static within one top-level
+    /// initialization prefix. Incomplete reachability requires a fresh raw
+    /// closure even when the precise prefix was already summarized.
+    returned_callback_owners: BTreeSet<(bool, SourceUnitOrdinal)>,
     capture_contexts: BTreeMap<Arc<Context>, usize>,
     callback_sets: BTreeMap<Arc<Values>, usize>,
     active: BTreeSet<ActiveInvocation>,
@@ -2399,6 +2403,61 @@ impl Executor<'_> {
         }
     }
 
+    fn promote_returned_callbacks(&mut self, returned: &Values) {
+        let callbacks: Values = self
+            .callback_values(returned)
+            .into_iter()
+            .filter(|callback| {
+                match callback {
+                    AbstractValue::Origin(ValueOrigin::Function(key))
+                    | AbstractValue::Closure(key, _) => {
+                        self.index.callables.get(key).is_some_and(|callable| {
+                            self.returned_callback_owners
+                                .insert((self.reachability.incomplete, callable.owner))
+                        })
+                    }
+                    // Keep class capability/superclass checks on their existing
+                    // path. Other aggregate values have already been expanded by
+                    // callback_values and are not callable roots themselves.
+                    AbstractValue::ClassMembers(_) => true,
+                    _ => false,
+                }
+            })
+            .collect();
+        if callbacks.is_empty() {
+            return;
+        }
+        let mut outcome = std::mem::take(&mut self.fallback_outcome);
+        let rebinds_before = outcome.effects.rebinds.len();
+        outcome.complete = false;
+        outcome.unknown_call = true;
+        self.promote_deferred_callbacks(&callbacks, &mut outcome);
+        // Class/superclass capability checks can invoke code and populate the
+        // shared accumulator reentrantly. Preserve those contributions before
+        // restoring the outer summary, including roots marked cached there.
+        let mut reentrant = std::mem::take(&mut self.fallback_outcome);
+        outcome.effects.reads.append(&mut reentrant.effects.reads);
+        outcome
+            .effects
+            .rebinds
+            .append(&mut reentrant.effects.rebinds);
+        outcome
+            .effects
+            .uninitialized_reads
+            .append(&mut reentrant.effects.uninitialized_reads);
+        outcome
+            .executed_owners
+            .append(&mut reentrant.executed_owners);
+        outcome.unknown_call |= reentrant.unknown_call;
+        if outcome.effects.rebinds.len() != rebinds_before {
+            self.apply_rebind_effects(&outcome.effects.rebinds);
+        }
+        // These effects belong to the active top-level prefix, regardless of
+        // the lexical callee. Merge them once there, rather than copying the
+        // same large read set through each cached nested invocation.
+        self.fallback_outcome = outcome;
+    }
+
     /// Opaque code holding a class or its prototype can retrieve and run any
     /// method, getter, field callback, or constructor synchronously. Cached
     /// owner traversal includes those bodies and their synchronous callees,
@@ -2652,7 +2711,7 @@ impl Executor<'_> {
             // returns another callable; stopping at the getter loses the
             // returned callable's importer reads. Prefix coverage preserves
             // the ordinary boundary at an unconditional await.
-            self.promote_deferred_callbacks(&nested.returns, outcome);
+            self.promote_returned_callbacks(&nested.returns);
             self.apply_rebind_effects(&nested.effects.rebinds);
             outcome.effects.reads.extend(nested.effects.reads);
             outcome.effects.rebinds.extend(nested.effects.rebinds);
@@ -4231,6 +4290,7 @@ pub(crate) fn annotate_synchronous_calls(
         fallback_outcome: Outcome::default(),
         fallback_callback_sizes: None,
         fallback_local_owners: BTreeSet::new(),
+        returned_callback_owners: BTreeSet::new(),
         capture_contexts: BTreeMap::new(),
         callback_sets: BTreeMap::new(),
         active: BTreeSet::new(),
@@ -4251,6 +4311,7 @@ pub(crate) fn annotate_synchronous_calls(
         executor.fallback_outcome = Outcome::default();
         executor.fallback_callback_sizes = None;
         executor.fallback_local_owners.clear();
+        executor.returned_callback_owners.clear();
         executor.private_constructor_result_owners = executor
             .closed_local_constructor_factory_result(fact)
             .unwrap_or_default();
