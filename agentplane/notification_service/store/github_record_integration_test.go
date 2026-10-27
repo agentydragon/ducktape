@@ -44,7 +44,7 @@ func (g githubFixture) claimHolder(t *testing.T) uuid.NullUUID {
 func TestRecordingAPageDeliversItAndSchedulesTheNextLook(t *testing.T) {
 	g := newGitHubFixture(t)
 	sub := g.follow(t, g.source(PullRequestSubject{Number: 7}), "follow")
-	g.deliver(t, "issue_comment", action("created"), onPullRequest(7), labelled("comment"))
+	g.deliver(t, "issue_comment", withAction("created"), onPullRequest(7), labelled("comment"))
 	// A failure from an earlier attempt ends with the next success.
 	g.exec(t, `
 		UPDATE subscription SET error = 'rate limited', error_kind = 'rate_limited', error_since = now(), error_observed_at = now()
@@ -98,7 +98,7 @@ func TestRecordingDoesNothingForASubscriptionThatMovedOn(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			g := newGitHubFixture(t)
 			sub := g.follow(t, g.source(PullRequestSubject{Number: 7}), "follow")
-			g.deliver(t, "issue_comment", action("created"), onPullRequest(7), labelled("comment"))
+			g.deliver(t, "issue_comment", withAction("created"), onPullRequest(7), labelled("comment"))
 			claim := g.claimInbox(t, g.inbox)
 			step := g.prepare(t, sub)
 			if len(step.Matched) != 1 {
@@ -129,7 +129,7 @@ func TestRecordingNeedsTheClaimOfTheInbox(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			g := newGitHubFixture(t)
 			sub := g.follow(t, g.source(PullRequestSubject{Number: 7}), "follow")
-			g.deliver(t, "issue_comment", action("created"), onPullRequest(7), labelled("comment"))
+			g.deliver(t, "issue_comment", withAction("created"), onPullRequest(7), labelled("comment"))
 			claim := g.claimInbox(t, g.inbox)
 			step := g.prepare(t, sub)
 			g.exec(t, lose, g.inbox)
@@ -151,12 +151,12 @@ func TestIngressAfterTheSnapshotLeavesTheSubscriptionDueAtOnce(t *testing.T) {
 			g := newGitHubFixture(t)
 			sub := g.follow(t, g.source(PullRequestSubject{Number: 7}), "follow")
 			if deliverBefore {
-				g.deliver(t, "issue_comment", action("created"), onPullRequest(7), labelled("first"))
+				g.deliver(t, "issue_comment", withAction("created"), onPullRequest(7), labelled("first"))
 			}
 			claim := g.claimInbox(t, g.inbox)
 			step := g.prepare(t, sub)
 			// Another receipt commits after the worker read the subscription.
-			g.deliver(t, "issue_comment", action("created"), onPullRequest(7), labelled("second"))
+			g.deliver(t, "issue_comment", withAction("created"), onPullRequest(7), labelled("second"))
 
 			if err := g.record(t, claim, step); err != nil {
 				t.Fatal(err)
@@ -184,7 +184,7 @@ func TestIngressAfterTheSnapshotLeavesTheSubscriptionDueAtOnce(t *testing.T) {
 func TestAPageReadUnderAFenceThatNoLongerHoldsIsNotRecorded(t *testing.T) {
 	for name, invalidate := range map[string]func(g githubFixture, t *testing.T, step *githubStep){
 		"the installation is suspended": func(g githubFixture, t *testing.T, _ *githubStep) {
-			g.deliver(t, "installation", action("suspend"))
+			g.deliver(t, "installation", withAction("suspend"))
 		},
 		"the grant expires": func(g githubFixture, t *testing.T, _ *githubStep) {
 			g.exec(t, `UPDATE github_repository_access SET valid_until = now() WHERE app_id = $1`, g.app)
@@ -203,7 +203,7 @@ func TestAPageReadUnderAFenceThatNoLongerHoldsIsNotRecorded(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			g := newGitHubFixture(t)
 			sub := g.follow(t, g.source(PullRequestSubject{Number: 7}), "follow")
-			g.deliver(t, "issue_comment", action("created"), onPullRequest(7), labelled("comment"))
+			g.deliver(t, "issue_comment", withAction("created"), onPullRequest(7), labelled("comment"))
 			claim := g.claimInbox(t, g.inbox)
 			step := g.prepare(t, sub)
 			g.exec(t, `UPDATE subscription SET next_attempt = now() + interval '1 hour' WHERE id = $1`, sub.ID)
@@ -252,8 +252,8 @@ func (g githubFixture) expireAccessWhenAppended(t *testing.T) {
 func TestAGrantExpiringWhileAPageIsAppendedRollsTheWholePageBack(t *testing.T) {
 	g := newGitHubFixture(t)
 	sub := g.follow(t, g.source(PullRequestSubject{Number: 7}), "follow")
-	g.deliver(t, "issue_comment", action("created"), onPullRequest(7), labelled("first"))
-	g.deliver(t, "issue_comment", action("created"), onPullRequest(7), labelled("second"))
+	g.deliver(t, "issue_comment", withAction("created"), onPullRequest(7), labelled("first"))
+	g.deliver(t, "issue_comment", withAction("created"), onPullRequest(7), labelled("second"))
 	claim := g.claimInbox(t, g.inbox)
 	step := g.prepare(t, sub)
 	if len(step.Matched) != 2 {
@@ -279,7 +279,7 @@ func TestRecordingWakesWorkersOnlyWhenItChangesWhatTheyFollow(t *testing.T) {
 	g := newGitHubFixture(t)
 	check := observeWakeups(t, g.fixture)
 	sub := g.follow(t, g.source(PullRequestSubject{Number: 7}), "follow")
-	g.deliver(t, "issue_comment", action("created"), onPullRequest(7), labelled("comment"))
+	g.deliver(t, "issue_comment", withAction("created"), onPullRequest(7), labelled("comment"))
 	claim := g.claimInbox(t, g.inbox)
 	step := g.prepare(t, sub)
 	stale := step
@@ -334,7 +334,7 @@ func TestDeliveriesPythonAlreadyRecordedAreNotRecordedAgain(t *testing.T) {
 			options := func(label string) []deliveryOption {
 				options := []deliveryOption{about, labelled(label)}
 				if actionValue != nil {
-					options = append(options, action(*actionValue))
+					options = append(options, withAction(*actionValue))
 				}
 				return options
 			}

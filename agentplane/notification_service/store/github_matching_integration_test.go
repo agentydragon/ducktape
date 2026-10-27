@@ -36,11 +36,11 @@ func sortedIDs(ids ...uuid.UUID) []uuid.UUID {
 func TestOnlyDeliveriesAfterTheSubscriptionStartAreOwed(t *testing.T) {
 	g := newGitHubFixture(t)
 	source := g.source(PullRequestSubject{Number: 7})
-	g.deliver(t, "issue_comment", action("created"), onPullRequest(7), labelled("before the subscription"))
+	g.deliver(t, "issue_comment", withAction("created"), onPullRequest(7), labelled("before the subscription"))
 	first := g.follow(t, source, "first")
 	second := g.follow(t, source, "overlap")
-	g.deliver(t, "issue_comment", action("created"), onPullRequest(8), labelled("another pull request"))
-	g.deliver(t, "issue_comment", action("created"), onPullRequest(7), labelled("owed"))
+	g.deliver(t, "issue_comment", withAction("created"), onPullRequest(8), labelled("another pull request"))
+	g.deliver(t, "issue_comment", withAction("created"), onPullRequest(7), labelled("owed"))
 
 	g.reconcileAll(t, first, second)
 
@@ -56,7 +56,7 @@ func TestOnlyDeliveriesAfterTheSubscriptionStartAreOwed(t *testing.T) {
 func TestRedeliveryIsNotDeliveredAgain(t *testing.T) {
 	g := newGitHubFixture(t)
 	sub := g.follow(t, g.source(PullRequestSubject{Number: 7}), "follow")
-	once := g.deliver(t, "issue_comment", action("created"), onPullRequest(7), labelled("once"))
+	once := g.deliver(t, "issue_comment", withAction("created"), onPullRequest(7), labelled("once"))
 	g.reconcileAll(t, sub)
 
 	if g.ingest(t, once) {
@@ -79,13 +79,13 @@ func TestIssueAndPullRequestSubjectsAreKeptApart(t *testing.T) {
 	pullRequest := g.source(PullRequestSubject{Number: 7})
 	subs := []githubSubscription{g.follow(t, issue, "issue"), g.follow(t, closed, "closed"), g.follow(t, pullRequest, "pull-request")}
 
-	g.deliver(t, "issues", action("opened"), onIssue(7), labelled("opened"))
-	g.deliver(t, "issues", action("closed"), onIssue(7), labelled("closed"))
-	g.deliver(t, "issue_comment", action("created"), onIssue(7), labelled("issue comment"))
+	g.deliver(t, "issues", withAction("opened"), onIssue(7), labelled("opened"))
+	g.deliver(t, "issues", withAction("closed"), onIssue(7), labelled("closed"))
+	g.deliver(t, "issue_comment", withAction("created"), onIssue(7), labelled("issue comment"))
 	// GitHub tells a pull request's comment from an issue's by the marker the issue carries, which the stored
 	// delivery shows as a link to the pull request.
-	g.deliver(t, "issue_comment", action("created"), onPullRequest(7), labelled("pull request comment"))
-	g.deliver(t, "issues", action("opened"), onIssue(8), labelled("another issue"))
+	g.deliver(t, "issue_comment", withAction("created"), onPullRequest(7), labelled("pull request comment"))
+	g.deliver(t, "issues", withAction("opened"), onIssue(8), labelled("another issue"))
 
 	g.reconcileAll(t, subs...)
 
@@ -108,18 +108,18 @@ func TestDefaultFiltersMatchBySubjectLinkOrByCommit(t *testing.T) {
 	sub := g.follow(t, g.source(PullRequestSubject{Number: 7}), "follow")
 	g.addRevisions(t, sub.Subject, GitHubHeadRevision{Repository: GitHubRepository{ID: g.repository, Name: testRepositoryName}, SHA: commitA})
 
-	g.deliver(t, "check_run", action("created"), atCommit(commitA), labelled("check run not completed"))
-	g.deliver(t, "check_run", action("completed"), atCommit(commitA), labelled("check run"))
+	g.deliver(t, "check_run", withAction("created"), atCommit(commitA), labelled("check run not completed"))
+	g.deliver(t, "check_run", withAction("completed"), atCommit(commitA), labelled("check run"))
 	g.deliver(t, "status", atCommit(commitA), labelled("status"))
-	g.deliver(t, "check_suite", action("completed"), atCommit(commitA), labelled("check suite"))
-	g.deliver(t, "workflow_run", action("completed"), atCommit(commitA), labelled("workflow run"))
-	g.deliver(t, "pull_request", action("opened"), onPullRequest(7), atCommit(commitA), labelled("pull request"))
-	g.deliver(t, "pull_request_review", action("submitted"), onPullRequest(7), labelled("review"))
-	g.deliver(t, "issue_comment", action("created"), onPullRequest(7), labelled("comment"))
+	g.deliver(t, "check_suite", withAction("completed"), atCommit(commitA), labelled("check suite"))
+	g.deliver(t, "workflow_run", withAction("completed"), atCommit(commitA), labelled("workflow run"))
+	g.deliver(t, "pull_request", withAction("opened"), onPullRequest(7), atCommit(commitA), labelled("pull request"))
+	g.deliver(t, "pull_request_review", withAction("submitted"), onPullRequest(7), labelled("review"))
+	g.deliver(t, "issue_comment", withAction("created"), onPullRequest(7), labelled("comment"))
 	g.deliver(t, "push", onBranch("devel"), atCommit(commitA), labelled("push"))
-	g.deliver(t, "issues", action("opened"), onIssue(7), labelled("issue"))
-	g.deliver(t, "pull_request", action("opened"), onPullRequest(8), labelled("another pull request"))
-	g.deliver(t, "check_run", action("completed"), atCommit(commitC), labelled("check run of another commit"))
+	g.deliver(t, "issues", withAction("opened"), onIssue(7), labelled("issue"))
+	g.deliver(t, "pull_request", withAction("opened"), onPullRequest(8), labelled("another pull request"))
+	g.deliver(t, "check_run", withAction("completed"), atCommit(commitC), labelled("check run of another commit"))
 
 	g.reconcileAll(t, sub)
 
@@ -138,9 +138,9 @@ func TestWorkflowJobsMatchByCommitAndAction(t *testing.T) {
 			sub := g.follow(t, g.source(subject, EventFilter{Event: EventWorkflowJob, Actions: []string{"completed"}}), "follow")
 			g.addRevisions(t, sub.Subject, GitHubHeadRevision{Repository: GitHubRepository{ID: g.repository, Name: testRepositoryName}, SHA: commitA})
 
-			g.deliver(t, "workflow_job", action("in_progress"), atCommit(commitA), labelled("in progress"))
-			g.deliver(t, "workflow_job", action("completed"), atCommit(commitB), labelled("another commit"))
-			g.deliver(t, "workflow_job", action("completed"), atCommit(commitA), labelled("completed"))
+			g.deliver(t, "workflow_job", withAction("in_progress"), atCommit(commitA), labelled("in progress"))
+			g.deliver(t, "workflow_job", withAction("completed"), atCommit(commitB), labelled("another commit"))
+			g.deliver(t, "workflow_job", withAction("completed"), atCommit(commitA), labelled("completed"))
 
 			g.reconcileAll(t, sub)
 
@@ -160,9 +160,9 @@ func TestBranchFollowsItsActivityAndCommitFollowsOnlyItsCI(t *testing.T) {
 			}
 
 			g.deliver(t, "push", onBranch("devel"), atCommit(commitA), labelled("push"))
-			g.deliver(t, "check_run", action("completed"), atCommit(commitA), labelled("check run"))
+			g.deliver(t, "check_run", withAction("completed"), atCommit(commitA), labelled("check run"))
 			g.deliver(t, "delete", onBranch("devel"), labelled("delete"))
-			g.deliver(t, "check_run", action("completed"), atCommit(commitB), labelled("check run of another commit"))
+			g.deliver(t, "check_run", withAction("completed"), atCommit(commitB), labelled("check run of another commit"))
 
 			g.reconcileAll(t, sub)
 
@@ -183,26 +183,26 @@ func TestACommitSeenLaterBringsInTheDeliveriesThatWaitedForIt(t *testing.T) {
 				g := newGitHubFixture(t)
 				var subject GitHubSubject = PullRequestSubject{Number: 7}
 				association := func() {
-					g.deliver(t, "pull_request", action("synchronize"), onPullRequest(7), atCommit(commitB), labelled("association"))
+					g.deliver(t, "pull_request", withAction("synchronize"), onPullRequest(7), atCommit(commitB), labelled("association"))
 				}
 				if kind == "branch" {
 					subject = BranchSubject{Name: "devel"}
 					association = func() { g.deliver(t, "push", onBranch("devel"), atCommit(commitB), labelled("association")) }
 				}
 				// The check run before the subscription is no replay when the commit turns out to be the subject's.
-				g.deliver(t, "check_run", action("completed"), atCommit(commitB), labelled("before the subscription"))
+				g.deliver(t, "check_run", withAction("completed"), atCommit(commitB), labelled("before the subscription"))
 				sub := g.follow(t, g.source(subject), "follow")
 				g.addRevisions(t, sub.Subject, GitHubHeadRevision{Repository: GitHubRepository{ID: g.repository, Name: testRepositoryName}, SHA: commitA})
 				if ciFirst {
-					g.deliver(t, "check_run", action("completed"), atCommit(commitB), labelled("check run of the new commit"))
+					g.deliver(t, "check_run", withAction("completed"), atCommit(commitB), labelled("check run of the new commit"))
 				} else {
 					association()
 				}
 				// More unrelated deliveries than a page cannot hide a match that comes after them.
 				for range GitHubDeliveryPageSize + 2 {
-					g.deliver(t, "check_run", action("completed"), atCommit(commitC), labelled("unrelated"))
+					g.deliver(t, "check_run", withAction("completed"), atCommit(commitC), labelled("unrelated"))
 				}
-				g.deliver(t, "check_run", action("completed"), atCommit(commitA), labelled("check run of the known commit"))
+				g.deliver(t, "check_run", withAction("completed"), atCommit(commitA), labelled("check run of the known commit"))
 
 				g.reconcileAll(t, sub)
 				if ciFirst {
@@ -214,7 +214,7 @@ func TestACommitSeenLaterBringsInTheDeliveriesThatWaitedForIt(t *testing.T) {
 				if ciFirst {
 					association()
 				} else {
-					g.deliver(t, "check_run", action("completed"), atCommit(commitB), labelled("check run of the new commit"))
+					g.deliver(t, "check_run", withAction("completed"), atCommit(commitB), labelled("check run of the new commit"))
 				}
 				g.reconcileAll(t, sub)
 				g.reconcileAll(t, sub)
@@ -242,10 +242,10 @@ func TestCIDeliveriesWithTheirOwnSubjectReferencesAssociateCommits(t *testing.T)
 			explicit := g.follow(t, g.source(subject, EventFilter{Event: EventName(event)}), "explicit")
 
 			// A check that names no subject comes first, and only the later delivery says which commit it is for.
-			g.deliver(t, "check_run", action("completed"), atCommit(commitB), labelled("check without a subject"))
+			g.deliver(t, "check_run", withAction("completed"), atCommit(commitB), labelled("check without a subject"))
 			var options []deliveryOption
 			if event != "status" {
-				options = append(options, action("completed"))
+				options = append(options, withAction("completed"))
 			}
 			g.deliver(t, event, append(options, atCommit(commitB), link, labelled("association"))...)
 
@@ -277,12 +277,12 @@ func TestMatchingPagesAndLongRevisionHistoryAreNotCapped(t *testing.T) {
 	source := g.source(PullRequestSubject{Number: 7}, EventFilter{Event: EventCheckRun, Actions: []string{"completed"}})
 	// The subject's history of commits is longer than a page, and predates the subscription.
 	for i := range GitHubDeliveryPageSize + 2 {
-		g.deliver(t, "pull_request", action("synchronize"), onPullRequest(7), atCommit(fmt.Sprintf("%040x", i)))
+		g.deliver(t, "pull_request", withAction("synchronize"), onPullRequest(7), atCommit(fmt.Sprintf("%040x", i)))
 	}
 	sub := g.follow(t, source, "follow")
-	g.deliver(t, "check_run", action("created"), atCommit(fmt.Sprintf("%040x", 1)), labelled("not completed"))
+	g.deliver(t, "check_run", withAction("created"), atCommit(fmt.Sprintf("%040x", 1)), labelled("not completed"))
 	for i := range GitHubDeliveryPageSize + 2 {
-		g.deliver(t, "check_run", action("completed"), atCommit(fmt.Sprintf("%040x", 1)), labelled(fmt.Sprint("check run ", i)))
+		g.deliver(t, "check_run", withAction("completed"), atCommit(fmt.Sprintf("%040x", 1)), labelled(fmt.Sprint("check run ", i)))
 	}
 
 	claim := g.claimInbox(t, g.inbox)
@@ -315,9 +315,9 @@ func TestADeliveryOfAForkNeedsTheForksGrant(t *testing.T) {
 	forkRepository := g.fork(1000)
 	const forkInstallation, strangerInstallation = 22, 33
 	fork := g.grant(t, g.installation+forkInstallation, forkRepository)
-	g.deliver(t, "pull_request", action("synchronize"), onPullRequest(7), atCommit(commitB), inFork(forkRepository.ID, forkRepository.Name), labelled("fork head"))
+	g.deliver(t, "pull_request", withAction("synchronize"), onPullRequest(7), atCommit(commitB), inFork(forkRepository.ID, forkRepository.Name), labelled("fork head"))
 	forkCheck := func(installation int64, label string) {
-		g.deliver(t, "check_run", action("completed"), inRepository(forkRepository.ID, forkRepository.Name), atCommit(commitB),
+		g.deliver(t, "check_run", withAction("completed"), inRepository(forkRepository.ID, forkRepository.Name), atCommit(commitB),
 			inInstallation(installation), labelled(label))
 	}
 	forkCheck(g.installation+forkInstallation, "fork check")
@@ -339,7 +339,7 @@ func TestADeliveryOfAForkNeedsTheForksGrant(t *testing.T) {
 	g.exec(t, `
 		UPDATE github_repository_access SET error = NULL, error_kind = NULL, error_since = NULL, error_observed_at = NULL,
 			next_attempt = NULL WHERE app_id = $1 AND repository_id = $2`, g.app, forkRepository.ID)
-	g.deliver(t, "issue_comment", action("created"), onPullRequest(7), labelled("comment"))
+	g.deliver(t, "issue_comment", withAction("created"), onPullRequest(7), labelled("comment"))
 	g.reconcileAll(t, sub)
 
 	g.requireDelivered(t, "fork head", "fork check", "comment")

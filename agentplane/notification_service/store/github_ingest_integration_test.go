@@ -69,7 +69,7 @@ func (g githubFixture) deliveries(t *testing.T) int {
 
 func TestRedeliveryStoresNothingAndReusedIDIsRefused(t *testing.T) {
 	g := newGitHubFixture(t)
-	first := g.deliver(t, "issue_comment", action("created"), onPullRequest(7))
+	first := g.deliver(t, "issue_comment", withAction("created"), onPullRequest(7))
 
 	if g.ingest(t, first) {
 		t.Error("a redelivery was stored again")
@@ -96,9 +96,9 @@ func TestRedeliveryStoresNothingAndReusedIDIsRefused(t *testing.T) {
 
 func TestDeliveryIsStoredAgainstTheSubjectsOfItsRepositoryAndNothingElse(t *testing.T) {
 	g := newGitHubFixture(t)
-	shaless := g.deliver(t, "issue_comment", action("created"), onPullRequest(7))
+	shaless := g.deliver(t, "issue_comment", withAction("created"), onPullRequest(7))
 	elsewhere := g.repository + 1
-	other := g.deliver(t, "issue_comment", action("created"), inRepository(elsewhere, "test-fork-owner/test-repo"), onPullRequest(7))
+	other := g.deliver(t, "issue_comment", withAction("created"), inRepository(elsewhere, "test-fork-owner/test-repo"), onPullRequest(7))
 
 	stored, position := g.storedDelivery(t, g.app, shaless.DeliveryID)
 	if stored.headSHA.Valid {
@@ -124,10 +124,10 @@ func TestDeliveryIsStoredAgainstTheSubjectsOfItsRepositoryAndNothingElse(t *test
 
 func TestSubjectKeepsEveryCommitItHasBeenSeenAt(t *testing.T) {
 	g := newGitHubFixture(t)
-	g.deliver(t, "pull_request", action("synchronize"), onPullRequest(7), atCommit(commitB))
+	g.deliver(t, "pull_request", withAction("synchronize"), onPullRequest(7), atCommit(commitB))
 	// A delayed, older observation does not replace the newer one.
-	g.deliver(t, "pull_request", action("synchronize"), onPullRequest(7), atCommit(commitA), inFork(g.repository+1, "test-fork-owner/test-repo"))
-	g.deliver(t, "check_run", action("completed"), onPullRequest(7), atCommit(commitB))
+	g.deliver(t, "pull_request", withAction("synchronize"), onPullRequest(7), atCommit(commitA), inFork(g.repository+1, "test-fork-owner/test-repo"))
+	g.deliver(t, "check_run", withAction("completed"), onPullRequest(7), atCommit(commitB))
 
 	rows, err := g.db.QueryContext(t.Context(), `
 		SELECT head_repository_id, sha FROM github_subject_revision WHERE repository_id = $1 AND kind = 'pull_request' AND subject_key = '7'`,
@@ -175,7 +175,7 @@ func TestRepositoryKeepsTheNameItWasFirstSeenUnder(t *testing.T) {
 
 func TestInstallationEventNamingNoRepositoryIsStoredWithoutOne(t *testing.T) {
 	g := newGitHubFixture(t)
-	event := g.delivery("installation", action("suspend"))
+	event := g.delivery("installation", withAction("suspend"))
 	event.Repository = nil
 	if !g.ingest(t, event) {
 		t.Fatal("not stored")
@@ -237,10 +237,10 @@ func TestInstallationEventsInvalidateWhatWasLearnedUnderTheInstallation(t *testi
 			}
 
 			// An event that is not about the installation changes nothing it holds.
-			g.deliver(t, "check_run", action("completed"), atCommit(commitA))
+			g.deliver(t, "check_run", withAction("completed"), atCommit(commitA))
 			requireEqual(t, g.invalidationState(t, sub.Subject), before)
 
-			g.deliver(t, event, action("removed"))
+			g.deliver(t, event, withAction("removed"))
 			after := g.invalidationState(t, sub.Subject)
 			if after.installation != before.installation+1 || after.access != before.access+1 || after.subject != before.subject+1 {
 				t.Errorf("generations after = %+v, want each moved on from %+v", after, before)
@@ -269,7 +269,7 @@ func TestInstallationEventStopsALeaseInFlightFromRecording(t *testing.T) {
 				t.Fatalf("lease = %v, %v", subject, err)
 			}
 
-			g.deliver(t, event, action("removed"))
+			g.deliver(t, event, withAction("removed"))
 
 			for name, lease := range map[string]*GitHubRefreshLease{"access": access, "subject": subject} {
 				var deferred *RefreshDeferredError
@@ -489,7 +489,7 @@ func TestDeliveriesPythonStoredAreRecognisedAsRedeliveries(t *testing.T) {
 func TestGitHubRetentionDeletesReceiptsAndLinksButPreservesInboxCopies(t *testing.T) {
 	g := newGitHubFixture(t)
 	sub := g.follow(t, g.source(PullRequestSubject{Number: 7}), "follow")
-	delivered := g.deliver(t, "issue_comment", action("created"), onPullRequest(7), labelled("copied"))
+	delivered := g.deliver(t, "issue_comment", withAction("created"), onPullRequest(7), labelled("copied"))
 	claim := g.claimInbox(t, g.inbox)
 	if err := g.record(t, claim, g.prepare(t, sub)); err != nil {
 		t.Fatal(err)
@@ -497,11 +497,11 @@ func TestGitHubRetentionDeletesReceiptsAndLinksButPreservesInboxCopies(t *testin
 	_, position := g.storedDelivery(t, g.app, delivered.DeliveryID)
 	cutoff := time.Now().UTC().Add(-7 * 24 * time.Hour).Truncate(time.Microsecond)
 	g.exec(t, `UPDATE github_delivery SET received_at = $2 WHERE position = $1`, position, cutoff.Add(-time.Second))
-	missed := g.deliver(t, "issue_comment", action("created"), onPullRequest(7), labelled("expired before matching"))
+	missed := g.deliver(t, "issue_comment", withAction("created"), onPullRequest(7), labelled("expired before matching"))
 	g.exec(t, `UPDATE github_delivery SET received_at = $2 WHERE delivery_id = $1`, missed.DeliveryID, cutoff.Add(-time.Second))
-	boundary := g.deliver(t, "issue_comment", action("created"), onPullRequest(7), labelled("boundary"))
+	boundary := g.deliver(t, "issue_comment", withAction("created"), onPullRequest(7), labelled("boundary"))
 	g.exec(t, `UPDATE github_delivery SET received_at = $2 WHERE delivery_id = $1`, boundary.DeliveryID, cutoff)
-	g.deliver(t, "issue_comment", action("created"), onPullRequest(7), labelled("recent"))
+	g.deliver(t, "issue_comment", withAction("created"), onPullRequest(7), labelled("recent"))
 	if err := g.CleanupGitHubDeliveries(t.Context(), cutoff); err != nil {
 		t.Fatal(err)
 	}
@@ -532,7 +532,7 @@ func TestGitHubRetentionDeletesReceiptsAndLinksButPreservesInboxCopies(t *testin
 
 func TestGitHubRetentionBoundsEachDeletionBatch(t *testing.T) {
 	g := newGitHubFixture(t)
-	seed := g.deliver(t, "issue_comment", action("created"), onPullRequest(7))
+	seed := g.deliver(t, "issue_comment", withAction("created"), onPullRequest(7))
 	g.exec(t, `INSERT INTO github_delivery
 		(app_id, delivery_id, installation_id, event, digest, payload, received_at)
 		SELECT app_id, gen_random_uuid(), installation_id, event, digest, payload, now() - interval '8 days'

@@ -362,7 +362,8 @@ func TestEventsPageBySequence(t *testing.T) {
 			t.Errorf("event %d has sequence %d", i, event.Sequence)
 		}
 	}
-	if last := events[2]; last.Sequence != cancelled.Request.Version || !last.At.Equal(cancelled.Request.UpdatedAt) || last.Actor != caller {
+	if last := events[2]; last.Sequence != cancelled.Request.Version || !last.At.Equal(cancelled.Request.UpdatedAt) ||
+		last.Actor != (action.CallerActor{Account: caller.Account}) {
 		t.Errorf("the cancellation's event = %+v", last)
 	}
 	if events[0].Actor != nil || events[1].Actor != nil {

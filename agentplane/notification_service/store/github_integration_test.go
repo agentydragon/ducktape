@@ -68,7 +68,7 @@ func (g githubFixture) source(subject GitHubSubject, events ...EventFilter) GitH
 // delivery's repository comes after the option that sets it.
 type deliveryOption func(*GitHubIngest)
 
-func action(value string) deliveryOption { return func(i *GitHubIngest) { i.Action = &value } }
+func withAction(value string) deliveryOption { return func(i *GitHubIngest) { i.Action = &value } }
 
 func inInstallation(id int64) deliveryOption { return func(i *GitHubIngest) { i.InstallationID = id } }
 

@@ -195,7 +195,7 @@ func TestSubjectRefreshIsNotRecordedUnderAGrantThatMovedOn(t *testing.T) {
 		t.Fatalf("lease = %v, %v", lease, err)
 	}
 
-	g.deliver(t, "installation", action("suspend"))
+	g.deliver(t, "installation", withAction("suspend"))
 
 	// The subject's lease died with the installation's event, and the fence it read under is no longer good.
 	requireDeferred(t, g.state.Succeed(t.Context(), *lease, GitHubSuccess{Fences: []GitHubAccessFence{base}}))

@@ -38,7 +38,7 @@ func TestAPendingCancellationIsDurableAndIdempotent(t *testing.T) {
 	}
 	events := f.events(t, pending.ID)
 	if !slices.Equal(eventStates(events), []action.State{action.StateDecisionPending, action.StateCancelled}) ||
-		events[1].Actor != caller || !events[1].At.Equal(result.Request.UpdatedAt) {
+		events[1].Actor != (action.CallerActor{Account: caller.Account}) || !events[1].At.Equal(result.Request.UpdatedAt) {
 		t.Errorf("events %+v", events)
 	}
 
