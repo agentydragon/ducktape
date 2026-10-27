@@ -264,5 +264,6 @@ class Authenticator:
         self.access_token = access_token
         self.access_token_expires_at = time.monotonic() + expires_in
 
+
 class AuthenticationRequiredError(RuntimeError):
     """Raised when there is no valid refresh credential for the service."""

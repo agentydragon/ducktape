@@ -61,13 +61,10 @@ async def test_callback_http_returns_provider_error_safely() -> None:
     callback_future: asyncio.Future[CallbackResult] = asyncio.get_running_loop().create_future()
     description = "bad\x1b_request <script> & " + "x" * 300
     expected_description = ("bad_request <script> & " + "x" * 300)[:240]
-    escaped_description = (
-        "bad_request &lt;script&gt; &amp; " + "x" * (240 - len("bad_request <script> & "))
-    )
+    escaped_description = "bad_request &lt;script&gt; &amp; " + "x" * (240 - len("bad_request <script> & "))
     async with _test_client(callback_future) as client:
         response = await client.get(
-            "/callback",
-            params={"state": STATE, "error": "invalid_request", "error_description": description},
+            "/callback", params={"state": STATE, "error": "invalid_request", "error_description": description}
         )
         assert response.status == 200
         body = await response.text()
@@ -76,9 +73,7 @@ async def test_callback_http_returns_provider_error_safely() -> None:
         assert "<script>" not in body
         _assert_response_headers(response)
 
-    assert await callback_future == CallbackResult(
-        error="invalid_request", error_description=expected_description
-    )
+    assert await callback_future == CallbackResult(error="invalid_request", error_description=expected_description)
 
 
 @pytest.mark.asyncio
