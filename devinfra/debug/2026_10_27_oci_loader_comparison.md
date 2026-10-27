@@ -122,7 +122,7 @@ that tests lock behavior only within that action. Its one passing
 first loaded a benchmark-owned PostgreSQL tag in 34.499s, then launched each
 four-caller group against a different absent tag with layers already used:
 
-| Four same-action callers | Group wall time | Observed imports                                                             |
+| Four same-action callers | Group wall time | Observed load commands                                                       |
 | ------------------------ | --------------: | ---------------------------------------------------------------------------- |
 | Python guarded loader    |          5.105s | Python caller logs were empty; source guard/lock enforces one loader per tag |
 | Bare `oci_load`          |          4.725s | All four caller logs say `Loaded image`                                      |
@@ -133,8 +133,9 @@ client process-tree CPU. Its twelve individual caller logs remain attached to
 the BuildBuddy invocation. This is one ordered run, so the 5.105s versus
 1.591s guarded-importer difference may reflect process startup, daemon state,
 and contention; it does not establish that the tar backend should change.
-The four bare callers did redundant imports, while the equivalent guard
-avoided three of them. A cross-action CI reliability claim still needs
+The four bare callers each invoked `docker load`, while the equivalent guard
+avoided three of those calls. The logs do not show how many layers Docker
+unpacked. A cross-action CI reliability claim still needs
 evidence that those actions actually share the Docker daemon and lock
 filesystem. No daemon was pruned, and no other job's tags or containers were
 removed.
