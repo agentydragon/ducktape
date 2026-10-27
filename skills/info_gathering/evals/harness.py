@@ -5,7 +5,7 @@ Agent (uses skill) vs Simulator (holds ground truth). Provides:
 - Pydantic models for results and logging
 - Helpers for loading the skill text
 
-Uses the OpenAI Responses API via BoundOpenAIModel / RetryingOpenAIModel.
+Uses the OpenAI Responses API via BoundOpenAIModel and the SDK's configured retry policy.
 """
 
 import argparse
@@ -14,12 +14,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
-from openai import AsyncOpenAI
 from pydantic import BaseModel
 
 from agent_core.events import ToolCall
+from openai_utils.client_factory import get_async_openai
 from openai_utils.model import BoundOpenAIModel, OpenAIModelProto
-from openai_utils.retry import RetryingOpenAIModel
 from util.bazel.runfiles import get_required_path
 
 logger = logging.getLogger(__name__)
@@ -89,5 +88,5 @@ def output_dir_from_args(args: argparse.Namespace) -> Path:
 
 
 def model_from_args(args: argparse.Namespace) -> OpenAIModelProto:
-    client = AsyncOpenAI(base_url=args.base_url, api_key=args.api_key or "unused")
-    return RetryingOpenAIModel(base=BoundOpenAIModel(client=client, model=args.model))
+    client = get_async_openai(base_url=args.base_url, api_key=args.api_key or "unused")
+    return BoundOpenAIModel(client=client, model=args.model)

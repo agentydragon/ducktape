@@ -30,7 +30,7 @@ Every suppression should either be eliminated through better code design, replac
 **BAD**: Suppressing return type mismatch
 
 ```python
-async def responses_create_with_retries(client: AsyncOpenAI, **kwargs: Any) -> ResponsesResult:
+async def create_responses_result(client: AsyncOpenAI, **kwargs: Any) -> ResponsesResult:
     return await client.responses.create(**kwargs)  # type: ignore[return-value]
 ```
 
@@ -39,9 +39,9 @@ async def responses_create_with_retries(client: AsyncOpenAI, **kwargs: Any) -> R
 **GOOD**: Actually convert the type
 
 ```python
-async def responses_create_with_retries(client: AsyncOpenAI, **kwargs: Any) -> ResponsesResult:
-    sdk_resp = await client.responses.create(**kwargs)
-    return convert_sdk_response(sdk_resp)
+async def create_responses_result(client: AsyncOpenAI, **kwargs: Any) -> ResponsesResult:
+    sdk_resp = await translate_context_length(client.responses.create, **kwargs)
+    return ResponsesResult.from_sdk(sdk_resp)
 ```
 
 ### Pattern 2: Overly Broad Type Annotations

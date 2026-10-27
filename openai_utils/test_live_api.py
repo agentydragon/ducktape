@@ -13,7 +13,7 @@ import pytest_bazel
 from openai_utils.client_factory import build_client
 from openai_utils.errors import ContextLengthExceededError
 from openai_utils.model import OpenAIModelProto, ResponsesRequest
-from openai_utils.retry import chat_create_with_retries
+from openai_utils.requests import create_chat_completion
 from openai_utils.testing.fixtures import ClientMode, error_transport, mock_and_live, mock_openai_client
 
 # --- Helpers ---
@@ -50,7 +50,7 @@ async def test_chat_context_length_exceeded_live(live_openai_model, live_openai)
     params = {"model": live_openai_model, "messages": [{"role": "user", "content": _huge_prompt()}], "max_tokens": 8}
 
     with pytest.raises(ContextLengthExceededError):
-        await chat_create_with_retries(live_openai, params)
+        await create_chat_completion(live_openai, params)
 
 
 if __name__ == "__main__":

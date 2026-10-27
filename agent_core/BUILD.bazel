@@ -55,7 +55,7 @@ py_library(
     deps = [
         "//openai_utils:api_shape",
         "//openai_utils:model",
-        "//openai_utils:retry",
+        "//openai_utils:requests",
         "//openai_utils:types",
         "@pypi//openai",
         "@pypi//pydantic",

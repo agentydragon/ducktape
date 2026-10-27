@@ -87,15 +87,13 @@ py_library(
 )
 
 py_library(
-    name = "retry",
-    srcs = ["retry.py"],
+    name = "requests",
+    srcs = ["requests.py"],
     visibility = ["//:__subpackages__"],
     deps = [
         ":errors",
         ":model",
-        "@pypi//httpx",
         "@pypi//openai",
-        "@pypi//tenacity",
     ],
 )
 
@@ -106,7 +104,6 @@ py_library(
     deps = [
         ":http_logging",
         ":model",
-        ":retry",
         ":types",
         "@pypi//openai",
     ],
@@ -161,6 +158,24 @@ py_test(
 )
 
 py_test(
+    name = "test_sdk_retry_policy",
+    srcs = ["test_sdk_retry_policy.py"],
+    deps = [
+        ":client_factory",
+        ":conftest",
+        ":errors",
+        ":model",
+        ":requests",
+        "//:conftest",
+        "@pypi//httpx2",
+        "@pypi//openai",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep: enables auto mode for async tests
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_json_schema",
     srcs = ["test_json_schema.py"],
     deps = [
@@ -201,7 +216,7 @@ live_openai_py_test(
         ":conftest",
         ":errors",
         ":model",
-        ":retry",
+        ":requests",
         "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
         "//openai_utils/testing:fixtures",
         "@pypi//pytest",

@@ -48,7 +48,7 @@ from openai_utils.model import (
     ToolChoiceFunction,
     UserMessage,
 )
-from openai_utils.retry import chat_create_with_retries
+from openai_utils.requests import create_chat_completion
 from openai_utils.types import ReasoningParams
 
 type AgentWireBody = ResponsesRequest | CompletionCreateParamsNonStreaming
@@ -157,7 +157,7 @@ class ChatCompletionsAgentModel(AgentModelProto):
         return PreparedAgentModelRequest(api_shape=self.api_shape, request=request, wire_body=body)
 
     async def sample(self, request: PreparedAgentModelRequest) -> AgentModelResult:
-        response = await chat_create_with_retries(
+        response = await create_chat_completion(
             self._client, cast(CompletionCreateParamsNonStreaming, request.wire_body)
         )
         choice = response.choices[0]
