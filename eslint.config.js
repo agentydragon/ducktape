@@ -37,10 +37,15 @@ const reactProjects = [
   "props/frontend/**",
   "util/frontend/**",
 ];
-const projectGlobs = reactProjects;
+// Shared TypeScript libraries are not React frontends, but their sources still receive the
+// workspace TypeScript rules. Keep these project registrations separate so React rules and
+// browser-specific setup remain scoped to the frontend list above.
+const nonReactTypeScriptProjects = ["aiquota/shared/**", "haku/shared/bridge_protocol/**"];
 
-// All React projects' .ts/.tsx get the shared TypeScript, React, and hooks rules.
-const tsFiles = projectGlobs.map((g) => `${g}/*.{ts,tsx}`);
+// All registered TypeScript projects receive shared TS rules; only React projects receive the
+// React and hooks rules below.
+const reactTsFiles = reactProjects.map((g) => `${g}/*.{ts,tsx}`);
+const nonReactTsFiles = nonReactTypeScriptProjects.map((g) => `${g}/*.ts`);
 const reactFiles = reactProjects.map((g) => `${g}/*.{ts,tsx}`);
 const testFiles = reactProjects.map((g) => `${g}/*.test.{ts,tsx}`);
 
@@ -69,6 +74,13 @@ const importRules = {
 // explicit overrides (no-unused-vars with the `^_` pattern, etc.) win; `no-undef`
 // is already disabled below for the type-name positives TypeScript itself catches.
 const tsRecommendedRules = tseslint.configs.recommended.rules;
+const unregisteredTypeScriptRule = [
+  "error",
+  {
+    selector: "Program",
+    message: "Register this TypeScript project in the appropriate project list in eslint.config.js.",
+  },
+];
 
 // Shared quality + TS rules applied everywhere
 const coreRules = {
@@ -105,16 +117,39 @@ export default [
     },
   },
 
-  // ── All TypeScript files ───────────────────────────────────────────────
+  // ── TypeScript registration fallback ───────────────────────────────────
+  // New projects must opt into a configured TypeScript project list below. Without a fallback,
+  // a new path silently receives no TypeScript parser or rules from this flat config.
   {
-    files: tsFiles,
+    files: ["**/*.{ts,tsx}"],
+    languageOptions: {
+      parser: tsparser,
+      parserOptions: { ecmaVersion: "latest", sourceType: "module", ecmaFeatures: { jsx: true } },
+    },
+    rules: { "no-restricted-syntax": unregisteredTypeScriptRule },
+  },
+
+  // Shared libraries use TypeScript rules without frontend globals or React rules.
+  {
+    files: nonReactTsFiles,
+    languageOptions: {
+      parser: tsparser,
+      parserOptions: { ecmaVersion: "latest", sourceType: "module" },
+    },
+    plugins: tsPlugins,
+    rules: { ...coreRules, "no-restricted-syntax": "off" },
+  },
+
+  // ── Registered React TypeScript projects ───────────────────────────────
+  {
+    files: reactTsFiles,
     languageOptions: {
       parser: tsparser,
       parserOptions: { ecmaVersion: "latest", sourceType: "module" },
       globals: browserGlobals,
     },
     plugins: tsPlugins,
-    rules: coreRules,
+    rules: { ...coreRules, "no-restricted-syntax": "off" },
   },
 
   // ── React projects (eslint-plugin-react recommended + react-hooks) ──────
