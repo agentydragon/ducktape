@@ -128,7 +128,7 @@ export function SandboxPage({
   const ready = sandboxReady(sandbox);
   const canWakeForThread = sandboxSuspended(sandbox) && sandbox?.wake_on_send === true;
   const threadUnavailableReason = pendingOpen
-    ? "An earlier thread open attempt is unconfirmed. Check open status before creating another thread."
+    ? "An earlier thread open attempt is unconfirmed. Check opening status before creating another thread."
     : !sandbox
       ? live.snapshot === null
         ? "Waiting for Sandbox status to load."
