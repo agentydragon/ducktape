@@ -1,4 +1,8 @@
-export function rowsFrom(frame: unknown) {
+type FrameColumns = Record<string, readonly unknown[]>;
+type FrameRow<T extends FrameColumns> = { [K in keyof T]: T[K][number] };
+
+export function rowsFrom<T extends FrameColumns>(frame: T | null | undefined): FrameRow<T>[];
+export function rowsFrom(frame: unknown): unknown[] {
   if (frame == null) return [];
   if (typeof frame !== "object") {
     throw new Error("Malformed frame payload");

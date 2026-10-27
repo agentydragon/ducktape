@@ -89,6 +89,7 @@ ts_library(
     srcs = ["data_helpers.ts"],
     tsconfig = TSCONFIG,
     deps = [
+        ":client",
         ":input_helpers",
         ":rollout_event_vocabulary",
         "//finance/augur/frontend/lib:format",
