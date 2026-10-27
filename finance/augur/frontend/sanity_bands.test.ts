@@ -3,9 +3,16 @@
 
 import { test, expect } from "vitest";
 
-import { sortSanityBands, sanityPassCount, fmtBandValue, fmtExpectedBand, fmtObserved } from "./sanity_bands";
+import {
+  sortSanityBands,
+  sanityPassCount,
+  fmtBandValue,
+  fmtExpectedBand,
+  fmtObserved,
+  type SanityBand,
+} from "./sanity_bands";
 
-function band(overrides) {
+function band(overrides: Partial<SanityBand> = {}): SanityBand {
   return {
     label: "band",
     seriesId: "security:SPY",

@@ -40,7 +40,7 @@ export function StatCardsSkeleton() {
   );
 }
 
-export function ProductProjectionLoading({ error }) {
+export function ProductProjectionLoading({ error }: { error: string | null }) {
   return (
     <div
       data-augur-surface="product"

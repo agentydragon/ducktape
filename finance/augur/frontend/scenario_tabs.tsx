@@ -3,7 +3,9 @@
 // announce *which* variant they're showing — not just the comparison header. Color matches the
 // header and chart legend (`scenarioColor`, by position), so the badge reads as the same entity
 // everywhere.
-export function ScenarioBadge({ label, color, className = "" }) {
+type ScenarioBadgeProps = { label: string; color: string; className?: string };
+
+export function ScenarioBadge({ label, color, className = "" }: ScenarioBadgeProps) {
   return (
     <span className={`inline-flex items-center gap-1.5 ${className}`} data-product-active-scenario-badge="">
       <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: color }} aria-hidden="true" />
