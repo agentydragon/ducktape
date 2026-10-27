@@ -740,7 +740,16 @@ fn diagnose_namespace_member_write_links_contract_dependency_and_inspection() {
         "the first bounded row is inconclusive even though query status includes supported traces beyond the limit"
     );
 
-    let first = &bounded["traces"][0];
+    let exhaustive = gate_diagnose_json(&rejected, "later", &["--all"]);
+    assert_eq!(exhaustive["returned_count"], exhaustive["total_count"]);
+    assert_eq!(exhaustive["truncated"], false);
+    assert_eq!(exhaustive["expansion"], "all");
+    let first = exhaustive["traces"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|trace| trace["coverage"] == "supported_namespace_member_write")
+        .expect("a supported trace must back the query's supported status");
     assert_eq!(first["ownership_target"]["binding"], "later");
     assert_eq!(first["ownership_target"]["module"], "values/later");
     assert_eq!(first["constraining_dependency"]["edge_kind"], "eager_use");
@@ -872,11 +881,6 @@ fn diagnose_namespace_member_write_links_contract_dependency_and_inspection() {
                         .contains("alias.make = replacement")
             })
     );
-
-    let exhaustive = gate_diagnose_json(&rejected, "later", &["--all"]);
-    assert_eq!(exhaustive["returned_count"], exhaustive["total_count"]);
-    assert_eq!(exhaustive["truncated"], false);
-    assert_eq!(exhaustive["expansion"], "all");
 }
 
 #[test]
