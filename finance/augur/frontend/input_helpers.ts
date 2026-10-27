@@ -471,7 +471,6 @@ type ScenarioInputFieldKind =
   | "lifecycleEvents";
 
 const SCENARIO_INPUT_FIELD_KINDS = {
-  horizonMonths: "number",
   monthlySpend: "number",
   spendIndex: "spendIndex",
   sleeveWeights: "sleeveWeights",
@@ -498,7 +497,7 @@ const SCENARIO_INPUT_FIELD_KINDS = {
   leasingFeeMonths: "number",
   avgTenancyMonths: "number",
   propertyLifecycleEvents: "lifecycleEvents",
-} satisfies Record<keyof typeof DEFAULT_PRODUCT_INPUT_BASE, ScenarioInputFieldKind>;
+} satisfies Record<Exclude<keyof typeof DEFAULT_PRODUCT_INPUT_BASE, "horizonMonths">, ScenarioInputFieldKind>;
 
 const SCENARIO_SPEND_INDEXES = ["none", "inflation"] as const satisfies readonly ProductScenario["spendIndex"][];
 const SCENARIO_FINANCING_KINDS = ["cash", "mortgage"] as const satisfies readonly ProductPropertyFinancing["kind"][];
@@ -556,7 +555,7 @@ function isSleeveWeight(value: unknown): value is ProductSleeveWeight {
   return false;
 }
 
-function isScenarioInputFieldValue(kind: ScenarioInputFieldKind, value: unknown): boolean {
+function isScenarioInputFieldValue(kind: Exclude<ScenarioInputFieldKind, "lifecycleEvents">, value: unknown): boolean {
   switch (kind) {
     case "number":
       return isFiniteNumber(value);
@@ -572,17 +571,12 @@ function isScenarioInputFieldValue(kind: ScenarioInputFieldKind, value: unknown)
       return SCENARIO_FINANCING_KINDS.some((option) => option === value);
     case "sleeveWeights":
       return value == null || (Array.isArray(value) && value.every(isSleeveWeight));
-    case "lifecycleEvents":
-      return parseLifecycleEvents(value) != null;
   }
 }
 
 function parseScenarioInputFields(raw: Record<string, unknown>): Record<string, unknown> | null {
   const parsed: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(raw)) {
-    // Older v3 links serialized this shared tab control in the scenario too. The app now owns it
-    // in `?h=`, so accept a well-formed legacy value but keep the current default on the input.
-    if (key === "horizonMonths" && isFiniteNumber(value)) continue;
     if (!Object.prototype.hasOwnProperty.call(SCENARIO_INPUT_FIELD_KINDS, key)) return null;
     const kind = SCENARIO_INPUT_FIELD_KINDS[key as keyof typeof SCENARIO_INPUT_FIELD_KINDS];
     if (kind === "lifecycleEvents") {
