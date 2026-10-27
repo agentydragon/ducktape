@@ -177,7 +177,7 @@ def _backend_probe(*, initial_delay_seconds: int, period_seconds: int) -> k8s.Pr
 
 
 def _deployment(scope: Construct, configuration: ConfigMap, caddy_config: ConfigMap) -> None:
-    installer_content = {
+    installer_content: dict[str, object] = {
         "config_dir": _CONFIG_DIR,
         "components": [component.model_dump(mode="json", exclude_defaults=True) for component in _COMPONENTS],
     }
@@ -396,7 +396,7 @@ def _token_provisioner(scope: Construct) -> None:
             k8s.PolicyRule(api_groups=[""], resources=["secrets"], verbs=["create"]),
         ],
     )
-    content = {
+    content: dict[str, object] = {
         "endpoint": _ENDPOINT.model_dump(),
         "owner_username": _OWNER_USERNAME,
         "tokens": [token.model_dump(exclude_defaults=True) for token in _TOKENS],
