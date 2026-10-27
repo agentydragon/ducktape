@@ -132,6 +132,15 @@ class ElectricService:
             "url": self.url,
         }
 
+    async def memory_snapshot(self) -> dict[str, object]:
+        """Docker cgroup accounting and host `ps` RSS, kept separate from file cache."""
+        container = self._container.get_wrapped_container()
+        stats, processes = await asyncio.gather(
+            asyncio.to_thread(container.stats, stream=False),
+            asyncio.to_thread(container.top, ps_args="-eo pid,rss,comm"),
+        )
+        return {"docker_memory_stats": stats["memory_stats"], "processes": processes}
+
 
 async def _ready(url: str, *, timeout_s: float = 60) -> None:
     async with asyncio.timeout(timeout_s), httpx.AsyncClient(base_url=url, timeout=2) as client:

@@ -1658,3 +1658,24 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "test_electric_window_traffic",
+    size = "medium",
+    srcs = ["test_electric_window_traffic.py"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//agentplane/app/testing:replication_source",
+        "//agentplane/history_service/fold:models",
+        "//agentplane/history_service/testing:electric_service",
+        "//agentplane/history_service/testing:history",
+        "//agentplane/proto:event_pb2",
+        "//util/testing:undeclared_outputs",
+        "@pypi//httpx",
+        "@pypi//protobuf",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
