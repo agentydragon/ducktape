@@ -117,8 +117,8 @@ in
   # Piraeus `ssd` pool: its own LUKS partition behind the shrunk root partition,
   # unlocked after root is mounted by a keyfile on the encrypted root (never in
   # the initrd, which sits unencrypted on the ESP). LINSTOR initializes the opened
-  # device as its LVM PV. `ducktape.piraeusHost` stays off: DRBD 9.2.16 fails to
-  # build against this host's 7.2 kernel (`struct sockaddr_unsized`, 2026-10-27).
+  # device as its LVM PV. `ducktape.piraeusHost` stays off: its DRBD 9.2.16 fails
+  # to build against this host's 7.2 kernel (`struct sockaddr_unsized`, 2026-10-27).
   environment.etc.crypttab.text = ''
     piraeus-ssd /dev/disk/by-partlabel/rugged-piraeus /etc/keys/rugged-piraeus.key luks,nofail,x-systemd.device-timeout=10s
   '';

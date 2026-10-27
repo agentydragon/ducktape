@@ -67,9 +67,11 @@ Reboot once when convenient to prove the keyfile unlock at boot
 
 DRBD 9.2.16 (nixpkgs `nixos-26.05`) fails to build against rugged's 7.2.9
 kernel (`linuxPackages_latest`, kept for the IPU7 camera): the kernel's socket
-API now takes `struct sockaddr_unsized *`. Needs a DRBD release supporting 7.2,
-then `ducktape.piraeusHost.enable = true` and a reboot (DRBD 9 loads only from
-the booted system); check `modinfo -F version drbd` is 9.x.
+API now takes `struct sockaddr_unsized *`. `nixos-unstable`'s 9.3.3 driver
+builds against it (test build on rugged, 2026-10-27). Next: let
+`ducktape.piraeusHost` take that driver for rugged, confirm 9.3 peers with the
+other satellites' DRBD, enable it and reboot (DRBD 9 loads only from the booted
+system); check `modinfo -F version drbd` is 9.x.
 
 ## Admission (separate cluster change)
 
