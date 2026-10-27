@@ -1,6 +1,10 @@
 import { fromJson, toJson, type JsonValue } from "@bufbuild/protobuf";
 
-import { DeliveryState, DispatchSchema, WatchDispatchesResponseSchema } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
+import {
+  DeliveryState,
+  DispatchSchema,
+  WatchDispatchesResponseSchema,
+} from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
 import { dispatchFromJson, isUnknownDispatchState } from "./client";
 import { followWatch } from "../watch_stream";
 import type { LocalCommands } from "./local_commands";
@@ -15,7 +19,9 @@ function isJsonValue(value: unknown): value is JsonValue {
   return typeof value === "object" && Object.values(value).every(isJsonValue);
 }
 
-function decodeDispatchFrame(value: unknown): { kind: "dispatch"; dispatch: ReturnType<typeof dispatchFromJson> } | { kind: "caughtUp" } {
+function decodeDispatchFrame(
+  value: unknown
+): { kind: "dispatch"; dispatch: ReturnType<typeof dispatchFromJson> } | { kind: "caughtUp" } {
   if (!isJsonValue(value) || typeof value !== "object" || value === null || Array.isArray(value))
     throw new TypeError("Session Dispatcher watch result must be a JSON object");
   const hasDispatch = Object.prototype.hasOwnProperty.call(value, "dispatch");

@@ -1393,6 +1393,23 @@ it("shows a future numeric delivery state as unknown rather than a known Dispatc
   expect(watch.signal?.aborted).toBe(true);
 });
 
+it("keeps the known DELIVERY_STATE_UNKNOWN receipt behavior", async () => {
+  const waiting = message("known-unknown-delivery-state");
+  new LocalCommands(THREAD.id).remember(waiting);
+  vi.mocked(submitInput).mockResolvedValue({
+    kind: "dispatch",
+    dispatch: dispatchReceipt(waiting.commandId, "DELIVERY_STATE_UNKNOWN", "sandbox_deleted", "2026-10-17T12:26:30Z"),
+  });
+
+  const container = await render();
+  expect(progressLabel(container, waiting.commandId)).toBe("Outcome unknown: sandbox_deleted");
+  expect(
+    pendingRow(container, waiting.commandId)
+      .querySelector(".agentplane-user-bubble")
+      ?.getAttribute("data-message-phase")
+  ).toBe("failed");
+});
+
 it("follows the dispatches of queued commands only until they settle", async () => {
   const waiting = message("followed-until-admitted");
   new LocalCommands(THREAD.id).remember(waiting);
