@@ -1779,6 +1779,103 @@ impl Executor<'_> {
         callbacks
     }
 
+    fn retained_factory_callbacks(
+        &self,
+        site: CallSite,
+        expressions: &[ValueExpr],
+        args: &[Values],
+    ) -> Option<Values> {
+        let contract = self.index.retained_callback_calls.get(&site)?;
+        if let Some((namespace, member)) = &contract.namespace_member
+            && !self
+                .index
+                .audited_factory_members
+                .get(namespace)
+                .is_some_and(|members| members.contains(member))
+        {
+            return None;
+        }
+        for signature in &contract.signatures {
+            let mut retained = Values::new();
+            let admitted = signature.callback_arguments.iter().all(|position| {
+                let expression = &expressions[*position];
+                // The whole-chunk flow distinguishes a single stable function
+                // identity from a rebound cell, including later writes.
+                if let ValueExpr::Binding(binding) = expression
+                    && (self.facts.iter().any(|fact| {
+                        fact.rebinds.eager.contains(binding) || fact.rebinds.lazy.contains(binding)
+                    }) || self.flow.values_of_binding(binding).iter().count() > 1)
+                {
+                    return false;
+                }
+                let values = &args[*position];
+                if values.is_empty()
+                    || !values.iter().all(|value| match value {
+                        AbstractValue::Origin(ValueOrigin::Function(key))
+                        | AbstractValue::Closure(key, _) => {
+                            self.index.callables.contains_key(key)
+                                && !self.tainted_functions.contains(key)
+                        }
+                        AbstractValue::DeferredCallbacks(_) => true,
+                        _ => false,
+                    })
+                {
+                    return false;
+                }
+                retained.extend(self.callback_values(values));
+                true
+            });
+            if !admitted {
+                continue;
+            }
+            let functions: BTreeSet<_> = retained
+                .iter()
+                .filter_map(|value| match value {
+                    AbstractValue::Origin(ValueOrigin::Function(key))
+                    | AbstractValue::Closure(key, _) => Some(*key),
+                    _ => None,
+                })
+                .collect();
+            let mutating_receiver = |expression: &ValueExpr| {
+                let mut root = expression;
+                while let ValueExpr::Member(receiver, _, _) = root {
+                    root = receiver;
+                }
+                matches!(root, ValueExpr::Binding(binding) if self.flow.values_of_binding(binding).iter()
+                    .any(|origin| matches!(origin, ValueOrigin::Function(key) if functions.contains(&key))))
+            };
+            // Existing callable own/prototype surfaces are outside the fresh
+            // input proof. Reject recognized writes through all local aliases,
+            // even if they occur after this call or in a lazy callable.
+            let mutated = self
+                .index
+                .intrinsic_mutation_receivers
+                .iter()
+                .any(mutating_receiver)
+                || self
+                    .index
+                    .top_callback_result_writes
+                    .iter()
+                    .flatten()
+                    .chain(
+                        self.index
+                            .callables
+                            .values()
+                            .flat_map(|callable| &callable.callback_result_writes),
+                    )
+                    .any(|write| mutating_receiver(&write.receiver));
+            if mutated
+                || retained
+                    .iter()
+                    .any(|value| self.global_escaped_callbacks.contains(value))
+            {
+                continue;
+            }
+            return Some(retained);
+        }
+        None
+    }
+
     fn fresh_primitive_write_receivers(
         &mut self,
         callable: &Callable,
@@ -1917,13 +2014,26 @@ impl Executor<'_> {
             let uncertified = receivers.iter().filter(|value| !matches!(value,
                 AbstractValue::Origin(ValueOrigin::Object(object)) if certified_data_receivers.contains(object))).cloned().collect();
             self.taint_objects(&uncertified);
-            let callbacks = self.callback_values(&receivers);
-            if !callbacks
-                .iter()
-                .any(|value| matches!(value, AbstractValue::DeferredCallbacks(_)))
+            let mut callbacks = self.callback_values(&receivers);
+            let mut root = &write.receiver;
+            while let ValueExpr::Member(receiver, _, _) = root {
+                root = receiver;
+            }
+            let root_values = self.evaluate(root, env, captures);
+            let callable_surface = root_values.iter().any(|value| {
+                matches!(
+                    value,
+                    AbstractValue::Origin(ValueOrigin::Function(_)) | AbstractValue::Closure(_, _)
+                )
+            });
+            if !callable_surface
+                && !callbacks
+                    .iter()
+                    .any(|value| matches!(value, AbstractValue::DeferredCallbacks(_)))
             {
                 continue;
             }
+            callbacks.extend(self.callback_values(&root_values));
             if write
                 .property
                 .as_deref()
@@ -1932,9 +2042,11 @@ impl Executor<'_> {
             {
                 continue;
             }
-            // Installing an opaque value can add an accessor anywhere in the
-            // returned graph. Include its effects now: a later plain member
-            // read can execute a getter without another explicit Call node.
+            // Callable own/prototype fields are not modeled as an ordinary
+            // object graph. Installing an opaque value there, or in a retained
+            // factory result, can add callbacks/accessors. Conservatively
+            // include their effects now, before a later opaque consumer or
+            // member projection can execute an otherwise untracked callback.
             outcome.complete = false;
             outcome.unknown_call = true;
             self.note_unknown_execution(owner);
@@ -2535,6 +2647,12 @@ impl Executor<'_> {
                 }
                 _ => continue,
             };
+            // Foreign code can retain and invoke a callback's synchronous
+            // return value as well. This includes a descriptor getter that
+            // returns another callable; stopping at the getter loses the
+            // returned callable's importer reads. Prefix coverage preserves
+            // the ordinary boundary at an unconditional await.
+            self.promote_deferred_callbacks(&nested.returns, outcome);
             self.apply_rebind_effects(&nested.effects.rebinds);
             outcome.effects.reads.extend(nested.effects.reads);
             outcome.effects.rebinds.extend(nested.effects.rebinds);
@@ -2982,6 +3100,7 @@ impl Executor<'_> {
                     args.as_slice(),
                     [ValueExpr::Origin(ValueOrigin::Function(_))]
                 );
+                let expressions = args;
                 let mut args: Vec<Values> = args
                     .iter()
                     .map(|arg| self.evaluate(arg, env, captures))
@@ -2997,6 +3116,15 @@ impl Executor<'_> {
                 }
                 for values in &mut args {
                     values.remove(&AbstractValue::Unavailable);
+                }
+                if let Some(callbacks) = self.retained_factory_callbacks(*span, expressions, &args)
+                {
+                    let result = self.deferred_callbacks(callbacks);
+                    return if args_may_throw {
+                        BTreeSet::from([result, AbstractValue::Unavailable])
+                    } else {
+                        BTreeSet::from([result])
+                    };
                 }
                 if let Some(callbacks) = self.proven_from_entries_callbacks(*span, env, captures) {
                     return BTreeSet::from([self.deferred_callbacks(callbacks)]);
@@ -3591,6 +3719,14 @@ impl Executor<'_> {
         for values in &mut args {
             values.remove(&AbstractValue::Unavailable);
         }
+        if call.kind == CallKind::Call
+            && !call.has_spread
+            && self
+                .retained_factory_callbacks(call.span.into(), &call.args, &args)
+                .is_some()
+        {
+            return;
+        }
         // The author assertion covers this direct imported call with checked
         // primitive arguments. Its result remains Unknown; only opaque
         // callback promotion is suppressed.
@@ -3891,6 +4027,13 @@ pub(crate) fn annotate_synchronous_calls(
                 arg.bindings(&mut needed);
             }
         }
+    }
+    // Property-write analysis also needs the receiver's prefix identity, even
+    // when only another alias is passed to a later call. In particular, a
+    // callable's custom fields/prototype are outside the object-record model.
+    for write in index.top_callback_result_writes.iter().flatten() {
+        write.receiver.bindings(&mut needed);
+        write.value.bindings(&mut needed);
     }
     // Retain prefix values for direct heritage reachability and captured bases.
     for key in index.class_bindings.keys() {

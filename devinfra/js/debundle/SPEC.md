@@ -429,6 +429,61 @@ Calls with a named callback, a retained factory result, spread arguments, or
 `new` use conservative callback timing. This contract is independent of purity
 and does not grant the broader `callback_factory_exports` composition rule.
 
+### Retaining existing or multiple callbacks
+
+`retained_callback_factory_exports` and `retained_callback_factory_members`
+are **separate, stronger author assertions**. No provider name implies this
+contract. Each entry lists exact audited signatures:
+
+```yaml
+chunk_export_purity:
+  provider:
+    retained_callback_factory_exports:
+      factory:
+        - { argument_count: 1, callback_arguments: [0] }
+    retained_callback_factory_members:
+      api:
+        make:
+          - { argument_count: 2, callback_arguments: [0, 1] }
+```
+
+Positions are zero-based. At least one position must be listed, every listed
+position must be less than `argument_count`, and all arguments must be present.
+Unlisted positions admit only the inert primitive syntax of `no_reentry_exports`.
+Spread, construction, computed/chained/aliased callees, uncertain callback
+values, and unlisted arities retain conservative timing. The older contracts
+continue to admit their existing shapes independently when both are declared.
+
+Listed positions admit inline functions/arrows, stable local named function
+values, and retained audited-factory results. Every admitted callback contributes
+to a single over-approximated returned callback graph; extracting any member or
+invoking or publishing that graph can expose all those callbacks and their
+lexical captures. The contract never proves callback purity.
+
+The author must audit **both the provider and each admitted call site's input
+graphs**. Unlike a fresh inline callback, an existing function has observable
+identity, aliases, own properties and a prototype. All provider/type/helper paths
+must refrain from synchronously invoking any caller/importer/host callback,
+publishing or mutating any supplied graph, or accessing importer-owned lexical
+state through any other route. The provider must return a fresh ordinary
+callable/plain-object graph retaining the supplied callbacks, without introducing
+additional provider callbacks, existing-instance aliases or cross-call state.
+Provider-private effects remain allowed and normally ordered.
+
+The callable property/prototype surfaces exposed through the result must contain
+only inert metadata, standard intrinsic properties, and capabilities already
+represented by the supplied callbacks and their lexical captures. Additional
+callbacks attached as custom properties/prototypes, proxies and accessors are
+outside the contract. A provider audit alone cannot establish this importer-side
+obligation. Recognized mutation, rebinding and exposure keep the conservative
+fallback; the checker does not prove the absence of all external aliases.
+
+Namespace members retain the existing namespace identity, mutation and lookup
+guards and require the same namespace capability audit as the fresh-only
+contract. Result mutation and later callback invocation/publication retain the
+ordinary synchronous-effect checks. No callback deferral assertion implies
+purity or permission to reorder argument evaluation.
+
 `chunk_export_purity.<defining chunk>.no_reentry_exports` asserts that direct
 calls of listed named imports cannot synchronously invoke caller-, importer-,
 or host-provided callbacks or read importer-owned lexical state. The author

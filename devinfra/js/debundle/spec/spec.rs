@@ -191,6 +191,14 @@ pub struct ChunkExportPurity {
     /// the same return-only callback contract as `callback_factory_exports`.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub callback_factory_members: BTreeMap<String, BTreeSet<String>>,
+    /// Separately audited factories admitting existing local callbacks and
+    /// multiple retained callback arguments. See `RetainedCallbackSignature`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub retained_callback_factory_exports: BTreeMap<String, Vec<RetainedCallbackSignature>>,
+    /// The same stronger contract on direct static namespace member calls.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub retained_callback_factory_members:
+        BTreeMap<String, BTreeMap<String, Vec<RetainedCallbackSignature>>>,
     /// Named exports whose direct calls with checked primitive arguments
     /// cannot synchronously invoke caller/importer/host callbacks or read
     /// importer-owned lexical state. This changes call timing only: provider
@@ -212,6 +220,48 @@ pub struct ChunkExportPurity {
     /// or replace audited factories except through supplied caller inputs.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub namespace_independent_members: BTreeMap<String, BTreeSet<String>>,
+}
+
+/// One exact call shape certified by the stronger retained-callback audit.
+/// Non-callback positions must be syntactically inert primitives. All listed
+/// callbacks are retained in one fresh returned graph; none may be invoked,
+/// inspected through effectful properties/prototypes, mutated or published
+/// during the call. Existing callable identity and aliases are part of the
+/// author audit; the older fresh-only factory assertions do not imply this.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+pub struct RetainedCallbackSignature {
+    pub argument_count: usize,
+    pub callback_arguments: BTreeSet<usize>,
+}
+
+impl<'de> Deserialize<'de> for RetainedCallbackSignature {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Signature {
+            argument_count: usize,
+            callback_arguments: BTreeSet<usize>,
+        }
+        let signature = Signature::deserialize(deserializer)?;
+        if signature.callback_arguments.is_empty() {
+            return Err(serde::de::Error::custom(
+                "retained callback signature must list at least one callback argument",
+            ));
+        }
+        if signature
+            .callback_arguments
+            .iter()
+            .any(|position| *position >= signature.argument_count)
+        {
+            return Err(serde::de::Error::custom(
+                "retained callback signature position must be less than argument_count",
+            ));
+        }
+        Ok(Self {
+            argument_count: signature.argument_count,
+            callback_arguments: signature.callback_arguments,
+        })
+    }
 }
 
 /// Per-chunk dependency-graph build options. Each field defaults to the

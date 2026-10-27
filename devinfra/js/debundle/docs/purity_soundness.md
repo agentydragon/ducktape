@@ -450,6 +450,20 @@ spreads, arrays, and other expression forms remain conservative.
 Factory calls remain effectful for ordering unless a separate purity contract
 applies. See <design.md> for how this contract scopes callback-flow analysis.
 
+The separate `retained_callback_factory_exports` and
+`retained_callback_factory_members` contracts additionally admit stable named
+local callbacks and explicitly listed callback positions at exact arities.
+They do not widen either fresh-only assertion. The stronger audit belongs to
+each provider **and each call site**: existing callable identity, aliases and
+property/prototype capabilities cannot expose additional callbacks, proxies or
+accessors outside the tracked callable/capture graphs. The provider must not
+mutate, invoke or publish those inputs synchronously, access importer state,
+or introduce provider callbacks or cross-instance aliases in its fresh result.
+The analyzer aggregates all admitted callback graphs and retains ordinary
+mutation/publication/invocation checks. Recognized uncertain, rebound, exposed
+or mutated values fall back conservatively. Exact shape checks and the full
+author obligation are in <../SPEC.md> § Retaining existing or multiple callbacks.
+
 ## Local-effect decorator annotations
 
 `typescript_decorate_helper` only certifies mutation locality.

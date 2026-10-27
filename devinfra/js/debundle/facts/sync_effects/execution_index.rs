@@ -808,6 +808,12 @@ struct Call {
     has_spread: bool,
 }
 
+#[derive(Debug, Clone)]
+struct RetainedCallbackCall {
+    namespace_member: Option<(Id, String)>,
+    signatures: Vec<spec::RetainedCallbackSignature>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CallKind {
     Call,
@@ -1696,6 +1702,13 @@ struct ExecutionIndex {
     callback_factory_imports: BTreeSet<Id>,
     inline_callback_factory_imports: BTreeSet<Id>,
     callback_factory_members: BTreeMap<Id, BTreeSet<String>>,
+    /// Union used only for namespace privacy/mutation guards. Admission of the
+    /// old and stronger contracts remains separate.
+    audited_factory_members: BTreeMap<Id, BTreeSet<String>>,
+    retained_callback_factory_imports: BTreeMap<Id, Vec<spec::RetainedCallbackSignature>>,
+    retained_callback_factory_members:
+        BTreeMap<Id, BTreeMap<String, Vec<spec::RetainedCallbackSignature>>>,
+    retained_callback_calls: BTreeMap<CallSite, RetainedCallbackCall>,
     no_reentry_exports: BTreeSet<Id>,
     no_reentry_members: BTreeMap<Id, BTreeSet<String>>,
     no_reentry_record_members: BTreeMap<Id, BTreeSet<String>>,
@@ -1781,6 +1794,10 @@ impl Default for ExecutionIndex {
             callback_factory_imports: BTreeSet::new(),
             inline_callback_factory_imports: BTreeSet::new(),
             callback_factory_members: BTreeMap::new(),
+            audited_factory_members: BTreeMap::new(),
+            retained_callback_factory_imports: BTreeMap::new(),
+            retained_callback_factory_members: BTreeMap::new(),
+            retained_callback_calls: BTreeMap::new(),
             no_reentry_exports: BTreeSet::new(),
             no_reentry_members: BTreeMap::new(),
             no_reentry_record_members: BTreeMap::new(),
@@ -1842,6 +1859,10 @@ impl ExecutionIndex {
                         .assumptions
                         .callback_factory_members
                         .contains_key(name)
+                        || hints
+                            .assumptions
+                            .retained_callback_factory_members
+                            .contains_key(name)
                         || hints.assumptions.no_reentry_members.contains_key(name)
                         || hints
                             .assumptions
@@ -1926,6 +1947,29 @@ impl ExecutionIndex {
                     {
                         index.no_reentry_exports.insert(local.to_id());
                     }
+                    if let Some(signatures) = hints
+                        .assumptions
+                        .retained_callback_factories
+                        .get(local.sym.as_ref())
+                    {
+                        index
+                            .retained_callback_factory_imports
+                            .insert(local.to_id(), signatures.clone());
+                    }
+                    if let Some(members) = hints
+                        .assumptions
+                        .retained_callback_factory_members
+                        .get(local.sym.as_ref())
+                    {
+                        index
+                            .retained_callback_factory_members
+                            .insert(local.to_id(), members.clone());
+                        index
+                            .audited_factory_members
+                            .entry(local.to_id())
+                            .or_default()
+                            .extend(members.keys().cloned());
+                    }
                     if let Some(members) = hints
                         .assumptions
                         .callback_factory_members
@@ -1934,6 +1978,11 @@ impl ExecutionIndex {
                         index
                             .callback_factory_members
                             .insert(local.to_id(), members.clone());
+                        index
+                            .audited_factory_members
+                            .entry(local.to_id())
+                            .or_default()
+                            .extend(members.iter().cloned());
                     }
                     if let Some(members) =
                         hints.assumptions.no_reentry_members.get(local.sym.as_ref())
@@ -2072,7 +2121,7 @@ impl ExecutionIndex {
         }
         let mut claim_counts = BTreeMap::<FreshErrorWriteSite, usize>::new();
         if !index.fresh_error_claims.is_empty()
-            && !index.callback_factory_members.is_empty()
+            && !index.audited_factory_members.is_empty()
             && flow.is_some()
         {
             // A11 supplies the standard Error allocation/prototype behavior. Reject
@@ -2282,7 +2331,7 @@ impl ExecutionIndex {
             BTreeSet::new()
         } else {
             index
-                .callback_factory_members
+                .audited_factory_members
                 .values()
                 .chain(index.no_reentry_members.values())
                 .chain(index.no_reentry_record_members.values())
@@ -2295,7 +2344,8 @@ impl ExecutionIndex {
             .cloned()
             .collect();
         loop {
-            let factory_members = index.callback_factory_members.clone();
+            let factory_members = index.audited_factory_members.clone();
+            let legacy_factory_members = index.callback_factory_members.clone();
             let no_reentry_members = index.no_reentry_members.clone();
             let no_reentry_record_members = index.no_reentry_record_members.clone();
             // The fresh result is private until these adjacent writes finish.
@@ -2306,7 +2356,7 @@ impl ExecutionIndex {
                     &fresh_steps,
                     &namespace_value_facts,
                     &factory_imports,
-                    &factory_members,
+                    &legacy_factory_members,
                 )
             } else {
                 (BTreeSet::new(), BTreeSet::new())
@@ -2324,8 +2374,11 @@ impl ExecutionIndex {
                 }
             };
             index
-                .callback_factory_members
+                .audited_factory_members
                 .retain(|id, members| keep_audited_members(id, members));
+            index
+                .callback_factory_members
+                .retain(|id, _| index.audited_factory_members.contains_key(id));
             index.no_reentry_members.retain(|id, members| {
                 index
                     .namespace_privacy
@@ -2342,7 +2395,7 @@ impl ExecutionIndex {
                     .is_some_and(|independent| members.is_subset(independent))
                     && keep_audited_members(id, members)
             });
-            if index.callback_factory_members.len() == factory_members.len()
+            if index.audited_factory_members.len() == factory_members.len()
                 && index.no_reentry_members.len() == no_reentry_members.len()
                 && index.no_reentry_record_members.len() == no_reentry_record_members.len()
             {
@@ -2658,7 +2711,7 @@ impl ExecutionIndex {
         };
         let value = ValueExpr::from_expr(expression);
         let exposed = self
-            .callback_factory_members
+            .audited_factory_members
             .keys()
             .filter(|id| value.carries_namespace(id, &BTreeSet::new()))
             .cloned()
@@ -2676,7 +2729,7 @@ impl ExecutionIndex {
             return false;
         };
         matches!(member.obj.unwrap_parens(), Expr::Ident(namespace)
-            if self.callback_factory_members.contains_key(&namespace.to_id()))
+            if self.audited_factory_members.contains_key(&namespace.to_id()))
             && matches!(member.prop, MemberProp::Ident(_))
     }
 
@@ -2687,7 +2740,7 @@ impl ExecutionIndex {
         let Expr::Ident(namespace) = member.obj.unwrap_parens() else {
             return false;
         };
-        self.callback_factory_members
+        self.audited_factory_members
             .contains_key(&namespace.to_id())
             && matches!(member.prop, MemberProp::Ident(_))
     }
@@ -2719,6 +2772,57 @@ impl ExecutionIndex {
                 Expr::Fn(_) | Expr::Arrow(_)
             ))
         .then_some(0)
+    }
+
+    fn retained_callback_call(&self, call: &CallExpr) -> Option<RetainedCallbackCall> {
+        if call.args.iter().any(|argument| argument.spread.is_some()) {
+            return None;
+        }
+        let Callee::Expr(callee) = &call.callee else {
+            return None;
+        };
+        let (signatures, namespace_member) = match callee.unwrap_parens() {
+            Expr::Ident(binding) => (
+                self.retained_callback_factory_imports
+                    .get(&binding.to_id())?,
+                None,
+            ),
+            Expr::Member(member) => {
+                let (Expr::Ident(namespace), MemberProp::Ident(property)) =
+                    (member.obj.unwrap_parens(), &member.prop)
+                else {
+                    return None;
+                };
+                (
+                    self.retained_callback_factory_members
+                        .get(&namespace.to_id())?
+                        .get(property.sym.as_ref())?,
+                    Some((namespace.to_id(), property.sym.to_string())),
+                )
+            }
+            _ => return None,
+        };
+        let signatures: Vec<_> = signatures
+            .iter()
+            .filter(|signature| {
+                signature.argument_count == call.args.len()
+                    && call.args.iter().enumerate().all(|(position, argument)| {
+                        if signature.callback_arguments.contains(&position) {
+                            matches!(
+                                argument.expr.unwrap_parens(),
+                                Expr::Ident(_) | Expr::Fn(_) | Expr::Arrow(_) | Expr::Call(_)
+                            )
+                        } else {
+                            no_reentry_primitive_argument(&argument.expr)
+                        }
+                    })
+            })
+            .cloned()
+            .collect();
+        (!signatures.is_empty()).then_some(RetainedCallbackCall {
+            namespace_member,
+            signatures,
+        })
     }
 
     fn record_member_write(&mut self, member: &MemberExpr) {
@@ -3826,11 +3930,25 @@ impl Visit for ExecutionIndex {
         }
 
         let callback_argument = self.inline_factory_callback_argument(call);
+        let retained_call = self.retained_callback_call(call);
+        let callback_arguments: BTreeSet<_> = callback_argument
+            .into_iter()
+            .chain(
+                retained_call
+                    .iter()
+                    .flat_map(|call| call.signatures.iter())
+                    .flat_map(|signature| signature.callback_arguments.iter().copied()),
+            )
+            .collect();
+        if let Some(retained_call) = retained_call {
+            self.retained_callback_calls
+                .insert(call.span.into(), retained_call);
+        }
         let is_factory_member_callee = self.literal_depth > 0
             && self.factory_callback_depth > 0
             && matches!(&call.callee, Callee::Expr(callee)
                 if self.is_callback_factory_member_callee(callee));
-        if callback_argument.is_some() || is_factory_member_callee {
+        if !callback_arguments.is_empty() || is_factory_member_callee {
             match &call.callee {
                 Callee::Expr(callee) if is_factory_member_callee => {
                     self.factory_member_value_depth += 1;
@@ -3840,7 +3958,7 @@ impl Visit for ExecutionIndex {
                 callee => callee.visit_with(self),
             }
             for (index, argument) in call.args.iter().enumerate() {
-                if callback_argument == Some(index) {
+                if callback_arguments.contains(&index) {
                     self.factory_callback_depth += 1;
                     argument.visit_with(self);
                     self.factory_callback_depth -= 1;

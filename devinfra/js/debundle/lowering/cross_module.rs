@@ -13,7 +13,9 @@ use analysis::cross_module_purity::{
     resolve_asserted_member_purities, resolve_asserted_namespace_independent_members,
     resolve_asserted_no_reentry_bindings, resolve_asserted_no_reentry_members,
     resolve_asserted_no_reentry_record_members, resolve_asserted_pure_new_bindings,
-    resolve_imported_callback_factories, resolve_imported_purities,
+    resolve_asserted_retained_callback_factories,
+    resolve_asserted_retained_callback_factory_members, resolve_imported_callback_factories,
+    resolve_imported_purities,
 };
 use analysis::purity::Purity;
 use anyhow::{Context, Result};
@@ -72,6 +74,10 @@ pub(super) struct CrossModulePurities {
     pub(super) callback_factories: BTreeMap<String, BTreeSet<String>>,
     pub(super) inline_callback_factories: BTreeMap<String, BTreeSet<String>>,
     pub(super) callback_factory_members: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
+    pub(super) retained_callback_factories:
+        BTreeMap<String, BTreeMap<String, Vec<spec::RetainedCallbackSignature>>>,
+    pub(super) retained_callback_factory_members:
+        BTreeMap<String, BTreeMap<String, BTreeMap<String, Vec<spec::RetainedCallbackSignature>>>>,
     pub(super) no_reentry_exports: BTreeMap<String, BTreeSet<String>>,
     pub(super) no_reentry_members: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
     pub(super) no_reentry_record_members: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
@@ -399,6 +405,30 @@ pub(super) fn collect_cross_module_imported_purities(
         }
     }
     CrossModulePurities {
+        retained_callback_factories: resolve_asserted_retained_callback_factories(
+            &modules,
+            &chunk_export_purity
+                .iter()
+                .map(|(chunk, assertion)| {
+                    (
+                        chunk.clone(),
+                        assertion.retained_callback_factory_exports.clone(),
+                    )
+                })
+                .collect(),
+        ),
+        retained_callback_factory_members: resolve_asserted_retained_callback_factory_members(
+            &modules,
+            &chunk_export_purity
+                .iter()
+                .map(|(chunk, assertion)| {
+                    (
+                        chunk.clone(),
+                        assertion.retained_callback_factory_members.clone(),
+                    )
+                })
+                .collect(),
+        ),
         bindings: resolve_imported_purities(&modules, &asserted_pure),
         members: resolve_asserted_member_purities(&modules, &asserted_members),
         fluent: resolve_asserted_fluent_bindings(&modules, &asserted_fluent),

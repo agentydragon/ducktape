@@ -445,11 +445,28 @@ pub fn resolve_asserted_namespace_independent_members(
     resolve_asserted_members(modules, asserted_members, "namespace_independent_members")
 }
 
-fn resolve_asserted_members(
+pub fn resolve_asserted_retained_callback_factories(
     modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
-    asserted_members: &BTreeMap<ModuleKey, BTreeMap<String, BTreeSet<String>>>,
+    asserted: &BTreeMap<ModuleKey, BTreeMap<String, Vec<spec::RetainedCallbackSignature>>>,
+) -> BTreeMap<ModuleKey, BTreeMap<String, Vec<spec::RetainedCallbackSignature>>> {
+    resolve_asserted_members(modules, asserted, "retained_callback_factory_exports")
+}
+
+pub fn resolve_asserted_retained_callback_factory_members(
+    modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
+    asserted: &BTreeMap<
+        ModuleKey,
+        BTreeMap<String, BTreeMap<String, Vec<spec::RetainedCallbackSignature>>>,
+    >,
+) -> BTreeMap<ModuleKey, BTreeMap<String, BTreeMap<String, Vec<spec::RetainedCallbackSignature>>>> {
+    resolve_asserted_members(modules, asserted, "retained_callback_factory_members")
+}
+
+fn resolve_asserted_members<T: Clone>(
+    modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
+    asserted_members: &BTreeMap<ModuleKey, BTreeMap<String, T>>,
     contract: &str,
-) -> BTreeMap<ModuleKey, BTreeMap<String, BTreeSet<String>>> {
+) -> BTreeMap<ModuleKey, BTreeMap<String, T>> {
     for (module, by_export) in asserted_members {
         for export_name in by_export.keys() {
             let known_export = modules
@@ -466,7 +483,7 @@ fn resolve_asserted_members(
     modules
         .iter()
         .map(|(key, facts)| {
-            let members: BTreeMap<String, BTreeSet<String>> = facts
+            let members: BTreeMap<String, T> = facts
                 .imports
                 .iter()
                 .filter_map(|(local, target)| {

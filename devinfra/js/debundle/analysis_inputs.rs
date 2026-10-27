@@ -70,6 +70,9 @@ pub struct AnalysisAssumptions {
     /// Static members of imported namespace bindings with an audited
     /// return-only callback contract, independent of member-call purity.
     pub callback_factory_members: BTreeMap<String, BTreeSet<String>>,
+    pub retained_callback_factories: BTreeMap<String, Vec<spec::RetainedCallbackSignature>>,
+    pub retained_callback_factory_members:
+        BTreeMap<String, BTreeMap<String, Vec<spec::RetainedCallbackSignature>>>,
     /// Direct imported function calls with audited no-reentry timing for
     /// checked primitive arguments. Does not imply purity or known return.
     pub no_reentry_exports: BTreeSet<String>,

@@ -56,6 +56,11 @@ debundle_e2e_test(name = "native_browser_reentry_test")
 
 debundle_e2e_test(name = "empty_collection_timing_test")
 
+debundle_e2e_test(
+    name = "retained_callback_factory_test",
+    deps = ["//devinfra/js/debundle:analysis"],
+)
+
 debundle_e2e_test(name = "map_entry_callbacks_test")
 
 debundle_e2e_test(name = "from_entries_callback_storage_test")

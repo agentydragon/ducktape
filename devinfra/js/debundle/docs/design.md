@@ -1165,11 +1165,37 @@ spread arguments, or construction does not use this contract. The imported
 binding identity follows the ordinary export/import resolver, including local
 renames; this callback-flow fact does not imply purity.
 
+The separate `retained_callback_factory_exports` and
+`retained_callback_factory_members` assertions admit explicitly enumerated
+arities and callback positions, including stable local named callbacks. The
+call index retains the syntax/primitive-position check from the single parse;
+the interpreter checks actual callable values and unions the retained callback
+graphs at both value production and synchronous call execution. Namespace
+privacy checks cover the union of independently audited factory members, while
+the old and stronger admission rules remain separate. Unsupported values,
+mutation, rebinding, exposure, spreads and construction keep ordinary fallback.
+The per-call-site audit additionally covers nonfresh callable identity, aliases,
+property/prototype capabilities and exclusion of additional callbacks or
+cross-instance state in the returned graph; the complete contract is in
+<../SPEC.md> § Retaining existing or multiple callbacks. This is an explicit
+author assumption, never an inference from a provider's name.
+
 Invoking a retained result promotes its callbacks through the shared synchronous
 statement adjacency and retained prefix reads. This includes callbacks returned
 before suspension while excluding reads after an unconditional await. Complete
 raw rebinds remain conservative; incomplete reachability or uncovered callable
 surfaces retain whole-body read effects.
+
+Callable own/prototype properties are not tracked as ordinary object records.
+Installing nonprimitive values through a recognized callable receiver or local
+alias therefore promotes the supplied callbacks conservatively at the write.
+This also covers nested prototype writes: otherwise an opaque factory could
+return the original function and expose an untracked `result.invoke.extra()`
+callback. Primitive metadata writes keep their existing narrow exception.
+Opaque consumers can also retain and invoke a passed callback's synchronous
+return value. The fallback promotes those returned callback graphs through the
+same bounded, cycle-safe source closure, preserving unconditional-await
+boundaries rather than stopping at the first invocation.
 
 Opaque class and instance values can expose constructors, instance fields,
 methods, and accessors to foreign code. Their callback promotion uses the same
