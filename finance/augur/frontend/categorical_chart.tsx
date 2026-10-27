@@ -6,31 +6,35 @@
 import React from "react";
 
 import { fmtKl, fmtProb, klTextClass, PlatformBadge } from "./calibration_format";
+import type { CalibrationRunResponse } from "./client";
+
+type CategoricalFamily = NonNullable<CalibrationRunResponse["result"]["categorical"]>[number];
+type CategoricalBucket = CategoricalFamily["buckets"][number];
 
 const MARKET_BAR_CLASS = "fill-blue-500 dark:fill-blue-400";
 const MODEL_BAR_CLASS = "fill-emerald-500 dark:fill-emerald-400";
 
 // One mutually-exclusive bucket range, e.g. `[7400, 7600)` or open ends `< 4000` / `≥ 9000`.
-function fmtRange(low, high) {
+function fmtRange(low: number | null | undefined, high: number | null | undefined) {
   if (low == null) return `< ${Number(high).toLocaleString()}`;
   if (high == null) return `≥ ${Number(low).toLocaleString()}`;
   return `${Number(low).toLocaleString()}–${Number(high).toLocaleString()}`;
 }
 
-function bucketLabel(bucket) {
+function bucketLabel(bucket: CategoricalBucket) {
   return bucket.label || fmtRange(bucket.low, bucket.high);
 }
 
-function bucketTitle(bucket) {
+function bucketTitle(bucket: CategoricalBucket) {
   return `${bucketLabel(bucket)}\nMarket: ${fmtProb(bucket.pMarket)}\nModel: ${fmtProb(bucket.pModel)}\n${bucket.marketId}`;
 }
 
-function probabilityY(value, top, chartHeight) {
+function probabilityY(value: number | null, top: number, chartHeight: number) {
   const bounded = Math.min(1, Math.max(0, Number(value)));
   return top + (1 - bounded) * chartHeight;
 }
 
-export function CategoricalMiniChart({ buckets }) {
+export function CategoricalMiniChart({ buckets }: { buckets: readonly CategoricalBucket[] }) {
   const width = 320;
   const height = 124;
   const top = 10;
@@ -45,7 +49,7 @@ export function CategoricalMiniChart({ buckets }) {
   // probabilities remain available on hover (bucketTitle).
   const maxP = Math.max(0, ...buckets.flatMap((bucket) => [bucket.pMarket ?? 0, bucket.pModel ?? 0]));
   const scaleP = maxP > 0 ? 1 / maxP : 1;
-  const xFor = (index) => slot * index + slot / 2;
+  const xFor = (index: number) => slot * index + slot / 2;
   const marketPoints = buckets.map(
     (bucket, index) => `${xFor(index)},${probabilityY(bucket.pMarket * scaleP, top, chartHeight)}`
   );
@@ -167,7 +171,7 @@ export function CategoricalMiniChart({ buckets }) {
   );
 }
 
-export function CategoricalPanel({ families }) {
+export function CategoricalPanel({ families }: { families: readonly CategoricalFamily[] }) {
   return (
     <section className="augur-panel overflow-hidden" aria-label="Categorical markets" data-calibration-categorical="">
       <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
