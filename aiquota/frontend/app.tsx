@@ -2,6 +2,7 @@ import { useEffect, useState, type JSX } from "react";
 
 import { Dashboard } from "./dashboard";
 import type { QuotasView } from "./quotas";
+import { parseQuotasView } from "./wire";
 
 const TICK_MS = 1_000;
 
@@ -21,10 +22,12 @@ export function App(): JSX.Element {
     events.addEventListener("view", (event) => {
       if (!active) return;
       try {
-        setQuotas(JSON.parse(event.data) as QuotasView);
+        setQuotas(parseQuotasView(event.data));
         setError(null);
         setConnecting(false);
-      } catch {
+      } catch (cause) {
+        console.warn("Could not decode the live quota update", cause);
+        setConnecting(false);
         setError("Could not read the live quota update.");
       }
     });

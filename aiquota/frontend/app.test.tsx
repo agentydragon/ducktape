@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./app";
+import type { QuotasView } from "./quotas";
 
 class Stream extends EventTarget {
   static CLOSED = 2;
@@ -35,11 +36,11 @@ class Stream extends EventTarget {
               last_success: null,
               currently_over_plan: false,
               paid_credits_active: false,
-              extra_status: "hidden",
+              extra_status: "none",
               burn: null,
             },
           ],
-        }),
+        } satisfies QuotasView),
       })
     );
   }
@@ -64,10 +65,44 @@ afterEach(() => {
   act(() => root.unmount());
   container.remove();
   vi.useRealTimers();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
 describe("quota subscription", () => {
+  it.each(["{", "{}", '{"fetched_at":"2026-01-15T12:00:00Z","providers":[{"last_output":false}]}'])(
+    "retains the last valid snapshot and recovers after a rejected frame: %s",
+    (data) => {
+      const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      const stream = Stream.instances[0];
+      act(() => stream.view("2026-01-15T12:00:00+00:00"));
+      expect(container.textContent).toContain("1 banked reset");
+      const initial = container.querySelector(".aiquota-card")?.textContent;
+
+      act(() => {
+        stream.dispatchEvent(new MessageEvent("view", { data }));
+      });
+      expect(container.querySelector('[role="status"]')?.textContent).toBe("Quota stream unavailable");
+      expect(container.querySelector(".aiquota-card")?.textContent).toBe(initial);
+      expect(warning).toHaveBeenCalledOnce();
+
+      act(() => stream.view("2026-01-16T12:00:00Z", 2));
+      expect(container.querySelector(".aiquota-notice")).toBeNull();
+      expect(container.querySelector('[role="status"]')?.textContent).toBe("Quota stream live");
+      expect(container.textContent).toContain("2 banked resets");
+    }
+  );
+
+  it("reports an invalid first frame without leaving reconnect disabled", () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    act(() => {
+      Stream.instances[0].dispatchEvent(new MessageEvent("view", { data: "{}" }));
+    });
+    expect(container.querySelector('[role="status"]')?.textContent).toBe("Quota stream unavailable");
+    expect(container.querySelector<HTMLButtonElement>("button")?.disabled).toBe(false);
+    expect(container.querySelector(".aiquota-card")).toBeNull();
+  });
+
   it("receives initial and replacement snapshots without fetching or polling", () => {
     const stream = Stream.instances[0];
     expect(stream.url).toBe("/v1/events");

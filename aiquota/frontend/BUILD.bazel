@@ -2,7 +2,7 @@
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
-load("//devinfra/js:openapi.bzl", "js_openapi_schema")
+load("//devinfra/js:openapi.bzl", "js_openapi_schema", "js_openapi_zod")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 load("//devinfra/js:typed_eslint.bzl", "typed_eslint_test")
@@ -51,11 +51,25 @@ ts_config(
     src = "tsconfig.json",
 )
 
+ts_config(
+    name = "tsconfig_generated",
+    src = "tsconfig.generated.json",
+    deps = [":tsconfig"],
+)
+
 # Wire types generated from the API's own OpenAPI document, so the dashboard's idea of a
 # quota window is the Pydantic model rather than a hand-kept copy. Not checked in.
 js_openapi_schema(
     name = "schema",
     generator = "//aiquota:export_schema_bin",
+)
+
+js_openapi_zod(
+    name = "schema_zod",
+    out = "api/schema.zod.ts",
+    config = "openapi-ts.config.mjs",
+    generator = "//aiquota:export_schema_bin",
+    tsconfig = ":tsconfig_generated",
 )
 
 ts_library(
@@ -72,6 +86,17 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [":schema"],
+)
+
+ts_library(
+    name = "wire",
+    srcs = ["wire.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":quotas",
+        ":schema_zod",
+    ],
 )
 
 # The board is the shareable half: the Haku Console renders it from its own shell, so it must
@@ -112,6 +137,7 @@ ts_library(
     deps = [
         ":dashboard",
         ":quotas",
+        ":wire",
         "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
@@ -218,6 +244,7 @@ aiquota_vitest_test(
     isolated_typecheck = True,
     deps = [
         ":app",
+        ":quotas",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
         "//:node_modules/react",
