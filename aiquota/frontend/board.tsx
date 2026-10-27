@@ -17,23 +17,25 @@
 
 import { type JSX } from "react";
 
+import { displayUsedPercent, formatKnownExpiries, formatUsd, formatUsdWhole, formatWindowLabel } from "./format";
 import {
-  displayUsedPercent,
+  bindingTint,
+  computePace,
   formatAge,
   formatClock,
   formatDuration,
-  formatKnownExpiries,
-  formatMultiplier,
   formatPace,
   formatPaceForecast,
   formatPeakInterval,
   formatPrepaidBalance,
-  formatUsd,
-  formatUsdWhole,
-  formatWindowLabel,
+  formatMultiplier,
   roundHalfToEven,
-} from "./format";
-import { bindingTint, computePace, elapsedFraction, isExhausted, tintFor, type Tint, type WindowMath } from "./pace";
+  elapsedFraction,
+  isExhausted,
+  tintFor,
+  type Tint,
+  type WindowMath,
+} from "../shared/presentation.js";
 import {
   effectiveQuota,
   isShortWindow,

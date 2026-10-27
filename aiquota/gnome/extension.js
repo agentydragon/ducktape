@@ -9,7 +9,7 @@ import * as Main from "resource:///org/gnome/shell/ui/main.js";
 import * as PanelMenu from "resource:///org/gnome/shell/ui/panelMenu.js";
 import * as PopupMenu from "resource:///org/gnome/shell/ui/popupMenu.js";
 import {
-  bindingTint as sharedBindingTint,
+  bindingTint,
   computePace as sharedComputePace,
   displayUsedPercent as sharedDisplayUsedPercent,
   elapsedFraction as sharedElapsedFraction,
@@ -18,13 +18,13 @@ import {
   formatDuration as sharedFormatDuration,
   formatKnownExpiry,
   formatMultiplier,
-  formatPace as sharedFormatPace,
-  formatPaceForecast as sharedFormatForecast,
+  formatPace,
+  formatPaceForecast,
   formatPeakInterval,
   formatPrepaidBalance as sharedFormatPrepaidBalance,
   isExhausted as sharedIsExhausted,
   roundHalfToEven,
-  tintFor as sharedTintFor,
+  tintFor,
   formatWindowLabel,
 } from "./presentation.js";
 
@@ -168,23 +168,6 @@ function isExhausted(state) {
 function formatUsedPercent(state) {
   if (state?.usedPercent == null) return "?";
   return `${sharedDisplayUsedPercent(state.usedPercent)}%`;
-}
-
-function tintFor({ pace, usedPercent, isShort }) {
-  return sharedTintFor(pace ?? null, usedPercent, isShort);
-}
-
-// Preserve the most urgent tint across every provider-supplied window.
-function bindingTint(tints) {
-  return sharedBindingTint(tints);
-}
-
-function formatPace(pace) {
-  return pace == null ? null : sharedFormatPace(pace);
-}
-
-function formatForecast(pace, resetSeconds) {
-  return pace == null ? null : sharedFormatForecast(pace, resetSeconds);
 }
 
 function formatCompactDollars(usd) {
@@ -960,11 +943,7 @@ const QuotaIndicator = GObject.registerClass(
       const exhaustedWindows = liveWindows.filter((window) => isExhausted(window));
       const longestDuration = Math.max(...liveWindows.map((window) => window.windowSeconds));
       const tints = liveWindows.map((window, index) =>
-        tintFor({
-          pace: paces[index],
-          usedPercent: window.usedPercent,
-          isShort: window.windowSeconds < longestDuration,
-        })
+        tintFor(paces[index] ?? null, window.usedPercent, window.windowSeconds < longestDuration)
       );
       const overPlan = state.currentlyOverPlan === true || state.paidCreditsActive === true;
       const stale = staleAge != null || isStaleFetch(state.lastFetch);
@@ -1104,7 +1083,7 @@ const QuotaIndicator = GObject.registerClass(
       const used = formatUsedPercent(liveState);
       const reset = `↻${formatDuration(liveState.resetSeconds)}`;
       const paceStr = formatPace(pace);
-      const forecast = formatForecast(pace, liveState.resetSeconds);
+      const forecast = formatPaceForecast(pace, liveState.resetSeconds);
       const parts = [used, reset];
       if (exhausted) {
         parts.push("exhausted");
@@ -1114,8 +1093,7 @@ const QuotaIndicator = GObject.registerClass(
       }
       item._summaryLabel.set_text(`${label}: ${parts.join("  ")}`);
 
-      const usageTint =
-        staleAgeSeconds != null ? "stale" : tintFor({ pace, usedPercent: liveState.usedPercent, isShort });
+      const usageTint = staleAgeSeconds != null ? "stale" : tintFor(pace, liveState.usedPercent, isShort);
       this._setQuotaBar(
         item._quotaBar,
         liveState.usedPercent == null ? null : liveState.usedPercent / 100,

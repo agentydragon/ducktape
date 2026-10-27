@@ -1,66 +1,18 @@
-/** Browser adapters for the shared runtime-neutral presentation helpers. */
-
 import {
-  displayUsedPercent as sharedDisplayUsedPercent,
-  formatAge as sharedFormatAge,
-  formatClock as sharedFormatClock,
-  formatDuration as sharedFormatDuration,
+  displayUsedPercent as displaySharedUsedPercent,
   formatKnownExpiry,
-  formatMultiplier as sharedFormatMultiplier,
-  formatPace as sharedFormatPace,
-  formatPaceForecast as sharedFormatPaceForecast,
-  formatPeakInterval as sharedFormatPeakInterval,
-  formatPrepaidBalance as sharedFormatPrepaidBalance,
-  formatWindowDuration as sharedFormatWindowDuration,
-  formatWindowLabel as sharedFormatWindowLabel,
+  formatWindowLabel as formatSharedWindowLabel,
   roundHalfToEven,
 } from "../shared/presentation.js";
-import type { Pace } from "./pace";
 
-export { roundHalfToEven };
-
-export function formatDuration(seconds: number): string {
-  return sharedFormatDuration(seconds);
-}
-
-export function formatWindowDuration(seconds: number): string {
-  return sharedFormatWindowDuration(seconds);
-}
-
+/** Adapt the API's snake_case window shape to the shared presentation model. */
 export function formatWindowLabel(window: { name?: string | null; window_seconds: number }): string {
-  return sharedFormatWindowLabel({ name: window.name, windowSeconds: window.window_seconds });
+  return formatSharedWindowLabel({ name: window.name, windowSeconds: window.window_seconds });
 }
 
+/** Adapt the API's snake_case window shape to the shared presentation model. */
 export function displayUsedPercent(window: { used_percent: number }): number {
-  return sharedDisplayUsedPercent(window.used_percent);
-}
-
-export function formatAge(seconds: number): string {
-  return sharedFormatAge(seconds);
-}
-
-export function formatPrepaidBalance(amountMinor: number, exponent: number, currency: string): string {
-  return sharedFormatPrepaidBalance(amountMinor, exponent, currency);
-}
-
-export function formatPace(pace: Pace | null): string | null {
-  return sharedFormatPace(pace);
-}
-
-export function formatPaceForecast(pace: Pace | null, resetSeconds: number): string | null {
-  return sharedFormatPaceForecast(pace, resetSeconds);
-}
-
-export function formatClock(instant: Date): string {
-  return sharedFormatClock(instant);
-}
-
-export function formatMultiplier(value: number): string {
-  return sharedFormatMultiplier(value);
-}
-
-export function formatPeakInterval(interval: { start: string; end: string }): string {
-  return sharedFormatPeakInterval(interval);
+  return displaySharedUsedPercent(window.used_percent);
 }
 
 export function formatKnownExpiries(expiries: string[]): string {

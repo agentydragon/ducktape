@@ -8,17 +8,18 @@
 
 import { describe, expect, it } from "vitest";
 
+import { displayUsedPercent, formatWindowLabel } from "./format";
+import cases from "./fixtures/format_cases.json";
 import {
-  displayUsedPercent,
+  computePace,
   formatDuration,
   formatPace,
   formatPaceForecast,
   formatPrepaidBalance,
-  formatWindowLabel,
+  isExhausted,
   roundHalfToEven,
-} from "./format";
-import cases from "./fixtures/format_cases.json";
-import { computePace, isExhausted, tintFor } from "./pace";
+  tintFor,
+} from "../shared/presentation.js";
 
 type FormatCase = {
   name: string | null;

@@ -1,4 +1,15 @@
-export function roundHalfToEven(value) {
+export type Tint = "cool" | "ok" | "warn" | "hot" | "unknown" | "stale";
+
+export type Pace = {
+  deviation: number;
+  projectedAtReset: number | null;
+  secondsToExhaust: number | null;
+  stable: boolean;
+};
+
+export type WindowMath = { usedPercent: number; resetSeconds: number; windowSeconds: number };
+
+export function roundHalfToEven(value: number): number {
   const floor = Math.floor(value);
   const fraction = value - floor;
   if (fraction > 0.5) return floor + 1;
@@ -6,15 +17,15 @@ export function roundHalfToEven(value) {
   return floor % 2 === 0 ? floor : floor + 1;
 }
 
-export function isExhausted({ usedPercent }) {
+export function isExhausted({ usedPercent }: WindowMath): boolean {
   return usedPercent >= 100;
 }
 
-export function elapsedFraction({ resetSeconds, windowSeconds }) {
+export function elapsedFraction({ resetSeconds, windowSeconds }: WindowMath): number {
   return clamp01((windowSeconds - resetSeconds) / windowSeconds);
 }
 
-export function computePace({ usedPercent, resetSeconds, windowSeconds }) {
+export function computePace({ usedPercent, resetSeconds, windowSeconds }: WindowMath): Pace {
   const elapsedSeconds = windowSeconds - resetSeconds;
   const elapsed = elapsedSeconds / windowSeconds;
   const spending = elapsedSeconds > 0 && usedPercent > 0;
@@ -27,7 +38,7 @@ export function computePace({ usedPercent, resetSeconds, windowSeconds }) {
   };
 }
 
-export function tintFor(pace, usedPercent, isShort) {
+export function tintFor(pace: Pace | null, usedPercent: number | null, isShort: boolean): Tint {
   if (usedPercent == null) return "unknown";
   if (isShort && usedPercent >= 85) return "hot";
   if (pace === null || !pace.stable) {
@@ -41,12 +52,12 @@ export function tintFor(pace, usedPercent, isShort) {
   return "ok";
 }
 
-export function bindingTint(tints) {
-  const rank = { unknown: 0, stale: 0, ok: 1, cool: 1, warn: 2, hot: 3 };
+export function bindingTint(tints: Tint[]): Tint {
+  const rank: Record<Tint, number> = { unknown: 0, stale: 0, ok: 1, cool: 1, warn: 2, hot: 3 };
   return tints.reduce((worst, tint) => (rank[tint] > rank[worst] ? tint : worst), "unknown");
 }
 
-export function formatDuration(seconds) {
+export function formatDuration(seconds: number): string {
   const total = Math.max(0, roundHalfToEven(seconds));
   const days = Math.floor(total / 86400);
   const hours = Math.floor((total % 86400) / 3600);
@@ -56,7 +67,7 @@ export function formatDuration(seconds) {
   return `${minutes}m`;
 }
 
-export function formatWindowDuration(seconds) {
+export function formatWindowDuration(seconds: number): string {
   const rounded = roundHalfToEven(seconds);
   if (rounded % 86400 === 0) return `${rounded / 86400}d`;
   if (rounded % 3600 === 0) return `${rounded / 3600}h`;
@@ -64,27 +75,27 @@ export function formatWindowDuration(seconds) {
   return `${rounded}s`;
 }
 
-export function formatWindowLabel(window) {
+export function formatWindowLabel(window: { name?: string | null; windowSeconds: number }): string {
   const duration = formatWindowDuration(window.windowSeconds);
   return window.name ? `${window.name} (${duration})` : duration;
 }
 
-export function displayUsedPercent(usedPercent) {
+export function displayUsedPercent(usedPercent: number): number {
   const rounded = roundHalfToEven(usedPercent);
   return usedPercent >= 100 ? rounded : Math.min(rounded, 99);
 }
 
-export function formatAge(seconds) {
+export function formatAge(seconds: number): string {
   const total = Math.max(0, roundHalfToEven(seconds));
   return total < 60 ? `${total}s` : formatDuration(total);
 }
 
-export function formatPace(pace) {
+export function formatPace(pace: Pace | null): string | null {
   if (pace === null || !pace.stable) return null;
   return `${pace.deviation >= 0 ? "+" : "-"}${Math.abs(roundHalfToEven(pace.deviation))}%`;
 }
 
-export function formatPaceForecast(pace, resetSeconds) {
+export function formatPaceForecast(pace: Pace | null, resetSeconds: number): string | null {
   if (pace === null || !pace.stable || pace.projectedAtReset === null) return null;
   if (pace.projectedAtReset > 100.5 && pace.secondsToExhaust !== null) {
     return `exhausts ~${formatDuration(resetSeconds - pace.secondsToExhaust)} before reset`;
@@ -93,7 +104,7 @@ export function formatPaceForecast(pace, resetSeconds) {
   return "on pace";
 }
 
-export function formatPrepaidBalance(amountMinor, exponent, currency) {
+export function formatPrepaidBalance(amountMinor: number, exponent: number, currency: string): string {
   const negative = amountMinor < 0;
   const amount = BigInt(Math.abs(amountMinor));
   const scale = 10n ** BigInt(exponent);
@@ -104,18 +115,18 @@ export function formatPrepaidBalance(amountMinor, exponent, currency) {
   return currency === "USD" ? `${sign}$${value}` : `${sign}${value} ${currency}`;
 }
 
-export function formatClock(instant) {
+export function formatClock(instant: Date): string {
   return instant.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
-export function formatPeakInterval(interval) {
+export function formatPeakInterval(interval: { start: string; end: string }): string {
   const start = new Date(interval.start);
   const weekday = start.toLocaleDateString([], { weekday: "short" });
   return `${weekday} ${formatClock(start)}-${formatClock(new Date(interval.end))}`;
 }
 
-export function formatKnownExpiry(expiry) {
-  const date = new Date(expiry);
+export function formatKnownExpiry(expiry: string | Date): string | null {
+  const date = expiry instanceof Date ? expiry : new Date(expiry);
   if (Number.isNaN(date.getTime())) return null;
   return date.toLocaleString([], {
     month: "short",
@@ -126,10 +137,10 @@ export function formatKnownExpiry(expiry) {
   });
 }
 
-export function formatMultiplier(value) {
+export function formatMultiplier(value: number): string {
   return `${value}x`;
 }
 
-function clamp01(value) {
+function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
 }
