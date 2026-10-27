@@ -30,7 +30,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use clap::Args as ClapArgs;
 use peel::OutputFormat;
 use spec::LogicalModule;
-use spec_modules::read_module_file as read_module;
+use spec_modules::{coalesce_source_match_claims, read_module_file as read_module};
 use yaml_edit::write_yaml_atomic;
 
 use crate::edit_gate::{GraphEditArgs, PostEditSpec, post_delete_spec, post_edit_spec_from_docs};
@@ -391,6 +391,7 @@ fn plan_merge(modules_root: &Path, target: &Path, sources: &[&Path]) -> Result<M
         ));
     }
 
+    coalesce_source_match_claims(&mut target_module);
     Ok(MergePlan {
         summary: MergeSummary {
             target: target_abs,

@@ -18,6 +18,12 @@ semantic intent and do not change the spec unless an author explicitly applies
 an edit. A new upstream snapshot needs its own reviewed spec and exact validation
 against that snapshot.
 
+The `modules refine` and `modules merge` authoring edits may combine source-match
+records with byte-identical templates and matching metadata into one ordered
+capture list. Conflicting notes or overlapping local captures remain separate.
+The combined document passes the same production selector resolution and edit
+gate before writing; regrouping does not bypass source-unit identity checks.
+
 ## Accepted output
 
 Unresolved claims prevent acceptance. A run may write diagnostic reports for a
