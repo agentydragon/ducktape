@@ -1916,16 +1916,21 @@ function standaloneReasoningRows(
 ): Record<string, unknown>[] {
   const reasoning = codeFence
     ? [
-        "# Result",
+        "> Check",
         "",
-        "I checked the typed implementation and its returned value:",
+        "| State | Count |",
+        "| --- | --- |",
+        "| Ready | 2 |",
+        "",
+        "- Parsed",
+        "- Complete",
         "",
         "```python",
         "def greet(name: str) -> str:",
         '    return f"Hello, {name}!"',
         "```",
         "",
-        "The complete implementation remains available when expanded.",
+        "The complete result remains available when expanded.",
       ].join("\n")
     : longBody
       ? LONG_REASONING_BODY

@@ -623,16 +623,27 @@ async def test_standalone_reasoning_opens_session_standalone_reasoning_open(
 
 
 @DESKTOP_AND_MOBILE
-async def test_standalone_reasoning_opens_session_reasoning_code_fence_open(
-    view: VisualPage, app: AgentplaneFixture
-) -> None:
+async def test_standalone_reasoning_compact_markdown_and_code_fence(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.standalone_reasoning(code_fence=True)
     await app.mount_thread(IDLE_THREAD)
     await view.check(context="fixture ready")
     page = view.page
-    reasoning = await _open_standalone_reasoning(page)
+    reasoning = page.locator('[data-thread-anchor="20"] .agentplane-step-details')
+    summary = reasoning.locator(".agentplane-disclosure-summary").first
+    preview = reasoning.locator(".agentplane-step-preview .agentplane-markdown--single-line")
+    await expect(summary).to_have_attribute("aria-expanded", "false")
+    await expect(preview).to_contain_text("> Check")
+    await expect(preview).to_contain_text("State | Count ; Ready | 2")
+    await expect(preview).to_contain_text("• Parsed • Complete")
+    await wait_for_stable(page)
+    await view.capture(target=page.locator("#app"))
+
+    await summary.click()
+    await expect(summary).to_have_attribute("aria-expanded", "true")
+    await expect(reasoning.locator(".agentplane-disclosure-panel .agentplane-markdown")).to_be_visible()
     await expect(reasoning.locator(".agentplane-code-block .cm-content")).to_be_attached()
-    await view.capture(target=view.page.locator("#app"))
+    await wait_for_stable(page)
+    await view.capture(name=f"{view.capture_name}_expanded", target=page.locator("#app"))
 
 
 @DESKTOP_AND_MOBILE

@@ -175,6 +175,32 @@ function toReactNode(node: ChildNode, key: string, singleLine: boolean): ReactNo
       .map((attribute) => [attribute.name === "class" ? "className" : attribute.name, attribute.value])
   );
   const children = [...node.childNodes].map((child, index) => toReactNode(child, `${key}.${index}`, singleLine));
+  if (singleLine && node.tagName === "BLOCKQUOTE") return createElement("span", { key }, "> ", ...children);
+  if (singleLine && node.tagName === "LI") {
+    const list = node.parentElement;
+    const items = Array.from(list?.children ?? []).filter((child) => child.tagName === "LI");
+    const index = items.indexOf(node);
+    const marker = list instanceof HTMLOListElement ? `${list.start + index}. ` : "• ";
+    return createElement("span", { key }, marker, ...children);
+  }
+  if (singleLine && node.tagName === "TR") {
+    const rows = Array.from(node.closest("table")?.querySelectorAll("tr") ?? []);
+    const rowIndex = rows.findIndex((row) => row.isSameNode(node));
+    return createElement("span", { key }, ...(rowIndex > 0 ? [" ; "] : []), ...children);
+  }
+  if (singleLine && (node.tagName === "TD" || node.tagName === "TH")) {
+    const cells = Array.from(node.parentElement?.children ?? []).filter(
+      (cell) => cell.tagName === "TD" || cell.tagName === "TH"
+    );
+    return createElement("span", { key }, ...(cells.indexOf(node) > 0 ? [" | "] : []), ...children);
+  }
+  if (singleLine && node.tagName === "TABLE")
+    return createElement("span", { key, className: MARKDOWN_TABLE_SCROLL_CLASS }, ...children);
+  if (
+    singleLine &&
+    ["H1", "H2", "H3", "H4", "H5", "H6", "OL", "P", "TBODY", "TFOOT", "THEAD", "UL"].includes(node.tagName)
+  )
+    return createElement("span", { key }, ...children);
   // The one-line form is shown inside a disclosure button. Keep link text, but do not nest a
   // navigable anchor in that button; the expanded Markdown still renders the real link.
   if (singleLine && node.tagName === "A") return createElement("span", { key }, ...children);
