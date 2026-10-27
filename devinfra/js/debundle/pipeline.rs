@@ -109,7 +109,9 @@ impl TransformArgs {
         let spec_source = resolve_spec_source(&self)?;
         Ok(TransformCli {
             spec_source,
-            package_roots: self.package_roots.into_iter().collect(),
+            package_roots: collect_package_roots(self.package_roots)?
+                .into_iter()
+                .collect(),
             packages_root: self.packages_root,
         })
     }
@@ -146,15 +148,15 @@ fn required_tree_arg(name: &str, value: &Option<PathBuf>) -> Result<PathBuf> {
         .with_context(|| format!("{name} is required with --tree-config"))
 }
 
-fn parse_package_root_kv(value: &str) -> Result<(String, PathBuf), String> {
+pub fn parse_package_root_kv(value: &str) -> Result<(String, PathBuf), String> {
     let Some(separator) = value.find('=') else {
         return Err(format!(
-            "--package-root must be in <package>=<dir> form, got {value}"
+            "package root mapping must be <package>=<dir>, got {value}"
         ));
     };
     if separator == 0 || separator == value.len() - 1 {
         return Err(format!(
-            "--package-root must be in <package>=<dir> form, got {value}"
+            "package root mapping must be <package>=<dir>, got {value}"
         ));
     }
     Ok((
@@ -163,9 +165,23 @@ fn parse_package_root_kv(value: &str) -> Result<(String, PathBuf), String> {
     ))
 }
 
+pub fn collect_package_roots(
+    pairs: impl IntoIterator<Item = (String, PathBuf)>,
+) -> Result<std::collections::BTreeMap<String, PathBuf>> {
+    let mut roots = std::collections::BTreeMap::new();
+    for (name, path) in pairs {
+        anyhow::ensure!(
+            roots.insert(name.clone(), path).is_none(),
+            "duplicate package root mapping for {name}"
+        );
+    }
+    Ok(roots)
+}
+
 pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Result<()> {
     let (roots, modules_directory) = provenance_roots(cli)?;
-    let capture = InputCapture::start(roots, modules_directory)?;
+    let generation_command = canonical_generation_command(cli, &options, &roots)?;
+    let capture = InputCapture::start(roots, modules_directory, generation_command)?;
     if let TransformSpecSource::Tree(tree) = &cli.spec_source {
         // Capture the whole authored tree, including YAMLs outside the chunk
         // selected for this graph. Path membership is part of the analysis input.
@@ -466,6 +482,59 @@ fn provenance_roots(cli: &TransformCli) -> Result<(ProvenanceRoots, Option<PathB
         },
         modules_directory,
     ))
+}
+
+/// A runnable argv containing the effective inputs, including values supplied
+/// only through Clap env vars. All input and output roots are absolute so a
+/// caller can replay it from another working directory (or translate roots
+/// for an isolated snapshot).
+fn canonical_generation_command(
+    cli: &TransformCli,
+    options: &TransformRunOptions,
+    roots: &ProvenanceRoots,
+) -> Result<Vec<String>> {
+    fn path_arg(path: &Path) -> Result<String> {
+        Ok(graph_provenance::absolute(path)?
+            .to_str()
+            .with_context(|| format!("non-UTF-8 generation path {}", path.display()))?
+            .to_string())
+    }
+    let mut argv = vec![path_arg(&std::env::current_exe()?)?, "run".to_string()];
+    match &cli.spec_source {
+        TransformSpecSource::Flat { path } => {
+            argv.extend(["--spec".to_string(), path_arg(path)?]);
+        }
+        TransformSpecSource::Tree(tree) => {
+            argv.extend(["--tree-config".to_string(), path_arg(&tree.config_path)?]);
+            argv.extend(["--tree-modules".to_string(), path_arg(&tree.modules_root)?]);
+            argv.extend([
+                "--tree-vendor-marks".to_string(),
+                path_arg(&tree.vendor_marks_path)?,
+            ]);
+            // Explicitly preserve the effective compile root when it came
+            // from DEBUNDLE_TREE_SOURCE_ROOT or the original cwd.
+            argv.extend(["--tree-source-root".to_string(), path_arg(&roots.source)?]);
+            argv.extend(["--out-root".to_string(), path_arg(&tree.out_root)?]);
+        }
+    }
+    let mut package_roots = cli.package_roots.iter().collect::<Vec<_>>();
+    package_roots.sort_by_key(|(name, _)| *name);
+    for (name, path) in package_roots {
+        argv.extend([
+            "--package-root".to_string(),
+            format!("{name}={}", path_arg(path)?),
+        ]);
+    }
+    if let Some(root) = &cli.packages_root {
+        argv.extend(["--packages-root".to_string(), path_arg(root)?]);
+    }
+    if options.dry_run {
+        argv.push("--dry-run".to_string());
+    }
+    if !options.keep_going {
+        argv.push("--fail-fast".to_string());
+    }
+    Ok(argv)
 }
 
 fn load_transform_spec_source(source: &TransformSpecSource) -> Result<TransformSpec> {

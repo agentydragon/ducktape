@@ -47,7 +47,8 @@ SHA-256 of the executable engine and the exact bytes read for the tree config,
 vendor marks, module YAMLs, optional binding patches, JS list, every listed JS
 chunk, and vendor package files consulted by planning. Module YAML path
 membership is recorded separately, including paths outside the graph chunk.
-The provenance also retains the run argv/cwd, logical root paths, and the
+The provenance also retains a canonical runnable argv with resolved paths and
+effective env-provided values, the original cwd, logical root paths, and the
 config's chunk-to-module-tree mapping. A graph created before this metadata
 existed remains a historical report only.
 

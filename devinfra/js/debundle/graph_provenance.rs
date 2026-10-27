@@ -3,12 +3,13 @@
 //! Readers call `read_bytes` while a pipeline capture is active. This records
 //! the bytes returned to the parser, rather than reopening the path after analysis.
 
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::fs;
 use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
@@ -102,6 +103,7 @@ pub struct GraphMismatch {
     #[serde(flatten)]
     pub reason: GraphMismatchReason,
     pub regenerate_command: Vec<String>,
+    pub regenerate_cwd: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize)]
@@ -156,10 +158,15 @@ pub enum GraphMismatchReason {
 }
 
 impl GraphMismatch {
-    pub fn new(reason: GraphMismatchReason, regenerate_command: Vec<String>) -> Self {
+    pub fn new(
+        reason: GraphMismatchReason,
+        regenerate_command: Vec<String>,
+        regenerate_cwd: Option<PathBuf>,
+    ) -> Self {
         Self {
             reason,
             regenerate_command,
+            regenerate_cwd,
         }
     }
 }
@@ -168,8 +175,15 @@ impl fmt::Display for GraphMismatch {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             formatter,
-            "graph compatibility mismatch: {:?}; regenerate with {}",
-            self.reason,
+            "graph compatibility mismatch: {:?}; regenerate with ",
+            self.reason
+        )?;
+        if let Some(cwd) = &self.regenerate_cwd {
+            write!(formatter, "cd {} && ", shell_quote(&cwd.to_string_lossy()))?;
+        }
+        write!(
+            formatter,
+            "{}",
             self.regenerate_command
                 .iter()
                 .map(|arg| shell_quote(arg))
@@ -181,22 +195,60 @@ impl fmt::Display for GraphMismatch {
 
 impl std::error::Error for GraphMismatch {}
 
-static CAPTURE: OnceLock<Mutex<Option<GraphProvenance>>> = OnceLock::new();
+type CaptureState = Arc<Mutex<Option<GraphProvenance>>>;
 
-fn capture() -> &'static Mutex<Option<GraphProvenance>> {
-    CAPTURE.get_or_init(|| Mutex::new(None))
+thread_local! {
+    static ACTIVE_CAPTURE: RefCell<Option<CaptureState>> = const { RefCell::new(None) };
 }
 
-pub struct InputCapture;
+fn active_capture() -> Option<CaptureState> {
+    ACTIVE_CAPTURE.with(|slot| slot.borrow().clone())
+}
+
+/// Explicit context passed to Rayon jobs; worker threads do not inherit
+/// thread-local state from the pipeline caller.
+pub struct CaptureContext(Option<CaptureState>);
+
+pub fn capture_context() -> CaptureContext {
+    CaptureContext(active_capture())
+}
+
+pub fn with_capture_context<T>(context: &CaptureContext, body: impl FnOnce() -> T) -> T {
+    struct Restore(Option<CaptureState>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            ACTIVE_CAPTURE.with(|slot| *slot.borrow_mut() = self.0.take());
+        }
+    }
+    let previous = ACTIVE_CAPTURE.with(|slot| slot.replace(context.0.clone()));
+    let _restore = Restore(previous);
+    body()
+}
+
+pub struct InputCapture {
+    state: CaptureState,
+}
 
 impl Drop for InputCapture {
     fn drop(&mut self) {
-        capture().lock().expect("capture lock").take();
+        ACTIVE_CAPTURE.with(|slot| {
+            let is_current = slot
+                .borrow()
+                .as_ref()
+                .is_some_and(|state| Arc::ptr_eq(state, &self.state));
+            if is_current {
+                *slot.borrow_mut() = None;
+            }
+        });
     }
 }
 
 impl InputCapture {
-    pub fn start(roots: ProvenanceRoots, modules_directory: Option<PathBuf>) -> Result<Self> {
+    pub fn start(
+        roots: ProvenanceRoots,
+        modules_directory: Option<PathBuf>,
+        generation_command: Vec<String>,
+    ) -> Result<Self> {
         let provenance = GraphProvenance {
             roots,
             modules_directory,
@@ -208,21 +260,21 @@ impl InputCapture {
             yaml_memberships: Vec::new(),
             engine_sha256: engine_sha256()?,
             generation_cwd: std::env::current_dir()?,
-            generation_command: std::env::args().collect(),
+            generation_command,
         };
-        {
-            let mut capture = capture().lock().expect("capture lock");
-            if capture.is_some() {
+        let state = Arc::new(Mutex::new(Some(provenance)));
+        ACTIVE_CAPTURE.with(|slot| {
+            if slot.borrow().is_some() {
                 bail!("nested graph input capture");
             }
-            *capture = Some(provenance);
-            Ok(Self)
-        }
+            *slot.borrow_mut() = Some(state.clone());
+            Ok(Self { state })
+        })
     }
 
     pub fn set_source_root(&self, path: &Path) -> Result<()> {
         let path = absolute(path)?;
-        capture()
+        self.state
             .lock()
             .expect("capture lock")
             .as_mut()
@@ -237,7 +289,7 @@ impl InputCapture {
         config_path: &Path,
         roots: BTreeMap<String, Vec<PathBuf>>,
     ) -> Result<()> {
-        let mut guard = capture().lock().expect("capture lock");
+        let mut guard = self.state.lock().expect("capture lock");
         let provenance = guard.as_mut().expect("capture started");
         let config = absolute(config_path)?;
         let relative = config
@@ -256,7 +308,8 @@ impl InputCapture {
 
     pub fn finish(self) -> Result<GraphProvenance> {
         {
-            let mut provenance = capture()
+            let mut provenance = self
+                .state
                 .lock()
                 .expect("capture lock")
                 .take()
@@ -281,8 +334,8 @@ impl InputCapture {
 
 pub fn read_bytes(path: &Path) -> Result<Vec<u8>> {
     let bytes = fs::read(path).with_context(|| format!("reading {}", path.display()))?;
-    {
-        let mut guard = capture().lock().expect("capture lock");
+    if let Some(state) = active_capture() {
+        let mut guard = state.lock().expect("capture lock");
         if let Some(provenance) = guard.as_mut() {
             let (root, relative) = provenance.classify(path)?;
             let entry = InputFile {
@@ -314,10 +367,12 @@ pub fn read_to_string(path: &Path) -> Result<String> {
 }
 
 pub fn record_absent(path: &Path) -> Result<()> {
-    let mut guard = capture().lock().expect("capture lock");
-    if let Some(provenance) = guard.as_mut() {
-        let (root, path) = provenance.classify(path)?;
-        provenance.absent_files.push(InputPath { root, path });
+    if let Some(state) = active_capture() {
+        let mut guard = state.lock().expect("capture lock");
+        if let Some(provenance) = guard.as_mut() {
+            let (root, path) = provenance.classify(path)?;
+            provenance.absent_files.push(InputPath { root, path });
+        }
     }
     Ok(())
 }
@@ -328,15 +383,17 @@ pub fn record_chunk_source(
     input_file: &Path,
     bytes: &[u8],
 ) -> Result<()> {
-    let mut guard = capture().lock().expect("capture lock");
-    if let Some(provenance) = guard.as_mut() {
-        let (root, path) = provenance.classify(input_file)?;
-        provenance.chunk_sources.push(ChunkSource {
-            chunk_id: chunk_id.to_string(),
-            source_path: PathBuf::from(source_path),
-            input_file: InputPath { root, path },
-            sha256: sha256(bytes),
-        });
+    if let Some(state) = active_capture() {
+        let mut guard = state.lock().expect("capture lock");
+        if let Some(provenance) = guard.as_mut() {
+            let (root, path) = provenance.classify(input_file)?;
+            provenance.chunk_sources.push(ChunkSource {
+                chunk_id: chunk_id.to_string(),
+                source_path: PathBuf::from(source_path),
+                input_file: InputPath { root, path },
+                sha256: sha256(bytes),
+            });
+        }
     }
     Ok(())
 }
@@ -344,8 +401,8 @@ pub fn record_chunk_source(
 /// Record the exact list returned by the module-tree walk, including paths
 /// outside the current graph chunk. Added/deleted YAMLs invalidate the graph.
 pub fn record_yaml_membership(directory: &Path, members: &[PathBuf]) -> Result<()> {
-    {
-        let mut guard = capture().lock().expect("capture lock");
+    if let Some(state) = active_capture() {
+        let mut guard = state.lock().expect("capture lock");
         if let Some(provenance) = guard.as_mut() {
             let (root, relative_dir) = provenance.classify(directory)?;
             let mut relative_members = members
@@ -365,8 +422,8 @@ pub fn record_yaml_membership(directory: &Path, members: &[PathBuf]) -> Result<(
                 members: relative_members,
             });
         }
-        Ok(())
     }
+    Ok(())
 }
 
 impl GraphProvenance {
@@ -432,6 +489,7 @@ impl GraphProvenance {
                     actual: engine,
                 },
                 self.generation_command.clone(),
+                Some(self.generation_cwd.clone()),
             )
             .into());
         }
@@ -445,6 +503,7 @@ impl GraphProvenance {
                         actual: if dir.exists() { "file" } else { "missing" }.to_string(),
                     },
                     self.generation_command.clone(),
+                    Some(self.generation_cwd.clone()),
                 )
                 .into());
             }
@@ -457,6 +516,7 @@ impl GraphProvenance {
                         actual,
                     },
                     self.generation_command.clone(),
+                    Some(self.generation_cwd.clone()),
                 )
                 .into());
             }
@@ -476,6 +536,7 @@ impl GraphProvenance {
                         actual,
                     },
                     self.generation_command.clone(),
+                    Some(self.generation_cwd.clone()),
                 )
                 .into());
             }
@@ -490,6 +551,7 @@ impl GraphProvenance {
                         actual: "present".to_string(),
                     },
                     self.generation_command.clone(),
+                    Some(self.generation_cwd.clone()),
                 )
                 .into());
             }
@@ -498,11 +560,16 @@ impl GraphProvenance {
     }
 
     pub fn regeneration_command(&self) -> String {
-        self.generation_command
+        let command = self
+            .generation_command
             .iter()
             .map(|arg| shell_quote(arg))
             .collect::<Vec<_>>()
-            .join(" ")
+            .join(" ");
+        format!(
+            "cd {} && {command}",
+            shell_quote(&self.generation_cwd.to_string_lossy())
+        )
     }
 }
 
@@ -593,4 +660,57 @@ fn engine_sha256() -> Result<String> {
         hasher.update(&buffer[..count]);
     }
     Ok(hex(&hasher.finalize()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{Arc, Barrier};
+
+    #[test]
+    fn simultaneous_captures_keep_worker_reads_in_their_own_runs() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let barrier = Arc::new(Barrier::new(2));
+        let mut workers = Vec::new();
+        for index in 0..2 {
+            let root = temp.path().join(format!("run-{index}"));
+            fs::create_dir_all(&root)?;
+            fs::write(root.join("source.js"), format!("const value = {index};"))?;
+            let barrier = barrier.clone();
+            workers.push(std::thread::spawn(move || -> Result<(String, String)> {
+                let capture = InputCapture::start(
+                    ProvenanceRoots {
+                        spec: root.clone(),
+                        source: root.clone(),
+                        packages: BTreeMap::new(),
+                    },
+                    None,
+                    vec!["debundle".to_string(), "run".to_string()],
+                )?;
+                barrier.wait();
+                let context = capture_context();
+                let path = root.join("source.js");
+                let read = std::thread::spawn(move || {
+                    with_capture_context(&context, || read_bytes(&path))
+                });
+                let bytes = read.join().expect("worker thread")?;
+                barrier.wait();
+                let provenance = capture.finish()?;
+                Ok((
+                    sha256(&bytes),
+                    provenance
+                        .files
+                        .first()
+                        .expect("recorded source")
+                        .sha256
+                        .clone(),
+                ))
+            }));
+        }
+        for worker in workers {
+            let (read_digest, captured_digest) = worker.join().expect("pipeline thread")?;
+            assert_eq!(read_digest, captured_digest);
+        }
+        Ok(())
+    }
 }

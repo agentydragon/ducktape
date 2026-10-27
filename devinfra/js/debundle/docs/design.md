@@ -394,7 +394,7 @@ The dependency graph is the right abstraction for tooling:
 records SHA-256 of the bytes returned to the spec, source, and vendor readers,
 the complete YAML path membership of the authored module tree, absent optional
 inputs, the chunk-to-source-file mapping, the engine executable's SHA-256, and
-the original invocation and working directory. Paths are relative to named
+an absolute-path regeneration invocation and original working directory. Paths are relative to named
 spec, source, and package roots where possible, so the same inputs can be
 checked after those roots are explicitly relocated. A second read of one input
 during analysis must return the same digest. Final-output-only inputs, such as

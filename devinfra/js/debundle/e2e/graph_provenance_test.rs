@@ -100,6 +100,17 @@ fn accepted_edit_uses_baseline_then_old_graph_becomes_stale() {
 }
 
 #[test]
+fn preview_and_no_op_keep_graph_compatible() {
+    let fixture = GraphFixture::acyclic_pair();
+    let preview = fixture.command(&["bindings", "assign", "alpha:a", "--dry-run"]);
+    assert!(preview.status.success(), "{}", stderr(&preview));
+    assert!(!stderr(&preview).contains("pre-edit"));
+    fixture.assert_success(&["coverage", "--format", "json"]);
+    fixture.assert_success(&["bindings", "assign", "alpha:a"]);
+    fixture.assert_success(&["coverage", "--format", "json"]);
+}
+
+#[test]
 fn wrong_chunk_scope_with_same_binding_is_rejected() {
     let run = run_tree_fixture(
         &TreeFixture {
@@ -182,4 +193,54 @@ fn explicit_roots_allow_relocated_graph_and_spec() {
         .output()
         .unwrap();
     assert!(output.status.success(), "{}", stderr(&output));
+}
+
+#[test]
+fn env_only_run_records_replayable_absolute_argv_across_cwd() {
+    let fixture = GraphFixture::acyclic_pair();
+    let out = fixture.root().join("env_out");
+    let result = std::process::Command::new(debundler_path())
+        .current_dir(fixture.root())
+        .args([
+            "run",
+            "--tree-config",
+            "spec_config.yaml",
+            "--tree-modules",
+            "modules",
+            "--tree-vendor-marks",
+            "vendor_marks.yaml",
+        ])
+        .env("DEBUNDLE_TREE_SOURCE_ROOT", fixture.root())
+        .env("DEBUNDLE_OUT", &out)
+        .output()
+        .unwrap();
+    assert!(result.status.success(), "{}", stderr(&result));
+    let graph = out.join("reports/tree/main/dependency_graph.json");
+    let report: serde_json::Value = serde_json::from_slice(&fs::read(&graph).unwrap()).unwrap();
+    let provenance = &report["provenance"];
+    assert_eq!(
+        provenance["generation_cwd"],
+        fixture.root().to_str().unwrap()
+    );
+    let argv = provenance["generation_command"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|arg| arg.as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert!(argv.contains(&"--tree-source-root"));
+    assert!(argv.contains(&"--out-root"));
+    assert!(argv.contains(&fixture.root().to_str().unwrap()));
+    assert!(argv.contains(&out.to_str().unwrap()));
+    fs::remove_dir_all(&out).unwrap();
+    let other_cwd = TempDir::new().unwrap();
+    let replay = std::process::Command::new(argv[0])
+        .args(&argv[1..])
+        .current_dir(other_cwd.path())
+        .env_remove("DEBUNDLE_TREE_SOURCE_ROOT")
+        .env_remove("DEBUNDLE_OUT")
+        .output()
+        .unwrap();
+    assert!(replay.status.success(), "{}", stderr(&replay));
+    assert!(graph.exists());
 }

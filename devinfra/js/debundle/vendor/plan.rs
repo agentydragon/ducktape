@@ -698,9 +698,14 @@ fn plan_full_swaps(
     }
     // Rayon workers don't inherit `GLOBALS`; re-set per worker so any
     // `Mark::new()` / `Id` use stays in the caller's arena.
+    let capture = graph_provenance::capture_context();
     GLOBALS.with(|globals| {
         jobs.into_par_iter()
-            .map(|job| GLOBALS.set(globals, || resolve_full_swap(job, options)))
+            .map(|job| {
+                graph_provenance::with_capture_context(&capture, || {
+                    GLOBALS.set(globals, || resolve_full_swap(job, options))
+                })
+            })
             .collect::<Result<Vec<_>>>()
     })
 }

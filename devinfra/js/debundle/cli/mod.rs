@@ -57,6 +57,7 @@ pub(crate) fn verify_graph_compatibility(
                 graph: graph_path.to_path_buf(),
             },
             vec!["debundle".to_string(), "run".to_string()],
+            None,
         )
     })?;
     let current = graph_provenance::CurrentRoots {
@@ -79,6 +80,7 @@ pub(crate) fn verify_graph_compatibility(
                     actual: modules,
                 },
                 provenance.generation_command.clone(),
+                Some(provenance.generation_cwd.clone()),
             )
             .into());
         }
@@ -102,6 +104,7 @@ pub(crate) fn verify_graph_compatibility(
                     actual: modules,
                 },
                 provenance.generation_command.clone(),
+                Some(provenance.generation_cwd.clone()),
             )
             .into());
         }
@@ -123,6 +126,7 @@ pub(crate) fn verify_graph_compatibility(
                 return Err(GraphMismatch::new(
                     GraphMismatchReason::ConfigPath { expected, actual },
                     provenance.generation_command.clone(),
+                    Some(provenance.generation_cwd.clone()),
                 )
                 .into());
             }
@@ -135,6 +139,7 @@ pub(crate) fn verify_graph_compatibility(
                 actual: graph_provenance::absolute(modules_root)?,
             },
             provenance.generation_command.clone(),
+            Some(provenance.generation_cwd.clone()),
         )
         .into());
     }
@@ -165,6 +170,7 @@ pub(crate) fn verify_graph_compatibility(
                     actual: canonical_actual,
                 },
                 provenance.generation_command.clone(),
+                Some(provenance.generation_cwd.clone()),
             )
             .into());
         }
@@ -185,6 +191,7 @@ pub(crate) fn verify_graph_compatibility(
                     actual,
                 },
                 provenance.generation_command.clone(),
+                Some(provenance.generation_cwd.clone()),
             )
             .into());
         }
@@ -210,8 +217,8 @@ pub struct DebundleArgs {
     #[arg(long, global = true, env = "DEBUNDLE_GRAPH_SOURCE_ROOT")]
     graph_source_root: Option<std::path::PathBuf>,
     /// Relocated package root used by graph compatibility; repeat for each package.
-    #[arg(long = "graph-package-root", global = true, value_name = "NAME=DIR")]
-    graph_package_roots: Vec<String>,
+    #[arg(long = "graph-package-root", global = true, value_name = "NAME=DIR", value_parser = pipeline::parse_package_root_kv)]
+    graph_package_roots: Vec<(String, std::path::PathBuf)>,
     #[command(subcommand)]
     command: DebundleCommand,
 }
@@ -259,20 +266,7 @@ enum DebundleCommand {
 }
 
 pub fn run_debundle_cli(args: DebundleArgs) -> Result<()> {
-    let graph_package_roots = args
-        .graph_package_roots
-        .iter()
-        .map(|mapping| {
-            let (name, path) = mapping.split_once('=').with_context(|| {
-                format!("--graph-package-root expects NAME=DIR, got {mapping:?}")
-            })?;
-            anyhow::ensure!(
-                !name.is_empty() && !path.is_empty(),
-                "--graph-package-root expects NAME=DIR, got {mapping:?}"
-            );
-            Ok((name.to_string(), std::path::PathBuf::from(path)))
-        })
-        .collect::<Result<std::collections::BTreeMap<_, _>>>()?;
+    let graph_package_roots = pipeline::collect_package_roots(args.graph_package_roots)?;
     if let Err(error) = verify_mixed_graph_command(
         &args.command,
         args.spec_root.as_deref(),
@@ -324,7 +318,7 @@ pub fn run_debundle_cli(args: DebundleArgs) -> Result<()> {
     };
     if result.is_ok() && writes_with_graph {
         eprintln!(
-            "saved graph still describes the pre-edit inputs; regenerate it before another graph-backed edit"
+            "saved graph describes the pre-edit inputs; if spec bytes changed, regenerate it before another graph-backed edit"
         );
     }
     result
