@@ -6,7 +6,7 @@ import type { z } from "zod";
 
 import type { ActionPresentation } from "../presentation";
 import { CodeBlock } from "../../../../../../util/frontend/code_block";
-import { CommandCallView, CommandSummary, OutputBlock } from "../../../command_view";
+import { ShellCommandView, ShellCommandSummary, OutputBlock } from "../../../shell_command_view";
 import { definePreview, type ArgumentsPreview, type PreviewProps } from "../entry";
 import { defineResultPreview, type ResultPreview, type ResultPreviewProps } from "../result_entry";
 import { sshExecNotes, zSshExecArguments, zSshExecResult } from "../../schemas/ssh/exec";
@@ -16,7 +16,7 @@ type SshExecResult = z.infer<typeof zSshExecResult>;
 
 function ExecArguments({ args }: PreviewProps<SshExecArguments>): JSX.Element {
   return (
-    <CommandCallView
+    <ShellCommandView
       command={args.command}
       notes={sshExecNotes(args)}
       releaseWhenFar
@@ -39,7 +39,7 @@ function ExecLabel({ args }: PreviewProps<SshExecArguments>): JSX.Element {
 }
 
 function ExecCollapsed({ args }: PreviewProps<SshExecArguments>): JSX.Element {
-  return <CommandSummary text={args.command} />;
+  return <ShellCommandSummary text={args.command} />;
 }
 
 function ExecResult({ result }: ResultPreviewProps<SshExecResult>): JSX.Element {
