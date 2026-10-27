@@ -99,8 +99,9 @@ values, and `regenerate_command` argv. A successful edit leaves the saved
 graph describing the pre-edit spec; rerun `debundle run` before another
 graph-backed edit. With explicit relocation roots, the mismatch recipe uses
 the current engine and translated input paths, and `regenerate_cwd` names the
-current spec root. An output path outside the captured roots becomes
-`debundle-output` under that root.
+current spec root. The recipe selects an unused `-regenerated` sibling of the
+translated output directory, adding a numeric suffix if needed. Computing the
+recipe does not create or remove that directory.
 Flat-spec graphs have no authored module-tree scope and
 cannot authorize a YAML-tree edit or query.
 `--no-verify` skips the post-edit assignment gate only; it does not skip
