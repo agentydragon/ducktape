@@ -1,20 +1,48 @@
-import React from "react";
 import { NativeSelect, NumberInput, SegmentedControl } from "@mantine/core";
+import type { ReactNode } from "react";
 
+import type { AugurDeployment } from "./client";
 import { replaceSearchParams } from "./url_state";
 
 const SCALE_OPTIONS = [
-  { value: "linear", label: "Linear" },
-  { value: "log", label: "Log" },
+  { value: "linear" as const, label: "Linear" },
+  { value: "log" as const, label: "Log" },
 ];
 
 const CURRENCY_DISPLAY_OPTIONS = [
-  { value: "exact", label: "Exact" },
-  { value: "compact", label: "Compact" },
+  { value: "exact" as const, label: "Exact" },
+  { value: "compact" as const, label: "Compact" },
 ];
 
-function numberInputOnChange(onChange) {
-  return (next) => {
+type MetricScale = (typeof SCALE_OPTIONS)[number]["value"];
+type CurrencyDisplay = (typeof CURRENCY_DISPLAY_OPTIONS)[number]["value"];
+
+function isMetricScale(value: string): value is MetricScale {
+  return SCALE_OPTIONS.some((option) => option.value === value);
+}
+
+function isCurrencyDisplay(value: string): value is CurrencyDisplay {
+  return CURRENCY_DISPLAY_OPTIONS.some((option) => option.value === value);
+}
+
+type SharedControlsProps = {
+  rolloutCount: number | null;
+  onChangeRolloutCount?: (value: number | null) => void;
+  maxRolloutCount: number;
+  model: string | null;
+  onChangeModel?: (value: string) => void;
+  models: readonly string[];
+  metricScale: MetricScale;
+  onChangeMetricScale?: (value: MetricScale) => void;
+  currencyDisplay: CurrencyDisplay;
+  onChangeCurrencyDisplay?: (value: CurrencyDisplay) => void;
+  settingsOpen: boolean;
+  onChangeSettingsOpen: (open: boolean) => void;
+};
+type ControlRow = { label: string; input: ReactNode };
+
+function numberInputOnChange(onChange: (value: number | null) => void) {
+  return (next: string | number) => {
     const number = typeof next === "number" ? next : Number(next);
     onChange(Number.isFinite(number) ? number : null);
   };
@@ -33,10 +61,11 @@ export function SharedControls({
   onChangeCurrencyDisplay,
   settingsOpen,
   onChangeSettingsOpen,
-}) {
-  const showModelControl = onChangeModel && models.length > 1;
-  const rows = [
-    onChangeRolloutCount && {
+}: SharedControlsProps) {
+  const showModelControl = onChangeModel != null && models.length > 1;
+  const rows: ControlRow[] = [];
+  if (onChangeRolloutCount) {
+    rows.push({
       label: "Rollouts",
       input: (
         <NumberInput
@@ -52,8 +81,10 @@ export function SharedControls({
           onChange={numberInputOnChange(onChangeRolloutCount)}
         />
       ),
-    },
-    showModelControl && {
+    });
+  }
+  if (showModelControl) {
+    rows.push({
       label: "Model",
       input: (
         <NativeSelect
@@ -65,8 +96,10 @@ export function SharedControls({
           onChange={(event) => onChangeModel(event.target.value)}
         />
       ),
-    },
-    onChangeMetricScale && {
+    });
+  }
+  if (onChangeMetricScale) {
+    rows.push({
       label: "Scale",
       input: (
         <SegmentedControl
@@ -74,11 +107,15 @@ export function SharedControls({
           size="xs"
           value={metricScale}
           data={SCALE_OPTIONS}
-          onChange={onChangeMetricScale}
+          onChange={(value) => {
+            if (isMetricScale(value)) onChangeMetricScale(value);
+          }}
         />
       ),
-    },
-    onChangeCurrencyDisplay && {
+    });
+  }
+  if (onChangeCurrencyDisplay) {
+    rows.push({
       label: "Currency",
       input: (
         <SegmentedControl
@@ -86,11 +123,13 @@ export function SharedControls({
           size="xs"
           value={currencyDisplay}
           data={CURRENCY_DISPLAY_OPTIONS}
-          onChange={onChangeCurrencyDisplay}
+          onChange={(value) => {
+            if (isCurrencyDisplay(value)) onChangeCurrencyDisplay(value);
+          }}
         />
       ),
-    },
-  ].filter(Boolean);
+    });
+  }
 
   return (
     <details
@@ -118,7 +157,13 @@ export function SharedControls({
   );
 }
 
-export function AugurHeader({ rightSlot = null, nav = null }) {
+export function AugurHeader({
+  rightSlot = null,
+  nav = null,
+}: {
+  rightSlot?: ReactNode | null;
+  nav?: ReactNode | null;
+}) {
   return (
     <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur dark:border-slate-800 dark:bg-slate-950/95 sm:px-6 lg:px-8">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -143,20 +188,24 @@ const TABS = [
   { value: "product", label: "Product" },
   { value: "calibration", label: "Calibration" },
   { value: "budget", label: "Budget" },
-];
-const TAB_VALUES = new Set(TABS.map((tab) => tab.value));
-const DEFAULT_TAB = "product";
-
-export function tabFromSearch(searchString) {
-  const requested = new URLSearchParams(searchString).get("tab");
-  return requested && TAB_VALUES.has(requested) ? requested : DEFAULT_TAB;
+] as const;
+export type AugurTab = (typeof TABS)[number]["value"];
+function isAugurTab(value: string): value is AugurTab {
+  return TABS.some((tab) => tab.value === value);
 }
 
-export function writeTabToSearch(tab) {
+const DEFAULT_TAB: AugurTab = "product";
+
+export function tabFromSearch(searchString: string): AugurTab {
+  const requested = new URLSearchParams(searchString).get("tab");
+  return requested && isAugurTab(requested) ? requested : DEFAULT_TAB;
+}
+
+export function writeTabToSearch(tab: AugurTab) {
   replaceSearchParams({ tab: tab === DEFAULT_TAB ? null : tab });
 }
 
-export function AugurTabBar({ tab, onSelectTab }) {
+export function AugurTabBar({ tab, onSelectTab }: { tab: AugurTab; onSelectTab: (tab: AugurTab) => void }) {
   return (
     <nav className="flex items-center gap-1" aria-label="Augur views" data-augur-tab-bar="">
       {TABS.map((entry) => (
@@ -178,12 +227,18 @@ export function AugurTabBar({ tab, onSelectTab }) {
 
 // -- Deployment status chip (header rightSlot) ---------------------------------
 
-function shortCommit(commit) {
+function shortCommit(commit: string | null | undefined) {
   if (!commit) return null;
   return commit.slice(0, 12);
 }
 
-function DeploymentCommitItem({ label, image }) {
+function DeploymentCommitItem({
+  label,
+  image,
+}: {
+  label: string;
+  image: NonNullable<AugurDeployment["api"]> | null | undefined;
+}) {
   const commit = shortCommit(image?.sourceCommit);
   if (!commit) return null;
   const className = "mono font-semibold text-slate-700 dark:text-slate-200";
@@ -191,7 +246,7 @@ function DeploymentCommitItem({ label, image }) {
   return (
     <span className="whitespace-nowrap" title={title}>
       {label}{" "}
-      {image.sourceCommitUrl ? (
+      {image?.sourceCommitUrl ? (
         <a className={`${className} augur-link`} href={image.sourceCommitUrl}>
           {commit}
         </a>
@@ -202,11 +257,11 @@ function DeploymentCommitItem({ label, image }) {
   );
 }
 
-export function DeploymentCommitSummary({ deployment }) {
+export function DeploymentCommitSummary({ deployment }: { deployment: AugurDeployment | null }) {
   const apiCommit = deployment?.api?.sourceCommit ?? null;
   const frontendCommit = deployment?.frontend?.sourceCommit ?? null;
   if (!apiCommit && !frontendCommit) return null;
-  if (apiCommit && frontendCommit && apiCommit === frontendCommit) {
+  if (deployment != null && apiCommit && frontendCommit && apiCommit === frontendCommit) {
     return <DeploymentCommitItem label="Deployed" image={deployment.api} />;
   }
   return (
