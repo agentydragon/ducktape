@@ -394,6 +394,39 @@ retained lazy closure are included as well, covering an accessor that returns
 another conversion callable. This is callback-effect analysis; it does not
 classify the enclosing operator as pure.
 
+## Source-anchored export policies
+
+`chunk_export_purity` normally keys contracts by the defining chunk ID.
+An optional `source_markers` list instead identifies that provider by a
+conjunction of purpose-bearing substrings; the key then serves only as a
+policy label:
+
+```yaml
+chunk_export_purity:
+  lazyRegistry:
+    source_markers: [neutral-lazy-registry, private-callback-storage]
+    pure_exports: [factory]
+    inline_callback_factory_exports: [factory]
+```
+
+Matching uses the loaded provider entry's current analysis source before
+logical-module lowering: exact input text for pass-through source entries,
+or the current staged AST's rendering for retained AST entries. It does not
+read filenames or original text from an earlier parser snapshot. Every marker
+must be nonempty, and the conjunction must identify exactly one loaded
+provider, including providers outside the selected chunks' import closure.
+Zero/multiple matches, an empty list, whitespace-only markers, and multiple
+policies resolving to one provider are spec errors. An explicit chunk-ID
+policy and a source policy for the same provider also conflict.
+
+Only the policy map is resolved to the existing provider ID. This does not
+alias, select, rename, split, relocate or rewrite the provider, and it grants
+no admission override. It can therefore configure an analyzed but unselected
+provider whose `import.meta` context must remain in its existing output file.
+Existing input/output relocation rules remain unchanged. The markers identify
+a provider; they do not prove its contracts. Each purity, callback, intrinsic
+and publication premise still requires the same independent source audit.
+
 ## Audited callback factories
 
 `chunk_export_purity.<defining chunk>.callback_factory_exports` lists named

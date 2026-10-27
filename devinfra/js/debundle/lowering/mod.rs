@@ -23,6 +23,7 @@ mod body_facts;
 mod chunk_ast;
 mod chunk_renames;
 mod cross_module;
+mod export_policies;
 mod exports;
 mod imports;
 mod io;
@@ -279,6 +280,10 @@ pub fn materialize_logical_modules(
     if let Some(dir) = options.report_emission.full_dir() {
         prepare_output_dir(dir)?;
     }
+
+    let resolved_export_purity =
+        export_policies::resolve_source_export_policies(&artifact, chunk_export_purity)?;
+    let chunk_export_purity = resolved_export_purity.as_ref();
 
     if options.config.prune_other_chunks {
         prune_artifact_to_chunk_ids(&mut artifact, &selected_chunk_ids);

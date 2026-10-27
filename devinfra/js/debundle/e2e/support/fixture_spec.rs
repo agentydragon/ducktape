@@ -863,6 +863,11 @@ impl ChunkExportPurityBuilder {
         }
     }
 
+    pub fn with_source_markers(mut self, markers: &[&str]) -> Self {
+        self.purity.source_markers = Some(markers.iter().map(|s| (*s).to_string()).collect());
+        self
+    }
+
     pub fn with_pure_exports(mut self, exports: &[&str]) -> Self {
         self.purity.pure_exports = exports.iter().map(|s| (*s).to_string()).collect();
         self

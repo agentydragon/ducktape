@@ -124,6 +124,11 @@ pub enum ExecutionRuntime {
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ChunkExportPurity {
+    /// When present, identify the defining provider by a conjunction of
+    /// purpose-bearing substrings in its loaded entry source. The map key
+    /// becomes a policy label; provider identity and emission stay unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_markers: Option<BTreeSet<String>>,
     /// Export names whose *calls* the author asserts have no observable
     /// side effects. Applies to the export regardless of how the binding
     /// is produced (function declaration, function-valued const, interop

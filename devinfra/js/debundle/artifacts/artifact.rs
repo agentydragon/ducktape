@@ -179,7 +179,8 @@ impl JsFile {
         })
     }
 
-    fn render_source(&self) -> Result<String> {
+    /// Render the current body without changing its source or identity.
+    pub fn render_source(&self) -> Result<String> {
         match &self.body {
             JsFileBody::Source(source) => Ok(source.clone()),
             JsFileBody::Ast(ast) => emit_js_module_with_comments(

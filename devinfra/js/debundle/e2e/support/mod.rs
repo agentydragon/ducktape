@@ -470,6 +470,18 @@ pub fn assert_module_exports(
     }
 }
 
+pub fn assert_same_module_bytes(left: &Fixture, right: &Fixture, module_path: &str) {
+    let read = |fixture: &Fixture| {
+        fs::read(fixture.out_root.join(module_path))
+            .unwrap_or_else(|error| panic!("read {module_path}: {error}"))
+    };
+    assert_eq!(
+        read(left),
+        read(right),
+        "provider bytes changed at {module_path}"
+    );
+}
+
 pub fn assert_module_source(
     out_root: &Path,
     module_path: &str,
