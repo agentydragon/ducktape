@@ -159,25 +159,6 @@ spec:
               readOnly: true
       imagePullSecrets:
         - name: forgejo-images-creds
-      initContainers:
-        - command:
-            - /bin/sh
-            - -ec
-            - if [ ! -e /data/db.sqlite3 ]; then cp -a /local-path-data/. /data/; fi; ls -l /data
-          image: busybox:1.38
-          name: seed-from-local-path
-          resources:
-            limits:
-              memory: 1Gi
-            requests:
-              cpu: 10m
-              memory: 16Mi
-          volumeMounts:
-            - mountPath: /data
-              name: data
-            - mountPath: /local-path-data
-              name: local-path-data
-              readOnly: true
       nodeSelector:
         topology.kubernetes.io/region: proxmox
       securityContext:
@@ -188,10 +169,6 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: data
-        - name: local-path-data
-          persistentVolumeClaim:
-            claimName: activitywatch-data
-            readOnly: true
         - configMap:
             name: activitywatch-readonly-proxy
           name: readonly-proxy-config
@@ -211,21 +188,6 @@ spec:
     requests:
       storage: 10Gi
   storageClassName: piraeus-hdd-local
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  annotations:
-    kustomize.toolkit.fluxcd.io/prune: disabled
-  name: activitywatch-data
-  namespace: activitywatch
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 10Gi
-  storageClassName: local-path-proxmox
 ---
 apiVersion: v1
 kind: Service
