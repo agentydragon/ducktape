@@ -137,6 +137,7 @@ pub fn collect_module_files(root: &Path) -> Result<Vec<PathBuf>> {
     let mut out = Vec::new();
     collect_module_files_into(root, &mut out)?;
     out.sort();
+    graph_provenance::record_yaml_membership(root, &out)?;
     Ok(out)
 }
 
@@ -155,23 +156,19 @@ fn collect_module_files_into(root: &Path, out: &mut Vec<PathBuf>) -> Result<()> 
 }
 
 pub fn read_module_file(path: &Path) -> Result<ModuleFile> {
-    serde_yaml::from_str(
-        &fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?,
-    )
-    .with_context(|| format!("parsing {}", path.display()))
+    serde_yaml::from_str(&graph_provenance::read_to_string(path)?)
+        .with_context(|| format!("parsing {}", path.display()))
 }
 
 /// Read a flat transform spec with the same typed schema used by the pipeline.
 pub fn read_flat_transform_spec(path: &Path) -> Result<TransformSpec> {
-    serde_yaml::from_slice(&fs::read(path).with_context(|| format!("reading {}", path.display()))?)
+    serde_yaml::from_slice(&graph_provenance::read_bytes(path)?)
         .with_context(|| format!("parsing {}", path.display()))
 }
 
 fn read_binding_patches_file(path: &Path) -> Result<BindingPatchesFile> {
-    serde_yaml::from_str(
-        &fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?,
-    )
-    .with_context(|| format!("parsing {}", path.display()))
+    serde_yaml::from_str(&graph_provenance::read_to_string(path)?)
+        .with_context(|| format!("parsing {}", path.display()))
 }
 
 pub fn module_claims(module: ModuleFile) -> Result<ModuleClaims> {
@@ -208,6 +205,7 @@ pub fn read_module_claims(path: &Path) -> Result<ModuleClaims> {
 pub fn load_binding_patch_members(modules_root: &Path) -> Result<Vec<Member>> {
     let path = default_binding_patches_path(modules_root);
     if !path.exists() {
+        graph_provenance::record_absent(&path)?;
         return Ok(Vec::new());
     }
     let members = read_binding_patches_file(&path)?.members;

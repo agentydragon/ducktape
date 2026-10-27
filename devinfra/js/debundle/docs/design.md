@@ -388,6 +388,26 @@ The dependency graph is the right abstraction for tooling:
 - "Why did this fail?" should point at dependency edges first, then
   at the derived module edge they induced.
 
+### Saved-graph input contract
+
+`debundle run` embeds a `GraphProvenance` inventory in each saved graph. It
+records SHA-256 of the bytes returned to the spec, source, and vendor readers,
+the complete YAML path membership of the authored module tree, absent optional
+inputs, the chunk-to-source-file mapping, the engine executable's SHA-256, and
+the original invocation and working directory. Paths are relative to named
+spec, source, and package roots where possible, so the same inputs can be
+checked after those roots are explicitly relocated. A second read of one input
+during analysis must return the same digest. Final-output-only inputs, such as
+browser harness assets, are outside the dependency-graph contract.
+
+Any command combining a saved graph with current spec or source first checks
+the graph's input inventory and exact selected chunk scope. The check runs
+before an edit is written. An edit then evaluates its candidate assignment on
+the saved dependency graph through the normal shared gates; the candidate YAML
+is intentionally different from the graph's **pre-edit** baseline. A successful
+edit leaves the saved graph as a pre-edit snapshot. Another graph-backed edit
+requires regenerating the graph against the new spec.
+
 The emitted module graph is a **quotient** of this graph: choose a
 destination function `dest(source_unit)` from spec assignments (defaulting
 to the entry destination), merge source units with the same destination, drop

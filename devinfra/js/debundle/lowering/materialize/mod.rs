@@ -90,6 +90,7 @@ pub(super) struct ChunkContext<'a> {
     pub(super) keep_going: bool,
     pub(super) list_template_identifiers: bool,
     pub(super) report_emission: &'a ReportEmission,
+    pub(super) graph_provenance: Option<&'a graph_provenance::GraphProvenance>,
     pub(super) export_reentry_policies: &'a BTreeMap<ChunkId, ExportReentryPolicy>,
     pub(super) export_reentry_reports: &'a BTreeMap<ChunkId, ExportReentryReport>,
     /// Vendor-plan consultation for runtime re-import construction;
@@ -383,6 +384,7 @@ pub(super) fn finish_logical_chunk(
         chunk_id,
         target_dir,
         report_emission,
+        graph_provenance,
         vendor_import_oracle,
         export_reentry_policies,
         export_reentry_reports,
@@ -662,6 +664,7 @@ pub(super) fn finish_logical_chunk(
     let validated_assignment = validate_and_emit_reports(
         chunk_id,
         report_emission,
+        graph_provenance,
         &assignment_analysis,
         &export_reentry_reports[&chunk_id_interned],
     )?;
@@ -1077,6 +1080,7 @@ fn pattern_binds_name(pattern: &Pat, binding: &str) -> bool {
 fn validate_and_emit_reports<'a>(
     chunk_id: &str,
     report_emission: &ReportEmission,
+    graph_provenance: Option<&graph_provenance::GraphProvenance>,
     assignment_analysis: &'a AssignmentAnalysis,
     export_reentry_report: &ExportReentryReport,
 ) -> Result<ValidatedAssignment<'a>> {
@@ -1096,7 +1100,8 @@ fn validate_and_emit_reports<'a>(
         report_emission.full_dir()
     };
     if let Some(report_out_dir) = report_out_dir {
-        let dependency_graph_report = assignment_analysis.dependency_graph_report();
+        let mut dependency_graph_report = assignment_analysis.dependency_graph_report();
+        dependency_graph_report.provenance = graph_provenance.cloned();
         write_chunk_report_json(
             report_out_dir,
             chunk_id,

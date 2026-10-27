@@ -24,16 +24,16 @@ pub struct ModulesApplyArgs {
     batch: String,
     /// Root directory of per-module YAML files.
     #[arg(long = "modules", env = "DEBUNDLE_MODULES")]
-    modules_root: PathBuf,
+    pub(super) modules_root: PathBuf,
     /// Tree config that scopes this graph-backed edit to its chunk's module roots.
     #[arg(long = "tree-config", env = "DEBUNDLE_TREE_CONFIG")]
     tree_config: Option<PathBuf>,
     /// Current dependency graph, used to check proposal identity and the resulting assignment.
     #[arg(long = "graph", env = "DEBUNDLE_GRAPH")]
-    graph: PathBuf,
+    pub(super) graph: PathBuf,
     /// Root for the chunk's source file.
     #[arg(long = "source-root", env = "DEBUNDLE_SOURCE_ROOT")]
-    source_root: PathBuf,
+    pub(super) source_root: PathBuf,
     /// Match the size cap used when generating the proposal IDs.
     #[arg(long = "size-cap-lines", default_value_t = DEFAULT_SIZE_CAP_LINES)]
     size_cap_lines: usize,
@@ -42,7 +42,7 @@ pub struct ModulesApplyArgs {
     dry_run: bool,
     /// Output format. Default text on tty, JSON on pipe.
     #[arg(long, value_enum)]
-    format: Option<OutputFormat>,
+    pub(super) format: Option<OutputFormat>,
 }
 
 #[derive(Debug, Deserialize)]

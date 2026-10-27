@@ -1098,6 +1098,7 @@ pub fn run_tree_fixture(fixture: &TreeFixture<'_>, extra_args: &[&str]) -> TreeR
     let root = TempDir::with_prefix(current_test_prefix()).expect("create tempdir");
     let snapshot = root.path().join("snapshot");
     let modules = root.path().join("modules");
+    fs::create_dir_all(&modules).expect("create modules root");
     let out_root = root.path().join("out");
     let mut js_list = String::new();
     let mut unassigned_mode = String::new();
@@ -1112,6 +1113,9 @@ pub fn run_tree_fixture(fixture: &TreeFixture<'_>, extra_args: &[&str]) -> TreeR
         .iter()
         .map(|(tree, chunk)| format!("  {tree}: {chunk}\n"))
         .collect::<String>();
+    for (tree, _) in fixture.module_roots {
+        fs::create_dir_all(modules.join(tree)).expect("create chunk module root");
+    }
     for (path, body) in fixture.modules {
         write_text_file(&modules.join(path), body);
     }

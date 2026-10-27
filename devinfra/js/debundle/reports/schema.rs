@@ -84,6 +84,10 @@ pub struct BindingReport {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DependencyGraphReport {
     pub chunk_id: String,
+    /// Exact inputs consumed by the run that produced this graph. Older
+    /// reports remain readable as historical snapshots, but cannot validate edits.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<graph_provenance::GraphProvenance>,
     pub nodes: Vec<SourceUnitReport>,
     /// Shared callee verdicts referenced by `purity.reasons[].cause_ref`.
     /// Each cause is emitted once, even when many source units call it.

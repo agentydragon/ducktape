@@ -42,6 +42,24 @@ The browser writer materializes those decisions without rediscovering entries.
 
 ## Authoring reports
 
+Each `dependency_graph.json` written by `debundle run` carries input provenance:
+SHA-256 of the executable engine and the exact bytes read for the tree config,
+vendor marks, module YAMLs, optional binding patches, JS list, every listed JS
+chunk, and vendor package files consulted by planning. Module YAML path
+membership is recorded separately, including paths outside the graph chunk.
+The provenance also retains the run argv/cwd, logical root paths, and the
+config's chunk-to-module-tree mapping. A graph created before this metadata
+existed remains a historical report only.
+
+A command that combines a saved graph with current spec or source checks the
+recorded baseline before reading claims or writing edits. It refuses changed,
+added, deleted, or mismapped inputs and reports the mismatch with a regeneration
+command. An accepted edit evaluates its candidate assignment against the saved
+dependency analysis; the graph remains the **pre-edit** snapshot and the next
+graph-backed edit requires another `debundle run`. A batch edit checks one
+starting snapshot and one combined candidate. Graph-only historical views do
+not certify current input compatibility.
+
 Description reports include `module_proposals` and `module_proposal_diagnostics`
 only when proposal analysis runs. Their limits sections use the same field names.
 Proposals name their outgoing residual quotient-class dependencies with

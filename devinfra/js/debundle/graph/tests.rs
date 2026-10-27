@@ -137,6 +137,7 @@ mod from_report_tests {
     /// `role` on the wire.
     fn report_with_edge(target: &str, role: Option<EdgeRoleReport>) -> DependencyGraphReport {
         DependencyGraphReport {
+            provenance: None,
             chunk_id: "chunk".into(),
             nodes: vec![node("unit:0", 0), node("unit:1", 1), node("unit:2", 2)],
             purity_causes: Vec::new(),

@@ -27,6 +27,81 @@ pub(super) struct ModulesNs {
     command: ModulesNsCommand,
 }
 
+impl ModulesNs {
+    pub(super) fn format(&self) -> Option<OutputFormat> {
+        match &self.command {
+            ModulesNsCommand::Merge(args) => args.edit.format,
+            ModulesNsCommand::Delete(args) => args.edit.format,
+            ModulesNsCommand::Propose(args) => args.format,
+            ModulesNsCommand::Apply(args) => args.format,
+            ModulesNsCommand::Refine(args) => args.format,
+            ModulesNsCommand::Decompose(args) => args.format,
+            _ => None,
+        }
+    }
+    pub(super) fn verify_graph(
+        &self,
+        spec_root: Option<&std::path::Path>,
+        graph_source_root: Option<&std::path::Path>,
+    ) -> Result<()> {
+        match &self.command {
+            ModulesNsCommand::Merge(args) => verify_edit(&args.edit, spec_root, graph_source_root),
+            ModulesNsCommand::Delete(args) => verify_edit(&args.edit, spec_root, graph_source_root),
+            ModulesNsCommand::Propose(args) => crate::verify_graph_compatibility(
+                &args.common.dependency_graph_path,
+                &args.common.modules_root,
+                args.source_root.as_deref(),
+                spec_root,
+                graph_source_root,
+                args.tree_config.as_deref(),
+            ),
+            ModulesNsCommand::Apply(args) => crate::verify_graph_compatibility(
+                &args.graph,
+                &args.modules_root,
+                Some(&args.source_root),
+                spec_root,
+                graph_source_root,
+                args.tree_config.as_deref(),
+            ),
+            ModulesNsCommand::Refine(args) => crate::verify_graph_compatibility(
+                &args.graph,
+                &args.modules_root,
+                Some(&args.source_root),
+                spec_root,
+                graph_source_root,
+                args.tree_config.as_deref(),
+            ),
+            ModulesNsCommand::Decompose(args) => crate::verify_graph_compatibility(
+                &args.common.dependency_graph_path,
+                &args.common.modules_root,
+                args.source_root.as_deref(),
+                spec_root,
+                graph_source_root,
+                args.tree_config.as_deref(),
+            ),
+            _ => Ok(()),
+        }
+    }
+}
+
+fn verify_edit(
+    edit: &crate::edit_gate::GraphEditArgs,
+    spec_root: Option<&std::path::Path>,
+    graph_source_root: Option<&std::path::Path>,
+) -> Result<()> {
+    if let Some(graph) = &edit.dependency_graph_path {
+        crate::verify_graph_compatibility(
+            graph,
+            &edit.modules_root,
+            edit.source_root.as_deref(),
+            spec_root,
+            graph_source_root,
+            None,
+        )?;
+    }
+    Ok(())
+}
+
 #[derive(Debug, Subcommand)]
 enum ModulesNsCommand {
     /// Read, set, edit, or clear a module's top-level `comment:` field.

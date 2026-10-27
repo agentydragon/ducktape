@@ -230,6 +230,7 @@ rust_library(
     edition = "2024",
     deps = [
         ":analysis",
+        ":graph_provenance",
         ":js_ast",
         ":output_layout",
         ":spec",
@@ -324,6 +325,7 @@ rust_library(
         ":analysis",
         ":artifact",
         ":binding_targets",
+        ":graph_provenance",
         ":js_ast",
         ":program_analysis",
         ":spec",
@@ -450,6 +452,18 @@ rust_library(
 )
 
 rust_library(
+    name = "graph_provenance",
+    srcs = ["graph_provenance.rs"],
+    edition = "2024",
+    deps = [
+        "@crates//:anyhow",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@crates//:sha2",
+    ],
+)
+
+rust_library(
     name = "analysis",
     srcs = [
         "analysis_inputs.rs",
@@ -506,6 +520,7 @@ rust_library(
     edition = "2024",
     deps = [
         ":binding_targets",
+        ":graph_provenance",
         ":js_ast",
         ":source_identity",
         ":spec",
@@ -630,6 +645,7 @@ rust_library(
     crate_root = "spec/spec_modules.rs",
     edition = "2024",
     deps = [
+        ":graph_provenance",
         ":spec",
         "@crates//:anyhow",
         "@crates//:serde",
@@ -805,6 +821,7 @@ rust_library(
     crate_root = "spec/spec_tree.rs",
     edition = "2024",
     deps = [
+        ":graph_provenance",
         ":output_layout",
         ":spec",
         ":spec_modules",
@@ -866,6 +883,7 @@ rust_library(
         ":binding_targets",
         ":chunk_analysis",
         ":gate",
+        ":graph_provenance",
         ":js_ast",
         ":output_layout",
         ":program_analysis",
@@ -963,6 +981,7 @@ rust_library(
     deps = [
         ":artifact",
         ":emit_harness",
+        ":graph_provenance",
         ":js_ast",
         ":lowering",
         ":prepare_chunks",
@@ -1018,6 +1037,7 @@ rust_library(
         ":analysis",
         ":anonymous_resolution",
         ":gate",
+        ":graph_provenance",
         ":js_ast",
         ":lowering",
         ":output_layout",

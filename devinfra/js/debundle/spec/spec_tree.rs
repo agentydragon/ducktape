@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
@@ -285,6 +284,20 @@ pub fn compile_spec_tree(options: &CompileSpecTreeOptions) -> Result<TransformSp
     })
 }
 
+pub fn graph_module_roots(config_path: &Path) -> Result<BTreeMap<String, Vec<PathBuf>>> {
+    let config: AuthoringConfig = read_yaml(config_path)?;
+    validate_module_roots(&config.module_roots)?;
+    let mut roots: BTreeMap<String, Vec<PathBuf>> = BTreeMap::new();
+    if config.module_roots.is_empty() {
+        roots.insert(config.main_chunk_id, vec![PathBuf::new()]);
+    } else {
+        for (root, chunk) in config.module_roots {
+            roots.entry(chunk).or_default().push(root);
+        }
+    }
+    Ok(roots)
+}
+
 fn source_path(source_root: Option<&Path>, path: PathBuf) -> PathBuf {
     if path.is_absolute() {
         path
@@ -296,10 +309,8 @@ fn source_path(source_root: Option<&Path>, path: PathBuf) -> PathBuf {
 }
 
 fn read_yaml<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T> {
-    serde_yaml::from_str(
-        &fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?,
-    )
-    .with_context(|| format!("parsing {}", path.display()))
+    serde_yaml::from_str(&graph_provenance::read_to_string(path)?)
+        .with_context(|| format!("parsing {}", path.display()))
 }
 
 fn load_module_sources(
@@ -666,6 +677,7 @@ fn chunk_renames_map(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     fn write_file(path: &Path, body: &str) {
         if let Some(parent) = path.parent() {

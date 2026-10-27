@@ -44,6 +44,14 @@ rust_library(
 
 debundle_e2e_test(name = "chunk_admission_test")
 
+debundle_e2e_test(
+    name = "graph_provenance_test",
+    deps = [
+        "@crates//:serde_json",
+        "@crates//:tempfile",
+    ],
+)
+
 debundle_e2e_test(name = "source_export_policy_test")
 
 debundle_e2e_test(

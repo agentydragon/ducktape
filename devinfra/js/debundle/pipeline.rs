@@ -9,6 +9,7 @@ use artifact::ChunkId;
 use artifact::load_js_chunks;
 use artifact::reports::ChunkDecompositionOutput;
 use emit_harness::emit_browser_harness;
+use graph_provenance::{InputCapture, ProvenanceRoots};
 use lowering::{
     MaterializeLogicalModulesOptions, MaterializeSpecInputs, ReportEmission,
     materialize_logical_modules, naturalize_cross_chunk_imports,
@@ -19,7 +20,7 @@ use prune_module_exports::prune_unimported_module_exports;
 use reconstruction::{ReconstructionPlan, UnmatchedSpecClaim, VendorManifestOutput};
 use spec::TransformSpec;
 use spec_modules::read_flat_transform_spec;
-use spec_tree::{CompileSpecTreeOptions, compile_spec_tree};
+use spec_tree::{CompileSpecTreeOptions, compile_spec_tree, graph_module_roots};
 use vendor::{
     VendorPlanOptions, VendorSwapsReport, apply_emission_rewrites_in_place,
     build_partial_swap_resolutions, build_vendor_resolution_plan,
@@ -163,7 +164,31 @@ fn parse_package_root_kv(value: &str) -> Result<(String, PathBuf), String> {
 }
 
 pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Result<()> {
+    let (roots, modules_directory) = provenance_roots(cli)?;
+    let capture = InputCapture::start(roots, modules_directory)?;
+    if let TransformSpecSource::Tree(tree) = &cli.spec_source {
+        // Capture the whole authored tree, including YAMLs outside the chunk
+        // selected for this graph. Path membership is part of the analysis input.
+        let members = graph_provenance::collect_yaml(&tree.modules_root)?;
+        let paths = members
+            .iter()
+            .map(|member| tree.modules_root.join(member))
+            .collect::<Vec<_>>();
+        graph_provenance::record_yaml_membership(&tree.modules_root, &paths)?;
+        for path in &paths {
+            graph_provenance::read_bytes(path)?;
+        }
+    }
     let spec = load_transform_spec_source(&cli.spec_source)?;
+    if let TransformSpecSource::Tree(tree) = &cli.spec_source {
+        capture.set_tree_scope(&tree.config_path, graph_module_roots(&tree.config_path)?)?;
+    }
+    let source_root = match &cli.spec_source {
+        TransformSpecSource::Tree(tree) => tree.source_root.clone(),
+        TransformSpecSource::Flat { .. } => None,
+    }
+    .unwrap_or_else(|| std::env::current_dir().expect("current directory"));
+    capture.set_source_root(&source_root)?;
     validate_transform_spec(&spec)?;
     if !options.dry_run {
         preflight_output_roots(&spec)?;
@@ -203,6 +228,7 @@ pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Re
             output_wrapper_dir: swap_cfg.output_wrapper_dir.as_deref(),
         },
     )?;
+    let graph_provenance = capture.finish()?;
     let write_vendor_outputs = swap_cfg.write && !options.dry_run;
 
     // Full swaps are an emission-set exclusion: the swapped chunks stay in
@@ -243,6 +269,7 @@ pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Re
             },
             &vendor_plan,
             MaterializeLogicalModulesOptions {
+                graph_provenance: Some(graph_provenance),
                 config: spec.materialize_logical_modules.clone(),
                 chunk_ids: materialise_chunk_ids,
                 keep_going: options.keep_going,
@@ -383,6 +410,62 @@ pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Re
     }
 
     Ok(())
+}
+
+fn provenance_roots(cli: &TransformCli) -> Result<(ProvenanceRoots, Option<PathBuf>)> {
+    let (spec_root, modules_directory) = match &cli.spec_source {
+        TransformSpecSource::Flat { path } => (
+            graph_provenance::absolute(path.parent().unwrap_or_else(|| Path::new(".")))?,
+            None,
+        ),
+        TransformSpecSource::Tree(tree) => {
+            let config_parent = graph_provenance::absolute(
+                tree.config_path.parent().unwrap_or_else(|| Path::new(".")),
+            )?;
+            let vendor_parent = graph_provenance::absolute(
+                tree.vendor_marks_path
+                    .parent()
+                    .unwrap_or_else(|| Path::new(".")),
+            )?;
+            let modules_root = graph_provenance::absolute(&tree.modules_root)?;
+            let mut common = config_parent;
+            while !vendor_parent.starts_with(&common) || !modules_root.starts_with(&common) {
+                common = common
+                    .parent()
+                    .context("spec inputs have no common root")?
+                    .to_path_buf();
+            }
+            let modules_directory = modules_root.strip_prefix(&common)?.to_path_buf();
+            (common, Some(modules_directory))
+        }
+    };
+    let source = match &cli.spec_source {
+        TransformSpecSource::Tree(tree) => tree
+            .source_root
+            .as_deref()
+            .map(graph_provenance::absolute)
+            .transpose()?,
+        TransformSpecSource::Flat { .. } => None,
+    }
+    .unwrap_or(std::env::current_dir()?);
+    let mut packages = std::collections::BTreeMap::new();
+    for (name, root) in &cli.package_roots {
+        packages.insert(name.clone(), graph_provenance::absolute(root)?);
+    }
+    if let Some(root) = &cli.packages_root {
+        packages.insert(
+            "__packages_root__".to_string(),
+            graph_provenance::absolute(root)?,
+        );
+    }
+    Ok((
+        ProvenanceRoots {
+            spec: spec_root,
+            source,
+            packages,
+        },
+        modules_directory,
+    ))
 }
 
 fn load_transform_spec_source(source: &TransformSpecSource) -> Result<TransformSpec> {

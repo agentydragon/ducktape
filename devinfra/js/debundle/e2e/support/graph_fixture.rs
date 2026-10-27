@@ -10,6 +10,9 @@ pub struct GraphFixture {
 }
 
 impl GraphFixture {
+    pub fn root(&self) -> &Path {
+        self.run.root()
+    }
     /// Module paths are relative to this fixture's single `main` chunk tree.
     pub fn new(source: &str, modules: &[(&str, &str)]) -> Self {
         Self::run(source, modules, true)
@@ -45,11 +48,7 @@ impl GraphFixture {
             &TreeFixture {
                 chunks,
                 module_roots: &[("main", "main")],
-                modules: if files.is_empty() {
-                    &[("main/empty.yaml", "members: []\n")]
-                } else {
-                    &files
-                },
+                modules: &files,
             },
             &[],
         );
@@ -60,9 +59,6 @@ impl GraphFixture {
             run.result.stderr
         );
         let modules_root = run._root.path().join("modules/main");
-        if files.is_empty() {
-            fs::remove_file(modules_root.join("empty.yaml")).unwrap();
-        }
         Self {
             graph: run.report_root.join("main/dependency_graph.json"),
             modules: modules_root,

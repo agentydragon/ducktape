@@ -231,6 +231,7 @@ impl ReportEmission {
 
 #[derive(Debug, Clone)]
 pub struct MaterializeLogicalModulesOptions {
+    pub graph_provenance: Option<graph_provenance::GraphProvenance>,
     pub config: spec::MaterializeLogicalModulesConfig,
     pub chunk_ids: Vec<String>,
     pub keep_going: bool,
@@ -351,6 +352,7 @@ pub fn materialize_logical_modules(
                                 keep_going: options.keep_going,
                                 list_template_identifiers: options.list_template_identifiers,
                                 report_emission: &options.report_emission,
+                                graph_provenance: options.graph_provenance.as_ref(),
                                 export_reentry_reports: &export_reentry_reports,
                                 vendor_import_oracle: vendor_import_oracle.as_ref(),
                                 export_reentry_policies: &export_reentry_policies,

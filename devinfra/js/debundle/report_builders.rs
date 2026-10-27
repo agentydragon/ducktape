@@ -58,6 +58,7 @@ pub(crate) fn build_dependency_graph_report(
     let quotient_sccs =
         build_quotient_scc_reports(assignment_analysis, &quotient_nodes, &quotient_edges);
     DependencyGraphReport {
+        provenance: None,
         chunk_id: assignment_analysis.inputs().chunk_id().to_string(),
         nodes,
         purity_causes,

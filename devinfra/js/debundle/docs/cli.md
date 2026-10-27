@@ -33,12 +33,26 @@ Use `debundle <command> --help` for the current command and flag inventory.
 Most commands take these paths, each as a flag or an env var; the flag wins if
 both are set.
 
-| Flag                   | Env var                | Meaning                                                                                                                                                          |
-| ---------------------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--graph <path>`       | `DEBUNDLE_GRAPH`       | `dependency_graph.json` for the chunk being inspected or edited. The graph path implies the chunk; multi-chunk callers point at different graphs per invocation. |
-| `--modules <dir>`      | `DEBUNDLE_MODULES`     | Per-module YAML tree root (the directory under `spec/modules/`).                                                                                                 |
-| `--source-root <dir>`  | `DEBUNDLE_SOURCE_ROOT` | Upstream snapshot root containing the original chunk bytes, used to resolve source-backed selectors and typed binding pins.                                      |
-| `--tree-config <file>` | `DEBUNDLE_TREE_CONFIG` | For graph-backed `modules` edits and queries, scope an app-level modules tree to the chunk named by `--graph`.                                                   |
+| Flag                        | Env var                      | Meaning                                                                                                                                                          |
+| --------------------------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--graph <path>`            | `DEBUNDLE_GRAPH`             | `dependency_graph.json` for the chunk being inspected or edited. The graph path implies the chunk; multi-chunk callers point at different graphs per invocation. |
+| `--modules <dir>`           | `DEBUNDLE_MODULES`           | Per-module YAML tree root (the directory under `spec/modules/`).                                                                                                 |
+| `--source-root <dir>`       | `DEBUNDLE_SOURCE_ROOT`       | Upstream snapshot root containing the original chunk bytes, used to resolve source-backed selectors and typed binding pins.                                      |
+| `--tree-config <file>`      | `DEBUNDLE_TREE_CONFIG`       | For graph-backed `modules` edits and queries, scope an app-level modules tree to the chunk named by `--graph`.                                                   |
+| `--spec-root <dir>`         | `DEBUNDLE_SPEC_ROOT`         | Current common root of the tree config, vendor marks and modules after relocation. Global flag; the flag wins over the env var.                                  |
+| `--graph-source-root <dir>` | `DEBUNDLE_GRAPH_SOURCE_ROOT` | Current root of the analyzed input files after relocation. Distinct from `--source-root`, which resolves selector source paths. Global flag; the flag wins.      |
+
+Graph-backed spec queries and edits compare the saved graph's engine and
+captured input bytes and YAML path membership with the current roots before
+using the graph. `--modules` must name the graph chunk's exact configured
+subtree. Commands accepting `--tree-config` may name the full modules tree
+when that flag names the config captured by the graph. A changed source,
+YAML, config, dependency assumption, wrong chunk tree, or old graph without
+provenance exits nonzero. JSON and NDJSON commands emit a typed
+`graph_compatibility` rejection with `mismatch.reason`, expected/actual
+values, and `regenerate_command` argv. A successful edit leaves the saved
+graph describing the pre-edit spec; rerun `debundle run` before another
+graph-backed edit.
 
 `debundle run --out-root` reads `DEBUNDLE_OUT`. `debundle run
 --tree-source-root` (the spec-tree compile root for source-relative paths in

@@ -18,7 +18,6 @@
 //! those sites.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
@@ -728,8 +727,7 @@ fn resolve_full_swap(job: FullSwapJob, options: &VendorPlanOptions<'_>) -> Resul
         options.package_roots,
         options.packages_root,
     )?;
-    let upstream_code = fs::read_to_string(&upstream_path)
-        .with_context(|| format!("reading {}", upstream_path.display()))?;
+    let upstream_code = graph_provenance::read_to_string(&upstream_path)?;
 
     let wrapper_source = match job.wrapper_shape {
         Some(WrapperShape::NamedFromDefault) => {
@@ -913,8 +911,7 @@ fn plan_partial_swaps(
                 PartialSwapPackageCoords::from(package),
                 any_member_for_package.then_some("kind=member"),
             )?;
-            let upstream_code = fs::read_to_string(&upstream_path)
-                .with_context(|| format!("reading {}", upstream_path.display()))?;
+            let upstream_code = graph_provenance::read_to_string(&upstream_path)?;
             let upstream_ast =
                 parse_js_module(&upstream_path.display().to_string(), &upstream_code)?;
             let upstream_exports = collect_exported_names(&upstream_ast.module);
@@ -1005,8 +1002,7 @@ fn plan_bundled_partial_swaps(
             Some(&bundled.packages),
         )?;
 
-        let bundle_code = fs::read_to_string(&bundled.bundle.path)
-            .with_context(|| format!("reading {}", bundled.bundle.path.display()))?;
+        let bundle_code = graph_provenance::read_to_string(&bundled.bundle.path)?;
         let bundle_ast = parse_js_module(&bundled.bundle.path.display().to_string(), &bundle_code)?;
         let bundle_runtime = program_analysis::analyze_program_shallow(&bundle_ast).runtime_facts;
         let bundle_exports = collect_exported_names(&bundle_ast.module);

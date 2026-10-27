@@ -258,6 +258,7 @@ pub fn graph_of(
 ) -> DependencyGraphReport {
     let module_nodes = module_table(nodes.iter().map(|n| &n.destination));
     DependencyGraphReport {
+        provenance: None,
         chunk_id: "x".to_string(),
         nodes,
         purity_causes: Vec::new(),
