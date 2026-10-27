@@ -40,8 +40,6 @@ spec:
                   config:
                     PodsWithPVC:
                       protectedStorageClasses:
-                        - name: local-path-home-ssd
-                        - name: local-path-proxmox
                         - name: piraeus-hdd-local
                         - name: piraeus-ssd-local
                   extraEnabled:

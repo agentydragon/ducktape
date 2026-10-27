@@ -39,17 +39,6 @@ spec:
 apiVersion: cdi.kubevirt.io/v1beta1
 kind: StorageProfile
 metadata:
-  name: local-path-proxmox
-spec:
-  claimPropertySets:
-    - accessModes:
-        - ReadWriteOnce
-      volumeMode: Filesystem
-  cloneStrategy: copy
----
-apiVersion: cdi.kubevirt.io/v1beta1
-kind: StorageProfile
-metadata:
   name: piraeus-hdd-local
 spec:
   claimPropertySets:
