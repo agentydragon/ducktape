@@ -62,7 +62,7 @@ func RunIntegrationTests(migrate func(context.Context, *sql.DB) error, run func(
 	return code
 }
 
-// Start loads the repository-pinned PostgreSQL and Ryuk images, starts PostgreSQL, and applies migrate.
+// Start ensures the PostgreSQL and Ryuk image tags are available, starts PostgreSQL, and applies migrate.
 func Start(ctx context.Context, migrate func(context.Context, *sql.DB) error) (*Database, error) {
 	if err := loadImage(ctx, postgresImage, "ducktape/third_party/containers/postgres_18_load.sh"); err != nil {
 		return nil, err
@@ -197,6 +197,8 @@ func loadImage(ctx context.Context, image, loaderRlocation string) error {
 	}
 	_, inspectErr := dockerClient.ImageInspect(ctx, image)
 	closeErr := dockerClient.Close()
+	// TODO: Verify cached images against the Bazel pin; consider sharing
+	// the image-loading path with Python.
 	if inspectErr == nil {
 		return closeErr
 	}
