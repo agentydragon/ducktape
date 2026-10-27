@@ -181,8 +181,8 @@
   flex-shrink: 0;
 }
 
-/* Inline with composer actions when there is room, otherwise at the scrollable
-   history tail (visible on phones without reserving space beneath the composer). */
+/* Model activity moves to the history tail on narrow screens; the autosuspend
+   countdown stays attached to the composer. */
 .agentplane-composer-activity {
   padding-inline: var(--mantine-spacing-xs);
   margin-left: auto;
