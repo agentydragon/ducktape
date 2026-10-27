@@ -37,6 +37,38 @@ fn unchanged_graph_matches_and_source_change_rejects() {
 }
 
 #[test]
+fn selector_root_must_resolve_to_analyzed_source_file() {
+    let fixture = GraphFixture::acyclic_pair();
+    let other = TempDir::new().unwrap();
+    fs::copy(fixture.source_path(), other.path().join("main.js")).unwrap();
+    let output = fixture.command(&[
+        "coverage",
+        "--source-root",
+        other.path().to_str().unwrap(),
+        "--format",
+        "json",
+    ]);
+    assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
+    let rejection: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(rejection["mismatch"]["reason"], "selector_source_root");
+}
+
+#[test]
+fn fallback_source_search_cannot_shadow_analyzed_file() {
+    let fixture = GraphFixture::acyclic_pair();
+    let shadow = fixture.modules.parent().unwrap().join("main.js");
+    fs::copy(fixture.source_path(), shadow).unwrap();
+    let output = fixture
+        .process(&["coverage", "--format", "json"])
+        .env_remove("DEBUNDLE_SOURCE_ROOT")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
+    let rejection: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(rejection["mismatch"]["reason"], "selector_source_root");
+}
+
+#[test]
 fn existing_added_and_deleted_yaml_reject_before_edit() {
     for mutation in ["existing", "added", "deleted"] {
         let fixture = GraphFixture::acyclic_pair();
@@ -77,6 +109,40 @@ fn config_assumption_and_engine_change_reject() {
     graph["provenance"]["engine_sha256"] = "wrong-engine".into();
     fs::write(&fixture.graph, serde_json::to_vec(&graph).unwrap()).unwrap();
     assert_mismatch(&fixture, "engine");
+}
+
+#[test]
+fn provider_chunk_analysis_option_invalidates_consumer_graph() {
+    let run = run_tree_fixture(
+        &TreeFixture {
+            chunks: &[
+                ("main", "const mainValue = 1; console.log(mainValue);"),
+                (
+                    "provider",
+                    "const providerValue = 2; console.log(providerValue);",
+                ),
+            ],
+            module_roots: &[("main", "main"), ("provider", "provider")],
+            modules: &[],
+        },
+        &[],
+    );
+    assert!(run.result.status.success(), "{}", run.result.stderr);
+    let config = run.root().join("spec_config.yaml");
+    let mut text = fs::read_to_string(&config).unwrap();
+    text.push_str("chunk_analysis_options:\n  provider:\n    trusted_dataflow_summaries: true\n");
+    fs::write(config, text).unwrap();
+    let output = std::process::Command::new(debundler_path())
+        .args(["coverage", "--graph"])
+        .arg(run.report_root.join("main/dependency_graph.json"))
+        .arg("--modules")
+        .arg(run.root().join("modules/main"))
+        .args(["--format", "json"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
+    let rejection: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(rejection["mismatch"]["reason"], "file");
 }
 
 #[test]

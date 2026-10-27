@@ -95,6 +95,8 @@ values, and `regenerate_command` argv. A successful edit leaves the saved
 graph describing the pre-edit spec; rerun `debundle run` before another
 graph-backed edit. Flat-spec graphs have no authored module-tree scope and
 cannot authorize a YAML-tree edit or query.
+`--no-verify` skips the post-edit assignment gate only; it does not skip
+the saved graph's baseline compatibility check when a graph is supplied.
 
 `debundle run --out-root` reads `DEBUNDLE_OUT`. `debundle run
 --tree-source-root` (the spec-tree compile root for source-relative paths in
