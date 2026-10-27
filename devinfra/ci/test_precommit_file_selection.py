@@ -61,6 +61,7 @@ def test_base_advancing_after_checkout_does_not_select_upstream_edits(
     _git(checkout.origin, "switch", "devel")
     (checkout.origin / "upstream.txt").write_text("landed after the test merge\n")
     _git(checkout.origin, "commit", "-am", "advance base")
+    _git(checkout.path, "fetch", "--depth=1", "origin", "devel")
     changed_files = tmp_path / "changed-files"
 
     needs_roles, paths = prepare_changed_files(
