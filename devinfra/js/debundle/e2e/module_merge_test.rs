@@ -200,6 +200,11 @@ fn merge_batch_rejects_untouched_symlink_aliases_without_writes() {
         );
         fixture.assert_rejected_unchanged(
             &["modules", "merge", "--batch", batch.to_str().unwrap()],
+            &["graph compatibility mismatch"],
+        );
+        fixture.refresh_graph();
+        fixture.assert_rejected_unchanged(
+            &["modules", "merge", "--batch", batch.to_str().unwrap()],
             &["does not support symlink entries"],
         );
         fixture.assert_runs("2\n");
@@ -422,8 +427,9 @@ fn merge_rejects_document_conflicts_before_writing_in_both_modes() {
                 ("second.yaml", "members: [{selector: {binding: {name: c}}}]"),
             ],
         );
-        // Start with real graph artifacts, then model an author's conflicting
-        // edits. Invalid claims must not be silently repaired by a merge.
+        // The edited spec makes the saved graph stale. Verified edits reject
+        // that pair first; an explicit edit without a graph must still refuse
+        // conflicting documents rather than silently repair their claims.
         for (path, yaml) in [
             ("target.yaml", target),
             ("first.yaml", first),
@@ -431,12 +437,9 @@ fn merge_rejects_document_conflicts_before_writing_in_both_modes() {
         ] {
             write_text_file(&fixture.modules.join(path), yaml);
         }
-        for no_verify in [false, true] {
-            let mut args = vec!["modules", "merge", "--target", "target", "first", "second"];
-            if no_verify {
-                args.push("--no-verify");
-            }
-            fixture.assert_rejected_unchanged(&args, &diagnostics);
-        }
+        let mut args = vec!["modules", "merge", "--target", "target", "first", "second"];
+        fixture.assert_rejected_unchanged(&args, &["graph compatibility mismatch"]);
+        args.push("--no-verify");
+        fixture.assert_rejected_unchanged_without_graph(&args, &diagnostics);
     }
 }
