@@ -2,15 +2,18 @@
 import { Accordion, Divider, Drawer, Group, Paper, ScrollArea, Select, Stack, Text } from "@mantine/core";
 import { useEffect, useState, type JSX } from "react";
 
+import { displayableError } from "./client";
 import { clockTime, isoTime, timeAgo } from "./format_time";
 import { followStream } from "./live_stream";
 import { type StreamConnection } from "./stream_reader";
-import type {
-  GitHubSubject,
-  SandboxNotificationStatus,
-  Source,
-  SourceObservation,
-  SubscriptionStatus,
+import {
+  decodeSandboxNotificationStatus,
+  type GitHubSubject,
+  type InboxStatus,
+  type SandboxNotificationStatus,
+  type Source,
+  type SourceObservation,
+  type SubscriptionStatus,
 } from "./notification_types";
 
 type SubscriptionState = "active" | "expired" | "cancelled";
@@ -59,15 +62,17 @@ function subscriptionLabel(sub: SubscriptionStatus, observedAt?: string): string
 
 function subjectLabel(subject: GitHubSubject | undefined): string {
   if (subject === undefined) return "event";
-  if ("pullRequest" in subject) return `pull request ${subject.pullRequest.number}`;
-  if ("issue" in subject) return `issue ${subject.issue.number}`;
-  if ("branch" in subject) return `branch ${subject.branch.name}`;
-  return `commit ${subject.commit.sha}`;
+  if (subject.pullRequest !== undefined) return `pull request ${subject.pullRequest.number}`;
+  if (subject.issue !== undefined) return `issue ${subject.issue.number}`;
+  if (subject.branch !== undefined) return `branch ${subject.branch.name}`;
+  if (subject.commit !== undefined) return `commit ${subject.commit.sha}`;
+  throw new TypeError("notification GitHub subject has no kind");
 }
 
 function sourceLabel(source: Source): string {
-  if ("actions" in source) return `Action ${source.actions.requestId}`;
-  return `${source.github.repository} · ${subjectLabel(source.github.subject)}`;
+  if (source.actions !== undefined) return `Action ${source.actions.requestId}`;
+  if (source.github !== undefined) return `${source.github.repository} · ${subjectLabel(source.github.subject)}`;
+  throw new TypeError("notification source has no provider");
 }
 
 /** Plain text for the strings built from it; the ISO time stands where a tooltip cannot. */
@@ -98,10 +103,13 @@ export function NotificationStatus({
       events: {
         snapshot: (message) => {
           try {
-            setData(JSON.parse(message.data) as SandboxNotificationStatus);
+            setData(decodeSandboxNotificationStatus(message.data));
             setError(null);
-          } catch {
-            setError("Invalid notification status snapshot");
+            return undefined;
+          } catch (reason) {
+            const failure = displayableError(reason);
+            setError(failure);
+            return failure;
           }
         },
       },
@@ -109,8 +117,9 @@ export function NotificationStatus({
     });
   }, [opened, sandbox]);
   const observedAt = data?.observedAt;
+  const inboxStatuses: InboxStatus[] = data?.inboxes ?? [];
   const inboxes =
-    data?.inboxes
+    inboxStatuses
       .filter(({ inbox }) => !sessionId || inbox.sessionId === sessionId)
       .map((status) => ({
         ...status,
