@@ -292,9 +292,9 @@ Asked one at a time; each open one has a default the plan assumes.
    first.
 2. **Launcher grants on every launch. Accepted by the operator, 2026-10-26 23:47 UTC:** a launch writes all of them
    on the new Sandbox, shown on the card. Rejected: an opt-in flag per launch, and an approval for every command.
-3. **The preset catalog in the executor's settings.** Default: yes, rendered from the same definition as the app's.
-   Alternative: launch takes concrete fields with no catalog to read, and the caller learns templates and sets
-   elsewhere.
+3. **The preset catalog in the executor's settings. Accepted by the operator, 2026-10-27 00:01 UTC:** rendered from
+   the same definition as the app's. Rejected: launch takes concrete fields with no catalog to read, and the caller
+   learns templates and sets elsewhere.
 4. **No inbox for the caller in v1.** Default: replies are turn outcomes the caller reads. Alternative: promote
    `EXTERNAL_AGENT_INBOXES` so a worker can reach a caller unprompted.
 5. **`claude-ai` as the orchestrating account.** Default: yes, under the pending
