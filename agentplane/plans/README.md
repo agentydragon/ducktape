@@ -38,9 +38,9 @@ operator decisions and proportional acceptance from the [low-priority freezer](t
 - [Kubernetes API aggregation](api_aggregation_exploration.md) — held design exploration of serving
   agent-facing records through an extension apiserver, with RBAC via `SubjectAccessReview` as the
   cheaper route
-- [Orchestrating agents from an MCP client](mcp_orchestration.md) — proposed workflow, tool surface and authority
-  for Claude or any MCP Connection to launch worker Sandboxes, give them tasks and read their outcomes: one Action
-  group run as the operator's act until each backend can grant callers itself
+- [Orchestrating agents from an MCP client](mcp_orchestration.md) — what remains after the `orchestration_v1`
+  Action group: reading workers' turns, moving each operation to a grant its backend checks, and bounding what a
+  launcher may let its workers do
 - [History read and follow](history_read_follow.md) — proposed `FollowSession` call reading one Session's raw
   entries from a cursor, a number of entries of a kind back, or the tail, with a kind filter and an optional follow,
   for Notifications and orchestration; awaiting operator review

@@ -305,10 +305,10 @@ flowchart TD
     HISTORY_SANDBOX_RECORD --> THREAD_READ_POLICY
     THREAD_CREATE_POLICY --> THREAD_CREATE_AUTHORIZATION
     AGENT_LAUNCH_POLICY_DESIGN --> AGENT_SANDBOX_LAUNCH
-    ORCHESTRATION_V1[In progress: the orchestration_v1 Action group, phase 1]
-    ORCHESTRATION_V1 -. interim until .-> THREAD_CREATE_AUTHORIZATION
-    ORCHESTRATION_V1 -. interim until .-> THREAD_READ_POLICY
-    ORCHESTRATION_V1 -. interim until .-> AGENT_SANDBOX_LAUNCH
+    ORCHESTRATION_V1_BACKEND_GRANTS[Blocked: orchestration_v1 operations on backend grants]
+    THREAD_CREATE_AUTHORIZATION --> ORCHESTRATION_V1_BACKEND_GRANTS
+    THREAD_READ_POLICY --> ORCHESTRATION_V1_BACKEND_GRANTS
+    AGENT_SANDBOX_LAUNCH --> ORCHESTRATION_V1_BACKEND_GRANTS
     RUNNER_HARNESS_OBJECTS_DESIGN[Decision: process diagnostics and placement]
     HARNESS_IDENTITY_DESIGN[Decision: private store and native Session mapping]
     HARNESS_IDENTITY_DESIGN --> RUNNER_HARNESS_OBJECTS_DESIGN
@@ -450,18 +450,17 @@ effective spec and delegation server-side. Test allowed and forbidden launch par
 concurrent retries. Reuse the app's create path (the shared Sandbox inventory), not harness-native agent tools. Launch alone
 does not grant history read, messaging, credentials or execution of another principal's Actions.
 
-### `ORCHESTRATION_V1` — the `orchestration_v1` Action group, phase 1
+### `ORCHESTRATION_V1_BACKEND_GRANTS` — `orchestration_v1` operations on backend grants
 
-**In progress; operator, 2026-10-27 00:42 UTC: "you can go implement it. i'd maybe call it orchestration_v1 just to
-leave room for later refactor".** Build P1 of the [plan](mcp_orchestration.md#phases): the executor kind in the
-Action Service with `list_launch_presets`, `launch_sandbox` writing launcher grants behind the admission guard,
-`open_session`, `submit_input`, `interrupt_turn`, `get_session` and `list_sessions`; then, once its image is pinned,
-the staging configuration (preset catalog, RBAC, the executor's Dispatcher and History entries). Operations no
-backend can grant a caller yet run as the operator's act, which the Dispatcher and History trust until
-`THREAD_CREATE_AUTHORIZATION`, `THREAD_READ_POLICY` and `AGENT_SANDBOX_LAUNCH` land; auto-approval by argument shape
-is for v1 only ([why](mcp_orchestration.md#shape-matched-approval-is-the-v1-expedient)). Exit: a k3s system test
-launches a worker through an approved Action, opens a Session, submits input and sees the turn run, and a command
-aimed at another Sandbox is not auto-approved.
+**Blocked; one operation at a time as each backend rule lands.** The
+[`orchestration_v1` group](../action_service/orchestration_v1/README.md) runs every operation as the operator's act,
+with the Action Service trusted by the Dispatcher and History ([ADR](../docs/adr_orchestration_v1.md)). Move each to
+a grant its backend checks: Session open and commands after `THREAD_CREATE_AUTHORIZATION` and
+`DISPATCHER_SEND_AUTHORIZATION_GENERALIZE`, Session reads after `THREAD_READ_POLICY`, launch after
+`AGENT_SANDBOX_LAUNCH`. The executor then calls as the caller, launcher grants write the backend rule instead of an
+`argument_schema` auto-approval ([target shape](mcp_orchestration.md#shape-matched-approval-is-the-v1-expedient)), and
+`send_message` joins the group. Exit: the Action Service is in neither the Dispatcher's callers and wake callers nor
+History's readers, and no launcher grant matches argument shapes.
 
 ### `ORCHESTRATION_V1_TURN_READS` — read and wait for workers' turns
 
@@ -1296,8 +1295,8 @@ restart. Notification presentation/outcome design remains separate.
 **Deferred TODO; v0 decision does not block delivery design.** Dispatcher may specifically trust the
 App and Notification service identities to act for their users, with wake permission separately
 allowlisted. Do not extend that exception to agents or other services, except the one the operator accepted on
-2026-10-26: the [`orchestration_v1` group's executor](mcp_orchestration.md), which acts only on Action Decisions,
-until each of its operations has a caller grant. Design destination- and
+2026-10-26: the [`orchestration_v1` group's executor](../action_service/orchestration_v1/README.md), which acts only on Action Decisions,
+until `ORCHESTRATION_V1_BACKEND_GRANTS` gives each of its operations a caller grant. Design destination- and
 operation-scoped grants, delegated caller proof and the effect of revocation on queued work before
 general senders are admitted. Consider RBAC-backed permissions, but choose the authority with the
 multiagent model; the operator prefers verb-over-target rules to shape-matched auto-approval and expects Session

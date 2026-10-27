@@ -59,7 +59,7 @@ held with the other read decisions.
 
 History enforces scoped authorization on its own API regardless of policy representation. Do not
 broaden its reader allowlist wholesale: a listed reader reads every Session. The one accepted exception
-(operator, 2026-10-26) is the [`orchestration_v1` group's executor](mcp_orchestration.md), which reads only on an
+(operator, 2026-10-26) is the [`orchestration_v1` group's executor](../action_service/orchestration_v1/README.md), which reads only on an
 Action Decision until this policy replaces it. Keep read authority
 separate from message ingress, Session open/control, Sandbox lifecycle and grant administration.
 A read grant does not imply send or create authority.

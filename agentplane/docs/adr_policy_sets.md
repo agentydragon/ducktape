@@ -27,7 +27,9 @@ Policy Controller keeps. Deployed scope and the static grants around it:
 - **Authority.** Writing a set or a binding is equivalent to granting RBAC, so no agent is
   granted write access to either on staging. Flux writes sets and the bindings of static accounts. The
   Sandbox Controller writes a Sandbox's binding, and the app writes the operator's runtime
-  grants as bindings owned by the Sandbox. The controller writes bindings, never Roles. Its `bind`
+  grants as bindings owned by the Sandbox. The Action Service writes `orchestration_v1` launcher grants, which an
+  admission policy limits to inbox and Action rules on the one Sandbox that owns them
+  ([contract](../action_service/orchestration_v1/README.md#the-contract)). The controller writes bindings, never Roles. Its `bind`
   permission is a `resourceNames` list for exactly the roles the Flux-rendered sets reference,
   generated from the same source as the sets (`cluster/cdk8s/agentplane/policy_controller.py`);
   a wildcard `bind` or a broad ClusterRoleBinding in place of namespaced RoleBindings is not

@@ -4,7 +4,8 @@
 drive other agents, and it has to work, but its authority model is the one to replace: the Action
 Service acts with its own account where each backend should check the caller, and launcher grants
 match argument shapes where they should be typed permissions on the Sandbox. The `_v1` in its name
-leaves room for that replacement.
+leaves room for that replacement. Why it is built this way: the
+[ADR](../../docs/adr_orchestration_v1.md).
 
 An Action group that lets a caller launch Session Sandboxes and drive their Sessions: an MCP client
 such as claude.ai through the MCP edge, or an in-cluster agent with `agentplane actions`. Its
