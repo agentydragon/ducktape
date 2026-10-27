@@ -17,7 +17,7 @@ go_library(
         "//util/netlistener",
         "@build_buf_go_protovalidate//:protovalidate",
         "@build_buf_go_protoyaml//:protoyaml",
-        "@in_yaml_go_yaml_v3//:yaml_v3",
+        "@in_yaml_go_yaml_v3//:yaml",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//credentials/insecure",
