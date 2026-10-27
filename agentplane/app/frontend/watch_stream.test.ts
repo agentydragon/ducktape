@@ -85,3 +85,25 @@ it("treats an error message of the stream as the end of the connection", async (
   expect(connection()).toMatchObject({ phase: "reconnecting", lastError: expect.stringContaining("lease lost") });
   expect(watch(0).signal?.aborted).toBe(true);
 });
+
+it("rejects malformed envelopes without delivering a frame or reporting live", async () => {
+  follow();
+  await settle();
+  watch(0).write('{"result":{"n":1},"error":{"code":14,"message":"lease lost"}}\n');
+  await settle();
+
+  expect(events).toEqual(["open"]);
+  expect(connections.map(({ phase }) => phase)).toEqual(["connecting", "reconnecting"]);
+  expect(connection()).toHaveProperty("lastError");
+});
+
+it("reports a truncated final message instead of dropping it", async () => {
+  follow();
+  await settle();
+  watch(0).write('{"result":{"n":1}}');
+  watch(0).end();
+  await settle();
+
+  expect(events).toEqual(["open"]);
+  expect(connection()).toMatchObject({ phase: "reconnecting", lastError: expect.any(String) });
+});
