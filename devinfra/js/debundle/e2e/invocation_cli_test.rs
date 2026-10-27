@@ -53,7 +53,8 @@ fn graph_environment_is_materialized_and_cli_flag_wins() {
     let mut env_only = fixture.process(&["gate", "list", "--print-invocation"]);
     env_only.env("DEBUNDLE_GRAPH", &env_graph);
     let env_record = run_json(&mut env_only);
-    assert_eq!(env_record["mode"], "graph_snapshot_read");
+    assert_eq!(env_record["mode"], "diagnostic_snapshot_read");
+    assert_eq!(env_record["requested_proof"], "diagnostic_snapshot_input");
     assert_eq!(env_record["will_execute"], false);
     assert!(
         env_record["argv"]
@@ -92,6 +93,8 @@ fn graph_environment_is_materialized_and_cli_flag_wins() {
     ]);
     overridden.env("DEBUNDLE_GRAPH", &env_graph);
     let flag_record = run_json(&mut overridden);
+    assert_eq!(flag_record["mode"], "diagnostic_snapshot_read");
+    assert_eq!(flag_record["requested_proof"], "diagnostic_snapshot_input");
     assert!(
         flag_record["argv"]
             .as_array()
