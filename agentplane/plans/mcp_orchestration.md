@@ -1,6 +1,8 @@
 # Orchestrating Agentplane agents from an MCP client
 
-Status: **proposed 2026-10-26; nothing implemented, no phase authorized.** The operator (23:19 UTC) asked how
+Status: **accepted 2026-10-27; P1 in progress as the `orchestration_v1` Action group** (operator, 00:42 UTC: "you
+can go implement it. i'd maybe call it orchestration_v1 just to leave room for later refactor"); see
+[`ORCHESTRATION_V1`](task_dag.md#orchestration_v1--the-orchestration_v1-action-group-phase-1). The operator (23:19 UTC) asked how
 Claude, connected through Agentplane's MCP server, could "orchestrate agentplane agents to work on tasks": which
 capabilities it needs, how they reach an agent talking to the MCP server "(possibly through an actions sandbox it
 might allocate)", the planned workflow, and how this fits the RBAC and identity philosophy. Today only messages
@@ -16,21 +18,21 @@ an orchestrator in a Session Sandbox reaches the same Actions through the Action
 
 What an orchestrating caller does, with the working tool names of the [tool surface](#tool-surface):
 
-1. **Pick a configuration.** `orchestration__list_launch_presets` returns the reviewed launch presets resolved to
+1. **Pick a configuration.** `orchestration_v1__list_launch_presets` returns the reviewed launch presets resolved to
    concrete fields: template, policy sets, inbox tags, bootstrap and Session defaults.
-2. **Launch a worker.** `request_action` for `orchestration/launch_sandbox` with those fields, edited for the task,
+2. **Launch a worker.** `request_action` for `orchestration_v1/launch_sandbox` with those fields, edited for the task,
    plus the grants the caller wants on the new Sandbox. The operator approves it on the Action card, which Web Push
    brings to the phone. The result names the Sandbox and its UID.
-3. **Give it the task.** `orchestration__open_session` with the Sandbox name and UID, a Session ID the caller mints
-   and the Session spec, then `orchestration__submit_input` with the task. The Dispatcher queues both until the
+3. **Give it the task.** `orchestration_v1__open_session` with the Sandbox name and UID, a Session ID the caller mints
+   and the Session spec, then `orchestration_v1__submit_input` with the task. The Dispatcher queues both until the
    Sandbox is Ready, so neither waits for step 2's Pod to start.
-4. **Follow it.** `orchestration__get_session` says whether the Session is working or idle and where its queued
-   commands are. `orchestration__wait_for_turn` waits up to the instance's direct-tool wait (30 s on staging) for
-   the running turn to end. `orchestration__read_turns` returns completed turns' final assistant messages and
+4. **Follow it.** `orchestration_v1__get_session` says whether the Session is working or idle and where its queued
+   commands are. `orchestration_v1__wait_for_turn` waits up to the instance's direct-tool wait (30 s on staging) for
+   the running turn to end. `orchestration_v1__read_turns` returns completed turns' final assistant messages and
    outcomes, paging further back on request. These two wait on History's
    [read and follow API](#reading-turns-depends-on-historys-read-and-follow-design), which is not designed yet.
 5. **Answer and steer.** A worker that needs something ends its turn saying so. The caller reads that in step 4 and
-   answers with `orchestration__submit_input`, or stops a turn going wrong with `orchestration__interrupt_turn`.
+   answers with `orchestration_v1__submit_input`, or stops a turn going wrong with `orchestration_v1__interrupt_turn`.
 6. **Finish.** Launched with idle suspend and wake-on-send, the worker suspends once idle and a later input wakes
    it. Its work lands where its own grants let it write, such as a branch or a PR. Deleting it stays an operator
    act, never automatic.
@@ -107,7 +109,7 @@ widens the operator's suggestion for messaging under `AGENT_LAUNCH_POLICY_DESIGN
 here:
 
 - `send_message` as a `session_inbox_access` rule, which Notifications enforces now;
-- the `orchestration` Actions on that Sandbox as `action_auto_approve` rules matching its name and UID, each
+- the `orchestration_v1` Actions on that Sandbox as `action_auto_approve` rules matching its name and UID, each
   replaced by its backend rule type once one exists.
 
 The launch card shows these grants, so approving a launch approves them, and a request without them gets none. One
@@ -121,7 +123,7 @@ kind: PolicySet
 metadata:
   name: worker-3f2a-launcher
   namespace: agentplane-staging
-  ownerReferences: [{ apiVersion: agents.x-k8s.io/v1beta1, kind: Sandbox, name: worker-3f2a, uid: 9b0e… }]
+  ownerReferences: [{ apiVersion: agentplane.allegedly.works/v1alpha1, kind: Sandbox, name: worker-3f2a, uid: 9b0e… }]
 spec:
   rules:
     - type: session_inbox_access
@@ -131,7 +133,7 @@ spec:
       policy:
         type: argument_schema
         actions:
-          orchestration:
+          orchestration_v1:
             [open_session, submit_input, interrupt_turn, get_session, list_sessions, read_turns, wait_for_turn]
         schema:
           required: [sandbox]
@@ -153,7 +155,7 @@ never inherits a grant meant for its predecessor.
 
 `create` on PolicySets and PolicyBindings would let the executor write any grant, so a `ValidatingAdmissionPolicy`
 on its service account admits only this shape: one owner reference, to a Sandbox in the same namespace; rules that
-name only that Sandbox's name and UID (the inbox targets, the schema's `const`) and only `orchestration` Actions; a
+name only that Sandbox's name and UID (the inbox targets, the schema's `const`) and only `orchestration_v1` Actions; a
 binding whose PolicySets share that owner. A bug in the executor then cannot grant past the worker it launched.
 Admission cannot see the Action's caller, so it limits what a grant reaches, not who holds it: the binding's subject
 is always `ExecutionRequest.caller`, the authenticated account that submitted the launch (`claude-ai` through the MCP
@@ -204,13 +206,25 @@ granted by a Role naming the worker through a `kubernetes_role_binding` rule: Ku
 what comes with it, but a Role cannot pin a UID, so the Gateway still compares it. Or it could be a typed `PolicySet`
 rule over Sandbox targets by name, UID or tag, as `session_inbox_access` selects by inbox tag.
 
+### What a launcher may let its workers do
+
+Open (operator, 2026-10-27 00:41 UTC: "how to specify what's the set of things that an agent may allow its launched
+sandboxes to do"). In v1 the operator approves every launch and sees the template, policy sets and tags it names, so
+the launch card is the bound. Once a launch can be auto-approved (`AGENT_LAUNCH_POLICY_DESIGN`,
+`AGENT_SANDBOX_LAUNCH`), each launching account needs that bound written down: which templates, which PolicySets it
+may attach, which inbox and history tags it may stamp, and how many workers it may run at once. Part of the question
+is whether the bound is a subset of the launcher's own grants or a list of its own; nothing is inherited, which
+suggests its own list, so an orchestrator with no GitHub access could still start a worker holding
+`common-github-read`. Kubernetes RBAC has this shape in its `bind` verb, where binding a Role takes that Role's
+permissions or `bind` on it by name; the counterpart here would grant attaching named PolicySets.
+
 ## Exposure
 
-**One Action group, `orchestration`, holds every operation**, as an executor kind in the Action Service beside the
+**One Action group, `orchestration_v1`, holds every operation**, as an executor kind in the Action Service beside the
 Sandbox group's. A claude.ai conversation reaches it through the MCP edge like any Action: the auto-approvable calls
 appear as [direct tools](../action_service/README.md#direct-tools) and answer in one call, while the rest go through
 `request_action` and wait for a Decision. An in-cluster orchestrator submits the same Actions with
-`agentplane actions submit orchestration/<name>`. No new MCP server, edge tool or app endpoint is involved.
+`agentplane actions submit orchestration_v1/<name>`. No new MCP server, edge tool or app endpoint is involved.
 
 The executor lives in the Action Service because it needs the authenticated `ExecutionRequest.caller`, to bind
 launcher grants and to record provenance, and the dispatch lease and receipts every Action has. Its service account
@@ -304,7 +318,7 @@ Each phase is independently useful; P1's parts are separate PRs.
 - **P0, configuration only (optional).** Bind `claude-ai` to the `send-to-*` sets the operator picks, so Claude
   can message existing Haku or public-coder Sessions from a box. It also exercises the agent receive, read and
   acknowledge behavior the cross-agent plan still lists as unvalidated.
-- **P1, the `orchestration` group under the operator's act.**
+- **P1, the `orchestration_v1` group under the operator's act.**
   1. The executor kind with `list_launch_presets` and `launch_sandbox`, writing launcher grants; the preset catalog
      rendered into its settings; Sandbox, PolicySet and PolicyBinding `create` for its account.
   2. `open_session` and the four commands; the executor's account in the Dispatcher's callers and wake callers.
@@ -332,7 +346,7 @@ grouping workers under their launcher, and a spend budget per account at the LLM
 Asked one at a time; all six are answered.
 
 1. **The operator's act for launch, Session commands and reads in v1. Accepted by the operator, 2026-10-26 23:37
-   UTC,** as a transitional path: the `orchestration` group, with the Dispatcher and History trusting its executor
+   UTC,** as a transitional path: the `orchestration_v1` group, with the Dispatcher and History trusting its executor
    until each backend rule lands. Rejected for now: building the caller rule types in the Dispatcher and History
    first.
 2. **Launcher grants on every launch. Accepted by the operator, 2026-10-26 23:47 UTC:** a launch writes all of them

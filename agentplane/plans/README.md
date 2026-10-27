@@ -43,7 +43,7 @@ operator decisions and proportional acceptance from the [low-priority freezer](t
   group run as the operator's act until each backend can grant callers itself
 - [History read and follow](history_read_follow.md) — proposed `FollowSession` call reading one Session's raw
   entries from a cursor, a number of entries of a kind back, or the tail, with a kind filter and an optional follow,
-  for the title worker, Notifications and orchestration; awaiting operator review
+  for Notifications and orchestration; awaiting operator review
 - [Scoped Session reads](scoped_session_reads.md) — proposed ServiceAccount read policy for
   retained Session history
 - [KubeVirt execution environments](kubevirt_environments.md) — the live gates for VM Sandboxes that no

@@ -10,8 +10,6 @@ consumers below.
 
 | Consumer                                                                                     | Kinds it reads                                                                                       | Start                             | Follows                     |
 | -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | --------------------------------- | --------------------------- |
-| First-message title worker (`app/threads/title_generation.py`)                               | `harness_user_message_confirmed`                                                                     | Cursor 0                          | Until the first message     |
-| Auto-title ([#11817](https://github.com/agentydragon/ducktape/issues/11817))                 | `harness_user_message_confirmed`                                                                     | Cursor 0                          | No; cancels after N         |
 | Notifications command outcome (`notification_service/worker/deliver.go`), if it stays a read | `command_admitted`, `command_failed`, `command_noop`, `harness_user_message_confirmed`               | Its stored cursor                 | Until its command's outcome |
 | Orchestration `read_turns`                                                                   | `turn_started`, `turn_completed`, `item_started`, `item_completed`, `harness_user_message_confirmed` | N turns back                      | No                          |
 | Orchestration `wait_for_turn`                                                                | `turn_completed`                                                                                     | The cursor the last call returned | Up to the tool's wait       |
@@ -123,8 +121,7 @@ message Entries {
 
 ## What moves to it
 
-The first-message title worker and Auto-title (`THREAD_TITLE_GENERATION`), the orchestration reads, and the
-Notification Service's outcome scan unless `NOTIFICATION_COMMAND_OUTCOME_DESIGN` removes that read. The app's raw
+The orchestration reads, and the Notification Service's outcome scan unless `NOTIFICATION_COMMAND_OUTCOME_DESIGN` removes that read. The app's raw
 debug reads stay on `ReadSessionEvents`.
 
 ## Questions for review

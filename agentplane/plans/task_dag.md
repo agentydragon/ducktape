@@ -305,10 +305,10 @@ flowchart TD
     HISTORY_SANDBOX_RECORD --> THREAD_READ_POLICY
     THREAD_CREATE_POLICY --> THREAD_CREATE_AUTHORIZATION
     AGENT_LAUNCH_POLICY_DESIGN --> AGENT_SANDBOX_LAUNCH
-    MCP_ORCHESTRATION_DESIGN[Decision: orchestrating agents from an MCP client]
-    MCP_ORCHESTRATION_DESIGN -. interim until .-> THREAD_CREATE_AUTHORIZATION
-    MCP_ORCHESTRATION_DESIGN -. interim until .-> THREAD_READ_POLICY
-    MCP_ORCHESTRATION_DESIGN -. interim until .-> AGENT_SANDBOX_LAUNCH
+    ORCHESTRATION_V1[In progress: the orchestration_v1 Action group, phase 1]
+    ORCHESTRATION_V1 -. interim until .-> THREAD_CREATE_AUTHORIZATION
+    ORCHESTRATION_V1 -. interim until .-> THREAD_READ_POLICY
+    ORCHESTRATION_V1 -. interim until .-> AGENT_SANDBOX_LAUNCH
     RUNNER_HARNESS_OBJECTS_DESIGN[Decision: process diagnostics and placement]
     HARNESS_IDENTITY_DESIGN[Decision: private store and native Session mapping]
     HARNESS_IDENTITY_DESIGN --> RUNNER_HARNESS_OBJECTS_DESIGN
@@ -439,6 +439,10 @@ An explicit launch option keeps "launch alone does not grant messaging"; whether
 the operator's to choose. Stamping an inbox tag at launch, which presets already do, is the
 alternative. Spend limits: see `THREAD_CREATE_POLICY`.
 
+**Operator input, 2026-10-27 UTC (not a decision):** decide "how to specify what's the set of things that an agent
+may allow its launched sandboxes to do": the templates, PolicySets and tags a launcher may give the workers it starts
+([orchestration](mcp_orchestration.md#what-a-launcher-may-let-its-workers-do)).
+
 ### `AGENT_SANDBOX_LAUNCH` — constrained agent-requested launch
 
 **Blocked on launch policy.** Enforce the reviewed
@@ -446,21 +450,24 @@ effective spec and delegation server-side. Test allowed and forbidden launch par
 concurrent retries. Reuse the app's create path (the shared Sandbox inventory), not harness-native agent tools. Launch alone
 does not grant history read, messaging, credentials or execution of another principal's Actions.
 
-### `MCP_ORCHESTRATION_DESIGN` — orchestrating agents from an MCP client
+### `ORCHESTRATION_V1` — the `orchestration_v1` Action group, phase 1
 
-**Decision; operator request, 2026-10-26 UTC.** [Plan](mcp_orchestration.md): one `orchestration` Action group lets
-an MCP Connection or an in-cluster orchestrator launch Session Sandboxes, open Sessions, send input and read turn
-outcomes. Operations no backend can grant a caller yet run as the operator's act, authorized by the Action Decision
-(the operator offered approval-gated Actions, 23:21), with Sandbox-owned launcher grants making one approval per
-worker enough. Each moves to its backend rule as `THREAD_CREATE_AUTHORIZATION`, `THREAD_READ_POLICY` and
-`AGENT_SANDBOX_LAUNCH` land. Its turn reads (`read_turns`, `wait_for_turn`) wait on `HISTORY_READ_FOLLOW_API` and
-are not built on today's reads. The operator accepted the operator's-act path as transitional (2026-10-26 23:37 UTC),
-so the Dispatcher and History may trust the group's executor until then, and a launch writes launcher grants on every
-worker (23:47 UTC), and the executor reads a rendered copy of the preset catalog (2026-10-27 00:01 UTC), and workers answer by turn
-outcomes with no caller inbox in v1 (00:02 UTC), `claude-ai` orchestrates (00:03 UTC), and the executor lives in the Action Service
-(00:04 UTC). Matching auto-approval on argument shape is accepted for v1 only; the operator prefers RBAC-style
-verb-over-target permissions ([why](mcp_orchestration.md#shape-matched-approval-is-the-v1-expedient)). Every plan
-decision is answered; the plan awaits the operator's review of the whole. No implementation until the operator accepts the plan.
+**In progress; operator, 2026-10-27 00:42 UTC: "you can go implement it. i'd maybe call it orchestration_v1 just to
+leave room for later refactor".** Build P1 of the [plan](mcp_orchestration.md#phases): the executor kind in the
+Action Service with `list_launch_presets`, `launch_sandbox` writing launcher grants behind the admission guard,
+`open_session`, `submit_input`, `interrupt_turn`, `get_session` and `list_sessions`; then, once its image is pinned,
+the staging configuration (preset catalog, RBAC, the executor's Dispatcher and History entries). Operations no
+backend can grant a caller yet run as the operator's act, which the Dispatcher and History trust until
+`THREAD_CREATE_AUTHORIZATION`, `THREAD_READ_POLICY` and `AGENT_SANDBOX_LAUNCH` land; auto-approval by argument shape
+is for v1 only ([why](mcp_orchestration.md#shape-matched-approval-is-the-v1-expedient)). Exit: a k3s system test
+launches a worker through an approved Action, opens a Session, submits input and sees the turn run, and a command
+aimed at another Sandbox is not auto-approved.
+
+### `ORCHESTRATION_V1_TURN_READS` — read and wait for workers' turns
+
+**Blocked on `HISTORY_READ_FOLLOW_API`.** `read_turns` and `wait_for_turn` on the follow API
+([how](history_read_follow.md#what-the-orchestration-executor-builds-on-it)). Exit: the system test waits for a
+worker's turn across several bounded calls and reads its final message.
 
 ### `RUNNER_HARNESS_OBJECTS_DESIGN` — decide process diagnostics and placement policy
 
@@ -1289,7 +1296,7 @@ restart. Notification presentation/outcome design remains separate.
 **Deferred TODO; v0 decision does not block delivery design.** Dispatcher may specifically trust the
 App and Notification service identities to act for their users, with wake permission separately
 allowlisted. Do not extend that exception to agents or other services, except the one the operator accepted on
-2026-10-26: the [`orchestration` group's executor](mcp_orchestration.md), which acts only on Action Decisions,
+2026-10-26: the [`orchestration_v1` group's executor](mcp_orchestration.md), which acts only on Action Decisions,
 until each of its operations has a caller grant. Design destination- and
 operation-scoped grants, delegated caller proof and the effect of revocation on queued work before
 general senders are admitted. Consider RBAC-backed permissions, but choose the authority with the
@@ -1469,7 +1476,7 @@ flowchart TD
     HISTORY_READ_FOLLOW_DESIGN --> HISTORY_READ_FOLLOW_API
     HISTORY_READ_FOLLOW_API -. browser watch .-> HISTORY_READS_FACADE
     HISTORY_READ_FOLLOW_API -. possible consumer .-> SESSION_ACTIVITY_STREAM
-    HISTORY_READ_FOLLOW_API -. turn reads .-> MCP_ORCHESTRATION_DESIGN[Decision: orchestration from MCP, section 3]
+    HISTORY_READ_FOLLOW_API --> ORCHESTRATION_V1_TURN_READS[Blocked: read and wait for workers' turns]
     HISTORY_READ_FOLLOW_DESIGN -. related .- NOTIFICATION_COMMAND_OUTCOME_DESIGN
     HISTORY_READ_FOLLOW_API -. a feed it must authorize .-> THREAD_READ_POLICY
 ```
@@ -1487,7 +1494,7 @@ remaining consumers:
 - the Notification Service scans raw history for its own command's admission and confirmation
   (`NOTIFICATION_COMMAND_OUTCOME_DESIGN`);
 - `SESSION_ACTIVITY_STREAM` would re-read a summary after every `changed`;
-- the planned orchestration turn reads (`MCP_ORCHESTRATION_DESIGN`) need a start at the tail or a number of turns
+- the planned orchestration turn reads (`ORCHESTRATION_V1_TURN_READS`) need a start at the tail or a number of turns
   back, a kind filter for turn completions and final assistant messages, and a bounded wait for the next turn end
   that a 30 s tool call can repeat without a gap ([needs](mcp_orchestration.md#reading-turns-depends-on-historys-read-and-follow-design));
 - the browser follows Threads through Electric shapes over the fold tables.
