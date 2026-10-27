@@ -1759,10 +1759,12 @@ struct ExecutionIndex {
     audited_factory_members: BTreeMap<Id, BTreeSet<String>>,
     retained_callback_factory_imports: BTreeMap<Id, Vec<spec::RetainedCallbackSignature>>,
     retained_callback_constructor_imports: BTreeMap<Id, Vec<spec::RetainedCallbackSignature>>,
+    no_reentry_callback_imports: BTreeMap<Id, Vec<spec::RetainedCallbackSignature>>,
     retained_callback_factory_members:
         BTreeMap<Id, BTreeMap<String, Vec<spec::RetainedCallbackSignature>>>,
     retained_callback_calls: BTreeMap<CallSite, RetainedCallbackCall>,
     retained_constructor_calls: BTreeMap<CallSite, RetainedCallbackCall>,
+    no_reentry_callback_calls: BTreeMap<CallSite, RetainedCallbackCall>,
     no_reentry_exports: BTreeSet<Id>,
     no_reentry_members: BTreeMap<Id, BTreeSet<String>>,
     no_reentry_record_members: BTreeMap<Id, BTreeSet<String>>,
@@ -1854,9 +1856,11 @@ impl Default for ExecutionIndex {
             audited_factory_members: BTreeMap::new(),
             retained_callback_factory_imports: BTreeMap::new(),
             retained_callback_constructor_imports: BTreeMap::new(),
+            no_reentry_callback_imports: BTreeMap::new(),
             retained_callback_factory_members: BTreeMap::new(),
             retained_callback_calls: BTreeMap::new(),
             retained_constructor_calls: BTreeMap::new(),
+            no_reentry_callback_calls: BTreeMap::new(),
             no_reentry_exports: BTreeSet::new(),
             no_reentry_members: BTreeMap::new(),
             no_reentry_record_members: BTreeMap::new(),
@@ -2008,6 +2012,15 @@ impl ExecutionIndex {
                         .contains(local.sym.as_ref())
                     {
                         index.no_reentry_exports.insert(local.to_id());
+                    }
+                    if let Some(signatures) = hints
+                        .assumptions
+                        .no_reentry_callback_exports
+                        .get(local.sym.as_ref())
+                    {
+                        index
+                            .no_reentry_callback_imports
+                            .insert(local.to_id(), signatures.clone());
                     }
                     if let Some(signatures) = hints
                         .assumptions
@@ -2936,6 +2949,20 @@ impl ExecutionIndex {
             _ => return None,
         };
         Self::retained_callback_invocation(signatures, &call.args, namespace_member)
+    }
+
+    fn no_reentry_callback_call(&self, call: &CallExpr) -> Option<RetainedCallbackCall> {
+        let Callee::Expr(callee) = &call.callee else {
+            return None;
+        };
+        let Expr::Ident(binding) = callee.unwrap_parens() else {
+            return None;
+        };
+        Self::retained_callback_invocation(
+            self.no_reentry_callback_imports.get(&binding.to_id())?,
+            &call.args,
+            None,
+        )
     }
 
     fn retained_constructor_call(&self, allocation: &NewExpr) -> Option<RetainedCallbackCall> {
@@ -4107,11 +4134,13 @@ impl Visit for ExecutionIndex {
 
         let callback_argument = self.inline_factory_callback_argument(call);
         let retained_call = self.retained_callback_call(call);
+        let no_reentry_call = self.no_reentry_callback_call(call);
         let callback_arguments: BTreeSet<_> = callback_argument
             .into_iter()
             .chain(
                 retained_call
                     .iter()
+                    .chain(no_reentry_call.iter())
                     .flat_map(|call| call.signatures.iter())
                     .flat_map(|signature| signature.callback_arguments.iter().copied()),
             )
@@ -4119,6 +4148,10 @@ impl Visit for ExecutionIndex {
         if let Some(retained_call) = retained_call {
             self.retained_callback_calls
                 .insert(call.span.into(), retained_call);
+        }
+        if let Some(no_reentry_call) = no_reentry_call {
+            self.no_reentry_callback_calls
+                .insert(call.span.into(), no_reentry_call);
         }
         let is_factory_member_callee = self.literal_depth > 0
             && self.factory_callback_depth > 0

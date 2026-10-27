@@ -1810,6 +1810,44 @@ impl Executor<'_> {
         )
     }
 
+    fn no_reentry_callbacks(
+        &self,
+        site: CallSite,
+        expressions: &[ValueExpr],
+        args: &[Values],
+    ) -> Option<Values> {
+        let contract = self.index.no_reentry_callback_calls.get(&site)?;
+        // This contract admits ordinary local callables only. An opaque result
+        // or a returned callback graph does not establish that input shape.
+        let signatures: Vec<_> = contract
+            .signatures
+            .iter()
+            .filter(|signature| {
+                signature.callback_arguments.iter().all(|position| {
+                    args[*position].iter().all(|value| {
+                        matches!(
+                            value,
+                            AbstractValue::Origin(ValueOrigin::Function(_))
+                                | AbstractValue::Closure(_, _)
+                        )
+                    })
+                })
+            })
+            .cloned()
+            .collect();
+        let contract = RetainedCallbackCall {
+            namespace_member: None,
+            signatures,
+        };
+        let callbacks = self.retained_callbacks(&contract, expressions, args)?;
+        // Independently exported aliases and already exposed callbacks keep
+        // ordinary conservative timing; the provider audit cannot hide them.
+        if !callbacks.is_disjoint(&self.export_callback_values()) {
+            return None;
+        }
+        Some(callbacks)
+    }
+
     fn retained_callbacks(
         &self,
         contract: &RetainedCallbackCall,
@@ -2635,6 +2673,10 @@ impl Executor<'_> {
         if !self.export_reentry_enabled {
             return Values::new();
         }
+        self.export_callback_values()
+    }
+
+    fn export_callback_values(&self) -> Values {
         // Discover the whole export surface in one traversal. Exported aliases,
         // unknown values, and shared objects must not each re-expand the same
         // escaped callback/capture graph independently.
@@ -3839,6 +3881,21 @@ impl Executor<'_> {
         }
         for values in &mut args {
             values.remove(&AbstractValue::Unavailable);
+        }
+        if call.kind == CallKind::Call
+            && !call.has_spread
+            && let Some(callbacks) = self.no_reentry_callbacks(call.span.into(), &call.args, &args)
+        {
+            // Argument evaluation has completed. The provider cannot reenter
+            // during this call, but may retain callbacks anywhere, including a
+            // private cross-call registry. Every subsequent opaque operation
+            // must therefore see them. Do not give the result a known shape.
+            let before = self.global_escaped_callbacks.len();
+            self.global_escaped_callbacks.extend(callbacks);
+            if self.global_escaped_callbacks.len() != before {
+                self.prefix_revision = self.prefix_revision.wrapping_add(1);
+            }
+            return;
         }
         if call.kind == CallKind::Call
             && !call.has_spread

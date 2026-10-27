@@ -582,6 +582,40 @@ Aliases, uncertain arguments, and result use retain ordinary reentry checks.
 The defining module still initializes in its usual order. This contract is
 independent of `pure_exports` and callback-factory assertions.
 
+`chunk_export_purity.<defining chunk>.no_reentry_callback_exports` is a separate
+author assertion for direct imported calls with exact callback-bearing signatures:
+
+```yaml
+chunk_export_purity:
+  provider:
+    no_reentry_callback_exports:
+      register:
+        - { argument_count: 2, callback_arguments: [0] }
+```
+
+Positions are zero-based and at least one callback position is required. Every
+unlisted argument must use the checked inert primitive syntax described above.
+Listed arguments must resolve to stable local ordinary callable identities;
+inline functions/arrows and stable named aliases are supported. Rebound,
+exposed, mutated, uncertain or non-callable values, retained result graphs,
+callee aliases, namespace calls, spread and construction remain conservative.
+
+The author audits every admitted provider/type/helper path and each callable's
+own/prototype surface and aliases. During the call, the provider must not invoke
+any supplied, caller-, importer- or host-provided callback, mutate supplied
+graphs, inspect effectful properties/prototypes or access importer-owned lexical
+state. The exported callable must retain its audited identity and behavior
+through synchronous initialization. Provider-private effects remain allowed.
+
+Unlike the returned-graph factory contracts, this assertion permits storing
+callbacks in cross-call provider registries or returning opaque capabilities.
+After argument evaluation and the audited call, every supplied callback and its
+capture graph becomes globally reachable in the analysis, even if the actual
+provider only returns it. Every later opaque call or protocol operation may
+invoke those callbacks. Sibling/operand evaluation and later invocation,
+publication or mutation retain their ordinary checks. The result stays opaque.
+This contract does not imply purity or any factory/constructor retention policy.
+
 `chunk_export_purity.<defining chunk>.no_reentry_members` asserts a narrower
 call-timing fact for listed static namespace members: with admitted primitive
 arguments, the call does not synchronously invoke caller-, importer-, or

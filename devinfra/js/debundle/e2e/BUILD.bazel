@@ -63,6 +63,8 @@ debundle_e2e_test(
 
 debundle_e2e_test(name = "optional_call_timing_test")
 
+debundle_e2e_test(name = "no_reentry_callback_test")
+
 debundle_e2e_test(name = "empty_collection_timing_test")
 
 debundle_e2e_test(
