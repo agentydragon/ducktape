@@ -18,16 +18,6 @@ ts_library(
 )
 
 ts_library(
-    name = "router",
-    srcs = ["router.ts"],
-    tsconfig = "//props/frontend:tsconfig",
-    deps = [
-        "//props/frontend:node_modules/@types/react",
-        "//props/frontend:node_modules/react",
-    ],
-)
-
-ts_library(
     name = "colors",
     srcs = ["colors.ts"],
     tsconfig = "//props/frontend:tsconfig",
@@ -144,9 +134,9 @@ ts_library(
     srcs = ["CritiqueIssueLink.tsx"],
     tsconfig = "//props/frontend:tsconfig",
     deps = [
-        ":router",
         "//props/frontend:node_modules/@types/react",
         "//props/frontend:node_modules/react",
+        "//props/frontend:node_modules/react-router",
     ],
 )
 
@@ -155,9 +145,9 @@ ts_library(
     srcs = ["FileLink.tsx"],
     tsconfig = "//props/frontend:tsconfig",
     deps = [
-        ":router",
         "//props/frontend:node_modules/@types/react",
         "//props/frontend:node_modules/react",
+        "//props/frontend:node_modules/react-router",
     ],
 )
 
@@ -166,9 +156,9 @@ ts_library(
     srcs = ["OccurrenceLink.tsx"],
     tsconfig = "//props/frontend:tsconfig",
     deps = [
-        ":router",
         "//props/frontend:node_modules/@types/react",
         "//props/frontend:node_modules/react",
+        "//props/frontend:node_modules/react-router",
     ],
 )
 
@@ -178,9 +168,9 @@ ts_library(
     tsconfig = "//props/frontend:tsconfig",
     deps = [
         ":formatters",
-        ":router",
         "//props/frontend:node_modules/@types/react",
         "//props/frontend:node_modules/react",
+        "//props/frontend:node_modules/react-router",
     ],
 )
 
@@ -190,9 +180,9 @@ ts_library(
     tsconfig = "//props/frontend:tsconfig",
     deps = [
         ":formatters",
-        ":router",
         "//props/frontend:node_modules/@types/react",
         "//props/frontend:node_modules/react",
+        "//props/frontend:node_modules/react-router",
     ],
 )
 
@@ -202,9 +192,9 @@ ts_library(
     tsconfig = "//props/frontend:tsconfig",
     deps = [
         ":formatters",
-        ":router",
         "//props/frontend:node_modules/@types/react",
         "//props/frontend:node_modules/react",
+        "//props/frontend:node_modules/react-router",
     ],
 )
 
@@ -214,8 +204,8 @@ ts_library(
     tsconfig = "//props/frontend:tsconfig",
     deps = [
         ":client",
-        ":router",
         "//props/frontend:node_modules/@types/react",
         "//props/frontend:node_modules/react",
+        "//props/frontend:node_modules/react-router",
     ],
 )

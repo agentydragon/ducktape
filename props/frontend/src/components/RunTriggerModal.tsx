@@ -9,7 +9,7 @@ import {
   type DefinitionInfo,
 } from "../lib/api/client";
 import { formatDigest } from "../lib/formatters";
-import { resolve } from "../lib/router";
+import { Link } from "react-router";
 import { toast } from "../lib/toast";
 import type { ExampleKind, RunModalPrefill, Split } from "../lib/types";
 
@@ -301,7 +301,7 @@ export default function RunTriggerModal({ open, onClose, prefill }: Props): JSX.
             {resultRunId && (
               <>
                 {" — "}
-                <Anchor href={resolve(`/runs/${resultRunId}`)} onClick={onClose} fw={600}>
+                <Anchor component={Link} to={`/runs/${resultRunId}`} onClick={onClose} fw={600}>
                   view run
                 </Anchor>
               </>

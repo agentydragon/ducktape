@@ -6,7 +6,7 @@ import CoverageHeatmap from "$components/stats/CoverageHeatmap";
 import DefinitionsTable from "$components/stats/DefinitionsTable";
 import DistributionChart from "$components/stats/DistributionChart";
 import SummaryCards from "$components/stats/SummaryCards";
-import { goto } from "$lib/router";
+import { useNavigate } from "react-router";
 import { useRunModal } from "$lib/runModalContext";
 import { toast } from "$lib/toast";
 import type { RunModalPrefill } from "$lib/types";
@@ -17,6 +17,7 @@ interface Props {
 }
 
 export default function OverviewPage({ initialData }: Props) {
+  const navigate = useNavigate();
   const runModal = useRunModal();
   const [overview, setOverview] = useState<OverviewResponse | null>(initialData ?? null);
   const [loading, setLoading] = useState(!initialData);
@@ -77,7 +78,7 @@ export default function OverviewPage({ initialData }: Props) {
     if (filters.split) params.set("split", filters.split);
     if (filters.kind) params.set("kind", filters.kind);
     const query = params.toString();
-    goto(query ? `/runs?${query}` : "/runs");
+    void navigate(query ? `/runs?${query}` : "/runs");
   }
 
   if (loading) {

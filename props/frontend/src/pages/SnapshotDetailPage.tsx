@@ -37,7 +37,7 @@ import {
   type SnapshotDetailResponse,
 } from "$lib/api/client";
 import { formatLocationAnchor } from "$lib/formatters";
-import { useSearchParams, resolve } from "$lib/router";
+import { Link, useSearchParams } from "react-router";
 import { toast } from "$lib/toast";
 import OccurrenceLink from "$lib/OccurrenceLink";
 
@@ -65,7 +65,7 @@ function splitColor(split: string): string {
 }
 
 export default function SnapshotDetailPage({ slug, initialSnapshot, initialTree }: Props) {
-  const searchParams = useSearchParams();
+  const [searchParams] = useSearchParams();
   const parts = slug.split("/");
   const snapshotSlug = parts.slice(0, 2).join("/");
   const issueId = parts.length >= 4 ? parts[2] : undefined;
@@ -215,9 +215,8 @@ export default function SnapshotDetailPage({ slug, initialSnapshot, initialTree 
 
   function getOccurrenceUrl(targetIssueId: string, occurrenceId: string, filePath?: string): string {
     const routePath = `/snapshots/${snapshotSlug}/${targetIssueId}/${occurrenceId}`;
-    const hashPath = resolve(routePath);
-    if (filePath) return `${window.location.origin}${hashPath}?file=${encodeURIComponent(filePath)}`;
-    return `${window.location.origin}${hashPath}`;
+    const query = filePath ? `?file=${encodeURIComponent(filePath)}` : "";
+    return new URL(`#${routePath}${query}`, window.location.href).href;
   }
 
   function renderIssueList(issues: SnapshotIssue[], isTruePositive: boolean) {
@@ -488,12 +487,12 @@ export default function SnapshotDetailPage({ slug, initialSnapshot, initialTree 
                                       p="sm"
                                     >
                                       <Group gap="xs">
-                                        <a
-                                          href={resolve(`/runs/${member.critique_run_id}`)}
+                                        <Link
+                                          to={`/runs/${member.critique_run_id}`}
                                           style={{ fontFamily: "monospace" }}
                                         >
                                           {member.critique_run_id.slice(0, 8)}
-                                        </a>
+                                        </Link>
                                         <Text c="dimmed">/</Text>
                                         <Code>{member.critique_issue_id}</Code>
                                       </Group>

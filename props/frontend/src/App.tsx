@@ -14,10 +14,10 @@ import {
   Title,
 } from "@mantine/core";
 import { Notifications } from "@mantine/notifications";
-import { useEffect, useMemo, useState, type FormEvent, type JSX, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type FormEvent, type JSX } from "react";
 
 import RunTriggerModal from "$components/RunTriggerModal";
-import { parseParams, resolve, useRoute } from "$lib/router";
+import { HashRouter, Link, Route, Routes, useLocation, useParams } from "react-router";
 import { RunModalContext } from "$lib/runModalContext";
 import {
   clearToken,
@@ -46,33 +46,41 @@ function isActive(path: string, currentPath: string): boolean {
   return path === "/" ? currentPath === "/" : currentPath.startsWith(path);
 }
 
-type CurrentRoute =
-  | { component: "overview" | "runs" | "examples" | "snapshots" }
-  | { component: "run-detail"; runId: string }
-  | { component: "definition-detail"; definitionId: string }
-  | { component: "snapshot-detail"; slug: string }
-  | { component: "not-found" };
+function RunRoute(): JSX.Element {
+  const { runId } = useParams();
+  if (runId === undefined) throw new Error("missing runId route parameter");
+  return <RunDetailPage runId={runId} />;
+}
 
-function matchRoute(path: string): CurrentRoute {
-  const run = parseParams("/runs/[runId]", path);
-  if (run) return { component: "run-detail", runId: run.runId };
-  if (path === "/runs") return { component: "runs" };
+function DefinitionRoute(): JSX.Element {
+  const { definitionId } = useParams();
+  if (definitionId === undefined) throw new Error("missing definitionId route parameter");
+  return <DefinitionDetailPage definitionId={definitionId} />;
+}
 
-  const definition = parseParams("/definitions/[definitionId]", path);
-  if (definition) return { component: "definition-detail", definitionId: definition.definitionId };
-  if (path === "/examples") return { component: "examples" };
+function SnapshotRoute(): JSX.Element {
+  const { "*": slug } = useParams();
+  if (slug === undefined) throw new Error("missing snapshot slug route parameter");
+  return <SnapshotDetailPage slug={slug} />;
+}
 
-  const snapshot = parseParams("/snapshots/[...slug]", path);
-  if (snapshot) return { component: "snapshot-detail", slug: snapshot.slug };
-  if (path === "/snapshots") return { component: "snapshots" };
-  if (path === "/" || path === "") return { component: "overview" };
-  return { component: "not-found" };
+function NotFound(): JSX.Element {
+  return (
+    <Center py={80}>
+      <Stack align="center" gap="xs">
+        <Title order={2}>Page Not Found</Title>
+        <Text c="dimmed">The page you&apos;re looking for doesn&apos;t exist.</Text>
+        <Button component={Link} to="/" variant="subtle">
+          Go home
+        </Button>
+      </Stack>
+    </Center>
+  );
 }
 
 function PropsApp(): JSX.Element {
-  const { pathname } = useRoute();
+  const { pathname } = useLocation();
   const needsToken = useNeedsToken();
-  const route = useMemo(() => matchRoute(pathname), [pathname]);
   const [showRunModal, setShowRunModal] = useState(false);
   const [modalPrefill, setModalPrefill] = useState<RunModalPrefill | undefined>();
   const [tokenInput, setTokenInput] = useState("");
@@ -227,50 +235,13 @@ function PropsApp(): JSX.Element {
     );
   }
 
-  let page: ReactNode;
-  switch (route.component) {
-    case "overview":
-      page = <OverviewPage />;
-      break;
-    case "runs":
-      page = <RunsPage />;
-      break;
-    case "run-detail":
-      page = <RunDetailPage runId={route.runId} />;
-      break;
-    case "definition-detail":
-      page = <DefinitionDetailPage definitionId={route.definitionId} />;
-      break;
-    case "examples":
-      page = <ExamplesPage />;
-      break;
-    case "snapshots":
-      page = <SnapshotsPage />;
-      break;
-    case "snapshot-detail":
-      page = <SnapshotDetailPage slug={route.slug} />;
-      break;
-    default:
-      page = (
-        <Center py={80}>
-          <Stack align="center" gap="xs">
-            <Title order={2}>Page Not Found</Title>
-            <Text c="dimmed">The page you&apos;re looking for doesn&apos;t exist.</Text>
-            <Button component="a" href={resolve("/")} variant="subtle">
-              Go home
-            </Button>
-          </Stack>
-        </Center>
-      );
-  }
-
   return (
     <RunModalContext.Provider value={runModal}>
       <AppShell header={{ height: 60 }}>
         <AppShell.Header px="md" className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
           <Group h="100%" justify="space-between" wrap="nowrap">
             <Title order={3} m={0}>
-              <Anchor href={resolve("/")} c="inherit" underline="never">
+              <Anchor component={Link} to="/" c="inherit" underline="never">
                 Props
               </Anchor>
             </Title>
@@ -278,8 +249,8 @@ function PropsApp(): JSX.Element {
               {navItems.map(({ path, label }) => (
                 <Button
                   key={path}
-                  component="a"
-                  href={resolve(path)}
+                  component={Link}
+                  to={path}
                   size="sm"
                   variant={isActive(path, pathname) ? "light" : "subtle"}
                 >
@@ -299,7 +270,18 @@ function PropsApp(): JSX.Element {
             </Group>
           </Group>
         </AppShell.Header>
-        <AppShell.Main className="bg-gray-50 dark:bg-gray-900 p-6">{page}</AppShell.Main>
+        <AppShell.Main className="bg-gray-50 dark:bg-gray-900 p-6">
+          <Routes>
+            <Route path="/" element={<OverviewPage />} />
+            <Route path="/runs" element={<RunsPage />} />
+            <Route path="/runs/:runId" element={<RunRoute />} />
+            <Route path="/definitions/:definitionId" element={<DefinitionRoute />} />
+            <Route path="/examples" element={<ExamplesPage />} />
+            <Route path="/snapshots" element={<SnapshotsPage />} />
+            <Route path="/snapshots/*" element={<SnapshotRoute />} />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </AppShell.Main>
       </AppShell>
       <RunTriggerModal open={showRunModal} onClose={handleCloseRunModal} prefill={modalPrefill} />
     </RunModalContext.Provider>
@@ -310,7 +292,9 @@ export default function App(): JSX.Element {
   return (
     <MantineProvider defaultColorScheme="auto">
       <Notifications position="top-right" autoClose={8000} />
-      <PropsApp />
+      <HashRouter>
+        <PropsApp />
+      </HashRouter>
     </MantineProvider>
   );
 }

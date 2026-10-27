@@ -1,4 +1,4 @@
-import { resolve } from "./router";
+import { Link } from "react-router";
 import { formatUuid } from "./formatters";
 
 interface Props {
@@ -7,12 +7,12 @@ interface Props {
 
 export default function RunIdLink({ id }: Props) {
   return (
-    <a
-      href={resolve(`/runs/${id}`)}
+    <Link
+      to={`/runs/${id}`}
       className="font-mono text-blue-600 dark:text-blue-400 underline hover:text-blue-800 dark:hover:text-blue-300"
       title={id}
     >
       {formatUuid(id)}
-    </a>
+    </Link>
   );
 }

@@ -2,6 +2,8 @@
 // Renders full pages with mock data to verify overall layout and navigation.
 
 import { createRoot } from "react-dom/client";
+import { HashRouter } from "react-router";
+import App from "../../src/App";
 import type { ComponentType } from "react";
 import { MantineProvider } from "@mantine/core";
 
@@ -178,6 +180,13 @@ const app = document.getElementById("app");
 if (!app) throw new Error("missing #app");
 const root = createRoot(app);
 
+declare global {
+  interface Window {
+    mountApp: () => void;
+  }
+}
+window.mountApp = () => root.render(<App />);
+
 if (!pageName) {
   root.render(
     <main style={{ fontFamily: "system-ui", padding: 20 }}>
@@ -205,9 +214,11 @@ if (!pageName) {
     );
     root.render(
       <MantineProvider defaultColorScheme="auto">
-        <RunModalContext.Provider value={{ open: () => undefined }}>
-          {page.wrapperClassName ? <div className={page.wrapperClassName}>{shot}</div> : shot}
-        </RunModalContext.Provider>
+        <HashRouter>
+          <RunModalContext.Provider value={{ open: () => undefined }}>
+            {page.wrapperClassName ? <div className={page.wrapperClassName}>{shot}</div> : shot}
+          </RunModalContext.Provider>
+        </HashRouter>
       </MantineProvider>
     );
   }

@@ -1,4 +1,4 @@
-import { resolve } from "./router";
+import { Link } from "react-router";
 
 interface Props {
   snapshotSlug: string;
@@ -10,12 +10,12 @@ export default function FileLink({ snapshotSlug, filePath, displayText }: Props)
   const text = displayText ?? filePath;
 
   return (
-    <a
-      href={resolve(`/snapshots/${snapshotSlug}?file=${encodeURIComponent(filePath)}`)}
+    <Link
+      to={`/snapshots/${snapshotSlug}?file=${encodeURIComponent(filePath)}`}
       className="font-mono text-xs text-blue-600 dark:text-blue-400 underline hover:text-blue-800 dark:hover:text-blue-300"
       title={`View ${filePath} in ${snapshotSlug}`}
     >
       {text}
-    </a>
+    </Link>
   );
 }

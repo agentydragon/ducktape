@@ -1,4 +1,4 @@
-import { resolve } from "./router";
+import { Link } from "react-router";
 
 interface Props {
   snapshotSlug: string;
@@ -16,12 +16,12 @@ export default function OccurrenceLink({ snapshotSlug, issueId, occurrenceId, fi
   const text = displayText ?? `${issueId}/${occurrenceId}`;
 
   return (
-    <a
-      href={resolve(urlPath)}
+    <Link
+      to={urlPath}
       className="font-mono text-blue-600 dark:text-blue-400 underline hover:text-blue-800 dark:hover:text-blue-300"
       title={`View occurrence ${issueId}/${occurrenceId} in ${snapshotSlug}`}
     >
       {text}
-    </a>
+    </Link>
   );
 }

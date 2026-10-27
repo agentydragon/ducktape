@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { Center, Loader, Text } from "@mantine/core";
 
 import ExampleDetail from "$components/ExampleDetail";
-import { useSearchParams } from "$lib/router";
+import { useSearchParams } from "react-router";
 import { fetchExampleDetail, type ExampleDetailResponse, type ExampleKind } from "$lib/api/client";
 
 interface Props {
@@ -11,7 +11,7 @@ interface Props {
 }
 
 export default function ExamplesPage({ initialData }: Props) {
-  const searchParams = useSearchParams();
+  const [searchParams] = useSearchParams();
   const snapshotSlug = searchParams.get("snapshot_slug") ?? "";
   const exampleKind = (searchParams.get("example_kind") ?? "whole_snapshot") as ExampleKind;
   const filesHash = searchParams.get("files_hash");

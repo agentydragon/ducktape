@@ -24,8 +24,8 @@ ts_library(
     deps = [
         "//props/frontend:node_modules/@types/react",
         "//props/frontend:node_modules/react",
+        "//props/frontend:node_modules/react-router",
         "//props/frontend/src/components:RunsBrowser",
-        "//props/frontend/src/lib:router",
         "//props/frontend/src/lib:runModalContext",
         "//props/frontend/src/lib:types",
     ],
@@ -52,9 +52,9 @@ ts_library(
         "//props/frontend:node_modules/@mantine/core",
         "//props/frontend:node_modules/@types/react",
         "//props/frontend:node_modules/react",
+        "//props/frontend:node_modules/react-router",
         "//props/frontend/src/components:ExampleDetail",
         "//props/frontend/src/lib:client",
-        "//props/frontend/src/lib:router",
     ],
 )
 
@@ -66,9 +66,9 @@ ts_library(
         "//props/frontend:node_modules/@mantine/core",
         "//props/frontend:node_modules/@types/react",
         "//props/frontend:node_modules/react",
+        "//props/frontend:node_modules/react-router",
         "//props/frontend/src/lib:client",
         "//props/frontend/src/lib:colors",
-        "//props/frontend/src/lib:router",
     ],
 )
 
@@ -80,12 +80,12 @@ ts_library(
         "//props/frontend:node_modules/@mantine/core",
         "//props/frontend:node_modules/@types/react",
         "//props/frontend:node_modules/react",
+        "//props/frontend:node_modules/react-router",
         "//props/frontend/src/components/stats:CoverageHeatmap",
         "//props/frontend/src/components/stats:DefinitionsTable",
         "//props/frontend/src/components/stats:DistributionChart",
         "//props/frontend/src/components/stats:SummaryCards",
         "//props/frontend/src/lib:client",
-        "//props/frontend/src/lib:router",
         "//props/frontend/src/lib:runModalContext",
         "//props/frontend/src/lib:toast",
         "//props/frontend/src/lib:types",
@@ -100,6 +100,7 @@ ts_library(
         "//props/frontend:node_modules/@mantine/core",
         "//props/frontend:node_modules/@types/react",
         "//props/frontend:node_modules/react",
+        "//props/frontend:node_modules/react-router",
         "//props/frontend/src/components:BackButton",
         "//props/frontend/src/components:Breadcrumb",
         "//props/frontend/src/components:CopyButton",
@@ -111,7 +112,6 @@ ts_library(
         "//props/frontend/src/lib:client",
         "//props/frontend/src/lib:colors",
         "//props/frontend/src/lib:formatters",
-        "//props/frontend/src/lib:router",
         "//props/frontend/src/lib:toast",
     ],
 )

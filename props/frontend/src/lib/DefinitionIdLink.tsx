@@ -1,4 +1,4 @@
-import { resolve } from "./router";
+import { Link } from "react-router";
 import { formatDigest } from "./formatters";
 
 interface Props {
@@ -8,12 +8,12 @@ interface Props {
 
 export default function DefinitionIdLink({ id, display_name }: Props) {
   return (
-    <a
-      href={resolve(`/definitions/${id}`)}
+    <Link
+      to={`/definitions/${id}`}
       className="text-blue-600 dark:text-blue-400 underline hover:text-blue-800 dark:hover:text-blue-300"
       title={id}
     >
       {display_name ?? formatDigest(id)}
-    </a>
+    </Link>
   );
 }

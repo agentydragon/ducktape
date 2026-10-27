@@ -4,7 +4,6 @@ import { Button } from "@mantine/core";
 
 import IssueComment from "./IssueComment";
 import { CheckCircle, ChevronDown, ChevronRight, MessageSquare, XCircle } from "../lib/icons";
-import { resolve } from "../lib/router";
 import type {
   FileContentResponse,
   FpInfo,
@@ -189,7 +188,7 @@ export default function FileViewer({
   function getOccurrenceUrl(issueId: string, occurrenceId: string): string | undefined {
     if (!snapshotSlug) return undefined;
     const routePath = `/snapshots/${snapshotSlug}/${issueId}/${occurrenceId}?file=${encodeURIComponent(file.path)}`;
-    return `${window.location.origin}${resolve(routePath)}`;
+    return new URL(`#${routePath}`, window.location.href).href;
   }
 
   const tpCount = allIssues.filter((issue) => issue.kind === "tp").length;

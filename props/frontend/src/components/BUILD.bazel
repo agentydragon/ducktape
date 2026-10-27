@@ -26,7 +26,7 @@ ts_library(
     deps = [
         "//props/frontend:node_modules/@types/react",
         "//props/frontend:node_modules/react",
-        "//props/frontend/src/lib:router",
+        "//props/frontend:node_modules/react-router",
     ],
 )
 
@@ -37,8 +37,8 @@ ts_library(
     deps = [
         "//props/frontend:node_modules/@types/react",
         "//props/frontend:node_modules/react",
+        "//props/frontend:node_modules/react-router",
         "//props/frontend/src/lib:icons",
-        "//props/frontend/src/lib:router",
     ],
 )
 
@@ -201,7 +201,6 @@ ts_library(
         "//props/frontend/src/lib:fileTypes",
         "//props/frontend/src/lib:highlighting",
         "//props/frontend/src/lib:icons",
-        "//props/frontend/src/lib:router",
         "//props/frontend/src/lib:types",
     ],
 )
@@ -294,9 +293,9 @@ ts_library(
         "//props/frontend:node_modules/@mantine/core",
         "//props/frontend:node_modules/@types/react",
         "//props/frontend:node_modules/react",
+        "//props/frontend:node_modules/react-router",
         "//props/frontend/src/lib:client",
         "//props/frontend/src/lib:formatters",
-        "//props/frontend/src/lib:router",
         "//props/frontend/src/lib:toast",
         "//props/frontend/src/lib:types",
     ],

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 import { Badge, Card, Center, Loader, Table, Text, Title } from "@mantine/core";
 
-import { goto } from "$lib/router";
+import { useNavigate } from "react-router";
 import { fetchSnapshots, type SnapshotsResponse } from "$lib/api/client";
 
 interface Props {
@@ -23,6 +23,7 @@ function splitColor(split: string): string {
 }
 
 export default function SnapshotsPage({ initialData }: Props) {
+  const navigate = useNavigate();
   const [snapshots, setSnapshots] = useState<SnapshotsResponse["snapshots"]>(initialData ?? []);
   const [loading, setLoading] = useState(!initialData);
   const [error, setError] = useState<string | null>(null);
@@ -82,7 +83,7 @@ export default function SnapshotsPage({ initialData }: Props) {
               {snapshots.map((snapshot) => (
                 <Table.Tr
                   key={snapshot.slug}
-                  onClick={() => goto(`/snapshots/${snapshot.slug}`)}
+                  onClick={() => void navigate(`/snapshots/${snapshot.slug}`)}
                   style={{ cursor: "pointer" }}
                 >
                   <Table.Td>

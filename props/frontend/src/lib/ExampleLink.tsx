@@ -1,5 +1,5 @@
 // Link component for examples.
-import { resolve } from "./router";
+import { Link } from "react-router";
 import type { WholeSnapshotExample, SingleFileSetExample } from "./api/client";
 
 type Example = WholeSnapshotExample | SingleFileSetExample;
@@ -24,12 +24,12 @@ export default function ExampleLink({ example }: Props) {
   const queryString = params.toString();
 
   return (
-    <a
-      href={resolve(`/examples?${queryString}`)}
+    <Link
+      to={`/examples?${queryString}`}
       className="font-mono text-xs text-blue-600 dark:text-blue-400 underline hover:text-blue-800 dark:hover:text-blue-300"
       title={`${example.snapshot_slug} (${example.kind})`}
     >
       {displayText}
-    </a>
+    </Link>
   );
 }
