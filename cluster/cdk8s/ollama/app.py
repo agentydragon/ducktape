@@ -135,12 +135,12 @@ def _piraeus_claims(scope: Construct) -> None:
 
 
 def _copy_ssd_models_job(scope: Construct) -> None:
-    """Copy the IQ4 directory, derived template shard included, onto its Piraeus claim and
-    check every shard against the pinned digests. Serving keeps reading the static PV."""
+    """Copy the pinned IQ4 shards, derived template shard included, onto their Piraeus claim
+    and check each against its digest. Serving keeps reading the static PV."""
     k8s.KubeJob(
         scope,
         "copy-ssd-models",
-        metadata=k8s.ObjectMeta(name="copy-qwen38-iq4-v1", namespace=_NAMESPACE),
+        metadata=k8s.ObjectMeta(name="copy-qwen38-iq4-v2", namespace=_NAMESPACE),
         spec=k8s.JobSpec(
             backoff_limit=2,
             template=k8s.PodTemplateSpec(
@@ -174,7 +174,7 @@ def _copy_ssd_models_job(scope: Construct) -> None:
                                     "cpu": k8s.Quantity.from_string("500m"),
                                     "memory": k8s.Quantity.from_string("64Mi"),
                                 },
-                                limits={"memory": k8s.Quantity.from_string("256Mi")},
+                                limits={"memory": k8s.Quantity.from_string("512Mi")},
                             ),
                             volume_mounts=[
                                 k8s.VolumeMount(name="scripts", mount_path=_SCRIPTS_DIR, read_only=True),
