@@ -32,7 +32,6 @@ from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME
 from cluster.cdk8s.settings_file import PodWiring, SettingsFile
-from util.settings_contract import validate_settings_fragment
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _EGRESS_SIDECAR_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress-sidecar"
@@ -247,12 +246,12 @@ def add_sidecar_settings(
             else {}
         ),
     }
-    validate_settings_fragment(sidecar_config.Settings, content)
+    settings = sidecar_config.Settings.model_validate(content)
     return SettingsFile(
         scope,
         f"{name}-settings",
         metadata=ApiObjectMetadata(name=name, namespace=env.namespace),
-        content=yaml_config(content),
+        content=yaml_config(settings.model_dump(mode="json", exclude_unset=True)),
         path=_SIDECAR_SETTINGS_PATH,
     )
 

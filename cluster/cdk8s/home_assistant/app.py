@@ -181,8 +181,10 @@ def _deployment(scope: Construct, configuration: ConfigMap, caddy_config: Config
         "config_dir": _CONFIG_DIR,
         "components": [component.model_dump(mode="json", exclude_defaults=True) for component in _COMPONENTS],
     }
-    validate_settings_fragment(components.Settings, installer_content)
-    installer_settings = _settings_config_map(scope, "component-installer", installer_content)
+    installer_model = components.Config.model_validate(installer_content)
+    installer_settings = _settings_config_map(
+        scope, "component-installer", installer_model.model_dump(mode="json", exclude_unset=True)
+    )
     k8s.KubeDeployment(
         scope,
         "deployment",

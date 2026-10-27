@@ -65,7 +65,7 @@ from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSec
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from cluster.cdk8s.secret_ref import SecretKey, SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
-from util.settings_contract import checked_value, env_name, validate_settings_fragment
+from util.settings_contract import checked_value, env_name
 
 NAME = "aiquota"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/aiquota"
@@ -81,15 +81,18 @@ _CONFIG_HEADER = textwrap.dedent(
 
     """
 )
-_CONFIG = {
-    "cli_proxy_api": {"url": f"{cli_proxy_api_app.SERVICE.url}/v0/management"},
-    "claude": {"enabled": True},
-    "codex": {"enabled": True},
-    "zai": {"enabled": False},
-}
-validate_settings_fragment(Config, _CONFIG)
+_CONFIG = Config.model_validate(
+    {
+        "cli_proxy_api": {"url": f"{cli_proxy_api_app.SERVICE.url}/v0/management"},
+        "claude": {"enabled": True},
+        "codex": {"enabled": True},
+        "zai": {"enabled": False},
+    }
+)
 CONFIG_CONFIG_MAP = ConfigMapArgs(
-    name="aiquota-api-config", namespace=NAMESPACE, data={_CONFIG_PATH.name: _CONFIG_HEADER + tomli_w.dumps(_CONFIG)}
+    name="aiquota-api-config",
+    namespace=NAMESPACE,
+    data={_CONFIG_PATH.name: _CONFIG_HEADER + tomli_w.dumps(_CONFIG.model_dump(mode="json", exclude_unset=True))},
 )
 
 _API_NAME = "aiquota-api"

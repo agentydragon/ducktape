@@ -6,8 +6,10 @@ Secret leaves stay out of it: the Deployment overlays them from Secrets through
 
 from __future__ import annotations
 
-from typing import Any
+from haku.console.identity.config import AccessProfile, ConsoleConfigFile
 
 
-def config() -> dict[str, Any]:
-    return {"access_profiles": [{"id": "manual-review"}], "default_access_profile_id": "manual-review"}
+def config() -> ConsoleConfigFile:
+    return ConsoleConfigFile(
+        access_profiles=[AccessProfile(id="manual-review")], default_access_profile_id="manual-review"
+    )

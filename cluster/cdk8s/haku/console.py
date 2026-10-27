@@ -61,7 +61,6 @@ from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 from cluster.cdk8s.secret_ref import SecretKey, SecretRef
 from cluster.cdk8s.settings_file import SettingsFile
 from haku.console.config import CONFIG_FILE_ENV
-from haku.console.identity.config import ConsoleConfigFile
 from haku.console.settings import Settings
 from util.settings_contract import env_name
 
@@ -119,9 +118,7 @@ class Console(Construct):
         )
         self._add_rbac(service_account)
         env = self._container_env()
-        config_content = ConsoleConfigFile.model_validate(console_config.config()).model_dump(
-            mode="json", exclude_unset=True
-        )
+        config_content = console_config.config().model_dump(mode="json", exclude_unset=True)
         config = SettingsFile(
             self,
             "config",

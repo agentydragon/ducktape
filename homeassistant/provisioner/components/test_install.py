@@ -13,12 +13,24 @@ from homeassistant.provisioner.components.install import (
     install_component,
     install_component_from_url,
 )
-from homeassistant.provisioner.components.settings import ComponentConfig
+from homeassistant.provisioner.components.settings import ComponentConfig, Settings
 
 # The httpx2_mock fixture comes from the auto-loaded pytest-httpx2 plugin.
 # gazelle:include_dep @pypi//pytest_httpx2
 
 pytestmark = pytest.mark.httpx2(base_url="https://example.test", assert_all_called=False)
+
+
+def test_runtime_settings_combine_yaml_and_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    settings_file = tmp_path / "settings.yaml"
+    settings_file.write_text("config_dir: /from-file\ncomponents: []\n", encoding="utf-8")
+    monkeypatch.setenv(Settings.config_file_env, str(settings_file))
+    monkeypatch.setenv("HOME_ASSISTANT_COMPONENT_INSTALLER_CONFIG_DIR", "/from-environment")
+
+    settings = Settings()
+
+    assert settings.config_dir == Path("/from-environment")
+    assert settings.components == ()
 
 
 def _archive(files: dict[str, str]) -> bytes:

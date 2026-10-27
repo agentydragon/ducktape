@@ -3950,7 +3950,6 @@ data:
   settings.yaml: |
     proxy_host: egress.agentplane-staging.svc.cluster.local
     proxy_port: 8888
-    readiness_listen_address: 0.0.0.0:3129
     token_file: /var/run/agentplane-egress/token
     audience_token_files:
       https://localhost:7445: /var/run/agentplane-egress/kubernetes-token
@@ -3969,6 +3968,7 @@ data:
       telemetry:
         listen_address: 127.0.0.1:3132
         upstream: alloy.monitoring.svc.cluster.local:4317
+    readiness_listen_address: 0.0.0.0:3129
 immutable: false
 ---
 apiVersion: v1
@@ -4356,8 +4356,6 @@ data:
   settings.yaml: |
     proxy_host: egress.agentplane-staging.svc.cluster.local
     proxy_port: 8888
-    readiness_listen_address: 0.0.0.0:3129
-    listen_address: 0.0.0.0:3128
     token_file: /var/run/agentplane-egress/token
     audience_token_files:
       https://localhost:7445: /var/run/agentplane-egress/kubernetes-token
@@ -4376,6 +4374,8 @@ data:
       telemetry:
         listen_address: 0.0.0.0:3132
         upstream: alloy.monitoring.svc.cluster.local:4317
+    listen_address: 0.0.0.0:3128
+    readiness_listen_address: 0.0.0.0:3129
 immutable: false
 ---
 apiVersion: kyverno.io/v1
@@ -7438,13 +7438,13 @@ data:
   settings.yaml: |
     proxy_host: egress.agentplane-staging.svc.cluster.local
     proxy_port: 8888
-    readiness_listen_address: 0.0.0.0:3129
     token_file: /var/run/agentplane-egress/token
     audience_token_files:
       https://localhost:7445: /var/run/agentplane-egress/kubernetes-token
       agentplane-notifications: /var/run/agentplane-egress/notifications-token
       agentplane-runner-control: /var/run/agentplane-egress/runner-control-token
       agentplane-runner-ingress: /var/run/agentplane-egress/runner-ingress-token
+    readiness_listen_address: 0.0.0.0:3129
 immutable: false
 ---
 apiVersion: v1

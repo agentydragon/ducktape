@@ -333,7 +333,6 @@ py_library(
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:settings_file",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
-        "//util:settings_contract",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",

@@ -31,7 +31,6 @@ from cluster.cdk8s.providers.agentplane.policy_binding import PolicyBinding
 from cluster.cdk8s.providers.agentplane.policy_set import Rule
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.settings_file import PodWiring, SettingsFile
-from util.settings_contract import validate_settings_fragment
 
 NAMESPACE = "public-coder-agent"
 LABELS = {"app.kubernetes.io/name": NAMESPACE}
@@ -55,12 +54,12 @@ _SETTINGS_PATH = "/etc/agentplane-egress-sidecar/settings.yaml"
 def add_relay_settings(scope: Construct) -> PodWiring:
     """The relay's settings ConfigMap, and what the Pod needs to mount it."""
     content = {"proxy_host": GATEWAY.fqdn, "proxy_port": GATEWAY.pod_port, "token_file": f"{_TOKEN_DIR}/token"}
-    validate_settings_fragment(sidecar_config.Settings, content)
+    settings = sidecar_config.Settings.model_validate(content)
     return SettingsFile(
         scope,
         "egress-sidecar-settings",
         metadata=ApiObjectMetadata(name=_SETTINGS_CONFIG_MAP, namespace=NAMESPACE),
-        content=yaml_config(content),
+        content=yaml_config(settings.model_dump(mode="json", exclude_unset=True)),
         path=_SETTINGS_PATH,
     ).pod_wiring(volume_name=_SETTINGS_VOLUME, env=sidecar_config.Settings.config_file_env)
 

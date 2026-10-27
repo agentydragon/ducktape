@@ -15,7 +15,6 @@ import yaml
 from agentplane.egress.sidecar_config import Settings
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 from util.net import Listener, listen_tcp
-from util.settings_contract import validate_settings_fragment
 
 _BINARY = get_required_path(own_repo_rlocation("agentplane/egress/sidecar/egress-sidecar_/egress-sidecar"))
 
@@ -67,9 +66,9 @@ class SidecarProcess:
                 "listen_address": self._fd_address(self.proxy_listener),
                 "readiness_listen_address": self._fd_address(self.readiness_listener),
             }
-            validate_settings_fragment(Settings, settings)
+            validated_settings = Settings.model_validate(settings)
             settings_path = Path(self._settings_dir.name) / "settings.yaml"
-            settings_path.write_text(yaml.safe_dump(settings))
+            settings_path.write_text(yaml.safe_dump(validated_settings.model_dump(mode="json", exclude_unset=True)))
             env = {Settings.config_file_env: str(settings_path)}
             listeners = [self.proxy_listener, self.readiness_listener, *self._route_listeners.values()]
             pass_fds = tuple(listener.socket.fileno() for listener in listeners)
