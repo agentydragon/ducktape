@@ -609,11 +609,7 @@ impl GraphProvenance {
                     "--out-root" => {
                         let original = absolute(Path::new(&value))?;
                         let mapped = self.translate_rooted_path(&original, current)?;
-                        if relocated && mapped == original {
-                            cwd.join("debundle-output")
-                        } else {
-                            mapped
-                        }
+                        fresh_regeneration_output(&mapped)?
                     }
                     _ => {
                         let original = absolute(Path::new(&value))?;
@@ -754,6 +750,30 @@ impl GraphProvenance {
             shell_quote(&self.generation_cwd.to_string_lossy())
         )
     }
+}
+
+fn fresh_regeneration_output(previous: &Path) -> Result<PathBuf> {
+    let parent = previous
+        .parent()
+        .context("recorded output root has no parent directory")?;
+    let name = previous
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "debundle-output".to_string());
+    for suffix in 0..1000 {
+        let candidate = if suffix == 0 {
+            parent.join(format!("{name}-regenerated"))
+        } else {
+            parent.join(format!("{name}-regenerated-{suffix}"))
+        };
+        if !candidate.try_exists()? {
+            return Ok(candidate);
+        }
+    }
+    anyhow::bail!(
+        "cannot find an unused regeneration output beside {}",
+        previous.display()
+    )
 }
 
 pub fn validate_relative_path(path: &Path) -> Result<()> {
