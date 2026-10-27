@@ -1929,6 +1929,11 @@ go_deps.module(
     version = "v0.8.2",
 )
 go_deps.module(
+    path = "golang.org/x/tools",
+    sum = "h1:k4Xc/1Om9jwkBJBo4NVLMSARBoWtK10mx+W5BnXCeAI=",
+    version = "v0.51.0",
+)
+go_deps.module(
     path = "golang.org/x/exp/typeparams",
     sum = "h1:1P7xPZEwZMoBoz0Yze5Nx2/4pxj6nw9ZqHWXqP0iRgQ=",
     version = "v0.0.0-20231108232855-2478ac86f678",
@@ -2327,6 +2332,7 @@ use_repo(
     "org_golang_x_sys",
     "org_golang_x_text",
     "org_golang_x_time",
+    "org_golang_x_tools",
     "org_modernc_sqlite",
 )
 
