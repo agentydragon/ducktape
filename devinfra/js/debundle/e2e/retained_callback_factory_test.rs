@@ -736,8 +736,8 @@ fn diagnose_namespace_member_write_links_contract_dependency_and_inspection() {
     assert_eq!(limited["returned_count"], 1);
     assert_eq!(limited["query_status"], "local_supported_witness_found");
     assert_eq!(
-        limited["traces"][0]["coverage"], "inconclusive_no_supported_callback_factory_barrier",
-        "the summary status must include supported traces beyond the output limit"
+        limited["traces"][0]["coverage"], "inconclusive_callback_argument_source_mismatch",
+        "the first bounded row is inconclusive even though query status includes supported traces beyond the limit"
     );
 
     let first = &bounded["traces"][0];
