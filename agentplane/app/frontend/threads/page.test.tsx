@@ -469,12 +469,12 @@ it("shows how long the harness has been idle, with the full time on hover", asyn
 it("collapses model activity and idle timestamps that are close and display the same age", async () => {
   vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-01-01T12:10:00Z"));
   sharedThread = {
-    last_model_activity_at: "2026-01-01T11:56:55Z",
-    idle_since: "2026-01-01T11:57:25Z",
+    last_model_activity_at: "2026-01-01T11:56:35Z",
+    idle_since: "2026-01-01T11:56:55Z",
   };
   const activity = (await render()).querySelector<HTMLElement>(".agentplane-composer-model-activity");
   expect(activity?.textContent).toBe("Model activity: 13m ago · Idle");
-  expect(activity?.querySelector("time")?.getAttribute("title")).toBe("2026-01-01T11:57:25.000Z");
+  expect(activity?.querySelector("time")?.getAttribute("title")).toBe("2026-01-01T11:56:55.000Z");
 });
 
 it("keeps distinct model activity and idle ages visible", async () => {
