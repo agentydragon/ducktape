@@ -333,7 +333,7 @@ AGENTPLANE_DESTINATION ({"destination_ref": {...}, "session_id": "..."}) or --de
 Subscribe first, then read the pull request's current state: this follows from creation, not from history.
 
 By default, pull-request subscriptions include mergeability_changed, which reports the initial
-conflicted state and later true/false transitions. --event replaces the default events (for example
+conflicted state and later MERGEABLE/CONFLICTING transitions. --event replaces the default events (for example
 --event issue_comment:created or --event mergeability_changed) rather than adding to them.
 mergeability_changed takes no action suffix. The idempotency key is derived from the source, so
 repeating the command returns the same subscription, and a transient failure (3) is retried by

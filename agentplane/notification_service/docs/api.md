@@ -77,8 +77,7 @@ monitors both the pull-request head and base, and retries pending mergeability c
 end its turn after confirming the subscription and reading current state. These entries use
 `event.githubMergeability` with `appId`, `repositoryId`, `pullRequestNumber`, and a durable globally
 increasing `sequence`, not a GitHub webhook delivery UUID. Their payload uses camelCase fields
-`repository`, `pullRequestNumber`, `baseRef`, `headSha`, `baseSha`, `previousMergeable` (boolean or
-null for the initial observation), `mergeable` (boolean), and `observedAt` (timestamp).
+`repository`, `pullRequestNumber`, `baseRef`, `headSha`, `baseSha`, `previousMergeability` (`UNKNOWN` for the initial observation), `mergeability` (`MERGEABLE` or `CONFLICTING`), and `observedAt` (timestamp).
 
 A `source` with neither field set is rejected as `INVALID_ARGUMENT`. A service without the GitHub App refuses
 a `github` source with `PERMISSION_DENIED`; no route lists enabled providers. Inbox cursors,
@@ -240,6 +239,10 @@ Sandbox snapshots expose `unannounced_count` beyond covered, acknowledged and ex
 `notice_due_at`, `quiet_until` and `max_wait_at` apply while waiting on debounce. Awaiting
 confirmation or retrying a delivery instead exposes that wait reason. `next_work_at` and
 `next_source_check_at` are scheduling observations, not promises of notice delivery.
+
+PR observations retain GitHub's lifecycle states `OPEN`, `CLOSED` (without merging), and `MERGED`
+separately from mergeability states `MERGEABLE`, `CONFLICTING`, and `UNKNOWN`. Only open PRs generate
+mergeability notifications or schedule retries for `UNKNOWN`; terminal lifecycle states do neither.
 
 ## Current source-processing observations
 

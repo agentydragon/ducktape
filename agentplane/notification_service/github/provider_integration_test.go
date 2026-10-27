@@ -141,7 +141,7 @@ func TestUnknownMergeabilityStillDeliversAndSchedulesARepair(t *testing.T) {
 	h := newHarness(t)
 	subscription := h.follow(pullRequestSource(7), "follow")
 	h.fake.respond("/repos/owner/repo/pulls/7", http.StatusOK, nil,
-		`{"number":7,"state":"open","base":{"ref":"main","sha":"`+testBaseSHA+`"},"mergeable":null,"head":{"sha":"`+testSHA+`","repo":{"id":200,"full_name":"fork/repo"}}}`)
+		`{"number":7,"state":"open","merged":false,"base":{"ref":"main","sha":"`+testBaseSHA+`"},"mergeable":null,"head":{"sha":"`+testSHA+`","repo":{"id":200,"full_name":"fork/repo"}}}`)
 	h.ingest("issue_comment", comment(7))
 	claim := h.claim()
 	h.reconcileAll(claim)
@@ -168,7 +168,7 @@ func TestAnInitialConflictProducesASyntheticMergeabilityEntry(t *testing.T) {
 	source := pullRequestSource(7, store.EventFilter{Event: store.EventMergeabilityChanged})
 	subscription := h.follow(source, "follow")
 	h.fake.respond("/repos/owner/repo/pulls/7", http.StatusOK, nil,
-		`{"number":7,"state":"open","base":{"ref":"main","sha":"`+testBaseSHA+`"},"mergeable":false,"head":{"sha":"`+testSHA+`","repo":{"id":200,"full_name":"fork/repo"}}}`)
+		`{"number":7,"state":"open","merged":false,"base":{"ref":"main","sha":"`+testBaseSHA+`"},"mergeable":false,"head":{"sha":"`+testSHA+`","repo":{"id":200,"full_name":"fork/repo"}}}`)
 	h.reconcileAll(h.claim())
 
 	entries := h.page(subscription.InboxID).Entries
@@ -180,20 +180,21 @@ func TestAnInitialConflictProducesASyntheticMergeabilityEntry(t *testing.T) {
 		t.Fatalf("event = %#v, want the pull request's synthetic mergeability identity", entries[0].Event)
 	}
 	var payload struct {
-		Repository        string    `json:"repository"`
-		PullRequestNumber int64     `json:"pullRequestNumber"`
-		BaseRef           string    `json:"baseRef"`
-		HeadSHA           string    `json:"headSha"`
-		BaseSHA           string    `json:"baseSha"`
-		PreviousMergeable *bool     `json:"previousMergeable"`
-		Mergeable         bool      `json:"mergeable"`
-		ObservedAt        time.Time `json:"observedAt"`
+		Repository           string                     `json:"repository"`
+		PullRequestNumber    int64                      `json:"pullRequestNumber"`
+		BaseRef              string                     `json:"baseRef"`
+		HeadSHA              string                     `json:"headSha"`
+		BaseSHA              string                     `json:"baseSha"`
+		PreviousMergeability store.GitHubMergeableState `json:"previousMergeability"`
+		Mergeability         store.GitHubMergeableState `json:"mergeability"`
+		ObservedAt           time.Time                  `json:"observedAt"`
 	}
 	if err := json.Unmarshal(entries[0].Payload, &payload); err != nil {
 		t.Fatal(err)
 	}
 	if payload.Repository != baseRepositoryName || payload.PullRequestNumber != 7 || payload.BaseRef != "main" ||
-		payload.HeadSHA != testSHA || payload.BaseSHA != testBaseSHA || payload.PreviousMergeable != nil || payload.Mergeable || payload.ObservedAt.IsZero() {
+		payload.HeadSHA != testSHA || payload.BaseSHA != testBaseSHA || payload.PreviousMergeability != store.GitHubMergeabilityUnknown ||
+		payload.Mergeability != store.GitHubConflicting || payload.ObservedAt.IsZero() {
 		t.Errorf("payload = %+v, want the initial conflict state observed from GitHub", payload)
 	}
 }

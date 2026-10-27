@@ -16,6 +16,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 )
 
 const installationID = 11
@@ -58,7 +60,8 @@ func TestReadsReturnTheirResources(t *testing.T) {
 	pullRequest, err := client.PullRequest(ctx, "owner/repo", 7, installationID)
 	if err != nil || pullRequest.Head.SHA != testSHA || pullRequest.Head.Repository == nil ||
 		*pullRequest.Head.Repository != (Repository{ID: 200, FullName: "fork/repo"}) || pullRequest.BaseRef != "main" ||
-		pullRequest.BaseSHA != testBaseSHA || !pullRequest.Open || pullRequest.Mergeable == nil || !*pullRequest.Mergeable {
+		pullRequest.BaseSHA != testBaseSHA || pullRequest.State != store.GitHubPullRequestOpen ||
+		pullRequest.Mergeability != store.GitHubMergeable {
 		t.Errorf("PullRequest = %+v, %v", pullRequest, err)
 	}
 	if err := client.CheckIssue(ctx, "owner/repo", 8, installationID); err != nil {
@@ -69,29 +72,31 @@ func TestReadsReturnTheirResources(t *testing.T) {
 	}
 }
 
-func TestPullRequestReportsNullableMergeabilityAndClosedState(t *testing.T) {
+func TestPullRequestReportsLifecycleAndMergeabilityStates(t *testing.T) {
 	for _, test := range []struct {
-		name      string
-		state     string
-		mergeable string
-		open      bool
-		want      *bool
+		name          string
+		state         string
+		merged        string
+		mergeable     string
+		wantState     store.GitHubPullRequestState
+		wantMergeable store.GitHubMergeableState
 	}{
-		{name: "mergeable", state: "open", mergeable: "true", open: true, want: githubBool(true)},
-		{name: "conflicting", state: "open", mergeable: "false", open: true, want: githubBool(false)},
-		{name: "mergeability is being computed", state: "open", mergeable: "null", open: true},
-		{name: "closed", state: "closed", mergeable: "false", want: githubBool(false)},
+		{name: "mergeable", state: "open", merged: "false", mergeable: "true", wantState: store.GitHubPullRequestOpen, wantMergeable: store.GitHubMergeable},
+		{name: "conflicting", state: "open", merged: "false", mergeable: "false", wantState: store.GitHubPullRequestOpen, wantMergeable: store.GitHubConflicting},
+		{name: "mergeability is being computed", state: "open", merged: "false", mergeable: "null", wantState: store.GitHubPullRequestOpen, wantMergeable: store.GitHubMergeabilityUnknown},
+		{name: "closed unmerged", state: "closed", merged: "false", mergeable: "null", wantState: store.GitHubPullRequestClosed, wantMergeable: store.GitHubMergeabilityUnknown},
+		{name: "merged", state: "closed", merged: "true", mergeable: "true", wantState: store.GitHubPullRequestMerged, wantMergeable: store.GitHubMergeable},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			fake := newFake(t)
 			fake.respond("/repos/owner/repo/pulls/7", 200, nil,
-				`{"number":7,"state":"`+test.state+`","base":{"ref":"main","sha":"`+testBaseSHA+`"},"mergeable":`+test.mergeable+`,"head":{"sha":"`+testSHA+`","repo":null}}`)
+				`{"number":7,"state":"`+test.state+`","merged":`+test.merged+`,"base":{"ref":"main","sha":"`+testBaseSHA+`"},"mergeable":`+test.mergeable+`,"head":{"sha":"`+testSHA+`","repo":null}}`)
 			observation, err := newTestClient(t, fake).PullRequest(t.Context(), "owner/repo", 7, installationID)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if observation.Head != (Revision{SHA: testSHA}) || observation.BaseRef != "main" || observation.BaseSHA != testBaseSHA ||
-				observation.Open != test.open || !sameBoolPointer(observation.Mergeable, test.want) {
+				observation.State != test.wantState || observation.Mergeability != test.wantMergeable {
 				t.Errorf("PullRequest = %+v", observation)
 			}
 			if got := fake.count("/repos/owner/repo/pulls/7"); got != 1 {
@@ -103,11 +108,14 @@ func TestPullRequestReportsNullableMergeabilityAndClosedState(t *testing.T) {
 
 func TestPullRequestRequiresItsStateAndBaseRevision(t *testing.T) {
 	for name, body := range map[string]string{
-		"missing state":      `{"number":7,"base":{"ref":"main","sha":"` + testBaseSHA + `"},"head":{"sha":"` + testSHA + `"}}`,
-		"missing base":       `{"number":7,"state":"open","head":{"sha":"` + testSHA + `"}}`,
-		"missing base ref":   `{"number":7,"state":"open","base":{"sha":"` + testBaseSHA + `"},"head":{"sha":"` + testSHA + `"}}`,
-		"missing base sha":   `{"number":7,"state":"open","base":{"ref":"main"},"head":{"sha":"` + testSHA + `"}}`,
-		"unrecognized state": `{"number":7,"state":"merged","base":{"ref":"main","sha":"` + testBaseSHA + `"},"head":{"sha":"` + testSHA + `"}}`,
+		"missing state":          `{"number":7,"merged":false,"base":{"ref":"main","sha":"` + testBaseSHA + `"},"head":{"sha":"` + testSHA + `"}}`,
+		"missing merged state":   `{"number":7,"state":"closed","base":{"ref":"main","sha":"` + testBaseSHA + `"},"head":{"sha":"` + testSHA + `"}}`,
+		"null merged state":      `{"number":7,"state":"closed","merged":null,"base":{"ref":"main","sha":"` + testBaseSHA + `"},"head":{"sha":"` + testSHA + `"}}`,
+		"open but marked merged": `{"number":7,"state":"open","merged":true,"base":{"ref":"main","sha":"` + testBaseSHA + `"},"head":{"sha":"` + testSHA + `"}}`,
+		"missing base":           `{"number":7,"state":"open","merged":false,"head":{"sha":"` + testSHA + `"}}`,
+		"missing base ref":       `{"number":7,"state":"open","merged":false,"base":{"sha":"` + testBaseSHA + `"},"head":{"sha":"` + testSHA + `"}}`,
+		"missing base sha":       `{"number":7,"state":"open","merged":false,"base":{"ref":"main"},"head":{"sha":"` + testSHA + `"}}`,
+		"unrecognized state":     `{"number":7,"state":"merged","merged":false,"base":{"ref":"main","sha":"` + testBaseSHA + `"},"head":{"sha":"` + testSHA + `"}}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			fake := newFake(t)
@@ -116,12 +124,6 @@ func TestPullRequestRequiresItsStateAndBaseRevision(t *testing.T) {
 			asError[*invalidResponseError](t, err)
 		})
 	}
-}
-
-func githubBool(value bool) *bool { return &value }
-
-func sameBoolPointer(a, b *bool) bool {
-	return a == nil && b == nil || a != nil && b != nil && *a == *b
 }
 
 func TestBranchesAreFoundByNameAndMissingOnesAreNotAnError(t *testing.T) {

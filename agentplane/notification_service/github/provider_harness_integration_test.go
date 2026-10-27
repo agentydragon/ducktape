@@ -116,7 +116,7 @@ func (w *world) serve(rw http.ResponseWriter, r *http.Request, path string) bool
 		if fork {
 			repository = fmt.Sprintf(`{"id": %d, "full_name": "fork/repo"}`, forkRepository)
 		}
-		reply(http.StatusOK, fmt.Sprintf(`{"number": %s, "state": "open", "base": {"ref": "main", "sha": %q}, "mergeable": true, "head": {"sha": %q, "repo": %s}}`, last, testBaseSHA, head, repository))
+		reply(http.StatusOK, fmt.Sprintf(`{"number": %s, "state": "open", "merged": false, "base": {"ref": "main", "sha": %q}, "mergeable": true, "head": {"sha": %q, "repo": %s}}`, last, testBaseSHA, head, repository))
 	case strings.Contains(path, "/issues/"):
 		reply(http.StatusOK, fmt.Sprintf(`{"number": %s}`, last))
 	case strings.Contains(path, "/git/ref/"):

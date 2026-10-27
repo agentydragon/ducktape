@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/bradleyfalzon/ghinstallation/v2"
 	"github.com/google/go-github/v88/github"
@@ -41,14 +42,13 @@ type Revision struct {
 	Repository *Repository
 }
 
-// PullRequestObservation is the current state GitHub reports for a pull request. Mergeable is nil while GitHub
-// has not computed mergeability yet.
+// PullRequestObservation is the current state GitHub reports for a pull request.
 type PullRequestObservation struct {
-	Head      Revision
-	BaseRef   string
-	BaseSHA   string
-	Open      bool
-	Mergeable *bool
+	Head         Revision
+	BaseRef      string
+	BaseSHA      string
+	State        store.GitHubPullRequestState
+	Mergeability store.GitHubMergeableState
 }
 
 // Client reads GitHub as the App, or as one of its installations. It is safe for concurrent use.
@@ -354,11 +354,22 @@ func (c *Client) PullRequest(ctx context.Context, repository string, number int,
 	if pullRequest.State == nil {
 		return PullRequestObservation{}, &invalidResponseError{reason: "pull request state is missing"}
 	}
-	var open bool
+	if pullRequest.Merged == nil {
+		return PullRequestObservation{}, &invalidResponseError{reason: "pull request merged state is missing"}
+	}
+	var state store.GitHubPullRequestState
 	switch *pullRequest.State {
 	case "open":
-		open = true
+		if *pullRequest.Merged {
+			return PullRequestObservation{}, &invalidResponseError{reason: "open pull request is marked merged"}
+		}
+		state = store.GitHubPullRequestOpen
 	case "closed":
+		if *pullRequest.Merged {
+			state = store.GitHubPullRequestMerged
+		} else {
+			state = store.GitHubPullRequestClosed
+		}
 	default:
 		return PullRequestObservation{}, &invalidResponseError{reason: "pull request state is invalid"}
 	}
@@ -381,13 +392,17 @@ func (c *Client) PullRequest(ctx context.Context, repository string, number int,
 		}
 		revision.Repository = &fork
 	}
-	var mergeable *bool
-	if pullRequest.Mergeable != nil {
-		value := *pullRequest.Mergeable
-		mergeable = &value
+	var mergeability store.GitHubMergeableState
+	switch {
+	case pullRequest.Mergeable == nil:
+		mergeability = store.GitHubMergeabilityUnknown
+	case *pullRequest.Mergeable:
+		mergeability = store.GitHubMergeable
+	default:
+		mergeability = store.GitHubConflicting
 	}
 	return PullRequestObservation{
-		Head: revision, BaseRef: base.GetRef(), BaseSHA: *base.SHA, Open: open, Mergeable: mergeable,
+		Head: revision, BaseRef: base.GetRef(), BaseSHA: *base.SHA, State: state, Mergeability: mergeability,
 	}, nil
 }
 

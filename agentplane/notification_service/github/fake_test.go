@@ -193,7 +193,7 @@ func (f *fakeGitHub) serve(w http.ResponseWriter, r *http.Request, path string, 
 	case path == "/repos/owner/repo" || path == "/repositories/100":
 		reply(http.StatusOK, `{"id": 100, "full_name": "owner/repo"}`)
 	case path == "/repos/owner/repo/pulls/7":
-		reply(http.StatusOK, fmt.Sprintf(`{"number": 7, "state": "open", "base": {"ref": "main", "sha": %q}, "mergeable": true, "head": {"sha": %q, "repo": {"id": 200, "full_name": "fork/repo"}}}`, testBaseSHA, testSHA))
+		reply(http.StatusOK, fmt.Sprintf(`{"number": 7, "state": "open", "merged": false, "base": {"ref": "main", "sha": %q}, "mergeable": true, "head": {"sha": %q, "repo": {"id": 200, "full_name": "fork/repo"}}}`, testBaseSHA, testSHA))
 	case path == "/repos/owner/repo/issues/8":
 		reply(http.StatusOK, `{"number": 8}`)
 	case path == "/repos/owner/repo/git/ref/heads/devel", path == "/repos/owner/repo/git/ref/heads/feature/x":

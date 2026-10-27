@@ -5,9 +5,9 @@ CREATE TABLE github_pull_request (
     base_ref VARCHAR NOT NULL,
     head_sha VARCHAR NOT NULL,
     base_sha VARCHAR NOT NULL,
-    open BOOLEAN NOT NULL,
-    pending BOOLEAN NOT NULL,
-    mergeable BOOLEAN,
+    state VARCHAR NOT NULL CHECK (state IN ('OPEN', 'CLOSED', 'MERGED')),
+    mergeability VARCHAR NOT NULL CHECK (mergeability IN ('MERGEABLE', 'CONFLICTING', 'UNKNOWN')),
+    last_settled_mergeability VARCHAR NOT NULL CHECK (last_settled_mergeability IN ('MERGEABLE', 'CONFLICTING', 'UNKNOWN')),
     event_sequence BIGINT NOT NULL DEFAULT 0,
     PRIMARY KEY (repository_id, number)
 );
