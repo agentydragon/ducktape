@@ -465,6 +465,8 @@ async def test_deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notif
     expected_wake_callers = [
         {"namespace": namespace(), "name": "app"},
         {"namespace": namespace(), "name": "notifications"},
+        # The k3s fixture offers the orchestration_v1 group, whose sends wake Sandboxes too.
+        {"namespace": namespace(), "name": "actions"},
     ]
     accounts = {f"{account['namespace']}/{account['name']}" for account in expected_wake_callers}
     assert set(gateway_settings["dispatcher_callers"]) == accounts
