@@ -12611,9 +12611,32 @@
   },
   "scope": "Read-only scan and separate bounded local/RBE experiments; no workflow reruns, production settings, test-policy changes, or scheduled monitoring.",
   "validation": {
-    "status": "pending final combined report browser review",
+    "status": "passed numeric checks and combined desktop/mobile browser review",
     "report_sha256": "822bb21883c367f5641224f2f41ed4aa3e8cb725d463d3c971be88ae0d956174",
-    "numeric_checks": "Original frequency evidence unchanged; 3 fresh MCP runs of 12 cases each; historical source and current dispositions explicit"
+    "numeric_checks": "Original frequency evidence unchanged; 3 fresh MCP runs of 12 cases each; historical source and current dispositions explicit",
+    "browser_review": {
+      "runner_invocation": "84c79de3-acb5-49ae-ae7f-6d9e8721a34d",
+      "bazel_invocation": "25416ace-ddcc-4f43-a660-6fc69109b860",
+      "viewports": [
+        "1280x900",
+        "390x844"
+      ],
+      "checks": [
+        "exact HTML bytes copied into browser test data and SHA-256 matched",
+        "h1 visible and content ready",
+        "no document horizontal overflow",
+        "native disclosure opens and closes",
+        "screenshots visually inspected at desktop and mobile"
+      ],
+      "screenshots": [
+        "reliability-desktop-overview",
+        "reliability-desktop-culprits",
+        "reliability-desktop-recoveries",
+        "reliability-mobile-overview",
+        "reliability-mobile-culprits",
+        "reliability-mobile-recoveries"
+      ]
+    }
   },
   "baseline_source_devel_commit": "424eefe254c61edba4c9d5eadfe80dc6a0c8bb95",
   "disposition_followup": {
