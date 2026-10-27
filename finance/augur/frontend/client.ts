@@ -3,6 +3,7 @@ import type { CamelCasedDeep } from "./lib/casing";
 import {
   zBudgetSnapshotRequest,
   zBudgetSnapshotResponse,
+  zBudgetSummaryCsvRequest,
   zBudgetTransactionsRequest,
   zBudgetTransactionsResponse,
   zCalibrationInfo,
@@ -185,7 +186,7 @@ export function fetchBudgetTransactions(
 }
 
 export function fetchBudgetSummaryCsv(
-  budgetSummaryCsvRequest: CamelCasedSchemaInput<typeof zBudgetSnapshotRequest>,
+  budgetSummaryCsvRequest: CamelCasedSchemaInput<typeof zBudgetSummaryCsvRequest>,
   { signal }: FetchOptions = {}
 ) {
   return postBlob("/api/budget/snapshot.csv", budgetSummaryCsvRequest, signal);

@@ -459,6 +459,7 @@ py_library(
         "//finance/augur/model:series",
         "//finance/augur/sim:ids",
         "//finance/augur/x/models:independent",
+        "//finance/budget:wire",
     ],
 )
 

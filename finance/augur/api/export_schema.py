@@ -1,12 +1,10 @@
 """Emit the Augur API OpenAPI schema (to stdout) for frontend Zod/TS codegen.
 
-Builds the *real* FastAPI app and dumps its `.openapi()`. The app registers every route —
-including `/api/calibration/*` — so the emitted document carries every component schema the
-frontend consumes; there is no separate schema-only app to drift. The OpenAPI document is a
-function of the route signatures (request/response models), not of any config *data*, so the
-exporter constructs a minimal valid deployment in Python (one agent, one location + property,
-an empty `independent` model preset) rather than reading a YAML fixture from runfiles —
-which is what let it break when ducktape is consumed as an external module.
+Builds the *real* FastAPI app and dumps its `.openapi()`, adding the request schema for the
+undocumented CSV endpoint from its existing Pydantic model. There is no separate schema-only app
+to drift. The OpenAPI document is a function of route signatures (request/response models), not
+config data, so the exporter constructs a minimal valid deployment in Python rather than reading
+a YAML fixture from runfiles — which would break when ducktape is consumed as an external module.
 """
 
 from __future__ import annotations
@@ -30,6 +28,7 @@ from finance.augur.api.wire import ActorRole, Property
 from finance.augur.model.series import LocationId
 from finance.augur.sim.ids import AgentId, JurisdictionId, PropertyId
 from finance.augur.x.models.independent import IndependentProviderConfig
+from finance.budget.wire import BudgetSummaryCsvRequest
 
 _SCHEMA_LOCATION_ID = LocationId("schema_location")
 
@@ -90,15 +89,16 @@ def main() -> None:
         # minimal empty `MarketCatalog` (only its routes/component schemas matter for the export).
         calibration_catalog_path = Path(tmpdir) / "calibration_catalog.yaml"
         calibration_catalog_path.write_text('metadata: {as_of: "2026-01-01"}\nmarkets: []\n', encoding="utf-8")
-        print(
-            json.dumps(
-                create_app_from_augur_config(
-                    _schema_export_config(properties_path, calibration_catalog_path),
-                    price_clients=static_price_clients({}),
-                ).openapi(),
-                indent=2,
-            )
-        )
+        document = create_app_from_augur_config(
+            _schema_export_config(properties_path, calibration_catalog_path), price_clients=static_price_clients({})
+        ).openapi()
+        # The CSV route stays out of path docs; its existing request model still drives frontend types.
+        csv_request_schema = BudgetSummaryCsvRequest.model_json_schema(ref_template="#/components/schemas/{model}")
+        schemas = document["components"]["schemas"]
+        for name, schema in csv_request_schema.pop("$defs", {}).items():
+            schemas.setdefault(name, schema)
+        schemas["BudgetSummaryCsvRequest"] = csv_request_schema
+        print(json.dumps(document, indent=2))
 
 
 if __name__ == "__main__":
