@@ -246,6 +246,7 @@ ts_library(
     deps = [
         ":chronological_debug",
         ":client",
+        ":command_delivery",
         ":composer",
         ":history_rows",
         ":live",
@@ -477,18 +478,14 @@ ts_library(
 )
 
 ts_library(
-    name = "thread_commands",
-    srcs = ["thread_commands.tsx"],
+    name = "command_delivery",
+    srcs = ["command_delivery.ts"],
     tsconfig = TSCONFIG,
     deps = [
         ":client",
-        ":command_progress",
         ":dispatch_watch",
         ":local_commands",
-        ":thread_cards",
-        ":thread_evidence",
         ":thread_sync",
-        "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
@@ -496,13 +493,28 @@ ts_library(
 )
 
 agentplane_vitest_test(
-    name = "thread_commands_test",
-    srcs = ["thread_commands.test.ts"],
+    name = "command_delivery_test",
+    srcs = ["command_delivery.test.ts"],
     deps = [
-        ":thread_commands",
-        # Run-time only: the @mantine/core that thread_commands imports loads it.
-        "//:node_modules/react-dom",
+        ":command_delivery",
         "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "thread_commands",
+    srcs = ["thread_commands.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":command_delivery",
+        ":command_progress",
+        ":local_commands",
+        ":thread_cards",
+        ":thread_evidence",
+        ":thread_sync",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
     ],
 )
 

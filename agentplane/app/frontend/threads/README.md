@@ -8,8 +8,9 @@ the status indicator, and the Thread tab favicon belong with that navigation.
 `page.tsx` resolves the selected Thread and its live availability. `conversation.tsx`
 connects synchronization with command delivery; `composer.tsx` owns the draft, keyboard handling,
 and send/interrupt controls; `history_row_views.tsx` renders history rows,
-and `virtualized_history.tsx` owns their virtualization and scroll anchoring. `thread_commands.tsx`
-owns local delivery, retries, and command outcome presentation. `thread_sync.ts`
+and `virtualized_history.tsx` owns their virtualization and scroll anchoring. `command_delivery.ts`
+owns retained command submission, receipts, and retries; `thread_commands.tsx` renders command
+outcomes. `thread_sync.ts`
 defines the view-facing contract, and `electric_sync.tsx` implements it with
 Electric. `thread_cards.tsx` renders bodies and cards, while `thread_evidence.tsx`
 owns their lazy evidence paging. History rows, local commands, disclosures, Thread

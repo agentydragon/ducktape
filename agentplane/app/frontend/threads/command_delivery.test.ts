@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 
-import { pruneCommandErrors } from "./thread_commands";
+import { pruneCommandErrors } from "./command_delivery";
 
 it("drops request errors after their local commands are dismissed", () => {
   const errors = new Map([
