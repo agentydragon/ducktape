@@ -1,10 +1,8 @@
 """Render fixture states with explicit Python readiness and capture."""
 
-from urllib.parse import urlsplit
-
 import pytest
 import pytest_bazel
-from playwright.async_api import Locator, Route, expect
+from playwright.async_api import Locator, expect
 
 from util.testing.viewports import Viewport
 from util.testing.visual_capture import VisualHarness
@@ -103,13 +101,22 @@ async def test_app_hash_navigation(visual: VisualHarness, capture_name: str) -> 
         "/api/stats/occurrences": {"occurrences": []},
     }
 
-    async def respond(route: Route) -> None:
-        await route.fulfill(json=responses[urlsplit(route.request.url).path])
-
     async with visual.open(capture_name=capture_name) as view:
-        await view.page.route("**/auth/me", respond)
-        await view.page.route("**/api/**", respond)
-        await view.page.evaluate("() => { window.location.hash = '/missing'; window.mountApp(); }")
+        # The asset harness has a file:// URL; fetch cannot send HTTP requests from it.
+        await view.page.evaluate(
+            """responses => {
+                window.fetch = async input => {
+                    const url = new URL(input instanceof Request ? input.url : input, window.location.href);
+                    if (!(url.pathname in responses)) throw new Error(`Unexpected request: ${url}`);
+                    return new Response(JSON.stringify(responses[url.pathname]), {
+                        headers: { "Content-Type": "application/json" },
+                    });
+                };
+                window.location.hash = "/missing";
+                window.mountApp();
+            }""",
+            responses,
+        )
         await expect(view.page.get_by_role("heading", name="Page Not Found")).to_be_visible()
         await view.page.get_by_role("link", name="Ground Truth", exact=True).click()
         await view.page.get_by_role("cell", name=slug, exact=True).click()
