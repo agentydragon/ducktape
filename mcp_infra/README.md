@@ -9,4 +9,4 @@ Shared support for the repo's FastMCP servers.
 - `static_bearer.py` — fixed-bearer ASGI guard for cluster-internal endpoints
 - `persistence.py` — server state store config (PostgreSQL / Valkey)
 - `constants.py` — shared path and process constants
-- `testing/` — fixtures, stubs (`TypedClient`), naming and schema helpers
+- `testing/` — fixtures, naming and result matchers

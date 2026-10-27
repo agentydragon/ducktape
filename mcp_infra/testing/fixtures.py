@@ -7,18 +7,14 @@ Register in downstream packages via:
 from __future__ import annotations
 
 import sys
-from contextlib import asynccontextmanager
 from pathlib import Path
 
 import aiodocker
 import pytest
-from fastmcp.client import Client
 from fastmcp.mcp_config import StdioMCPServer
-from fastmcp.server import FastMCP
 
 from mcp_infra.exec.docker.types import ContainerExecServerConfig, DefaultValue
 from mcp_infra.testing.simple_servers import make_simple_mcp as _make_simple_mcp  # avoid fixture collision
-from mcp_infra.testing.stubs.typed_stubs import TypedClient
 from util.bazel.subprocess import python_env
 
 # The stdio transport fixture launches `-m mcp_infra.testing.stdio_app`; the module
@@ -51,24 +47,6 @@ async def async_docker_client():
 def make_simple_mcp():
     """Lightweight FastMCP backend with simple tools for tests."""
     return _make_simple_mcp()
-
-
-@pytest.fixture
-def make_typed_mcp():
-    """Global typed MCP helper yielding (TypedClient, session) for a FastMCP server.
-
-    Usage:
-        async with make_typed_mcp(server) as (client, sess):
-            ...
-    """
-
-    @asynccontextmanager
-    async def _open(server: FastMCP):
-        async with Client(server) as sess:
-            client = TypedClient.from_server(server, sess)
-            yield client, sess
-
-    return _open
 
 
 @pytest.fixture

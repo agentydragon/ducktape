@@ -6,8 +6,6 @@ py_test(
     deps = [
         ":conftest",
         "//:conftest",
-        "//mcp_infra/testing:tool_schemas",
-        "//mcp_infra/testing/stubs:typed_stubs",
         "@pypi//fastmcp_slim",
         "@pypi//pydantic",
         "@pypi//pytest_bazel",

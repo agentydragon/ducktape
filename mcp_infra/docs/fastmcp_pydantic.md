@@ -23,6 +23,5 @@ self.lookup_tool = self.tool(output_schema=None)(lookup)  # inside a FastMCP sub
 - `Context` and `Depends(...)` parameters are injected, not exposed.
 - Return a `BaseModel` for structured output; `output_schema=None` when returning MCP
   content blocks or when the contract intentionally has no structured schema.
-- Tests: `TypedClient.from_server` and
-  `mcp_infra.testing.tool_schemas.extract_tool_input_schemas` derive Pydantic input
-  models from the `FunctionTool` signature — no custom `Tool` subclass needed.
+- Tests use FastMCP's `Client(server)` and `await client.call_tool(name, arguments)`.
+  Validate structured results with the domain model's `model_validate` when asserting fields.

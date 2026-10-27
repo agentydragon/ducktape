@@ -189,9 +189,7 @@ py_test(
     deps = [
         ":direct_exec",
         "//:conftest",
-        "//mcp_infra/testing:exec_stubs",
         "//util/exec:models",
-        "//util/exec:subprocess",
         "@pypi//fastmcp_slim",
         "@pypi//pytest_bazel",
     ],

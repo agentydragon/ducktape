@@ -17,9 +17,9 @@ py_test(
     name = "test_server",
     srcs = ["test_server.py"],
     deps = [
-        ":conftest",
         ":server",
         "//:conftest",
+        "@pypi//fastmcp_slim",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
@@ -34,16 +34,5 @@ py_library(
         "@pypi//fastmcp_slim",
         "@pypi//httpx",
         "@pypi//pydantic",
-    ],
-)
-
-py_library(
-    name = "conftest",
-    testonly = True,
-    srcs = ["conftest.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "//mcp_infra/testing:fixtures",
-        "@pypi//pytest",
     ],
 )
