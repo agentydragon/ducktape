@@ -202,7 +202,10 @@ def _data_claim(scope: Construct) -> None:
     k8s.KubePersistentVolumeClaim(
         scope,
         "data",
-        metadata=k8s.ObjectMeta(name=_DATA_CLAIM, namespace=_NAMESPACE),
+        # Kept when dropped from here: it stays the copy source until the owner releases it.
+        metadata=k8s.ObjectMeta(
+            name=_DATA_CLAIM, namespace=_NAMESPACE, annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"}
+        ),
         spec=k8s.PersistentVolumeClaimSpec(
             access_modes=["ReadWriteOnce"],
             storage_class_name="local-path-proxmox",

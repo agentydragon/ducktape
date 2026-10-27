@@ -57,11 +57,16 @@ AUTH_PROXY = ServiceRef(name=_NAME, port=Port(name="auth-proxy", number=11435), 
 _MODELS_CLAIM = "llm-models"
 _SSD_MODELS_CLAIM = "qwen38-iq4-ssd"
 _SSD_MODELS_VOLUME = "wyrm2-qwen38-iq4-ssd"
+# Piraeus successors on wyrm2's own pools; the copy Job seeds the SSD one from the static PV.
+_PIRAEUS_MODELS_CLAIM = "models"
+_PIRAEUS_SSD_MODELS_CLAIM = "qwen38-iq4"
+_SSD_MODELS_COPY_DIR = "/ssd-models-new"
 DIRECT_TOKEN = SecretRef(namespace=_NAMESPACE, name="ollama-direct-token").key("token")
 _AUTH_PROXY_CONFIG_MAP = "ollama-auth-proxy"
 _SCRIPTS_CONFIG_MAP = "gpt-oss-scripts"
 _SETUP_SCRIPT = "setup-gpt-oss-v2.sh"
 _LINK_SCRIPT = "link-ssd-models.sh"
+_COPY_SCRIPT = "copy-ssd-models.sh"
 _NGINX_CONF = "nginx.conf"
 # Container-side mount paths; link-ssd-models.sh and setup-gpt-oss-v2.sh spell them too.
 _MODELS_DIR = "/models"
@@ -90,7 +95,10 @@ def _models_claim(scope: Construct) -> None:
     k8s.KubePersistentVolumeClaim(
         scope,
         "models",
-        metadata=k8s.ObjectMeta(name=_MODELS_CLAIM, namespace=_NAMESPACE),
+        # Kept when dropped from here; its blobs are deleted by hand once Ollama is on Piraeus.
+        metadata=k8s.ObjectMeta(
+            name=_MODELS_CLAIM, namespace=_NAMESPACE, annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"}
+        ),
         spec=k8s.PersistentVolumeClaimSpec(
             access_modes=["ReadWriteOnce"],
             # OpenEBS LVM HDD on wyrm2 — co-located with GPUs. VG is 500GB
@@ -98,6 +106,85 @@ def _models_claim(scope: Construct) -> None:
             # (setup-gpt-oss-v2.sh) with headroom for future additions.
             storage_class_name="lvm-proxmox-hdd",
             resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("350Gi")}),
+        ),
+    )
+
+
+def _piraeus_claims(scope: Construct) -> None:
+    # Ollama re-pulls the HDD roster (setup-gpt-oss-v2.sh) into an empty registry.
+    k8s.KubePersistentVolumeClaim(
+        scope,
+        "piraeus-models",
+        metadata=k8s.ObjectMeta(name=_PIRAEUS_MODELS_CLAIM, namespace=_NAMESPACE),
+        spec=k8s.PersistentVolumeClaimSpec(
+            access_modes=["ReadWriteOnce"],
+            storage_class_name="piraeus-hdd-local",
+            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("200Gi")}),
+        ),
+    )
+    k8s.KubePersistentVolumeClaim(
+        scope,
+        "piraeus-ssd-models",
+        metadata=k8s.ObjectMeta(name=_PIRAEUS_SSD_MODELS_CLAIM, namespace=_NAMESPACE),
+        spec=k8s.PersistentVolumeClaimSpec(
+            access_modes=["ReadWriteOnce"],
+            storage_class_name="piraeus-ssd-local",
+            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("100Gi")}),
+        ),
+    )
+
+
+def _copy_ssd_models_job(scope: Construct) -> None:
+    """Copy the IQ4 directory, derived template shard included, onto its Piraeus claim and
+    check every shard against the pinned digests. Serving keeps reading the static PV."""
+    k8s.KubeJob(
+        scope,
+        "copy-ssd-models",
+        metadata=k8s.ObjectMeta(name="copy-qwen38-iq4-v1", namespace=_NAMESPACE),
+        spec=k8s.JobSpec(
+            backoff_limit=2,
+            template=k8s.PodTemplateSpec(
+                spec=k8s.PodSpec(
+                    security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
+                    automount_service_account_token=False,
+                    restart_policy="Never",
+                    node_selector={"kubernetes.io/hostname": "wyrm2"},
+                    volumes=[
+                        k8s.Volume(name="scripts", config_map=k8s.ConfigMapVolumeSource(name=_SCRIPTS_CONFIG_MAP)),
+                        k8s.Volume(
+                            name="ssd-models",
+                            persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(
+                                claim_name=_SSD_MODELS_CLAIM, read_only=True
+                            ),
+                        ),
+                        k8s.Volume(
+                            name="ssd-models-new",
+                            persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(
+                                claim_name=_PIRAEUS_SSD_MODELS_CLAIM
+                            ),
+                        ),
+                    ],
+                    containers=[
+                        k8s.Container(
+                            name="copy",
+                            image="busybox:1.38",
+                            command=["/bin/sh", f"{_SCRIPTS_DIR}/{_COPY_SCRIPT}"],
+                            resources=k8s.ResourceRequirements(
+                                requests={
+                                    "cpu": k8s.Quantity.from_string("500m"),
+                                    "memory": k8s.Quantity.from_string("64Mi"),
+                                },
+                                limits={"memory": k8s.Quantity.from_string("256Mi")},
+                            ),
+                            volume_mounts=[
+                                k8s.VolumeMount(name="scripts", mount_path=_SCRIPTS_DIR, read_only=True),
+                                k8s.VolumeMount(name="ssd-models", mount_path=_SSD_MODELS_DIR, read_only=True),
+                                k8s.VolumeMount(name="ssd-models-new", mount_path=_SSD_MODELS_COPY_DIR),
+                            ],
+                        )
+                    ],
+                )
+            ),
         ),
     )
 
@@ -451,6 +538,8 @@ def chart(app: App) -> Chart:
     _namespace(chart)
     _models_claim(chart)
     _ssd_models(chart)
+    _piraeus_claims(chart)
+    _copy_ssd_models_job(chart)
     _deployment(chart)
     _service(chart)
     https_route(
@@ -495,6 +584,7 @@ def write_config_maps(root: Path) -> list[ConfigMapArgs]:
             files=[
                 _SETUP_SCRIPT,
                 copy_source_file(root, OUTPUT_DIR, f"{_SOURCE_DIR}/{_LINK_SCRIPT}"),
+                copy_source_file(root, OUTPUT_DIR, f"{_SOURCE_DIR}/{_COPY_SCRIPT}"),
                 copy_source_file(root, OUTPUT_DIR, f"{_SOURCE_DIR}/qwen38-ssd-shards.tsv"),
                 copy_source_file(root, OUTPUT_DIR, f"{_SOURCE_DIR}/qwen38-ssd-derived-shards.tsv"),
             ],
