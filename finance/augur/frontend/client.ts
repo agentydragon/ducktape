@@ -2,7 +2,7 @@ import { camelizeObjectKeys, decamelizeObjectKeys, type CamelCasedDeep } from ".
 import {
   zBudgetSnapshotRequest,
   zBudgetSnapshotResponse,
-  zBudgetSummaryCsvRequest,
+  type zBudgetSummaryCsvRequest,
   zBudgetTransactionsRequest,
   zBudgetTransactionsResponse,
   zCalibrationInfo,
