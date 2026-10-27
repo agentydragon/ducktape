@@ -610,6 +610,15 @@ debundle_e2e_test(
 debundle_e2e_test(name = "scc_cluster_cli_test")
 
 debundle_e2e_test(
+    name = "invocation_cli_test",
+    deps = [
+        "@crates//:serde_json",
+        "@crates//:shlex",
+        "@crates//:tempfile",
+    ],
+)
+
+debundle_e2e_test(
     name = "top_level_query_cli_test",
     deps = ["@crates//:serde_json"],
 )

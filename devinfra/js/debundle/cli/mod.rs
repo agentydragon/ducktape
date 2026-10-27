@@ -2,6 +2,7 @@ pub mod binding;
 pub mod comment;
 pub mod edit_gate;
 pub mod gate;
+pub mod invocation;
 pub mod module;
 mod module_apply;
 pub mod outcome;
@@ -17,7 +18,7 @@ mod snapshot;
 mod spec_commands;
 
 use anyhow::{Context, Result};
-use clap::{Parser, Subcommand};
+use clap::{Args as ClapArgs, CommandFactory, FromArgMatches, Parser, Subcommand};
 use graph_provenance::{GraphMismatch, GraphMismatchReason};
 use peel::{AtomicGroupsArgs, GraphSummaryArgs, OutputFormat, PatchPlanArgs, print_report};
 use pipeline::{TransformArgs, TransformRunOptions, run_transform_cli};
@@ -25,6 +26,7 @@ use pipeline::{TransformArgs, TransformRunOptions, run_transform_cli};
 use crate::bindings_commands::BindingsNs;
 use crate::gate::{GateArgs, run_gate_cli};
 use crate::inspection_commands::{DescribeArgs, InspectSourceArgs};
+use crate::invocation::ResolvedInvocation;
 use crate::modules_commands::ModulesNs;
 use crate::scc_cluster::{ClusterArgs, SccArgs, run_cluster, run_scc};
 use crate::spec_commands::SpecNs;
@@ -234,8 +236,27 @@ pub struct DebundleArgs {
     /// Relocated package root used by graph compatibility; repeat for each package.
     #[arg(long = "graph-package-root", global = true, value_name = "NAME=DIR", value_parser = pipeline::parse_package_root_kv)]
     graph_package_roots: Vec<(String, std::path::PathBuf)>,
+    #[command(flatten)]
+    invocation: InvocationArgs,
     #[command(subcommand)]
     command: DebundleCommand,
+}
+
+#[derive(Debug, Clone, ClapArgs)]
+struct InvocationArgs {
+    /// Print the resolved command as JSON and exit without running it.
+    #[arg(long, global = true)]
+    print_invocation: bool,
+
+    /// Write the resolved invocation record before running the command.
+    #[arg(long, global = true, value_name = "PATH")]
+    invocation_out: Option<std::path::PathBuf>,
+}
+
+impl InvocationArgs {
+    fn requested(&self) -> bool {
+        self.print_invocation || self.invocation_out.is_some()
+    }
 }
 
 #[derive(Debug, Subcommand)]
@@ -282,7 +303,41 @@ enum DebundleCommand {
     Snapshot(snapshot::SnapshotArgs),
 }
 
-pub fn run_debundle_cli(args: DebundleArgs) -> Result<()> {
+/// Parse the current process arguments with Clap metadata available for
+/// resolving environment values and defaults, then dispatch the command.
+pub fn run_debundle_cli_from_process() -> Result<()> {
+    let raw_argv = std::env::args_os().collect::<Vec<_>>();
+    let command = DebundleArgs::command();
+    let matches = command.clone().get_matches_from(raw_argv.clone());
+    let args = DebundleArgs::from_arg_matches(&matches)
+        .expect("Clap validated DebundleArgs before constructing ArgMatches");
+    let invocation = if args.invocation.requested() {
+        Some(ResolvedInvocation::capture(
+            &command,
+            &matches,
+            &raw_argv,
+            args.invocation.print_invocation,
+            args.invocation.invocation_out.as_deref(),
+        )?)
+    } else {
+        None
+    };
+    run_debundle_cli(args, invocation)
+}
+
+fn run_debundle_cli(args: DebundleArgs, invocation: Option<ResolvedInvocation>) -> Result<()> {
+    if let Some(record) = invocation {
+        if let Some(path) = &args.invocation.invocation_out {
+            let mut bytes = serde_json::to_vec_pretty(&record)?;
+            bytes.push(b'\n');
+            std::fs::write(path, bytes)
+                .with_context(|| format!("writing invocation record to {}", path.display()))?;
+        }
+        if args.invocation.print_invocation {
+            println!("{}", serde_json::to_string_pretty(&record)?);
+            return Ok(());
+        }
+    }
     let graph_package_roots = pipeline::collect_package_roots(args.graph_package_roots)?;
     if let Err(error) = verify_mixed_graph_command(
         &args.command,

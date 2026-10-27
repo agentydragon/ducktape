@@ -4,6 +4,40 @@ What `debundle` guarantees when it places spec entities in a bundle chunk. How t
 write selectors: <docs/selectors.md>. How it is implemented:
 `docs/selector_resolution.md`.
 
+## Resolved CLI invocations
+
+The global `--print-invocation` option parses the selected command normally,
+resolves its declared CLI values, environment-backed values, and meaningful
+defaults, then prints a typed `ResolvedInvocation` and exits before dispatch.
+It does not read graph contents, run source analysis or proposal work, create
+operation outputs, write graph rejection reports, or modify spec files.
+Resolution may inspect CLI syntax and the current working directory only; it
+does not require that file inputs already exist. If `--invocation-out` is
+supplied, writing that requested record file is the sole print-only write.
+
+`--invocation-out <path>` persists the same record before the selected
+operation starts. An execution record is provenance for the attempted call,
+not proof of success or of completed validation. Its `requested_proof` records
+the checks the command asks to run, and its `write_scope` records possible
+operation writes. Neither field describes a completed result.
+
+The record includes the current working directory, executable path, typed
+argument values and their sources, replay argv, and a shell-quoted command.
+Declared environment-backed values are emitted as explicit replay arguments;
+explicit CLI values take precedence. The record does not dump ambient
+environment variables. A replay preserves file selection and relative-path
+resolution while the caller environment changes, but argv alone does not pin
+the contents of a spec, source tree, graph, or executable. Reproducing a
+mutation against a changed spec requires the corresponding input identity or
+snapshot provenance.
+
+Operation classification is based on the selected CLI shape: graph-snapshot or
+diagnostic-snapshot read, source-snapshot read, fresh pipeline, snapshot
+creation or verification, validated edit, unverified edit, conditional comment
+operation, or read-only analysis. Unrecognized shapes remain unclassified.
+Running an edit gate does not establish full pipeline, reconstruction, or
+runtime validation.
+
 ## Input and spec scope
 
 One run or validation resolves one exact spec against one configured input

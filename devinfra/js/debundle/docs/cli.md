@@ -118,6 +118,55 @@ debundle scc --binding XOe
 debundle bindings assign XOe:runtime/plugins
 ```
 
+## Resolved invocation records
+
+Every command accepts the global `--print-invocation` and
+`--invocation-out <path>` options. `--print-invocation` validates the ordinary
+CLI shape, resolves command-line values, documented environment-backed values,
+and meaningful defaults, then prints a JSON `ResolvedInvocation` to stdout and
+exits without dispatching the operation. The record includes an argv array, a
+POSIX-shell-safe command line, the working directory, effective argument
+values and their source, the requested operation/check class, and the planned
+write scope. Environment-backed paths such as `DEBUNDLE_GRAPH` are materialized
+as explicit replay flags; explicit flags retain precedence over environment
+values. The record does not include unrelated ambient environment variables.
+
+`--invocation-out <path>` writes the same record as JSON to that file before
+the operation starts. It leaves the command's normal stdout and stderr streams
+alone. If the operation later fails, the record still describes the attempted
+call; it is not evidence that the operation succeeded or that a requested
+check passed. When both options are supplied, the record is written to the
+file and printed to stdout, with the operation skipped.
+
+The record distinguishes graph-snapshot reads, diagnostic-snapshot reads,
+source-snapshot reads, fresh pipeline requests, snapshot creation and
+verification, validated edits, unverified edits, conditional comment operations,
+and read-only analysis. A command shape without a specific classification is
+reported as `unclassified`; it is never silently labeled as a validated edit.
+Its `requested_proof` field says which checks the command asks for; it never
+claims that those checks completed. In particular, an edit gate does not imply
+that a fresh pipeline, reconstruction, or runtime check ran. `write_scope`
+describes possible writes for the selected operation (plus the invocation
+file, when requested), not files that were actually changed.
+
+`argv` includes the executable and resolved environment/default options, so it
+can be replayed after changing caller environment. `shell_command` also changes
+to the recorded working directory and quotes each argument. Paths in the argv
+remain relative when they were supplied relatively; the recorded working
+directory preserves their resolution. Replay is repeatable only while its
+spec, source tree, graph, and other file inputs retain the same contents. An
+invocation record does not snapshot or identify those inputs, and it does not
+pin the executable contents. Use graph/input provenance or an archived input
+snapshot when replay must prove it used the same files.
+
+For example, this plans a graph query without reading the graph or creating
+reports, and records `DEBUNDLE_GRAPH` as an explicit `--graph` argument:
+
+```sh
+DEBUNDLE_GRAPH='reports/tree/main/dependency_graph.json' \
+  debundle gate list --print-invocation
+```
+
 If remote execution downloads only minimal outputs, request full outputs so
 the report side files are local: `--remote_download_outputs=all`.
 
