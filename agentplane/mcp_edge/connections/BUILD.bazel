@@ -13,6 +13,7 @@ go_library(
     visibility = ["//agentplane:__subpackages__"],
     deps = [
         "//agentplane/action_service:action_service_go_proto",
+        "//agentplane/grpc/streaming",
         "//agentplane/mcp_edge:connection_service_go_proto",
         "//agentplane/postgres/go:postgres",
         "//agentplane/postgres/go/wakeups",

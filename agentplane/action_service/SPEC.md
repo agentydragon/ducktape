@@ -162,6 +162,12 @@ ends; the last received receipt is current state. The HTTP/JSON facade exposes t
 route described by `/openapi.json`. The receipt read has no `wait_seconds` or `wait_until` query
 parameters.
 
+Every Action Service watch bounds waiting for a stream write to clear transport backpressure at five
+seconds; an exceeded bound ends the stream with `DEADLINE_EXCEEDED`. That bound does not guarantee
+when the peer receives a frame: the HTTP/2 facade may have queued it before the flush. Idle drain
+behavior keeps each watch's protocol: watches with a `reconnect_required` frame send it when no write
+is outstanding, while a drain that ends an outstanding write ends the stream without another frame.
+
 MCP tools retain their bounded `wait.wait_seconds` and `wait.wait_until` options. A receipt wait can
 return immediately or wait up to the MCP edge's configured `max_wait_seconds` (30 seconds by default)
 for either a resolved Decision or an Execution outcome. Direct MCP tools initially wait for the edge's

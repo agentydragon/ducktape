@@ -69,8 +69,9 @@ last received `through_cursor`: entries have no gaps or duplicates. The initial 
 committed tail of its read snapshot, including when every new entry was filtered out. Later
 `caught_up` frames follow cursor progress or a correction; an idle wake sends no frame. With
 `follow = false`, the stream ends successfully after its initial `caught_up`. With `follow = true`,
-it ends with `reconnect_required` when `watch_lease_s` expires or the replica drains; reconnect with
-fresh authorization. Bare EOF before either terminal frame is a failure.
+an idle stream ends with `reconnect_required` when `watch_lease_s` expires or the replica drains;
+reconnect with fresh authorization. If the lease or drain ends during a write, the stream ends
+without another frame. Bare EOF before either terminal frame is a failure.
 
 `settled` carries the same `SettledDeltas` as `ReadSessionEvents` and is sent only for an empty kind
 filter or one containing `text_delta`, `tool_arguments_delta`, `tool_output_delta` or `native`; all
@@ -90,7 +91,9 @@ Each entries frame holds at most 128 entries or 1 MiB of encoded response, with 
 sent alone. Filtering and byte bounds are applied in the database before payloads are transferred.
 The server reads a bounded entries/settlements page, waits for its frames to finish sending, then
 reads the next; it holds no database transaction while sending. It reads all intersecting removal
-ranges once per catch-up. Backend reads and writes to the stream have `request_timeout_s` deadlines.
+ranges once per catch-up. Backend reads and waiting for each stream `Send` to clear transport
+backpressure have `request_timeout_s` bounds. A bound does not guarantee when a queued frame reaches
+the peer.
 Each replica subscribes followers to the wakeup hub's
 `agentplane_session_history_changes` before the first read. A payload-free notification wakes all
 followers; reconnecting the LISTEN connection also wakes them to cover lost notifications.
@@ -177,8 +180,9 @@ the folded one.
 
 `WatchSessionSummaries` tells a reader when to re-read: each fold commit NOTIFYs the history
 database, and every replica forwards that to its watchers as a payload-free `changed`. A stream opens
-with one `changed` to cover whatever the caller missed, and ends with `reconnect_required` after
-`watch_lease_s`. A request with `opened_after` also gets `session_opened` for each Session recorded at
+with one `changed` to cover whatever the caller missed, and an idle stream ends with
+`reconnect_required` after `watch_lease_s` or a replica drain. A lease/drain during a write ends the
+stream without another frame. A request with `opened_after` also gets `session_opened` for each Session recorded at
 a later position, the backlog first and then each as its first push binds it, so the app opens a
 Thread for Sessions it did not start. The binding draws the Session's `opened_position` under a
 transaction advisory lock held to commit, so positions become visible in ascending order and a caller

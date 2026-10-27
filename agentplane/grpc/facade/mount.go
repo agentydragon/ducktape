@@ -3,7 +3,10 @@ package facade
 import (
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
 	"google.golang.org/grpc"
 )
 
@@ -17,6 +20,22 @@ func MountGRPC(server *http.Server, grpcServer *grpc.Server) {
 	rest := server.Handler
 	server.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("Content-Type"), "application/grpc") {
+			controller := http.NewResponseController(w)
+			var writeMu sync.Mutex
+			writeActive := true
+			r = r.WithContext(streaming.WithAbortWrite(r.Context(), func() error {
+				writeMu.Lock()
+				defer writeMu.Unlock()
+				if !writeActive {
+					return nil
+				}
+				return controller.SetWriteDeadline(time.Now())
+			}))
+			defer func() {
+				writeMu.Lock()
+				writeActive = false
+				writeMu.Unlock()
+			}()
 			grpcServer.ServeHTTP(w, r)
 			return
 		}

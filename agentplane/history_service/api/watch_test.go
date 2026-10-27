@@ -193,7 +193,7 @@ func TestAWriteTheCallerDoesNotReadFailsAtTheTimeout(t *testing.T) {
 	t.Cleanup(func() { close(stream.release) })
 	failed := make(chan error, 1)
 	go func() {
-		failed <- sendWithin(stream, 10*time.Millisecond, &historypb.WatchSessionSummariesResponse{})
+		failed <- sendWithin(t.Context(), stream, 10*time.Millisecond, &historypb.WatchSessionSummariesResponse{})
 	}()
 	select {
 	case err := <-failed:

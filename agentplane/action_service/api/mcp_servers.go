@@ -35,6 +35,8 @@ func (s *OperatorService) DisconnectMcpServer(ctx context.Context, request *oper
 // a linked token reaches its expiry, which changes its status with no commit.
 func (s *OperatorService) WatchMcpServers(_ *operator_action_servicepb.WatchMcpServersRequest, stream grpc.ServerStreamingServer[operator_action_servicepb.WatchMcpServersResponse]) error {
 	ctx := stream.Context()
+	writeCtx, stopWrites := watchWriteContext(ctx, s.gate)
+	defer stopWrites()
 	// The linkages are read after the subscription, so a commit in between is not missed.
 	updates, unsubscribe, err := s.updates.Subscribe(linkage.UpdatesChannel)
 	if err != nil {
@@ -49,14 +51,14 @@ func (s *OperatorService) WatchMcpServers(_ *operator_action_servicepb.WatchMcpS
 			return err
 		}
 		if shown == nil {
-			if err := s.sendLinkageSnapshot(ctx, stream, linkages); err != nil {
+			if err := s.sendLinkageSnapshot(ctx, writeCtx, stream, linkages); err != nil {
 				return err
 			}
 			shown = make(map[string]*operator_action_servicepb.McpServerLinkage, len(linkages))
 		}
 		for _, current := range linkages {
 			if held, sent := shown[current.GetServerId()]; sent && !proto.Equal(held, current) {
-				if err := send(ctx, s.gate, stream, &operator_action_servicepb.WatchMcpServersResponse{
+				if err := send(ctx, writeCtx, s.gate, stream, &operator_action_servicepb.WatchMcpServersResponse{
 					Frame: &operator_action_servicepb.WatchMcpServersResponse_Upsert{Upsert: current},
 				}); err != nil {
 					return err
@@ -69,7 +71,7 @@ func (s *OperatorService) WatchMcpServers(_ *operator_action_servicepb.WatchMcpS
 		stop()
 		if errors.Is(err, errDraining) {
 			// A planned renewal, as for WatchActionRequests.
-			return send(ctx, s.gate, stream, &operator_action_servicepb.WatchMcpServersResponse{
+			return send(ctx, ctx, s.gate, stream, &operator_action_servicepb.WatchMcpServersResponse{
 				Frame: &operator_action_servicepb.WatchMcpServersResponse_ReconnectRequired{ReconnectRequired: &emptypb.Empty{}},
 			})
 		}
@@ -81,15 +83,15 @@ func (s *OperatorService) WatchMcpServers(_ *operator_action_servicepb.WatchMcpS
 
 // sendLinkageSnapshot sends the linkages as snapshot frames of at most snapshotChunk linkages, then
 // snapshot_complete.
-func (s *OperatorService) sendLinkageSnapshot(ctx context.Context, stream grpc.ServerStreamingServer[operator_action_servicepb.WatchMcpServersResponse], linkages []*operator_action_servicepb.McpServerLinkage) error {
+func (s *OperatorService) sendLinkageSnapshot(ctx, writeCtx context.Context, stream grpc.ServerStreamingServer[operator_action_servicepb.WatchMcpServersResponse], linkages []*operator_action_servicepb.McpServerLinkage) error {
 	for chunk := range slices.Chunk(linkages, snapshotChunk) {
-		if err := send(ctx, s.gate, stream, &operator_action_servicepb.WatchMcpServersResponse{
+		if err := send(ctx, writeCtx, s.gate, stream, &operator_action_servicepb.WatchMcpServersResponse{
 			Frame: &operator_action_servicepb.WatchMcpServersResponse_Snapshot{Snapshot: &operator_action_servicepb.McpServerLinkageChunk{Linkages: chunk}},
 		}); err != nil {
 			return err
 		}
 	}
-	return send(ctx, s.gate, stream, &operator_action_servicepb.WatchMcpServersResponse{
+	return send(ctx, writeCtx, s.gate, stream, &operator_action_servicepb.WatchMcpServersResponse{
 		Frame: &operator_action_servicepb.WatchMcpServersResponse_SnapshotComplete{SnapshotComplete: &emptypb.Empty{}},
 	})
 }

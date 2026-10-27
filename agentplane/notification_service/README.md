@@ -70,8 +70,9 @@ verification also includes a fresh Action subscription and a real GitHub webhook
 database checks alone do not prove ingress or runner notice delivery.
 
 The service reads the settings file and environment variables of [Configuration](#configuration). It takes no
-flags, and no `log_levels`; logs are JSON on stderr. `request_timeout_s` (default 15) bounds a call's backend work,
-and `watch_lease_s` (default 300) is how long a watch lasts before it ends with `reconnect_required`.
+flags, and no `log_levels`; logs are JSON on stderr. `request_timeout_s` (default 15) bounds a call's backend work
+and waiting for each watch write to clear transport backpressure; `watch_lease_s` (default 300) is how long a watch
+lasts before it ends with `reconnect_required`.
 `message_body_limit_bytes` (default 32768, at most 262144, which the database also holds) bounds a message body.
 `policy_watch_period_s` (default 60, at least 2) is how long each watch of PolicySets and PolicyBindings stays
 open; sends are refused once a watch has missed three. GitHub is on

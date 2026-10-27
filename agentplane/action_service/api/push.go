@@ -125,6 +125,8 @@ func (s *PushService) DeletePushSubscription(ctx context.Context, request *web_p
 // subscription, sends nothing.
 func (s *PushService) WatchPushSubscriptions(_ *web_push_servicepb.WatchPushSubscriptionsRequest, stream grpc.ServerStreamingServer[web_push_servicepb.WatchPushSubscriptionsResponse]) error {
 	ctx := stream.Context()
+	writeCtx, stopWrites := watchWriteContext(ctx, s.gate)
+	defer stopWrites()
 	operator := pushOperator(ctx)
 	updates, unsubscribe, err := s.updates.Subscribe(push.UpdatesChannel)
 	if err != nil {
@@ -134,7 +136,7 @@ func (s *PushService) WatchPushSubscriptions(_ *web_push_servicepb.WatchPushSubs
 	// The watch reads after subscribing, so a commit in between is not missed.
 	f := follower{gate: s.gate, updates: updates}
 	sendFrame := func(frame *web_push_servicepb.WatchPushSubscriptionsResponse) error {
-		return send(ctx, s.gate, stream, frame)
+		return send(ctx, writeCtx, s.gate, stream, frame)
 	}
 	subscriptions, err := s.subscriptions.List(ctx, operator)
 	if err != nil {
@@ -163,7 +165,7 @@ func (s *PushService) WatchPushSubscriptions(_ *web_push_servicepb.WatchPushSubs
 		if err := f.changed(ctx); err != nil {
 			if errors.Is(err, errDraining) {
 				// A planned renewal, as for WatchActionRequests.
-				return sendFrame(&web_push_servicepb.WatchPushSubscriptionsResponse{
+				return send(ctx, ctx, s.gate, stream, &web_push_servicepb.WatchPushSubscriptionsResponse{
 					Frame: &web_push_servicepb.WatchPushSubscriptionsResponse_ReconnectRequired{ReconnectRequired: &emptypb.Empty{}},
 				})
 			}

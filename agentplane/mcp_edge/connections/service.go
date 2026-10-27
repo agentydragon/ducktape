@@ -28,8 +28,8 @@ type Gate interface {
 	// Recheck verifies the call's bearer again. It fails, with the status the call ends with, once the bearer no
 	// longer proves the operator the call was admitted as.
 	Recheck(ctx context.Context) error
-	// Draining is closed once the service stops accepting work.
-	Draining() <-chan struct{}
+	// DrainingContext is cancelled once the service stops accepting work.
+	DrainingContext() context.Context
 }
 
 // Service is the ConnectionService server.

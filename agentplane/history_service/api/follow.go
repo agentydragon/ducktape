@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
@@ -48,6 +49,10 @@ func (s *Service) FollowSession(request *historypb.FollowSessionRequest, stream 
 			return call.reconnect()
 		}
 		if err := call.catchUp(leased, initial); err != nil {
+			var writeErr *terminalWriteError
+			if errors.As(err, &writeErr) {
+				return writeErr.err
+			}
 			if leased.Err() != nil && ctx.Err() == nil {
 				return call.reconnect()
 			}
@@ -73,16 +78,33 @@ type followCall struct {
 	through   uint64
 }
 
-func (c *followCall) send(response *historypb.FollowSessionResponse) error {
+type terminalWriteError struct{ err error }
+
+func (e *terminalWriteError) Error() string { return e.err.Error() }
+func (e *terminalWriteError) Unwrap() error { return e.err }
+
+func (c *followCall) send(ctx context.Context, response *historypb.FollowSessionResponse) error {
 	response.ThroughCursor = c.through
-	return sendWithin(c.stream, c.service.requestTimeout, response)
+	return c.write(ctx, response)
+}
+
+func (c *followCall) write(ctx context.Context, response *historypb.FollowSessionResponse) error {
+	if err := sendWithin(ctx, c.stream, c.service.requestTimeout, response); err != nil {
+		return &terminalWriteError{err: err}
+	}
+	return nil
 }
 
 func (c *followCall) reconnect() error {
 	if err := c.stream.Context().Err(); err != nil {
 		return status.FromContextError(err).Err()
 	}
-	return c.send(&historypb.FollowSessionResponse{Frame: &historypb.FollowSessionResponse_ReconnectRequired{ReconnectRequired: &emptypb.Empty{}}})
+	err := c.send(c.stream.Context(), &historypb.FollowSessionResponse{Frame: &historypb.FollowSessionResponse_ReconnectRequired{ReconnectRequired: &emptypb.Empty{}}})
+	var writeErr *terminalWriteError
+	if errors.As(err, &writeErr) {
+		return writeErr.err
+	}
+	return err
 }
 
 func (c *followCall) catchUp(ctx context.Context, initial bool) error {
@@ -99,14 +121,14 @@ func (c *followCall) catchUp(ctx context.Context, initial bool) error {
 			return err
 		}
 		for _, settled := range page.Settlements {
-			if err := c.send(&historypb.FollowSessionResponse{Frame: &historypb.FollowSessionResponse_Settled{Settled: settled}}); err != nil {
+			if err := c.send(ctx, &historypb.FollowSessionResponse{Frame: &historypb.FollowSessionResponse_Settled{Settled: settled}}); err != nil {
 				return err
 			}
 			sentFrame = true
 		}
 		if len(page.Entries) > 0 {
 			response := &historypb.FollowSessionResponse{ThroughCursor: page.ThroughCursor, Frame: &historypb.FollowSessionResponse_Entries{Entries: &historypb.Entries{Entries: page.Entries}}}
-			if err := sendWithin(c.stream, c.service.requestTimeout, response); err != nil {
+			if err := c.write(ctx, response); err != nil {
 				return err
 			}
 			sentFrame = true
@@ -126,13 +148,13 @@ func (c *followCall) catchUp(ctx context.Context, initial bool) error {
 		return err
 	}
 	for _, cursorRange := range removed {
-		if err := c.send(&historypb.FollowSessionResponse{Frame: &historypb.FollowSessionResponse_Removed{Removed: cursorRange}}); err != nil {
+		if err := c.send(ctx, &historypb.FollowSessionResponse{Frame: &historypb.FollowSessionResponse_Removed{Removed: cursorRange}}); err != nil {
 			return err
 		}
 		sentFrame = true
 	}
 	if initial || c.through != startThrough || sentFrame {
-		return c.send(&historypb.FollowSessionResponse{Frame: &historypb.FollowSessionResponse_CaughtUp{CaughtUp: &emptypb.Empty{}}})
+		return c.send(ctx, &historypb.FollowSessionResponse{Frame: &historypb.FollowSessionResponse_CaughtUp{CaughtUp: &emptypb.Empty{}}})
 	}
 	return nil
 }

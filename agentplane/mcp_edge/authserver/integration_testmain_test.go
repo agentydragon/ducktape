@@ -100,7 +100,7 @@ func (testGate) Operator(ctx context.Context) (string, string) {
 
 func (testGate) Recheck(context.Context) error { return nil }
 
-func (testGate) Draining() <-chan struct{} { return nil }
+func (testGate) DrainingContext() context.Context { return context.Background() }
 
 // as is a call context of the operator, bounded by callDeadline.
 func as(t *testing.T, subject string) context.Context {

@@ -19,6 +19,7 @@ go_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/api",
     deps = [
+        "//agentplane/grpc/streaming",
         "//agentplane/history_service:history_service_go_proto",
         "//agentplane/notification_service:notifications_go_proto",
         "//agentplane/notification_service:notifications_operator_go_proto",

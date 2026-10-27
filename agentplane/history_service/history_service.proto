@@ -100,7 +100,8 @@ message FollowSessionResponse {
     SettledDeltas settled = 3;
     // Cleanup correction; later catch-ups may report a removed range below the starting cursor.
     CursorRange removed = 4;
-    // Planned renewal on lease expiry or drain: resume after through_cursor with fresh auth.
+    // Planned renewal when an idle stream's lease expires or the service drains: resume after through_cursor with
+    // fresh auth. If either ends during a write, the stream ends without this frame.
     google.protobuf.Empty reconnect_required = 5;
   }
   // Highest cursor covered by entries or caught_up, including filtered entries. Retain this to
