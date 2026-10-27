@@ -270,7 +270,9 @@ always goes through `request_action` with a caller-chosen idempotency key.
 Launch takes concrete fields, never a preset name, so what the operator approves is what runs and no backend
 attaches meaning to a preset name ([launch presets](../docs/launch_presets.md)). The catalog is app configuration
 today; cdk8s renders it into the executor's settings from the same definition, so the executor reads no app API or
-app state ([dependency rule](../docs/service_boundaries.md)).
+app state ([dependency rule](../docs/service_boundaries.md)). That is the v1 shape; the operator (2026-10-27 00:51
+UTC) expects presets to become "something that would probably want to be called by both the app and orchestration
+actions", one owner both read at run time instead of two rendered copies.
 
 Not in v1: suspend, resume and delete. Idle suspend and wake-on-send cover a worker's cost, and deleting stays an
 operator act in the app.
