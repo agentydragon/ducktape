@@ -527,7 +527,7 @@ fn rejects_source_that_no_longer_has_the_reviewed_binding() {
             "--size-cap-lines",
             "1",
         ],
-        &["needs exactly one source declaration"],
+        &["graph compatibility mismatch", "snapshot/main.js"],
     );
 }
 

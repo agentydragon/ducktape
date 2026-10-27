@@ -66,12 +66,13 @@ fn relational_member_still_counts_when_editing_an_anchor_module() {
 
 #[test]
 fn malformed_manual_claim_edits_are_refused_before_unassigning() {
-    // Generate genuine graph facts first, then model an author's bad YAML edit.
+    // Generate genuine graph facts first, then require stale-graph refusal for
+    // an author's malformed YAML edit before unassign can write anything.
     for (source, yaml, diagnostic) in [
         (
             "const alpha = 1; const beta = 1; const gamma = 3;",
             "source_matches: [{match: 'const x = 1;', bindings: [{local: x, name: X}]}]",
-            "is ambiguous — matched 2 declarations (alpha, beta)",
+            "is ambiguous -- matched 2 top-level declarations",
         ),
         (
             "const alpha = 1; const beta = 2; const gamma = 3;",
@@ -86,11 +87,15 @@ fn malformed_manual_claim_edits_are_refused_before_unassigning() {
         (
             "const alpha = {}; const gamma = 3; alpha.x = 1; alpha.x = 1;",
             "anonymous_statements: [{match: 'alpha.x = 1;'}]",
-            "anonymous statement selector matched 2 source statements",
+            "is ambiguous -- matched 2 top-level statements",
         ),
     ] {
         let fixture = GraphFixture::new(source, &[GAMMA]);
         write_text_file(&fixture.modules.join("home/atom.yaml"), yaml);
-        fixture.assert_rejected_unchanged(&["bindings", "unassign", "gamma"], &[diagnostic]);
+        fixture.assert_rejected_unchanged(
+            &["bindings", "unassign", "gamma"],
+            &["graph compatibility mismatch"],
+        );
+        fixture.assert_current_pipeline_rejects(&[diagnostic]);
     }
 }

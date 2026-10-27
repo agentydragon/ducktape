@@ -163,9 +163,16 @@ fn inspect_source_direct_range_uses_raw_body_indices_and_default_item_limit() {
 fn inspect_source_rejects_stale_graph_source_and_old_command() {
     let fixture = GraphFixture::new("const a = 1;\n", &[]);
     fs::write(fixture.source_path(), "\nconst a = 1;\n").unwrap();
-    let out = fixture.command(&["inspect-source", "--id", "unit:0"]);
-    assert!(!out.status.success());
-    assert!(String::from_utf8_lossy(&out.stderr).contains("regenerate the dependency graph"));
+    let out = fixture.command(&["inspect-source", "--id", "unit:0", "--format", "json"]);
+    assert_eq!(out.status.code(), Some(1));
+    let rejection: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(rejection["kind"], "graph_compatibility");
+    assert_eq!(rejection["mismatch"]["reason"], "file");
+    assert_eq!(
+        rejection["mismatch"]["path"],
+        fixture.source_path().to_str().unwrap()
+    );
+    assert!(rejection["mismatch"]["regenerate_command"].is_array());
     let out = fixture.command(&["show-source", "unit:0"]);
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("unrecognized subcommand"));
