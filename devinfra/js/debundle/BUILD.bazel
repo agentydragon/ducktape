@@ -829,6 +829,7 @@ rust_library(
         "lowering/chunk_ast.rs",
         "lowering/chunk_renames.rs",
         "lowering/cross_module.rs",
+        "lowering/export_policies.rs",
         "lowering/exports.rs",
         "lowering/imports/cross_chunk_imports.rs",
         "lowering/imports/import_emit.rs",
