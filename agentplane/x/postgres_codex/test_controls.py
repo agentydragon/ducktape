@@ -18,7 +18,7 @@ from agentplane.x.postgres_codex.code_mode import code_mode
 from agentplane.x.postgres_codex.control_testing import cli, options, seed
 from agentplane.x.postgres_codex.executor import Executor
 from agentplane.x.postgres_codex.sampler import advance
-from agentplane.x.postgres_codex.store import Base, Intent, LiveCell, Store, UnknownEffectError
+from agentplane.x.postgres_codex.store import Base, Intent, KnownFailureError, LiveCell, Store, UnknownEffectError
 from agentplane.x.postgres_codex.testing import drop_completed_process_reply
 from util.testing.sqlalchemy_engines import postgres_async_engine
 from util.testing.undeclared_outputs import undeclared_outputs_dir
@@ -189,7 +189,7 @@ async def test_lost_yielded_host_is_not_reconstructed(
                 await advance(
                     store, owner, runtime, http, endpoint="http://unused.invalid", credential="test", model="test"
                 )
-                with pytest.raises(ValueError, match="known live cell_id"):
+                with pytest.raises(KnownFailureError, match="known live cell_id"):
                     await runtime.execute({"name": "wait", "input": '{"cell_id":"missing"}'})
         assert (await store.read(owner)).pending is None
         await store.release(owner)
@@ -295,7 +295,7 @@ async def test_wait_terminate_is_terminal_and_repeated_wait_fails_safely(
                     {"name": "wait", "input": json.dumps({"cell_id": cell["cell_id"], "terminate": True})}
                 )
                 assert "Cell terminated" in str(output)
-                with pytest.raises(ValueError, match="known live cell_id"):
+                with pytest.raises(KnownFailureError, match="known live cell_id"):
                     await runtime.execute({"name": "wait", "input": json.dumps({"cell_id": cell["cell_id"]})})
                 assert not (await store.execution_state(owner))["cells"]
 

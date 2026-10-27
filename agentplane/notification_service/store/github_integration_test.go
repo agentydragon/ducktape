@@ -263,7 +263,7 @@ func (g githubFixture) prepare(t *testing.T, sub githubSubscription) githubStep 
 	if err != nil {
 		t.Fatal(err)
 	}
-	repairAt := subject.LastSuccessAt.Add(testFreshness)
+	repairAt := subject.RepairAt
 	fences := []GitHubAccessFence{base}
 	grants, err := g.state.RevisionGrants(ctx, g.app, sub.Subject)
 	if err != nil {

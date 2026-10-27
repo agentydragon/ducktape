@@ -70,6 +70,8 @@ def sandbox_view(
         view.suspended_by = sandbox.status.suspended_by.value
     if spec.idle_suspend_after is not None:
         view.idle_suspend_after.FromTimedelta(spec.idle_suspend_after)
+    if sandbox.status.idle_suspend_at is not None:
+        view.idle_suspend_at.FromDatetime(sandbox.status.idle_suspend_at)
     return view
 
 

@@ -8,7 +8,7 @@ import { type JSX, useState } from "react";
 import { Link, useMatch, useNavigate } from "react-router";
 
 import { archiveThread, displayableError, harnessLabel, type SandboxView, type ThreadView } from "../client";
-import { THREAD_PAGE, useRequiredThreadsLive, useThreadListing } from "../live";
+import { THREAD_PAGE, useRequiredThreadsLive, useThreadListing } from "./live";
 import { MarkGlyph } from "../mark_glyph";
 import { sandboxStatusDetail, sandboxSummary } from "../sandbox_status";
 import { SANDBOX_STATUS_MARKS } from "../status_mark";

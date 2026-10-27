@@ -65,6 +65,25 @@ thread, per stage, cold and warm, against regression ceilings; its module docstr
 interval. Each run writes its timings to
 `bazel-testlogs/agentplane/system_tests/test_thread_latency/test.outputs/`.
 
+## VM phase tracing
+
+VM-marked cases write OpenTelemetry spans to `test.outputs/vm-phases.jsonl` using the shared
+[test trace exporter](../../util/testing/otel_tracing.py). Each `vm.case` trace carries the pytest
+node ID and covers function-scoped fixtures, scenario execution, diagnostics and cleanup. Shared
+k3s startup remains in `k3s-timeline.jsonl`; it is session setup, outside these per-case traces.
+
+The spans separate Sandbox create acknowledgement from waiting for Ready, session opening, and
+scenario execution. `test_vm_sandbox_vm` also separates the scripted turn and each OOM command
+(`memory-before`, `tool-oom`, `memory-after`). Cleanup events distinguish suspend acknowledgement,
+observed effective suspension, delete acknowledgement, and observed deletion. Nested spans overlap;
+do not add a scenario's duration to its child turn/command durations. Use `test.xml` for the final
+pytest verdict; a case span includes fixture lifetime and is not itself a pass verdict.
+
+Completed spans flush immediately, including exception status, so earlier phases survive a later
+failure or process kill. An unfinished span is not exported if the process is killed. Attributes
+contain test/Sandbox identities and phase names; command bodies and model transcripts are not
+added to the trace attributes.
+
 ## VM workspace ownership
 
 `test_vm_workspace_ownership` creates one uniquely named VM Sandbox and

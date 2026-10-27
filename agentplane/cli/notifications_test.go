@@ -256,6 +256,51 @@ func TestSubscribeEventsReplaceTheDefaults(t *testing.T) {
 	}
 }
 
+func TestMergeabilityEventFilterHasNoActionsAndInboxSummaryNamesItsPullRequest(t *testing.T) {
+	filters, err := parseEvents([]string{"mergeability_changed"})
+	if err != nil || len(filters) != 1 || filters[0].GetEvent() != notificationspb.GitHubEventName_GITHUB_EVENT_NAME_MERGEABILITY_CHANGED || len(filters[0].GetActions()) != 0 {
+		t.Fatalf("filters = %v, error = %v", filters, err)
+	}
+	if _, err := parseEvents([]string{"mergeability_changed:completed"}); err == nil {
+		t.Fatal("mergeability_changed accepted an action suffix")
+	}
+	line := inboxEntryLine(&notificationspb.InboxEntry{
+		Cursor: 5,
+		Event: &notificationspb.EventIdentity{Provider: &notificationspb.EventIdentity_GithubMergeability{
+			GithubMergeability: &notificationspb.GitHubMergeabilityEvent{
+				PullRequestNumber: 7, Observation: &notificationspb.GitHubMergeabilityEvent_Sequence{Sequence: 3},
+			},
+		}},
+	})
+	if want := "entry 5  github PR #7 mergeability sequence 3"; line != want {
+		t.Errorf("summary = %q, want %q", line, want)
+	}
+	snapshot := inboxEntryLine(&notificationspb.InboxEntry{
+		Cursor: 6,
+		Event: &notificationspb.EventIdentity{Provider: &notificationspb.EventIdentity_GithubMergeability{
+			GithubMergeability: &notificationspb.GitHubMergeabilityEvent{
+				PullRequestNumber: 7, Observation: &notificationspb.GitHubMergeabilityEvent_SnapshotVersion{SnapshotVersion: 4},
+			},
+		}},
+	})
+	if want := "entry 6  github PR #7 mergeability snapshot version 4"; snapshot != want {
+		t.Errorf("snapshot summary = %q, want %q", snapshot, want)
+	}
+}
+
+func TestSubscribeOnlyToMergeabilityReplacesTheDefaultEvents(t *testing.T) {
+	servicer := answering(pullRequestSubscription(1, false))
+	invoke(notificationsEnv(serveNotifications(t, servicer)), subscribeArgs("--event", "mergeability_changed")...)
+	sent := received[*notificationspb.CreateSubscriptionRequest](servicer)
+	if len(sent) != 1 {
+		t.Fatalf("%d creations, want 1", len(sent))
+	}
+	events := sent[0].GetSource().GetGithub().GetEvents()
+	if len(events) != 1 || events[0].GetEvent() != notificationspb.GitHubEventName_GITHUB_EVENT_NAME_MERGEABILITY_CHANGED || len(events[0].GetActions()) != 0 {
+		t.Errorf("events = %v, want only actionless mergeability_changed", events)
+	}
+}
+
 func TestSubscribeDestinationFlagWinsOverTheEnvironment(t *testing.T) {
 	servicer := answering(pullRequestSubscription(1, false))
 	env := notificationsEnv(serveNotifications(t, servicer))

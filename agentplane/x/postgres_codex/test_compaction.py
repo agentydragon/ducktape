@@ -253,14 +253,24 @@ async def test_compaction_does_not_replace_on_failure(owned_store: tuple[Store, 
         row = (await db.scalars(select(Conversation))).one()
         assert row.items == original
         assert row.context_items is None
-        assert row.pending is not None
-        assert row.pending["kind"] == "compaction"
         intent = (await db.scalars(select(Intent))).one()
-        assert intent.result is None
-    if failure != "ownership":
+        if failure in {"failed", "tool", "growing", "duplicate"}:
+            assert row.pending is None
+            assert intent.result is not None
+            assert intent.result["status"] == "rejected"
+            assert row.stopped
+        else:
+            assert row.pending is not None
+            assert row.pending["kind"] == "compaction"
+            assert intent.result is None
+    if failure in {"partial", "cancel"}:
         async with ClientSession() as http:
             with pytest.raises(UnknownEffectError, match="unresolved"):
                 await advance(store, owner, None, http, endpoint="http://unused", credential="test", model="test")
+
+    if failure in {"failed", "tool", "growing", "duplicate"}:
+        await store.append_input(owner, "Continue after the failed compaction.")
+        assert not (await store.read(owner)).stopped
 
 
 @pytest.mark.parametrize("guard", ["call", "orphan", "nested", "pending", "live_cell"])

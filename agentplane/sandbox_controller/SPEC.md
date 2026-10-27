@@ -50,6 +50,12 @@ a KubeVirt VirtualMachine, and the state PVC. A Sandbox is its state, running or
   `spec.running`. A runner that is busy again, or idle since another instant, refuses, and the wait
   starts over; a controller restart also restarts it. Terminals and background processes do not
   count as work. Idleness never deletes a Sandbox.
+- `status.idleSuspendAt` reports the next suspension attempt time while this controller has seen an
+  idle runner and `spec.idleSuspendAfter` is set. It uses the controller's clock, starts when the
+  controller first saw the runner's current idle period, and moves to the retry deadline after a
+  refused or failed quiesce attempt. It is absent while suspension is off, the runner is busy or
+  absent, or the Sandbox is stopping, stopped, deleting or blocked. A controller restart restarts
+  the idle timer and reports its recomputed deadline.
 - A wake that lands while an idle suspension is being recorded replaces the incarnation: the runner is
   already sealed to new work, and the Sandbox is to run.
 - Each incarnation reads `spec.template` and the template as they are when it starts. Editing

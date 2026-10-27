@@ -11,20 +11,20 @@ import { Disclosure, DisclosureBody } from "./disclosure";
 import { HighlightedText } from "./json_view";
 import { OperationSection } from "./operation_section";
 
-export const COMMAND_MAX_HEIGHT_REM = 10;
+export const SHELL_COMMAND_MAX_HEIGHT_REM = 10;
 
 /** How many lines of a command a compact card's collapsed row shows before cutting it off. */
-export const COMMAND_SUMMARY_MAX_LINES = 3;
+export const SHELL_COMMAND_SUMMARY_MAX_LINES = 3;
 
 type Expansion = readonly [boolean, (expanded: boolean) => void];
 
-type CommandInput = { command: string; argv?: never } | { command?: never; argv: readonly string[] };
+type ShellCommandInput = { command: string; argv?: never } | { command?: never; argv: readonly string[] };
 
 /** A command on a compact card's collapsed row: highlighted shell, its line breaks read as spaces, cut
- * off after `COMMAND_SUMMARY_MAX_LINES` lines. The opened preview and the full card hold all of it. */
-export function CommandSummary({ text }: { text: string }): JSX.Element {
+ * off after `SHELL_COMMAND_SUMMARY_MAX_LINES` lines. The opened preview and the full card hold all of it. */
+export function ShellCommandSummary({ text }: { text: string }): JSX.Element {
   return (
-    <Text size="xs" lineClamp={COMMAND_SUMMARY_MAX_LINES} style={{ overflowWrap: "anywhere" }}>
+    <Text size="xs" lineClamp={SHELL_COMMAND_SUMMARY_MAX_LINES} style={{ overflowWrap: "anywhere" }}>
       <InlineCode text={text} language="bash" />
     </Text>
   );
@@ -32,7 +32,7 @@ export function CommandSummary({ text }: { text: string }): JSX.Element {
 
 /** The call as the reader judges it: what the model said it is for, the exact command, and the
  * settings that change how it runs. Where it runs belongs in the Action's label. */
-export function CommandCallView(
+export function ShellCommandView(
   props: {
     description?: string;
     notes: readonly string[];
@@ -43,7 +43,7 @@ export function CommandCallView(
     surface?: CodeBlockSurface;
     /** Keep the Command heading pinned as the collapse control while scrolling expanded content. */
     stickyCollapse?: boolean;
-  } & CommandInput
+  } & ShellCommandInput
 ): JSX.Element {
   const { description, notes, expansion, releaseWhenFar = false, surface, stickyCollapse = true } = props;
   const command = "command" in props ? props.command : undefined;
@@ -58,7 +58,7 @@ export function CommandCallView(
         </DisclosureBody>
       )}
       <ClampedBlock
-        maxHeightRem={COMMAND_MAX_HEIGHT_REM}
+        maxHeightRem={SHELL_COMMAND_MAX_HEIGHT_REM}
         lines={lineCount(commandText)}
         label={commandLabel}
         header={

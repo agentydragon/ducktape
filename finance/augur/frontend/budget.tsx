@@ -3,15 +3,52 @@ import { NativeSelect } from "@mantine/core";
 
 import {
   type BudgetSnapshotRequest,
+  type BudgetSummaryCsvRequest,
   fetchBudgetSnapshot,
   fetchBudgetSummaryCsv,
   fetchBudgetTransactions,
   fetchBudgetTransactionsCsv,
 } from "./client";
-import { parseAdjustments, adjustmentsToParams, effectiveSignedAvg, computeTotals } from "./budget_adjustments";
+import {
+  type Adjustment,
+  type Adjustments,
+  type BudgetTotals,
+  parseAdjustments,
+  adjustmentsToParams,
+  effectiveSignedAvg,
+  computeTotals,
+} from "./budget_adjustments";
 import { fmtUsd, fmtNumber } from "./lib/format";
 import { toastFetchError } from "./lib/toast";
 import { replaceSearchParams } from "./url_state";
+
+type BudgetSnapshot = Awaited<ReturnType<typeof fetchBudgetSnapshot>>;
+type BudgetBucket = BudgetSnapshot["buckets"][number];
+type BudgetTransaction = Awaited<ReturnType<typeof fetchBudgetTransactions>>["transactions"][number];
+type BucketSeries = {
+  bucketId: string;
+  label: string;
+  kind: BudgetBucket["kind"];
+  family: string | null;
+  monthlyAmounts: number[];
+  windowAvg: number;
+  transactionCount: number;
+};
+type AdjustedBucketSeries = BucketSeries & {
+  adjustment: Adjustment | undefined;
+  hidden: boolean;
+  overridden: boolean;
+  effectiveAvg: number;
+};
+type ChartTooltip = { bucketId: string; label: string; amount: number; month: string; left: number; top: number };
+type BucketDisplayEntry = AdjustedBucketSeries;
+type AdjustmentHandler = (bucketId: string, adjustment: Adjustment | null) => void;
+type LumpyItem = BudgetSnapshot["lumpy"][number];
+
+function errorMessage(error: unknown): string {
+  if (error && typeof error === "object" && "message" in error && error.message) return String(error.message);
+  return String(error);
+}
 
 // Only expense buckets stack into the "monthly spend" outflow chart. Inflow / transfer /
 // income render in their own panels (or, for inflow, alongside their family's expenses).
@@ -35,16 +72,16 @@ function windowSpecFromChoice(value: string): BudgetSnapshotRequest["window"] {
   return { kind: "trailing_months", months };
 }
 
-function maxChoiceLabel(coverageStarts) {
+function maxChoiceLabel(coverageStarts: string) {
   return `Max (since ${coverageStarts})`;
 }
 
 // `windowChoice` values are "trailing:N" / "max"; the colon is awkward in a download filename.
-function windowSlug(windowChoice) {
+function windowSlug(windowChoice: string) {
   return windowChoice.replace(":", "-");
 }
 
-function downloadBlob(filename, blob) {
+function downloadBlob(filename: string, blob: Blob) {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
@@ -61,20 +98,20 @@ function downloadBlob(filename, blob) {
 
 const EXPORT_BUTTON_CLASS = "augur-icon-button gap-1.5 px-2.5 py-1.5 text-xs font-medium";
 
-function adjustmentsToRequest(adjustments) {
+function adjustmentsToRequest(adjustments: Adjustments): BudgetSummaryCsvRequest["adjustments"] {
   return Object.fromEntries(adjustments.entries());
 }
 
 // Mirror the product/calibration shell's URL-state pattern: rewrite only our two budget params
 // (preserving everything else) so a hidden-rent / overridden view round-trips through the URL.
-function writeAdjustmentsToSearch(adjustments) {
+function writeAdjustmentsToSearch(adjustments: Adjustments) {
   const { bhide, bset } = adjustmentsToParams(adjustments);
   replaceSearchParams({ bhide, bset });
 }
 
 const UNGROUPED_FAMILY = "_ungrouped";
 
-function fmtMonth(iso) {
+function fmtMonth(iso: string) {
   // iso: "YYYY-MM-DD" — render as "Jul '25" so 12 months fit on a row of pills.
   const [yearStr, monthStr] = iso.split("-");
   const month = Number(monthStr);
@@ -82,19 +119,19 @@ function fmtMonth(iso) {
   return `${names[month - 1]} '${yearStr.slice(2)}`;
 }
 
-function fmtFamily(family) {
+function fmtFamily(family: string) {
   if (family === UNGROUPED_FAMILY) return "Ungrouped";
   return family.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function KindBadge({ kind }) {
-  const tone =
-    {
-      expense: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
-      inflow: "bg-sky-50 text-sky-800 dark:bg-sky-950/40 dark:text-sky-300",
-      transfer: "bg-slate-50 text-slate-500 italic dark:bg-slate-900 dark:text-slate-500",
-      income: "bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300",
-    }[kind] || "bg-slate-100 text-slate-700";
+function KindBadge({ kind }: { kind: BudgetBucket["kind"] }) {
+  const toneByKind = {
+    expense: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
+    inflow: "bg-sky-50 text-sky-800 dark:bg-sky-950/40 dark:text-sky-300",
+    transfer: "bg-slate-50 text-slate-500 italic dark:bg-slate-900 dark:text-slate-500",
+    income: "bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300",
+  } satisfies Record<BudgetBucket["kind"], string>;
+  const tone = toneByKind[kind];
   return (
     <span
       className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${tone}`}
@@ -104,7 +141,15 @@ function KindBadge({ kind }) {
   );
 }
 
-function Sparkline({ amounts, width = 90, height = 24 }) {
+function Sparkline({
+  amounts,
+  width = 90,
+  height = 24,
+}: {
+  amounts: readonly number[];
+  width?: number;
+  height?: number;
+}) {
   if (!amounts.length) return null;
   const max = Math.max(...amounts.map((value) => Math.abs(value)));
   if (max === 0) return <svg width={width} height={height} aria-hidden="true" />;
@@ -125,7 +170,7 @@ function Sparkline({ amounts, width = 90, height = 24 }) {
 }
 
 // "Nice" tick values: 1/2/5 × 10^n bracketing the data so axis labels read $5k/$10k/$15k.
-function niceTicks(max, target = 5) {
+function niceTicks(max: number, target = 5) {
   if (max <= 0) return { ticks: [0], ceiling: 1 };
   const rawStep = max / target;
   const magnitude = 10 ** Math.floor(Math.log10(rawStep));
@@ -137,9 +182,17 @@ function niceTicks(max, target = 5) {
   return { ticks, ceiling };
 }
 
-function StackedMonthlyChart({ months, bucketSeries, onToggleBucket }) {
-  const chartRef = useRef(null);
-  const [tooltip, setTooltip] = useState(null);
+function StackedMonthlyChart({
+  months,
+  bucketSeries,
+  onToggleBucket,
+}: {
+  months: readonly string[];
+  bucketSeries: readonly AdjustedBucketSeries[];
+  onToggleBucket: (series: AdjustedBucketSeries) => void;
+}) {
+  const chartRef = useRef<HTMLDivElement | null>(null);
+  const [tooltip, setTooltip] = useState<ChartTooltip | null>(null);
   const spendSeries = bucketSeries.filter((series) => series.kind === STACKABLE_SPEND_KIND);
   const spendSeriesWithIndex = spendSeries.map((series, originalIndex) => ({ series, originalIndex }));
   const visibleSpendSeries = spendSeriesWithIndex.filter(({ series }) => !series.hidden);
@@ -174,7 +227,7 @@ function StackedMonthlyChart({ months, bucketSeries, onToggleBucket }) {
   const colorByBucketId = new Map(
     spendSeriesWithIndex.map(({ series, originalIndex }) => [series.bucketId, palette[originalIndex % palette.length]])
   );
-  const colorForBucket = (bucketId) => String(colorByBucketId.get(bucketId) ?? palette[0]);
+  const colorForBucket = (bucketId: string) => String(colorByBucketId.get(bucketId) ?? palette[0]);
   const legendRows = spendSeriesWithIndex
     .map(({ series, originalIndex }) => ({
       series,
@@ -184,7 +237,12 @@ function StackedMonthlyChart({ months, bucketSeries, onToggleBucket }) {
     .sort((left, right) => right.amount - left.amount || left.originalIndex - right.originalIndex);
   const yAxisWidthPx = 56;
   const innerHeightPx = 220;
-  const showSegmentTooltip = (event, series, value, monthIso) => {
+  const showSegmentTooltip = (
+    event: Pick<React.MouseEvent<SVGRectElement>, "clientX" | "clientY">,
+    series: AdjustedBucketSeries,
+    value: number,
+    monthIso: string
+  ) => {
     const bounds = chartRef.current?.getBoundingClientRect();
     const left = bounds ? event.clientX - bounds.left : 0;
     const top = bounds ? event.clientY - bounds.top : 0;
@@ -197,7 +255,12 @@ function StackedMonthlyChart({ months, bucketSeries, onToggleBucket }) {
       top,
     });
   };
-  const showFocusedSegmentTooltip = (event, series, value, monthIso) => {
+  const showFocusedSegmentTooltip = (
+    event: { currentTarget: SVGRectElement },
+    series: AdjustedBucketSeries,
+    value: number,
+    monthIso: string
+  ) => {
     const chartBounds = chartRef.current?.getBoundingClientRect();
     const segmentBounds = event.currentTarget.getBoundingClientRect();
     setTooltip({
@@ -345,9 +408,19 @@ function StackedMonthlyChart({ months, bucketSeries, onToggleBucket }) {
 
 // Inline editor for a per-bucket override. Prefills with the bucket's current planned magnitude
 // (the override if set, else the rounded historical average) so "Set" is a one-keystroke tweak.
-function OverrideEditor({ entry, onAdjust, onClose }) {
+function OverrideEditor({
+  entry,
+  onAdjust,
+  onClose,
+}: {
+  entry: BucketDisplayEntry;
+  onAdjust: AdjustmentHandler;
+  onClose: () => void;
+}) {
   const [draft, setDraft] = useState(() =>
-    entry.overridden ? String(entry.adjustment.monthly) : String(Math.round(Math.abs(entry.windowAvg)))
+    entry.adjustment?.kind === "override"
+      ? String(entry.adjustment.monthly)
+      : String(Math.round(Math.abs(entry.windowAvg)))
   );
   const commit = () => {
     const value = Number(draft);
@@ -381,9 +454,19 @@ function OverrideEditor({ entry, onAdjust, onClose }) {
   );
 }
 
-function BucketRow({ entry, onSelect, selected, onAdjust }) {
+function BucketRow({
+  entry,
+  onSelect,
+  selected,
+  onAdjust,
+}: {
+  entry: BucketDisplayEntry;
+  onSelect: (bucketId: string) => void;
+  selected: boolean;
+  onAdjust: AdjustmentHandler;
+}) {
   const [editing, setEditing] = useState(false);
-  const stop = (event) => event.stopPropagation();
+  const stop = (event: React.MouseEvent<HTMLElement>) => event.stopPropagation();
   // Effective figure shown in the $/mo cell: the override when set, otherwise the historical
   // average. Overridden rows render in accent + carry a "was …" reset line; hidden rows are
   // dimmed and struck through (they're dropped from totals/chart but stay visible to bring back).
@@ -451,7 +534,17 @@ function BucketRow({ entry, onSelect, selected, onAdjust }) {
   );
 }
 
-function HeadlineCards({ totals, historical, windowMonths, adjustmentsActive }) {
+function HeadlineCards({
+  totals,
+  historical,
+  windowMonths,
+  adjustmentsActive,
+}: {
+  totals: BudgetTotals;
+  historical: BudgetTotals;
+  windowMonths: number;
+  adjustmentsActive: boolean;
+}) {
   // Always show "Monthly burn" (net of inflows + income). Show "Inflows" / "Income"
   // cards only when nonzero so we don't render a wall of $0 cards on simple flows.
   // When inflows == income == 0, "spend" and "netBurn" are identical -- skip the
@@ -459,7 +552,7 @@ function HeadlineCards({ totals, historical, windowMonths, adjustmentsActive }) 
   // totals (hidden buckets dropped, overrides applied); the burn card then anchors
   // them against the unadjusted history so the tweak's effect is legible.
   const subtitle = adjustmentsActive ? "planned $/mo" : `${windowMonths}-month average`;
-  const cards = [];
+  const cards: { label: string; value: number; note?: string; tone?: string }[] = [];
   const hasOffsets = totals.inflow > 0 || totals.income > 0;
   if (hasOffsets) {
     cards.push({ label: "Gross spend", value: totals.spend, note: "All expense buckets, before inflows." });
@@ -504,7 +597,7 @@ function HeadlineCards({ totals, historical, windowMonths, adjustmentsActive }) 
 
 // A running summary of the active planning adjustments with a one-click reset. Renders nothing
 // until something is hidden or overridden, so the default view stays uncluttered.
-function AdjustmentsBar({ rows, onReset }) {
+function AdjustmentsBar({ rows, onReset }: { rows: readonly AdjustedBucketSeries[]; onReset: () => void }) {
   const hidden = rows.filter((row) => row.hidden);
   const overridden = rows.filter((row) => row.overridden);
   if (!hidden.length && !overridden.length) return null;
@@ -532,7 +625,21 @@ function AdjustmentsBar({ rows, onReset }) {
   );
 }
 
-function FamilyPanel({ family, rows, onSelectBucket, selectedBucketId, onAdjust, windowMonths }) {
+function FamilyPanel({
+  family,
+  rows,
+  onSelectBucket,
+  selectedBucketId,
+  onAdjust,
+  windowMonths,
+}: {
+  family: string;
+  rows: readonly AdjustedBucketSeries[];
+  onSelectBucket: (bucketId: string) => void;
+  selectedBucketId: string | null;
+  onAdjust: AdjustmentHandler;
+  windowMonths: number;
+}) {
   // Roll up the family-level totals from each row's effective average (override when set, else
   // historical) so the summary lines up with the row figures. Hidden buckets are excluded -- the
   // panel total tracks the same adjusted view the headline cards show.
@@ -615,7 +722,13 @@ function FamilyPanel({ family, rows, onSelectBucket, selectedBucketId, onAdjust,
   );
 }
 
-function LumpyPanel({ items, bucketsById }) {
+function LumpyPanel({
+  items,
+  bucketsById,
+}: {
+  items: readonly LumpyItem[];
+  bucketsById: ReadonlyMap<string, BudgetBucket>;
+}) {
   if (!items.length) {
     return <div className="px-4 py-6 text-sm augur-muted">No lumpy spends in window above threshold.</div>;
   }
@@ -647,7 +760,7 @@ function LumpyPanel({ items, bucketsById }) {
   );
 }
 
-function TransactionsPanel({ transactions }) {
+function TransactionsPanel({ transactions }: { transactions: readonly BudgetTransaction[] | null }) {
   if (!transactions) return <div className="px-4 py-6 text-sm augur-muted">Loading…</div>;
   if (!transactions.length) {
     return <div className="px-4 py-6 text-sm augur-muted">No transactions in this bucket.</div>;
@@ -689,14 +802,14 @@ export function BudgetWorkspace() {
   // Default to full coverage history. When `coverage_starts` is unset on the deployment
   // the server 400s; switch the default to a trailing window if that's ever a concern.
   const [windowChoice, setWindowChoice] = useState(MAX_CHOICE_VALUE);
-  const [snapshot, setSnapshot] = useState(null);
-  const [snapshotError, setSnapshotError] = useState(null);
-  const [selectedBucketId, setSelectedBucketId] = useState(null);
-  const [bucketTx, setBucketTx] = useState(null);
-  const [bucketTxError, setBucketTxError] = useState(null);
+  const [snapshot, setSnapshot] = useState<BudgetSnapshot | null>(null);
+  const [snapshotError, setSnapshotError] = useState<string | null>(null);
+  const [selectedBucketId, setSelectedBucketId] = useState<string | null>(null);
+  const [bucketTx, setBucketTx] = useState<BudgetTransaction[] | null>(null);
+  const [bucketTxError, setBucketTxError] = useState<string | null>(null);
   // Planning adjustments (hidden buckets / per-bucket overrides) initialized from the URL so a
   // shared link reopens the same tweaked view.
-  const [adjustments, setAdjustments] = useState(() => parseAdjustments(window.location.search));
+  const [adjustments, setAdjustments] = useState<Adjustments>(() => parseAdjustments(window.location.search));
 
   // Mirror adjustments to the URL whenever they change (replaceState; preserves other params). On
   // mount this re-emits the params just parsed in, so the no-change guard makes it a no-op.
@@ -714,7 +827,7 @@ export function BudgetWorkspace() {
       .then((payload) => setSnapshot(payload))
       .catch((error) => {
         if (error?.name === "AbortError") return;
-        setSnapshotError(error?.message || String(error));
+        setSnapshotError(errorMessage(error));
         toastFetchError("budget-snapshot", "Budget snapshot failed", error);
       });
     return () => controller.abort();
@@ -729,14 +842,14 @@ export function BudgetWorkspace() {
       .then((payload) => setBucketTx(payload.transactions))
       .catch((error) => {
         if (error?.name === "AbortError") return;
-        setBucketTxError(error?.message || String(error));
+        setBucketTxError(errorMessage(error));
         toastFetchError("budget-transactions", "Transactions failed", error);
       });
     return () => controller.abort();
   }, [selectedBucketId, windowSpec]);
 
   const bucketsById = useMemo(() => {
-    const out = new Map();
+    const out = new Map<string, BudgetBucket>();
     if (snapshot) for (const bucket of snapshot.buckets) out.set(bucket.id, bucket);
     return out;
   }, [snapshot]);
@@ -780,11 +893,12 @@ export function BudgetWorkspace() {
   const rowsByFamily = useMemo(() => {
     // Group rows by family. Buckets without a declared family share a synthetic
     // "_ungrouped" key so they still render -- just below the named families.
-    const grouped = new Map();
+    const grouped = new Map<string, AdjustedBucketSeries[]>();
     for (const row of adjustedRows) {
       const key = row.family ?? UNGROUPED_FAMILY;
-      if (!grouped.has(key)) grouped.set(key, []);
-      grouped.get(key).push(row);
+      const familyRows = grouped.get(key) ?? [];
+      familyRows.push(row);
+      grouped.set(key, familyRows);
     }
     // Stable ordering: named families first, alphabetically; ungrouped last.
     const families = Array.from(grouped.keys()).sort((l, r) => {
@@ -792,13 +906,13 @@ export function BudgetWorkspace() {
       if (r === UNGROUPED_FAMILY) return -1;
       return l.localeCompare(r);
     });
-    return families.map((family) => ({ family, rows: grouped.get(family) }));
+    return families.map((family) => ({ family, rows: grouped.get(family) ?? [] }));
   }, [adjustedRows]);
 
   // Adjusted totals power the headline cards; the unadjusted version anchors the "Historical: …"
   // note so the effect of hiding/overriding is legible. With no adjustments the two coincide.
-  const totals = useMemo(() => (snapshot ? computeTotals(rows, adjustments) : null), [snapshot, rows, adjustments]);
-  const historicalTotals = useMemo(() => (snapshot ? computeTotals(rows, new Map()) : null), [snapshot, rows]);
+  const totals = useMemo(() => computeTotals(rows, adjustments), [rows, adjustments]);
+  const historicalTotals = useMemo(() => computeTotals(rows, new Map()), [rows]);
 
   const exportSummary = async () => {
     if (!snapshot) return;
@@ -826,7 +940,7 @@ export function BudgetWorkspace() {
   // null clears the bucket back to "actual"; otherwise set hidden / override. One adjustment per
   // bucket (hide and override are mutually exclusive). Functional update so rapid successive
   // changes each compose on the latest state; the effect above mirrors the result to the URL.
-  const applyAdjustment = (bucketId, adjustment) => {
+  const applyAdjustment: AdjustmentHandler = (bucketId, adjustment) => {
     setAdjustments((previous) => {
       const next = new Map(previous);
       if (adjustment) next.set(bucketId, adjustment);
@@ -836,7 +950,7 @@ export function BudgetWorkspace() {
   };
 
   const resetAdjustments = () => setAdjustments(new Map());
-  const toggleBucketVisibility = (series) => {
+  const toggleBucketVisibility = (series: AdjustedBucketSeries) => {
     applyAdjustment(series.bucketId, series.hidden ? null : { kind: "hidden" });
   };
 

@@ -54,9 +54,11 @@ go_test(
         "errors_test.go",
         "runner_test.go",
         "send_test.go",
+        "views_test.go",
     ],
     embed = [":api"],
     deps = [
+        "//agentplane/notification_service:notifications_go_proto",
         "//agentplane/notification_service:notifications_operator_go_proto",
         "//agentplane/notification_service/store",
         "//agentplane/notification_service/worker",
@@ -68,6 +70,8 @@ go_test(
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//encoding/protojson",
+        "@org_golang_google_protobuf//proto",
     ],
 )
 

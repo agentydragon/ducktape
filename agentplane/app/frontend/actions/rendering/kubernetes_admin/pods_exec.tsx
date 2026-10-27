@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import { type ActionPresentation, expandsForRejectedArguments } from "../presentation";
 import { argvText } from "../../../argv_text";
-import { CommandCallView, CommandSummary, OutputBlock } from "../../../command_view";
+import { ShellCommandView, ShellCommandSummary, OutputBlock } from "../../../shell_command_view";
 
 import { definePreview, type ArgumentsPreview } from "../entry";
 import { defineResultPreview, type ResultPreview, type ResultPreviewProps } from "../result_entry";
@@ -21,7 +21,7 @@ const podsExecArguments = z.strictObject({
 type PodsExecArguments = z.infer<typeof podsExecArguments>;
 
 function Collapsed({ args }: { args: PodsExecArguments }): JSX.Element {
-  return <CommandSummary text={argvText(args.command)} />;
+  return <ShellCommandSummary text={argvText(args.command)} />;
 }
 
 function PodsExecLabel({ args }: { args: PodsExecArguments }): JSX.Element {
@@ -33,7 +33,7 @@ function PodsExecLabel({ args }: { args: PodsExecArguments }): JSX.Element {
 }
 
 function Opened({ args }: { args: PodsExecArguments }): JSX.Element {
-  return <CommandCallView argv={args.command} notes={podsExecNotes(args)} releaseWhenFar surface="framed" />;
+  return <ShellCommandView argv={args.command} notes={podsExecNotes(args)} releaseWhenFar surface="framed" />;
 }
 
 function PodExecOutput({ result }: ResultPreviewProps<string>): JSX.Element {

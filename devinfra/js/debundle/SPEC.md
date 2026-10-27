@@ -24,6 +24,12 @@ capture list. Conflicting notes or overlapping local captures remain separate.
 The combined document passes the same production selector resolution and edit
 gate before writing; regrouping does not bypass source-unit identity checks.
 
+`modules merge --batch` composes all requested whole-module merges before one
+edit-gate check. Rejected plans and gate failures leave every source and target
+unchanged. Successful batches retain exact physical filenames and all claim and
+metadata fields, write every target before deleting sources, and use atomic
+per-file replacement rather than a crash-atomic multi-file transaction.
+
 ## Accepted output
 
 Unresolved claims prevent acceptance. A run may write diagnostic reports for a
