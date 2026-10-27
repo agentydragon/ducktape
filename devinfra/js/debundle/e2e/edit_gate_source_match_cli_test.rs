@@ -1,8 +1,7 @@
 //! Source-backed edit gates must resolve the same claims as the run pipeline.
 
-use debundle_e2e_support::{GraphFixture, debundler_path, write_text_file};
+use debundle_e2e_support::{GraphFixture, write_text_file};
 use std::fs;
-use std::process::Command;
 
 const GAMMA: (&str, &str) = (
     "solo/gamma.yaml",
@@ -11,32 +10,6 @@ const GAMMA: (&str, &str) = (
 const MEMBER: &str = "members: [{selector: {binding: {name: beta}}}]\n";
 const MATCH: &str =
     "source_matches: [{match: 'let alpha = 0;', bindings: [{local: alpha, name: Alpha}]}]\n";
-
-fn assert_current_pipeline_rejects(fixture: &GraphFixture, diagnostics: &[&str]) {
-    let root = fixture.root();
-    let out_root = root.join("current-spec-validation");
-    let output = Command::new(debundler_path())
-        .args(["run", "--tree-config"])
-        .arg(root.join("spec_config.yaml"))
-        .arg("--tree-modules")
-        .arg(&fixture.modules)
-        .arg("--tree-vendor-marks")
-        .arg(root.join("vendor_marks.yaml"))
-        .arg("--tree-source-root")
-        .arg(root)
-        .arg("--out-root")
-        .arg(out_root)
-        .output()
-        .unwrap();
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        !output.status.success(),
-        "current malformed spec unexpectedly passed the pipeline"
-    );
-    for diagnostic in diagnostics {
-        assert!(stderr.contains(diagnostic), "{stderr}");
-    }
-}
 
 fn atomic_fixture(yaml: &str) -> GraphFixture {
     GraphFixture::new(
@@ -123,6 +96,6 @@ fn malformed_manual_claim_edits_are_refused_before_unassigning() {
             &["bindings", "unassign", "gamma"],
             &["graph compatibility mismatch"],
         );
-        assert_current_pipeline_rejects(&fixture, &[diagnostic]);
+        fixture.assert_current_pipeline_rejects(&[diagnostic]);
     }
 }
