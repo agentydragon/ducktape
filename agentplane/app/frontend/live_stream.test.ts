@@ -68,3 +68,31 @@ it("ignores events it has no handler for, which do not make the stream live", as
   expect(connections.map(({ phase }) => phase)).toEqual(["connecting", "live"]);
   expect(events).toEqual([["snapshot", "{}"]]);
 });
+
+it("does not mark the stream live when its snapshot decoder rejects a frame", async () => {
+  await stream();
+  stop();
+  connections = [];
+  stop = followStream("/test/stream", {
+    events: {
+      snapshot: (message) =>
+        message.data === "accepted" ? undefined : "Invalid snapshot frame: missing observation time",
+    },
+    onConnection: (connection) => connections.push(connection),
+  });
+  await vi.advanceTimersByTimeAsync(0);
+  const served = fetchMock.served.at(-1);
+  if (served === undefined) throw new Error("no decoder stream requested");
+
+  served.event("snapshot", "corrupt");
+  await vi.advanceTimersByTimeAsync(0);
+  expect(connections.at(-1)).toMatchObject({
+    phase: "invalid",
+    lastError: "Invalid snapshot frame: missing observation time",
+  });
+  expect(connections.some(({ phase }) => phase === "live")).toBe(false);
+
+  served.event("snapshot", "accepted");
+  await vi.advanceTimersByTimeAsync(0);
+  expect(connections.at(-1)?.phase).toBe("live");
+});

@@ -11,10 +11,11 @@ import { SandboxesLiveProvider, type SandboxesSnapshot } from "./sandboxes/live"
 import { Sidebar } from "./sidebar";
 import { threadViewRecorder } from "./threads/thread_view_recorder";
 import { ConnectionIndicator, DEGRADED_AFTER_MS } from "./stream_status";
-import type { InboxNoticeState, SessionNoticeStates } from "./notification_types";
+import type { InboxNoticeState } from "./notification_types";
 import { latestOn, reconnected, type ServedWatch, serveEventStreams } from "./testing/watch";
 
 const NO_NOTICES: Omit<InboxNoticeState, "inboxId" | "sessionId"> = { queued: 0, unacknowledged: 0 };
+type NoticeFixture = Omit<Partial<InboxNoticeState>, "notice"> & { notice?: InboxNoticeState["notice"] | number };
 
 const fetchMock = vi.hoisted(() => {
   const fetch = vi.fn<(request: Request) => Promise<Response>>();
@@ -142,7 +143,7 @@ async function render(
     initialPath?: string;
     settingsOpen?: boolean;
     open?: boolean;
-    notices?: Record<string, Partial<InboxNoticeState>>;
+    notices?: Record<string, NoticeFixture>;
   } = {}
 ): Promise<{
   onOpenSettings: ReturnType<typeof vi.fn>;
@@ -165,7 +166,7 @@ async function render(
           sessionId: session,
           ...options.notices?.[session],
         }));
-      const states: SessionNoticeStates = { observedAt: "2026-01-01T00:00:00Z", inboxes };
+      const states = { observedAt: "2026-01-01T00:00:00Z", inboxes };
       stream.event("snapshot", JSON.stringify(states));
       return;
     }
@@ -847,7 +848,7 @@ it("counts each listed thread's unprocessed notifications and flags failed deliv
         error: "runner unreachable",
       },
       "00000000-0000-4000-8000-000000000004": { notice: "NOTICE_PROGRESS_CONFIRMED" },
-      "00000000-0000-4000-8000-000000000005": { unacknowledged: 1, notice: { unknown: 999 } },
+      "00000000-0000-4000-8000-000000000005": { unacknowledged: 1, notice: 999 },
     },
   });
   await act(async () => {});

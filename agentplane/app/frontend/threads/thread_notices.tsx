@@ -10,7 +10,7 @@ import type { JSX } from "react";
 
 import { clockTime } from "../format_time";
 import { useSnapshotStream } from "../live_stream";
-import type { InboxNoticeState, SessionNoticeStates } from "../notification_types";
+import { decodeSessionNoticeStatesFrame, type InboxNoticeState, type SessionNoticeStates } from "../notification_types";
 
 /** The route's own bound, as many threads as one listing page carries. */
 const MAX_THREADS = 200;
@@ -32,7 +32,7 @@ export function threadNoticesUrl(threadIds: readonly string[]): string {
  * go without. */
 export function useThreadNotices(threadIds: readonly string[]): ThreadNotices {
   const url = threadIds.length === 0 ? null : threadNoticesUrl(threadIds);
-  const { snapshot, connection } = useSnapshotStream<SessionNoticeStates>(url);
+  const { snapshot, connection } = useSnapshotStream<SessionNoticeStates>(url, decodeSessionNoticeStatesFrame);
   if (url === null || snapshot === null) return { bySession: null, live: false };
   const bySession = new Map<string, InboxNoticeState[]>();
   for (const inbox of snapshot.inboxes)

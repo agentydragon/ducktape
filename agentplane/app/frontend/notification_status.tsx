@@ -109,6 +109,7 @@ export function NotificationStatus({
           } catch (reason) {
             const failure = displayableError(reason);
             setError(failure);
+            return failure;
           }
         },
       },
