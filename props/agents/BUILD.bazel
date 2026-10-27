@@ -102,6 +102,7 @@ py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
+    visibility = ["//props/agents:__subpackages__"],
     deps = [
         "//props/testing/fixtures:e2e_container",
         "//props/testing/fixtures:e2e_infra",
