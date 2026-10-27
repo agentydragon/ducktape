@@ -10,7 +10,7 @@ import { RoutedThreadsLiveProvider, type ThreadsSnapshot } from "./threads/live"
 import { Sidebar } from "./sidebar";
 import { scrollCapture } from "./threads/scroll_diagnostics";
 import { ConnectionIndicator, DEGRADED_AFTER_MS } from "./stream_status";
-import type { InboxNoticeState, SessionNoticeStates } from "./notification_types";
+import type { InboxNoticeState, SessionNoticeStates } from "./notifications/types";
 
 const NO_NOTICES: Omit<InboxNoticeState, "inboxId" | "sessionId"> = { queued: 0, unacknowledged: 0 };
 

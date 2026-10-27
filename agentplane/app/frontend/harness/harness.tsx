@@ -58,7 +58,7 @@ import type {
   SandboxNotificationStatus,
   SessionNoticeStates,
   SubscriptionStatus,
-} from "../notification_types";
+} from "../notifications/types";
 import { EventSchema, ItemKind, RecoveryDisposition, TurnStatus } from "../../../proto/event_pb";
 import { CommandSchema } from "../../../proto/command_pb";
 import { EventEntrySchema } from "../../../proto/event_log_pb";

@@ -2,15 +2,9 @@
 import { Accordion, Divider, Drawer, Group, Paper, ScrollArea, Select, Stack, Text } from "@mantine/core";
 import { useEffect, useState, type JSX } from "react";
 
-import { clockTime, isoTime, timeAgo } from "./format_time";
-import { followStream, type StreamConnection } from "./live_stream";
-import type {
-  GitHubSubject,
-  SandboxNotificationStatus,
-  Source,
-  SourceObservation,
-  SubscriptionStatus,
-} from "./notification_types";
+import { clockTime, isoTime, timeAgo } from "../format_time";
+import { followStream, type StreamConnection } from "../live_stream";
+import type { GitHubSubject, SandboxNotificationStatus, Source, SourceObservation, SubscriptionStatus } from "./types";
 
 type SubscriptionState = "active" | "expired" | "cancelled";
 type SubscriptionFilter = "not-cancelled" | SubscriptionState | "all";

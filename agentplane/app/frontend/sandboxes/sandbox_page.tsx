@@ -1,5 +1,5 @@
 import type { SandboxView, ThreadView } from "../schema";
-import { NotificationStatus } from "../notification_status";
+import { NotificationStatus } from "../notifications/status";
 import {
   ActionIcon,
   Alert,
