@@ -84,6 +84,25 @@ func reconcileResult(t *testing.T, r *Reconciler) ctrl.Result {
 
 func durationPtr(d time.Duration) *time.Duration { return &d }
 
+type countingStatusClient struct {
+	client.Client
+	statusUpdates int
+}
+
+func (c *countingStatusClient) Status() client.SubResourceWriter {
+	return &countingStatusWriter{SubResourceWriter: c.Client.Status(), statusUpdates: &c.statusUpdates}
+}
+
+type countingStatusWriter struct {
+	client.SubResourceWriter
+	statusUpdates *int
+}
+
+func (w *countingStatusWriter) Update(ctx context.Context, obj client.Object, opts ...client.SubResourceUpdateOption) error {
+	*w.statusUpdates = *w.statusUpdates + 1
+	return w.SubResourceWriter.Update(ctx, obj, opts...)
+}
+
 func TestARunnerIdleForIdleSuspendAfterSuspendsItsSandbox(t *testing.T) {
 	r, c, now := idleRunner(t, durationPtr(idleSuspendAfter))
 	quiescer := r.Quiescer.(*fakeQuiescer)
@@ -91,6 +110,9 @@ func TestARunnerIdleForIdleSuspendAfterSuspendsItsSandbox(t *testing.T) {
 
 	if result := reconcileResult(t, r); quiescer.calls != 0 || result.RequeueAfter != idleSuspendAfter {
 		t.Fatalf("first sight of the idle runner: quiesce calls = %d, requeue = %v; want 0 and the full wait", quiescer.calls, result.RequeueAfter)
+	}
+	if got, want := getSandbox(t, c).Status.IdleSuspendAt, metav1.NewTime(testNow.Add(idleSuspendAfter)); got == nil || !got.Equal(&want) {
+		t.Fatalf("idleSuspendAt = %v, want %v", got, want)
 	}
 	*now = now.Add(idleSuspendAfter - time.Minute)
 	if result := reconcileResult(t, r); quiescer.calls != 0 || result.RequeueAfter != time.Minute {
@@ -110,6 +132,9 @@ func TestARunnerIdleForIdleSuspendAfterSuspendsItsSandbox(t *testing.T) {
 	if suspended.Status.OperatingMode != sandboxapi.OperatingModeSuspended || runningReason(t, c) != "Quiescing" || getPod(t, c) == nil {
 		t.Fatalf("mode = %s, Running reason = %s, Pod present = %v; want Suspended while the Pod waits for the seal", suspended.Status.OperatingMode, runningReason(t, c), getPod(t, c) != nil)
 	}
+	if suspended.Status.IdleSuspendAt != nil {
+		t.Fatalf("idleSuspendAt = %v after suspension began, want absent", suspended.Status.IdleSuspendAt)
+	}
 
 	quiescer.result = QuiesceResult{}
 	quiesceSessions(t, r)
@@ -123,12 +148,90 @@ func TestARunnerIdleForIdleSuspendAfterSuspendsItsSandbox(t *testing.T) {
 }
 
 func TestIdleSuspensionIsOffUnlessTheSandboxAsksForIt(t *testing.T) {
-	r, c, now := idleRunner(t, nil)
+	r, c, now := idleRunner(t, durationPtr(idleSuspendAfter))
+	reconcileOnce(t, r)
+	if getSandbox(t, c).Status.IdleSuspendAt == nil {
+		t.Fatal("an enabled idle timer did not publish its deadline")
+	}
+	setIdleSuspendAfter(t, c, nil)
 	reconcileOnce(t, r)
 	*now = now.Add(24 * time.Hour)
 	reconcileOnce(t, r)
 	if calls := r.Quiescer.(*fakeQuiescer).calls; calls != 0 || getSandbox(t, c).Status.OperatingMode != sandboxapi.OperatingModeRunning {
 		t.Fatalf("an idle Sandbox with no idleSuspendAfter was asked to quiesce %d times", calls)
+	}
+	if got := getSandbox(t, c).Status.IdleSuspendAt; got != nil {
+		t.Fatalf("idleSuspendAt = %v after suspension was disabled, want absent", got)
+	}
+}
+
+func TestIdleSuspendAtDoesNotCauseStatusWritesAsTheCountdownAdvances(t *testing.T) {
+	r, c, now := idleRunner(t, durationPtr(idleSuspendAfter))
+	statusClient := &countingStatusClient{Client: r.Client}
+	r.Client = statusClient
+	*now = now.Add(123 * time.Millisecond)
+
+	reconcileOnce(t, r)
+	first := getSandbox(t, c)
+	wantDeadline := metav1.NewTime(now.Add(idleSuspendAfter).Truncate(time.Second))
+	if first.Status.IdleSuspendAt == nil || !first.Status.IdleSuspendAt.Equal(&wantDeadline) || first.Status.IdleSuspendAt.Nanosecond() != 0 {
+		t.Fatalf("published idleSuspendAt = %v, want whole-second %v", first.Status.IdleSuspendAt, wantDeadline)
+	}
+	writesAfterPublication, resourceVersion := statusClient.statusUpdates, first.ResourceVersion
+	if writesAfterPublication == 0 {
+		t.Fatal("publishing idleSuspendAt did not write status")
+	}
+
+	*now = now.Add(time.Minute)
+	if result := reconcileResult(t, r); result.RequeueAfter != idleSuspendAfter-time.Minute {
+		t.Fatalf("countdown requeue = %v, want %v", result.RequeueAfter, idleSuspendAfter-time.Minute)
+	}
+	second := getSandbox(t, c)
+	if second.Status.IdleSuspendAt == nil || !second.Status.IdleSuspendAt.Equal(&wantDeadline) {
+		t.Fatalf("idleSuspendAt changed during countdown: got %v", second.Status.IdleSuspendAt)
+	}
+	if statusClient.statusUpdates != writesAfterPublication || second.ResourceVersion != resourceVersion {
+		t.Fatalf("countdown caused status writes or resourceVersion churn: updates %d -> %d, resourceVersion %q -> %q", writesAfterPublication, statusClient.statusUpdates, resourceVersion, second.ResourceVersion)
+	}
+}
+
+func TestIdleSuspendDeadlineRestartsWithControllerMemoryTimer(t *testing.T) {
+	r, c, now := idleRunner(t, durationPtr(idleSuspendAfter))
+	*now = now.Add(123 * time.Millisecond)
+	reconcileOnce(t, r)
+	firstDeadline := getSandbox(t, c).Status.IdleSuspendAt
+	wantFirstDeadline := metav1.NewTime(now.Add(idleSuspendAfter).Truncate(time.Second))
+	if firstDeadline == nil || !firstDeadline.Equal(&wantFirstDeadline) {
+		t.Fatalf("initial idleSuspendAt = %v, want %v", firstDeadline, wantFirstDeadline)
+	}
+
+	*now = now.Add(3 * time.Minute)
+	restarted := &Reconciler{
+		Client: r.Client, Objects: r.Objects, KubeVirt: r.KubeVirt,
+		Quiescer: r.Quiescer, Leases: r.Leases, Now: r.Now,
+	}
+	reconcileOnce(t, restarted)
+	got := getSandbox(t, c).Status.IdleSuspendAt
+	wantRestartDeadline := metav1.NewTime(now.Add(idleSuspendAfter).Truncate(time.Second))
+	if got == nil || !got.Equal(&wantRestartDeadline) {
+		t.Fatalf("idleSuspendAt after controller restart = %v, want %v", got, wantRestartDeadline)
+	}
+}
+
+func TestIdleSuspendAtClearsWhenConvergenceIsBlocked(t *testing.T) {
+	r, c, _ := idleRunner(t, durationPtr(idleSuspendAfter))
+	reconcileOnce(t, r)
+	sandbox := getSandbox(t, c)
+	if sandbox.Status.IdleSuspendAt == nil {
+		t.Fatal("the running idle Sandbox has no published deadline")
+	}
+
+	deadline := sandbox.Status.IdleSuspendAt.DeepCopy()
+	if _, err := r.updateStatus(context.Background(), sandbox, workload{pod: getPod(t, c)}, &unready{reason: "Blocked", message: "test blocker"}, deadline); err != nil {
+		t.Fatal(err)
+	}
+	if got := getSandbox(t, c).Status.IdleSuspendAt; got != nil {
+		t.Fatalf("idleSuspendAt = %v while blocked, want absent", got)
 	}
 }
 
@@ -151,9 +254,15 @@ func TestARunnerThatWorksAgainRestartsTheIdleTimer(t *testing.T) {
 	*now = now.Add(idleSuspendAfter - time.Minute)
 	publishIdleSince(t, c, nil)
 	reconcileOnce(t, r)
+	if got := getSandbox(t, c).Status.IdleSuspendAt; got != nil {
+		t.Fatalf("idleSuspendAt = %v while runner is busy, want absent", got)
+	}
 	workDone := now.Add(-time.Second)
 	publishIdleSince(t, c, &workDone)
 	reconcileOnce(t, r)
+	if got, want := getSandbox(t, c).Status.IdleSuspendAt, metav1.NewTime(now.Add(idleSuspendAfter).Truncate(time.Second)); got == nil || !got.Equal(&want) {
+		t.Fatalf("idleSuspendAt = %v after runner became idle again, want %v", got, want)
+	}
 
 	*now = now.Add(idleSuspendAfter - time.Second)
 	reconcileOnce(t, r)
@@ -181,6 +290,9 @@ func TestARunnerThatRefusesToQuiesceKeepsItsSandboxRunningAndTheTimerStartsOver(
 	if got := getSandbox(t, c); got.Status.OperatingMode != sandboxapi.OperatingModeRunning || got.Status.SuspendedBy != nil {
 		t.Fatalf("mode = %s, suspendedBy = %v after a refusal, want Running and none", got.Status.OperatingMode, got.Status.SuspendedBy)
 	}
+	if got, want := getSandbox(t, c).Status.IdleSuspendAt, metav1.NewTime(now.Add(idleSuspendAfter).Truncate(time.Second)); got == nil || !got.Equal(&want) {
+		t.Fatalf("idleSuspendAt after a busy refusal = %v, want %v", got, want)
+	}
 	reconcileOnce(t, r)
 	if quiescer.calls != 1 {
 		t.Fatal("the refused request was repeated before the timer ran again")
@@ -202,6 +314,9 @@ func TestAnUnreachableIdleRunnerIsAskedAgainAtTheQuiesceDeadline(t *testing.T) {
 	if result := reconcileResult(t, r); quiescer.calls != 1 || result.RequeueAfter != quiesceDeadline {
 		t.Fatalf("quiesce calls = %d, requeue = %v; want one failed request and a retry at the deadline", quiescer.calls, result.RequeueAfter)
 	}
+	if got, want := getSandbox(t, c).Status.IdleSuspendAt, metav1.NewTime(now.Add(quiesceDeadline).Truncate(time.Second)); got == nil || !got.Equal(&want) {
+		t.Fatalf("idleSuspendAt after an unreachable runner = %v, want %v", got, want)
+	}
 	if getSandbox(t, c).Status.OperatingMode != sandboxapi.OperatingModeRunning {
 		t.Fatal("a failed request suspended the Sandbox")
 	}
@@ -215,6 +330,9 @@ func TestAnUnreachableIdleRunnerIsAskedAgainAtTheQuiesceDeadline(t *testing.T) {
 	reconcileOnce(t, r)
 	if quiescer.calls != 2 || getSandbox(t, c).Status.OperatingMode != sandboxapi.OperatingModeSuspended {
 		t.Fatalf("quiesce calls = %d, mode = %s; want a second request that suspended the Sandbox", quiescer.calls, getSandbox(t, c).Status.OperatingMode)
+	}
+	if got := getSandbox(t, c).Status.IdleSuspendAt; got != nil {
+		t.Fatalf("idleSuspendAt = %v after the runner accepted suspension, want absent", got)
 	}
 }
 

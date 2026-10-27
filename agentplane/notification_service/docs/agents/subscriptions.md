@@ -47,7 +47,9 @@ not proof that the current head passed required checks.
 
 Inspect `agentplane notifications subscription ID` (or `subscriptions` to list) for source failures
 and expiry: the text line shows `expires TIME` and `error KIND` while a failure persists, and `--json`
-has `errorKind`, `error`, `errorSince` and `retryAt`. On inbox reads, `inbox.deliveryError` says why a
+has `errorKind`, `error`, `errorSince` and `retryAt`. For a GitHub pull request, `github.subject.retryAt`
+shows the next mergeability refresh while the result is pending, without a failure or an inbox notice.
+On inbox reads, `inbox.deliveryError` says why a
 notice could not be delivered and `notice` how far the latest one got. If creation or delivery fails,
 use a bounded status check or explain the limitation; do not claim monitoring is active.
 A notice to a suspended Sandbox waits until the Sandbox runs again unless the Sandbox has wake on message turned on.

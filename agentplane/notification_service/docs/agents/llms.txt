@@ -1,6 +1,6 @@
 # Agentplane notifications
 
-> Follow Actions and GitHub activity, and exchange messages with other agents, through durable Session inboxes. Notices arrive as user messages and start a new turn when your harness is idle.
+> Follow Actions and GitHub activity, including current pull-request conflict snapshots for joining subscribers and later mergeability transitions, and exchange messages with other agents through durable Session inboxes. Notices arrive as user messages and start a new turn when your harness is idle.
 
 Use `agentplane notifications inbox read INBOX_ID --after CURSOR --limit 128 --json` to read one
 bounded page and `agentplane notifications inbox ack INBOX_ID --through CURSOR` to acknowledge the

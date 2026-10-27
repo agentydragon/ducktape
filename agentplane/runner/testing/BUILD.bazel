@@ -146,3 +146,20 @@ py_library(
         "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
     ],
 )
+
+py_library(
+    name = "executor_companion",
+    srcs = ["executor_companion.py"],
+    data = [
+        "//agentplane/runner:main_bin",  # keep: production Runner companion executable
+        "@agentplane_codex_cli_linux_x64//:files",  # keep: pinned exec-server executable
+    ],
+    deps = [
+        ":launches",
+        "//third_party/containers:debian_slim",
+        "//util:oci",
+        "//util/bazel:runfiles",
+        "//util/testing:container_logs",
+        "@pypi//pytest",
+    ],
+)

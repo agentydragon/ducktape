@@ -169,6 +169,10 @@ class SandboxView(BaseModel):
         description="Why the Sandbox is suspended: its runner was idle for `idle_suspend_after_seconds`, "
         "or a requester suspended it. Null while it runs and until the controller reports.",
     )
+    idle_suspend_at: datetime | None = Field(
+        default=None,
+        description="Controller-clock deadline for the next idle suspension attempt; null when no timer runs.",
+    )
     phase: SandboxPhase = Field(
         description="Unspecified means the controller has not reported an effective mode yet. "
         "Quiescing and Tearing down mean deletion was asked for: it seals and waits for its ingress, "

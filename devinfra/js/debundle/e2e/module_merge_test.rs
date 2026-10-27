@@ -6,6 +6,227 @@ use debundle_e2e_support::{GraphFixture, write_text_file};
 use serde_yaml::Value;
 
 #[test]
+fn merge_batch_preserves_exact_filenames_claims_and_runtime() {
+    let fixture = GraphFixture::new(
+        "const a = 1; const b = 2; console.log(a + b);",
+        &[
+            (
+                "old-a.yaml",
+                "comment: source overview\nnote: source debt\nsource_matches: [{match: 'const a = 1;', bindings: [{local: a, name: Alpha}]}]\nannotations: {Alpha: {note: binding debt}}",
+            ),
+            (
+                "old-b.yaml",
+                "members: [{name: Beta, selector: {binding: {name: b}}}]\nanonymous_statements: [{match: 'console.log(a + b);', note: startup output}]",
+            ),
+            (
+                "models/Alpha.yaml",
+                "comment: target overview\nnote: target debt\nmembers: []",
+            ),
+        ],
+    );
+    let batch = fixture.modules.join("merge.json");
+    write_text_file(
+        &batch,
+        r#"[
+          {"target":"models/Alpha.yaml","sources":["old-a.yaml"]},
+          {"target":"models/Beta.yaml","sources":["old-b.yaml"]}
+        ]"#,
+    );
+    let args = ["modules", "merge", "--batch", batch.to_str().unwrap()];
+    let paths = ["old-a.yaml", "old-b.yaml", "models/Alpha.yaml"];
+    let before: Vec<_> = paths
+        .iter()
+        .map(|path| fs::read(fixture.modules.join(path)).unwrap())
+        .collect();
+    let mut preview = args.to_vec();
+    preview.push("--dry-run");
+    assert_eq!(fixture.json(&preview)["gate"], "passed");
+    for (path, bytes) in paths.iter().zip(before) {
+        assert_eq!(fs::read(fixture.modules.join(path)).unwrap(), bytes);
+    }
+    assert!(!fixture.modules.join("models/Beta.yaml").exists());
+    let outcome = fixture.json(&args);
+    assert_eq!(outcome["files_written"].as_array().unwrap().len(), 2);
+    assert_eq!(outcome["files_deleted"].as_array().unwrap().len(), 2);
+    assert_eq!(outcome["targets"].as_array().unwrap().len(), 2);
+    for path in [
+        "old-a.yaml",
+        "old-b.yaml",
+        "models/alpha.yaml",
+        "models/beta.yaml",
+    ] {
+        assert!(!fixture.modules.join(path).exists(), "{path}");
+    }
+    let alpha: Value =
+        serde_yaml::from_slice(&fs::read(fixture.modules.join("models/Alpha.yaml")).unwrap())
+            .unwrap();
+    assert_eq!(alpha["source_matches"][0]["bindings"][0]["name"], "Alpha");
+    assert_eq!(alpha["annotations"]["Alpha"]["note"], "binding debt");
+    assert_eq!(
+        alpha["comment"],
+        "target overview\n--- from old-a.yaml:\nsource overview"
+    );
+    assert_eq!(
+        alpha["note"],
+        "target debt\n--- from old-a.yaml:\nsource debt\nmerged from: old-a.yaml"
+    );
+    let beta: Value =
+        serde_yaml::from_slice(&fs::read(fixture.modules.join("models/Beta.yaml")).unwrap())
+            .unwrap();
+    assert_eq!(beta["members"][0]["name"], "Beta");
+    assert_eq!(beta["anonymous_statements"][0]["note"], "startup output");
+    fixture.assert_runs("3\n");
+}
+
+#[test]
+fn merge_batch_gate_failure_leaves_every_target_and_source_unchanged() {
+    let fixture = GraphFixture::dependency_chain();
+    let batch = fixture.modules.join("merge.json");
+    write_text_file(
+        &batch,
+        r#"[
+      {"target":"models/Middle.yaml","sources":["c.yaml"]},
+      {"target":"a.yaml","sources":["b.yaml"]}
+    ]"#,
+    );
+    fixture.assert_rejected_unchanged(
+        &["modules", "merge", "--batch", batch.to_str().unwrap()],
+        &["unrealizable"],
+    );
+    fixture.assert_runs("3\n");
+}
+
+#[test]
+fn merge_batch_rejects_ambiguous_plans_without_writes() {
+    let fixture = GraphFixture::acyclic_pair();
+    let batch = fixture.modules.join("merge.json");
+    let absolute_source = fixture.modules.join("a.yaml");
+    let alias_batch = serde_json::json!([
+        {"target":"models/Alpha.yaml","sources":["a"]},
+        {"target":"models/Beta.yaml","sources":[absolute_source]},
+    ])
+    .to_string();
+    for (plan, diagnostic) in [
+        ("[]", "merge batch is empty"),
+        (r#"[{"target":"New.yaml","sources":[]}]"#, "has no sources"),
+        (
+            r#"[{"target":"models/State.json","sources":["a"]}]"#,
+            "module path must end in .yaml",
+        ),
+        (
+            r#"[{"target":"New.yaml","sources":["merge.json"]}]"#,
+            "module path must end in .yaml",
+        ),
+        (
+            r#"[{"target":"New.yaml","sources":["a"]},{"target":"New.yaml","sources":["b"]}]"#,
+            "duplicate merge batch target",
+        ),
+        (
+            r#"[{"target":"New.yaml","sources":["a","a.yaml"]}]"#,
+            "reused merge batch source",
+        ),
+        (alias_batch.as_str(), "reused merge batch source"),
+        (
+            r#"[{"target":"a.yaml","sources":["a"]}]"#,
+            "source-target overlap",
+        ),
+        (
+            r#"[{"target":"a.yaml","sources":["b"]},{"target":"New.yaml","sources":["a"]}]"#,
+            "source-target overlap",
+        ),
+        (
+            r#"[{"target":"New.yaml","sources":["a"]},{"target":"new.yaml","sources":["b"]}]"#,
+            "logical destination collision",
+        ),
+        (
+            r#"[{"target":"B.yaml","sources":["a"]}]"#,
+            "logical destination collision",
+        ),
+        (
+            r#"[{"target":"B.yaml","sources":["a"]},{"target":"New.yaml","sources":["b"]}]"#,
+            "logical source-target overlap",
+        ),
+        (
+            r#"[{"target":"New.yaml","sources":["a"],"extra":true}]"#,
+            "unknown field",
+        ),
+    ] {
+        eprintln!("merge batch under test: {plan}");
+        write_text_file(&batch, plan);
+        fixture.assert_rejected_unchanged(
+            &["modules", "merge", "--batch", batch.to_str().unwrap()],
+            &[diagnostic],
+        );
+    }
+    fixture.assert_runs("2\n");
+}
+
+#[test]
+fn merge_batch_allows_case_only_relocation() {
+    let fixture = GraphFixture::acyclic_pair();
+    let batch = fixture.modules.join("merge.json");
+    write_text_file(
+        &batch,
+        r#"[
+      {"target":"A.yaml","sources":["a.yaml"]},
+      {"target":"models/Beta.yaml","sources":["b.yaml"]}
+    ]"#,
+    );
+    fixture.assert_success(&["modules", "merge", "--batch", batch.to_str().unwrap()]);
+    assert!(fixture.modules.join("A.yaml").exists());
+    assert!(!fixture.modules.join("a.yaml").exists());
+    fixture.assert_runs("2\n");
+}
+
+#[test]
+fn merge_batch_rejects_untouched_symlink_aliases_without_writes() {
+    for (alias, target) in [("alias.yaml", "target.yaml"), ("alias-dir", "nested")] {
+        let fixture = GraphFixture::acyclic_pair();
+        write_text_file(&fixture.modules.join("target.yaml"), "members: []");
+        write_text_file(&fixture.modules.join("nested/empty.yaml"), "members: []");
+        std::os::unix::fs::symlink(target, fixture.modules.join(alias)).unwrap();
+        let batch = fixture.modules.join("merge.json");
+        let destination = if alias == "alias.yaml" {
+            "alias.yaml"
+        } else {
+            "New.yaml"
+        };
+        write_text_file(
+            &batch,
+            &serde_json::json!([
+                {"target":destination,"sources":["a"]}
+            ])
+            .to_string(),
+        );
+        fixture.assert_rejected_unchanged(
+            &["modules", "merge", "--batch", batch.to_str().unwrap()],
+            &["does not support symlink entries"],
+        );
+        fixture.assert_runs("2\n");
+    }
+}
+
+#[test]
+fn merge_batch_and_single_target_arguments_are_exclusive() {
+    let fixture = GraphFixture::acyclic_pair();
+    let batch = fixture.modules.join("merge.json");
+    write_text_file(&batch, r#"[{"target":"New.yaml","sources":["a"]}]"#);
+    for arguments in [
+        vec!["--batch", batch.to_str().unwrap(), "--target", "New", "a"],
+        vec!["--batch", batch.to_str().unwrap(), "a"],
+        vec!["--batch", batch.to_str().unwrap(), "--no-verify"],
+        vec!["--target", "New"],
+        vec!["a"],
+        vec![],
+    ] {
+        let mut args = vec!["modules", "merge"];
+        args.extend(arguments);
+        fixture.assert_rejected_unchanged(&args, &["error:"]);
+    }
+    fixture.assert_runs("2\n");
+}
+
+#[test]
 fn merge_preserves_claims_metadata_and_runtime_with_or_without_target_comments() {
     for metadata in ["", "comment: target overview\nnote: existing debt\n"] {
         let target = format!(
@@ -17,7 +238,7 @@ fn merge_preserves_claims_metadata_and_runtime_with_or_without_target_comments()
                 ("ui/target.yaml", &target),
                 (
                     "ui/src1.yaml",
-                    "comment: source overview\nmembers: [{selector: {binding: {name: b}}}]\nanonymous_statements: [{match: 'console.log(\"second\");'}]",
+                    "comment: source overview\nnote: source debt\nmembers: [{selector: {binding: {name: b}}}]\nanonymous_statements: [{match: 'console.log(\"second\");'}]",
                 ),
                 (
                     "ui/src2.yaml",
@@ -100,6 +321,7 @@ fn merge_preserves_claims_metadata_and_runtime_with_or_without_target_comments()
         // Provenance names every merged source, even the empty one, after any
         // existing note.
         let note = doc["note"].as_str().unwrap();
+        assert_eq!(note.matches("source debt").count(), 1);
         for source in [
             "ui/src1.yaml",
             "ui/src2.yaml",

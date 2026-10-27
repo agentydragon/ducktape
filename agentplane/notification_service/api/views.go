@@ -88,6 +88,7 @@ var eventNames = []struct {
 	{notificationspb.GitHubEventName_GITHUB_EVENT_NAME_WORKFLOW_RUN, store.EventWorkflowRun},
 	{notificationspb.GitHubEventName_GITHUB_EVENT_NAME_WORKFLOW_JOB, store.EventWorkflowJob},
 	{notificationspb.GitHubEventName_GITHUB_EVENT_NAME_ISSUES, store.EventIssues},
+	{notificationspb.GitHubEventName_GITHUB_EVENT_NAME_MERGEABILITY_CHANGED, store.EventMergeabilityChanged},
 }
 
 func eventNameView(name store.EventName) (notificationspb.GitHubEventName, error) {
@@ -270,6 +271,22 @@ func eventIdentityView(event store.EventIdentity) (*notificationspb.EventIdentit
 			AppId: event.AppID, DeliveryId: event.DeliveryID.String(), RepositoryId: event.RepositoryID,
 			Event: name, Action: event.Action,
 		}}}, nil
+	case store.GitHubMergeabilityEvent:
+		return &notificationspb.EventIdentity{Provider: &notificationspb.EventIdentity_GithubMergeability{
+			GithubMergeability: &notificationspb.GitHubMergeabilityEvent{
+				AppId: event.AppID, RepositoryId: event.RepositoryID,
+				PullRequestNumber: event.PullRequestNumber,
+				Observation:       &notificationspb.GitHubMergeabilityEvent_Sequence{Sequence: event.Sequence},
+			},
+		}}, nil
+	case store.GitHubMergeabilitySnapshotEvent:
+		return &notificationspb.EventIdentity{Provider: &notificationspb.EventIdentity_GithubMergeability{
+			GithubMergeability: &notificationspb.GitHubMergeabilityEvent{
+				AppId: event.AppID, RepositoryId: event.RepositoryID,
+				PullRequestNumber: event.PullRequestNumber,
+				Observation:       &notificationspb.GitHubMergeabilityEvent_SnapshotVersion{SnapshotVersion: event.Version},
+			},
+		}}, nil
 	case store.MessageEvent:
 		return &notificationspb.EventIdentity{Provider: &notificationspb.EventIdentity_Message{Message: &notificationspb.MessageEvent{
 			MessageId: event.MessageID.String(),

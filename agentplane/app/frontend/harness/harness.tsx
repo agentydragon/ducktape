@@ -964,7 +964,7 @@ function withDormantSession(thread: ThreadView): ThreadView {
   return thread.id === RUNNING_THREAD
     ? {
         ...thread,
-        name: "Dormant harness session",
+        name: "Dormant harness thread",
         feed_status: "active",
         harness_state: "HARNESS_STATE_STOPPED",
         active_turn_id: null,
@@ -977,6 +977,24 @@ function withFailedTurn(thread: ThreadView): ThreadView {
   return thread.id === IDLE_THREAD
     ? { ...thread, name: "Failed-turn thread", last_turn_status: "TURN_STATUS_FAILED" }
     : thread;
+}
+
+function autosuspendCountdown(): void {
+  const sandbox = SANDBOXES.find((candidate) => candidate.name === "ready-sandbox");
+  if (!sandbox) throw new Error("Missing ready Sandbox fixture");
+  sandbox.idle_suspend_after_seconds = 900;
+  sandbox.idle_suspend_at = ago(-12 * 60_000);
+  threadEntityRows = interleavedRows;
+  mapThread = (thread) =>
+    thread.id === IDLE_THREAD
+      ? {
+          ...thread,
+          name: "Idle thread awaiting autosuspend",
+          active_turn_id: null,
+          last_model_activity_at: ago(13 * 60_000 + 25_000),
+          idle_since: ago(13 * 60_000 + 5_000),
+        }
+      : thread;
 }
 
 let mapThread = (thread: ThreadView): ThreadView => thread;
@@ -3248,7 +3266,7 @@ function projectQueuedSession(): void {
   const projected: ThreadView = {
     ...source,
     id: sessionId,
-    name: "Queued opening session",
+    name: "Queued opening thread",
     created_at: ago(0),
     last_cursor: 0,
     last_event_at: ago(0),
@@ -3297,6 +3315,7 @@ const visualHarness = {
   mountOperationPresentation(): void {
     mount(<OperationPresentationVisual />);
   },
+  autosuspendCountdown,
   addProvisioningSandbox,
   addSuspendedSandboxes,
   queueOpenResponse(): void {

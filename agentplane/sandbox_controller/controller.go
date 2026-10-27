@@ -137,7 +137,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (ctrl
 		if err != nil || blocked == nil {
 			return ctrl.Result{}, err
 		}
-		return r.updateStatus(ctx, &sandbox, w, blocked)
+		return r.updateStatus(ctx, &sandbox, w, blocked, nil)
 	}
 	if controllerutil.AddFinalizer(&sandbox, StateVolumeFinalizer) {
 		if err := r.Update(ctx, &sandbox); err != nil {
@@ -178,7 +178,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (ctrl
 			return ctrl.Result{}, err
 		}
 	}
-	result, err := r.updateStatus(ctx, &sandbox, w, blocked)
+	result, err := r.updateStatus(ctx, &sandbox, w, blocked, idle.suspendAt)
 	result.RequeueAfter = earliest(result.RequeueAfter, idle.recheck)
 	return result, err
 }
@@ -593,8 +593,12 @@ func withSandboxLabel(labels map[string]string, sandbox *sandboxapi.Sandbox) map
 	return labels
 }
 
-func (r *Reconciler) updateStatus(ctx context.Context, sandbox *sandboxapi.Sandbox, w workload, blocked *unready) (ctrl.Result, error) {
+func (r *Reconciler) updateStatus(ctx context.Context, sandbox *sandboxapi.Sandbox, w workload, blocked *unready, idleSuspendAt *metav1.Time) (ctrl.Result, error) {
 	status := sandbox.Status.DeepCopy()
+	status.IdleSuspendAt = nil
+	if blocked == nil && idleSuspendAt != nil {
+		status.IdleSuspendAt = idleSuspendAt.DeepCopy()
+	}
 	status.Incarnation = nil
 	status.OperatingMode = sandboxOperatingMode(sandbox)
 	status.SuspendedBy, status.SuspendedAtWakeGeneration = sandboxSuspension(sandbox)

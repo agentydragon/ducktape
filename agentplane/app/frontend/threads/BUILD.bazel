@@ -226,6 +226,16 @@ ts_library(
 )
 
 ts_library(
+    name = "sandbox_autosuspend",
+    srcs = ["sandbox_autosuspend.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:sandbox_status",
+    ],
+)
+
+ts_library(
     name = "conversation",
     srcs = ["conversation.tsx"],
     tsconfig = TSCONFIG,
@@ -235,6 +245,7 @@ ts_library(
         ":history_rows",
         ":live",
         ":retained_disclosures",
+        ":sandbox_autosuspend",
         ":thread_cards",
         ":thread_commands",
         ":thread_status",
@@ -686,6 +697,38 @@ ts_library(
         "//agentplane/app/frontend:mark_glyph",
         "//agentplane/app/frontend:notification_types",
         "//agentplane/app/frontend:status_mark",
+    ],
+)
+
+ts_library(
+    name = "new_thread_form",
+    srcs = ["new_thread_form.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:disclosure",
+        "//agentplane/proto:runner_pb",
+    ],
+)
+
+ts_library(
+    name = "sandbox_threads",
+    srcs = ["sandbox_threads.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":thread_status",
+        ":thread_status_indicator",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:icons",
+        "//agentplane/app/frontend:time_ago",
+        "//agentplane/app/frontend:trace_search",
     ],
 )
 

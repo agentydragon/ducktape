@@ -197,6 +197,7 @@ py_test(
     data = [
         "migrations/0001_compaction.sql",
         "migrations/0002_process_controls.sql",
+        "migrations/0003_process_output.sql",
     ],
     requires_docker = True,
     deps = [
@@ -253,6 +254,32 @@ py_library(
     srcs = ["responses.py"],
     deps = [
         ":code_mode",
+        ":store",
         "@pypi//aiohttp",
+    ],
+)
+
+py_test(
+    name = "test_correctness",
+    srcs = ["test_correctness.py"],
+    data = ["@agentplane_codex_cli_linux_x64//:files"],
+    requires_docker = True,
+    deps = [
+        ":code_mode",
+        ":conftest",
+        ":executor",
+        ":sampler",
+        ":store",
+        ":testing",
+        "//:conftest",
+        "//agentplane/native/codex/testing:responses",
+        "//agentplane/native/codex/testing:responses_sse",
+        "//agentplane/native/testing:model_endpoint",
+        "//util/testing:sqlalchemy_engines",
+        "//util/testing:undeclared_outputs",
+        "@pypi//aiohttp",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
     ],
 )

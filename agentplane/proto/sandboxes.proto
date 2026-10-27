@@ -89,6 +89,8 @@ message Sandbox {
   google.protobuf.Duration idle_suspend_after = 23;
   // Why the Sandbox is suspended, `Idle` or `Requested`; absent while it runs.
   optional string suspended_by = 24;
+  // Controller-clock deadline for the next idle suspension attempt; absent when no timer runs.
+  google.protobuf.Timestamp idle_suspend_at = 25;
 }
 
 // Where the Sandbox is in its lifecycle, derived from what the Sandbox Controller records: whether

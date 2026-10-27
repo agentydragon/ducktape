@@ -26,6 +26,7 @@ import { installThreadFavicon } from "./thread_favicon";
 import { snapshotFresh, threadStatusFromSnapshot } from "./thread_status";
 import { isoTime } from "../format_time";
 import { TimeAgo } from "../time_ago";
+import { autosuspendHint } from "./sandbox_autosuspend";
 import { NotificationStatus } from "../notification_status";
 import { TopbarActions } from "../topbar";
 import { langfuseSandboxTraceUrl } from "../langfuse_search";
@@ -43,6 +44,23 @@ function modelActivityAge(at: string | null | undefined, now: number): string {
   return intlFormatDistance(new Date(time), new Date(now), { locale: "en", numeric: "always", style: "narrow" });
 }
 
+function canCollapseIdleHint(
+  activityAt: string | null | undefined,
+  idleSince: string | null | undefined,
+  activityAge: string,
+  now: number
+): boolean {
+  if (!activityAt || !idleSince || activityAge === "unknown") return false;
+  const activityTime = Date.parse(activityAt);
+  const idleTime = Date.parse(idleSince);
+  return (
+    Number.isFinite(activityTime) &&
+    Number.isFinite(idleTime) &&
+    Math.abs(activityTime - idleTime) < 60_000 &&
+    modelActivityAge(idleSince, now) === activityAge
+  );
+}
+
 function ModelActivityHint({
   at,
   age,
@@ -54,13 +72,14 @@ function ModelActivityHint({
   idleSince: string | null | undefined;
   className: string;
 }): JSX.Element {
+  const collapsedIdle = canCollapseIdleHint(at, idleSince, age, Date.now());
   return (
     <Text
       className={className}
       size="xs"
       c="dimmed"
       ta="right"
-      aria-label={`Last inferred model activity: ${age}`}
+      aria-label={`Last inferred model activity: ${age}${collapsedIdle ? " · idle" : ""}`}
       title={
         at && age !== "unknown"
           ? `${isoTime(at)} · Inferred from model-originated Thread events, not a measured provider request or cache hit`
@@ -68,12 +87,44 @@ function ModelActivityHint({
       }
     >
       Model activity: {age}
-      {idleSince && (
-        <>
-          {" · Idle since "}
-          <TimeAgo value={idleSince} />
-        </>
-      )}
+      {idleSince &&
+        (collapsedIdle ? (
+          <time
+            dateTime={isoTime(idleSince)}
+            title={isoTime(idleSince)}
+            aria-label={`Idle since ${isoTime(idleSince)}`}
+          >
+            {" · Idle"}
+          </time>
+        ) : (
+          <>
+            {" · Idle since "}
+            <TimeAgo value={idleSince} />
+          </>
+        ))}
+    </Text>
+  );
+}
+
+function AutosuspendHint({
+  hint,
+  className,
+}: {
+  hint: ReturnType<typeof autosuspendHint>;
+  className: string;
+}): JSX.Element | null {
+  if (!hint) return null;
+  const title = "Autosuspend waits until all sessions on this Sandbox are idle; new work resets the timer.";
+  return (
+    <Text
+      className={className}
+      size="xs"
+      c="dimmed"
+      ta="right"
+      aria-label={hint.text}
+      title={hint.deadline ? `${title} Next suspension attempt: ${isoTime(hint.deadline)}` : title}
+    >
+      {hint.text}
     </Text>
   );
 }
@@ -127,15 +178,15 @@ function ConversationBody({
   const controls = view && "controls" in view.state ? view.state.controls : null;
   const operational = view && "controls" in view.state ? view.state.operational : null;
   const syncWritable = sync.window?.caughtUp === true && sync.window.error === null;
-  const sessionCanAcceptInput =
+  const threadCanAcceptInput =
     syncWritable &&
     !thread.archived &&
     !["SETUP_STATE_FAILED", "SETUP_STATE_INTERRUPTED"].includes(thread.setup_state ?? "") &&
     operational?.status !== "failed";
   const running =
-    available && sessionCanAcceptInput && operational?.status === "active" && controls?.harness_state === "running";
+    available && threadCanAcceptInput && operational?.status === "active" && controls?.harness_state === "running";
   // Dispatcher admission does not require a running native harness.
-  const canSend = sessionCanAcceptInput && (available || canQueueCommands);
+  const canSend = threadCanAcceptInput && (available || canQueueCommands);
   const activeTurn = controls?.active_turn_id ?? null;
   const threadsLive = useRequiredThreadsLive();
   const status = threadStatusFromSnapshot(
@@ -143,6 +194,8 @@ function ConversationBody({
     threadsLive.snapshot?.sandboxes.find((candidate) => candidate.name === thread.sandbox),
     snapshotFresh(threadsLive)
   );
+  const currentSandbox = threadsLive.snapshot?.sandboxes.find((candidate) => candidate.name === thread.sandbox);
+  const sandboxAutosuspend = autosuspendHint(currentSandbox, snapshotFresh(threadsLive), Math.max(clock, Date.now()));
   useEffect(
     () => onStatusChange({ kind: status.kind, tabLabel: status.tabLabel }),
     [onStatusChange, status.kind, status.tabLabel]
@@ -266,6 +319,7 @@ function ConversationBody({
           onResumeSandbox={onResumeSandbox}
           onSubmit={commands.submitInput}
           onInterrupt={commands.interruptTurn}
+          status={<AutosuspendHint hint={sandboxAutosuspend} className="agentplane-composer-autosuspend-mobile" />}
         >
           <Group className="agentplane-composer-settings" gap="xs" wrap="nowrap">
             <Select
@@ -330,7 +384,7 @@ function ConversationBody({
                     target="_blank"
                     rel="noreferrer"
                   >
-                    Find Session traces in Grafana
+                    Find Thread traces in Grafana
                   </Menu.Item>
                 )}
                 {langfuseSearch && sandbox && (
@@ -350,12 +404,15 @@ function ConversationBody({
               </Menu.Dropdown>
             </Menu>
           </TopbarActions>
-          <ModelActivityHint
-            at={thread.last_model_activity_at}
-            age={activityAge}
-            idleSince={activeTurn ? null : thread.idle_since}
-            className="agentplane-composer-model-activity"
-          />
+          <Stack className="agentplane-composer-activity" align="flex-end" gap={0}>
+            <AutosuspendHint hint={sandboxAutosuspend} className="agentplane-composer-autosuspend" />
+            <ModelActivityHint
+              at={thread.last_model_activity_at}
+              age={activityAge}
+              idleSince={activeTurn ? null : thread.idle_since}
+              className="agentplane-composer-model-activity"
+            />
+          </Stack>
         </ThreadComposer>
       </Stack>
     </RetainedDisclosureProvider>

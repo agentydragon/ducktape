@@ -268,7 +268,8 @@ func (g *GitHubState) Acquire(ctx context.Context, key GitHubRefreshKey) (*GitHu
 				return err
 			}
 		} else {
-			fresh = !row.errorMessage.Valid && row.lastSuccessAt.Valid && row.lastSuccessAt.Time.Add(g.freshness).After(at)
+			fresh = !row.errorMessage.Valid && row.lastSuccessAt.Valid && row.lastSuccessAt.Time.Add(g.freshness).After(at) &&
+				(!row.nextAttempt.Valid || row.nextAttempt.Time.After(at))
 		}
 		if fresh {
 			return nil
@@ -334,6 +335,8 @@ func leased(ctx context.Context, tx *sql.Tx, lease GitHubRefreshLease) (refreshR
 
 // GitHubSuccess is what a refresh learned.
 type GitHubSuccess struct {
+	// PullRequest is the mergeability observation made in the same read as its head revision.
+	PullRequest *GitHubPullRequestObservation
 	// Fences are the grants the result was read under. If any no longer holds, nothing is recorded.
 	Fences []GitHubAccessFence
 	// Revisions are the commits a subject was seen at, for a subject refresh.
@@ -372,9 +375,14 @@ func (g *GitHubState) Succeed(ctx context.Context, lease GitHubRefreshLease, suc
 		at := now()
 		const settled = `last_success_at = $4, error_kind = NULL, error = NULL, error_since = NULL,
 			error_observed_at = NULL, claim = NULL, claim_until = NULL, next_attempt = NULL`
-		if _, ok := lease.Key.(GitHubAccessKey); !ok {
-			_, err := tx.ExecContext(ctx, "UPDATE "+table+" SET "+settled+" WHERE "+where, args[0], args[1], args[2], at)
-			return err
+		if subject, ok := lease.Key.(GitHubSubjectKey); ok {
+			if _, err := tx.ExecContext(ctx, "UPDATE "+table+" SET "+settled+" WHERE "+where, args[0], args[1], args[2], at); err != nil {
+				return err
+			}
+			if success.PullRequest != nil {
+				return g.store.observePullRequest(ctx, tx, subject, success, at)
+			}
+			return nil
 		}
 		if lease.InstallationGeneration == nil {
 			return errors.New("an access lease holds the installation generation it was claimed under")

@@ -50,7 +50,12 @@ async def controlled_advance(
                     _, pending = await asyncio.wait(runtime.delegates, timeout=5)
                     delegates_stopped = not pending
                 state = await store.execution_state(owner)
-                complete = not state["cells"] and not state["processes"] and delegates_stopped and cleanup_error is None
+                complete = (
+                    not state["cells"]
+                    and not any(process["status"] != "exited_unread" for process in state["processes"])
+                    and delegates_stopped
+                    and cleanup_error is None
+                )
                 result: dict[str, Any] = {
                     "status": "interrupted" if complete else "effects_unknown",
                     "provider_cancelled": row.pending is not None and row.pending["kind"] in {"sampling", "compaction"},

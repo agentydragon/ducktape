@@ -110,6 +110,10 @@ function inventorySandbox(operating_mode: "Running" | "Suspended" = "Running", w
           },
   };
 }
+
+function autosuspendSandbox(idle_suspend_at: string | null): SandboxView {
+  return { ...inventorySandbox(), idle_suspend_after_seconds: 900, idle_suspend_at };
+}
 let sandboxes: Inventory = [];
 let inventoryFresh = true;
 let inventoryDrops = false;
@@ -248,7 +252,7 @@ it("offers a Grafana trace link from the thread menu when configured", async () 
   if (!menuButton) throw new Error("Missing thread actions menu");
   await act(async () => menuButton.click());
   const link = [...document.querySelectorAll('[role="menuitem"]')].find((node) =>
-    node.textContent?.includes("Find Session traces in Grafana")
+    node.textContent?.includes("Find Thread traces in Grafana")
   );
   expect(link).toBeInstanceOf(HTMLAnchorElement);
   expect(new URL((link as HTMLAnchorElement).href).searchParams.get("panes")).toContain("span.session.id");
@@ -292,7 +296,7 @@ it("hides the Grafana trace link from the thread menu when unconfigured", async 
   await act(async () => menuButton.click());
   expect(
     [...document.querySelectorAll('[role="menuitem"]')].some((node) =>
-      node.textContent?.includes("Find Session traces in Grafana")
+      node.textContent?.includes("Find Thread traces in Grafana")
     )
   ).toBe(false);
 });
@@ -305,7 +309,7 @@ it("hides only the Langfuse link when Langfuse search is unconfigured", async ()
   await act(async () => menuButton.click());
   const menuItems = [...document.querySelectorAll('[role="menuitem"]')];
   expect(menuItems.some((node) => node.textContent?.includes("Sandbox LLM traces in Langfuse"))).toBe(false);
-  expect(menuItems.some((node) => node.textContent?.includes("Find Session traces in Grafana"))).toBe(true);
+  expect(menuItems.some((node) => node.textContent?.includes("Find Thread traces in Grafana"))).toBe(true);
 });
 
 function TestLiveProviders({ children }: { children: JSX.Element }): JSX.Element {
@@ -441,14 +445,12 @@ it.each<KeyboardEventInit>([{ ctrlKey: true }, { metaKey: true }, { shiftKey: tr
   }
 );
 
-it("shows inferred model activity in the composer controls, not in a separate row", async () => {
+it("shows inferred model activity with its provider-measurement explanation", async () => {
   vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-01-01T12:10:00Z"));
   sharedThread = { last_model_activity_at: "2026-01-01T12:02:00Z", active_turn_id: "running" };
   const container = await render();
   const activity = container.querySelector<HTMLElement>(".agentplane-composer-model-activity");
   expect(activity?.textContent).toContain("Model activity: 8m ago");
-  expect(activity?.parentElement?.classList.contains("agentplane-composer-controls")).toBe(true);
-  expect(activity?.nextElementSibling?.classList.contains("agentplane-composer-send")).toBe(true);
   expect(container.querySelector(".agentplane-thread-tail-model-activity")?.textContent).toContain("8m ago");
   expect(activity?.getAttribute("title")).toContain("not a measured provider request or cache hit");
   expect(container.querySelector(".agentplane-sidebar-row-activity")).toBeNull();
@@ -461,6 +463,71 @@ it("shows how long the harness has been idle, with the full time on hover", asyn
   const idle = container.querySelector(".agentplane-composer-model-activity time");
   expect(idle?.textContent).toBe("6 minutes ago");
   expect(idle?.getAttribute("title")).toBe("2026-01-01T12:04:00.000Z");
+});
+
+it("collapses model activity and idle timestamps that are close and display the same age", async () => {
+  vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-01-01T12:10:00Z"));
+  sharedThread = {
+    last_model_activity_at: "2026-01-01T11:56:35Z",
+    idle_since: "2026-01-01T11:56:55Z",
+  };
+  const activity = (await render()).querySelector<HTMLElement>(".agentplane-composer-model-activity");
+  expect(activity?.textContent).toBe("Model activity: 13m ago · Idle");
+  expect(activity?.querySelector("time")?.getAttribute("title")).toBe("2026-01-01T11:56:55.000Z");
+});
+
+it("keeps distinct model activity and idle ages visible", async () => {
+  vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-01-01T12:10:00Z"));
+  sharedThread = {
+    last_model_activity_at: "2026-01-01T11:57:00Z",
+    idle_since: "2026-01-01T11:54:00Z",
+  };
+  const activity = (await render()).querySelector<HTMLElement>(".agentplane-composer-model-activity");
+  expect(activity?.textContent).toContain("Model activity: 13m ago · Idle since");
+  expect(activity?.querySelector("time")?.getAttribute("title")).toBe("2026-01-01T11:54:00.000Z");
+});
+
+it("counts down from the controller deadline on the UI clock without another stream", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(Date.parse("2026-01-01T12:00:00Z"));
+  sandboxes = [autosuspendSandbox("2026-01-01T12:12:00Z")];
+  const container = await render();
+  const hint = container.querySelector(".agentplane-composer-autosuspend");
+  expect(hint?.textContent).toBe("Sandbox autosuspends in ~12m");
+  const streams = eventSourceUrls.length;
+
+  await act(async () => vi.advanceTimersByTimeAsync(60_000));
+
+  expect(hint?.textContent).toBe("Sandbox autosuspends in ~11m");
+  expect(eventSourceUrls).toHaveLength(streams);
+  expect(hint?.getAttribute("title")).toContain("Next suspension attempt: 2026-01-01T12:12:00.000Z");
+});
+
+it("reports the autosuspend policy while no idle deadline is active", async () => {
+  sandboxes = [autosuspendSandbox(null)];
+  const container = await render();
+  expect(container.querySelector(".agentplane-composer-autosuspend")?.textContent).toBe("Autosuspend after 15m idle");
+});
+
+it("reports stale timing as unavailable and does not call a missing loading sandbox disabled", async () => {
+  sandboxes = [autosuspendSandbox("2026-01-01T12:12:00Z")];
+  inventoryFresh = false;
+  const stale = await render();
+  expect(stale.querySelector(".agentplane-composer-autosuspend")?.textContent).toBe("Autosuspend timing unavailable");
+
+  sandboxes = null;
+  const loading = await render();
+  expect(loading.querySelector(".agentplane-composer-autosuspend")).toBeNull();
+});
+
+it.each([
+  ["a past deadline", "2026-01-01T11:59:00Z", "Autosuspend pending"],
+  ["an invalid deadline", "not-a-datetime", "Autosuspend timing unavailable"],
+])("handles %s without showing a negative countdown", async (_case, deadline, expected) => {
+  vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-01-01T12:00:00Z"));
+  sandboxes = [autosuspendSandbox(deadline)];
+  const container = await render();
+  expect(container.querySelector(".agentplane-composer-autosuspend")?.textContent).toBe(expected);
 });
 
 it.each([

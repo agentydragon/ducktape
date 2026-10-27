@@ -59,6 +59,7 @@ class Scene(StrEnum):
     LIFECYCLE_GROUP = "lifecycleGroup"
     THREAD_SETUP = "threadSetup"
     THREAD_SETUP_RUNNING = "threadSetupRunning"
+    AUTOSUSPEND_COUNTDOWN = "autosuspendCountdown"
     SHELL_CALLS = "shellCalls"
     MARKDOWN_CODE_FENCE = "markdownCodeFence"
     STREAMING_INTERLEAVED = "streamingInterleaved"

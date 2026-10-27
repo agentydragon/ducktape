@@ -102,6 +102,9 @@ func (s *Store) storeDelivery(ctx context.Context, tx *sql.Tx, ingest GitHubInge
 			return err
 		}
 	}
+	if err := invalidateMergeability(ctx, tx, ingest); err != nil {
+		return err
+	}
 	var repositoryID sql.NullInt64
 	if ingest.Repository != nil {
 		repositoryID = sql.NullInt64{Int64: ingest.Repository.ID, Valid: true}
@@ -187,18 +190,25 @@ func wakeGitHubInboxes(ctx context.Context, tx *sql.Tx, appID int64) error {
 	return err
 }
 
-// CleanupGitHubDeliveries deletes at most 1000 raw receipts older than cutoff, including their
-// subject links, IDs and digests. Inbox entries own independent payload copies. The GitHub lock
-// serializes this with ingestion and recording; work already copied into an inbox is untouched.
+// CleanupGitHubDeliveries deletes up to 1000 raw receipts and 1000 mergeability transitions older than cutoff.
+// Expired transition rows are removed even if no inbox consumed them. Inbox entries and current pull-request
+// snapshots have independent lifetimes. The GitHub lock serializes this with ingestion and recording.
 func (s *Store) CleanupGitHubDeliveries(ctx context.Context, cutoff time.Time) error {
 	return s.transaction(ctx, func(tx *sql.Tx) error {
 		if err := githubLock(ctx, tx); err != nil {
 			return err
 		}
-		_, err := tx.ExecContext(ctx, `
+		if _, err := tx.ExecContext(ctx, `
 			DELETE FROM github_delivery WHERE position IN (
 				SELECT position FROM github_delivery WHERE received_at < $1
 				ORDER BY received_at, position LIMIT 1000
+			)`, cutoff); err != nil {
+			return err
+		}
+		_, err := tx.ExecContext(ctx, `
+			DELETE FROM github_mergeability_event WHERE sequence IN (
+				SELECT sequence FROM github_mergeability_event WHERE created_at < $1
+				ORDER BY created_at, sequence LIMIT 1000
 			)`, cutoff)
 		return err
 	})
