@@ -7,13 +7,15 @@ import { MemoryRouter } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { api, type NewSandboxDefaults, type SandboxPresetView, type SandboxView } from "../client";
+import type * as LiveModule from "../live";
 import { SandboxList } from "./list";
 import { deletable, SuspendResume } from "./lifecycle";
 import { sandboxSummary } from "../sandbox_status";
 
 const liveSandboxData = vi.hoisted(() => ({ snapshot: null as { sandboxes: unknown[] } | null }));
 
-vi.mock("../live", () => ({
+vi.mock("../live", async (importOriginal) => ({
+  ...(await importOriginal<typeof LiveModule>()),
   liveSandboxesUrl: () => "/live/sandboxes",
   useLive: () => liveSandboxData,
 }));

@@ -90,10 +90,10 @@ it("accepts producer-shaped generated schemas, nested snapshots, defaults, nulls
     JSON.stringify({ sandboxes: [sandbox], watch }),
     "Snapshot"
   );
-  expect(sandboxes.success).toBe(true);
   if (!sandboxes.success) throw new Error(sandboxes.error);
+  expect(sandboxes.success).toBe(true);
   expect(sandboxes.data.sandboxes[0]?.pod).toBeNull();
-  expect(sandboxes.data.sandboxes[0]?.status?.conditions[0]?.status).toBe("True");
+  expect(sandboxes.data.sandboxes[0]?.status).toMatchObject({ conditions: [{ type: "Ready", status: "True" }] });
 
   const threads = parseJsonFrame(
     liveSchemas.threads.snapshot,
@@ -157,6 +157,8 @@ it("accepts producer-shaped generated schemas, nested snapshots, defaults, nulls
   const egress = parseJsonFrame(zDecisionsSnapshot, JSON.stringify(decisions), "Egress snapshot");
   expect(egress.success).toBe(true);
   if (egress.success) {
+    expect(Array.isArray(egress.data.decisions)).toBe(true);
+    if (!Array.isArray(egress.data.decisions)) throw new Error("Expected egress decisions");
     expect(egress.data.decisions).toHaveLength(2);
     expect(egress.data.decisions[0]).toMatchObject({ reason: "host_not_allowed", substituted: false, address: null });
   }

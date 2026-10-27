@@ -118,6 +118,7 @@ js_openapi_schema(
 js_openapi_zod(
     name = "live_schemas_generated",
     out = "api/live_schema.zod.ts",
+    config = "openapi-ts.config.mjs",
     generator = "//agentplane/app:export_schema_bin",
     tsconfig = ":tsconfig_generated",
 )

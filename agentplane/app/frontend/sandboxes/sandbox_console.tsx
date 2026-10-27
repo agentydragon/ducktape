@@ -1,9 +1,10 @@
 /** The serial console of a VM Sandbox, read-only: the output from the moment this view attaches. */
 import { Code, ScrollArea, Stack, Text } from "@mantine/core";
 import { type JSX, useEffect, useRef, useState } from "react";
+import { z } from "zod";
 
 import { consoleText } from "./console_text";
-import { followStream } from "../live_stream";
+import { followStream, parseJsonFrame } from "../live_stream";
 
 export function SandboxConsole({ sandbox }: { sandbox: string }): JSX.Element {
   const [text, setText] = useState("");
@@ -21,7 +22,9 @@ export function SandboxConsole({ sandbox }: { sandbox: string }): JSX.Element {
           setText((previous) => consoleText(previous, decoder.decode(bytes, { stream: true })));
         },
         unavailable: (message) => {
-          setUnavailable(JSON.parse(message.data) as string);
+          const unavailable = parseJsonFrame(z.string(), message.data, "Console unavailable");
+          if (!unavailable.success) return unavailable.error;
+          setUnavailable(unavailable.data);
           stop();
         },
       },

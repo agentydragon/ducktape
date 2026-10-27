@@ -35,7 +35,14 @@ afterEach(async () => {
 });
 
 function sandbox(name: string, overrides: Partial<SandboxView> = {}): SandboxView {
-  const uid = `00000000-0000-4000-8000-${name.padStart(12, "0").slice(-12)}`;
+  const uidFor = (value: string): string => {
+    const hash = Array.from(value).reduce(
+      (current, character) => Math.imul(current ^ character.charCodeAt(0), 0x01000193) >>> 0,
+      0x811c9dc5
+    );
+    return `00000000-0000-4000-8000-${hash.toString(16).padStart(12, "0")}`;
+  };
+  const uid = uidFor(name);
   return {
     name,
     uid,
@@ -48,7 +55,7 @@ function sandbox(name: string, overrides: Partial<SandboxView> = {}): SandboxVie
     pod: {
       name,
       namespace: "agentplane-test",
-      uid: `${uid}-pod`,
+      uid: uidFor(`${name}-pod`),
       deleting: false,
       node_name: "test-node",
       owner_references: [
@@ -215,13 +222,15 @@ function location(): string | null | undefined {
 
 it("applies pushed renames and Sandbox state without marking a suspended harness live", async () => {
   const running = thread({
-    id: "t-1",
+    id: "00000000-0000-4000-8000-000000000001",
     sandbox: "test-sandbox",
     name: "Before rename",
     harness_state: "HARNESS_STATE_RUNNING",
   });
   const sandboxes = { "test-sandbox": sandbox("test-sandbox") };
-  const { stream } = await render([running], sandboxes, { initialPath: "/threads/t-1" });
+  const { stream } = await render([running], sandboxes, {
+    initialPath: "/threads/00000000-0000-4000-8000-000000000001",
+  });
   expect(container.querySelectorAll(".agentplane-thread-status-indicator[data-status='idle']")).toHaveLength(1);
 
   const renamed = { ...running, name: "Renamed in another replica" };
@@ -248,12 +257,12 @@ it("applies pushed renames and Sandbox state without marking a suspended harness
   await pushSnapshot(stream, snapshot([renamed], {}));
   expect(container.querySelector('a[href="/sandboxes/test-sandbox"]')).toBeNull();
   await act(async () => row(renamed.name).click());
-  expect(location()).toBe("/threads/t-1");
+  expect(location()).toBe("/threads/00000000-0000-4000-8000-000000000001");
 });
 
 it("shows chevrons in the shared status indicator when a fresh sidebar thread has an active turn", async () => {
   const active = thread({
-    id: "t-1",
+    id: "00000000-0000-4000-8000-000000000001",
     sandbox: "test-sandbox",
     name: "Active thread",
     harness_state: "HARNESS_STATE_RUNNING",
@@ -276,7 +285,7 @@ it("shows chevrons in the shared status indicator when a fresh sidebar thread ha
 it("keeps retained rows but withdraws live indicators when any update source is unavailable", async () => {
   const threads = [
     thread({
-      id: "t-1",
+      id: "00000000-0000-4000-8000-000000000001",
       sandbox: "test-sandbox",
       name: "Retained thread",
       harness_state: "HARNESS_STATE_RUNNING",
@@ -319,9 +328,9 @@ it("keeps retained rows but withdraws live indicators when any update source is 
 it("groups threads by sandbox, showing each group's state, name and visible thread count", async () => {
   await render(
     [
-      thread({ id: "t-1", sandbox: "demo-a1b2", name: "List the repository files" }),
-      thread({ id: "t-2", sandbox: "demo-a1b2", name: "Clean up the stale branch" }),
-      thread({ id: "t-3", sandbox: "prod-x7f2", name: "Investigate flaky CI" }),
+      thread({ id: "00000000-0000-4000-8000-000000000001", sandbox: "demo-a1b2", name: "List the repository files" }),
+      thread({ id: "00000000-0000-4000-8000-000000000002", sandbox: "demo-a1b2", name: "Clean up the stale branch" }),
+      thread({ id: "00000000-0000-4000-8000-000000000003", sandbox: "prod-x7f2", name: "Investigate flaky CI" }),
     ],
     {
       "demo-a1b2": sandbox("demo-a1b2"),
@@ -341,7 +350,16 @@ it("groups threads by sandbox, showing each group's state, name and visible thre
 });
 
 it("opens retained Thread history even when its Sandbox is gone", async () => {
-  await render([thread({ id: "t-1", sandbox: "old-debug-3f9c", name: "Why did the migration hang" })], {});
+  await render(
+    [
+      thread({
+        id: "00000000-0000-4000-8000-000000000001",
+        sandbox: "old-debug-3f9c",
+        name: "Why did the migration hang",
+      }),
+    ],
+    {}
+  );
 
   const label = [...container.querySelectorAll(".agentplane-thread-list-group-name")].find(
     (node) => node.textContent === "old-debug-3f9c"
@@ -355,7 +373,7 @@ it("opens retained Thread history even when its Sandbox is gone", async () => {
   expect(readonlyRow).toBeDefined();
   expect(readonlyRow?.getAttribute("role")).toBe("button");
   await act(async () => (readonlyRow as HTMLElement).click());
-  expect(location()).toBe("/threads/t-1");
+  expect(location()).toBe("/threads/00000000-0000-4000-8000-000000000001");
 });
 
 it.each([
@@ -390,8 +408,18 @@ it("dims only the rows of threads whose harness is stopped", async () => {
   const live = { sandbox: "test-sandbox", feed_status: "active" } as const;
   await render(
     [
-      thread({ ...live, id: "t-1", name: "Idle thread", harness_state: "HARNESS_STATE_RUNNING" }),
-      thread({ ...live, id: "t-2", name: "Stopped thread", harness_state: "HARNESS_STATE_STOPPED" }),
+      thread({
+        ...live,
+        id: "00000000-0000-4000-8000-000000000001",
+        name: "Idle thread",
+        harness_state: "HARNESS_STATE_RUNNING",
+      }),
+      thread({
+        ...live,
+        id: "00000000-0000-4000-8000-000000000002",
+        name: "Stopped thread",
+        harness_state: "HARNESS_STATE_STOPPED",
+      }),
     ],
     { "test-sandbox": sandbox("test-sandbox") }
   );
@@ -412,9 +440,9 @@ it("opens the details of a provisioning Sandbox with no Threads", async () => {
 
 it("links a Sandbox name to its details without changing Thread navigation", async () => {
   await render(
-    [thread({ id: "t-1", sandbox: "demo-a1b2", name: "First thread" })],
+    [thread({ id: "00000000-0000-4000-8000-000000000001", sandbox: "demo-a1b2", name: "First thread" })],
     { "demo-a1b2": sandbox("demo-a1b2") },
-    { initialPath: "/threads/t-1" }
+    { initialPath: "/threads/00000000-0000-4000-8000-000000000001" }
   );
   const link = container.querySelector('a[href="/sandboxes/demo-a1b2"]');
   if (!(link instanceof HTMLAnchorElement)) throw new Error("missing Sandbox details link");
@@ -424,13 +452,13 @@ it("links a Sandbox name to its details without changing Thread navigation", asy
   expect(location()).toBe("/sandboxes/demo-a1b2");
 
   await act(async () => row("First thread").click());
-  expect(location()).toBe("/threads/t-1");
+  expect(location()).toBe("/threads/00000000-0000-4000-8000-000000000001");
 });
 
 it("highlights only the current Sandbox group on its details route", async () => {
   const name = "demo a1b2";
   await render(
-    [thread({ id: "t-1", sandbox: name, name: "First thread" })],
+    [thread({ id: "00000000-0000-4000-8000-000000000001", sandbox: name, name: "First thread" })],
     { [name]: sandbox(name), other: sandbox("other") },
     { initialPath: "/sandboxes/demo%20a1b2?tab=status" }
   );
@@ -451,25 +479,25 @@ it("highlights only the current Sandbox group on its details route", async () =>
 it("opens the stable Thread route and highlights that Thread", async () => {
   await render(
     [
-      thread({ id: "t-1", sandbox: "demo-a1b2", name: "First thread" }),
-      thread({ id: "t-2", sandbox: "demo-a1b2", name: "Second thread" }),
+      thread({ id: "00000000-0000-4000-8000-000000000001", sandbox: "demo-a1b2", name: "First thread" }),
+      thread({ id: "00000000-0000-4000-8000-000000000002", sandbox: "demo-a1b2", name: "Second thread" }),
     ],
     { "demo-a1b2": sandbox("demo-a1b2") },
-    { initialPath: "/threads/t-2" }
+    { initialPath: "/threads/00000000-0000-4000-8000-000000000002" }
   );
 
   expect(row("Second thread").className).toContain("current");
   expect(row("First thread").className).not.toContain("current");
 
   await act(async () => row("First thread").click());
-  expect(location()).toBe("/threads/t-1");
+  expect(location()).toBe("/threads/00000000-0000-4000-8000-000000000001");
 });
 
 it("hides archived threads until the switch is toggled, and archives a thread from its row action", async () => {
   await render(
     [
-      thread({ id: "t-1", sandbox: "demo-a1b2", name: "Active thread" }),
-      thread({ id: "t-2", sandbox: "demo-a1b2", name: "Old spike", archived: true }),
+      thread({ id: "00000000-0000-4000-8000-000000000001", sandbox: "demo-a1b2", name: "Active thread" }),
+      thread({ id: "00000000-0000-4000-8000-000000000002", sandbox: "demo-a1b2", name: "Old spike", archived: true }),
     ],
     { "demo-a1b2": sandbox("demo-a1b2") }
   );
@@ -487,7 +515,8 @@ it("hides archived threads until the switch is toggled, and archives a thread fr
   if (!(archiveButton instanceof HTMLButtonElement)) throw new Error("missing archive button");
   await act(async () => archiveButton.click());
   const archiveCall = fetchMock.mock.calls.find(
-    ([request]) => new URL((request as Request).url).pathname === "/threads/t-1/archive"
+    ([request]) =>
+      new URL((request as Request).url).pathname === "/threads/00000000-0000-4000-8000-000000000001/archive"
   );
   expect(archiveCall).toBeDefined();
   expect((archiveCall?.[0] as Request).method).toBe("POST");
@@ -495,7 +524,11 @@ it("hides archived threads until the switch is toggled, and archives a thread fr
 
 it("grows the window a page at a time and narrows it to a search", async () => {
   const threads = Array.from({ length: 51 }, (_, index) =>
-    thread({ id: `t-${index}`, sandbox: "demo", name: `Listed thread ${index}` })
+    thread({
+      id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+      sandbox: "demo",
+      name: `Listed thread ${index}`,
+    })
   );
   await render(threads, { demo: sandbox("demo") });
   expect(container.textContent).not.toContain("Listed thread 50");
@@ -521,12 +554,22 @@ it("grows the window a page at a time and narrows it to a search", async () => {
 it("keeps the open Thread in the list while it is archived and the archived switch is off", async () => {
   await render(
     [
-      thread({ id: "t-1", sandbox: "demo-a1b2", name: "Active thread" }),
-      thread({ id: "t-2", sandbox: "demo-a1b2", name: "Open archive", archived: true }),
-      thread({ id: "t-3", sandbox: "demo-a1b2", name: "Other archive", archived: true }),
+      thread({ id: "00000000-0000-4000-8000-000000000001", sandbox: "demo-a1b2", name: "Active thread" }),
+      thread({
+        id: "00000000-0000-4000-8000-000000000002",
+        sandbox: "demo-a1b2",
+        name: "Open archive",
+        archived: true,
+      }),
+      thread({
+        id: "00000000-0000-4000-8000-000000000003",
+        sandbox: "demo-a1b2",
+        name: "Other archive",
+        archived: true,
+      }),
     ],
     { "demo-a1b2": sandbox("demo-a1b2") },
-    { initialPath: "/threads/t-2" }
+    { initialPath: "/threads/00000000-0000-4000-8000-000000000002" }
   );
 
   expect(row("Open archive").className).toContain("current");
@@ -541,7 +584,7 @@ it("archives an idle Session while its harness process remains running", async (
   await render(
     [
       thread({
-        id: "t-1",
+        id: "00000000-0000-4000-8000-000000000001",
         sandbox: "demo",
         name: "Live thread",
         harness_state: "HARNESS_STATE_RUNNING",
@@ -554,7 +597,8 @@ it("archives an idle Session while its harness process remains running", async (
   expect(archiveButton.disabled).toBe(false);
   await act(async () => archiveButton.click());
   const archiveCall = fetchMock.mock.calls.find(
-    ([request]) => new URL((request as Request).url).pathname === "/threads/t-1/archive"
+    ([request]) =>
+      new URL((request as Request).url).pathname === "/threads/00000000-0000-4000-8000-000000000001/archive"
   );
   expect(archiveCall).toBeDefined();
 });
@@ -563,7 +607,7 @@ it("archives a reserved dormant Session before its first input", async () => {
   await render(
     [
       thread({
-        id: "t-1",
+        id: "00000000-0000-4000-8000-000000000001",
         sandbox: "demo",
         name: "Reserved thread",
         harness_state: "HARNESS_STATE_STOPPED",
@@ -577,7 +621,8 @@ it("archives a reserved dormant Session before its first input", async () => {
   expect(archiveButton.disabled).toBe(false);
   await act(async () => archiveButton.click());
   const archiveCall = fetchMock.mock.calls.find(
-    ([request]) => new URL((request as Request).url).pathname === "/threads/t-1/archive"
+    ([request]) =>
+      new URL((request as Request).url).pathname === "/threads/00000000-0000-4000-8000-000000000001/archive"
   );
   expect(archiveCall).toBeDefined();
 });
@@ -589,7 +634,7 @@ it.each([
   await render(
     [
       thread({
-        id: "t-1",
+        id: "00000000-0000-4000-8000-000000000001",
         sandbox: "demo",
         name: "Live thread",
         harness_state: "HARNESS_STATE_RUNNING",
@@ -604,7 +649,7 @@ it.each([
 });
 
 it("keeps the last snapshot when archiving fails and reports the error", async () => {
-  await render([thread({ id: "t-1", sandbox: "demo", name: "Keep this thread" })], {
+  await render([thread({ id: "00000000-0000-4000-8000-000000000001", sandbox: "demo", name: "Keep this thread" })], {
     demo: sandbox("demo"),
   });
   fetchMock.mockResolvedValueOnce(Response.json({ detail: "Archive unavailable" }, { status: 503 }));
@@ -743,7 +788,7 @@ it("closes the phone-width overlay, but leaves the desktop column open, on openi
   for (const phone of [true, false]) {
     stubPhoneWidth(phone);
     const { onClose: closeOnOpenThread } = await render(
-      [thread({ id: "t-1", sandbox: "demo-a1b2", name: "First thread" })],
+      [thread({ id: "00000000-0000-4000-8000-000000000001", sandbox: "demo-a1b2", name: "First thread" })],
       { "demo-a1b2": sandbox("demo-a1b2") },
       { open: true }
     );

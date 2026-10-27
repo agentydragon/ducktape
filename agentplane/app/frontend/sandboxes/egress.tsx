@@ -6,9 +6,11 @@ import { TimeAgo } from "../time_ago";
 import type { Decision } from "../client";
 import { type DecisionGroup, groupDecisions } from "./decision_groups";
 import { type DecisionsSnapshot, liveEgressDecisionsUrl } from "../live";
-import { zDecisionsSnapshot, zDecisionsWatching } from "../api/live_schema.zod";
+import { zDecisionsSnapshot } from "../api/live_schema.zod";
 import { followStream, parseJsonFrame, type StreamConnection } from "../live_stream";
 import { useStreamStatus } from "../stream_status";
+
+const zDecisionsWatching = zDecisionsSnapshot.pick({ watching: true });
 
 /** The groups whose requests are listed, comma-separated; a group key has no comma in it. */
 const GROUPS_PARAM = "decision_groups";

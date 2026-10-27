@@ -37,14 +37,14 @@ export interface Live<T> {
 type SnapshotSchemas<T> = { snapshot: z.ZodType<T>; health: z.ZodType<WatchHealth> };
 
 /** Runtime validators generated from the Pydantic models that publish these streams. */
-export const liveSchemas = {
-  sandbox: { snapshot: zSandboxSnapshot, health: zWatchHealth },
-  sandboxes: { snapshot: zSandboxesSnapshot, health: zWatchHealth },
-  threads: { snapshot: zThreadsSnapshot, health: zWatchHealth },
-} satisfies {
+export const liveSchemas: {
   sandbox: SnapshotSchemas<SandboxSnapshot>;
   sandboxes: SnapshotSchemas<SandboxesSnapshot>;
   threads: SnapshotSchemas<ThreadsSnapshot>;
+} = {
+  sandbox: { snapshot: zSandboxSnapshot, health: zWatchHealth },
+  sandboxes: { snapshot: zSandboxesSnapshot, health: zWatchHealth },
+  threads: { snapshot: zThreadsSnapshot, health: zWatchHealth },
 };
 
 export function liveSandboxesUrl(): string {
