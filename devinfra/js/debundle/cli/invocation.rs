@@ -389,8 +389,12 @@ fn append_env_and_default_arguments(
 
 fn append_option_values(argv: &mut Vec<String>, flag: &str, values: &[String]) {
     for value in values {
-        argv.push(flag.to_string());
-        argv.push(value.clone());
+        if value.starts_with('-') {
+            argv.push(format!("{flag}={value}"));
+        } else {
+            argv.push(flag.to_string());
+            argv.push(value.clone());
+        }
     }
 }
 

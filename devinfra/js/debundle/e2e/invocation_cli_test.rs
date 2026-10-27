@@ -111,6 +111,34 @@ fn graph_environment_is_materialized_and_cli_flag_wins() {
 }
 
 #[test]
+fn graph_environment_value_starting_with_dash_replays_as_option_value() {
+    let fixture = GraphFixture::new("const a = 1; console.log(a);", &[]);
+
+    let mut env_only = fixture.process(&["gate", "list", "--print-invocation"]);
+    env_only.env("DEBUNDLE_GRAPH", "-graph.json");
+    let record = run_json(&mut env_only);
+    let argv = record["argv"].as_array().unwrap();
+    assert!(argv.iter().any(|value| value == "--graph=-graph.json"));
+    assert_eq!(
+        path_argument(&record, "dependency_graph_path"),
+        "-graph.json"
+    );
+
+    let mut replay = Command::new(argv[0].as_str().unwrap());
+    replay
+        .args(argv[1..].iter().map(|value| value.as_str().unwrap()))
+        .arg("--print-invocation")
+        .current_dir(record["cwd"].as_str().unwrap())
+        .env_remove("DEBUNDLE_GRAPH");
+    let replay_record = run_json(&mut replay);
+    assert_eq!(replay_record["argv"], record["argv"]);
+    assert_eq!(
+        path_argument(&replay_record, "dependency_graph_path"),
+        "-graph.json"
+    );
+}
+
+#[test]
 fn ambient_graph_does_not_misclassify_source_or_diagnostic_reads() {
     let fixture = GraphFixture::new("const a = 1; console.log(a);", &[]);
     let temp = TempDir::new().unwrap();
