@@ -21,6 +21,17 @@ pub(super) struct BindingsNs {
 }
 
 impl BindingsNs {
+    pub(super) fn writes_with_graph(&self) -> bool {
+        match &self.command {
+            BindingsNsCommand::Assign(args) => {
+                args.edit.dependency_graph_path.is_some() && !args.edit.dry_run
+            }
+            BindingsNsCommand::Unassign(args) => {
+                args.edit.dependency_graph_path.is_some() && !args.edit.dry_run
+            }
+            _ => false,
+        }
+    }
     pub(super) fn format(&self) -> Option<OutputFormat> {
         match &self.command {
             BindingsNsCommand::Assign(args) => args.edit.format,

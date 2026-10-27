@@ -27,7 +27,7 @@ pub struct ModulesApplyArgs {
     pub(super) modules_root: PathBuf,
     /// Tree config that scopes this graph-backed edit to its chunk's module roots.
     #[arg(long = "tree-config", env = "DEBUNDLE_TREE_CONFIG")]
-    tree_config: Option<PathBuf>,
+    pub(super) tree_config: Option<PathBuf>,
     /// Current dependency graph, used to check proposal identity and the resulting assignment.
     #[arg(long = "graph", env = "DEBUNDLE_GRAPH")]
     pub(super) graph: PathBuf,
@@ -39,7 +39,7 @@ pub struct ModulesApplyArgs {
     size_cap_lines: usize,
     /// Validate and show the edit without writing YAML.
     #[arg(long)]
-    dry_run: bool,
+    pub(super) dry_run: bool,
     /// Output format. Default text on tty, JSON on pipe.
     #[arg(long, value_enum)]
     pub(super) format: Option<OutputFormat>,

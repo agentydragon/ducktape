@@ -119,6 +119,11 @@ pub enum GraphMismatchReason {
         expected: String,
         actual: String,
     },
+    Directory {
+        path: PathBuf,
+        expected: String,
+        actual: String,
+    },
     YamlMembership {
         directory: PathBuf,
         expected: Vec<PathBuf>,
@@ -432,6 +437,17 @@ impl GraphProvenance {
         }
         for membership in &self.yaml_memberships {
             let dir = self.resolve(&membership.root, &membership.directory, current)?;
+            if !dir.is_dir() {
+                return Err(GraphMismatch::new(
+                    GraphMismatchReason::Directory {
+                        path: dir.clone(),
+                        expected: "directory".to_string(),
+                        actual: if dir.exists() { "file" } else { "missing" }.to_string(),
+                    },
+                    self.generation_command.clone(),
+                )
+                .into());
+            }
             let actual = collect_yaml(&dir)?;
             if actual != membership.members {
                 return Err(GraphMismatch::new(
@@ -540,11 +556,14 @@ pub fn absolute(path: &Path) -> Result<PathBuf> {
         return fs::canonicalize(path)
             .with_context(|| format!("canonicalizing {}", path.display()));
     }
-    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
     let name = path
         .file_name()
         .with_context(|| format!("invalid path {}", path.display()))?;
-    Ok(fs::canonicalize(parent)?.join(name))
+    Ok(absolute(parent)?.join(name))
 }
 
 pub fn sha256(bytes: &[u8]) -> String {

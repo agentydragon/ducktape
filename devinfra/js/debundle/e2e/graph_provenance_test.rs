@@ -93,7 +93,9 @@ fn missing_metadata_cannot_authorize_edit_but_graph_only_read_works() {
 #[test]
 fn accepted_edit_uses_baseline_then_old_graph_becomes_stale() {
     let fixture = GraphFixture::acyclic_pair();
-    fixture.assert_success(&["bindings", "assign", "beta:a"]);
+    let output = fixture.command(&["bindings", "assign", "beta:a"]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert!(stderr(&output).contains("pre-edit"));
     assert_mismatch(&fixture, "yaml_membership");
 }
 

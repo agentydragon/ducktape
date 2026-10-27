@@ -52,7 +52,8 @@ provenance exits nonzero. JSON and NDJSON commands emit a typed
 `graph_compatibility` rejection with `mismatch.reason`, expected/actual
 values, and `regenerate_command` argv. A successful edit leaves the saved
 graph describing the pre-edit spec; rerun `debundle run` before another
-graph-backed edit.
+graph-backed edit. Flat-spec graphs have no authored module-tree scope and
+cannot authorize a YAML-tree edit or query.
 
 `debundle run --out-root` reads `DEBUNDLE_OUT`. `debundle run
 --tree-source-root` (the spec-tree compile root for source-relative paths in

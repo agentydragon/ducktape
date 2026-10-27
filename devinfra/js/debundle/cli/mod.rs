@@ -126,6 +126,16 @@ pub(crate) fn verify_graph_compatibility(
                 .into());
             }
         }
+    } else {
+        return Err(GraphMismatch::new(
+            GraphMismatchReason::ModuleScope {
+                chunk_id: graph.chunk_id.clone(),
+                expected: Vec::new(),
+                actual: graph_provenance::absolute(modules_root)?,
+            },
+            provenance.generation_command.clone(),
+        )
+        .into());
     }
     provenance.verify(&current)?;
     if let Some(root) = selector_source_root {
@@ -253,7 +263,12 @@ pub fn run_debundle_cli(args: DebundleArgs) -> Result<()> {
         emit_graph_mismatch_json(&args.command, &error);
         return Err(error);
     }
-    match args.command {
+    let writes_with_graph = match &args.command {
+        DebundleCommand::Bindings(args) => args.writes_with_graph(),
+        DebundleCommand::Modules(args) => args.writes_with_graph(),
+        _ => false,
+    };
+    let result = match args.command {
         DebundleCommand::Run(args) => {
             let dry_run = args.dry_run;
             let keep_going = !args.fail_fast;
@@ -287,7 +302,13 @@ pub fn run_debundle_cli(args: DebundleArgs) -> Result<()> {
         // "no blocking SCC with id ..."), and an outer wrap would
         // hide them since `main.rs` prints only the top context.
         DebundleCommand::Gate(args) => run_gate_cli(args),
+    };
+    if result.is_ok() && writes_with_graph {
+        eprintln!(
+            "saved graph still describes the pre-edit inputs; regenerate it before another graph-backed edit"
+        );
     }
+    result
 }
 
 fn emit_graph_mismatch_json(command: &DebundleCommand, error: &anyhow::Error) {
