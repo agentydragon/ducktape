@@ -272,6 +272,9 @@ fn relocated_mismatch_recipe_rebuilds_after_original_inputs_are_removed() {
     let mut source_bytes = fs::read(&source).unwrap();
     source_bytes.extend_from_slice(b"\n// changed after snapshot\n");
     fs::write(&source, source_bytes).unwrap();
+    // The replay recipe must avoid both the populated original output and an
+    // existing output from a previous regeneration attempt.
+    fs::create_dir(relocated.path().join("out-regenerated")).unwrap();
     let graph = relocated
         .path()
         .join("out/reports/tree/main/dependency_graph.json");
@@ -305,7 +308,7 @@ fn relocated_mismatch_recipe_rebuilds_after_original_inputs_are_removed() {
     assert!(
         command
             .iter()
-            .any(|arg| arg == relocated.path().join("out").to_str().unwrap())
+            .any(|arg| arg == relocated.path().join("out-regenerated-1").to_str().unwrap())
     );
     assert!(
         command
