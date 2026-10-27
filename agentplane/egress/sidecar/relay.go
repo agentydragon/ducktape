@@ -17,6 +17,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/egress/sidecar/configpb"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/util/netlistener"
 )
@@ -30,7 +31,7 @@ const (
 )
 
 type sidecar struct {
-	config config
+	config *configpb.Config
 	ready  atomic.Bool
 
 	readinessServer   *http.Server
@@ -43,18 +44,18 @@ type sidecar struct {
 }
 
 func (s *sidecar) run(ctx context.Context) error {
-	readinessListener, err := netlistener.Open(s.config.ReadinessListenAddress)
+	readinessListener, err := netlistener.Open(s.config.GetReadinessListenAddress())
 	if err != nil {
 		return fmt.Errorf("start readiness listener: %w", err)
 	}
 
-	routes, err := bindPlatformRoutes(s.config.PlatformRoutes)
+	routes, err := bindPlatformRoutes(s.config.GetPlatformRoutes())
 	if err != nil {
 		_ = readinessListener.Close()
 		return err
 	}
 
-	proxyListener, err := netlistener.Open(s.config.ListenAddress)
+	proxyListener, err := netlistener.Open(s.config.GetListenAddress())
 	if err != nil {
 		_ = readinessListener.Close()
 		stopPlatformRoutes(routes)
@@ -95,7 +96,7 @@ func (s *sidecar) serve(ctx context.Context, proxyListener, readinessListener ne
 	}
 	serve("HTTP proxy listener", s.acceptLoop)
 	s.ready.Store(true)
-	slog.Info("relaying HTTP proxy traffic", "listen", proxyListener.Addr(), "upstream", net.JoinHostPort(s.config.ProxyHost, strconv.Itoa(s.config.ProxyPort)))
+	slog.Info("relaying HTTP proxy traffic", "listen", proxyListener.Addr(), "upstream", net.JoinHostPort(s.config.GetProxyHost(), strconv.Itoa(int(s.config.GetProxyPort()))))
 
 	select {
 	case <-ctx.Done():
@@ -191,17 +192,17 @@ func (s *sidecar) handle(client net.Conn) {
 		writeRefusal(client, http.StatusBadRequest, "Bad Request", "bad-request")
 		return
 	}
-	token, err := readToken(s.config.TokenFile)
+	token, err := readToken(s.config.GetTokenFile())
 	if err != nil {
-		slog.Error("central proxy token unavailable", "path", s.config.TokenFile, "error", err)
+		slog.Error("central proxy token unavailable", "path", s.config.GetTokenFile(), "error", err)
 		writeRefusal(client, http.StatusServiceUnavailable, "Service Unavailable", "token-unavailable")
 		return
 	}
 	projected := s.readProjectedTokens()
 	forwarded := rewriteRequestHead(head, token, projected, connect)
-	upstream, err := (&net.Dialer{Timeout: 10 * time.Second}).Dial("tcp", net.JoinHostPort(s.config.ProxyHost, strconv.Itoa(s.config.ProxyPort)))
+	upstream, err := (&net.Dialer{Timeout: 10 * time.Second}).Dial("tcp", net.JoinHostPort(s.config.GetProxyHost(), strconv.Itoa(int(s.config.GetProxyPort()))))
 	if err != nil {
-		slog.Warn("central proxy unreachable", "host", s.config.ProxyHost, "port", s.config.ProxyPort, "error", err)
+		slog.Warn("central proxy unreachable", "host", s.config.GetProxyHost(), "port", int(s.config.GetProxyPort()), "error", err)
 		writeRefusal(client, http.StatusBadGateway, "Bad Gateway", "proxy-unreachable")
 		return
 	}
@@ -237,7 +238,7 @@ func (s *sidecar) handle(client net.Conn) {
 		}
 	}
 	if err := pipeDuplex(client, reader, upstream, upstreamReader); err != nil {
-		slog.Warn("relay ended with connection error", "host", s.config.ProxyHost, "port", s.config.ProxyPort, "error", err)
+		slog.Warn("relay ended with connection error", "host", s.config.GetProxyHost(), "port", int(s.config.GetProxyPort()), "error", err)
 	}
 }
 
@@ -255,8 +256,8 @@ func (s *sidecar) track(conn net.Conn, add bool) {
 }
 
 func (s *sidecar) readProjectedTokens() map[string]string {
-	tokens := make(map[string]string, len(s.config.AudienceTokenFiles))
-	for audience, path := range s.config.AudienceTokenFiles {
+	tokens := make(map[string]string, len(s.config.GetAudienceTokenFiles()))
+	for audience, path := range s.config.GetAudienceTokenFiles() {
 		if token, err := readToken(path); err == nil {
 			tokens[audience] = token
 		} else {

@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package agentplane.egress.sidecar;
+
+import "buf/validate/validate.proto";
+
+option go_package = "github.com/agentydragon/ducktape/agentplane/egress/sidecar/configpb";
+
+// Config is the YAML settings file named by AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE.
+message Config {
+  string proxy_host = 1 [(buf.validate.field).string.min_len = 1];
+  // Absent uses 8888; an explicitly supplied zero is invalid.
+  optional int32 proxy_port = 2 [(buf.validate.field).int32 = {gte: 1, lte: 65535}];
+  string token_file = 3 [(buf.validate.field).string.min_len = 1];
+  map<string, string> audience_token_files = 4;
+  map<string, PlatformRoute> platform_routes = 5;
+  // Absent uses 127.0.0.1:3128.
+  optional string listen_address = 6 [(buf.validate.field).string.min_len = 1];
+  // Absent uses 0.0.0.0:3129.
+  optional string readiness_listen_address = 7 [(buf.validate.field).string.min_len = 1];
+}
+
+message PlatformRoute {
+  string listen_address = 1 [(buf.validate.field).string.min_len = 1];
+  string upstream = 2 [(buf.validate.field).string.min_len = 1];
+  string token_file = 3;
+}

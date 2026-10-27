@@ -53,6 +53,9 @@ Also here:
   that service's projected token on every call. The runtime uses no Python interpreter. Its
   settings come only from the YAML file named by `AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE`, which it
   refuses to start without; it reads no per-setting env and takes no flags.
+- `sidecar/configpb/config.proto`: the Go sidecar configuration schema, decoded with Buf's `protoyaml`
+  and validated with `protovalidate`. Optional listener and port fields distinguish omission from an
+  invalid explicit empty string or zero.
 - `sidecar_config.py` and `platform_routes.py`: Python settings and route models cdk8s renders each
   Sandbox template's sidecar settings ConfigMap from. The process entry point and both forwarding
   paths live in Go; `platform_routes.py` does not serve traffic.

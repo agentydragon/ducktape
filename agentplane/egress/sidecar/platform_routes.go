@@ -10,8 +10,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/egress/sidecar/configpb"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/util/netlistener"
+
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -22,7 +24,7 @@ import (
 
 type platformRoute struct {
 	name   string
-	config platformRouteConfig
+	config *configpb.PlatformRoute
 	conn   *grpc.ClientConn
 	server *grpc.Server
 	listen net.Listener
@@ -33,7 +35,7 @@ type routeForwarder struct {
 	tokenFile string
 }
 
-func bindPlatformRoutes(routes map[string]platformRouteConfig) ([]*platformRoute, error) {
+func bindPlatformRoutes(routes map[string]*configpb.PlatformRoute) ([]*platformRoute, error) {
 	return bindPlatformRoutesWithKeepalive(routes, keepalive.ClientParameters{
 		Time:                time.Minute,
 		Timeout:             10 * time.Second,
@@ -42,7 +44,7 @@ func bindPlatformRoutes(routes map[string]platformRouteConfig) ([]*platformRoute
 }
 
 func bindPlatformRoutesWithKeepalive(
-	routes map[string]platformRouteConfig,
+	routes map[string]*configpb.PlatformRoute,
 	keepaliveParameters keepalive.ClientParameters,
 ) ([]*platformRoute, error) {
 	names := make([]string, 0, len(routes))
