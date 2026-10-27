@@ -564,7 +564,18 @@ impl GraphProvenance {
                             mapped
                         }
                     }
-                    _ => self.translate_rooted_path(Path::new(&value), current)?,
+                    _ => {
+                        let original = absolute(Path::new(&value))?;
+                        let relative =
+                            original.strip_prefix(&self.roots.spec).with_context(|| {
+                                format!(
+                                    "recorded spec input {} is outside the spec root",
+                                    original.display()
+                                )
+                            })?;
+                        absolute(current.spec.as_deref().unwrap_or(&self.roots.spec))?
+                            .join(relative)
+                    }
                 };
                 argv[index + 1] = translated.to_string_lossy().into_owned();
                 index += 2;

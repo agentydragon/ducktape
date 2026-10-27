@@ -323,6 +323,59 @@ fn relocated_mismatch_recipe_rebuilds_after_original_inputs_are_removed() {
 }
 
 #[test]
+fn source_only_relocation_keeps_spec_paths_in_regeneration_recipe() {
+    let fixture = GraphFixture::acyclic_pair();
+    let relocated_source = TempDir::new().unwrap();
+    copy_tree(fixture.root(), relocated_source.path());
+    fs::write(
+        relocated_source.path().join("snapshot/main.js"),
+        "const beta = 3; const alpha = beta + 1; console.log(alpha);\n",
+    )
+    .unwrap();
+    let output = std::process::Command::new(debundler_path())
+        .args([
+            "--graph-source-root",
+            relocated_source.path().to_str().unwrap(),
+            "coverage",
+            "--graph",
+            fixture.graph.to_str().unwrap(),
+            "--modules",
+            fixture.modules.to_str().unwrap(),
+            "--source-root",
+            relocated_source.path().join("snapshot").to_str().unwrap(),
+            "--format",
+            "json",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
+    let rejection: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(rejection["mismatch"]["reason"], "file");
+    let argv = rejection["mismatch"]["regenerate_command"]
+        .as_array()
+        .unwrap();
+    let flag_value = |flag: &str| {
+        let index = argv
+            .iter()
+            .position(|arg| arg.as_str() == Some(flag))
+            .unwrap();
+        argv[index + 1].as_str().unwrap()
+    };
+    assert_eq!(
+        flag_value("--tree-config"),
+        fixture.root().join("spec_config.yaml").to_str().unwrap()
+    );
+    assert_eq!(
+        flag_value("--tree-modules"),
+        fixture.root().join("modules").to_str().unwrap()
+    );
+    assert_eq!(
+        flag_value("--tree-source-root"),
+        relocated_source.path().to_str().unwrap()
+    );
+}
+
+#[test]
 fn env_only_run_records_replayable_absolute_argv_across_cwd() {
     let fixture = GraphFixture::acyclic_pair();
     let out = fixture.root().join("env_out");
