@@ -14,7 +14,8 @@ import { finishSessionCreate, withinSessionCreate } from "../tracing";
 import { useFrontendConfig } from "../frontend_config";
 import { appDocumentTitle, CONNECTING_TAB_STATUS, threadDocumentTitle } from "../tab_metadata";
 import { useThreadSync } from "./thread_sync";
-import { SyncedThread, DEFAULT_COMPOSER_PLACEHOLDER } from "./projected_session_view";
+import { SyncedThread } from "./projected_session_view";
+import { DEFAULT_COMPOSER_PLACEHOLDER } from "./composer";
 import "./projected_session.css";
 
 /** Why the thread's sandbox cannot take commands, as the inventory last reported it; the composer's
