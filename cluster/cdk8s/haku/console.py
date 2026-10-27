@@ -52,6 +52,7 @@ from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
 from cluster.cdk8s import agent_access_profiles as access, node_scheduling, pod_policy, service_ref
+from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_registry.pull_credentials import forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.haku import console_config, database
@@ -62,7 +63,7 @@ from cluster.cdk8s.settings_file import SettingsFile
 from haku.console.config import CONFIG_FILE_ENV
 from haku.console.identity.config import ConsoleConfigFile
 from haku.console.settings import Settings
-from util.settings_contract import env_name
+from util.settings_contract import env_name, settings_file
 
 NAMESPACE = "haku-console"
 NAME = "haku-console"
@@ -110,8 +111,8 @@ class Console(Construct):
     def __init__(self, scope: Construct, id: str) -> None:
         super().__init__(scope, id)
         self._secrets: dict[str, ISecret] = {}
-        # Settings-file leaves the Deployment supplies from Secrets, so the file validates as
-        # the whole model with those filled in (SettingsFile's `supplied`).
+        # Settings-file leaves the Deployment supplies from Secrets, so validate the whole model
+        # with those paths supplied by the secret environment variables.
         self._supplied: list[tuple[str, ...]] = []
 
         # Narrow runtime identity: claim/exec RBAC on the haku-sandbox pool
@@ -125,10 +126,8 @@ class Console(Construct):
             self,
             "config",
             metadata=ApiObjectMetadata(name="config", namespace=NAMESPACE),
-            model=ConsoleConfigFile,
-            content=console_config.config(),
+            content=yaml_config(console_config.config()),
             path="/etc/haku-console/config/config.yaml",
-            supplied=[path for path in self._supplied if path[0] in ConsoleConfigFile.model_fields],
         )
         self._add_deployment(service_account, env, config)
         self._add_service()

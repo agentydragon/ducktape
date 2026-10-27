@@ -24,12 +24,14 @@ from cluster.cdk8s.agentplane import actions, egress
 from cluster.cdk8s.agentplane.egress_credentials import EXTERNAL_CREDS_STORE, credential_external_secret
 from cluster.cdk8s.agentplane.egress_policies import add_egress_policy
 from cluster.cdk8s.clickhouse import client
+from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.providers.agentplane.egress_credential import EgressCredential, Source
 from cluster.cdk8s.providers.agentplane.policy_binding import PolicyBinding
 from cluster.cdk8s.providers.agentplane.policy_set import Rule
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.settings_file import PodWiring, SettingsFile
+from util.settings_contract import settings_file
 
 NAMESPACE = "public-coder-agent"
 LABELS = {"app.kubernetes.io/name": NAMESPACE}
@@ -56,8 +58,12 @@ def add_relay_settings(scope: Construct) -> PodWiring:
         scope,
         "egress-sidecar-settings",
         metadata=ApiObjectMetadata(name=_SETTINGS_CONFIG_MAP, namespace=NAMESPACE),
-        model=sidecar_config.Settings,
-        content={"proxy_host": GATEWAY.fqdn, "proxy_port": GATEWAY.pod_port, "token_file": f"{_TOKEN_DIR}/token"},
+        content=yaml_config(
+            settings_file(
+                sidecar_config.Settings,
+                {"proxy_host": GATEWAY.fqdn, "proxy_port": GATEWAY.pod_port, "token_file": f"{_TOKEN_DIR}/token"},
+            )
+        ),
         path=_SETTINGS_PATH,
     ).pod_wiring(volume_name=_SETTINGS_VOLUME, env=sidecar_config.Settings.config_file_env)
 

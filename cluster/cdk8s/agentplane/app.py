@@ -44,6 +44,7 @@ from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.service_workload import ServiceWorkload, add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
+from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_registry.pull_credentials import forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.probes import http_probe
@@ -52,7 +53,7 @@ from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
-from util.settings_contract import checked_value, cli_args, env_name
+from util.settings_contract import checked_value, cli_args, env_name, settings_file
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 NAME = "app"
@@ -116,10 +117,14 @@ class App(Construct):
             self,
             "config",
             metadata=ApiObjectMetadata(name="app-config", namespace=env.namespace),
-            model=Settings,
             # The endpoint is delivered as an env var: an older app image ignores unknown env vars
             # while this manifest reaches the cluster before image automation publishes the new image.
-            content=env.app_config.model_dump(mode="json", exclude_unset=True, exclude={"connection_service_url"}),
+            content=yaml_config(
+                settings_file(
+                    Settings,
+                    env.app_config.model_dump(mode="json", exclude_unset=True, exclude={"connection_service_url"}),
+                )
+            ),
             path="/etc/agentplane/config.yaml",
         )
         workload = self._add_workload(config)

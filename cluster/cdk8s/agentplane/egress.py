@@ -63,6 +63,7 @@ from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.service_workload import ServiceWorkload, add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.cert_manager.interception_ca import interception_root_ca
+from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo import app as forgejo  # a bare `app.HTTP` would not say whose
 from cluster.cdk8s.home_assistant import app as home_assistant  # a bare `app.SERVICE` would not say whose
 from cluster.cdk8s.litellm import proxy as litellm_proxy
@@ -76,7 +77,7 @@ from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, In
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
-from util.settings_contract import checked_value, env_name
+from util.settings_contract import checked_value, env_name, settings_file
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 NAME = "egress"
@@ -635,21 +636,27 @@ class Egress(Construct):
             self,
             "settings",
             metadata=ApiObjectMetadata(name=f"{NAME}-go-settings", namespace=env.namespace),
-            model=Settings,
-            content={
-                "allowed_service_account_namespaces": [env.namespace, *env.egress.external_workload_namespaces],
-                "admin_grpc_audience": ADMIN_GRPC_AUDIENCE,
-                "admin_grpc_callers": [
-                    f"{account.namespace}/{account.name}"
-                    for account in sorted(admin_grpc_callers, key=lambda account: (account.namespace, account.name))
-                ],
-                "projected_token_audiences": [
-                    KUBERNETES_AUDIENCE,
-                    notifications.TOKEN_AUDIENCE,
-                    RUNNER_CONTROL_AUDIENCE,
-                    RUNNER_INGRESS_AUDIENCE,
-                ],
-            },
+            content=yaml_config(
+                settings_file(
+                    Settings,
+                    {
+                        "allowed_service_account_namespaces": [env.namespace, *env.egress.external_workload_namespaces],
+                        "admin_grpc_audience": ADMIN_GRPC_AUDIENCE,
+                        "admin_grpc_callers": [
+                            f"{account.namespace}/{account.name}"
+                            for account in sorted(
+                                admin_grpc_callers, key=lambda account: (account.namespace, account.name)
+                            )
+                        ],
+                        "projected_token_audiences": [
+                            KUBERNETES_AUDIENCE,
+                            notifications.TOKEN_AUDIENCE,
+                            RUNNER_CONTROL_AUDIENCE,
+                            RUNNER_INGRESS_AUDIENCE,
+                        ],
+                    },
+                )
+            ),
             # A directory of its own: the CA volumes mount under /etc/agentplane-egress, and nothing
             # can mount inside a read-only ConfigMap volume.
             path="/etc/agentplane-egress/settings/settings.yaml",

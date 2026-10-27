@@ -67,8 +67,11 @@ how to regenerate: `cluster/AGENTS.md` § Generated manifests.
 - **The service's `Settings` is its deployment contract.** Render flags, env vars and
   settings files through the binary's pydantic-settings model (`util/settings_contract.py`:
   `cli_args`, `env_name`, `settings_file`, `checked_value`) so a renamed field fails at
-  synth. The code package owns `Settings` and its `config_file_env`; `cluster/cdk8s` owns
-  where it runs. Nothing under `x/` or `haku/` imports `cluster/`. A project's `deploy/`
+  synth. Callers validate data with `settings_file(...)`, then render it with
+  `config_format.yaml_config(...)` before passing the string to `SettingsFile`; that
+  construct only creates the ConfigMap and wires its mount and path env var. The code
+  package owns `Settings` and its `config_file_env`; `cluster/cdk8s` owns where it runs.
+  Nothing under `x/` or `haku/` imports `cluster/`. A project's `deploy/`
   may hold a props-driven construct (tested with synthetic props); the cluster's
   instantiation lives here. Generally, config is typed by its consumer's schema; where
   that schema is another artifact, mirror it in a model tied by a test — e.g. a

@@ -26,13 +26,14 @@ from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
+from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.probes import grpc_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
-from util.settings_contract import env_name
+from util.settings_contract import env_name, settings_file
 
 NAME = "notifications"
 WORKLOAD_CREDENTIAL = "agentplane-notifications-workload"
@@ -103,32 +104,36 @@ class Notifications(Construct):
             self,
             "settings",
             metadata=ApiObjectMetadata(name=f"{NAME}-settings", namespace=env.namespace),
-            model=Settings,
             path="/etc/agentplane-notifications/settings.yaml",
-            content={
-                "namespace": env.namespace,
-                "token_audience": TOKEN_AUDIENCE,
-                "operator_reader_account": "app",
-                "notice_debounce": {"quiet_seconds": 60, "max_wait_seconds": 120},
-                "actions": {
-                    "url": f"http://{actions.fqdn}:{actions.port.number}",
-                    "token_file": "/var/run/secrets/notifications/actions",
-                },
-                "runner_gateway": {
-                    "control_target": gateway_control_target,
-                    "token_file": "/var/run/secrets/notifications/gateway",
-                },
-                "history_service": {
-                    "target": f"{history.fqdn}:{history.pod_port}",
-                    "token_file": "/var/run/secrets/notifications/history",
-                },
-                "session_dispatcher": {
-                    "target": f"{dispatcher.fqdn}:{dispatcher.port.number}",
-                    "token_file": "/var/run/secrets/notifications/dispatcher",
-                },
-                "github": {"app_id": github.app_id} if github is not None else None,
-            },
-            supplied=supplied,
+            content=yaml_config(
+                settings_file(
+                    Settings,
+                    {
+                        "namespace": env.namespace,
+                        "token_audience": TOKEN_AUDIENCE,
+                        "operator_reader_account": "app",
+                        "notice_debounce": {"quiet_seconds": 60, "max_wait_seconds": 120},
+                        "actions": {
+                            "url": f"http://{actions.fqdn}:{actions.port.number}",
+                            "token_file": "/var/run/secrets/notifications/actions",
+                        },
+                        "runner_gateway": {
+                            "control_target": gateway_control_target,
+                            "token_file": "/var/run/secrets/notifications/gateway",
+                        },
+                        "history_service": {
+                            "target": f"{history.fqdn}:{history.pod_port}",
+                            "token_file": "/var/run/secrets/notifications/history",
+                        },
+                        "session_dispatcher": {
+                            "target": f"{dispatcher.fqdn}:{dispatcher.port.number}",
+                            "token_file": "/var/run/secrets/notifications/dispatcher",
+                        },
+                        "github": {"app_id": github.app_id} if github is not None else None,
+                    },
+                    supplied=supplied,
+                )
+            ),
         )
         readiness = grpc_probe(port=endpoint.pod_port, initial_delay_seconds=3, period_seconds=10)
         liveness = grpc_probe(

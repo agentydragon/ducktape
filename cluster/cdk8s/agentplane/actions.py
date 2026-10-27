@@ -50,6 +50,7 @@ from cluster.cdk8s.agentplane.environment import Environment, OrchestrationProps
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.service_workload import ServiceWorkload, add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
+from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.probes import grpc_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
@@ -58,7 +59,7 @@ from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
-from util.settings_contract import env_name
+from util.settings_contract import env_name, settings_file
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 NAME = "actions"
@@ -351,10 +352,8 @@ class Actions(Construct):
             self,
             "settings",
             metadata=ApiObjectMetadata(name="actions-settings", namespace=env.namespace),
-            model=Settings,
-            content=content,
+            content=yaml_config(settings_file(Settings, content, supplied=supplied)),
             path="/etc/agentplane-actions/settings.yaml",
-            supplied=supplied,
         )
         workload = self._add_workload(settings)
         self._add_rbac(workload.account)

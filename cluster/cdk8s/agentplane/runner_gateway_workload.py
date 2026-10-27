@@ -49,6 +49,7 @@ from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
+from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.probes import grpc_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
@@ -56,7 +57,7 @@ from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
-from util.settings_contract import checked_value, env_name
+from util.settings_contract import checked_value, env_name, settings_file
 
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway:unset"
 _MIGRATION_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway-queue-migrate:unset"
@@ -196,12 +197,16 @@ class RunnerGateway(Construct):
             self,
             "settings",
             metadata=ApiObjectMetadata(name=f"{runner_gateway.NAME}-settings", namespace=namespace),
-            model=Settings,
-            content={
-                "dispatcher_callers": dispatcher_accounts,
-                "gateway_callers": gateway_accounts,
-                **({"wake_callers": wake_accounts} if wake_accounts else {}),
-            },
+            content=yaml_config(
+                settings_file(
+                    Settings,
+                    {
+                        "dispatcher_callers": dispatcher_accounts,
+                        "gateway_callers": gateway_accounts,
+                        **({"wake_callers": wake_accounts} if wake_accounts else {}),
+                    },
+                )
+            ),
             path="/etc/agentplane-runner-gateway/settings/settings.yaml",
         )
         workload = add_service_workload(

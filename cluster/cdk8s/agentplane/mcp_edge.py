@@ -32,6 +32,7 @@ from cluster.cdk8s.agentplane.mcp_routes import add_public_route
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.api_resource import custom_resource, named_resource
+from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_registry.pull_credentials import forgejo_images_creds_secret_ref
 from cluster.cdk8s.probes import grpc_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
@@ -39,7 +40,7 @@ from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
-from util.settings_contract import env_name
+from util.settings_contract import env_name, settings_file
 
 NAME = "mcp-edge"
 _LABELS = {"app.kubernetes.io/name": NAME}
@@ -80,19 +81,23 @@ class McpEdge(Construct):
             self,
             "settings",
             metadata=ApiObjectMetadata(name=f"{NAME}-settings", namespace=env.namespace),
-            model=Settings,
-            content={
-                "host": "0.0.0.0",
-                "port": self.endpoint.pod_port,
-                "actions_target": f"{actions.service(env.namespace).fqdn}:{actions.service(env.namespace).port.number}",
-                "operator_oidc": props.operator_oidc.model_dump(mode="json", exclude_unset=True),
-                "caller_service_account_namespaces": sorted(props.caller_service_account_namespaces),
-                "mintable_accounts": sorted(
-                    f"{account.namespace}/{account.name}" for account in props.mintable_accounts
-                ),
-            },
+            content=yaml_config(
+                settings_file(
+                    Settings,
+                    {
+                        "host": "0.0.0.0",
+                        "port": self.endpoint.pod_port,
+                        "actions_target": f"{actions.service(env.namespace).fqdn}:{actions.service(env.namespace).port.number}",
+                        "operator_oidc": props.operator_oidc.model_dump(mode="json", exclude_unset=True),
+                        "caller_service_account_namespaces": sorted(props.caller_service_account_namespaces),
+                        "mintable_accounts": sorted(
+                            f"{account.namespace}/{account.name}" for account in props.mintable_accounts
+                        ),
+                    },
+                    supplied=[("database_url",)],
+                )
+            ),
             path="/etc/agentplane-mcp-edge/settings.yaml",
-            supplied=[("database_url",)],
         )
         variables = {env_name(Settings, "database_url"): database_url}
         if props.oauth_secret_name is not None:

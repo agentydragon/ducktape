@@ -499,12 +499,9 @@ py_library(
     srcs = ["settings_file.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
-        ":config_format",
-        "//util:settings_contract",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
-        "@pypi//pydantic",
     ],
 )
 
@@ -518,9 +515,7 @@ py_test(
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//more_itertools",
-        "@pypi//pydantic",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
     ],
 )
 
