@@ -789,9 +789,12 @@ fn diagnose_namespace_member_write_links_contract_dependency_and_inspection() {
     assert!(witness.get("parsed_statement_id").is_none());
     let inspection = witness["inspection_command"].as_str().unwrap();
     let binary = debundler_path();
+    let executable = binary
+        .canonicalize()
+        .expect("resolve debundle runfile executable");
     let expected_program = format!(
         "'{}' inspect-source",
-        binary.to_string_lossy().replace('\'', "'\\''")
+        executable.to_string_lossy().replace('\'', "'\\''")
     );
     assert!(
         inspection.starts_with(&expected_program),
