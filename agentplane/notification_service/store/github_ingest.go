@@ -102,6 +102,9 @@ func (s *Store) storeDelivery(ctx context.Context, tx *sql.Tx, ingest GitHubInge
 			return err
 		}
 	}
+	if err := invalidateMergeability(ctx, tx, ingest); err != nil {
+		return err
+	}
 	var repositoryID sql.NullInt64
 	if ingest.Repository != nil {
 		repositoryID = sql.NullInt64{Int64: ingest.Repository.ID, Valid: true}

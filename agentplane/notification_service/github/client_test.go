@@ -55,9 +55,11 @@ func TestReadsReturnTheirResources(t *testing.T) {
 			t.Errorf("repository %s = %+v, %v", name, repository, err)
 		}
 	}
-	head, err := client.PullRequestHead(ctx, "owner/repo", 7, installationID)
-	if err != nil || head.SHA != testSHA || head.Repository == nil || *head.Repository != (Repository{ID: 200, FullName: "fork/repo"}) {
-		t.Errorf("PullRequestHead = %+v, %v", head, err)
+	pullRequest, err := client.PullRequest(ctx, "owner/repo", 7, installationID)
+	if err != nil || pullRequest.Head.SHA != testSHA || pullRequest.Head.Repository == nil ||
+		*pullRequest.Head.Repository != (Repository{ID: 200, FullName: "fork/repo"}) || pullRequest.BaseRef != "main" ||
+		pullRequest.BaseSHA != testBaseSHA || !pullRequest.Open || pullRequest.Mergeable == nil || !*pullRequest.Mergeable {
+		t.Errorf("PullRequest = %+v, %v", pullRequest, err)
 	}
 	if err := client.CheckIssue(ctx, "owner/repo", 8, installationID); err != nil {
 		t.Errorf("CheckIssue: %v", err)
@@ -67,13 +69,59 @@ func TestReadsReturnTheirResources(t *testing.T) {
 	}
 }
 
-func TestPullRequestHeadWithoutItsRepositoryIsStillAHead(t *testing.T) {
-	fake := newFake(t)
-	fake.respond("/repos/owner/repo/pulls/7", 200, nil, `{"number": 7, "head": {"sha": "`+testSHA+`", "repo": null}}`)
-	head, err := newTestClient(t, fake).PullRequestHead(t.Context(), "owner/repo", 7, installationID)
-	if err != nil || head != (Revision{SHA: testSHA}) {
-		t.Errorf("PullRequestHead = %+v, %v", head, err)
+func TestPullRequestReportsNullableMergeabilityAndClosedState(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		state     string
+		mergeable string
+		open      bool
+		want      *bool
+	}{
+		{name: "mergeable", state: "open", mergeable: "true", open: true, want: githubBool(true)},
+		{name: "conflicting", state: "open", mergeable: "false", open: true, want: githubBool(false)},
+		{name: "mergeability is being computed", state: "open", mergeable: "null", open: true},
+		{name: "closed", state: "closed", mergeable: "false", want: githubBool(false)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fake := newFake(t)
+			fake.respond("/repos/owner/repo/pulls/7", 200, nil,
+				`{"number":7,"state":"`+test.state+`","base":{"ref":"main","sha":"`+testBaseSHA+`"},"mergeable":`+test.mergeable+`,"head":{"sha":"`+testSHA+`","repo":null}}`)
+			observation, err := newTestClient(t, fake).PullRequest(t.Context(), "owner/repo", 7, installationID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if observation.Head != (Revision{SHA: testSHA}) || observation.BaseRef != "main" || observation.BaseSHA != testBaseSHA ||
+				observation.Open != test.open || !sameBoolPointer(observation.Mergeable, test.want) {
+				t.Errorf("PullRequest = %+v", observation)
+			}
+			if got := fake.count("/repos/owner/repo/pulls/7"); got != 1 {
+				t.Errorf("%d pull request reads, want one", got)
+			}
+		})
 	}
+}
+
+func TestPullRequestRequiresItsStateAndBaseRevision(t *testing.T) {
+	for name, body := range map[string]string{
+		"missing state":      `{"number":7,"base":{"ref":"main","sha":"` + testBaseSHA + `"},"head":{"sha":"` + testSHA + `"}}`,
+		"missing base":       `{"number":7,"state":"open","head":{"sha":"` + testSHA + `"}}`,
+		"missing base ref":   `{"number":7,"state":"open","base":{"sha":"` + testBaseSHA + `"},"head":{"sha":"` + testSHA + `"}}`,
+		"missing base sha":   `{"number":7,"state":"open","base":{"ref":"main"},"head":{"sha":"` + testSHA + `"}}`,
+		"unrecognized state": `{"number":7,"state":"merged","base":{"ref":"main","sha":"` + testBaseSHA + `"},"head":{"sha":"` + testSHA + `"}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			fake := newFake(t)
+			fake.respond("/repos/owner/repo/pulls/7", 200, nil, body)
+			_, err := newTestClient(t, fake).PullRequest(t.Context(), "owner/repo", 7, installationID)
+			asError[*invalidResponseError](t, err)
+		})
+	}
+}
+
+func githubBool(value bool) *bool { return &value }
+
+func sameBoolPointer(a, b *bool) bool {
+	return a == nil && b == nil || a != nil && b != nil && *a == *b
 }
 
 func TestBranchesAreFoundByNameAndMissingOnesAreNotAnError(t *testing.T) {
@@ -241,7 +289,7 @@ func TestInstallationTokensAreSharedAndDroppedWhenRejected(t *testing.T) {
 
 	reads := []func() error{
 		func() error { _, err := client.Repository(ctx, "owner/repo", installationID); return err },
-		func() error { _, err := client.PullRequestHead(ctx, "owner/repo", 7, installationID); return err },
+		func() error { _, err := client.PullRequest(ctx, "owner/repo", 7, installationID); return err },
 		func() error { return client.CheckIssue(ctx, "owner/repo", 8, installationID) },
 		func() error { _, _, err := client.Branch(ctx, "owner/repo", "devel", installationID); return err },
 		func() error { return client.CheckCommit(ctx, "owner/repo", testSHA, installationID) },

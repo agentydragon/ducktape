@@ -2,6 +2,7 @@ package store
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -28,5 +29,65 @@ func TestAMessageIdentityIsReadBackWithItsSender(t *testing.T) {
 		if _, err := DecodeEventIdentity([]byte(stored)); err == nil {
 			t.Errorf("%s: decoded", name)
 		}
+	}
+}
+
+func TestAMergeabilityObservationIdentityIsReadBackWithoutAWebhookDeliveryID(t *testing.T) {
+	sent := GitHubMergeabilityEvent{AppID: 11, RepositoryID: 22, PullRequestNumber: 7, Sequence: 3}
+	stored, err := json.Marshal(sent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"provider":"github_mergeability","app_id":11,"repository_id":22,"pull_request_number":7,"sequence":3}`
+	requireEqual(t, string(stored), want)
+	read, err := DecodeEventIdentity(stored)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireEqual(t, read, EventIdentity(sent))
+	for name, stored := range map[string]string{
+		"no app ID":              `{"provider":"github_mergeability","repository_id":22,"pull_request_number":7,"sequence":3}`,
+		"no repository ID":       `{"provider":"github_mergeability","app_id":11,"pull_request_number":7,"sequence":3}`,
+		"no pull request number": `{"provider":"github_mergeability","app_id":11,"repository_id":22,"sequence":3}`,
+		"no sequence":            `{"provider":"github_mergeability","app_id":11,"repository_id":22,"pull_request_number":7}`,
+	} {
+		if _, err := DecodeEventIdentity([]byte(stored)); err == nil {
+			t.Errorf("%s: decoded", name)
+		}
+	}
+	webhook := `{"provider":"github","app_id":11,"delivery_id":"5b0a6c51-8d7e-4f0a-9d2b-7c3e1f4a2b60","repository_id":22,"event":"mergeability_changed"}`
+	if _, err := DecodeEventIdentity([]byte(webhook)); err == nil {
+		t.Fatal("decoded an Agentplane observation as a GitHub webhook event")
+	}
+}
+
+func TestMergeabilityChangedIsAPullRequestOnlyActionlessSelector(t *testing.T) {
+	pr := GitHubSource{Repository: "test-owner/test-repo", Subject: PullRequestSubject{Number: 7}}
+	for _, subject := range []GitHubSubject{PullRequestSubject{Number: 7}} {
+		source := GitHubSource{Repository: pr.Repository, Subject: subject, Events: []EventFilter{{Event: EventMergeabilityChanged}}}
+		if err := source.validate(); err != nil {
+			t.Fatalf("pull request selector: %v", err)
+		}
+	}
+	for _, actions := range [][]string{{"opened"}, {}} {
+		source := GitHubSource{Repository: pr.Repository, Subject: pr.Subject, Events: []EventFilter{{Event: EventMergeabilityChanged, Actions: actions}}}
+		if err := source.validate(); err == nil {
+			t.Errorf("selector with actions %v was accepted", actions)
+		}
+	}
+	for _, subject := range []GitHubSubject{
+		IssueSubject{Number: 7}, BranchSubject{Name: "test-branch"}, CommitSubject{SHA: strings.Repeat("a", 40)},
+	} {
+		source := GitHubSource{Repository: pr.Repository, Subject: subject, Events: []EventFilter{{Event: EventMergeabilityChanged}}}
+		if err := source.validate(); err == nil {
+			t.Errorf("selector was accepted for %T", subject)
+		}
+	}
+	found := false
+	for _, filter := range pr.Filters() {
+		found = found || filter.Event == EventMergeabilityChanged
+	}
+	if !found {
+		t.Fatal("default pull-request events omit mergeability_changed")
 	}
 }

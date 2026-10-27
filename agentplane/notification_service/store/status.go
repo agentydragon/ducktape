@@ -176,6 +176,9 @@ func summarize(cursor int64, event EventIdentity, payload []byte, createdAt time
 				}
 			}
 		}
+	case GitHubMergeabilityEvent:
+		summary.Provider = EntryFromGitHub
+		summary.Summary = fmt.Sprintf("GitHub PR #%d mergeability · sequence %d", event.PullRequestNumber, event.Sequence)
 	case MessageEvent:
 		// Who sent it is what the service authenticated; the body is never shown.
 		summary.Provider = EntryFromMessage

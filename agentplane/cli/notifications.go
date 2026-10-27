@@ -200,6 +200,9 @@ func inboxEntryLine(entry *notificationspb.InboxEntry) string {
 		if action := provider.Github.GetAction(); action != "" {
 			identity += " " + strconv.Quote(action)
 		}
+	case *notificationspb.EventIdentity_GithubMergeability:
+		identity = fmt.Sprintf("github PR #%d mergeability sequence %d",
+			provider.GithubMergeability.GetPullRequestNumber(), provider.GithubMergeability.GetSequence())
 	case *notificationspb.EventIdentity_Message:
 		sender := provider.Message.GetSender()
 		identity = fmt.Sprintf("message %s from %s/%s", provider.Message.GetMessageId(), sender.GetNamespace(), sender.GetName())
@@ -283,10 +286,13 @@ func (a *app) destination(flag string) (*notificationspb.CreateSubscriptionReque
 func parseEvents(specs []string) ([]*notificationspb.GitHubEventFilter, error) {
 	var filters []*notificationspb.GitHubEventFilter
 	for _, spec := range specs {
-		name, actions, _ := strings.Cut(spec, ":")
+		name, actions, hasActions := strings.Cut(spec, ":")
 		event := notificationspb.GitHubEventName(notificationspb.GitHubEventName_value[githubEventPrefix+strings.ToUpper(name)])
 		if name == "" || event == notificationspb.GitHubEventName_GITHUB_EVENT_NAME_UNSPECIFIED {
 			return nil, usageFailure("--event wants NAME[:ACTION[,ACTION]] with a GitHub event name such as issue_comment, got %q", spec)
+		}
+		if event == notificationspb.GitHubEventName_GITHUB_EVENT_NAME_MERGEABILITY_CHANGED && hasActions {
+			return nil, usageFailure("--event mergeability_changed does not accept actions")
 		}
 		filter := &notificationspb.GitHubEventFilter{Event: event}
 		if actions != "" {
@@ -326,9 +332,12 @@ func (a *app) subscribePullRequestCommand() *cobra.Command {
 AGENTPLANE_DESTINATION ({"destination_ref": {...}, "session_id": "..."}) or --destination, which wins.
 Subscribe first, then read the pull request's current state: this follows from creation, not from history.
 
---event replaces the default events (for example --event issue_comment:created) rather than adding to
-them. The idempotency key is derived from the source, so repeating the command returns the same
-subscription, and a transient failure (3) is retried by running it again; --key overrides the key.
+By default, pull-request subscriptions include mergeability_changed, which reports the initial
+conflicted state and later true/false transitions. --event replaces the default events (for example
+--event issue_comment:created or --event mergeability_changed) rather than adding to them.
+mergeability_changed takes no action suffix. The idempotency key is derived from the source, so
+repeating the command returns the same subscription, and a transient failure (3) is retried by
+running it again; --key overrides the key.
 Exit 4 when a changed --lifetime-days (1-30, default 7) meets the same key (renew changes the
 lifetime), and when the key belongs to a cancelled subscription (pass a new --key).`,
 		Args: cobra.ExactArgs(1),
@@ -377,7 +386,7 @@ lifetime), and when the key belongs to a cancelled subscription (pass a new --ke
 			return a.showSubscription(response)
 		}),
 	}
-	command.Flags().StringArrayVar(&events, "event", nil, "NAME[:ACTION[,ACTION]]; replaces the default events; repeatable")
+	command.Flags().StringArrayVar(&events, "event", nil, "NAME[:ACTION[,ACTION]]; replaces defaults; repeatable; mergeability_changed has no actions")
 	command.Flags().Var(&lifetime, "lifetime-days", "subscription lifetime in days (service default 7)")
 	command.Flags().StringVar(&key, "key", "", "idempotency key; derived from the source if absent")
 	command.Flags().StringVar(&destinationFlag, "destination", "", "the destination JSON, instead of AGENTPLANE_DESTINATION")

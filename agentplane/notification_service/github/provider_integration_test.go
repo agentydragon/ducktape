@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -136,6 +137,67 @@ func TestSharedRefreshesAreMadeOnceAndSurviveARestart(t *testing.T) {
 	requireEqual(t, page.Entries[0].SubscriptionIDs, sortedIDs(first.ID, second.ID))
 }
 
+func TestUnknownMergeabilityStillDeliversAndSchedulesARepair(t *testing.T) {
+	h := newHarness(t)
+	subscription := h.follow(pullRequestSource(7), "follow")
+	h.fake.respond("/repos/owner/repo/pulls/7", http.StatusOK, nil,
+		`{"number":7,"state":"open","base":{"ref":"main","sha":"`+testBaseSHA+`"},"mergeable":null,"head":{"sha":"`+testSHA+`","repo":{"id":200,"full_name":"fork/repo"}}}`)
+	h.ingest("issue_comment", comment(7))
+	claim := h.claim()
+	h.reconcileAll(claim)
+
+	if entries := h.page(subscription.InboxID).Entries; len(entries) != 1 {
+		t.Fatalf("%d entries with mergeability unknown, want the webhook delivered", len(entries))
+	}
+	subject, err := store.NewGitHubSubjectKey(baseRepository, store.PullRequestSubject{Number: 7})
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := h.provider.state.Subject(t.Context(), subject)
+	if err != nil {
+		t.Fatal(err)
+	}
+	freshness := time.Duration(DefaultSettings().FreshnessSeconds) * time.Second
+	if state.LastSuccessAt == nil || !state.RepairAt.Before(state.LastSuccessAt.Add(freshness)) {
+		t.Fatalf("subject state = %+v, want a persisted repair before normal freshness expiry", state)
+	}
+}
+
+func TestAnInitialConflictProducesASyntheticMergeabilityEntry(t *testing.T) {
+	h := newHarness(t)
+	source := pullRequestSource(7, store.EventFilter{Event: store.EventMergeabilityChanged})
+	subscription := h.follow(source, "follow")
+	h.fake.respond("/repos/owner/repo/pulls/7", http.StatusOK, nil,
+		`{"number":7,"state":"open","base":{"ref":"main","sha":"`+testBaseSHA+`"},"mergeable":false,"head":{"sha":"`+testSHA+`","repo":{"id":200,"full_name":"fork/repo"}}}`)
+	h.reconcileAll(h.claim())
+
+	entries := h.page(subscription.InboxID).Entries
+	if len(entries) != 1 {
+		t.Fatalf("%d entries, want the initial conflict observation", len(entries))
+	}
+	event, ok := entries[0].Event.(store.GitHubMergeabilityEvent)
+	if !ok || event.AppID != testAppID || event.RepositoryID != baseRepository || event.PullRequestNumber != 7 || event.Sequence <= 0 {
+		t.Fatalf("event = %#v, want the pull request's synthetic mergeability identity", entries[0].Event)
+	}
+	var payload struct {
+		Repository        string    `json:"repository"`
+		PullRequestNumber int64     `json:"pullRequestNumber"`
+		BaseRef           string    `json:"baseRef"`
+		HeadSHA           string    `json:"headSha"`
+		BaseSHA           string    `json:"baseSha"`
+		PreviousMergeable *bool     `json:"previousMergeable"`
+		Mergeable         bool      `json:"mergeable"`
+		ObservedAt        time.Time `json:"observedAt"`
+	}
+	if err := json.Unmarshal(entries[0].Payload, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Repository != baseRepositoryName || payload.PullRequestNumber != 7 || payload.BaseRef != "main" ||
+		payload.HeadSHA != testSHA || payload.BaseSHA != testBaseSHA || payload.PreviousMergeable != nil || payload.Mergeable || payload.ObservedAt.IsZero() {
+		t.Errorf("payload = %+v, want the initial conflict state observed from GitHub", payload)
+	}
+}
+
 // The access is validated before the subject is read, so it is the first thing a page was made under to go stale.
 func TestASubscriptionIsReadAgainWhenTheEarliestThingItWasReadUnderGoesStale(t *testing.T) {
 	h := newHarness(t)
@@ -145,7 +207,7 @@ func TestASubscriptionIsReadAgainWhenTheEarliestThingItWasReadUnderGoesStale(t *
 	staleAt := h.count(`
 		SELECT count(*) FROM subscription s, github_repository_access a, github_subject g
 		WHERE s.next_attempt = a.valid_until AND a.valid_until < g.last_success_at + make_interval(secs => $1)`,
-		h.provider.freshness.Seconds())
+		float64(DefaultSettings().FreshnessSeconds))
 	if staleAt != 1 {
 		t.Error("the subscription is not due again exactly when the access it was read under goes stale")
 	}

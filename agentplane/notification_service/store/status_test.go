@@ -122,6 +122,12 @@ func TestEntriesAreSummarizedByTheirLifecycleFieldsOnly(t *testing.T) {
 			"GitHub issues · " + strings.Repeat("é", maxSummaryField),
 		},
 		{
+			"an Agentplane mergeability observation shows its pull request and sequence",
+			GitHubMergeabilityEvent{AppID: 11, RepositoryID: 22, PullRequestNumber: 7, Sequence: 3},
+			`{"mergeable": false, "headSha": "private"}`,
+			"GitHub PR #7 mergeability · sequence 3",
+		},
+		{
 			"a check run's conclusion",
 			GitHubEvent{Event: EventCheckRun, Action: action("completed")},
 			`{"check_run": {"conclusion": "failure", "output": "private"}}`,
@@ -160,9 +166,10 @@ func TestEntriesAreSummarizedByTheirLifecycleFieldsOnly(t *testing.T) {
 
 func TestAnEntrySaysWhichKindOfSourceItCameFrom(t *testing.T) {
 	for event, want := range map[EventIdentity]EntryProvider{
-		ActionsEvent{RequestID: uuid.New(), Sequence: 1}: EntryFromActions,
-		GitHubEvent{Event: EventPush}:                    EntryFromGitHub,
-		MessageEvent{MessageID: uuid.New()}:              EntryFromMessage,
+		ActionsEvent{RequestID: uuid.New(), Sequence: 1}:           EntryFromActions,
+		GitHubEvent{Event: EventPush}:                              EntryFromGitHub,
+		GitHubMergeabilityEvent{PullRequestNumber: 7, Sequence: 1}: EntryFromGitHub,
+		MessageEvent{MessageID: uuid.New()}:                        EntryFromMessage,
 	} {
 		got, err := summarize(1, event, []byte(`{}`), time.Time{})
 		if err != nil {

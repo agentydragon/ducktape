@@ -41,6 +41,16 @@ type Revision struct {
 	Repository *Repository
 }
 
+// PullRequestObservation is the current state GitHub reports for a pull request. Mergeable is nil while GitHub
+// has not computed mergeability yet.
+type PullRequestObservation struct {
+	Head      Revision
+	BaseRef   string
+	BaseSHA   string
+	Open      bool
+	Mergeable *bool
+}
+
 // Client reads GitHub as the App, or as one of its installations. It is safe for concurrent use.
 type Client struct {
 	timeout    time.Duration
@@ -323,31 +333,62 @@ func (c *Client) RepositoryByID(ctx context.Context, id, installationID int64) (
 	return repositoryFrom(repository)
 }
 
-// PullRequestHead reads a pull request's head as an installation.
-func (c *Client) PullRequestHead(ctx context.Context, repository string, number int, installationID int64) (Revision, error) {
+// PullRequest reads a pull request as an installation.
+func (c *Client) PullRequest(ctx context.Context, repository string, number int, installationID int64) (PullRequestObservation, error) {
 	owner, name, err := splitRepository(repository)
 	if err != nil {
-		return Revision{}, err
+		return PullRequestObservation{}, err
 	}
 	pullRequest, err := callAsInstallation(ctx, c, installationID, false, func(ctx context.Context, client *github.Client) (*github.PullRequest, *github.Response, error) {
 		return client.PullRequests.Get(ctx, owner, name, number)
 	})
 	if err != nil {
-		return Revision{}, err
+		return PullRequestObservation{}, err
+	}
+	if pullRequest == nil || pullRequest.Number == nil {
+		return PullRequestObservation{}, &invalidResponseError{reason: "pull request number is missing"}
+	}
+	if *pullRequest.Number != number {
+		return PullRequestObservation{}, &SourceChangedError{Reason: "GitHub pull request identity changed"}
+	}
+	if pullRequest.State == nil {
+		return PullRequestObservation{}, &invalidResponseError{reason: "pull request state is missing"}
+	}
+	var open bool
+	switch *pullRequest.State {
+	case "open":
+		open = true
+	case "closed":
+	default:
+		return PullRequestObservation{}, &invalidResponseError{reason: "pull request state is invalid"}
+	}
+	base := pullRequest.GetBase()
+	if base.GetRef() == "" {
+		return PullRequestObservation{}, &invalidResponseError{reason: "pull request base ref is missing"}
+	}
+	if base.SHA == nil || *base.SHA == "" {
+		return PullRequestObservation{}, &invalidResponseError{reason: "pull request base sha is missing"}
 	}
 	head := pullRequest.GetHead()
 	if head.GetSHA() == "" {
-		return Revision{}, &invalidResponseError{reason: "pull request head is missing"}
+		return PullRequestObservation{}, &invalidResponseError{reason: "pull request head is missing"}
 	}
 	revision := Revision{SHA: head.GetSHA()}
 	if head.Repo != nil {
 		fork, err := repositoryFrom(head.Repo)
 		if err != nil {
-			return Revision{}, err
+			return PullRequestObservation{}, err
 		}
 		revision.Repository = &fork
 	}
-	return revision, nil
+	var mergeable *bool
+	if pullRequest.Mergeable != nil {
+		value := *pullRequest.Mergeable
+		mergeable = &value
+	}
+	return PullRequestObservation{
+		Head: revision, BaseRef: base.GetRef(), BaseSHA: *base.SHA, Open: open, Mergeable: mergeable,
+	}, nil
 }
 
 // CheckIssue reads an issue as an installation and returns a SourceChangedError unless it is that issue and not a

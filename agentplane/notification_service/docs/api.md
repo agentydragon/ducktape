@@ -67,6 +67,19 @@ event can match multiple subscriptions. Payload content remains provider-defined
 }
 ```
 
+Pull-request subscriptions include the Agentplane-generated `mergeability_changed` selector by
+default. Selecting it explicitly replaces the defaults and accepts no `actions` filter. The service
+records an initial observation only when the pull request is conflicted, then records later changes
+to either mergeable or conflicted; it creates no inbox entry while the result is pending. The first
+conflicted event may use a cached current observation made before subscription creation, so its
+`observedAt` can predate the subscription. The service
+monitors both the pull-request head and base, and retries pending mergeability checks, so an agent can
+end its turn after confirming the subscription and reading current state. These entries use
+`event.githubMergeability` with `appId`, `repositoryId`, `pullRequestNumber`, and a durable globally
+increasing `sequence`, not a GitHub webhook delivery UUID. Their payload uses camelCase fields
+`repository`, `pullRequestNumber`, `baseRef`, `headSha`, `baseSha`, `previousMergeable` (boolean or
+null for the initial observation), `mergeable` (boolean), and `observedAt` (timestamp).
+
 A `source` with neither field set is rejected as `INVALID_ARGUMENT`. A service without the GitHub App refuses
 a `github` source with `PERMISSION_DENIED`; no route lists enabled providers. Inbox cursors,
 acknowledgement, and runner notices remain provider-neutral.
@@ -236,7 +249,7 @@ Subscription reads and operator snapshots expose `last_success_at`, `error_kind`
 advances `last_success_at`, which is null before the first successful processing pass.
 
 Repeated failures of one kind preserve `error_since` and update their details and observation
-time. A different kind starts a new `error_since`. `retry_at` is populated only for a current
+time. A different kind starts a new `error_since`. Subscription `retry_at` is set for a current
 failure on an active subscription. Cancelled and expired subscriptions retain their observations
 without an active retry. A successful pass does not prove complete webhook coverage, current
 remote authorization or runner delivery. Observation changes do not create inbox entries or
@@ -246,5 +259,7 @@ GitHub subscriptions additionally expose access and subject observations in `git
 `github.subject`, separately from subscription processing. Actions subscriptions return no
 GitHub status. Access observations include validation time, expiry and `currently_valid` at the
 time of the read; that is not a promise about later delivery. Observations include failure facts,
-retry and refresh-lease deadlines. A subject refresh repairs metadata; it does not synthesize a
-missing webhook activity event.
+retry and refresh-lease deadlines. `github.subject.retryAt` also gives the next refresh time while
+mergeability is pending; this does not imply a failure or a pending inbox notice. Subject refreshes
+monitor both PR head and base changes and retry pending mergeability checks. They can produce
+mergeability observations but do not recover missing webhook activity.

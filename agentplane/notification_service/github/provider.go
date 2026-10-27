@@ -24,14 +24,12 @@ type Provider struct {
 	store  *store.Store
 	state  *store.GitHubState
 	appID  int64
-	// freshness is how long a validation of access, or a refresh of a subject, is good for.
-	freshness time.Duration
 }
 
 func NewProvider(client *Client, st *store.Store, settings Settings) *Provider {
 	freshness := time.Duration(settings.FreshnessSeconds) * time.Second
 	return &Provider{
-		client: client, store: st, state: store.NewGitHubState(st, freshness), appID: settings.AppID, freshness: freshness,
+		client: client, store: st, state: store.NewGitHubState(st, freshness), appID: settings.AppID,
 	}
 }
 
@@ -75,12 +73,12 @@ func (p *Provider) Authorize(ctx context.Context, source store.GitHubSource) (st
 	}
 	switch subject := source.Subject.(type) {
 	case store.PullRequestSubject:
-		head, err := p.client.PullRequestHead(ctx, source.Repository, int(subject.Number), access.InstallationID)
+		pullRequest, err := p.client.PullRequest(ctx, source.Repository, int(subject.Number), access.InstallationID)
 		if err != nil {
 			return store.GitHubAccessKey{}, err
 		}
-		if head.Repository != nil && head.Repository.ID != access.RepositoryID {
-			if _, err := p.forkAccess(ctx, *head.Repository); err != nil {
+		if pullRequest.Head.Repository != nil && pullRequest.Head.Repository.ID != access.RepositoryID {
+			if _, err := p.forkAccess(ctx, *pullRequest.Head.Repository); err != nil {
 				return store.GitHubAccessKey{}, err
 			}
 		}
@@ -138,7 +136,7 @@ func (p *Provider) reconcile(ctx context.Context, claim store.Claim, due store.D
 	if state.LastSuccessAt == nil {
 		return &store.RefreshDeferredError{Until: time.Now()}
 	}
-	repairAt := state.LastSuccessAt.Add(p.freshness)
+	repairAt := state.RepairAt
 
 	// A commit of the subject in another repository is owed only under that repository's current grant.
 	grants, err := p.state.RevisionGrants(ctx, binding.AppID, subject)
@@ -230,57 +228,70 @@ func (p *Provider) refreshSubject(ctx context.Context, source store.GitHubSource
 	if err != nil || lease == nil {
 		return err
 	}
-	revisions, err := p.readSubject(ctx, source, subject, base.Key.InstallationID)
+	observation, err := p.readSubject(ctx, source, subject, base.Key.InstallationID)
 	if err != nil {
 		return p.refreshFailed(ctx, *lease, err)
 	}
-	return p.state.Succeed(ctx, *lease, store.GitHubSuccess{Fences: []store.GitHubAccessFence{base}, Revisions: revisions})
+	return p.state.Succeed(ctx, *lease, store.GitHubSuccess{
+		Fences: []store.GitHubAccessFence{base}, Revisions: observation.revisions, PullRequest: observation.pullRequest,
+	})
 }
 
-func (p *Provider) readSubject(ctx context.Context, source store.GitHubSource, subject store.GitHubSubjectKey, installation int64) ([]store.GitHubHeadRevision, error) {
+type subjectObservation struct {
+	revisions   []store.GitHubHeadRevision
+	pullRequest *store.GitHubPullRequestObservation
+}
+
+func (p *Provider) readSubject(ctx context.Context, source store.GitHubSource, subject store.GitHubSubjectKey, installation int64) (subjectObservation, error) {
 	name, err := p.state.RepositoryName(ctx, subject.RepositoryID)
 	if err != nil {
-		return nil, err
+		return subjectObservation{}, err
 	}
 	here := store.GitHubRepository{ID: subject.RepositoryID, Name: name}
 	switch s := source.Subject.(type) {
 	case store.PullRequestSubject:
-		head, err := p.client.PullRequestHead(ctx, name, int(s.Number), installation)
+		pullRequest, err := p.client.PullRequest(ctx, name, int(s.Number), installation)
 		if err != nil {
-			return nil, err
+			return subjectObservation{}, err
 		}
-		revisions := []store.GitHubHeadRevision{{Repository: here, SHA: head.SHA}}
+		revisions := []store.GitHubHeadRevision{{Repository: here, SHA: pullRequest.Head.SHA}}
 		// Base-repository CI may build the fork's head, so the head is associated with the fork by the identity
 		// GitHub names, never by an equal SHA. Only an installation on the fork grants access to its deliveries.
-		if head.Repository != nil && head.Repository.ID != subject.RepositoryID {
-			fork := store.GitHubRepository{ID: head.Repository.ID, Name: head.Repository.FullName}
-			revisions = append(revisions, store.GitHubHeadRevision{Repository: fork, SHA: head.SHA})
-			access, err := p.forkAccess(ctx, *head.Repository)
+		if pullRequest.Head.Repository != nil && pullRequest.Head.Repository.ID != subject.RepositoryID {
+			fork := store.GitHubRepository{ID: pullRequest.Head.Repository.ID, Name: pullRequest.Head.Repository.FullName}
+			revisions = append(revisions, store.GitHubHeadRevision{Repository: fork, SHA: pullRequest.Head.SHA})
+			access, err := p.forkAccess(ctx, *pullRequest.Head.Repository)
 			if err != nil {
-				return nil, err
+				return subjectObservation{}, err
 			}
 			if access != nil {
 				if err := p.state.Grant(ctx, *access, fork.Name); err != nil {
-					return nil, err
+					return subjectObservation{}, err
 				}
 			}
 		}
-		return revisions, nil
+		return subjectObservation{
+			revisions: revisions,
+			pullRequest: &store.GitHubPullRequestObservation{
+				BaseRef: pullRequest.BaseRef, HeadSHA: pullRequest.Head.SHA, BaseSHA: pullRequest.BaseSHA,
+				Open: pullRequest.Open, Mergeable: pullRequest.Mergeable,
+			},
+		}, nil
 	case store.IssueSubject:
-		return nil, p.client.CheckIssue(ctx, name, int(s.Number), installation)
+		return subjectObservation{}, p.client.CheckIssue(ctx, name, int(s.Number), installation)
 	case store.BranchSubject:
 		sha, found, err := p.client.Branch(ctx, name, s.Name, installation)
 		if err != nil || !found {
-			return nil, err
+			return subjectObservation{}, err
 		}
-		return []store.GitHubHeadRevision{{Repository: here, SHA: sha}}, nil
+		return subjectObservation{revisions: []store.GitHubHeadRevision{{Repository: here, SHA: sha}}}, nil
 	case store.CommitSubject:
 		if err := p.client.CheckCommit(ctx, name, s.SHA, installation); err != nil {
-			return nil, err
+			return subjectObservation{}, err
 		}
-		return []store.GitHubHeadRevision{{Repository: here, SHA: s.SHA}}, nil
+		return subjectObservation{revisions: []store.GitHubHeadRevision{{Repository: here, SHA: s.SHA}}}, nil
 	default:
-		return nil, fmt.Errorf("unsupported GitHub subject %T", s)
+		return subjectObservation{}, fmt.Errorf("unsupported GitHub subject %T", s)
 	}
 }
 
