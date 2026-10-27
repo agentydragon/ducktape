@@ -1,5 +1,6 @@
 //! Serialized report models and the shared JSON writer for artifact output.
 
+use std::collections::BTreeSet;
 use std::fs;
 use std::io::BufWriter;
 use std::path::Path;
@@ -184,6 +185,9 @@ pub struct ChunkAnalysisReport {
 
 #[derive(Debug, Clone, Default)]
 pub struct ChunkRuntimeFacts {
+    /// Direct ESM exports whose complete local binding history is primitive.
+    /// Canonical shallow-scan facts; never serialized or author asserted.
+    pub stable_primitive_exports: BTreeSet<String>,
     pub module_kind: ChunkModuleKind,
     pub has_top_level_await: bool,
     pub has_cjs_interop: bool,

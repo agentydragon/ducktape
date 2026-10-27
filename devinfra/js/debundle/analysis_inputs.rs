@@ -108,4 +108,7 @@ pub struct AnalysisInputs {
     /// oracle (`crate::cross_module_purity`); empty in strictly per-chunk
     /// paths, where imported callees stay `unknown_call`.
     pub imported_purities: BTreeMap<String, std::sync::Arc<Purity>>,
+    /// Inferred direct ESM import bindings whose possible values are primitive.
+    /// Used only to suppress ToPrimitive callback promotion, never eager reads.
+    pub imported_primitives: BTreeSet<String>,
 }

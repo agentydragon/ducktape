@@ -99,6 +99,7 @@ struct Executor<'a> {
     flow: &'a ChunkValueFlow,
     set_iterable_proof: &'a SetIterableProof,
     shadowed: &'a BTreeSet<&'static str>,
+    imported_primitives: &'a BTreeSet<String>,
     /// Stable own primitive fields, admitted using canonical rebind facts.
     enum_data_members: BTreeMap<Id, BTreeSet<String>>,
     top_bindings: BTreeSet<Id>,
@@ -3765,6 +3766,14 @@ impl Executor<'_> {
             return;
         }
         if call.kind == CallKind::ImplicitCoercion {
+            // The binding read and its TDZ/import ordering facts remain in the
+            // statement. This proof removes only a possible protocol callback.
+            if matches!(call.args.first(), Some(ValueExpr::Binding(id))
+                if self.index.imported_bindings.contains(id)
+                    && self.imported_primitives.contains(id.0.as_ref()))
+            {
+                return;
+            }
             let values = call
                 .args
                 .first()
@@ -4300,6 +4309,7 @@ pub(crate) fn annotate_synchronous_calls(
         flow,
         set_iterable_proof: proofs.set_iterable,
         shadowed,
+        imported_primitives: &hints.imported_primitives,
         enum_data_members,
         top_bindings,
         binding_owner: facts

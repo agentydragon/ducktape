@@ -395,6 +395,7 @@ pub fn materialize_logical_modules(
         chunk_export_purity,
         &declared_pure_new,
         &full_swap_chunk_ids,
+        &vendor_affected_chunk_ids,
         Some(&cross_module_chunk_closure),
     );
     let chunk_results = GLOBALS

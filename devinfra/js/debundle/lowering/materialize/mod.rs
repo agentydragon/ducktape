@@ -435,6 +435,11 @@ pub(super) fn finish_logical_chunk(
             .get(chunk_id)
             .cloned()
             .unwrap_or_default();
+        inputs.imported_primitives = cross_module_purities
+            .primitives
+            .get(chunk_id)
+            .cloned()
+            .unwrap_or_default();
         // Definition-side `pure_members` assertions projected onto this
         // chunk's local import bindings; merged (not overwritten) so spec
         // member annotations and cross-module assertions coexist.
