@@ -1466,57 +1466,23 @@ Electric instead ([thread sync](thread_sync/README.md)).
 
 ```mermaid
 flowchart TD
-    HISTORY_READ_FOLLOW_DESIGN[Decision: read and follow one Session's history]
-    HISTORY_READ_FOLLOW_API[Blocked: implement the reviewed read/follow API]
+    HISTORY_READ_FOLLOW_API[In progress: implement the reviewed read/follow API]
     HISTORY_READS_FACADE[Candidate: History reads as a generated browser API, section 13]
     SESSION_ACTIVITY_STREAM[Unscheduled: deliver on a Session's idle time, section 7]
     NOTIFICATION_COMMAND_OUTCOME_DESIGN[Unscheduled: notice delivery without reading history, section 2]
     THREAD_READ_POLICY[Blocked: scoped archive reads, section 3]
-    HISTORY_READ_FOLLOW_DESIGN --> HISTORY_READ_FOLLOW_API
     HISTORY_READ_FOLLOW_API -. browser watch .-> HISTORY_READS_FACADE
     HISTORY_READ_FOLLOW_API -. possible consumer .-> SESSION_ACTIVITY_STREAM
     HISTORY_READ_FOLLOW_API --> ORCHESTRATION_V1_TURN_READS[Blocked: read and wait for workers' turns]
-    HISTORY_READ_FOLLOW_DESIGN -. related .- NOTIFICATION_COMMAND_OUTCOME_DESIGN
+    HISTORY_READ_FOLLOW_API -. related .- NOTIFICATION_COMMAND_OUTCOME_DESIGN
     HISTORY_READ_FOLLOW_API -. a feed it must authorize .-> THREAD_READ_POLICY
 ```
 
-### `HISTORY_READ_FOLLOW_DESIGN` — read and follow one Session's history
-
-**Decision; operator, 2026-10-24 UTC: "a proper history reading/following API before automatic titles".**
-Automatic Thread title generation has been removed from the app. It remains deferred until the design in
-[#11817](https://github.com/agentydragon/ducktape/issues/11817) is resolved; see
-[`THREAD_TITLE_GENERATION`](task_freezer.md#thread_title_generation). Do not include it among the first
-read/follow API consumers. Design one History API that reads a Session's history from a position and keeps
-following it as it commits, so consumers stop building follow loops on `WatchSessionSummaries`. The
-remaining consumers:
-
-- the Notification Service scans raw history for its own command's admission and confirmation
-  (`NOTIFICATION_COMMAND_OUTCOME_DESIGN`);
-- `SESSION_ACTIVITY_STREAM` would re-read a summary after every `changed`;
-- the planned orchestration turn reads (`ORCHESTRATION_V1_TURN_READS`) need a start at the tail or a number of turns
-  back, a kind filter for turn completions and final assistant messages, and a bounded wait for the next turn end
-  that a 30 s tool call can repeat without a gap ([needs](mcp_orchestration.md#reading-turns-depends-on-historys-read-and-follow-design));
-- the browser follows Threads through Electric shapes over the fold tables.
-
-Decide what a follow carries (raw runner entries, fold entities or both, and how a caller narrows the kinds
-of data it receives); where a reader starts (a cursor, the tail, or N matching items back); how
-settlements, removed ranges and a replaced projection epoch appear in the stream; how a reconnect resumes
-with no gap or duplicate; flow control and bounds; how replicas wake followers (today's NOTIFY); and how a
-stream ends (`reconnect_required`, as the watch does). It is gRPC with a JSON server-stream facade, per the
-approved transport direction (section 13). Callers stay the configured reader accounts until
-`THREAD_READ_POLICY` covers follows. State whether the browser moves to it or stays on Electric: the
-[thread sync plan](thread_sync/README.md) holds Electric's open work and the second-implementation
-candidates, and #11817 asks for that comparison without a parallel sync path unless a concrete gap needs one.
-
-[History read and follow](history_read_follow.md) proposes raw entries with a kind filter for the backend readers,
-the browser staying on Electric. **Question for review:** which consumers the first version serves (the backend ones only, or the browser
-too), and whether it follows raw entries, fold entities or both. Exit: a reviewed API (proto sketch,
-start, resume and end semantics, settlement and epoch behavior, bounds) and the consumers that move to it.
-
 ### `HISTORY_READ_FOLLOW_API` — implement the reviewed read/follow API
 
-**Blocked on `HISTORY_READ_FOLLOW_DESIGN`.** Add the call to the Go History Service with its facade and
-client, and move the first consumers the design names onto it. Test a follow that starts mid-history and
+**In progress; the design is [History read and follow](history_read_follow.md)'s `FollowSession`, accepted by the
+operator 2026-10-27 04:01 UTC: "Yeah let's add those APIs".** Add the call to the Go History Service with its
+facade and client, and move the first consumers the design names onto it. Test a follow that starts mid-history and
 catches up to live, a reconnect from the last cursor with no gap or duplicate, a settlement and a removed
 range arriving while following, a projection epoch replaced under a follower, replica failover, and a
 denied caller.

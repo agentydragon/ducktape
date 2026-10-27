@@ -1,10 +1,9 @@
 # History read and follow
 
-A proposal for [`HISTORY_READ_FOLLOW_DESIGN`](task_dag.md#history_read_follow_design--read-and-follow-one-sessions-history),
-not a decision. The operator, 2026-10-26 UTC, on orchestrating agents from an MCP client: "i think this would already
-need to involve reads from history, so there would be at least a bit of grpc to design". It sketches one call that
-reads one Session's raw history from a chosen start and optionally keeps following it, sized for the backend
-consumers below.
+**Accepted by the operator, 2026-10-27 04:01 UTC: "Yeah let's add those APIs";** built under
+[`HISTORY_READ_FOLLOW_API`](task_dag.md#history_read_follow_api--implement-the-reviewed-readfollow-api). The first two
+questions for review are answered as recommended; the third stays open. One call reads one Session's raw history from
+a chosen start and optionally keeps following it, sized for the backend consumers below.
 
 ## Consumers
 

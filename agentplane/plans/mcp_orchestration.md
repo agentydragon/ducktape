@@ -36,16 +36,14 @@ stay deferred until a worker must reach a caller that has not asked.
 
 ### Reading turns depends on History's read and follow design
 
-How History's gRPC reads and watches should work is open
-([`HISTORY_READ_FOLLOW_DESIGN`](task_dag.md#history_read_follow_design--read-and-follow-one-sessions-history), operator
-2026-10-26: "there is still an open issue about how exactly reads/watches from history service via grpc should
-work"). `read_turns` and `wait_for_turn` are built on whatever API it chooses, not on today's paged reads and
-payload-free summary watch, which would add one more follow loop for that design to move
+`read_turns` and `wait_for_turn` build on [History read and follow](history_read_follow.md)'s `FollowSession`,
+accepted by the operator on 2026-10-27 and built under
+[`HISTORY_READ_FOLLOW_API`](task_dag.md#history_read_follow_api--implement-the-reviewed-readfollow-api), not on
+today's paged reads and payload-free summary watch, which would add one more follow loop
 ([#11817](https://github.com/agentydragon/ducktape/issues/11817) is what such a loop got wrong for titles). What an
 orchestrator needs from it: a start a number of turns back, a kind filter for turn completions and final assistant
 messages, and a bounded wait for the next turn end that a caller with a 30 s tool budget can repeat without a gap or
-duplicate. [History read and follow](history_read_follow.md) proposes one call for that design and
-[how these two tools build on it](history_read_follow.md#what-the-orchestration-executor-builds-on-it).
+duplicate; [how these two tools build on it](history_read_follow.md#what-the-orchestration-executor-builds-on-it).
 
 ## Shape-matched approval is the v1 expedient
 
