@@ -40,8 +40,10 @@ on 2026-10-26 with owner approval. The Haku UI WALs stay on
 Seaweed until Haku UI is retired. Forgejo's shared Git volume and Grocy's backup
 destinations stay on Seaweed.
 
-Before more consumers move, run primary-node loss with quorum suspend-io, resync
-and expansion on the class. Review Matrix and GitHub API capture's RWX needs
+Before more consumers move, run loss of a node holding a data copy (all OVH
+`ssd` pools are on control-plane nodes), resync and expansion on the class.
+Losing a diskless Primary fails over in 84 s with the HA controller
+([results](../../debug/drbd_canary/failover/results.md)). Review Matrix and GitHub API capture's RWX needs
 before choosing RWO for similar apps, and inventory direct S3 consumers as well
 as PVCs. Keep a moved consumer's old claim until the owner releases it.
 
