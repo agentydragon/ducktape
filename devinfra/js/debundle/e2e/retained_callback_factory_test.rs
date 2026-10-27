@@ -786,7 +786,6 @@ fn diagnose_namespace_member_write_links_contract_dependency_and_inspection() {
         witness["source_location"]["end_line"].as_u64().unwrap()
             >= witness["source_location"]["start_line"].as_u64().unwrap()
     );
-    assert!(witness.get("parsed_statement_id").is_none());
     let inspection = witness["inspection_command"].as_str().unwrap();
     let binary = debundler_path();
     let executable = binary

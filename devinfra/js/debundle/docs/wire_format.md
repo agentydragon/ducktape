@@ -223,10 +223,10 @@ positions.
 `debundle gate diagnose` joins these rows to constraining edges tagged
 `role.kind = "promoted_at_init"`, returns bounded traces with counts and
 coverage status, and preserves the witness's graph source-unit reference and
-ordinal. It currently omits `parsed_statement_id` because the diagnose command
-does not read or validate its source input against the graph-generation
-fingerprint; consumers must not apply a possibly stale
-`SourceUnitOrdinal -> StatementId` crosswalk. The explicit-path inspection
+ordinal. The wire format has no parsed statement ID: diagnose does not read or
+validate source inputs against the graph-generation fingerprint, so consumers
+must not apply a possibly stale `SourceUnitOrdinal -> StatementId` crosswalk.
+The explicit-path inspection
 command remains available to inspect the graph source-unit reference using the
 supplied graph, module spec, and source root. `query_status` summarizes all
 uniquely linked candidate promoted edges even when returned traces are bounded; the

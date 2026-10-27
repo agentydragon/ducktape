@@ -361,10 +361,6 @@ pub struct GateDiagnoseGuard {
 pub struct GateDiagnoseWitness {
     pub source_unit: String,
     pub statement_ordinal: SourceUnitOrdinal,
-    /// Raw parsed `Module.body` coordinate, resolved through the stored
-    /// SourceUnitOrdinal -> StatementId crosswalk.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub parsed_statement_id: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_location: Option<analysis::SourceLocation>,
     pub receiver_binding: Atom,
@@ -638,32 +634,26 @@ fn diagnose_barrier_witness(
     Option<GateDiagnoseWitness>,
 )> {
     match &barrier.rejection {
-        CallbackFactoryRejectionReport::NamespaceMemberWrite { witness } => {
-            Ok((
-                GateDiagnoseCoverage::SupportedNamespaceMemberWrite,
-                GateDiagnoseGuardCode::NamespaceMemberWrite,
-                Some(GateDiagnoseWitness {
-                    source_unit: witness.source_unit.clone(),
-                    statement_ordinal: witness.statement_ordinal,
-                    // Diagnose does not validate source inputs against the
-                    // graph fingerprint. Keep the parsed coordinate absent
-                    // rather than applying a possibly stale crosswalk.
-                    parsed_statement_id: None,
-                    source_location: witness.source_location.clone(),
-                    receiver_binding: witness.receiver_binding.clone(),
-                    property: witness.property.clone(),
-                    witness_selection:
-                        GateDiagnoseWitnessSelection::FirstSourceUnitOrderDeterministicWithinUnit,
-                    inspection_command: inspection_command(
-                        &witness.source_unit,
-                        &args.graph,
-                        &args.modules,
-                        &args.source_root,
-                        inspection_roots,
-                    )?,
-                }),
-            ))
-        }
+        CallbackFactoryRejectionReport::NamespaceMemberWrite { witness } => Ok((
+            GateDiagnoseCoverage::SupportedNamespaceMemberWrite,
+            GateDiagnoseGuardCode::NamespaceMemberWrite,
+            Some(GateDiagnoseWitness {
+                source_unit: witness.source_unit.clone(),
+                statement_ordinal: witness.statement_ordinal,
+                source_location: witness.source_location.clone(),
+                receiver_binding: witness.receiver_binding.clone(),
+                property: witness.property.clone(),
+                witness_selection:
+                    GateDiagnoseWitnessSelection::FirstSourceUnitOrderDeterministicWithinUnit,
+                inspection_command: inspection_command(
+                    &witness.source_unit,
+                    &args.graph,
+                    &args.modules,
+                    &args.source_root,
+                    inspection_roots,
+                )?,
+            }),
+        )),
         CallbackFactoryRejectionReport::UnsupportedGuard => Ok((
             GateDiagnoseCoverage::InconclusiveUnsupportedGuard,
             GateDiagnoseGuardCode::UnsupportedGuard,

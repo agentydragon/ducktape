@@ -584,9 +584,9 @@ supported row also requires the promoted edge's callee source unit to match a
 statically resolved callback argument root from that exact signature.
 Unresolved callback arguments and source-unit mismatches are inconclusive. The
 report provides an explicit-path `inspect-source` command. Diagnose currently
-does not read or fingerprint the source input, so it omits
-`parsed_statement_id` rather than applying a possibly stale
-`SourceUnitOrdinal -> StatementId` crosswalk. Five rows are returned by
+does not read or fingerprint the source input, so it does not emit a parsed
+statement ID or apply a possibly stale `SourceUnitOrdinal -> StatementId`
+crosswalk. Five rows are returned by
 default; `--all` requests exhaustive output, while query status summarizes all
 uniquely linked candidate edges regardless of the output limit. This is a
 local witness for this guard family, not a claim of a sole or globally earliest

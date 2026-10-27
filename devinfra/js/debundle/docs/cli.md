@@ -817,7 +817,7 @@ reports an inconclusive source mismatch or unresolved callback source. Only
 overloads whose arity and callback positions apply to the actual call are
 reported. The write witness includes its graph source-unit ref and source-unit
 ordinal. Diagnose does not read or validate the supplied source against the
-graph-generation fingerprint, so `parsed_statement_id` is omitted and consumers do not
+graph-generation fingerprint, so it does not emit a parsed statement ID or
 apply a possibly stale `SourceUnitOrdinal -> StatementId` crosswalk. Its
 `inspection_command` is directly runnable and repeats all three paths. Output
 is limited to five trace rows by default; `--limit N` changes that bound and
