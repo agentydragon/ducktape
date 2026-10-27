@@ -452,7 +452,7 @@ func TestAForkDeliveryIsOwedOnlyUnderTheForksCurrentInstallationAccess(t *testin
 	}
 }
 
-func TestAWebhookRacingTheBootstrapKeepsBothRevisionAssociations(t *testing.T) {
+func TestAWebhookRacingTheBootstrapFencesTheReadAndKeepsBothRevisionAssociations(t *testing.T) {
 	h := newHarness(t)
 	subscription := h.follow(pullRequestSource(7, store.EventFilter{Event: store.EventCheckRun}), "follow")
 	h.ingest("check_run", check(nextSHA))
@@ -470,16 +470,17 @@ func TestAWebhookRacingTheBootstrapKeepsBothRevisionAssociations(t *testing.T) {
 		}
 	})
 	claim := h.claim()
-	h.reconcile(claim)
+	asError[*worker.ProviderDeferred](t, h.provider.Reconcile(t.Context(), claim, h.next(claim)))
+	h.reconcileAll(claim)
 	requireEqual(t, payloads(t, h.page(subscription.InboxID).Entries), []any{asJSON(t, check(nextSHA)), asJSON(t, check(testSHA))})
 
 	// A delayed older observation cannot erase the newer one.
-	requests := h.fake.total()
+	requests := h.fake.count("/repos/owner/repo/pulls/7")
 	h.ingest("pull_request", pullRequestPayload(testSHA))
 	h.ingest("check_run", check(nextSHA))
 	h.reconcileAll(claim)
-	if h.fake.total() != requests {
-		t.Errorf("%d requests, want none while the shared state is fresh", h.fake.total()-requests)
+	if got := h.fake.count("/repos/owner/repo/pulls/7") - requests; got != 1 {
+		t.Errorf("%d PR reads, want one after the PR webhook invalidates the subject", got)
 	}
 	if cursor := h.page(subscription.InboxID).Inbox.LastCursor; cursor != 3 {
 		t.Errorf("last cursor = %d, want 3", cursor)
