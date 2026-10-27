@@ -1093,7 +1093,7 @@ def register_batch_tools(
             current: dict[str, Any] = r.json()
 
             body = {k: v for k, v in current.items() if k in PRODUCT_WRITABLE_FIELDS}
-            _set_if_present(body, "name", item.name)
+            body.update(item.model_dump(include=PRODUCT_WRITABLE_FIELDS, exclude_unset=True, exclude_none=True))
             for ref, key, entity_type in (
                 (item.stock_qu, "qu_id_stock", EntityType.QUANTITY_UNIT),
                 (item.location, "location_id", EntityType.LOCATION),
@@ -1104,13 +1104,6 @@ def register_batch_tools(
             ):
                 if ref is not None:
                     body[key] = await _resolve_id(client, entity_type, ref)
-            for key, value in (
-                ("min_stock_amount", item.min_stock_amount),
-                ("default_best_before_days", item.default_best_before_days),
-                ("due_type", item.due_type),
-                ("description", item.description),
-            ):
-                _set_if_present(body, key, value)
             for field, key in {
                 EditProductField.DESCRIPTION: "description",
                 EditProductField.PRODUCT_GROUP: "product_group_id",

@@ -214,8 +214,6 @@ async def test_product_lifecycle(mcp_client: Client, refunwrap_result: RefData) 
     )
     assert edit_results[0]["kind"] == "ok"
     # TODO: test batch edit (multiple items in one call)
-    # TODO: test editing due_type, clear_fields
-    # TODO: test that clear_fields nulls product_group while preserving other fields
 
     products = unwrap_result(await mcp_client.call_tool("products_list", {"detail": "full"}))
     our_product = [p for p in products if p["name"] == new_name]
@@ -272,6 +270,108 @@ async def test_products_edit_preserves_default_best_before_days_when_omitted(
     products = unwrap_result(await mcp_client.call_tool("products_list", {"detail": "full"}))
     our_product = next(p for p in products if p["name"] == product)
     assert int(our_product["default_best_before_days"]) == 42
+
+
+async def test_products_edit_serializes_values_and_resolves_references(
+    mcp_client: Client, refunwrap_result: RefData
+) -> None:
+    """Keep scalar assignments, omission, clearing, and reference resolution at the Grocy boundary."""
+    product_id = refunwrap_result.product_ids[0]
+    location_id = next(
+        row["id"]
+        for row in unwrap_result(await mcp_client.call_tool("locations_list", {}))
+        if row["name"] == refunwrap_result.location
+    )
+    quantity_unit_id = next(
+        row["id"]
+        for row in unwrap_result(await mcp_client.call_tool("quantity_units_list", {}))
+        if row["name"] == refunwrap_result.qu
+    )
+    product_group_id = next(
+        row["id"]
+        for row in unwrap_result(await mcp_client.call_tool("product_groups_list", {}))
+        if row["name"] == refunwrap_result.group
+    )
+
+    edit = unwrap_result(
+        await mcp_client.call_tool(
+            "products_edit",
+            {
+                "items": [
+                    {
+                        "product": product_id,
+                        "stock_qu": refunwrap_result.qu,
+                        "location": location_id,
+                        "purchase_qu": quantity_unit_id,
+                        "consume_qu": refunwrap_result.qu,
+                        "parent_product": refunwrap_result.product_ids[1],
+                        "product_group": refunwrap_result.group,
+                        "min_stock_amount": 0,
+                        "due_type": 2,
+                        "description": "",
+                    }
+                ]
+            },
+        )
+    )
+    assert edit[0]["kind"] == "ok", edit
+
+    products = unwrap_result(await mcp_client.call_tool("products_list", {"detail": "full"}))
+    product = next(row for row in products if int(row["id"]) == product_id)
+    assert float(product["min_stock_amount"]) == 0
+    assert int(product["due_type"]) == 2
+    assert product["description"] in ("", None)
+    assert int(product["qu_id_stock"]) == int(quantity_unit_id)
+    assert int(product["location_id"]) == int(location_id)
+    assert int(product["qu_id_purchase"]) == int(quantity_unit_id)
+    assert int(product["qu_id_consume"]) == int(quantity_unit_id)
+    assert int(product["parent_product_id"]) == refunwrap_result.product_ids[1]
+    assert int(product["product_group_id"]) == int(product_group_id)
+    saved_description = product["description"]
+
+    unrelated_edit = unwrap_result(
+        await mcp_client.call_tool(
+            "products_edit",
+            {"items": [{"product": product_id, "name": f"Edited-{refunwrap_result.suffix}", "description": None}]},
+        )
+    )
+    assert unrelated_edit[0]["kind"] == "ok", unrelated_edit
+
+    products = unwrap_result(await mcp_client.call_tool("products_list", {"detail": "full"}))
+    product = next(row for row in products if int(row["id"]) == product_id)
+    assert product["description"] == saved_description
+    assert float(product["min_stock_amount"]) == 0
+    assert int(product["due_type"]) == 2
+    assert int(product["qu_id_stock"]) == int(quantity_unit_id)
+    assert int(product["location_id"]) == int(location_id)
+    assert int(product["qu_id_purchase"]) == int(quantity_unit_id)
+    assert int(product["qu_id_consume"]) == int(quantity_unit_id)
+    assert int(product["parent_product_id"]) == refunwrap_result.product_ids[1]
+    assert int(product["product_group_id"]) == int(product_group_id)
+
+    clear = unwrap_result(
+        await mcp_client.call_tool(
+            "products_edit",
+            {
+                "items": [
+                    {
+                        "product": product_id,
+                        "description": "clear_fields takes precedence",
+                        "product_group": refunwrap_result.group,
+                        "clear_fields": ["description", "product_group"],
+                    }
+                ]
+            },
+        )
+    )
+    assert clear[0]["kind"] == "ok", clear
+
+    products = unwrap_result(await mcp_client.call_tool("products_list", {"detail": "full"}))
+    product = next(row for row in products if int(row["id"]) == product_id)
+    assert product["description"] in (None, "")
+    assert product["product_group_id"] is None
+    assert float(product["min_stock_amount"]) == 0
+    assert int(product["due_type"]) == 2
 
 
 # -- entity_update PATCH semantics -------------------------------------------
