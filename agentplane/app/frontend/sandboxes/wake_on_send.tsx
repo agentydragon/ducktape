@@ -1,7 +1,8 @@
 import { Checkbox } from "@mantine/core";
 import { type JSX, useEffect, useState } from "react";
 
-import { api, displayableError, type SandboxView } from "../client";
+import { api, displayableError } from "../client";
+import { type SandboxView } from "./client";
 
 /**
  * Whether a message to a suspended Sandbox resumes it, saved on each change to the incarnation shown. What

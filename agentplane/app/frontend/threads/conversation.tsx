@@ -3,17 +3,12 @@ import { IconDotsVertical, IconHistory } from "../icons";
 import { intlFormatDistance } from "date-fns";
 import { type JSX, useCallback, useEffect, useState } from "react";
 
-import {
-  displayableError,
-  harnessLabel,
-  models,
-  modelsForHarness,
-  type LangfuseSearchSettings,
-  type ModelOption,
-  type SandboxView,
-  type TraceSearchSettings,
-  type ThreadView,
-} from "../client";
+import { displayableError } from "../client";
+import { harnessLabel, models, modelsForHarness, type ModelOption } from "../model_catalog";
+import { type LangfuseSearchSettings, langfuseSandboxTraceUrl } from "../langfuse_search";
+import { type TraceSearchSettings, traceSearchUrl } from "../trace_search";
+import { type SandboxView } from "../sandboxes/client";
+import { type ThreadView } from "./client";
 import { decimalBigInt, useThreadSync, type ThreadEntity, type ThreadWindow } from "./thread_sync";
 import { historyRows } from "./history_rows";
 import { useRequiredThreadsLive } from "../live";
@@ -28,8 +23,7 @@ import { isoTime } from "../format_time";
 import { TimeAgo } from "../time_ago";
 import { NotificationStatus } from "../notification_status";
 import { TopbarActions } from "../topbar";
-import { langfuseSandboxTraceUrl } from "../langfuse_search";
-import { traceSearchUrl } from "../trace_search";
+
 import { type ThreadTabTitleStatus } from "../tab_metadata";
 import { ThreadComposer } from "./composer";
 import { VirtualizedHistory } from "./virtualized_history";

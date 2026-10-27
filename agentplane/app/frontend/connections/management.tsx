@@ -3,7 +3,14 @@ import "./management.css";
 import { type StreamConnection } from "../live_stream";
 import { Fragment, type JSX, useCallback, useEffect, useState } from "react";
 
-import { displayableError, HttpError, isEligibleCaller, serviceAccountKey, type CallerServiceAccount } from "../client";
+import { displayableError, HttpError } from "../client";
+import {
+  isEligibleCaller,
+  serviceAccountKey,
+  type CallerServiceAccount,
+  type CallerGrantReader,
+  type Connection,
+} from "./models";
 import { readCallerGrants } from "./caller_grants_client";
 import {
   adaptConnectionWatchFrame,
@@ -13,7 +20,7 @@ import {
   renameConnection,
   unbindConnection,
 } from "./connection_service_client";
-import type { CallerGrantReader, Connection } from "./models";
+
 import { followWatch } from "../watch_stream";
 
 import { CallerGrants } from "./caller_grants";

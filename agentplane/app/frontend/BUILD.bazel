@@ -118,7 +118,10 @@ ts_library(
     testonly = True,
     srcs = ["test_model_catalog.ts"],
     tsconfig = TSCONFIG,
-    deps = [":client"],
+    deps = [
+        ":client",
+        ":model_catalog",
+    ],
 )
 
 ts_library(
@@ -127,6 +130,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":client",
+        ":schema",
         "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
@@ -136,7 +140,10 @@ ts_library(
     name = "trace_search",
     srcs = ["trace_search.ts"],
     tsconfig = TSCONFIG,
-    deps = [":client"],
+    deps = [
+        ":client",
+        ":schema",
+    ],
 )
 
 agentplane_vitest_test(
@@ -152,7 +159,10 @@ ts_library(
     name = "langfuse_search",
     srcs = ["langfuse_search.ts"],
     tsconfig = TSCONFIG,
-    deps = [":client"],
+    deps = [
+        ":client",
+        ":schema",
+    ],
 )
 
 ts_library(
@@ -160,7 +170,10 @@ ts_library(
     testonly = True,
     srcs = ["langfuse_search_fixture.ts"],
     tsconfig = TSCONFIG,
-    deps = [":client"],
+    deps = [
+        ":client",
+        ":langfuse_search",
+    ],
 )
 
 agentplane_vitest_test(
@@ -243,11 +256,7 @@ ts_library(
     deps = [
         ":operator_login",
         ":schema",
-        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/openapi-fetch",
-        "//agentplane/proto:event_log_pb",
-        "//agentplane/proto:runner_pb",
-        "//agentplane/proto:sandboxes_pb",
     ],
 )
 
@@ -257,7 +266,6 @@ agentplane_vitest_test(
     deps = [
         ":client",
         ":operator_login",
-        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/vitest",
     ],
 )
@@ -575,6 +583,7 @@ ts_library(
         ":client",
         ":format_time",
         ":status_mark",
+        "//agentplane/app/frontend/sandboxes:client",
     ],
 )
 
@@ -585,6 +594,7 @@ agentplane_vitest_test(
         ":client",
         ":sandbox_status",
         "//:node_modules/vitest",
+        "//agentplane/app/frontend/sandboxes:client",
     ],
 )
 
@@ -684,6 +694,8 @@ agentplane_vitest_test(
         "//:node_modules/react-dom",
         "//:node_modules/react-router",
         "//:node_modules/vitest",
+        "//agentplane/app/frontend/sandboxes:client",
+        "//agentplane/app/frontend/threads:client",
         "//agentplane/app/frontend/threads:scroll_diagnostics",
         "//agentplane/app/frontend/threads:thread_groups",
         "//agentplane/app/frontend/threads:thread_status",
@@ -697,6 +709,7 @@ ts_library(
     deps = [
         ":client",
         ":status_mark",
+        "//agentplane/app/frontend/sandboxes:client",
     ],
 )
 
@@ -707,6 +720,7 @@ agentplane_vitest_test(
         ":binding_state",
         ":client",
         "//:node_modules/vitest",
+        "//agentplane/app/frontend/sandboxes:client",
     ],
 )
 
@@ -724,6 +738,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
+        "//agentplane/app/frontend/sandboxes:client",
         "//util/frontend:code_block",
     ],
 )
@@ -736,6 +751,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":client",
+        ":schema",
         ":system_css",
         ":time_ago",
         ":topbar",
@@ -982,6 +998,8 @@ ts_library(
         "//agentplane/app/frontend/actions/rendering:index",
         "//agentplane/app/frontend/connections:fixture",
         "//agentplane/app/frontend/connections:models",
+        "//agentplane/app/frontend/sandboxes:client",
+        "//agentplane/app/frontend/threads:client",
         "//agentplane/app/frontend/threads:local_commands",
         "//agentplane/proto:runner_pb",
     ],
@@ -1089,6 +1107,16 @@ agentplane_vitest_test(
     deps = [
         ":harness_network",
         "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "model_catalog",
+    srcs = ["model_catalog.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":schema",
     ],
 )
 

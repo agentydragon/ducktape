@@ -17,17 +17,9 @@ import { IconDotsVertical, IconPlus, IconTrash } from "../icons";
 import { type JSX, useEffect, useEffectEvent, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 
-import {
-  api,
-  displayableError,
-  findThread,
-  getSessionOpening,
-  getThread,
-  HttpError,
-  openSession,
-  type SandboxView,
-  type ThreadView,
-} from "../client";
+import { api, displayableError, HttpError } from "../client";
+import { findThread, getThread, type ThreadView } from "../threads/client";
+import { getSessionOpening, openSession, type SandboxView } from "./client";
 import { ActionPolicySection } from "../actions/policy";
 import { EgressLog } from "./egress";
 import { MarkGlyph } from "../mark_glyph";

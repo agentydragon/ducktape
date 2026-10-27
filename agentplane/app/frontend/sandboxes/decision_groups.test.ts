@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 
-import type { Decision } from "../client";
+import type { Decision } from "./client";
 import { groupDecisions } from "./decision_groups";
 
 function decision(at: string, overrides: Partial<Decision> = {}): Decision {

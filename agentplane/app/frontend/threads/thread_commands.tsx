@@ -5,11 +5,11 @@ import {
   changeModel,
   changeReasoningEffort,
   CommandSubmissionRefused,
-  displayableError,
   interruptTurn,
   submitInput,
   type CommandSubmission,
-} from "../client";
+} from "./client";
+import { displayableError } from "../client";
 import { Body, UserInputBubble, pendingSentMessage } from "./thread_cards";
 import { CommandProgress, type CommandStage, type CommandSubject } from "./command_progress";
 import { EvidencePanel, EvidenceToggle, revealEvidenceOnTap } from "./thread_evidence";

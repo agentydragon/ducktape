@@ -1,14 +1,10 @@
 import { Accordion, Badge, Button, Group, Paper, Stack, Table, Text, Title } from "@mantine/core";
 import { type JSX, type ReactNode, useEffect, useState } from "react";
 
-import {
-  displayableError,
-  getRunnerStatus,
-  harnessLabel,
-  type RunnerStatusView,
-  type SandboxView,
-  type ThreadView,
-} from "../client";
+import { displayableError } from "../client";
+import { getRunnerStatus, type RunnerStatusView, type SandboxView } from "./client";
+import { harnessLabel } from "../model_catalog";
+import { type ThreadView } from "../threads/client";
 import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
 import { IdleSuspendInput } from "./idle_suspend";
 import { JsonView } from "../json_view";

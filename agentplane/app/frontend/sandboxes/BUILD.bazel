@@ -26,6 +26,7 @@ ts_library(
     srcs = ["lifecycle.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":client",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -54,6 +55,7 @@ ts_library(
     srcs = ["idle_suspend.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":client",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -66,6 +68,7 @@ ts_library(
     srcs = ["wake_on_send.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":client",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -78,6 +81,7 @@ ts_library(
     srcs = ["sandbox_status_view.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":client",
         ":idle_suspend",
         ":lifecycle",
         ":wake_on_send",
@@ -86,9 +90,11 @@ ts_library(
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:json_view",
+        "//agentplane/app/frontend:model_catalog",
         "//agentplane/app/frontend:raw_switch",
         "//agentplane/app/frontend:sandbox_status",
         "//agentplane/app/frontend:time_ago",
+        "//agentplane/app/frontend/threads:client",
         "//util/frontend:help_tooltip",
     ],
 )
@@ -98,6 +104,7 @@ ts_library(
     srcs = ["list.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":client",
         ":idle_suspend",
         ":lifecycle",
         ":sandbox_name",
@@ -123,13 +130,17 @@ ts_library(
     name = "decision_groups",
     srcs = ["decision_groups.ts"],
     tsconfig = TSCONFIG,
-    deps = ["//agentplane/app/frontend:client"],
+    deps = [
+        ":client",
+        "//agentplane/app/frontend:client",
+    ],
 )
 
 agentplane_vitest_test(
     name = "decision_groups_test",
     srcs = ["decision_groups.test.ts"],
     deps = [
+        ":client",
         ":decision_groups",
         "//:node_modules/vitest",
         "//agentplane/app/frontend:client",
@@ -141,6 +152,7 @@ ts_library(
     srcs = ["egress.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":client",
         ":decision_groups",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -159,6 +171,7 @@ ts_library(
     srcs = ["policy_bindings.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":client",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -201,6 +214,7 @@ ts_library(
     srcs = ["sandbox_page.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":client",
         ":egress",
         ":lifecycle",
         ":policy_bindings",
@@ -223,6 +237,7 @@ ts_library(
         "//agentplane/app/frontend:trace_search",
         "//agentplane/app/frontend:tracing",
         "//agentplane/app/frontend/actions:policy",
+        "//agentplane/app/frontend/threads:client",
         "//agentplane/app/frontend/threads:new_thread_form",
         "//agentplane/app/frontend/threads:sandbox_threads",
         "//agentplane/app/frontend/threads:thread_status",
@@ -234,6 +249,7 @@ agentplane_vitest_test(
     name = "sandbox_page_test",
     srcs = ["sandbox_page.test.tsx"],
     deps = [
+        ":client",
         ":sandbox_page",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -244,9 +260,12 @@ agentplane_vitest_test(
         "//:node_modules/vitest",
         "//agentplane/app/frontend:app",
         "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:langfuse_search",
         "//agentplane/app/frontend:langfuse_search_fixture",
         "//agentplane/app/frontend:live",
         "//agentplane/app/frontend:test_model_catalog",
+        "//agentplane/app/frontend:trace_search",
+        "//agentplane/app/frontend/threads:client",
     ],
 )
 
@@ -254,6 +273,7 @@ agentplane_vitest_test(
     name = "list_test",
     srcs = ["list.test.tsx"],
     deps = [
+        ":client",
         ":list",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -265,6 +285,18 @@ agentplane_vitest_test(
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:test_model_catalog",
         "//agentplane/app/frontend/actions:action_client",
+    ],
+)
+
+ts_library(
+    name = "client",
+    srcs = ["client.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@bufbuild/protobuf",
+        "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:schema",
+        "//agentplane/proto:runner_pb",
     ],
 )
 

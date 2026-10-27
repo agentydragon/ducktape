@@ -4,7 +4,7 @@ import { useSearchParams } from "react-router";
 
 import { bindingState } from "./binding_state";
 import { CodeBlock } from "../../../util/frontend/code_block";
-import type { BindingView, EgressRuleView, PolicySetView } from "./client";
+import type { BindingView, EgressRuleView, PolicySetView } from "./sandboxes/client";
 import { MarkGlyph } from "./mark_glyph";
 import { BINDING_STATE_MARKS } from "./status_mark";
 import { TimeAgo } from "./time_ago";

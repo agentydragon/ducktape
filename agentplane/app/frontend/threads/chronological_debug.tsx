@@ -5,10 +5,10 @@ import { IconHistory } from "../icons";
 import {
   threadObservationEntry,
   threadObservations,
-  displayableError,
   type ArchivedObservationEntry,
   type ObservationPage,
-} from "../client";
+} from "./client";
+import { displayableError } from "../client";
 import { Disclosure, DisclosureBody } from "../disclosure";
 import { JsonView } from "../json_view";
 

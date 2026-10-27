@@ -6,17 +6,15 @@ import { createRoot } from "react-dom/client";
 import { Link, MemoryRouter, Route, Routes } from "react-router";
 import { afterAll, afterEach, expect, it, vi, type Mock } from "vitest";
 
-import {
-  api,
-  type LangfuseSearchSettings,
-  type RunnerStatusView,
-  type SandboxView,
-  type ThreadView,
-  type TraceSearchSettings,
-} from "../client";
+import { api } from "../client";
+import { type LangfuseSearchSettings } from "../langfuse_search";
+import { type TraceSearchSettings } from "../trace_search";
+import { type RunnerStatusView, type SandboxView } from "./client";
+import { type ThreadView } from "../threads/client";
 import { LANGFUSE_SEARCH_SETTINGS } from "../langfuse_search_fixture";
 import type * as LiveModule from "../live";
-import type { Live, SandboxSnapshot } from "../live";
+import { type Live, type SandboxSnapshot } from "../live";
+
 import { SandboxRoute } from "../app";
 import { SandboxPage } from "./sandbox_page";
 import { TopbarContext } from "../topbar";
