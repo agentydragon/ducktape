@@ -333,10 +333,17 @@ impl InputCapture {
 }
 
 pub fn read_bytes(path: &Path) -> Result<Vec<u8>> {
-    read_bytes_with_role(path, false)
+    read_bytes_with_role(path, ReadRole::Auto)
 }
 
-fn read_bytes_with_role(path: &Path, source: bool) -> Result<Vec<u8>> {
+#[derive(Clone, Copy)]
+enum ReadRole {
+    Auto,
+    Source,
+    Dependency,
+}
+
+fn read_bytes_with_role(path: &Path, role: ReadRole) -> Result<Vec<u8>> {
     let bytes = fs::read(path).with_context(|| format!("reading {}", path.display()))?;
     if let Some(state) = active_capture() {
         let mut guard = state.lock().expect("capture lock");
@@ -344,10 +351,10 @@ fn read_bytes_with_role(path: &Path, source: bool) -> Result<Vec<u8>> {
             let provenance = guard
                 .as_mut()
                 .context("graph capture ended before input read")?;
-            let (root, relative) = if source {
-                provenance.classify_source(path)?
-            } else {
-                provenance.classify(path)?
+            let (root, relative) = match role {
+                ReadRole::Auto => provenance.classify(path)?,
+                ReadRole::Source => provenance.classify_source(path)?,
+                ReadRole::Dependency => provenance.classify_dependency(path)?,
             };
             let entry = InputFile {
                 root,
@@ -380,7 +387,14 @@ pub fn read_to_string(path: &Path) -> Result<String> {
 /// Source-list and JS chunk reads carry an explicit role when spec and source
 /// roots overlap, so moving only the source root does not silently reuse them.
 pub fn read_source_to_string(path: &Path) -> Result<String> {
-    String::from_utf8(read_bytes_with_role(path, true)?)
+    String::from_utf8(read_bytes_with_role(path, ReadRole::Source)?)
+        .with_context(|| format!("{} is not UTF-8", path.display()))
+}
+
+/// Vendor/dependency reads prefer their named package root, then the source
+/// root, even when either overlaps the spec root.
+pub fn read_dependency_to_string(path: &Path) -> Result<String> {
+    String::from_utf8(read_bytes_with_role(path, ReadRole::Dependency)?)
         .with_context(|| format!("{} is not UTF-8", path.display()))
 }
 
@@ -454,6 +468,25 @@ pub fn record_yaml_membership(directory: &Path, members: &[PathBuf]) -> Result<(
 }
 
 impl GraphProvenance {
+    fn classify_dependency(&self, path: &Path) -> Result<(InputRoot, PathBuf)> {
+        let absolute = absolute(path)?;
+        let package = self
+            .roots
+            .packages
+            .iter()
+            .filter_map(|(name, root)| {
+                absolute
+                    .strip_prefix(root)
+                    .ok()
+                    .map(|relative| (name, root, relative))
+            })
+            .max_by_key(|(_, root, _)| root.components().count());
+        if let Some((name, _, relative)) = package {
+            return Ok((InputRoot::Package(name.clone()), relative.to_path_buf()));
+        }
+        self.classify_source(&absolute)
+    }
+
     fn classify_source(&self, path: &Path) -> Result<(InputRoot, PathBuf)> {
         let absolute = absolute(path)?;
         if let Ok(relative) = absolute.strip_prefix(&self.roots.source) {
