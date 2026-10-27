@@ -25,8 +25,48 @@ JSON-on-stdout / structured-diagnostic-on-stderr convention.
   then [apply reviewed source-unit assignments](#applying-reviewed-source-unit-assignments-modules-refine).
 - Diagnose a rejected edit: [Rejection diagnostics](#rejection-diagnostics)
   and [Gate queries](#gate-queries).
+- Delegate an isolated spec edit: [Delegating with an input snapshot](#delegating-with-an-input-snapshot).
 
 Use `debundle <command> --help` for the current command and flag inventory.
+
+## Delegating with an input snapshot
+
+Generate current analysis, then create a separate snapshot for each worker:
+
+```bash
+debundle snapshot create --graph output/reports/tree/main/dependency_graph.json \
+  --destination /tmp/worker-one > /tmp/worker-one.json
+debundle snapshot verify /tmp/worker-one
+```
+
+`--graph` may also come from `DEBUNDLE_GRAPH`; an explicit flag wins. The
+returned JSON identifies the copied engine, graph, spec/source roots, complete
+modules tree and a `regeneration_argv` array. Execute that argument array
+directly. The replay uses only copied inputs and writes under that worker's
+`output/` directory. To display a shell command:
+
+```bash
+jq -r '.regeneration_argv | @sh' /tmp/worker-one.json
+```
+
+Send the worker its snapshot directory, task, acceptance checks and permitted
+edit scope. It edits its own YAML tree and regenerates analysis there. The
+original saved graph and `snapshot.json` describe the starting state; the
+snapshot baseline check will fail after edits. Subsequent graph-backed edits
+use the newly generated graph and copied roots. Create another snapshot for
+each concurrent worker instead of sharing writable spec paths.
+
+Return the reviewed YAML patch or changed files/deletions, the starting
+snapshot manifest, and exact validation invocations/results. Before integrating,
+verify that the receiving spec still matches that baseline. Apply reviewed
+changes in an isolated integration checkout, regenerate the combined spec and
+run its full pipeline/runtime checks. Individually accepted edits can conflict
+when combined.
+
+Snapshot creation currently supports tree-shaped specs with relative embedded
+source/vendor-bundle paths. It refuses unrooted input dependencies and existing
+destinations. Relocation roots are supplied by the global `--spec-root` and
+`--graph-source-root` options when the original graph was generated elsewhere.
 
 ## Common arguments and env vars
 

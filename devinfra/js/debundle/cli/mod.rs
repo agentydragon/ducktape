@@ -13,6 +13,7 @@ mod inspection_commands;
 mod modules_commands;
 mod selector_explanation;
 mod selector_input;
+mod snapshot;
 mod spec_commands;
 
 use anyhow::{Context, Result};
@@ -263,6 +264,8 @@ enum DebundleCommand {
     Spec(SpecNs),
     /// Query the realizability gate's rejected SCCs (list / describe / cut).
     Gate(GateArgs),
+    /// Create and verify isolated input snapshots for delegated work.
+    Snapshot(snapshot::SnapshotArgs),
 }
 
 pub fn run_debundle_cli(args: DebundleArgs) -> Result<()> {
@@ -315,6 +318,14 @@ pub fn run_debundle_cli(args: DebundleArgs) -> Result<()> {
         // "no blocking SCC with id ..."), and an outer wrap would
         // hide them since `main.rs` prints only the top context.
         DebundleCommand::Gate(args) => run_gate_cli(args),
+        DebundleCommand::Snapshot(snapshot_args) => snapshot::run(
+            snapshot_args,
+            graph_provenance::CurrentRoots {
+                spec: args.spec_root,
+                source: args.graph_source_root,
+                packages: graph_package_roots,
+            },
+        ),
     };
     if result.is_ok() && writes_with_graph {
         eprintln!(

@@ -66,6 +66,31 @@ only when proposal analysis runs. Their limits sections use the same field names
 Proposals name their outgoing residual quotient-class dependencies with
 `edges_to_other_residual_classes` and `other_residual_classes_referenced`.
 
+## Delegated input snapshots
+
+`snapshot create` copies one saved graph's verified input set and exact engine
+bytes into a new worker directory. It preserves the input bytes and root
+relationships, rechecks copied file digests, and publishes the directory only
+after verifying the complete copy. Existing destinations are refused.
+
+The snapshot includes source chunks, the complete captured spec/config input
+set, dependency inputs, the graph, and a manifest describing the starting
+state. Its returned regeneration argument vector names the worker's copied
+engine, inputs and output directory. Separate snapshots share no writable
+input or output files. Snapshot verification continues to work after the
+original workspace is removed or the snapshot directory is moved.
+Browser source assets and their summary are copied and fingerprinted when
+the snapshot is created.
+
+`snapshot verify` checks the starting graph, engine, input contents and YAML
+membership. After a worker edits its spec, this baseline check fails; running
+the returned regeneration command produces analysis for the edited state.
+
+Snapshot creation requires a graph produced by `run` from a tree-shaped spec.
+Embedded source and vendor-bundle paths must be relative to the configured
+source root, and all captured files must belong to declared relocatable roots.
+Unsupported inputs are refused before a worker directory is published.
+
 ## Unassigned source
 
 Every configured chunk selects one `unassigned_mode` destination policy:

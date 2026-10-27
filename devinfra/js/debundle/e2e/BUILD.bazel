@@ -52,6 +52,14 @@ debundle_e2e_test(
     ],
 )
 
+debundle_e2e_test(
+    name = "delegation_snapshot_cli_test",
+    deps = [
+        "@crates//:serde_json",
+        "@crates//:tempfile",
+    ],
+)
+
 debundle_e2e_test(name = "source_export_policy_test")
 
 debundle_e2e_test(
