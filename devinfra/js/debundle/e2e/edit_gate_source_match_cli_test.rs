@@ -72,7 +72,7 @@ fn malformed_manual_claim_edits_are_refused_before_unassigning() {
         (
             "const alpha = 1; const beta = 1; const gamma = 3;",
             "source_matches: [{match: 'const x = 1;', bindings: [{local: x, name: X}]}]",
-            "is ambiguous — matched 2 declarations (alpha, beta)",
+            "is ambiguous -- matched 2 top-level declarations",
         ),
         (
             "const alpha = 1; const beta = 2; const gamma = 3;",
