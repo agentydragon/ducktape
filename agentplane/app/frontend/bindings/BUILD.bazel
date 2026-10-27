@@ -1,0 +1,56 @@
+load("//agentplane/app/frontend:vitest.bzl", "agentplane_vitest_test")
+load("//devinfra/js:ts_library.bzl", "ts_library")
+
+package(default_visibility = ["//agentplane/app:__subpackages__"])
+
+filegroup(
+    name = "typed_lint_srcs",
+    srcs = glob(
+        [
+            "*.ts",
+            "*.tsx",
+        ],
+        allow_empty = True,
+    ),
+    visibility = ["//agentplane/app/frontend:__pkg__"],
+)
+
+TSCONFIG = "//agentplane/app/frontend:tsconfig"
+
+ts_library(
+    name = "state",
+    srcs = ["state.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//agentplane/app/frontend:status_mark",
+        "//agentplane/app/frontend/sandboxes:client",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "state_test",
+    srcs = ["state.test.ts"],
+    deps = [
+        ":state",
+        "//:node_modules/vitest",
+        "//agentplane/app/frontend/sandboxes:client",
+    ],
+)
+
+ts_library(
+    name = "table",
+    srcs = ["table.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":state",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/react-router",
+        "//agentplane/app/frontend:mark_glyph",
+        "//agentplane/app/frontend:status_mark",
+        "//agentplane/app/frontend:time_ago",
+        "//agentplane/app/frontend/sandboxes:client",
+        "//util/frontend:code_block",
+    ],
+)

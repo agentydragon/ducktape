@@ -2,7 +2,7 @@ import { Alert, Button, Group, Stack, Text, Title } from "@mantine/core";
 import { type JSX, useEffect, useState } from "react";
 
 import { ActionPolicySection } from "../actions/policy";
-import { BINDING_GRANT_HELP, BindingsTable } from "../bindings_table";
+import { BINDING_GRANT_HELP, BindingsTable } from "../bindings/table";
 import { type CallerServiceAccount, serviceAccountKey, type CallerGrantReader, type CallerGrantView } from "./models";
 import { displayableError } from "../client";
 import { HelpTooltip } from "../../../../util/frontend/help_tooltip";

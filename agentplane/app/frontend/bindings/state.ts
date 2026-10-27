@@ -1,5 +1,5 @@
-import type { BindingView } from "./sandboxes/client";
-import type { BindingStateKind } from "./status_mark";
+import type { BindingView } from "../sandboxes/client";
+import type { BindingStateKind } from "../status_mark";
 
 export interface BindingState {
   kind: BindingStateKind;
