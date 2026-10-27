@@ -342,6 +342,15 @@ async def test_products_edit_serializes_values_and_resolves_references(
     assert float(product["min_stock_amount"]) == 0
     assert int(product["product_group_id"]) == int(product_group_id)
 
+    empty_description = unwrap_result(
+        await mcp_client.call_tool("products_edit", {"items": [{"product": product_id, "description": ""}]})
+    )
+    assert empty_description[0]["kind"] == "ok", empty_description
+    products = unwrap_result(await mcp_client.call_tool("products_list", {"detail": "full"}))
+    product = next(row for row in products if int(row["id"]) == product_id)
+    # Grocy normalizes an empty product description to null on read.
+    assert product["description"] is None
+
     clear = unwrap_result(
         await mcp_client.call_tool(
             "products_edit",
@@ -365,14 +374,6 @@ async def test_products_edit_serializes_values_and_resolves_references(
     assert product["product_group_id"] is None
     assert float(product["min_stock_amount"]) == 0
     assert int(product["due_type"]) == 2
-
-    empty_description = unwrap_result(
-        await mcp_client.call_tool("products_edit", {"items": [{"product": product_id, "description": ""}]})
-    )
-    assert empty_description[0]["kind"] == "ok", empty_description
-    products = unwrap_result(await mcp_client.call_tool("products_list", {"detail": "full"}))
-    product = next(row for row in products if int(row["id"]) == product_id)
-    assert product["description"] == ""
 
 
 # -- entity_update PATCH semantics -------------------------------------------
