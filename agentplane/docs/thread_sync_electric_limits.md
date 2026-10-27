@@ -31,6 +31,8 @@ IDs are from <thread_sync_requirements.md>.
    holds, most of that traffic is rows it holds anyway. It is waste when the thread is long and
    busy and the reader is scrolled away, and on fields with many bodies. A server that knows
    what each reader holds would send only that.
+   The [fixed-window probe](../debug/electric_fixed_window_traffic.md) measures this cost on
+   the real Electric fixture, with raw responses and separate process/container memory counters.
 2. **A delta exists only as a committed row.** Electric replicates PostgreSQL, so a streamed batch
    reaches a reader only after it is written, committed, logged to WAL, read by Electric and
    pushed.
