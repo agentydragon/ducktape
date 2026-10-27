@@ -42,7 +42,7 @@ fn missing_local_direct_claim_is_rejected_without_writes() {
     fixture.assert_rejected_unchanged(MERGE, &["graph compatibility mismatch"]);
     fixture.assert_current_pipeline_rejects(&[
         "Ghost",
-        "no matching local declaration source unit exists",
+        "no top-level declaration with that name exists",
     ]);
 }
 
@@ -67,28 +67,44 @@ fn missing_import_direct_claim_is_rejected_without_writes() {
 
     fixture.assert_rejected_unchanged(MERGE, &["graph compatibility mismatch"]);
     fixture.assert_current_pipeline_rejects(&[
-        "Ghost",
-        "no source declaration or import with this kind was found",
+        "no import specifier found for `Ghost` in source chunk",
     ]);
 }
 
 #[test]
 fn import_specifier_source_claims_cover_each_import_form() {
-    for source in [
-        "import { dep } from \"external-package\";\nconsole.log(dep);\n",
-        "import dep from \"external-package\";\nconsole.log(dep);\n",
-        "import * as dep from \"external-package\";\nconsole.log(dep);\n",
+    for (source, full_run_succeeds) in [
+        (
+            "import { dep } from \"external-package\";\nconsole.log(dep);\n",
+            true,
+        ),
+        (
+            "import dep from \"external-package\";\nconsole.log(dep);\n",
+            false,
+        ),
+        (
+            "import * as dep from \"external-package\";\nconsole.log(dep);\n",
+            false,
+        ),
     ] {
-        let fixture = GraphFixture::new(
-            source,
-            &[
-                (
-                    "alpha.yaml",
-                    "members: [{selector: {binding: {name: dep, kind: import_specifier}}}]\n",
-                ),
-                EMPTY,
-            ],
-        );
+        let modules = &[
+            (
+                "alpha.yaml",
+                "members: [{selector: {binding: {name: dep, kind: import_specifier}}}]\n",
+            ),
+            EMPTY,
+        ];
+        let fixture = if full_run_succeeds {
+            GraphFixture::new(source, modules)
+        } else {
+            GraphFixture::rejected(source, modules)
+        };
+        assert!(fixture.graph.exists(), "analysis graph was not emitted");
+        if !full_run_succeeds {
+            fixture.assert_current_pipeline_rejects(&[
+                "no named import specifier found for `dep` in source chunk",
+            ]);
+        }
         let report = fixture.json(MERGE);
         assert_eq!(report["gate"], "passed", "{report}");
     }
@@ -132,7 +148,7 @@ fn mismatched_local_source_kind_is_rejected_without_writes() {
 
     fixture.assert_rejected_unchanged(MERGE, &["graph compatibility mismatch"]);
     fixture.assert_current_pipeline_rejects(&[
-        "class_declaration",
-        "source occurrences have incompatible kinds",
+        "did not match any top-level declaration",
+        "ClassDeclaration",
     ]);
 }
