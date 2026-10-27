@@ -83,7 +83,7 @@ async def test_composer_autosuspend_busy(view: VisualPage, app: AgentplaneFixtur
     await expect(hint).to_have_text("Autosuspend waiting: Turn running · +2")
     await view.capture()
     await hint.click()
-    details = view.page.get_by_label("Autosuspend blockers")
+    details = view.page.get_by_role("dialog", name="Autosuspend waiting: Turn running · +2")
     await expect(details).to_be_visible()
     await expect(details.get_by_role("link", name="Session running a turn", exact=True)).to_be_visible()
     await expect(details.get_by_role("link", name="Session running setup", exact=True)).to_be_visible()

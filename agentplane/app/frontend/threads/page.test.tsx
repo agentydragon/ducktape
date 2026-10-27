@@ -532,7 +532,7 @@ it("explains every runner blocker and links sessions outside the loaded thread l
   const hint = container.querySelector<HTMLButtonElement>(".agentplane-composer-autosuspend");
   expect(hint?.textContent).toBe("Autosuspend waiting: Turn running · +5");
   await act(async () => hint?.click());
-  const details = document.querySelector('[aria-label="Autosuspend blockers"]');
+  const details = document.querySelector('[role="dialog"]');
   expect(details?.textContent).toContain("Setup running");
   expect(details?.textContent).toContain("Session starting");
   expect(details?.textContent).toContain("Sandbox bootstrap running");

@@ -127,7 +127,7 @@ function AutosuspendHint({
             </Text>
           </UnstyledButton>
         </Popover.Target>
-        <Popover.Dropdown aria-label="Autosuspend blockers" style={{ overflowWrap: "anywhere" }}>
+        <Popover.Dropdown style={{ overflowWrap: "anywhere" }}>
           <Stack gap="xs">
             <Text size="xs">{title}</Text>
             {hint.blockers.map((blocker) => (
