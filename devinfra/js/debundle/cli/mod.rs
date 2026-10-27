@@ -42,6 +42,15 @@ pub(crate) fn load_dependency_graph_report(
         .with_context(|| format!("parsing dependency graph {}", path.display()))
 }
 
+/// Which current authoring scope a graph-backed command actually interprets.
+#[derive(Clone, Copy)]
+enum GraphCompatibilityScope<'a> {
+    AuthoredModuleTree {
+        tree_config: Option<&'a std::path::Path>,
+    },
+    ExactSourceUnit,
+}
+
 /// Shared pre-edit/pre-query check for any operation that joins a saved graph
 /// to current authoring files. Historical graph-only views use the loader above.
 pub(crate) fn verify_graph_compatibility(
@@ -60,8 +69,7 @@ pub(crate) fn verify_graph_compatibility(
         spec_root,
         graph_source_root,
         graph_package_roots,
-        tree_config,
-        true,
+        GraphCompatibilityScope::AuthoredModuleTree { tree_config },
     )
 }
 
@@ -72,9 +80,12 @@ fn verify_graph_compatibility_with_scope(
     spec_root: Option<&std::path::Path>,
     graph_source_root: Option<&std::path::Path>,
     graph_package_roots: &std::collections::BTreeMap<String, std::path::PathBuf>,
-    tree_config: Option<&std::path::Path>,
-    require_module_scope: bool,
+    scope: GraphCompatibilityScope<'_>,
 ) -> Result<()> {
+    let (require_module_scope, tree_config) = match scope {
+        GraphCompatibilityScope::AuthoredModuleTree { tree_config } => (true, tree_config),
+        GraphCompatibilityScope::ExactSourceUnit => (false, None),
+    };
     let graph = graph_provenance::read_graph_header(graph_path)?;
     let provenance = graph.provenance.as_ref().ok_or_else(|| {
         GraphMismatch::new(
@@ -534,8 +545,11 @@ fn verify_mixed_graph_command(
                 spec_root,
                 graph_source_root,
                 graph_package_roots,
-                None,
-                !args.id.as_deref().is_some_and(|id| id.starts_with("unit:")),
+                if args.id.as_deref().is_some_and(|id| id.starts_with("unit:")) {
+                    GraphCompatibilityScope::ExactSourceUnit
+                } else {
+                    GraphCompatibilityScope::AuthoredModuleTree { tree_config: None }
+                },
             )
         }
         _ => Ok(()),
