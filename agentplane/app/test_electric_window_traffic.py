@@ -149,6 +149,7 @@ async def test_fixed_older_window_receives_busy_tail_changes(
         initial = [row for row in await entities() if row.entity_id in selected]
         assert len(initial) == 6
         report["before_shapes_memory"] = await service.memory_snapshot()
+        artifact.write_text(json.dumps(report, indent=2) + "\n")
         params = {
             "where": "thread_id = $1 AND projection_epoch = $2",
             "params[1]": str(thread),
@@ -178,8 +179,8 @@ async def test_fixed_older_window_receives_busy_tail_changes(
                 }
             )
             assert {row["entity_id"] for row in held} == selected
-            references = [row["text_ref"] for row in held]
-            assert all(reference is not None for reference in references)
+            # Electric's raw PostgreSQL JSONB columns are JSON strings; ShapeStream normally decodes them.
+            references = [json.loads(row["text_ref"]) for row in held]
             held_chunks = await chunks.subset(
                 {
                     "where": " OR ".join(
