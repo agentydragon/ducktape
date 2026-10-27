@@ -26,8 +26,8 @@ var database *postgres.Database
 func TestMain(m *testing.M) {
 	os.Exit(postgres.RunIntegrationTests(
 		migrations.Up,
-		func(database *postgres.Database) int {
-			database = database
+		func(fixtureDatabase *postgres.Database) int {
+			database = fixtureDatabase
 			return m.Run()
 		},
 	))
