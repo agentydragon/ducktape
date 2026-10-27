@@ -120,7 +120,7 @@ let inventoryDrops = false;
 let sharedFeed: "active" | "ended" | "failed" = "active";
 let sharedThread: Partial<ThreadView> = {};
 let eventSourceUrls: string[] = [];
-let threadsSource: EventTarget | undefined;
+let sendThreadFrame: ((frame: MessageEvent) => void) | undefined;
 const TRACE_SEARCH_SETTINGS: TraceSearchSettings = {
   grafana_base_url: "https://grafana.test.invalid",
   tempo_datasource_uid: "tempo-test",
@@ -147,7 +147,7 @@ beforeEach(() => {
   sharedFeed = "active";
   sharedThread = {};
   eventSourceUrls = [];
-  threadsSource = undefined;
+  sendThreadFrame = undefined;
   traceSearchSettings = TRACE_SEARCH_SETTINGS;
   langfuseSearchSettings = LANGFUSE_SEARCH_SETTINGS;
   dispatchWatches = stubWatchFetch().served;
@@ -175,7 +175,11 @@ beforeEach(() => {
       constructor(readonly url: string) {
         super();
         eventSourceUrls.push(url);
-        if (new URL(url, "http://test").pathname === "/live/threads") threadsSource = this;
+        if (new URL(url, "http://test").pathname === "/live/threads") {
+          sendThreadFrame = (frame) => {
+            this.dispatchEvent(frame);
+          };
+        }
         queueMicrotask(() => {
           if (new URL(url, "http://test").pathname === "/threads/notices/stream") {
             this.dispatchEvent(
@@ -537,8 +541,8 @@ it("marks retained timing unavailable after an invalid deadline and recovers on 
   const hint = (): string | null | undefined =>
     container.querySelector(".agentplane-composer-autosuspend")?.textContent;
   expect(hint()).toBe("Sandbox autosuspends in ~12m");
-  const source = threadsSource;
-  if (!source) throw new Error("Missing thread snapshot stream");
+  const send = sendThreadFrame;
+  if (!send) throw new Error("Missing thread snapshot stream");
   const streams = eventSourceUrls.length;
   const snapshot = (deadline: string): MessageEvent =>
     new MessageEvent("snapshot", {
@@ -553,12 +557,12 @@ it("marks retained timing unavailable after an invalid deadline and recovers on 
     });
 
   await act(async () => {
-    source.dispatchEvent(snapshot("not-a-datetime"));
+    send(snapshot("not-a-datetime"));
   });
   expect(hint()).toBe("Autosuspend timing unavailable");
 
   await act(async () => {
-    source.dispatchEvent(snapshot("2026-01-01T12:13:00Z"));
+    send(snapshot("2026-01-01T12:13:00Z"));
   });
   expect(hint()).toBe("Sandbox autosuspends in ~13m");
   expect(eventSourceUrls).toHaveLength(streams);
