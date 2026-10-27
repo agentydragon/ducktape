@@ -1366,11 +1366,30 @@ it("shows a future numeric delivery state as unknown rather than a known Dispatc
   });
 
   const container = await render();
-  await sendDispatches([dispatchRow(waiting.commandId, 999, undefined, "2026-10-17T12:26:35Z")]);
+  const watch = await openedWatch();
+  await act(async () =>
+    watch.send({ dispatch: dispatchRow(waiting.commandId, 999, undefined, "2026-10-17T12:26:35Z") })
+  );
 
   const row = pendingRow(container, waiting.commandId);
   expect(row.querySelector('[data-stage="unknown"]')).not.toBeNull();
   expect(progressLabel(container, waiting.commandId)).toBe("Outcome unknown: Unrecognized delivery state 999");
+  expect(watch.signal?.aborted).toBe(false);
+
+  await act(async () =>
+    watch.send({
+      dispatch: dispatchRow(
+        waiting.commandId,
+        "DELIVERY_STATE_FAILED",
+        "runner NotFound: no rollout found for thread id",
+        "2026-10-17T12:26:40Z"
+      ),
+    })
+  );
+  await vi.waitFor(() =>
+    expect(pendingRow(container, waiting.commandId).querySelector('[data-stage="dispatch_failed"]')).not.toBeNull()
+  );
+  expect(watch.signal?.aborted).toBe(true);
 });
 
 it("follows the dispatches of queued commands only until they settle", async () => {
