@@ -5,7 +5,7 @@ import { Body, UserInputBubble, pendingSentMessage } from "./thread_cards";
 import { CommandProgress, type CommandStage, type CommandSubject } from "./command_progress";
 import { EvidencePanel, EvidenceToggle, revealEvidenceOnTap } from "./thread_evidence";
 import { type CommandIssue } from "./command_delivery";
-import { LocalCommands, type LocalCommand } from "./local_commands";
+import type { LocalCommands, LocalCommand } from "./local_commands";
 import { decimalBigInt, useThreadSync, type ThreadEntity } from "./thread_sync";
 
 function subject(operation: string): CommandSubject {
