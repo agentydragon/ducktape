@@ -169,7 +169,7 @@ pub struct GateDiagnoseArgs {
     #[arg(long, required = true)]
     pub modules: PathBuf,
 
-    /// Root used to resolve `source_location.source_path` values.
+    /// Root passed to the generated `inspect-source` command.
     #[arg(long = "source-root", required = true)]
     pub source_root: PathBuf,
 
@@ -666,8 +666,11 @@ fn inspection_command(
         std::fs::canonicalize(modules).context("resolving --modules for inspection command")?;
     let source_root = std::fs::canonicalize(source_root)
         .context("resolving --source-root for inspection command")?;
+    let executable = std::env::current_exe()
+        .context("resolving running debundle executable for inspection command")?;
     Ok(format!(
-        "debundle inspect-source --id {} --graph {} --modules {} --source-root {} --format json",
+        "{} inspect-source --id {} --graph {} --modules {} --source-root {} --format json",
+        shell_quote(&executable.display().to_string()),
         shell_quote(source_unit),
         shell_quote(&graph.display().to_string()),
         shell_quote(&modules.display().to_string()),

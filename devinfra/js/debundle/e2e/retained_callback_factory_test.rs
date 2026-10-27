@@ -788,6 +788,15 @@ fn diagnose_namespace_member_write_links_contract_dependency_and_inspection() {
     );
     assert!(witness.get("parsed_statement_id").is_none());
     let inspection = witness["inspection_command"].as_str().unwrap();
+    let binary = debundler_path();
+    let expected_program = format!(
+        "'{}' inspect-source",
+        binary.to_string_lossy().replace('\'', "'\\''")
+    );
+    assert!(
+        inspection.starts_with(&expected_program),
+        "inspection must invoke the same debundle executable: {inspection}"
+    );
     assert!(inspection.contains("--graph '"));
     assert!(inspection.contains("--modules '"));
     assert!(inspection.contains("--source-root '"));
@@ -825,7 +834,6 @@ fn diagnose_namespace_member_write_links_contract_dependency_and_inspection() {
     );
 
     // Execute the exact generated command with the runfile binary directory on PATH.
-    let binary = debundler_path();
     let binary_dir = binary.parent().expect("debundle runfile has a parent");
     let path = format!(
         "{}:{}",
