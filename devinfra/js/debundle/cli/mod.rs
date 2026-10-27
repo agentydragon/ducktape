@@ -24,7 +24,7 @@ use peel::{AtomicGroupsArgs, GraphSummaryArgs, OutputFormat, PatchPlanArgs, prin
 use pipeline::{TransformArgs, TransformRunOptions, run_transform_cli};
 
 use crate::bindings_commands::BindingsNs;
-use crate::gate::{GateArgs, run_gate_cli};
+use crate::gate::{GateArgs, InspectionRoots, run_gate_cli};
 use crate::inspection_commands::{DescribeArgs, InspectSourceArgs};
 use crate::invocation::ResolvedInvocation;
 use crate::modules_commands::ModulesNs;
@@ -53,6 +53,28 @@ pub(crate) fn verify_graph_compatibility(
     graph_package_roots: &std::collections::BTreeMap<String, std::path::PathBuf>,
     tree_config: Option<&std::path::Path>,
 ) -> Result<()> {
+    verify_graph_compatibility_with_scope(
+        graph_path,
+        modules_root,
+        selector_source_root,
+        spec_root,
+        graph_source_root,
+        graph_package_roots,
+        tree_config,
+        true,
+    )
+}
+
+fn verify_graph_compatibility_with_scope(
+    graph_path: &std::path::Path,
+    modules_root: &std::path::Path,
+    selector_source_root: Option<&std::path::Path>,
+    spec_root: Option<&std::path::Path>,
+    graph_source_root: Option<&std::path::Path>,
+    graph_package_roots: &std::collections::BTreeMap<String, std::path::PathBuf>,
+    tree_config: Option<&std::path::Path>,
+    require_module_scope: bool,
+) -> Result<()> {
     let graph = graph_provenance::read_graph_header(graph_path)?;
     let provenance = graph.provenance.as_ref().ok_or_else(|| {
         GraphMismatch::new(
@@ -68,7 +90,26 @@ pub(crate) fn verify_graph_compatibility(
         source: graph_source_root.map(std::path::Path::to_path_buf),
         packages: graph_package_roots.clone(),
     };
-    if let Some(directory) = &provenance.modules_directory {
+    let (regenerate_command, regenerate_cwd) = provenance.regeneration_recipe(&current)?;
+    if require_module_scope && provenance.modules_directory.is_none() {
+        return Err(GraphMismatch::new(
+            GraphMismatchReason::ModuleScope {
+                chunk_id: graph.chunk_id.clone(),
+                expected: Vec::new(),
+                actual: graph_provenance::absolute(modules_root)?,
+            },
+            regenerate_command.clone(),
+            Some(regenerate_cwd.clone()),
+        )
+        .into());
+    }
+    // `inspect-source --id unit:*` resolves a saved node without interpreting
+    // current module claims, so it skips only this authored-scope check.
+    if require_module_scope {
+        let directory = provenance
+            .modules_directory
+            .as_ref()
+            .expect("checked above");
         let base = current
             .spec
             .as_ref()
@@ -82,8 +123,8 @@ pub(crate) fn verify_graph_compatibility(
                     expected: base,
                     actual: modules,
                 },
-                provenance.generation_command.clone(),
-                Some(provenance.generation_cwd.clone()),
+                regenerate_command.clone(),
+                Some(regenerate_cwd.clone()),
             )
             .into());
         }
@@ -106,8 +147,8 @@ pub(crate) fn verify_graph_compatibility(
                     expected: scopes.iter().map(|scope| base.join(scope)).collect(),
                     actual: modules,
                 },
-                provenance.generation_command.clone(),
-                Some(provenance.generation_cwd.clone()),
+                regenerate_command.clone(),
+                Some(regenerate_cwd.clone()),
             )
             .into());
         }
@@ -128,23 +169,12 @@ pub(crate) fn verify_graph_compatibility(
             if expected != actual {
                 return Err(GraphMismatch::new(
                     GraphMismatchReason::ConfigPath { expected, actual },
-                    provenance.generation_command.clone(),
-                    Some(provenance.generation_cwd.clone()),
+                    regenerate_command.clone(),
+                    Some(regenerate_cwd.clone()),
                 )
                 .into());
             }
         }
-    } else {
-        return Err(GraphMismatch::new(
-            GraphMismatchReason::ModuleScope {
-                chunk_id: graph.chunk_id.clone(),
-                expected: Vec::new(),
-                actual: graph_provenance::absolute(modules_root)?,
-            },
-            provenance.generation_command.clone(),
-            Some(provenance.generation_cwd.clone()),
-        )
-        .into());
     }
     provenance.verify(&current)?;
     let source = provenance
@@ -186,8 +216,8 @@ pub(crate) fn verify_graph_compatibility(
                     expected: canonical_expected,
                     actual: canonical_actual,
                 },
-                provenance.generation_command.clone(),
-                Some(provenance.generation_cwd.clone()),
+                regenerate_command.clone(),
+                Some(regenerate_cwd.clone()),
             )
             .into());
         }
@@ -207,8 +237,8 @@ pub(crate) fn verify_graph_compatibility(
                     expected: source.sha256.clone(),
                     actual,
                 },
-                provenance.generation_command.clone(),
-                Some(provenance.generation_cwd.clone()),
+                regenerate_command.clone(),
+                Some(regenerate_cwd.clone()),
             )
             .into());
         }
@@ -386,7 +416,14 @@ fn run_debundle_cli(args: DebundleArgs, invocation: Option<ResolvedInvocation>) 
         // already carry enough context in their bail messages (e.g.
         // "no blocking SCC with id ..."), and an outer wrap would
         // hide them since `main.rs` prints only the top context.
-        DebundleCommand::Gate(args) => run_gate_cli(args),
+        DebundleCommand::Gate(gate_args) => run_gate_cli(
+            gate_args,
+            InspectionRoots {
+                spec_root: args.spec_root.clone(),
+                graph_source_root: args.graph_source_root.clone(),
+                graph_package_roots: graph_package_roots.clone(),
+            },
+        ),
         DebundleCommand::Snapshot(snapshot_args) => snapshot::run(
             snapshot_args,
             graph_provenance::CurrentRoots {
@@ -490,7 +527,7 @@ fn verify_mixed_graph_command(
         DebundleCommand::InspectSource(args) if args.id.is_some() => {
             let graph = args.graph.as_deref().context("--id requires --graph")?;
             let modules = args.modules.as_deref().context("--id requires --modules")?;
-            verify_graph_compatibility(
+            verify_graph_compatibility_with_scope(
                 graph,
                 modules,
                 args.source_root.as_deref(),
@@ -498,6 +535,7 @@ fn verify_mixed_graph_command(
                 graph_source_root,
                 graph_package_roots,
                 None,
+                !args.id.as_deref().is_some_and(|id| id.starts_with("unit:")),
             )
         }
         _ => Ok(()),

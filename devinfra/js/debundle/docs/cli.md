@@ -41,7 +41,11 @@ debundle snapshot verify /tmp/worker-one
 
 `--graph` may also come from `DEBUNDLE_GRAPH`; an explicit flag wins. The
 returned JSON identifies the copied engine, graph, spec/source roots, complete
-modules tree and a `regeneration_argv` array. Execute that argument array
+modules tree, `graph_package_roots` map and a `regeneration_argv` array. For a
+graph-backed query or edit in the snapshot, pass each map entry as the global
+`--graph-package-root NAME=DIR` alongside `--spec-root` and
+`--graph-source-root`. The reserved `__packages_root__` entry relocates the
+shared `--packages-root` directory. Execute `regeneration_argv`
 directly. The replay uses only copied inputs and writes under that worker's
 `output/` directory. To display a shell command:
 
@@ -93,8 +97,17 @@ provenance exits nonzero. JSON and NDJSON commands emit a typed
 `graph_compatibility` rejection with `mismatch.reason`, expected/actual
 values, and `regenerate_command` argv. A successful edit leaves the saved
 graph describing the pre-edit spec; rerun `debundle run` before another
-graph-backed edit. Flat-spec graphs have no authored module-tree scope and
-cannot authorize a YAML-tree edit or query.
+graph-backed edit. With explicit relocation roots, the mismatch recipe uses
+the current engine and translated input paths, and `regenerate_cwd` names the
+current spec root. The recipe selects an unused `-regenerated` sibling of the
+translated output directory, adding a numeric suffix if needed. Computing the
+recipe does not create or remove that directory.
+Flat-spec graphs have no authored module-tree scope and cannot authorize a
+YAML-tree edit or query. `inspect-source --id unit:...` can inspect one saved
+source unit from a flat graph: it does not resolve module claims, but still
+checks the captured engine and input fingerprints plus the exact source path
+and digest before loading source bytes. Other `--id` selections retain the
+module-scope check.
 `--no-verify` skips the post-edit assignment gate only; it does not skip
 the saved graph's baseline compatibility check when a graph is supplied.
 
@@ -212,9 +225,38 @@ each verb prints **one outcome object** sharing a common schema core:
 
 Verb-specific fields flatten in alongside the core: `moves_applied`
 (assign), `unassigned` (unassign), `binding` / `old_readable` /
-`new_readable` (rename), `target` (merge). Gate rejections replace the
+`new_readable` (rename), `target` (single merge) / `targets` (merge batch). Gate rejections replace the
 success object with a structured rejection object — see "Rejection
 diagnostics" below.
+
+## Whole-module merge batches
+
+Use a batch for several merges or filename replacements with one validation of
+the complete prospective spec. For example, `merges.json`:
+
+```json
+[
+  { "target": "models/Alpha.yaml", "sources": ["parts/first.yaml"] },
+  { "target": "models/Beta.yaml", "sources": ["parts/second.yaml"] }
+]
+```
+
+```bash
+debundle modules merge --batch merges.json --modules "$MODULES" \
+  --graph "$GRAPH" --source-root "$SOURCE_ROOT" --dry-run
+# Apply the same validated plan by omitting --dry-run.
+```
+
+Explicit `.yaml` filenames preserve their physical casing. Each entry uses the
+single-merge claim, annotation, comment and note rules. The batch rejects empty
+entries, reused sources, source-target chains, paths outside the module root and
+case-equivalent logical destination collisions, including untouched modules.
+Resolved files must end in `.yaml`; module trees containing symlink files or
+directories are unsupported and rejected before planning writes.
+Case-only relocation within one entry is supported. `--batch` cannot be combined
+with `--target`, positional sources or `--no-verify`. A rejected plan or gate writes nothing;
+after success, all targets are written before any source is deleted. Individual
+file replacements are atomic; the batch is not a crash-atomic transaction.
 
 ## Name and identifier resolution
 
@@ -841,9 +883,47 @@ rejected. The unit is the blocking SCC, not a cycle — a single SCC can
 contain exponentially many simple cycles, so the CLI exposes the cut (a
 primitive on the SCC) but deliberately not a `cycle list`.
 
-Each `gate ...` command accepts `--cycles <path>` to override the default
-`cycles.json` location (sibling of `--graph`). A missing `cycles.json` is
-the clean state: zero blocking SCCs, exit 0.
+The SCC query commands (`gate list`, `gate describe`, and `gate cut`) accept
+`--cycles <path>` to override the default `cycles.json` location (sibling of
+`--graph`). A missing `cycles.json` is the clean state: zero blocking SCCs,
+exit 0.
+
+`gate diagnose <binding>` traces constraining promoted-at-initialization edges
+to a matched callback-factory contract rejected by the supported imported
+namespace-member write guard. It requires explicit graph, module-spec, and
+source-root paths:
+
+```sh
+debundle gate diagnose later \
+  --graph reports/tree/static/app/dependency_graph.json \
+  --modules spec/modules \
+  --source-root snapshot \
+  --format json
+```
+
+The JSON report connects the binding's current module ownership, promoted
+dependency and callback source unit, matched contract signature, typed guard
+code, and a write witness selected by source-unit order (deterministic within
+one source unit). A supported row requires the edge's callee source unit to
+match a statically resolved callback argument root for that call; otherwise it
+reports an inconclusive source mismatch or unresolved callback source. Only
+overloads whose arity and callback positions apply to the actual call are
+reported. The write witness includes its graph source-unit ref and source-unit
+ordinal. Diagnose does not read or validate the supplied source against the
+graph-generation fingerprint, so it does not emit a parsed statement ID or
+apply a possibly stale `SourceUnitOrdinal -> StatementId` crosswalk. Its
+`inspection_command` is directly runnable and repeats all three paths. Output
+is limited to five trace rows by default; `--limit N` changes that bound and
+`--all` explicitly emits every row. `returned_count`, `total_count`,
+`truncated`, `expansion`, `query_status`, and `coverage_scope` make the output
+boundary explicit. `query_status` summarizes all uniquely linked candidate promoted edges,
+including supported links beyond a bounded returned page. The query does not
+establish the sole or globally earliest cause: unsupported guard families,
+taint causes, and traces without a supported barrier remain explicitly
+inconclusive. If one source unit has multiple candidate barriers, or a promoted
+callback source does not match the callback argument roots of its barrier, the
+query reports an inconclusive link rather than pairing a contract with the
+wrong promoted callback.
 
 ## Workflow: investigating a binding end-to-end
 

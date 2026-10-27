@@ -1,8 +1,23 @@
 import { NativeSelect, NumberInput, Text } from "@mantine/core";
+import type { ComponentProps } from "react";
 
 const FIELD_LABEL_CLASSES = { label: "augur-field-label mb-1 block", input: "augur-tabular" };
 
-function numberFieldSectionWidth(section) {
+type NumberFieldProps = Omit<
+  ComponentProps<typeof NumberInput>,
+  "label" | "value" | "onChange" | "min" | "max" | "step" | "prefix" | "suffix"
+> & {
+  label?: string;
+  value?: number | string | null;
+  onChange: (value: number | null) => void;
+  min?: number;
+  max?: number;
+  step?: number;
+  prefix?: string | null;
+  suffix?: string | null;
+};
+
+function numberFieldSectionWidth(section: string | undefined) {
   if (!section) return undefined;
   return Math.max(34, String(section).length * 8 + 24);
 }
@@ -17,7 +32,7 @@ export function NumberField({
   prefix = null,
   suffix = null,
   ...inputProps
-}) {
+}: NumberFieldProps) {
   const formattedPrefix = prefix ? String(prefix).trim() : undefined;
   const formattedSuffix = suffix ? String(suffix).trim() : undefined;
   return (
@@ -48,6 +63,6 @@ export function NumberField({
 
 // Mantine NativeSelect with the project's standard label classNames so callsites don't repeat
 // `classNames={{ label: "augur-field-label mb-1 block", input: "augur-tabular" }}` per use.
-export function NativeSelectField(props) {
+export function NativeSelectField(props: ComponentProps<typeof NativeSelect>) {
   return <NativeSelect classNames={FIELD_LABEL_CLASSES} {...props} />;
 }

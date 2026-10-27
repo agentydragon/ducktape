@@ -4,7 +4,7 @@ Gaps to close if a workflow needs them; none is committed.
 
 ## Thread tool schemas generated from their implementations
 
-The thread's shell tool calls have the same hazard: `threads/command_calls.ts` mirrors Claude Code's
+The thread's shell tool calls have the same hazard: `threads/shell_calls.ts` mirrors Claude Code's
 `Bash` input and the arguments `runner/codex/adapter.go` records for `commandExecution` by hand, strictly, so
 a field a harness adds sends every such call to the JSON view while the tests still pass.
 

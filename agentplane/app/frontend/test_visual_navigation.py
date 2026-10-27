@@ -66,8 +66,8 @@ async def test_current_sandbox_highlight(view: VisualPage, app: AgentplaneFixtur
     await view.capture(target=page.locator("#app"))
 
 
-async def test_vm_console_to_sessions_tab(view: VisualPage, app: AgentplaneFixture) -> None:
-    """Leaving the live VM console for Sessions unmounts its stream and keeps the page mounted."""
+async def test_vm_console_to_threads_tab(view: VisualPage, app: AgentplaneFixture) -> None:
+    """Leaving the live VM console for Threads unmounts its stream and keeps the page mounted."""
     await app.as_vm_sandbox("ready-sandbox")
     await app.mount_app("/sandboxes/ready-sandbox?tab=console")
     page = view.page
@@ -75,13 +75,13 @@ async def test_vm_console_to_sessions_tab(view: VisualPage, app: AgentplaneFixtu
     await expect(page.get_by_label("Console output")).to_be_visible()
     await expect(page.get_by_label("Console output")).to_contain_text("guest console output")
     await view.check(context="console attached before changing tabs")
-    await view.capture(name="vm-console-before-sessions", target=page.locator("#app"))
+    await view.capture(name="vm-console-before-threads", target=page.locator("#app"))
 
-    await page.get_by_role("tab", name="Sessions").click()
-    await expect(page.get_by_role("tab", name="Sessions")).to_have_attribute("aria-selected", "true")
-    await expect(page.get_by_role("button", name="New session")).to_be_visible()
-    await view.check(context="after changing from VM console to Sessions")
-    await view.capture(name="vm-console-to-sessions", target=page.locator("#app"))
+    await page.get_by_role("tab", name="Threads").click()
+    await expect(page.get_by_role("tab", name="Threads")).to_have_attribute("aria-selected", "true")
+    await expect(page.get_by_role("button", name="New thread", exact=True)).to_be_visible()
+    await view.check(context="after changing from VM console to Threads")
+    await view.capture(name="vm-console-to-threads", target=page.locator("#app"))
 
 
 @DESKTOP_AND_MOBILE
@@ -90,7 +90,7 @@ async def test_pod_sandbox_hides_vm_console(view: VisualPage, app: AgentplaneFix
     await app.mount_app("/sandboxes/ready-sandbox?tab=console")
     page = view.page
     await expect(page.get_by_label("Sandbox status: Ready")).to_be_visible()
-    await expect(page.get_by_role("tab", name="Sessions")).to_have_attribute("aria-selected", "true")
+    await expect(page.get_by_role("tab", name="Threads")).to_have_attribute("aria-selected", "true")
     await expect(page.get_by_role("tab", name="Console")).to_have_count(0)
     await expect(page.get_by_label("Console output")).to_have_count(0)
     await view.check(context="Pod Sandbox opened without the VM console")
@@ -102,10 +102,10 @@ async def test_queued_session_open_follows_live_projection_and_survives_return(
 ) -> None:
     """A queued Open follows its History projection; the Sandbox table lists it on return."""
     await app.queue_open_response()
-    await app.mount_app("/sandboxes/ready-sandbox?tab=sessions")
+    await app.mount_app("/sandboxes/ready-sandbox?tab=threads")
     page = view.page
-    await page.get_by_role("button", name="New session").click()
-    await page.get_by_role("button", name="Start session").click()
+    await page.get_by_role("button", name="New thread", exact=True).click()
+    await page.get_by_role("button", name="Create thread").click()
     pending = page.get_by_role("status").filter(has_text="Open attempt")
     await expect(pending).to_contain_text("Queued in Dispatcher")
     match = re.search(r"Open attempt ([0-9a-f-]{36})", await pending.inner_text())
@@ -114,17 +114,17 @@ async def test_queued_session_open_follows_live_projection_and_survives_return(
 
     await app.project_queued_session()
     await expect(page).to_have_url(re.compile(re.escape(session_id)))
-    sidebar_thread = page.locator(".agentplane-thread-list-row-name").filter(has_text="Queued opening session")
+    sidebar_thread = page.locator(".agentplane-thread-list-row-name").filter(has_text="Queued opening thread")
     await expect(sidebar_thread).to_be_visible()
 
     await page.locator("a.agentplane-thread-list-group-link").filter(has_text="ready-sandbox").click()
-    await page.get_by_role("tab", name="Sessions").click()
-    row = page.get_by_role("row", name=re.compile("Queued opening session"))
+    await page.get_by_role("tab", name="Threads").click()
+    row = page.get_by_role("row", name=re.compile("Queued opening thread"))
     await expect(row).to_be_visible()
     await expect(
-        page.locator(".agentplane-thread-list-row-name").filter(has_text="Queued opening session")
+        page.locator(".agentplane-thread-list-row-name").filter(has_text="Queued opening thread")
     ).to_be_visible()
-    await view.check(context="queued Session projected and listed after returning to its Sandbox")
+    await view.check(context="queued Thread projected and listed after returning to its Sandbox")
     await view.capture(target=page.locator("#app"))
 
 
@@ -282,7 +282,7 @@ async def capture_paused_claude_harness_picker(view: VisualPage, app: Agentplane
     await view.page.wait_for_selector('[role="option"][data-combobox-disabled]', state="attached")
     await view.check(context="fixture ready")
     page = view.page
-    await page.get_by_role("button", name="New session").click()
+    await page.get_by_role("button", name="New thread", exact=True).click()
     harness = page.get_by_role("combobox", name="Harness")
     await expect(harness).to_have_value("Codex")
     await harness.click()

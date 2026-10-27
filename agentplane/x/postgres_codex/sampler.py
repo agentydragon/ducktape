@@ -7,7 +7,7 @@ from aiohttp import ClientSession
 from agentplane.x.postgres_codex.code_mode import CodeMode
 from agentplane.x.postgres_codex.compaction import compact
 from agentplane.x.postgres_codex.responses import request_body, sample
-from agentplane.x.postgres_codex.store import Owner, Store, UnknownEffectError
+from agentplane.x.postgres_codex.store import KnownFailureError, Owner, Store, UnknownEffectError
 
 
 def pending_call(items: list[dict[str, Any]]) -> dict[str, Any] | None:
@@ -45,7 +45,11 @@ async def advance(
         if runtime is None:
             raise ValueError("a pending cell requires a code-mode runtime")
         intent_id = await store.begin(owner, {"kind": "cell", "call": call})
-        output = await runtime.execute(call)
+        try:
+            output = await runtime.execute(call)
+        except KnownFailureError as failure:
+            await store.reject(owner, intent_id, failure)
+            raise
         result = {"type": "custom_tool_call_output", "call_id": call["call_id"], "output": output}
         await store.finish(owner, intent_id, result, [result])
         return "cell"
@@ -63,10 +67,16 @@ async def advance(
         model, str(row.id), row.context(), instructions=row.instructions, execution_state=execution_state
     )
     intent_id = await store.begin(owner, {"kind": "sampling", "body": body})
-    sampled = await sample(http, endpoint, credential, body)
-    for item in sampled.output:
-        if item["type"] not in {"message", "reasoning", "custom_tool_call"}:
-            raise ValueError(f"unsupported provider output type: {item['type']}")
+    try:
+        sampled = await sample(http, endpoint, credential, body)
+        for item in sampled.output:
+            if item["type"] not in {"message", "reasoning", "custom_tool_call"}:
+                raise KnownFailureError({"reason": "unsupported provider output type", **sampled.audit()})
+            if item["type"] == "custom_tool_call" and item["name"] not in {"exec", "wait"}:
+                raise KnownFailureError({"reason": "unsupported model tool", **sampled.audit()})
+    except KnownFailureError as failure:
+        await store.reject(owner, intent_id, failure)
+        raise
     # Provider items, including opaque reasoning and unknown fields, remain intact in JSONB.
     usage = sampled.terminal.get("usage")
     await store.finish(

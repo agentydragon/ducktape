@@ -36,6 +36,7 @@ pub use atomic_groups::{
     compute_dependency_graph_and_atomic_groups_with,
 };
 pub use facts::{
+    CallbackFactoryBarrierFact, CallbackFactoryBarrierRejection, CallbackFactoryWriteWitness,
     ChunkFactAnalysis, EffectCell, PositionBucketed, StatementEffectSummary, StatementFacts,
     StatementKind, StructuralChunkAnalysis, StructuralStatementFacts, analyze_chunk,
     analyze_chunk_structural, analyze_chunk_with_policy, analyze_vendor_prune_chunk,
@@ -59,8 +60,9 @@ pub use purity::{
 };
 pub use reports::schema::{
     AtomicGraphReport, AtomicGroupConflictReport, AtomicGroupEdgeReport, AtomicGroupReport,
-    BindingReport, ConflictingClaimReport, DependencyEdgeReport, DependencyGraphReport,
-    EdgeRoleReport, LineRange, ModuleDestinationKind, ModuleEntry, ModuleKey, ModuleQuotientReport,
-    PurityCauseReport, QuotientEdgeReport, QuotientSccReport, SequencedSourceUnitCause,
-    SourceLocation, SourceUnitReport,
+    BindingReport, CallbackFactoryBarrierReport, CallbackFactoryContractReport,
+    CallbackFactoryRejectionReport, CallbackFactoryWriteWitnessReport, ConflictingClaimReport,
+    DependencyEdgeReport, DependencyGraphReport, EdgeRoleReport, LineRange, ModuleDestinationKind,
+    ModuleEntry, ModuleKey, ModuleQuotientReport, PurityCauseReport, QuotientEdgeReport,
+    QuotientSccReport, SequencedSourceUnitCause, SourceLocation, SourceUnitReport,
 };

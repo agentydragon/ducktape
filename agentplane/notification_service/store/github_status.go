@@ -11,7 +11,7 @@ type GitHubRefreshStatus struct {
 	LastSuccessAt *time.Time
 	// Failure is the current failure of the row's refresh, nil when the last one succeeded.
 	Failure *SourceFailure
-	// RetryAt is when a failed refresh is next tried.
+	// RetryAt is when a failed refresh or pending mergeability computation is next tried.
 	RetryAt *time.Time
 	// RefreshingUntil is when the lease of a refresh in flight runs out.
 	RefreshingUntil *time.Time
@@ -55,9 +55,9 @@ func (row refreshRow) status() (GitHubRefreshStatus, error) {
 		status.Failure = &SourceFailure{
 			Kind: kind, Message: row.errorMessage.String, Since: row.errorSince.Time.UTC(), ObservedAt: row.errorObservedAt.Time.UTC(),
 		}
-		if row.nextAttempt.Valid {
-			status.RetryAt = utc(row.nextAttempt.Time)
-		}
+	}
+	if row.nextAttempt.Valid {
+		status.RetryAt = utc(row.nextAttempt.Time)
 	}
 	if row.claim.Valid && row.claimUntil.Valid {
 		status.RefreshingUntil = utc(row.claimUntil.Time)

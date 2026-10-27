@@ -87,7 +87,8 @@ func (w *Worker) Run(ctx context.Context, changes <-chan struct{}) error {
 	}
 }
 
-// retention schedules raw receipt cleanup and pages through inbox retention, one batch a minute.
+// retention schedules cleanup of GitHub receipts and mergeability history, then pages through inbox retention,
+// one batch a minute.
 type retention struct {
 	after *uuid.UUID
 	due   time.Time

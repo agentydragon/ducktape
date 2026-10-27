@@ -53,6 +53,25 @@ async def test_reported_rollout_overview(reported_rollout: VisualPage) -> None:
     await reported_rollout.capture()
 
 
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
+async def test_composer_autosuspend_countdown(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.build(Scene.AUTOSUSPEND_COUNTDOWN)
+    await app.mount_thread(IDLE_THREAD)
+    await view.page.wait_for_selector("[aria-label='Thread history'][data-layout-settled='true']", state="attached")
+    autosuspend = view.page.locator(
+        ".agentplane-composer-autosuspend:visible, .agentplane-composer-autosuspend-mobile:visible"
+    )
+    activity = view.page.locator(
+        ".agentplane-composer-model-activity:visible, .agentplane-thread-tail-model-activity:visible"
+    )
+    await expect(autosuspend).to_be_visible()
+    await expect(autosuspend).to_have_text("Sandbox autosuspends in ~12m")
+    await expect(activity).to_be_visible()
+    await expect(activity).to_contain_text("Model activity: 13m ago · Idle")
+    await view.check(context="autosuspend composer ready")
+    await view.capture()
+
+
 @pytest.mark.parametrize(
     ("viewport", "color_scheme"),
     [(DESKTOP, "light"), (MOBILE, "light"), (DESKTOP, "dark")],

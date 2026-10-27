@@ -16,6 +16,8 @@ type GitHubSubjectState struct {
 	Generation int64
 	// LastSuccessAt is when the subject was last refreshed, nil while it never was.
 	LastSuccessAt *time.Time
+	// RepairAt includes an earlier retry while GitHub computes mergeability.
+	RepairAt time.Time
 }
 
 // Subject reads the refresh state of the subject.
@@ -27,6 +29,10 @@ func (g *GitHubState) Subject(ctx context.Context, key GitHubSubjectKey) (GitHub
 	state := GitHubSubjectState{Generation: row.generation}
 	if row.lastSuccessAt.Valid {
 		state.LastSuccessAt = utc(row.lastSuccessAt.Time)
+		state.RepairAt = row.lastSuccessAt.Time.Add(g.freshness)
+		if row.nextAttempt.Valid && row.nextAttempt.Time.Before(state.RepairAt) {
+			state.RepairAt = row.nextAttempt.Time
+		}
 	}
 	return state, nil
 }

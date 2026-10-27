@@ -69,6 +69,8 @@ type idleCheck struct {
 	lameduck bool
 	// When the idle timer next matters; zero where no event will end the wait.
 	recheck time.Duration
+	// The next attempt to suspend this idle Sandbox, absent when no attempt is scheduled.
+	suspendAt *metav1.Time
 }
 
 // suspendIfIdle suspends a Sandbox that is to run once its runner has been idle for `spec.idleSuspendAfter`. It
@@ -106,12 +108,10 @@ func (r *Reconciler) suspendIfIdle(ctx context.Context, sandbox *sandboxapi.Sand
 		return idleCheck{}, nil
 	}
 	after := sandbox.Spec.IdleSuspendAfter.Duration
-	due := sighting.firstSeen.Add(after)
-	if sighting.notBefore.After(due) {
-		due = sighting.notBefore
-	}
+	due := idleSuspendDeadline(sighting, after)
 	if remaining := due.Sub(now); remaining > 0 {
-		return idleCheck{recheck: remaining}, nil
+		deadline := idleSuspendStatusTime(due)
+		return idleCheck{recheck: remaining, suspendAt: &deadline}, nil
 	}
 	logger := ctrl.LoggerFrom(ctx)
 	result, err := r.Quiescer.Quiesce(ctx, sandbox, facts.IdleSince)
@@ -119,12 +119,16 @@ func (r *Reconciler) suspendIfIdle(ctx context.Context, sandbox *sandboxapi.Sand
 	case status.Code(err) == codes.Aborted:
 		// The runner is busy again, or idle since another instant: its next fact, which enqueues the
 		// Sandbox, says which. Otherwise the timer starts over.
-		r.idle.holdUntil(key, now.Add(after))
-		return idleCheck{recheck: after}, nil
+		notBefore := now.Add(after)
+		r.idle.holdUntil(key, notBefore)
+		deadline := idleSuspendStatusTime(notBefore)
+		return idleCheck{recheck: after, suspendAt: &deadline}, nil
 	case err != nil:
 		logger.Error(err, "asking an idle runner to quiesce", "sandbox", key.String())
-		r.idle.holdUntil(key, now.Add(quiesceDeadline))
-		return idleCheck{recheck: quiesceDeadline}, nil
+		notBefore := now.Add(quiesceDeadline)
+		r.idle.holdUntil(key, notBefore)
+		deadline := idleSuspendStatusTime(notBefore)
+		return idleCheck{recheck: quiesceDeadline, suspendAt: &deadline}, nil
 	}
 	logger.Info("suspending an idle Sandbox", "sandbox", key.String(), "idleSince", facts.IdleSince, "idleSuspendAfter", after.String())
 	idle, generation := sandboxapi.SuspendedByIdle, sandbox.Spec.WakeGeneration
@@ -137,4 +141,18 @@ func (r *Reconciler) suspendIfIdle(ctx context.Context, sandbox *sandboxapi.Sand
 		sandbox.Status.QuiescedIncarnation = &runner
 	}
 	return idleCheck{}, nil
+}
+
+// idleSuspendDeadline is the next attempt, after both the full idle period and any retry hold.
+func idleSuspendDeadline(sighting idleSighting, after time.Duration) time.Time {
+	due := sighting.firstSeen.Add(after)
+	if sighting.notBefore.After(due) {
+		return sighting.notBefore
+	}
+	return due
+}
+
+// idleSuspendStatusTime uses Kubernetes' whole-second wire precision so a readback compares equal.
+func idleSuspendStatusTime(at time.Time) metav1.Time {
+	return metav1.NewTime(at.Truncate(time.Second))
 }

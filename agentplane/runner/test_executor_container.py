@@ -3,13 +3,9 @@
 from __future__ import annotations
 
 import asyncio
-import json
-import os
 import shlex
-import socket
 import time
-from collections.abc import Iterator
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
 
@@ -20,94 +16,16 @@ from agentplane.proto import event_pb2, runner_pb2
 from agentplane.runner.testing import events, launches
 from agentplane.runner.testing.config import RunnerTestConfig
 from agentplane.runner.testing.driver import RunnerDriver, SessionFollow, SessionSealedError
+from agentplane.runner.testing.executor_companion import ExecutorCompanion, ExecutorStatus, inspect_executor
 from agentplane.runner.testing.fixtures import ModelEndpoint
 from agentplane.runner.testing.process import RunningRunner
 from agentplane.runner.testing.process_fixtures import wait_for_exit
 from agentplane.testing.scripted_model import ScriptedModel, ShellCall, Text
-from third_party.containers import debian_slim
-from util.bazel.runfiles import get_required_path
-from util.oci import load_oci_image
-from util.testing.container_logs import LoggedContainer
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps.
 # gazelle:include_dep @pypi//protobuf
 
 pytestmark = pytest.mark.parametrize("harness", [runner_pb2.HARNESS_CODEX], ids=["codex"])
-
-
-@dataclass(frozen=True)
-class ExecutorCompanion:
-    url: str
-    socket: Path
-    container: LoggedContainer
-
-
-@dataclass(frozen=True)
-class ExecutorStatus:
-    generation: str
-    owned: bool
-
-
-def _free_port() -> int:
-    with socket.socket() as listener:
-        listener.bind(("127.0.0.1", 0))
-        return int(listener.getsockname()[1])
-
-
-def _inspect_executor(path: Path) -> ExecutorStatus:
-    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
-        connection.settimeout(2)
-        connection.connect(str(path))
-        connection.sendall(b'{"operation":"inspect"}\n')
-        response = bytearray()
-        while not response.endswith(b"\n"):
-            chunk = connection.recv(4096)
-            if not chunk:
-                raise ConnectionError("executor companion closed its inspect connection")
-            response.extend(chunk)
-    status = json.loads(response)
-    return ExecutorStatus(generation=status["generation"], owned=status["owned"])
-
-
-@pytest.fixture
-def executor_companion(tmp_path: Path) -> Iterator[ExecutorCompanion]:
-    load_oci_image(debian_slim.IMAGE)
-    runner_binary = get_required_path(launches.RUNNER_BINARY).resolve()
-    codex_binary = get_required_path(launches.CODEX_BINARY).resolve()
-    socket_path = tmp_path / "executor.sock"
-    url = f"ws://127.0.0.1:{_free_port()}"
-    container = (
-        LoggedContainer(debian_slim.IMAGE.tag, test_name="runner-executor-companion")
-        .with_kwargs(network_mode="host", mem_limit="512m", pids_limit=64, user=f"{os.getuid()}:{os.getgid()}")
-        .with_volume_mapping(str(tmp_path), str(tmp_path), mode="rw")
-        .with_volume_mapping(str(runner_binary), "/runner", mode="ro")
-        .with_volume_mapping(str(codex_binary.parent.parent), "/opt/codex", mode="ro")
-        .with_command(
-            shlex.join(
-                [
-                    "/runner",
-                    "--executor-container",
-                    "--socket",
-                    str(socket_path),
-                    "--listen",
-                    url,
-                    "--binary",
-                    "/opt/codex/bin/codex",
-                ]
-            )
-        )
-    )
-    with container:
-        deadline = time.monotonic() + 10
-        while True:
-            try:
-                _inspect_executor(socket_path)
-                break
-            except OSError:
-                if time.monotonic() >= deadline:
-                    raise TimeoutError("executor companion did not create its ownership socket") from None
-                time.sleep(0.05)
-        yield ExecutorCompanion(url=url, socket=socket_path, container=container)
 
 
 @pytest.fixture
@@ -130,7 +48,7 @@ async def _wait_for_generation(path: Path, previous: str, *, owned: bool) -> Exe
     async with asyncio.timeout(30):
         while True:
             try:
-                status = await asyncio.to_thread(_inspect_executor, path)
+                status = await asyncio.to_thread(inspect_executor, path)
             except OSError:
                 await asyncio.sleep(0.1)
                 continue
@@ -143,7 +61,7 @@ async def _wait_for_owned(path: Path, generation: str) -> ExecutorStatus:
     async with asyncio.timeout(30):
         while True:
             try:
-                status = await asyncio.to_thread(_inspect_executor, path)
+                status = await asyncio.to_thread(inspect_executor, path)
             except OSError:
                 await asyncio.sleep(0.1)
                 continue
@@ -250,7 +168,7 @@ async def test_companion_namespace_restarts_without_restarting_codex_app_server(
     await session.submit_input("input-1", "Run the first shell tool and report its output.")
     await _reply_to_tool(model, session, "call-first", first_command, "FIRST_DONE", "FIRST_TOOL_OK")
     detached_host_pid = await asyncio.to_thread(_wait_for_host_pid, executor_companion, detached_marker)
-    initial_executor = await asyncio.to_thread(_inspect_executor, executor_companion.socket)
+    initial_executor = await asyncio.to_thread(inspect_executor, executor_companion.socket)
     assert initial_executor.owned
     initial_app_server = await _codex_process(driver)
     assert initial_app_server.HasField("pid")

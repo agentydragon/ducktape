@@ -52,6 +52,10 @@ impl PositionBucketed<BTreeSet<Id>> {
 pub struct StatementFacts {
     pub ordinal: SourceUnitOrdinal,
     pub source_location: Option<SourceLocation>,
+    /// Matched retained callback-factory contracts rejected by a visible
+    /// namespace guard for a top-level call in this source unit. These facts
+    /// explain conservative fallback; they never affect the analysis result.
+    pub(crate) callback_factory_barriers: Vec<CallbackFactoryBarrierFact>,
     pub declared: BTreeSet<Id>,
     /// Bindings introduced inside this statement's lexical scopes (parameters,
     /// local declarations). Used to distinguish callback calls through local
@@ -150,6 +154,33 @@ pub struct StatementFacts {
     pub dataflow_summarizable: bool,
     pub purity: Purity,
     pub kind: StatementKind,
+}
+
+#[derive(Debug, Clone)]
+pub struct CallbackFactoryBarrierFact {
+    pub namespace_binding: String,
+    pub member: String,
+    pub argument_count: usize,
+    pub callback_arguments: BTreeSet<usize>,
+    /// Exact callback argument roots known from whole-chunk value flow. `None`
+    /// means the argument shape was not statically resolvable for this query.
+    pub callback_source_units: Option<BTreeSet<SourceUnitOrdinal>>,
+    pub rejection: CallbackFactoryBarrierRejection,
+}
+
+#[derive(Debug, Clone)]
+pub enum CallbackFactoryBarrierRejection {
+    NamespaceMemberWrite {
+        witness: CallbackFactoryWriteWitness,
+    },
+    UnsupportedGuard,
+}
+
+#[derive(Debug, Clone)]
+pub struct CallbackFactoryWriteWitness {
+    pub statement_ordinal: SourceUnitOrdinal,
+    pub receiver_binding: String,
+    pub property: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]

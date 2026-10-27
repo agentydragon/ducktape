@@ -13,11 +13,12 @@ use crate::facts::global_object::unshadowed_global_object_aliases;
 use crate::facts::item_views::{TopLevelItemView, collect_declared_names, var_decl_of_item};
 use crate::facts::lazy_boundary::visit_eager_member_parts;
 use crate::facts::local_effect_targets::{MetadataDecorateCall, metadata_decorate_call};
-use crate::facts::statement_facts::StatementFacts;
+use crate::facts::statement_facts::{CallbackFactoryWriteWitness, StatementFacts};
 use crate::facts::value_flow::{ChunkValueFlow, ValueOrigin};
 use crate::purity::ChunkCodeGraph;
 use source_identity::SourceUnitOrdinal;
 use spec::BuiltinGlobalRoot;
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use swc_common::{Span, Spanned};
 use swc_ecma_ast::*;
@@ -812,6 +813,15 @@ struct Call {
 struct RetainedCallbackCall {
     namespace_member: Option<(Id, String)>,
     signatures: Vec<spec::RetainedCallbackSignature>,
+    argument_count: usize,
+    callback_argument_exprs: BTreeMap<usize, ValueExpr>,
+}
+
+#[derive(Debug, Clone)]
+struct IndexedRetainedCallbackCall {
+    call: RetainedCallbackCall,
+    owner: SourceUnitOrdinal,
+    caller: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1829,12 +1839,13 @@ struct ExecutionIndex {
     /// Union used only for namespace privacy/mutation guards. Admission of the
     /// old and stronger contracts remains separate.
     audited_factory_members: BTreeMap<Id, BTreeSet<String>>,
+    rejected_namespace_member_writes: BTreeMap<(Id, String), CallbackFactoryWriteWitness>,
     retained_callback_factory_imports: BTreeMap<Id, Vec<spec::RetainedCallbackSignature>>,
     retained_callback_constructor_imports: BTreeMap<Id, Vec<spec::RetainedCallbackSignature>>,
     no_reentry_callback_imports: BTreeMap<Id, Vec<spec::RetainedCallbackSignature>>,
     retained_callback_factory_members:
         BTreeMap<Id, BTreeMap<String, Vec<spec::RetainedCallbackSignature>>>,
-    retained_callback_calls: BTreeMap<CallSite, RetainedCallbackCall>,
+    retained_callback_calls: BTreeMap<CallSite, IndexedRetainedCallbackCall>,
     retained_constructor_calls: BTreeMap<CallSite, RetainedCallbackCall>,
     no_reentry_callback_calls: BTreeMap<CallSite, RetainedCallbackCall>,
     no_reentry_exports: BTreeSet<Id>,
@@ -1926,6 +1937,7 @@ impl Default for ExecutionIndex {
             inline_callback_factory_imports: BTreeSet::new(),
             callback_factory_members: BTreeMap::new(),
             audited_factory_members: BTreeMap::new(),
+            rejected_namespace_member_writes: BTreeMap::new(),
             retained_callback_factory_imports: BTreeMap::new(),
             retained_callback_constructor_imports: BTreeMap::new(),
             no_reentry_callback_imports: BTreeMap::new(),
@@ -2342,6 +2354,8 @@ impl ExecutionIndex {
         let private_namespace_family = !index.namespace_privacy.members.is_empty()
             && !index.namespace_privacy.invalid
             && index.dynamic_scope_owners.is_empty();
+        let namespace_member_write_witnesses =
+            RefCell::new(BTreeMap::<(Id, String), CallbackFactoryWriteWitness>::new());
         let keep_namespace = |id: &Id, members: &BTreeSet<String>, writes: &BTreeSet<_>| {
             if private_namespace_family {
                 return true;
@@ -2363,7 +2377,9 @@ impl ExecutionIndex {
                     &namespace_value_facts,
                 )
             };
-            let top_member_write = index
+            // Keep the original conservative admission predicate independent
+            // of diagnostic witness extraction below.
+            let top_member_write_rejected = index
                 .top_property_writes
                 .iter()
                 .enumerate()
@@ -2386,6 +2402,40 @@ impl ExecutionIndex {
                                 || receiver_aliases.contains(receiver))
                     })
                 });
+            let top_member_write_witness = index
+                .top_property_writes
+                .iter()
+                .enumerate()
+                .filter(|(owner, _)| !writes.contains(&SourceUnitOrdinal(*owner)))
+                .flat_map(|(owner, writes)| {
+                    writes
+                        .iter()
+                        .map(move |write| (SourceUnitOrdinal(owner), write))
+                })
+                .find_map(|(owner, (receiver, property))| {
+                    let receiver = receiver.as_ref()?;
+                    let property = property.as_ref()?;
+                    (members.contains(property)
+                        && !certified(owner, None, receiver, property)
+                        && (receiver == id
+                            || aliases.contains(receiver)
+                            || receiver_aliases.contains(receiver)))
+                    .then_some((owner, receiver, property))
+                });
+            if let Some((statement_ordinal, receiver_binding, property)) = &top_member_write_witness
+            {
+                let witness = CallbackFactoryWriteWitness {
+                    statement_ordinal: *statement_ordinal,
+                    receiver_binding: receiver_binding.0.to_string(),
+                    property: Some((*property).clone()),
+                };
+                let mut recorded = namespace_member_write_witnesses.borrow_mut();
+                for member in members {
+                    recorded
+                        .entry((id.clone(), member.clone()))
+                        .or_insert_with(|| witness.clone());
+                }
+            }
             let destructuring_write = index.destructuring_member_writes.iter().any(|write| {
                 is_mutation_receiver(&write.receiver)
                     || write
@@ -2473,7 +2523,7 @@ impl ExecutionIndex {
                 .flatten()
                 .any(|value| value.may_publish_namespace(id, &aliases, &namespace_value_facts))
                 || index.exported_bindings.iter().any(is_namespace_or_alias);
-            !(top_member_write
+            !(top_member_write_rejected
                 || destructuring_write
                 || top_dynamic_write
                 || top_callback_result_write
@@ -2558,6 +2608,7 @@ impl ExecutionIndex {
                 break;
             }
         }
+        index.rejected_namespace_member_writes = namespace_member_write_witnesses.into_inner();
         if index.deferred_global_requested {
             let first_publication = index
                 .deferred_global_candidates
@@ -3085,6 +3136,10 @@ impl ExecutionIndex {
             .iter()
             .filter(|signature| {
                 signature.argument_count == args.len()
+                    && signature
+                        .callback_arguments
+                        .iter()
+                        .all(|position| *position < args.len())
                     && args.iter().enumerate().all(|(position, argument)| {
                         if signature.callback_arguments.contains(&position) {
                             matches!(
@@ -3098,9 +3153,19 @@ impl ExecutionIndex {
             })
             .cloned()
             .collect();
+        let callback_argument_positions: BTreeSet<_> = signatures
+            .iter()
+            .flat_map(|signature| signature.callback_arguments.iter().copied())
+            .collect();
+        let callback_argument_exprs = callback_argument_positions
+            .into_iter()
+            .map(|position| (position, ValueExpr::from_expr(&args[position].expr)))
+            .collect();
         (!signatures.is_empty()).then_some(RetainedCallbackCall {
             namespace_member,
             signatures,
+            argument_count: args.len(),
+            callback_argument_exprs,
         })
     }
 
@@ -4242,8 +4307,14 @@ impl Visit for ExecutionIndex {
             )
             .collect();
         if let Some(retained_call) = retained_call {
-            self.retained_callback_calls
-                .insert(call.span.into(), retained_call);
+            self.retained_callback_calls.insert(
+                call.span.into(),
+                IndexedRetainedCallbackCall {
+                    call: retained_call,
+                    owner: self.owner,
+                    caller: self.current,
+                },
+            );
         }
         if let Some(no_reentry_call) = no_reentry_call {
             self.no_reentry_callback_calls

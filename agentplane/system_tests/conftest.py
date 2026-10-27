@@ -14,13 +14,14 @@ from __future__ import annotations
 import asyncio
 import os
 import subprocess
-from collections.abc import AsyncIterator, Callable, Coroutine, Sequence
+from collections.abc import AsyncIterator, Callable, Coroutine, Iterator, Sequence
 from contextlib import aclosing
 from enum import StrEnum
 from typing import Any, cast
 from uuid import UUID
 
 import pytest
+from opentelemetry import trace
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
 from agentplane.app.sandbox_models import NewSandbox, SandboxView, sandbox_is_ready
@@ -31,6 +32,9 @@ from agentplane.sandbox_resource import OperatingMode
 from agentplane.system_tests import native_artifacts, scripted_upstream
 from agentplane.system_tests.ollama_warmup import warm_ollama
 from util.net import Listener
+from util.testing.otel_tracing import configure_tracing
+
+tracer = trace.get_tracer(__name__)
 
 # `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
 # gazelle:include_dep @pypi//protobuf
@@ -122,6 +126,26 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
     items[:] = [item for item in items if item not in other]
 
 
+def pytest_collection_finish(session: pytest.Session) -> None:
+    if any(item.get_closest_marker("vm_sandboxes") is not None for item in session.items):
+        configure_tracing(filename="vm-phases.jsonl")
+
+
+@pytest.fixture
+def phase_tracer(request: pytest.FixtureRequest) -> Iterator[trace.Tracer]:
+    selected = tracer if request.node.get_closest_marker("vm_sandboxes") is not None else trace.NoOpTracer()
+    with selected.start_as_current_span("vm.case", attributes={"pytest.nodeid": request.node.nodeid}):
+        yield selected
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_call(item: pytest.Item) -> object:
+    if item.get_closest_marker("vm_sandboxes") is None:
+        return (yield)
+    with tracer.start_as_current_span("vm.scenario"):
+        return (yield)
+
+
 def namespace() -> str:
     """Read at call time: the k3s target publishes its stack after the scenario modules are imported."""
     return os.environ.get(NAMESPACE, STAGING_NAMESPACE)
@@ -143,14 +167,17 @@ def token() -> str:
 
 
 @pytest.fixture
-async def client(base_url: str, token: str, request: pytest.FixtureRequest) -> AsyncIterator[Client]:
+async def client(
+    base_url: str, token: str, request: pytest.FixtureRequest, phase_tracer: trace.Tracer
+) -> AsyncIterator[Client]:
     async with Client(base_url=base_url, token=token) as opened:
         try:
             yield opened
         finally:
             if request.node.get_closest_marker("vm_sandboxes") is not None:
                 for uid in opened.opened_sandbox_uids:
-                    await native_artifacts.capture(opened, sandbox_uid=uid)
+                    with phase_tracer.start_as_current_span("vm.diagnostics", attributes={"sandbox.uid": str(uid)}):
+                        await native_artifacts.capture(opened, sandbox_uid=uid)
 
 
 @pytest.fixture(params=[runner_pb2.HARNESS_CLAUDE, runner_pb2.HARNESS_CODEX], ids=["claude", "codex"])
@@ -197,30 +224,37 @@ async def wait_until_running(client: Client, name: str) -> SandboxView:
 
 
 async def suspend_and_delete(client: Client, name: str, uid: UUID) -> None:
-    await client.suspend_sandbox(name)
-    # Deletion admission reads effective mode, which the controller publishes after the spec write.
-    delete_requested = False
-    async with asyncio.timeout(SANDBOX_READY_SECONDS), aclosing(client.sandbox_snapshots()) as snapshots:
-        async for snapshot in snapshots:
-            if not snapshot.watch.fresh:
-                continue
-            view = next((view for view in snapshot.sandboxes if view.name == name), None)
-            if view is None:
-                if delete_requested:
-                    return
-                continue
-            if view.uid != uid:
-                raise SandboxNotReadyError(f"{name} has been replaced: expected {uid}, observed {view.uid}")
-            if not delete_requested and view.operating_mode is OperatingMode.SUSPENDED:
-                await client.delete_sandbox(name)
-                # The delete response only accepts the request. Keep controllers and kubelet alive
-                # until the finalizer has removed the VM/Pod and released its volumes.
-                delete_requested = True
-        raise SandboxNotReadyError(f"{name}'s stream ended before observing deletion")
+    with tracer.start_as_current_span(
+        "vm.sandbox.cleanup", attributes={"sandbox.name": name, "sandbox.uid": str(uid)}
+    ) as cleanup:
+        await client.suspend_sandbox(name)
+        cleanup.add_event("suspend.accepted")
+        # Deletion admission reads effective mode, which the controller publishes after the spec write.
+        delete_requested = False
+        async with asyncio.timeout(SANDBOX_READY_SECONDS), aclosing(client.sandbox_snapshots()) as snapshots:
+            async for snapshot in snapshots:
+                if not snapshot.watch.fresh:
+                    continue
+                view = next((view for view in snapshot.sandboxes if view.name == name), None)
+                if view is None:
+                    if delete_requested:
+                        cleanup.add_event("deleted")
+                        return
+                    continue
+                if view.uid != uid:
+                    raise SandboxNotReadyError(f"{name} has been replaced: expected {uid}, observed {view.uid}")
+                if not delete_requested and view.operating_mode is OperatingMode.SUSPENDED:
+                    cleanup.add_event("suspended")
+                    await client.delete_sandbox(name)
+                    cleanup.add_event("delete.accepted")
+                    # The delete response only accepts the request. Keep controllers and kubelet alive
+                    # until the finalizer has removed the VM/Pod and released its volumes.
+                    delete_requested = True
+            raise SandboxNotReadyError(f"{name}'s stream ended before observing deletion")
 
 
 @pytest.fixture
-async def sandbox(client: Client) -> AsyncIterator[Sandboxes]:
+async def sandbox(client: Client, phase_tracer: trace.Tracer) -> AsyncIterator[Sandboxes]:
     """Creates sandboxes and deletes every one it created, whatever the test did.
 
     Deletion is refused while a sandbox runs, so each is suspended first. A sandbox that will not go
@@ -240,18 +274,24 @@ async def sandbox(client: Client) -> AsyncIterator[Sandboxes]:
     ) -> SandboxView:
         if template is None:
             template = POD_TEMPLATE
-        view = await client.create_sandbox(
-            NewSandbox(
-                name=name,
-                template=template,
-                preset=preset,
-                policy_sets=policies or [],
-                inbox_tags=list(inbox_tags),
-                bootstrap=bootstrap,
+        with phase_tracer.start_as_current_span(
+            "vm.sandbox.create", attributes={"sandbox.name": name, "sandbox.template": template}
+        ):
+            view = await client.create_sandbox(
+                NewSandbox(
+                    name=name,
+                    template=template,
+                    preset=preset,
+                    policy_sets=policies or [],
+                    inbox_tags=list(inbox_tags),
+                    bootstrap=bootstrap,
+                )
             )
-        )
         created.append((view.name, view.uid))
-        return await wait_until_running(client, view.name)
+        with phase_tracer.start_as_current_span(
+            "vm.sandbox.ready", attributes={"sandbox.name": view.name, "sandbox.uid": str(view.uid)}
+        ):
+            return await wait_until_running(client, view.name)
 
     yield create
 

@@ -69,6 +69,7 @@ pub fn build_dependency_graph_with(
             declared: stmt.declared.clone(),
             kind: stmt.kind,
             purity: stmt.purity.clone(),
+            callback_factory_barriers: stmt.callback_factory_barriers.clone(),
         });
     }
 

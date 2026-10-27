@@ -528,7 +528,7 @@ fn named_manifest_imports(import: &ImportRecord) -> Vec<String> {
 }
 
 pub fn load_js_chunks(input_root: &Path, js_list_path: &Path) -> Result<LoadedJsChunks> {
-    let js_files = parse_js_list(&graph_provenance::read_to_string(js_list_path)?)?;
+    let js_files = parse_js_list(&graph_provenance::read_source_to_string(js_list_path)?)?;
     let mut chunk_table = ChunkTable::default();
     let mut chunks = Vec::new();
     for entry in &js_files {
@@ -540,7 +540,7 @@ pub fn load_js_chunks(input_root: &Path, js_list_path: &Path) -> Result<LoadedJs
             .to_string();
         let chunk_name = chunk_id_for_js_path(&entry.path)?;
         chunk_table.intern(chunk_name.clone());
-        let content = graph_provenance::read_to_string(&absolute_path)?;
+        let content = graph_provenance::read_source_to_string(&absolute_path)?;
         graph_provenance::record_chunk_source(
             &chunk_name,
             &entry.source_path,

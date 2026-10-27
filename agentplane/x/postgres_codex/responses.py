@@ -7,6 +7,7 @@ from typing import Any
 from aiohttp import ClientSession
 
 from agentplane.x.postgres_codex.code_mode import tool_definitions
+from agentplane.x.postgres_codex.store import KnownFailureError
 
 
 def request_body(
@@ -83,7 +84,8 @@ async def sample(
     if compaction:
         headers["x-codex-beta-features"] = "remote_compaction_v2"
     async with http.post(endpoint, json=body, headers=headers) as response:
-        response.raise_for_status()
+        if response.status >= 400:
+            raise KnownFailureError({"http_status": response.status, "body": await response.text()})
         data: list[str] = []
         events: list[dict[str, Any]] = []
         output: list[dict[str, Any]] = []
@@ -100,12 +102,16 @@ async def sample(
                 if event["type"] == "response.completed":
                     terminal: dict[str, Any] = event["response"]
                     if terminal.get("status", "completed") != "completed":
-                        raise ValueError(f"unexpected terminal status: {terminal['status']}")
+                        raise KnownFailureError(
+                            {"reason": "unexpected terminal status", "response": terminal, "events": events}
+                        )
                     if "output" in terminal:
                         if output and output != terminal["output"]:
-                            raise ValueError("terminal output disagrees with streamed completed items")
+                            raise KnownFailureError(
+                                {"reason": "terminal output disagrees with streamed completed items", "events": events}
+                            )
                         output = terminal["output"]
                     return ProviderResponse(terminal, output, events)
                 if event["type"] in {"response.failed", "response.incomplete", "error"}:
-                    raise RuntimeError(event)
+                    raise KnownFailureError({"terminal": event, "events": events})
     raise ConnectionError("provider stream ended without response.completed; sampling outcome unknown")

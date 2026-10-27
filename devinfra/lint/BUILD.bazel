@@ -61,12 +61,15 @@ buildifier(
 )
 
 # Go static analysis via rules_go nogo.
-# Runs go vet analyzers on every go_library/go_binary compile action.
+# rules_go's vet preset omits assign; enable it explicitly to catch self-assignment.
 nogo(
     name = "nogo",
     vet = True,
     visibility = ["//visibility:public"],
-    deps = [":staticcheck_u1000"],
+    deps = [
+        ":staticcheck_u1000",
+        "@org_golang_x_tools//go/analysis/passes/assign:go_default_library",
+    ],
 )
 
 # Staticcheck's U1000 implementation is a lint.Analyzer wrapper. Expose its

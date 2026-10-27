@@ -77,7 +77,9 @@ on `:8081`, and replicas elect a leader by a Lease in the namespace.
   seal and is deleted without `Quiesced`.
 - **The idle timer is controller memory, started at its first sight of each `idle-since` value.**
   The runner's clock never counts, so skew cannot suspend early; a restart starts every timer
-  over and suspends up to one `idleSuspendAfter` later. The controller sends the value as
+  over and suspends up to one `idleSuspendAfter` later. `status.idleSuspendAt` reports the next
+  attempt as an absolute time; it stays stable during the countdown, advances after a retry, and
+  clears when no attempt is scheduled. The controller sends the runner's `idle-since` value as
   `Quiesce(if_idle_since)`: work that arrived after the decision makes the runner refuse with
   `ABORTED` and the timer starts over. Another failure retries at the quiesce deadline.
 - **A wake during the idle `Quiesce` is not lost.** The accepted request is recorded by the status

@@ -431,16 +431,24 @@ pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Re
 fn provenance_roots(cli: &TransformCli) -> Result<(ProvenanceRoots, Option<PathBuf>)> {
     let (spec_root, modules_directory) = match &cli.spec_source {
         TransformSpecSource::Flat { path } => (
-            graph_provenance::absolute(path.parent().unwrap_or_else(|| Path::new(".")))?,
+            graph_provenance::absolute(
+                path.parent()
+                    .filter(|parent| !parent.as_os_str().is_empty())
+                    .unwrap_or_else(|| Path::new(".")),
+            )?,
             None,
         ),
         TransformSpecSource::Tree(tree) => {
             let config_parent = graph_provenance::absolute(
-                tree.config_path.parent().unwrap_or_else(|| Path::new(".")),
+                tree.config_path
+                    .parent()
+                    .filter(|parent| !parent.as_os_str().is_empty())
+                    .unwrap_or_else(|| Path::new(".")),
             )?;
             let vendor_parent = graph_provenance::absolute(
                 tree.vendor_marks_path
                     .parent()
+                    .filter(|parent| !parent.as_os_str().is_empty())
                     .unwrap_or_else(|| Path::new(".")),
             )?;
             let modules_root = graph_provenance::absolute(&tree.modules_root)?;

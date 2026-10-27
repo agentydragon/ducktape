@@ -5,6 +5,7 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 use swc_ecma_ast::Id;
 
+use crate::facts::CallbackFactoryBarrierFact;
 use crate::purity::Purity;
 use crate::{SourceLocation, StatementKind};
 
@@ -50,6 +51,7 @@ pub struct SourceUnit {
     pub declared: BTreeSet<Id>,
     pub kind: StatementKind,
     pub purity: Purity,
+    pub callback_factory_barriers: Vec<CallbackFactoryBarrierFact>,
 }
 
 /// Declaration-based classification, independent of syntax kind and destination.
@@ -173,6 +175,7 @@ impl DependencyGraph {
                 declared: BTreeSet::new(),
                 kind: n.statement_kind,
                 purity: n.purity.clone(),
+                callback_factory_barriers: Vec::new(),
             })
             .collect();
 

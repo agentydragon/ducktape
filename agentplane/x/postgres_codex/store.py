@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, ForeignKey, Integer, Text, select
+from sqlalchemy import DateTime, ForeignKey, Integer, LargeBinary, Text, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -55,6 +55,7 @@ class RemoteProcess(Base):
     status: Mapped[str]
     tty: Mapped[bool]
     exit_code: Mapped[int | None]
+    buffered_output: Mapped[bytes] = mapped_column(LargeBinary, default=b"")
 
 
 class LiveCell(Base):
@@ -73,6 +74,14 @@ class InterruptRequest(Base):
     conversation_id: Mapped[UUID] = mapped_column(ForeignKey(Conversation.id))
     generation: Mapped[int]
     result: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+
+
+class KnownFailureError(RuntimeError):
+    """A terminal provider failure or a tool rejection before dispatch."""
+
+    def __init__(self, evidence: dict[str, Any]):
+        self.evidence = evidence
+        super().__init__(str(evidence))
 
 
 class LostOwnershipError(RuntimeError):
@@ -197,6 +206,50 @@ class Store:
                 row.context_tokens = context_tokens
             row.pending = None
 
+    async def reject(self, owner: Owner, intent_id: UUID, failure: KnownFailureError) -> None:
+        """Persist a known rejection without installing partial provider output or context."""
+        async with self.sessions.begin() as db:
+            row = await self._lock(db, owner)
+            if row.pending is None or row.pending["id"] != str(intent_id):
+                raise ValueError("rejection does not match the pending intent")
+            intent = (await db.scalars(select(Intent).where(Intent.id == intent_id))).one()
+            unresolved = await db.scalar(
+                select(Intent.id)
+                .where(Intent.conversation_id == row.id, Intent.id != intent_id, Intent.result.is_(None))
+                .limit(1)
+            )
+            live_cell = await db.scalar(
+                select(LiveCell.id).where(LiveCell.conversation_id == row.id, LiveCell.status == "live").limit(1)
+            )
+            live_process = await db.scalar(
+                select(RemoteProcess.id)
+                .where(
+                    RemoteProcess.conversation_id == row.id, RemoteProcess.status.not_in({"exited", "exited_unread"})
+                )
+                .limit(1)
+            )
+            if unresolved is not None or live_cell is not None or live_process is not None:
+                # Rejection proves only this operation's outcome, not cleanup of prior execution.
+                intent.result = {"status": "rejected", **failure.evidence, "not_dispatched": []}
+                row.stopped = True
+                return
+            completed = {item["call_id"] for item in row.items if item["type"] == "custom_tool_call_output"}
+            outputs = [
+                {
+                    "type": "custom_tool_call_output",
+                    "call_id": item["call_id"],
+                    "output": [{"type": "input_text", "text": "Not dispatched because the turn failed."}],
+                }
+                for item in row.items
+                if item["type"] == "custom_tool_call" and item["call_id"] not in completed
+            ]
+            intent.result = {"status": "rejected", **failure.evidence, "not_dispatched": outputs}
+            row.items = [*row.items, *outputs]
+            if row.context_items is not None:
+                row.context_items = [*row.context_items, *outputs]
+            row.stopped = True
+            row.pending = None
+
     async def begin_compaction(self, owner: Owner, request: dict[str, Any], original: list[dict[str, Any]]) -> UUID:
         async with self.sessions.begin() as db:
             row = await self._lock(db, owner)
@@ -283,7 +336,10 @@ class Store:
             if row.executor_session is not None and row.executor_session != session_id:
                 process = await db.scalar(
                     select(RemoteProcess.id)
-                    .where(RemoteProcess.conversation_id == owner.conversation_id, RemoteProcess.status != "exited")
+                    .where(
+                        RemoteProcess.conversation_id == owner.conversation_id,
+                        RemoteProcess.status.not_in({"exited", "exited_unread"}),
+                    )
                     .limit(1)
                 )
                 cell = await db.scalar(
@@ -307,7 +363,14 @@ class Store:
             ).one()
 
     async def process_result(
-        self, owner: Owner, process_id: str, after_seq: int | None, status: str, exit_code: int | None = None
+        self,
+        owner: Owner,
+        process_id: str,
+        after_seq: int | None,
+        status: str,
+        exit_code: int | None = None,
+        *,
+        consume_output: bool = False,
     ) -> None:
         async with self.sessions.begin() as db:
             await self._lock(db, owner)
@@ -319,6 +382,28 @@ class Store:
                 )
             ).one()
             row.after_seq, row.status, row.exit_code = after_seq, status, exit_code
+            if consume_output:
+                row.buffered_output = b""
+
+    async def retain_process_output(
+        self, owner: Owner, process_id: str, after_seq: int, output: bytes, *, exited: bool, exit_code: int | None
+    ) -> None:
+        """Advance the executor cursor without consuming the model's unread output."""
+        async with self.sessions.begin() as db:
+            await self._lock(db, owner)
+            row = (
+                await db.scalars(
+                    select(RemoteProcess).where(
+                        RemoteProcess.id == process_id, RemoteProcess.conversation_id == owner.conversation_id
+                    )
+                )
+            ).one()
+            if len(row.buffered_output) + len(output) > 1024 * 1024:
+                raise ValueError("unread process output exceeds 1 MiB; executor cursor was not advanced")
+            row.buffered_output += output
+            row.after_seq = after_seq
+            if exited:
+                row.status, row.exit_code = "exited_unread", exit_code
 
     async def cell_result(self, owner: Owner, cell_id: str, status: str) -> None:
         async with self.sessions.begin() as db:
