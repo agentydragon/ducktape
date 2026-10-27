@@ -80,7 +80,6 @@ func TestNoticeWaitFollowsWhatHoldsTheInboxInPriority(t *testing.T) {
 
 func TestEntriesAreSummarizedByTheirLifecycleFieldsOnly(t *testing.T) {
 	request := uuid.MustParse("5b0a6c51-8d7e-4f0a-9d2b-7c3e1f4a2b60")
-	action := func(s string) *string { return &s }
 	longer := strings.Repeat("é", maxSummaryField+1)
 	for _, c := range []struct {
 		name    string
@@ -114,11 +113,11 @@ func TestEntriesAreSummarizedByTheirLifecycleFieldsOnly(t *testing.T) {
 			"Action 5b0a6c51-8d7e-4f0a-9d2b-7c3e1f4a2b60 · event 3 · " + strings.Repeat("é", maxSummaryField),
 		},
 		{"a GitHub event without an action", GitHubEvent{Event: EventPush}, `{"ref": "refs/heads/secret"}`, "GitHub push"},
-		{"a GitHub event with an action", GitHubEvent{Event: EventPullRequest, Action: action("opened")}, `{}`, "GitHub pull_request · opened"},
-		{"a GitHub event with an empty action", GitHubEvent{Event: EventPullRequest, Action: action("")}, `{}`, "GitHub pull_request"},
+		{"a GitHub event with an action", GitHubEvent{Event: EventPullRequest, Action: ptr("opened")}, `{}`, "GitHub pull_request · opened"},
+		{"a GitHub event with an empty action", GitHubEvent{Event: EventPullRequest, Action: ptr("")}, `{}`, "GitHub pull_request"},
 		{
 			"a GitHub action is cut by characters",
-			GitHubEvent{Event: EventIssues, Action: action(longer)},
+			GitHubEvent{Event: EventIssues, Action: ptr(longer)},
 			`{}`,
 			"GitHub issues · " + strings.Repeat("é", maxSummaryField),
 		},
@@ -136,13 +135,13 @@ func TestEntriesAreSummarizedByTheirLifecycleFieldsOnly(t *testing.T) {
 		},
 		{
 			"a check run's conclusion",
-			GitHubEvent{Event: EventCheckRun, Action: action("completed")},
+			GitHubEvent{Event: EventCheckRun, Action: ptr("completed")},
 			`{"check_run": {"conclusion": "failure", "output": "private"}}`,
 			"GitHub check_run · completed · failure",
 		},
 		{
 			"a workflow run's conclusion",
-			GitHubEvent{Event: EventWorkflowRun, Action: action("completed")},
+			GitHubEvent{Event: EventWorkflowRun, Action: ptr("completed")},
 			`{"workflow_run": {"conclusion": "success"}}`,
 			"GitHub workflow_run · completed · success",
 		},
