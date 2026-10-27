@@ -2194,6 +2194,22 @@
    "views": null
   },
   {
+   "accepted_by_go": false,
+   "input": {
+    "test-group": {
+     "description": "test group description",
+     "executor": {
+      "description": "test MCP executor",
+      "kind": "mcp",
+      "namespace": null
+     },
+     "title": "test group"
+    }
+   },
+   "name": "MCP executor with a null pod field",
+   "views": null
+  },
+  {
    "accepted_by_go": true,
    "held": {
     "test-group": {
@@ -2311,6 +2327,26 @@
     }
    },
    "name": "pod executor with an MCP field",
+   "views": null
+  },
+  {
+   "accepted_by_go": false,
+   "input": {
+    "test-group": {
+     "description": "test group description",
+     "executor": {
+      "config": null,
+      "description": "test pod executor",
+      "kind": "pod",
+      "namespace": "test-namespace",
+      "templates": {
+       "test-template": "a test box"
+      }
+     },
+     "title": "test group"
+    }
+   },
+   "name": "pod executor with a null MCP field",
    "views": null
   },
   {

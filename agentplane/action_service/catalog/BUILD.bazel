@@ -12,6 +12,7 @@ go_library(
     deps = [
         "//agentplane/action_service:action_service_go_proto",
         "@com_github_santhosh_tekuri_jsonschema_v6//:jsonschema",
+        "@in_gopkg_yaml_v3//:yaml_v3",
     ],
 )
 

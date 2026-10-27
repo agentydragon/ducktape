@@ -17,6 +17,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	"gopkg.in/yaml.v3"
 )
 
 // keyPattern is what a group or Action key matches: a stable lowercase identifier.
@@ -188,18 +189,67 @@ type groupSettings struct {
 	DirectTools []string                  `yaml:"direct_tools"`
 }
 
-// executorSettings holds the fields of both executor kinds; New refuses a field of the kind Kind does not name.
-type executorSettings struct {
-	Kind        string `yaml:"kind"`
-	Description string `yaml:"description"`
+// executorSettings is an executor's settings, decoded as the kind its `kind` names.
+type executorSettings struct{ kind executorKind }
 
-	Config map[string]any `yaml:"config"`
+// executorKind is one executor kind's settings: an *mcpExecutorSettings or a *podExecutorSettings.
+type executorKind interface {
+	binding() (Binding, error)
+	// unknownKeys are the keys the kind has no field for, `kind` among them. UnmarshalYAML refuses them itself:
+	// Node.Decode, which it decodes the kind with, ignores KnownFields (https://github.com/go-yaml/yaml/issues/460).
+	unknownKeys() map[string]yaml.Node
+}
 
-	Namespace string            `yaml:"namespace"`
-	Templates map[string]string `yaml:"templates"`
+type mcpExecutorSettings struct {
+	Description string               `yaml:"description"`
+	Config      map[string]any       `yaml:"config"`
+	Unknown     map[string]yaml.Node `yaml:",inline"`
+}
+
+type podExecutorSettings struct {
+	Description string            `yaml:"description"`
+	Namespace   string            `yaml:"namespace"`
+	Templates   map[string]string `yaml:"templates"`
 	// The limits decode as float64, as an int field would take 60.5 as 60.
-	MaxTimeoutSeconds *float64 `yaml:"max_timeout_seconds"`
-	MaxOutputBytes    *float64 `yaml:"max_output_bytes"`
+	MaxTimeoutSeconds *float64             `yaml:"max_timeout_seconds"`
+	MaxOutputBytes    *float64             `yaml:"max_output_bytes"`
+	Unknown           map[string]yaml.Node `yaml:",inline"`
+}
+
+func (s *mcpExecutorSettings) unknownKeys() map[string]yaml.Node { return s.Unknown }
+func (s *podExecutorSettings) unknownKeys() map[string]yaml.Node { return s.Unknown }
+
+// UnmarshalYAML decodes node as the executor kind its `kind` names, refusing a key that kind has no field for. Its
+// errors are yaml.TypeErrors, which the decoder reports with its own.
+func (s *executorSettings) UnmarshalYAML(node *yaml.Node) error {
+	var discriminator struct {
+		Kind string `yaml:"kind"`
+	}
+	if err := node.Decode(&discriminator); err != nil {
+		return err
+	}
+	switch discriminator.Kind {
+	case "mcp":
+		s.kind = &mcpExecutorSettings{}
+	case "pod":
+		s.kind = &podExecutorSettings{}
+	default:
+		return &yaml.TypeError{Errors: []string{fmt.Sprintf("line %d: executor kind must be mcp or pod", node.Line)}}
+	}
+	if err := node.Decode(s.kind); err != nil {
+		return err
+	}
+	unknown := s.kind.unknownKeys()
+	delete(unknown, "kind")
+	if len(unknown) == 0 {
+		return nil
+	}
+	var problems []string
+	for _, key := range slices.Sorted(maps.Keys(unknown)) {
+		problems = append(problems,
+			fmt.Sprintf("line %d: field %s not found in an executor of kind %s", unknown[key].Line, key, discriminator.Kind))
+	}
+	return &yaml.TypeError{Errors: problems}
 }
 
 type actionSettings struct {
@@ -254,15 +304,16 @@ func newGroup(key string, s groupSettings) (*Group, error) {
 	if s.Executor == nil {
 		return nil, errors.New("executor is required")
 	}
-	executor, err := newBinding(*s.Executor)
+	executor, err := s.Executor.kind.binding()
 	if err != nil {
 		return nil, fmt.Errorf("executor: %w", err)
 	}
-	// The operator settings page joins a group to its MCP server's linkage by this key. Only an MCP executor has a
-	// config.
-	if serverID, set := s.Executor.Config["server_id"]; set && serverID != nil {
-		if id, ok := serverID.(string); !ok || id != key {
-			return nil, errors.New("executor.config.server_id must be the group's key")
+	// The operator settings page joins a group to its MCP server's linkage by this key.
+	if mcp, ok := s.Executor.kind.(*mcpExecutorSettings); ok {
+		if serverID, set := mcp.Config["server_id"]; set && serverID != nil {
+			if id, ok := serverID.(string); !ok || id != key {
+				return nil, errors.New("executor.config.server_id must be the group's key")
+			}
 		}
 	}
 	g := &Group{
@@ -300,48 +351,42 @@ func newGroup(key string, s groupSettings) (*Group, error) {
 	return g, nil
 }
 
-func newBinding(s executorSettings) (Binding, error) {
+func (s *mcpExecutorSettings) binding() (Binding, error) {
 	if err := checkLength("description", s.Description, 1, 2000); err != nil {
 		return nil, err
 	}
-	switch s.Kind {
-	case "mcp":
-		if s.Namespace != "" || s.Templates != nil || s.MaxTimeoutSeconds != nil || s.MaxOutputBytes != nil {
-			return nil, errors.New("an mcp executor takes no namespace, templates or limits")
-		}
-		config, err := jsonObject(s.Config)
-		if err != nil {
-			return nil, fmt.Errorf("config %w", err)
-		}
-		return MCPBinding{Description: s.Description, Config: config}, nil
-	case "pod":
-		if s.Config != nil {
-			return nil, errors.New("a pod executor takes no config")
-		}
-		if s.Namespace == "" {
-			return nil, errors.New("namespace is required")
-		}
-		if len(s.Templates) == 0 {
-			return nil, errors.New("templates must describe at least one PodTemplate by name")
-		}
-		timeout, err := limit("max_timeout_seconds", s.MaxTimeoutSeconds, 1800, 1, 3600)
-		if err != nil {
-			return nil, err
-		}
-		output, err := limit("max_output_bytes", s.MaxOutputBytes, 200_000, 0, 1_000_000)
-		if err != nil {
-			return nil, err
-		}
-		return PodBinding{
-			Description:       s.Description,
-			Namespace:         s.Namespace,
-			Templates:         s.Templates,
-			MaxTimeoutSeconds: timeout,
-			MaxOutputBytes:    output,
-		}, nil
-	default:
-		return nil, errors.New("kind must be mcp or pod")
+	config, err := jsonObject(s.Config)
+	if err != nil {
+		return nil, fmt.Errorf("config %w", err)
 	}
+	return MCPBinding{Description: s.Description, Config: config}, nil
+}
+
+func (s *podExecutorSettings) binding() (Binding, error) {
+	if err := checkLength("description", s.Description, 1, 2000); err != nil {
+		return nil, err
+	}
+	if s.Namespace == "" {
+		return nil, errors.New("namespace is required")
+	}
+	if len(s.Templates) == 0 {
+		return nil, errors.New("templates must describe at least one PodTemplate by name")
+	}
+	timeout, err := limit("max_timeout_seconds", s.MaxTimeoutSeconds, 1800, 1, 3600)
+	if err != nil {
+		return nil, err
+	}
+	output, err := limit("max_output_bytes", s.MaxOutputBytes, 200_000, 0, 1_000_000)
+	if err != nil {
+		return nil, err
+	}
+	return PodBinding{
+		Description:       s.Description,
+		Namespace:         s.Namespace,
+		Templates:         s.Templates,
+		MaxTimeoutSeconds: timeout,
+		MaxOutputBytes:    output,
+	}, nil
 }
 
 func newAction(s actionSettings) (ActionDefinition, error) {

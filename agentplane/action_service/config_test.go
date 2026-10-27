@@ -265,6 +265,8 @@ func TestSettingsAreRefusedWithoutEchoingTheirValues(t *testing.T) {
 		"action groups key":                  requiredFile + strings.Replace(testActionGroups, "X-Test-Header: test", "1: never-print-this", 1),
 		"action group field of another type": requiredFile + strings.Replace(testActionGroups, "available: yes", "available: never-print-this", 1),
 		"unknown action group field":         requiredFile + strings.Replace(testActionGroups, "available: yes", "health: never-print-this", 1),
+		"executor kind":                      requiredFile + strings.Replace(testActionGroups, "kind: mcp", "kind: never-print-this", 1),
+		"executor field of another kind":     requiredFile + strings.Replace(testActionGroups, "kind: mcp", "kind: mcp\n      namespace: never-print-this", 1),
 		"web push without its key":           requiredFile + testWebPush,
 		"web push key not PEM":               requiredFile + testWebPush + "  private_key_pem: never-print-this\n",
 		"unknown web push key":               requiredFile + testWebPush + "  vapid_claims: never-print-this\n",

@@ -53,7 +53,6 @@ func TestRefusalsDoNotEchoValues(t *testing.T) {
 	for name, document := range map[string]string{
 		"server_id":                 `{"g": {"title": "t", "description": "d", "executor": {"kind": "mcp", "description": "e", "config": {"server_id": "never-print-this"}}}}`,
 		"server_id of another type": `{"g": {"title": "t", "description": "d", "executor": {"kind": "mcp", "description": "e", "config": {"server_id": ["never-print-this"]}}}}`,
-		"executor kind":             `{"g": {"title": "t", "description": "d", "executor": {"kind": "never-print-this", "description": "e"}}}`,
 		"long title":                `{"g": {"title": "never-print-this` + strings.Repeat("x", 200) + `", "description": "d", "executor": {"kind": "mcp", "description": "e"}}}`,
 		"direct tool":               `{"g": {"title": "t", "description": "d", "executor": {"kind": "mcp", "description": "e"}, "direct_tools": ["never-print-this.x"]}}`,
 	} {
