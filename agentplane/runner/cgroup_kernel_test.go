@@ -19,8 +19,15 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+func TestMain(m *testing.M) {
+	if handled, code := InternalMode(os.Args[1:]); handled {
+		os.Exit(code)
+	}
+	os.Exit(m.Run())
+}
+
 // TestCgroupKernelFixture runs in the privileged, private cgroup namespace owned
-// by test_cgroups.py. The ordinary Go suite only registers this fixture.
+// by test_cgroups.py.
 func TestCgroupKernelFixture(t *testing.T) {
 	if os.Getenv("AGENTPLANE_CGROUP_KERNEL_FIXTURE") != "1" {
 		return
