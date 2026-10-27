@@ -159,6 +159,41 @@ Admission cannot see the Action's caller, so it limits what a grant reaches, not
 is always `ExecutionRequest.caller`, the authenticated account that submitted the launch (`claude-ai` through the MCP
 edge, an in-cluster agent's own account through `agentplane actions`), and no argument names it.
 
+### Shape-matched approval is the v1 expedient
+
+The operator, 2026-10-27 00:03 UTC: auto-approval policies "looking at the structure of the actions to auto-approve
+is a little ugly, it would be nice if we had specific rbac-style permissions for the involved actions rather than
+auto-approving them by their shape", accepted for v1 "out of expediency". What matching on shape costs:
+
+- **The rule restates the arguments.** It permits what its author predicted the JSON would look like. An Action that
+  addresses a worker by `session_id`, or gains a second target argument, falls outside the schema or slips past it,
+  and nothing tells the rule's author.
+- **It cannot resolve anything.** A schema sees literals: it cannot map a Session to its Sandbox, follow a tag, or
+  check a UID against the live object, so every Action carries the Sandbox verbatim and the executor rechecks it.
+- **It skips a gate rather than granting a permission.** The authority stays the executor's service identity, and the
+  rule means nothing outside the Action Service: the same operation through the Dispatcher, the CLI or a later
+  backend path needs a second, differently shaped rule.
+- **It reads badly.** The Policies tab shows a JSON Schema, not "`claude-ai` may submit input to Sessions in
+  `worker-3f2a`".
+
+The nicer shape is a permission check: each Action declares the verb and resource it acts on, and a typed rule grants
+verbs over targets, as `session_inbox_access` already does for `send_message` with `operations` and Sandbox
+`targets`:
+
+```yaml
+- type: session_access # sketch: session_inbox_access with more verbs
+  operations: [send_message, open_session, submit_input, interrupt_turn, read_history]
+  targets: { sandboxes: [{ name: worker-3f2a, uid: 9b0e… }] }
+```
+
+The authorizer resolves a request to caller, verb and Sandbox from the Action's declaration, not from argument text,
+and answers "may this account do this to that Sandbox" the same way wherever the operation enters: the executor at
+first, the Dispatcher and History once P3 moves enforcement to them. A launcher grant becomes that one rule; an Action
+approval stays an optional human gate on top; `action_auto_approve` keeps its role as a standing delegation for
+Actions with no resource model. P3 replaces each `argument_schema` rule with backend rule types; this is the
+operator's preference for what those types look like: one verb-over-target family the backends share, not one
+bespoke rule each.
+
 ## Exposure
 
 **One Action group, `orchestration`, holds every operation**, as an executor kind in the Action Service beside the
@@ -284,7 +319,7 @@ grouping workers under their launcher, and a spend budget per account at the LLM
 
 ## Decisions for the operator
 
-Asked one at a time; each open one has a default the plan assumes.
+Asked one at a time; all six are answered.
 
 1. **The operator's act for launch, Session commands and reads in v1. Accepted by the operator, 2026-10-26 23:37
    UTC,** as a transitional path: the `orchestration` group, with the Dispatcher and History trusting its executor
@@ -300,8 +335,8 @@ Asked one at a time; each open one has a default the plan assumes.
 5. **`claude-ai` as the orchestrating account. Accepted by the operator, 2026-10-27 00:03 UTC,** under the pending
    [`CLAUDE_AI_SA`](task_dag.md#claude_ai_sa--review-the-external-callers-actual-authority) review. Rejected: a second
    Connection bound to an account that holds only orchestration grants.
-6. **The executor inside the Action Service.** Default: yes. Alternative: its own service, which would then need
-   the caller passed to it by Actions, a trust channel that does not exist.
+6. **The executor inside the Action Service. Accepted by the operator, 2026-10-27 00:04 UTC.** Rejected: its own
+   service, which would need the caller passed to it by Actions, a trust channel that does not exist.
 
 ## Alternatives considered
 

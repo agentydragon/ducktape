@@ -457,8 +457,10 @@ worker enough. Each moves to its backend rule as `THREAD_CREATE_AUTHORIZATION`, 
 are not built on today's reads. The operator accepted the operator's-act path as transitional (2026-10-26 23:37 UTC),
 so the Dispatcher and History may trust the group's executor until then, and a launch writes launcher grants on every
 worker (23:47 UTC), and the executor reads a rendered copy of the preset catalog (2026-10-27 00:01 UTC), and workers answer by turn
-outcomes with no caller inbox in v1 (00:02 UTC), and `claude-ai` orchestrates (00:03 UTC). **Question for review:** whether
-the executor lives inside the Action Service, the plan's last open decision. No implementation until the operator accepts the plan.
+outcomes with no caller inbox in v1 (00:02 UTC), `claude-ai` orchestrates (00:03 UTC), and the executor lives in the Action Service
+(00:04 UTC). Matching auto-approval on argument shape is accepted for v1 only; the operator prefers RBAC-style
+verb-over-target permissions ([why](mcp_orchestration.md#shape-matched-approval-is-the-v1-expedient)). Every plan
+decision is answered; the plan awaits the operator's review of the whole. No implementation until the operator accepts the plan.
 
 ### `RUNNER_HARNESS_OBJECTS_DESIGN` — decide process diagnostics and placement policy
 
@@ -1291,7 +1293,8 @@ allowlisted. Do not extend that exception to agents or other services, except th
 until each of its operations has a caller grant. Design destination- and
 operation-scoped grants, delegated caller proof and the effect of revocation on queued work before
 general senders are admitted. Consider RBAC-backed permissions, but choose the authority with the
-multiagent model. Include authorization before wake and any required execution-time recheck. The
+multiagent model; the operator prefers verb-over-target rules to shape-matched auto-approval (2026-10-27,
+[orchestration](mcp_orchestration.md#shape-matched-approval-is-the-v1-expedient)). Include authorization before wake and any required execution-time recheck. The
 mandatory Sandbox UID fence is part of `DELIVERY_DESTINATION_CONTRACT`, independent of sender policy.
 
 ### `RESUME_CREDENTIALS_VALID` — grants and tokens still valid after a long suspension
