@@ -88,7 +88,7 @@ describe("quota subscription", () => {
 
   it("renders Claude's exact prepaid balance as money, separate from Codex credits", () => {
     const stream = Stream.instances[0];
-    act(() =>
+    act(() => {
       stream.dispatchEvent(
         new MessageEvent("view", {
           data: JSON.stringify({
@@ -113,14 +113,14 @@ describe("quota subscription", () => {
             ],
           }),
         })
-      )
-    );
+      );
+    });
 
     expect(container.textContent).toContain("Claude prepaid balance · $123.45");
     expect(container.textContent).not.toContain("No quota data.");
     expect(container.textContent).not.toContain("Paid credits");
 
-    act(() =>
+    act(() => {
       stream.dispatchEvent(
         new MessageEvent("view", {
           data: JSON.stringify({
@@ -141,8 +141,8 @@ describe("quota subscription", () => {
             ],
           }),
         })
-      )
-    );
+      );
+    });
     expect(container.textContent).toContain("Claude prepaid balance unavailable");
   });
 

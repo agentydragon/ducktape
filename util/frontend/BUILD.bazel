@@ -1,9 +1,62 @@
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
 load("//devinfra/js:ts_library.bzl", "ts_library")
+load("//devinfra/js:typed_eslint.bzl", "typed_eslint_test")
 load("//devinfra/js:vitest.bzl", "check_vitest_specs", "vitest_config", "vitest_test")
 
 package(default_visibility = ["//visibility:private"])
+
+filegroup(
+    name = "typed_lint_srcs",
+    srcs = glob(
+        [
+            "*.ts",
+            "*.tsx",
+            "**/*.ts",
+            "**/*.tsx",
+        ],
+        allow_empty = True,
+    ),
+    visibility = [
+        "//agentplane/app/frontend:__pkg__",
+        "//devinfra/claude/session_export/frontend:__pkg__",
+        "//finance/plaid/spend/ui:__pkg__",
+        "//props/frontend:__pkg__",
+    ],
+)
+
+filegroup(
+    name = "typed_lint_program_data",
+    srcs = [
+        "//:node_modules/@codemirror/lang-json",
+        "//:node_modules/@codemirror/lang-yaml",
+        "//:node_modules/@codemirror/language",
+        "//:node_modules/@codemirror/legacy-modes",
+        "//:node_modules/@codemirror/state",
+        "//:node_modules/@codemirror/view",
+        "//:node_modules/@lezer/highlight",
+        "//:node_modules/@replit/codemirror-lang-nix",
+        "//:node_modules/@types/dompurify",
+        "//:node_modules/@uiw/react-codemirror",
+        "//:node_modules/dompurify",
+        "//:node_modules/happy-dom",
+        "//:node_modules/jsdom",
+        "//:node_modules/marked",
+    ],
+    visibility = [
+        "//agentplane/app/frontend:__pkg__",
+        "//devinfra/claude/session_export/frontend:__pkg__",
+        "//finance/plaid/spend/ui:__pkg__",
+        "//props/frontend:__pkg__",
+    ],
+)
+
+typed_eslint_test(
+    name = "eslint_typed_test",
+    srcs = ":typed_lint_srcs",
+    extra_data = [":typed_lint_program_data"],
+    tsconfig = "tsconfig.json",
+)
 
 ts_config(
     name = "tsconfig",

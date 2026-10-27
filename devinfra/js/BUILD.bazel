@@ -1,8 +1,25 @@
 # Shared JavaScript/TypeScript Bazel macros.
 
-load("@aspect_rules_js//js:defs.bzl", "js_binary")
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library")
 load("@rules_python//python:defs.bzl", "py_library")
 load("//devinfra/python:defs.bzl", "py_binary", "py_test")
+
+exports_files(
+    ["eslint.typed.config.js"],
+    visibility = ["//visibility:public"],
+)
+
+js_library(
+    name = "eslint_typed_config",
+    srcs = ["eslint.typed.config.js"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//:node_modules/@typescript-eslint/eslint-plugin",
+        "//:node_modules/@typescript-eslint/parser",
+        "//:node_modules/eslint-plugin-react",
+        "//:node_modules/eslint-plugin-react-hooks",
+    ],
+)
 
 js_binary(
     name = "strip_ts_types",

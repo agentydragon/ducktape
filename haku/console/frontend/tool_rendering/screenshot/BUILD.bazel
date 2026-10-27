@@ -4,6 +4,20 @@ load("//devinfra/python:defs.bzl", "py_library")
 
 package(default_visibility = ["//visibility:public"])
 
+filegroup(
+    name = "typed_lint_srcs",
+    srcs = glob(
+        [
+            "*.ts",
+            "*.tsx",
+            "**/*.ts",
+            "**/*.tsx",
+        ],
+        allow_empty = True,
+    ),
+    visibility = ["//haku/console/frontend:__pkg__"],
+)
+
 TSCONFIG = "//haku/console/frontend:tsconfig"
 
 # Shared preview-screenshot harness. `mcp_mock.ts` owns only the JSON-RPC transport simulation;

@@ -4,6 +4,20 @@ load("//haku/console/frontend:vitest.bzl", "haku_vitest_test")
 
 package(default_visibility = ["//visibility:public"])
 
+filegroup(
+    name = "typed_lint_srcs",
+    srcs = glob(
+        [
+            "*.ts",
+            "*.tsx",
+            "**/*.ts",
+            "**/*.tsx",
+        ],
+        allow_empty = True,
+    ),
+    visibility = ["//haku/console/frontend:__pkg__"],
+)
+
 TSCONFIG = "//haku/console/frontend:tsconfig"
 
 # Shared leaves of the server-first tool-rendering tree plus the dispatch registry. Each

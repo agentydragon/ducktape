@@ -6,6 +6,20 @@ package(default_visibility = [
     "//props/frontend:__subpackages__",
 ])
 
+filegroup(
+    name = "typed_lint_srcs",
+    srcs = glob(
+        [
+            "*.ts",
+            "*.tsx",
+            "**/*.ts",
+            "**/*.tsx",
+        ],
+        allow_empty = True,
+    ),
+    visibility = ["//props/frontend:__pkg__"],
+)
+
 js_openapi_schema(
     name = "schema",
     generator = "//props/backend:export_schema_bin",

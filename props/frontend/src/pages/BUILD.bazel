@@ -5,6 +5,20 @@ package(default_visibility = [
     "//props/frontend:__subpackages__",
 ])
 
+filegroup(
+    name = "typed_lint_srcs",
+    srcs = glob(
+        [
+            "*.ts",
+            "*.tsx",
+            "**/*.ts",
+            "**/*.tsx",
+        ],
+        allow_empty = True,
+    ),
+    visibility = ["//props/frontend:__pkg__"],
+)
+
 ts_library(
     name = "RunDetailPage",
     srcs = ["RunDetailPage.tsx"],

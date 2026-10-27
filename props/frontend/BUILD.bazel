@@ -5,6 +5,7 @@ load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
 load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 load("//devinfra/js:ts_library.bzl", "ts_library")
+load("//devinfra/js:typed_eslint.bzl", "typed_eslint_test")
 load("//devinfra/js:vitest.bzl", "vitest_config")
 load("//util/testing/frontend_visual:py_visual_test.bzl", "py_visual_test")
 
@@ -21,6 +22,56 @@ vitest_config(
     name = "vitest_config",
     data = ["//:node_modules/happy-dom"],
     environment = "node",
+)
+
+filegroup(
+    name = "typed_lint_srcs",
+    srcs = glob(
+        [
+            "*.ts",
+            "*.tsx",
+            "**/*.ts",
+            "**/*.tsx",
+        ],
+        allow_empty = True,
+    ) + [
+        "//props/frontend/src/components:typed_lint_srcs",
+        "//props/frontend/src/components/stats:typed_lint_srcs",
+        "//props/frontend/src/lib:typed_lint_srcs",
+        "//props/frontend/src/pages:typed_lint_srcs",
+    ],
+)
+
+filegroup(
+    name = "typed_lint_program_data",
+    srcs = [
+        ":node_modules/@mantine/core",
+        ":node_modules/@mantine/notifications",
+        ":node_modules/@tabler/icons-react",
+        ":node_modules/chart.js",
+        ":node_modules/chartjs-chart-matrix",
+        ":node_modules/date-fns",
+        ":node_modules/esbuild",
+        ":node_modules/esbuild-plugin-tailwindcss",
+        ":node_modules/highlight.js",
+        ":node_modules/openapi-fetch",
+        ":node_modules/react",
+        ":node_modules/react-dom",
+        ":node_modules/tailwindcss",
+        "//props/frontend/src/lib:schema",
+    ],
+)
+
+typed_eslint_test(
+    name = "eslint_typed_test",
+    srcs = ":typed_lint_srcs",
+    extra_data = [
+        ":main",
+        ":typed_lint_program_data",
+        "//util/frontend:typed_lint_program_data",
+    ],
+    source_data = ["//util/frontend:typed_lint_srcs"],
+    tsconfig = "tsconfig.json",
 )
 
 # Export config files.

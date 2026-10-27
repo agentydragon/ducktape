@@ -152,9 +152,15 @@ function GetGmailThreadPreview({ args, variant }: PreviewProps<GetGmailThreadArg
   useEffect(() => {
     let alive = true;
     setPreview(undefined);
-    fetchGmailThreadPreviews([args.id]).then((result) => {
-      if (alive) setPreview(result[args.id] ?? null);
-    });
+    fetchGmailThreadPreviews([args.id]).then(
+      (result) => {
+        if (alive) setPreview(result[args.id] ?? null);
+      },
+      (error: unknown) => {
+        console.warn(`Could not resolve Gmail thread preview ${args.id}`, error);
+        if (alive) setPreview(null);
+      }
+    );
     return () => {
       alive = false;
     };
@@ -184,9 +190,15 @@ function GetGmailMessagePreview({ args, variant }: PreviewProps<GetGmailMessageA
   useEffect(() => {
     let alive = true;
     setPreview(undefined);
-    fetchGmailMessagePreview(args.id).then((result) => {
-      if (alive) setPreview(result);
-    });
+    fetchGmailMessagePreview(args.id).then(
+      (result) => {
+        if (alive) setPreview(result);
+      },
+      (error: unknown) => {
+        console.warn(`Could not resolve Gmail message preview ${args.id}`, error);
+        if (alive) setPreview(null);
+      }
+    );
     return () => {
       alive = false;
     };

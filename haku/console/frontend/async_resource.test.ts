@@ -17,7 +17,9 @@ describe("useAsyncResource", () => {
       resource.current = useAsyncResource(load);
       return null;
     }
-    act(() => root.render(createElement(Harness)));
+    act(() => {
+      root.render(createElement(Harness));
+    });
     await vi.waitFor(() => expect(load).toHaveBeenCalledOnce());
     act(() => resource.current?.update("authoritative"));
     await act(async () => {
@@ -28,6 +30,8 @@ describe("useAsyncResource", () => {
     act(() => resource.current?.refresh());
     await vi.waitFor(() => expect(resource.current?.error).toBe("offline"));
     expect(resource.current?.data).toBe("authoritative");
-    act(() => root.unmount());
+    act(() => {
+      root.unmount();
+    });
   });
 });
