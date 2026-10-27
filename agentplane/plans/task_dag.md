@@ -29,7 +29,7 @@ another. Agent messaging and the test-tier split have finished; what they left i
 ```mermaid
 flowchart LR
     subgraph ACTION_TRACK[MCP edge extraction]
-        ACTION_MCP_EDGE_SPLIT[Active: remove Actions' integrated MCP serving path]
+        ACTION_MCP_EDGE_SPLIT[Active: retire Actions' integrated Connection ownership]
     end
     subgraph DISPATCH_TRACK[Dispatcher and Gateway merge]
         DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: merge plan awaiting review]
@@ -506,7 +506,7 @@ Codex already runs one app-server and store per Runner, and Claude one process p
 the recommendation covers what remains open around them.
 
 Central Codex hosting through Sandbox exec servers, including coexistence with local modes, is
-`HARNESS_PLACEMENT_DESIGN` in section 5. It does not gate the current placement decision or separate tool
+`CENTRAL_SAMPLER_V1` in section 5. It does not gate the current placement decision or separate tool
 memory containment.
 
 Deliver a recommendation and proposed API shape for review; implementation and migration/retirement
@@ -613,10 +613,11 @@ flowchart LR
     PLATFORM_SERVICE_NAMES_DESIGN -. related naming and transport choices .-> PLATFORM_SERVICE_ROUTING_DESIGN
     STRUCTURED_TOOL_OUTPUT[Unscheduled: tool results as ordered text and image parts]
     STRUCTURED_TOOL_OUTPUT -. multi-block output .-> CODEX_CODE_MODE_CELLS[Unscheduled: Codex code-mode cells as runner items]
-    CENTRAL_CODEX_SPIKE[In progress: experimental central Codex process fixture]
-    CENTRAL_CODEX_SPIKE --> HARNESS_PLACEMENT_DESIGN[Decision, unscheduled: sampler placement and state authority]
-    CLAUDE_REMOTE_EXECUTION_SPIKE[Unscheduled: Claude remote tools and custom sampler compatibility]
-    CLAUDE_REMOTE_EXECUTION_SPIKE -. optional Claude branch evidence .-> HARNESS_PLACEMENT_DESIGN
+    CENTRAL_SAMPLER_V1[In review: standalone central code-mode sampler]
+    CENTRAL_SAMPLER_V1 --> CENTRAL_SAMPLER_PRODUCTION_IMPL[Unscheduled: production sampler implementation, Go preferred]
+    CENTRAL_SAMPLER_PRODUCTION_IMPL --> CENTRAL_SAMPLER_DEPLOYMENT[Unscheduled: opt-in deployment]
+    CLAUDE_REMOTE_EXECUTION_SPIKE[In review: gated native Claude remote tools]
+    CLAUDE_CUSTOM_SAMPLER[In review: custom Claude sampler evidence]
 ```
 
 ### `STRUCTURED_TOOL_OUTPUT` — tool results as ordered text and image parts
@@ -640,61 +641,67 @@ script and what it emitted) as runner items. Codex app-server has no `ThreadItem
 only the nested `commandExecution`. Needs upstream support, or reading the rollout or the native frames. Multi-block
 cell output likely needs `STRUCTURED_TOOL_OUTPUT`.
 
-### `CENTRAL_CODEX_SPIKE` — a Codex app-server outside the Sandbox drives its exec-server
+### `CENTRAL_SAMPLER_V1` — independent central code-mode runner
 
-**In progress; dispatched by operator, 2026-10-27.** Worker `/root/central_codex_spike`,
-2026-10-27: the first runnable slice under `runner/x/central_codex` passed on RBE with real pinned upstream
-processes and a test-only WebSocket relay ([evidence](../debug/central_codex_sampling.md)). An explicit host
-loss policy records unknown effects and interrupts the turn; upstream yielded output alone is not terminal
-failure evidence. The operator selected experimental `x/` scope; flag gating is
-optional and Codex code-mode-only support is acceptable. This slice covers routing, instruction loading,
-credential environment separation and retained conversation reads after executor process loss. It does not
-complete the separate failure-domain, Gateway authorization, spend-attribution or latency gates below.
-Model-exchange frontend work is lower priority because partial Langfuse linkage already exists; it is not a
-gate for this spike. [Research](sampling_outside_sandboxes.md).
+**In review; [PR #12225](https://github.com/agentydragon/ducktape/pull/12225); operator approved implementation,
+2026-10-27.** Root `/root` integrates branch `x/central-runtime-v1-20261027`.
+The placement decision is accepted: a shared independent sampler with its own PostgreSQL
+continuation, per-Session supervised JS host, fixed Sandbox/incarnation executor via the pinned
+Codex exec-server protocol, Dispatcher direct command routing and existing History ingress.
+Wrapped Codex/Claude retain local execution and sampling. Required v1 capabilities are compaction,
+model-facing wait, stdin and interrupts. Remote AGENTS.md discovery and executor replacement are
+deferred; neither gates v1. OpenAI-shaped Responses API/code mode is the selected provider scope.
 
-Remaining full-spike gates: in the k3s fixture, run the pinned Codex app-server in a control-plane Pod and `environment/add` one Sandbox's
-`codex exec-server`, reached through a Runner Gateway WebSocket tunnel over the runner's outbound connection.
-Drive a scripted GPT-6 code-mode turn: a cell running `tools.exec_command` and `tools.apply_patch`, a
-`view_image`, and AGENTS.md read from the Sandbox's workspace. Check that the Sandbox needs no LLM ingress
-grant, and whether a per-thread model provider token attributes spend to the Session. Measure nested-call
-latency against isolated-executor mode. Put sampling, native persistence and the recovery journal outside the
-executor's mounts and failure domain. Kill the executor or its state backend mid-tool: the conversation remains
-readable, the turn reaches a bounded failure, and unknown effects are not replayed
-([incident #12203](https://github.com/agentydragon/ducktape/issues/12203)). Exit: the test and its numbers in the
-research plan. Changes no deployed mode.
+Exit: reviewable experimental `x/` service with authenticated API, fixed-binding Gateway relay,
+durable commands/context/evidence, History export with lost-ack reconciliation, failure semantics,
+native-mode regression and integration tests, optional UI selection and documented resource limits.
+One-shot executor setup and the scripted-model k3s scenario through Dispatcher, Gateway, the bound
+executor and retained/folded History have passed. The shared Langfuse fixture refactor landed separately on `devel` first in [PR #12228](https://github.com/agentydragon/ducktape/pull/12228).
+No deployment or data migration is authorized here. [Accepted design](sampling_outside_sandboxes.md#accepted-central-sampler-v1)
+and [service contract](../x/central_sampler/SPEC.md). Earlier spike findings remain in
+[Codex placement evidence](../debug/central_codex_sampling.md) and
+[Postgres sampler evidence](../debug/postgres_codex_spike.md).
+[V1 validation](../debug/central_sampler_v1.md) records the passing combined execution/History test,
+native regressions and remaining deployment-specific limits.
 
-### `CLAUDE_REMOTE_EXECUTION_SPIKE` — Claude remote tools and custom sampler compatibility
+### `CENTRAL_SAMPLER_PRODUCTION_IMPL` — deployable sampler implementation
 
-**Unscheduled investigation/spike; operator, 2026-10-27 PDT.** Independent of both Codex spikes.
-Start from [versioned evidence](../debug/claude_execution_placement.md): the 2.1.252 test pin's gate is compiled
-off; installed 2.1.296 has a local forwarding switch, account flags and native tool serving. Establish which
-gates are locally settable, which require account support, and whether a scripted Agentplane peer can implement
-the transport. Trace and capture root/nested `CLAUDE.md` in the next model request after a remote read, including
-resume, caller isolation and read-before-edit behavior; file-operation success alone does not establish parity.
-Compare native serving, central CLI with driver MCP and built-ins disabled, and a custom Postgres sampler through
-CLIProxyAPI translation/cloaking or CLI/SDK-shaped requests. Distinguish model-wire identity from Claude controller
-protocol compatibility. Check streaming, tool names, continuation and cache behavior; mark any untested provider
-or subscription compatibility explicitly. Exit: versioned captures or a reproducible blocker and a recommendation
-for the Claude branch. No live account feature changes or runtime cutover implied.
+**Unscheduled; operator preference, 2026-10-27; technically after `CENTRAL_SAMPLER_V1`.** Build the
+deployable sampler in Go (preferred), or another agreed compiled language. The Python `x/`
+service supplies the prototype, contracts and acceptance evidence. Carry forward its authenticated
+API, PostgreSQL continuation and leases, uncertain-effect handling, supervised JS hosts,
+compaction/wait/stdin/interrupts, Gateway relay and History outbox semantics. Reuse the wire fixtures
+and acceptance scenarios to validate the replacement. Exit: reviewed implementation with equivalent
+acceptance coverage, including recovery, fencing and native harness coexistence.
 
-### `HARNESS_PLACEMENT_DESIGN` — sampler placement and state authority
+### `CENTRAL_SAMPLER_DEPLOYMENT` — opt-in runtime deployment
 
-**Decision, unscheduled; after `CENTRAL_CODEX_SPIKE`.** Claude evidence is optional
-and must not block a Codex-only choice. Compare upstream central Codex (per-Sandbox harness Pod or shared
-app-server), a Postgres-backed Codex fork, a custom central sampler, and no change. Recommendation to review:
-measure the smaller headless subset before choosing a rewrite; upstream per-Sandbox hosting remains the
-baseline for preserving behavior and failure scope. Operator question: do removing duplicate persistence/recovery
-and gaining model-exchange visibility justify owning the provider/tool contract more directly?
+**Unscheduled; technically after `CENTRAL_SAMPLER_PRODUCTION_IMPL`; requires operator selection.** Deploy an
+isolated database, sampler workload, delegated per-host resource boundary, audience/token and
+allowlists, configured provider route, History ingress network path and optional app offering.
+Preserve existing native Session identities, history, state and wrapped harness operation. Validate
+the deployed cgroup delegation and trusted Session attribution; scripted wire fixtures alone do not
+establish live endpoint/model compaction support. No default switch, native data conversion or
+executor replacement implied. Exit: bounded new-Session acceptance and data-preserving rollback.
 
-Name the single conversation/command authority, recovery and replica ownership, the future role of History reads
-and frontend folds, and which Dispatcher/Gateway responsibilities remain necessary for executor authentication,
-dial-out, cancellation and lifecycle. Include instructions/memory placement, spend attribution, request/response
-trace fidelity and retention, executor replacement and unknown effects, coexistence with local modes, and
-preservation of existing identities/history/native state. This owns the central-mode portion of the frozen
-`RUNNER_STATE_BOUNDARY_RETHINK`; it does not authorize a cutover. Review Codex-only support versus a Claude native
-remote-tool or custom-sampler branch; CLI subscription assumptions do not settle that choice. Implementation and
-data-preserving migration nodes follow the chosen design.
+### `CLAUDE_REMOTE_EXECUTION_SPIKE` — gated native Claude remote tools
+
+**In review; [PR #12210](https://github.com/agentydragon/ducktape/pull/12210), 2026-10-27.** The question
+is the specifically gated native remote-tools feature, its locally settable versus account gates,
+transport and instruction/read-state behavior. Generic filesystem MCP feasibility is already known
+and is not the acceptance outcome. Preserve exact binary versions and captures proving whether a
+remote read makes root/nested `CLAUDE.md` appear in the next model request; file access alone does
+not establish that. Exit: reproducible native-feature evidence or blocker and recommendation.
+Independent of the Codex v1 implementation; no live account changes or runtime cutover authorized.
+
+### `CLAUDE_CUSTOM_SAMPLER` — custom Claude loop and shared code-mode compatibility
+
+**In review; [PR #12211](https://github.com/agentydragon/ducktape/pull/12211), 2026-10-27.** Record
+scripted custom sampler evidence and CLIProxyAPI/CLI-shaped compatibility limits. A future Claude
+backend could use the same central code-mode runtime with suitable prompting and tool contracts;
+that is a later decision, not established by wire cloaking. Preserve wrapped official harnesses as
+an independent transitional backend. History must retain backend-specific evidence and expose a
+purpose-specific common display fold without inventing details absent from a harness JSON API.
 
 ### `SANDBOX_FORM_TERMINOLOGY` — distinguish launch presets from runtime templates
 
@@ -1784,7 +1791,7 @@ contract is [HTTP/JSON facades](../docs/grpc_services.md#httpjson-facades); what
 flowchart LR
     HISTORY_READS_FACADE[Candidate: History reads as a generated browser API]
     WEB_PUSH_SERVICE[Decision, unscheduled: Web Push as its own sender]
-    ACTION_MCP_EDGE_SPLIT[Active: remove Actions' integrated MCP serving path]
+    ACTION_MCP_EDGE_SPLIT[Active: retire Actions' integrated Connection ownership]
 ```
 
 ### `HISTORY_READS_FACADE` — History reads as a generated browser API
@@ -1795,19 +1802,19 @@ reads and replace the app's mirror models (`app/threads/view/content.py`,
 changed; a browser-facing watch could use `FollowSession` (section 11). Decide on purpose whether the app's Thread
 check on `thread_observations` (404 for a Session no Thread links) is kept or dropped.
 
-### `ACTION_MCP_EDGE_SPLIT` — remove the retired Action Service serving path
+### `ACTION_MCP_EDGE_SPLIT` — finish the MCP edge handoff
 
-**Active (Codex).** The standalone edge serves external MCP/OAuth and ConnectionService; Actions
-keeps upstream MCP linkage and CIMD. This source change removes Actions' integrated runtime and
-API registrations while retaining false-only/no-op settings for the old image's generated keys.
+**Active (Codex).** The Go port, Python retirement and legacy schema cleanup are complete. Staging's
+handoff configuration is merged (#11729, #11734): one edge replica serves the public MCP/OAuth routes and
+the app's Connection calls, and Actions' integrated ConnectionService is off
+(`integrated_connection_service: false`).
 
-Remaining work: after the new image is observed running, remove the compatibility keys from
-generated manifests, deploy that config, then remove the parser fields in a later image. Preserve
-all database rows and schemas in this change; any later migration needs a separate verified
-ownership and retention plan. Detailed sequence and constraints:
-[MCP edge extraction](mcp_edge_extraction.md#remaining-work). The current token audience is
-`agentplane-egress`; a dedicated audience is a separate change. Actions retains its upstream CIMD
-endpoint and the app retains upstream OAuth callbacks.
+Remaining outcome: deletion of Actions' integrated Connection/OAuth runtime and its six source tables.
+Detailed sequence and constraints: [MCP edge extraction](mcp_edge_extraction.md#remaining-work).
+The current token audience is `agentplane-egress`; a dedicated audience is a separate change.
+Actions retains its upstream CIMD endpoint and the app retains upstream OAuth callbacks.
+External-client reauthorization remains unverified; extraction preserves existing issuer URLs
+and copied token state rather than requiring another reauthorization.
 
 ### `WEB_PUSH_SERVICE` — Web Push as its own sender
 
@@ -1986,8 +1993,8 @@ app, checking each: `sandboxes/inventory.py`, `postgres/wakeups.py`, `history_se
 ## 15. Cleanups after the current tracks
 
 Dead code, transitional pieces and test leftovers each current track reports it will leave behind (census of the
-lanes, 2026-10-21). Removals that a track's own plan already lists stay there: the compatibility
-settings and separately gated schema cleanup in [MCP edge extraction](mcp_edge_extraction.md#remaining-work). The overview's graph is in
+lanes, 2026-10-21). Removals that a track's own plan already lists stay there: the integrated Connection/OAuth runtime
+and its old tables in [MCP edge extraction](mcp_edge_extraction.md#remaining-work). The overview's graph is in
 [Current tracks](#current-tracks-and-what-they-leave-behind). Fakes kept to inject faults the real API server cannot
 produce are named at the fake and are not cleanups.
 

@@ -6,8 +6,8 @@ from aiohttp import ClientSession
 
 from agentplane.x.postgres_codex.code_mode import CodeMode
 from agentplane.x.postgres_codex.compaction import compact
-from agentplane.x.postgres_codex.responses import request_body, sample
-from agentplane.x.postgres_codex.store import Owner, Store, UnknownEffectError
+from agentplane.x.postgres_codex.responses import ResponseEvidence, request_body, sample
+from agentplane.x.postgres_codex.store import KnownFailureError, Owner, Store, UnknownEffectError
 
 
 def pending_call(items: list[dict[str, Any]]) -> dict[str, Any] | None:
@@ -27,6 +27,7 @@ async def advance(
     credential: str,
     model: str,
     auto_compact_tokens: int | None = None,
+    reasoning_effort: str | None = None,
 ) -> str:
     if auto_compact_tokens is not None and auto_compact_tokens <= 0:
         raise ValueError("auto-compaction threshold must be positive")
@@ -45,7 +46,11 @@ async def advance(
         if runtime is None:
             raise ValueError("a pending cell requires a code-mode runtime")
         intent_id = await store.begin(owner, {"kind": "cell", "call": call})
-        output = await runtime.execute(call)
+        try:
+            output = await runtime.execute(call)
+        except KnownFailureError as failure:
+            await store.reject(owner, intent_id, failure)
+            raise
         result = {"type": "custom_tool_call_output", "call_id": call["call_id"], "output": output}
         await store.finish(owner, intent_id, result, [result])
         return "cell"
@@ -62,11 +67,28 @@ async def advance(
     body = request_body(
         model, str(row.id), row.context(), instructions=row.instructions, execution_state=execution_state
     )
+    if reasoning_effort is not None:
+        body["reasoning"] = {"effort": reasoning_effort}
+    body["client_metadata"] = await store.provider_metadata(owner)
+    body["prompt_cache_key"] = body["client_metadata"]["session_id"]
     intent_id = await store.begin(owner, {"kind": "sampling", "body": body})
-    sampled = await sample(http, endpoint, credential, body)
-    for item in sampled.output:
-        if item["type"] not in {"message", "reasoning", "custom_tool_call"}:
-            raise ValueError(f"unsupported provider output type: {item['type']}")
+    try:
+        sampled = await sample(
+            http,
+            endpoint,
+            credential,
+            body,
+            evidence=ResponseEvidence(store, owner, intent_id),
+            attribution=await store.provider_headers(owner),
+        )
+        for item in sampled.output:
+            if item["type"] not in {"message", "reasoning", "custom_tool_call"}:
+                raise KnownFailureError({"reason": "unsupported provider output type", **sampled.audit()})
+            if item["type"] == "custom_tool_call" and item["name"] not in {"exec", "wait"}:
+                raise KnownFailureError({"reason": "unsupported model tool", **sampled.audit()})
+    except KnownFailureError as failure:
+        await store.reject(owner, intent_id, failure)
+        raise
     # Provider items, including opaque reasoning and unknown fields, remain intact in JSONB.
     usage = sampled.terminal.get("usage")
     await store.finish(

@@ -5,8 +5,8 @@ from typing import Any
 
 from aiohttp import ClientSession
 
-from agentplane.x.postgres_codex.responses import request_body, sample
-from agentplane.x.postgres_codex.store import Owner, Store, UnknownEffectError
+from agentplane.x.postgres_codex.responses import ResponseEvidence, request_body, sample
+from agentplane.x.postgres_codex.store import KnownFailureError, Owner, Store, UnknownEffectError
 
 
 def check_pairs(items: list[dict[str, Any]]) -> None:
@@ -44,13 +44,29 @@ async def compact(
     original = row.context()
     check_pairs(original)
     body = request_body(model, str(row.id), original, instructions=row.instructions, execution_state=execution_state)
+    body["client_metadata"] = await store.provider_metadata(owner)
+    body["prompt_cache_key"] = body["client_metadata"]["session_id"]
     body["input"].append({"type": "compaction_trigger"})
     intent_id = await store.begin_compaction(owner, {"kind": "compaction", "body": body}, original)
-    result = await sample(http, endpoint, credential, body, compaction=True)
-    if len(result.output) != 1 or result.output[0]["type"] != "compaction":
-        raise ValueError("compaction must produce exactly one compaction item and no tools")
-    if not isinstance(result.output[0].get("encrypted_content"), str) or not result.output[0]["encrypted_content"]:
-        raise ValueError("compaction must include opaque encrypted_content")
-    if context_bytes(result.output) >= context_bytes(original):
-        raise ValueError("compaction did not reduce serialized model context")
+    try:
+        result = await sample(
+            http,
+            endpoint,
+            credential,
+            body,
+            compaction=True,
+            evidence=ResponseEvidence(store, owner, intent_id),
+            attribution=await store.provider_headers(owner),
+        )
+        if len(result.output) != 1 or result.output[0]["type"] != "compaction":
+            raise KnownFailureError(
+                {"reason": "compaction must produce exactly one compaction item and no tools", **result.audit()}
+            )
+        if not isinstance(result.output[0].get("encrypted_content"), str) or not result.output[0]["encrypted_content"]:
+            raise KnownFailureError({"reason": "compaction must include opaque encrypted_content", **result.audit()})
+        if context_bytes(result.output) >= context_bytes(original):
+            raise KnownFailureError({"reason": "compaction did not reduce serialized model context", **result.audit()})
+    except KnownFailureError as failure:
+        await store.reject(owner, intent_id, failure)
+        raise
     await store.finish_compaction(owner, intent_id, result.audit(), original, result.output)

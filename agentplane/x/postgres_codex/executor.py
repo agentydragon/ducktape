@@ -8,14 +8,23 @@ from uuid import uuid4
 
 from aiohttp import ClientWebSocketResponse, WSMsgType
 
+from agentplane.runner_gateway.executor_client import ExecutorSocket
 from agentplane.x.postgres_codex.store import Owner, Store
 
 
 class Executor:
-    def __init__(self, socket: ClientWebSocketResponse, *, cwd: Path, codex_path: str):
+    def __init__(
+        self,
+        socket: ClientWebSocketResponse | ExecutorSocket,
+        *,
+        cwd: Path,
+        codex_path: str,
+        environment: dict[str, str] | None = None,
+    ):
         self.socket = socket
         self.cwd = cwd
         self.codex_path = codex_path
+        self.environment = environment or {}
         self.store: Store
         self.owner: Owner
         self.lock = asyncio.Lock()
@@ -50,7 +59,8 @@ class Executor:
         # The native process registry is scoped to an executor session, not the server.
         # Resume only the recorded session; an unknown/expired ID is a hard failure.
         state = await self.store.execution_state(self.owner)
-        resume = (await self.store.read(self.owner)).executor_session if state["processes"] or state["cells"] else None
+        needs_remote = state["cells"] or any(p["status"] != "exited_unread" for p in state["processes"])
+        resume = (await self.store.read(self.owner)).executor_session if needs_remote else None
         result = await self.rpc("initialize", {"clientName": "postgres-codex-spike", "resumeSessionId": resume})
         await self.store.set_executor_session(self.owner, result["sessionId"])
         await self.socket.send_json({"method": "initialized", "params": {}})
@@ -86,24 +96,25 @@ class Executor:
         else:
             raise ValueError(f"unsupported nested tool: {name}")
         process_id = str(uuid4())
-        async with self.dispatch_lock:
-            if self.stopping:
-                raise InterruptedError("process dispatch stopped by user")
-            await self.store.register_process(self.owner, process_id, tty=tty)
-            await self.rpc(
-                "process/start",
-                {
-                    "processId": process_id,
-                    "argv": argv,
-                    "cwd": cwd.as_uri(),
-                    "env": {},
-                    "tty": tty,
-                    "pipeStdin": not tty,
-                    "arg0": None,
-                },
-            )
-            await self.store.process_result(self.owner, process_id, None, "running")
-        return await self.read_process(process_id, yield_ms)
+        async with self.process_locks.setdefault(process_id, asyncio.Lock()):
+            async with self.dispatch_lock:
+                if self.stopping:
+                    raise InterruptedError("process dispatch stopped by user")
+                await self.store.register_process(self.owner, process_id, tty=tty)
+                await self.rpc(
+                    "process/start",
+                    {
+                        "processId": process_id,
+                        "argv": argv,
+                        "cwd": cwd.as_uri(),
+                        "env": self.environment,
+                        "tty": tty,
+                        "pipeStdin": not tty,
+                        "arg0": None,
+                    },
+                )
+                await self.store.process_result(self.owner, process_id, None, "running")
+            return await self.read_process(process_id, yield_ms)
 
     async def write_stdin(self, arguments: Any) -> dict[str, Any]:
         if not isinstance(arguments, dict) or set(arguments) - {"session_id", "chars", "eof", "yield_time_ms"}:
@@ -116,7 +127,7 @@ class Executor:
         yield_ms = self.yield_ms(arguments, 1000)
         async with self.process_locks.setdefault(process_id, asyncio.Lock()):
             row = await self.store.process(self.owner, process_id)
-            if row.status != "running":
+            if row.status != "running" and not (row.status == "exited_unread" and not chars and not eof):
                 raise ValueError(f"session {process_id} is {row.status}; stdin was not sent")
             if eof and (not row.tty or chars):
                 raise ValueError("EOF requires a PTY and empty chars; pinned exec-server has no pipe-close RPC")
@@ -146,8 +157,13 @@ class Executor:
     async def read_process(self, process_id: str, yield_ms: int) -> dict[str, Any]:
         row = await self.store.process(self.owner, process_id)
         after_seq = row.after_seq
+        if row.status == "exited_unread":
+            await self.store.process_result(
+                self.owner, process_id, after_seq, "exited", row.exit_code, consume_output=True
+            )
+            return {"output": row.buffered_output.decode(errors="replace"), "exit_code": row.exit_code}
         deadline = asyncio.get_running_loop().time() + yield_ms / 1000
-        output = bytearray()
+        output = bytearray(row.buffered_output)
         while True:
             remaining = max(0, int((deadline - asyncio.get_running_loop().time()) * 1000))
             result = await self.rpc(
@@ -164,11 +180,56 @@ class Executor:
                 raise ValueError("output exceeds 1 MiB; outcome remains unknown")
             # Drain retained output after exit before publishing a terminal handle.
             if result["exited"] and not result["chunks"]:
-                await self.store.process_result(self.owner, process_id, after_seq, "exited", result["exitCode"])
+                await self.store.process_result(
+                    self.owner, process_id, after_seq, "exited", result["exitCode"], consume_output=True
+                )
                 return {"output": output.decode(errors="replace"), "exit_code": result["exitCode"]}
             if not result["exited"] and asyncio.get_running_loop().time() >= deadline:
-                await self.store.process_result(self.owner, process_id, after_seq, "running")
+                await self.store.process_result(self.owner, process_id, after_seq, "running", consume_output=True)
                 return {"output": output.decode(errors="replace"), "exit_code": None, "session_id": process_id}
+
+    async def reconcile_processes(self, *, rpc_timeout_seconds: float) -> bool:
+        """Observe idle processes independently of model polling, retaining every unread byte.
+
+        Each pass reads at most one bounded page per process without waiting for output.
+        The RPC lock remains the sole WebSocket reader, including during interruption.
+        """
+        progressed = False
+        for process in (await self.store.execution_state(self.owner))["processes"]:
+            process_id = process["session_id"]
+            process_lock = self.process_locks.setdefault(process_id, asyncio.Lock())
+            # An active delegate already observes this process. Do not let its foreground
+            # observation delay command admission or reconciliation of other handles.
+            if process_lock.locked():
+                continue
+            async with process_lock:
+                row = await self.store.process(self.owner, process_id)
+                if row.status in {"exited", "exited_unread"}:
+                    continue
+                if row.status != "running":
+                    raise ConnectionError(f"cannot reconcile remote process in state {row.status}")
+                async with asyncio.timeout(rpc_timeout_seconds):
+                    result = await self.rpc(
+                        "process/read",
+                        {"processId": process_id, "afterSeq": row.after_seq, "maxBytes": 65536, "waitMs": 0},
+                    )
+                if result["failure"] is not None or (result["closed"] and not result["exited"]):
+                    await self.store.process_result(self.owner, process_id, row.after_seq, "unknown")
+                    raise ConnectionError(f"remote process outcome unknown: {result['failure']}")
+                output = b"".join(base64.b64decode(chunk["chunk"]) for chunk in result["chunks"])
+                # A terminal page may still precede further retained output.
+                exited = result["exited"] and not result["chunks"]
+                if result["chunks"] or exited:
+                    await self.store.retain_process_output(
+                        self.owner,
+                        process_id,
+                        result["nextSeq"] - 1,
+                        output,
+                        exited=exited,
+                        exit_code=result["exitCode"],
+                    )
+                    progressed = True
+        return progressed
 
     async def interrupt_all(self) -> dict[str, Any]:
         outcomes: dict[str, Any] = {}
@@ -178,12 +239,17 @@ class Executor:
         async with self.dispatch_lock:
             processes = (await self.store.execution_state(self.owner))["processes"]
         for process in processes:
+            if process["status"] == "exited_unread":
+                continue
             process_id = process["session_id"]
             intent = await self.store.record_nested(self.owner, {"kind": "interrupt_process", "session_id": process_id})
             try:
                 async with asyncio.timeout(5):
+                    # Terminate before taking the observation lock: a delegate may
+                    # hold it while waiting for this very process to exit.
                     await self.rpc("process/terminate", {"processId": process_id})
-                    result = await self.read_process(process_id, 3000)
+                    async with self.process_locks.setdefault(process_id, asyncio.Lock()):
+                        result = await self.read_process(process_id, 3000)
                     if "session_id" in result:
                         raise TimeoutError("process exit not observed")
                 outcomes[process_id] = {"exit_observed": True, **result}

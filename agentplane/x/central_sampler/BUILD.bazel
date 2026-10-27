@@ -1,0 +1,409 @@
+load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+
+# gazelle:resolve py agentplane.x.central_sampler.sampler_pb2 //agentplane/x/central_sampler:sampler_pb2
+# gazelle:resolve py agentplane.x.central_sampler.sampler_pb2_grpc //agentplane/x/central_sampler:sampler_pb2_grpc
+load("@protobuf//bazel:proto_library.bzl", "proto_library")
+load("//agentplane/runner/testing:exec_properties.bzl", "NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//devinfra/python:grpc.bzl", "py_grpc_service_library")
+load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
+
+package(default_visibility = ["//visibility:public"])
+
+proto_library(
+    name = "sampler_proto",
+    srcs = ["sampler.proto"],
+    deps = [
+        "//agentplane/proto:event_log_proto",
+        "//agentplane/proto:runner_proto",
+        "//agentplane/proto:sandboxes_proto",
+        "//agentplane/runner:runner_service_proto",
+    ],
+)
+
+py_proto_library_with_mypy_stubs(
+    name = "sampler_pb2",
+    deps = [":sampler_proto"],
+)
+
+py_grpc_service_library(
+    name = "sampler_pb2_grpc",
+    proto = ":sampler_proto",
+    py_proto = ":sampler_pb2",
+)
+
+py_binary(
+    name = "main_bin",
+    main_module = "agentplane.x.central_sampler.main",
+    deps = [":main"],
+)
+
+py_library(
+    name = "main",
+    srcs = ["main.py"],
+    deps = [
+        ":exporter",
+        ":migration",
+        ":runtime",
+        ":service",
+        ":settings",
+        ":store",
+        "//agentplane/grpc:serving",
+        "//agentplane/workload_auth:principal",
+        "//agentplane/x/central_sampler:sampler_pb2_grpc",
+        "@pypi//asyncpg",
+        "@pypi//grpcio",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//protobuf",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "runtime",
+    srcs = ["runtime.py"],
+    data = [":host_launcher_bin"],
+    deps = [
+        ":executor",
+        ":host_limits",
+        ":settings",
+        ":store",
+        "//agentplane/grpc:calls",
+        "//agentplane/proto:command_pb2",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/runner_gateway:executor_client",
+        "//agentplane/x/central_sampler:sampler_pb2",
+        "//agentplane/x/postgres_codex:code_mode",
+        "//agentplane/x/postgres_codex:compaction",
+        "//agentplane/x/postgres_codex:control",
+        "//agentplane/x/postgres_codex:sampler",
+        "//agentplane/x/postgres_codex:store",
+        "//util/bazel:runfiles",
+        "@pypi//aiohttp",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "service",
+    srcs = ["service.py"],
+    deps = [
+        ":runtime",
+        ":settings",
+        ":store",
+        "//agentplane/proto:command_pb2",
+        "//agentplane/proto:event_log_pb2",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/runner:runner_service_pb2",
+        "//agentplane/workload_auth:bearer",
+        "//agentplane/workload_auth:principal",
+        "//agentplane/x/central_sampler:sampler_pb2",
+        "//agentplane/x/central_sampler:sampler_pb2_grpc",
+        "@pypi//grpcio",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//protobuf",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "settings",
+    srcs = ["settings.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "store",
+    srcs = ["store.py"],
+    deps = [
+        ":evidence",
+        "//agentplane/postgres:wakeups",
+        "//agentplane/proto:command_pb2",
+        "//agentplane/proto:event_log_pb2",
+        "//agentplane/proto:event_pb2",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/x/central_sampler:sampler_pb2",
+        "//agentplane/x/postgres_codex:store",
+        "@pypi//protobuf",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "testing",
+    testonly = True,
+    srcs = ["testing.py"],
+    deps = [
+        ":runtime",
+        ":service",
+        ":settings",
+        ":store",
+        "//agentplane/grpc:serving",
+        "//agentplane/native/testing:model_endpoint",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/proto:sandboxes_pb2",
+        "//agentplane/workload_auth:principal",
+        "//agentplane/x/central_sampler:sampler_pb2",
+        "//agentplane/x/central_sampler:sampler_pb2_grpc",
+        "@pypi//grpcio",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//protobuf",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        "//agentplane/runner/testing:executor_companion",
+        "//agentplane/testing:kubernetes_apiserver_fixtures",
+        "//agentplane/x/postgres_codex:conftest",
+    ],
+)
+
+py_test(
+    name = "test_service",
+    size = "medium",
+    srcs = ["test_service.py"],
+    data = ["@agentplane_codex_cli_linux_x64//:files"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":migration",
+        ":settings",
+        ":store",
+        ":testing",
+        "//:conftest",
+        "//agentplane/native/codex/testing:responses_sse",
+        "//agentplane/native/testing:model_endpoint",
+        "//agentplane/proto:command_pb2",
+        "//agentplane/proto:event_pb2",
+        "//agentplane/runner:runner_service_pb2",
+        "//agentplane/x/central_sampler:sampler_pb2",
+        "//agentplane/x/central_sampler:sampler_pb2_grpc",
+        "//agentplane/x/postgres_codex:store",
+        "//agentplane/x/postgres_codex:testing",
+        "//util/testing:sqlalchemy_engines",
+        "//util/testing:undeclared_outputs",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+go_proto_library(
+    name = "sampler_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "@io_bazel_rules_go//proto:go_grpc_v2",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/x/central_sampler/samplerpb",
+    proto = ":sampler_proto",
+    deps = [
+        "//agentplane/proto:event_log_go_proto",
+        "//agentplane/proto:runner_go_proto",
+        "//agentplane/proto:sandboxes_go_proto",
+        "//agentplane/runner:runner_service_go_proto",
+    ],
+)
+
+py_library(
+    name = "executor",
+    srcs = ["executor.py"],
+    deps = ["//agentplane/x/postgres_codex:executor"],
+)
+
+py_library(
+    name = "migration",
+    srcs = ["migration.py"],
+    data = [":migration_files"],
+    deps = [
+        ":store",
+        "//util:db_migrations",
+        "//util/bazel:runfiles",
+    ],
+)
+
+filegroup(
+    name = "migration_files",
+    srcs = [
+        "//agentplane/x/central_sampler/migrations:env.py",
+        "//agentplane/x/central_sampler/migrations/versions:0001_sampler.py",
+        "//agentplane/x/central_sampler/migrations/versions:0002_setup.py",
+        "//agentplane/x/central_sampler/migrations/versions:0003_runtime_correctness.py",
+    ],
+)
+
+py_binary(
+    name = "host_launcher_bin",
+    main_module = "agentplane.x.central_sampler.host_launcher",
+    deps = [":host_launcher"],
+)
+
+py_library(
+    name = "host_launcher",
+    srcs = ["host_launcher.py"],
+)
+
+py_library(
+    name = "host_limits",
+    srcs = ["host_limits.py"],
+)
+
+py_library(
+    name = "evidence",
+    srcs = ["evidence.py"],
+)
+
+py_library(
+    name = "exporter",
+    srcs = ["exporter.py"],
+    deps = [
+        ":store",
+        "//agentplane/grpc:calls",
+        "//agentplane/history_service:runner_ingress_pb2",
+        "//agentplane/history_service:runner_ingress_pb2_grpc",
+        "//agentplane/postgres:wakeups",
+        "//agentplane/proto:event_log_pb2",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_exporter",
+    size = "medium",
+    srcs = ["test_exporter.py"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":exporter",
+        ":migration",
+        ":store",
+        "//:conftest",
+        "//agentplane:subjects",
+        "//agentplane/history_service/testing:go_service",
+        "//agentplane/proto:event_log_pb2",
+        "//agentplane/proto:event_pb2",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/proto:sandboxes_pb2",
+        "//agentplane/testing:electric_role",
+        "//agentplane/testing:kubernetes_apiserver",
+        "//agentplane/x/central_sampler:sampler_pb2",
+        "//util/testing:postgres",
+        "//util/testing:sqlalchemy_engines",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_gateway_integration",
+    size = "medium",
+    srcs = ["test_gateway_integration.py"],
+    env = {"DOCKER_HOST": "tcp://127.0.0.1:2375"},
+    exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
+    requires_docker = True,
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        ":conftest",
+        ":exporter",
+        ":migration",
+        ":settings",
+        ":store",
+        ":testing",
+        "//:conftest",
+        "//agentplane:subjects",
+        "//agentplane/grpc:calls",
+        "//agentplane/history_service/testing:go_service",
+        "//agentplane/native/codex/testing:responses_sse",
+        "//agentplane/proto:event_pb2",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/runner:configuration",
+        "//agentplane/runner:runner_service_pb2",
+        "//agentplane/runner/testing:executor_companion",
+        "//agentplane/runner/testing:gateway",
+        "//agentplane/runner/testing:launches",
+        "//agentplane/runner/testing:process",
+        "//agentplane/runner_gateway:executor_client",
+        "//agentplane/runner_gateway/testing:gateway_process",
+        "//agentplane/sandboxes/testing:kubernetes",
+        "//agentplane/testing:electric_role",
+        "//agentplane/testing:kubernetes_apiserver",
+        "//agentplane/x/central_sampler:sampler_pb2",
+        "//util/testing:postgres",
+        "//util/testing:sqlalchemy_engines",
+        "//util/testing:undeclared_outputs",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_setup",
+    size = "medium",
+    srcs = ["test_setup.py"],
+    data = ["@agentplane_codex_cli_linux_x64//:files"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":migration",
+        ":store",
+        ":testing",
+        "//:conftest",
+        "//agentplane/native/codex/testing:responses_sse",
+        "//agentplane/proto:event_pb2",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/runner:runner_service_pb2",
+        "//agentplane/x/central_sampler:sampler_pb2",
+        "//agentplane/x/central_sampler:sampler_pb2_grpc",
+        "//util/testing:sqlalchemy_engines",
+        "//util/testing:undeclared_outputs",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_session_correctness",
+    size = "medium",
+    srcs = ["test_session_correctness.py"],
+    data = ["@agentplane_codex_cli_linux_x64//:files"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":migration",
+        ":store",
+        ":testing",
+        "//:conftest",
+        "//agentplane/native/codex/testing:responses_sse",
+        "//agentplane/native/testing:model_endpoint",
+        "//agentplane/proto:command_pb2",
+        "//agentplane/proto:event_pb2",
+        "//agentplane/runner:runner_service_pb2",
+        "//agentplane/x/central_sampler:sampler_pb2",
+        "//agentplane/x/central_sampler:sampler_pb2_grpc",
+        "//agentplane/x/postgres_codex:store",
+        "//util/testing:sqlalchemy_engines",
+        "//util/testing:undeclared_outputs",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)

@@ -45,6 +45,9 @@ Completed provider/cell outputs atomically append to the conversation and clear 
 intent. Nested results alone cannot recover an interrupted JS cell. Output cursors advance only after
 real retained output is read; terminal process results drain output after exit. Current live handles
 are regenerated from the database for model requests rather than inferred from earlier tool text.
+The embedded central service also reconciles idle processes independently of model reads. Its
+bounded unread-output buffer preserves up to 1 MiB per handle in PostgreSQL, and an observed exited
+process with unread bytes can release the live runtime while remaining locally readable.
 
 Process handles can survive completed cells and a sampler restart **while the same upstream executor
 session remains resumable**. Initialize sends its recorded `resumeSessionId`; the pinned server retains
@@ -58,8 +61,9 @@ host or using a fresh owner with a live-cell checkpoint blocks advancement. A on
 yields a cell therefore cannot continue it in the next process; use `run` for that lifecycle.
 
 Fresh disposable databases use `main_bin init` / SQLAlchemy metadata. Existing experiment databases
-apply `migrations/0001_compaction.sql` and `migrations/0002_process_controls.sql` once, offline,
-before using this extension.
+apply `migrations/0001_compaction.sql`, `migrations/0002_process_controls.sql`,
+`migrations/0003_process_output.sql` and `migrations/0004_interrupt_targets.sql` once, in order,
+offline before using this extension.
 There is no production migration runner or shipped service using these isolated tables.
 
 ## External interruption and explicit continuation
@@ -122,11 +126,13 @@ repeated compaction without another sample. This opt-in threshold uses observed 
 unmeasured tool-output growth can cross a model window before another observation. It is not a hard
 context-window bound or a default derived from an unverified model catalog.
 
-Failed, partial, malformed, nonshrinking or canceled compaction preserves the original context and
-leaves its intent unresolved. An acknowledged external interrupt may clear the canceled compaction
-intent after observed cleanup; it preserves the preceding context and requires explicit user input.
-Ownership loss fences installation. These cases block future automatic
-advance and have no reconciliation interface yet. Compaction never dispatches or replays a tool.
+Rejected or malformed completed compaction, including nonshrinking output, preserves the original
+context and settles its intent as rejected. Explicit new input can resume safely; there is no
+automatic retry. Unterminated or canceled compaction leaves its intent unresolved. An acknowledged
+external interrupt may clear the canceled compaction intent after observed cleanup; it preserves
+the preceding context and requires explicit user input. Ownership loss fences installation.
+Unresolved cases block future automatic advance and have no reconciliation interface yet.
+Compaction never dispatches or replays a tool.
 
 ## Remaining omissions
 
@@ -135,3 +141,9 @@ persistent JavaScript `store`/`load`, notify, subagents, skills, MCP, approvals,
 History export or frontend traces. Unsupported provider item types and non-`exec`/`wait` tools fail
 explicitly. No live inference/provider-account compatibility, production replacement or deployment is
 established. The full native harness remains responsible for capabilities outside this contract.
+
+## Service embedding
+
+The central sampler reuses these runtime transitions. Its Store subclass appends evidence within
+the same transactions and supplies public Session attribution. The standalone experiment keeps
+its own conversation identity and sends no central attribution header.

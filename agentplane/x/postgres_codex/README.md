@@ -9,7 +9,8 @@ This is a runnable experiment, with deliberately narrow tool behavior; see [SPEC
 Each `main_bin advance` performs one sampling or code-cell transition and exits. A later process
 uses Postgres checkpoints to continue. `main_bin run` retains a real code-mode host across sampling
 and model-facing `wait` calls, supporting yielded JavaScript cells. No production database, migration runner, deployment or service
-reads these tables. The package is test-only and has no shipped caller.
+reads these tables. The command-line experiment and fixtures are test-only. The reusable runtime libraries also serve
+[the central sampler](../central_sampler/README.md).
 
 ```sh
 bbr test //agentplane/x/postgres_codex:test_sampler \
@@ -61,7 +62,9 @@ records observed process exits plus possible partial effects. Explicit `input CO
 can continue after this terminal interrupted state. Unknown cleanup outcomes block continuation;
 there is no automatic replay or reconciliation interface. These controls cover known supervised
 processes, not arbitrary escaped descendants. Existing disposable experiment databases need the
-additive `migrations/0001_compaction.sql` and `migrations/0002_process_controls.sql`; `init` creates the current schema for a fresh database.
+additive `migrations/0001_compaction.sql`, `migrations/0002_process_controls.sql`,
+`migrations/0003_process_output.sql` and `migrations/0004_interrupt_targets.sql` in order;
+`init` creates the current schema for a fresh database.
 
 `store.py` owns the isolated schema, intent checkpoints and lease generations. `sampler.py` owns
 conversation transitions. `code_mode.py` speaks upstream's

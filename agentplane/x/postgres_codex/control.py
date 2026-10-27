@@ -22,6 +22,7 @@ async def controlled_advance(
     credential: str,
     model: str,
     auto_compact_tokens: int | None = None,
+    reasoning_effort: str | None = None,
 ) -> str:
     task: asyncio.Task[str] | None = None
     try:
@@ -50,7 +51,12 @@ async def controlled_advance(
                     _, pending = await asyncio.wait(runtime.delegates, timeout=5)
                     delegates_stopped = not pending
                 state = await store.execution_state(owner)
-                complete = not state["cells"] and not state["processes"] and delegates_stopped and cleanup_error is None
+                complete = (
+                    not state["cells"]
+                    and not any(process["status"] != "exited_unread" for process in state["processes"])
+                    and delegates_stopped
+                    and cleanup_error is None
+                )
                 result: dict[str, Any] = {
                     "status": "interrupted" if complete else "effects_unknown",
                     "provider_cancelled": row.pending is not None and row.pending["kind"] in {"sampling", "compaction"},
@@ -75,6 +81,7 @@ async def controlled_advance(
                         credential=credential,
                         model=model,
                         auto_compact_tokens=auto_compact_tokens,
+                        reasoning_effort=reasoning_effort,
                     )
                 )
             if task.done():

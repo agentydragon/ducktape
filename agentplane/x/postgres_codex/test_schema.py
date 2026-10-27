@@ -56,6 +56,11 @@ async def test_controls_migration_preserves_original_rows(database_url: str) -> 
             for statement in migration.split(";"):
                 if statement.strip():
                     await connection.execute(text(statement))
+            for name in ("0003_process_output.sql", "0004_interrupt_targets.sql"):
+                migration = get_required_path(f"_main/agentplane/x/postgres_codex/migrations/{name}").read_text()
+                for statement in migration.split(";"):
+                    if statement.strip():
+                        await connection.execute(text(statement))
         store = Store(engine)
         owner = await store.claim(conversation_id, lease=timedelta(seconds=30))
         row = await store.read(owner)

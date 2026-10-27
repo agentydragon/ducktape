@@ -1,0 +1,28 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+py_library(
+    name = "0001_sampler",
+    srcs = ["0001_sampler.py"],
+    deps = ["@pypi//alembic"],
+)
+
+exports_files(
+    [
+        "0001_sampler.py",
+        "0002_setup.py",
+        "0003_runtime_correctness.py",
+    ],
+    visibility = ["//agentplane/x/central_sampler:__pkg__"],
+)
+
+py_library(
+    name = "0002_setup",
+    srcs = ["0002_setup.py"],
+    deps = ["@pypi//alembic"],
+)
+
+py_library(
+    name = "0003_runtime_correctness",
+    srcs = ["0003_runtime_correctness.py"],
+    deps = ["@pypi//alembic"],
+)

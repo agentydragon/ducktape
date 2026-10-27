@@ -1,9 +1,10 @@
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
-package(default_testonly = True)
+package(default_visibility = ["//visibility:public"])
 
 py_binary(
     name = "main_bin",
+    testonly = True,
     main_module = "agentplane.x.postgres_codex.main",
     deps = [":main"],
 )
@@ -48,6 +49,7 @@ py_library(
     srcs = ["executor.py"],
     deps = [
         ":store",
+        "//agentplane/runner_gateway:executor_client",
         "@pypi//aiohttp",
     ],
 )
@@ -75,6 +77,7 @@ py_library(
 
 py_library(
     name = "main",
+    testonly = True,
     srcs = ["main.py"],
     deps = [
         ":code_mode",
@@ -107,6 +110,7 @@ py_library(
 
 py_library(
     name = "testing",
+    testonly = True,
     srcs = ["testing.py"],
     deps = [
         ":executor",
@@ -156,6 +160,7 @@ py_test(
 
 py_library(
     name = "control_testing",
+    testonly = True,
     srcs = ["control_testing.py"],
     deps = [
         ":store",
@@ -193,10 +198,13 @@ py_test(
 
 py_test(
     name = "test_schema",
+    size = "medium",
     srcs = ["test_schema.py"],
     data = [
         "migrations/0001_compaction.sql",
         "migrations/0002_process_controls.sql",
+        "migrations/0003_process_output.sql",
+        "migrations/0004_interrupt_targets.sql",
     ],
     requires_docker = True,
     deps = [
@@ -253,6 +261,7 @@ py_library(
     srcs = ["responses.py"],
     deps = [
         ":code_mode",
+        ":store",
         "@pypi//aiohttp",
     ],
 )

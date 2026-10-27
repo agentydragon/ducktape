@@ -3,10 +3,12 @@
 import json
 from dataclasses import dataclass
 from typing import Any
+from uuid import UUID
 
 from aiohttp import ClientSession
 
 from agentplane.x.postgres_codex.code_mode import tool_definitions
+from agentplane.x.postgres_codex.store import KnownFailureError, Owner, Store
 
 
 def request_body(
@@ -75,15 +77,32 @@ class ProviderResponse:
         return {"response": self.terminal, "events": self.events}
 
 
+@dataclass(frozen=True)
+class ResponseEvidence:
+    store: Store
+    owner: Owner
+    intent_id: UUID
+
+
 async def sample(
-    http: ClientSession, endpoint: str, credential: str, body: dict[str, Any], *, compaction: bool = False
+    http: ClientSession,
+    endpoint: str,
+    credential: str,
+    body: dict[str, Any],
+    *,
+    compaction: bool = False,
+    evidence: ResponseEvidence | None = None,
+    attribution: dict[str, str] | None = None,
 ) -> ProviderResponse:
     """Require the provider terminal event; never continue from partially streamed items."""
     headers = {"Authorization": f"Bearer {credential}", "x-openai-internal-codex-responses-lite": "true"}
+    if attribution is not None:
+        headers.update(attribution)
     if compaction:
         headers["x-codex-beta-features"] = "remote_compaction_v2"
     async with http.post(endpoint, json=body, headers=headers) as response:
-        response.raise_for_status()
+        if response.status >= 400:
+            raise KnownFailureError({"http_status": response.status, "body": await response.text()})
         data: list[str] = []
         events: list[dict[str, Any]] = []
         output: list[dict[str, Any]] = []
@@ -94,18 +113,24 @@ async def sample(
             elif not line and data:
                 event = json.loads("\n".join(data))
                 data.clear()
+                if evidence is not None:
+                    await evidence.store.provider_event(evidence.owner, evidence.intent_id, event)
                 events.append(event)
                 if event["type"] == "response.output_item.done":
                     output.append(event["item"])
                 if event["type"] == "response.completed":
                     terminal: dict[str, Any] = event["response"]
                     if terminal.get("status", "completed") != "completed":
-                        raise ValueError(f"unexpected terminal status: {terminal['status']}")
+                        raise KnownFailureError(
+                            {"reason": "unexpected terminal status", "response": terminal, "events": events}
+                        )
                     if "output" in terminal:
                         if output and output != terminal["output"]:
-                            raise ValueError("terminal output disagrees with streamed completed items")
+                            raise KnownFailureError(
+                                {"reason": "terminal output disagrees with streamed completed items", "events": events}
+                            )
                         output = terminal["output"]
                     return ProviderResponse(terminal, output, events)
                 if event["type"] in {"response.failed", "response.incomplete", "error"}:
-                    raise RuntimeError(event)
+                    raise KnownFailureError({"terminal": event, "events": events})
     raise ConnectionError("provider stream ended without response.completed; sampling outcome unknown")
