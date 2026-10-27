@@ -23,7 +23,8 @@ import { api, displayableError } from "../client";
 import { type NewSandbox, type NewSandboxDefaults, type SandboxPresetView, type SandboxView } from "./client";
 import { IdleSuspendField, IdleSuspendInput } from "./idle_suspend";
 import { ConfirmDelete, deletable, deleting, SuspendResume } from "./lifecycle";
-import { liveSandboxesUrl, type SandboxesSnapshot, useLive } from "../live";
+import { liveSandboxesUrl, type SandboxesSnapshot } from "./live";
+import { useLive } from "../live";
 
 import { MarkGlyph } from "../mark_glyph";
 import { placeholderSandboxName, sandboxNameError } from "./sandbox_name";

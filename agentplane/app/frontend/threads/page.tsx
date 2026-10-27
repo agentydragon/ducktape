@@ -5,7 +5,8 @@ import { displayableError } from "../client";
 import { getThread, type ThreadView } from "./client";
 import { harnessLabel } from "../model_catalog";
 import { resumeSandbox, type SandboxView } from "../sandboxes/client";
-import { useRequiredSandboxesLive, useRequiredThreadsLive } from "../live";
+import { useRequiredSandboxesLive } from "../sandboxes/live";
+import { useRequiredThreadsLive } from "./live";
 
 import { ChronologicalDebugProvider } from "./chronological_debug";
 import { ThreadTitle } from "./thread_title";

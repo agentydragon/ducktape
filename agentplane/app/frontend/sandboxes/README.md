@@ -3,7 +3,7 @@
 The Sandbox list (`list.tsx`) and detail pages live here, along with creation, lifecycle,
 runtime Session diagnostics, console, status, policy, and egress views and their tests.
 The Sandbox Thread list and creation form live in `../threads/`. Sandbox API calls live
-in `client.ts`. Shared HTTP transport and the Sandbox status model stay in the parent frontend package; Thread status and its
+in `client.ts`, and `live.tsx` owns live Sandbox views. Shared HTTP transport and the Sandbox status model stay in the parent frontend package; Thread status and its
 indicator are owned by `../threads/`. `BindingsTable` stays in the parent package because
 Settings also uses it to display caller grants.
 

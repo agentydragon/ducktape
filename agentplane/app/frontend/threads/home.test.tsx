@@ -8,7 +8,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import type { SandboxView } from "../sandboxes/client";
 import type { ThreadView } from "./client";
 import { Home } from "./home";
-import { RoutedThreadsLiveProvider, type ThreadsSnapshot } from "../live";
+import { RoutedThreadsLiveProvider, type ThreadsSnapshot } from "./live";
 import type { SessionNoticeStates } from "../notification_types";
 import { Sidebar } from "../sidebar";
 

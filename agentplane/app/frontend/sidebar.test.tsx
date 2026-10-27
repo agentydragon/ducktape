@@ -7,7 +7,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import type { SandboxView } from "./sandboxes/client";
 import type { ThreadView } from "./threads/client";
-import { RoutedThreadsLiveProvider, type ThreadsSnapshot } from "./live";
+import { RoutedThreadsLiveProvider, type ThreadsSnapshot } from "./threads/live";
 import { Sidebar } from "./sidebar";
 import { scrollCapture } from "./threads/scroll_diagnostics";
 import { ConnectionIndicator, DEGRADED_AFTER_MS } from "./stream_status";

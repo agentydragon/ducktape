@@ -47,13 +47,9 @@ import type { DispatchReceipt, ThreadView } from "../threads/client";
 import { ACTION_RENDERERS } from "../actions/rendering/index";
 import type { ActionGroupView, ActionPolicyView, ActionRequestView } from "../actions/client";
 import type { McpLinkageView } from "../mcp_linkage_client";
-import {
-  type DecisionsSnapshot,
-  type SandboxesSnapshot,
-  type SandboxSnapshot,
-  type ThreadsSnapshot,
-  type WatchHealth,
-} from "../live";
+import { type DecisionsSnapshot, type SandboxesSnapshot, type SandboxSnapshot } from "../sandboxes/live";
+import { type ThreadsSnapshot } from "../threads/live";
+import { type WatchHealth } from "../live";
 
 import type {
   GitHubSubject,

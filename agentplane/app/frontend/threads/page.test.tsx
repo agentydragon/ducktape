@@ -21,7 +21,8 @@ import { resumeSandbox, type SandboxView } from "../sandboxes/client";
 import { type LangfuseSearchSettings } from "../langfuse_search";
 import { type TraceSearchSettings } from "../trace_search";
 import { historyRows, rowKey } from "./history_rows";
-import { SandboxesLiveProvider, ThreadsLiveProvider, useRequiredThreadsLive } from "../live";
+import { SandboxesLiveProvider } from "../sandboxes/live";
+import { ThreadsLiveProvider, useRequiredThreadsLive } from "./live";
 
 import type { InboxNoticeState } from "../notification_types";
 import { LocalCommands } from "./local_commands";

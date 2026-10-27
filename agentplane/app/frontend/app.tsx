@@ -10,7 +10,8 @@ import { ActionsAttentionBar } from "./actions/sidebar";
 import { ConnectionConsent } from "./connections/consent";
 import { Home } from "./threads/home";
 import { SandboxPage } from "./sandboxes/sandbox_page";
-import { RoutedThreadsLiveProvider, SandboxesLiveProvider } from "./live";
+import { RoutedThreadsLiveProvider } from "./threads/live";
+import { SandboxesLiveProvider } from "./sandboxes/live";
 
 import { SandboxList } from "./sandboxes/list";
 import { ThreadPage } from "./threads/page";

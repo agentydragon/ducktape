@@ -11,7 +11,7 @@ import { archiveThread, type ThreadView } from "./client";
 import { displayableError } from "../client";
 import { harnessLabel } from "../model_catalog";
 import { type SandboxView } from "../sandboxes/client";
-import { THREAD_PAGE, useRequiredThreadsLive, useThreadListing } from "../live";
+import { THREAD_PAGE, useRequiredThreadsLive, useThreadListing } from "./live";
 import { MarkGlyph } from "../mark_glyph";
 import { sandboxStatusDetail, sandboxSummary } from "../sandbox_status";
 import { SANDBOX_STATUS_MARKS } from "../status_mark";
