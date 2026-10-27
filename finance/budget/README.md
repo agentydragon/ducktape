@@ -13,13 +13,13 @@ Consumers: augur's API server serves it at `/api/budget/*` for the frontend's
 
 ## Architecture
 
-| Module              | What it does                                                                                                                                                                               |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `schema.py`         | `BudgetConfig` Pydantic: bucket taxonomy (kinds: expense / inflow / transfer / income) + the condition DSL and rule kinds, loaded from the `budget:` block of the augur config YAML        |
-| `sql_read_model.py` | Reads Plaid transactions from Postgres, compiles the rules to a first-match-wins SQL CASE, classifies (direction-gated) + applies overrides, aggregates monthly totals, returns drilldowns |
-| `service.py`        | Orchestrates request windows, database session reuse, CSV export, and wire types                                                                                                           |
-| `wire.py`           | HTTP wire schemas (drive augur's frontend Zod codegen via its `export_schema`)                                                                                                             |
-| `csv_export.py`     | CSV exports: the bucket-by-month summary (plus planning columns when adjustments are sent) and one bucket's transactions                                                                   |
+| Module              | What it does                                                                                                                                                                        |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `schema.py`         | `BudgetConfig` Pydantic: bucket taxonomy (kinds: expense / inflow / transfer / income) + the condition DSL and rule kinds, loaded from the `budget:` block of the augur config YAML |
+| `sql_read_model.py` | Reads Plaid transactions from Postgres, builds first-match-wins SQLAlchemy Core expressions for classification and overrides, aggregates monthly totals, returns drilldowns         |
+| `service.py`        | Orchestrates request windows, database session reuse, CSV export, and wire types                                                                                                    |
+| `wire.py`           | HTTP wire schemas (drive augur's frontend Zod codegen via its `export_schema`)                                                                                                      |
+| `csv_export.py`     | CSV exports: the bucket-by-month summary (plus planning columns when adjustments are sent) and one bucket's transactions                                                            |
 
 ## What lives in ducktape vs gaffer-private
 

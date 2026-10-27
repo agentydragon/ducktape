@@ -23,6 +23,7 @@ py_library(
     deps = [
         ":schema",
         ":wire",
+        "//finance/plaid/db:models",
         "@pypi//sqlalchemy",
     ],
 )
