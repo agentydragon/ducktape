@@ -217,6 +217,29 @@ func TestBadBatchRollsBackAndConflictingDuplicateIsRejected(t *testing.T) {
 	assertError(t, err, ErrNotFound)
 }
 
+func TestAppendStoresObservationFieldNumbers(t *testing.T) {
+	db := testDB(t)
+	store := NewStore(db, false)
+	sessionID := opened(t, store)
+	batch := []*eventlogpb.EventEntry{entry(1), nativeEntry(2, "test-frame"), entry(3)}
+	batch[2].Event = nil
+	appendEntries(t, store, sessionID, batch...)
+	// The numbers are the runner Event's wire fields, independent of observation names.
+	for cursor, want := range []int{4, 20, 0} {
+		var kind int
+		if err := db.QueryRowContext(t.Context(), "SELECT kind FROM session_event WHERE session_id = $1 AND cursor = $2", sessionID, cursor+1).Scan(&kind); err != nil {
+			t.Fatal(err)
+		}
+		if kind != want {
+			t.Errorf("cursor %d kind = %d, want %d", cursor+1, kind, want)
+		}
+	}
+	// An old replica can keep writing while the nullable column rolls out.
+	if _, err := db.ExecContext(t.Context(), "INSERT INTO session_event (session_id, cursor, payload) VALUES ($1, 4, $2)", sessionID, []byte{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestTwoReplicaWritersSerializeOnTheHistoryRow(t *testing.T) {
 	db := testDB(t)
 	left, right := NewStore(db, false), NewStore(db, false)

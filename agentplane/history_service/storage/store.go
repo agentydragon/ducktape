@@ -293,8 +293,8 @@ func (s *Store) Append(ctx context.Context, sessionID uuid.UUID, entries []*even
 			if err != nil {
 				return err
 			}
-			if _, err := tx.ExecContext(ctx, "INSERT INTO session_event (session_id, cursor, payload) VALUES ($1, $2, $3)",
-				sessionID, cursor, payload); err != nil {
+			if _, err := tx.ExecContext(ctx, "INSERT INTO session_event (session_id, cursor, payload, kind) VALUES ($1, $2, $3, $4)",
+				sessionID, cursor, payload, observationNumber(entry)); err != nil {
 				return err
 			}
 			row.sourceID, row.lastCursor, appended = &sourceID, cursor, append(appended, entry)
@@ -694,6 +694,16 @@ func observationKind(entry *eventlogpb.EventEntry) string {
 		return string(field.Name())
 	}
 	return ""
+}
+
+// observationNumber stores the Event.observation field number for FollowSession's indexed reads.
+// Zero represents an entry without an observation.
+func observationNumber(entry *eventlogpb.EventEntry) int32 {
+	event := entry.GetEvent().ProtoReflect()
+	if field := event.WhichOneof(event.Descriptor().Oneofs().ByName("observation")); field != nil {
+		return int32(field.Number())
+	}
+	return 0
 }
 
 // settlementSpanLimit bounds how far back an item's start may lie before the item is kept whole rather
