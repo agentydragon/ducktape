@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { CommandSchema, type Command } from "../../../proto/command_pb";
 import { EventEntrySchema, type EventEntry } from "../../../proto/event_log_pb";
-import type { DispatchReceipt } from "../client";
+import type { DispatchReceipt } from "./client";
 import { LocalCommands, MAX_RETAINED_COMMANDS } from "./local_commands";
 
 const COMMAND = create(CommandSchema, {

@@ -1,5 +1,18 @@
 import type { components } from "../api/schema";
-import type { CallerServiceAccount } from "../client";
+
+export interface CallerServiceAccount {
+  namespace: string;
+  name: string;
+}
+
+/** `namespace/name`, as kubectl spells a ServiceAccount; the key a picker selects by. */
+export function serviceAccountKey(account: CallerServiceAccount): string {
+  return `${account.namespace}/${account.name}`;
+}
+
+export function isEligibleCaller(caller: CallerServiceAccount, accounts: CallerServiceAccount[]): boolean {
+  return accounts.some((account) => serviceAccountKey(account) === serviceAccountKey(caller));
+}
 
 export type ConnectionGrant = {
   id: string;

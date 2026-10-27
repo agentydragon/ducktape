@@ -1,4 +1,4 @@
-import { dispatchReceipt } from "../client";
+import { dispatchReceipt } from "./client";
 import { followWatch } from "../watch_stream";
 import type { LocalCommands } from "./local_commands";
 

@@ -107,6 +107,7 @@ ts_library(
         "//agentplane/app/frontend:text_block",
         "//agentplane/app/frontend:time_ago",
         "//agentplane/app/frontend/actions/rendering:index",
+        "//agentplane/app/frontend/connections:models",
     ],
 )
 

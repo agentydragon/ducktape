@@ -2,13 +2,8 @@ import { ActionIcon, Button, Group, Stack, Text } from "@mantine/core";
 import { IconZoomCode } from "../icons";
 import { type CSSProperties, type JSX, type MouseEvent, useEffect, useEffectEvent, useRef, useState } from "react";
 
-import {
-  displayableError,
-  threadEvidence,
-  threadNativeFrames,
-  type EvidencePage,
-  type NativeFramePage,
-} from "../client";
+import { displayableError } from "../client";
+import { threadEvidence, threadNativeFrames, type EvidencePage, type NativeFramePage } from "./client";
 import { DisclosureBody } from "../disclosure";
 import { JsonView } from "../json_view";
 import { ChronologicalDebugIcon } from "./chronological_debug";

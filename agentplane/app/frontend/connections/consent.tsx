@@ -13,7 +13,8 @@ import {
 } from "@mantine/core";
 import { type JSX, useEffect, useState } from "react";
 
-import { displayableError, serviceAccountKey } from "../client";
+import { displayableError } from "../client";
+import { serviceAccountKey } from "./models";
 import { TimeAgo } from "../time_ago";
 import { decideConsent, previewConsent, type ConsentDecision, type ConsentPreview } from "./connection_service_client";
 

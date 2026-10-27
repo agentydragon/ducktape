@@ -6,7 +6,8 @@ import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 
-import { api, type NewSandboxDefaults, type SandboxPresetView, type SandboxView } from "../client";
+import { api } from "../client";
+import { type NewSandboxDefaults, type SandboxPresetView, type SandboxView } from "./client";
 import { SandboxList } from "./list";
 import { deletable, SuspendResume } from "./lifecycle";
 import { sandboxSummary } from "../sandbox_status";

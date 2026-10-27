@@ -2,7 +2,7 @@ import { create, equals, fromJson, toJson, type JsonValue } from "@bufbuild/prot
 
 import { CommandSchema, type Command } from "../../../proto/command_pb";
 import { EventEntrySchema, type EventEntry } from "../../../proto/event_log_pb";
-import type { DispatchReceipt, InterruptResult } from "../client";
+import type { DispatchReceipt, InterruptResult } from "./client";
 
 /** A typed operation retained for lost-response recovery; Command protobuf belongs to the journal. */
 type PlainOperation =
