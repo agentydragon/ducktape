@@ -41,6 +41,27 @@ type Database struct {
 	clones int
 }
 
+// RunIntegrationTests starts the PostgreSQL fixture, then runs the package tests and closes the fixture.
+// Startup and migrations share a three-minute bound; tests run without that startup deadline.
+func RunIntegrationTests(migrate func(context.Context, *sql.DB) error, run func(*Database) int) int {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	database, err := Start(ctx, migrate)
+	cancel()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+
+	code := run(database)
+	if err := database.Close(); err != nil {
+		fmt.Fprintln(os.Stderr, "close PostgreSQL fixture:", err)
+		if code == 0 {
+			code = 1
+		}
+	}
+	return code
+}
+
 // Start loads the repository-pinned PostgreSQL and Ryuk images, starts PostgreSQL, and applies migrate.
 func Start(ctx context.Context, migrate func(context.Context, *sql.DB) error) (*Database, error) {
 	if err := loadImage(ctx, postgresImage, "ducktape/third_party/containers/postgres_18_load.sh"); err != nil {

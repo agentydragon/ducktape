@@ -298,6 +298,7 @@ go_library(
         "//agentplane/observability",
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/policy/reader",
+        "//agentplane/postgres/go:postgres",
         "//agentplane/postgres/go/probes",
         "//agentplane/postgres/go/wakeups",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",

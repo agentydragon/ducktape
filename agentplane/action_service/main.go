@@ -48,12 +48,12 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
+	"github.com/agentydragon/ducktape/agentplane/postgres/go"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/probes"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
-	_ "github.com/lib/pq"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
@@ -115,14 +115,8 @@ func run(ctx context.Context, c config) error {
 }
 
 func openDatabase(ctx context.Context, databaseURL string) (*sql.DB, error) {
-	db, err := sql.Open("postgres", databaseURL)
+	db, err := postgres.Open(ctx, databaseURL, maxConnections, idleConnections)
 	if err != nil {
-		return nil, err
-	}
-	db.SetMaxOpenConns(maxConnections)
-	db.SetMaxIdleConns(idleConnections)
-	if err := db.PingContext(ctx); err != nil {
-		db.Close()
 		return nil, fmt.Errorf("Action Service PostgreSQL unavailable: %w", err)
 	}
 	return db, nil

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
+	"github.com/agentydragon/ducktape/agentplane/postgres/go"
 )
 
 // UpdatesChannel is notified, with no payload, in every commit that adds, changes or removes a subscription.
@@ -44,20 +45,11 @@ func NewSubscriptions(db *sql.DB) *Subscriptions { return &Subscriptions{db: db}
 
 // transaction runs f in one transaction, which it commits when f succeeds.
 func transaction(ctx context.Context, db *sql.DB, f func(*sql.Tx) error) error {
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	if err := f(tx); err != nil {
-		return err
-	}
-	return tx.Commit()
+	return postgres.Transaction(ctx, db, sql.TxOptions{}, f)
 }
 
 func notify(ctx context.Context, tx *sql.Tx) error {
-	_, err := tx.ExecContext(ctx, `SELECT pg_notify($1, '')`, UpdatesChannel)
-	return err
+	return postgres.Notify(ctx, tx, UpdatesChannel, "")
 }
 
 // Save registers the browser for the operator. Registering an endpoint the operator holds again replaces its keys and

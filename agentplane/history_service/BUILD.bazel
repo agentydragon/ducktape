@@ -92,6 +92,7 @@ go_library(
         "//agentplane/history_service/reads",
         "//agentplane/history_service/storage",
         "//agentplane/observability",
+        "//agentplane/postgres/go:postgres",
         "//agentplane/postgres/go/wakeups",
         "//agentplane/workload_auth/go/auth",
         "//util/netlistener",

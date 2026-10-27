@@ -18,6 +18,7 @@ go_library(
         "//agentplane/action_service/catalog",
         "//agentplane/action_service/store",
         "//agentplane/observability",
+        "//agentplane/postgres/go:postgres",
         "@com_github_google_uuid//:uuid",
         "@com_github_lib_pq//:pq",
         "@com_github_modelcontextprotocol_go_sdk//oauthex",
