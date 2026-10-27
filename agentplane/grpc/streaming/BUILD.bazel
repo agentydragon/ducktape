@@ -12,6 +12,7 @@ go_test(
     name = "unit_test",
     srcs = ["send_test.go"],
     embed = [":streaming"],
+    race = "on",
     deps = [
         "//agentplane/grpc/facade",
         "@org_golang_google_grpc//:grpc",
