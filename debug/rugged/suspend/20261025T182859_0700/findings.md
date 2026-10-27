@@ -2,6 +2,10 @@
 
 Collected after the suspend that resumed at 2026-10-25 18:28:59 PDT.
 
+Follow-up: [Oct 27 review](../20261027T084500_0700/findings.md) records five
+additional successful attempts, a rapid re-suspend comparison, and an open
+MBIM resume-timeout investigation.
+
 ## Observation
 
 - `mhi-suspend-trace.service` was active and emitted a sample for this attempt:
