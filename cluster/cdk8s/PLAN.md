@@ -111,11 +111,6 @@ or change resource ownership merely to make a directory qualify as generated.
 
 ## Gates and completion
 
-Use `render_diff.py` for conversions claiming unchanged Kubernetes objects, within
-its documented scope: no `postBuild` substitution, ciphertext rather than decrypted
-Secrets, and incomplete foreign branch-source rendering. Its non-`/**` glob-copy
-behavior needs repair before relying on that mechanism (remainder backlog).
-
 App-payload conversions also need semantic checks at their format/runtime boundary.
 A changed payload string or ConfigMap hash is an expected resource diff to review, not
 an empty render diff to claim. Ownership moves require the live protection/adoption
