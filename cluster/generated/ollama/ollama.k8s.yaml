@@ -10,6 +10,8 @@ spec: {}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
   name: llm-models
   namespace: ollama
 spec:
@@ -64,6 +66,81 @@ spec:
   storageClassName: ""
   volumeMode: Filesystem
   volumeName: wyrm2-qwen38-iq4-ssd
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: models
+  namespace: ollama
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 200Gi
+  storageClassName: piraeus-hdd-local
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: qwen38-iq4
+  namespace: ollama
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Gi
+  storageClassName: piraeus-ssd-local
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: copy-qwen38-iq4-v1
+  namespace: ollama
+spec:
+  backoffLimit: 2
+  template:
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - command:
+            - /bin/sh
+            - /scripts/copy-ssd-models.sh
+          image: busybox:1.38
+          name: copy
+          resources:
+            limits:
+              memory: 256Mi
+            requests:
+              cpu: 500m
+              memory: 64Mi
+          volumeMounts:
+            - mountPath: /scripts
+              name: scripts
+              readOnly: true
+            - mountPath: /ssd-models
+              name: ssd-models
+              readOnly: true
+            - mountPath: /ssd-models-new
+              name: ssd-models-new
+      nodeSelector:
+        kubernetes.io/hostname: wyrm2
+      restartPolicy: Never
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - configMap:
+            name: gpt-oss-scripts
+          name: scripts
+        - name: ssd-models
+          persistentVolumeClaim:
+            claimName: qwen38-iq4-ssd
+            readOnly: true
+        - name: ssd-models-new
+          persistentVolumeClaim:
+            claimName: qwen38-iq4
 ---
 apiVersion: apps/v1
 kind: Deployment
