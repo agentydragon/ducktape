@@ -292,6 +292,14 @@ pub struct DependencyGraphOptions {
     /// the write, RHS evaluation, and ordering effects remain observable.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub deferred_global_publications: BTreeMap<BuiltinGlobalRoot, BTreeSet<String>>,
+    /// Author-certified literal-key membership probes on direct unshadowed
+    /// builtin roots that cannot synchronously invoke or publish callbacks,
+    /// or access importer-owned cells, through host/proxy/prototype behavior.
+    /// Host identity and the complete prototype/alias surface must remain
+    /// intact at every admitted probe. This narrows protocol reentry only;
+    /// evaluation, dependencies, impurity and possible throws remain.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub non_reentrant_global_membership: BTreeMap<BuiltinGlobalRoot, BTreeSet<String>>,
     /// Emit the side-effect ordering chain using per-statement
     /// (writes, reads) summaries instead of the adjacent-impure
     /// transitive reduction. See the S-chain block in

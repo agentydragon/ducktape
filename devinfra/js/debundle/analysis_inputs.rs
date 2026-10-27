@@ -36,6 +36,8 @@ pub struct AnalysisAssumptions {
     /// Exact author-certified browser-global slots whose stored capabilities
     /// cannot be consumed before this chunk finishes synchronous init.
     pub deferred_global_publications: BTreeMap<BuiltinGlobalRoot, BTreeSet<String>>,
+    /// Exact root/key host-membership probes with an independent nonreentry audit.
+    pub non_reentrant_global_membership: BTreeMap<BuiltinGlobalRoot, BTreeSet<String>>,
     pub declared_pure: BTreeSet<String>,
     pub declared_pure_new: BTreeSet<String>,
     /// Author-trusted purity of one selected top-level variable initializer.

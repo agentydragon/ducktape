@@ -548,6 +548,9 @@ pub(super) fn finish_logical_chunk(
         inputs.assumptions.deferred_global_publications = dependency_graph_options
             .deferred_global_publications
             .clone();
+        inputs.assumptions.non_reentrant_global_membership = dependency_graph_options
+            .non_reentrant_global_membership
+            .clone();
         inputs
     };
     // Chunk analysis: hint-sensitive facts, dependency graph, and structural

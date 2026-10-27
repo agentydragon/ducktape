@@ -1127,6 +1127,21 @@ discarded result can use a confined local alias to the global object before
 the certified publication. Its alias and derived values cannot leave that
 invocation, access the certified slot, or reach an uncertain call.
 
+**Audited builtin-global membership.**
+`chunk_analysis_options.<chunk>.non_reentrant_global_membership` separately
+certifies protocol nonreentry for listed literal-string `in` probes on a direct
+unshadowed `globalThis` or `window`. The host's exact identity and relevant
+prototype/alias behavior must remain intact at every admitted probe, including
+hidden host and cross-chunk paths. This is an explicit author premise, not
+inferred builtin trust or a consequence of deferred global publication. Scoped
+bindings, aliases, uncertain keys/receivers, dynamic scope, and recognized root,
+prototype, Object-intrinsic or exposure mutations keep conservative fallback.
+The existing confined earlier-IIFE alias proof can certify a nonescaping alias
+that never touches protected keys or prototype/identity slots. The evaluator
+still indexes/evaluates operands and retains purity, throw and dependency
+checks; it suppresses only this exact host protocol's callback reentry.
+See [the full contract](../SPEC.md#audited-builtin-global-membership-probes).
+
 **Audited callback-factory exports.**
 `chunk_export_purity.<defining chunk>.callback_factory_exports` and
 `callback_factory_members` are separate callback-flow contracts. The latter

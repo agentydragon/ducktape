@@ -1625,6 +1625,55 @@ impl NamespacePrivacy {
     }
 }
 
+#[derive(Default)]
+struct GlobalMembershipBindings(BTreeSet<Id>);
+
+impl Visit for GlobalMembershipBindings {
+    fn visit_binding_ident(&mut self, binding: &BindingIdent) {
+        self.0.insert(binding.id.to_id());
+    }
+
+    fn visit_fn_decl(&mut self, declaration: &FnDecl) {
+        self.0.insert(declaration.ident.to_id());
+        declaration.visit_children_with(self);
+    }
+
+    fn visit_class_decl(&mut self, declaration: &ClassDecl) {
+        self.0.insert(declaration.ident.to_id());
+        declaration.visit_children_with(self);
+    }
+
+    fn visit_fn_expr(&mut self, expression: &FnExpr) {
+        if let Some(ident) = &expression.ident {
+            self.0.insert(ident.to_id());
+        }
+        expression.visit_children_with(self);
+    }
+
+    fn visit_class_expr(&mut self, expression: &ClassExpr) {
+        if let Some(ident) = &expression.ident {
+            self.0.insert(ident.to_id());
+        }
+        expression.visit_children_with(self);
+    }
+}
+
+#[derive(Clone)]
+struct GlobalMembershipProbe {
+    root: BuiltinGlobalRoot,
+    receiver: Id,
+    property: String,
+    owner: SourceUnitOrdinal,
+}
+
+fn global_receiver_path(value: &ValueExpr, names: &BTreeSet<&str>) -> bool {
+    match value {
+        ValueExpr::Binding(id) => names.contains(id.0.as_ref()),
+        ValueExpr::Member(receiver, _, _) => global_receiver_path(receiver, names),
+        _ => false,
+    }
+}
+
 struct ExecutionIndex {
     owner: SourceUnitOrdinal,
     current: Option<u32>,
@@ -1685,6 +1734,9 @@ struct ExecutionIndex {
     discarded_sync_iifes: Vec<Option<u32>>,
     deferred_global_certificates: BTreeSet<SourceUnitOrdinal>,
     deferred_global_requested: bool,
+    global_guards_requested: bool,
+    global_membership_candidates: BTreeMap<CallSite, GlobalMembershipProbe>,
+    non_reentrant_global_membership: BTreeSet<CallSite>,
     global_slot_mentions: BTreeMap<String, usize>,
     dynamic_global_member: bool,
     global_alias_written: bool,
@@ -1779,6 +1831,9 @@ impl Default for ExecutionIndex {
             discarded_sync_iifes: Vec::new(),
             deferred_global_certificates: BTreeSet::new(),
             deferred_global_requested: false,
+            global_guards_requested: false,
+            global_membership_candidates: BTreeMap::new(),
+            non_reentrant_global_membership: BTreeSet::new(),
             global_slot_mentions: BTreeMap::new(),
             dynamic_global_member: false,
             global_alias_written: false,
@@ -1817,7 +1872,10 @@ impl ExecutionIndex {
         flow: Option<&ChunkValueFlow>,
         plain_array_bindings: &BTreeSet<String>,
     ) -> Self {
+        let global_guards_requested = !hints.assumptions.deferred_global_publications.is_empty()
+            || !hints.assumptions.non_reentrant_global_membership.is_empty();
         let mut index = Self {
+            global_guards_requested,
             top_calls: vec![Vec::new(); body.len()],
             owner_callable_prefix_reads: vec![None; body.len()],
             top_property_writes: vec![Vec::new(); body.len()],
@@ -1834,7 +1892,7 @@ impl ExecutionIndex {
                 })
                 .collect(),
             deferred_global_candidates: vec![None; body.len()],
-            discarded_sync_iifes: if hints.assumptions.deferred_global_publications.is_empty() {
+            discarded_sync_iifes: if !global_guards_requested {
                 Vec::new()
             } else {
                 vec![None; body.len()]
@@ -1911,7 +1969,7 @@ impl ExecutionIndex {
         }
         for (ordinal, item) in body.iter().enumerate() {
             fresh_steps.push(fresh_value_step(item.as_module_item()));
-            if index.deferred_global_requested {
+            if index.global_guards_requested {
                 index.deferred_global_candidates[ordinal] =
                     deferred_global_publication(item.as_module_item());
                 index.discarded_sync_iifes[ordinal] =
@@ -2454,45 +2512,8 @@ impl ExecutionIndex {
                 })
                 .map(|candidate| candidate.receiver_id.clone())
                 .collect();
-            let global_root_exposed = index
-                .top_assignments
-                .iter()
-                .flatten()
-                .any(|(_, value)| exposes_global_receiver(value, &index.global_object_names))
-                || index
-                    .top_exported_values
-                    .iter()
-                    .flatten()
-                    .any(|value| exposes_global_receiver(value, &index.global_object_names))
-                || index.top_calls.iter().flatten().any(|call| {
-                    call_exposes_global_receiver(
-                        call,
-                        &index.global_object_names,
-                        &certified_root_ids,
-                    )
-                })
-                || index.callables.iter().any(|(key, callable)| {
-                    callable.local_assignments.iter().any(|(id, value)| {
-                        exposes_global_receiver(value, &index.global_object_names)
-                            && !confined_prepublication_alias(
-                                &index,
-                                *key,
-                                id,
-                                first_publication,
-                                &protected,
-                            )
-                    }) || callable
-                        .returns
-                        .iter()
-                        .any(|value| exposes_global_receiver(value, &index.global_object_names))
-                        || callable.calls.iter().any(|call| {
-                            call_exposes_global_receiver(
-                                call,
-                                &index.global_object_names,
-                                &certified_root_ids,
-                            )
-                        })
-                });
+            let global_root_exposed =
+                index.global_receiver_exposed(first_publication, &protected, &certified_root_ids);
             if index.dynamic_scope_owners.is_empty()
                 && !index.dynamic_global_member
                 && !index.global_alias_written
@@ -2525,7 +2546,109 @@ impl ExecutionIndex {
                 }
             }
         }
+        if !hints.assumptions.non_reentrant_global_membership.is_empty() {
+            let mut bindings = GlobalMembershipBindings::default();
+            for item in body {
+                item.as_module_item().visit_with(&mut bindings);
+            }
+            index.global_membership_candidates.retain(|_, probe| {
+                !bindings.0.contains(&probe.receiver)
+                    && hints
+                        .assumptions
+                        .non_reentrant_global_membership
+                        .get(&probe.root)
+                        .is_some_and(|keys| keys.contains(&probe.property))
+            });
+            let first_probe = index
+                .global_membership_candidates
+                .values()
+                .map(|probe| probe.owner)
+                .min()
+                .unwrap_or(SourceUnitOrdinal(0));
+            let protected = hints
+                .assumptions
+                .non_reentrant_global_membership
+                .values()
+                .flat_map(|keys| keys.iter().cloned())
+                .collect();
+            let roots = index
+                .global_membership_candidates
+                .values()
+                .map(|probe| probe.receiver.clone())
+                .collect();
+            let prototype_write = index
+                .top_callback_result_writes
+                .iter()
+                .flatten()
+                .chain(
+                    index
+                        .callables
+                        .values()
+                        .flat_map(|callable| &callable.callback_result_writes),
+                )
+                .any(|write| {
+                    global_receiver_path(&write.receiver, &index.global_object_names)
+                        && write.property.as_deref().is_none_or(|property| {
+                            matches!(property, "__proto__" | "prototype" | "constructor")
+                        })
+                });
+            if index.dynamic_scope_owners.is_empty()
+                && !index.dynamic_global_member
+                && !index.global_alias_written
+                && !prototype_write
+                && !index
+                    .mutated_intrinsic_roots
+                    .contains(&IntrinsicRoot::Object)
+                && !index.global_receiver_exposed(first_probe, &protected, &roots)
+            {
+                index
+                    .non_reentrant_global_membership
+                    .extend(index.global_membership_candidates.keys().copied());
+            }
+        }
         index
+    }
+
+    fn global_receiver_exposed(
+        &self,
+        first_publication: SourceUnitOrdinal,
+        protected: &BTreeSet<String>,
+        certified_root_ids: &BTreeSet<Id>,
+    ) -> bool {
+        self.top_assignments
+            .iter()
+            .flatten()
+            .any(|(_, value)| exposes_global_receiver(value, &self.global_object_names))
+            || self
+                .top_exported_values
+                .iter()
+                .flatten()
+                .any(|value| exposes_global_receiver(value, &self.global_object_names))
+            || self.top_calls.iter().flatten().any(|call| {
+                call_exposes_global_receiver(call, &self.global_object_names, certified_root_ids)
+            })
+            || self.callables.iter().any(|(key, callable)| {
+                callable.local_assignments.iter().any(|(id, value)| {
+                    exposes_global_receiver(value, &self.global_object_names)
+                        && !confined_prepublication_alias(
+                            self,
+                            *key,
+                            id,
+                            first_publication,
+                            protected,
+                        )
+                }) || callable
+                    .returns
+                    .iter()
+                    .any(|value| exposes_global_receiver(value, &self.global_object_names))
+                    || callable.calls.iter().any(|call| {
+                        call_exposes_global_receiver(
+                            call,
+                            &self.global_object_names,
+                            certified_root_ids,
+                        )
+                    })
+            })
     }
 
     fn collect_uninitialized_lexical_bindings(&mut self, item: &ModuleItem) {
@@ -3274,6 +3397,25 @@ impl Visit for ExecutionIndex {
                 self.record_implicit_coercion(&expression.right, expression.span);
             }
         }
+        if self.global_guards_requested
+            && expression.op == BinaryOp::In
+            && let (Expr::Lit(Lit::Str(property)), Expr::Ident(receiver)) = (
+                expression.left.unwrap_parens(),
+                expression.right.unwrap_parens(),
+            )
+            && self.global_object_names.contains(receiver.sym.as_ref())
+            && let Some(root) = builtin_global_root(receiver)
+        {
+            self.global_membership_candidates.insert(
+                expression.span.into(),
+                GlobalMembershipProbe {
+                    root,
+                    receiver: receiver.to_id(),
+                    property: property.value.to_string_lossy().into_owned(),
+                    owner: self.owner,
+                },
+            );
+        }
         if matches!(expression.op, BinaryOp::In | BinaryOp::InstanceOf) {
             self.record_call(Call {
                 kind: if expression.op == BinaryOp::In {
@@ -3411,7 +3553,7 @@ impl Visit for ExecutionIndex {
         {
             let callable = self.callables.get_mut(&key).unwrap();
             callable.reads.insert(ident.to_id());
-            if self.deferred_global_requested
+            if self.global_guards_requested
                 && self.discarded_sync_iifes[self.owner.0] == Some(key)
                 && self.allowed_local_member_receiver != Some(ident.span.lo.0)
             {
@@ -3427,7 +3569,7 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_member_expr(&mut self, member: &MemberExpr) {
-        if self.deferred_global_requested
+        if self.global_guards_requested
             && is_global_receiver(&member.obj, &self.global_object_names)
         {
             if let Some(property) = static_prop(&member.prop) {
@@ -3447,7 +3589,7 @@ impl Visit for ExecutionIndex {
         let previous = self.namespace_privacy.allowed_read;
         self.namespace_privacy.allowed_read = self.namespace_privacy.read_receiver(member);
         let previous_local_receiver = self.allowed_local_member_receiver;
-        if self.deferred_global_requested
+        if self.global_guards_requested
             && self
                 .current
                 .is_some_and(|key| self.discarded_sync_iifes[self.owner.0] == Some(key))
@@ -3632,7 +3774,7 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_assign_expr(&mut self, assignment: &AssignExpr) {
-        if self.deferred_global_requested {
+        if self.global_guards_requested {
             self.global_alias_written |= match &assignment.left {
                 AssignTarget::Simple(SimpleAssignTarget::Ident(binding)) => {
                     self.global_object_names.contains(binding.id.sym.as_ref())

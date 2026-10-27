@@ -3646,6 +3646,17 @@ impl Executor<'_> {
                 .map(|argument| self.evaluate(argument, env, captures))
                 .collect();
             if call.kind == CallKind::InProtocol
+                && self
+                    .index
+                    .non_reentrant_global_membership
+                    .contains(&call.span.into())
+            {
+                // Operand effects were indexed/evaluated normally. The separate
+                // author contract certifies only this exact host protocol's
+                // lack of callback reentry; purity and throw checks stay intact.
+                return;
+            }
+            if call.kind == CallKind::InProtocol
                 && self.ordinary_prototype_chain(&operands[0])
                 && operands[0]
                     .iter()

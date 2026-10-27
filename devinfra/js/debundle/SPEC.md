@@ -714,8 +714,47 @@ through the alias retain the conservative fallback.
 Primitive-valued operator results cannot carry the global-object identity.
 The synthetic protocol call for a literal-key `in` check on a direct builtin
 global root does not publish that root as a value; its possible host or proxy
-effects remain in synchronous effect analysis. Dynamic keys, aliases, ordinary
+effects remain in synchronous effect analysis unless the independent audited
+membership contract below applies. Dynamic keys, aliases, ordinary
 calls, and visible root replacement retain the conservative publication guard.
+
+## Audited builtin-global membership probes
+
+`chunk_analysis_options.<chunk>.non_reentrant_global_membership` maps builtin
+roots (`globalThis` or `window`) to literal string keys. For example:
+
+```yaml
+non_reentrant_global_membership:
+  globalThis: [featureEnabled]
+```
+
+This separately certifies the host's `[[HasProperty]]` protocol at every admitted
+probe. The author must audit that the exact global object and its complete
+prototype/alias surface remain intact throughout synchronous initialization,
+including code in other chunks and host setup. The probe must neither invoke
+or publish caller/importer/host callbacks nor access importer-owned lexical
+cells through getters, proxies, modified prototypes or other hidden routes.
+A browser-global name alone establishes none of these facts. Clean native
+host behavior is a strong per-probe author premise, not inferred builtin trust.
+
+Admission requires a listed literal string on the left of `in` and a direct,
+unshadowed listed root on the right (parentheses are transparent). Parameters,
+block-local bindings, imported roots, aliases, other roots, effectful receivers
+and nonliteral keys keep their conservative protocol behavior. Recognized
+root replacement, prototype writes, mutated Object intrinsics, dynamic global
+member access, dynamic scope or global-root publication/escape also disable
+the certificate. An earlier discarded synchronous function IIFE may use the
+existing mechanically checked confined alias rule; its derived values cannot
+escape or touch the protected keys or prototype/identity surface. Unsupported
+or hidden alias/prototype mutations remain part of the author's audit burden.
+
+Only protocol callback reentry is suppressed. Both operands and their existing
+reads/effects are still evaluated and indexed in source order. Purity,
+possible errors/throws, global-property dependencies and unrelated call effects
+retain their existing treatment. The emitted JavaScript still executes the
+original operator. Unlisted probes remain conservative even in the same chunk.
+`deferred_global_publications` certifies a different timing boundary and never
+implies this membership contract, or vice versa.
 
 ## Local-effect decorator annotations
 

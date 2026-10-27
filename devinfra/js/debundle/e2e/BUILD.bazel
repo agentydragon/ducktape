@@ -54,6 +54,11 @@ debundle_e2e_test(name = "unknown_call_export_reentry_test")
 
 debundle_e2e_test(name = "native_browser_reentry_test")
 
+debundle_e2e_test(
+    name = "global_membership_reentry_test",
+    deps = ["//devinfra/js/debundle:analysis"],
+)
+
 debundle_e2e_test(name = "empty_collection_timing_test")
 
 debundle_e2e_test(

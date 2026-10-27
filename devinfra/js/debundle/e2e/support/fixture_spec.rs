@@ -685,6 +685,8 @@ pub struct FixtureOpts<'a> {
     pub local_property_effects: bool,
     /// Author-certified browser-global slots, as `(root, static property)`.
     pub deferred_global_publications: &'a [(&'a str, &'a str)],
+    /// Independent host-membership nonreentry contract, as root/key pairs.
+    pub non_reentrant_global_membership: &'a [(&'a str, &'a str)],
     pub extra_files: &'a [(&'a str, &'a str)],
     /// Additional input chunks `(snapshot-relative path, source)` listed in
     /// `js-files.txt` alongside the entry chunk. Unlike `extra_files`
@@ -726,6 +728,7 @@ impl<'a> FixtureOpts<'a> {
             admission_overrides: &[],
             local_property_effects: false,
             deferred_global_publications: &[],
+            non_reentrant_global_membership: &[],
             extra_files: &[],
             extra_chunks: &[],
             source_paths: &[],
@@ -1033,6 +1036,7 @@ pub(super) fn build_spec(opts: &FixtureOpts<'_>, setup: &PreparedFixture) -> Tra
         || opts.trusted_dataflow_summaries
         || opts.local_property_effects
         || !opts.deferred_global_publications.is_empty()
+        || !opts.non_reentrant_global_membership.is_empty()
         || !opts.admission_overrides.is_empty()
     {
         BTreeMap::from([(
@@ -1042,6 +1046,21 @@ pub(super) fn build_spec(opts: &FixtureOpts<'_>, setup: &PreparedFixture) -> Tra
                 trusted_dataflow_summaries: opts.trusted_dataflow_summaries,
                 local_property_effects: opts.local_property_effects,
                 deferred_global_publications: opts.deferred_global_publications.iter().fold(
+                    BTreeMap::new(),
+                    |mut slots, (root, property)| {
+                        let root = match *root {
+                            "globalThis" => spec::BuiltinGlobalRoot::GlobalThis,
+                            "window" => spec::BuiltinGlobalRoot::Window,
+                            _ => panic!("unsupported fixture global root: {root}"),
+                        };
+                        slots
+                            .entry(root)
+                            .or_insert_with(std::collections::BTreeSet::new)
+                            .insert((*property).to_string());
+                        slots
+                    },
+                ),
+                non_reentrant_global_membership: opts.non_reentrant_global_membership.iter().fold(
                     BTreeMap::new(),
                     |mut slots, (root, property)| {
                         let root = match *root {

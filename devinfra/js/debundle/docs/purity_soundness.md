@@ -622,3 +622,15 @@ Out of scope (not admitted; flagged for follow-up review):
 - `Array.from(I[, mapFn])` — sound only when `mapFn` is absent (a
   `mapFn` invokes user code per element). Skipped to avoid the
   per-call argument-count gate.
+
+## Host membership nonreentry is separate from purity
+
+`non_reentrant_global_membership` is an explicit root/key host-integrity audit,
+not a builtin whitelist. It narrows callback reentry only for literal-key `in`
+probes on a direct unshadowed `globalThis` or `window`. Key coercion, aliases,
+shadowed roots, effectful receivers and unlisted keys retain fallback. The
+index also rejects recognized root/prototype mutations and global exposure.
+Source checks cannot establish the complete host or cross-chunk prototype
+surface: its integrity at each probe remains a strong author premise. The
+operator's existing impurity, operand reads/effects and possible throws remain;
+see the complete contract in [SPEC](../SPEC.md#audited-builtin-global-membership-probes).
