@@ -1,1 +1,1 @@
-head-still-conflicting
+resolved
