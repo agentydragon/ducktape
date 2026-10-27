@@ -16,7 +16,7 @@ it("throws a non-2xx answer as an HttpError with its status and the complete str
   const middleware = { onRequest: () => Response.json(body, { status: 503 }) };
   api.use(middleware);
   try {
-    const failure: unknown = api
+    const failure: unknown = await api
       .GET("/models")
       .then((answer) => ok(answer))
       .catch((error: unknown) => error);
