@@ -51,6 +51,28 @@ pub(crate) fn verify_graph_compatibility(
     graph_package_roots: &std::collections::BTreeMap<String, std::path::PathBuf>,
     tree_config: Option<&std::path::Path>,
 ) -> Result<()> {
+    verify_graph_compatibility_with_scope(
+        graph_path,
+        modules_root,
+        selector_source_root,
+        spec_root,
+        graph_source_root,
+        graph_package_roots,
+        tree_config,
+        true,
+    )
+}
+
+fn verify_graph_compatibility_with_scope(
+    graph_path: &std::path::Path,
+    modules_root: &std::path::Path,
+    selector_source_root: Option<&std::path::Path>,
+    spec_root: Option<&std::path::Path>,
+    graph_source_root: Option<&std::path::Path>,
+    graph_package_roots: &std::collections::BTreeMap<String, std::path::PathBuf>,
+    tree_config: Option<&std::path::Path>,
+    require_module_scope: bool,
+) -> Result<()> {
     let graph = graph_provenance::read_graph_header(graph_path)?;
     let provenance = graph.provenance.as_ref().ok_or_else(|| {
         GraphMismatch::new(
@@ -67,7 +89,25 @@ pub(crate) fn verify_graph_compatibility(
         packages: graph_package_roots.clone(),
     };
     let (regenerate_command, regenerate_cwd) = provenance.regeneration_recipe(&current)?;
-    if let Some(directory) = &provenance.modules_directory {
+    if require_module_scope && provenance.modules_directory.is_none() {
+        return Err(GraphMismatch::new(
+            GraphMismatchReason::ModuleScope {
+                chunk_id: graph.chunk_id.clone(),
+                expected: Vec::new(),
+                actual: graph_provenance::absolute(modules_root)?,
+            },
+            regenerate_command.clone(),
+            Some(regenerate_cwd.clone()),
+        )
+        .into());
+    }
+    // `inspect-source --id unit:*` resolves a saved node without interpreting
+    // current module claims, so it skips only this authored-scope check.
+    if require_module_scope {
+        let directory = provenance
+            .modules_directory
+            .as_ref()
+            .expect("checked above");
         let base = current
             .spec
             .as_ref()
@@ -133,17 +173,6 @@ pub(crate) fn verify_graph_compatibility(
                 .into());
             }
         }
-    } else {
-        return Err(GraphMismatch::new(
-            GraphMismatchReason::ModuleScope {
-                chunk_id: graph.chunk_id.clone(),
-                expected: Vec::new(),
-                actual: graph_provenance::absolute(modules_root)?,
-            },
-            regenerate_command.clone(),
-            Some(regenerate_cwd.clone()),
-        )
-        .into());
     }
     provenance.verify(&current)?;
     let source = provenance
@@ -443,7 +472,7 @@ fn verify_mixed_graph_command(
         DebundleCommand::InspectSource(args) if args.id.is_some() => {
             let graph = args.graph.as_deref().context("--id requires --graph")?;
             let modules = args.modules.as_deref().context("--id requires --modules")?;
-            verify_graph_compatibility(
+            verify_graph_compatibility_with_scope(
                 graph,
                 modules,
                 args.source_root.as_deref(),
@@ -451,6 +480,7 @@ fn verify_mixed_graph_command(
                 graph_source_root,
                 graph_package_roots,
                 None,
+                !args.id.as_deref().is_some_and(|id| id.starts_with("unit:")),
             )
         }
         _ => Ok(()),
