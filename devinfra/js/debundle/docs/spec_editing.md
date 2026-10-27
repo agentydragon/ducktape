@@ -228,6 +228,16 @@ unclaimed, import, and export source units and does not synthesize selectors. Mo
 comments and notes remain with their original files. See <cli.md> § Applying
 reviewed source-unit assignments (`modules refine`).
 
+Both `modules refine` and `modules merge` consolidate source-match records in
+their destinations when the template bytes, identifier policy and selector note
+are identical and the local capture names do not overlap. Captures retain their
+order and export aliases; binding annotations and module metadata are preserved.
+Different notes or incompatible capture aliases remain separate records.
+Consolidation happens before the normal source-resolution and assignment gates.
+An unchanged-owner `modules refine` batch can explicitly normalize an existing
+destination: preview and apply still run the complete identity check and gate,
+and report `dry-run` / `applied` when only selector grouping changes.
+
 ## Peel heuristics: patterns that should move together
 
 These patterns surface repeatedly when peeling minified bundles. Each

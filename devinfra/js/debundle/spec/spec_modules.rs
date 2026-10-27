@@ -31,6 +31,47 @@ use spec::{
 /// The on-disk module and the logical module share one canonical schema.
 pub type ModuleFile = spec::LogicalModule;
 
+/// Consolidate byte-identical source-match templates with identical metadata.
+/// Keep the first record's position and append captures in authoring order.
+/// Different selector notes or overlapping local captures remain separate;
+/// in particular, two export aliases of one local must not be collapsed.
+/// Callers must resolve and validate the resulting document before writing it.
+pub fn coalesce_source_match_claims(module: &mut ModuleFile) {
+    let mut grouped: Vec<SourceMatchClaim> = Vec::new();
+    for claim in std::mem::take(&mut module.source_matches) {
+        // Exhaustive destructuring makes new metadata fields require an explicit
+        // decision here instead of silently disappearing from the grouping key.
+        let SourceMatchClaim {
+            identifiers,
+            match_source,
+            bindings,
+            note,
+        } = claim;
+        if let Some(previous) = grouped.iter_mut().find(|previous| {
+            !bindings.is_empty()
+                && !previous.bindings.is_empty()
+                && previous.identifiers == identifiers
+                && previous.match_source == match_source
+                && previous.note == note
+                && !bindings.iter().any(|binding| {
+                    previous.bindings.iter().any(|existing| {
+                        existing.local() == binding.local() || existing.name() == binding.name()
+                    })
+                })
+        }) {
+            previous.bindings.extend(bindings);
+        } else {
+            grouped.push(SourceMatchClaim {
+                identifiers,
+                match_source,
+                bindings,
+                note,
+            });
+        }
+    }
+    module.source_matches = grouped;
+}
+
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct BindingPatchesFile {
@@ -234,6 +275,24 @@ mod tests {
         let path = root.join(rel);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, body).unwrap();
+    }
+
+    #[test]
+    fn coalescing_keeps_incompatible_capture_aliases_and_identifier_modes_separate() {
+        // Multiple aliases of one capture cannot form one grouped claim. This
+        // document-level corner is deliberately tested before source validation.
+        let mut module: ModuleFile = serde_yaml::from_str(
+            "source_matches:\n\
+             - {match: 'const local = 1;', bindings: [{local: local, name: First}]}\n\
+             - {match: 'const local = 1;', bindings: [{local: local, name: Second}]}\n\
+             - {match: 'const local = 1;', bindings: [other]}\n\
+             - {match: 'const local = 1;', bindings: []}\n",
+        )
+        .unwrap();
+        module.source_matches[2].identifiers = spec::SourceMatchIdentifierMode::Exact;
+        let original = module.clone();
+        coalesce_source_match_claims(&mut module);
+        assert_eq!(module.source_matches, original.source_matches);
     }
 
     #[test]

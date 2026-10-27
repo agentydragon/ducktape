@@ -28,7 +28,9 @@ use spec::{
     AnonymousStatement, BindingAnnotation, LogicalModule, Member, ModulePath, SourceMatchBinding,
     SourceMatchBindingDetail, SourceMatchClaim, is_residual_namespace_path,
 };
-use spec_modules::{collect_module_files, module_path_from_file, read_module_file};
+use spec_modules::{
+    coalesce_source_match_claims, collect_module_files, module_path_from_file, read_module_file,
+};
 use spec_tree::ModuleTreeScope;
 use yaml_edit::write_yaml_atomic;
 
@@ -1224,6 +1226,23 @@ pub fn run_source_unit_refine(
         }
     }
 
+    // Normalize only the reviewed destinations, including an unchanged-owner
+    // request. Resolve this exact document through the complete identity gate.
+    let requested_modules: BTreeSet<_> = requested_destinations
+        .values()
+        .flat_map(|destination| {
+            existing_destinations
+                .get(destination)
+                .cloned()
+                .unwrap_or_else(|| vec![destination.clone()])
+        })
+        .collect();
+    for destination in requested_modules {
+        if let Some((_, module)) = docs.get_mut(&destination) {
+            coalesce_source_match_claims(module);
+        }
+    }
+
     let to_delete = drained_source_modules(&docs, &source_modules);
     let post_spec = post_edit_spec_from_docs(&docs, &to_delete)?;
     gate_post_edit_assignment_with_expected_source_unit_modules(
@@ -1237,7 +1256,7 @@ pub fn run_source_unit_refine(
 
     let (files_written, files_deleted) =
         apply_doc_changes(&original_docs, &docs, &to_delete, dry_run)?;
-    let action = if source_units_reassigned == 0 {
+    let action = if files_written.is_empty() && files_deleted.is_empty() {
         "unchanged"
     } else if dry_run {
         "dry-run"
