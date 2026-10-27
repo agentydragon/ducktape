@@ -153,7 +153,10 @@ export function markFanRows(markFan: CalibrationMarkFan | null | undefined) {
     .sort((left, right) => left.monthIndex - right.monthIndex);
 }
 
-export function terminalPercentileValue(result: ProductTerminalDistribution | null | undefined, percentile: number) {
+export function terminalPercentileValue(
+  result: Pick<ProductTerminalDistribution, "terminalMetricPercentiles"> | null | undefined,
+  percentile: number
+) {
   if (!result?.terminalMetricPercentiles) return null;
   for (const row of rowsFrom(result?.terminalMetricPercentiles)) {
     if (Number(row.percentile) === percentile) {
