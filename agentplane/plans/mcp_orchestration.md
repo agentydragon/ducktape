@@ -295,8 +295,8 @@ Asked one at a time; each open one has a default the plan assumes.
 3. **The preset catalog in the executor's settings. Accepted by the operator, 2026-10-27 00:01 UTC:** rendered from
    the same definition as the app's. Rejected: launch takes concrete fields with no catalog to read, and the caller
    learns templates and sets elsewhere.
-4. **No inbox for the caller in v1.** Default: replies are turn outcomes the caller reads. Alternative: promote
-   `EXTERNAL_AGENT_INBOXES` so a worker can reach a caller unprompted.
+4. **No inbox for the caller in v1. Accepted by the operator, 2026-10-27 00:02 UTC:** replies are turn outcomes the
+   caller reads. Rejected for v1: promoting `EXTERNAL_AGENT_INBOXES` so a worker can reach a caller unprompted.
 5. **`claude-ai` as the orchestrating account.** Default: yes, under the pending
    [`CLAUDE_AI_SA`](task_dag.md#claude_ai_sa--review-the-external-callers-actual-authority) review. Alternative: a
    second Connection bound to an account that holds only orchestration grants.
