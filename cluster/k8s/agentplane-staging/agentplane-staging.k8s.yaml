@@ -7885,7 +7885,6 @@ spec:
         - nvidia-device-plugin
         - oci-cache
         - ollama
-        - openebs
         - proxmox-proxy
         - study-casino
         - tana-mcp
@@ -7921,7 +7920,6 @@ spec:
         - nvidia-device-plugin
         - oci-cache
         - ollama
-        - openebs
         - proxmox-proxy
         - public-coder-agent
         - study-casino

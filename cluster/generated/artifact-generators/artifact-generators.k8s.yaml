@@ -781,11 +781,6 @@ spec:
       name: ollama-app
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/generated/openebs-lvm/**"
-          to: "@artifact/cluster/generated/openebs-lvm/"
-      name: openebs-lvm
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/generated/piraeus/operator/**"
           to: "@artifact/cluster/generated/piraeus/operator/"
       name: piraeus-operator
