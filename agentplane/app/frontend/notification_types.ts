@@ -94,10 +94,13 @@ export type GitHubSubject = GitHubSubjectJson;
 export type Source = Override<SourceJson, { github?: GitHubSourceView }>;
 export type GitHubAccessStatus = GitHubAccessView;
 export type GitHubSubjectStatus = GitHubSubjectStatusView;
-export type SourceObservation = Pick<
-  GitHubAccessStatusJson,
-  "lastSuccessAt" | "errorKind" | "error" | "errorSince" | "errorObservedAt" | "retryAt" | "refreshingUntil"
-> & { errorKind?: SourceFailureKind };
+export type SourceObservation = Override<
+  Pick<
+    GitHubAccessStatusJson,
+    "lastSuccessAt" | "errorKind" | "error" | "errorSince" | "errorObservedAt" | "retryAt" | "refreshingUntil"
+  >,
+  { errorKind?: SourceFailureKind }
+>;
 export type SubscriptionStatus = Override<
   RequiredJson<SubscriptionStatusJson, "id" | "source" | "cancelled" | "expiresAt">,
   {
