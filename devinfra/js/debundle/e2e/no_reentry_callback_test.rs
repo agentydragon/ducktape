@@ -141,6 +141,7 @@ fn protocol_operations_and_opaque_results_retain_registered_callbacks() {
 
 #[test]
 fn unsupported_shapes_and_callback_surfaces_keep_conservative_timing() {
+    let mut unexpected = Vec::new();
     for (declarations, call, names, statements) in [
         ("", "register(...[() => later])", vec![], vec![]),
         ("", "new register(() => later)", vec![], vec![]),
@@ -190,6 +191,12 @@ fn unsupported_shapes_and_callback_surfaces_keep_conservative_timing() {
             vec!["callback"],
             vec![],
         ),
+        (
+            "const callback = () => later;\nconst alias = callback;\nexport { alias };\n",
+            "register(callback)",
+            vec!["callback", "alias"],
+            vec![],
+        ),
     ] {
         let source = format!(
             "import {{ register, emit, publish }} from './peer.js';\n{declarations}const registration = {call};\nconst later = 42;\nconsole.log(emit()[0]);\n"
@@ -198,23 +205,29 @@ fn unsupported_shapes_and_callback_surfaces_keep_conservative_timing() {
         members.push(Member::new("registration"));
         let provider =
             format!("{PROVIDER}export function publish(value) {{ globalThis.saved = value; }}\n");
-        expect_atomic_conflict_rejection(
-            FixtureOpts::new(
-                &source,
-                vec![
-                    logical_module_with_anon("callbacks/registration", &members, &statements),
-                    logical_module("values/later", &[Member::new("later")]),
-                ],
+        let outcome = std::panic::catch_unwind(|| {
+            expect_atomic_conflict_rejection(
+                FixtureOpts::new(
+                    &source,
+                    vec![
+                        logical_module_with_anon("callbacks/registration", &members, &statements),
+                        logical_module("values/later", &[Member::new("later")]),
+                    ],
+                )
+                .with_extra_chunks(&[("static/peer", &provider)])
+                .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+                    .with_no_reentry_callback("register", 1, &[0])
+                    .with_no_reentry_callback("register", 2, &[0])
+                    .build()]),
+                &["callbacks/registration", "values/later"],
+                &[],
             )
-            .with_extra_chunks(&[("static/peer", &provider)])
-            .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-                .with_no_reentry_callback("register", 1, &[0])
-                .with_no_reentry_callback("register", 2, &[0])
-                .build()]),
-            &["callbacks/registration", "values/later"],
-            &[],
-        );
+        });
+        if outcome.is_err() {
+            unexpected.push(format!("{call}; declarations: {declarations:?}"));
+        }
     }
+    assert!(unexpected.is_empty(), "unexpected cases: {unexpected:#?}");
 }
 
 #[test]

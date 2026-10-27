@@ -1842,7 +1842,7 @@ impl Executor<'_> {
         let callbacks = self.retained_callbacks(&contract, expressions, args)?;
         // Independently exported aliases and already exposed callbacks keep
         // ordinary conservative timing; the provider audit cannot hide them.
-        if !callbacks.is_disjoint(&self.available_export_callbacks()) {
+        if !callbacks.is_disjoint(&self.export_callback_values()) {
             return None;
         }
         Some(callbacks)
@@ -2673,6 +2673,10 @@ impl Executor<'_> {
         if !self.export_reentry_enabled {
             return Values::new();
         }
+        self.export_callback_values()
+    }
+
+    fn export_callback_values(&self) -> Values {
         // Discover the whole export surface in one traversal. Exported aliases,
         // unknown values, and shared objects must not each re-expand the same
         // escaped callback/capture graph independently.
