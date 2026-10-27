@@ -215,6 +215,11 @@ pub struct ChunkExportPurity {
     /// effects and the opaque return value remain conservative.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub no_reentry_exports: BTreeSet<String>,
+    /// Exact direct imported call signatures that cannot synchronously reenter
+    /// caller/importer/host code, including their callback arguments. Callbacks
+    /// become globally reachable after the call; the result remains opaque.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub no_reentry_callback_exports: BTreeMap<String, Vec<RetainedCallbackSignature>>,
     /// Static members of an imported namespace whose calls cannot synchronously
     /// invoke caller, importer, or host callbacks or read importer-owned cells.
     /// This asserts call timing only, not purity or the shape of the result.
@@ -232,12 +237,10 @@ pub struct ChunkExportPurity {
     pub namespace_independent_members: BTreeMap<String, BTreeSet<String>>,
 }
 
-/// One exact call shape certified by the stronger retained-callback audit.
-/// Non-callback positions must be syntactically inert primitives. All listed
-/// callbacks are retained in one fresh returned graph; none may be invoked,
-/// inspected through effectful properties/prototypes, mutated or published
-/// during the call. Existing callable identity and aliases are part of the
-/// author audit; the older fresh-only factory assertions do not imply this.
+/// One exact callback-bearing call shape. Non-callback positions must be
+/// syntactically inert primitives. The policy containing this signature
+/// determines whether callbacks stay in a fresh returned graph or become
+/// globally reachable after the call. No policy is implied by another.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub struct RetainedCallbackSignature {
     pub argument_count: usize,

@@ -5,7 +5,7 @@ import { useSearchParams } from "react-router";
 import { TimeAgo } from "../time_ago";
 import type { Decision } from "../client";
 import { type DecisionGroup, groupDecisions } from "./decision_groups";
-import { type DecisionsSnapshot, liveEgressDecisionsUrl } from "../live";
+import { type DecisionsSnapshot, liveEgressDecisionsUrl } from "./live";
 import { zDecisionsSnapshot } from "../api/live_schema.zod";
 import { followStream, parseJsonFrame, type StreamConnection } from "../live_stream";
 import { useStreamStatus } from "../stream_status";

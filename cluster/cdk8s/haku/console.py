@@ -125,7 +125,7 @@ class Console(Construct):
             self,
             "config",
             metadata=ApiObjectMetadata(name="config", namespace=NAMESPACE),
-            model=console_config.RollingConsoleConfig,
+            model=ConsoleConfigFile,
             content=console_config.config(),
             path="/etc/haku-console/config/config.yaml",
             supplied=[path for path in self._supplied if path[0] in ConsoleConfigFile.model_fields],

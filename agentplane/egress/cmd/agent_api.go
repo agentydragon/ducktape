@@ -19,7 +19,7 @@ import (
 // forwards to that service over address itself, so the servicer authenticates every request; it runs
 // until ctx ends.
 func newAgentAPI(ctx context.Context, address string, verifier *identity.Verifier, index *policy.Index, agentDocs fs.FS, openAPI []byte) (*http.Server, error) {
-	rulesFacade, err := facade.NewHandler(ctx, address, egressrulespb.RegisterEgressRulesHandlerFromEndpoint)
+	rulesFacade, err := facade.NewHandler(ctx, address, 0, egressrulespb.RegisterEgressRulesHandlerFromEndpoint)
 	if err != nil {
 		return nil, err
 	}

@@ -89,6 +89,7 @@ ts_library(
     srcs = ["data_helpers.ts"],
     tsconfig = TSCONFIG,
     deps = [
+        ":client",
         ":input_helpers",
         ":rollout_event_vocabulary",
         "//finance/augur/frontend/lib:format",
@@ -111,7 +112,10 @@ ts_library(
     name = "sanity_bands",
     srcs = ["sanity_bands.ts"],
     tsconfig = TSCONFIG,
-    deps = ["//finance/augur/frontend/lib:format"],
+    deps = [
+        ":client",
+        "//finance/augur/frontend/lib:format",
+    ],
 )
 
 ts_library(
@@ -127,6 +131,7 @@ ts_library(
     srcs = ["header.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":client",
         ":url_state",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -252,6 +257,7 @@ ts_library(
     srcs = ["calibration_format.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":client",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//finance/augur/frontend/lib:format",
@@ -264,6 +270,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":calibration_format",
+        ":client",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//finance/augur/frontend/lib:format",
@@ -287,6 +294,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":calibration_format",
+        ":client",
         "//:node_modules/@types/react",
         "//:node_modules/react",
     ],

@@ -5,15 +5,18 @@
 import React from "react";
 
 import { fmtPct } from "./lib/format";
+import type { CalibrationRunResponse } from "./client";
 
-export function fmtProb(value) {
+type Platform = CalibrationRunResponse["result"]["clean"][number]["platform"];
+
+export function fmtProb(value: unknown) {
   return value == null || !Number.isFinite(Number(value)) ? "n/a" : fmtPct(value);
 }
 
 // `D_KL(market ‖ model)`: 0 = model matches the market, larger = louder disagreement. Pass
 // `withUnit` for standalone figures (e.g. a categorical family's overall KL) that have no column
 // header to carry the unit; the scored-markets table omits it because its "KL (bits)" header does.
-export function fmtKl(value, { withUnit = false } = {}) {
+export function fmtKl(value: unknown, { withUnit = false }: { withUnit?: boolean } = {}) {
   if (value == null || !Number.isFinite(Number(value))) return "—";
   const formatted = Number(value).toFixed(3);
   return withUnit ? `${formatted} bits` : formatted;
@@ -22,10 +25,11 @@ export function fmtKl(value, { withUnit = false } = {}) {
 // Bigger model-vs-market divergences get a louder tint on the KL cell itself so the eye lands on
 // the disagreements first. The full row stays untinted so platform-logo and link contrast doesn't
 // have to fight a rose/amber background.
-export function klTextClass(klBits) {
+export function klTextClass(klBits: unknown) {
   if (klBits == null || !Number.isFinite(Number(klBits))) return "augur-muted";
-  if (klBits >= 0.15) return "font-semibold text-rose-700 dark:text-rose-300";
-  if (klBits >= 0.05) return "font-semibold text-amber-700 dark:text-amber-300";
+  const numericKlBits = Number(klBits);
+  if (numericKlBits >= 0.15) return "font-semibold text-rose-700 dark:text-rose-300";
+  if (numericKlBits >= 0.05) return "font-semibold text-amber-700 dark:text-amber-300";
   return "augur-tabular";
 }
 
@@ -75,8 +79,12 @@ const PLATFORM_ICON = {
   ),
 };
 
-export function PlatformBadge({ platform }) {
-  const icon = PLATFORM_ICON[platform] ?? PLATFORM_ICON.manifold;
+function isPlatformIconKey(platform: string): platform is keyof typeof PLATFORM_ICON {
+  return Object.prototype.hasOwnProperty.call(PLATFORM_ICON, platform);
+}
+
+export function PlatformBadge({ platform }: { platform: Platform }) {
+  const icon = isPlatformIconKey(platform) ? PLATFORM_ICON[platform] : PLATFORM_ICON.manifold;
   // Centered inside the dedicated platform column; the parent <td> handles spacing.
   return (
     <span className="inline-flex items-center justify-center" title={platform}>

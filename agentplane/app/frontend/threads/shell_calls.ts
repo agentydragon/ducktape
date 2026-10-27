@@ -1,12 +1,12 @@
 // The tool calls that run a shell command, in the two shapes the harnesses give them: Claude's
-// `Bash` tool and Codex's `commandExecution` item. Their arguments are parsed into one `CommandCall`
+// `Bash` tool and Codex's `commandExecution` item. Their arguments are parsed into one `ShellCall`
 // for the thread to draw as a command; any call that does not parse is drawn as its JSON.
 import { z } from "zod";
 
 import { parsedJson } from "../parsed_json";
 
 /** A shell command call, as the thread shows it. */
-export interface CommandCall {
+export interface ShellCall {
   /** What to call the tool. */
   label: string;
   /** The one line that stands for the call while it is folded. */
@@ -50,7 +50,7 @@ export function oneLine(text: string): string {
 /** `argumentsJson` as the call to the harness's shell tool `toolName`, or `null` for any other tool,
  * for arguments that are not JSON (a call still streaming in), and for arguments the tool does not
  * take whole. */
-export function parseCommandCall(toolName: string, argumentsJson: string): CommandCall | null {
+export function parseShellCall(toolName: string, argumentsJson: string): ShellCall | null {
   const value = parsedJson(argumentsJson);
   switch (toolName) {
     case "Bash": {

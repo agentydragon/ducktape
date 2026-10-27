@@ -5,11 +5,11 @@ import { type CSSProperties, type JSX, type ReactNode, useEffect, useLayoutEffec
 import { ClampedBlock, lineCount } from "../clamped_block";
 import { InlineCode } from "../../../../util/frontend/code_block";
 import { DisclosureBody, DisclosureCard } from "../disclosure";
-import { COMMAND_MAX_HEIGHT_REM, CommandCallView, OutputBlock } from "../command_view";
+import { SHELL_COMMAND_MAX_HEIGHT_REM, ShellCommandView, OutputBlock } from "../shell_command_view";
 import { HighlightedText } from "../json_view";
 import { Markdown } from "../../../../util/frontend/markdown";
 import { RawSwitch } from "../raw_switch";
-import { oneLine, parseCommandCall, type CommandCall } from "./command_calls";
+import { oneLine, parseShellCall, type ShellCall } from "./shell_calls";
 import { CommandProgress } from "./command_progress";
 import { lifecyclePresentation } from "./history_rows";
 import { EvidencePanel, EvidenceToggle } from "./thread_evidence";
@@ -414,7 +414,7 @@ function DiscardedCard({ id, summary, children }: { id: string; summary: string;
   );
 }
 
-function CommandExecutionMetadata({ call }: { call: CommandCall }): JSX.Element | null {
+function ShellCallExecutionMetadata({ call }: { call: ShellCall }): JSX.Element | null {
   if (!call.invocation && !call.cwd) return null;
   return (
     <Text size="xs" c="dimmed" style={{ flex: "1 1 12rem", minWidth: 0, overflowWrap: "anywhere" }}>
@@ -432,7 +432,7 @@ function CommandExecutionMetadata({ call }: { call: CommandCall }): JSX.Element 
   );
 }
 
-function CommandCallControls({
+function ShellCallControls({
   call,
   raw,
   onRawChange,
@@ -440,7 +440,7 @@ function CommandCallControls({
   fullWidth = true,
   children,
 }: {
-  call: CommandCall;
+  call: ShellCall;
   raw: boolean;
   onRawChange: (raw: boolean) => void;
   hasOutput: boolean;
@@ -455,7 +455,7 @@ function CommandCallControls({
       wrap="wrap"
       style={fullWidth ? { width: "100%" } : undefined}
     >
-      <CommandExecutionMetadata call={call} />
+      <ShellCallExecutionMetadata call={call} />
       <Group gap="xs" wrap="nowrap" style={{ marginInlineStart: "auto" }}>
         <RawSwitch
           raw={raw}
@@ -510,7 +510,7 @@ function ToolCard({
     <OptionalPayload reference={entity.argumentsRef}>
       {(args) => {
         const argumentsBody = args?.body ?? null;
-        const call = argumentsBody === null ? null : parseCommandCall(state.tool_name, argumentsBody);
+        const call = argumentsBody === null ? null : parseShellCall(state.tool_name, argumentsBody);
         const detail = (
           <Stack gap={0}>
             {(state.recovery === RecoveryDisposition.UNKNOWN ||
@@ -529,11 +529,11 @@ function ToolCard({
             )}
             {argumentsBody !== null &&
               (call && !raw ? (
-                <CommandCallView command={call.command} notes={call.notes} expansion={input} />
+                <ShellCommandView command={call.command} notes={call.notes} expansion={input} />
               ) : (
                 <div>
                   <ClampedBlock
-                    maxHeightRem={COMMAND_MAX_HEIGHT_REM}
+                    maxHeightRem={SHELL_COMMAND_MAX_HEIGHT_REM}
                     lines={lineCount(argumentsBody)}
                     label="Arguments"
                     header={
@@ -572,7 +572,7 @@ function ToolCard({
                 <Group justify="space-between" wrap="wrap">
                   <Group gap="xs">{itemStatus([entity], live)}</Group>
                   {call ? (
-                    <CommandCallControls
+                    <ShellCallControls
                       call={call}
                       raw={raw}
                       onRawChange={setRaw}
@@ -580,7 +580,7 @@ function ToolCard({
                       fullWidth={false}
                     >
                       <EvidenceToggle entity={entity} placement="inline" />
-                    </CommandCallControls>
+                    </ShellCallControls>
                   ) : (
                     <Group gap="xs" wrap="nowrap">
                       <EvidenceToggle entity={entity} placement="inline" />
@@ -622,12 +622,7 @@ function ToolCard({
               }
               controls={
                 call && (
-                  <CommandCallControls
-                    call={call}
-                    raw={raw}
-                    onRawChange={setRaw}
-                    hasOutput={entity.outputRef !== null}
-                  />
+                  <ShellCallControls call={call} raw={raw} onRawChange={setRaw} hasOutput={entity.outputRef !== null} />
                 )
               }
               summaryAside={<EvidenceToggle entity={entity} placement="inline" />}

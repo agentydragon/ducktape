@@ -93,11 +93,11 @@ flowchart LR
     edge -->|HTML, assets and service worker| frontend
     edge -->|API, auth and streams| app
     app -->|gRPC health + tunneled Runner RPCs| gw
-    app -->|Dispatcher API: gRPC and HTTP/JSON reads| gw
+    app -->|Dispatcher commands and watches: gRPC| gw
     app --> hs
     app -->|gRPC operator watches + health| notif
-    app -->|Action generated HTTP/JSON and NDJSON facade + MCP linkage| actions
-    app -->|ConnectionService facade + gRPC health| edge
+    app -->|Action RPCs: gRPC; MCP OAuth callback: HTTP| actions
+    app -->|ConnectionService RPCs and health: gRPC| edge
     edge -->|authenticated ActionService gRPC| actions
     notif -->|Action history: gRPC| actions
     actions -->|orchestration_v1 Session commands: Dispatcher gRPC| gw

@@ -11,9 +11,10 @@ use analysis::cross_module_purity::{
     ModulePurityFacts, ResolvedImport, resolve_asserted_callback_factory_members,
     resolve_asserted_fluent_bindings, resolve_asserted_inline_callback_factories,
     resolve_asserted_member_purities, resolve_asserted_namespace_independent_members,
-    resolve_asserted_no_reentry_bindings, resolve_asserted_no_reentry_members,
-    resolve_asserted_no_reentry_record_members, resolve_asserted_pure_new_bindings,
-    resolve_asserted_retained_callback_constructors, resolve_asserted_retained_callback_factories,
+    resolve_asserted_no_reentry_bindings, resolve_asserted_no_reentry_callbacks,
+    resolve_asserted_no_reentry_members, resolve_asserted_no_reentry_record_members,
+    resolve_asserted_pure_new_bindings, resolve_asserted_retained_callback_constructors,
+    resolve_asserted_retained_callback_factories,
     resolve_asserted_retained_callback_factory_members, resolve_imported_callback_factories,
     resolve_imported_purities,
 };
@@ -83,6 +84,8 @@ pub(super) struct CrossModulePurities {
     pub(super) retained_callback_constructors:
         BTreeMap<String, BTreeMap<String, Vec<spec::RetainedCallbackSignature>>>,
     pub(super) no_reentry_exports: BTreeMap<String, BTreeSet<String>>,
+    pub(super) no_reentry_callback_exports:
+        BTreeMap<String, BTreeMap<String, Vec<spec::RetainedCallbackSignature>>>,
     pub(super) no_reentry_members: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
     pub(super) no_reentry_record_members: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
     pub(super) namespace_independent_members: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
@@ -424,6 +427,15 @@ pub(super) fn collect_cross_module_imported_purities(
         }
     }
     CrossModulePurities {
+        no_reentry_callback_exports: resolve_asserted_no_reentry_callbacks(
+            &modules,
+            &chunk_export_purity
+                .iter()
+                .map(|(chunk, assertion)| {
+                    (chunk.clone(), assertion.no_reentry_callback_exports.clone())
+                })
+                .collect(),
+        ),
         retained_callback_constructors: resolve_asserted_retained_callback_constructors(
             &modules,
             &chunk_export_purity

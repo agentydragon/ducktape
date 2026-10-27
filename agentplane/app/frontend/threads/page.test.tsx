@@ -27,11 +27,12 @@ import {
   type ThreadView,
 } from "../client";
 import { historyRows, rowKey } from "./history_rows";
-import { SandboxesLiveProvider, ThreadsLiveProvider, useRequiredThreadsLive } from "../live";
+import { SandboxesLiveProvider } from "../sandboxes/live";
+import { ThreadsLiveProvider, useRequiredThreadsLive } from "./live";
 import type { InboxNoticeState } from "../notification_types";
 import { LocalCommands } from "./local_commands";
 import { STREAMING_CURSOR } from "../../../../util/frontend/markdown";
-import { ProjectedSession } from "./projected_session";
+import { ThreadPage } from "./page";
 import { HistoryRowView } from "./history_row_views";
 import { RetainedDisclosureProvider } from "./retained_disclosures";
 import { DEGRADED_AFTER_MS, STALE_AFTER_MS } from "../stream_status";
@@ -226,7 +227,7 @@ afterEach(async () => {
 async function render(state: ThreadState = threadState()): Promise<HTMLDivElement> {
   const container = document.createElement("div");
   document.body.append(container);
-  // The real shell topbar (app.tsx) isn't mounted here, so ProjectedSession's title/menu need
+  // The real shell topbar (app.tsx) isn't mounted here, so ThreadPage's title/menu need
   // somewhere to portal into. Left unattached until after the initial render: createRoot's first
   // commit clears container's pre-existing children, which would tear these back out.
   const topbarTitle = document.createElement("div");
@@ -356,7 +357,7 @@ function page(
     <MantineProvider env="test">
       <ThreadSyncContext.Provider value={sync}>
         <TopbarContext.Provider value={{ title: topbarTitle, actions: topbarActions }}>
-          <ProjectedSession key={mountKey} threadId={THREAD.id} />
+          <ThreadPage key={mountKey} threadId={THREAD.id} />
         </TopbarContext.Provider>
       </ThreadSyncContext.Provider>
     </MantineProvider>

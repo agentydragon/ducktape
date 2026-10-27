@@ -372,8 +372,8 @@ ts_library(
 )
 
 ts_library(
-    name = "command_view",
-    srcs = ["command_view.tsx"],
+    name = "shell_command_view",
+    srcs = ["shell_command_view.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":argv_text",
@@ -516,6 +516,8 @@ agentplane_vitest_test(
         "//:node_modules/react",
         "//:node_modules/react-dom",
         "//:node_modules/vitest",
+        "//agentplane/app/frontend/sandboxes:live",
+        "//agentplane/app/frontend/threads:live",
     ],
 )
 
@@ -582,14 +584,11 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":format_time",
-        ":live_schemas_generated",
         ":live_stream",
         ":schema",
         ":stream_status",
-        "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
-        "//:node_modules/react-router",
         "//:node_modules/zod",
     ],
 )
@@ -711,6 +710,7 @@ agentplane_vitest_test(
         "//:node_modules/react-dom",
         "//:node_modules/react-router",
         "//:node_modules/vitest",
+        "//agentplane/app/frontend/threads:live",
         "//agentplane/app/frontend/threads:scroll_diagnostics",
         "//agentplane/app/frontend/threads:thread_groups",
         "//agentplane/app/frontend/threads:thread_status",
@@ -891,10 +891,12 @@ ts_library(
         "//agentplane/app/frontend/actions:sidebar",
         "//agentplane/app/frontend/connections:consent",
         "//agentplane/app/frontend/sandboxes:list",
+        "//agentplane/app/frontend/sandboxes:live",
         "//agentplane/app/frontend/sandboxes:sandbox_page",
+        "//agentplane/app/frontend/threads:electric_sync",
         "//agentplane/app/frontend/threads:home",
-        "//agentplane/app/frontend/threads:projected_session",
-        "//agentplane/app/frontend/threads:thread_store",
+        "//agentplane/app/frontend/threads:live",
+        "//agentplane/app/frontend/threads:page",
         "//agentplane/app/frontend/threads:thread_sync",
     ],
 )
@@ -987,12 +989,12 @@ ts_library(
         ":app",
         ":clamped_block",
         ":client",
-        ":command_view",
         ":disclosure",
         ":harness_network",
         ":live",
         ":mcp_linkage_client",
         ":notification_types",
+        ":shell_command_view",
         ":stream_status",
         ":test_model_catalog",
         ":text_block",
@@ -1009,6 +1011,8 @@ ts_library(
         "//agentplane/app/frontend/actions/rendering:index",
         "//agentplane/app/frontend/connections:fixture",
         "//agentplane/app/frontend/connections:models",
+        "//agentplane/app/frontend/sandboxes:live",
+        "//agentplane/app/frontend/threads:live",
         "//agentplane/app/frontend/threads:local_commands",
         "//agentplane/proto:runner_pb",
     ],

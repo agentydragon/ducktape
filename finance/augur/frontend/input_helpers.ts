@@ -1,10 +1,63 @@
 import { clampInteger } from "./lib/format";
-import type { ProductProjectionSummaryRequest } from "./client";
+import type { fetchAugurCatalog, fetchAugurSettings, ProductProjectionSummaryRequest } from "./client";
 
+type Catalog = Awaited<ReturnType<typeof fetchAugurCatalog>>;
+type Settings = Awaited<ReturnType<typeof fetchAugurSettings>>;
+type Bootstrap = Pick<Catalog, "locations"> &
+  Pick<Settings, "maxRolloutSamples" | "maxHorizonMonths" | "productInputDefaults" | "models" | "defaultModelId">;
 type ProductScenario = ProductProjectionSummaryRequest["scenario"];
 type ProductPropertyPurchase = NonNullable<ProductScenario["propertyPurchase"]>;
 type ProductPropertyFinancing = NonNullable<ProductPropertyPurchase["financing"]>;
 type ProductLifecycleEvent = NonNullable<ProductPropertyPurchase["lifecycleEvents"]>[number];
+type ProductSleeveWeight = NonNullable<NonNullable<ProductScenario["fundingPolicy"]>["sleeveWeights"]>[number];
+export type LifecycleInputEvent =
+  | { _id: string; kind: "set_rented_fraction"; month: number; rentedFractionPct: number }
+  | { _id: string; kind: "set_primary_residence"; month: number; livesHere: boolean }
+  | { _id: string; kind: "capital_improvement"; month: number; amount: number }
+  | { _id: string; kind: "property_sale"; month: number; closingCostPct: number };
+type SleeveWeight = ProductSleeveWeight;
+type WithoutWeight<T> = T extends unknown ? Omit<T, "weight"> : never;
+type SleeveIdentity = WithoutWeight<SleeveWeight>;
+type ProductInput = Omit<
+  typeof DEFAULT_PRODUCT_INPUT_BASE,
+  | "horizonMonths"
+  | "spendIndex"
+  | "sleeveWeights"
+  | "rentalLocationId"
+  | "propertyId"
+  | "financingKind"
+  | "rentalFullPropertyMonthly"
+  | "propertyLifecycleEvents"
+> & {
+  spendIndex: NonNullable<ProductScenario["spendIndex"]>;
+  sleeveWeights: SleeveWeight[] | null;
+  rentalLocationId: string | null;
+  propertyId: string | null;
+  financingKind: ProductPropertyFinancing["kind"];
+  rentalFullPropertyMonthly: number | null;
+  propertyLifecycleEvents: LifecycleInputEvent[];
+};
+type ProductInputWithHorizon = ProductInput & Pick<typeof DEFAULT_PRODUCT_INPUT_BASE, "horizonMonths">;
+type ProductInputOverrides = Bootstrap["productInputDefaults"];
+type SellableRow = {
+  key: string | null;
+  sleeve: SleeveIdentity;
+  label: string;
+  valueQuanta: string | null;
+};
+type ScenarioVariant = { id: string; label: string; overrides: Partial<ProductInput> };
+type ScenarioSet = {
+  base: { label: string; input: ProductInput };
+  variants: ScenarioVariant[];
+  activeId: string;
+};
+type ProjectionShared = {
+  rolloutCount: number;
+  firstSeed: number;
+  model: string | null;
+  horizonMonths: number;
+  sellable: readonly SellableRow[] | null | undefined;
+};
 
 // Rollout count is NOT a product-input field: it is a top-level control shared across the
 // product and calibration tabs (see `rolloutCountDefault` and the `?n=` URL param). Both tabs
@@ -54,7 +107,7 @@ export const LIFECYCLE_KINDS = [
   { value: "set_primary_residence", label: "Set primary home" },
   { value: "capital_improvement", label: "Capital improvement" },
   { value: "property_sale", label: "Sell property" },
-];
+] as const satisfies readonly { value: ProductLifecycleEvent["kind"]; label: string }[];
 
 export const FAN_PERCENTILES = [5, 25, 50, 75, 95];
 export const TERMINAL_DISTRIBUTION_PERCENTILES = Array.from({ length: 101 }, (_value, percentile) => percentile);
@@ -79,16 +132,22 @@ export const METRIC_OPTIONS = [
   { value: "mortgage_balance", chartValue: "mortgageBalanceQuanta", label: "Mortgage balance" },
   { value: "home_equity", chartValue: "homeEquityQuanta", label: "Home equity" },
   { value: "net_worth", chartValue: "netWorthQuanta", label: "Net worth" },
-];
+] as const satisfies readonly {
+  value: ProductProjectionSummaryRequest["metric"];
+  chartValue: string;
+  label: string;
+}[];
 
-export function productInputDefaults(bootstrap) {
+export function productInputDefaults(bootstrap: Bootstrap): ProductInput {
   // Server-provided overrides (from the deployment's augur YAML's `product_input_defaults`).
   // Each field is `null` when the deployment didn't set it; we drop those entries so the
   // frontend's hard-coded base value stays. The decamelize layer in `client.js` already
   // converted snake_case keys, so `cash_band_index_to_inflation` arrives as `cashBandIndexToInflation`.
   const overrides = bootstrap.productInputDefaults ?? {};
-  const overridesNotNull = Object.fromEntries(Object.entries(overrides).filter(([, value]) => value != null));
-  const base = { ...DEFAULT_PRODUCT_INPUT_BASE, ...overridesNotNull };
+  const overridesNotNull = Object.fromEntries(
+    Object.entries(overrides).filter(([, value]) => value != null)
+  ) as Partial<ProductInputOverrides>;
+  const base = { ...DEFAULT_PRODUCT_INPUT_BASE, ...overridesNotNull } as ProductInputWithHorizon;
   for (const key of [
     "monthlySpend",
     "cashFloor",
@@ -96,7 +155,7 @@ export function productInputDefaults(bootstrap) {
     "peLnwFloor",
     "monthlyRent",
     "rentalFullPropertyMonthly",
-  ]) {
+  ] as const) {
     if (base[key] != null) base[key] = Number(base[key]);
   }
   // Per-bootstrap derived clamps + fallbacks. These take effect after both base and YAML so we
@@ -112,16 +171,16 @@ export function productInputDefaults(bootstrap) {
 // Tab-shared rollout count. The app shell owns the live value and persists it to `?n=`; the
 // product and calibration workspaces both read it. The default honors a deployment's
 // `product_input_defaults.rollout_count` override and is clamped to `max_rollout_samples`.
-export function rolloutCountDefault(bootstrap) {
+export function rolloutCountDefault(bootstrap: Bootstrap) {
   const override = bootstrap.productInputDefaults?.rolloutCount;
   return clampInteger(override ?? DEFAULT_ROLLOUT_COUNT, 1, bootstrap.maxRolloutSamples);
 }
 
-export function clampRolloutCount(value, bootstrap) {
+export function clampRolloutCount(value: number, bootstrap: Bootstrap) {
   return clampInteger(value, 1, bootstrap.maxRolloutSamples);
 }
 
-export function rolloutCountFromSearch(searchString, bootstrap) {
+export function rolloutCountFromSearch(searchString: string, bootstrap: Bootstrap) {
   const raw = new URLSearchParams(searchString).get("n");
   if (raw == null) return rolloutCountDefault(bootstrap);
   const numeric = Number(raw);
@@ -131,12 +190,12 @@ export function rolloutCountFromSearch(searchString, bootstrap) {
 // First rollout seed. Product projections and calibration runs consume the same seed-sequence
 // start; it's a fixed default (no longer user-tunable) so identical seeds reproduce identical
 // sampled exogenous paths across runs.
-export function firstSeedDefault(bootstrap) {
+export function firstSeedDefault(bootstrap: Bootstrap) {
   const override = bootstrap.productInputDefaults?.firstSeed;
   return clampFirstSeed(override ?? DEFAULT_FIRST_SEED);
 }
 
-export function clampFirstSeed(value) {
+export function clampFirstSeed(value: number) {
   return clampInteger(value, 0, 2 ** 31 - 1);
 }
 
@@ -144,12 +203,12 @@ export function clampFirstSeed(value) {
 // and persists it to `?x=`; the product scenario and the calibration run both read it. A value
 // not in `bootstrap.models` (stale URL, empty) falls back to the deployment default. The
 // selected id is always one of `bootstrap.models`.
-export function defaultModel(bootstrap) {
+export function defaultModel(bootstrap: Bootstrap) {
   const preferred = bootstrap.defaultModelId;
   return bootstrap.models.includes(preferred) ? preferred : bootstrap.models[0];
 }
 
-export function modelFromSearch(searchString, bootstrap) {
+export function modelFromSearch(searchString: string, bootstrap: Bootstrap) {
   const requested = new URLSearchParams(searchString).get("x");
   return requested && bootstrap.models.includes(requested) ? requested : defaultModel(bootstrap);
 }
@@ -158,16 +217,16 @@ export function modelFromSearch(searchString, bootstrap) {
 // persists it to `?h=`; the product scenario and the calibration run both read it. The default
 // honors a deployment's `product_input_defaults.horizon_months` override, clamped to
 // `max_horizon_months`.
-export function horizonMonthsDefault(bootstrap) {
+export function horizonMonthsDefault(bootstrap: Bootstrap) {
   const override = bootstrap.productInputDefaults?.horizonMonths;
   return clampInteger(override ?? DEFAULT_PRODUCT_INPUT_BASE.horizonMonths, 1, bootstrap.maxHorizonMonths);
 }
 
-export function clampHorizonMonths(value, bootstrap) {
+export function clampHorizonMonths(value: number, bootstrap: Bootstrap) {
   return clampInteger(value, 1, bootstrap.maxHorizonMonths);
 }
 
-export function horizonMonthsFromSearch(searchString, bootstrap) {
+export function horizonMonthsFromSearch(searchString: string, bootstrap: Bootstrap) {
   const raw = new URLSearchParams(searchString).get("h");
   if (raw == null) return horizonMonthsDefault(bootstrap);
   const numeric = Number(raw);
@@ -176,30 +235,30 @@ export function horizonMonthsFromSearch(searchString, bootstrap) {
 
 // Tab-shared chart scale (linear/log), owned by the app shell and persisted to `?scale=`. Both
 // the product metric fan and the calibration mark fan honor it. Default is linear.
-export function metricScaleFromSearch(searchString) {
+export function metricScaleFromSearch(searchString: string): "linear" | "log" {
   return new URLSearchParams(searchString).get("scale") === "log" ? "log" : "linear";
 }
 
 // Stable per-event id used as the React key so editing/reordering preserves DOM identity
 // (NumberInput focus state, mid-edit values). The id is purely UI state — `stripLifecycleIds`
-// drops it before the `?scenarios=` blob is serialized, and `regenerateLifecycleIds` mints a fresh
-// one on decode so base and variants never share a (colliding) key.
+// drops it before the `?scenarios=` blob is serialized, and decode mints a fresh one so base and
+// variants never share a (colliding) key.
 let _nextLifecycleEventId = 0;
-export function nextLifecycleEventId() {
+export function nextLifecycleEventId(): string {
   _nextLifecycleEventId += 1;
   return `lc-${_nextLifecycleEventId}`;
 }
 
-export function defaultLifecycleEvent(kind, suggestedMonth) {
+export function defaultLifecycleEvent(kind: LifecycleInputEvent["kind"], suggestedMonth: number): LifecycleInputEvent {
   const base = { _id: nextLifecycleEventId(), kind, month: Math.max(1, suggestedMonth || 12) };
-  if (kind === "set_rented_fraction") return { ...base, rentedFractionPct: 0 };
-  if (kind === "set_primary_residence") return { ...base, livesHere: false };
-  if (kind === "capital_improvement") return { ...base, amount: 25000 };
-  if (kind === "property_sale") return { ...base, closingCostPct: 6 };
+  if (kind === "set_rented_fraction") return { ...base, kind, rentedFractionPct: 0 };
+  if (kind === "set_primary_residence") return { ...base, kind, livesHere: false };
+  if (kind === "capital_improvement") return { ...base, kind, amount: 25000 };
+  if (kind === "property_sale") return { ...base, kind, closingCostPct: 6 };
   throw new Error(`unknown lifecycle event kind ${kind}`);
 }
 
-export function buildPropertyFinancing(input): ProductPropertyFinancing {
+export function buildPropertyFinancing(input: ProductInput): ProductPropertyFinancing {
   if (input.financingKind !== "mortgage") return { kind: "cash" };
   return {
     kind: "mortgage",
@@ -209,7 +268,9 @@ export function buildPropertyFinancing(input): ProductPropertyFinancing {
   };
 }
 
-export function buildRentalIncomePlan(input) {
+export function buildRentalIncomePlan(
+  input: ProductInput
+): NonNullable<ProductPropertyPurchase["initialRental"]> | null {
   // `rentalFractionRentedPct` = 0 → property isn't rented at all; no rental plan on the wire.
   const fractionPct = Number(input.rentalFractionRentedPct) || 0;
   if (fractionPct <= 0) return null;
@@ -221,7 +282,9 @@ export function buildRentalIncomePlan(input) {
   return { fullPropertyMonthlyRent, fractionRented: fraction, vacancyPct };
 }
 
-export function buildRentalManagement(input) {
+export function buildRentalManagement(
+  input: ProductInput
+): NonNullable<ProductPropertyPurchase["rentalManagement"]> | null {
   // Management agency only makes sense when there's something to rent.
   if (!input.useRentalManagement || (Number(input.rentalFractionRentedPct) || 0) <= 0) return null;
   return {
@@ -231,7 +294,7 @@ export function buildRentalManagement(input) {
   };
 }
 
-export function buildPropertyPurchase(input): ProductScenario["propertyPurchase"] {
+export function buildPropertyPurchase(input: ProductInput): ProductPropertyPurchase | null {
   if (!input.propertyId) return null;
   const initialRental = buildRentalIncomePlan(input);
   // Wire enforces is_primary_residence=False when fraction_rented=1.0; mirror that here
@@ -248,12 +311,13 @@ export function buildPropertyPurchase(input): ProductScenario["propertyPurchase"
   };
 }
 
-export function buildLifecycleEvents(events): ProductLifecycleEvent[] {
+export function buildLifecycleEvents(events: LifecycleInputEvent[]): ProductLifecycleEvent[] {
   if (!Array.isArray(events) || events.length === 0) return [];
   return events
     .slice()
     .sort((a, b) => a.month - b.month)
     .map((event): ProductLifecycleEvent => {
+      const eventKind: string = event.kind;
       if (event.kind === "set_rented_fraction") {
         return {
           kind: "set_rented_fraction",
@@ -278,14 +342,14 @@ export function buildLifecycleEvents(events): ProductLifecycleEvent[] {
       if (event.kind === "property_sale") {
         return { kind: "property_sale", month: event.month, closingCostPct: Number(event.closingCostPct) || 0 };
       }
-      throw new Error(`unknown lifecycle event kind ${event.kind}`);
+      throw new Error(`unknown lifecycle event kind ${eventKind}`);
     });
 }
 
 // A sleeve is a held security, named by the series symbol the sim prices it by, or a managed TLH
 // portfolio, named by its id: the portfolio tracks an index but is not a holding of it, so lots of
 // that index are a separate sleeve. `null` for anything else, which is not a sleeve.
-export function sleeveIdentity(sleeve) {
+export function sleeveIdentity(sleeve: Partial<SleeveWeight> | null | undefined): SleeveIdentity | null {
   if (sleeve?.kind === "security" && sleeve.symbol) return { kind: "security", symbol: sleeve.symbol };
   if (sleeve?.kind === "managed_portfolio" && sleeve.portfolioId) {
     return { kind: "managed_portfolio", portfolioId: sleeve.portfolioId };
@@ -294,7 +358,7 @@ export function sleeveIdentity(sleeve) {
 }
 
 // One string per sleeve identity, for maps and React keys.
-export function sleeveKey(sleeve) {
+export function sleeveKey(sleeve: Partial<SleeveWeight> | null | undefined): string | null {
   const identity = sleeveIdentity(sleeve);
   if (identity == null) return null;
   return identity.kind === "security" ? `security:${identity.symbol}` : `managed_portfolio:${identity.portfolioId}`;
@@ -307,7 +371,7 @@ export function sleeveKey(sleeve) {
 //
 // `max(1, ...)` keeps a holding too small to round to 1% inside the target rather than silently
 // outside it — weight 0 means "never sell this", which is not what "you own a little of it" says.
-export function seedSleeveWeights(sellable) {
+export function seedSleeveWeights(sellable: readonly SellableRow[] | null | undefined): SleeveWeight[] {
   const held = (sellable ?? []).filter((row) => BigInt(row.valueQuanta ?? 0) > 0n);
   const total = held.reduce((sum, row) => sum + BigInt(row.valueQuanta), 0n);
   if (total === 0n) return [];
@@ -321,7 +385,10 @@ export function seedSleeveWeights(sellable) {
 // hold-what-you-have seed here, so `FundingPolicy.sleeve_weights` is always an explicit list.
 // An explicit list is taken as-is, including the empty one — that is how auto-sale is turned off,
 // and it has to stay distinguishable from "not edited".
-export function resolveSleeveWeights(sleeveWeights, sellable) {
+export function resolveSleeveWeights(
+  sleeveWeights: ProductInput["sleeveWeights"],
+  sellable: readonly SellableRow[] | null | undefined
+): SleeveWeight[] {
   if (sleeveWeights == null) return seedSleeveWeights(sellable);
   return sleeveWeights
     .filter((sleeve) => sleeveIdentity(sleeve) != null)
@@ -329,11 +396,11 @@ export function resolveSleeveWeights(sleeveWeights, sellable) {
 }
 
 export function productScenario(
-  input,
-  bootstrap,
-  modelId,
-  horizonMonths,
-  sellable
+  input: ProductInput,
+  bootstrap: Bootstrap,
+  modelId: string | null,
+  horizonMonths: number,
+  sellable: readonly SellableRow[] | null | undefined
 ): ProductProjectionSummaryRequest["scenario"] {
   const sleeveWeights = resolveSleeveWeights(input.sleeveWeights, sellable);
   const monthlyRent = Math.max(0, Number(input.monthlyRent) || 0);
@@ -367,7 +434,15 @@ export function productScenario(
 // passed in `shared` rather than read from `input`, since the app shell owns them
 // (see `?n=`/`?x=`/`?h=`). `sellable` rides along for the same reason: it comes from the fetched
 // portfolio the shell owns, and an unedited target allocation is seeded from it.
-function productProjectionSamplingRequest(input, bootstrap, metric, shared, percentiles) {
+function productProjectionSamplingRequest(
+  input: ProductInput,
+  bootstrap: Bootstrap,
+  metric: (typeof METRIC_OPTIONS)[number],
+  shared: ProjectionShared,
+  percentiles: number[]
+): Pick<ProductProjectionSummaryRequest, "scenario" | "firstSeed" | "rolloutCount" | "metric"> & {
+  percentiles: number[];
+} {
   const { rolloutCount, firstSeed, model, horizonMonths, sellable } = shared;
   return {
     scenario: productScenario(input, bootstrap, model, horizonMonths, sellable),
@@ -379,12 +454,12 @@ function productProjectionSamplingRequest(input, bootstrap, metric, shared, perc
 }
 
 export function productProjectionSummaryRequest(
-  input,
-  bootstrap,
-  metric,
-  shared,
-  fanPercentiles,
-  terminalPercentiles
+  input: ProductInput,
+  bootstrap: Bootstrap,
+  metric: (typeof METRIC_OPTIONS)[number],
+  shared: ProjectionShared,
+  fanPercentiles: number[],
+  terminalPercentiles: number[]
 ): ProductProjectionSummaryRequest {
   const request = productProjectionSamplingRequest(input, bootstrap, metric, shared, fanPercentiles);
   return {
@@ -412,61 +487,191 @@ export function productProjectionSummaryRequest(
 // Per-scenario fan colors. Index 0 is the Base series (the existing single-scenario blue); variants
 // take the rest. Deliberately red-free: red (`FAILED_ROLLOUT_COLOR`) is reserved for failed
 // rollouts, so a red line never reads as a scenario hue. Blue / teal / violet / gold / cyan.
-export const SCENARIO_COLORS = ["#2563eb", "#0d9488", "#7c3aed", "#ca8a04", "#0e7490"];
+export const SCENARIO_COLORS = ["#2563eb", "#0d9488", "#7c3aed", "#ca8a04", "#0e7490"] as const;
 // Base is series 0; variants share the remaining colors.
 export const MAX_VARIANTS = SCENARIO_COLORS.length - 1;
 
-export function scenarioColor(index) {
+export function scenarioColor(index: number) {
   const count = SCENARIO_COLORS.length;
   return SCENARIO_COLORS[((index % count) + count) % count];
 }
 
-export function defaultVariantLabel(index) {
+export function defaultVariantLabel(index: number) {
   return `Variant ${index + 1}`;
 }
 
 let _nextVariantId = 0;
 // Stable per-variant id used as the React key + the active-selection handle. UI-only — the URL
 // encodes variants positionally, so ids are minted fresh on every decode.
-export function nextVariantId() {
+export function nextVariantId(): string {
   _nextVariantId += 1;
   return `var-${_nextVariantId}`;
 }
 
-export function makeVariant(label, overrides = {}) {
+export function makeVariant(label: string, overrides: Partial<ProductInput> = {}): ScenarioVariant {
   return { id: nextVariantId(), label, overrides };
 }
 
 // A variant resolves against the base: its overrides win on the keys it sets.
-export function resolveVariant(baseInput, overrides) {
+export function resolveVariant(baseInput: ProductInput, overrides: Partial<ProductInput>): ProductInput {
   return { ...baseInput, ...overrides };
-}
-
-function regenerateLifecycleIds(events) {
-  return Array.isArray(events) ? events.map((event) => ({ ...event, _id: nextLifecycleEventId() })) : [];
 }
 
 // Lifecycle-event `_id`s are UI-only React keys; drop them from anything we persist so two scenarios
 // that share a lifecycle plan don't also share (colliding) keys after a decode.
-function stripLifecycleIds(obj) {
+function stripLifecycleIds(obj: Partial<ProductInput>) {
   if (!obj || !("propertyLifecycleEvents" in obj)) return obj;
   const events = Array.isArray(obj.propertyLifecycleEvents) ? obj.propertyLifecycleEvents : [];
   return { ...obj, propertyLifecycleEvents: events.map(({ _id, ...rest }) => rest) };
 }
 
-function deserializeBaseInput(raw, defaults) {
-  const merged = { ...defaults, ...(raw && typeof raw === "object" ? raw : {}) };
-  merged.propertyLifecycleEvents = regenerateLifecycleIds(raw?.propertyLifecycleEvents);
-  return merged;
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value != null && typeof value === "object" && !Array.isArray(value);
 }
 
-function deserializeOverrides(raw) {
-  if (!raw || typeof raw !== "object") return {};
-  const overrides = { ...raw };
-  if ("propertyLifecycleEvents" in overrides) {
-    overrides.propertyLifecycleEvents = regenerateLifecycleIds(raw.propertyLifecycleEvents);
+type ScenarioInputFieldKind =
+  | "number"
+  | "nullableNumber"
+  | "boolean"
+  | "nullableString"
+  | "spendIndex"
+  | "financingKind"
+  | "sleeveWeights"
+  | "lifecycleEvents";
+
+const SCENARIO_INPUT_FIELD_KINDS = {
+  monthlySpend: "number",
+  spendIndex: "spendIndex",
+  sleeveWeights: "sleeveWeights",
+  cashFloor: "number",
+  cashCeiling: "number",
+  cashBandIndexToInflation: "boolean",
+  peLnwFloor: "number",
+  peIndexFloorToInflation: "boolean",
+  monthlyRent: "number",
+  rentalLocationId: "nullableString",
+  propertyId: "nullableString",
+  livesHere: "boolean",
+  financingKind: "financingKind",
+  downPaymentPct: "number",
+  mortgageTermMonths: "number",
+  annualRatePct: "number",
+  annualInsurancePct: "number",
+  annualMaintenancePct: "number",
+  rentalFullPropertyMonthly: "nullableNumber",
+  rentalFractionRentedPct: "number",
+  rentalVacancyPct: "number",
+  useRentalManagement: "boolean",
+  managementFeePct: "number",
+  leasingFeeMonths: "number",
+  avgTenancyMonths: "number",
+  propertyLifecycleEvents: "lifecycleEvents",
+} satisfies Record<keyof ProductInput, ScenarioInputFieldKind>;
+
+const SCENARIO_SPEND_INDEXES = ["none", "inflation"] as const satisfies readonly ProductScenario["spendIndex"][];
+const SCENARIO_FINANCING_KINDS = ["cash", "mortgage"] as const satisfies readonly ProductPropertyFinancing["kind"][];
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function isPositiveInteger(value: unknown): value is number {
+  return isFiniteNumber(value) && Number.isInteger(value) && value > 0;
+}
+
+function parseLifecycleEvent(value: unknown): LifecycleInputEvent | null {
+  if (!isRecord(value) || !isPositiveInteger(value.month)) return null;
+  const month = value.month;
+  switch (value.kind) {
+    case "set_rented_fraction":
+      return isFiniteNumber(value.rentedFractionPct)
+        ? { _id: nextLifecycleEventId(), kind: value.kind, month, rentedFractionPct: value.rentedFractionPct }
+        : null;
+    case "set_primary_residence":
+      return typeof value.livesHere === "boolean"
+        ? { _id: nextLifecycleEventId(), kind: value.kind, month, livesHere: value.livesHere }
+        : null;
+    case "capital_improvement":
+      return isFiniteNumber(value.amount)
+        ? { _id: nextLifecycleEventId(), kind: value.kind, month, amount: value.amount }
+        : null;
+    case "property_sale":
+      return isFiniteNumber(value.closingCostPct)
+        ? { _id: nextLifecycleEventId(), kind: value.kind, month, closingCostPct: value.closingCostPct }
+        : null;
+    default:
+      return null;
   }
-  return overrides;
+}
+
+function parseLifecycleEvents(value: unknown): LifecycleInputEvent[] | null {
+  if (!Array.isArray(value)) return null;
+  const events: LifecycleInputEvent[] = [];
+  for (const rawEvent of value) {
+    const event = parseLifecycleEvent(rawEvent);
+    if (event == null) return null;
+    events.push(event);
+  }
+  return events;
+}
+
+function isSleeveWeight(value: unknown): value is ProductSleeveWeight {
+  if (!isRecord(value) || !isFiniteNumber(value.weight) || !Number.isInteger(value.weight) || value.weight < 0) {
+    return false;
+  }
+  if (value.kind === "security") return typeof value.symbol === "string";
+  if (value.kind === "managed_portfolio") return typeof value.portfolioId === "string";
+  return false;
+}
+
+function isScenarioInputFieldValue(kind: Exclude<ScenarioInputFieldKind, "lifecycleEvents">, value: unknown): boolean {
+  switch (kind) {
+    case "number":
+      return isFiniteNumber(value);
+    case "nullableNumber":
+      return value == null || isFiniteNumber(value);
+    case "boolean":
+      return typeof value === "boolean";
+    case "nullableString":
+      return value == null || typeof value === "string";
+    case "spendIndex":
+      return SCENARIO_SPEND_INDEXES.some((option) => option === value);
+    case "financingKind":
+      return SCENARIO_FINANCING_KINDS.some((option) => option === value);
+    case "sleeveWeights":
+      return value == null || (Array.isArray(value) && value.every(isSleeveWeight));
+  }
+}
+
+function parseScenarioInputFields(raw: Record<string, unknown>): Partial<ProductInput> | null {
+  const parsed: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (!Object.prototype.hasOwnProperty.call(SCENARIO_INPUT_FIELD_KINDS, key)) return null;
+    const kind = SCENARIO_INPUT_FIELD_KINDS[key as keyof typeof SCENARIO_INPUT_FIELD_KINDS];
+    if (kind === "lifecycleEvents") {
+      const events = parseLifecycleEvents(value);
+      if (events == null) return null;
+      parsed[key] = events;
+    } else {
+      if (!isScenarioInputFieldValue(kind, value)) return null;
+      parsed[key] = value;
+    }
+  }
+  // The field-kind table covers every current input key, and each value has passed its matching
+  // runtime check above.
+  return parsed as Partial<ProductInput>;
+}
+
+function deserializeBaseInput(raw: unknown, defaults: ProductInput): ProductInput | null {
+  const rawInput = raw == null ? {} : isRecord(raw) ? parseScenarioInputFields(raw) : null;
+  if (rawInput == null) return null;
+  return { ...defaults, ...rawInput };
+}
+
+function deserializeOverrides(raw: unknown): Partial<ProductInput> | null {
+  if (raw == null) return {};
+  if (!isRecord(raw)) return null;
+  return parseScenarioInputFields(raw);
 }
 
 // Bump when the `?scenarios=` payload shape changes; an unrecognized version falls back to a
@@ -474,8 +679,8 @@ function deserializeOverrides(raw) {
 // with each sleeve weight naming its kind.
 const SCENARIO_SET_VERSION = 3;
 
-function decodeScenarioSet(packed, bootstrap) {
-  let payload;
+function decodeScenarioSet(packed: string, bootstrap: Bootstrap): ScenarioSet | null {
+  let payload: unknown;
   try {
     payload = JSON.parse(packed);
   } catch (error) {
@@ -483,26 +688,33 @@ function decodeScenarioSet(packed, bootstrap) {
     if (error instanceof SyntaxError) return null;
     throw error;
   }
-  if (payload?.v !== SCENARIO_SET_VERSION || !payload.base) return null;
+  if (!isRecord(payload) || payload.v !== SCENARIO_SET_VERSION || !isRecord(payload.base)) return null;
   const defaults = productInputDefaults(bootstrap);
+  const input = deserializeBaseInput(payload.base.input, defaults);
+  if (input == null) return null;
   const base = {
     label: typeof payload.base.label === "string" && payload.base.label !== "" ? payload.base.label : "Base",
-    input: deserializeBaseInput(payload.base.input, defaults),
+    input,
   };
-  const variants = (Array.isArray(payload.variants) ? payload.variants : [])
-    .slice(0, MAX_VARIANTS)
-    .map((raw, index) =>
+  const rawVariants: unknown[] = Array.isArray(payload.variants) ? payload.variants : [];
+  const variants: ScenarioVariant[] = [];
+  for (const [index, raw] of rawVariants.slice(0, MAX_VARIANTS).entries()) {
+    const variant = isRecord(raw) ? raw : {};
+    const overrides = deserializeOverrides(variant.overrides);
+    if (overrides == null) return null;
+    variants.push(
       makeVariant(
-        typeof raw?.label === "string" && raw.label !== "" ? raw.label : defaultVariantLabel(index),
-        deserializeOverrides(raw?.overrides)
+        typeof variant.label === "string" && variant.label !== "" ? variant.label : defaultVariantLabel(index),
+        overrides
       )
     );
+  }
   return { base, variants, activeId: "base" };
 }
 
 // Encode the set to a single `?scenarios=` JSON param (`v: 3`): the Base full input plus per-variant
 // override diffs. A lone Base (variants: []) uses the same form — one URL format for every set.
-export function scenarioSetToSearch(base, variants) {
+export function scenarioSetToSearch(base: ScenarioSet["base"], variants: ScenarioVariant[]) {
   const payload = {
     v: SCENARIO_SET_VERSION,
     base: { label: base.label, input: stripLifecycleIds(base.input) },
@@ -513,7 +725,7 @@ export function scenarioSetToSearch(base, variants) {
   return params.toString();
 }
 
-export function scenarioSetFromSearch(searchString, bootstrap) {
+export function scenarioSetFromSearch(searchString: string, bootstrap: Bootstrap): ScenarioSet {
   const packed = new URLSearchParams(searchString).get("scenarios");
   if (packed != null) {
     const decoded = decodeScenarioSet(packed, bootstrap);

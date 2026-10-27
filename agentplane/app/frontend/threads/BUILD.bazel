@@ -214,12 +214,26 @@ ts_library(
 )
 
 ts_library(
-    name = "projected_session_view",
-    srcs = ["projected_session_view.tsx"],
+    name = "composer",
+    srcs = ["composer.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/app/frontend:icons",
+    ],
+)
+
+ts_library(
+    name = "conversation",
+    srcs = ["conversation.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":chronological_debug",
+        ":composer",
         ":history_rows",
+        ":live",
         ":retained_disclosures",
         ":thread_cards",
         ":thread_commands",
@@ -247,13 +261,16 @@ ts_library(
 )
 
 ts_library(
-    name = "projected_session",
-    srcs = ["projected_session.tsx"],
+    name = "page",
+    srcs = ["page.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":chronological_debug",
-        ":projected_session_css",
-        ":projected_session_view",
+        ":composer",
+        ":conversation",
+        ":conversation_css",
+        ":live",
+        ":page_css",
         ":thread_notices",
         ":thread_status",
         ":thread_status_indicator",
@@ -269,23 +286,30 @@ ts_library(
         "//agentplane/app/frontend:tab_metadata",
         "//agentplane/app/frontend:topbar",
         "//agentplane/app/frontend:tracing",
+        "//agentplane/app/frontend/sandboxes:live",
     ],
 )
 
-# projected_session.tsx imports this stylesheet for the bundler.
+# page.tsx imports these stylesheets for the bundler.
 js_library(
-    name = "projected_session_css",
-    srcs = ["projected_session.css"],
+    name = "page_css",
+    srcs = ["page.css"],
+)
+
+js_library(
+    name = "conversation_css",
+    srcs = ["conversation.css"],
 )
 
 agentplane_vitest_test(
-    name = "projected_session_test",
-    srcs = ["projected_session.test.tsx"],
+    name = "page_test",
+    srcs = ["page.test.tsx"],
     deps = [
         ":history_row_views",
         ":history_rows",
+        ":live",
         ":local_commands",
-        ":projected_session",
+        ":page",
         ":retained_disclosures",
         ":thread_entity_fixture",
         ":thread_state_fixture",
@@ -305,6 +329,7 @@ agentplane_vitest_test(
         "//agentplane/app/frontend:test_model_catalog",
         "//agentplane/app/frontend:topbar",
         "//agentplane/app/frontend:watch_fixture",
+        "//agentplane/app/frontend/sandboxes:live",
         "//agentplane/proto:command_pb",
         "//agentplane/proto:event_log_pb",
         "//agentplane/proto:event_pb",
@@ -337,8 +362,8 @@ agentplane_vitest_test(
 
 # The shell tool calls of both harnesses, parsed into one shape for the thread to draw.
 ts_library(
-    name = "command_calls",
-    srcs = ["command_calls.ts"],
+    name = "shell_calls",
+    srcs = ["shell_calls.ts"],
     tsconfig = TSCONFIG,
     deps = [
         "//:node_modules/zod",
@@ -347,10 +372,10 @@ ts_library(
 )
 
 agentplane_vitest_test(
-    name = "command_calls_test",
-    srcs = ["command_calls.test.ts"],
+    name = "shell_calls_test",
+    srcs = ["shell_calls.test.ts"],
     deps = [
-        ":command_calls",
+        ":shell_calls",
         "//:node_modules/vitest",
     ],
 )
@@ -372,10 +397,10 @@ ts_library(
     srcs = ["thread_cards.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":command_calls",
         ":command_progress",
         ":history_rows",
         ":retained_disclosures",
+        ":shell_calls",
         ":step_line",
         ":thread_evidence",
         ":thread_sync",
@@ -383,10 +408,10 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend:clamped_block",
-        "//agentplane/app/frontend:command_view",
         "//agentplane/app/frontend:disclosure",
         "//agentplane/app/frontend:json_view",
         "//agentplane/app/frontend:raw_switch",
+        "//agentplane/app/frontend:shell_command_view",
         "//agentplane/proto:event_pb",
         "//util/frontend:code_block",
         "//util/frontend:markdown",
@@ -518,8 +543,8 @@ ts_library(
 )
 
 ts_library(
-    name = "thread_store",
-    srcs = ["thread_store.tsx"],
+    name = "electric_sync",
+    srcs = ["electric_sync.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":thread_sync",
@@ -533,10 +558,10 @@ ts_library(
 )
 
 agentplane_vitest_test(
-    name = "thread_store_test",
-    srcs = ["thread_store.test.tsx"],
+    name = "electric_sync_test",
+    srcs = ["electric_sync.test.tsx"],
     deps = [
-        ":thread_store",
+        ":electric_sync",
         ":thread_sync",
         "//:node_modules/@electric-sql/client",
         "//:node_modules/@types/react",
@@ -681,6 +706,7 @@ ts_library(
     ],
     tsconfig = TSCONFIG,
     deps = [
+        ":live",
         ":thread_groups",
         ":thread_list_css",
         ":thread_notices",
@@ -705,6 +731,7 @@ agentplane_vitest_test(
     srcs = ["home.test.tsx"],
     deps = [
         ":home",
+        ":live",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
@@ -745,6 +772,20 @@ ts_library(
         "//agentplane/app/frontend:format_time",
         "//agentplane/app/frontend:live_stream",
         "//agentplane/app/frontend:notification_types",
+    ],
+)
+
+ts_library(
+    name = "live",
+    srcs = ["live.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/react-router",
+        "//agentplane/app/frontend:live",
+        "//agentplane/app/frontend:live_schemas_generated",
+        "//agentplane/app/frontend:schema",
     ],
 )
 

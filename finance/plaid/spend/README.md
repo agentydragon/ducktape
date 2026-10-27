@@ -204,6 +204,13 @@ wallets and current USD spot quotes, including held quantities, not external wal
 The backend signs view-only GET requests in memory, caches ready valuations for 60 seconds, and retries unavailable
 reads on the next request.
 
+Read-only analysis clients can reuse `plaid_valuation.value_plaid_rows` without importing the database or Coinbase
+clients. The `portfolio_queries` SQLAlchemy Select builders select current active account balances and each account's latest complete holding capture
+batch, with security metadata for allocation details. Convert transport timestamps to timezone-aware `datetime`
+objects and pass holdings for the configured correction/exclusion accounts. The result contains the source status,
+gross assets, signed liabilities and exclusions in USD cents; an unavailable source's zero totals must not be used.
+`corrected_holding_value` applies the same exact-position policy corrections to allocation detail rows.
+
 Every historical spending point uses **today's** eligible portfolio; historical asset values are not reconstructed.
 Partial windows annualize only their contiguous covered days and are labeled. Inferred transaction boundaries are
 not proof of complete linked spending. Asset

@@ -37,7 +37,6 @@ from agentplane.app.threads.runner_directory import RunnerDirectory
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
-from agentplane.app.upstream_proxy import UpstreamProxy
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.grpc.calls import dial
 from agentplane.history_service.client import HistoryServiceClient
@@ -97,9 +96,6 @@ def _openapi_document(api_client: k8s_client.ApiClient, channel: grpc.aio.Channe
         content=content,
         database_updates=database_updates,
         operator_sessions=OperatorSessionStore(engine),
-        dispatcher_http=UpstreamProxy(
-            httpx.AsyncClient(base_url="http://schema.invalid"), Path("/schema-unused-token")
-        ),
         notifications=NotificationsOperatorClient(
             channel, token_file=Path("/schema-unused-token"), request_timeout_s=1
         ),

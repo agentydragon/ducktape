@@ -45,7 +45,9 @@ import type { BindingView, Decision, DispatchReceipt, PolicySetView, SandboxView
 import { ACTION_RENDERERS } from "../actions/rendering/index";
 import type { ActionGroupView, ActionPolicyView, ActionRequestView } from "../actions/client";
 import type { McpLinkageView } from "../mcp_linkage_client";
-import type { DecisionsSnapshot, SandboxesSnapshot, SandboxSnapshot, ThreadsSnapshot, WatchHealth } from "../live";
+import type { DecisionsSnapshot, SandboxesSnapshot, SandboxSnapshot } from "../sandboxes/live";
+import type { ThreadsSnapshot } from "../threads/live";
+import type { WatchHealth } from "../live";
 import type {
   GitHubSubject,
   InboxNoticeState,
@@ -1719,7 +1721,7 @@ function statesRows(threadId: string, outcomes = false): Record<string, unknown>
       outcomes ? "Target turn already ended" : null
     ),
     // Admitted and still pending, so it renders inline as a pending message bubble rather than in
-    // the pending-commands box below -- see projected_session_view.tsx's pendingSentMessage.
+    // the pending-commands box below -- see conversation.tsx's pendingSentMessage.
     command(26, "queued-submit", "submit_input", "pending", null, "Continue past the failing test once it lands."),
     command(
       27,

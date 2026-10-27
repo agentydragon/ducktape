@@ -19,6 +19,7 @@ go_library(
         "//agentplane/history_service/settledcursors",
         "//agentplane/history_service/storage",
         "//agentplane/history_service/threadfold",
+        "//agentplane/postgres/go:postgres",
         "//agentplane/proto:event_go_proto",
         "//agentplane/proto:event_log_go_proto",
         "//agentplane/proto:runner_go_proto",

@@ -112,6 +112,7 @@ py_library(
     name = "dispatcher_client",
     srcs = ["dispatcher_client.py"],
     deps = [
+        "//agentplane/app:grpc_stream",
         "//agentplane/grpc:calls",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2_grpc",
         "@pypi//grpcio",

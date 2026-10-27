@@ -5,7 +5,9 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import type { SandboxView } from "./client";
 import { zDecisionsSnapshot } from "./api/live_schema.zod";
-import { liveSchemas, useLive } from "./live";
+import { useLive } from "./live";
+import { sandboxLiveSchemas, sandboxesLiveSchemas } from "./sandboxes/live";
+import { threadsLiveSchemas } from "./threads/live";
 import { parseJsonFrame } from "./live_stream";
 
 class TestEventSource extends EventTarget {
@@ -68,7 +70,7 @@ afterEach(async () => {
 });
 
 function LiveProbe(): JSX.Element {
-  const live = useLive("/live/sandboxes", "Sandboxes", liveSchemas.sandboxes);
+  const live = useLive("/live/sandboxes", "Sandboxes", sandboxesLiveSchemas);
   return <output>{JSON.stringify(live)}</output>;
 }
 
@@ -86,7 +88,7 @@ function stream(): TestEventSource {
 
 it("accepts producer-shaped generated schemas, nested snapshots, defaults, nulls, and UTC timestamps", () => {
   const sandboxes = parseJsonFrame(
-    liveSchemas.sandboxes.snapshot,
+    sandboxesLiveSchemas.snapshot,
     JSON.stringify({ sandboxes: [sandbox], watch }),
     "Snapshot"
   );
@@ -96,7 +98,7 @@ it("accepts producer-shaped generated schemas, nested snapshots, defaults, nulls
   expect(sandboxes.data.sandboxes[0]?.status).toMatchObject({ conditions: [{ type: "Ready", status: "True" }] });
 
   const threads = parseJsonFrame(
-    liveSchemas.threads.snapshot,
+    threadsLiveSchemas.snapshot,
     JSON.stringify({
       sandboxes: [sandbox],
       watch,
@@ -110,7 +112,7 @@ it("accepts producer-shaped generated schemas, nested snapshots, defaults, nulls
   expect(threads.success).toBe(true);
 
   const sandboxDetail = parseJsonFrame(
-    liveSchemas.sandbox.snapshot,
+    sandboxLiveSchemas.snapshot,
     JSON.stringify({
       sandbox,
       bindings: [],

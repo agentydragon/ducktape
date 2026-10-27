@@ -1,0 +1,83 @@
+load("@rules_oci//oci:defs.bzl", "oci_load")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+
+py_library(
+    name = "driver",
+    testonly = True,
+    srcs = ["driver.py"],
+    deps = [
+        "//third_party/containers:postgres_18",
+        "//util:oci",
+        "//util/bazel:runfiles",
+    ],
+)
+
+py_binary(
+    name = "driver_bin",
+    testonly = True,
+    main_module = "devinfra.debug.oci_loader_benchmark.driver",
+    deps = [":driver"],
+)
+
+oci_load(
+    name = "rules_0",
+    image = "@postgres_18_linux_amd64",
+    repo_tags = ["ducktape-oci-benchmark:rules-0"],
+)
+
+oci_load(
+    name = "rules_1",
+    image = "@postgres_18_linux_amd64",
+    repo_tags = ["ducktape-oci-benchmark:rules-1"],
+)
+
+oci_load(
+    name = "rules_2",
+    image = "@postgres_18_linux_amd64",
+    repo_tags = ["ducktape-oci-benchmark:rules-2"],
+)
+
+sh_test(
+    name = "compare",
+    size = "large",
+    srcs = ["compare.sh"],
+    args = [
+        "$(rootpath :driver_bin)",
+        "$(rootpath :rules_0)",
+        "$(rootpath :rules_1)",
+        "$(rootpath :rules_2)",
+    ],
+    data = [
+        ":driver_bin",
+        ":rules_0",
+        ":rules_1",
+        ":rules_2",
+    ],
+    tags = [
+        "manual",
+        "requires_docker",
+    ],
+)
+
+sh_test(
+    name = "compare_concurrent",
+    size = "large",
+    srcs = ["compare_concurrent.sh"],
+    args = [
+        "$(rootpath :driver_bin)",
+        "$(rootpath :rules_0)",
+        "$(rootpath :rules_1)",
+        "$(rootpath :rules_2)",
+    ],
+    data = [
+        ":driver_bin",
+        ":rules_0",
+        ":rules_1",
+        ":rules_2",
+    ],
+    tags = [
+        "manual",
+        "requires_docker",
+    ],
+)

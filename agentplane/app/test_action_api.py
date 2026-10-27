@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+# Generated service annotations need the grpcio typing dependency.
+# gazelle:include_dep @pypi//grpcio
+# Generated protobuf annotations need the protobuf typing dependency.
+# gazelle:include_dep @pypi//protobuf
 import asyncio
 import logging
 import time
@@ -9,7 +13,7 @@ from collections.abc import AsyncIterator, Callable
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import cast
+from typing import Any, cast
 from urllib.parse import parse_qs
 
 import httpx
@@ -17,14 +21,13 @@ import jwt
 import pytest
 import pytest_bazel
 from fastapi import FastAPI
-from google.protobuf.json_format import MessageToJson
 from pydantic import AnyHttpUrl
 from sqlalchemy import select
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
-from agentplane.action_service import action_service_pb2 as action_pb
+from agentplane.action_service import action_service_pb2, action_service_pb2_grpc
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings
 from agentplane.app.action_federation import FederatedOperatorActions
 from agentplane.app.action_federation_settings import DirectFederationSettings, ExchangeFederationSettings
@@ -34,12 +37,14 @@ from agentplane.app.database import connect
 from agentplane.app.database_updates import create_database_updates
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
+from agentplane.app.grpc_stream import OperatorGrpcClient
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex, SandboxSnapshot
 from agentplane.app.notifications_operator_client import NotificationsOperatorClient
 from agentplane.app.oidc import INSECURE_COOKIE, OIDCSettings
 from agentplane.app.operator_sessions import BrowserSession, OperatorSession, OperatorSessionStore
 from agentplane.app.sandbox_access import SandboxAccess
+from agentplane.app.testing.fake_action_service import ActionCall, FakeActionService
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.model_test_data import TEST_MODELS
 from agentplane.app.testing.system_status import answering_system_status
@@ -47,7 +52,6 @@ from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
-from agentplane.app.upstream_proxy import UpstreamProxy
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.history import History
@@ -73,8 +77,9 @@ class Review:
     app: FastAPI
     # Every refresh token presented to the login provider, in order.
     refreshes: list[str]
-    # Requests sent through the generated Action Service HTTP facade.
-    facade_requests: list[httpx.Request]
+    verification_key: Any
+    audience: str
+    action_calls: list[ActionCall]
 
 
 @pytest.fixture
@@ -110,13 +115,9 @@ async def review(
     history_client: HistoryServiceClient,
     electric_proxy: ElectricProxy,
     notifications: NotificationsOperatorClient,
-    dispatcher_http: UpstreamProxy,
+    action_service: tuple[FakeActionService, action_service_pb2_grpc.ActionServiceStub, OperatorGrpcClient],
 ) -> AsyncIterator[Review]:
-    """Exercise the app's ASGI behavior with an in-process Actions facade.
-
-    This fixture verifies the app's generated ProtoJSON policy/proxy contract. The separate K3s
-    acceptance test exercises the actual Go Action Service and its cross-service authorization.
-    """
+    """Exercise the app's ASGI and gRPC client behavior against an in-process Action Service."""
     async with AsyncExitStack() as stack:
         private_key, public_key = generate_rsa_keypair()
         idp_endpoint = stack.enter_context(bind_http_server())
@@ -128,52 +129,15 @@ async def review(
             audience="test-app" if direct_federation and operator_connection != "wrong-audience" else "test-actions",
             jwks_uri=f"{idp_url}jwks/",
         )
-        facade_requests: list[httpx.Request] = []
-
-        async def action_service_facade(request: httpx.Request) -> httpx.Response:
-            facade_requests.append(request)
-            authorization = request.headers.get("Authorization", "")
-            assert authorization.startswith("Bearer ")
-            claims = jwt.decode(
-                authorization.removeprefix("Bearer "),
-                public_key,
-                algorithms=["RS256"],
-                issuer=target_issuer,
-                audience=target.audience,
-            )
-            assert isinstance(claims["sub"], str)
-            if request.url.path == "/v1/action-policy":
-                response = action_pb.GetActionPolicyResponse()
-                policy = response.action_policy
-                policy.subject.namespace = request.url.params["subject.namespace"]
-                policy.subject.name = request.url.params["subject.name"]
-                policy.synced = True
-                effective = policy.auto_approve_if.add(
-                    binding="live-launch", policy_set="test-reads", source=action_pb.POLICY_SOURCE_RULES, index=0
-                )
-                effective.policy.exact_actions.actions["test_review"].values.append("record")
-                return httpx.Response(
-                    200, content=MessageToJson(response).encode(), headers={"Content-Type": "application/json"}
-                )
-            if request.url.path == "/v1/action-requests":
-                return httpx.Response(
-                    200,
-                    content=MessageToJson(action_pb.ListActionRequestsResponse()).encode(),
-                    headers={"Content-Type": "application/json"},
-                )
-            if request.url.path == "/v1/action-groups":
-                return httpx.Response(
-                    200,
-                    content=MessageToJson(action_pb.ListActionGroupsResponse()).encode(),
-                    headers={"Content-Type": "application/json"},
-                )
-            return httpx.Response(404, json={"code": "not_found"})
-
-        facade_http = await stack.enter_async_context(
-            httpx.AsyncClient(
-                transport=httpx.MockTransport(action_service_facade), base_url="http://test-actions.invalid"
-            )
+        fake_actions, action_stub, operator_grpc = action_service
+        policy = fake_actions.policy.action_policy
+        policy.synced = True
+        policy.subject.namespace = "test-sandboxes"
+        policy.subject.name = "live"
+        effective = policy.auto_approve_if.add(
+            binding="live-launch", policy_set="test-reads", source=action_service_pb2.POLICY_SOURCE_RULES, index=0
         )
+        effective.policy.exact_actions.actions["test_review"].values.append("record")
         exchanged_subjects: list[str] = []
 
         async def exchange(request: Request) -> JSONResponse:
@@ -313,8 +277,8 @@ async def review(
             operator_sessions=operator_sessions,
             electric=electric_proxy,
             notifications=notifications,
-            dispatcher_http=dispatcher_http,
-            actions_http=UpstreamProxy(facade_http, token_file=None),
+            action_service=action_stub,
+            operator_grpc=operator_grpc,
             system_status=answering_system_status(),
         )
         await stack.enter_async_context(idp_endpoint.serve(idp))
@@ -351,8 +315,8 @@ async def review(
             operator_sessions=OperatorSessionStore(replica_engine),
             electric=electric_proxy,
             notifications=notifications,
-            dispatcher_http=dispatcher_http,
-            actions_http=UpstreamProxy(facade_http, token_file=None),
+            action_service=action_stub,
+            operator_grpc=operator_grpc,
             system_status=answering_system_status(),
         )
         second_browser = await stack.enter_async_context(
@@ -364,7 +328,16 @@ async def review(
             )
         )
         yield Review(
-            browser, second_browser, login_as, target_issuer, exchanged_subjects, app, refreshes, facade_requests
+            browser,
+            second_browser,
+            login_as,
+            target_issuer,
+            exchanged_subjects,
+            app,
+            refreshes,
+            public_key,
+            target.audience,
+            fake_actions.calls,
         )
 
 
@@ -385,18 +358,27 @@ async def _first_snapshot(client: httpx.AsyncClient, path: str, headers: dict[st
     raise AssertionError("the stream ended before its first snapshot")
 
 
-def _assert_policy_facade_request(review: Review, subject: ServiceAccountRef) -> None:
-    requests = [request for request in review.facade_requests if request.url.path == "/v1/action-policy"]
+def _assert_policy_grpc_call(review: Review, subject: ServiceAccountRef) -> None:
     matching = [
-        request
-        for request in requests
-        if request.url.params["subject.namespace"] == subject.namespace
-        and request.url.params["subject.name"] == subject.name
+        call
+        for call in review.action_calls
+        if call.method == "GetActionPolicy"
+        and isinstance(call.request, action_service_pb2.GetActionPolicyRequest)
+        and call.request.subject.namespace == subject.namespace
+        and call.request.subject.name == subject.name
     ]
     assert len(matching) == 1
-    request = matching[0]
-    assert request.method == "GET"
-    assert request.headers.get("Authorization", "").startswith("Bearer ")
+    call = matching[0]
+    assert call.bearer_token is not None
+    assert call.bearer_token.startswith("Bearer ")
+    claims = jwt.decode(
+        call.bearer_token.removeprefix("Bearer "),
+        review.verification_key,
+        algorithms=["RS256"],
+        issuer=review.issuer,
+        audience=review.audience,
+    )
+    assert isinstance(claims["sub"], str)
 
 
 @pytest.mark.parametrize("operator_connection", ["configured", "disabled"])
@@ -429,7 +411,7 @@ async def test_the_sandbox_policy_frame_is_the_services_answer_for_its_account_o
         assert isinstance(view, ActionPolicyView)
         assert view.synced is True
         assert [(p.binding, p.policy_set, p.index) for p in view.auto_approve_if] == [("live-launch", "test-reads", 0)]
-        _assert_policy_facade_request(review, ServiceAccountRef(namespace=namespace.name, name="live"))
+        _assert_policy_grpc_call(review, ServiceAccountRef(namespace=namespace.name, name="live"))
     assert as_agent.action_policy == ActionPolicyUnavailable(code="operator_session_required")
 
 
@@ -458,12 +440,12 @@ async def test_caller_grants_without_a_sandbox(
     else:
         assert isinstance(view.action_policy, ActionPolicyView)
         assert [policy.binding for policy in view.action_policy.auto_approve_if] == ["live-launch"]
-        _assert_policy_facade_request(review, namespace.account("live"))
+        _assert_policy_grpc_call(review, namespace.account("live"))
     other = await review.browser.get("/caller-grants/other-namespace/live")
     other.raise_for_status()
     assert [binding["name"] for binding in other.json()["bindings"]] == ["unrelated"]
     if operator_connection == "configured":
-        _assert_policy_facade_request(review, ServiceAccountRef(namespace="other-namespace", name="live"))
+        _assert_policy_grpc_call(review, ServiceAccountRef(namespace="other-namespace", name="live"))
 
 
 async def test_caller_grants_require_an_operator_session(
@@ -473,6 +455,44 @@ async def test_caller_grants_require_an_operator_session(
         path = f"/caller-grants/{namespace.name}/live"
         assert (await client.get(path)).status_code == 401
         assert (await client.get(path, headers=agent_auth)).status_code == 403
+
+
+async def test_action_bff_builds_rpc_requests_and_rejects_invalid_proto_json(review: Review) -> None:
+    await review.browser.get("/auth/login")
+
+    listed = await review.browser.get(
+        "/upstream/actions/v1/action-requests",
+        params=[
+            ("state", "ACTION_STATE_DECISION_PENDING"),
+            ("state", "ACTION_STATE_ALLOWED"),
+            ("idempotencyKey", "recover-key"),
+            ("limit", "3"),
+            ("afterId", "last-id"),
+        ],
+    )
+    assert listed.status_code == 200, listed.text
+    call = next(call for call in review.action_calls if call.method == "ListActionRequests")
+    assert isinstance(call.request, action_service_pb2.ListActionRequestsRequest)
+    assert list(call.request.state) == [
+        action_service_pb2.ACTION_STATE_DECISION_PENDING,
+        action_service_pb2.ACTION_STATE_ALLOWED,
+    ]
+    assert call.request.idempotency_key == "recover-key"
+    assert call.request.limit == 3
+    assert call.request.after_id == "last-id"
+    assert call.bearer_token is not None
+    assert call.bearer_token.startswith("Bearer ")
+
+    invalid_state = await review.browser.get(
+        "/upstream/actions/v1/action-requests", params={"state": "ACTION_STATE_UNKNOWN"}
+    )
+    assert invalid_state.status_code == 400
+
+    decision = "/upstream/actions/v1/operator/action-requests/test-id/decision"
+    for body in (b"{", b'{"unknownField":"value"}'):
+        malformed = await review.browser.post(decision, content=body, headers={"content-type": "application/json"})
+        assert malformed.status_code == 400
+        assert malformed.json()["detail"]["code"] == "INVALID_ARGUMENT"
 
 
 @pytest.mark.parametrize(

@@ -39,7 +39,6 @@ from agentplane.app.threads.history_watch import SessionOpenings
 from agentplane.app.threads.runner_directory import RunnerDirectory
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
-from agentplane.app.upstream_proxy import UpstreamProxy
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.postgres.wakeups import WakeupListener
@@ -278,7 +277,6 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_session_open
     namespace: SandboxNamespace,
     agent_auth: dict[str, str],
     notifications: NotificationsOperatorClient,
-    dispatcher_http: UpstreamProxy,
     history_client: HistoryServiceClient,
     dispatcher: SessionDispatcherClient,
     bound_listener: Listener,
@@ -304,7 +302,6 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_session_open
         operator_sessions=operator_sessions,
         electric=None,
         notifications=notifications,
-        dispatcher_http=dispatcher_http,
         system_status=answering_system_status(),
     )
     # A budget the test would never wait out: the stream has to end because of the drain, not this.

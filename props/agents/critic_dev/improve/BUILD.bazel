@@ -48,6 +48,7 @@ py_test(
         "//agent_core/testing:responses",
         "//mcp_infra/testing:matchers",
         "//props:conftest",
+        "//props/agents:conftest",
         "//props/agents/critic_dev/testing:mocks",
         "//props/db:database",
         "//props/db:models",

@@ -29,7 +29,7 @@ export function pruneCommandErrors<T>(errors: Map<string, T>, commandIds: Readon
   return new Map(Array.from(errors).filter(([id]) => commandIds.has(id)));
 }
 
-interface ProjectedCommands {
+interface ThreadCommands {
   local: LocalCommandSnapshot;
   errors: ReadonlyMap<string, CommandIssue>;
   submissionError: string | null;
@@ -41,7 +41,7 @@ interface ProjectedCommands {
   store: LocalCommands;
 }
 
-export function useProjectedCommands(threadId: string, entities: ThreadEntity[]): ProjectedCommands {
+export function useThreadCommands(threadId: string, entities: ThreadEntity[]): ThreadCommands {
   const store = useMemo(() => new LocalCommands(threadId), [threadId]);
   const local = useSyncExternalStore(store.subscribe, store.getSnapshot, () => EMPTY_LOCAL);
   const [errors, setErrors] = useState(new Map<string, CommandIssue>());

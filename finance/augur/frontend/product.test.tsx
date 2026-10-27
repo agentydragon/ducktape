@@ -4,7 +4,7 @@ import React, { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-import { scenarioSetToSearch } from "./input_helpers";
+import { productInputDefaults, scenarioSetToSearch } from "./input_helpers";
 import { ProductProjectionWorkspace } from "./product";
 
 const client = vi.hoisted(() => ({ portfolio: vi.fn(), projection: vi.fn(), rollout: vi.fn(), toast: vi.fn() }));
@@ -122,11 +122,21 @@ function detail(seed: number, value: string) {
 const requests: Array<ReturnType<typeof deferred<ReturnType<typeof detail>>> & { seed: number; signal: AbortSignal }> =
   [];
 const roots: Array<ReturnType<typeof createRoot>> = [];
+const bootstrap = {
+  locations: [],
+  properties: [],
+  models: ["example-model"],
+  defaultModelId: "example-model",
+  productInputDefaults: {},
+  maxRolloutSamples: 100,
+  maxHorizonMonths: 120,
+};
 
 async function mount() {
-  const search = scenarioSetToSearch({ label: "Base", input: { monthlySpend: 1000 } }, [
-    { label: "Variant", overrides: { monthlySpend: 1500 } },
-  ]);
+  const search = scenarioSetToSearch(
+    { label: "Base", input: { ...productInputDefaults(bootstrap), monthlySpend: 1000 } },
+    [{ id: "test-variant", label: "Variant", overrides: { monthlySpend: 1500 } }]
+  );
   window.history.replaceState(null, "", `/?${search}`);
   const container = document.createElement("div");
   document.body.append(container);
@@ -135,7 +145,7 @@ async function mount() {
   await act(async () => {
     root.render(
       <ProductProjectionWorkspace
-        bootstrap={{ locations: [], models: ["example-model"], maxRolloutSamples: 100, maxHorizonMonths: 120 }}
+        bootstrap={bootstrap}
         deployment={null}
         tab="product"
         onSelectTab={vi.fn()}

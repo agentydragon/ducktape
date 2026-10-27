@@ -77,7 +77,7 @@ how to regenerate: `cluster/AGENTS.md` § Generated manifests.
   undeclared variables.
 - **What the generator knows, it renders** as a Python constant. Flux `postBuild`
   substitution is only for values only the cluster has: it costs a Kustomization plus a
-  `dependsOn` edge per consumer, and the committed manifests and `render_diff.py` see only
+  `dependsOn` edge per consumer, and the committed manifests see only
   `${VAR}`.
 - **Cluster-wide behavior is configured once where it runs; objects carry only
   exceptions.** Reloader runs `autoReloadAll`, ignores Jobs/CronJobs (`reloader.py`), and
@@ -228,12 +228,6 @@ helper, class or indirection.
   `haku/` never read `cluster/` or synthesize a cluster chart.
 - **Construct tests use synthetic props** (`Chart(Testing.app(), ...)`, pattern:
   `test_fleet_rules.py`); invariants use real environments.
-- **Render identity across a conversion**: `render_diff.py` reconciles the whole Flux
-  graph at two revisions (sources, ArtifactGenerator copies, `kustomize build`, before
-  `postBuild`) and exits 1 on any object difference:
-  `bb run //cluster/cdk8s:render_diff_bin -- origin/devel HEAD --repo "$PWD"` (devshell;
-  cache `~/.cache/render-diff`, `--cache-dir` to move). Its docstring lists the Flux
-  semantics it reproduces.
 
 ## Adding a fleet rule
 

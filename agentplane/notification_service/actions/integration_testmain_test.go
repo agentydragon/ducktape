@@ -1,11 +1,8 @@
 package actions
 
 import (
-	"context"
-	"fmt"
 	"os"
 	"testing"
-	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/migrations"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
@@ -15,25 +12,11 @@ import (
 var database *postgres.Database
 
 func TestMain(m *testing.M) {
-	os.Exit(runIntegrationTests(m))
-}
-
-func runIntegrationTests(m *testing.M) int {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-	started, err := postgres.Start(ctx, migrations.Up)
-	cancel()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	database = started
-
-	code := m.Run()
-	if err := database.Close(); err != nil {
-		fmt.Fprintln(os.Stderr, "close PostgreSQL fixture:", err)
-		if code == 0 {
-			code = 1
-		}
-	}
-	return code
+	os.Exit(postgres.RunIntegrationTests(
+		migrations.Up,
+		func(fixtureDatabase *postgres.Database) int {
+			database = fixtureDatabase
+			return m.Run()
+		},
+	))
 }

@@ -1,0 +1,52 @@
+exec ${PAGER:-/usr/bin/less} "$0" || exit 1
+Executing tests from //devinfra/debug/oci_loader_benchmark:compare
+-----------------------------------------------------------------------------
+DRIVER=overlay2 ROOT=/var/lib/docker SERVER=28.1.0
+TMPDIR= TEST_TMPDIR=/workspace/_tmp/7b00ef401257a97257fb5f26b09367e4 DOCKER_HOST=
+CASE python startup control
+elapsed=1.149 user=0.524 system=0.497
+CASE 0 python cold-tag
+elapsed=28.427 user=0.506 system=5.163
+CASE 0 rules cold-tag
+Loaded image: ducktape-oci-benchmark:rules-0
+elapsed=0.755 user=0.179 system=0.844
+CASE 0 python warm
+elapsed=0.121 user=0.104 system=0.026
+CASE 0 rules warm
+Loaded image: ducktape-oci-benchmark:rules-0
+elapsed=0.585 user=0.112 system=0.628
+CASE 0 guarded_rules warm-tag-missing-marker
+Loaded image: ducktape-oci-benchmark:rules-0
+elapsed=0.632 user=0.235 system=0.567
+CASE 0 guarded_rules second-warm
+elapsed=0.117 user=0.091 system=0.038
+CASE 1 rules cold-tag
+Loaded image: ducktape-oci-benchmark:rules-1
+elapsed=0.663 user=0.203 system=0.642
+CASE 1 python cold-tag
+elapsed=0.939 user=0.303 system=0.725
+CASE 1 python warm
+elapsed=0.142 user=0.100 system=0.029
+CASE 1 rules warm
+Loaded image: ducktape-oci-benchmark:rules-1
+elapsed=0.668 user=0.178 system=0.621
+CASE 1 guarded_rules warm-tag-missing-marker
+Loaded image: ducktape-oci-benchmark:rules-1
+elapsed=0.690 user=0.292 system=0.541
+CASE 1 guarded_rules second-warm
+elapsed=0.122 user=0.078 system=0.052
+CASE 2 python cold-tag
+elapsed=0.822 user=0.226 system=0.745
+CASE 2 rules cold-tag
+Loaded image: ducktape-oci-benchmark:rules-2
+elapsed=1.086 user=0.168 system=0.969
+CASE 2 python warm
+elapsed=0.136 user=0.113 system=0.034
+CASE 2 rules warm
+Loaded image: ducktape-oci-benchmark:rules-2
+elapsed=0.595 user=0.139 system=0.576
+CASE 2 guarded_rules warm-tag-missing-marker
+Loaded image: ducktape-oci-benchmark:rules-2
+elapsed=0.826 user=0.243 system=0.767
+CASE 2 guarded_rules second-warm
+elapsed=0.111 user=0.098 system=0.024

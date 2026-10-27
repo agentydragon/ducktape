@@ -25,12 +25,15 @@ def _mypy_grpc_stub_impl(ctx):
     # it drives; abstract ones would force a hand-written all-UNIMPLEMENTED base per service.
     # External imports (googleapis' `google/api/annotations.proto`) resolve under their own source root.
     import_roots = ["-I" + root for root in proto_info.transitive_proto_path.to_list() if root != "."]
+    parameters = ["generate_concrete_servicer_stubs"]
+    if ctx.attr.async_only:
+        parameters.append("only_async")
     ctx.actions.run(
         executable = ctx.executable._protoc,
         arguments = [
             "-I.",
             "--plugin=protoc-gen-mypy_grpc={}".format(ctx.executable._mypy_grpc_plugin.path),
-            "--mypy_grpc_out=generate_concrete_servicer_stubs:{}".format(ctx.bin_dir.path),
+            "--mypy_grpc_out={}:{}".format(",".join(parameters), ctx.bin_dir.path),
         ] + import_roots + [sources[0].path],
         inputs = proto_info.transitive_sources,
         tools = [ctx.executable._mypy_grpc_plugin],
@@ -43,6 +46,7 @@ def _mypy_grpc_stub_impl(ctx):
 _mypy_grpc_stub = rule(
     implementation = _mypy_grpc_stub_impl,
     attrs = {
+        "async_only": attr.bool(),
         "module_name": attr.string(mandatory = True),
         "proto": attr.label(mandatory = True, providers = [ProtoInfo]),
         "_mypy_grpc_plugin": attr.label(default = Label(_MYPY_GRPC_PLUGIN), executable = True, cfg = "exec"),
@@ -62,11 +66,12 @@ _message_stubs = rule(
     attrs = {"py_proto": attr.label(mandatory = True, providers = [PyInfo])},
 )
 
-def py_grpc_service_library(name, proto, py_proto, visibility = None):
+def py_grpc_service_library(name, proto, py_proto, visibility = None, async_only = False):
     """A typed `<name>` gRPC service library over a standard `py_proto_library`.
 
     `proto` is a standard `proto_library`, whose `ProtoInfo` supplies the complete import closure;
     callers never repeat imported sources. `py_proto` owns the corresponding message modules.
+    `async_only` types stubs and servicers for grpc.aio channels/servers without sync overloads.
     """
     py_grpc_library(
         name = name + "_service",
@@ -82,6 +87,7 @@ def py_grpc_service_library(name, proto, py_proto, visibility = None):
     )
     _mypy_grpc_stub(
         name = name + "_stub",
+        async_only = async_only,
         module_name = name,
         proto = proto,
         visibility = ["//visibility:private"],

@@ -1,0 +1,6 @@
+2026-10-27 20:39:14,850 util.oci Loading testcontainers/ryuk:0.14.0 (sha256:f0456560ea5b) into the Docker daemon (pid 520)
+2026-10-27 20:39:15,930 util.oci Loaded testcontainers/ryuk:0.14.0 in 1.1s
+2026-10-27 20:39:15,934 util.oci Loading postgres:18 (sha256:7341002d2b8c) into the Docker daemon (pid 520)
+2026-10-27 20:39:41,660 util.oci Loaded postgres:18 in 25.7s
+2026-10-27 20:39:41,846 util.testing.postgres_fixtures Starting postgres:18
+2026-10-27 20:39:47,820 util.testing.postgres_fixtures Postgres ready in 6.0s

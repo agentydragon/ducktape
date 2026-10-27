@@ -1851,6 +1851,14 @@ fn namespace_factory_keeps_unknown_binding_conservative() {
 }
 
 #[test]
+fn namespace_factory_keeps_unknown_optional_call_conservative() {
+    assert_namespace_factory_publication_rejected(
+        "const alias = globalThis.untrusted?.();\n\
+         globalThis.exposed = alias;\n",
+    );
+}
+
+#[test]
 fn namespace_factory_keeps_array_destructuring_conservative() {
     assert_namespace_factory_publication_rejected(
         "const [alias] = [api];\n\

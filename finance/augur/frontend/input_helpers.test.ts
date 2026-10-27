@@ -13,13 +13,22 @@ import {
   productScenario,
   resolveSleeveWeights,
   MAX_VARIANTS,
+  METRIC_OPTIONS,
 } from "./input_helpers";
 
 // `productInputDefaults` only reads `productInputDefaults` (deployment overrides) and
 // `locations[0]?.id`; an empty bootstrap exercises the pure hard-coded defaults.
-const bootstrap = { productInputDefaults: {}, locations: [] };
+const bootstrap: Parameters<typeof productInputDefaults>[0] = {
+  maxRolloutSamples: 500,
+  maxHorizonMonths: 240,
+  productInputDefaults: {},
+  models: ["test-model"],
+  defaultModelId: "test-model",
+  locations: [],
+};
+type ProductInput = ReturnType<typeof productInputDefaults>;
 
-function baseWith(overrides, label = "Base") {
+function baseWith(overrides: Partial<ProductInput>, label = "Base") {
   return { label, input: { ...productInputDefaults(bootstrap), ...overrides } };
 }
 
@@ -27,7 +36,7 @@ test("the combined projection builder carries distinct fan and terminal percenti
   const request = productProjectionSummaryRequest(
     productInputDefaults(bootstrap),
     { ...bootstrap, maxRolloutSamples: 100 },
-    { value: "cash" },
+    METRIC_OPTIONS.find((metric) => metric.value === "cash")!,
     { rolloutCount: 20, firstSeed: 7, model: "test-model", horizonMonths: 12, sellable: [] },
     [5, 50, 95],
     [0, 1, 50, 99, 100]
@@ -100,7 +109,7 @@ test("a variant's lifecycle-event override survives a round-trip with regenerate
     propertyLifecycleEvents: [{ _id: "lc-orig", kind: "property_sale", month: 120, closingCostPct: 6 }],
   });
   const decoded = scenarioSetFromSearch(scenarioSetToSearch(baseWith({}), [variant]), bootstrap);
-  const events = decoded.variants[0].overrides.propertyLifecycleEvents;
+  const events = decoded.variants[0].overrides.propertyLifecycleEvents ?? [];
   expect(events).toHaveLength(1);
   expect(events[0]).toMatchObject({ kind: "property_sale", month: 120, closingCostPct: 6 });
   expect(events[0]._id).not.toBe("lc-orig");
@@ -120,6 +129,46 @@ test("a malformed ?scenarios= blob falls back to a base with no variants", () =>
   expect(decoded.base.input.monthlySpend).toBe(productInputDefaults(bootstrap).monthlySpend);
 });
 
+test("a malformed nested lifecycle value rejects the scenario set", () => {
+  const params = new URLSearchParams();
+  params.set(
+    "scenarios",
+    JSON.stringify({
+      v: 3,
+      base: {
+        label: "Edited",
+        input: {
+          monthlySpend: 4200,
+          propertyLifecycleEvents: [{ kind: "property_sale", month: "later", closingCostPct: 6 }],
+        },
+      },
+      variants: [],
+    })
+  );
+
+  const decoded = scenarioSetFromSearch(params.toString(), bootstrap);
+  expect(decoded.base.label).toBe("Base");
+  expect(decoded.base.input.monthlySpend).toBe(productInputDefaults(bootstrap).monthlySpend);
+  expect(decoded.variants).toHaveLength(0);
+});
+
+test("an obsolete scenario field rejects the scenario set", () => {
+  const params = new URLSearchParams();
+  params.set(
+    "scenarios",
+    JSON.stringify({
+      v: 3,
+      base: { label: "Edited", input: { horizonMonths: 24 } },
+      variants: [],
+    })
+  );
+
+  const decoded = scenarioSetFromSearch(params.toString(), bootstrap);
+  expect(decoded.base.label).toBe("Base");
+  expect(decoded.base.input.monthlySpend).toBe(productInputDefaults(bootstrap).monthlySpend);
+  expect(decoded.variants).toHaveLength(0);
+});
+
 test("an unrecognized ?scenarios= version falls back to a base with no variants", () => {
   const params = new URLSearchParams();
   params.set("scenarios", JSON.stringify({ v: 999, base: { label: "x", input: {} }, variants: [] }));
@@ -132,7 +181,7 @@ test("an unrecognized ?scenarios= version falls back to a base with no variants"
 const SELLABLE = [
   { key: "security:spy", sleeve: { kind: "security", symbol: "spy" }, label: "S&P 500", valueQuanta: "900000" },
   { key: "security:btc", sleeve: { kind: "security", symbol: "btc" }, label: "Bitcoin", valueQuanta: "100000" },
-];
+] as const;
 
 test("an unedited target allocation seeds from what is held, not equal weights", () => {
   // The whole reason the seed exists: equal weights would make the first refill a rebalance the
@@ -149,7 +198,7 @@ test("a holding too small to round to one percent stays inside the target", () =
     ...SELLABLE,
     { key: "security:doge", sleeve: { kind: "security", symbol: "doge" }, label: "Doge", valueQuanta: "100" },
   ]);
-  expect(weights.find((sleeve) => sleeve.symbol === "doge").weight).toBe(1);
+  expect(weights.find((sleeve) => sleeve.kind === "security" && sleeve.symbol === "doge")?.weight).toBe(1);
 });
 
 test("an explicit empty target stays empty, and is not re-seeded", () => {
@@ -176,7 +225,7 @@ test("the scenario always carries an explicit sleeve list, never the unedited nu
     12,
     SELLABLE
   );
-  expect(scenario.fundingPolicy.sleeveWeights).toEqual([
+  expect(scenario.fundingPolicy?.sleeveWeights).toEqual([
     { kind: "security", symbol: "spy", weight: 90 },
     { kind: "security", symbol: "btc", weight: 10 },
   ]);
@@ -192,5 +241,5 @@ test("the cash ceiling is never below the floor", () => {
     12,
     SELLABLE
   );
-  expect(scenario.fundingPolicy.cashCeiling).toBe("50000");
+  expect(scenario.fundingPolicy?.cashCeiling).toBe("50000");
 });

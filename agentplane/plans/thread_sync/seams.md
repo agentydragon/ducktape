@@ -15,8 +15,8 @@ Electric sits behind one module on each side:
 - **Backend:** `electric.py` holds `ElectricProxy` and the `/threads/{thread_id}/sync/*` router,
   which `api.py` always mounts; `electric_url` is an optional setting. Its only read of the fold is
   `ContentStore.current_scope`, which any implementation needs for **P7**.
-- **Frontend:** `thread_sync.ts` defines the `ThreadSync` interface, and `projected_session.tsx`
-  reads only that, from a context `app.tsx` fills. `thread_store.tsx` implements it as
+- **Frontend:** `thread_sync.ts` defines the `ThreadSync` interface, and `page.tsx`
+  reads only that, from a context `app.tsx` fills. `electric_sync.tsx` implements it as
   `electricThreadSync`, on the raw `@electric-sql/client`.
 
 ## Backend
@@ -97,7 +97,7 @@ a dynamic `import()` already keeps it off the page.
 2. **Electric costs something when nobody picks it.** Its replication slot retains WAL and its shape
    storage holds state regardless of traffic, and the app cannot run without it today: turning it
    off needs the deploy-time choice above.
-3. **The interface must not be Electric-shaped.** Extracted from today's `thread_store.tsx` props,
+3. **The interface must not be Electric-shaped.** Extracted from today's `electric_sync.tsx` props,
    it would hand every other implementation shape and subset concepts it has no use for. It is
    written from the list above, and Electric is adapted to it.
 4. **The schema is shared.** An implementation that needs a column or index adds it to the fold

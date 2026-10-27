@@ -657,6 +657,10 @@ not a builtin whitelist. It narrows callback reentry only for literal-key `in`
 probes on a direct unshadowed `globalThis` or `window`. Key coercion, aliases,
 shadowed roots, effectful receivers and unlisted keys retain fallback. The
 index also rejects recognized root/prototype mutations and global exposure.
+Unknown computed writes on other descendant objects do not themselves identify
+a root mutation. Explicit prototype keys, known identity/prototype paths and
+visible stored back-aliases still reject. Disjointness of other descendants is
+part of the complete author alias-integrity premise, not inferred host trust.
 Source checks cannot establish the complete host or cross-chunk prototype
 surface: its integrity at each probe remains a strong author premise. The
 operator's existing impurity, operand reads/effects and possible throws remain;

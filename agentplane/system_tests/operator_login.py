@@ -38,6 +38,16 @@ class LoginBlockedError(Exception):
     """Only non-sensitive prerequisite failures cross this boundary; never response contents."""
 
 
+def _is_action_not_found(payload: object) -> bool:
+    """The Go facade uses google.rpc.Code; the Python BFF uses FastAPI's detail envelope."""
+    if not isinstance(payload, dict):
+        return False
+    if payload.get("code") == 5:
+        return True
+    detail = payload.get("detail")
+    return isinstance(detail, dict) and detail.get("code") == "NOT_FOUND"
+
+
 async def verify_action_federation(http: httpx.AsyncClient) -> None:
     """An absent Action proves authenticated federation without listing anyone's requests."""
     __tracebackhide__ = True
@@ -45,7 +55,7 @@ async def verify_action_federation(http: httpx.AsyncClient) -> None:
     try:
         response = await http.get(f"/upstream/actions/v1/action-requests/{request_id}")
         failure = response.json()
-        if response.status_code == HTTPStatus.NOT_FOUND and isinstance(failure, dict) and failure.get("code") == 5:
+        if response.status_code == HTTPStatus.NOT_FOUND and _is_action_not_found(failure):
             return
     except httpx.HTTPError, httpx.InvalidURL, ValueError, KeyError, TypeError:
         # Malformed responses and transport exceptions may contain private auth material.

@@ -16,6 +16,7 @@ py_test(
         "//:conftest",
         "//openai_utils:api_shape",
         "//props:conftest",
+        "//props/agents:conftest",
         "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//agent_framework_core",

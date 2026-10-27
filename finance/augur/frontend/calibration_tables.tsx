@@ -5,8 +5,12 @@ import React from "react";
 
 import { fmtProb, fmtKl, klTextClass, PlatformBadge } from "./calibration_format";
 import { fmtPct, fmtVolume } from "./lib/format";
+import type { CalibrationRunResponse } from "./client";
 
-export function CleanTable({ rows }) {
+type CleanRow = CalibrationRunResponse["result"]["clean"][number];
+type SurfacedRow = CalibrationRunResponse["result"]["surfaced"][number];
+
+export function CleanTable({ rows }: { rows: readonly CleanRow[] }) {
   if (rows.length === 0) {
     return <div className="px-4 py-6 text-sm augur-muted">No apples-to-apples (scored) markets in this catalog.</div>;
   }
@@ -83,7 +87,7 @@ export function CleanTable({ rows }) {
   );
 }
 
-export function SurfacedTable({ rows }) {
+export function SurfacedTable({ rows }: { rows: readonly SurfacedRow[] }) {
   if (rows.length === 0) {
     return <div className="px-4 py-6 text-sm augur-muted">No surfaced (context-only) markets in this catalog.</div>;
   }
