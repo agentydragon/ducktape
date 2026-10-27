@@ -16,6 +16,7 @@ python314Packages.buildPythonApplication {
   src = artifacts."plaid-spend-desktop";
 
   propagatedBuildInputs = with python314Packages; [
+    aiohttp
     babel
     dbus-next
     httpx
