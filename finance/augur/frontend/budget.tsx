@@ -7,6 +7,7 @@ import {
   fetchBudgetTransactions,
   fetchBudgetTransactionsCsv,
 } from "./client";
+import type { BudgetSnapshotRequest } from "./client";
 import { parseAdjustments, adjustmentsToParams, effectiveSignedAvg, computeTotals } from "./budget_adjustments";
 import { fmtUsd, fmtNumber } from "./lib/format";
 import { toastFetchError } from "./lib/toast";
@@ -28,7 +29,7 @@ const TRAILING_CHOICES = [
 ];
 const MAX_CHOICE_VALUE = "max";
 
-function windowSpecFromChoice(value) {
+function windowSpecFromChoice(value: string): BudgetSnapshotRequest["window"] {
   if (value === MAX_CHOICE_VALUE) return { kind: "since_coverage_start" };
   const months = Number(value.split(":")[1]);
   return { kind: "trailing_months", months };

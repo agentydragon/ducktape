@@ -1,4 +1,5 @@
 import { camelizeObjectKeys, decamelizeObjectKeys } from "./lib/casing";
+import type { CamelCasedDeep } from "./lib/casing";
 import {
   zBudgetSnapshotRequest,
   zBudgetSnapshotResponse,
@@ -76,6 +77,8 @@ async function postBlob(path, body, signal) {
 // Anything with a Zod-like `.parse` (structural, so we don't import zod here). `T` is the wire
 // (snake_case) output type; the helpers below carry it through camelization as `CamelCasedDeep<T>`.
 type Parser<T> = { parse: (data: unknown) => T };
+type SchemaInput<TSchema extends Parser<unknown>> = TSchema extends { _input: infer Input } ? Input : never;
+type CamelCasedSchemaInput<TSchema extends Parser<unknown>> = CamelCasedDeep<SchemaInput<TSchema>>;
 
 // GET a JSON resource, validate it against its wire schema, and camelize — the single place a
 // read does this. Returns the camelCase-typed body.
@@ -85,11 +88,11 @@ async function apiGet<T>(path: string, schema: Parser<T>, signal?: AbortSignal) 
 
 // POST a camelCase `body`: decamelize + validate it against the request schema, then validate and
 // camelize the response — the single place a write does this.
-async function apiPost<T>(
+async function apiPost<TRequestSchema extends Parser<unknown>, TResponse>(
   path: string,
-  requestSchema: Parser<unknown>,
-  responseSchema: Parser<T>,
-  body: unknown,
+  requestSchema: TRequestSchema,
+  responseSchema: Parser<TResponse>,
+  body: CamelCasedSchemaInput<TRequestSchema>,
   signal?: AbortSignal
 ) {
   const request = requestSchema.parse(decamelizeObjectKeys(body));
@@ -118,7 +121,10 @@ export function fetchProductPortfolio({ signal }: FetchOptions = {}) {
   return apiGet("/api/product/portfolio", zProductPortfolioResponse, signal);
 }
 
-export function fetchProductProjectionSummary(projectionSummaryRequest, { signal }: FetchOptions = {}) {
+export function fetchProductProjectionSummary(
+  projectionSummaryRequest: CamelCasedSchemaInput<typeof zProductProjectionRequest>,
+  { signal }: FetchOptions = {}
+) {
   return apiPost(
     "/api/product/projections/summary",
     zProductProjectionRequest,
@@ -128,11 +134,19 @@ export function fetchProductProjectionSummary(projectionSummaryRequest, { signal
   );
 }
 
-export function fetchProductRollout(rolloutRequest, { signal }: FetchOptions = {}) {
+export type ProductProjectionSummaryRequest = CamelCasedSchemaInput<typeof zProductProjectionRequest>;
+
+export function fetchProductRollout(
+  rolloutRequest: CamelCasedSchemaInput<typeof zRolloutRequest>,
+  { signal }: FetchOptions = {}
+) {
   return apiPost("/api/product/projections/rollout", zRolloutRequest, zRolloutResponse, rolloutRequest, signal);
 }
 
-export function fetchCalibrationRun(calibrationRunRequest, { signal }: FetchOptions = {}) {
+export function fetchCalibrationRun(
+  calibrationRunRequest: CamelCasedSchemaInput<typeof zCalibrationRunRequest>,
+  { signal }: FetchOptions = {}
+) {
   return apiPost(
     "/api/calibration/run",
     zCalibrationRunRequest,
@@ -142,7 +156,10 @@ export function fetchCalibrationRun(calibrationRunRequest, { signal }: FetchOpti
   );
 }
 
-export function fetchBudgetSnapshot(budgetSnapshotRequest, { signal }: FetchOptions = {}) {
+export function fetchBudgetSnapshot(
+  budgetSnapshotRequest: CamelCasedSchemaInput<typeof zBudgetSnapshotRequest>,
+  { signal }: FetchOptions = {}
+) {
   return apiPost(
     "/api/budget/snapshot",
     zBudgetSnapshotRequest,
@@ -152,7 +169,12 @@ export function fetchBudgetSnapshot(budgetSnapshotRequest, { signal }: FetchOpti
   );
 }
 
-export function fetchBudgetTransactions(budgetTransactionsRequest, { signal }: FetchOptions = {}) {
+export type BudgetSnapshotRequest = CamelCasedSchemaInput<typeof zBudgetSnapshotRequest>;
+
+export function fetchBudgetTransactions(
+  budgetTransactionsRequest: CamelCasedSchemaInput<typeof zBudgetTransactionsRequest>,
+  { signal }: FetchOptions = {}
+) {
   return apiPost(
     "/api/budget/transactions",
     zBudgetTransactionsRequest,
@@ -162,10 +184,16 @@ export function fetchBudgetTransactions(budgetTransactionsRequest, { signal }: F
   );
 }
 
-export function fetchBudgetSummaryCsv(budgetSummaryCsvRequest, { signal }: FetchOptions = {}) {
+export function fetchBudgetSummaryCsv(
+  budgetSummaryCsvRequest: CamelCasedSchemaInput<typeof zBudgetSnapshotRequest>,
+  { signal }: FetchOptions = {}
+) {
   return postBlob("/api/budget/snapshot.csv", budgetSummaryCsvRequest, signal);
 }
 
-export function fetchBudgetTransactionsCsv(budgetTransactionsRequest, { signal }: FetchOptions = {}) {
+export function fetchBudgetTransactionsCsv(
+  budgetTransactionsRequest: CamelCasedSchemaInput<typeof zBudgetTransactionsRequest>,
+  { signal }: FetchOptions = {}
+) {
   return postBlob("/api/budget/transactions.csv", budgetTransactionsRequest, signal);
 }

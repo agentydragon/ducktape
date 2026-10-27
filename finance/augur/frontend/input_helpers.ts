@@ -1,4 +1,5 @@
 import { clampInteger } from "./lib/format";
+import type { ProductProjectionSummaryRequest } from "./client";
 
 // Rollout count is NOT a product-input field: it is a top-level control shared across the
 // product and calibration tabs (see `rolloutCountDefault` and the `?n=` URL param). Both tabs
@@ -322,7 +323,13 @@ export function resolveSleeveWeights(sleeveWeights, sellable) {
     .map((sleeve) => ({ ...sleeveIdentity(sleeve), weight: Math.max(0, Math.trunc(Number(sleeve.weight) || 0)) }));
 }
 
-export function productScenario(input, bootstrap, modelId, horizonMonths, sellable) {
+export function productScenario(
+  input,
+  bootstrap,
+  modelId,
+  horizonMonths,
+  sellable
+): ProductProjectionSummaryRequest["scenario"] {
   const sleeveWeights = resolveSleeveWeights(input.sleeveWeights, sellable);
   const monthlyRent = Math.max(0, Number(input.monthlyRent) || 0);
   const rentalLocationId = monthlyRent > 0 ? input.rentalLocationId : null;
@@ -366,7 +373,14 @@ function productProjectionSamplingRequest(input, bootstrap, metric, shared, perc
   };
 }
 
-export function productProjectionSummaryRequest(input, bootstrap, metric, shared, fanPercentiles, terminalPercentiles) {
+export function productProjectionSummaryRequest(
+  input,
+  bootstrap,
+  metric,
+  shared,
+  fanPercentiles,
+  terminalPercentiles
+): ProductProjectionSummaryRequest {
   const request = productProjectionSamplingRequest(input, bootstrap, metric, shared, fanPercentiles);
   return {
     scenario: request.scenario,

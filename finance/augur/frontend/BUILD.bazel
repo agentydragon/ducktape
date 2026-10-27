@@ -40,6 +40,7 @@ ts_library(
     srcs = ["input_helpers.ts"],
     tsconfig = TSCONFIG,
     deps = [
+        ":client",
         "//finance/augur/frontend/lib:format",
         "//finance/augur/frontend/lib:frame",
     ],
