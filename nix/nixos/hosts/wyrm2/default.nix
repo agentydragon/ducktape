@@ -51,6 +51,7 @@ in
     ../../modules/gpu-monitor.nix
     ../../modules/github-api-recorder.nix
     ../../modules/attic-substituter.nix
+    ../../modules/piraeus-host.nix
   ];
 
   # Claude Desktop Cowork sandboxed-microVM feature (QEMU firmware + virtiofsd
@@ -58,6 +59,8 @@ in
   ducktape.cowork.enable = true;
 
   ducktape.homeWifi.enable = true;
+
+  ducktape.piraeusHost.enable = true;
 
   zramSwap.enable = true;
   systemd.oomd.enableUserSlices = true;
