@@ -10,12 +10,14 @@ by companion restart backoff and the runner's `Codex executor startup: context
 deadline exceeded`. The `k3s` target at that source revision selected the
 `model_free` runner image, which has no Codex binary. The same-source retry
 [786f259e](https://app.buildbuddy.io/invocation/786f259e-a8b7-5444-b806-a23f7ebf07eb)
-passed, but does not disprove the missing executable on the failed attempt.
+passed its admission and cleanup assertions, but did not prove a Codex
+executor could start with that image.
 
 [PR #12167](https://github.com/agentydragon/ducktape/pull/12167) already
 changed this target to the harness image and made the companion refuse an
-unstartable claim without entering restart backoff. The fresh dispatcher
-acceptance target should confirm that source behavior after the fix. The
-separate cleanup change in this directory preserves a scenario exception if
-cleanup also fails; the cited failed attempt had no earlier scenario exception
-to preserve.
+unstartable claim without entering restart backoff. A fresh unfiltered
+`test_dispatcher` run passed all three scenarios on the corrected source
+([BuildBuddy invocation 19325b64](https://app.buildbuddy.io/invocation/19325b64-2793-4f6e-8ab1-2211efd4cc38)).
+The separate cleanup change in this directory preserves a scenario exception
+if cleanup also fails; the cited failed attempt had no earlier scenario
+exception to preserve.
