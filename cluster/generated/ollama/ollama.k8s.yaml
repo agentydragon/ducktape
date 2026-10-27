@@ -96,7 +96,7 @@ spec:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: copy-qwen38-iq4-v1
+  name: copy-qwen38-iq4-v2
   namespace: ollama
 spec:
   backoffLimit: 2
@@ -111,7 +111,7 @@ spec:
           name: copy
           resources:
             limits:
-              memory: 256Mi
+              memory: 512Mi
             requests:
               cpu: 500m
               memory: 64Mi
