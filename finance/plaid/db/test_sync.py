@@ -113,21 +113,21 @@ class _FakeApi(plaid_api.PlaidApi):
         if (exc := self._errors.get((endpoint, access_token))) is not None:
             raise exc
 
-    def item_get(self, request: ItemGetRequest, /) -> object:
-        self._maybe_raise("item/get", request.access_token)
+    def item_get(self, item_get_request: ItemGetRequest, **kwargs: Any) -> Any:
+        self._maybe_raise("item/get", item_get_request.access_token)
         return {"item": {"webhook": self.item_webhook}, "request_id": "req-item"}
 
-    def item_webhook_update(self, request: ItemWebhookUpdateRequest, /) -> object:
-        self.item_webhooks.append(request.webhook)
+    def item_webhook_update(self, item_webhook_update_request: ItemWebhookUpdateRequest, **kwargs: Any) -> Any:
+        self.item_webhooks.append(item_webhook_update_request.webhook)
         return {"request_id": "req-webhook"}
 
-    def accounts_get(self, request: AccountsGetRequest, /) -> object:
-        self._maybe_raise("accounts/get", request.access_token)
+    def accounts_get(self, accounts_get_request: AccountsGetRequest, **kwargs: Any) -> Any:
+        self._maybe_raise("accounts/get", accounts_get_request.access_token)
         return {"accounts": [], "request_id": "req-accounts"}
 
-    def transactions_sync(self, request: TransactionsSyncRequest, /) -> object:
-        self.sync_requests.append(request)
-        self._maybe_raise("transactions/sync", request.access_token)
+    def transactions_sync(self, transactions_sync_request: TransactionsSyncRequest, **kwargs: Any) -> Any:
+        self.sync_requests.append(transactions_sync_request)
+        self._maybe_raise("transactions/sync", transactions_sync_request.access_token)
         if self.sync_responses:
             response = self.sync_responses.pop(0)
             if isinstance(response, Exception):
@@ -135,18 +135,22 @@ class _FakeApi(plaid_api.PlaidApi):
             return response
         return _sync_response()
 
-    def investments_holdings_get(self, request: InvestmentsHoldingsGetRequest, /) -> object:
-        self._maybe_raise("investments/holdings/get", request.access_token)
+    def investments_holdings_get(
+        self, investments_holdings_get_request: InvestmentsHoldingsGetRequest, **kwargs: Any
+    ) -> Any:
+        self._maybe_raise("investments/holdings/get", investments_holdings_get_request.access_token)
         return {"securities": [], "holdings": [], "request_id": "req-hold"}
 
-    def investments_transactions_get(self, request: InvestmentsTransactionsGetRequest, /) -> object:
+    def investments_transactions_get(
+        self, investments_transactions_get_request: InvestmentsTransactionsGetRequest, **kwargs: Any
+    ) -> Any:
         self.investment_transaction_calls += 1
-        self._maybe_raise("investments/transactions/get", request.access_token)
+        self._maybe_raise("investments/transactions/get", investments_transactions_get_request.access_token)
         return {"total_investment_transactions": 0, "investment_transactions": [], "request_id": "req-itxn"}
 
-    def liabilities_get(self, request: LiabilitiesGetRequest, /) -> object:
+    def liabilities_get(self, liabilities_get_request: LiabilitiesGetRequest, **kwargs: Any) -> Any:
         self.liabilities_calls += 1
-        self._maybe_raise("liabilities/get", request.access_token)
+        self._maybe_raise("liabilities/get", liabilities_get_request.access_token)
         return {"liabilities": {}, "request_id": "req-liab"}
 
 
