@@ -62,12 +62,13 @@ async def test_persession_exec_timeout_then_next_ok(exec_session) -> None:
     assert r1.stdout == "ok\n"
 
 
-async def test_collector_error_propagates(async_docker_client, debian_slim_image, monkeypatch) -> None:
+@pytest.mark.parametrize("error_type", [ValueError, TimeoutError])
+async def test_collector_error_propagates(async_docker_client, debian_slim_image, monkeypatch, error_type) -> None:
     async def fail_collect(stream, stdout_buf, stderr_buf):
         chunk = await stream.read_out()
         assert chunk is not None
         assert chunk.data == b"started\n"
-        raise ValueError("collector failed")
+        raise error_type("collector failed")
 
     monkeypatch.setattr(container_session, "_collect_from_exec_stream", fail_collect)
     opts = make_container_opts(debian_slim_image)
@@ -76,7 +77,7 @@ async def test_collector_error_propagates(async_docker_client, debian_slim_image
         input = ResolvedExecInput(
             cmd=["sh", "-lc", "echo started; exec sleep 30"], cwd=None, env=None, user=None, timeout_ms=5000
         )
-        with pytest.raises(ValueError, match="collector failed"):
+        with pytest.raises(error_type, match="collector failed"):
             await run_session_container(session, input.cmd, input)
 
 

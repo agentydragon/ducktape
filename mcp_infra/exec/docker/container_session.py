@@ -177,10 +177,13 @@ async def run_session_container(
     stream: Any = exec_obj.start()
 
     t_collect_begin = loop.time()
+    deadline = asyncio.timeout(input.timeout_ms / 1000.0)
     try:
-        async with asyncio.timeout(input.timeout_ms / 1000.0):
+        async with deadline:
             await _collect_from_exec_stream(stream, stdout_buf, stderr_buf)
     except TimeoutError:
+        if not deadline.expired():
+            raise
         timed_out = True
     finally:
         await stream.close()
