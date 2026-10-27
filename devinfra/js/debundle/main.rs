@@ -1,7 +1,6 @@
 use std::process::ExitCode;
 
-use clap::Parser;
-use debundle_cli::{DebundleArgs, run_debundle_cli};
+use debundle_cli::run_debundle_cli_from_process;
 use swc_common::{GLOBALS, Globals};
 
 fn main() -> ExitCode {
@@ -12,7 +11,7 @@ fn main() -> ExitCode {
     // `Globals` instance per process keeps `Mark` identity comparable
     // across chunks.
     let globals = Globals::default();
-    GLOBALS.set(&globals, || match run_debundle_cli(DebundleArgs::parse()) {
+    GLOBALS.set(&globals, || match run_debundle_cli_from_process() {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             // `{error:#}` prints the full anyhow context chain inline
