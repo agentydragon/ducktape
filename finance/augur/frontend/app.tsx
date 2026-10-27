@@ -15,6 +15,7 @@ import {
   tabFromSearch,
   writeTabToSearch,
   type AugurTab,
+  type CurrencyDisplay,
 } from "./header";
 import { ProductProjectionLoading } from "./skeleton";
 import { CurrencyDisplayProvider } from "./hooks";
@@ -107,12 +108,12 @@ type SharedAppProps = {
   firstSeed: number;
   model: string;
   onChangeModel: (value: string) => void;
-  horizonMonths: number;
+  horizonMonths: number | null;
   onChangeHorizonMonths: (value: number | null) => void;
   metricScale: MetricScale;
   onChangeMetricScale: (value: MetricScale) => void;
   currencyDisplay: "exact" | "compact";
-  onChangeCurrencyDisplay: (value: "exact" | "compact") => void;
+  onChangeCurrencyDisplay: (value: CurrencyDisplay) => void;
   settingsOpen: boolean;
   onChangeSettingsOpen: (open: boolean) => void;
 };
@@ -183,9 +184,13 @@ function LoadedAppShell({ bootstrap, deployment }: { bootstrap: Bootstrap; deplo
   // First seed is a fixed default (no UI control) so runs stay reproducible.
   const firstSeed = firstSeedDefault(bootstrap);
   const [model, setModel] = useState(() => modelFromSearch(window.location.search, bootstrap));
-  const [horizonMonths, setHorizonMonths] = useState(() => horizonMonthsFromSearch(window.location.search, bootstrap));
+  const [horizonMonths, setHorizonMonths] = useState<number | null>(() =>
+    horizonMonthsFromSearch(window.location.search, bootstrap)
+  );
   const [metricScale, setMetricScale] = useState(() => metricScaleFromSearch(window.location.search));
-  const [currencyDisplay, setCurrencyDisplay] = useState(() => currencyDisplayFromSearch(window.location.search));
+  const [currencyDisplay, setCurrencyDisplay] = useState<CurrencyDisplay>(() =>
+    currencyDisplayFromSearch(window.location.search)
+  );
   const [settingsOpen, setSettingsOpen] = useState(true);
 
   const onSelectTab = (next: AugurTab) => {
@@ -215,7 +220,7 @@ function LoadedAppShell({ bootstrap, deployment }: { bootstrap: Bootstrap; deplo
     writeMetricScaleToSearch(value);
   };
 
-  const onChangeCurrencyDisplay = (value: "exact" | "compact") => {
+  const onChangeCurrencyDisplay = (value: CurrencyDisplay) => {
     setCurrencyDisplay(value);
     replaceSearchParams({ fmt: value !== "compact" ? "exact" : null });
   };

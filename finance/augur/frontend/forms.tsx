@@ -10,10 +10,32 @@ import {
   fmtUsd,
   fmtQuantity,
 } from "./lib/format";
-import { LIFECYCLE_KINDS, defaultLifecycleEvent, resolveSleeveWeights, sleeveKey } from "./input_helpers";
+import {
+  LIFECYCLE_KINDS,
+  defaultLifecycleEvent,
+  resolveSleeveWeights,
+  sleeveKey,
+  type LifecycleInputEvent,
+} from "./input_helpers";
 import { sellableSleeves, isPrivateSecurityPosition } from "./data_helpers";
+import type { fetchAugurCatalog, ProductPortfolioResponse } from "./client";
 
-function firstSaleMonth(events) {
+type LifecycleEvent = LifecycleInputEvent;
+type CatalogProperty = Awaited<ReturnType<typeof fetchAugurCatalog>>["properties"][number];
+type SleeveWeightsInput = Parameters<typeof resolveSleeveWeights>[0];
+type SleeveWeights = ReturnType<typeof resolveSleeveWeights>;
+type SellableSleevesInput = Parameters<typeof sellableSleeves>[0];
+type PortfolioHolding = ProductPortfolioResponse["holdings"][number];
+type PortfolioPosition = PortfolioHolding & { symbol?: string };
+type ManagedPortfolio = ProductPortfolioResponse["tlhPortfolios"][number];
+type PortfolioBond = ProductPortfolioResponse["bonds"][number];
+type CurrencyFormat = NonNullable<Parameters<typeof fmtQuanta>[1]>;
+
+function isLifecycleEventKind(value: string): value is LifecycleEvent["kind"] {
+  return LIFECYCLE_KINDS.some((option) => option.value === value);
+}
+
+function firstSaleMonth(events: readonly LifecycleEvent[]): number | null {
   let earliest = null;
   for (const event of events) {
     if (event.kind === "property_sale" && (earliest == null || event.month < earliest)) {
@@ -27,13 +49,13 @@ function firstSaleMonth(events) {
 // after `saleMonth`, plus same-month non-sale events (a SetRentedFraction in the same month
 // as the sale is also illegal). `saleMonth == null` means no sale on the timeline → nothing
 // is post-sale.
-function isEventPostSale(event, saleMonth) {
+function isEventPostSale(event: LifecycleEvent, saleMonth: number | null): boolean {
   if (saleMonth == null) return false;
   if (event.month > saleMonth) return true;
   return event.month === saleMonth && event.kind !== "property_sale";
 }
 
-export function DisclosureArrow({ collapsed, className = "" }) {
+export function DisclosureArrow({ collapsed, className = "" }: { collapsed: boolean; className?: string }) {
   return (
     <span
       aria-hidden="true"
@@ -44,14 +66,26 @@ export function DisclosureArrow({ collapsed, className = "" }) {
   );
 }
 
-export function propertyLabel(property) {
+export function propertyLabel(property: CatalogProperty): string {
   const sqft = Number(property.sqft);
   const head = property.address || property.id;
   const meta = `${fmtUsd(property.price)}` + (Number.isFinite(sqft) && sqft > 0 ? ` · ${fmtNumber(sqft)} sqft` : "");
   return `${head} — ${meta}`;
 }
 
-export function LifecycleEventsEditor({ events, horizonMonths, onChange, showLabel = true, className = "" }) {
+export function LifecycleEventsEditor({
+  events,
+  horizonMonths,
+  onChange,
+  showLabel = true,
+  className = "",
+}: {
+  events: LifecycleEvent[];
+  horizonMonths: number | null;
+  onChange: (events: LifecycleEvent[]) => void;
+  showLabel?: boolean;
+  className?: string;
+}) {
   const maxMonth = Math.max(1, Number(horizonMonths) - 1);
   const saleMonth = firstSaleMonth(events);
   // After a sale, the property is frozen: the wire validator rejects any other lifecycle event
@@ -65,10 +99,10 @@ export function LifecycleEventsEditor({ events, horizonMonths, onChange, showLab
     const kind = last ? last.kind : LIFECYCLE_KINDS[0].value;
     onChange([...events, defaultLifecycleEvent(kind, Math.max(1, suggested))]);
   };
-  const updateEvent = (index, patch) => {
-    onChange(events.map((event, idx) => (idx === index ? { ...event, ...patch } : event)));
+  const updateEvent = (index: number, updatedEvent: LifecycleEvent) => {
+    onChange(events.map((event, idx) => (idx === index ? updatedEvent : event)));
   };
-  const removeEvent = (index) => {
+  const removeEvent = (index: number) => {
     onChange(events.filter((_, idx) => idx !== index));
   };
   return (
@@ -82,7 +116,7 @@ export function LifecycleEventsEditor({ events, horizonMonths, onChange, showLab
               event={event}
               maxMonth={maxMonth}
               postSale={isEventPostSale(event, saleMonth)}
-              onChange={(patch) => updateEvent(index, patch)}
+              onChange={(updatedEvent) => updateEvent(index, updatedEvent)}
               onReplaceKind={(kind) => updateEvent(index, defaultLifecycleEvent(kind, event.month))}
               onRemove={() => removeEvent(index)}
             />
@@ -101,7 +135,21 @@ export function LifecycleEventsEditor({ events, horizonMonths, onChange, showLab
   );
 }
 
-function LifecycleEventRow({ event, maxMonth, postSale, onChange, onReplaceKind, onRemove }) {
+function LifecycleEventRow({
+  event,
+  maxMonth,
+  postSale,
+  onChange,
+  onReplaceKind,
+  onRemove,
+}: {
+  event: LifecycleEvent;
+  maxMonth: number;
+  postSale: boolean;
+  onChange: (event: LifecycleEvent) => void;
+  onReplaceKind: (kind: LifecycleEvent["kind"]) => void;
+  onRemove: () => void;
+}) {
   // Borderless row — the outer editor frame provides the pill outline; `divide-y` draws the
   // horizontal separator between consecutive rows. The post-sale state tints the row's
   // background so the warning is still obvious without breaking the shared frame.
@@ -118,14 +166,17 @@ function LifecycleEventRow({ event, maxMonth, postSale, onChange, onReplaceKind,
         max={maxMonth}
         step={1}
         suffix="mo"
-        onChange={(month) => onChange({ month: clampInteger(month, 1, maxMonth) })}
+        onChange={(month) => onChange({ ...event, month: clampInteger(month ?? 0, 1, maxMonth) })}
       />
       <NativeSelectField
         label="Kind"
         aria-label="Lifecycle event kind"
         value={event.kind}
         data={LIFECYCLE_KINDS}
-        onChange={(domEvent) => onReplaceKind(domEvent.target.value)}
+        onChange={(domEvent) => {
+          const kind = domEvent.target.value;
+          if (isLifecycleEventKind(kind)) onReplaceKind(kind);
+        }}
       />
       <LifecycleEventValueField event={event} onChange={onChange} />
       <Button size="xs" variant="outline" color="red" onClick={onRemove} aria-label="Remove event">
@@ -140,7 +191,13 @@ function LifecycleEventRow({ event, maxMonth, postSale, onChange, onReplaceKind,
   );
 }
 
-function LifecycleEventValueField({ event, onChange }) {
+function LifecycleEventValueField({
+  event,
+  onChange,
+}: {
+  event: LifecycleEvent;
+  onChange: (event: LifecycleEvent) => void;
+}) {
   if (event.kind === "set_rented_fraction") {
     return (
       <NumberField
@@ -150,7 +207,7 @@ function LifecycleEventValueField({ event, onChange }) {
         max={100}
         step={5}
         suffix="%"
-        onChange={(rentedFractionPct) => onChange({ rentedFractionPct })}
+        onChange={(rentedFractionPct) => onChange({ ...event, rentedFractionPct })}
       />
     );
   }
@@ -161,7 +218,7 @@ function LifecycleEventValueField({ event, onChange }) {
         aria-label="Primary home after this event"
         checked={Boolean(event.livesHere)}
         classNames={{ label: "text-sm font-semibold augur-strong" }}
-        onChange={(domEvent) => onChange({ livesHere: domEvent.currentTarget.checked })}
+        onChange={(domEvent) => onChange({ ...event, livesHere: domEvent.currentTarget.checked })}
       />
     );
   }
@@ -173,7 +230,7 @@ function LifecycleEventValueField({ event, onChange }) {
         min={0}
         step={1000}
         prefix="$"
-        onChange={(amount) => onChange({ amount })}
+        onChange={(amount) => onChange({ ...event, amount })}
       />
     );
   }
@@ -187,7 +244,7 @@ function LifecycleEventValueField({ event, onChange }) {
         max={100}
         step={0.5}
         suffix="%"
-        onChange={(closingCostPct) => onChange({ closingCostPct })}
+        onChange={(closingCostPct) => onChange({ ...event, closingCostPct })}
       />
     );
   }
@@ -200,6 +257,12 @@ export function SleeveWeightsControl({
   onChange,
   label = "Target allocation (relative weights)",
   compact = false,
+}: {
+  sleeveWeights: SleeveWeightsInput;
+  portfolio: SellableSleevesInput;
+  onChange: (weights: SleeveWeights) => void;
+  label?: string | null;
+  compact?: boolean;
 }) {
   // One row per sellable sleeve (a held security, or a TLH portfolio) with an integer weight. Only RATIOS matter, so the row also
   // shows each weight as a percentage of their sum — that is the number a person actually reasons
@@ -212,13 +275,10 @@ export function SleeveWeightsControl({
   const sellable = sellableSleeves(portfolio);
   if (sellable.length === 0) return null;
   const resolved = resolveSleeveWeights(sleeveWeights, sellable);
-  // The type argument is load-bearing. `resolveSleeveWeights` is untyped, so `resolved` is `any`
-  // and the callback's return type is discarded — leaving `Map<unknown, unknown>`, which makes
-  // every arithmetic use of a weight below a compile error.
-  const weightByKey = new Map<string, number>(resolved.map((sleeve) => [sleeveKey(sleeve), sleeve.weight]));
+  const weightByKey = new Map<string | null, number>(resolved.map((sleeve) => [sleeveKey(sleeve), sleeve.weight]));
   const total = sellable.reduce((sum, row) => sum + (weightByKey.get(row.key) ?? 0), 0);
 
-  const emit = (key, weight) =>
+  const emit = (key: string | null, weight: number) =>
     onChange(
       sellable.map((row) => ({
         ...row.sleeve,
@@ -264,7 +324,7 @@ export function SleeveWeightsControl({
   );
 }
 
-function PortfolioGroupHeaderRow({ label }) {
+function PortfolioGroupHeaderRow({ label }: { label: string }) {
   return (
     <tr className="border-t border-slate-200 dark:border-slate-700">
       <td colSpan={5} className="pt-2 pb-1 text-[11px] uppercase tracking-wide augur-muted">
@@ -274,7 +334,7 @@ function PortfolioGroupHeaderRow({ label }) {
   );
 }
 
-function PortfolioPositionRow({ position, currency }) {
+function PortfolioPositionRow({ position, currency }: { position: PortfolioPosition; currency: CurrencyFormat }) {
   return (
     <tr className="border-t border-slate-100 dark:border-slate-800">
       <td className="py-1 pl-3">
@@ -295,14 +355,15 @@ function PortfolioPositionRow({ position, currency }) {
 
 // Money and basis by cohort, not units at a price: the columns a holding fills with a unit count
 // and a unit value carry the cohort count instead.
-function PortfolioTlhRow({ portfolio, currency }) {
+function PortfolioTlhRow({ portfolio, currency }: { portfolio: ManagedPortfolio; currency: CurrencyFormat }) {
   const cohorts = portfolio.cohorts.length;
   return (
     <tr className="border-t border-slate-100 dark:border-slate-800">
       <td className="py-1 pl-3">
         <div className="truncate font-semibold augur-strong">{portfolio.label}</div>
         <div className="truncate text-xs augur-muted">
-          {portfolio.asset.symbol} · {portfolio.accountLabel || portfolio.accountId}
+          {(portfolio.asset.kind === "security" ? portfolio.asset.symbol : portfolio.asset.issuerId) +
+            ` · ${portfolio.accountLabel || portfolio.accountId}`}
         </div>
       </td>
       <td colSpan={2} className="py-1 text-right augur-tabular augur-muted">
@@ -316,7 +377,7 @@ function PortfolioTlhRow({ portfolio, currency }) {
   );
 }
 
-function PortfolioBondRow({ bond, currency }) {
+function PortfolioBondRow({ bond, currency }: { bond: PortfolioBond; currency: CurrencyFormat }) {
   const periodsPerYear = 12 / bond.couponPeriodMonths;
   return (
     <tr className="border-t border-slate-100 dark:border-slate-800">
@@ -337,7 +398,17 @@ function PortfolioBondRow({ bond, currency }) {
   );
 }
 
-function PortfolioSubtotalRow({ label, valueQuanta, dataKey, currency }) {
+function PortfolioSubtotalRow({
+  label,
+  valueQuanta,
+  dataKey,
+  currency,
+}: {
+  label: string;
+  valueQuanta: string | null;
+  dataKey: string;
+  currency: CurrencyFormat;
+}) {
   return (
     <tr className="border-t border-slate-100 dark:border-slate-800">
       <td colSpan={4} className="py-1 pl-3 text-xs augur-muted">
@@ -353,7 +424,13 @@ function PortfolioSubtotalRow({ label, valueQuanta, dataKey, currency }) {
   );
 }
 
-export function ProductPortfolioPanel({ portfolio, error }) {
+export function ProductPortfolioPanel({
+  portfolio,
+  error,
+}: {
+  portfolio: ProductPortfolioResponse | null | undefined;
+  error: string | null | undefined;
+}) {
   const [collapsed, setCollapsed] = useState(true);
   const holdings = portfolio?.holdings ?? [];
   const currency = { currencyCode: portfolio?.currencyCode, currencyQuantum: portfolio?.currencyQuantum };
@@ -496,6 +573,8 @@ export function ProductPortfolioPanel({ portfolio, error }) {
   );
 }
 
-function sumCurrentValueQuanta(positions) {
+function sumCurrentValueQuanta<TPosition extends { currentValueQuanta?: string | null }>(
+  positions: readonly TPosition[]
+): string | null {
   return currencyQuantaAdd(...positions.map((position) => position.currentValueQuanta ?? "0"));
 }

@@ -198,7 +198,7 @@ test("a holding too small to round to one percent stays inside the target", () =
     ...SELLABLE,
     { key: "security:doge", sleeve: { kind: "security", symbol: "doge" }, label: "Doge", valueQuanta: "100" },
   ]);
-  expect(weights.find((sleeve) => sleeve.symbol === "doge")?.weight).toBe(1);
+  expect(weights.find((sleeve) => sleeve.kind === "security" && sleeve.symbol === "doge")?.weight).toBe(1);
 });
 
 test("an explicit empty target stays empty, and is not re-seeded", () => {

@@ -119,7 +119,7 @@ function CalibrationResults({ response, metricScale }: { response: CalibrationRu
         <CleanTable rows={result.clean ?? []} />
       </section>
 
-      {result.categorical?.length > 0 && <CategoricalPanel families={result.categorical} />}
+      {result.categorical && result.categorical.length > 0 && <CategoricalPanel families={result.categorical} />}
 
       {(markFans ?? []).map((fan) => (
         <IssuerFanPanel
@@ -147,7 +147,7 @@ function CalibrationResults({ response, metricScale }: { response: CalibrationRu
         />
       ))}
 
-      {response.sanityBands?.length > 0 && <SanityBandsPanel bands={response.sanityBands} />}
+      {response.sanityBands && response.sanityBands.length > 0 && <SanityBandsPanel bands={response.sanityBands} />}
 
       <section className="augur-panel overflow-hidden" aria-label="Surfaced markets">
         <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
@@ -172,7 +172,7 @@ export function CalibrationWorkspace({
   sharedControlsSlot,
 }: {
   bootstrap: Bootstrap;
-  rolloutCount: number;
+  rolloutCount: number | null;
   firstSeed: number;
   model: string | null;
   metricScale: MetricScale;

@@ -2,7 +2,14 @@ import React, { useState } from "react";
 import { Button } from "@mantine/core";
 import { NumberField, NativeSelectField } from "./lib/controls";
 import { fmtUsd, fmtNumber } from "./lib/format";
-import { scenarioColor, resolveVariant, MAX_VARIANTS } from "./input_helpers";
+import {
+  scenarioColor,
+  resolveVariant,
+  MAX_VARIANTS,
+  type productInputDefaults,
+  type scenarioSetFromSearch,
+} from "./input_helpers";
+import type { fetchAugurCatalog, ProductPortfolioResponse } from "./client";
 import {
   DisclosureArrow,
   SleeveWeightsControl,
@@ -10,6 +17,51 @@ import {
   LifecycleEventsEditor,
   propertyLabel,
 } from "./forms";
+
+type ScenarioSet = ReturnType<typeof scenarioSetFromSearch>;
+type ProductInput = ScenarioSet["base"]["input"];
+type ScenarioVariant = ScenarioSet["variants"][number];
+type Bootstrap = Parameters<typeof productInputDefaults>[0] &
+  Partial<Pick<Awaited<ReturnType<typeof fetchAugurCatalog>>, "properties">>;
+type CatalogProperty = NonNullable<Bootstrap["properties"]>[number];
+type InputKey = keyof ProductInput;
+type InputValue = ProductInput[InputKey];
+type KnobKind =
+  | "property"
+  | "pct"
+  | "bool"
+  | "financing"
+  | "term"
+  | "usd"
+  | "index"
+  | "boolIndex"
+  | "num"
+  | "location"
+  | "sleeveWeights";
+type KnobNeed = "owns" | "mortgage" | "rented" | "managed";
+type KnobGroup = (typeof GROUPS)[number];
+type Knob = {
+  key: InputKey;
+  label: string;
+  kind: KnobKind;
+  group: KnobGroup;
+  needs?: KnobNeed;
+  min?: number;
+  max?: number;
+  step?: number;
+  unit?: string;
+};
+type ScenarioEntry = {
+  id: string;
+  label: string;
+  input: ProductInput;
+  variant: ScenarioVariant | null;
+};
+type InputChange = (key: InputKey, value: InputValue) => void;
+type VariantPatch = (id: string, patch: Partial<ProductInput>) => void;
+type RevertKeys = (id: string, keys: InputKey[]) => void;
+type CatalogPropertyFact = { label: string; value: (property: CatalogProperty) => React.ReactNode };
+type Portfolio = ProductPortfolioResponse | null;
 
 const INDEX_DATA = [
   { value: "inflation", label: "Inflation" },
@@ -46,7 +98,7 @@ const GROUPS = [
   "Outside rent",
   "Cash band",
   "Private equity",
-];
+] as const;
 
 const KNOBS = [
   { key: "propertyId", label: "Property to buy", kind: "property", group: "Property" },
@@ -137,7 +189,7 @@ const KNOBS = [
   { key: "cashBandIndexToInflation", label: "Band index", kind: "boolIndex", group: "Cash band" },
   { key: "peLnwFloor", label: "PE LNW floor", kind: "usd", step: 10000, group: "Private equity" },
   { key: "peIndexFloorToInflation", label: "PE floor index", kind: "boolIndex", group: "Private equity" },
-];
+] as const satisfies readonly Knob[];
 
 // `GROUPS` drives the render order and `KNOBS` names its group by string, so a group renamed in one
 // and not the other drops every row in it — silently, since the renderer just finds no knobs for the
@@ -150,26 +202,26 @@ if (UNKNOWN_KNOB_GROUPS.length > 0) {
 // The chosen house's read-only facts, surfaced as comparison rows (one cell per scenario, "—" when a
 // scenario buys nothing). They describe the property and aren't edited here, so they live in their
 // own collapsible "House facts" group rather than among the editable knobs.
-const usdOrDash = (value) => (value == null ? "—" : fmtUsd(value));
-const numOrDash = (value) => (value == null ? "—" : fmtNumber(value));
+const usdOrDash = (value: unknown) => (value == null ? "—" : fmtUsd(value));
+const numOrDash = (value: unknown) => (value == null ? "—" : fmtNumber(value));
 const HOUSE_FACTS = [
-  { label: "Type", value: (property) => property.type || "—" },
+  { label: "Type", value: (property: CatalogProperty) => property.type || "—" },
   {
     label: "Beds / baths",
-    value: (property) =>
+    value: (property: CatalogProperty) =>
       property.beds == null && property.baths == null
         ? "—"
         : `${numOrDash(property.beds)} / ${numOrDash(property.baths)}`,
   },
-  { label: "Sqft", value: (property) => numOrDash(property.sqft) },
-  { label: "Year built", value: (property) => property.yearBuilt ?? "—" },
-  { label: "Price", value: (property) => usdOrDash(property.price) },
-  { label: "HOA / mo", value: (property) => usdOrDash(property.hoaMonthly) },
-  { label: "Property tax / yr", value: (property) => usdOrDash(property.annualTaxOnList) },
-  { label: "Rent estimate", value: (property) => usdOrDash(property.rentEstimate) },
-];
+  { label: "Sqft", value: (property: CatalogProperty) => numOrDash(property.sqft) },
+  { label: "Year built", value: (property: CatalogProperty) => property.yearBuilt ?? "—" },
+  { label: "Price", value: (property: CatalogProperty) => usdOrDash(property.price) },
+  { label: "HOA / mo", value: (property: CatalogProperty) => usdOrDash(property.hoaMonthly) },
+  { label: "Property tax / yr", value: (property: CatalogProperty) => usdOrDash(property.annualTaxOnList) },
+  { label: "Rent estimate", value: (property: CatalogProperty) => usdOrDash(property.rentEstimate) },
+] satisfies readonly CatalogPropertyFact[];
 
-function propertyOptions(bootstrap) {
+function propertyOptions(bootstrap: Bootstrap) {
   const properties = bootstrap.properties ?? [];
   return [
     { value: "", label: properties.length === 0 ? "(no properties)" : "(no purchase)" },
@@ -177,14 +229,14 @@ function propertyOptions(bootstrap) {
   ];
 }
 
-function locationOptions(bootstrap) {
+function locationOptions(bootstrap: Bootstrap) {
   return [
     { value: "", label: "(default)" },
     ...bootstrap.locations.map((location) => ({ value: location.id, label: location.label })),
   ];
 }
 
-function findProperty(bootstrap, propertyId) {
+function findProperty(bootstrap: Bootstrap, propertyId: string | null): CatalogProperty | null {
   if (propertyId == null) return null;
   return (bootstrap.properties ?? []).find((property) => property.id === propertyId) ?? null;
 }
@@ -192,7 +244,7 @@ function findProperty(bootstrap, propertyId) {
 // Whether a knob applies to a single resolved scenario. Gates both the row (shown when it applies
 // to some scenario) and each cell (a non-applying scenario shows "—" instead of an inert input — so
 // the mortgage rows render inputs only for the scenarios that actually buy with a mortgage, etc.).
-function knobApplies(knob, input) {
+function knobApplies(knob: Knob, input: ProductInput): boolean {
   const owns = input.propertyId != null;
   const rented = owns && Number(input.rentalFractionRentedPct) > 0;
   // Owner-occupancy is moot once the property is fully rented (the wire forces is_primary_residence
@@ -214,7 +266,7 @@ function knobApplies(knob, input) {
 
 // Placeholder text for the full-property-rent cell: left blank, it falls back to the property's rent
 // estimate, so "" and "$0" mean different things. Other knobs have no placeholder.
-function cellPlaceholder(knob, input, bootstrap) {
+function cellPlaceholder(knob: Knob, input: ProductInput, bootstrap: Bootstrap): string | undefined {
   if (knob.key !== "rentalFullPropertyMonthly") return undefined;
   const property = findProperty(bootstrap, input.propertyId);
   const estimate = Number(property?.rentEstimate);
@@ -229,6 +281,23 @@ function NaCell() {
       —
     </td>
   );
+}
+
+function isSleeveWeights(value: InputValue): value is NonNullable<ProductInput["sleeveWeights"]> {
+  if (!Array.isArray(value)) return false;
+  return value.every((item: unknown) => {
+    if (typeof item !== "object" || item === null || !("kind" in item) || !("weight" in item)) return false;
+    if (typeof item.weight !== "number") return false;
+    if (item.kind === "security") return "symbol" in item && typeof item.symbol === "string";
+    if (item.kind === "managed_portfolio") return "portfolioId" in item && typeof item.portfolioId === "string";
+    return false;
+  });
+}
+
+function requireSleeveWeights(value: InputValue): ProductInput["sleeveWeights"] {
+  if (value == null) return null;
+  if (isSleeveWeights(value)) return value;
+  throw new TypeError("The target allocation control received a non-allocation value");
 }
 
 // Compact, label-less control for a spreadsheet cell. The row + column headers already name the knob
@@ -246,16 +315,26 @@ function KnobCell({
   rightSection = undefined,
   placeholder = undefined,
   onChange,
+}: {
+  knob: Knob;
+  value: InputValue;
+  ariaLabel: string;
+  bootstrap: Bootstrap;
+  portfolio: Portfolio;
+  muted?: boolean;
+  rightSection?: React.ReactNode;
+  placeholder?: string;
+  onChange: (value: InputValue) => void;
 }) {
-  const wrap = (control) => <div className={muted ? "opacity-75" : undefined}>{control}</div>;
+  const wrap = (control: React.ReactNode) => <div className={muted ? "opacity-75" : undefined}>{control}</div>;
   const controlProps = {
     ...(rightSection ? { rightSection, rightSectionPointerEvents: "auto" as const, rightSectionWidth: 30 } : {}),
     ...(muted ? { variant: "filled" as const } : {}),
   };
-  const number = (extra) => (
+  const number = (extra: { prefix?: string; suffix?: string } = {}) => (
     <NumberField
       aria-label={ariaLabel}
-      value={value}
+      value={typeof value === "number" || typeof value === "string" || value == null ? value : undefined}
       min={knob.min ?? 0}
       max={knob.max}
       step={knob.step ?? 1}
@@ -265,7 +344,11 @@ function KnobCell({
       onChange={onChange}
     />
   );
-  const select = (data, current, decode) => (
+  const select = (
+    data: readonly { value: string; label: string }[],
+    current: string,
+    decode: (next: string) => InputValue
+  ) => (
     <NativeSelectField
       aria-label={ariaLabel}
       value={current}
@@ -282,28 +365,40 @@ function KnobCell({
     case "num":
       return wrap(number({ suffix: knob.unit }));
     case "index":
-      return wrap(select(INDEX_DATA, value, (next) => (next === "none" ? "none" : "inflation")));
+      return wrap(
+        select(INDEX_DATA, typeof value === "string" ? value : "", (next) => (next === "none" ? "none" : "inflation"))
+      );
     case "boolIndex":
       return wrap(select(INDEX_DATA, value ? "inflation" : "none", (next) => next === "inflation"));
     case "bool":
       return wrap(select(YES_NO, value ? "yes" : "no", (next) => next === "yes"));
     case "financing":
-      return wrap(select(FINANCING_DATA, value, (next) => (next === "mortgage" ? "mortgage" : "cash")));
+      return wrap(
+        select(FINANCING_DATA, typeof value === "string" ? value : "", (next) =>
+          next === "mortgage" ? "mortgage" : "cash"
+        )
+      );
     case "term":
       return wrap(select(TERM_DATA, String(value), (next) => (Number(next) === 180 ? 180 : 360)));
     case "property":
-      return wrap(select(propertyOptions(bootstrap), value ?? "", (next) => next || null));
+      return wrap(select(propertyOptions(bootstrap), typeof value === "string" ? value : "", (next) => next || null));
     case "sleeveWeights":
       return wrap(
-        <SleeveWeightsControl sleeveWeights={value} portfolio={portfolio} compact label={null} onChange={onChange} />
+        <SleeveWeightsControl
+          sleeveWeights={requireSleeveWeights(value)}
+          portfolio={portfolio}
+          compact
+          label={null}
+          onChange={onChange}
+        />
       );
     default: // location
-      return wrap(select(locationOptions(bootstrap), value ?? "", (next) => next || null));
+      return wrap(select(locationOptions(bootstrap), typeof value === "string" ? value : "", (next) => next || null));
   }
 }
 
 // Revert-to-base affordance rendered inside an overridden cell's input as a right section (suffix).
-function RevertButton({ label, onClick }) {
+function RevertButton({ label, onClick }: { label: string; onClick: () => void }) {
   return (
     <button
       type="button"
@@ -317,13 +412,25 @@ function RevertButton({ label, onClick }) {
   );
 }
 
-function stopSummaryButton(event) {
+function stopSummaryButton(event: React.SyntheticEvent) {
   event.preventDefault();
   event.stopPropagation();
 }
 
-function ScenarioHeaderCells({ entries, activeId, onSelect, onDelete, onRename }) {
-  const [editingId, setEditingId] = useState(null);
+function ScenarioHeaderCells({
+  entries,
+  activeId,
+  onSelect,
+  onDelete,
+  onRename,
+}: {
+  entries: readonly { id: string; label: string }[];
+  activeId: string;
+  onSelect: (id: string) => void;
+  onDelete: (id: string) => void;
+  onRename: (id: string, label: string) => void;
+}) {
+  const [editingId, setEditingId] = useState<string | null>(null);
   return (
     <div className="contents" data-product-scenario-tabs="">
       {entries.map((entry, index) => {
@@ -418,7 +525,23 @@ function ScenarioHeaderCells({ entries, activeId, onSelect, onDelete, onRename }
 // One variant's cell: editable, bound to the override value when overridden or the inherited Base
 // value otherwise (editing an inherited cell creates the override). The revert ↩ appears (inside the
 // box) only when overridden, dropping the key so the cell re-inherits Base.
-function VariantKnobCell({ knob, variant, baseInput, bootstrap, portfolio, onPatchVariant, onRevertKeys }) {
+function VariantKnobCell({
+  knob,
+  variant,
+  baseInput,
+  bootstrap,
+  portfolio,
+  onPatchVariant,
+  onRevertKeys,
+}: {
+  knob: Knob;
+  variant: ScenarioVariant;
+  baseInput: ProductInput;
+  bootstrap: Bootstrap;
+  portfolio: Portfolio;
+  onPatchVariant: VariantPatch;
+  onRevertKeys: RevertKeys;
+}) {
   const resolved = resolveVariant(baseInput, variant.overrides);
   if (!knobApplies(knob, resolved)) return <NaCell />;
   const overridden = knob.key in variant.overrides;
@@ -447,9 +570,22 @@ function VariantKnobCell({ knob, variant, baseInput, bootstrap, portfolio, onPat
   );
 }
 
-function TimelineCell({ entry, horizonMonths, onSetBaseField, onPatchVariant, onRevertKeys }) {
+function TimelineCell({
+  entry,
+  horizonMonths,
+  onSetBaseField,
+  onPatchVariant,
+  onRevertKeys,
+}: {
+  entry: ScenarioEntry;
+  horizonMonths: number | null;
+  onSetBaseField: InputChange;
+  onPatchVariant: VariantPatch;
+  onRevertKeys: RevertKeys;
+}) {
   if (entry.input.propertyId == null) return <NaCell />;
-  const overridden = entry.variant != null && "propertyLifecycleEvents" in entry.variant.overrides;
+  const variant = entry.variant;
+  const overridden = variant != null && "propertyLifecycleEvents" in variant.overrides;
   const content = (
     <LifecycleEventsEditor
       events={entry.input.propertyLifecycleEvents ?? []}
@@ -466,12 +602,12 @@ function TimelineCell({ entry, horizonMonths, onSetBaseField, onPatchVariant, on
   return (
     <td className="px-3 py-2 align-top" data-product-timeline-cell={entry.id}>
       <div className={entry.variant != null && !overridden ? "opacity-75" : undefined}>
-        {overridden && (
+        {overridden && variant != null && (
           <div className="mb-1 flex justify-end">
             <button
               type="button"
               className="augur-link text-xs font-semibold"
-              onClick={() => onRevertKeys(entry.variant.id, ["propertyLifecycleEvents"])}
+              onClick={() => onRevertKeys(variant.id, ["propertyLifecycleEvents"])}
             >
               Revert
             </button>
@@ -504,12 +640,28 @@ export function ScenarioEditor({
   onDeleteVariant,
   onRename,
   onResetBase,
+}: {
+  base: ScenarioSet["base"];
+  variants: ScenarioSet["variants"];
+  activeId: string;
+  bootstrap: Bootstrap;
+  portfolio: Portfolio;
+  portfolioError: string | null;
+  horizonMonths: number | null;
+  onSetBaseField: InputChange;
+  onPatchVariant: VariantPatch;
+  onRevertKeys: RevertKeys;
+  onAddVariant: () => void;
+  onSelect: (id: string) => void;
+  onDeleteVariant: (id: string) => void;
+  onRename: (id: string, label: string) => void;
+  onResetBase: () => void;
 }) {
   const [open, setOpen] = useState(true);
   // Per-group + timeline collapse — fold away the rows/sections that don't matter for the comparison
   // at hand (e.g. mortgage terms, management, the per-scenario timelines). Everything starts expanded.
-  const [collapsed, setCollapsed] = useState(() => new Set());
-  const toggleCollapsed = (name) =>
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
+  const toggleCollapsed = (name: string) =>
     setCollapsed((previous) => {
       const next = new Set(previous);
       if (next.has(name)) next.delete(name);
@@ -520,7 +672,12 @@ export function ScenarioEditor({
   const activeVariant = variants.find((v) => v.id === activeId) ?? null;
   const resetActive = () => {
     if (activeVariant == null) onResetBase();
-    else onRevertKeys(activeVariant.id, Object.keys(activeVariant.overrides));
+    else {
+      const keys = Object.keys(activeVariant.overrides).filter((key): key is InputKey =>
+        Object.prototype.hasOwnProperty.call(base.input, key)
+      );
+      onRevertKeys(activeVariant.id, keys);
+    }
   };
   const settingColumnWidth = "18rem";
   const scenarioMinWidth = "12rem";

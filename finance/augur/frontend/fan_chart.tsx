@@ -9,9 +9,76 @@ import {
   eventMonthIndex,
   eventColor,
   eventTitle,
+  type metricFanRows,
+  type selectedRolloutMetricRows,
 } from "./data_helpers";
+import type { useEventSelection } from "./hooks";
 
-function FanAxes({ left, top, plotWidth, plotHeight, height, y, yAxis, maxYear, metric, currency }) {
+type ProductFanRow = ReturnType<typeof metricFanRows>[number];
+type FanRow = Pick<ProductFanRow, "monthIndex" | "year" | "values"> &
+  Partial<Pick<ProductFanRow, "displayValues" | "currency">>;
+type SelectedRow = ReturnType<typeof selectedRolloutMetricRows>[number];
+type Metric = { chartValue: string; label: string };
+type RolloutEvent = Parameters<typeof eventTitle>[0];
+type EventSelection = Pick<
+  ReturnType<typeof useEventSelection>,
+  "selectedEventMonthIndex" | "hoveredEventMonthIndex" | "onSelectEventMonth" | "onHoverEventMonth"
+>;
+type XCoordinate = (row: { year: number }) => number;
+type YCoordinate = (value: number | undefined) => number;
+export type FanSeries = { id: string; label: string; color: string; rows: FanRow[]; isActive: boolean };
+type RowsBySeries = ReadonlyMap<string, ReadonlyMap<number, FanRow>>;
+type EventMarker = {
+  event: RolloutEvent;
+  index: number;
+  monthIndex: number;
+  row: SelectedRow;
+  color: string;
+  stackIndex: number;
+  stackCount: number;
+};
+type FanEventMarkerProps = EventMarker &
+  EventSelection & { x: XCoordinate; y: YCoordinate; top: number; plotHeight: number };
+type MetricFanChartProps = EventSelection & {
+  series: readonly FanSeries[];
+  metric: Metric;
+  percentiles: readonly number[];
+  selectedRows: readonly SelectedRow[];
+  selectedEvents: readonly RolloutEvent[];
+  selectedSeed: number | null;
+  selectedFailed: boolean;
+  visibleEventKinds: ReadonlySet<RolloutEvent["kind"]>;
+  metricScale?: ReturnType<typeof fanChartAxis>["scale"];
+  mode?: "fan" | "candles";
+  candleBucketMonths?: number;
+  horizonMonths?: number | null;
+  onChangeHorizonMonths?: ((months: number) => void) | null;
+  maxHorizonMonths?: number | null;
+};
+
+function FanAxes({
+  left,
+  top,
+  plotWidth,
+  plotHeight,
+  height,
+  y,
+  yAxis,
+  maxYear,
+  metric,
+  currency,
+}: {
+  left: number;
+  top: number;
+  plotWidth: number;
+  plotHeight: number;
+  height: number;
+  y: YCoordinate;
+  yAxis: ReturnType<typeof fanChartAxis>;
+  maxYear: number;
+  metric: Metric;
+  currency: FanRow["currency"] | undefined;
+}) {
   return (
     <>
       {yAxis.ticks.map((value) => {
@@ -56,7 +123,7 @@ function FanEventMarker({
   hoveredEventMonthIndex,
   onSelectEventMonth,
   onHoverEventMonth,
-}) {
+}: FanEventMarkerProps) {
   const title = eventTitle(event);
   const isSelected = selectedEventMonthIndex === monthIndex;
   const isHovered = hoveredEventMonthIndex === monthIndex;
@@ -135,14 +202,14 @@ function FanEventMarker({
 // Checkpoint rows for the candle view: one every `bucketMonths` months (mapped to the nearest
 // actual row), always including the horizon end. Deduped so a coarse bucket on a short horizon
 // doesn't draw two candles on the same month.
-function buildCandleCheckpoints(rows, maxMonth, bucketMonths) {
+function buildCandleCheckpoints(rows: readonly FanRow[], maxMonth: number, bucketMonths: number): FanRow[] {
   const targets = [];
   for (let month = bucketMonths; month <= maxMonth; month += bucketMonths) targets.push(month);
   if (targets.length === 0 || targets[targets.length - 1] !== maxMonth) targets.push(maxMonth);
-  const seen = new Set();
-  const checkpoints = [];
+  const seen = new Set<number>();
+  const checkpoints: FanRow[] = [];
   for (const target of targets) {
-    let best = null;
+    let best: FanRow | null = null;
     let bestDist = Infinity;
     for (const row of rows) {
       const dist = Math.abs(row.monthIndex - target);
@@ -163,7 +230,27 @@ function buildCandleCheckpoints(rows, maxMonth, bucketMonths) {
 // wick, a translucent P25–P75 box, and a median tick — offset side-by-side so scenarios don't
 // overlap. Candles sit at their true x; their width adapts to the bucket spacing and how many
 // scenarios share each checkpoint, so finer buckets / more scenarios render proportionally thinner.
-function CandleLayer({ series, checkpointRows, rowByMonthBySeries, x, y, bucketMonths, maxMonth, plotWidth, pcts }) {
+function CandleLayer({
+  series,
+  checkpointRows,
+  rowByMonthBySeries,
+  x,
+  y,
+  bucketMonths,
+  maxMonth,
+  plotWidth,
+  pcts,
+}: {
+  series: readonly FanSeries[];
+  checkpointRows: readonly FanRow[];
+  rowByMonthBySeries: RowsBySeries;
+  x: XCoordinate;
+  y: YCoordinate;
+  bucketMonths: number;
+  maxMonth: number;
+  plotWidth: number;
+  pcts: { outerLow: number; innerLow: number; median: number; innerHigh: number; outerHigh: number };
+}) {
   const { outerLow, innerLow, median, innerHigh, outerHigh } = pcts;
   const spacingPx = (bucketMonths / Math.max(1, maxMonth)) * plotWidth;
   // One scenario's candle width: capped at 16px and never wider than its share of the checkpoint
@@ -254,9 +341,9 @@ export function MetricFanChart({
   horizonMonths = null,
   onChangeHorizonMonths = null,
   maxHorizonMonths = null,
-}) {
-  const [hoveredMonth, setHoveredMonth] = useState(null);
-  const svgRef = useRef(null);
+}: MetricFanChartProps) {
+  const [hoveredMonth, setHoveredMonth] = useState<FanRow | null>(null);
+  const svgRef = useRef<SVGSVGElement | null>(null);
   const [svgWidth, setSvgWidth] = useState(760);
   useEffect(() => {
     const svg = svgRef.current;
@@ -281,7 +368,7 @@ export function MetricFanChart({
   useEffect(() => {
     const svg = svgRef.current;
     if (!svg || !onChangeHorizonMonths || maxHorizonMonths == null) return undefined;
-    const onWheel = (event) => {
+    const onWheel = (event: WheelEvent) => {
       event.preventDefault();
       const base = horizonRef.current;
       if (base == null) return;
@@ -307,7 +394,7 @@ export function MetricFanChart({
   );
   // Per-scenario month→row lookup for the comparison tooltip (each scenario's median at the hovered month).
   const rowByMonthBySeries = useMemo(() => {
-    const map = new Map();
+    const map = new Map<string, Map<number, FanRow>>();
     for (const entry of series) map.set(entry.id, new Map(entry.rows.map((row) => [row.monthIndex, row])));
     return map;
   }, [series]);
@@ -330,18 +417,20 @@ export function MetricFanChart({
   const values = allRows
     .flatMap((row) => sortedPercentiles.map((pct) => row.values.get(pct)))
     .concat(selectedRows.map((row) => row.value))
-    .filter(Number.isFinite);
+    .filter((value): value is number => Number.isFinite(value));
   const chartCurrency = activeSeries.rows[0]?.currency ?? selectedRows[0]?.currency;
   const yAxis = fanChartAxis(metric.chartValue, values, metricScale);
   const svgHeight = 300;
   const margin = { left: 82, right: 24, top: 18, bottom: 42 };
   const plotHeight = svgHeight - margin.top - margin.bottom;
   const plotWidth = svgWidth - margin.left - margin.right;
-  const x = (row) => margin.left + (row.year / maxYear) * plotWidth;
-  const y = (value) => margin.top + (1 - (axisCoordinate(yAxis, value) - yAxis.min) / yAxis.range) * plotHeight;
-  const valueAt = (row, pct) => row.values.get(pct);
-  const line = (rows, pct) => rows.map((row) => `${x(row)},${y(valueAt(row, pct))}`).join(" ");
-  const band = (rows, upperPct, lowerPct) => {
+  const x: XCoordinate = (row) => margin.left + (row.year / maxYear) * plotWidth;
+  const y: YCoordinate = (value) =>
+    margin.top + (1 - (axisCoordinate(yAxis, value ?? NaN) - yAxis.min) / yAxis.range) * plotHeight;
+  const valueAt = (row: FanRow, pct: number) => row.values.get(pct);
+  const line = (rows: readonly FanRow[], pct: number) =>
+    rows.map((row) => `${x(row)},${y(valueAt(row, pct))}`).join(" ");
+  const band = (rows: readonly FanRow[], upperPct: number, lowerPct: number) => {
     const upper = rows.map((row) => `${x(row)},${y(valueAt(row, upperPct))}`).join(" ");
     const lower = rows
       .slice()
@@ -363,7 +452,7 @@ export function MetricFanChart({
     ? buildCandleCheckpoints(activeSeries.rows, maxMonth, candleBucketMonths)
     : [];
 
-  const monthBuckets = new Map();
+  const monthBuckets = new Map<number, { event: RolloutEvent; index: number; row: SelectedRow }[]>();
   for (let index = 0; index < selectedEvents.length; index += 1) {
     const event = selectedEvents[index];
     if (!visibleEventKinds.has(event.kind)) continue;
@@ -371,10 +460,14 @@ export function MetricFanChart({
     if (monthIndex == null) continue;
     const row = selectedRowByMonth.get(monthIndex);
     if (!row) continue;
-    if (!monthBuckets.has(monthIndex)) monthBuckets.set(monthIndex, []);
-    monthBuckets.get(monthIndex).push({ event, index, row });
+    let bucket = monthBuckets.get(monthIndex);
+    if (bucket == null) {
+      bucket = [];
+      monthBuckets.set(monthIndex, bucket);
+    }
+    bucket.push({ event, index, row });
   }
-  const eventMarkers = [];
+  const eventMarkers: EventMarker[] = [];
   for (const [monthIndex, bucket] of monthBuckets) {
     for (let stackIndex = 0; stackIndex < bucket.length; stackIndex += 1) {
       const { event, index, row } = bucket[stackIndex];
@@ -392,7 +485,7 @@ export function MetricFanChart({
 
   // Plain handlers (not useCallback): they sit after the early return above, and as DOM event
   // handlers gain nothing from memoization.
-  const handleMouseMove = (event) => {
+  const handleMouseMove = (event: React.MouseEvent<SVGSVGElement>) => {
     const svg = svgRef.current;
     if (!svg) return;
     const rect = svg.getBoundingClientRect();
@@ -402,7 +495,7 @@ export function MetricFanChart({
       return;
     }
     const targetYear = ((svgX - margin.left) / plotWidth) * maxYear;
-    let closest = null;
+    let closest: FanRow | null = null;
     let closestDist = Infinity;
     for (const row of activeSeries.rows) {
       const dist = Math.abs(row.year - targetYear);

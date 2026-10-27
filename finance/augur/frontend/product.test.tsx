@@ -4,10 +4,25 @@ import React, { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-import { scenarioSetToSearch } from "./input_helpers";
+import { productInputDefaults, scenarioSetToSearch } from "./input_helpers";
 import { ProductProjectionWorkspace } from "./product";
+import type { fetchProductPortfolio, fetchProductProjectionSummary, fetchProductRollout } from "./client";
+import type { ScenarioEditor } from "./scenario_editor";
+import type { TerminalDistributionChart } from "./terminal_distribution";
+import type { MetricFanChart } from "./fan_chart";
 
-const client = vi.hoisted(() => ({ portfolio: vi.fn(), projection: vi.fn(), rollout: vi.fn(), toast: vi.fn() }));
+const client = vi.hoisted(() => ({
+  portfolio: vi.fn<typeof fetchProductPortfolio>(),
+  projection: vi.fn<typeof fetchProductProjectionSummary>(),
+  rollout: vi.fn<typeof fetchProductRollout>(),
+  toast: vi.fn(),
+}));
+type SelectProbeProps = {
+  data: readonly { value: string; label: string }[];
+  onChange: React.ChangeEventHandler<HTMLSelectElement>;
+  value: string;
+  "aria-label": string;
+};
 vi.mock("./client", () => ({
   fetchProductPortfolio: client.portfolio,
   fetchProductProjectionSummary: client.projection,
@@ -16,7 +31,7 @@ vi.mock("./client", () => ({
 vi.mock("./lib/toast", () => ({ toastFetchError: client.toast }));
 // Keep product request/selection state real; these render-boundary probes avoid chart geometry.
 vi.mock("@mantine/core", () => ({
-  NativeSelect: ({ data, onChange, value, "aria-label": label }) => (
+  NativeSelect: ({ data, onChange, value, "aria-label": label }: SelectProbeProps) => (
     <select aria-label={label} value={value} onChange={onChange}>
       {data.map((option) => (
         <option key={option.value} value={option.value}>
@@ -38,12 +53,16 @@ vi.mock("./scenario_tabs", () => ({ ScenarioBadge: () => null }));
 vi.mock("./events_panel", () => ({ SelectedRolloutEventsPanel: () => null, EventKindLegend: () => null }));
 vi.mock("./skeleton", () => ({ RolloutResultsSkeleton: () => null, StatCardsSkeleton: () => null }));
 vi.mock("./scenario_editor", () => ({
-  ScenarioEditor: ({ onSetBaseField }) => (
+  ScenarioEditor: ({ onSetBaseField }: React.ComponentProps<typeof ScenarioEditor>) => (
     <button onClick={() => onSetBaseField("monthlySpend", 2000)}>Edit base</button>
   ),
 }));
 vi.mock("./terminal_distribution", () => ({
-  TerminalDistributionChart: ({ scenarios, onSelectPercentile, onClear }) => (
+  TerminalDistributionChart: ({
+    scenarios,
+    onSelectPercentile,
+    onClear,
+  }: React.ComponentProps<typeof TerminalDistributionChart>) => (
     <div>
       {scenarios.map((scenario) => (
         <span key={scenario.id}>
@@ -56,7 +75,7 @@ vi.mock("./terminal_distribution", () => ({
   ),
 }));
 vi.mock("./fan_chart", () => ({
-  MetricFanChart: ({ series, selectedRows }) => (
+  MetricFanChart: ({ series, selectedRows }: React.ComponentProps<typeof MetricFanChart>) => (
     <div>
       <output data-testid="fans">{JSON.stringify(series.map(({ label, rows }) => [label, rows.length]))}</output>
       <output data-testid="detail">{selectedRows.map((row) => row.currencyQuanta).join(",")}</output>
@@ -68,8 +87,8 @@ vi.mock("./fan_chart", () => ({
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 function deferred<T>() {
-  let resolve: (value: T) => void;
-  let reject: (reason: unknown) => void;
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
   const promise = new Promise<T>((yes, no) => {
     resolve = yes;
     reject = no;
@@ -77,7 +96,7 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-function projection(request) {
+function projection(request: Parameters<typeof fetchProductProjectionSummary>[0]) {
   const seed = Number(request.scenario.monthlySpend) / 100;
   const common = {
     currencyCode: "USD",
@@ -86,7 +105,8 @@ function projection(request) {
     failedCount: 0,
     completedCount: 2,
     observationCount: 2,
-    basis: "completed_horizon",
+    basis: "completed_horizon" as const,
+    diagnostics: [],
     terminalMetricPercentiles: {
       percentile: [0, 50, 100],
       valueQuanta: ["100000", "150000", "200000"] as Array<string | null>,
@@ -105,14 +125,28 @@ function projection(request) {
   };
 }
 
-function detail(seed: number, value: string) {
+function detail(seed: number, value: string): Awaited<ReturnType<typeof fetchProductRollout>> {
   return {
     currencyCode: "USD",
     currencyQuantum: "0.01",
+    diagnostics: [],
     rollout: {
       seed,
       failed: false,
-      endingMetrics: { snapshotIndex: 0, failedMonthIndex: null as number | null, netWorthQuanta: value },
+      endingMetrics: {
+        snapshotIndex: 0,
+        failedMonthIndex: null,
+        cashQuanta: "0",
+        holdingValueQuanta: "0",
+        privateEquityValueQuanta: "0",
+        propertyValueQuanta: "0",
+        mortgageBalanceQuanta: "0",
+        homeEquityQuanta: "0",
+        liquidNetWorthQuanta: value,
+        netWorthQuanta: value,
+        shortfallQuanta: "0",
+        bondValueQuanta: "0",
+      },
       monthlyMetrics: { monthIndex: [0], netWorthQuanta: [value] },
       events: [],
     },
@@ -122,11 +156,21 @@ function detail(seed: number, value: string) {
 const requests: Array<ReturnType<typeof deferred<ReturnType<typeof detail>>> & { seed: number; signal: AbortSignal }> =
   [];
 const roots: Array<ReturnType<typeof createRoot>> = [];
+const bootstrap = {
+  locations: [],
+  properties: [],
+  models: ["example-model"],
+  defaultModelId: "example-model",
+  productInputDefaults: {},
+  maxRolloutSamples: 100,
+  maxHorizonMonths: 120,
+};
 
 async function mount() {
-  const search = scenarioSetToSearch({ label: "Base", input: { monthlySpend: 1000 } }, [
-    { label: "Variant", overrides: { monthlySpend: 1500 } },
-  ]);
+  const search = scenarioSetToSearch(
+    { label: "Base", input: { ...productInputDefaults(bootstrap), monthlySpend: 1000 } },
+    [{ id: "test-variant", label: "Variant", overrides: { monthlySpend: 1500 } }]
+  );
   window.history.replaceState(null, "", `/?${search}`);
   const container = document.createElement("div");
   document.body.append(container);
@@ -135,7 +179,7 @@ async function mount() {
   await act(async () => {
     root.render(
       <ProductProjectionWorkspace
-        bootstrap={{ locations: [], models: ["example-model"], maxRolloutSamples: 100, maxHorizonMonths: 120 }}
+        bootstrap={bootstrap}
         deployment={null}
         tab="product"
         onSelectTab={vi.fn()}
@@ -218,9 +262,22 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.resetAllMocks();
   requests.length = 0;
-  client.portfolio.mockResolvedValue({ holdings: [] });
+  client.portfolio.mockResolvedValue({
+    asOfDate: "2026-10-27",
+    currencyCode: "USD",
+    currencyQuantum: "0.01",
+    cashQuanta: "0",
+    holdings: [],
+    tlhPortfolios: [],
+    bonds: [],
+    totalHoldingsValueQuanta: "0",
+    totalHoldingsCostBasisQuanta: "0",
+    totalBondFaceValueQuanta: "0",
+  });
   client.projection.mockImplementation((request) => Promise.resolve(projection(request)));
-  client.rollout.mockImplementation((request, { signal }) => {
+  client.rollout.mockImplementation((request, options) => {
+    const signal = options?.signal;
+    if (!signal) throw new Error("Expected the rollout request to carry an abort signal");
     const response = { ...deferred<ReturnType<typeof detail>>(), seed: request.seed, signal };
     requests.push(response);
     return response.promise;

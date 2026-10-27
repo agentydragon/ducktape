@@ -3,5 +3,8 @@ import { createRoot } from "react-dom/client";
 
 import AugurApp from "./app";
 
-const root = createRoot(document.getElementById("root"));
+const rootElement = document.getElementById("root");
+if (rootElement == null) throw new Error("Augur root element is missing");
+
+const root = createRoot(rootElement);
 root.render(<AugurApp />);

@@ -15,7 +15,7 @@ const CURRENCY_DISPLAY_OPTIONS = [
 ];
 
 type MetricScale = (typeof SCALE_OPTIONS)[number]["value"];
-type CurrencyDisplay = (typeof CURRENCY_DISPLAY_OPTIONS)[number]["value"];
+export type CurrencyDisplay = (typeof CURRENCY_DISPLAY_OPTIONS)[number]["value"];
 
 function isMetricScale(value: string): value is MetricScale {
   return SCALE_OPTIONS.some((option) => option.value === value);
