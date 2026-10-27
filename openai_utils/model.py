@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
-from functools import singledispatch
 from typing import Annotated, Any, Literal, Self, cast
 
 from openai import AsyncOpenAI
@@ -304,25 +303,6 @@ class AssistantMessageOut(BaseModel):
 ResponseOutItem = Annotated[
     ReasoningItem | FunctionCallItem | FunctionCallOutputItem | AssistantMessageOut, Field(discriminator="type")
 ]
-
-
-@singledispatch
-def response_out_item_to_input(item: BaseModel) -> InputItem:
-    raise TypeError(f"Unsupported response item type: {type(item)!r}")
-
-
-def _identity(item: InputItem) -> InputItem:
-    return item
-
-
-response_out_item_to_input.register(ReasoningItem)(_identity)
-response_out_item_to_input.register(FunctionCallItem)(_identity)
-response_out_item_to_input.register(FunctionCallOutputItem)(_identity)
-
-
-@response_out_item_to_input.register
-def _(item: AssistantMessageOut) -> InputItem:
-    return item.to_input_item()
 
 
 def _message_output_to_assistant(message: ResponseOutputMessage) -> AssistantMessageOut:

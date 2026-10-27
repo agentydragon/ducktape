@@ -119,6 +119,7 @@ func TestCleanupUsesConfiguredGitHubRetentionWithoutEnablingProvider(t *testing.
 	settings := DefaultSettings()
 	settings.GitHubDeliveryRetentionDays = new(3)
 	h := newHarness(t, settings)
+	repositoryID := seedMergeabilityHistory(t, h)
 	h.exec(t, `INSERT INTO github_delivery
 		(app_id, delivery_id, installation_id, event, digest, payload, received_at)
 		VALUES (42, '00000000-0000-0000-0000-000000000001', 42, 'issue_comment', 'digest', '{}', now() - interval '4 days'),
@@ -133,6 +134,19 @@ func TestCleanupUsesConfiguredGitHubRetentionWithoutEnablingProvider(t *testing.
 	if count != 1 {
 		t.Fatalf("retained %d receipts, want only the two-day-old receipt", count)
 	}
+	if err := h.db.QueryRowContext(t.Context(), `SELECT count(*) FROM github_mergeability_event WHERE repository_id = $1`, repositoryID).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("retained %d expired mergeability transitions, want none", count)
+	}
+	var snapshotState string
+	if err := h.db.QueryRowContext(t.Context(), `SELECT state FROM github_pull_request WHERE repository_id = $1`, repositoryID).Scan(&snapshotState); err != nil {
+		t.Fatal(err)
+	}
+	if snapshotState != "OPEN" {
+		t.Fatalf("pull request snapshot state = %q, want OPEN after transition cleanup", snapshotState)
+	}
 	h.exec(t, `DELETE FROM github_delivery WHERE app_id = 42`)
 }
 
@@ -140,6 +154,7 @@ func TestInfiniteGitHubRetentionStillCleansUpInboxPayloads(t *testing.T) {
 	settings := DefaultSettings()
 	settings.GitHubDeliveryRetentionDays = nil
 	h := newHarness(t, settings)
+	repositoryID := seedMergeabilityHistory(t, h)
 	sub := h.subscribe(t, "retention")
 	h.exec(t, `INSERT INTO entry (inbox_id, cursor, event, payload, created_at)
 		VALUES ($1, 1, '{"provider":"github"}', '{}', now() - interval '31 days')`, sub.InboxID)
@@ -157,6 +172,12 @@ func TestInfiniteGitHubRetentionStillCleansUpInboxPayloads(t *testing.T) {
 	if count != 1 {
 		t.Fatalf("retained %d raw receipts, want 1", count)
 	}
+	if err := h.db.QueryRowContext(t.Context(), `SELECT count(*) FROM github_mergeability_event WHERE repository_id = $1`, repositoryID).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("retained %d mergeability transitions with infinite retention, want 1", count)
+	}
 	var expired bool
 	if err := h.db.QueryRowContext(t.Context(), `SELECT payload IS NULL FROM entry WHERE inbox_id = $1 AND cursor = 1`, sub.InboxID).Scan(&expired); err != nil {
 		t.Fatal(err)
@@ -165,4 +186,30 @@ func TestInfiniteGitHubRetentionStillCleansUpInboxPayloads(t *testing.T) {
 		t.Fatal("inbox payload did not expire")
 	}
 	h.exec(t, `DELETE FROM github_delivery WHERE app_id = 43`)
+}
+
+func seedMergeabilityHistory(t *testing.T, h *harness) int64 {
+	t.Helper()
+	repositoryID := time.Now().UnixNano()
+	t.Cleanup(func() {
+		for _, query := range []string{
+			`DELETE FROM github_mergeability_event WHERE repository_id = $1`,
+			`DELETE FROM github_pull_request WHERE repository_id = $1`,
+			`DELETE FROM github_repository WHERE repository_id = $1`,
+		} {
+			if _, err := h.db.ExecContext(context.Background(), query, repositoryID); err != nil {
+				t.Errorf("cleanup retention fixture: %v", err)
+			}
+		}
+	})
+	h.exec(t, `INSERT INTO github_repository (repository_id, full_name) VALUES ($1, 'owner/retention')`, repositoryID)
+	h.exec(t, `INSERT INTO github_pull_request
+		(repository_id, number, base_ref, head_sha, base_sha, state, mergeability,
+		 last_settled_mergeability, snapshot_version, observed_at)
+		VALUES ($1, 7, 'main', repeat('a', 40), repeat('b', 40), 'OPEN', 'CONFLICTING', 'CONFLICTING', 1, now())`, repositoryID)
+	h.exec(t, `INSERT INTO github_mergeability_event
+		(app_id, installation_id, repository_id, pull_request_number, payload, created_at)
+		VALUES (42, 42, $1, 7, '{"previousMergeability":"UNKNOWN","mergeability":"CONFLICTING"}',
+			now() - interval '4 days')`, repositoryID)
+	return repositoryID
 }

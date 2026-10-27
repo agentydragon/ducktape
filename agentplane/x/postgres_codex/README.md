@@ -61,7 +61,8 @@ records observed process exits plus possible partial effects. Explicit `input CO
 can continue after this terminal interrupted state. Unknown cleanup outcomes block continuation;
 there is no automatic replay or reconciliation interface. These controls cover known supervised
 processes, not arbitrary escaped descendants. Existing disposable experiment databases need the
-additive `migrations/0001_compaction.sql` and `migrations/0002_process_controls.sql`; `init` creates the current schema for a fresh database.
+additive `migrations/0001_compaction.sql`, `migrations/0002_process_controls.sql`, and
+`migrations/0003_process_output.sql` in order; `init` creates the current schema for a fresh database.
 
 `store.py` owns the isolated schema, intent checkpoints and lease generations. `sampler.py` owns
 conversation transitions. `code_mode.py` speaks upstream's

@@ -221,9 +221,13 @@ func (s *Store) RecordGitHub(ctx context.Context, claim Claim, recording GitHubR
 				return err
 			}
 		}
+		mergeabilityCount, mergeabilityMore, err := s.recordMergeability(ctx, tx, claim.ID, recording)
+		if err != nil {
+			return err
+		}
 		// Ingress that committed since the subscription was read must not be overwritten by an idle schedule.
 		next := recording.RepairAt
-		if recording.More || generation != recording.Generation {
+		if recording.More || mergeabilityMore || generation != recording.Generation {
 			next = now()
 		}
 		if _, err := tx.ExecContext(ctx, `
@@ -232,7 +236,7 @@ func (s *Store) RecordGitHub(ctx context.Context, claim Claim, recording GitHubR
 			WHERE id = $1`, recording.SubscriptionID, next, now()); err != nil {
 			return err
 		}
-		if len(recording.Matched) > 0 {
+		if len(recording.Matched) > 0 || mergeabilityCount > 0 {
 			if _, err := tx.ExecContext(ctx, `UPDATE inbox SET updated_at = $2 WHERE id = $1`, claim.ID, now()); err != nil {
 				return err
 			}

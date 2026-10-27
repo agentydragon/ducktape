@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 import pytest_bazel
+from opentelemetry import trace
 from pydantic import BaseModel
 
 from agentplane.app.testing.client import Client
@@ -20,6 +21,8 @@ from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from agentplane.testing.codex_model import CodexModel
 from agentplane.testing.scripted_model import ShellCall, Text
 from util.testing.undeclared_outputs import undeclared_outputs_dir
+
+tracer = trace.get_tracer(__name__)
 
 PING = "Run a shell command, then say exactly PING."
 
@@ -80,33 +83,36 @@ class _ExecResult(BaseModel):
 async def _command(
     agent: Agent, model: CodexModel, *, call_id: str, command: str, exit_code: int
 ) -> tuple[Turn, _ExecResult]:
-    async with asyncio.timeout(TURN_SECONDS), asyncio.TaskGroup() as turns:
-        turn = turns.create_task(agent.run("Run the requested shell command and report its result."))
-        request = await model.request()
-        # Emit the nested result, including its exit status, through the actual code-mode tool.
-        script = (
-            f"let result = await tools.exec_command({json.dumps({'cmd': command, 'yield_time_ms': 1000})});\n"
-            "while (result.session_id != null) {\n"
-            "  const next = await tools.write_stdin({session_id: result.session_id, chars: '', yield_time_ms: 1000});\n"
-            "  result = {...next, output: result.output + next.output};\n"
-            "}\n"
-            "text('VM_EXEC_RESULT ' + JSON.stringify(result));"
-        )
-        async with request._exchange as exchange:
-            assert request.native.code_mode
-            await exchange.send(
-                *responses_sse.response_stream(
-                    [responses_sse.CustomToolCall(call_id, "exec", script)], model=model.model
-                ).events
+    with tracer.start_as_current_span("vm.command", attributes={"command.id": call_id}):
+        async with asyncio.timeout(TURN_SECONDS), asyncio.TaskGroup() as turns:
+            turn = turns.create_task(agent.run("Run the requested shell command and report its result."))
+            request = await model.request()
+            # Emit the nested result, including its exit status, through the actual code-mode tool.
+            script = (
+                f"let result = await tools.exec_command({json.dumps({'cmd': command, 'yield_time_ms': 1000})});\n"
+                "while (result.session_id != null) {\n"
+                "  const next = await tools.write_stdin({session_id: result.session_id, chars: '', yield_time_ms: 1000});\n"
+                "  result = {...next, output: result.output + next.output};\n"
+                "}\n"
+                "text('VM_EXEC_RESULT ' + JSON.stringify(result));"
             )
-        result = await model.request()
-        await model.reply(result, Text("Command observed."))
-    (output,) = [output for output in result.tool_outputs if output.call_id == call_id]
-    reports = [block.removeprefix("VM_EXEC_RESULT ") for block in output.blocks if block.startswith("VM_EXEC_RESULT ")]
-    assert len(reports) == 1, output
-    executed = _ExecResult.model_validate_json(reports[0])
-    assert executed.exit_code == exit_code, output
-    return turn.result(), executed
+            async with request._exchange as exchange:
+                assert request.native.code_mode
+                await exchange.send(
+                    *responses_sse.response_stream(
+                        [responses_sse.CustomToolCall(call_id, "exec", script)], model=model.model
+                    ).events
+                )
+            result = await model.request()
+            await model.reply(result, Text("Command observed."))
+        (output,) = [output for output in result.tool_outputs if output.call_id == call_id]
+        reports = [
+            block.removeprefix("VM_EXEC_RESULT ") for block in output.blocks if block.startswith("VM_EXEC_RESULT ")
+        ]
+        assert len(reports) == 1, output
+        executed = _ExecResult.model_validate_json(reports[0])
+        assert executed.exit_code == exit_code, output
+        return turn.result(), executed
 
 
 @pytest.mark.vm_sandboxes
@@ -117,18 +123,22 @@ async def test_a_vm_sandbox_runs_a_turn(
     view = await sandbox(f"systest-vm-{harness}", template=VM_TEMPLATE)
     assert view.pod is not None
     model = scripted.model(view.pod.name, harness)
-    agent = await Agent.open(client, sandbox=view.name, harness=harness, model=offered_model, cwd=VM_WORKING_DIRECTORY)
-    async with asyncio.TaskGroup() as turns:
-        turn = turns.create_task(agent.run(PING))
-        await model.reply(await model.request(), ShellCall("vm-cgroup", "cat /proc/self/cgroup"))
-        result = await model.request()
-        (output,) = result.tool_outputs
-        assert output.call_id == "vm-cgroup"
-        subtree = "executors" if harness == runner_pb2.HARNESS_CODEX else "workloads"
-        assert output.contains(f"/agentplane-runner.service/{subtree}/process-")
-        await model.reply(result, Text("PING"))
-    # The scripted reply is the thread's answer: the guest's model traffic came back through the launcher.
-    assert "PING" in turn.result().answer, turn.result().transcript
+    with tracer.start_as_current_span("vm.session.open", attributes={"harness": runner_pb2.Harness.Name(harness)}):
+        agent = await Agent.open(
+            client, sandbox=view.name, harness=harness, model=offered_model, cwd=VM_WORKING_DIRECTORY
+        )
+    with tracer.start_as_current_span("vm.turn"):
+        async with asyncio.TaskGroup() as turns:
+            turn = turns.create_task(agent.run(PING))
+            await model.reply(await model.request(), ShellCall("vm-cgroup", "cat /proc/self/cgroup"))
+            result = await model.request()
+            (output,) = result.tool_outputs
+            assert output.call_id == "vm-cgroup"
+            subtree = "executors" if harness == runner_pb2.HARNESS_CODEX else "workloads"
+            assert output.contains(f"/agentplane-runner.service/{subtree}/process-")
+            await model.reply(result, Text("PING"))
+        # The scripted reply is the thread's answer: the guest's model traffic came back through the launcher.
+        assert "PING" in turn.result().answer, turn.result().transcript
 
 
 @pytest.mark.vm_sandboxes
@@ -141,9 +151,10 @@ async def test_codex_tool_oom_preserves_runner_and_app_server(
     assert view.pod is not None
     model = scripted.model(view.pod.name, runner_pb2.HARNESS_CODEX)
     assert isinstance(model, CodexModel)
-    agent = await Agent.open(
-        client, sandbox=view.name, harness=runner_pb2.HARNESS_CODEX, model=offered_model, cwd=VM_WORKING_DIRECTORY
-    )
+    with tracer.start_as_current_span("vm.session.open", attributes={"harness": "HARNESS_CODEX"}):
+        agent = await Agent.open(
+            client, sandbox=view.name, harness=runner_pb2.HARNESS_CODEX, model=offered_model, cwd=VM_WORKING_DIRECTORY
+        )
     evidence: dict[str, Any] = {}
     try:
         _, output = await _command(agent, model, call_id="memory-before", command=MEMORY_PROBE, exit_code=0)

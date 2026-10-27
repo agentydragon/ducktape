@@ -12,7 +12,7 @@
 //! cycles) AND atom-split detection (every `AtomicGroup`'s members
 //! must co-locate). Either rejection prints a diagnostic to stderr
 //! and exits non-zero without writing any file. `--no-verify` skips
-//! the gate; `--dry-run` runs the gate but doesn't write.
+//! the gate for single merges only; `--dry-run` validates without writing.
 //!
 //! The splice deserializes the target and each source into the typed
 //! [`spec::LogicalModule`] schema, concatenates their `members`,
@@ -30,7 +30,10 @@ use anyhow::{Context, Result, anyhow, bail};
 use clap::Args as ClapArgs;
 use peel::OutputFormat;
 use spec::LogicalModule;
-use spec_modules::{coalesce_source_match_claims, read_module_file as read_module};
+use spec_modules::{
+    coalesce_source_match_claims, collect_module_files, is_module_yaml, module_path_from_file,
+    read_module_file as read_module,
+};
 use yaml_edit::write_yaml_atomic;
 
 use crate::edit_gate::{GraphEditArgs, PostEditSpec, post_delete_spec, post_edit_spec_from_docs};
@@ -43,15 +46,26 @@ pub struct MergeArgs {
 
     /// Target module path (relative to --modules) to merge into.
     /// Created if it doesn't exist yet.
-    #[arg(long = "target")]
-    pub target: PathBuf,
+    #[arg(long, required_unless_present = "batch", conflicts_with = "batch")]
+    pub target: Option<PathBuf>,
 
     /// Source module paths (relative to --modules) to merge in. The
     /// `.yaml` suffix is optional: `ai/models/pricing` resolves to
     /// `ai/models/pricing.yaml` even when `ai/models/pricing/` is also
     /// a directory.
-    #[arg(required = true)]
+    #[arg(required_unless_present = "batch", conflicts_with = "batch")]
     pub sources: Vec<PathBuf>,
+
+    /// JSON array of {target, sources} merges, validated together before writing.
+    #[arg(long, conflicts_with_all = ["target", "sources", "no_verify"])]
+    pub batch: Option<PathBuf>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MergeRequest {
+    target: PathBuf,
+    sources: Vec<PathBuf>,
 }
 
 /// Target and source files shared by merge preview, apply, and CLI reporting.
@@ -71,6 +85,13 @@ pub struct MergeOutcome {
     #[serde(flatten)]
     pub outcome: MutationOutcome,
     pub target: String,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct MergeBatchOutcome {
+    #[serde(flatten)]
+    outcome: MutationOutcome,
+    targets: Vec<String>,
 }
 
 /// `modules delete` outcome: just the shared core (deleted paths in
@@ -201,7 +222,7 @@ impl DeleteSummary {
 ///   and exit non-zero with the same `render_cycle_summary`
 ///   diagnostic the pipeline prints if `Verdict::Unrealizable`.
 /// * `--dry-run`: run the gate but do not modify any file.
-/// * `--no-verify`: skip the gate; apply the merge regardless.
+/// * `--no-verify`: skip the gate for a single merge; rejected with `--batch`.
 pub fn run_merge(merge: MergeArgs) -> Result<()> {
     if merge.edit.no_verify {
         eprintln!(
@@ -210,35 +231,73 @@ pub fn run_merge(merge: MergeArgs) -> Result<()> {
         );
     }
     let gate = merge.edit.gate()?;
-    let sources: Vec<&Path> = merge.sources.iter().map(PathBuf::as_path).collect();
-    let plan = plan_merge(&merge.edit.modules_root, &merge.target, &sources)?;
-    if let Err(err) = gate.check(&merge.edit.modules_root, || {
-        plan.post_spec(&merge.edit.modules_root)
-    }) {
+    let is_batch = merge.batch.is_some();
+    let modules_root = if is_batch {
+        fs::canonicalize(&merge.edit.modules_root)?
+    } else {
+        merge.edit.modules_root.clone()
+    };
+    let requests = if let Some(batch) = merge.batch {
+        let text = fs::read_to_string(&batch)
+            .with_context(|| format!("reading merge batch {}", batch.display()))?;
+        let requests = serde_json::from_str(&text).context("parsing merge batch")?;
+        resolve_merge_batch(&modules_root, requests)?
+    } else {
+        vec![MergeRequest {
+            target: merge.target.context("merge target is required")?,
+            sources: merge.sources,
+        }]
+    };
+    let plans = requests
+        .iter()
+        .map(|request| {
+            let sources: Vec<_> = request.sources.iter().map(PathBuf::as_path).collect();
+            plan_merge(&modules_root, &request.target, &sources)
+        })
+        .collect::<Result<Vec<_>>>()?;
+    if let Err(err) = gate.check(&modules_root, || post_merge_spec(&modules_root, &plans)) {
         emit_gate_rejection_json("merge", merge.edit.format, &err);
         return Err(err);
     }
-    let (summary, action) = if merge.edit.dry_run {
-        (plan.summary, "dry-run")
+    if !merge.edit.dry_run {
+        // Every target is written before any source is deleted. Per-file writes
+        // are atomic; this is not a crash-atomic multi-file transaction.
+        for plan in &plans {
+            plan.write_target()?;
+        }
+        for plan in &plans {
+            for source in &plan.summary.merged_sources {
+                fs::remove_file(source)
+                    .with_context(|| format!("deleting merged source {}", source.display()))?;
+            }
+        }
+    }
+    let action = if merge.edit.dry_run {
+        "dry-run"
     } else {
-        (plan.apply()?, "applied")
+        "applied"
     };
-    let merge_outcome = MergeOutcome {
-        outcome: MutationOutcome {
-            verb: "merge",
-            action,
-            gate: gate.outcome(),
-            files_written: vec![summary.target.display().to_string()],
-            files_deleted: summary
-                .merged_sources
-                .iter()
-                .map(|p| p.display().to_string())
-                .collect(),
-        },
-        target: summary.target.display().to_string(),
+    let outcome = MutationOutcome {
+        verb: "merge",
+        action,
+        gate: gate.outcome(),
+        files_written: plans
+            .iter()
+            .map(|p| p.summary.target.display().to_string())
+            .collect(),
+        files_deleted: plans
+            .iter()
+            .flat_map(|p| &p.summary.merged_sources)
+            .map(|p| p.display().to_string())
+            .collect(),
     };
     match OutputFormat::resolve(merge.edit.format) {
         OutputFormat::Text => {
+            if is_batch {
+                println!("{action}: {} merge target(s)", plans.len());
+                return Ok(());
+            }
+            let summary = &plans[0].summary;
             if merge.edit.dry_run {
                 println!(
                     "dry-run: would merge {} source(s) into {}",
@@ -249,7 +308,20 @@ pub fn run_merge(merge: MergeArgs) -> Result<()> {
                 println!("{}", summary.summary_line());
             }
         }
-        format => print_outcome_json(&merge_outcome, format)?,
+        format if is_batch => {
+            let targets = plans
+                .iter()
+                .map(|p| p.summary.target.display().to_string())
+                .collect();
+            print_outcome_json(&MergeBatchOutcome { outcome, targets }, format)?;
+        }
+        format => print_outcome_json(
+            &MergeOutcome {
+                outcome,
+                target: plans[0].summary.target.display().to_string(),
+            },
+            format,
+        )?,
     }
     Ok(())
 }
@@ -262,38 +334,173 @@ struct MergePlan {
 }
 
 impl MergePlan {
-    fn post_spec(&self, modules_root: &Path) -> Result<PostEditSpec> {
-        let mut replaced = self.summary.merged_sources.clone();
-        replaced.push(self.summary.target.clone());
-        let mut post_spec = post_delete_spec(modules_root, &replaced)?;
-        // Use the same document-to-claims projection as binding edits, rather
-        // than independently concatenating the original files' claims.
-        let docs = BTreeMap::from([(
-            String::new(),
-            (self.summary.target.clone(), self.document.clone()),
-        )]);
-        post_spec
-            .modules
-            .extend(post_edit_spec_from_docs(&docs, &BTreeSet::new())?.modules);
-        post_spec
-            .modules
-            .sort_by(|left, right| left.path.cmp(&right.path));
-        Ok(post_spec)
-    }
-
-    fn apply(self) -> Result<MergeSummary> {
+    fn write_target(&self) -> Result<()> {
         let target = &self.summary.target;
         let doc = serde_yaml::to_value(&self.document)
             .with_context(|| format!("re-encoding merged {}", target.display()))?;
-        // Retain write-before-delete and the shared atomic per-file writer.
-        // This does not promise a crash-atomic multi-file transaction.
-        write_yaml_atomic(target, &doc)?;
-        for src in &self.summary.merged_sources {
-            fs::remove_file(src)
-                .with_context(|| format!("deleting merged source {}", src.display()))?;
-        }
-        Ok(self.summary)
+        write_yaml_atomic(target, &doc)
     }
+}
+
+fn post_merge_spec(modules_root: &Path, plans: &[MergePlan]) -> Result<PostEditSpec> {
+    let replaced: Vec<_> = plans
+        .iter()
+        .flat_map(|plan| {
+            plan.summary
+                .merged_sources
+                .iter()
+                .cloned()
+                .chain(std::iter::once(plan.summary.target.clone()))
+        })
+        .collect();
+    let mut post_spec = post_delete_spec(modules_root, &replaced)?;
+    let docs = plans
+        .iter()
+        .enumerate()
+        .map(|(index, plan)| {
+            (
+                index.to_string(),
+                (plan.summary.target.clone(), plan.document.clone()),
+            )
+        })
+        .collect();
+    post_spec
+        .modules
+        .extend(post_edit_spec_from_docs(&docs, &BTreeSet::new())?.modules);
+    post_spec
+        .modules
+        .sort_by(|left, right| left.path.cmp(&right.path));
+    Ok(post_spec)
+}
+
+/// Resolve aliases without changing the physical spelling of a new filename.
+fn merge_path_identity(path: &Path) -> Result<PathBuf> {
+    match fs::canonicalize(path) {
+        Ok(path) => Ok(path),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            let name = path.file_name().context("ambiguous merge batch path")?;
+            let parent = path
+                .parent()
+                .filter(|p| !p.as_os_str().is_empty())
+                .unwrap_or(Path::new("."));
+            Ok(merge_path_identity(parent)?.join(name))
+        }
+        Err(err) => {
+            Err(err).with_context(|| format!("resolving merge batch path {}", path.display()))
+        }
+    }
+}
+
+fn resolve_merge_batch(root: &Path, requests: Vec<MergeRequest>) -> Result<Vec<MergeRequest>> {
+    anyhow::ensure!(!requests.is_empty(), "merge batch is empty");
+    reject_merge_batch_symlinks(root)?;
+    let mut targets = BTreeMap::new();
+    let mut sources = BTreeMap::new();
+    let mut resolved = Vec::new();
+    for (index, request) in requests.into_iter().enumerate() {
+        anyhow::ensure!(
+            !request.sources.is_empty(),
+            "merge batch entry {index} has no sources"
+        );
+        let resolve = |path: &Path| -> Result<PathBuf> {
+            let path = merge_path_identity(&resolve_module_file(root, path))?;
+            anyhow::ensure!(
+                is_module_yaml(&path),
+                "merge batch module path must end in .yaml: {}",
+                path.display()
+            );
+            anyhow::ensure!(
+                path.starts_with(root),
+                "merge batch path escapes modules root: {}",
+                path.display()
+            );
+            Ok(path)
+        };
+        let target = resolve(&request.target)?;
+        anyhow::ensure!(
+            targets.insert(target.clone(), index).is_none(),
+            "duplicate merge batch target: {}",
+            target.display()
+        );
+        let mut resolved_sources = Vec::new();
+        for source in request.sources {
+            let source = resolve(&source)?;
+            anyhow::ensure!(
+                sources.insert(source.clone(), index).is_none(),
+                "reused merge batch source: {}",
+                source.display()
+            );
+            resolved_sources.push(source);
+        }
+        resolved.push(MergeRequest {
+            target,
+            sources: resolved_sources,
+        });
+    }
+    for target in targets.keys() {
+        anyhow::ensure!(
+            !sources.contains_key(target),
+            "merge batch source-target overlap: {}",
+            target.display()
+        );
+    }
+    // Check the complete prospective file set, including untouched modules.
+    // Logical names are canonicalized separately from physical filenames.
+    let mut logical_paths = BTreeMap::new();
+    for file in collect_module_files(root)?
+        .into_iter()
+        .filter(|file| !sources.contains_key(file) && !targets.contains_key(file))
+        .chain(targets.keys().cloned())
+    {
+        let logical = spec::ModulePath::parse(&module_path_from_file(&file, root), "")?;
+        if let Some(previous) = logical_paths.insert(logical, file.clone()) {
+            bail!(
+                "merge batch logical destination collision: {} and {}",
+                previous.display(),
+                file.display()
+            );
+        }
+        for target in targets.keys() {
+            anyhow::ensure!(
+                target == &file || !file.starts_with(target),
+                "merge batch target is a parent of another module: {}",
+                target.display()
+            );
+        }
+    }
+    // Case-only relocation within one row is valid. Cross-row logical chains
+    // are ambiguous even when both physical files exist on a case-sensitive FS.
+    for (target, target_row) in &targets {
+        for (source, source_row) in &sources {
+            let target_name = module_path_from_file(target, root).to_ascii_lowercase();
+            let source_name = module_path_from_file(source, root).to_ascii_lowercase();
+            anyhow::ensure!(
+                target_row == source_row || target_name != source_name,
+                "merge batch logical source-target overlap: {} and {}",
+                target.display(),
+                source.display()
+            );
+        }
+    }
+    Ok(resolved)
+}
+
+/// Writing through one alias can change an untouched module's claims, and
+/// deleting a source can strand another alias. Keep that boundary explicit.
+fn reject_merge_batch_symlinks(root: &Path) -> Result<()> {
+    for entry in fs::read_dir(root)? {
+        let entry = entry?;
+        let kind = entry.file_type()?;
+        anyhow::ensure!(
+            !kind.is_symlink(),
+            "merge batch does not support symlink entries: {}",
+            entry.path().display()
+        );
+        if kind.is_dir() {
+            reject_merge_batch_symlinks(&entry.path())?;
+        }
+    }
+    Ok(())
 }
 
 fn plan_merge(modules_root: &Path, target: &Path, sources: &[&Path]) -> Result<MergePlan> {
@@ -307,6 +514,7 @@ fn plan_merge(modules_root: &Path, target: &Path, sources: &[&Path]) -> Result<M
     let mut existing_names = claim_names(&target_module, &target_abs)?;
     let mut merged_source_labels: Vec<String> = Vec::new();
     let mut merged_comments: Vec<String> = Vec::new();
+    let mut merged_notes: Vec<String> = Vec::new();
 
     for src in &source_abs {
         let src_module = read_module(src)?;
@@ -342,6 +550,13 @@ fn plan_merge(modules_root: &Path, target: &Path, sources: &[&Path]) -> Result<M
             .filter(|comment| !comment.trim().is_empty())
         {
             merged_comments.push(format!("--- from {label}:\n{comment}"));
+        }
+        if let Some(note) = src_module
+            .note
+            .as_deref()
+            .filter(|note| !note.trim().is_empty())
+        {
+            merged_notes.push(format!("--- from {label}:\n{}", note.trim_end()));
         }
         // `members:`, `source_matches:`, and `anonymous_statements:` are all
         // claims; dropping any of them with the deleted source would silently
@@ -385,10 +600,8 @@ fn plan_merge(modules_root: &Path, target: &Path, sources: &[&Path]) -> Result<M
     // (docs/spec_editing.md § "Comments and notes"). `note:` is non-emitting and round-trips.
     if !merged_source_labels.is_empty() {
         let provenance = format!("merged from: {}", merged_source_labels.join(", "));
-        target_module.note = Some(compose_block(
-            target_module.note.as_deref(),
-            std::iter::once(provenance),
-        ));
+        merged_notes.push(provenance);
+        target_module.note = Some(compose_block(target_module.note.as_deref(), merged_notes));
     }
 
     coalesce_source_match_claims(&mut target_module);

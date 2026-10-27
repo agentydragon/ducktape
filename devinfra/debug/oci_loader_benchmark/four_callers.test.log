@@ -1,0 +1,15 @@
+exec ${PAGER:-/usr/bin/less} "$0" || exit 1
+Executing tests from //devinfra/debug/oci_loader_benchmark:compare_concurrent
+-----------------------------------------------------------------------------
+CASE prime layer store
+Loaded image: ducktape-oci-benchmark:rules-0
+elapsed=34.499 user=0.513 system=9.147
+CASE four python guarded callers, fresh tag, warm layers
+elapsed=5.105 user=3.403 system=3.557
+CASE four bare rules_oci callers, fresh tag, warm layers
+elapsed=4.725 user=0.982 system=4.450
+CASE four guarded rules_oci callers, fresh tag, warm layers
+elapsed=1.591 user=1.368 system=1.144
+sha256:a6638641707cdf047e5d5c2781f437e2e809323cab22c70b280be8389fbb7878
+sha256:a6638641707cdf047e5d5c2781f437e2e809323cab22c70b280be8389fbb7878
+sha256:a6638641707cdf047e5d5c2781f437e2e809323cab22c70b280be8389fbb7878

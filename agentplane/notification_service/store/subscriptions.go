@@ -260,6 +260,13 @@ func (s *Store) Subscribe(ctx context.Context, owner ServiceAccount, body Subscr
 			binding.githubSubjectKind, binding.githubSubjectKey, expiry(written, body.LifetimeDays), written); err != nil {
 			return err
 		}
+		if _, ok := body.Source.(GitHubSource); ok {
+			if _, err := tx.ExecContext(ctx, `UPDATE subscription
+				SET github_mergeability_after_sequence = (SELECT coalesce(max(sequence), 0) FROM github_mergeability_event)
+				WHERE id = $1`, id); err != nil {
+				return err
+			}
+		}
 		if _, err := tx.ExecContext(ctx, `UPDATE inbox SET updated_at = $2, next_attempt = $2 WHERE id = $1`,
 			inbox.ID, written); err != nil {
 			return err

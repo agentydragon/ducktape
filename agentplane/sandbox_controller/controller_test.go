@@ -284,7 +284,7 @@ func TestStatusConditionsUseOneConnectionLeaseSnapshot(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: sandboxName, UID: "uid-pod"},
 		Status:     corev1.PodStatus{Phase: corev1.PodRunning, Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}}},
 	}
-	if _, err := r.updateStatus(context.Background(), sandbox, workload{pod: pod}, nil); err != nil {
+	if _, err := r.updateStatus(context.Background(), sandbox, workload{pod: pod}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if reader.leaseGets != 1 {

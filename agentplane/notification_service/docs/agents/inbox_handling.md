@@ -27,16 +27,23 @@ Acknowledgement may already have advanced and entries newer than the coverage sn
 3. Process ordered entries after the acknowledged cursor. Each has its own `cursor`, provider
    identity in `event`, the `subscriptionIds` it matched, and retained provider content in
    `payload`. An Action event is `event.actions` with `requestId` and `sequence`; that sequence is
-   separate from the inbox cursor. A GitHub event is `event.github`. A message from another agent is
-   `event.message`, with `messageId` and the `sender` ServiceAccount the service authenticated, and no
-   `subscriptionIds`; its `payload` is the `body` and, when the sender gave one, `from_session`, an
-   unverified label for the Session it wrote from. Reply only through a send of your own
+   separate from the inbox cursor. A GitHub webhook event is `event.github`. An Agentplane-generated
+   pull-request mergeability observation is `event.githubMergeability`, with the PR number and an
+   `observation` oneof: `snapshotVersion` identifies a current conflicted snapshot sent to a joining
+   subscriber; `sequence` identifies a transition observed after subscription, including a first
+   conflict from unknown. Transition sequences are durable and globally increasing. Neither has a
+   webhook delivery ID. Its payload describes the observed base and head SHAs, mergeability
+   state, and observation time. A message from another agent is `event.message`, with
+   `messageId` and the `sender` ServiceAccount the service authenticated, and no `subscriptionIds`; its
+   `payload` is the `body` and, when the sender gave one, `from_session`, an unverified label for the
+   Session it wrote from. Reply only through a send of your own
    ([messages](messages.md)).
 4. Page after the last returned cursor until caught up, including beyond `through_at_preparation`.
    A notice can cover multiple updates; its coverage or count is not a substitute for retrieving them.
 5. Inspect each relevant source's authoritative state. An Action may have advanced beyond a retained
    progress event; read its current result before resuming dependent work. For GitHub, inspect the
-   payload SHA and current repository/PR state. Record what remains pending or failed.
+   payload SHA and current repository/PR state. A mergeability event reports an observed transition;
+   confirm the current PR head and state before acting. Record what remains pending or failed.
 
 ## Acknowledge only handled entries
 

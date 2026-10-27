@@ -43,7 +43,10 @@ or dispatch a model tool; partial streams never dispatch. There is no automatic 
 Every provider, cell observation and nested tool invocation commits an intent before dispatch.
 Completed provider/cell outputs atomically append to the conversation and clear the outer pending
 intent. Nested results alone cannot recover an interrupted JS cell. Output cursors advance only after
-real retained output is read; terminal process results drain output after exit. Current live handles
+real retained output is read; terminal process results drain output after exit. Idle process reconciliation can retain up to 1 MiB of unread output per handle in PostgreSQL.
+An observed exited process remains locally readable with `write_stdin` using empty input, even
+after its remote executor session expires. The standalone CLI reconciles on explicit model reads;
+an embedding caller can invoke bounded reconciliation independently. Current live handles
 are regenerated from the database for model requests rather than inferred from earlier tool text.
 
 Process handles can survive completed cells and a sampler restart **while the same upstream executor
@@ -58,9 +61,19 @@ host or using a fresh owner with a live-cell checkpoint blocks advancement. A on
 yields a cell therefore cannot continue it in the next process; use `run` for that lifecycle.
 
 Fresh disposable databases use `main_bin init` / SQLAlchemy metadata. Existing experiment databases
-apply `migrations/0001_compaction.sql` and `migrations/0002_process_controls.sql` once, offline,
+apply `migrations/0001_compaction.sql`, `migrations/0002_process_controls.sql`, and
+`migrations/0003_process_output.sql` once, in order, offline,
 before using this extension.
 There is no production migration runner or shipped service using these isolated tables.
+
+HTTP rejections and terminal provider failure events settle the sampling intent as rejected.
+Unsupported completed provider output and outer model-tool validation rejected before JavaScript
+dispatch likewise stop the conversation without retaining an unresolved intent. Undispatched
+sibling calls receive terminal outputs only when no unresolved nested intent or live execution remains.
+Otherwise the rejection retains a blocking checkpoint and leaves tool calls unchanged.
+Explicit user input resumes a safely rejected conversation; transport loss or an
+unterminated stream retains the unresolved intent and blocks input. Nested executor failures remain
+uncertain because surrounding JavaScript may already have caused effects.
 
 ## External interruption and explicit continuation
 
@@ -122,11 +135,13 @@ repeated compaction without another sample. This opt-in threshold uses observed 
 unmeasured tool-output growth can cross a model window before another observation. It is not a hard
 context-window bound or a default derived from an unverified model catalog.
 
-Failed, partial, malformed, nonshrinking or canceled compaction preserves the original context and
-leaves its intent unresolved. An acknowledged external interrupt may clear the canceled compaction
-intent after observed cleanup; it preserves the preceding context and requires explicit user input.
-Ownership loss fences installation. These cases block future automatic
-advance and have no reconciliation interface yet. Compaction never dispatches or replays a tool.
+Rejected or malformed completed compaction, including nonshrinking output, preserves the original
+context and settles its intent as rejected. Explicit new input can resume safely; there is no
+automatic retry. Unterminated or canceled compaction leaves its intent unresolved. An acknowledged
+external interrupt may clear the canceled compaction intent after observed cleanup; it preserves
+the preceding context and requires explicit user input. Ownership loss fences installation.
+Unresolved cases block future automatic advance and have no reconciliation interface yet.
+Compaction never dispatches or replays a tool.
 
 ## Remaining omissions
 

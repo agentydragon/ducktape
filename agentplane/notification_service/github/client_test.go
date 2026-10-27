@@ -16,6 +16,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 )
 
 const installationID = 11
@@ -55,9 +57,12 @@ func TestReadsReturnTheirResources(t *testing.T) {
 			t.Errorf("repository %s = %+v, %v", name, repository, err)
 		}
 	}
-	head, err := client.PullRequestHead(ctx, "owner/repo", 7, installationID)
-	if err != nil || head.SHA != testSHA || head.Repository == nil || *head.Repository != (Repository{ID: 200, FullName: "fork/repo"}) {
-		t.Errorf("PullRequestHead = %+v, %v", head, err)
+	pullRequest, err := client.PullRequest(ctx, "owner/repo", 7, installationID)
+	if err != nil || pullRequest.Head.SHA != testSHA || pullRequest.Head.Repository == nil ||
+		*pullRequest.Head.Repository != (Repository{ID: 200, FullName: "fork/repo"}) || pullRequest.BaseRef != "main" ||
+		pullRequest.BaseSHA != testBaseSHA || pullRequest.State != store.GitHubPullRequestOpen ||
+		pullRequest.Mergeability != store.GitHubMergeable {
+		t.Errorf("PullRequest = %+v, %v", pullRequest, err)
 	}
 	if err := client.CheckIssue(ctx, "owner/repo", 8, installationID); err != nil {
 		t.Errorf("CheckIssue: %v", err)
@@ -67,12 +72,57 @@ func TestReadsReturnTheirResources(t *testing.T) {
 	}
 }
 
-func TestPullRequestHeadWithoutItsRepositoryIsStillAHead(t *testing.T) {
-	fake := newFake(t)
-	fake.respond("/repos/owner/repo/pulls/7", 200, nil, `{"number": 7, "head": {"sha": "`+testSHA+`", "repo": null}}`)
-	head, err := newTestClient(t, fake).PullRequestHead(t.Context(), "owner/repo", 7, installationID)
-	if err != nil || head != (Revision{SHA: testSHA}) {
-		t.Errorf("PullRequestHead = %+v, %v", head, err)
+func TestPullRequestReportsLifecycleAndMergeabilityStates(t *testing.T) {
+	for _, test := range []struct {
+		name          string
+		state         string
+		merged        string
+		mergeable     string
+		wantState     store.GitHubPullRequestState
+		wantMergeable store.GitHubMergeableState
+	}{
+		{name: "mergeable", state: "open", merged: "false", mergeable: "true", wantState: store.GitHubPullRequestOpen, wantMergeable: store.GitHubMergeable},
+		{name: "conflicting", state: "open", merged: "false", mergeable: "false", wantState: store.GitHubPullRequestOpen, wantMergeable: store.GitHubConflicting},
+		{name: "mergeability is being computed", state: "open", merged: "false", mergeable: "null", wantState: store.GitHubPullRequestOpen, wantMergeable: store.GitHubMergeabilityUnknown},
+		{name: "closed unmerged", state: "closed", merged: "false", mergeable: "null", wantState: store.GitHubPullRequestClosed, wantMergeable: store.GitHubMergeabilityUnknown},
+		{name: "merged", state: "closed", merged: "true", mergeable: "true", wantState: store.GitHubPullRequestMerged, wantMergeable: store.GitHubMergeable},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fake := newFake(t)
+			fake.respond("/repos/owner/repo/pulls/7", 200, nil,
+				`{"number":7,"state":"`+test.state+`","merged":`+test.merged+`,"base":{"ref":"main","sha":"`+testBaseSHA+`"},"mergeable":`+test.mergeable+`,"head":{"sha":"`+testSHA+`","repo":null}}`)
+			observation, err := newTestClient(t, fake).PullRequest(t.Context(), "owner/repo", 7, installationID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if observation.Head != (Revision{SHA: testSHA}) || observation.BaseRef != "main" || observation.BaseSHA != testBaseSHA ||
+				observation.State != test.wantState || observation.Mergeability != test.wantMergeable {
+				t.Errorf("PullRequest = %+v", observation)
+			}
+			if got := fake.count("/repos/owner/repo/pulls/7"); got != 1 {
+				t.Errorf("%d pull request reads, want one", got)
+			}
+		})
+	}
+}
+
+func TestPullRequestRequiresItsStateAndBaseRevision(t *testing.T) {
+	for name, body := range map[string]string{
+		"missing state":          `{"number":7,"merged":false,"base":{"ref":"main","sha":"` + testBaseSHA + `"},"head":{"sha":"` + testSHA + `"}}`,
+		"missing merged state":   `{"number":7,"state":"closed","base":{"ref":"main","sha":"` + testBaseSHA + `"},"head":{"sha":"` + testSHA + `"}}`,
+		"null merged state":      `{"number":7,"state":"closed","merged":null,"base":{"ref":"main","sha":"` + testBaseSHA + `"},"head":{"sha":"` + testSHA + `"}}`,
+		"open but marked merged": `{"number":7,"state":"open","merged":true,"base":{"ref":"main","sha":"` + testBaseSHA + `"},"head":{"sha":"` + testSHA + `"}}`,
+		"missing base":           `{"number":7,"state":"open","merged":false,"head":{"sha":"` + testSHA + `"}}`,
+		"missing base ref":       `{"number":7,"state":"open","merged":false,"base":{"sha":"` + testBaseSHA + `"},"head":{"sha":"` + testSHA + `"}}`,
+		"missing base sha":       `{"number":7,"state":"open","merged":false,"base":{"ref":"main"},"head":{"sha":"` + testSHA + `"}}`,
+		"unrecognized state":     `{"number":7,"state":"merged","merged":false,"base":{"ref":"main","sha":"` + testBaseSHA + `"},"head":{"sha":"` + testSHA + `"}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			fake := newFake(t)
+			fake.respond("/repos/owner/repo/pulls/7", 200, nil, body)
+			_, err := newTestClient(t, fake).PullRequest(t.Context(), "owner/repo", 7, installationID)
+			asError[*invalidResponseError](t, err)
+		})
 	}
 }
 
@@ -241,7 +291,7 @@ func TestInstallationTokensAreSharedAndDroppedWhenRejected(t *testing.T) {
 
 	reads := []func() error{
 		func() error { _, err := client.Repository(ctx, "owner/repo", installationID); return err },
-		func() error { _, err := client.PullRequestHead(ctx, "owner/repo", 7, installationID); return err },
+		func() error { _, err := client.PullRequest(ctx, "owner/repo", 7, installationID); return err },
 		func() error { return client.CheckIssue(ctx, "owner/repo", 8, installationID) },
 		func() error { _, _, err := client.Branch(ctx, "owner/repo", "devel", installationID); return err },
 		func() error { return client.CheckCommit(ctx, "owner/repo", testSHA, installationID) },

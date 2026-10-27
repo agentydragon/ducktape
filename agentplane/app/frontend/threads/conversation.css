@@ -181,13 +181,23 @@
   flex-shrink: 0;
 }
 
-/* Inline with composer actions when there is room, otherwise at the scrollable
-   history tail (visible on phones without reserving space beneath the composer). */
-.agentplane-composer-model-activity {
+/* Model activity moves to the history tail on narrow screens; the autosuspend
+   countdown stays attached to the composer. */
+.agentplane-composer-activity {
   padding-inline: var(--mantine-spacing-xs);
   margin-left: auto;
-  white-space: nowrap;
   flex-shrink: 0;
+  align-items: flex-end;
+  min-width: 0;
+}
+
+.agentplane-composer-model-activity,
+.agentplane-composer-autosuspend {
+  white-space: nowrap;
+}
+
+.agentplane-composer-autosuspend-mobile {
+  display: none;
 }
 
 .agentplane-thread-tail-model-activity {
@@ -195,6 +205,16 @@
 }
 
 @media (max-width: 1199px) {
+  .agentplane-composer-activity {
+    display: none;
+  }
+
+  .agentplane-composer-autosuspend-mobile {
+    display: block;
+    padding-inline: var(--mantine-spacing-xs);
+    overflow-wrap: anywhere;
+  }
+
   .agentplane-composer-model-activity {
     display: none;
   }

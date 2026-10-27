@@ -216,9 +216,38 @@ each verb prints **one outcome object** sharing a common schema core:
 
 Verb-specific fields flatten in alongside the core: `moves_applied`
 (assign), `unassigned` (unassign), `binding` / `old_readable` /
-`new_readable` (rename), `target` (merge). Gate rejections replace the
+`new_readable` (rename), `target` (single merge) / `targets` (merge batch). Gate rejections replace the
 success object with a structured rejection object — see "Rejection
 diagnostics" below.
+
+## Whole-module merge batches
+
+Use a batch for several merges or filename replacements with one validation of
+the complete prospective spec. For example, `merges.json`:
+
+```json
+[
+  { "target": "models/Alpha.yaml", "sources": ["parts/first.yaml"] },
+  { "target": "models/Beta.yaml", "sources": ["parts/second.yaml"] }
+]
+```
+
+```bash
+debundle modules merge --batch merges.json --modules "$MODULES" \
+  --graph "$GRAPH" --source-root "$SOURCE_ROOT" --dry-run
+# Apply the same validated plan by omitting --dry-run.
+```
+
+Explicit `.yaml` filenames preserve their physical casing. Each entry uses the
+single-merge claim, annotation, comment and note rules. The batch rejects empty
+entries, reused sources, source-target chains, paths outside the module root and
+case-equivalent logical destination collisions, including untouched modules.
+Resolved files must end in `.yaml`; module trees containing symlink files or
+directories are unsupported and rejected before planning writes.
+Case-only relocation within one entry is supported. `--batch` cannot be combined
+with `--target`, positional sources or `--no-verify`. A rejected plan or gate writes nothing;
+after success, all targets are written before any source is deleted. Individual
+file replacements are atomic; the batch is not a crash-atomic transaction.
 
 ## Name and identifier resolution
 

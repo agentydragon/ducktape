@@ -249,8 +249,8 @@ function KnobCell({
 }) {
   const wrap = (control) => <div className={muted ? "opacity-75" : undefined}>{control}</div>;
   const controlProps = {
-    ...(rightSection ? { rightSection, rightSectionPointerEvents: "auto", rightSectionWidth: 30 } : {}),
-    ...(muted ? { variant: "filled" } : {}),
+    ...(rightSection ? { rightSection, rightSectionPointerEvents: "auto" as const, rightSectionWidth: 30 } : {}),
+    ...(muted ? { variant: "filled" as const } : {}),
   };
   const number = (extra) => (
     <NumberField

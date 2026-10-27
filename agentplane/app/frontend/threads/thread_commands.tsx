@@ -431,7 +431,7 @@ function LocalControlRows({
                       ? `Set reasoning effort to ${operation.value.effort}`
                       : operation.case === "interruptTurn"
                         ? `Interrupt turn ${operation.value.turnId}`
-                        : "Session action"}
+                        : "Thread action"}
                 </Text>
                 <CommandOutcome
                   stage={progressStage(null, admitted, value.dispatch ?? value.interruptResult, issue)}
@@ -496,7 +496,7 @@ export function ProjectedControlCommand({
                   : "Reasoning effort change"
                 : row.state.operation === "interrupt_turn"
                   ? "Interrupt turn"
-                  : "Session action"}
+                  : "Thread action"}
           </Text>
           <CommandOutcome
             stage={progressStage(row.state.outcome, true)}

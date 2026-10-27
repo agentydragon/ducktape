@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from cluster.cdk8s.render_diff import (
+from cluster.cdk8s.x.render_diff import (
     Blob,
     BlobStore,
     Failed,
