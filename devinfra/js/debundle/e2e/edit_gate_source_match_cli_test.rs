@@ -1,7 +1,8 @@
 //! Source-backed edit gates must resolve the same claims as the run pipeline.
 
-use debundle_e2e_support::{GraphFixture, write_text_file};
+use debundle_e2e_support::{GraphFixture, debundler_path, write_text_file};
 use std::fs;
+use std::process::Command;
 
 const GAMMA: (&str, &str) = (
     "solo/gamma.yaml",
@@ -10,6 +11,32 @@ const GAMMA: (&str, &str) = (
 const MEMBER: &str = "members: [{selector: {binding: {name: beta}}}]\n";
 const MATCH: &str =
     "source_matches: [{match: 'let alpha = 0;', bindings: [{local: alpha, name: Alpha}]}]\n";
+
+fn assert_current_pipeline_rejects(fixture: &GraphFixture, diagnostics: &[&str]) {
+    let root = fixture.root();
+    let out_root = root.join("current-spec-validation");
+    let output = Command::new(debundler_path())
+        .args(["run", "--tree-config"])
+        .arg(root.join("spec_config.yaml"))
+        .arg("--tree-modules")
+        .arg(&fixture.modules)
+        .arg("--tree-vendor-marks")
+        .arg(root.join("vendor_marks.yaml"))
+        .arg("--tree-source-root")
+        .arg(root)
+        .arg("--out-root")
+        .arg(out_root)
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !output.status.success(),
+        "current malformed spec unexpectedly passed the pipeline"
+    );
+    for diagnostic in diagnostics {
+        assert!(stderr.contains(diagnostic), "{stderr}");
+    }
+}
 
 fn atomic_fixture(yaml: &str) -> GraphFixture {
     GraphFixture::new(
@@ -66,7 +93,8 @@ fn relational_member_still_counts_when_editing_an_anchor_module() {
 
 #[test]
 fn malformed_manual_claim_edits_are_refused_before_unassigning() {
-    // Generate genuine graph facts first, then model an author's bad YAML edit.
+    // Generate genuine graph facts first, then require stale-graph refusal for
+    // an author's malformed YAML edit before unassign can write anything.
     for (source, yaml, diagnostic) in [
         (
             "const alpha = 1; const beta = 1; const gamma = 3;",
@@ -91,6 +119,10 @@ fn malformed_manual_claim_edits_are_refused_before_unassigning() {
     ] {
         let fixture = GraphFixture::new(source, &[GAMMA]);
         write_text_file(&fixture.modules.join("home/atom.yaml"), yaml);
-        fixture.assert_rejected_unchanged(&["bindings", "unassign", "gamma"], &[diagnostic]);
+        fixture.assert_rejected_unchanged(
+            &["bindings", "unassign", "gamma"],
+            &["graph compatibility mismatch"],
+        );
+        assert_current_pipeline_rejects(&fixture, &[diagnostic]);
     }
 }

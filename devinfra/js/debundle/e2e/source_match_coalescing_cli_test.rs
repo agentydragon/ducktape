@@ -135,6 +135,7 @@ fn unchanged_owner_refine_normalizes_only_requested_modules_and_preserves_emitte
     let result = fixture.json(&args);
     assert_eq!(result["action"], "applied");
     assert_eq!(result["source_units_reassigned"], 0);
+    fixture.refresh_graph();
     let normalized = fs::read_to_string(fixture.modules.join("owner.yaml")).unwrap();
     let doc: Value = serde_yaml::from_str(&normalized).unwrap();
     assert_eq!(doc["source_matches"].as_sequence().unwrap().len(), 1);
