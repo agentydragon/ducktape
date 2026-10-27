@@ -66,12 +66,21 @@ oci_image(
 pkg_tar(
     name = "root_etc",
     srcs = [
+        "acpid.conf",
         "group",
         "hosts",
         "passwd",
     ],
     mode = "0644",
     package_dir = "/etc",
+)
+
+pkg_tar(
+    name = "root_acpi",
+    srcs = ["acpi_poweroff"],
+    mode = "0755",
+    package_dir = "/etc/acpi",
+    remap_paths = {"acpi_poweroff": "poweroff"},
 )
 
 pkg_files(
@@ -114,6 +123,7 @@ pkg_tar(
         "usr/bin/sh": "busybox",
     },
     deps = [
+        ":root_acpi",
         ":root_etc",
         ":root_init",
         "//agentplane/system_tests/k3s:runner_claude_harness",

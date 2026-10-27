@@ -539,6 +539,7 @@ py_test(
         ":guest_logs",
         "//:conftest",
         "//agentplane/system_tests:conftest",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//tenacity",
     ],

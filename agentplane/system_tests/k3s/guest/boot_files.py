@@ -17,7 +17,7 @@ from pathlib import Path, PurePosixPath
 from devinfra.cpio.cpio_tool import write_archive
 
 # virtio-pci, virtiofs and ext4 are built in.
-_MODULES = ("virtio_blk", "virtio_net", "isofs", "erofs", "overlay")
+_MODULES = ("virtio_blk", "virtio_net", "isofs", "erofs", "overlay", "button", "evdev")
 
 
 @contextlib.contextmanager

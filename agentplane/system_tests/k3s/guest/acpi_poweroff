@@ -1,0 +1,4 @@
+#!/usr/bin/busybox sh
+# PID1 owns runner drain and storage teardown. Repeated button events are coalesced there.
+set -eu
+kill -USR2 1

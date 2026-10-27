@@ -3,7 +3,8 @@
 # systemd: the disks vm.nix mounts by serial, the workspace formatted on first use, masquerade networking,
 # busybox's tools, both harnesses, Bash, Git and `findmnt` in the NixOS system profile the runner puts on PATH,
 # and the cgroup systemd delegates to `agentplane-runner.service` with the runner in its `runner`
-# subgroup. It restarts the runner when it exits. vm.nix's sandboxing of the runner unit (capability
+# subgroup. It restarts the runner when it exits, and drains it before powering off on ACPI shutdown.
+# vm.nix's sandboxing of the runner unit (capability
 # bounding set, read-only system) is absent.
 set -eux
 profile=/run/current-system/sw/bin
@@ -58,14 +59,66 @@ for group in /sys/fs/cgroup /sys/fs/cgroup/system.slice "$service"; do
 	echo "$controllers" >"$group/cgroup.subtree_control"
 done
 
+shutdown_requested=0
+runner_pid=
+terminate() {
+	# An already-exited child may have been reaped by ash before its explicit wait.
+	if ! kill -TERM "$1" 2>/dev/null && kill -0 "$1" 2>/dev/null; then
+		echo "could not terminate owned process $1" >&2
+		exit 1
+	fi
+}
+request_shutdown() {
+	shutdown_requested=1
+	trap '' USR2
+	echo "AGENTPLANE_GUEST_SHUTDOWN_REQUESTED"
+	# Also signal here: a request between the flag check and wait must not leave wait blocked.
+	if [ -n "$runner_pid" ]; then
+		terminate "$runner_pid"
+	fi
+}
+# Ignore later requests so they cannot interrupt the final wait for the runner's actual exit.
+trap request_shutdown USR2
+grep -q 'Name="Power Button"' /proc/bus/input/devices
 /usr/sbin/agentplane-cgroup-observer &
+observer_pid=$!
+acpid -d &
+acpid_pid=$!
 
 umask 0007
 export ANTHROPIC_AUTH_TOKEN=agentplane-credential-agentplane-workload
 export OPENAI_API_KEY=agentplane-credential-agentplane-workload
-while :; do
+while [ "$shutdown_requested" -eq 0 ]; do
 	# The inner shell enters the runner's cgroup, then becomes the runner.
-	sh -c "echo \$\$ >$service/runner/cgroup.procs && exec $runtime/runner/bin/agentplane-runner --config $runtime/config/runner.json --launch-file $runtime/sandbox/launch.json" ||
-		echo "agentplane-runner exited $?; restarting"
+	sh -c "echo \$\$ >$service/runner/cgroup.procs && exec $runtime/runner/bin/agentplane-runner --config $runtime/config/runner.json --launch-file $runtime/sandbox/launch.json" &
+	runner_pid=$!
+	status=0
+	if [ "$shutdown_requested" -eq 0 ]; then
+		wait "$runner_pid" || status=$?
+	fi
+	if [ "$shutdown_requested" -eq 1 ]; then
+		# The first wait may have been interrupted by the trap. SIGTERM invokes Runner.Close();
+		# only the second, uninterrupted wait establishes that journals and native processes closed.
+		terminate "$runner_pid"
+		wait "$runner_pid"
+		break
+	fi
+	runner_pid=
+	echo "agentplane-runner exited $status; restarting"
 	sleep 2
 done
+echo "AGENTPLANE_GUEST_RUNNER_DRAINED"
+
+# The observer and ACPI listener do not own writable storage. Reap them before unmounting it.
+for pid in "$observer_pid" "$acpid_pid"; do
+	terminate "$pid"
+	status=0
+	wait "$pid" || status=$?
+	[ "$status" -eq 0 ] || [ "$status" -eq 143 ]
+done
+sync
+umount "$workspace"
+umount /state
+echo "AGENTPLANE_GUEST_SHUTDOWN_COMPLETE"
+# Ordinary poweroff only signals PID1; this shell has already performed its shutdown duties.
+exec busybox poweroff -f

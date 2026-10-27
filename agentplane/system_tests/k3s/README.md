@@ -131,6 +131,11 @@ directly, a busybox initramfs that mounts an erofs root under a tmpfs overlay, a
 the runner what [`vm.nix`](../../runner/vm.nix) does. The runner comes from the production runner disk,
 as in a Pod; both harnesses, Git and `findmnt` are pinned in the root disk.
 
+The guest loads the ACPI button/evdev drivers and runs BusyBox `acpid`. On a power-button event,
+PID1 stops restarting the runner, requests its orderly SIGTERM shutdown and waits for exit, then
+stops its helpers, syncs and unmounts the workspace and state before powering off. KubeVirt's
+shutdown grace period and the controller's wait for actual deletion remain in place.
+
 `test_vm_sandbox_vm` also drives the real Codex app-server to run a memory-exhausting shell command
 through its isolated exec-server. The allocator touches memory beyond the configured executor
 limit, with a raised `oom_score_adj` to select that tool as the victim. The test checks a single
@@ -164,7 +169,15 @@ stack's own images import.
 Guest console logs are copied continuously to `test.outputs/vm-artifacts/consoles/`, scoped by
 launcher Pod UID and container log inode. They retain Kubernetes CRI timestamps and stream markers,
 including the guest kernel, Runner and executor supervisor output. Open log descriptors preserve
-output across launcher deletion, suspension, replacement and container restarts. For VM tests, shared client fixture cleanup exports retained native frames in both directions for
+output across launcher deletion, suspension, replacement and container restarts.
+On successful VM test teardown, each retained launcher incarnation must contain
+`AGENTPLANE_GUEST_SHUTDOWN_COMPLETE`, emitted by the guest's PID1 after runner exit and successful
+workspace/state unmounts. Rotated logs are checked together per launcher. Existing test failures skip
+this additional assertion while retaining their logs. Launcher `compute` logs and the KubeVirt
+namespace's `virt-handler` logs are retained under `vm-artifacts/launchers/` and
+`vm-artifacts/handlers/`, respectively, for graceful-shutdown and domain-exit evidence.
+
+For VM tests, shared client fixture cleanup exports retained native frames in both directions for
 every Sandbox where that client opened a Session. Exports go to
 `test.outputs/vm-artifacts/native/<sandbox-uid>/<thread-id>.jsonl`, with archive cursors and origins;
 the adjacent JSON records the export watermark. Failed and partially observed turns are included.

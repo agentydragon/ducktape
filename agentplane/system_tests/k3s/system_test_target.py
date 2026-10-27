@@ -61,10 +61,16 @@ def _models(listener: Listener) -> rendered_fixture.Models:
 
 
 @pytest.fixture(scope="session", autouse=True)
-def k3s_deployment(pytestconfig: pytest.Config, scripted_listener: Listener) -> Iterator[None]:
+def k3s_deployment(
+    pytestconfig: pytest.Config, request: pytest.FixtureRequest, scripted_listener: Listener
+) -> Iterator[None]:
     timeline = pytestconfig.stash[TIMELINE] = Timeline()
     with (
-        running_stack(models=_models(scripted_listener), timeline=timeline) as stack,
+        running_stack(
+            models=_models(scripted_listener),
+            timeline=timeline,
+            validate_vm_shutdown=lambda: request.session.testsfailed == 0,
+        ) as stack,
         tempfile.TemporaryDirectory() as tools,
         pytest.MonkeyPatch.context() as environment,
     ):

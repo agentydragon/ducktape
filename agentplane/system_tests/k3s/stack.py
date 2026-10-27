@@ -24,7 +24,7 @@ import tarfile
 import tempfile
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -468,7 +468,9 @@ def _deployment_images(objects: list[dict[str, Any]]) -> set[str]:
 
 
 @contextlib.contextmanager
-def running_stack(*, models: rendered_fixture.Models, timeline: Timeline) -> Iterator[Stack]:
+def running_stack(
+    *, models: rendered_fixture.Models, timeline: Timeline, validate_vm_shutdown: Callable[[], bool]
+) -> Iterator[Stack]:
     """The stack with every Deployment Available, LLM ingress forwarding to `models`, each step of
     bringing it up marked on `timeline`.
 
@@ -599,7 +601,9 @@ def running_stack(*, models: rendered_fixture.Models, timeline: Timeline) -> Ite
                 guest_logs.capture(
                     log_root=Path("/var/log/pods"),
                     namespace=fixture.namespace,
-                    destination=undeclared_outputs_dir() / "vm-artifacts" / "consoles",
+                    kubevirt_namespace=vm_sandboxes.KUBEVIRT_NAMESPACE,
+                    destination=undeclared_outputs_dir() / "vm-artifacts",
+                    validate_shutdown=validate_vm_shutdown,
                 )
             )
         yield Stack(k3s=k3s, namespace=fixture.namespace, base_url=fixture.app_origin, token=token, mcp_fixtures=access)
