@@ -277,7 +277,7 @@ py_library(
         ":codex_models",
         ":environment",
         ":telemetry",
-        "//agentplane/llm_ingress:settings",
+        "//agentplane/llm_ingress/configpb:config_pb2",
         "//agentplane/workload_auth:audience",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:config_format",
@@ -290,10 +290,10 @@ py_library(
         "//cluster/cdk8s:token_reviewer_rbac",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "//cluster/cdk8s/providers/cilium:network_policy",
-        "//util:settings_contract",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
+        "@pypi//protobuf",
     ],
 )
 
@@ -665,12 +665,13 @@ py_library(
         "//agentplane/action_service:mcp_settings",
         "//agentplane/action_service:operator_oidc_settings",
         "//agentplane/app:settings",
-        "//agentplane/llm_ingress:models",
+        "//agentplane/llm_ingress/configpb:config_pb2",
         "//agentplane/runner:configuration",
         "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
         "//model_catalog:catalog",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
+        "@pypi//protobuf",
     ],
 )
 
@@ -749,6 +750,7 @@ py_library(
         "//agentplane/action_service/sandbox:actions",
         "//agentplane/action_service/sandbox:binding",
         "//agentplane/app:action_federation_settings",
+        "//agentplane/llm_ingress/configpb:config_pb2",
         "//agentplane/runner:configuration",
         "//cluster/cdk8s:agent_access_profiles",
         "//cluster/cdk8s:cilium",
@@ -772,6 +774,24 @@ py_library(
         "//cluster/cdk8s/ssh_mcp:config",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
+        "@pypi//protobuf",
+    ],
+)
+
+py_test(
+    name = "test_llm_ingress",
+    srcs = ["test_llm_ingress.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":conftest",
+        ":staging",
+        "//agentplane/llm_ingress/configpb:config_pb2",
+        "@pypi//more_itertools",
+        "@pypi//protobuf",
+        "@pypi//protovalidate",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )
 

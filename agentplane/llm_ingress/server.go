@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/llm_ingress/configpb"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"go.opentelemetry.io/otel/baggage"
@@ -42,16 +43,16 @@ type ingressHandler struct {
 	backend     *http.Client
 	baseURL     *url.URL
 	key         string
-	models      map[string]modelConfig
-	attribution attributionConfig
+	models      map[string]*configpb.ModelConfig
+	attribution *configpb.AttributionConfig
 	codex       *codexCatalog
 	logBody     bool
 	logger      *slog.Logger
 	pool        chan struct{}
 }
 
-func newIngressHandler(c config, resolver *auth.Resolver, logger *slog.Logger) (*ingressHandler, error) {
-	baseURL, err := url.Parse(c.LiteLLMURL)
+func newIngressHandler(c *configpb.Config, resolver *auth.Resolver, logger *slog.Logger) (*ingressHandler, error) {
+	baseURL, err := url.Parse(c.LitellmUrl)
 	if err != nil {
 		return nil, errors.New("invalid LiteLLM URL")
 	}
@@ -79,7 +80,7 @@ func newIngressHandler(c config, resolver *auth.Resolver, logger *slog.Logger) (
 			return http.ErrUseLastResponse
 		},
 	}
-	models := make(map[string]modelConfig, len(c.Models))
+	models := make(map[string]*configpb.ModelConfig, len(c.Models))
 	for _, item := range c.Models {
 		models[item.Model] = item
 	}
@@ -93,11 +94,11 @@ func newIngressHandler(c config, resolver *auth.Resolver, logger *slog.Logger) (
 		resolver:    resolver,
 		backend:     backend,
 		baseURL:     baseURL,
-		key:         c.LiteLLMKey,
+		key:         c.LitellmKey,
 		models:      models,
 		attribution: c.Attribution,
 		codex:       codex,
-		logBody:     c.LogLLMRequests,
+		logBody:     c.GetLogLlmRequests(),
 		logger:      logger,
 		pool:        make(chan struct{}, 100),
 	}, nil
@@ -144,7 +145,7 @@ func (h *ingressHandler) ServeHTTP(writer http.ResponseWriter, request *http.Req
 		model := h.models[query.Get("model")]
 		writer.Header().Set("Content-Type", "application/json")
 		writer.WriteHeader(http.StatusOK)
-		if model.Model == "" {
+		if model == nil {
 			_, _ = io.WriteString(writer, "null")
 			return
 		}
@@ -306,11 +307,11 @@ func forwardedRequestHeaders(
 	headers http.Header,
 	principal auth.Principal,
 	key string,
-	attribution attributionConfig,
+	attribution *configpb.AttributionConfig,
 ) (http.Header, error) {
 	connectionTokens := connectionHeaderTokens(headers)
-	configuredHeaders := make(map[string]struct{}, len(attribution.JSONHeaders))
-	for _, header := range attribution.JSONHeaders {
+	configuredHeaders := make(map[string]struct{}, len(attribution.JsonHeaders))
+	for _, header := range attribution.JsonHeaders {
 		configuredHeaders[strings.ToLower(header.Name)] = struct{}{}
 	}
 	forwarded := make(http.Header)
@@ -337,13 +338,13 @@ func forwardedRequestHeaders(
 		forwarded[name] = append([]string(nil), values...)
 	}
 	forwarded.Set("Authorization", "Bearer "+key)
-	claims := map[verifiedClaim]string{
-		verifiedNamespace:      principal.Account.Namespace,
-		verifiedServiceAccount: principal.Account.Name,
-		verifiedPodName:        principal.PodName,
-		verifiedPodUID:         principal.PodUID,
+	claims := map[configpb.VerifiedClaim]string{
+		configpb.VerifiedClaim_namespace:       principal.Account.Namespace,
+		configpb.VerifiedClaim_service_account: principal.Account.Name,
+		configpb.VerifiedClaim_pod_name:        principal.PodName,
+		configpb.VerifiedClaim_pod_uid:         principal.PodUID,
 	}
-	for _, header := range attribution.JSONHeaders {
+	for _, header := range attribution.JsonHeaders {
 		members := make(map[string]string, len(header.Fields))
 		for _, field := range header.Fields {
 			members[field.Key] = claims[field.Source]
@@ -364,7 +365,7 @@ func forwardedRequestHeaders(
 	return forwarded, nil
 }
 
-func agentplaneIdentityBaggage(fields []attributionField, claims map[verifiedClaim]string) (string, error) {
+func agentplaneIdentityBaggage(fields []*configpb.AttributionField, claims map[configpb.VerifiedClaim]string) (string, error) {
 	// Baggage is derived only from the authenticated Kubernetes principal.
 	outgoing := baggage.Baggage{}
 	for _, field := range fields {

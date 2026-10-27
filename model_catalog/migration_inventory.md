@@ -76,8 +76,8 @@ The settled boundaries are:
   `Environment` does not carry an unused `model_routes` field.
 - `cluster/cdk8s/agentplane/llm_ingress.py` projects selected routes and explicit
   `RUNNER_CONTEXT_OVERRIDES` into ingress-owned configuration, not runner environment
-  or guest-config budget maps. `agentplane/llm_ingress/models.py` owns the shared
-  `ModelConfig` contract; `settings.py` owns ingress configuration.
+  or guest-config budget maps. `agentplane/llm_ingress/configpb/config.proto` owns the shared
+  `ModelConfig` contract; the same schema owns ingress configuration.
 - `agentplane/runner/config.go` performs the authenticated lookup. Runner
   configuration selects the harness endpoint/credential, and session handling applies
   the resolved budget in the native adapter's vocabulary. The

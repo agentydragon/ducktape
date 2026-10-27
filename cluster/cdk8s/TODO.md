@@ -54,7 +54,7 @@ live Secret existence or service readiness.
 
 Move remaining deployment schemas and their required submodels out of service runtime
 modules, updating all callers. Follow the application-owned
-`agentplane/llm_ingress/settings.py` pattern. Inspect transitive imports too: a settings
+`agentplane/egress/settings.py` pattern; protobuf consumers use their generated messages. Inspect transitive imports too: a settings
 module importing runtime helpers still pulls those runtimes into synthesis.
 
 Done: synthesis imports the deployment contract without importing service runtimes.

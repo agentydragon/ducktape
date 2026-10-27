@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from pathlib import PurePosixPath
 
+import protovalidate
 from cdk8s import ApiObjectMetadata, Size
 from cdk8s_plus_34 import (
     ConfigMap,
@@ -25,7 +26,7 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 
-from agentplane.llm_ingress.settings import Settings
+from agentplane.llm_ingress.configpb import config_pb2
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
 from cluster.cdk8s.agentplane import telemetry
@@ -38,7 +39,13 @@ from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
-from util.settings_contract import checked_value, env_name, validate_settings_fragment
+from util.protobuf import message_dict
+
+# Generated message stubs import protobuf runtime types.
+# gazelle:include_dep @pypi//protobuf
+
+_CONFIG_FILE_ENV = "AGENTPLANE_LLM_INGRESS_CONFIG_FILE"
+_ENV_PREFIX = "AGENTPLANE_LLM_INGRESS_"
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _NAME = "llm-ingress"
@@ -117,19 +124,23 @@ class LlmIngress(Construct):
                 data={_CODEX_CATALOG_PATH.name: catalog},
             )
         )
-        # Settings this deployment supplies as YAML rather than flags, so a list is a list.
-        content = {
-            "allowed_service_account_namespaces": [env.namespace],
-            "log_llm_requests": env.llm_ingress.log_llm_requests,
-            "models": [item.model_dump(mode="json") for item in env.llm_ingress.models],
-            "attribution": env.llm_ingress.attribution.model_dump(mode="json"),
-            **({} if catalog_map is None else {"codex_model_catalog_file": str(_CODEX_CATALOG_PATH)}),
-        }
+        # This file is a source fragment. Startup validates it together with the
+        # environment, including the actual Secret; its nested file values are complete.
+        content = config_pb2.Config(
+            allowed_service_account_namespaces=[env.namespace],
+            log_llm_requests=env.llm_ingress.log_llm_requests,
+            models=env.llm_ingress.models,
+            attribution=env.llm_ingress.attribution,
+            codex_model_catalog_file=str(_CODEX_CATALOG_PATH) if catalog_map is not None else "",
+        )
+        for model in content.models:
+            protovalidate.validate(model)
+        protovalidate.validate(content.attribution)
         settings = SettingsFile(
             self,
             "settings",
             metadata=ApiObjectMetadata(name=f"{_NAME}-settings", namespace=env.namespace),
-            content=yaml_config(validate_settings_fragment(Settings, content)),
+            content=yaml_config(message_dict(content)),
             path="/etc/agentplane-llm-ingress/settings.yaml",
         )
         deployment = self._add_deployment(service_account, settings, catalog_map)
@@ -175,21 +186,16 @@ class LlmIngress(Construct):
             image=f"{_IMAGE_NAME}:{_PLACEHOLDER_TAG}",
             image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
             env_variables={
-                **{
-                    env_name(Settings, field): EnvValue.from_value(str(checked_value(Settings, field, value)))
-                    for field, value in {
-                        "token_audience": WORKLOAD_TOKEN_AUDIENCE,
-                        "litellm_url": self.litellm_url,
-                        "host": "0.0.0.0",
-                        "port": self.service.pod_port,
-                    }.items()
-                },
+                f"{_ENV_PREFIX}TOKEN_AUDIENCE": EnvValue.from_value(WORKLOAD_TOKEN_AUDIENCE),
+                f"{_ENV_PREFIX}LITELLM_URL": EnvValue.from_value(self.litellm_url),
+                f"{_ENV_PREFIX}HOST": EnvValue.from_value("0.0.0.0"),
+                f"{_ENV_PREFIX}PORT": EnvValue.from_value(str(self.service.pod_port)),
                 **{
                     name: EnvValue.from_value(value)
                     for name, value in telemetry.service_environment(self.env.namespace, _NAME).items()
                 },
                 # The only real model credential in this service; runners never mount it.
-                env_name(Settings, "litellm_key"): SecretRef(
+                f"{_ENV_PREFIX}LITELLM_KEY": SecretRef(
                     namespace=self.env.namespace, name=self.env.llm_ingress.litellm_key_secret_name
                 )
                 .key("api-key")
@@ -206,7 +212,7 @@ class LlmIngress(Construct):
             security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
         )
 
-        settings.mount_into(deployment.containers[0], env=Settings.config_file_env)
+        settings.mount_into(deployment.containers[0], env=_CONFIG_FILE_ENV)
         if catalog_map is not None:
             deployment.containers[0].mount(
                 str(_CODEX_CATALOG_PATH.parent),

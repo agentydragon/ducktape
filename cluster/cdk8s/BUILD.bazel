@@ -110,8 +110,9 @@ py_library(
         "//cluster/cdk8s/agentplane:__pkg__",
     ],
     deps = [
-        "//agentplane/llm_ingress:models",
+        "//agentplane/llm_ingress/configpb:config_pb2",
         "//model_catalog:catalog",
+        "@pypi//protobuf",
     ],
 )
 

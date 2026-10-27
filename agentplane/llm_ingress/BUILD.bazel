@@ -1,37 +1,9 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_test")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
-
-py_library(
-    name = "models",
-    srcs = ["models.py"],
-    visibility = [
-        "//agentplane:__subpackages__",
-        "//cluster/cdk8s:__pkg__",
-        "//cluster/cdk8s/agentplane:__pkg__",
-    ],
-    deps = ["@pypi//pydantic"],
-)
-
-py_library(
-    name = "settings",
-    srcs = ["settings.py"],
-    visibility = [
-        "//agentplane:__subpackages__",
-        "//cluster/cdk8s/agentplane:__pkg__",
-    ],
-    deps = [
-        ":models",
-        "//agentplane:log_levels",
-        "//util:urls",
-        "//util:yaml_file_settings",
-        "@pypi//pydantic",
-        "@pypi//pydantic_settings",
-    ],
-)
 
 pkg_tar(
     name = "binary_layer",
@@ -64,13 +36,18 @@ go_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/llm_ingress",
     deps = [
+        "//agentplane/llm_ingress/configpb",
         "//agentplane/observability",
         "//agentplane/workload_auth/go/auth",
-        "@com_github_spf13_viper//:viper",
+        "@build_buf_go_protovalidate//:protovalidate",
+        "@build_buf_go_protoyaml//:protoyaml",
+        "@in_yaml_go_yaml_v3//:yaml",
         "@io_k8s_client_go//kubernetes/typed/authentication/v1:authentication",
         "@io_k8s_client_go//rest",
         "@io_k8s_client_go//tools/clientcmd",
         "@io_opentelemetry_go_otel//baggage",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//reflect/protoreflect",
     ],
 )
 
@@ -90,11 +67,26 @@ go_test(
     data = [":server"],
     embed = [":server_lib"],
     deps = [
+        "//agentplane/llm_ingress/configpb",
         "//agentplane/testing/kubeapiserver",
         "//agentplane/workload_auth/go/auth",
         "@io_bazel_rules_go//go/runfiles",
         "@io_k8s_api//core/v1:core",
         "@io_k8s_client_go//rest",
         "@io_opentelemetry_go_otel//baggage",
+    ],
+)
+
+py_test(
+    name = "test_config",
+    srcs = ["test_config.py"],
+    deps = [
+        "//:conftest",
+        "//agentplane/llm_ingress/configpb:config_pb2",
+        "//util:protobuf_config",
+        "@pypi//protobuf",
+        "@pypi//protovalidate",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

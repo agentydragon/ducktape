@@ -5,9 +5,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/agentydragon/ducktape/agentplane/llm_ingress/configpb"
 )
 
-func loadTestConfig(t *testing.T, environ []string) (config, error) {
+func loadTestConfig(t *testing.T, environ []string) (*configpb.Config, error) {
 	t.Helper()
 	for _, entry := range os.Environ() {
 		name, _, _ := strings.Cut(entry, "=")
@@ -53,9 +55,9 @@ models:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.TokenAudience != "env-audience" || c.Port != 7070 || c.LiteLLMKey != "env-secret" || c.LogLLMRequests ||
+	if c.TokenAudience != "env-audience" || c.GetPort() != 7070 || c.LitellmKey != "env-secret" || c.GetLogLlmRequests() ||
 		len(c.AllowedServiceAccountNamespaces) != 1 || c.AllowedServiceAccountNamespaces[0] != "yaml-namespace" ||
-		c.LiteLLMURL != "http://127.0.0.1:8100/prefix" || len(c.Models) != 1 || c.Models[0].TotalContextBudgetTokens != 8192 ||
+		c.LitellmUrl != "http://127.0.0.1:8100/prefix" || len(c.Models) != 1 || c.Models[0].TotalContextBudgetTokens != 8192 ||
 		c.CodexModelCatalogFile != "/yaml/codex_models.json" {
 		t.Fatalf("unexpected merged config: %+v", c)
 	}
@@ -96,16 +98,16 @@ litellm_key: test-secret
 			}
 			switch test.name {
 			case "default":
-				if len(c.Attribution.JSONHeaders) != 1 || c.Attribution.JSONHeaders[0].Name != "x-litellm-spend-logs-metadata" || len(c.Attribution.Baggage) != 0 {
+				if len(c.Attribution.JsonHeaders) != 1 || c.Attribution.JsonHeaders[0].Name != "x-litellm-spend-logs-metadata" || len(c.Attribution.Baggage) != 0 {
 					t.Fatalf("default attribution = %+v", c.Attribution)
 				}
 			case "baggage only":
-				if len(c.Attribution.JSONHeaders) != 0 || len(c.Attribution.Baggage) != 1 || c.Attribution.Baggage[0].Key != "Custom.PodUid" {
+				if len(c.Attribution.JsonHeaders) != 0 || len(c.Attribution.Baggage) != 1 || c.Attribution.Baggage[0].Key != "Custom.PodUid" {
 					t.Fatalf("baggage-only attribution = %+v", c.Attribution)
 				}
 			case "mixed-case custom key":
-				if len(c.Attribution.JSONHeaders) != 1 || c.Attribution.JSONHeaders[0].Name != "X-Custom-Verified" ||
-					c.Attribution.JSONHeaders[0].Fields[0].Key != "Agentplane.PodName" {
+				if len(c.Attribution.JsonHeaders) != 1 || c.Attribution.JsonHeaders[0].Name != "X-Custom-Verified" ||
+					c.Attribution.JsonHeaders[0].Fields[0].Key != "Agentplane.PodName" {
 					t.Fatalf("custom attribution lost spelling: %+v", c.Attribution)
 				}
 			}
@@ -141,5 +143,42 @@ models: []
 	_, err := loadTestConfig(t, []string{configFileEnv + "=" + path})
 	if err == nil || strings.Contains(err.Error(), "never-include-this-secret") {
 		t.Fatalf("got unsafe or missing config error: %v", err)
+	}
+}
+
+func TestLoadConfigPreservesDefaultsAndScalarEnvironmentContract(t *testing.T) {
+	const base = "allowed_service_account_namespaces: [test-namespace]\ntoken_audience: test-audience\nlitellm_url: http://backend.example.test:4000\nlitellm_key: never-include-this-secret\n"
+	for _, test := range []struct {
+		name, yaml string
+		env        []string
+		port       int32
+		fails      bool
+	}{
+		{name: "omitted defaults", port: 8080},
+		{name: "empty environment ignored", env: []string{settingPrefix + "PORT="}, port: 8080},
+		{name: "ephemeral port", yaml: "port: 0\n", port: 0},
+		{name: "lists remain file only", env: []string{settingPrefix + "ALLOWED_SERVICE_ACCOUNT_NAMESPACES=ignored"}, port: 8080},
+		{name: "invalid port override", env: []string{settingPrefix + "PORT=never-include-this-secret"}, fails: true},
+		{name: "invalid boolean override", env: []string{settingPrefix + "LOG_LLM_REQUESTS=never-include-this-secret"}, fails: true},
+		{name: "duplicate YAML key", yaml: "host: other.example.test\nhost: never-include-this-secret\n", fails: true},
+		{name: "empty host", yaml: "host: ''\n", fails: true},
+		{name: "port outside range", yaml: "port: 65536\n", fails: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			path := writeSettings(t, base+test.yaml)
+			c, err := loadTestConfig(t, append(test.env, configFileEnv+"="+path))
+			if test.fails {
+				if err == nil || strings.Contains(err.Error(), "never-include-this-secret") {
+					t.Fatalf("unsafe or missing config error: %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if c.GetHost() != "0.0.0.0" || c.GetPort() != test.port || c.GetLogLlmRequests() || c.AllowedServiceAccountNamespaces[0] != "test-namespace" {
+				t.Fatal("settings defaults or environment precedence changed")
+			}
+		})
 	}
 }

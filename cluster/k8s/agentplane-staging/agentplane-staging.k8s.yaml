@@ -1101,20 +1101,7 @@ data:
   settings.yaml: |
     allowed_service_account_namespaces:
       - agentplane-staging
-    log_llm_requests: true
-    models: []
     attribution:
-      json_headers:
-        - name: x-litellm-spend-logs-metadata
-          fields:
-            - key: agentplane.namespace
-              source: namespace
-            - key: agentplane.service_account
-              source: service_account
-            - key: agentplane.pod_name
-              source: pod_name
-            - key: agentplane.pod_uid
-              source: pod_uid
       baggage:
         - key: litellm.metadata.spend_logs_metadata.agentplane.namespace
           source: namespace
@@ -1124,7 +1111,19 @@ data:
           source: pod_name
         - key: litellm.metadata.spend_logs_metadata.agentplane.pod_uid
           source: pod_uid
+      json_headers:
+        - fields:
+            - key: agentplane.namespace
+              source: namespace
+            - key: agentplane.service_account
+              source: service_account
+            - key: agentplane.pod_name
+              source: pod_name
+            - key: agentplane.pod_uid
+              source: pod_uid
+          name: x-litellm-spend-logs-metadata
     codex_model_catalog_file: /etc/agentplane-llm-ingress-codex/codex_models.json
+    log_llm_requests: true
 immutable: false
 ---
 apiVersion: apps/v1

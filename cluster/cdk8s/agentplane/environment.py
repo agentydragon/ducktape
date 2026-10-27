@@ -18,7 +18,7 @@ from agentplane.action_service.catalog import ActionGroup, Key
 from agentplane.action_service.mcp_settings import McpClientMetadataSettings, McpOAuthServer
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings
 from agentplane.app.settings import AppSettingsConfig
-from agentplane.llm_ingress.models import AttributionConfig, ModelConfig, default_attribution
+from agentplane.llm_ingress.configpb import config_pb2
 from agentplane.runner.configuration import GuestResources
 from agentplane.subjects import ServiceAccountRef
 from model_catalog.catalog import Route
@@ -38,10 +38,10 @@ class ReplicaProfile:
 @dataclass(frozen=True)
 class LlmIngressProps:
     litellm_key_secret_name: str
-    models: Sequence[ModelConfig]
+    models: Sequence[config_pb2.ModelConfig]
     # The routes the Codex harness offers; the ingress serves Codex a catalog entry for those that need one.
     codex_routes: Sequence[Route]
-    attribution: AttributionConfig = field(default_factory=default_attribution)
+    attribution: config_pb2.AttributionConfig | None = None
     log_llm_requests: bool = False
 
 
