@@ -127,15 +127,15 @@ function ConversationBody({
   const controls = view && "controls" in view.state ? view.state.controls : null;
   const operational = view && "controls" in view.state ? view.state.operational : null;
   const syncWritable = sync.window?.caughtUp === true && sync.window.error === null;
-  const sessionCanAcceptInput =
+  const threadCanAcceptInput =
     syncWritable &&
     !thread.archived &&
     !["SETUP_STATE_FAILED", "SETUP_STATE_INTERRUPTED"].includes(thread.setup_state ?? "") &&
     operational?.status !== "failed";
   const running =
-    available && sessionCanAcceptInput && operational?.status === "active" && controls?.harness_state === "running";
+    available && threadCanAcceptInput && operational?.status === "active" && controls?.harness_state === "running";
   // Dispatcher admission does not require a running native harness.
-  const canSend = sessionCanAcceptInput && (available || canQueueCommands);
+  const canSend = threadCanAcceptInput && (available || canQueueCommands);
   const activeTurn = controls?.active_turn_id ?? null;
   const threadsLive = useRequiredThreadsLive();
   const status = threadStatusFromSnapshot(
