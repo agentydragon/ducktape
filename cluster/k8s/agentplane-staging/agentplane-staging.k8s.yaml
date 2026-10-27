@@ -5798,7 +5798,9 @@ data:
           - list_launch_presets
           - list_sessions
           - open_session
+          - read_turns
           - submit_input
+          - wait_for_turn
 immutable: false
 ---
 apiVersion: v1

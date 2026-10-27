@@ -505,6 +505,8 @@ ENV = Environment(
                     "change_reasoning_effort",
                     "get_session",
                     "list_sessions",
+                    "read_turns",
+                    "wait_for_turn",
                 }
             )
         ),
