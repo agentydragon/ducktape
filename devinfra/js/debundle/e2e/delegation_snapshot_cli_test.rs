@@ -69,6 +69,13 @@ fn delegated_workers_replay_after_original_inputs_are_removed_and_edit_independe
     assert!(verify(&moved_second).status.success());
     let query = checked(
         Command::new(first_report["engine"].as_str().unwrap())
+            .arg("--graph-package-root")
+            .arg(format!(
+                "__packages_root__={}",
+                first_report["graph_package_roots"]["__packages_root__"]
+                    .as_str()
+                    .unwrap()
+            ))
             .args([
                 "--spec-root",
                 first_report["spec_root"].as_str().unwrap(),

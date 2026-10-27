@@ -117,7 +117,10 @@ after verifying the complete copy. Existing destinations are refused.
 The snapshot includes source chunks, the complete captured spec/config input
 set, dependency inputs, the graph, and a manifest describing the starting
 state. Its returned regeneration argument vector names the worker's copied
-engine, inputs and output directory. Separate snapshots share no writable
+engine, inputs and output directory. The returned `graph_package_roots` map
+supplies each global `--graph-package-root NAME=DIR` override for graph-backed
+queries and edits, including the `__packages_root__` fallback name. Separate
+snapshots share no writable
 input or output files. Snapshot verification continues to work after the
 original workspace is removed or the snapshot directory is moved.
 Browser source assets and their summary are copied and fingerprinted when

@@ -476,17 +476,15 @@ impl GraphProvenance {
             .get_key_value(name)
             .or_else(|| self.roots.packages.get_key_value("__packages_root__"))
             .with_context(|| format!("missing captured root for package {name}"))?;
-        let relative = absolute.strip_prefix(root).with_context(|| {
-            format!(
-                "package {name} input {} is outside declared root {}",
-                absolute.display(),
-                root.display()
-            )
-        })?;
-        Ok((
-            InputRoot::Package(root_name.clone()),
-            relative.to_path_buf(),
-        ))
+        if let Ok(relative) = absolute.strip_prefix(root) {
+            return Ok((
+                InputRoot::Package(root_name.clone()),
+                relative.to_path_buf(),
+            ));
+        }
+        // A symlink can lead outside the package directory. Record the bytes
+        // under the actual absolute path, which isolated snapshots reject.
+        Ok((InputRoot::Absolute, absolute))
     }
 
     fn classify_source(&self, path: &Path) -> Result<(InputRoot, PathBuf)> {
@@ -537,6 +535,18 @@ impl GraphProvenance {
     /// The stored argv uses absolute paths and is the source of the effective
     /// options; only declared path arguments are translated.
     pub fn regeneration_recipe(&self, current: &CurrentRoots) -> Result<(Vec<String>, PathBuf)> {
+        for name in current.packages.keys() {
+            anyhow::ensure!(
+                self.roots.packages.contains_key(name),
+                "graph package root {name} was not captured; available names: {}",
+                self.roots
+                    .packages
+                    .keys()
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
         anyhow::ensure!(
             self.generation_command
                 .get(1)
@@ -884,6 +894,13 @@ mod tests {
             mismatch.downcast_ref::<GraphMismatch>().map(|m| &m.reason),
             Some(GraphMismatchReason::File { path, .. }) if path == &moved.join("package.json")
         ));
+        let unknown = provenance
+            .verify(&CurrentRoots {
+                packages: BTreeMap::from([("typo".to_string(), moved)]),
+                ..CurrentRoots::default()
+            })
+            .unwrap_err();
+        assert!(unknown.to_string().contains("was not captured"));
         Ok(())
     }
 

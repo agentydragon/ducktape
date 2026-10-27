@@ -84,6 +84,7 @@ struct SnapshotOutcome {
     engine: PathBuf,
     spec_root: PathBuf,
     graph_source_root: PathBuf,
+    graph_package_roots: BTreeMap<String, PathBuf>,
     source_root: PathBuf,
     tree_config: PathBuf,
     modules: PathBuf,
@@ -571,6 +572,12 @@ fn outcome(directory: &Path, manifest: &SnapshotManifest) -> Result<SnapshotOutc
         engine: directory.join(&manifest.engine),
         spec_root: directory.join(&manifest.roots.spec),
         graph_source_root: directory.join(&manifest.roots.source),
+        graph_package_roots: manifest
+            .roots
+            .packages
+            .iter()
+            .map(|(name, root)| (name.clone(), directory.join(root)))
+            .collect(),
         source_root: directory.join(&manifest.selector_source_root),
         tree_config: directory.join(&manifest.run.config),
         modules: directory.join(&manifest.run.modules),
