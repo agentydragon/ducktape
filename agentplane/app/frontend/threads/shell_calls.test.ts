@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { oneLine, parseCommandCall, shellInvocation } from "./command_calls";
+import { oneLine, parseShellCall, shellInvocation } from "./shell_calls";
 
 describe("shellInvocation", () => {
   it.each([
@@ -35,9 +35,9 @@ describe("shellInvocation", () => {
   });
 });
 
-describe("parseCommandCall", () => {
+describe("parseShellCall", () => {
   it("draws Claude's Bash by what the model said it is for, with the command behind it", () => {
-    const call = parseCommandCall(
+    const call = parseShellCall(
       "Bash",
       JSON.stringify({ command: "docker ps -a", description: "List containers", timeout: 120000 })
     );
@@ -51,13 +51,13 @@ describe("parseCommandCall", () => {
   });
 
   it("falls back to the command, on one line, where Claude gave no description", () => {
-    const call = parseCommandCall("Bash", JSON.stringify({ command: "set -e\n  make   test\n", description: "" }));
+    const call = parseShellCall("Bash", JSON.stringify({ command: "set -e\n  make   test\n", description: "" }));
     expect(call?.summary).toBe("set -e make test");
     expect(call?.description).toBeUndefined();
   });
 
   it("says what changes how a Bash call runs", () => {
-    const call = parseCommandCall(
+    const call = parseShellCall(
       "Bash",
       JSON.stringify({ command: "make", run_in_background: true, dangerouslyDisableSandbox: true })
     );
@@ -65,7 +65,7 @@ describe("parseCommandCall", () => {
   });
 
   it("draws Codex's command as the script it ran and keeps its invocation and cwd structured", () => {
-    const call = parseCommandCall(
+    const call = parseShellCall(
       "commandExecution",
       JSON.stringify({
         command: String.raw`/bin/bash -lc "curl -sS \"https://test.example/\""`,
@@ -83,10 +83,7 @@ describe("parseCommandCall", () => {
   });
 
   it("draws a Codex command that is not a shell script as the line it is", () => {
-    const call = parseCommandCall(
-      "commandExecution",
-      JSON.stringify({ command: "git status", cwd: "/test-workspace" })
-    );
+    const call = parseShellCall("commandExecution", JSON.stringify({ command: "git status", cwd: "/test-workspace" }));
     expect(call?.command).toBe("git status");
     expect(call?.cwd).toBe("/test-workspace");
     expect(call?.invocation).toBeUndefined();
@@ -94,14 +91,14 @@ describe("parseCommandCall", () => {
   });
 
   it("takes no call it could not show whole", () => {
-    expect(parseCommandCall("Bash", JSON.stringify({ command: "ls", test_extra: true }))).toBeNull();
-    expect(parseCommandCall("Bash", JSON.stringify({ description: "no command" }))).toBeNull();
-    expect(parseCommandCall("commandExecution", JSON.stringify({ command: "ls" }))).toBeNull();
+    expect(parseShellCall("Bash", JSON.stringify({ command: "ls", test_extra: true }))).toBeNull();
+    expect(parseShellCall("Bash", JSON.stringify({ description: "no command" }))).toBeNull();
+    expect(parseShellCall("commandExecution", JSON.stringify({ command: "ls" }))).toBeNull();
   });
 
   it("takes no other tool, and no arguments that are still arriving", () => {
-    expect(parseCommandCall("Read", JSON.stringify({ command: "ls" }))).toBeNull();
-    expect(parseCommandCall("Bash", '{"command": "ls -')).toBeNull();
+    expect(parseShellCall("Read", JSON.stringify({ command: "ls" }))).toBeNull();
+    expect(parseShellCall("Bash", '{"command": "ls -')).toBeNull();
   });
 });
 

@@ -357,8 +357,8 @@ agentplane_vitest_test(
 
 # The shell tool calls of both harnesses, parsed into one shape for the thread to draw.
 ts_library(
-    name = "command_calls",
-    srcs = ["command_calls.ts"],
+    name = "shell_calls",
+    srcs = ["shell_calls.ts"],
     tsconfig = TSCONFIG,
     deps = [
         "//:node_modules/zod",
@@ -367,10 +367,10 @@ ts_library(
 )
 
 agentplane_vitest_test(
-    name = "command_calls_test",
-    srcs = ["command_calls.test.ts"],
+    name = "shell_calls_test",
+    srcs = ["shell_calls.test.ts"],
     deps = [
-        ":command_calls",
+        ":shell_calls",
         "//:node_modules/vitest",
     ],
 )
@@ -392,10 +392,10 @@ ts_library(
     srcs = ["thread_cards.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":command_calls",
         ":command_progress",
         ":history_rows",
         ":retained_disclosures",
+        ":shell_calls",
         ":step_line",
         ":thread_evidence",
         ":thread_sync",
@@ -403,10 +403,10 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend:clamped_block",
-        "//agentplane/app/frontend:command_view",
         "//agentplane/app/frontend:disclosure",
         "//agentplane/app/frontend:json_view",
         "//agentplane/app/frontend:raw_switch",
+        "//agentplane/app/frontend:shell_command_view",
         "//agentplane/proto:event_pb",
         "//util/frontend:code_block",
         "//util/frontend:markdown",

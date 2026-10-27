@@ -362,8 +362,8 @@ ts_library(
 )
 
 ts_library(
-    name = "command_view",
-    srcs = ["command_view.tsx"],
+    name = "shell_command_view",
+    srcs = ["shell_command_view.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":argv_text",
@@ -960,12 +960,12 @@ ts_library(
         ":app",
         ":clamped_block",
         ":client",
-        ":command_view",
         ":disclosure",
         ":harness_network",
         ":live",
         ":mcp_linkage_client",
         ":notification_types",
+        ":shell_command_view",
         ":stream_status",
         ":test_model_catalog",
         ":text_block",
