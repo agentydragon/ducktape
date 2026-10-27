@@ -258,6 +258,9 @@ impl ValueExpr {
                     // short-circuiting without dropping the invocation path.
                     Self::Alternatives(vec![
                         Self::Undefined,
+                        // Preserve the prior unknown publication capability;
+                        // timing precision must not admit namespace contracts.
+                        Self::Unknown,
                         Self::Call(
                             Box::new(Self::from_expr(&call.callee)),
                             call.args
@@ -268,14 +271,22 @@ impl ValueExpr {
                         ),
                     ])
                 }
-                OptChainBase::Member(member) => Self::Alternatives(vec![
-                    Self::Undefined,
-                    Self::Member(
-                        Box::new(Self::from_expr(&member.obj)),
-                        static_prop(&member.prop),
-                        matches!(member.prop, MemberProp::Ident(_)),
-                    ),
-                ]),
+                OptChainBase::Member(member) => {
+                    let mut options = vec![
+                        Self::Undefined,
+                        Self::Member(
+                            Box::new(Self::from_expr(&member.obj)),
+                            static_prop(&member.prop),
+                            matches!(member.prop, MemberProp::Ident(_)),
+                        ),
+                    ];
+                    if !matches!(member.obj.unwrap_parens(), Expr::Ident(_))
+                        || !matches!(member.prop, MemberProp::Ident(_))
+                    {
+                        options.push(Self::Unknown);
+                    }
+                    Self::Alternatives(options)
+                }
                 // Spread calls have no modeled result shape.
                 _ => Self::Unknown,
             },
