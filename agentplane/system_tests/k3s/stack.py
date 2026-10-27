@@ -35,6 +35,7 @@ from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_f
 
 from agentplane.system_tests.conftest import AGENT_SERVICE_ACCOUNT, AUDIENCE
 from agentplane.system_tests.k3s import block_storage, guest_logs, rendered_fixture, vm_sandboxes
+from agentplane.system_tests.k3s.iptables_rule import ensure_rule
 from agentplane.system_tests.k3s.bootstrap import Bootstrap
 from agentplane.testing import tls
 from util.bazel.runfiles import get_required_path
@@ -231,10 +232,7 @@ class K3s:
             # A recycled runner already has the rule.
             iptables = self.data_dir / "data/current/bin/aux/iptables"  # the copy k3s ships; the host has none
             masquerade = ("POSTROUTING", "-s", POD_CIDR, "!", "-d", POD_CIDR, "-j", "MASQUERADE")
-            if subprocess.run(
-                [str(iptables), "-t", "nat", "-C", *masquerade], capture_output=True, check=False
-            ).returncode:
-                run(str(iptables), "-t", "nat", "-A", *masquerade)
+            ensure_rule(iptables, table="nat", chain=masquerade[0], rule=masquerade[1:])
         except BaseException:
             process.terminate()
             try:
