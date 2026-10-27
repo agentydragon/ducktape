@@ -29,10 +29,10 @@ fn source_policy_projects_without_relocating_context_sensitive_provider() {
     ).with_extra_chunks(&[("static/peer", PROVIDER)])
         .with_extra_files(&[("static/resource.cjs", "module.exports = 7;\n"), ("static/peer/resource.cjs", "module.exports = 7;\n")]));
     assert_preserved_entry_output(&control, "42 7 true\n");
-    assert_same_module_bytes(&control, &fixture, "static/peer/peer.js");
+    assert_same_module_bytes(&control, &fixture, "static/peer/entry.js");
     assert_module_source(
         &fixture.out_root,
-        "static/peer/peer.js",
+        "static/peer/entry.js",
         &["import.meta.require", "import.meta.url"],
         &[],
     );
@@ -133,7 +133,7 @@ fn source_markers_are_a_conjunction_and_policy_label_is_not_a_chunk_alias() {
     assert_preserved_entry_output(&fixture, "42\n");
     assert_module_source(
         &fixture.out_root,
-        "static/other/other.js",
+        "static/other/entry.js",
         &["neutral-lazy-registry"],
         &["factory"],
     );
