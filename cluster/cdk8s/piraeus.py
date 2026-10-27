@@ -410,12 +410,14 @@ def cluster_chart(app: App) -> Chart:
                     "podTemplate": {"spec": {"nodeSelector": _CONTROLLER_NODE_SELECTOR}},
                 },
                 "csiNode": {"enabled": True},
-                # Keep local PV affinity updates, but omit unrelated NFS and HA/eviction components.
+                # Keep local PV affinity updates; omit the unrelated NFS server.
                 "affinityController": {
                     "enabled": True,
                     "podTemplate": {"spec": {"nodeSelector": _CONTROLLER_NODE_SELECTOR}},
                 },
-                "highAvailabilityController": {"enabled": False},
+                # Force-deletes Pods and VolumeAttachments stuck on a node whose DRBD primary lost
+                # quorum, so replicated volumes fail over without manual force-deletes.
+                "highAvailabilityController": {"enabled": True},
                 "nfsServer": {"enabled": False},
             },
             "linstorSatelliteConfigurations": [

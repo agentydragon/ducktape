@@ -128,7 +128,7 @@ def test_piraeus_storage_is_confined_to_prepared_nodes(
     for component in ("controller", "csiController", "affinityController"):
         assert cluster[component]["podTemplate"]["spec"]["nodeSelector"] == controller_selector
     assert cluster["properties"] == [{"name": "TcpPortAutoRange", "value": "7900-7999"}]
-    assert cluster["highAvailabilityController"] == {"enabled": False}
+    assert cluster["highAvailabilityController"] == {"enabled": True}
     assert cluster["nfsServer"] == {"enabled": False}
 
     (

@@ -3651,7 +3651,7 @@ spec:
       csiNode:
         enabled: true
       highAvailabilityController:
-        enabled: false
+        enabled: true
       nfsServer:
         enabled: false
       nodeAffinity:

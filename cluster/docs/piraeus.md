@@ -75,7 +75,7 @@ evacuation or node maintenance, require fresh samples and the agreed headroom.
   Alloy DaemonSet; the chart's satellite PodMonitor is removed.
 - The LINSTOR datastore is Kubernetes. The controller, CSI controller and
   affinity controller run on prepared OVH nodes, independent of any one pool.
-- HA controller and NFS server are disabled.
+- The HA controller runs; the NFS server is disabled.
 
 **Gotcha:** LINSTOR places diskless tiebreakers on any satellite, including a
 cordoned node about to be wiped. Fence a node before maintenance with
