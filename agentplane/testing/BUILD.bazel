@@ -18,6 +18,7 @@ package(
         "//agentplane/system_tests:__pkg__",
         "//agentplane/system_tests/k3s:__pkg__",
         "//agentplane/x/runner_layering:__pkg__",
+        "//cluster/cdk8s/agentplane:__pkg__",
     ],
 )
 

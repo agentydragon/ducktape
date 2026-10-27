@@ -78,6 +78,7 @@ from cluster.cdk8s.agentplane.environment import (
     Environment,
     LlmIngressProps,
     McpEdgeProps,
+    OrchestrationProps,
     ReplicaProfile,
 )
 from cluster.cdk8s.model_selections import HarnessRoutes, model_configs
@@ -247,6 +248,7 @@ def environment(*, vm_sandboxes: bool, models: Models, app_origin: str = APP_ORI
                 )
             },
             oauth_secret_items=("client-secret",),
+            orchestration_v1=OrchestrationProps(),
         ),
         mcp_edge=McpEdgeProps(
             replicas=_ONE_REPLICA,
@@ -362,16 +364,17 @@ def build_chart(
     notifications_caller = {
         ServiceAccountRef(namespace=NAMESPACE, name=notifications.NAME): notifications.service(NAMESPACE).pods
     }
-    dispatcher_callers = app_caller | notifications_caller
+    orchestration_caller = actions.orchestration_callers(env)
+    gateway_callers = app_caller | notifications_caller
     control = runner_gateway_workload.runner_control_service(NAMESPACE, port=Port(name="grpc", number=8080))
     runner_gateway_workload.add_stable_services(chart, env, control=control)
     runner_gateway_workload.RunnerGateway(
         chart,
         "runner-gateway",
         env,
-        dispatcher_callers=dispatcher_callers,
-        gateway_callers=dispatcher_callers,
-        wake_callers=env.wake_caller_accounts,
+        dispatcher_callers=gateway_callers | orchestration_caller,
+        gateway_callers=gateway_callers,
+        wake_callers=env.wake_caller_accounts | orchestration_caller.keys(),
         database_url=dispatcher_database_url,
         sandbox_controller=(
             ServiceAccountRef(namespace=NAMESPACE, name=sandbox_controller.NAME),
@@ -399,7 +402,7 @@ def build_chart(
         "history-service",
         env,
         database_url=history_database_url,
-        callers=app_caller | notifications_caller,
+        callers=app_caller | notifications_caller | orchestration_caller,
         placement=None,
         registry_secret_name=None,
         container_env=database_env,
@@ -467,6 +470,10 @@ def build_chart(
         "actions",
         env,
         database_url=actions_database_url,
+        history=history_service.service(NAMESPACE),
+        history_audience=history_service.TOKEN_AUDIENCE,
+        dispatcher=runner_gateway_workload.dispatcher_service(NAMESPACE),
+        dispatcher_audience=session_dispatcher.TOKEN_AUDIENCE,
         placement=None,
         registry_secret_name=None,
         image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,

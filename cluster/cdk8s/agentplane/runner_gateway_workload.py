@@ -36,6 +36,7 @@ from agentplane.runner_gateway.settings import Settings
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import (
+    actions,
     app as app_component,
     database,
     egress,
@@ -326,6 +327,7 @@ def serving_chart(app: App, *, env: Environment) -> Chart:
         ServiceAccountRef(namespace=env.namespace, name=app_component.NAME): app_component.service(env.namespace).pods,
         ServiceAccountRef(namespace=env.namespace, name=notifications.NAME): notifications.service(env.namespace).pods,
     }
+    orchestration = actions.orchestration_callers(env)
     dispatcher_database_url = (
         SecretRef(namespace=env.namespace, name="postgres-session-dispatcher")
         .key("uri")
@@ -339,9 +341,10 @@ def serving_chart(app: App, *, env: Environment) -> Chart:
         migration=migrate_init_container(
             _MIGRATION_IMAGE, name="migrate", env_variables={"DATABASE_URL": dispatcher_database_url}
         ),
-        dispatcher_callers=callers,
+        dispatcher_callers=callers | orchestration,
         gateway_callers=callers,
-        wake_callers=env.wake_caller_accounts,
+        # The orchestration_v1 group sends input that wakes a Sandbox launched with wakeOnSend.
+        wake_callers=env.wake_caller_accounts | orchestration.keys(),
         sandbox_controller=(
             ServiceAccountRef(namespace=env.namespace, name=sandbox_controller.NAME),
             sandbox_controller.pods(env.namespace),

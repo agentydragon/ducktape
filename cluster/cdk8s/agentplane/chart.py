@@ -130,8 +130,9 @@ def environment_chart(
         "history-service",
         env,
         database_url=history_database_url,
-        # The app reads Threads; the Notification Service reads command receipts.
-        callers=app_caller | notifications_caller,
+        # The app reads Threads; the Notification Service reads command receipts; the orchestration_v1
+        # group reads the Sessions it drives.
+        callers=app_caller | notifications_caller | actions.orchestration_callers(env),
         placement=node_scheduling.HIL_OVH,
         registry_secret_name=REGISTRY_SECRET_NAME,
     ).add_platform_resources()
@@ -172,6 +173,10 @@ def environment_chart(
         "actions",
         env,
         database_url=actions_database_url,
+        history=history_service.service(env.namespace),
+        history_audience=history_service.TOKEN_AUDIENCE,
+        dispatcher=session_dispatcher.service(env.namespace),
+        dispatcher_audience=session_dispatcher.TOKEN_AUDIENCE,
         placement=node_scheduling.HIL_OVH,
         registry_secret_name=REGISTRY_SECRET_NAME,
     ).add_platform_resources()

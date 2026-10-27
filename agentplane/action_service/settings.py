@@ -12,6 +12,7 @@ from agentplane.action_service.catalog import ActionGroup, Key
 from agentplane.action_service.mcp_settings import McpClientMetadataSettings, McpOAuthServer
 from agentplane.action_service.oauth_settings import OAuthSettings
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings
+from agentplane.action_service.orchestration_v1.binding import OrchestrationExecutorBinding
 from agentplane.action_service.push_settings import WebPushSettings
 from agentplane.log_levels import LogLevels
 from agentplane.subjects import ServiceAccountRef
@@ -32,6 +33,18 @@ class GitHubVisibilitySettings(BaseModel):
         ge=0,
         description="How long one repository's confirmed visibility is reused before GitHub is asked again.",
     )
+
+
+class ServicePeer(BaseModel):
+    """A gRPC service this one calls as its workload."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    target: str = Field(min_length=1, description="gRPC host:port.")
+    token_file: str = Field(
+        min_length=1, description="The rotating projected ServiceAccount token for the peer's audience."
+    )
+    request_timeout_s: float = Field(gt=0, allow_inf_nan=False)
 
 
 class Settings(YamlFileSettings):
@@ -92,6 +105,12 @@ class Settings(YamlFileSettings):
     mcp_servers: dict[Key, McpOAuthServer] = Field(default_factory=dict)
     mcp_client_metadata: McpClientMetadataSettings | None = None
     web_push: WebPushSettings | None = Field(default=None, description="Optional Web Push delivery identity.")
+    session_dispatcher: ServicePeer | None = Field(
+        default=None, description="Where orchestration_v1 groups send Session commands; set exactly when one exists."
+    )
+    history_service: ServicePeer | None = Field(
+        default=None, description="Where orchestration_v1 groups read Sessions; set exactly when one exists."
+    )
 
     @model_validator(mode="after")
     def shared_mcp_client_metadata(self) -> Settings:
@@ -100,4 +119,22 @@ class Settings(YamlFileSettings):
             raise ValueError("configure mcp_client_metadata exactly when an MCP server uses the shared CIMD")
         if self.oauth is not None and not self.integrated_connection_service:
             raise ValueError("oauth requires integrated_connection_service while Actions serves MCP")
+        return self
+
+    @model_validator(mode="after")
+    def orchestration_peers(self) -> Settings:
+        # Checks at synthesis what the service checks at startup (config.go validateOrchestration).
+        orchestration = [
+            group.executor
+            for group in self.action_groups.values()
+            if isinstance(group.executor, OrchestrationExecutorBinding)
+        ]
+        if any(binding.namespace != self.policy_namespace for binding in orchestration):
+            raise ValueError(
+                "an orchestration_v1 group launches in policy_namespace, where its launcher grants are read"
+            )
+        if (self.session_dispatcher is None, self.history_service is None) != (not orchestration, not orchestration):
+            raise ValueError(
+                "configure session_dispatcher and history_service exactly when an orchestration_v1 group calls them"
+            )
         return self

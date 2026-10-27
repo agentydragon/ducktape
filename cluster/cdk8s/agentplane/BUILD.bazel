@@ -455,7 +455,9 @@ py_library(
         ":service_workload",
         "//agentplane:crd_group",
         "//agentplane:subjects",
+        "//agentplane/action_service:catalog",
         "//agentplane/action_service:settings",
+        "//agentplane/action_service/orchestration_v1:binding",
         "//agentplane/workload_auth:audience",
         "//cluster/cdk8s:api_resource",
         "//cluster/cdk8s:cilium",
@@ -794,6 +796,26 @@ py_test(
     ],
 )
 
+# cdk8s synth needs jsii's Node runtime.
+py_test(
+    name = "test_launcher_grant_admission",
+    # Starts an API server.
+    size = "medium",
+    srcs = ["test_launcher_grant_admission.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":actions",
+        "//:conftest",
+        "//agentplane:crd_group",
+        "//agentplane/testing:kubernetes_apiserver",
+        "@pypi//cdk8s",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pytest_bazel",
+        "@pypi//tenacity",
+    ],
+)
+
 py_test(
     name = "test_notifications",
     size = "medium",
@@ -984,6 +1006,7 @@ py_library(
     name = "runner_gateway_workload",
     srcs = ["runner_gateway_workload.py"],
     deps = [
+        ":actions",
         ":app",
         ":database",
         ":egress",

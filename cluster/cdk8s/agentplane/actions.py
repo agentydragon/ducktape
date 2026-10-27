@@ -1,6 +1,7 @@
 """The Action Service: its Deployment (+ Goose migrate initContainer), RBAC, ConfigMaps,
-Service, NetworkPolicy, ServiceMonitor, optional PodDisruptionBudget, and the public HTTPRoute of
-an environment with an Action Service hostname. Staging's policy sets are added by its chart.
+Service, NetworkPolicy, ServiceMonitor, optional PodDisruptionBudget, the public HTTPRoute of
+an environment with an Action Service hostname, and the admission policy on the launcher grants of
+an environment with the orchestration_v1 group. Staging's policy sets are added by its chart.
 """
 
 from __future__ import annotations
@@ -26,17 +27,26 @@ from cdk8s_plus_34 import (
     Secret,
     ServiceAccount,
     Volume,
+    k8s,
 )
 from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
+from agentplane.action_service.catalog import ActionGroup
+from agentplane.action_service.orchestration_v1.binding import (
+    LaunchPreset,
+    OrchestrationExecutorBinding,
+    PresetLaunch,
+    PresetSession,
+    PresetSessionSpec,
+)
 from agentplane.action_service.settings import Settings
 from agentplane.crd_group import GROUP
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import database, notifications
-from cluster.cdk8s.agentplane.environment import Environment
+from cluster.cdk8s.agentplane.environment import Environment, OrchestrationProps
 from cluster.cdk8s.agentplane.mcp_routes import PUBLIC_PATHS
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.service_workload import ServiceWorkload, add_service_workload
@@ -59,6 +69,12 @@ _LABELS = {"app.kubernetes.io/name": _NAME}
 
 # Where the Action Service reads the `oauth_secret_items` of `mcp_oauth_secret`.
 MCP_OAUTH_DIR = "/etc/agentplane-mcp"
+# The orchestration_v1 group's key, which its launcher grants' rules name.
+ORCHESTRATION_GROUP = "orchestration_v1"
+_PEER_TOKEN_DIR = "/var/run/secrets/actions"
+# The orchestration_v1 executor and its admission policy both name launcher grants `<sandbox>.launcher`.
+_LAUNCHER_SUFFIX = ".launcher"
+_PEER_TIMEOUT_SECONDS = 15
 _DEFAULT_MEMORY_LIMIT = Size.mebibytes(512)
 _DEFAULT_MIGRATE_MEMORY_LIMIT = Size.mebibytes(256)
 
@@ -67,6 +83,161 @@ def service(namespace: str) -> ServiceRef:
     """The Action Service in one environment's namespace."""
     return ServiceRef(
         name=_NAME, port=Port(name="http", number=8080), pods=Pods(namespace=namespace, labels=tuple(_LABELS.items()))
+    )
+
+
+def orchestration_callers(env: Environment) -> dict[ServiceAccountRef, Pods]:
+    """The Action Service as a caller of the Session Dispatcher and the History Service, in an
+    environment with the orchestration_v1 group."""
+    if env.actions.orchestration_v1 is None:
+        return {}
+    return {ServiceAccountRef(namespace=env.namespace, name=_NAME): service(env.namespace).pods}
+
+
+def _orchestration_group(env: Environment, props: OrchestrationProps) -> ActionGroup:
+    """The orchestration_v1 group, launching with the app's presets and default PolicySets."""
+    app = env.app_config
+    presets = {}
+    for name, sandbox in app.sandbox_presets.items():
+        thread = app.thread_presets[sandbox.thread_preset]
+        presets[name] = LaunchPreset(
+            title=sandbox.title,
+            launch=PresetLaunch(
+                template=sandbox.template,
+                policy_sets=sandbox.policy_sets,
+                inbox_tags=sandbox.inbox_tags,
+                bootstrap=sandbox.bootstrap,
+            ),
+            open_session=PresetSession(
+                spec=PresetSessionSpec(
+                    harness=thread.harness,
+                    model=thread.model,
+                    cwd=thread.cwd,
+                    reasoning_effort=thread.reasoning_effort or "",
+                    instructions=thread.instructions,
+                ),
+                setup_script=thread.setup_script,
+            ),
+        )
+    return ActionGroup(
+        title="Orchestration",
+        description=(
+            "Launch Session Sandboxes and drive their Sessions: open them, send input, interrupt, change "
+            "model or effort, and read their state. A launch waits for the operator and grants its caller "
+            "what it names on the new Sandbox."
+        ),
+        executor=OrchestrationExecutorBinding(
+            kind="orchestration_v1",
+            description="Run by this service, on each request's Decision, with its own authority.",
+            namespace=env.namespace,
+            default_policy_sets=frozenset(app.default_policy_sets),
+            presets=presets,
+        ),
+        direct_tools=props.direct_tools,
+    )
+
+
+def add_launcher_admission(scope: Construct, namespace: str) -> None:
+    """Admits the `namespace` Action Service's Sandbox, PolicySet and PolicyBinding creations only in
+    the shape the orchestration_v1 executor writes (agentplane/action_service/orchestration_v1/README.md): a
+    grant owned by one Sandbox, named for it, naming only it and only this group's Actions, and a
+    Sandbox bound to no launcher grant. A bug in the executor then cannot grant past the Sandbox
+    it launched. Admission cannot see who called the Action, so it limits what a grant reaches,
+    not who holds it."""
+    name = f"{namespace}-actions-launcher-grants"
+    # The objects reach CEL as plain maps: a missing key is an error, so every access is guarded, and
+    # `const`, a CEL reserved word, is indexed.
+    owner = "variables.owners[0]"
+    target = "r.targets.sandboxes[0]"
+    schema = "r.policy.schema"
+    sandbox = f"{schema}.properties.sandbox"
+    const = f"{sandbox}['const']"
+    k8s.KubeValidatingAdmissionPolicy(
+        scope,
+        "launcher-admission",
+        metadata=k8s.ObjectMeta(name=name),
+        spec=k8s.ValidatingAdmissionPolicySpec(
+            failure_policy="Fail",
+            match_constraints=k8s.MatchResources(
+                resource_rules=[
+                    k8s.NamedRuleWithOperations(
+                        api_groups=[GROUP],
+                        api_versions=["*"],
+                        operations=["CREATE"],
+                        resources=["sandboxes", "policysets", "policybindings"],
+                    )
+                ]
+            ),
+            match_conditions=[
+                k8s.MatchCondition(
+                    name="action-service",
+                    expression=f"request.userInfo.username == 'system:serviceaccount:{namespace}:{_NAME}'",
+                )
+            ],
+            variables=[
+                k8s.Variable(name="owners", expression="object.metadata.?ownerReferences.orValue([])"),
+                k8s.Variable(name="grant", expression="request.resource.resource != 'sandboxes'"),
+            ],
+            validations=[
+                k8s.Validation(
+                    expression=(
+                        "variables.grant || !object.spec.?policySets.orValue([])"
+                        f".exists(set, set.endsWith('{_LAUNCHER_SUFFIX}'))"
+                    ),
+                    message="A Sandbox this service launches is bound to no launcher grant.",
+                ),
+                k8s.Validation(
+                    expression=(
+                        "!variables.grant || (size(variables.owners) == 1"
+                        f" && {owner}.apiVersion.startsWith('{GROUP}/') && {owner}.kind == 'Sandbox'"
+                        f" && object.metadata.name == {owner}.name + '{_LAUNCHER_SUFFIX}')"
+                    ),
+                    message="A launcher grant is owned by one Sandbox and named for it.",
+                ),
+                k8s.Validation(
+                    expression=(
+                        "request.resource.resource != 'policybindings'"
+                        " || object.spec.policySets == [object.metadata.name]"
+                    ),
+                    message="A launcher grant's PolicyBinding binds only its own PolicySet.",
+                ),
+                k8s.Validation(
+                    expression=(
+                        "request.resource.resource != 'policysets' || (size(variables.owners) == 1"
+                        " && object.spec.rules.all(r, (r.type == 'session_inbox_access'"
+                        " && has(r.operations) && r.operations == ['send_message'] && has(r.targets)"
+                        " && !has(r.targets.inboxTags) && !has(r.targets.allSandboxes)"
+                        f" && has(r.targets.sandboxes) && size(r.targets.sandboxes) == 1 && has({target}.uid)"
+                        f" && {target}.name == {owner}.name && {target}.uid == {owner}.uid)"
+                        " || (r.type == 'action_auto_approve' && has(r.policy) && r.policy.type == 'argument_schema'"
+                        f" && r.policy.actions.all(group, group == '{ORCHESTRATION_GROUP}')"
+                        f" && has({schema}) && {schema}.all(key, key in ['type', 'required', 'properties'])"
+                        f" && has({schema}.type) && {schema}.type == 'object'"
+                        f" && has({schema}.required) && {schema}.required == ['sandbox']"
+                        f" && has({schema}.properties) && {schema}.properties.all(key, key == 'sandbox')"
+                        f" && has({sandbox}) && {sandbox}.all(key, key == 'const') && 'const' in {sandbox}"
+                        f" && {const}.all(key, key in ['name', 'uid']) && 'name' in {const} && 'uid' in {const}"
+                        f" && {const}.name == {owner}.name && {const}.uid == {owner}.uid)))"
+                    ),
+                    message=(
+                        "A launcher grant's rules name only its Sandbox, by name and UID, and only "
+                        f"{ORCHESTRATION_GROUP} Actions."
+                    ),
+                ),
+            ],
+        ),
+    )
+    k8s.KubeValidatingAdmissionPolicyBinding(
+        scope,
+        "launcher-admission-binding",
+        metadata=k8s.ObjectMeta(name=name),
+        spec=k8s.ValidatingAdmissionPolicyBindingSpec(
+            policy_name=name,
+            validation_actions=["Deny"],
+            match_resources=k8s.MatchResources(
+                namespace_selector=k8s.LabelSelector(match_labels={"kubernetes.io/metadata.name": namespace})
+            ),
+        ),
     )
 
 
@@ -89,6 +260,10 @@ class Actions(Construct):
         env: Environment,
         *,
         database_url: EnvValue,
+        history: ServiceRef,
+        history_audience: str,
+        dispatcher: ServiceRef,
+        dispatcher_audience: str,
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
         registry_secret_name: str | None = "forgejo-images-creds",
         image_pull_policy: ImagePullPolicy = ImagePullPolicy.ALWAYS,
@@ -97,9 +272,15 @@ class Actions(Construct):
         migrate_memory_limit: Size | None = _DEFAULT_MIGRATE_MEMORY_LIMIT,
         container_env: Mapping[str, EnvValue] | None = None,
     ) -> None:
+        """`history` and `dispatcher` are the peers the orchestration_v1 group calls, in an environment
+        that has it."""
         super().__init__(scope, id)
         self.env = env
         self.database_url = database_url
+        self.history = history
+        self.history_audience = history_audience
+        self.dispatcher = dispatcher
+        self.dispatcher_audience = dispatcher_audience
         self.container_env = container_env or {}
         self.placement = placement
         self.registry_secret_name = registry_secret_name
@@ -136,8 +317,21 @@ class Actions(Construct):
         content["mcp_servers"] = {
             key: server.model_dump(mode="json", exclude_unset=True) for key, server in props.mcp_servers.items()
         }
+        groups = dict(props.action_groups)
+        if props.orchestration_v1 is not None:
+            groups[ORCHESTRATION_GROUP] = _orchestration_group(env, props.orchestration_v1)
+            content["session_dispatcher"] = {
+                "target": f"{dispatcher.fqdn}:{dispatcher.port.number}",
+                "token_file": f"{_PEER_TOKEN_DIR}/dispatcher",
+                "request_timeout_s": _PEER_TIMEOUT_SECONDS,
+            }
+            content["history_service"] = {
+                "target": f"{history.fqdn}:{history.pod_port}",
+                "token_file": f"{_PEER_TOKEN_DIR}/history",
+                "request_timeout_s": _PEER_TIMEOUT_SECONDS,
+            }
         content["action_groups"] = {
-            key: group.model_dump(mode="json", exclude_unset=True) for key, group in props.action_groups.items()
+            key: group.model_dump(mode="json", exclude_unset=True) for key, group in groups.items()
         }
         settings = SettingsFile(
             self,
@@ -150,6 +344,8 @@ class Actions(Construct):
         )
         workload = self._add_workload(settings)
         self._add_rbac(workload.account)
+        if props.orchestration_v1 is not None:
+            add_launcher_admission(self, env.namespace)
 
     def add_platform_resources(self) -> None:
         """Add the Cilium policy and metrics scrape used by fleet environments, and the public route
@@ -214,6 +410,18 @@ class Actions(Construct):
                 RolePolicyRule(resources=[custom_resource("", "serviceaccounts")], verbs=["get"]),
             ]
         )
+        if self.env.actions.orchestration_v1 is not None:
+            # The orchestration_v1 group launches Sandboxes and writes their launcher grants, which
+            # `_add_launcher_admission` limits to that shape. `get` reads back an object a retried
+            # launch already wrote.
+            rules_by_namespace[namespace].append(
+                RolePolicyRule(
+                    resources=[
+                        custom_resource(GROUP, resource) for resource in ("sandboxes", "policysets", "policybindings")
+                    ],
+                    verbs=["get", "create"],
+                )
+            )
         for target_namespace, rules in sorted(rules_by_namespace.items()):
             suffix = "" if target_namespace == namespace else f"-{target_namespace}"
             role = Role(
@@ -344,6 +552,12 @@ class Actions(Construct):
             # Its own directory: a subPath file cannot be mounted inside the read-only
             # settings volume (runc: "not a directory").
             container.mount(f"/run/secrets/{mount.name}", bearer_volume, read_only=True)
+        if self.env.actions.orchestration_v1 is not None:
+            workload.project_tokens(
+                "peer-tokens",
+                _PEER_TOKEN_DIR,
+                {"dispatcher": self.dispatcher_audience, "history": self.history_audience},
+            )
         return workload
 
     def _add_http_route(self, hostname: str) -> None:
@@ -397,6 +611,11 @@ class Actions(Construct):
                 cilium.dns_egress(resolves=["*"]),
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
                 database.egress(namespace),
+                *(
+                    [self.dispatcher.egress(), self.history.egress()]
+                    if self.env.actions.orchestration_v1 is not None
+                    else []
+                ),
                 *self.env.actions.extra_egress,
             ],
         )

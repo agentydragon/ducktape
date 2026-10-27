@@ -45,3 +45,17 @@ any other launch of a taken name is refused. `open_session` and each command car
 A launched Sandbox's own account is bound to this deployment's default PolicySets and the ones the
 launch names. A launch may not name a launcher grant's PolicySet, which would hand another
 Sandbox's launcher grant to the new one.
+
+## Deployment
+
+An environment offers the group with `ActionsProps.orchestration_v1`
+(`cluster/cdk8s/agentplane/environment.py`). Its Action Service then:
+
+- has the group in its settings, with the app's presets and default PolicySets, and the
+  `session_dispatcher` and `history_service` it calls with projected tokens of their audiences;
+- is a caller and waker of the Session Dispatcher and a reader of the History Service;
+- may get and create Sandboxes, PolicySets and PolicyBindings in its namespace;
+- creates those only in the executor's shape, which a ValidatingAdmissionPolicy enforces: a
+  Sandbox bound to no launcher grant, and a grant owned by one Sandbox, named for it, whose rules
+  name only that incarnation and only this group's Actions. The policy cannot see who called the
+  launch, so it bounds what a grant reaches, not who holds it.

@@ -104,6 +104,16 @@ class WebPushProps:
 
 
 @dataclass(frozen=True)
+class OrchestrationProps:
+    """This environment offers the `orchestration_v1` ActionGroup, a stopgap
+    (agentplane/action_service/orchestration_v1/README.md). Its launches take the app's presets and
+    default PolicySets."""
+
+    # The group's Actions external Connections also see as MCP tools of their own; None offers none.
+    direct_tools: frozenset[Key] | None = None
+
+
+@dataclass(frozen=True)
 class ActionsProps:
     """This environment's Actions settings and secret wiring."""
 
@@ -125,6 +135,8 @@ class ActionsProps:
     # CiliumNetworkPolicy egress rules appended after the shared DNS/kube-apiserver/
     # postgres rules: this environment's OIDC provider, MCP servers, ...
     extra_egress: Sequence[CiliumNetworkPolicySpecEgress] = field(default_factory=tuple)
+    # None offers no orchestration_v1 group.
+    orchestration_v1: OrchestrationProps | None = None
 
 
 @dataclass(frozen=True)

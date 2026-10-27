@@ -24,6 +24,7 @@ py_library(
         "//cluster/cdk8s:__subpackages__",
     ],
     deps = [
+        "//agentplane/action_service/orchestration_v1:binding",
         "//agentplane/action_service/sandbox:binding",
         "@pypi//mcp",
         "@pypi//mcp_types",
@@ -128,6 +129,7 @@ py_library(
         ":push_settings",
         "//agentplane:log_levels",
         "//agentplane:subjects",
+        "//agentplane/action_service/orchestration_v1:binding",
         "//util:yaml_file_settings",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
