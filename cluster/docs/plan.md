@@ -111,11 +111,6 @@ editing a route.
       `terraform/main/infrastructure.tf`) at `oci-cache`; machine-config changes reboot nodes,
       so use the maintenance procedure in <../k8s/oci-cache/README.md> § Node-level pull-through.
 
-- [ ] Verify dmeventd thin pool monitoring after wyrm2 reboot: NixOS config changed
-      `pkgs.lvm2` → `pkgs.lvm2_dmeventd` so `lvchange --monitor y` actually registers
-      with dmeventd. After next wyrm2 reboot, verify with
-      `lvs -o lv_name,seg_monitor -S "lv_attr=~^t"` — Monitor column should show
-      `monitored`. See `nix/nixos/hosts/wyrm2/default.nix` openebs setup services.
 - [ ] Fast token rotation on cluster reprovision: `claude-token-rotation` CronJob runs
       biweekly (1st/15th), so after a cluster rebuild the SOPS-encrypted token in
       `secrets/claude-web-k8s-jwt.yaml` is stale until the next scheduled run. Need a

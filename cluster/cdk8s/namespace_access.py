@@ -44,7 +44,6 @@ NAMESPACE_DIAGNOSTICS = {
     "nvidia-device-plugin": AgentReadable.LOGS,
     "oci-cache": AgentReadable.LOGS,
     "ollama": AgentReadable.LOGS,
-    "openebs": AgentReadable.LOGS,
     "proxmox-proxy": AgentReadable.LOGS,
     "public-coder-agent": AgentReadable.METADATA,
     "study-casino": AgentReadable.LOGS,

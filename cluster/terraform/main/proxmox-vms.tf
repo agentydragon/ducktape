@@ -180,14 +180,6 @@ resource "proxmox_virtual_environment_vm" "wyrm2" {
   } # Steam library (/games) — SSD, gaming seat
   disk {
     datastore_id = var.storage
-    interface    = "virtio2"
-    iothread     = true
-    discard      = "on"
-    size         = 500
-    file_format  = "raw"
-  } # OpenEBS LVM SSD (VG openebs-proxmox-ssd)
-  disk {
-    datastore_id = var.storage
     interface    = "virtio3"
     iothread     = true
     discard      = "on"
@@ -205,14 +197,6 @@ resource "proxmox_virtual_environment_vm" "wyrm2" {
     replicate    = false
     file_format  = "raw"
   } # Bazel caches — SSD (~/.cache/bazel)
-  disk {
-    datastore_id = "tank-hdd"
-    interface    = "virtio6"
-    iothread     = true
-    discard      = "on"
-    size         = 500
-    file_format  = "raw"
-  } # OpenEBS LVM HDD (VG openebs-proxmox-hdd)
   disk {
     datastore_id = "tank-hdd"
     interface    = "virtio7"

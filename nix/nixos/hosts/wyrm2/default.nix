@@ -191,7 +191,6 @@ in
   # is actually needed; models were on the Proxmox CSI PVC (200Gi) / ~/downloads/ollama-models/.
   # pkgs.ollama-cuda
   environment.systemPackages = [
-    pkgs.lvm2_dmeventd # LVM tools with dmeventd client support for thin pool autoextend
     pkgs.freecad
     pkgs.zoom-us
   ];
@@ -537,78 +536,10 @@ in
     ];
   };
 
-  # LVM for OpenEBS LVM LocalPV — thin-provisioned volumes with snapshot support.
-  # OpenEBS node agent runs privileged and uses host LVM tools via nsenter.
-  boot.kernelModules = [ "dm_thin_pool" ];
-
-  # dmeventd monitors thin pools and auto-extends them before they fill up.
-  # Without this, OpenEBS creates a tiny thin pool (sized to the first PVC)
-  # and mke2fs fails once it's full.
-  services.lvm.dmeventd.enable = true;
-  environment.etc."lvm/lvm.conf".text = lib.mkAfter ''
-    activation {
-      thin_pool_autoextend_threshold = 75
-      thin_pool_autoextend_percent = 20
-    }
-  '';
-
-  # A single `systemd.services` assignment: NixOS merges module definitions
-  # across files, but two `systemd.services` keys in ONE attrset (the whole-attr
-  # `=` here plus a dotted `systemd.services.<x> =` elsewhere) is a Nix-level
-  # "attribute already defined" error — so mkMerge the fixed services in here.
-  systemd.services = lib.mkMerge [
-    # OpenEBS LVM volume groups — idempotent oneshot services that create PV + VG.
-    #   openebs-proxmox-ssd: virtio2 — 500GB NVMe (local-zfs)
-    #   openebs-proxmox-hdd: virtio6 — 500GB HDD (tank-hdd)
-    (lib.mapAttrs'
-      (
-        vg: dev:
-        lib.nameValuePair "openebs-${vg}-setup" {
-          description = "Initialize LVM VG openebs-proxmox-${vg} on ${dev}";
-          wantedBy = [ "multi-user.target" ];
-          before = [ "kubelet.service" ];
-          after = [ "systemd-udev-settle.service" ];
-          path = [ pkgs.lvm2_dmeventd ];
-          serviceConfig = {
-            Type = "oneshot";
-            RemainAfterExit = true;
-          };
-          script = ''
-            if [ ! -b ${dev} ]; then
-              echo "Device ${dev} not present, skipping VG setup"
-              exit 0
-            fi
-            if vgs openebs-proxmox-${vg} >/dev/null 2>&1; then
-              echo "VG openebs-proxmox-${vg} already exists, activating"
-            else
-              pvcreate ${dev}
-              vgcreate openebs-proxmox-${vg} ${dev}
-            fi
-            vgchange -ay openebs-proxmox-${vg}
-
-            # Enable dmeventd monitoring on thin pools for autoextend.
-            # OpenEBS's container can't reach the host dmeventd socket, so pools
-            # are created without monitoring (openebs/lvm-localpv#93, WONTFIX).
-            # On boot, lvm2-monitor.service runs before VGs are active so misses them.
-            for pool in $(lvs --noheadings -o lv_name -S "lv_attr=~^t,vg_name=openebs-proxmox-${vg}" | tr -d ' '); do
-              echo "Enabling dmeventd monitoring on openebs-proxmox-${vg}/$pool"
-              lvchange --monitor y "openebs-proxmox-${vg}/$pool"
-            done
-          '';
-        }
-      )
-      {
-        ssd = "/dev/disk/by-path/virtio-pci-0000:06:0c.0";
-        hdd = "/dev/disk/by-path/virtio-pci-0000:08:01.0";
-      }
-    )
-    # Wyrm2's dedicated kubelet disk mounts are nofail so the workstation can
-    # boot if the HDD is absent. Kubelet itself must wait for both paths and
-    # fail closed rather than writing pod state back onto the root filesystem.
-    {
-      kubelet.unitConfig.RequiresMountsFor = "/var/lib/kubelet /var/log/pods";
-    }
-  ];
+  # Wyrm2's dedicated kubelet disk mounts are nofail so the workstation can
+  # boot if the HDD is absent. Kubelet itself must wait for both paths and
+  # fail closed rather than writing pod state back onto the root filesystem.
+  systemd.services.kubelet.unitConfig.RequiresMountsFor = "/var/lib/kubelet /var/log/pods";
 
   # Directories for Bazel caches under the single SSD cache mount.
   systemd.tmpfiles.rules = [

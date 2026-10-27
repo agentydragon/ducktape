@@ -4,8 +4,8 @@ node_selector:
   kubernetes.io/hostname: wyrm2
 port: 8080
 storage:
-  block_storage_class: lvm-proxmox-ssd-block
-  fs_storage_class: lvm-proxmox-ssd
+  block_storage_class: piraeus-ssd-local
+  fs_storage_class: piraeus-ssd-local
   rootfs_size: 10Gi
   work_size: 10Gi
   snapshot_size: 8Gi

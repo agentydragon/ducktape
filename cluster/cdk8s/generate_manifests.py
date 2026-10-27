@@ -227,7 +227,6 @@ from cluster.cdk8s.monitoring import (
 from cluster.cdk8s.nix_cache import attic as nix_cache_attic, flux_kustomizations as nix_cache_flux_kustomizations
 from cluster.cdk8s.oci_cache import flux_kustomizations as oci_cache_flux_kustomizations, zot as oci_cache_zot
 from cluster.cdk8s.ollama import app as ollama_app
-from cluster.cdk8s.openebs_lvm import storage as openebs_lvm_storage
 from cluster.cdk8s.parked import (
     augur_evidence as parked_augur_evidence,
     flux_kustomizations as parked_flux_kustomizations,
@@ -402,15 +401,7 @@ def generate_manifests(root: Path) -> None:
     gecko_namespace_kustomization = parked_flux_kustomizations.gecko_namespace(flux_chart, gecko_namespace_artifact)
     reflector_artifact = artifact("reflector", reflector.OUTPUT_DIR)
     reflector.reflector(flux_chart, write_directory(root, reflector_artifact, reflector.chart))
-    snapshot_controller_crds_kustomization = snapshot_controller_flux_kustomizations.snapshot_controller_crds(
-        flux_chart
-    )
-    openebs_lvm_artifact = artifact("openebs-lvm", openebs_lvm_storage.OUTPUT_DIR)
-    openebs_lvm_kustomization = openebs_lvm_storage.openebs_lvm(
-        flux_chart,
-        write_directory(root, openebs_lvm_artifact, openebs_lvm_storage.chart),
-        snapshot_controller_crds_kustomization,
-    )
+    snapshot_controller_flux_kustomizations.snapshot_controller_crds(flux_chart)
     piraeus_operator_artifact = artifact("piraeus-operator", piraeus.OPERATOR_OUTPUT_DIR)
     piraeus_operator_kustomization = piraeus.operator_kustomization(
         flux_chart, write_directory(root, piraeus_operator_artifact, piraeus.operator_chart)
@@ -1921,7 +1912,6 @@ def generate_manifests(root: Path) -> None:
         "nvidia-device-plugin": nvidia_device_plugin_kustomization,
         "oci-cache": oci_cache_kustomization,
         "ollama": ollama_kustomization,
-        "openebs": openebs_lvm_kustomization,
         "piraeus-operator": piraeus_operator_kustomization,
         "piraeus-cluster": piraeus_cluster_kustomization,
         "plaid-mcp": plaid_mcp_kustomization,
@@ -2086,7 +2076,6 @@ def generate_manifests(root: Path) -> None:
             node_feature_discovery_artifact,
             oci_cache_artifact,
             ollama_app_artifact,
-            openebs_lvm_artifact,
             piraeus_operator_artifact,
             piraeus_cluster_artifact,
             platform_monitoring_artifact,

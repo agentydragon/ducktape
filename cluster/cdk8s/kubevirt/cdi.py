@@ -38,11 +38,6 @@ _BLOCK = StorageProfileSpecClaimPropertySetsVolumeMode.BLOCK
 # storage class -> (clone strategy, [(access mode, volume mode)])
 _STORAGE_PROFILES = {
     "local-path-proxmox": ("copy", [("ReadWriteOnce", _FILESYSTEM)]),
-    "lvm-proxmox-hdd": ("snapshot", [("ReadWriteOnce", _FILESYSTEM)]),
-    "lvm-proxmox-hdd-block": ("snapshot", [("ReadWriteOnce", _BLOCK)]),
-    "lvm-proxmox-hdd-shared": ("snapshot", [("ReadWriteOnce", _FILESYSTEM)]),
-    "lvm-proxmox-ssd": ("snapshot", [("ReadWriteOnce", _FILESYSTEM)]),
-    "lvm-proxmox-ssd-block": ("snapshot", [("ReadWriteOnce", _BLOCK)]),
     "piraeus-hdd-local": ("copy", [("ReadWriteOnce", _FILESYSTEM)]),
     "seaweedfs-ovh": ("copy", [("ReadWriteMany", _FILESYSTEM), ("ReadWriteOnce", _FILESYSTEM)]),
 }

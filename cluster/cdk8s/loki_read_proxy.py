@@ -68,7 +68,6 @@ NAMESPACE_ALLOWLIST = (
     "nvidia-device-plugin",
     "oci-cache",
     "ollama",
-    "openebs",
     "props",
     "proxmox-proxy",
     "study-casino",
