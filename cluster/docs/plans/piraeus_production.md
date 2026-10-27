@@ -89,11 +89,9 @@ Remaining; deletions need the owner's approval at the time:
 
 - **Alert** on `tank` and `rpool` free space, which LINSTOR's thin accounting
   cannot see.
-- **Retirement**, each after its consumers are gone: OpenEBS on Wyrm2
-  (`virtio2`, `virtio6`, the VG setup units, the thin-autoextend `lvm.conf`
-  stanza, the `lvm-proxmox-*` classes and their CDI entries); `local-path-proxmox`
-  and `virtio0`, after inventorying what else is under
-  `/var/local-path-provisioner`.
+- **Retirement:** OpenEBS and the local-path provisioner are gone from the
+  cluster and Wyrm2's NixOS config. Detach and destroy `virtio0`, `virtio2` and
+  `virtio6` (owner approved destroying their leftovers without copies).
 
 ## Atlas reinstall (later, separate decision)
 
@@ -137,6 +135,9 @@ testing this design; neither tested three-node two-copy movement or WAN boundari
       admit hosts individually. Do not assume compatibility with rugged's last-known
       7.2 kernel. Inventory laptops online and test suspend/disconnect behavior
       before admission.
+- [ ] **Laptop pools:** give each admitted laptop (iguana, rugged) an LVM
+      physical volume as a Piraeus pool, so laptops work symmetrically with
+      Wyrm2. This replaces their `/var/local-path-provisioner` btrfs subvolumes.
 - [ ] **Interoperability acceptance:** repeat Block/Filesystem lifecycle and recovery
       checks on NixOS, then test Talos/NixOS remote use and automatic movement within
       the approved placement domain. Preserve existing Talos service throughout.
