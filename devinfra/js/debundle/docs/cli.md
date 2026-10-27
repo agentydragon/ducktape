@@ -129,7 +129,9 @@ POSIX-shell-safe command line, the working directory, effective argument
 values and their source, the requested operation/check class, and the planned
 write scope. Environment-backed paths such as `DEBUNDLE_GRAPH` are materialized
 as explicit replay flags; explicit flags retain precedence over environment
-values. The record does not include unrelated ambient environment variables.
+values. Resolution needs only CLI metadata, the current working directory, and
+the executable path; it does not read graph or source file contents. The record
+does not include unrelated ambient environment variables.
 
 `--invocation-out <path>` writes the same record as JSON to that file before
 the operation starts. It leaves the command's normal stdout and stderr streams

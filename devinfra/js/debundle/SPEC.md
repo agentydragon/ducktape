@@ -11,9 +11,10 @@ resolves its declared CLI values, environment-backed values, and meaningful
 defaults, then prints a typed `ResolvedInvocation` and exits before dispatch.
 It does not read graph contents, run source analysis or proposal work, create
 operation outputs, write graph rejection reports, or modify spec files.
-Resolution may inspect CLI syntax and the current working directory only; it
-does not require that file inputs already exist. If `--invocation-out` is
-supplied, writing that requested record file is the sole print-only write.
+Resolution uses parsed CLI metadata, the current working directory, and
+executable path metadata only; it does not require file inputs to exist or read
+their contents. If `--invocation-out` is supplied, writing that requested
+record file is the sole print-only write.
 
 `--invocation-out <path>` persists the same record before the selected
 operation starts. An execution record is provenance for the attempted call,
