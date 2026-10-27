@@ -333,6 +333,10 @@ impl InputCapture {
 }
 
 pub fn read_bytes(path: &Path) -> Result<Vec<u8>> {
+    read_bytes_with_role(path, false)
+}
+
+fn read_bytes_with_role(path: &Path, source: bool) -> Result<Vec<u8>> {
     let bytes = fs::read(path).with_context(|| format!("reading {}", path.display()))?;
     if let Some(state) = active_capture() {
         let mut guard = state.lock().expect("capture lock");
@@ -340,7 +344,11 @@ pub fn read_bytes(path: &Path) -> Result<Vec<u8>> {
             let provenance = guard
                 .as_mut()
                 .context("graph capture ended before input read")?;
-            let (root, relative) = provenance.classify(path)?;
+            let (root, relative) = if source {
+                provenance.classify_source(path)?
+            } else {
+                provenance.classify(path)?
+            };
             let entry = InputFile {
                 root,
                 path: relative,
@@ -369,6 +377,13 @@ pub fn read_to_string(path: &Path) -> Result<String> {
     String::from_utf8(read_bytes(path)?).with_context(|| format!("{} is not UTF-8", path.display()))
 }
 
+/// Source-list and JS chunk reads carry an explicit role when spec and source
+/// roots overlap, so moving only the source root does not silently reuse them.
+pub fn read_source_to_string(path: &Path) -> Result<String> {
+    String::from_utf8(read_bytes_with_role(path, true)?)
+        .with_context(|| format!("{} is not UTF-8", path.display()))
+}
+
 pub fn record_absent(path: &Path) -> Result<()> {
     if let Some(state) = active_capture() {
         let mut guard = state.lock().expect("capture lock");
@@ -395,7 +410,7 @@ pub fn record_chunk_source(
             let provenance = guard
                 .as_mut()
                 .context("graph capture ended before source mapping")?;
-            let (root, path) = provenance.classify(input_file)?;
+            let (root, path) = provenance.classify_source(input_file)?;
             provenance.chunk_sources.push(ChunkSource {
                 chunk_id: chunk_id.to_string(),
                 source_path: PathBuf::from(source_path),
@@ -439,6 +454,14 @@ pub fn record_yaml_membership(directory: &Path, members: &[PathBuf]) -> Result<(
 }
 
 impl GraphProvenance {
+    fn classify_source(&self, path: &Path) -> Result<(InputRoot, PathBuf)> {
+        let absolute = absolute(path)?;
+        if let Ok(relative) = absolute.strip_prefix(&self.roots.source) {
+            return Ok((InputRoot::Source, relative.to_path_buf()));
+        }
+        self.classify(&absolute)
+    }
+
     fn classify(&self, path: &Path) -> Result<(InputRoot, PathBuf)> {
         let absolute = absolute(path)?;
         let mut selected: Option<(InputRoot, PathBuf, usize)> = None;
@@ -590,15 +613,15 @@ impl GraphProvenance {
         let path = absolute(path)?;
         let mut selected: Option<(usize, PathBuf)> = None;
         let mut consider = |old: &Path, new: Option<&Path>| -> Result<()> {
-            if let Some(new) = new {
-                if let Ok(relative) = path.strip_prefix(old) {
-                    let depth = old.components().count();
-                    if selected
-                        .as_ref()
-                        .is_none_or(|(previous, _)| depth > *previous)
-                    {
-                        selected = Some((depth, absolute(new)?.join(relative)));
-                    }
+            if let Some(new) = new
+                && let Ok(relative) = path.strip_prefix(old)
+            {
+                let depth = old.components().count();
+                if selected
+                    .as_ref()
+                    .is_none_or(|(previous, _)| depth > *previous)
+                {
+                    selected = Some((depth, absolute(new)?.join(relative)));
                 }
             }
             Ok(())

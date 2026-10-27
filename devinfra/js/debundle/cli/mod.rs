@@ -332,8 +332,8 @@ pub fn run_debundle_cli(args: DebundleArgs) -> Result<()> {
         // already carry enough context in their bail messages (e.g.
         // "no blocking SCC with id ..."), and an outer wrap would
         // hide them since `main.rs` prints only the top context.
-        DebundleCommand::Gate(args) => run_gate_cli(
-            args,
+        DebundleCommand::Gate(gate_args) => run_gate_cli(
+            gate_args,
             InspectionRoots {
                 spec_root: args.spec_root.clone(),
                 graph_source_root: args.graph_source_root.clone(),
