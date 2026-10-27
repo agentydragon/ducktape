@@ -173,67 +173,125 @@ agentplane_vitest_test(
 )
 
 ts_library(
-    name = "projected_session",
-    srcs = [
-        "projected_session.tsx",
+    name = "history_row_views",
+    srcs = ["history_row_views.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":history_rows",
+        ":retained_disclosures",
+        ":step_line",
+        ":thread_cards",
+        ":thread_commands",
+        ":thread_sync",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:disclosure",
+        "//agentplane/proto:event_pb",
+        "//util/frontend:markdown",
     ],
+)
+
+ts_library(
+    name = "virtualized_history",
+    srcs = ["virtualized_history.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":history_row_views",
+        ":history_rows",
+        ":history_sizes",
+        ":thread_evidence",
+        ":thread_sync",
+        ":thread_view_timing",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@tanstack/react-virtual",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/app/frontend:disclosure",
+        "//agentplane/app/frontend:icons",
+    ],
+)
+
+ts_library(
+    name = "conversation",
+    srcs = ["conversation.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":chronological_debug",
         ":history_rows",
-        ":history_sizes",
-        ":projected_session_css",
         ":retained_disclosures",
         ":thread_cards",
         ":thread_commands",
-        ":thread_evidence",
-        ":thread_notices",
         ":thread_status",
-        ":thread_status_indicator",
         ":thread_sync",
         ":thread_tab",
-        ":thread_title",
         ":thread_view_timing",
-        "//:node_modules/@bufbuild/protobuf",
+        ":virtualized_history",
         "//:node_modules/@mantine/core",
-        "//:node_modules/@tanstack/react-virtual",
         "//:node_modules/@types/react",
         "//:node_modules/date-fns",
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
-        "//agentplane/app/frontend:disclosure",
         "//agentplane/app/frontend:format_time",
-        "//agentplane/app/frontend:frontend_config",
         "//agentplane/app/frontend:icons",
         "//agentplane/app/frontend:langfuse_search",
         "//agentplane/app/frontend:live",
         "//agentplane/app/frontend:notification_status",
-        "//agentplane/app/frontend:sandbox_status",
-        "//agentplane/app/frontend:status_mark",
         "//agentplane/app/frontend:stream_status",
         "//agentplane/app/frontend:tab_metadata",
         "//agentplane/app/frontend:time_ago",
         "//agentplane/app/frontend:topbar",
         "//agentplane/app/frontend:trace_search",
-        "//agentplane/app/frontend:tracing",
-        "//agentplane/proto:command_pb",
-        "//agentplane/proto:event_pb",
     ],
 )
 
-# projected_session.tsx imports this stylesheet for the bundler.
+ts_library(
+    name = "page",
+    srcs = ["page.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":chronological_debug",
+        ":conversation",
+        ":conversation_css",
+        ":page_css",
+        ":thread_notices",
+        ":thread_status",
+        ":thread_status_indicator",
+        ":thread_sync",
+        ":thread_title",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:frontend_config",
+        "//agentplane/app/frontend:live",
+        "//agentplane/app/frontend:sandbox_status",
+        "//agentplane/app/frontend:tab_metadata",
+        "//agentplane/app/frontend:topbar",
+        "//agentplane/app/frontend:tracing",
+    ],
+)
+
+# page.tsx imports these stylesheets for the bundler.
 js_library(
-    name = "projected_session_css",
-    srcs = ["projected_session.css"],
+    name = "page_css",
+    srcs = ["page.css"],
+)
+
+js_library(
+    name = "conversation_css",
+    srcs = ["conversation.css"],
 )
 
 agentplane_vitest_test(
-    name = "projected_session_test",
-    srcs = ["projected_session.test.tsx"],
+    name = "page_test",
+    srcs = ["page.test.tsx"],
     deps = [
+        ":history_row_views",
         ":history_rows",
         ":local_commands",
-        ":projected_session",
+        ":page",
         ":retained_disclosures",
         ":thread_entity_fixture",
         ":thread_state_fixture",
@@ -466,8 +524,8 @@ ts_library(
 )
 
 ts_library(
-    name = "thread_store",
-    srcs = ["thread_store.tsx"],
+    name = "electric_sync",
+    srcs = ["electric_sync.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":thread_sync",
@@ -481,10 +539,10 @@ ts_library(
 )
 
 agentplane_vitest_test(
-    name = "thread_store_test",
-    srcs = ["thread_store.test.tsx"],
+    name = "electric_sync_test",
+    srcs = ["electric_sync.test.tsx"],
     deps = [
-        ":thread_store",
+        ":electric_sync",
         ":thread_sync",
         "//:node_modules/@electric-sql/client",
         "//:node_modules/@types/react",

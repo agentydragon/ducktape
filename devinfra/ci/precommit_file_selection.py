@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import os
 import subprocess
-from collections.abc import Callable
 from pathlib import Path
 
-Runner = Callable[..., subprocess.CompletedProcess[bytes]]
+from devinfra.ci.pr_mergeability import SourceRevisionError, verify_source_revision
 
 ANSIBLE_CONFIGURATION_PATHS = {
     ".ansible-lint.yaml",
@@ -33,39 +32,43 @@ def _paths_from_git_output(output: bytes) -> list[str]:
 
 
 def prepare_changed_files(
-    *, event_name: str, base_ref: str, changed_files_path: Path, run: Runner = subprocess.run
+    *, event_name: str, expected_sha: str, expected_head_sha: str, changed_files_path: Path
 ) -> tuple[bool, list[str] | None]:
     """Write NUL-delimited PR paths and return whether Ansible roles are required.
 
-    A failed fetch or diff raises before the workflow publishes a skip decision. For
+    A failed source verification or diff raises before the workflow publishes a skip decision. For
     non-PR events the hook checks all files, so role provisioning is always retained.
     """
     if event_name != "pull_request":
         changed_files_path.write_bytes(b"")
         return True, None
 
-    if not base_ref:
-        raise ValueError("GITHUB_BASE_REF is required for pull_request file selection")
+    if not expected_sha or not expected_head_sha:
+        raise SourceRevisionError("PR file selection requires the tested merge SHA and expected PR head SHA")
 
-    run(["git", "fetch", "--depth=1", "origin", base_ref], check=True)
-    result = run(
-        ["git", "diff", "--name-only", "--diff-filter=d", "-z", f"origin/{base_ref}", "HEAD"],
-        check=True,
-        capture_output=True,
+    resolved_sha, *parents = (
+        subprocess.check_output(["git", "rev-list", "--parents", "-n", "1", "HEAD"]).decode().split()
     )
-    if result.stdout is None:
-        raise RuntimeError("git diff did not return changed paths")
-    changed_files_path.write_bytes(result.stdout)
-    changed_paths = _paths_from_git_output(result.stdout)
+    if len(parents) != 2:
+        raise SourceRevisionError(f"PR checkout {resolved_sha} must expose two merge parents; use fetch-depth: 2")
+    tested_sha = verify_source_revision(
+        resolved_sha, expected_sha=expected_sha, expected_head_sha=expected_head_sha, second_parent_sha=parents[1]
+    )
+    # The live base branch may have advanced since GitHub constructed this merge.
+    output = subprocess.check_output(["git", "diff", "--name-only", "--diff-filter=d", "-z", parents[0], tested_sha])
+    changed_files_path.write_bytes(output)
+    changed_paths = _paths_from_git_output(output)
     return needs_ansible_roles(event_name, changed_paths), changed_paths
 
 
 def main() -> None:
     event_name = os.environ["GITHUB_EVENT_NAME"]
-    base_ref = os.environ.get("GITHUB_BASE_REF", "")
     changed_files_path = Path(os.environ["RUNNER_TEMP"]) / "pre-commit-changed-files"
     needs_roles, changed_paths = prepare_changed_files(
-        event_name=event_name, base_ref=base_ref, changed_files_path=changed_files_path
+        event_name=event_name,
+        expected_sha=os.environ["GITHUB_SHA"],
+        expected_head_sha=os.environ.get("EXPECTED_HEAD_SHA", ""),
+        changed_files_path=changed_files_path,
     )
 
     with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:

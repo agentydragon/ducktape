@@ -14,6 +14,7 @@ go_library(
     deps = [
         "//agentplane/action_service:action_service_go_proto",
         "//agentplane/mcp_edge:connection_service_go_proto",
+        "//agentplane/postgres/go:postgres",
         "//agentplane/postgres/go/wakeups",
         "//agentplane/proto:sandboxes_go_proto",
         "//agentplane/workload_auth/go/auth",

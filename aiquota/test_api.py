@@ -15,14 +15,21 @@ from aiquota.api import (
     BrowserOAuth,
     CollectorMetrics,
     QuotaAPIService,
-    QuotaSnapshot,
-    RawUpstreamResponse,
     SnapshotFeed,
     _CapturingClientFactory,
     create_app,
 )
 from aiquota.config import Config
-from aiquota.models import AllQuotas, FetchError, FetchSuccess, ProviderFetch, ProviderQuota, QuotaWindow
+from aiquota.models import (
+    AllQuotas,
+    FetchError,
+    FetchSuccess,
+    ProviderFetch,
+    ProviderQuota,
+    QuotaSnapshot,
+    QuotaWindow,
+    RawUpstreamResponse,
+)
 from aiquota.render.view_model import AllQuotasView
 from aiquota.settings import Settings
 from util.testing.asgi import serve_app_in_loop

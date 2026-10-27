@@ -29,6 +29,7 @@ import (
 	"github.com/zitadel/oidc/v3/pkg/op"
 
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/connections"
+	"github.com/agentydragon/ducktape/agentplane/postgres/go"
 )
 
 const (
@@ -240,13 +241,5 @@ func (s *Server) requireResource(requested []string) error {
 }
 
 func (s *Server) transaction(ctx context.Context, f func(*sql.Tx) error) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	if err := f(tx); err != nil {
-		return err
-	}
-	return tx.Commit()
+	return postgres.Transaction(ctx, s.db, sql.TxOptions{}, f)
 }

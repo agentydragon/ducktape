@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/agentydragon/ducktape/agentplane/postgres/go"
 )
 
 // WorkChannel is the NOTIFY channel that tells workers inbox work was committed.
@@ -102,15 +104,7 @@ func New(db *sql.DB, quotas Quotas) *Store { return &Store{db: db, quotas: quota
 func now() time.Time { return time.Now().UTC().Truncate(time.Microsecond) }
 
 func (s *Store) transaction(ctx context.Context, f func(*sql.Tx) error) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	if err := f(tx); err != nil {
-		return err
-	}
-	return tx.Commit()
+	return postgres.Transaction(ctx, s.db, sql.TxOptions{}, f)
 }
 
 // startAfter is the ID a page of an ID-ordered list starts after: the nil UUID, which no row has, for the first.
@@ -122,6 +116,5 @@ func startAfter(id *uuid.UUID) uuid.UUID {
 }
 
 func notify(ctx context.Context, tx *sql.Tx) error {
-	_, err := tx.ExecContext(ctx, "SELECT pg_notify($1, '')", WorkChannel)
-	return err
+	return postgres.Notify(ctx, tx, WorkChannel, "")
 }

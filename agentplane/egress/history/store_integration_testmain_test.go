@@ -1,11 +1,8 @@
 package history
 
 import (
-	"context"
-	"fmt"
 	"os"
 	"testing"
-	"time"
 
 	migrations "github.com/agentydragon/ducktape/agentplane/egress/history_migrations"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
@@ -14,25 +11,11 @@ import (
 var integrationDatabase *postgres.Database
 
 func TestMain(m *testing.M) {
-	os.Exit(runIntegrationTests(m))
-}
-
-func runIntegrationTests(m *testing.M) int {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-	database, err := postgres.Start(ctx, migrations.Up)
-	cancel()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	integrationDatabase = database
-
-	code := m.Run()
-	if err := database.Close(); err != nil {
-		fmt.Fprintln(os.Stderr, "close PostgreSQL fixture:", err)
-		if code == 0 {
-			code = 1
-		}
-	}
-	return code
+	os.Exit(postgres.RunIntegrationTests(
+		migrations.Up,
+		func(database *postgres.Database) int {
+			integrationDatabase = database
+			return m.Run()
+		},
+	))
 }

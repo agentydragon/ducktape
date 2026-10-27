@@ -7,22 +7,18 @@ import httpx
 import pytest
 import pytest_bazel
 
-from aiquota.api import (
-    BackgroundCollector,
-    CollectorMetrics,
-    HistoryCollector,
-    HistorySnapshot,
-    QuotaSnapshot,
-    RawUpstreamResponse,
-)
+from aiquota.api import BackgroundCollector, CollectorMetrics, HistoryCollector
 from aiquota.clickhouse import ClickHouseSnapshotSink, schema_statements
 from aiquota.models import (
     AllQuotas,
     FetchSuccess,
     HistoryObservation,
+    HistorySnapshot,
     ProviderFetch,
     ProviderQuota,
+    QuotaSnapshot,
     QuotaWindow,
+    RawUpstreamResponse,
     ResetCredit,
     ResetCreditsObservation,
     TokenActivityDay,

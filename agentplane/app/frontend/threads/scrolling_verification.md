@@ -3,7 +3,7 @@
 The reader-facing contract is [`../SPEC.md`](../SPEC.md). This document records
 implementation context and how to assess changes against that contract.
 
-`VirtualizedHistory` in `projected_session.tsx` currently uses a scroll-anchor layer over
+`VirtualizedHistory` in `virtualized_history.tsx` currently uses a scroll-anchor layer over
 `@tanstack/react-virtual` and reads paginated rows from the Electric-backed store.
 Issue #7841 evaluated `react-virtuoso` and rejected it; another spike is evaluating
 `content-visibility` plus native `overflow-anchor`. A candidate is judged against the
@@ -71,7 +71,7 @@ profiler (a Playwright trace or Chrome's performance timeline) — not ad hoc ti
 a placeholder past any thread length observed so far; revisit against real staging data if it
 turns out to matter.
 
-Report, for any candidate: lines changed in `projected_session.tsx`, ref/state count before and
+Report, for any candidate: lines changed in `virtualized_history.tsx`, ref/state count before and
 after, and the bundled JS size delta — the same shape agentydragon/ducktape#7841 reported for
 `react-virtuoso`. These inform the decision but don't override it.
 

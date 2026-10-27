@@ -4,19 +4,19 @@ import base64
 import hashlib
 import json
 import uuid
-from collections.abc import Mapping, Sequence
-from datetime import UTC, datetime
-from typing import Protocol
+from datetime import UTC
 
 import httpx
 import sqlparse
 
 from aiquota.models import (
-    AllQuotas,
     FetchError,
     FetchSuccess,
     HistoryObservation,
+    HistorySnapshot,
     ProviderQuota,
+    QuotaSnapshot,
+    RawUpstreamResponse,
     ResetCreditsObservation,
     TokenActivityObservation,
     history_capture_key,
@@ -27,35 +27,6 @@ _DATASET = "aiquota"
 _SCHEMA = "aiquota/schema.sql"
 # `ON CLUSTER` DDL returns once every replica has applied it.
 _SCHEMA_TIMEOUT = 60.0
-
-
-class RawUpstreamResponse(Protocol):
-    status_code: int
-    content_type: str | None
-    body: object | None
-    body_base64: str | None
-    body_sha256: str | None
-    body_size_bytes: int | None
-    truncated: bool
-
-
-class QuotaSnapshot(Protocol):
-    @property
-    def quotas(self) -> AllQuotas: ...
-
-    @property
-    def raw_responses(self) -> Mapping[str, RawUpstreamResponse]: ...
-
-
-class HistorySnapshot(Protocol):
-    @property
-    def observations(self) -> Sequence[HistoryObservation]: ...
-
-    @property
-    def fetched_at(self) -> datetime: ...
-
-    @property
-    def raw_responses(self) -> Mapping[str, RawUpstreamResponse]: ...
 
 
 class ClickHouseSnapshotSink:

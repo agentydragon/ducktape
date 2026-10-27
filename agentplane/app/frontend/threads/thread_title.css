@@ -1,5 +1,5 @@
 /* The name's field is as wide as the name, so a row placing the title measures the name itself (the
-   topbar's thread heading, projected_session.css, keeps the Sandbox label beside it only when the
+   topbar's thread heading, page.css, keeps the Sandbox label beside it only when the
    whole name fits). Without `field-sizing` support the field keeps the browser's default width. It
    still shrinks to the room it gets, ending in an ellipsis. */
 .agentplane-thread-title-name {

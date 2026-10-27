@@ -12,6 +12,7 @@ import (
 	"slices"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/postgres/go"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	"github.com/google/uuid"
@@ -82,25 +83,16 @@ func NewStore(db *sql.DB, settleDeltas bool) *Store {
 	return &Store{db: db, settleDeltas: settleDeltas}
 }
 
-func transaction(ctx context.Context, db *sql.DB, opts *sql.TxOptions, f func(*sql.Tx) error) error {
-	tx, err := db.BeginTx(ctx, opts)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	if err := f(tx); err != nil {
-		return err
-	}
-	return tx.Commit()
+func transaction(ctx context.Context, db *sql.DB, opts sql.TxOptions, f func(*sql.Tx) error) error {
+	return postgres.Transaction(ctx, db, opts, f)
 }
 
 // snapshot is one read-only snapshot: settlement deletes entries and adds their range in one commit,
 // so a page read across that commit could pair entries with the range that removed them.
-var snapshot = &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true}
+var snapshot = sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true}
 
 func notify(ctx context.Context, tx *sql.Tx, channel string) error {
-	_, err := tx.ExecContext(ctx, "SELECT pg_notify($1, '')", channel)
-	return err
+	return postgres.Notify(ctx, tx, channel, "")
 }
 
 func conflict(format string, args ...any) error {
@@ -157,7 +149,7 @@ func (row *historyRow) checkpoint() (Checkpoint, error) {
 // is refused. Of two concurrent first writers, the row lock lets one bind and refuses the other.
 func (s *Store) BindWriter(ctx context.Context, sessionID uuid.UUID, writer Writer, sandboxUID string) (Checkpoint, error) {
 	var checkpoint Checkpoint
-	err := transaction(ctx, s.db, nil, func(tx *sql.Tx) error {
+	err := transaction(ctx, s.db, sql.TxOptions{}, func(tx *sql.Tx) error {
 		created := false
 		changed := false
 		var sandboxUIDValue any
@@ -266,7 +258,7 @@ func (s *Store) OpenedSessions(ctx context.Context, afterPosition uint64, limit 
 // the new checkpoint commit together; on any error the entire batch rolls back. An empty batch is a checkpoint read, not an inferred runner high-water mark.
 func (s *Store) Append(ctx context.Context, sessionID uuid.UUID, entries []*eventlogpb.EventEntry) (uint64, error) {
 	var lastCursor uint64
-	err := transaction(ctx, s.db, nil, func(tx *sql.Tx) error {
+	err := transaction(ctx, s.db, sql.TxOptions{}, func(tx *sql.Tx) error {
 		row, err := lockRow(ctx, tx, sessionID)
 		if err != nil {
 			return err
@@ -368,7 +360,7 @@ func isUnstored(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, cursor uin
 // it is, which also makes a repeat a no-op.
 func (s *Store) ReopenSealed(ctx context.Context, sessionID uuid.UUID, incarnationUID string, announcedCursor uint64) (Checkpoint, error) {
 	var checkpoint Checkpoint
-	err := transaction(ctx, s.db, nil, func(tx *sql.Tx) error {
+	err := transaction(ctx, s.db, sql.TxOptions{}, func(tx *sql.Tx) error {
 		row, err := lockRow(ctx, tx, sessionID)
 		if err != nil {
 			return err
@@ -405,7 +397,7 @@ func (s *Store) ReopenSealed(ctx context.Context, sessionID uuid.UUID, incarnati
 
 // RecordFeedState records only a covered runner snapshot; delayed copiers cannot rewind it or drop a seal.
 func (s *Store) RecordFeedState(ctx context.Context, sessionID uuid.UUID, feed *historypb.SessionFeedState) error {
-	return transaction(ctx, s.db, nil, func(tx *sql.Tx) error {
+	return transaction(ctx, s.db, sql.TxOptions{}, func(tx *sql.Tx) error {
 		row, err := lockRow(ctx, tx, sessionID)
 		if err != nil {
 			return err

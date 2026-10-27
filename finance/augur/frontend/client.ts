@@ -20,17 +20,17 @@ import {
 
 type FetchOptions = { signal?: AbortSignal };
 
-function describeErrorBody(body) {
+function describeErrorBody(body: unknown) {
   if (!body) return "";
   if (typeof body === "string") return body.slice(0, 500);
   if (typeof body !== "object") return String(body).slice(0, 500);
-  const detail = body.detail;
+  const detail = "detail" in body ? body.detail : undefined;
   if (typeof detail === "string") return detail;
-  if (Array.isArray(detail)) return detail.map((entry) => JSON.stringify(entry)).join("; ");
+  if (Array.isArray(detail)) return detail.map((entry: unknown) => JSON.stringify(entry)).join("; ");
   return JSON.stringify(body).slice(0, 500);
 }
 
-async function readJsonResponse(path, response) {
+async function readJsonResponse(path: string, response: Response) {
   const contentType = response.headers.get("content-type") || "";
   const isJson = contentType.includes("application/json");
   const body = isJson ? await response.json() : await response.text();
@@ -43,11 +43,11 @@ async function readJsonResponse(path, response) {
   return body;
 }
 
-async function getJson(path, signal) {
+async function getJson(path: string, signal?: AbortSignal) {
   return readJsonResponse(path, await fetch(path, { method: "GET", signal }));
 }
 
-async function postJson(path, body, signal) {
+async function postJson(path: string, body: unknown, signal?: AbortSignal) {
   return readJsonResponse(
     path,
     await fetch(path, {
@@ -59,7 +59,7 @@ async function postJson(path, body, signal) {
   );
 }
 
-async function postBlob(path, body, signal) {
+async function postBlob(path: string, body: unknown, signal?: AbortSignal) {
   const response = await fetch(path, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -82,7 +82,7 @@ type CamelCasedSchemaInput<TSchema extends Parser<unknown>> = CamelCasedDeep<Sch
 
 // GET a JSON resource, validate it against its wire schema, and camelize — the single place a
 // read does this. Returns the camelCase-typed body.
-async function apiGet<T>(path: string, schema: Parser<T>, signal?: AbortSignal) {
+async function apiGet<T>(path: string, schema: Parser<T>, signal?: AbortSignal): Promise<CamelCasedDeep<T>> {
   return camelizeObjectKeys(schema.parse(await getJson(path, signal)));
 }
 
@@ -94,7 +94,7 @@ async function apiPost<TRequestSchema extends Parser<unknown>, TResponse>(
   responseSchema: Parser<TResponse>,
   body: CamelCasedSchemaInput<TRequestSchema>,
   signal?: AbortSignal
-) {
+): Promise<CamelCasedDeep<TResponse>> {
   const request = requestSchema.parse(decamelizeObjectKeys(body));
   return camelizeObjectKeys(responseSchema.parse(await postJson(path, request, signal)));
 }
@@ -117,14 +117,20 @@ export function fetchAugurDeployment({ signal }: FetchOptions = {}) {
   return apiGet("/api/deployment", zDeploymentInfo, signal);
 }
 
-export function fetchProductPortfolio({ signal }: FetchOptions = {}) {
+export type AugurDeployment = Awaited<ReturnType<typeof fetchAugurDeployment>>;
+
+export type ProductPortfolioResponse = CamelCasedDeep<ReturnType<typeof zProductPortfolioResponse.parse>>;
+
+export function fetchProductPortfolio({ signal }: FetchOptions = {}): Promise<ProductPortfolioResponse> {
   return apiGet("/api/product/portfolio", zProductPortfolioResponse, signal);
 }
+
+export type ProductProjectionSummary = CamelCasedDeep<ReturnType<typeof zProductProjectionResponse.parse>>;
 
 export function fetchProductProjectionSummary(
   projectionSummaryRequest: CamelCasedSchemaInput<typeof zProductProjectionRequest>,
   { signal }: FetchOptions = {}
-) {
+): Promise<ProductProjectionSummary> {
   return apiPost(
     "/api/product/projections/summary",
     zProductProjectionRequest,
@@ -136,17 +142,19 @@ export function fetchProductProjectionSummary(
 
 export type ProductProjectionSummaryRequest = CamelCasedSchemaInput<typeof zProductProjectionRequest>;
 
+export type ProductRolloutResponse = CamelCasedDeep<ReturnType<typeof zRolloutResponse.parse>>;
+
 export function fetchProductRollout(
   rolloutRequest: CamelCasedSchemaInput<typeof zRolloutRequest>,
   { signal }: FetchOptions = {}
-) {
+): Promise<ProductRolloutResponse> {
   return apiPost("/api/product/projections/rollout", zRolloutRequest, zRolloutResponse, rolloutRequest, signal);
 }
 
 export function fetchCalibrationRun(
   calibrationRunRequest: CamelCasedSchemaInput<typeof zCalibrationRunRequest>,
   { signal }: FetchOptions = {}
-) {
+): Promise<CalibrationRunResponse> {
   return apiPost(
     "/api/calibration/run",
     zCalibrationRunRequest,
@@ -155,6 +163,8 @@ export function fetchCalibrationRun(
     signal
   );
 }
+
+export type CalibrationRunResponse = CamelCasedDeep<ReturnType<typeof zCalibrationRunResponse.parse>>;
 
 export function fetchBudgetSnapshot(
   budgetSnapshotRequest: CamelCasedSchemaInput<typeof zBudgetSnapshotRequest>,
@@ -170,6 +180,7 @@ export function fetchBudgetSnapshot(
 }
 
 export type BudgetSnapshotRequest = CamelCasedSchemaInput<typeof zBudgetSnapshotRequest>;
+export type BudgetSummaryCsvRequest = CamelCasedSchemaInput<typeof zBudgetSummaryCsvRequest>;
 
 export function fetchBudgetTransactions(
   budgetTransactionsRequest: CamelCasedSchemaInput<typeof zBudgetTransactionsRequest>,

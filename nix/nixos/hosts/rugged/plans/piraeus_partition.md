@@ -63,15 +63,11 @@ mount -o subvolid=5 /dev/mapper/cryptroot /mnt && btrfs subvolume delete /mnt/@l
 Reboot once when convenient to prove the keyfile unlock at boot
 (`/dev/mapper/piraeus-ssd` exists afterwards).
 
-## DRBD 9 (blocker for admission)
+## DRBD 9
 
-DRBD 9.2.16 (nixpkgs `nixos-26.05`) fails to build against rugged's 7.2.9
-kernel (`linuxPackages_latest`, kept for the IPU7 camera): the kernel's socket
-API now takes `struct sockaddr_unsized *`. `nixos-unstable`'s 9.3.3 driver
-builds against it (test build on rugged, 2026-10-27). Next: let
-`ducktape.piraeusHost` take that driver for rugged, confirm 9.3 peers with the
-other satellites' DRBD, enable it and reboot (DRBD 9 loads only from the booted
-system); check `modinfo -F version drbd` is 9.x.
+Rugged takes `nixos-unstable`'s DRBD 9.3.3 driver; 26.05's 9.2.16 does not build
+for its 7.2 kernel. It loads only from the booted system, so after the deploy
+reboot check `modinfo -F version drbd` reports 9.3.3.
 
 ## Admission (separate cluster change)
 

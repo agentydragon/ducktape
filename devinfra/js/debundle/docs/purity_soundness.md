@@ -98,6 +98,33 @@ by `fresh_proxy_object_literals_are_pure`,
 See the [Proxy constructor algorithm](https://tc39.es/ecma262/multipage/reflection.html#sec-proxy-constructor)
 and [ProxyCreate](https://tc39.es/ecma262/multipage/ordinary-and-exotic-objects-behaviours.html#sec-proxycreate).
 
+## Imported primitive coercion timing
+
+The synchronous-effect interpreter can omit callback promotion for implicit
+coercion of an exact direct imported binding when the provider proves that all
+its possible values are primitive. The canonical shallow analysis recognizes
+string, numeric, boolean, null, and BigInt literals in top-level `const` or
+single-declaration `var` bindings, direct named export aliases, and literal or
+binding default exports. A `var` cell can also contain its hoisted `undefined`;
+that value cannot execute a conversion callback either.
+
+The provider must be ESM without CommonJS interop, direct eval, or `with` anywhere
+in its body, including deferred functions. A whole-module hygienic declaration
+and write census rejects duplicate declarations, assignment/update/loop writes,
+and writes in closures. `let`, opaque initializers, local value-copy aliases,
+reexports, imported initializers, namespace properties, and vendor-affected
+providers remain opaque. The cross-module resolver projects only direct named
+or default imports; a shadowing local binding does not inherit the fact.
+
+This is an inferred callback-timing fact, separate from purity and author
+assertions. It does not remove eager binding reads, relax live-binding or TDZ
+constraints, classify the operator as pure, fold source expressions, or suppress
+runtime exceptions such as mixed BigInt/Number arithmetic. Other protocols and
+ordinary opaque calls retain their existing behavior. `imported_primitive_test`
+pins split acceptance and Node output, unchanged imported reads and impure
+classification, conservative provider-write/dynamic-scope controls, and runtime
+throws.
+
 ## Immutable Symbol computed keys
 
 Chunk-top `const` values made by unshadowed `Symbol()` with at most one
@@ -630,6 +657,10 @@ not a builtin whitelist. It narrows callback reentry only for literal-key `in`
 probes on a direct unshadowed `globalThis` or `window`. Key coercion, aliases,
 shadowed roots, effectful receivers and unlisted keys retain fallback. The
 index also rejects recognized root/prototype mutations and global exposure.
+Unknown computed writes on other descendant objects do not themselves identify
+a root mutation. Explicit prototype keys, known identity/prototype paths and
+visible stored back-aliases still reject. Disjointness of other descendants is
+part of the complete author alias-integrity premise, not inferred host trust.
 Source checks cannot establish the complete host or cross-chunk prototype
 surface: its integrity at each probe remains a strong author premise. The
 operator's existing impurity, operand reads/effects and possible throws remain;

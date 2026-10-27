@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 
+	"github.com/agentydragon/ducktape/agentplane/postgres/go"
 	notificationpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/dispatcher_notificationpb"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/google/uuid"
@@ -125,7 +126,7 @@ func (s *Store) EndSandbox(ctx context.Context, sandboxUID string) ([]TerminalEv
 				return err
 			}
 			for _, payload := range payloads {
-				if _, err := tx.ExecContext(ctx, "SELECT pg_notify($1,$2)", TerminalChannel, payload); err != nil {
+				if err := postgres.Notify(ctx, tx, TerminalChannel, payload); err != nil {
 					return err
 				}
 			}

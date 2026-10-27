@@ -46,6 +46,11 @@ debundle_e2e_test(name = "chunk_admission_test")
 
 debundle_e2e_test(name = "source_export_policy_test")
 
+debundle_e2e_test(
+    name = "imported_primitive_test",
+    deps = ["//devinfra/js/debundle:analysis"],
+)
+
 debundle_e2e_test(name = "soundness_at_init_value_flow_test")
 
 debundle_e2e_test(name = "unknown_call_unescaped_callable_test")
@@ -60,6 +65,10 @@ debundle_e2e_test(
     name = "global_membership_reentry_test",
     deps = ["//devinfra/js/debundle:analysis"],
 )
+
+debundle_e2e_test(name = "optional_call_timing_test")
+
+debundle_e2e_test(name = "no_reentry_callback_test")
 
 debundle_e2e_test(name = "empty_collection_timing_test")
 

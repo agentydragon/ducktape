@@ -11,6 +11,7 @@ go_library(
     visibility = ["//agentplane/egress:__subpackages__"],
     deps = [
         "//agentplane/egress/decision",
+        "//agentplane/postgres/go:postgres",
         "@com_github_lib_pq//:pq",
         "@com_github_sethvargo_go_retry//:go-retry",
     ],

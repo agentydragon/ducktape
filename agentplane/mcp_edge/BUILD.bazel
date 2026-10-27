@@ -90,6 +90,7 @@ go_library(
         "//agentplane/mcp_edge/mcpserver",
         "//agentplane/observability",
         "//agentplane/policy/reader",
+        "//agentplane/postgres/go:postgres",
         "//agentplane/postgres/go/probes",
         "//agentplane/postgres/go/wakeups",
         "//agentplane/settings/go:config",

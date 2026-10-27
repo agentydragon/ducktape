@@ -1674,6 +1674,78 @@ fn global_receiver_path(value: &ValueExpr, names: &BTreeSet<&str>) -> bool {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum GlobalMutationPath {
+    Unrelated,
+    Descendant,
+    Identity,
+    Prototype,
+}
+
+// This classifies syntactic evidence only. A descendant is not proven
+// disjoint: its complete alias integrity remains the author's premise.
+fn global_mutation_path(
+    value: &ValueExpr,
+    names: &BTreeSet<&str>,
+    bindings: &BTreeSet<Id>,
+) -> GlobalMutationPath {
+    use GlobalMutationPath::*;
+    match value {
+        ValueExpr::Binding(id) if !bindings.contains(id) => match id.0.as_ref() {
+            name if names.contains(name) => Identity,
+            "document" => Descendant,
+            "Window" | "EventTarget" | "Object" | "Document" | "HTMLDocument" => Prototype,
+            _ => Unrelated,
+        },
+        ValueExpr::Member(receiver, property, _) => {
+            match global_mutation_path(receiver, names, bindings) {
+                Unrelated => Unrelated,
+                Prototype => Prototype,
+                Identity | Descendant => match property.as_deref() {
+                    Some(
+                        "__proto__" | "prototype" | "constructor" | "Window" | "EventTarget"
+                        | "Object" | "Document" | "HTMLDocument",
+                    ) => Prototype,
+                    Some(
+                        "globalThis" | "global" | "window" | "self" | "frames" | "top" | "parent"
+                        | "defaultView",
+                    ) => Identity,
+                    _ => Descendant,
+                },
+            }
+        }
+        _ => Unrelated,
+    }
+}
+
+fn stored_global_alias(
+    value: &ValueExpr,
+    names: &BTreeSet<&str>,
+    bindings: &BTreeSet<Id>,
+    include_prototypes: bool,
+) -> bool {
+    match global_mutation_path(value, names, bindings) {
+        GlobalMutationPath::Identity => true,
+        GlobalMutationPath::Prototype => include_prototypes,
+        GlobalMutationPath::Descendant => false,
+        GlobalMutationPath::Unrelated => match value {
+            ValueExpr::Alternatives(values) => values
+                .iter()
+                .any(|value| stored_global_alias(value, names, bindings, include_prototypes)),
+            ValueExpr::ObjectLiteral(_, properties) => properties
+                .iter()
+                .any(|(_, value)| stored_global_alias(value, names, bindings, include_prototypes)),
+            ValueExpr::Member(receiver, _, _) => {
+                stored_global_alias(receiver, names, bindings, include_prototypes)
+            }
+            ValueExpr::Call(_, args, _) | ValueExpr::New(_, args, _) => args
+                .iter()
+                .any(|value| stored_global_alias(value, names, bindings, include_prototypes)),
+            _ => false,
+        },
+    }
+}
+
 struct ExecutionIndex {
     owner: SourceUnitOrdinal,
     current: Option<u32>,
@@ -1759,10 +1831,12 @@ struct ExecutionIndex {
     audited_factory_members: BTreeMap<Id, BTreeSet<String>>,
     retained_callback_factory_imports: BTreeMap<Id, Vec<spec::RetainedCallbackSignature>>,
     retained_callback_constructor_imports: BTreeMap<Id, Vec<spec::RetainedCallbackSignature>>,
+    no_reentry_callback_imports: BTreeMap<Id, Vec<spec::RetainedCallbackSignature>>,
     retained_callback_factory_members:
         BTreeMap<Id, BTreeMap<String, Vec<spec::RetainedCallbackSignature>>>,
     retained_callback_calls: BTreeMap<CallSite, RetainedCallbackCall>,
     retained_constructor_calls: BTreeMap<CallSite, RetainedCallbackCall>,
+    no_reentry_callback_calls: BTreeMap<CallSite, RetainedCallbackCall>,
     no_reentry_exports: BTreeSet<Id>,
     no_reentry_members: BTreeMap<Id, BTreeSet<String>>,
     no_reentry_record_members: BTreeMap<Id, BTreeSet<String>>,
@@ -1854,9 +1928,11 @@ impl Default for ExecutionIndex {
             audited_factory_members: BTreeMap::new(),
             retained_callback_factory_imports: BTreeMap::new(),
             retained_callback_constructor_imports: BTreeMap::new(),
+            no_reentry_callback_imports: BTreeMap::new(),
             retained_callback_factory_members: BTreeMap::new(),
             retained_callback_calls: BTreeMap::new(),
             retained_constructor_calls: BTreeMap::new(),
+            no_reentry_callback_calls: BTreeMap::new(),
             no_reentry_exports: BTreeSet::new(),
             no_reentry_members: BTreeMap::new(),
             no_reentry_record_members: BTreeMap::new(),
@@ -2008,6 +2084,15 @@ impl ExecutionIndex {
                         .contains(local.sym.as_ref())
                     {
                         index.no_reentry_exports.insert(local.to_id());
+                    }
+                    if let Some(signatures) = hints
+                        .assumptions
+                        .no_reentry_callback_exports
+                        .get(local.sym.as_ref())
+                    {
+                        index
+                            .no_reentry_callback_imports
+                            .insert(local.to_id(), signatures.clone());
                     }
                     if let Some(signatures) = hints
                         .assumptions
@@ -2587,10 +2672,34 @@ impl ExecutionIndex {
                         .flat_map(|callable| &callable.callback_result_writes),
                 )
                 .any(|write| {
-                    global_receiver_path(&write.receiver, &index.global_object_names)
-                        && write.property.as_deref().is_none_or(|property| {
-                            matches!(property, "__proto__" | "prototype" | "constructor")
-                        })
+                    let path = global_mutation_path(
+                        &write.receiver,
+                        &index.global_object_names,
+                        &bindings.0,
+                    );
+                    // A visible stored back-alias defeats the descendant
+                    // distinction even when its receiver is an ordinary object.
+                    // Prototype values held by unrelated private objects do
+                    // not themselves expose or mutate a global-rooted path.
+                    if stored_global_alias(
+                        &write.value,
+                        &index.global_object_names,
+                        &bindings.0,
+                        path != GlobalMutationPath::Unrelated,
+                    ) {
+                        return true;
+                    }
+                    match write.property.as_deref() {
+                        Some("__proto__" | "prototype" | "constructor") => {
+                            path != GlobalMutationPath::Unrelated
+                                || global_receiver_path(&write.receiver, &index.global_object_names)
+                        }
+                        None => matches!(
+                            path,
+                            GlobalMutationPath::Identity | GlobalMutationPath::Prototype
+                        ),
+                        _ => false,
+                    }
                 });
             if index.dynamic_scope_owners.is_empty()
                 && !index.dynamic_global_member
@@ -2936,6 +3045,20 @@ impl ExecutionIndex {
             _ => return None,
         };
         Self::retained_callback_invocation(signatures, &call.args, namespace_member)
+    }
+
+    fn no_reentry_callback_call(&self, call: &CallExpr) -> Option<RetainedCallbackCall> {
+        let Callee::Expr(callee) = &call.callee else {
+            return None;
+        };
+        let Expr::Ident(binding) = callee.unwrap_parens() else {
+            return None;
+        };
+        Self::retained_callback_invocation(
+            self.no_reentry_callback_imports.get(&binding.to_id())?,
+            &call.args,
+            None,
+        )
     }
 
     fn retained_constructor_call(&self, allocation: &NewExpr) -> Option<RetainedCallbackCall> {
@@ -4107,11 +4230,13 @@ impl Visit for ExecutionIndex {
 
         let callback_argument = self.inline_factory_callback_argument(call);
         let retained_call = self.retained_callback_call(call);
+        let no_reentry_call = self.no_reentry_callback_call(call);
         let callback_arguments: BTreeSet<_> = callback_argument
             .into_iter()
             .chain(
                 retained_call
                     .iter()
+                    .chain(no_reentry_call.iter())
                     .flat_map(|call| call.signatures.iter())
                     .flat_map(|signature| signature.callback_arguments.iter().copied()),
             )
@@ -4119,6 +4244,10 @@ impl Visit for ExecutionIndex {
         if let Some(retained_call) = retained_call {
             self.retained_callback_calls
                 .insert(call.span.into(), retained_call);
+        }
+        if let Some(no_reentry_call) = no_reentry_call {
+            self.no_reentry_callback_calls
+                .insert(call.span.into(), no_reentry_call);
         }
         let is_factory_member_callee = self.literal_depth > 0
             && self.factory_callback_depth > 0
@@ -4230,6 +4359,43 @@ impl Visit for ExecutionIndex {
         let before = self.past_await;
         chain.visit_children_with(self);
         self.past_await = before;
+        if let OptChainBase::Call(call) = chain.base.as_ref() {
+            // Optional invocation can still execute arbitrary callee/receiver
+            // protocols and invoke its arguments. Keep that conservative call
+            // even though value/short-circuit inference stays opaque. Do not
+            // admit the assertions indexed only for ordinary CallExpr syntax.
+            self.record_call(Call {
+                callee: ValueExpr::from_expr(&call.callee),
+                args: call
+                    .args
+                    .iter()
+                    .map(|arg| ValueExpr::from_expr(&arg.expr))
+                    .collect(),
+                kind: CallKind::Call,
+                span: call.span,
+                has_spread: call.args.iter().any(|arg| arg.spread.is_some()),
+                no_reentry_candidate: false,
+                no_reentry_record_candidate: false,
+                no_sync_arguments: false,
+                caller: self.current,
+                owner: self.owner,
+                plain_object_sources: false,
+            });
+            if call.args.iter().any(|arg| arg.spread.is_some()) {
+                // Argument positions and the returned value are unmodeled for
+                // spread calls. Preserve the callee and argument capabilities
+                // through the opaque path, including callable return values.
+                self.record_source_protocol(
+                    CallKind::Call,
+                    ValueExpr::Alternatives(
+                        std::iter::once(ValueExpr::from_expr(&call.callee))
+                            .chain(call.args.iter().map(|arg| ValueExpr::from_expr(&arg.expr)))
+                            .collect(),
+                    ),
+                    call.span,
+                );
+            }
+        }
         self.mark_opaque();
     }
 

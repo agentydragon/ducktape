@@ -23,10 +23,10 @@ import (
 	runneringresspb "github.com/agentydragon/ducktape/agentplane/history_service/runner_ingresspb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
 	"github.com/agentydragon/ducktape/agentplane/observability"
+	"github.com/agentydragon/ducktape/agentplane/postgres/go"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"github.com/agentydragon/ducktape/util/netlistener"
-	_ "github.com/lib/pq"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
@@ -79,14 +79,8 @@ func readOnly(databaseURL string) (string, error) {
 }
 
 func openDatabase(ctx context.Context, databaseURL string, connections int) (*sql.DB, error) {
-	db, err := sql.Open("postgres", databaseURL)
+	db, err := postgres.Open(ctx, databaseURL, connections, connections/2)
 	if err != nil {
-		return nil, err
-	}
-	db.SetMaxOpenConns(connections)
-	db.SetMaxIdleConns(connections / 2)
-	if err := db.PingContext(ctx); err != nil {
-		db.Close()
 		return nil, fmt.Errorf("History Service PostgreSQL unavailable: %w", err)
 	}
 	return db, nil

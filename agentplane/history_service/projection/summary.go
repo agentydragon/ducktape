@@ -7,6 +7,7 @@ import (
 	"errors"
 	"reflect"
 
+	"github.com/agentydragon/ducktape/agentplane/postgres/go"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	"github.com/google/uuid"
@@ -16,8 +17,7 @@ import (
 const ChannelSummaries = "agentplane_history_summary_changes"
 
 func notify(ctx context.Context, tx *sql.Tx, channel string) error {
-	_, err := tx.ExecContext(ctx, "SELECT pg_notify($1, '')", channel)
-	return err
+	return postgres.Notify(ctx, tx, channel, "")
 }
 
 // summary is the event-derived sidebar metadata of a Thread. attached and end are JSON documents: NULL, or

@@ -3,7 +3,7 @@ import hashlib
 import json
 import time
 from datetime import UTC, date, datetime
-from typing import cast
+from typing import Any, cast
 from uuid import UUID
 
 import jwt
@@ -11,6 +11,7 @@ import pytest_bazel
 from cryptography.hazmat.primitives.asymmetric import ec
 from fastapi.testclient import TestClient
 from itsdangerous import TimestampSigner
+from plaid.api import plaid_api
 from plaid.model.country_code import CountryCode
 from plaid.model.institution import Institution
 from plaid.model.institutions_get_by_id_request import InstitutionsGetByIdRequest
@@ -28,11 +29,10 @@ from plaid.model.jwk_public_key import JWKPublicKey
 from plaid.model.link_token_create_request import LinkTokenCreateRequest
 from plaid.model.link_token_create_response import LinkTokenCreateResponse
 from plaid.model.products import Products
-from plaid.model.transactions_sync_response import TransactionsSyncResponse
 from plaid.model.webhook_verification_key_get_request import WebhookVerificationKeyGetRequest
 from plaid.model.webhook_verification_key_get_response import WebhookVerificationKeyGetResponse
 
-from finance.plaid.db.client import PlaidClient, PlaidSdkApiLike
+from finance.plaid.db.client import PlaidClient
 from finance.plaid.db.config import PlaidWebSettings
 from finance.plaid.db.link_store import PlaidLinkStorage, StoredLink, SyncAlreadyRunningError
 from finance.plaid.link.app import create_app
@@ -117,17 +117,16 @@ class _FakeSecrets:
         self.deleted_secret_names.append(secret_name)
 
 
-class _FakePlaidApi:
-    api_client = object()
-
+class _FakePlaidApi(plaid_api.PlaidApi):
     def __init__(self) -> None:
+        super().__init__()
         self.webhook_private_key = ec.generate_private_key(ec.SECP256R1())
         self.link_token_requests: list[dict[str, object]] = []
         self.exchanged_public_tokens: list[str] = []
         self.removed_access_tokens: list[str] = []
 
-    def link_token_create(self, request: LinkTokenCreateRequest) -> LinkTokenCreateResponse:
-        self.link_token_requests.append(request.to_dict())
+    def link_token_create(self, link_token_create_request: LinkTokenCreateRequest, **kwargs: Any) -> Any:
+        self.link_token_requests.append(link_token_create_request.to_dict())
         return cast(
             LinkTokenCreateResponse,
             LinkTokenCreateResponse(
@@ -137,8 +136,10 @@ class _FakePlaidApi:
             ),
         )
 
-    def item_public_token_exchange(self, request: ItemPublicTokenExchangeRequest) -> ItemPublicTokenExchangeResponse:
-        self.exchanged_public_tokens.append(request.public_token)
+    def item_public_token_exchange(
+        self, item_public_token_exchange_request: ItemPublicTokenExchangeRequest, **kwargs: Any
+    ) -> Any:
+        self.exchanged_public_tokens.append(item_public_token_exchange_request.public_token)
         return cast(
             ItemPublicTokenExchangeResponse,
             ItemPublicTokenExchangeResponse(
@@ -146,11 +147,11 @@ class _FakePlaidApi:
             ),
         )
 
-    def item_remove(self, request: ItemRemoveRequest) -> ItemRemoveResponse:
-        self.removed_access_tokens.append(request.access_token)
+    def item_remove(self, item_remove_request: ItemRemoveRequest, **kwargs: Any) -> Any:
+        self.removed_access_tokens.append(item_remove_request.access_token)
         return cast(ItemRemoveResponse, ItemRemoveResponse(request_id="req-item-remove"))
 
-    def item_webhook_update(self, request: ItemWebhookUpdateRequest) -> ItemWebhookUpdateResponse:
+    def item_webhook_update(self, item_webhook_update_request: ItemWebhookUpdateRequest, **kwargs: Any) -> Any:
         return cast(
             ItemWebhookUpdateResponse,
             ItemWebhookUpdateResponse(
@@ -158,7 +159,7 @@ class _FakePlaidApi:
                     Item,
                     Item(
                         item_id="item_123",
-                        webhook=request.webhook,
+                        webhook=item_webhook_update_request.webhook,
                         error=None,
                         available_products=[Products("transactions")],
                         billed_products=[],
@@ -172,9 +173,9 @@ class _FakePlaidApi:
         )
 
     def webhook_verification_key_get(
-        self, request: WebhookVerificationKeyGetRequest
-    ) -> WebhookVerificationKeyGetResponse:
-        assert request.key_id == "test-key"
+        self, webhook_verification_key_get_request: WebhookVerificationKeyGetRequest, **kwargs: Any
+    ) -> Any:
+        assert webhook_verification_key_get_request.key_id == "test-key"
         numbers = self.webhook_private_key.public_key().public_numbers()
 
         def encode(value: int) -> str:
@@ -198,16 +199,16 @@ class _FakePlaidApi:
             WebhookVerificationKeyGetResponse, WebhookVerificationKeyGetResponse(key=key, request_id="req-webhook-key")
         )
 
-    def transactions_sync(self, request: object) -> TransactionsSyncResponse:
+    def transactions_sync(self, transactions_sync_request: Any, **kwargs: Any) -> Any:
         raise AssertionError("unexpected transaction sync in this app test")
 
-    def institutions_search(self, request: InstitutionsSearchRequest) -> InstitutionsSearchResponse:
+    def institutions_search(self, institutions_search_request: InstitutionsSearchRequest, **kwargs: Any) -> Any:
         return cast(
             InstitutionsSearchResponse,
             InstitutionsSearchResponse(institutions=[_institution()], request_id="req-institutions-search"),
         )
 
-    def institutions_get_by_id(self, request: InstitutionsGetByIdRequest) -> InstitutionsGetByIdResponse:
+    def institutions_get_by_id(self, institutions_get_by_id_request: InstitutionsGetByIdRequest, **kwargs: Any) -> Any:
         return cast(
             InstitutionsGetByIdResponse,
             InstitutionsGetByIdResponse(
@@ -256,7 +257,7 @@ def _client(
             settings,
             storage=cast(PlaidLinkStorage, storage or _FakeStorage()),
             secrets=secrets or _FakeSecrets(),
-            client=PlaidClient(api=cast(PlaidSdkApiLike, api or _FakePlaidApi())),
+            client=PlaidClient(api=api or _FakePlaidApi()),
         ),
         base_url=settings.public_base_url,
         headers={"Origin": settings.public_base_url},
@@ -551,7 +552,7 @@ def test_authenticated_unrecognized_envelope_body_is_recorded() -> None:
 
 def test_create_link_token_initializes_requested_products() -> None:
     api = _FakePlaidApi()
-    client = PlaidClient(api=cast(PlaidSdkApiLike, api))
+    client = PlaidClient(api=api)
 
     result = client.create_link_token(
         products=["transactions", "liabilities"],
@@ -580,7 +581,7 @@ def test_create_link_token_initializes_requested_products() -> None:
 
 def test_create_link_token_allows_custom_transaction_history_depth() -> None:
     api = _FakePlaidApi()
-    client = PlaidClient(api=cast(PlaidSdkApiLike, api))
+    client = PlaidClient(api=api)
 
     result = client.create_link_token(
         products=["transactions"],
@@ -595,7 +596,7 @@ def test_create_link_token_allows_custom_transaction_history_depth() -> None:
 
 def test_create_link_token_omits_transactions_config_without_transactions_product() -> None:
     api = _FakePlaidApi()
-    client = PlaidClient(api=cast(PlaidSdkApiLike, api))
+    client = PlaidClient(api=api)
 
     result = client.create_link_token(
         products=["investments"], redirect_uri="https://example.test/link/callback", client_user_id="owner"
@@ -611,7 +612,7 @@ def test_link_token_anchors_on_the_broadest_product() -> None:
     """The anchor is the one product that CAN fail the Link, so it must be the one least likely to
     have no eligible account. Liabilities anchors only when it is all that was asked for."""
     api = _FakePlaidApi()
-    client = PlaidClient(api=cast(PlaidSdkApiLike, api))
+    client = PlaidClient(api=api)
 
     client.create_link_token(
         products=["liabilities", "investments"], redirect_uri="https://x.test/cb", client_user_id="owner"
@@ -625,7 +626,7 @@ def test_link_token_anchors_on_the_broadest_product() -> None:
 
 def test_create_update_link_token_requests_additional_consented_products_only() -> None:
     api = _FakePlaidApi()
-    client = PlaidClient(api=cast(PlaidSdkApiLike, api))
+    client = PlaidClient(api=api)
 
     result = client.create_update_link_token(
         access_token="access-sandbox-existing",
@@ -651,7 +652,7 @@ def test_create_update_link_token_requests_additional_consented_products_only() 
 
 def test_exchange_public_token_uses_sdk_request() -> None:
     api = _FakePlaidApi()
-    client = PlaidClient(api=cast(PlaidSdkApiLike, api))
+    client = PlaidClient(api=api)
 
     result = client.exchange_public_token("public-sandbox-token")
 

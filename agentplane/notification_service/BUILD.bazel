@@ -140,6 +140,7 @@ go_library(
         "//agentplane/notification_service/worker",
         "//agentplane/observability",
         "//agentplane/policy/reader",
+        "//agentplane/postgres/go:postgres",
         "//agentplane/postgres/go/probes",
         "//agentplane/postgres/go/wakeups",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",

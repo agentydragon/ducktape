@@ -15,6 +15,7 @@ go_library(
         "//agentplane/mcp_edge/connections",
         "//agentplane/mcp_edge/mcpserver",
         "//agentplane/observability",
+        "//agentplane/postgres/go:postgres",
         "@com_github_coreos_go_oidc_v3//oidc",
         "@com_github_google_uuid//:uuid",
         "@com_github_modelcontextprotocol_go_sdk//auth",

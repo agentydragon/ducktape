@@ -1069,6 +1069,12 @@ The synchronous value-flow summary honors the same argument exemption for
 static event-listener registrations. Neither exemption suppresses reentry
 through callbacks already escaped to host code or available exports.
 Purity annotations alone do not assert that callback arguments are deferred.
+The separate exact-signature `no_reentry_callback_exports` author contract
+covers ordinary direct imported calls that cannot reenter any caller, importer
+or host callback during the call. Checked callbacks become globally escaped
+roots immediately afterward, even if the provider only returns them. The result
+remains opaque. Later unknown calls and protocol effects retain the ordinary
+promotion rules; this does not grant the return-only factory contract.
 Property writes inside collection callbacks retain the conservative accessor
 fallback when receiver integrity is unproved.
 

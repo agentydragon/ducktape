@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -16,6 +15,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	"github.com/agentydragon/ducktape/agentplane/observability"
+	"github.com/agentydragon/ducktape/agentplane/postgres/go"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/gateway"
@@ -23,7 +23,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"github.com/agentydragon/ducktape/util/netlistener"
 	"github.com/go-logr/logr"
-	_ "github.com/lib/pq"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
@@ -156,16 +155,11 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 	if err != nil {
 		return err
 	}
-	db, err := sql.Open("postgres", c.DispatcherDatabaseURL)
+	db, err := postgres.Open(ctx, c.DispatcherDatabaseURL, 8, 4)
 	if err != nil {
-		return err
-	}
-	defer db.Close()
-	db.SetMaxOpenConns(8)
-	db.SetMaxIdleConns(4)
-	if err := db.PingContext(ctx); err != nil {
 		return fmt.Errorf("Dispatcher PostgreSQL unavailable: %w", err)
 	}
+	defer db.Close()
 	store := dispatcher.NewStore(db, c.QueueCap)
 	catalog, err := dispatcher.NewKubernetesSandboxes(inventory, objects, c.Namespace)
 	if err != nil {

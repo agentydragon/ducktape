@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date, datetime
 from enum import StrEnum
 from typing import Annotated, Literal
@@ -189,3 +190,32 @@ def history_capture_key(provider: str, kind: HistoryKind) -> str:
     """
 
     return f"{provider}_{kind}"
+
+
+class RawUpstreamResponse(BaseModel):
+    """The safely exposable parts of one quota-endpoint response.
+
+    Request and response headers are deliberately excluded: they can contain
+    credentials, cookies, account identifiers, or proxy implementation data.
+    """
+
+    status_code: int
+    content_type: str | None = None
+    body: object | None = None
+    body_base64: str | None = None
+    body_sha256: str | None = None
+    body_size_bytes: int | None = None
+    truncated: bool = False
+
+
+@dataclass(frozen=True)
+class QuotaSnapshot:
+    quotas: AllQuotas
+    raw_responses: dict[str, RawUpstreamResponse]
+
+
+@dataclass(frozen=True)
+class HistorySnapshot:
+    observations: list[HistoryObservation]
+    fetched_at: datetime
+    raw_responses: dict[str, RawUpstreamResponse]

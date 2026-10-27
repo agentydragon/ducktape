@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use analysis::facts::module_has_top_level_await;
 use swc_common::{Spanned, SyntaxContext};
@@ -13,7 +13,9 @@ use artifact::reports::{
     TopLevelDeclarationKind,
 };
 use binding_targets::{
-    DeclShape, decl_shape, declaration_name_strings, member_root_sym, module_export_name,
+    DeclShape, TargetAccessRecorder, binding_names, decl_shape, declaration_name_strings,
+    member_root_sym, module_export_name, record_assign_target, record_pat_write,
+    record_update_target,
 };
 use js_ast::{ParsedJsModule, SourceLineIndex, str_value};
 
@@ -151,6 +153,100 @@ pub struct DeclarationRecord {
     pub kind: TopLevelDeclarationKind,
 }
 
+enum PrimitiveExportSource {
+    Literal,
+    Binding(Id),
+}
+
+fn primitive_literal(expression: &Expr) -> bool {
+    matches!(
+        expression.unwrap_parens(),
+        Expr::Lit(Lit::Str(_) | Lit::Num(_) | Lit::Bool(_) | Lit::Null(_) | Lit::BigInt(_))
+    )
+}
+
+fn collect_primitive_export_candidates(
+    item: &ModuleItem,
+    bindings: &mut BTreeSet<Id>,
+    exports: &mut BTreeMap<String, Vec<Option<PrimitiveExportSource>>>,
+) {
+    let declaration = match item {
+        ModuleItem::Stmt(Stmt::Decl(decl)) => Some(decl),
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(decl)) => Some(&decl.decl),
+        _ => None,
+    };
+    if let Some(Decl::Var(var)) = declaration
+        && matches!(var.kind, VarDeclKind::Const | VarDeclKind::Var)
+    {
+        for decl in &var.decls {
+            if let Pat::Ident(id) = &decl.name
+                && decl.init.as_deref().is_some_and(primitive_literal)
+            {
+                bindings.insert(id.id.to_id());
+            }
+        }
+    }
+    match item {
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(decl)) => {
+            for id in binding_targets::declaration_ids(&decl.decl) {
+                exports
+                    .entry(id.0.to_string())
+                    .or_default()
+                    .push(Some(PrimitiveExportSource::Binding(id)));
+            }
+        }
+        ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) => {
+            for specifier in &named.specifiers {
+                match specifier {
+                    ExportSpecifier::Named(specifier) => {
+                        let name = module_export_name(
+                            specifier.exported.as_ref().unwrap_or(&specifier.orig),
+                        );
+                        let source = if named.src.is_none() {
+                            match &specifier.orig {
+                                ModuleExportName::Ident(id) => {
+                                    Some(PrimitiveExportSource::Binding(id.to_id()))
+                                }
+                                _ => None,
+                            }
+                        } else {
+                            None
+                        };
+                        exports.entry(name).or_default().push(source);
+                    }
+                    ExportSpecifier::Namespace(specifier) => {
+                        exports
+                            .entry(module_export_name(&specifier.name))
+                            .or_default()
+                            .push(None);
+                    }
+                    ExportSpecifier::Default(specifier) => {
+                        exports
+                            .entry(specifier.exported.sym.to_string())
+                            .or_default()
+                            .push(None);
+                    }
+                }
+            }
+        }
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultExpr(default)) => {
+            let source = match default.expr.unwrap_parens() {
+                expr if primitive_literal(expr) => Some(PrimitiveExportSource::Literal),
+                Expr::Ident(id) => Some(PrimitiveExportSource::Binding(id.to_id())),
+                _ => None,
+            };
+            exports
+                .entry("default".to_string())
+                .or_default()
+                .push(source);
+        }
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultDecl(_)) => {
+            exports.entry("default".to_string()).or_default().push(None);
+        }
+        _ => {}
+    }
+}
+
 /// If `item` is a top-level declaration of a kind we anchor extraction on,
 /// classify it and pull its bound names. Otherwise return `None` and the
 /// caller treats the item as a side effect.
@@ -189,6 +285,9 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
         observable_module_effect,
         has_rewritable_specifier,
         has_cjs_interop: visitor_has_cjs_interop,
+        binding_declarations,
+        binding_writes,
+        dynamic_scope,
         ..
     } = module_scan;
     let has_cjs_interop = visitor_has_cjs_interop
@@ -214,7 +313,10 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
         ..ChunkRuntimeFacts::default()
     };
 
+    let mut primitive_bindings = BTreeSet::new();
+    let mut primitive_exports = BTreeMap::<String, Vec<Option<PrimitiveExportSource>>>::new();
     for item in &parsed.module.body {
+        collect_primitive_export_candidates(item, &mut primitive_bindings, &mut primitive_exports);
         if let ModuleItem::ModuleDecl(ModuleDecl::Import(decl)) = item {
             if import_decl_has_runtime_request(decl) {
                 runtime_facts.static_requests.push(StaticModuleRequest {
@@ -312,6 +414,29 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
         }
 
         side_effect_count += 1;
+    }
+
+    if runtime_facts.module_kind == ChunkModuleKind::Esm
+        && !runtime_facts.has_cjs_interop
+        && !dynamic_scope
+    {
+        primitive_bindings
+            .retain(|id| binding_declarations.get(id) == Some(&1) && !binding_writes.contains(id));
+        runtime_facts.stable_primitive_exports = primitive_exports
+            .into_iter()
+            .filter_map(|(name, sources)| {
+                let [Some(source)] = sources.as_slice() else {
+                    return None;
+                };
+                match source {
+                    PrimitiveExportSource::Literal => Some(name),
+                    PrimitiveExportSource::Binding(id) if primitive_bindings.contains(id) => {
+                        Some(name)
+                    }
+                    _ => None,
+                }
+            })
+            .collect();
     }
 
     ProgramAnalysis {
@@ -461,9 +586,70 @@ struct ModuleScanVisitor {
     has_rewritable_specifier: bool,
     has_cjs_interop: bool,
     unresolved_context: SyntaxContext,
+    binding_declarations: BTreeMap<Id, usize>,
+    binding_writes: BTreeSet<Id>,
+    dynamic_scope: bool,
+}
+
+impl TargetAccessRecorder for ModuleScanVisitor {
+    fn record_binding_write(&mut self, id: &Id) {
+        self.binding_writes.insert(id.clone());
+    }
 }
 
 impl Visit for ModuleScanVisitor {
+    fn visit_var_declarator(&mut self, node: &VarDeclarator) {
+        for id in binding_names(&node.name) {
+            *self.binding_declarations.entry(id).or_default() += 1;
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_fn_decl(&mut self, node: &FnDecl) {
+        *self
+            .binding_declarations
+            .entry(node.ident.to_id())
+            .or_default() += 1;
+        node.visit_children_with(self);
+    }
+
+    fn visit_class_decl(&mut self, node: &ClassDecl) {
+        *self
+            .binding_declarations
+            .entry(node.ident.to_id())
+            .or_default() += 1;
+        node.visit_children_with(self);
+    }
+
+    fn visit_assign_expr(&mut self, node: &AssignExpr) {
+        record_assign_target(&node.left, self);
+        node.visit_children_with(self);
+    }
+
+    fn visit_update_expr(&mut self, node: &UpdateExpr) {
+        record_update_target(&node.arg, self);
+        node.visit_children_with(self);
+    }
+
+    fn visit_for_in_stmt(&mut self, node: &ForInStmt) {
+        if let ForHead::Pat(pattern) = &node.left {
+            record_pat_write(pattern, self);
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_for_of_stmt(&mut self, node: &ForOfStmt) {
+        if let ForHead::Pat(pattern) = &node.left {
+            record_pat_write(pattern, self);
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_with_stmt(&mut self, node: &WithStmt) {
+        self.dynamic_scope = true;
+        node.visit_children_with(self);
+    }
+
     fn visit_ident(&mut self, node: &Ident) {
         if node.ctxt == self.unresolved_context
             && matches!(node.sym.as_ref(), "require" | "module" | "exports")
@@ -473,6 +659,10 @@ impl Visit for ModuleScanVisitor {
     }
 
     fn visit_call_expr(&mut self, node: &CallExpr) {
+        if matches!(&node.callee, Callee::Expr(expr) if matches!(expr.unwrap_parens(), Expr::Ident(id) if id.sym.as_ref() == "eval"))
+        {
+            self.dynamic_scope = true;
+        }
         if matches!(node.callee, Callee::Import(_)) {
             self.dynamic_import_count += 1;
             if !self.has_rewritable_specifier && dynamic_import_relative_specifier(node).is_some() {

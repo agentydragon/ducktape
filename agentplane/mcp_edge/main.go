@@ -24,10 +24,10 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/connections"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/mcpserver"
 	"github.com/agentydragon/ducktape/agentplane/observability"
+	"github.com/agentydragon/ducktape/agentplane/postgres/go"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/probes"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
-	_ "github.com/lib/pq"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
@@ -50,14 +50,8 @@ func (r readiness) Check(ctx context.Context, request *healthpb.HealthCheckReque
 }
 
 func openDatabase(ctx context.Context, databaseURL string) (*sql.DB, error) {
-	db, err := sql.Open("postgres", databaseURL)
+	db, err := postgres.Open(ctx, databaseURL, 6, 4)
 	if err != nil {
-		return nil, err
-	}
-	db.SetMaxOpenConns(6)
-	db.SetMaxIdleConns(4)
-	if err := db.PingContext(ctx); err != nil {
-		db.Close()
 		return nil, fmt.Errorf("MCP edge PostgreSQL unavailable: %w", err)
 	}
 	return db, nil

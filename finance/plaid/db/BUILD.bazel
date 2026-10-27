@@ -44,7 +44,6 @@ py_test(
         ":conftest",
         "//:conftest",
         "@pypi//certifi",
-        "@pypi//plaid_python",
         "@pypi//pytest_bazel",
     ],
 )
@@ -133,6 +132,7 @@ py_test(
     name = "test_sync",
     srcs = ["test_sync.py"],
     deps = [
+        ":client",
         ":conftest",
         ":link_store",
         ":sync",
@@ -179,6 +179,7 @@ py_library(
     srcs = ["sync.py"],
     visibility = ["//finance/plaid:__subpackages__"],
     deps = [
+        ":client",
         ":link_store",
         ":products",
         ":secret_store",

@@ -32,7 +32,7 @@ from finance.plaid.db.link_store import (
 )
 from finance.plaid.db.products import Product, syncable_products
 from finance.plaid.db.secret_store import K8sSecretStore, SecretStore
-from finance.plaid.db.sync import PlaidApiLike, sync_link, sync_transactions_only
+from finance.plaid.db.sync import sync_link, sync_transactions_only
 from finance.plaid.link.webhooks import InvalidPlaidWebhookError, PlaidWebhookVerifier
 from finance.plaid.models import AccountDeletionPreview, ItemInventory
 from util.oidc_login import LoginConfig, install_login
@@ -599,7 +599,7 @@ def _account_deletion_error(exc: Exception) -> HTTPException:
 
 
 async def _sync_one_link(
-    *, api: PlaidApiLike, storage: PlaidLinkStorage, secrets: SecretStore, link: StoredLink, webhook_url: str
+    *, api: PlaidClient, storage: PlaidLinkStorage, secrets: SecretStore, link: StoredLink, webhook_url: str
 ) -> UUID:
     try:
         return await sync_link(
@@ -618,7 +618,7 @@ async def _sync_one_link(
 
 
 async def _item_sync_worker(
-    *, api: PlaidApiLike, storage: PlaidLinkStorage, secrets: SecretStore, webhook_url: str | None
+    *, api: PlaidClient, storage: PlaidLinkStorage, secrets: SecretStore, webhook_url: str | None
 ) -> None:
     while True:
         try:

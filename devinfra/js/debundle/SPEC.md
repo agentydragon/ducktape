@@ -429,6 +429,12 @@ and publication premise still requires the same independent source audit.
 
 ## Audited callback factories
 
+Optional calls retain conservative callee, receiver and argument callback
+effects even when their value and short-circuit behavior cannot be inferred.
+Known local return graphs keep their callable captures and a possible undefined
+result. Optional calls do not acquire assertions scoped to ordinary direct-call
+syntax.
+
 `chunk_export_purity.<defining chunk>.callback_factory_exports` lists named
 exports whose calls are audited to defer a single callback argument.
 `callback_factory_members` lists static members on an imported namespace with
@@ -575,6 +581,40 @@ expressions are still visited normally.
 Aliases, uncertain arguments, and result use retain ordinary reentry checks.
 The defining module still initializes in its usual order. This contract is
 independent of `pure_exports` and callback-factory assertions.
+
+`chunk_export_purity.<defining chunk>.no_reentry_callback_exports` is a separate
+author assertion for direct imported calls with exact callback-bearing signatures:
+
+```yaml
+chunk_export_purity:
+  provider:
+    no_reentry_callback_exports:
+      register:
+        - { argument_count: 2, callback_arguments: [0] }
+```
+
+Positions are zero-based and at least one callback position is required. Every
+unlisted argument must use the checked inert primitive syntax described above.
+Listed arguments must resolve to stable local ordinary callable identities;
+inline functions/arrows and stable named aliases are supported. Rebound,
+exposed, mutated, uncertain or non-callable values, retained result graphs,
+callee aliases, namespace calls, spread and construction remain conservative.
+
+The author audits every admitted provider/type/helper path and each callable's
+own/prototype surface and aliases. During the call, the provider must not invoke
+any supplied, caller-, importer- or host-provided callback, mutate supplied
+graphs, inspect effectful properties/prototypes or access importer-owned lexical
+state. The exported callable must retain its audited identity and behavior
+through synchronous initialization. Provider-private effects remain allowed.
+
+Unlike the returned-graph factory contracts, this assertion permits storing
+callbacks in cross-call provider registries or returning opaque capabilities.
+After argument evaluation and the audited call, every supplied callback and its
+capture graph becomes globally reachable in the analysis, even if the actual
+provider only returns it. Every later opaque call or protocol operation may
+invoke those callbacks. Sibling/operand evaluation and later invocation,
+publication or mutation retain their ordinary checks. The result stays opaque.
+This contract does not imply purity or any factory/constructor retention policy.
 
 `chunk_export_purity.<defining chunk>.no_reentry_members` asserts a narrower
 call-timing fact for listed static namespace members: with admitted primitive
@@ -773,8 +813,7 @@ host behavior is a strong per-probe author premise, not inferred builtin trust.
 Admission requires a listed literal string on the left of `in` and a direct,
 unshadowed listed root on the right (parentheses are transparent). Keys with
 unpaired surrogate code units cannot match the UTF-8 assertion and keep fallback.
-Parameters,
-block-local bindings, imported roots, aliases, other roots, effectful receivers
+Parameters, block-local bindings, imported roots, aliases, other roots, effectful receivers
 and nonliteral keys keep their conservative protocol behavior. Recognized
 root replacement, prototype writes, mutated Object intrinsics, dynamic global
 member access, dynamic scope or global-root publication/escape also disable
@@ -782,6 +821,21 @@ the certificate. An earlier discarded synchronous function IIFE may use the
 existing mechanically checked confined alias rule; its derived values cannot
 escape or touch the protected keys or prototype/identity surface. Unsupported
 or hidden alias/prototype mutations remain part of the author's audit burden.
+
+A computed write to another object reached through a global property, such as
+`globalThis.cache[key]`, does not alone identify a root/prototype mutation.
+Explicit `__proto__`, `prototype` and `constructor` writes still reject, as do
+computed writes on recognized global identity or constructor/prototype paths
+(including `window.parent`, `document.defaultView` and `Window.prototype`).
+Stored direct/recognized identity back-aliases (including nested record values)
+remain rejecting. Storing a recognized prototype/constructor value on a
+global-rooted receiver also rejects; merely holding that value in an unrelated
+private object does not. The other root-exposure guards remain rejecting.
+The author must establish that an otherwise admitted descendant cannot alias
+the protected root or prototype surface; no host-property name proves this.
+Indirect aliases through untracked variables, calls or host fields still need
+the complete author audit; the path classifier does not prove their absence.
+The descendant write retains its normal execution effects and callback checks.
 
 Only protocol callback reentry is suppressed. Both operands and their existing
 reads/effects are still evaluated and indexed in source order. Purity,

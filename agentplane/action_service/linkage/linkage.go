@@ -20,6 +20,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/observability"
+	"github.com/agentydragon/ducktape/agentplane/postgres/go"
 	"github.com/lib/pq"
 	"github.com/modelcontextprotocol/go-sdk/oauthex"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -166,20 +167,11 @@ func (a *Authority) clientID(server Server) string {
 func now() time.Time { return time.Now().UTC().Truncate(time.Microsecond) }
 
 func (a *Authority) transaction(ctx context.Context, f func(*sql.Tx) error) error {
-	tx, err := a.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	if err := f(tx); err != nil {
-		return err
-	}
-	return tx.Commit()
+	return postgres.Transaction(ctx, a.db, sql.TxOptions{}, f)
 }
 
 func notify(ctx context.Context, tx *sql.Tx) error {
-	_, err := tx.ExecContext(ctx, "SELECT pg_notify($1, '')", UpdatesChannel)
-	return err
+	return postgres.Notify(ctx, tx, UpdatesChannel, "")
 }
 
 // scopesJSON is scopes as a JSONB column holds them: a list, never null.
@@ -205,12 +197,7 @@ func (a *Authority) Linkages(ctx context.Context) ([]*operator_action_servicepb.
 
 // read runs f on one snapshot, so a linkage and its token agree.
 func (a *Authority) read(ctx context.Context, f func(*sql.Tx) error) error {
-	tx, err := a.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	return f(tx)
+	return postgres.ReadTransaction(ctx, a.db, sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true}, f)
 }
 
 // stored is a server's linkage row, and the token it holds.

@@ -8,7 +8,8 @@ placeholder fetcher exists solely because ``create_app`` requires one.
 
 import json
 
-from aiquota.api import QuotaSnapshot, create_app
+from aiquota.api import create_app
+from aiquota.models import QuotaSnapshot
 
 
 class _UnusedFetcher:

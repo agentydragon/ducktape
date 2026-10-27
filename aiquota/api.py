@@ -31,13 +31,12 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Red
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, Counter, Gauge, generate_latest
-from pydantic import BaseModel
 from starlette.middleware.sessions import SessionMiddleware
 
 from aiquota.cache import _assemble, _instantiate
 from aiquota.clickhouse import ClickHouseSnapshotSink
 from aiquota.config import Config, load as load_config
-from aiquota.models import AllQuotas, FetchSuccess, HistoryObservation
+from aiquota.models import AllQuotas, FetchSuccess, HistorySnapshot, QuotaSnapshot, RawUpstreamResponse
 from aiquota.providers.base import SupportsHistory
 from aiquota.render.view_model import AllQuotasView, to_view
 from aiquota.settings import Settings
@@ -50,35 +49,6 @@ logger = logging.getLogger(__name__)
 
 _FRONTEND_INDEX = "_main/aiquota/frontend/dist/index.html"
 _SSE_HEARTBEAT_SECONDS = 10
-
-
-class RawUpstreamResponse(BaseModel):
-    """The safely exposable parts of one quota-endpoint response.
-
-    Request and response headers are deliberately excluded: they can contain
-    credentials, cookies, account identifiers, or proxy implementation data.
-    """
-
-    status_code: int
-    content_type: str | None = None
-    body: object | None = None
-    body_base64: str | None = None
-    body_sha256: str | None = None
-    body_size_bytes: int | None = None
-    truncated: bool = False
-
-
-@dataclass(frozen=True)
-class QuotaSnapshot:
-    quotas: AllQuotas
-    raw_responses: dict[str, RawUpstreamResponse]
-
-
-@dataclass(frozen=True)
-class HistorySnapshot:
-    observations: list[HistoryObservation]
-    fetched_at: datetime
-    raw_responses: dict[str, RawUpstreamResponse]
 
 
 class SnapshotFetcher(Protocol):

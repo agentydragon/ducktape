@@ -25,6 +25,7 @@ go_library(
         ":dispatcher_notification_go_proto",
         ":session_dispatcher_go_proto",
         "//agentplane/observability",
+        "//agentplane/postgres/go:postgres",
         "//agentplane/proto:command_go_proto",
         "//agentplane/proto:event_log_go_proto",
         "//agentplane/proto:runner_go_proto",

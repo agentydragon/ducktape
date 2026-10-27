@@ -139,6 +139,7 @@ py_library(
     name = "precommit_file_selection",
     srcs = ["precommit_file_selection.py"],
     visibility = ["//:__subpackages__"],
+    deps = [":pr_mergeability"],
 )
 
 py_library(
@@ -457,7 +458,9 @@ py_test(
     name = "test_precommit_file_selection",
     srcs = ["test_precommit_file_selection.py"],
     deps = [
+        ":pr_mergeability",
         ":precommit_file_selection",
+        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
