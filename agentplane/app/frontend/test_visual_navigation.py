@@ -84,6 +84,22 @@ async def test_vm_console_to_sessions_tab(view: VisualPage, app: AgentplaneFixtu
     await view.capture(name="vm-console-to-sessions", target=page.locator("#app"))
 
 
+async def test_egress_invalid_frame_keeps_the_last_valid_log(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.mount_app("/sandboxes/ready-sandbox?tab=egress_log")
+    page = view.page
+    table = page.get_by_role("table")
+    await expect(table).to_be_visible()
+    await expect(table).to_contain_text("api.github.com")
+
+    await app.publish(Flag.EGRESS_INVALID_FRAME, "/egress/decisions")
+    warning = page.get_by_role("alert").filter(has_text="An invalid egress update was ignored")
+    await expect(warning).to_contain_text("showing the last valid log")
+    await expect(warning).to_contain_text("Invalid Egress snapshot frame")
+    await expect(table).to_contain_text("api.github.com")
+    await view.check(context="invalid egress update retained the last valid log")
+    await view.capture(target=page.locator("#app"))
+
+
 @DESKTOP_AND_MOBILE
 async def test_pod_sandbox_hides_vm_console(view: VisualPage, app: AgentplaneFixture) -> None:
     """A Pod Sandbox has no Console tab, including when a link requests the VM-only tab."""
