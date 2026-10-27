@@ -9,7 +9,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
-from typing import Any, Protocol, cast
+from typing import Any
 from uuid import UUID
 
 from plaid.exceptions import ApiException as PlaidApiException
@@ -21,7 +21,9 @@ from plaid.model.item_get_request import ItemGetRequest
 from plaid.model.item_webhook_update_request import ItemWebhookUpdateRequest
 from plaid.model.liabilities_get_request import LiabilitiesGetRequest
 from plaid.model.transactions_sync_request import TransactionsSyncRequest
+from plaid.model_utils import ModelNormal
 
+from finance.plaid.db.client import PlaidClient
 from finance.plaid.db.link_store import ApiEvent, PlaidLinkStorage, StoredLink, SyncAlreadyRunningError
 from finance.plaid.db.products import Product
 from finance.plaid.db.secret_store import SecretStore
@@ -40,33 +42,6 @@ from finance.plaid.payloads import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-class PlaidRequestLike(Protocol):
-    """Common shape of plaid-python generated request objects."""
-
-    def to_dict(self) -> dict[str, Any]: ...
-
-
-class PlaidApiClientLike(Protocol):
-    """The generated SDK's nested ApiClient serializer."""
-
-    def sanitize_for_serialization(self, obj: object) -> object: ...
-
-
-class PlaidApiLike(Protocol):
-    """Minimal Plaid SDK client surface used by the synchronous sync job."""
-
-    @property
-    def api_client(self) -> PlaidApiClientLike: ...
-
-    def item_get(self, request: ItemGetRequest, /) -> object: ...
-    def item_webhook_update(self, request: ItemWebhookUpdateRequest, /) -> object: ...
-    def accounts_get(self, request: AccountsGetRequest, /) -> object: ...
-    def transactions_sync(self, request: TransactionsSyncRequest, /) -> object: ...
-    def investments_holdings_get(self, request: InvestmentsHoldingsGetRequest, /) -> object: ...
-    def investments_transactions_get(self, request: InvestmentsTransactionsGetRequest, /) -> object: ...
-    def liabilities_get(self, request: LiabilitiesGetRequest, /) -> object: ...
 
 
 @dataclass(frozen=True)
@@ -91,7 +66,7 @@ def redact_payload(value: Any) -> Any:
 
 async def sync_all(
     *,
-    api: PlaidApiLike,
+    api: PlaidClient,
     storage: PlaidLinkStorage,
     secrets: SecretStore,
     trigger: str = "cron",
@@ -127,7 +102,7 @@ async def sync_all(
 
 async def sync_link(
     *,
-    api: PlaidApiLike,
+    api: PlaidClient,
     storage: PlaidLinkStorage,
     secrets: SecretStore,
     link: StoredLink,
@@ -160,7 +135,7 @@ async def sync_link(
 
 
 async def sync_transactions_only(
-    *, api: PlaidApiLike, storage: PlaidLinkStorage, secrets: SecretStore, link: StoredLink, trigger: str = "webhook"
+    *, api: PlaidClient, storage: PlaidLinkStorage, secrets: SecretStore, link: StoredLink, trigger: str = "webhook"
 ) -> UUID:
     run_id = await storage.begin_sync_run(
         trigger=trigger, item_id=link.item_id, configured_windows={"transactions": "cursor"}
@@ -200,7 +175,7 @@ async def sync_transactions_only(
 
 async def _sync_link_inner(
     *,
-    api: PlaidApiLike,
+    api: PlaidClient,
     storage: PlaidLinkStorage,
     secrets: SecretStore,
     link: StoredLink,
@@ -333,7 +308,7 @@ async def _sync_link_inner(
 
 async def _sync_transactions_inner(
     *,
-    api: PlaidApiLike,
+    api: PlaidClient,
     storage: PlaidLinkStorage,
     run_id: UUID,
     access_token: str,
@@ -386,7 +361,7 @@ async def _sync_transactions_inner(
 
 
 async def _fetch_investment_transactions(
-    api: PlaidApiLike, storage: PlaidLinkStorage, run_id: UUID, access_token: str, item_id: str, start: date, end: date
+    api: PlaidClient, storage: PlaidLinkStorage, run_id: UUID, access_token: str, item_id: str, start: date, end: date
 ) -> list[PlaidInvestmentTransaction]:
     offset = 0
     count = 500
@@ -417,8 +392,8 @@ async def _fetch_investment_transactions(
     return out
 
 
-async def _call[PlaidRequestT: PlaidRequestLike, ResponseT: PlaidApiResponse](
-    api: PlaidApiLike,
+async def _call[PlaidRequestT: ModelNormal, ResponseT: PlaidApiResponse](
+    api: PlaidClient,
     storage: PlaidLinkStorage,
     run_id: UUID,
     endpoint: str,
@@ -429,7 +404,7 @@ async def _call[PlaidRequestT: PlaidRequestLike, ResponseT: PlaidApiResponse](
     response_model: type[ResponseT],
 ) -> ResponseT:
     started = time.monotonic()
-    request_json = _request_json(request)
+    request_json = request.to_dict()
     try:
         response = await asyncio.to_thread(call, request)
         serialized = api.api_client.sanitize_for_serialization(response)
@@ -462,10 +437,6 @@ async def _call[PlaidRequestT: PlaidRequestLike, ResponseT: PlaidApiResponse](
         )
     )
     return typed_response
-
-
-def _request_json(request: PlaidRequestLike) -> dict[str, Any]:
-    return cast(dict[str, Any], request.to_dict())
 
 
 def _plaid_error_code(exc: Exception) -> str | None:

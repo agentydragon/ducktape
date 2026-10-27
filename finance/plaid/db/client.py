@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Protocol
 
 import certifi
 import plaid
+from plaid import ApiClient
 from plaid.api import plaid_api
 from plaid.exceptions import ApiException as PlaidApiException
 from plaid.model.accounts_balance_get_request import AccountsBalanceGetRequest
@@ -16,9 +16,7 @@ from plaid.model.accounts_get_response import AccountsGetResponse
 from plaid.model.country_code import CountryCode
 from plaid.model.institutions_get_by_id_request import InstitutionsGetByIdRequest
 from plaid.model.institutions_get_by_id_request_options import InstitutionsGetByIdRequestOptions
-from plaid.model.institutions_get_by_id_response import InstitutionsGetByIdResponse
 from plaid.model.institutions_search_request import InstitutionsSearchRequest
-from plaid.model.institutions_search_response import InstitutionsSearchResponse
 from plaid.model.investments_holdings_get_request import InvestmentsHoldingsGetRequest
 from plaid.model.investments_holdings_get_response import InvestmentsHoldingsGetResponse
 from plaid.model.investments_transactions_get_request import InvestmentsTransactionsGetRequest
@@ -28,14 +26,12 @@ from plaid.model.item_get_response import ItemGetResponse
 from plaid.model.item_public_token_exchange_request import ItemPublicTokenExchangeRequest
 from plaid.model.item_public_token_exchange_response import ItemPublicTokenExchangeResponse
 from plaid.model.item_remove_request import ItemRemoveRequest
-from plaid.model.item_remove_response import ItemRemoveResponse
 from plaid.model.item_webhook_update_request import ItemWebhookUpdateRequest
 from plaid.model.item_webhook_update_response import ItemWebhookUpdateResponse
 from plaid.model.liabilities_get_request import LiabilitiesGetRequest
 from plaid.model.liabilities_get_response import LiabilitiesGetResponse
 from plaid.model.link_token_create_request import LinkTokenCreateRequest
 from plaid.model.link_token_create_request_user import LinkTokenCreateRequestUser
-from plaid.model.link_token_create_response import LinkTokenCreateResponse
 from plaid.model.link_token_transactions import LinkTokenTransactions
 from plaid.model.products import Products
 from plaid.model.sandbox_public_token_create_request import SandboxPublicTokenCreateRequest
@@ -120,52 +116,8 @@ class PlaidClientError(RuntimeError):
         return detail
 
 
-class PlaidPoolManagerLike(Protocol):
-    def clear(self) -> None: ...
-
-
-class PlaidRestClientLike(Protocol):
-    pool_manager: PlaidPoolManagerLike
-
-
-class PlaidApiClientLike(Protocol):
-    rest_client: PlaidRestClientLike
-
-    def close(self) -> None: ...
-    def sanitize_for_serialization(self, obj: object) -> object: ...
-
-
-class PlaidSdkApiLike(Protocol):
-    api_client: PlaidApiClientLike
-
-    def link_token_create(self, request: LinkTokenCreateRequest, /) -> LinkTokenCreateResponse: ...
-    def item_public_token_exchange(
-        self, request: ItemPublicTokenExchangeRequest, /
-    ) -> ItemPublicTokenExchangeResponse: ...
-    def item_remove(self, request: ItemRemoveRequest, /) -> ItemRemoveResponse: ...
-    def item_get(self, request: ItemGetRequest, /) -> ItemGetResponse: ...
-    def item_webhook_update(self, request: ItemWebhookUpdateRequest, /) -> ItemWebhookUpdateResponse: ...
-    def webhook_verification_key_get(
-        self, request: WebhookVerificationKeyGetRequest, /
-    ) -> WebhookVerificationKeyGetResponse: ...
-    def accounts_get(self, request: AccountsGetRequest, /) -> AccountsGetResponse: ...
-    def accounts_balance_get(self, request: AccountsBalanceGetRequest, /) -> AccountsGetResponse: ...
-    def transactions_get(self, request: TransactionsGetRequest, /) -> TransactionsGetResponse: ...
-    def transactions_sync(self, request: TransactionsSyncRequest, /) -> TransactionsSyncResponse: ...
-    def investments_holdings_get(self, request: InvestmentsHoldingsGetRequest, /) -> InvestmentsHoldingsGetResponse: ...
-    def investments_transactions_get(
-        self, request: InvestmentsTransactionsGetRequest, /
-    ) -> InvestmentsTransactionsGetResponse: ...
-    def liabilities_get(self, request: LiabilitiesGetRequest, /) -> LiabilitiesGetResponse: ...
-    def sandbox_public_token_create(
-        self, request: SandboxPublicTokenCreateRequest, /
-    ) -> SandboxPublicTokenCreateResponse: ...
-    def institutions_search(self, request: InstitutionsSearchRequest, /) -> InstitutionsSearchResponse: ...
-    def institutions_get_by_id(self, request: InstitutionsGetByIdRequest, /) -> InstitutionsGetByIdResponse: ...
-
-
 class PlaidClient:
-    def __init__(self, creds: PlaidCreds | None = None, *, api: PlaidSdkApiLike | None = None) -> None:
+    def __init__(self, creds: PlaidCreds | None = None, *, api: plaid_api.PlaidApi | None = None) -> None:
         if api is None:
             if creds is None:
                 raise ValueError("PlaidClient requires creds or api")
@@ -173,7 +125,7 @@ class PlaidClient:
         self._api = api
 
     @property
-    def api_client(self) -> PlaidApiClientLike:
+    def api_client(self) -> ApiClient:
         return self._api.api_client
 
     def close(self) -> None:

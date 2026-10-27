@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 
 import pytest
 import pytest_bazel
+from plaid.api import plaid_api
 from plaid.exceptions import ApiException as PlaidApiException
 from plaid.model.accounts_get_request import AccountsGetRequest
 from plaid.model.investments_holdings_get_request import InvestmentsHoldingsGetRequest
@@ -15,6 +16,7 @@ from plaid.model.item_webhook_update_request import ItemWebhookUpdateRequest
 from plaid.model.liabilities_get_request import LiabilitiesGetRequest
 from plaid.model.transactions_sync_request import TransactionsSyncRequest
 
+from finance.plaid.db.client import PlaidClient
 from finance.plaid.db.link_store import ApiEvent, PlaidLinkStorage, StoredLink
 from finance.plaid.db.sync import redact_payload, sync_all, sync_link, sync_transactions_only
 
@@ -94,16 +96,11 @@ def _no_liability_accounts_error() -> PlaidApiException:
     return exc
 
 
-class _FakeApiClient:
-    def sanitize_for_serialization(self, obj: object) -> object:
-        return obj
-
-
-class _FakeApi:
-    """PlaidApiLike fake; raises `errors[endpoint, access_token]` from that one endpoint."""
+class _FakeApi(plaid_api.PlaidApi):
+    """Plaid API fake; raises `errors[endpoint, access_token]` from that one endpoint."""
 
     def __init__(self, errors: dict[tuple[str, str], Exception] | None = None) -> None:
-        self.api_client = _FakeApiClient()
+        super().__init__()
         self._errors = errors or {}
         self.liabilities_calls = 0
         self.investment_transaction_calls = 0
@@ -216,7 +213,13 @@ async def test_investment_transactions_follow_the_requested_products() -> None:
     storage = _FakeStorage(links=[link])
     api = _FakeApi()
 
-    await sync_link(api=api, storage=cast(PlaidLinkStorage, storage), secrets=_FakeSecrets(), link=link, trigger="test")
+    await sync_link(
+        api=PlaidClient(api=api),
+        storage=cast(PlaidLinkStorage, storage),
+        secrets=_FakeSecrets(),
+        link=link,
+        trigger="test",
+    )
 
     assert api.investment_transaction_calls == 1
 
@@ -231,7 +234,13 @@ async def test_sync_link_tolerates_no_investment_accounts() -> None:
         errors={("investments/holdings/get", "token-for-secret-item-chase"): _no_investment_accounts_error()}
     )
 
-    await sync_link(api=api, storage=cast(PlaidLinkStorage, storage), secrets=_FakeSecrets(), link=link, trigger="test")
+    await sync_link(
+        api=PlaidClient(api=api),
+        storage=cast(PlaidLinkStorage, storage),
+        secrets=_FakeSecrets(),
+        link=link,
+        trigger="test",
+    )
 
     assert [(status, err) for _, status, err in storage.finished] == [("succeeded", None)]
     # The investment-transaction call belongs to the same block and must not fire either.
@@ -243,7 +252,13 @@ async def test_sync_link_tolerates_no_liability_accounts() -> None:
     storage = _FakeStorage(links=[link])
     api = _FakeApi(errors={("liabilities/get", "token-for-secret-item-merrill"): _no_liability_accounts_error()})
 
-    await sync_link(api=api, storage=cast(PlaidLinkStorage, storage), secrets=_FakeSecrets(), link=link, trigger="test")
+    await sync_link(
+        api=PlaidClient(api=api),
+        storage=cast(PlaidLinkStorage, storage),
+        secrets=_FakeSecrets(),
+        link=link,
+        trigger="test",
+    )
 
     assert api.liabilities_calls == 1
     assert storage.liability_snapshots == []
@@ -256,7 +271,7 @@ async def test_sync_link_updates_existing_item_webhook() -> None:
     api = _FakeApi()
 
     await sync_link(
-        api=api,
+        api=PlaidClient(api=api),
         storage=cast(PlaidLinkStorage, storage),
         secrets=_FakeSecrets(),
         link=link,
@@ -276,7 +291,11 @@ async def test_sync_link_reraises_other_liability_errors() -> None:
 
     with pytest.raises(PlaidApiException):
         await sync_link(
-            api=api, storage=cast(PlaidLinkStorage, storage), secrets=_FakeSecrets(), link=link, trigger="test"
+            api=PlaidClient(api=api),
+            storage=cast(PlaidLinkStorage, storage),
+            secrets=_FakeSecrets(),
+            link=link,
+            trigger="test",
         )
 
     assert [(status,) for _, status, _ in storage.finished] == [("failed",)]
@@ -289,7 +308,9 @@ async def test_sync_all_keeps_going_past_a_failing_link() -> None:
     api = _FakeApi(errors={("item/get", "token-for-secret-item-bad"): RuntimeError("bank exploded")})
 
     with pytest.raises(ExceptionGroup):
-        await sync_all(api=api, storage=cast(PlaidLinkStorage, storage), secrets=_FakeSecrets(), trigger="test")
+        await sync_all(
+            api=PlaidClient(api=api), storage=cast(PlaidLinkStorage, storage), secrets=_FakeSecrets(), trigger="test"
+        )
 
     assert storage.begun_items == ["item-bad", "item-good"]
     assert [(status, err is None) for _, status, err in storage.finished] == [("failed", False), ("succeeded", True)]
@@ -304,7 +325,13 @@ async def test_transaction_sync_accumulates_pages_before_advancing_cursor() -> N
         _sync_response(modified=[_transaction("two")], next_cursor="cursor-new"),
     ]
 
-    await sync_link(api=api, storage=cast(PlaidLinkStorage, storage), secrets=_FakeSecrets(), link=link, trigger="test")
+    await sync_link(
+        api=PlaidClient(api=api),
+        storage=cast(PlaidLinkStorage, storage),
+        secrets=_FakeSecrets(),
+        link=link,
+        trigger="test",
+    )
 
     assert [request.cursor for request in api.sync_requests] == ["cursor-old", "page-1"]
     assert [txn["transaction_id"] for txn in storage.transaction_deltas[0]["added"]] == ["one"]
@@ -317,7 +344,9 @@ async def test_webhook_sync_refreshes_accounts_before_transaction_delta() -> Non
     storage = _FakeStorage(links=[link])
     api = _FakeApi()
 
-    await sync_transactions_only(api=api, storage=cast(PlaidLinkStorage, storage), secrets=_FakeSecrets(), link=link)
+    await sync_transactions_only(
+        api=PlaidClient(api=api), storage=cast(PlaidLinkStorage, storage), secrets=_FakeSecrets(), link=link
+    )
 
     assert storage.account_refreshes == ["item-chase"]
     assert api.sync_requests[0].cursor == "cursor-old"
@@ -335,7 +364,13 @@ async def test_transaction_sync_restarts_mutated_pagination_from_saved_cursor() 
     last_page = _sync_response(next_cursor="cursor-new")
     api.sync_responses = [first_page, mutation, first_page, last_page]
 
-    await sync_link(api=api, storage=cast(PlaidLinkStorage, storage), secrets=_FakeSecrets(), link=link, trigger="test")
+    await sync_link(
+        api=PlaidClient(api=api),
+        storage=cast(PlaidLinkStorage, storage),
+        secrets=_FakeSecrets(),
+        link=link,
+        trigger="test",
+    )
 
     assert [request.cursor for request in api.sync_requests] == ["cursor-old", "page-1", "cursor-old", "page-1"]
     assert len(storage.transaction_deltas) == 1
