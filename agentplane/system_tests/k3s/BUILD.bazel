@@ -175,7 +175,6 @@ py_test(
         ":namespaces",
         ":rendered_fixture",
         "//:conftest",
-        "//agentplane/action_service:settings",
         "//agentplane/app:settings",
         "//agentplane/mcp_edge:oauth_settings",
         "//agentplane/mcp_edge:settings",

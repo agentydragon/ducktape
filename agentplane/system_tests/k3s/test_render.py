@@ -10,8 +10,6 @@ import pytest_bazel
 import yaml
 from pydantic import AnyHttpUrl
 
-from agentplane.action_service.settings import Settings as ActionsSettings
-
 # Each service module exports `Settings`; aliases keep their separate config contracts explicit.
 from agentplane.app.settings import Settings as AppSettings
 from agentplane.mcp_edge.oauth_settings import OAuthSettings
@@ -111,7 +109,7 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
     )
     assert "AGENTPLANE_ACTIONS_OAUTH" not in {entry["name"] for entry in actions_container["env"]}
     actions_config = yaml.safe_load(_resource(docs, "ConfigMap", "actions-settings")["data"]["settings.yaml"])
-    assert actions_config[env_name(ActionsSettings, "integrated_connection_service")] is False
+    assert actions_config["integrated_connection_service"] is False
     edge_database_env_name = env_name(McpEdgeSettings, "database_url")
     edge_database_env = {entry["name"]: entry for entry in edge_container["env"]}[edge_database_env_name]
     edge_migrator = edge_pod["initContainers"][0]
