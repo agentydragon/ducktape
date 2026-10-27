@@ -13,10 +13,6 @@ py_library(
         "//cluster/cdk8s/haku:__pkg__",
         "//cluster/cdk8s/public_coder:__pkg__",
     ],
-    deps = [
-        "//haku/console/identity:config",
-        "@pypi//pydantic",
-    ],
 )
 
 py_library(

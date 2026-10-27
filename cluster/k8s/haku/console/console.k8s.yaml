@@ -330,15 +330,9 @@ metadata:
   namespace: haku-console
 data:
   config.yaml: |
-    auto_approval_policies:
-      - id: manual_review
-        type: never
     access_profiles:
       - id: manual-review
-        auto_approval_policy: manual_review
     default_access_profile_id: manual-review
-    mcp:
-      servers: {}
 immutable: false
 ---
 apiVersion: apps/v1
