@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/google/uuid"
 )
@@ -19,11 +20,11 @@ func TestAnAllowedRequestRunsOnceAndItsOutcomeIsRecorded(t *testing.T) {
 	first := f.allowed(t, "first")
 	e := &executor{step: succeed}
 	run(t, f.store, e, testTiming(), f.dispatches(t))
-	f.await(t, first, store.StateSucceeded)
+	f.await(t, first, action.StateSucceeded)
 
 	// Allowed once the worker waits, so only the dispatch notification wakes it.
 	second := f.allowed(t, "second")
-	got := f.await(t, second, store.StateSucceeded)
+	got := f.await(t, second, action.StateSucceeded)
 	sameJSON(t, got.Execution.Result, echoed)
 	if ran := e.ran(); !slices.Equal(ran, []uuid.UUID{first, second}) {
 		t.Errorf("ran %v, want %v", ran, []uuid.UUID{first, second})
@@ -39,16 +40,16 @@ func TestAnAllowedRequestRunsOnceAndItsOutcomeIsRecorded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []store.ActionState{
-		store.StateDecisionPending, store.StateAllowed, store.StateDispatching, store.StateRunning, store.StateSucceeded,
+	want := []action.State{
+		action.StateDecisionPending, action.StateAllowed, action.StateDispatching, action.StateRunning, action.StateSucceeded,
 	}
 	if states := eventStates(events); !slices.Equal(states, want) {
 		t.Errorf("events %v, want %v", states, want)
 	}
 }
 
-func eventStates(events []store.Event) []store.ActionState {
-	states := make([]store.ActionState, len(events))
+func eventStates(events []store.Event) []action.State {
+	states := make([]action.State, len(events))
 	for i, event := range events {
 		states[i] = event.State
 	}
@@ -63,13 +64,13 @@ func TestEveryWakeupRereadsEveryPendingRequest(t *testing.T) {
 	seen := f.allowed(t, "seen")
 	wakeups <- struct{}{}
 	// Whichever read found it, the wakeup was spent on it: the worker reads again only on the next.
-	f.await(t, seen, store.StateSucceeded)
+	f.await(t, seen, action.StateSucceeded)
 
 	lost := f.allowed(t, "lost")
 	woken := f.allowed(t, "woken")
 	wakeups <- struct{}{}
-	f.await(t, lost, store.StateSucceeded)
-	f.await(t, woken, store.StateSucceeded)
+	f.await(t, lost, action.StateSucceeded)
+	f.await(t, woken, action.StateSucceeded)
 	if ran := e.ran(); len(ran) != 3 || !slices.Contains(ran, lost) || !slices.Contains(ran, woken) {
 		t.Errorf("ran %v", ran)
 	}
@@ -94,7 +95,7 @@ func TestAFailedClaimIsRetriedWithoutAnotherWakeup(t *testing.T) {
 	f.awaitCount(t, 1, lockWaiters)
 	f.awaitCount(t, 0, lockWaiters)
 	release()
-	f.await(t, id, store.StateSucceeded)
+	f.await(t, id, action.StateSucceeded)
 }
 
 func TestAnExecutionWaitsForItsExecutorToBeReady(t *testing.T) {
@@ -106,13 +107,13 @@ func TestAnExecutionWaitsForItsExecutorToBeReady(t *testing.T) {
 	r := run(t, f.store, e, testTiming(), wakeups)
 	eventually(t, func() (bool, string) { return e.routed.Load() > 0, "the worker never routed the request" })
 	r.awaitIdle(t)
-	if got := f.get(t, id); got.State != store.StateAllowed || !slices.Equal(f.pending(t), []uuid.UUID{id}) {
+	if got := f.get(t, id); got.State != action.StateAllowed || !slices.Equal(f.pending(t), []uuid.UUID{id}) {
 		t.Fatalf("a request whose executor is not ready is %s", got.State)
 	}
 
 	e.unready.Store(false)
 	wakeups <- struct{}{}
-	f.await(t, id, store.StateSucceeded)
+	f.await(t, id, action.StateSucceeded)
 }
 
 // The wakeup that says the Executor is ready can come while a dispatch that found it unready is still under way.
@@ -130,9 +131,9 @@ func TestAWakeupDuringADispatchRunsTheRequestOnceTheDispatchEnds(t *testing.T) {
 	probe := f.allowed(t, "probe")
 	wakeups <- struct{}{}
 	// The read after the wakeup found parked under way, then started the younger probe.
-	f.await(t, probe, store.StateSucceeded)
+	f.await(t, probe, action.StateSucceeded)
 	close(held.resume)
-	f.await(t, parked, store.StateSucceeded)
+	f.await(t, parked, action.StateSucceeded)
 }
 
 // heldRoute routes like its executor, but holds the first Route until resume closes, answering as things stood when
@@ -161,7 +162,7 @@ func TestAnActionNoExecutorRunsFailsOnceStarted(t *testing.T) {
 	f := newFixture(t)
 	id := f.allowed(t, "unsupported")
 	run(t, f.store, unrouted{}, testTiming(), nil)
-	got := f.await(t, id, store.StateFailed)
+	got := f.await(t, id, action.StateFailed)
 	if kind := errorKind(t, got); kind != "*worker.UnsupportedActionError" {
 		t.Errorf("kind %q", kind)
 	}
@@ -170,7 +171,7 @@ func TestAnActionNoExecutorRunsFailsOnceStarted(t *testing.T) {
 		t.Fatal(err)
 	}
 	// As in the Python service, the Execution crossed the no-replay boundary before its Executor was resolved.
-	if !slices.Contains(eventStates(events), store.StateRunning) {
+	if !slices.Contains(eventStates(events), action.StateRunning) {
 		t.Errorf("events %v", eventStates(events))
 	}
 }
@@ -183,30 +184,30 @@ func TestWhatTheExecutorAnswersIsWhatTheExecutionRecords(t *testing.T) {
 	described := json.RawMessage(`{"kind": "test_failure", "message": "test message"}`)
 	for name, test := range map[string]struct {
 		answer func() (store.ExecutionOutcome, error)
-		state  store.ActionState
+		state  action.State
 		kind   string
 	}{
 		"a described failure": {
 			answer: func() (store.ExecutionOutcome, error) {
 				return store.ExecutionOutcome{State: store.ExecutionFailed, Error: described}, nil
 			},
-			state: store.StateFailed, kind: "test_failure",
+			state: action.StateFailed, kind: "test_failure",
 		},
 		"an error, by its type": {
 			answer: func() (store.ExecutionOutcome, error) { return store.ExecutionOutcome{}, &testError{} },
-			state:  store.StateFailed, kind: "*worker.testError",
+			state:  action.StateFailed, kind: "*worker.testError",
 		},
 		"an unknown outcome": {
 			answer: func() (store.ExecutionOutcome, error) {
 				return store.ExecutionOutcome{}, fmt.Errorf("test backend timed out: %w", ErrOutcomeUnknown)
 			},
-			state: store.StateExecutionUnknown, kind: string(store.UnknownAdapterOutcome),
+			state: action.StateExecutionUnknown, kind: string(store.UnknownAdapterOutcome),
 		},
 		"an invalid outcome": {
 			answer: func() (store.ExecutionOutcome, error) {
 				return store.ExecutionOutcome{State: store.ExecutionRunning}, nil
 			},
-			state: store.StateFailed, kind: "*worker.InvalidOutcomeError",
+			state: action.StateFailed, kind: "*worker.InvalidOutcomeError",
 		},
 	} {
 		t.Run(name, func(t *testing.T) {

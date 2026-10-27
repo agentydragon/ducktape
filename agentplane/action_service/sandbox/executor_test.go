@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
@@ -21,7 +22,7 @@ type attempted struct {
 
 // attempt runs one attempt at action as caller. Execute is attempt under worker.Hold, whose lease only the worker
 // makes, once the caller is one a box can be given.
-func (f fixture) attempt(t *testing.T, caller store.ServiceAccount, action, arguments string) attempted {
+func (f fixture) attempt(t *testing.T, caller action.ServiceAccount, action, arguments string) attempted {
 	t.Helper()
 	executor, err := NewExecutor(f.binding, f.inventory())
 	if err != nil {
@@ -67,7 +68,7 @@ func (a attempted) failure() string {
 func TestEveryActionActsAsTheRequestCaller(t *testing.T) {
 	f := newFixture(t, nil)
 	other := account(t, f.binding.Namespace, "test-other")
-	for _, caller := range []store.ServiceAccount{f.caller, other} {
+	for _, caller := range []action.ServiceAccount{f.caller, other} {
 		resultOf[Info](f.attempt(t, caller, actionCreate, `{"name": "box", "template": "test-template"}`))
 		if pod := f.pod(t, caller, "box"); pod.Spec.ServiceAccountName != caller.Name {
 			t.Errorf("%s's box runs as %q", caller.Name, pod.Spec.ServiceAccountName)
@@ -90,7 +91,7 @@ func TestAnAccountNamedInArgumentsIsNotRead(t *testing.T) {
 	if kind := f.attempt(t, f.caller, actionCreate, arguments).failure(); kind != "invalid_arguments" {
 		t.Errorf("kind = %q, want invalid_arguments", kind)
 	}
-	for _, caller := range []store.ServiceAccount{f.caller, other} {
+	for _, caller := range []action.ServiceAccount{f.caller, other} {
 		if boxes, err := f.inventory().List(t.Context(), caller); err != nil || len(boxes) != 0 {
 			t.Errorf("%s has boxes %v, %v", caller.Name, boxes, err)
 		}
@@ -179,7 +180,7 @@ func TestARefusalBecomesAReasonTheCallerCanActOn(t *testing.T) {
 	}
 	for _, test := range []struct {
 		name      string
-		caller    store.ServiceAccount
+		caller    action.ServiceAccount
 		action    string
 		arguments string
 		kind      string

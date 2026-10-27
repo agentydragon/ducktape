@@ -8,13 +8,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/google/uuid"
 )
 
 func TestVocabulariesAreThoseOfTheStoredColumns(t *testing.T) {
 	enums := loadGolden(t).Enums
 	for column, want := range map[string][]string{
-		"action_state":    toStrings(actionStates),
+		"action_state":    toStrings(action.States()),
 		"execution_state": toStrings(executionStates),
 		"verdict":         {string(VerdictAllow), string(VerdictDeny)},
 		"policy_kind":     toStrings(policyKinds),
@@ -37,9 +38,9 @@ func TestUnknownOutcomeReasonsBelongToStoredVocabulary(t *testing.T) {
 
 func TestTerminalStatesMapToStoredRequestStates(t *testing.T) {
 	vectors := loadGolden(t).TerminalStates
-	got := map[ExecutionState]ActionState{}
+	got := map[ExecutionState]action.State{}
 	for _, vector := range vectors {
-		got[ExecutionState(vector.ExecutionState)] = ActionState(vector.ActionState)
+		got[ExecutionState(vector.ExecutionState)] = action.State(vector.ActionState)
 	}
 	if !reflect.DeepEqual(got, terminalActionStates) || len(vectors) != len(terminalActionStates) {
 		t.Errorf("stored mapping is %v, the store %v", got, terminalActionStates)
@@ -167,7 +168,7 @@ func TestPolicyEvidenceRoundTripsStoredForms(t *testing.T) {
 func TestActorsRoundTripStoredForms(t *testing.T) {
 	for _, vector := range loadGolden(t).Actors {
 		t.Run(vector.Name, func(t *testing.T) {
-			actor, err := decodeActor(vector.Input)
+			actor, err := action.DecodeActor(vector.Input)
 			if !vector.Valid {
 				if err == nil {
 					t.Errorf("accepted %s", vector.Input)
@@ -177,7 +178,7 @@ func TestActorsRoundTripStoredForms(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, caller := actor.(CallerPrincipal); caller != (vector.Kind == "caller") {
+			if _, caller := actor.(action.CallerActor); caller != (vector.Kind == "caller") {
 				t.Errorf("read a %T, want a %s", actor, vector.Kind)
 			}
 			written, err := json.Marshal(actor)
@@ -185,6 +186,31 @@ func TestActorsRoundTripStoredForms(t *testing.T) {
 				t.Fatal(err)
 			}
 			sameJSON(t, written, vector.Stored)
+		})
+	}
+}
+
+func TestRecordedActorPreservesInvalidArgumentClassification(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		document  string
+		wantError error
+	}{
+		{name: "empty caller account", document: `{"account":{"namespace":"","name":"worker"}}`, wantError: ErrInvalid},
+		{name: "empty operator", document: `{"issuer":"issuer","subject":""}`, wantError: ErrInvalid},
+		{name: "unknown field", document: `{"issuer":"issuer","subject":"subject","extra":null}`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := decodeRecordedActor([]byte(test.document))
+			if err == nil {
+				t.Fatalf("decodeRecordedActor accepted %s", test.document)
+			}
+			if test.wantError != nil && !errors.Is(err, test.wantError) {
+				t.Errorf("decodeRecordedActor error = %v, want %v", err, test.wantError)
+			}
+			if test.wantError == nil && errors.Is(err, ErrInvalid) {
+				t.Errorf("decodeRecordedActor error = %v, malformed JSON shape was classified as ErrInvalid", err)
+			}
 		})
 	}
 }

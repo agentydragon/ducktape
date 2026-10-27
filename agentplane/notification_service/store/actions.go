@@ -6,8 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"slices"
 	"time"
+
+	"github.com/agentydragon/ducktape/agentplane/action"
 )
 
 // ErrActionHistoryGap is a read of an Action request's events that skips a sequence the subscription has not
@@ -17,106 +18,38 @@ var ErrActionHistoryGap = errors.New("action event history has a gap")
 // actionsReadInterval is the wait before an Actions subscription is read again after a read that succeeded.
 const actionsReadInterval = 5 * time.Second
 
-// ActionState is the state an Action request is in, as the Action Service names it.
-type ActionState string
-
-const (
-	ActionDecisionPending  ActionState = "decision_pending"
-	ActionAllowed          ActionState = "allowed"
-	ActionDenied           ActionState = "denied"
-	ActionDispatching      ActionState = "dispatching"
-	ActionRunning          ActionState = "running"
-	ActionSucceeded        ActionState = "succeeded"
-	ActionFailed           ActionState = "failed"
-	ActionCancelled        ActionState = "cancelled"
-	ActionExecutionUnknown ActionState = "execution_unknown"
-)
-
-var actionStates = []ActionState{
-	ActionDecisionPending, ActionAllowed, ActionDenied, ActionDispatching, ActionRunning, ActionSucceeded,
-	ActionFailed, ActionCancelled, ActionExecutionUnknown,
-}
-
 // ActionEvent is an event of an Action request as the Action Service returns it, and the payload of the
 // inbox entry it becomes.
 type ActionEvent struct {
 	// Sequence is the event's position in the request's own log, from 1.
 	Sequence int64
-	State    ActionState
+	State    action.State
 	At       time.Time
 	// Actor is who cancelled the request, or nil for an event nobody caused.
-	Actor ActionActor
+	Actor action.Actor
 }
-
-// ActionActor is who an Action event records as its author: a CallerActor or an OperatorActor.
-type ActionActor interface{ isActionActor() }
-
-// CallerActor is a workload, or a Connection acting as one, that proved a ServiceAccount.
-type CallerActor struct{ Account ServiceAccount }
-
-// OperatorActor is the human behind the operator surface, as its adapter verified them.
-type OperatorActor struct{ Issuer, Subject string }
-
-func (CallerActor) isActionActor()   {}
-func (OperatorActor) isActionActor() {}
 
 // The JSON forms below are the ones the Action Service writes and the rows already in the database hold.
 
-func (a ServiceAccount) MarshalJSON() ([]byte, error) {
-	return json.Marshal(struct {
-		Namespace string `json:"namespace"`
-		Name      string `json:"name"`
-	}{a.Namespace, a.Name})
-}
-
-func (a *ServiceAccount) UnmarshalJSON(data []byte) error {
-	var wire struct {
-		Namespace *string `json:"namespace"`
-		Name      *string `json:"name"`
-	}
-	if err := decode(data, &wire); err != nil {
-		return err
-	}
-	if err := errors.Join(required("namespace", wire.Namespace != nil), required("name", wire.Name != nil)); err != nil {
-		return err
-	}
-	if *wire.Namespace == "" || *wire.Name == "" {
-		return errors.New("a ServiceAccount needs a namespace and a name")
-	}
-	*a = ServiceAccount{Namespace: *wire.Namespace, Name: *wire.Name}
-	return nil
-}
-
-func (a CallerActor) MarshalJSON() ([]byte, error) {
-	return json.Marshal(struct {
-		Account ServiceAccount `json:"account"`
-	}{a.Account})
-}
-
-func (a OperatorActor) MarshalJSON() ([]byte, error) {
-	return json.Marshal(struct {
-		Issuer  string `json:"issuer"`
-		Subject string `json:"subject"`
-	}{a.Issuer, a.Subject})
-}
-
-func decodeActionActor(data json.RawMessage) (ActionActor, error) {
+// Notification's stored event decoder accepts explicit nulls in the other actor variant's fields. Keep that wire
+// policy local while sharing the resulting actor vocabulary with the Action Service.
+func decodeActionActor(data json.RawMessage) (action.Actor, error) {
 	if data == nil || string(data) == "null" {
 		return nil, nil
 	}
 	var wire struct {
-		Account *ServiceAccount `json:"account"`
-		Issuer  *string         `json:"issuer"`
-		Subject *string         `json:"subject"`
+		Account *action.ServiceAccount `json:"account"`
+		Issuer  *string                `json:"issuer"`
+		Subject *string                `json:"subject"`
 	}
 	if err := decode(data, &wire); err != nil {
 		return nil, err
 	}
 	switch {
 	case wire.Account != nil && wire.Issuer == nil && wire.Subject == nil:
-		return CallerActor{Account: *wire.Account}, nil
+		return action.CallerActor{Account: *wire.Account}, nil
 	case wire.Account == nil && wire.Issuer != nil && wire.Subject != nil && *wire.Issuer != "" && *wire.Subject != "":
-		return OperatorActor{Issuer: *wire.Issuer, Subject: *wire.Subject}, nil
+		return action.OperatorActor{Issuer: *wire.Issuer, Subject: *wire.Subject}, nil
 	default:
 		return nil, errors.New("an actor is a caller (account) or an operator (issuer and subject)")
 	}
@@ -125,7 +58,7 @@ func decodeActionActor(data json.RawMessage) (ActionActor, error) {
 func (e *ActionEvent) UnmarshalJSON(data []byte) error {
 	var wire struct {
 		Sequence *int64          `json:"sequence"`
-		State    *ActionState    `json:"state"`
+		State    *action.State   `json:"state"`
 		At       *string         `json:"at"`
 		Actor    json.RawMessage `json:"actor"`
 	}
@@ -137,7 +70,7 @@ func (e *ActionEvent) UnmarshalJSON(data []byte) error {
 	); err != nil {
 		return err
 	}
-	if !slices.Contains(actionStates, *wire.State) {
+	if !wire.State.Valid() {
 		return fmt.Errorf("unknown Action state %q", *wire.State)
 	}
 	at, err := time.Parse(time.RFC3339Nano, *wire.At)
@@ -160,10 +93,10 @@ func (e ActionEvent) MarshalJSON() ([]byte, error) {
 		layout += ".000000"
 	}
 	return json.Marshal(struct {
-		Sequence int64       `json:"sequence"`
-		State    ActionState `json:"state"`
-		At       string      `json:"at"`
-		Actor    ActionActor `json:"actor"`
+		Sequence int64        `json:"sequence"`
+		State    action.State `json:"state"`
+		At       string       `json:"at"`
+		Actor    action.Actor `json:"actor"`
 	}{e.Sequence, e.State, e.At.Format(layout + "Z07:00"), e.Actor})
 }
 

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/google/uuid"
 )
 
@@ -92,7 +93,7 @@ func (s *Store) ClaimExecution(ctx context.Context, id uuid.UUID, executorID str
 		if execution.State != ExecutionPendingDispatch {
 			return nil
 		}
-		if row.State != StateAllowed {
+		if row.State != action.StateAllowed {
 			return &ConflictError{Reason: ConflictNotDispatchable, Message: fmt.Sprintf("cannot dispatch request in %s", row.State)}
 		}
 		if !canDispatch(row.Action) {
@@ -111,7 +112,7 @@ func (s *Store) ClaimExecution(ctx context.Context, id uuid.UUID, executorID str
 			id, ExecutionDispatching, executorID, started.Token, started.ExpiresAt, at); err != nil {
 			return err
 		}
-		if err := advance(ctx, tx, &row, StateDispatching, at, nil); err != nil {
+		if err := advance(ctx, tx, &row, action.StateDispatching, at, nil); err != nil {
 			return err
 		}
 		claim = started
@@ -160,7 +161,7 @@ func (s *Store) MarkRunning(ctx context.Context, id uuid.UUID) (ExecutionRequest
 		if err != nil {
 			return err
 		}
-		if row.State != StateDispatching || execution.State != ExecutionDispatching {
+		if row.State != action.StateDispatching || execution.State != ExecutionDispatching {
 			return &ConflictError{
 				Reason:  ConflictNotStartable,
 				Message: fmt.Sprintf("cannot start execution in %s/%s", row.State, execution.State),
@@ -172,7 +173,7 @@ func (s *Store) MarkRunning(ctx context.Context, id uuid.UUID) (ExecutionRequest
 			id, ExecutionRunning, at); err != nil {
 			return err
 		}
-		if err := advance(ctx, tx, &row, StateRunning, at, nil); err != nil {
+		if err := advance(ctx, tx, &row, action.StateRunning, at, nil); err != nil {
 			return err
 		}
 		payload = ExecutionRequest{RequestID: row.ID, Action: row.Action, Arguments: row.Arguments, Caller: row.Caller}
@@ -278,7 +279,7 @@ func (s *Store) ExpireStaleLeases(ctx context.Context, executorHealthTimeout tim
 				id, ExecutionUnknown, unknownOutcomeError(reason), at); err != nil {
 				return err
 			}
-			if err := advance(ctx, tx, &row, StateExecutionUnknown, at, nil); err != nil {
+			if err := advance(ctx, tx, &row, action.StateExecutionUnknown, at, nil); err != nil {
 				return err
 			}
 			expired = append(expired, id)

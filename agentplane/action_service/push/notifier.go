@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/SherClockHolmes/webpush-go"
+	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/google/uuid"
@@ -254,7 +255,7 @@ type retract struct {
 func (n *Notifier) message(requests []store.ActionRequest, shown map[uuid.UUID]bool) (any, map[uuid.UUID]string) {
 	var arrived, left []store.ActionRequest
 	for _, request := range requests {
-		switch pending := request.State == store.StateDecisionPending; {
+		switch pending := request.State == action.StateDecisionPending; {
 		case pending && !shown[request.ID]:
 			arrived = append(arrived, request)
 		case !pending && shown[request.ID]:

@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/linkage"
@@ -235,7 +236,7 @@ func TestTheServiceIsNotReadyWithoutThePolicyIndex(t *testing.T) {
 var testOperator = store.OperatorPrincipal{Issuer: "https://issuer.test.example", Subject: "test-operator"}
 
 // allow submits action as caller and allows it.
-func (r running) allow(t *testing.T, caller store.ServiceAccount, action store.ActionIdentity, arguments string) uuid.UUID {
+func (r running) allow(t *testing.T, caller action.ServiceAccount, action store.ActionIdentity, arguments string) uuid.UUID {
 	t.Helper()
 	pending, err := r.store.Submit(t.Context(), store.CallerPrincipal{Account: caller}, store.ActionRequestInput{
 		IdempotencyKey: "test-dispatched", Action: action, Arguments: json.RawMessage(arguments), Title: "test title",
@@ -252,7 +253,7 @@ func (r running) allow(t *testing.T, caller store.ServiceAccount, action store.A
 }
 
 // run submits action as caller, allows it, and returns the request once its Execution has ended.
-func (r running) run(t *testing.T, caller store.ServiceAccount, action store.ActionIdentity, arguments string) store.ActionRequest {
+func (r running) run(t *testing.T, caller action.ServiceAccount, action store.ActionIdentity, arguments string) store.ActionRequest {
 	t.Helper()
 	return r.ended(t, r.allow(t, caller, action, arguments))
 }
@@ -266,7 +267,7 @@ func (r running) ended(t *testing.T, id uuid.UUID) store.ActionRequest {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if request.State == store.StateSucceeded || request.State == store.StateFailed {
+		if request.State == action.StateSucceeded || request.State == action.StateFailed {
 			return request
 		}
 		select {
@@ -279,10 +280,10 @@ func (r running) ended(t *testing.T, id uuid.UUID) store.ActionRequest {
 
 func TestTheServiceFailsAnActionNoExecutorRuns(t *testing.T) {
 	service := start(t, kube.Config, &catalog.Catalog{})
-	request := service.run(t, store.ServiceAccount{Namespace: "test-namespace", Name: "test-caller"},
+	request := service.run(t, action.ServiceAccount{Namespace: "test-namespace", Name: "test-caller"},
 		store.ActionIdentity{Group: "test-group", Name: "test-action"}, `{}`)
 	var failure struct{ Kind string }
-	if err := json.Unmarshal(request.Execution.Error, &failure); err != nil || request.State != store.StateFailed ||
+	if err := json.Unmarshal(request.Execution.Error, &failure); err != nil || request.State != action.StateFailed ||
 		failure.Kind != "*worker.UnsupportedActionError" {
 		t.Errorf("the request is %s with execution error %s, %v", request.State, request.Execution.Error, err)
 	}
@@ -295,10 +296,10 @@ func TestTheServiceFailsAnActionNoExecutorRuns(t *testing.T) {
 func TestTheServiceRunsASandboxGroupsActions(t *testing.T) {
 	namespace := sandboxNamespace(t, kube, true)
 	service := start(t, kube.Config, sandboxGroups(t, namespace, "null"))
-	caller := store.ServiceAccount{Namespace: namespace, Name: "test-caller"}
+	caller := action.ServiceAccount{Namespace: namespace, Name: "test-caller"}
 	request := service.run(t, caller, store.ActionIdentity{Group: "test-sandbox", Name: "create"},
 		`{"name": "test-box", "template": "test-template"}`)
-	if request.State != store.StateSucceeded {
+	if request.State != action.StateSucceeded {
 		t.Fatalf("the request is %s with execution error %s", request.State, request.Execution.Error)
 	}
 	pods, err := kube.Clientset.CoreV1().Pods(namespace).List(t.Context(), metav1.ListOptions{})
@@ -362,7 +363,7 @@ func TestTheServiceRunsAnMCPGroupsActionOnceItsServerIsBack(t *testing.T) {
 	service := start(t, kube.Config, groups)
 	waitReady(t, service)
 
-	id := service.allow(t, store.ServiceAccount{Namespace: "test-namespace", Name: "test-caller"},
+	id := service.allow(t, action.ServiceAccount{Namespace: "test-namespace", Name: "test-caller"},
 		store.ActionIdentity{Group: "test-mcp", Name: "test_echo"}, `{}`)
 	var failures int32
 	awaitMCPHealth(t, groups, "test-mcp", func(h *action_servicepb.McpHealth) bool {
@@ -371,13 +372,13 @@ func TestTheServiceRunsAnMCPGroupsActionOnceItsServerIsBack(t *testing.T) {
 	})
 	// Another attempt fails after the dispatch was committed: the request still waits.
 	awaitMCPHealth(t, groups, "test-mcp", func(h *action_servicepb.McpHealth) bool { return h.GetFailures() > failures })
-	if request, err := service.store.Get(t.Context(), id, testOperator); err != nil || request.State != store.StateAllowed {
+	if request, err := service.store.Get(t.Context(), id, testOperator); err != nil || request.State != action.StateAllowed {
 		t.Fatalf("while the server is down the request is %s, %v", request.State, err)
 	}
 
 	down.Store(false)
 	request := service.ended(t, id)
-	if request.State != store.StateSucceeded {
+	if request.State != action.StateSucceeded {
 		t.Fatalf("the request is %s with execution error %s", request.State, request.Execution.Error)
 	}
 }
@@ -463,7 +464,7 @@ func TestTheServiceFinishesALinkAndAnOAuthGroupFollowsItsLinkage(t *testing.T) {
 
 func TestTheServiceAnswersAReadersReadsOverGRPCAndHTTP(t *testing.T) {
 	service := start(t, kube.Config, &catalog.Catalog{})
-	submitted, err := service.store.Submit(t.Context(), store.CallerPrincipal{Account: store.ServiceAccount{Namespace: "test-agentplane", Name: "test-caller"}},
+	submitted, err := service.store.Submit(t.Context(), store.CallerPrincipal{Account: action.ServiceAccount{Namespace: "test-agentplane", Name: "test-caller"}},
 		store.ActionRequestInput{
 			IdempotencyKey: "test-read", Action: store.ActionIdentity{Group: "test-group", Name: "test-action"},
 			Arguments: json.RawMessage(`{}`), Title: "test title",
@@ -633,7 +634,7 @@ func TestTheServiceAdmitsAWorkloadWhileItsServiceAccountCarriesTheCallerLabel(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	submitted, err := service.store.Submit(t.Context(), store.CallerPrincipal{Account: store.ServiceAccount{Namespace: caller.Namespace, Name: caller.Name}},
+	submitted, err := service.store.Submit(t.Context(), store.CallerPrincipal{Account: action.ServiceAccount{Namespace: caller.Namespace, Name: caller.Name}},
 		store.ActionRequestInput{
 			IdempotencyKey: "test-own", Action: store.ActionIdentity{Group: "test-group", Name: "test-action"},
 			Arguments: json.RawMessage(`{}`), Title: "test title",
@@ -733,7 +734,7 @@ func TestTheServiceAdmitsASubmissionAgainstItsCatalogOnlyWhileThePolicyIndexAdmi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stored, err := service.store.Get(t.Context(), id, testOperator); err != nil || stored.State != store.StateDecisionPending {
+	if stored, err := service.store.Get(t.Context(), id, testOperator); err != nil || stored.State != action.StateDecisionPending {
 		t.Errorf("the submission is stored as %s, %v; want awaiting a decision", stored.State, err)
 	}
 	if got := submitOverHTTP(t, service, token, "test-mcp", "test-http"); got != http.StatusOK {

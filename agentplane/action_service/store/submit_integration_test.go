@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/google/uuid"
 )
 
@@ -29,7 +30,7 @@ func TestSubmitStoresAPendingRequestWithItsFirstEvent(t *testing.T) {
 
 	if request.ID != id || request.IdempotencyKey != "pending" || request.Action != body.Action ||
 		request.Title != body.Title || *request.Description != description || request.Caller != caller.Account ||
-		request.State != StateDecisionPending || request.Version != 1 ||
+		request.State != action.StateDecisionPending || request.Version != 1 ||
 		!request.CreatedAt.Equal(request.UpdatedAt) || request.Decision != nil || request.Execution != nil {
 		t.Errorf("stored %+v", request)
 	}
@@ -38,7 +39,7 @@ func TestSubmitStoresAPendingRequestWithItsFirstEvent(t *testing.T) {
 		t.Errorf("read back %+v, want %+v", got, request)
 	}
 	events := f.events(t, id)
-	want := []Event{{Sequence: 1, State: StateDecisionPending, At: request.CreatedAt}}
+	want := []Event{{Sequence: 1, State: action.StateDecisionPending, At: request.CreatedAt}}
 	if !reflect.DeepEqual(events, want) {
 		t.Errorf("events = %+v, want %+v", events, want)
 	}
@@ -72,7 +73,7 @@ func TestAnIdempotencyKeyIsSpentWhateverTheEnvelopeSays(t *testing.T) {
 	if _, err := f.Submit(t.Context(), caller, input("spent"), Admission{RequestID: uuid.New()}); conflictReason(err) != ConflictIdempotencyKeyUsed {
 		t.Errorf("resubmitting after a cancellation: %v", err)
 	}
-	if fresh := f.submit(t, caller, "fresh"); fresh.State != StateDecisionPending {
+	if fresh := f.submit(t, caller, "fresh"); fresh.State != action.StateDecisionPending {
 		t.Errorf("a fresh key started in %s", fresh.State)
 	}
 }
@@ -86,11 +87,11 @@ func TestADecisiveVoteCommitsItsDecisionWithTheInsert(t *testing.T) {
 	description := "matched binding test-binding"
 	for _, test := range []struct {
 		verdict   Verdict
-		state     ActionState
+		state     action.State
 		execution bool
 	}{
-		{VerdictAllow, StateAllowed, true},
-		{VerdictDeny, StateDenied, false},
+		{VerdictAllow, action.StateAllowed, true},
+		{VerdictDeny, action.StateDenied, false},
 	} {
 		t.Run(string(test.verdict), func(t *testing.T) {
 			f := newFixture(t)
@@ -121,7 +122,7 @@ func TestADecisiveVoteCommitsItsDecisionWithTheInsert(t *testing.T) {
 				}
 			}
 			events := f.events(t, request.ID)
-			if got := eventStates(events); !reflect.DeepEqual(got, []ActionState{StateDecisionPending, test.state}) ||
+			if got := eventStates(events); !reflect.DeepEqual(got, []action.State{action.StateDecisionPending, test.state}) ||
 				!events[0].At.Equal(events[1].At) || events[1].Sequence != 2 {
 				t.Errorf("events %+v", events)
 			}

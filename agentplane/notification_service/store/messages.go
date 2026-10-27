@@ -10,6 +10,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/google/uuid"
 )
 
@@ -23,9 +24,9 @@ var ErrNoInbox = errors.New("the Session has no inbox yet")
 
 // Message is a message a workload sends to a Session's inbox.
 type Message struct {
-	Sender ServiceAccount
+	Sender action.ServiceAccount
 	// Recipient owns the inbox: the ServiceAccount the destination Sandbox runs as.
-	Recipient      ServiceAccount
+	Recipient      action.ServiceAccount
 	DestinationRef DestinationRef
 	SessionID      string
 	// IdempotencyKey is unique per sender and inbox: an identical retry answers with the message it sent.
@@ -87,7 +88,7 @@ type SentMessage struct {
 
 // OpenInbox creates the recipient's inbox for a Session if it has none, within the recipient's inbox quota. The
 // caller has confirmed that the Session runs in the destination Sandbox.
-func (s *Store) OpenInbox(ctx context.Context, recipient ServiceAccount, ref DestinationRef, sessionID string) error {
+func (s *Store) OpenInbox(ctx context.Context, recipient action.ServiceAccount, ref DestinationRef, sessionID string) error {
 	return s.transaction(ctx, func(tx *sql.Tx) error {
 		_, err := s.ensureInbox(ctx, tx, recipient, ref, sessionID)
 		return err
@@ -178,7 +179,7 @@ func (s *Store) Send(ctx context.Context, message Message) (SentMessage, error) 
 
 // SentMessage returns a message the sender sent. Another sender's message, an unknown ID and a message whose
 // inbox was purged are all ErrNotFound.
-func (s *Store) SentMessage(ctx context.Context, sender ServiceAccount, id uuid.UUID) (SentMessage, error) {
+func (s *Store) SentMessage(ctx context.Context, sender action.ServiceAccount, id uuid.UUID) (SentMessage, error) {
 	var sent SentMessage
 	err := s.transaction(ctx, func(tx *sql.Tx) (err error) {
 		sent, err = sentMessage(ctx, tx, sender, id)
@@ -187,7 +188,7 @@ func (s *Store) SentMessage(ctx context.Context, sender ServiceAccount, id uuid.
 	return sent, err
 }
 
-func sentMessage(ctx context.Context, tx *sql.Tx, sender ServiceAccount, id uuid.UUID) (SentMessage, error) {
+func sentMessage(ctx context.Context, tx *sql.Tx, sender action.ServiceAccount, id uuid.UUID) (SentMessage, error) {
 	sent := SentMessage{ID: id}
 	var destination []byte
 	err := tx.QueryRowContext(ctx, `

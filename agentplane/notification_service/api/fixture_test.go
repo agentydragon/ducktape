@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/inboxaccess"
 	operatorpb "github.com/agentydragon/ducktape/agentplane/notification_service/notifications_operatorpb"
@@ -110,7 +111,7 @@ func (r *fakeRunner) questions() []sandboxreader.Identity {
 }
 
 type actionsCall struct {
-	owner         store.ServiceAccount
+	owner         action.ServiceAccount
 	requestID     uuid.UUID
 	afterSequence int64
 }
@@ -122,7 +123,7 @@ type fakeActions struct {
 	calls []actionsCall
 }
 
-func (a *fakeActions) Events(_ context.Context, owner store.ServiceAccount, requestID uuid.UUID, afterSequence int64) ([]store.ActionEvent, error) {
+func (a *fakeActions) Events(_ context.Context, owner action.ServiceAccount, requestID uuid.UUID, afterSequence int64) ([]store.ActionEvent, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.calls = append(a.calls, actionsCall{owner: owner, requestID: requestID, afterSequence: afterSequence})
@@ -440,7 +441,7 @@ func (s testServer) record(t *testing.T, subscription *notificationspb.Subscript
 	var events []store.ActionEvent
 	for sequence := int64(1); sequence <= through; sequence++ {
 		events = append(events, store.ActionEvent{
-			Sequence: sequence, State: store.ActionDecisionPending, At: time.Date(2026, 10, 20, 3, 56, 3, 0, time.UTC),
+			Sequence: sequence, State: action.StateDecisionPending, At: time.Date(2026, 10, 20, 3, 56, 3, 0, time.UTC),
 		})
 	}
 	if err := s.store.RecordActionEvents(t.Context(), *claim, *due, events); err != nil {

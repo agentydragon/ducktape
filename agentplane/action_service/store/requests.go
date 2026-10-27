@@ -11,6 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 )
@@ -56,20 +57,28 @@ func utc(t *time.Time) *time.Time {
 	return &converted
 }
 
+func decodeRecordedActor(data []byte) (action.Actor, error) {
+	actor, err := action.DecodeActor(data)
+	if errors.Is(err, action.ErrInvalidActor) {
+		return nil, invalid("%s", err)
+	}
+	return actor, err
+}
+
 func scanRequest(row rowScanner) (requestRow, error) {
 	var r requestRow
-	var action, arguments []byte
+	var actionJSON, arguments []byte
 	var state string
-	if err := row.Scan(&r.ID, &r.IdempotencyKey, &action, &arguments, &r.Title, &r.Description, &r.Caller.Namespace,
+	if err := row.Scan(&r.ID, &r.IdempotencyKey, &actionJSON, &arguments, &r.Title, &r.Description, &r.Caller.Namespace,
 		&r.Caller.Name, &state, &r.Version, &r.CreatedAt, &r.UpdatedAt, &r.HistoryAt); err != nil {
 		return requestRow{}, err
 	}
-	if err := json.Unmarshal(action, &r.Action); err != nil {
+	if err := json.Unmarshal(actionJSON, &r.Action); err != nil {
 		return requestRow{}, fmt.Errorf("request %s action: %w", r.ID, err)
 	}
 	r.Arguments = arguments
-	r.State = ActionState(state)
-	if !r.State.valid() {
+	r.State = action.State(state)
+	if !r.State.Valid() {
 		return requestRow{}, fmt.Errorf("request %s has unknown state %q", r.ID, state)
 	}
 	r.CreatedAt, r.UpdatedAt, r.HistoryAt = r.CreatedAt.UTC(), r.UpdatedAt.UTC(), utc(r.HistoryAt)
@@ -210,10 +219,10 @@ func loadExecutions(ctx context.Context, q querier, ids pq.StringArray) (map[uui
 
 // advance moves the request to state in the caller's transaction as one transition: a version, an Event and the
 // request's first place in history.
-func advance(ctx context.Context, tx *sql.Tx, row *requestRow, state ActionState, at time.Time, actor Principal) error {
+func advance(ctx context.Context, tx *sql.Tx, row *requestRow, state action.State, at time.Time, actor Principal) error {
 	row.State, row.UpdatedAt = state, at
 	row.Version++
-	if state != StateDecisionPending && row.HistoryAt == nil {
+	if state != action.StateDecisionPending && row.HistoryAt == nil {
 		row.HistoryAt = &at
 	}
 	if _, err := tx.ExecContext(ctx,
@@ -228,7 +237,11 @@ func advance(ctx context.Context, tx *sql.Tx, row *requestRow, state ActionState
 func appendEvent(ctx context.Context, tx *sql.Tx, row requestRow, actor Principal) error {
 	var document any
 	if actor != nil {
-		encoded, err := json.Marshal(actor)
+		recorded, err := recordedActor(actor)
+		if err != nil {
+			return err
+		}
+		encoded, err := json.Marshal(recorded)
 		if err != nil {
 			return err
 		}
@@ -242,13 +255,24 @@ func appendEvent(ctx context.Context, tx *sql.Tx, row requestRow, actor Principa
 	return notify(ctx, tx, UpdatesChannel, row.ID.String())
 }
 
+func recordedActor(principal Principal) (action.Actor, error) {
+	switch principal := principal.(type) {
+	case CallerPrincipal:
+		return action.CallerActor{Account: principal.Account}, nil
+	case OperatorPrincipal:
+		return action.OperatorActor{Issuer: principal.Issuer, Subject: principal.Subject}, nil
+	default:
+		return nil, fmt.Errorf("principal %T cannot author an Action event", principal)
+	}
+}
+
 // Submit stores an admitted request for the caller. The caller's idempotency key is spent whatever the envelope
 // says: a second submission under it is a ConflictIdempotencyKeyUsed, and the request is read back by key.
 func (s *Store) Submit(ctx context.Context, caller CallerPrincipal, input ActionRequestInput, admission Admission) (ActionRequest, error) {
 	if err := input.Validate(); err != nil {
 		return ActionRequest{}, err
 	}
-	if err := caller.Account.validate(); err != nil {
+	if err := validateServiceAccount(caller.Account); err != nil {
 		return ActionRequest{}, err
 	}
 	if admission.Vote != nil {
@@ -307,7 +331,7 @@ func (s *Store) Submit(ctx context.Context, caller CallerPrincipal, input Action
 
 // ListFilter narrows List. Nil and empty fields do not filter.
 type ListFilter struct {
-	States         []ActionState
+	States         []action.State
 	IdempotencyKey *string
 	// Limit bounds the page; nil returns every match.
 	Limit *int
@@ -320,7 +344,7 @@ type ListFilter struct {
 // reader see every owner's.
 func (s *Store) List(ctx context.Context, principal ReadPrincipal, filter ListFilter) ([]ActionRequest, error) {
 	for _, state := range filter.States {
-		if !state.valid() {
+		if !state.Valid() {
 			return nil, invalid("unknown state %q", state)
 		}
 	}
@@ -364,13 +388,13 @@ func (s *Store) List(ctx context.Context, principal ReadPrincipal, filter ListFi
 
 // Versions returns the version of each request the reader may see in one of states, or in any state when states is
 // empty. Every visible change to a request advances its version, so a watch compares them to find what changed.
-func (s *Store) Versions(ctx context.Context, principal ReadPrincipal, states []ActionState) (map[uuid.UUID]int64, error) {
+func (s *Store) Versions(ctx context.Context, principal ReadPrincipal, states []action.State) (map[uuid.UUID]int64, error) {
 	var q query
 	conditions := q.readableBy(principal)
 	if len(states) > 0 {
 		values := make(pq.StringArray, len(states))
 		for i, state := range states {
-			if !state.valid() {
+			if !state.Valid() {
 				return nil, invalid("unknown state %q", state)
 			}
 			values[i] = string(state)
@@ -568,13 +592,13 @@ func (s *Store) Events(ctx context.Context, id uuid.UUID, principal ReadPrincipa
 			if err := rows.Scan(&event.Sequence, &state, &event.At, &actor); err != nil {
 				return err
 			}
-			event.State, event.At = ActionState(state), event.At.UTC()
-			if !event.State.valid() {
+			event.State, event.At = action.State(state), event.At.UTC()
+			if !event.State.Valid() {
 				return fmt.Errorf("event %s/%d has unknown state %q", id, event.Sequence, state)
 			}
 			if document := jsonValue(actor); document != nil {
 				var err error
-				if event.Actor, err = decodeActor(document); err != nil {
+				if event.Actor, err = decodeRecordedActor(document); err != nil {
 					return fmt.Errorf("event %s/%d actor: %w", id, event.Sequence, err)
 				}
 			}

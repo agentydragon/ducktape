@@ -9,6 +9,7 @@ go_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/actions",
     deps = [
+        "//agentplane/action",
         "//agentplane/action_service:action_service_go_proto",
         "//agentplane/grpc/bearer",
         "//agentplane/notification_service/store",
@@ -31,6 +32,7 @@ go_test(
     embed = [":actions"],
     tags = ["requires_docker"],
     deps = [
+        "//agentplane/action",
         "//agentplane/action_service:action_service_go_proto",
         "//agentplane/grpc/bearer",
         "//agentplane/notification_service/migrations",

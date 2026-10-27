@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/google/uuid"
 
 	"github.com/agentydragon/ducktape/agentplane/postgres/go"
@@ -34,17 +35,11 @@ type Quotas struct {
 	UnacknowledgedMessagesPerSender int `mapstructure:"unacknowledged_messages_per_sender"`
 }
 
-// ServiceAccount is the account a caller's workloads run as.
-type ServiceAccount struct {
-	Namespace string
-	Name      string
-}
-
 // Owner is whom an inbox and its subscriptions belong to: the account, as the Sandbox incarnation the inbox was
 // opened for. A Sandbox runs as the ServiceAccount of its own name, so a Sandbox recreated under a deleted one's
 // name is the same account but another incarnation, and the deleted one's inboxes are not its own.
 type Owner struct {
-	Account    ServiceAccount
+	Account    action.ServiceAccount
 	SandboxUID string
 }
 

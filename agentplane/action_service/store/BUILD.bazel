@@ -16,6 +16,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/action_service/store",
     deps = [
         "//agentplane/postgres/go:postgres",
+        "//agentplane/action",
         "@com_github_google_uuid//:uuid",
         "@com_github_lib_pq//:pq",
     ],
@@ -29,7 +30,10 @@ go_test(
     ],
     embed = [":store"],
     embedsrcs = ["golden.json"],
-    deps = ["@com_github_google_uuid//:uuid"],
+    deps = [
+        "//agentplane/action",
+        "@com_github_google_uuid//:uuid",
+    ],
 )
 
 go_test(
@@ -51,6 +55,7 @@ go_test(
     embedsrcs = ["golden.json"],
     tags = ["requires_docker"],
     deps = [
+        "//agentplane/action",
         "//agentplane/action_service/migrations",
         "//agentplane/postgres/go/wakeups",
         "//agentplane/testing/postgres",

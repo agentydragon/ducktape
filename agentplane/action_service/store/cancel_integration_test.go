@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/google/uuid"
 )
 
@@ -24,7 +25,7 @@ func TestAPendingCancellationIsDurableAndIdempotent(t *testing.T) {
 	pending := f.submit(t, caller, "cancelled")
 
 	result := f.cancel(t, pending.ID)
-	if result.Outcome != OutcomeCancelled || result.Request.State != StateCancelled || result.Request.Decision != nil ||
+	if result.Outcome != OutcomeCancelled || result.Request.State != action.StateCancelled || result.Request.Decision != nil ||
 		result.Request.Execution != nil || result.Request.Version != pending.Version+1 {
 		t.Errorf("result %+v", result)
 	}
@@ -36,7 +37,7 @@ func TestAPendingCancellationIsDurableAndIdempotent(t *testing.T) {
 		t.Errorf("duplicate = %+v, %v", duplicate, err)
 	}
 	events := f.events(t, pending.ID)
-	if !slices.Equal(eventStates(events), []ActionState{StateDecisionPending, StateCancelled}) ||
+	if !slices.Equal(eventStates(events), []action.State{action.StateDecisionPending, action.StateCancelled}) ||
 		events[1].Actor != caller || !events[1].At.Equal(result.Request.UpdatedAt) {
 		t.Errorf("events %+v", events)
 	}
@@ -77,7 +78,7 @@ func TestAnAllowedCancellationKeepsItsDecisionAndStopsDispatch(t *testing.T) {
 	}
 
 	replay, dispatch, err := f.Decide(t.Context(), allowed.ID, decision(pending, VerdictAllow, "decision-allowed"), operator)
-	if err != nil || dispatch || replay.State != StateCancelled {
+	if err != nil || dispatch || replay.State != action.StateCancelled {
 		t.Errorf("replayed approval = %v, dispatch %v, %v", replay.State, dispatch, err)
 	}
 }
@@ -94,7 +95,7 @@ func TestOnlyTheOwnerCanCancel(t *testing.T) {
 	if _, err := f.Cancel(t.Context(), uuid.New(), caller); !errors.Is(err, ErrNotFound) {
 		t.Errorf("an unknown request: %v", err)
 	}
-	if f.get(t, pending.ID).State != StateDecisionPending {
+	if f.get(t, pending.ID).State != action.StateDecisionPending {
 		t.Fatal("a cancellation by a non-owner took effect")
 	}
 	f.cancel(t, pending.ID)
@@ -106,21 +107,21 @@ func TestOnlyTheOwnerCanCancel(t *testing.T) {
 
 func TestCancellationOutcomeFollowsTheRequestsState(t *testing.T) {
 	for _, test := range []struct {
-		state ActionState
+		state action.State
 		reach func(f fixture, t *testing.T, id uuid.UUID)
 		want  CancellationOutcome
 	}{
-		{StateDispatching, func(f fixture, t *testing.T, id uuid.UUID) { f.claim(t, id) }, OutcomeTooLate},
-		{StateRunning, func(f fixture, t *testing.T, id uuid.UUID) { f.claim(t, id); f.markRunning(t, id) }, OutcomeTooLate},
-		{StateExecutionUnknown, func(f fixture, t *testing.T, id uuid.UUID) {
+		{action.StateDispatching, func(f fixture, t *testing.T, id uuid.UUID) { f.claim(t, id) }, OutcomeTooLate},
+		{action.StateRunning, func(f fixture, t *testing.T, id uuid.UUID) { f.claim(t, id); f.markRunning(t, id) }, OutcomeTooLate},
+		{action.StateExecutionUnknown, func(f fixture, t *testing.T, id uuid.UUID) {
 			f.claimFor(t, id, -time.Second)
 			f.markRunning(t, id)
 			f.expire(t)
 		}, OutcomeTooLate},
-		{StateSucceeded, func(f fixture, t *testing.T, id uuid.UUID) {
+		{action.StateSucceeded, func(f fixture, t *testing.T, id uuid.UUID) {
 			f.finish(t, id, f.claim(t, id).Lease, ExecutionSucceeded)
 		}, OutcomeAlreadyFinished},
-		{StateFailed, func(f fixture, t *testing.T, id uuid.UUID) {
+		{action.StateFailed, func(f fixture, t *testing.T, id uuid.UUID) {
 			f.finish(t, id, f.claim(t, id).Lease, ExecutionFailed)
 		}, OutcomeAlreadyFinished},
 	} {

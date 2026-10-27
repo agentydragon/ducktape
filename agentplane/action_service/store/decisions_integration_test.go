@@ -6,6 +6,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/google/uuid"
 )
 
@@ -17,10 +18,10 @@ func TestDecideRecordsTheOperatorsVerdict(t *testing.T) {
 	note := "test note"
 	for _, test := range []struct {
 		verdict Verdict
-		state   ActionState
+		state   action.State
 	}{
-		{VerdictAllow, StateAllowed},
-		{VerdictDeny, StateDenied},
+		{VerdictAllow, action.StateAllowed},
+		{VerdictDeny, action.StateDenied},
 	} {
 		t.Run(string(test.verdict), func(t *testing.T) {
 			f := newFixture(t)
@@ -53,7 +54,7 @@ func TestDecideRecordsTheOperatorsVerdict(t *testing.T) {
 				t.Errorf("read back %+v, want %+v", f.get(t, pending.ID), got)
 			}
 			events := f.events(t, pending.ID)
-			if !slices.Equal(eventStates(events), []ActionState{StateDecisionPending, test.state}) || events[1].Actor != nil {
+			if !slices.Equal(eventStates(events), []action.State{action.StateDecisionPending, test.state}) || events[1].Actor != nil {
 				t.Errorf("events %+v", events)
 			}
 		})
@@ -108,7 +109,7 @@ func TestADecisionKeyBelongsToItsOperatorAndItsFirstVerdict(t *testing.T) {
 			t.Errorf("%s: %v", name, err)
 		}
 	}
-	if !reflect.DeepEqual(f.get(t, first.ID), decided) || f.get(t, second.ID).State != StateDecisionPending {
+	if !reflect.DeepEqual(f.get(t, first.ID), decided) || f.get(t, second.ID).State != action.StateDecisionPending {
 		t.Error("a refused decision changed a request")
 	}
 
@@ -186,7 +187,7 @@ func TestDecideRefusesWhatItCannotRecord(t *testing.T) {
 			t.Errorf("%s: %v", name, err)
 		}
 	}
-	if f.get(t, pending.ID).State != StateDecisionPending {
+	if f.get(t, pending.ID).State != action.StateDecisionPending {
 		t.Error("a refused decision changed the request")
 	}
 }
@@ -224,10 +225,10 @@ func TestDifferentDecisionsOnOneVersionHaveOneWinner(t *testing.T) {
 	for _, test := range []struct {
 		name          string
 		first, second Verdict
-		state         ActionState
+		state         action.State
 	}{
-		{"allow queued first", VerdictAllow, VerdictDeny, StateAllowed},
-		{"deny queued first", VerdictDeny, VerdictAllow, StateDenied},
+		{"allow queued first", VerdictAllow, VerdictDeny, action.StateAllowed},
+		{"deny queued first", VerdictDeny, VerdictAllow, action.StateDenied},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			f := newFixture(t)
@@ -265,11 +266,11 @@ func TestAnApprovalCannotReviveACancelledRequest(t *testing.T) {
 		name            string
 		approvalFirst   bool
 		approvalRefused bool
-		states          []ActionState
+		states          []action.State
 		executions      int
 	}{
-		{"approval queued first", true, false, []ActionState{StateDecisionPending, StateAllowed, StateCancelled}, 1},
-		{"cancellation queued first", false, true, []ActionState{StateDecisionPending, StateCancelled}, 0},
+		{"approval queued first", true, false, []action.State{action.StateDecisionPending, action.StateAllowed, action.StateCancelled}, 1},
+		{"cancellation queued first", false, true, []action.State{action.StateDecisionPending, action.StateCancelled}, 0},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			f := newFixture(t)
@@ -313,7 +314,7 @@ func TestAnApprovalCannotReviveACancelledRequest(t *testing.T) {
 				t.Errorf("approval: %v", approved.err)
 			}
 			final := f.get(t, pending.ID)
-			if final.State != StateCancelled || !slices.Equal(eventStates(f.events(t, pending.ID)), test.states) {
+			if final.State != action.StateCancelled || !slices.Equal(eventStates(f.events(t, pending.ID)), test.states) {
 				t.Errorf("state %s, events %v", final.State, eventStates(f.events(t, pending.ID)))
 			}
 			if f.count(t, `SELECT count(*) FROM action_execution`) != test.executions ||

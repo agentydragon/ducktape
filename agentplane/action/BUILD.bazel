@@ -1,0 +1,23 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane:__subpackages__"])
+
+go_library(
+    name = "action",
+    srcs = ["action.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/action",
+    deps = [
+        "//agentplane/action_service:action_service_go_proto",
+        "//agentplane/proto:sandboxes_go_proto",
+    ],
+)
+
+go_test(
+    name = "action_test",
+    srcs = ["action_test.go"],
+    embed = [":action"],
+    deps = [
+        "//agentplane/action_service:action_service_go_proto",
+        "//agentplane/proto:sandboxes_go_proto",
+    ],
+)

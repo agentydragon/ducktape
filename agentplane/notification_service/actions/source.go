@@ -9,6 +9,7 @@ import (
 	"math"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
@@ -40,7 +41,7 @@ var _ worker.Provider = (*Source)(nil)
 //
 // The subscription servicer calls it when a subscription is created and shows an access denied failure as
 // PERMISSION_DENIED: authorization precedes persistence even when replay starts after the last event.
-func (s *Source) Events(ctx context.Context, owner store.ServiceAccount, requestID uuid.UUID, afterSequence int64) ([]store.ActionEvent, error) {
+func (s *Source) Events(ctx context.Context, owner action.ServiceAccount, requestID uuid.UUID, afterSequence int64) ([]store.ActionEvent, error) {
 	request, err := s.Service.GetActionRequest(ctx, &action_servicepb.GetActionRequestRequest{RequestId: requestID.String()})
 	if err != nil {
 		return nil, rpcFailure(ctx, err)
@@ -95,70 +96,29 @@ func (s *Source) Reconcile(ctx context.Context, claim store.Claim, due store.Due
 	return err
 }
 
-func serviceAccount(account *sandboxespb.ServiceAccount) (store.ServiceAccount, error) {
-	if account == nil || account.GetNamespace() == "" || account.GetName() == "" {
-		return store.ServiceAccount{}, validationFailure()
+func serviceAccount(account *sandboxespb.ServiceAccount) (action.ServiceAccount, error) {
+	serviceAccount, err := action.ServiceAccountFromProto(account)
+	if err != nil {
+		return action.ServiceAccount{}, validationFailure()
 	}
-	return store.ServiceAccount{Namespace: account.GetNamespace(), Name: account.GetName()}, nil
+	return serviceAccount, nil
 }
 
 func actionEvent(event *action_servicepb.ActionEvent) (store.ActionEvent, error) {
 	if event == nil || event.GetSequence() < 1 || event.GetAt() == nil || event.GetAt().CheckValid() != nil {
 		return store.ActionEvent{}, validationFailure()
 	}
-	state, ok := actionState(event.GetState())
+	state, ok := action.StateFromProto(event.GetState())
 	if !ok {
 		return store.ActionEvent{}, validationFailure()
 	}
-	actor, err := actionActor(event.GetActor())
+	actor, err := action.ActorFromProto(event.GetActor())
 	if err != nil {
-		return store.ActionEvent{}, err
+		return store.ActionEvent{}, validationFailure()
 	}
 	return store.ActionEvent{
 		Sequence: int64(event.GetSequence()), State: state, At: event.GetAt().AsTime().UTC().Truncate(time.Microsecond), Actor: actor,
 	}, nil
-}
-
-func actionState(state action_servicepb.ActionState) (store.ActionState, bool) {
-	switch state {
-	case action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING:
-		return store.ActionDecisionPending, true
-	case action_servicepb.ActionState_ACTION_STATE_ALLOWED:
-		return store.ActionAllowed, true
-	case action_servicepb.ActionState_ACTION_STATE_DENIED:
-		return store.ActionDenied, true
-	case action_servicepb.ActionState_ACTION_STATE_DISPATCHING:
-		return store.ActionDispatching, true
-	case action_servicepb.ActionState_ACTION_STATE_RUNNING:
-		return store.ActionRunning, true
-	case action_servicepb.ActionState_ACTION_STATE_SUCCEEDED:
-		return store.ActionSucceeded, true
-	case action_servicepb.ActionState_ACTION_STATE_FAILED:
-		return store.ActionFailed, true
-	case action_servicepb.ActionState_ACTION_STATE_CANCELLED:
-		return store.ActionCancelled, true
-	case action_servicepb.ActionState_ACTION_STATE_EXECUTION_UNKNOWN:
-		return store.ActionExecutionUnknown, true
-	default:
-		return "", false
-	}
-}
-
-func actionActor(principal *action_servicepb.Principal) (store.ActionActor, error) {
-	if principal == nil {
-		return nil, nil
-	}
-	if caller := principal.GetCaller(); caller != nil {
-		account, err := serviceAccount(caller)
-		if err != nil {
-			return nil, err
-		}
-		return store.CallerActor{Account: account}, nil
-	}
-	if operator := principal.GetOperator(); operator != nil && operator.GetIssuer() != "" && operator.GetSubject() != "" {
-		return store.OperatorActor{Issuer: operator.GetIssuer(), Subject: operator.GetSubject()}, nil
-	}
-	return nil, validationFailure()
 }
 
 func rpcFailure(ctx context.Context, err error) error {

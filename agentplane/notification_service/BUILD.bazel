@@ -126,6 +126,7 @@ go_library(
     deps = [
         ":notifications_go_proto",
         ":notifications_operator_go_proto",
+        "//agentplane/action",
         "//agentplane/action_service:action_service_go_proto",
         "//agentplane/grpc/bearer",
         "//agentplane/grpc/facade",

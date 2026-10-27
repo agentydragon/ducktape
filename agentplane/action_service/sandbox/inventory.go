@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	corev1 "k8s.io/api/core/v1"
@@ -173,12 +174,12 @@ func (i *Inventory) CheckTemplates(ctx context.Context) error {
 
 // objectName is a box's Pod's name: the same for the same caller and name, so creating a box twice reaches the
 // same Pod.
-func objectName(caller store.ServiceAccount, name string) string {
+func objectName(caller action.ServiceAccount, name string) string {
 	object := caller.Name + "-" + name
 	return strings.TrimRight(object[:min(len(object), 63)], "-")
 }
 
-func boxLabels(caller store.ServiceAccount, name, template string) map[string]string {
+func boxLabels(caller action.ServiceAccount, name, template string) map[string]string {
 	return map[string]string{
 		managedLabel:         "true",
 		callerLabel:          caller.Name,
@@ -190,7 +191,7 @@ func boxLabels(caller store.ServiceAccount, name, template string) map[string]st
 
 // pod is the caller's box of that name, or nil. A same-named Pod this surface did not create for the caller is a
 // ForeignError rather than adopted or reported absent.
-func (i *Inventory) pod(ctx context.Context, caller store.ServiceAccount, name string) (*corev1.Pod, error) {
+func (i *Inventory) pod(ctx context.Context, caller action.ServiceAccount, name string) (*corev1.Pod, error) {
 	pod, err := i.client.CoreV1().Pods(i.binding.Namespace).Get(ctx, objectName(caller, name), metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
 		return nil, nil
@@ -211,7 +212,7 @@ func (i *Inventory) pod(ctx context.Context, caller store.ServiceAccount, name s
 //
 // An existing box of that name is returned as it stands, whatever template it was created from: deciding that its
 // shape is wrong is the caller's, and Dispose is how it acts on that.
-func (i *Inventory) Create(ctx context.Context, caller store.ServiceAccount, name, template string) (Info, error) {
+func (i *Inventory) Create(ctx context.Context, caller action.ServiceAccount, name, template string) (Info, error) {
 	box, err := i.Template(ctx, template)
 	if err != nil {
 		return Info{}, err
@@ -238,7 +239,7 @@ func (i *Inventory) Create(ctx context.Context, caller store.ServiceAccount, nam
 	return info(pod), nil
 }
 
-func (i *Inventory) stamp(ctx context.Context, caller store.ServiceAccount, name, templateName string, template *corev1.PodTemplateSpec) error {
+func (i *Inventory) stamp(ctx context.Context, caller action.ServiceAccount, name, templateName string, template *corev1.PodTemplateSpec) error {
 	account, err := i.client.CoreV1().ServiceAccounts(i.binding.Namespace).Get(ctx, caller.Name, metav1.GetOptions{})
 	if err != nil {
 		return err
@@ -279,7 +280,7 @@ func (i *Inventory) stamp(ctx context.Context, caller store.ServiceAccount, name
 }
 
 // Get is the caller's box of that name.
-func (i *Inventory) Get(ctx context.Context, caller store.ServiceAccount, name string) (Info, error) {
+func (i *Inventory) Get(ctx context.Context, caller action.ServiceAccount, name string) (Info, error) {
 	pod, err := i.pod(ctx, caller, name)
 	if err != nil {
 		return Info{}, err
@@ -291,7 +292,7 @@ func (i *Inventory) Get(ctx context.Context, caller store.ServiceAccount, name s
 }
 
 // List is every box of the caller's.
-func (i *Inventory) List(ctx context.Context, caller store.ServiceAccount) ([]Info, error) {
+func (i *Inventory) List(ctx context.Context, caller action.ServiceAccount) ([]Info, error) {
 	pods, err := i.client.CoreV1().Pods(i.binding.Namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: labels.SelectorFromSet(labels.Set{
 			managedLabel: "true", callerLabel: caller.Name, callerNamespaceLabel: caller.Namespace,
@@ -308,7 +309,7 @@ func (i *Inventory) List(ctx context.Context, caller store.ServiceAccount) ([]In
 }
 
 // Dispose deletes the caller's box; false when it had none to delete.
-func (i *Inventory) Dispose(ctx context.Context, caller store.ServiceAccount, name string) (bool, error) {
+func (i *Inventory) Dispose(ctx context.Context, caller action.ServiceAccount, name string) (bool, error) {
 	pod, err := i.pod(ctx, caller, name)
 	if err != nil || pod == nil {
 		return false, err
@@ -323,7 +324,7 @@ func (i *Inventory) Dispose(ctx context.Context, caller store.ServiceAccount, na
 // Run runs script in the caller's box, which must be ready. The caps are this group's at most: submission already
 // refuses past them, and a request another replica admitted under other caps, across a settings roll, is still held
 // to these.
-func (i *Inventory) Run(ctx context.Context, caller store.ServiceAccount, name string, run Script) (ExecResult, error) {
+func (i *Inventory) Run(ctx context.Context, caller action.ServiceAccount, name string, run Script) (ExecResult, error) {
 	pod, err := i.pod(ctx, caller, name)
 	if err != nil {
 		return ExecResult{}, err

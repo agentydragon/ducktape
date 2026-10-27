@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/google/uuid"
 )
 
@@ -49,9 +50,9 @@ func recordDecision(ctx context.Context, tx *sql.Tx, row *requestRow, at time.Ti
 		decision.ReasonCode, decision.ReasonDescription, evidence, decision.IdempotencyKey, at); err != nil {
 		return false, err
 	}
-	state := StateDenied
+	state := action.StateDenied
 	if decision.Verdict == VerdictAllow {
-		state = StateAllowed
+		state = action.StateAllowed
 	}
 	if err := advance(ctx, tx, row, state, at, nil); err != nil {
 		return false, err
@@ -116,7 +117,7 @@ func (s *Store) Decide(ctx context.Context, id uuid.UUID, input DecisionInput, o
 					input.ExpectedVersion, row.Version),
 			}
 		}
-		if row.State != StateDecisionPending {
+		if row.State != action.StateDecisionPending {
 			return &ConflictError{
 				Reason:  ConflictAlreadyDecided,
 				Message: fmt.Sprintf("request was already decided; current state is %s", row.State),

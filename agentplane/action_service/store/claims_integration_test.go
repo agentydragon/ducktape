@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/google/uuid"
 )
 
@@ -72,7 +73,7 @@ func TestClaimReservesTheOnlyExecutionAndGrantsItsLease(t *testing.T) {
 		t.Errorf("claim %+v", claim)
 	}
 	got := f.get(t, allowed.ID)
-	if got.State != StateDispatching || got.Version != allowed.Version+1 || got.Execution.State != ExecutionDispatching ||
+	if got.State != action.StateDispatching || got.Version != allowed.Version+1 || got.Execution.State != ExecutionDispatching ||
 		got.Execution.StartedAt != nil || got.Execution.CompletedAt != nil {
 		t.Errorf("request %+v, execution %+v", got, got.Execution)
 	}
@@ -82,7 +83,7 @@ func TestClaimReservesTheOnlyExecutionAndGrantsItsLease(t *testing.T) {
 		t.Error("the lease was not recorded as the claim reports it")
 	}
 	events := f.events(t, allowed.ID)
-	if !slices.Equal(eventStates(events), []ActionState{StateDecisionPending, StateAllowed, StateDispatching}) ||
+	if !slices.Equal(eventStates(events), []action.State{action.StateDecisionPending, action.StateAllowed, action.StateDispatching}) ||
 		events[2].Actor != nil || !events[2].At.Equal(got.UpdatedAt) {
 		t.Errorf("events %+v", events)
 	}
@@ -225,9 +226,9 @@ func TestAClaimAndACancellationHaveOneWinner(t *testing.T) {
 			release()
 
 			got, cancellation := await(t, claimed), await(t, cancelled)
-			wantOutcome, wantState := OutcomeTooLate, StateDispatching
+			wantOutcome, wantState := OutcomeTooLate, action.StateDispatching
 			if !claimFirst {
-				wantOutcome, wantState = OutcomeCancelled, StateCancelled
+				wantOutcome, wantState = OutcomeCancelled, action.StateCancelled
 			}
 			if (got != nil) != claimFirst || cancellation.Outcome != wantOutcome || f.get(t, allowed.ID).State != wantState {
 				t.Errorf("claim %+v, cancellation %s, state %s", got, cancellation.Outcome, f.get(t, allowed.ID).State)

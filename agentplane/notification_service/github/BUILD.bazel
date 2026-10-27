@@ -54,6 +54,7 @@ go_test(
     embed = [":github"],
     tags = ["requires_docker"],
     deps = [
+        "//agentplane/action",
         "//agentplane/notification_service/migrations",
         "//agentplane/notification_service/store",
         "//agentplane/notification_service/worker",

@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
@@ -36,7 +37,7 @@ func TestMain(m *testing.M) {
 // fixture is a namespace holding the test template, and a caller of its own.
 type fixture struct {
 	binding catalog.PodBinding
-	caller  store.ServiceAccount
+	caller  action.ServiceAccount
 	exec    *recordingExec
 }
 
@@ -77,19 +78,19 @@ func newFixture(t *testing.T, edit func(*corev1.PodSpec)) fixture {
 }
 
 // account is a ServiceAccount of that name, created with its namespace.
-func account(t *testing.T, namespace, name string) store.ServiceAccount {
+func account(t *testing.T, namespace, name string) action.ServiceAccount {
 	t.Helper()
 	if _, err := server.ServiceAccount(t.Context(), auth.Account{Namespace: namespace, Name: name}); err != nil {
 		t.Fatal(err)
 	}
-	return store.ServiceAccount{Namespace: namespace, Name: name}
+	return action.ServiceAccount{Namespace: namespace, Name: name}
 }
 
 func (f fixture) inventory() *Inventory {
 	return NewInventory(f.binding, server.Clientset, f.exec.Exec)
 }
 
-func (f fixture) pod(t *testing.T, caller store.ServiceAccount, name string) *corev1.Pod {
+func (f fixture) pod(t *testing.T, caller action.ServiceAccount, name string) *corev1.Pod {
 	t.Helper()
 	pod, err := server.Clientset.CoreV1().Pods(f.binding.Namespace).Get(t.Context(), objectName(caller, name), metav1.GetOptions{})
 	if err != nil {
@@ -99,7 +100,7 @@ func (f fixture) pod(t *testing.T, caller store.ServiceAccount, name string) *co
 }
 
 // report writes the status Kubernetes would to the caller's box of that name.
-func (f fixture) report(t *testing.T, caller store.ServiceAccount, name string, status corev1.PodStatus) {
+func (f fixture) report(t *testing.T, caller action.ServiceAccount, name string, status corev1.PodStatus) {
 	t.Helper()
 	pod := f.pod(t, caller, name)
 	pod.Status = status

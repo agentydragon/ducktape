@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/google/uuid"
 )
 
@@ -24,20 +25,20 @@ func (s *Store) Cancel(ctx context.Context, id uuid.UUID, principal Principal) (
 			return ErrNotFound
 		}
 		switch row.State {
-		case StateCancelled:
+		case action.StateCancelled:
 			result.Outcome = OutcomeAlreadyCancelled
-		case StateDenied, StateSucceeded, StateFailed:
+		case action.StateDenied, action.StateSucceeded, action.StateFailed:
 			result.Outcome = OutcomeAlreadyFinished
-		case StateDispatching, StateRunning, StateExecutionUnknown:
+		case action.StateDispatching, action.StateRunning, action.StateExecutionUnknown:
 			result.Outcome = OutcomeTooLate
 		default:
 			at := now()
-			if row.State == StateAllowed {
+			if row.State == action.StateAllowed {
 				if err := cancelPendingDispatch(ctx, tx, id, at); err != nil {
 					return err
 				}
 			}
-			if err := advance(ctx, tx, &row, StateCancelled, at, principal); err != nil {
+			if err := advance(ctx, tx, &row, action.StateCancelled, at, principal); err != nil {
 				return err
 			}
 			result.Outcome = OutcomeCancelled

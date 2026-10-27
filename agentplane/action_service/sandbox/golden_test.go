@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 )
@@ -34,11 +35,11 @@ type vectors struct {
 		Valid  bool            `json:"valid"`
 	} `json:"arguments"`
 	Boxes []struct {
-		Name       string               `json:"name"`
-		Caller     store.ServiceAccount `json:"caller"`
-		Box        string               `json:"box"`
-		ObjectName string               `json:"object_name"`
-		Labels     map[string]string    `json:"labels"`
+		Name       string                `json:"name"`
+		Caller     action.ServiceAccount `json:"caller"`
+		Box        string                `json:"box"`
+		ObjectName string                `json:"object_name"`
+		Labels     map[string]string     `json:"labels"`
 	} `json:"boxes"`
 }
 

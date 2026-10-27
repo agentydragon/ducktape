@@ -7,6 +7,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/migrations"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
@@ -34,7 +35,7 @@ func defaultQuotas() Quotas {
 type fixture struct {
 	*Store
 	db         *sql.DB
-	owner      ServiceAccount
+	owner      action.ServiceAccount
 	sandboxUID string
 }
 
@@ -48,8 +49,8 @@ func newFixture(t *testing.T, quotas Quotas) fixture {
 	return fixture{Store: New(db, quotas), db: db, owner: newOwner(), sandboxUID: testSandboxUID}
 }
 
-func newOwner() ServiceAccount {
-	return ServiceAccount{Namespace: "test-namespace", Name: "owner-" + uuid.NewString()}
+func newOwner() action.ServiceAccount {
+	return action.ServiceAccount{Namespace: "test-namespace", Name: "owner-" + uuid.NewString()}
 }
 
 // testSandboxUID is the Sandbox incarnation body's destination names.

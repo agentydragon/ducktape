@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/agentydragon/ducktape/agentplane/action_service/migrations"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
@@ -36,9 +37,9 @@ func TestMain(m *testing.M) {
 const awaitBound = 30 * time.Second
 
 var (
-	caller   = store.CallerPrincipal{Account: store.ServiceAccount{Namespace: "test-namespace", Name: "test-caller"}}
-	operator = store.OperatorPrincipal{Issuer: "https://issuer.test.example", Subject: "test-operator"}
-	action   = store.ActionIdentity{Group: "test-group", Name: "test-action"}
+	caller         = store.CallerPrincipal{Account: action.ServiceAccount{Namespace: "test-namespace", Name: "test-caller"}}
+	operator       = store.OperatorPrincipal{Issuer: "https://issuer.test.example", Subject: "test-operator"}
+	actionIdentity = store.ActionIdentity{Group: "test-group", Name: "test-action"}
 )
 
 // fixture is a database of the test's own and the store over it.
@@ -93,7 +94,7 @@ func (f fixture) dispatches(t *testing.T) <-chan struct{} {
 func (f fixture) allowed(t *testing.T, key string) uuid.UUID {
 	t.Helper()
 	pending, err := f.store.Submit(t.Context(), caller, store.ActionRequestInput{
-		IdempotencyKey: key, Action: action, Arguments: json.RawMessage(`{"key": "` + key + `"}`), Title: "test title for " + key,
+		IdempotencyKey: key, Action: actionIdentity, Arguments: json.RawMessage(`{"key": "` + key + `"}`), Title: "test title for " + key,
 	}, store.Admission{RequestID: uuid.New()})
 	if err != nil {
 		t.Fatal(err)
@@ -116,7 +117,7 @@ func (f fixture) get(t *testing.T, id uuid.UUID) store.ActionRequest {
 }
 
 // await waits until the request is in the state, and returns it.
-func (f fixture) await(t *testing.T, id uuid.UUID, state store.ActionState) store.ActionRequest {
+func (f fixture) await(t *testing.T, id uuid.UUID, state action.State) store.ActionRequest {
 	t.Helper()
 	deadline := time.After(awaitBound)
 	for {

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/google/uuid"
 )
 
@@ -45,11 +46,11 @@ func TestMarkRunningCrossesTheNoReplayBoundary(t *testing.T) {
 	}
 	sameJSON(t, payload.Arguments, body.Arguments)
 	got := f.get(t, allowed.ID)
-	if got.State != StateRunning || got.Version != allowed.Version+2 || got.Execution.State != ExecutionRunning ||
+	if got.State != action.StateRunning || got.Version != allowed.Version+2 || got.Execution.State != ExecutionRunning ||
 		got.Execution.StartedAt == nil || !got.Execution.StartedAt.Equal(got.UpdatedAt) {
 		t.Errorf("request %+v, execution %+v", got, got.Execution)
 	}
-	if states := eventStates(f.events(t, allowed.ID)); !slices.Equal(states, []ActionState{StateDecisionPending, StateAllowed, StateDispatching, StateRunning}) {
+	if states := eventStates(f.events(t, allowed.ID)); !slices.Equal(states, []action.State{action.StateDecisionPending, action.StateAllowed, action.StateDispatching, action.StateRunning}) {
 		t.Errorf("events %v", states)
 	}
 
@@ -79,7 +80,7 @@ func TestHeartbeatRenewsOnlyTheOwnersLeaseOfAnExecutionInFlight(t *testing.T) {
 		allowed.ID, claim.ExpiresAt) != 1 {
 		t.Error("the lease was not renewed")
 	}
-	if expired := f.expire(t); len(expired) != 0 || f.get(t, allowed.ID).State != StateRunning {
+	if expired := f.expire(t); len(expired) != 0 || f.get(t, allowed.ID).State != action.StateRunning {
 		t.Errorf("a renewed lease expired: %v", expired)
 	}
 
@@ -192,7 +193,7 @@ func TestFinishRefusesWhatItCannotRecord(t *testing.T) {
 	if err := f.FinishExecution(t.Context(), allowed.ID, claim.Lease, ExecutionOutcome{State: ExecutionFailed}); conflictReason(err) != ConflictNotFinishable {
 		t.Errorf("a second outcome: %v", err)
 	}
-	if got := f.get(t, allowed.ID); got.State != StateSucceeded {
+	if got := f.get(t, allowed.ID); got.State != action.StateSucceeded {
 		t.Errorf("a second outcome changed the state to %s", got.State)
 	}
 }
@@ -212,7 +213,7 @@ func TestALateCompletionReconcilesTheUnknownExecution(t *testing.T) {
 	if err := f.FinishExecution(t.Context(), allowed.ID, other, ExecutionOutcome{State: ExecutionSucceeded}); conflictReason(err) != ConflictLeaseNotOwned {
 		t.Errorf("a late completion with another token: %v", err)
 	}
-	if f.get(t, allowed.ID).State != StateExecutionUnknown {
+	if f.get(t, allowed.ID).State != action.StateExecutionUnknown {
 		t.Fatal("a refused completion changed the state")
 	}
 	result := json.RawMessage(`{"echo": {}}`)
@@ -222,13 +223,13 @@ func TestALateCompletionReconcilesTheUnknownExecution(t *testing.T) {
 
 	got := f.get(t, allowed.ID)
 	execution := got.Execution
-	if got.State != StateSucceeded || execution.State != ExecutionSucceeded || execution.Error != nil ||
+	if got.State != action.StateSucceeded || execution.State != ExecutionSucceeded || execution.Error != nil ||
 		execution.ReconciledAt == nil || !execution.ReconciledAt.Equal(got.UpdatedAt) ||
 		!execution.CompletedAt.Equal(*unknown.Execution.CompletedAt) {
 		t.Errorf("request %+v, execution %+v", got, execution)
 	}
 	sameJSON(t, execution.Result, result)
-	want := []ActionState{StateDecisionPending, StateAllowed, StateDispatching, StateRunning, StateExecutionUnknown, StateSucceeded}
+	want := []action.State{action.StateDecisionPending, action.StateAllowed, action.StateDispatching, action.StateRunning, action.StateExecutionUnknown, action.StateSucceeded}
 	if states := eventStates(f.events(t, allowed.ID)); !slices.Equal(states, want) {
 		t.Errorf("events %v, want %v", states, want)
 	}
@@ -265,7 +266,7 @@ func TestTheSweepEndsALapsedLeaseAsUnknownAndNeverReplaysIt(t *testing.T) {
 			}
 			got := f.get(t, allowed.ID)
 			execution := got.Execution
-			if got.State != StateExecutionUnknown || execution.State != ExecutionUnknown || execution.CompletedAt == nil ||
+			if got.State != action.StateExecutionUnknown || execution.State != ExecutionUnknown || execution.CompletedAt == nil ||
 				!execution.CompletedAt.Equal(got.UpdatedAt) || execution.ReconciledAt != nil {
 				t.Errorf("request %+v, execution %+v", got, execution)
 			}
@@ -297,7 +298,7 @@ func TestTheSweepLeavesLiveLeasesAndReturnsTheLapsedInRequestOrder(t *testing.T)
 	if expired := f.expire(t); !slices.Equal(expired, lapsed) {
 		t.Errorf("expired %v, want %v", expired, lapsed)
 	}
-	if f.get(t, live.ID).State != StateDispatching {
+	if f.get(t, live.ID).State != action.StateDispatching {
 		t.Error("a live lease was ended")
 	}
 }
@@ -375,7 +376,7 @@ func TestASweepAndACompletionDoNotDeadlock(t *testing.T) {
 				wantSwept = nil
 			}
 			got := f.get(t, allowed.ID)
-			if !slices.Equal(result.ids, wantSwept) || got.State != StateSucceeded || (got.Execution.ReconciledAt != nil) == finishFirst {
+			if !slices.Equal(result.ids, wantSwept) || got.State != action.StateSucceeded || (got.Execution.ReconciledAt != nil) == finishFirst {
 				t.Errorf("sweep expired %v, request %s, reconciled %v", result.ids, got.State, got.Execution.ReconciledAt)
 			}
 		})

@@ -5,13 +5,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/google/uuid"
 )
 
 func TestAMessageIdentityIsReadBackWithItsSender(t *testing.T) {
 	sent := MessageEvent{
 		MessageID: uuid.MustParse("5b0a6c51-8d7e-4f0a-9d2b-7c3e1f4a2b60"),
-		Sender:    ServiceAccount{Namespace: "test-namespace", Name: "test-sender"},
+		Sender:    action.ServiceAccount{Namespace: "test-namespace", Name: "test-sender"},
 	}
 	stored, err := json.Marshal(sent)
 	if err != nil {
@@ -107,5 +108,28 @@ func TestMergeabilityChangedIsAPullRequestOnlyActionlessSelector(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("default pull-request events omit mergeability_changed")
+	}
+}
+
+func TestMessageEventKeepsItsPermissiveSenderWireShape(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		sender string
+		want   action.ServiceAccount
+	}{
+		{name: "missing namespace", sender: `{"name":"test-sender"}`, want: action.ServiceAccount{Name: "test-sender"}},
+		{name: "empty namespace", sender: `{"namespace":"","name":"test-sender"}`, want: action.ServiceAccount{Name: "test-sender"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			data := []byte(`{"provider":"message","message_id":"5b0a6c51-8d7e-4f0a-9d2b-7c3e1f4a2b60","sender":` + test.sender + `}`)
+			got, err := DecodeEventIdentity(data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			message := got.(MessageEvent)
+			if message.Sender != test.want {
+				t.Errorf("sender = %+v, want %+v", message.Sender, test.want)
+			}
+		})
 	}
 }

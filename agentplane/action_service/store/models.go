@@ -9,14 +9,9 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/google/uuid"
 )
-
-// ServiceAccount is a Kubernetes ServiceAccount: the identity that owns an ActionRequest.
-type ServiceAccount struct {
-	Namespace string `json:"namespace"`
-	Name      string `json:"name"`
-}
 
 // ActionIdentity names an Action by its group and name. It is stored as `action_request.action`.
 type ActionIdentity struct {
@@ -28,7 +23,7 @@ type ActionIdentity struct {
 // ServiceReaderPrincipal read every owner's.
 type ReadPrincipal interface{ isReadPrincipal() }
 
-// Principal is who authors Events: a CallerPrincipal or an OperatorPrincipal. It is stored as `action_event.actor`.
+// Principal is an authenticated caller or operator. A shared action.Actor records its identity on an event.
 type Principal interface {
 	ReadPrincipal
 	isPrincipal()
@@ -36,7 +31,7 @@ type Principal interface {
 
 // CallerPrincipal is a workload that proved one ServiceAccount.
 type CallerPrincipal struct {
-	Account ServiceAccount `json:"account"`
+	Account action.ServiceAccount `json:"account"`
 }
 
 // OperatorPrincipal is the human behind the operator surface, as its issuer verified them.
@@ -47,7 +42,7 @@ type OperatorPrincipal struct {
 
 // ServiceReaderPrincipal is an allowlisted workload that reads every owner's requests and changes none.
 type ServiceReaderPrincipal struct {
-	Account ServiceAccount
+	Account action.ServiceAccount
 }
 
 func (CallerPrincipal) isReadPrincipal()        {}
@@ -55,26 +50,6 @@ func (OperatorPrincipal) isReadPrincipal()      {}
 func (ServiceReaderPrincipal) isReadPrincipal() {}
 func (CallerPrincipal) isPrincipal()            {}
 func (OperatorPrincipal) isPrincipal()          {}
-
-// ActionState is where a request is. It is stored as text.
-type ActionState string
-
-const (
-	StateDecisionPending  ActionState = "decision_pending"
-	StateAllowed          ActionState = "allowed"
-	StateDenied           ActionState = "denied"
-	StateDispatching      ActionState = "dispatching"
-	StateRunning          ActionState = "running"
-	StateSucceeded        ActionState = "succeeded"
-	StateFailed           ActionState = "failed"
-	StateCancelled        ActionState = "cancelled"
-	StateExecutionUnknown ActionState = "execution_unknown"
-)
-
-var actionStates = []ActionState{
-	StateDecisionPending, StateAllowed, StateDenied, StateDispatching, StateRunning, StateSucceeded, StateFailed,
-	StateCancelled, StateExecutionUnknown,
-}
 
 // ExecutionState is where an Execution is. It is stored as text.
 type ExecutionState string
@@ -207,8 +182,8 @@ type ActionRequest struct {
 	Title       string
 	Description *string
 	// Caller is the ServiceAccount that submitted the request.
-	Caller ServiceAccount
-	State  ActionState
+	Caller action.ServiceAccount
+	State  action.State
 	// Version counts the request's transitions from 1; an Event's sequence is the version it records.
 	Version   int64
 	CreatedAt time.Time
@@ -249,10 +224,10 @@ type Execution struct {
 // Event is one transition of a request.
 type Event struct {
 	Sequence int64
-	State    ActionState
+	State    action.State
 	At       time.Time
-	// Actor authenticated a cancellation; nil for every other transition.
-	Actor Principal
+	// Actor is the cancellation author; nil for every other transition.
+	Actor action.Actor
 }
 
 // CancellationOutcome is what cancelling a request did.
@@ -291,7 +266,7 @@ type ExecutionRequest struct {
 	Action    ActionIdentity
 	// Arguments is a JSON object.
 	Arguments json.RawMessage
-	Caller    ServiceAccount
+	Caller    action.ServiceAccount
 }
 
 // ExecutionOutcome is the terminal outcome an executor delivers.
@@ -319,11 +294,11 @@ const (
 )
 
 // terminalActionStates is the state of a request whose Execution ended in the key.
-var terminalActionStates = map[ExecutionState]ActionState{
-	ExecutionSucceeded: StateSucceeded,
-	ExecutionFailed:    StateFailed,
-	ExecutionCancelled: StateCancelled,
-	ExecutionUnknown:   StateExecutionUnknown,
+var terminalActionStates = map[ExecutionState]action.State{
+	ExecutionSucceeded: action.StateSucceeded,
+	ExecutionFailed:    action.StateFailed,
+	ExecutionCancelled: action.StateCancelled,
+	ExecutionUnknown:   action.StateExecutionUnknown,
 }
 
 // unknownOutcomeError is the `action_execution.error` of an Execution whose outcome could not be observed.
@@ -346,9 +321,9 @@ func bounded(field, value string, minLength, maxLength int) error {
 	return nil
 }
 
-func (a ServiceAccount) validate() error {
-	if a.Namespace == "" || a.Name == "" {
-		return invalid("a ServiceAccount needs a namespace and a name")
+func validateServiceAccount(a action.ServiceAccount) error {
+	if err := a.Validate(); err != nil {
+		return invalid("%s", err)
 	}
 	return nil
 }
@@ -392,7 +367,6 @@ func (e PolicyEvidence) validate() error {
 	return nil
 }
 
-func (s ActionState) valid() bool    { return slices.Contains(actionStates, s) }
 func (s ExecutionState) valid() bool { return slices.Contains(executionStates, s) }
 func (v Verdict) valid() bool        { return v == VerdictAllow || v == VerdictDeny }
 
@@ -484,14 +458,6 @@ func decodeFields(data []byte, v any, required ...string) error {
 	return decoder.Decode(v)
 }
 
-func (a *ServiceAccount) UnmarshalJSON(data []byte) error {
-	type plain ServiceAccount
-	if err := decodeFields(data, (*plain)(a), "namespace", "name"); err != nil {
-		return err
-	}
-	return a.validate()
-}
-
 func (a *ActionIdentity) UnmarshalJSON(data []byte) error {
 	type plain ActionIdentity
 	if err := decodeFields(data, (*plain)(a), "group", "name"); err != nil {
@@ -538,25 +504,4 @@ func (e PolicyEvidence) MarshalJSON() ([]byte, error) {
 		e.PolicySets = []PolicySetEvidence{}
 	}
 	return json.Marshal(plain(e))
-}
-
-// decodeActor reads `action_event.actor`: a CallerPrincipal has an `account`, an OperatorPrincipal an `issuer`
-// and a `subject`.
-func decodeActor(data []byte) (Principal, error) {
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(data, &fields); err != nil {
-		return nil, err
-	}
-	if _, caller := fields["account"]; caller {
-		var principal CallerPrincipal
-		if err := decodeFields(data, &principal, "account"); err != nil {
-			return nil, err
-		}
-		return principal, principal.Account.validate()
-	}
-	var principal OperatorPrincipal
-	if err := decodeFields(data, &principal, "issuer", "subject"); err != nil {
-		return nil, err
-	}
-	return principal, principal.validate()
 }

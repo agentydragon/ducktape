@@ -5,8 +5,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/action"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	"google.golang.org/protobuf/proto"
 )
@@ -110,6 +112,45 @@ func TestActionEventsPythonRefusesAreRefused(t *testing.T) {
 			var event ActionEvent
 			if err := decode(vector.Wire, &event); err == nil {
 				t.Errorf("accepted %s", vector.Wire)
+			}
+		})
+	}
+}
+
+func TestActionActorDecoderKeepsExplicitNullCompatibility(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		json string
+		want action.Actor
+	}{
+		{
+			name: "caller with null operator fields",
+			json: `{"account":{"namespace":"test-namespace","name":"test-caller"},"issuer":null,"subject":null}`,
+			want: action.CallerActor{Account: action.ServiceAccount{Namespace: "test-namespace", Name: "test-caller"}},
+		},
+		{
+			name: "operator with null account",
+			json: `{"account":null,"issuer":"test-issuer","subject":"test-subject"}`,
+			want: action.OperatorActor{Issuer: "test-issuer", Subject: "test-subject"},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			actor, err := decodeActionActor(json.RawMessage(test.json))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(actor, test.want) {
+				t.Fatalf("actor = %#v, want %#v", actor, test.want)
+			}
+			written, err := json.Marshal(actor)
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch test.want.(type) {
+			case action.CallerActor:
+				sameJSON(t, written, []byte(`{"account":{"namespace":"test-namespace","name":"test-caller"}}`))
+			case action.OperatorActor:
+				sameJSON(t, written, []byte(`{"issuer":"test-issuer","subject":"test-subject"}`))
 			}
 		})
 	}

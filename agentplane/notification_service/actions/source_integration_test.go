@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action"
 	actionpb "github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
@@ -34,7 +35,7 @@ const (
 )
 
 // testOwner owns the inboxes: a Sandbox runs as the ServiceAccount of its own name.
-var testOwner = store.ServiceAccount{Namespace: testNamespace, Name: testSandbox}
+var testOwner = action.ServiceAccount{Namespace: testNamespace, Name: testSandbox}
 
 // testIncarnation is testOwner as the Sandbox the destinations name.
 var testIncarnation = store.Owner{Account: testOwner, SandboxUID: testSandboxUID}
@@ -374,7 +375,7 @@ func TestEventsReturnsTheOwnersEventsAndRefusesAnotherAccount(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(events) != 1 || events[0].Sequence != 2 || events[0].State != store.ActionDecisionPending {
+	if len(events) != 1 || events[0].Sequence != 2 || events[0].State != action.StateDecisionPending {
 		t.Errorf("events = %+v, want the second", events)
 	}
 	call := f.service.log()[1]
@@ -382,7 +383,7 @@ func TestEventsReturnsTheOwnersEventsAndRefusesAnotherAccount(t *testing.T) {
 		t.Errorf("events call = %+v", call)
 	}
 
-	_, err = f.source.Events(t.Context(), store.ServiceAccount{Namespace: testNamespace, Name: "another-sandbox"}, request, 0)
+	_, err = f.source.Events(t.Context(), action.ServiceAccount{Namespace: testNamespace, Name: "another-sandbox"}, request, 0)
 	requireFailure(t, err, store.FailureAccessDenied, "SourceNotOwnedError")
 }
 
@@ -412,13 +413,13 @@ func TestEventsMapsTheActionEventActors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(events) != 2 || events[0].State != store.ActionAllowed || events[1].State != store.ActionDenied {
+	if len(events) != 2 || events[0].State != action.StateAllowed || events[1].State != action.StateDenied {
 		t.Fatalf("events = %+v", events)
 	}
-	if actor, ok := events[0].Actor.(store.CallerActor); !ok || actor.Account != testOwner {
+	if actor, ok := events[0].Actor.(action.CallerActor); !ok || actor.Account != testOwner {
 		t.Errorf("caller actor = %#v", events[0].Actor)
 	}
-	if actor, ok := events[1].Actor.(store.OperatorActor); !ok || actor.Issuer != "test-issuer" || actor.Subject != "test-subject" {
+	if actor, ok := events[1].Actor.(action.OperatorActor); !ok || actor.Issuer != "test-issuer" || actor.Subject != "test-subject" {
 		t.Errorf("operator actor = %#v", events[1].Actor)
 	}
 }

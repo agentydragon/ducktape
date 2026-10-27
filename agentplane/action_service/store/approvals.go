@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 
+	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 )
@@ -18,7 +19,7 @@ func (s *Store) Approvals(ctx context.Context, ids []uuid.UUID) ([]ActionRequest
 	var requests []ActionRequest
 	err := s.read(ctx, func(tx *sql.Tx) error {
 		rows, err := scanRequests(ctx, tx, `SELECT `+requestColumns+` FROM action_request
-			WHERE state = $1 OR id = ANY($2::uuid[]) ORDER BY created_at, id`, StateDecisionPending, values)
+			WHERE state = $1 OR id = ANY($2::uuid[]) ORDER BY created_at, id`, action.StateDecisionPending, values)
 		if err != nil {
 			return err
 		}

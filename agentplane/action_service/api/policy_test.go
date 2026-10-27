@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/informer"
@@ -73,7 +74,7 @@ func refusedSchema() policyapi.Rule {
 
 // accountView is the account as a request or a view names it.
 func accountView(account auth.Account) *sandboxes.ServiceAccount {
-	return serviceAccount(store.ServiceAccount(account))
+	return action.ServiceAccount(account).Proto()
 }
 
 // readPolicy is the policy the bearer is shown of the subject, its own when subject is nil.
