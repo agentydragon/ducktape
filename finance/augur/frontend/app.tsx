@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { MantineProvider } from "@mantine/core";
 import { Notifications } from "@mantine/notifications";
 
@@ -14,6 +14,7 @@ import {
   DeploymentCommitSummary,
   tabFromSearch,
   writeTabToSearch,
+  type AugurTab,
 } from "./header";
 import { ProductProjectionLoading } from "./skeleton";
 import { CurrencyDisplayProvider } from "./hooks";
@@ -34,30 +35,54 @@ import { replaceSearchParams } from "./url_state";
 // The shared rollout count is a top-level concern (both tabs run this many rollouts), so it gets
 // its own `?n=` param written by the shell rather than living in either tab's serialized input.
 // Omitted when at the default, so a default rollout count leaves no `?n=` in the URL.
-function writeRolloutCountToSearch(value, bootstrap) {
+type Catalog = Awaited<ReturnType<typeof fetchAugurCatalog>>;
+type Settings = Awaited<ReturnType<typeof fetchAugurSettings>>;
+type CalibrationInfo = Awaited<ReturnType<typeof fetchAugurCalibrationInfo>>;
+type Bootstrap = Omit<Catalog, keyof Settings> & Settings & { calibration: CalibrationInfo };
+type Deployment = Awaited<ReturnType<typeof fetchAugurDeployment>>;
+type MetricScale = ReturnType<typeof metricScaleFromSearch>;
+
+function errorMessage(error: unknown): string {
+  if (error && typeof error === "object" && "message" in error && error.message) return String(error.message);
+  return String(error);
+}
+
+function isAbortError(error: unknown): boolean {
+  return error != null && typeof error === "object" && "name" in error && error.name === "AbortError";
+}
+
+function writeRolloutCountToSearch(value: number | null, bootstrap: Bootstrap) {
   replaceSearchParams({ n: value == null || value === rolloutCountDefault(bootstrap) ? null : value });
 }
 
 // The shared exogenous model is likewise a top-level concern (both tabs run against it), so it
 // gets its own `?x=` param. Omitted when at the deployment default, like the `?n=` param above.
-function writeExogenousModelToSearch(value, bootstrap) {
+function writeExogenousModelToSearch(value: string | null, bootstrap: Bootstrap) {
   replaceSearchParams({ x: value == null || value === defaultModel(bootstrap) ? null : value });
 }
 
 // The shared horizon (`?h=`) and chart scale (`?scale=`) are also top-level, owned by the shell.
-function writeHorizonMonthsToSearch(value, bootstrap) {
+function writeHorizonMonthsToSearch(value: number | null, bootstrap: Bootstrap) {
   replaceSearchParams({ h: value == null || value === horizonMonthsDefault(bootstrap) ? null : value });
 }
 
-function writeMetricScaleToSearch(value) {
+function writeMetricScaleToSearch(value: MetricScale) {
   replaceSearchParams({ scale: value === "log" ? "log" : null });
 }
 
-function currencyDisplayFromSearch(searchString) {
+function currencyDisplayFromSearch(searchString: string): "exact" | "compact" {
   return new URLSearchParams(searchString).get("fmt") === "exact" ? "exact" : "compact";
 }
 
-function BudgetAppSurface({ deployment, tab, onSelectTab }) {
+function BudgetAppSurface({
+  deployment,
+  tab,
+  onSelectTab,
+}: {
+  deployment: Deployment | null;
+  tab: AugurTab;
+  onSelectTab: (tab: AugurTab) => void;
+}) {
   return (
     <div
       data-augur-surface="budget"
@@ -71,6 +96,26 @@ function BudgetAppSurface({ deployment, tab, onSelectTab }) {
     </div>
   );
 }
+
+type SharedAppProps = {
+  bootstrap: Bootstrap;
+  deployment: Deployment | null;
+  tab: AugurTab;
+  onSelectTab: (tab: AugurTab) => void;
+  rolloutCount: number | null;
+  onChangeRolloutCount: (value: number | null) => void;
+  firstSeed: number;
+  model: string;
+  onChangeModel: (value: string) => void;
+  horizonMonths: number;
+  onChangeHorizonMonths: (value: number | null) => void;
+  metricScale: MetricScale;
+  onChangeMetricScale: (value: MetricScale) => void;
+  currencyDisplay: "exact" | "compact";
+  onChangeCurrencyDisplay: (value: "exact" | "compact") => void;
+  settingsOpen: boolean;
+  onChangeSettingsOpen: (open: boolean) => void;
+};
 
 function CalibrationAppSurface({
   bootstrap,
@@ -88,7 +133,7 @@ function CalibrationAppSurface({
   onChangeCurrencyDisplay,
   settingsOpen,
   onChangeSettingsOpen,
-}) {
+}: SharedAppProps) {
   return (
     <div
       data-augur-surface="calibration"
@@ -130,9 +175,11 @@ function CalibrationAppSurface({
 // Mounted once bootstrap has loaded so the shared defaults (which depend on bootstrap fields like
 // `maxRolloutSamples` and `models`) are available at state-init time. Owns the cross-tab
 // state — the active tab plus shared controls — and hands it to whichever workspace is active.
-function LoadedAppShell({ bootstrap, deployment }) {
+function LoadedAppShell({ bootstrap, deployment }: { bootstrap: Bootstrap; deployment: Deployment | null }) {
   const [tab, setTab] = useState(() => tabFromSearch(window.location.search));
-  const [rolloutCount, setRolloutCount] = useState(() => rolloutCountFromSearch(window.location.search, bootstrap));
+  const [rolloutCount, setRolloutCount] = useState<number | null>(() =>
+    rolloutCountFromSearch(window.location.search, bootstrap)
+  );
   // First seed is a fixed default (no UI control) so runs stay reproducible.
   const firstSeed = firstSeedDefault(bootstrap);
   const [model, setModel] = useState(() => modelFromSearch(window.location.search, bootstrap));
@@ -141,34 +188,34 @@ function LoadedAppShell({ bootstrap, deployment }) {
   const [currencyDisplay, setCurrencyDisplay] = useState(() => currencyDisplayFromSearch(window.location.search));
   const [settingsOpen, setSettingsOpen] = useState(true);
 
-  const onSelectTab = (next) => {
+  const onSelectTab = (next: AugurTab) => {
     setTab(next);
     writeTabToSearch(next);
   };
 
-  const onChangeRolloutCount = (value) => {
+  const onChangeRolloutCount = (value: number | null) => {
     const next = value == null ? value : clampRolloutCount(value, bootstrap);
     setRolloutCount(next);
     writeRolloutCountToSearch(next, bootstrap);
   };
 
-  const onChangeModel = (value) => {
+  const onChangeModel = (value: string) => {
     setModel(value);
     writeExogenousModelToSearch(value, bootstrap);
   };
 
-  const onChangeHorizonMonths = (value) => {
+  const onChangeHorizonMonths = (value: number | null) => {
     const next = value == null ? value : clampHorizonMonths(value, bootstrap);
     setHorizonMonths(next);
     writeHorizonMonthsToSearch(next, bootstrap);
   };
 
-  const onChangeMetricScale = (value) => {
+  const onChangeMetricScale = (value: MetricScale) => {
     setMetricScale(value);
     writeMetricScaleToSearch(value);
   };
 
-  const onChangeCurrencyDisplay = (value) => {
+  const onChangeCurrencyDisplay = (value: "exact" | "compact") => {
     setCurrencyDisplay(value);
     replaceSearchParams({ fmt: value !== "compact" ? "exact" : null });
   };
@@ -192,7 +239,7 @@ function LoadedAppShell({ bootstrap, deployment }) {
     settingsOpen,
     onChangeSettingsOpen: setSettingsOpen,
   };
-  let surface;
+  let surface: ReactNode;
   if (tab === "calibration") {
     surface = <CalibrationAppSurface {...sharedProps} />;
   } else if (tab === "budget") {
@@ -208,9 +255,9 @@ function LoadedAppShell({ bootstrap, deployment }) {
 }
 
 function ProductProjectionAppShell() {
-  const [bootstrap, setBootstrap] = useState(null);
-  const [bootstrapError, setBootstrapError] = useState(null);
-  const [deployment, setDeployment] = useState(null);
+  const [bootstrap, setBootstrap] = useState<Bootstrap | null>(null);
+  const [bootstrapError, setBootstrapError] = useState<string | null>(null);
+  const [deployment, setDeployment] = useState<Deployment | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -228,9 +275,9 @@ function ProductProjectionAppShell() {
         setBootstrapError(null);
       })
       .catch((error) => {
-        if (error?.name === "AbortError") return;
+        if (isAbortError(error)) return;
         setBootstrap(null);
-        setBootstrapError(error?.message || String(error));
+        setBootstrapError(errorMessage(error));
       });
     return () => controller.abort();
   }, []);
@@ -240,7 +287,7 @@ function ProductProjectionAppShell() {
     fetchAugurDeployment({ signal: controller.signal })
       .then((payload) => setDeployment(payload))
       .catch((error) => {
-        if (error?.name === "AbortError") return;
+        if (isAbortError(error)) return;
         setDeployment(null);
       });
     return () => controller.abort();
