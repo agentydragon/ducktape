@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from typing import cast
 
 import certifi
 import plaid
@@ -126,7 +127,7 @@ class PlaidClient:
 
     @property
     def api_client(self) -> ApiClient:
-        return self._api.api_client
+        return cast(ApiClient, self._api.api_client)
 
     def close(self) -> None:
         self._api.api_client.close()
@@ -264,14 +265,14 @@ class PlaidClient:
             raise _plaid_api_error("/item/remove", exc) from exc
 
     def item_public_token_exchange(self, request: ItemPublicTokenExchangeRequest, /) -> ItemPublicTokenExchangeResponse:
-        return self._api.item_public_token_exchange(request)
+        return cast(ItemPublicTokenExchangeResponse, self._api.item_public_token_exchange(request))
 
     def item_get(self, request: ItemGetRequest, /) -> ItemGetResponse:
-        return self._api.item_get(request)
+        return cast(ItemGetResponse, self._api.item_get(request))
 
     def item_webhook_update(self, request: ItemWebhookUpdateRequest, /) -> ItemWebhookUpdateResponse:
         try:
-            return self._api.item_webhook_update(request)
+            return cast(ItemWebhookUpdateResponse, self._api.item_webhook_update(request))
         except PlaidApiException as exc:
             raise _plaid_api_error("/item/webhook/update", exc) from exc
 
@@ -279,37 +280,37 @@ class PlaidClient:
         self, request: WebhookVerificationKeyGetRequest, /
     ) -> WebhookVerificationKeyGetResponse:
         try:
-            return self._api.webhook_verification_key_get(request)
+            return cast(WebhookVerificationKeyGetResponse, self._api.webhook_verification_key_get(request))
         except PlaidApiException as exc:
             raise _plaid_api_error("/webhook_verification_key/get", exc) from exc
 
     def accounts_get(self, request: AccountsGetRequest, /) -> AccountsGetResponse:
-        return self._api.accounts_get(request)
+        return cast(AccountsGetResponse, self._api.accounts_get(request))
 
     def accounts_balance_get(self, request: AccountsBalanceGetRequest, /) -> AccountsGetResponse:
-        return self._api.accounts_balance_get(request)
+        return cast(AccountsGetResponse, self._api.accounts_balance_get(request))
 
     def transactions_get(self, request: TransactionsGetRequest, /) -> TransactionsGetResponse:
-        return self._api.transactions_get(request)
+        return cast(TransactionsGetResponse, self._api.transactions_get(request))
 
     def transactions_sync(self, request: TransactionsSyncRequest, /) -> TransactionsSyncResponse:
-        return self._api.transactions_sync(request)
+        return cast(TransactionsSyncResponse, self._api.transactions_sync(request))
 
     def investments_holdings_get(self, request: InvestmentsHoldingsGetRequest, /) -> InvestmentsHoldingsGetResponse:
-        return self._api.investments_holdings_get(request)
+        return cast(InvestmentsHoldingsGetResponse, self._api.investments_holdings_get(request))
 
     def investments_transactions_get(
         self, request: InvestmentsTransactionsGetRequest, /
     ) -> InvestmentsTransactionsGetResponse:
-        return self._api.investments_transactions_get(request)
+        return cast(InvestmentsTransactionsGetResponse, self._api.investments_transactions_get(request))
 
     def liabilities_get(self, request: LiabilitiesGetRequest, /) -> LiabilitiesGetResponse:
-        return self._api.liabilities_get(request)
+        return cast(LiabilitiesGetResponse, self._api.liabilities_get(request))
 
     def sandbox_public_token_create(
         self, request: SandboxPublicTokenCreateRequest, /
     ) -> SandboxPublicTokenCreateResponse:
-        return self._api.sandbox_public_token_create(request)
+        return cast(SandboxPublicTokenCreateResponse, self._api.sandbox_public_token_create(request))
 
 
 def _create_sdk_api(creds: PlaidCreds) -> plaid_api.PlaidApi:
