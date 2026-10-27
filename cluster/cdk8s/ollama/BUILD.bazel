@@ -32,7 +32,6 @@ py_library(
     name = "app",
     srcs = ["app.py"],
     data = [
-        "copy-ssd-models.sh",
         "link-ssd-models.sh",
         "nginx.conf",
         "nginx-auth-proxy.conf.template",

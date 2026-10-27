@@ -7,7 +7,7 @@ set -eu
 # busybox ash supports `set -o pipefail` since 1.34.
 set -o pipefail
 # Sizes are the model-layer size from the ollama registry manifest.
-# Total ~228 GB; PVC `llm-models` is 350Gi (cluster/cdk8s/ollama/app.py).
+# Total ~116 GB; PVC `models` is 200Gi (cluster/cdk8s/ollama/app.py).
 #
 # We hit `/api/pull` directly instead of using `ollama pull` because the CLI
 # emits a CR-redrawn TTY progress bar that is unreadable in `kubectl logs`.

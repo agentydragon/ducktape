@@ -8,14 +8,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, JsonPatch, Size
-from cdk8s_plus_34 import (
-    PersistentVolume,
-    PersistentVolumeAccessMode,
-    PersistentVolumeClaim,
-    PersistentVolumeReclaimPolicy,
-    k8s,
-)
+from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s_plus_34 import k8s
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
@@ -54,19 +48,13 @@ _PODS = Pods(namespace=_NAMESPACE, labels=(("app.kubernetes.io/name", _NAME),))
 SERVICE = ServiceRef(name=_NAME, port=Port(name="http", number=11434), pods=_PODS)
 # The bearer-checking nginx in front of it, which the public route targets.
 AUTH_PROXY = ServiceRef(name=_NAME, port=Port(name="auth-proxy", number=11435), pods=_PODS)
-_MODELS_CLAIM = "llm-models"
-_SSD_MODELS_CLAIM = "qwen38-iq4-ssd"
-_SSD_MODELS_VOLUME = "wyrm2-qwen38-iq4-ssd"
-# Piraeus successors on wyrm2's own pools; the copy Job seeds the SSD one from the static PV.
-_PIRAEUS_MODELS_CLAIM = "models"
-_PIRAEUS_SSD_MODELS_CLAIM = "qwen38-iq4"
-_SSD_MODELS_COPY_DIR = "/ssd-models-new"
+_MODELS_CLAIM = "models"
+_SSD_MODELS_CLAIM = "qwen38-iq4"
 DIRECT_TOKEN = SecretRef(namespace=_NAMESPACE, name="ollama-direct-token").key("token")
 _AUTH_PROXY_CONFIG_MAP = "ollama-auth-proxy"
 _SCRIPTS_CONFIG_MAP = "gpt-oss-scripts"
 _SETUP_SCRIPT = "setup-gpt-oss-v2.sh"
 _LINK_SCRIPT = "link-ssd-models.sh"
-_COPY_SCRIPT = "copy-ssd-models.sh"
 _NGINX_CONF = "nginx.conf"
 # Container-side mount paths; link-ssd-models.sh and setup-gpt-oss-v2.sh spell them too.
 _MODELS_DIR = "/models"
@@ -91,31 +79,12 @@ def _namespace(scope: Construct) -> None:
     )
 
 
-def _models_claim(scope: Construct) -> None:
-    k8s.KubePersistentVolumeClaim(
-        scope,
-        "models",
-        # Kept when dropped from here; its blobs are deleted by hand once Ollama is on Piraeus.
-        metadata=k8s.ObjectMeta(
-            name=_MODELS_CLAIM, namespace=_NAMESPACE, annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"}
-        ),
-        spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteOnce"],
-            # OpenEBS LVM HDD on wyrm2 — co-located with GPUs. VG is 500GB
-            # (proxmox-vms.tf); no other workloads use this VG. 350Gi covers the ~228GB roster
-            # (setup-gpt-oss-v2.sh) with headroom for future additions.
-            storage_class_name="lvm-proxmox-hdd",
-            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("350Gi")}),
-        ),
-    )
-
-
-def _piraeus_claims(scope: Construct) -> None:
-    # Ollama re-pulls the HDD roster (setup-gpt-oss-v2.sh) into an empty registry.
+def _claims(scope: Construct) -> None:
+    # Both on wyrm2's own Piraeus pools, which pins Ollama to the GPU host.
     k8s.KubePersistentVolumeClaim(
         scope,
         "piraeus-models",
-        metadata=k8s.ObjectMeta(name=_PIRAEUS_MODELS_CLAIM, namespace=_NAMESPACE),
+        metadata=k8s.ObjectMeta(name=_MODELS_CLAIM, namespace=_NAMESPACE),
         spec=k8s.PersistentVolumeClaimSpec(
             access_modes=["ReadWriteOnce"],
             storage_class_name="piraeus-hdd-local",
@@ -125,120 +94,13 @@ def _piraeus_claims(scope: Construct) -> None:
     k8s.KubePersistentVolumeClaim(
         scope,
         "piraeus-ssd-models",
-        metadata=k8s.ObjectMeta(name=_PIRAEUS_SSD_MODELS_CLAIM, namespace=_NAMESPACE),
+        metadata=k8s.ObjectMeta(name=_SSD_MODELS_CLAIM, namespace=_NAMESPACE),
         spec=k8s.PersistentVolumeClaimSpec(
             access_modes=["ReadWriteOnce"],
             storage_class_name="piraeus-ssd-local",
             resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("100Gi")}),
         ),
     )
-
-
-def _copy_ssd_models_job(scope: Construct) -> None:
-    """Copy the pinned IQ4 shards, derived template shard included, onto their Piraeus claim
-    and check each against its digest. Serving keeps reading the static PV."""
-    k8s.KubeJob(
-        scope,
-        "copy-ssd-models",
-        metadata=k8s.ObjectMeta(name="copy-qwen38-iq4-v2", namespace=_NAMESPACE),
-        spec=k8s.JobSpec(
-            backoff_limit=2,
-            template=k8s.PodTemplateSpec(
-                spec=k8s.PodSpec(
-                    security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
-                    automount_service_account_token=False,
-                    restart_policy="Never",
-                    node_selector={"kubernetes.io/hostname": "wyrm2"},
-                    volumes=[
-                        k8s.Volume(name="scripts", config_map=k8s.ConfigMapVolumeSource(name=_SCRIPTS_CONFIG_MAP)),
-                        k8s.Volume(
-                            name="ssd-models",
-                            persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(
-                                claim_name=_SSD_MODELS_CLAIM, read_only=True
-                            ),
-                        ),
-                        k8s.Volume(
-                            name="ssd-models-new",
-                            persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(
-                                claim_name=_PIRAEUS_SSD_MODELS_CLAIM
-                            ),
-                        ),
-                    ],
-                    containers=[
-                        k8s.Container(
-                            name="copy",
-                            image="busybox:1.38",
-                            command=["/bin/sh", f"{_SCRIPTS_DIR}/{_COPY_SCRIPT}"],
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("500m"),
-                                    "memory": k8s.Quantity.from_string("64Mi"),
-                                },
-                                limits={"memory": k8s.Quantity.from_string("512Mi")},
-                            ),
-                            volume_mounts=[
-                                k8s.VolumeMount(name="scripts", mount_path=_SCRIPTS_DIR, read_only=True),
-                                k8s.VolumeMount(name="ssd-models", mount_path=_SSD_MODELS_DIR, read_only=True),
-                                k8s.VolumeMount(name="ssd-models-new", mount_path=_SSD_MODELS_COPY_DIR),
-                            ],
-                        )
-                    ],
-                )
-            ),
-        ),
-    )
-
-
-def _ssd_models(scope: Construct) -> None:
-    # Existing host-managed ext4 filesystem, not a dynamically provisioned LVM LV.
-    # Capacity advertises this directory; it is not a filesystem quota.
-    volume = PersistentVolume(
-        scope,
-        "ssd-models-volume",
-        metadata=ApiObjectMetadata(
-            name=_SSD_MODELS_VOLUME, annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"}
-        ),
-        storage=Size.gibibytes(90),
-        access_modes=[PersistentVolumeAccessMode.READ_WRITE_ONCE],
-        reclaim_policy=PersistentVolumeReclaimPolicy.RETAIN,
-        storage_class_name="",
-    )
-    # The fluent PV has no local source or node-affinity fields.
-    ApiObject.of(volume).add_json_patch(
-        JsonPatch.add(
-            "/spec/local", k8s.LocalVolumeSource(path="/var/lib/llm-models-ssd/Qwen3.8-Flash-Next-GGUF/UD-IQ4_XS")
-        ),
-        JsonPatch.add(
-            "/spec/nodeAffinity",
-            k8s.VolumeNodeAffinity(
-                required=k8s.NodeSelector(
-                    node_selector_terms=[
-                        k8s.NodeSelectorTerm(
-                            match_expressions=[
-                                k8s.NodeSelectorRequirement(
-                                    key="kubernetes.io/hostname", operator="In", values=["wyrm2"]
-                                )
-                            ]
-                        )
-                    ]
-                )
-            ),
-        ),
-    )
-    claim = PersistentVolumeClaim(
-        scope,
-        "ssd-models-claim",
-        metadata=ApiObjectMetadata(
-            name=_SSD_MODELS_CLAIM, namespace=_NAMESPACE, annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"}
-        ),
-        access_modes=[PersistentVolumeAccessMode.READ_WRITE_ONCE],
-        storage_class_name="",
-        storage=Size.gibibytes(90),
-        volume=volume,
-    )
-    volume.bind(claim)
-    # cdk8s-plus bind() renders only the name; PV claimRef also needs the namespace.
-    ApiObject.of(volume).add_json_patch(JsonPatch.add("/spec/claimRef/namespace", _NAMESPACE))
 
 
 def _ollama_container() -> k8s.Container:
@@ -267,7 +129,7 @@ def _ollama_container() -> k8s.Container:
             k8s.EnvVar(name="OLLAMA_FLASH_ATTENTION", value="1"),
             k8s.EnvVar(name="OLLAMA_CONTEXT_LENGTH", value=str(models.DEFAULT_NUM_CTX)),
             # Default 5m is shorter than a cold read of the 112GB qwen3.8-flash-next-q4
-            # weights off HDD-backed lvm-proxmox-hdd; Ollama abandons the load attempt
+            # weights off HDD-backed piraeus-hdd-local; Ollama abandons the load attempt
             # (and does not retry) once this elapses.
             k8s.EnvVar(name="OLLAMA_LOAD_TIMEOUT", value="30m"),
         ],
@@ -435,7 +297,7 @@ def _setup_job(scope: Construct) -> None:
         scope,
         "setup-gpt-oss",
         # Explicit version bumps own reruns.
-        metadata=k8s.ObjectMeta(name="setup-gpt-oss-v9", namespace=_NAMESPACE),
+        metadata=k8s.ObjectMeta(name="setup-gpt-oss-v10", namespace=_NAMESPACE),
         spec=k8s.JobSpec(
             template=k8s.PodTemplateSpec(
                 spec=k8s.PodSpec(
@@ -536,10 +398,7 @@ def _direct_token(scope: Construct) -> None:
 def chart(app: App) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
     _namespace(chart)
-    _models_claim(chart)
-    _ssd_models(chart)
-    _piraeus_claims(chart)
-    _copy_ssd_models_job(chart)
+    _claims(chart)
     _deployment(chart)
     _service(chart)
     https_route(
@@ -584,7 +443,6 @@ def write_config_maps(root: Path) -> list[ConfigMapArgs]:
             files=[
                 _SETUP_SCRIPT,
                 copy_source_file(root, OUTPUT_DIR, f"{_SOURCE_DIR}/{_LINK_SCRIPT}"),
-                copy_source_file(root, OUTPUT_DIR, f"{_SOURCE_DIR}/{_COPY_SCRIPT}"),
                 copy_source_file(root, OUTPUT_DIR, f"{_SOURCE_DIR}/qwen38-ssd-shards.tsv"),
                 copy_source_file(root, OUTPUT_DIR, f"{_SOURCE_DIR}/qwen38-ssd-derived-shards.tsv"),
             ],

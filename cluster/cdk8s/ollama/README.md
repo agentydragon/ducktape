@@ -38,13 +38,11 @@ service. Clients that cached the previous token must fetch the new value from
 
 ## SSD weights alongside HDD models
 
-The `llm-models` PVC remains Ollama's writable `/models` registry on HDD.
-`qwen38-iq4-ssd` is a second, statically bound PVC: its retained local PV exposes
-wyrm2's existing `/var/lib/llm-models-ssd/Qwen3.8-Flash-Next-GGUF/UD-IQ4_XS`
-directory read-only at `/ssd-models`. It does not allocate, format or resize a disk,
-and does not use OpenEBS; the advertised 90Gi is not an enforced quota. Node affinity
-pins the consumer to wyrm2, and the model-specific path and startup file checks make a
-missing SSD or model fail rather than serve an empty directory.
+The `models` PVC (`piraeus-hdd-local`) is Ollama's writable `/models` registry.
+`qwen38-iq4` (`piraeus-ssd-local`) holds the `UD-IQ4_XS` directory, mounted read-only
+at `/ssd-models`. Both are strict-local claims on wyrm2's Piraeus pools, which pins
+the consumers to wyrm2; the startup file checks make a missing model fail rather than
+serve an empty directory.
 
 The init container links digest-named blobs in `/models/blobs` to the three original
 SSD shards and the derived template shard. `qwen38-ssd-shards.tsv` pins the original
@@ -60,25 +58,17 @@ the sidecar when setup finishes. Small manifests and other models stay on HDD; O
 has one model root, so this is filesystem-managed placement, not a native per-model
 storage tier.
 
-The `lvm-proxmox-hdd` CSI rejects mounting the `llm-models` PVC in the serving Pod and
-the registration Job at once (`verifyMount: device already mounted`). To register,
-pause the serving Deployment through GitOps, wait for its Pod to terminate and the
-versioned Job to complete, then restore one serving replica. The static SSD PV has no
-such restriction.
+The setup Job and the serving Pod both mount `models` on wyrm2. If the Job's Pod
+cannot mount it beside the serving Pod (the retired `lvm-proxmox-hdd` claim refused
+with `verifyMount: device already mounted`), pause the serving Deployment through
+GitOps, wait for the Job to complete, then restore one serving replica.
 The completed Job has no TTL: Flux keeps it until the Job's version is bumped, which
 is also how to rerun registration. It opts out of Reloader, which would delete its
 running Pod on a scripts ConfigMap update.
 
 `OLLAMA_NOPRUNE=true` keeps startup garbage collection from unlinking the external
 blobs before registration, so unused blobs need deliberate cleanup; do not remove SSD
-files while a manifest references them. The SSD PV/PVC have Flux pruning disabled, the
-PV uses `Retain`, and the owning Kustomization orphans on deletion. The HDD PVC is not
-rebound or migrated.
-
-The SSD is wyrm2's separate host-managed ext4 model disk, not the SSD LVM volume group.
-The [thin-pool incident](../../docs/lessons_learned/2026_07_17_lvm_thinpool_exhaustion_emergency_ro.md)
-was physical pool exhaustion despite VG free space; Nix declares auto-extension
-mitigations, whose live coverage of new pools is unverified.
+files while a manifest references them.
 
 ## GPU placement
 
@@ -110,12 +100,12 @@ message becomes a ChatML system turn at the same position (Qwen's template alrea
 leading developer content into one). `patch_qwen38_template.py` pins the original
 template's SHA256.
 
-The 10.9 MB first GGUF shard holds this metadata. On wyrm2, generate its derived copy
-**before** deploying the `setup-gpt-oss` Job; the two large weight shards and all
-source files stay untouched:
+The 10.9 MB first GGUF shard holds this metadata. Its derived copy lives in
+`qwen38-iq4` under `agentplane-midturn/` and must exist **before** the `setup-gpt-oss`
+Job runs; the two large weight shards and all source files stay untouched. To
+regenerate it, run the patcher against the claim's mount, here `$ssd`:
 
 ```bash
-ssd=/var/lib/llm-models-ssd/Qwen3.8-Flash-Next-GGUF/UD-IQ4_XS
 bb run //cluster/cdk8s/ollama:derive_qwen38_template -- \
   "$ssd/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf" \
   "$PWD/cluster/cdk8s/ollama/qwen38-chat-template.jinja" \
