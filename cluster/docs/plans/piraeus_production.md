@@ -76,41 +76,28 @@ no redundancy, 79% allocated, 584 GB available; `tank-hdd` (pool `tank`) is
 raidz2 over four 16 TB disks with about 27.9 TB available. A `piraeus-ssd-local`
 volume on Wyrm2 therefore has no redundancy below LINSTOR; `piraeus-hdd-local`
 survives two disk failures. Atlas's LVM `global_filter` rejects `/dev/zd*`, so the
-host never activates guest VGs. Wyrm2's virtio disks carry no serial today.
+host never activates guest VGs.
 
-Each step needs the previous one; deletions and the Wyrm2 reboot need the
-owner's approval at the time.
+Done 2026-10-27: DRBD 9 on Wyrm2, the satellite enrolled, and sparse zvols
+`rpool/data/vm-110-piraeus-ssd` (150 GiB, 16 KiB) and `tank/vm-110-piraeus-hdd`
+(500 GiB, 64 KiB), both `primarycache=metadata`, hot-added as
+`virtio12`/`virtio13` with serials `piraeus-{ssd,hdd}`.
 
-1. **DRBD 9 host module.** `ducktape.piraeusHost` adds the out-of-tree DRBD 9
-   module (Wyrm2's kernel ships only in-tree 8.4.11). New modules load from the
-   booted system, so activation is a scheduled Wyrm2 reboot. Accept when
-   `modinfo drbd` reports 9.x for the running kernel and `/proc/drbd` exists.
-2. **Satellite enrollment.** A Wyrm2 `LinstorSatelliteConfiguration` without the
-   Talos patches and with the DRBD module loader disabled (the host provides the
-   module); label the node `piraeus-ready` and confirm the satellite is Online
-   on its Nebula address. `nebula1` is already a trusted firewall interface.
-3. **Disks.** On Atlas, create sparse zvols explicitly, since `volblocksize` is
-   fixed at creation: 150 GiB in `rpool/data` at 16 KiB and 500 GiB in `tank` at
-   64 KiB (the thin chunk size; less raidz2 padding than 16 KiB), both
-   `primarycache=metadata` so ARC does not duplicate the guest page cache. Keep
-   `sync=standard` and compression. Hot-add them as `virtio12`/`virtio13` with
-   `serial=piraeus-ssd`/`serial=piraeus-hdd`, `discard=on`, `iothread=1`, no
-   Proxmox backup or replication; slots after `virtio11` cannot shift existing
-   `/dev/vdX` names. Mirror both in `proxmox-vms.tf` (its `ignore_changes`
-   means Terraform does not attach them).
-4. **Pools.** Add `ssd` and `hdd` LVM_THIN pools to the Wyrm2 satellite from
-   `/dev/disk/by-id/virtio-piraeus-{ssd,hdd}`, with the HDD
-   `ExtCmd/WaitTimeout`. The existing `piraeus-{ssd,hdd}-local` classes then
-   reach Wyrm2; the replicated class stays OVH-only. Alert on `tank` and
-   `rpool` free space, which LINSTOR's thin accounting cannot see.
-5. **Acceptance.** Filesystem and Block lifecycle on each Wyrm2 pool: create,
+Each remaining step needs the previous one; deletions need the owner's approval
+at the time.
+
+1. **Pools.** `ssd` and `hdd` LVM_THIN pools on the Wyrm2 satellite from
+   `/dev/disk/by-id/virtio-piraeus-{ssd,hdd}`; the `piraeus-{ssd,hdd}-local`
+   classes then reach Wyrm2 and the replicated class stays OVH-only. Alert on
+   `tank` and `rpool` free space, which LINSTOR's thin accounting cannot see.
+2. **Acceptance.** Filesystem and Block lifecycle on each Wyrm2 pool: create,
    attach, write, expand, detach and delete.
-6. **Moves.** Qwen: a `piraeus-ssd-local` claim replacing the static
+3. **Moves.** Qwen: a `piraeus-ssd-local` claim replacing the static
    `wyrm2-qwen38-iq4-ssd` PV; copy or re-download `UD-IQ4_XS`, then confirm
    Ollama serves it. ActivityWatch: a `piraeus-hdd-local` claim; stop, copy,
    switch and verify its history, keeping the old PV until the owner releases
    it. Ollama gets a fresh empty `piraeus-hdd-local` claim and re-pulls on use.
-7. **Retirement**, each after its consumers are gone: the old model disk
+4. **Retirement**, each after its consumers are gone: the old model disk
    (`virtio8`, 816 GB on `rpool`) and its mount; OpenEBS on Wyrm2 (`virtio2`,
    `virtio6`, the VG setup units, the thin-autoextend `lvm.conf` stanza, the
    `lvm-proxmox-*` classes and their CDI entries); `local-path-proxmox` and

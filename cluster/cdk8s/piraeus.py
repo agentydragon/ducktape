@@ -53,6 +53,9 @@ _THIRD_NODE_DATA_DEVICE = "/dev/disk/by-id/nvme-INTEL_SSDPE2MX450G7_BTPF8256009U
 _OPTIPLEX_SELECTOR = {_PIRAEUS_READY_LABEL: "true", "kubernetes.io/hostname": "optiplex"}
 _OPTIPLEX_DATA_DEVICE = "/dev/disk/by-partlabel/r-piraeus"
 _WYRM2_SELECTOR = {_PIRAEUS_READY_LABEL: "true", "kubernetes.io/hostname": "wyrm2"}
+# Atlas zvols hot-added with these Proxmox disk serials: rpool/data (single NVMe) and tank (raidz2).
+_WYRM2_SSD_DATA_DEVICE = "/dev/disk/by-id/virtio-piraeus-ssd"
+_WYRM2_HDD_DATA_DEVICE = "/dev/disk/by-id/virtio-piraeus-hdd"
 _CONTROLLER_POD_SELECTOR = {"app.kubernetes.io/component": "linstor-controller"}
 _REACTOR_CONFIG_PATCH = get_required_path(own_repo_rlocation("cluster/cdk8s/piraeus-reactor-patch.yaml")).read_text()
 _DRBD_ALLOY_CONFIG = get_required_path(own_repo_rlocation("cluster/cdk8s/piraeus-drbd-metrics.alloy")).read_text()
@@ -357,6 +360,24 @@ def cluster_chart(app: App) -> Chart:
         storage_pool="ssd",
         name="piraeus-lvm-metrics-optiplex",
     )
+    piraeus_metrics.add_thin_pool_monitoring(
+        Construct(chart, "wyrm2-ssd-metrics"),
+        namespace=NAMESPACE,
+        node_selector=_WYRM2_SELECTOR,
+        volume_group=_FIRST_NODE_VOLUME_GROUP,
+        thin_pool=_FIRST_NODE_THIN_POOL,
+        storage_pool="ssd",
+        name="piraeus-lvm-metrics-wyrm2-ssd",
+    )
+    piraeus_metrics.add_thin_pool_monitoring(
+        Construct(chart, "wyrm2-hdd-metrics"),
+        namespace=NAMESPACE,
+        node_selector=_WYRM2_SELECTOR,
+        volume_group=_HDD_VOLUME_GROUP,
+        thin_pool=_FIRST_NODE_THIN_POOL,
+        storage_pool="hdd",
+        name="piraeus-lvm-metrics-wyrm2-hdd",
+    )
     repository = oci_helm_repository(
         chart, "piraeus-charts", "flux-system", url="oci://ghcr.io/piraeusdatastore/helm-charts"
     )
@@ -545,14 +566,33 @@ def cluster_chart(app: App) -> Chart:
                 },
                 {
                     "name": "wyrm2",
-                    # Diskless enrollment on NixOS ahead of wyrm2's own pools. The fence keeps
-                    # LINSTOR from placing tiebreakers or replicas of OVH resources here, across
-                    # the home/OVH link; lift it only with the placement policy for home pools.
+                    # Both pools sit on thin Atlas zvols whose free space LINSTOR cannot see.
                     "nodeSelector": _WYRM2_SELECTOR,
-                    "properties": [{"name": "AutoplaceTarget", "value": "false"}],
+                    # The HDD pool's external commands get the same longer wait as OVH HDDs.
+                    "properties": [{"name": "ExtCmd/WaitTimeout", "value": "180000"}],
                     "patches": _SATELLITE_PATCHES,
                     "podTemplate": _NIXOS_SATELLITE_POD_TEMPLATE,
                     "deletionPolicy": "Retain",
+                    "storagePools": [
+                        {
+                            "name": "ssd",
+                            "lvmThinPool": {
+                                "volumeGroup": _FIRST_NODE_VOLUME_GROUP,
+                                "thinPool": _FIRST_NODE_THIN_POOL,
+                                "logicalVolumeCreateArguments": ["--poolmetadatasize", "4G", "--chunksize", "64K"],
+                            },
+                            "source": {"hostDevices": [_WYRM2_SSD_DATA_DEVICE]},
+                        },
+                        {
+                            "name": "hdd",
+                            "lvmThinPool": {
+                                "volumeGroup": _HDD_VOLUME_GROUP,
+                                "thinPool": _FIRST_NODE_THIN_POOL,
+                                "logicalVolumeCreateArguments": ["--poolmetadatasize", "4G", "--chunksize", "64K"],
+                            },
+                            "source": {"hostDevices": [_WYRM2_HDD_DATA_DEVICE]},
+                        },
+                    ],
                 },
             ],
             "storageClasses": [

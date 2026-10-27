@@ -272,6 +272,33 @@ resource "proxmox_virtual_environment_vm" "wyrm2" {
     replicate    = false
     file_format  = "raw"
   } # Wyrm2 kubelet pod storage — HDD
+  # Piraeus LVM_THIN pools, hotplugged imperatively like the disks above: sparse
+  # zvols rpool/data/vm-110-piraeus-ssd (volblocksize 16K) and
+  # tank/vm-110-piraeus-hdd (64K), both primarycache=metadata. Piraeus finds them
+  # by serial (/dev/disk/by-id/virtio-piraeus-{ssd,hdd}). Proxmox backup and
+  # replication stay off: volume backup belongs to the Piraeus layer.
+  disk {
+    datastore_id = var.storage
+    interface    = "virtio12"
+    iothread     = true
+    discard      = "on"
+    size         = 150
+    serial       = "piraeus-ssd"
+    backup       = false
+    replicate    = false
+    file_format  = "raw"
+  } # Piraeus ssd pool
+  disk {
+    datastore_id = "tank-hdd"
+    interface    = "virtio13"
+    iothread     = true
+    discard      = "on"
+    size         = 500
+    serial       = "piraeus-hdd"
+    backup       = false
+    replicate    = false
+    file_format  = "raw"
+  } # Piraeus hdd pool
 
   network_device {
     bridge = "vmbr0"

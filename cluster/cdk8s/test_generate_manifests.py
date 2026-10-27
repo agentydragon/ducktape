@@ -210,14 +210,17 @@ def test_piraeus_storage_is_confined_to_prepared_nodes(
         "source": {"hostDevices": ["/dev/disk/by-id/ata-HGST_HUS726020ALA610_K5H8UMLA"]},
     }
 
-    # Wyrm2 is home-site and diskless: fenced from autoplacement so no OVH resource gets a
-    # replica or tiebreaker across the home/OVH link.
+    # Wyrm2 offers both local classes' pools, laid out like every other node's.
     assert wyrm2_satellite["nodeSelector"] == {
         "storage.allegedly.works/piraeus-ready": "true",
         "kubernetes.io/hostname": "wyrm2",
     }
-    assert "storagePools" not in wyrm2_satellite
-    assert {"name": "AutoplaceTarget", "value": "false"} in wyrm2_satellite["properties"]
+    wyrm2_ssd_pool, wyrm2_hdd_pool = wyrm2_satellite["storagePools"]
+    assert wyrm2_ssd_pool["lvmThinPool"] == ssd_satellite["storagePools"][0]["lvmThinPool"]
+    assert wyrm2_ssd_pool["name"] == "ssd"
+    assert wyrm2_hdd_pool["lvmThinPool"] == hdd_satellite["storagePools"][0]["lvmThinPool"]
+    assert wyrm2_hdd_pool["name"] == "hdd"
+    assert wyrm2_satellite["properties"] == hdd_satellite["properties"]
     assert wyrm2_satellite["patches"] == ssd_satellite["patches"]
 
     ssd_class, hdd_class, replicated_ssd_class = values["storageClasses"]
