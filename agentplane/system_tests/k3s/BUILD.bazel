@@ -225,6 +225,7 @@ py_library(
         ":block_storage",
         ":bootstrap",
         ":guest_logs",
+        ":iptables_rule",
         ":rendered_fixture",
         ":vm_sandboxes",
         "//agentplane/system_tests:conftest",
@@ -555,6 +556,7 @@ py_test(
     deps = [
         ":iptables_rule",
         "//util/bazel:runfiles",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
