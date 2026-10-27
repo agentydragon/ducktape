@@ -83,10 +83,11 @@ debundle_e2e_test(
 
 debundle_e2e_test(name = "class_callback_reachability_test")
 
-# A larger branching callback pool used to exhaust this bound in analysis.
+# Keep the full scale workloads: unoptimized RBE runs approach a minute even
+# without a regression, so the short deadline leaves too little margin.
 debundle_e2e_test(
     name = "opaque_callback_scale_test",
-    timeout = "short",
+    timeout = "moderate",
 )
 
 debundle_e2e_test(
@@ -96,13 +97,13 @@ debundle_e2e_test(
 
 debundle_e2e_test(
     name = "conflict_diagnostics_scale_test",
-    timeout = "short",
+    timeout = "moderate",
     deps = ["//devinfra/js/debundle:spec"],
 )
 
 debundle_e2e_test(
     name = "value_flow_sharing_scale_test",
-    timeout = "short",
+    timeout = "moderate",
 )
 
 debundle_e2e_test(name = "soundness_dynamic_scope_test")
