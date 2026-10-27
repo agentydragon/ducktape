@@ -43,6 +43,7 @@ typed_eslint_test(
         ":main",
         ":typed_lint_program_data",
     ],
+    source_data = ["//aiquota/shared:presentation.ts"],
     tsconfig = "tsconfig.json",
 )
 
