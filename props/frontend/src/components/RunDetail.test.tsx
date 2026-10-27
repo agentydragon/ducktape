@@ -2,6 +2,7 @@
 import { MantineProvider } from "@mantine/core";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import {
@@ -130,7 +131,9 @@ async function mount(runId: string): Promise<void> {
   await act(async () => {
     root?.render(
       <MantineProvider env="test">
-        <RunDetail runId={runId} />
+        <MemoryRouter>
+          <RunDetail runId={runId} />
+        </MemoryRouter>
       </MantineProvider>
     );
   });
@@ -140,7 +143,9 @@ async function switchRun(runId: string): Promise<void> {
   await act(async () => {
     root?.render(
       <MantineProvider env="test">
-        <RunDetail runId={runId} />
+        <MemoryRouter>
+          <RunDetail runId={runId} />
+        </MemoryRouter>
       </MantineProvider>
     );
   });

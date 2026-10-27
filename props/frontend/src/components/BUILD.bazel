@@ -298,6 +298,7 @@ props_vitest_test(
         "//:node_modules/react",
         "//:node_modules/react-dom",
         "//:node_modules/vitest",
+        "//props/frontend:node_modules/react-router",
         "//props/frontend/src/lib:client",
         "//props/frontend/src/lib:toast",
     ],
