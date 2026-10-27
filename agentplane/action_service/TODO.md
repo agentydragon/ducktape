@@ -2,6 +2,13 @@
 
 Gaps to close if a workflow needs them; none is committed.
 
+## Replace legacy model storage representations
+
+Design and migrate Action/Notification model persistence away from legacy JSON-shaped
+representations. Choose typed SQL or binary protobuf storage where appropriate; use new
+migrations with retained-data backfill and rolling read/write compatibility before removing
+the legacy codecs. Keep current stored formats compatible during the shared-protobuf refactor.
+
 ## Dynamic Client Registration for MCP OAuth linkage
 
 `linkage.Server` requires either a registered `client_id` or the shared Client ID Metadata
