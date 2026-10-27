@@ -298,6 +298,32 @@ pub fn graph_module_roots(config_path: &Path) -> Result<BTreeMap<String, Vec<Pat
     Ok(roots)
 }
 
+/// Snapshot relocation preserves input bytes, so embedded source paths must
+/// resolve through the new source root rather than an original absolute path.
+pub fn require_relative_source_paths(options: &CompileSpecTreeOptions) -> Result<()> {
+    let config: AuthoringConfig = read_yaml(&options.config_path)?;
+    let vendor: VendorMarksFile = read_yaml(&options.vendor_marks_path)?;
+    let mut paths = vec![config.inputs.root, config.inputs.js_list_path];
+    if let Some(browser) = config.browser_harness {
+        paths.push(browser.asset_summary_path);
+    }
+    paths.extend(
+        vendor
+            .vendor_marks
+            .into_iter()
+            .filter_map(|mark| mark.bundle.map(|bundle| bundle.path)),
+    );
+    for path in paths {
+        if path.is_absolute() {
+            bail!(
+                "snapshot cannot relocate embedded absolute source path {}; use a path relative to --tree-source-root",
+                path.display()
+            );
+        }
+    }
+    Ok(())
+}
+
 fn source_path(source_root: Option<&Path>, path: PathBuf) -> PathBuf {
     if path.is_absolute() {
         path
