@@ -62,58 +62,72 @@ deploy and validate). Measure Nebula latency and sustained throughput between
 eligible nodes, including during DRBD resync, before setting the preference or
 resync limits.
 
-## Wyrm2 first; Atlas reinstall is a separate later decision
+## Wyrm2 on Atlas virtual disks
 
-The owner wants Piraeus on Wyrm2 with **both SSD and HDD drives attached**.
-First migrate storage while **keeping Wyrm2 virtualized on Atlas/Proxmox**.
-Co-plan stable device attachment, pool sizing and data preservation within that
-existing arrangement. Piraeus qualification and the application migration must
-not depend on reinstalling Atlas or moving Wyrm2 to bare metal.
+Owner decisions, 2026-10-27: Wyrm2 stays a VM on Atlas for this phase and gets
+two new Proxmox virtual disks as whole-device Piraeus pools; nothing waits on an
+Atlas reinstall. Only the served Qwen3.8-Flash-Next `UD-IQ4_XS` weights (88 GB)
+stay on SSD. ActivityWatch moves to HDD. Every other model under
+`/var/lib/llm-models-ssd` and the Ollama `llm-models` blobs are re-downloadable
+and are deleted, not copied. All local-path claims on Wyrm2 eventually go.
 
-Separately, the owner reports little use of Atlas's other VMs and may later
-reinstall Atlas with Wyrm2 as the top-level host OS. Revisit that architecture
-only after the VM-based Piraeus migration is accepted. Preserve the distinction
-between attaching/preparing explicit devices for the VM and erasing Atlas's
-host or guest disks; no Atlas reinstall or whole-host wipe is approved here.
+Atlas, read 2026-10-27: `local-zfs` (`rpool/data`) is a **single** 4 TB NVMe with
+no redundancy, 79% allocated, 584 GB available; `tank-hdd` (pool `tank`) is
+raidz2 over four 16 TB disks with about 27.9 TB available. A `piraeus-ssd-local`
+volume on Wyrm2 therefore has no redundancy below LINSTOR; `piraeus-hdd-local`
+survives two disk failures. Atlas's LVM `global_filter` rejects `/dev/zd*`, so the
+host never activates guest VGs. Wyrm2's virtio disks carry no serial today.
 
-For the Piraeus-first phase, review inventory, SSD/HDD device attachment,
-OpenEBS/application migration, capacity, recovery and host compatibility below.
-The host-reinstallation parts of the worksheet are future joint planning, not
-prerequisites for this first phase.
+Each step needs the previous one; deletions and the Wyrm2 reboot need the
+owner's approval at the time.
 
-Prepare a concrete worksheet for joint review:
+1. **DRBD 9 host module.** `ducktape.piraeusHost` adds the out-of-tree DRBD 9
+   module (Wyrm2's kernel ships only in-tree 8.4.11). New modules load from the
+   booted system, so activation is a scheduled Wyrm2 reboot. Accept when
+   `modinfo drbd` reports 9.x for the running kernel and `/proc/drbd` exists.
+2. **Satellite enrollment.** A Wyrm2 `LinstorSatelliteConfiguration` without the
+   Talos patches and with the DRBD module loader disabled (the host provides the
+   module); label the node `piraeus-ready` and confirm the satellite is Online
+   on its Nebula address. `nebula1` is already a trusted firewall interface.
+3. **Disks.** On Atlas, create sparse zvols explicitly, since `volblocksize` is
+   fixed at creation: 150 GiB in `rpool/data` at 16 KiB and 500 GiB in `tank` at
+   64 KiB (the thin chunk size; less raidz2 padding than 16 KiB), both
+   `primarycache=metadata` so ARC does not duplicate the guest page cache. Keep
+   `sync=standard` and compression. Hot-add them as `virtio12`/`virtio13` with
+   `serial=piraeus-ssd`/`serial=piraeus-hdd`, `discard=on`, `iothread=1`, no
+   Proxmox backup or replication; slots after `virtio11` cannot shift existing
+   `/dev/vdX` names. Mirror both in `proxmox-vms.tf` (its `ignore_changes`
+   means Terraform does not attach them).
+4. **Pools.** Add `ssd` and `hdd` LVM_THIN pools to the Wyrm2 satellite from
+   `/dev/disk/by-id/virtio-piraeus-{ssd,hdd}`, with the HDD
+   `ExtCmd/WaitTimeout`. The existing `piraeus-{ssd,hdd}-local` classes then
+   reach Wyrm2; the replicated class stays OVH-only. Alert on `tank` and
+   `rpool` free space, which LINSTOR's thin accounting cannot see.
+5. **Acceptance.** Filesystem and Block lifecycle on each Wyrm2 pool: create,
+   attach, write, expand, detach and delete.
+6. **Moves.** Qwen: a `piraeus-ssd-local` claim replacing the static
+   `wyrm2-qwen38-iq4-ssd` PV; copy or re-download `UD-IQ4_XS`, then confirm
+   Ollama serves it. ActivityWatch: a `piraeus-hdd-local` claim; stop, copy,
+   switch and verify its history, keeping the old PV until the owner releases
+   it. Ollama gets a fresh empty `piraeus-hdd-local` claim and re-pulls on use.
+7. **Retirement**, each after its consumers are gone: the old model disk
+   (`virtio8`, 816 GB on `rpool`) and its mount; OpenEBS on Wyrm2 (`virtio2`,
+   `virtio6`, the VG setup units, the thin-autoextend `lvm.conf` stanza, the
+   `lvm-proxmox-*` classes and their CDI entries); `local-path-proxmox` and
+   `virtio0`, after inventorying what else is under `/var/local-path-provisioner`.
 
-1. Inventory physical drives by serial/WWID, media, capacity and health; map
-   Proxmox pools, VM disks, passthrough devices, encryption and every filesystem/LV
-   to those drives. Check actual SSD/HDD connectivity and GPU/IOMMU needs rather
-   than assuming the current VM layout maps cleanly to bare metal.
-2. Inventory Atlas and every VM, including stopped guests, datasets, snapshots,
-   host configuration and credentials. Identify unique authored data and current
-   consumers; low VM usage does not establish that their disks are disposable.
-   Include ActivityWatch and existing OpenEBS-backed Kubernetes claims on Wyrm2.
-3. Propose explicit system/runtime capacity and separate Piraeus SSD/HDD pool
-   budgets, device ownership and encryption/boot/unlock behavior. Show what fits
-   using measured live bytes, copy staging space and growth reserve. Preserve
-   home-site placement semantics; do not extend synchronous replication across
-   the home/OVH link by default.
-4. Specify how each retained dataset leaves the disks to be erased, where its
-   verified recovery copy lives, how it returns and what application checks
-   establish success. A backup on another VM disk in the same wipe set is not
-   off-machine recovery. Establish staging capacity before choosing a wipe order.
-5. Design installation/remote-console access, network and mesh identities,
-   Kubernetes node identity, GPU workloads and the outage/rollback procedure.
-   Decide whether Atlas's non-Wyrm2 services remain needed and where each runs.
-6. Review the exact device map and migration/preservation procedure together
-   before preparing the VM's Piraeus devices. Review any later host reinstall
-   separately, including its full wipe set and recovery evidence. This plan
-   grants no Atlas/Wyrm2 wipe approval.
+## Atlas reinstall (later, separate decision)
 
-Reuse the existing LINSTOR cluster and media StorageClasses after host/kernel,
-DRBD, CSI and pool acceptance. Keep existing OpenEBS VGs under OpenEBS ownership
-until their consumers are migrated and an explicit ownership handoff is accepted;
-never initialize a Piraeus pool over a live OpenEBS device. Choose the VM's dedicated virtual disks versus physical-device passthrough
-jointly. Keep the later Proxmox retirement decision independent of both this
-VM-based migration and the current OVH work.
+The owner may later reinstall Atlas with Wyrm2 as the bare-metal host OS. That
+is not approved here and is planned only after the VM phase is accepted.
+
+Data in the Piraeus zvols survives as long as its pool does: a bare-metal host
+can import `tank` and give LINSTOR the same zvol under node name `wyrm2`, and
+the VG reappears. The SSD zvol is on `rpool`, which a reinstall onto that NVMe
+would erase unless the pool is kept; otherwise drain it first. Before then,
+inventory Atlas's other VMs (including stopped VM 100 `wyrm`, 725 GB) for unique
+data, keep recovery copies off the wipe set, and plan remote console, Nebula and
+Kubernetes node identity, GPU passthrough replacement and rollback.
 
 ## Placement policy to implement and prove
 
@@ -140,15 +154,10 @@ testing this design; neither tested three-node two-copy movement or WAN boundari
 
 ## NixOS rollout
 
-- [ ] **Host support:** add a shared opt-in host module with a DRBD 9 module built
-      for each running kernel, utilities and udev integration; keep resource ownership
-      in LINSTOR. The earlier build targeted 6.18.55 while wyrm2 still runs 6.18.54.
-      Build/inspect a matching module or use a scheduled kernel roll; do not assume
-      either reboot-free activation or compatibility with rugged's last-known 7.2 kernel.
-- [ ] **Enrollment and capacity:** add OS-specific satellite/CSI configuration and
-      admit hosts individually, starting with wyrm2 after its capacity prerequisites
-      are resolved. Validate client access before adding dedicated local pools.
-      Inventory laptops online and test suspend/disconnect behavior before admission.
+- [ ] **Other NixOS hosts:** after Wyrm2 (above), enable the same host module and
+      admit hosts individually. Do not assume compatibility with rugged's last-known
+      7.2 kernel. Inventory laptops online and test suspend/disconnect behavior
+      before admission.
 - [ ] **Interoperability acceptance:** repeat Block/Filesystem lifecycle and recovery
       checks on NixOS, then test Talos/NixOS remote use and automatic movement within
       the approved placement domain. Preserve existing Talos service throughout.
