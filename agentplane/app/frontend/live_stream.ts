@@ -9,6 +9,7 @@
  * is back in view.
  */
 import { type Dispatch, type SetStateAction, useEffect, useState } from "react";
+import type { z } from "zod";
 
 import { api } from "./client";
 
@@ -18,7 +19,8 @@ import { api } from "./client";
 export type StreamConnection =
   | { phase: "connecting"; since: number }
   | { phase: "live"; since: number }
-  | { phase: "reconnecting"; since: number; attempt: number; lastError: string | null };
+  | { phase: "reconnecting"; since: number; attempt: number; lastError: string | null }
+  | { phase: "invalid"; since: number; lastError: string };
 
 const FIRST_RETRY_MS = 1_000;
 const LAST_RETRY_MS = 30_000;
@@ -31,10 +33,27 @@ export function backoff(retries: number): number {
 }
 
 export interface StreamHandlers {
-  /** By event name. A frame of any of them is what makes the stream live. */
-  events: Record<string, (message: MessageEvent<string>) => void>;
+  /** By event name. A frame makes the stream live unless its handler returns an invalid-frame reason. */
+  events: Record<string, (message: MessageEvent<string>) => string | void>;
   /** Called with the opening `connecting` at once, then on every change. */
   onConnection: (connection: StreamConnection) => void;
+}
+
+export type JsonFrame<T> = { success: true; data: T } | { success: false; error: string };
+
+/** Parse one JSON event against a generated runtime schema, keeping parse failures explicit. */
+export function parseJsonFrame<T>(schema: z.ZodType<T>, data: string, label: string): JsonFrame<T> {
+  let value: unknown;
+  try {
+    value = JSON.parse(data) as unknown;
+  } catch {
+    return { success: false, error: `Invalid ${label} frame: malformed JSON` };
+  }
+  const parsed = schema.safeParse(value);
+  if (parsed.success) return { success: true, data: parsed.data };
+  const issue = parsed.error.issues[0];
+  const path = issue?.path.length ? ` at ${issue.path.map(String).join(".")}` : "";
+  return { success: false, error: `Invalid ${label} frame${path}: ${issue?.message ?? "schema mismatch"}` };
 }
 
 /** Follows `url` until the returned function is called. */
@@ -55,11 +74,19 @@ export function followStream(url: string, { events, onConnection }: StreamHandle
     const current = (source = new EventSource(url));
     for (const [name, handle] of Object.entries(events))
       current.addEventListener(name, (message) => {
+        const invalidReason = handle(message as MessageEvent<string>);
+        if (invalidReason !== undefined) {
+          report({
+            phase: "invalid",
+            since: connection.phase === "invalid" ? connection.since : Date.now(),
+            lastError: invalidReason,
+          });
+          return;
+        }
         if (connection.phase !== "live") {
           retries = 0;
           report({ phase: "live", since: Date.now() });
         }
-        handle(message as MessageEvent<string>);
       });
     current.addEventListener("error", () => {
       report({

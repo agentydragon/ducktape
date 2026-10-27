@@ -62,3 +62,13 @@ browser on desktop and phone.
   portion currently on screen.
 - None of the above ever produces a visible flash of blank space or a scrollbar that visibly jumps
   and then corrects.
+
+## Live snapshots
+
+The sandbox, thread-list, and egress snapshot streams validate each JSON snapshot and health frame
+against runtime schemas generated from the app's Pydantic OpenAPI models. A malformed or
+wrong-shaped frame is ignored. If a valid snapshot already arrived, the page keeps showing it;
+otherwise it stays empty while the connection indicator reports the frame error. A rejected
+snapshot clears when a valid snapshot arrives, while a rejected health frame clears on a valid
+health frame or snapshot. The egress log shows an inline warning while retaining a valid decisions
+snapshot, or says it is waiting for one when no valid snapshot has arrived yet.

@@ -49,8 +49,8 @@ function thread(overrides: Partial<ThreadView> & Pick<ThreadView, "id" | "name">
 }
 
 const THREADS = [
-  thread({ id: "t-1", name: "Alpha thread", last_event_at: "2026-01-01T11:58:00Z" }),
-  thread({ id: "t-2", name: "Beta thread" }),
+  thread({ id: "00000000-0000-4000-8000-000000000001", name: "Alpha thread", last_event_at: "2026-01-01T11:58:00Z" }),
+  thread({ id: "00000000-0000-4000-8000-000000000002", name: "Beta thread" }),
 ];
 
 /** Renders Home beside the Sidebar, the way the shell lays them out on desktop; returns the URL of

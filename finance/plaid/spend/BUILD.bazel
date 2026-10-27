@@ -194,6 +194,26 @@ py_binary(
 )
 
 py_library(
+    name = "pydantic_wire_fixtures",
+    testonly = True,
+    srcs = ["pydantic_wire_fixtures.py"],
+    visibility = ["//finance/plaid/spend/ui:__pkg__"],
+    deps = [
+        ":allowance",
+        ":models",
+        ":sustainability",
+    ],
+)
+
+py_binary(
+    name = "pydantic_wire_fixtures_bin",
+    testonly = True,
+    main_module = "finance.plaid.spend.pydantic_wire_fixtures",
+    visibility = ["//finance/plaid/spend/ui:__pkg__"],
+    deps = [":pydantic_wire_fixtures"],
+)
+
+py_library(
     name = "export_schema",
     srcs = ["export_schema.py"],
     deps = [

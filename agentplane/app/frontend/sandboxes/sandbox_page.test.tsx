@@ -8,6 +8,7 @@ import { afterAll, afterEach, expect, it, vi, type Mock } from "vitest";
 
 import {
   api,
+  type Decision,
   type LangfuseSearchSettings,
   type RunnerStatusView,
   type SandboxView,
@@ -92,9 +93,14 @@ class SilentEventSource extends EventTarget {
   readyState = 1;
   constructor(readonly url: string) {
     super();
+    eventSources.push(this);
   }
   close(): void {}
+  frame(name: string, data: string): void {
+    this.dispatchEvent(new MessageEvent(name, { data }));
+  }
 }
+const eventSources: SilentEventSource[] = [];
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let root: ReturnType<typeof createRoot>;
@@ -195,6 +201,7 @@ async function render(
       ],
     })
 ): Promise<ReturnType<typeof vi.fn>> {
+  eventSources.length = 0;
   vi.stubGlobal("EventSource", SilentEventSource);
   fetchMock.mockImplementation((request: Request) => {
     const path = new URL(request.url).pathname;
@@ -281,6 +288,50 @@ function tab(label: string): HTMLButtonElement {
   if (!found) throw new Error(`Missing ${label} tab`);
   return found;
 }
+
+it("retains the last valid egress log through invalid snapshots and health, then recovers", async () => {
+  await render(async () => Response.json([]));
+  await act(async () => tab("Egress log").click());
+  const stream = eventSources.find(({ url }) => url.endsWith("/egress/decisions"));
+  if (!stream) throw new Error("missing egress decisions stream");
+  const decision = {
+    at: "2026-10-27T12:00:00Z",
+    method: "GET",
+    host: "packages.example.test",
+    port: 443,
+    outcome: "allow",
+    address: "192.0.2.8",
+    reason: null,
+    binding: null,
+    policy: null,
+    rule: null,
+    substituted: false,
+  } satisfies Decision;
+  const good = JSON.stringify({ watching: true, decisions: [decision] });
+
+  await act(async () => stream.frame("snapshot", good));
+  expect(container.textContent).toContain("packages.example.test");
+  expect(container.textContent).not.toContain("An invalid egress update was ignored");
+
+  await act(async () => stream.frame("snapshot", JSON.stringify({ watching: true, decisions: [{ host: "partial" }] })));
+  expect(container.textContent).toContain("An invalid egress update was ignored; showing the last valid log");
+  expect(container.textContent).toContain("packages.example.test");
+
+  await act(async () => stream.frame("snapshot", good));
+  expect(container.textContent).not.toContain("An invalid egress update was ignored");
+  await act(async () => stream.frame("health", JSON.stringify({ watching: "yes" })));
+  expect(container.textContent).toContain("Invalid Egress health frame");
+  expect(container.textContent).toContain("packages.example.test");
+
+  await act(async () => stream.frame("health", JSON.stringify({ watching: false })));
+  expect(container.textContent).not.toContain("An invalid egress update was ignored");
+  expect(container.textContent).toContain("Not hearing from the egress proxy about new decisions");
+  expect(container.textContent).toContain("packages.example.test");
+
+  await act(async () => stream.frame("snapshot", good));
+  expect(container.textContent).not.toContain("Not hearing from the egress proxy about new decisions");
+  expect(container.textContent).toContain("packages.example.test");
+});
 
 function newThread(): HTMLButtonElement {
   const button = [...container.querySelectorAll("button")].find((node) => node.textContent === "New thread");

@@ -32,7 +32,7 @@ import { ActionPolicySection } from "../actions/policy";
 import { EgressLog } from "./egress";
 import { MarkGlyph } from "../mark_glyph";
 import { ConfirmDelete, deletable, DELETE_NEEDS_SUSPENDED, SuspendResume } from "./lifecycle";
-import { liveSandboxUrl, type SandboxSnapshot } from "./live";
+import { liveSandboxUrl, sandboxLiveSchemas, type SandboxSnapshot } from "./live";
 import { useLive } from "../live";
 import { PolicyBindingsSection } from "./policy_bindings";
 import { SandboxConsole } from "./sandbox_console";
@@ -117,7 +117,7 @@ export function SandboxPage({
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [includeArchived, setIncludeArchived] = useState(false);
 
-  const live = useLive<SandboxSnapshot>(liveSandboxUrl(name, includeArchived), `Sandbox ${name}`);
+  const live = useLive<SandboxSnapshot>(liveSandboxUrl(name, includeArchived), `Sandbox ${name}`, sandboxLiveSchemas);
   const sandbox: SandboxView | null = live.snapshot?.sandbox ?? null;
   const vmConsoleAvailable = hasVmConsole(sandbox);
   const tab: Tab =

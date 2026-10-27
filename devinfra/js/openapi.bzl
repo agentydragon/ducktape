@@ -65,13 +65,13 @@ def js_openapi_schema(name, generator, out = "api/schema.d.ts", visibility = Non
         visibility = visibility,
     )
 
-def js_openapi_zod(name, generator, out = "api/schema.zod.mjs", tsconfig = None, isolated_typecheck = False, visibility = None):
+def js_openapi_zod(name, generator, out = "api/schema.zod.mjs", tsconfig = None, config = None, isolated_typecheck = False, visibility = None):
     """Generate a js_library with runtime Zod 4 schemas from an OpenAPI schema.
 
     Pipeline:
 
       1. Run *generator* to produce an OpenAPI JSON document.
-      2. ``@hey-api/openapi-ts --plugins zod`` emits ``<out_dir>/zod.gen.ts``
+      2. ``@hey-api/openapi-ts`` emits ``<out_dir>/zod.gen.ts``
          with one ``export const z<Name>`` per OpenAPI component schema.
       3. Emit *out*: a ``.ts``/``.mts`` *out* keeps the generated TypeScript
          verbatim (so TypeScript consumers retain Zod's inferred types end to
@@ -92,6 +92,9 @@ def js_openapi_zod(name, generator, out = "api/schema.zod.mjs", tsconfig = None,
         tsconfig:   Label of the ``ts_config`` the generated module compiles
                     against. Required for a TypeScript *out* and rejected for a
                     JavaScript one, since only the former is compiled.
+        config:     Optional package-relative ``openapi-ts.config.mjs`` input.
+                    Hey API discovers this config by name from the package
+                    working directory; it must configure the Zod plugin.
         visibility: Visibility of the output ``js_library``.
     """
     emits_typescript = out.endswith(".ts") or out.endswith(".mts")
@@ -99,6 +102,8 @@ def js_openapi_zod(name, generator, out = "api/schema.zod.mjs", tsconfig = None,
         fail("js_openapi_zod: a TypeScript out (%s) is compiled, so it needs a tsconfig" % out)
     if tsconfig and not emits_typescript:
         fail("js_openapi_zod: out %s is JavaScript; nothing compiles it, so tsconfig is unused" % out)
+    if config and config != "openapi-ts.config.mjs":
+        fail("js_openapi_zod: config must be the package-root openapi-ts.config.mjs for Hey API auto-discovery")
 
     json_out = _openapi_json_genrule(name, generator)
     gen_dir = "_" + name + "_hey_api_out"
@@ -108,18 +113,23 @@ def js_openapi_zod(name, generator, out = "api/schema.zod.mjs", tsconfig = None,
         name = "_" + name + "_openapi_ts_bin",
     )
 
+    generator_args = [
+        "--input",
+        json_out,
+        "--output",
+        gen_dir,
+    ]
+    generator_srcs = [":_" + name + "_openapi_json"]
+    if config:
+        generator_srcs.append(config)
+    else:
+        generator_args.extend(["--plugins", "zod"])
+
     js_run_binary(
         name = "_" + name + "_generate_ts",
-        srcs = [":_" + name + "_openapi_json"],
+        srcs = generator_srcs,
         outs = [gen_ts],
-        args = [
-            "--input",
-            json_out,
-            "--output",
-            gen_dir,
-            "--plugins",
-            "zod",
-        ],
+        args = generator_args,
         chdir = native.package_name(),
         tool = ":_" + name + "_openapi_ts_bin",
     )

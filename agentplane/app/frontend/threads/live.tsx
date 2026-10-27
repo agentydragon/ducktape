@@ -2,9 +2,15 @@ import { createContext, type JSX, type ReactNode, useContext, useEffect, useStat
 import { useMatch } from "react-router";
 
 import type { components } from "../api/schema";
-import { useLive, type Live } from "../live";
+import { useLive, type Live, type SnapshotSchemas } from "../live";
+import { zThreadsSnapshot, zWatchHealth } from "../api/live_schema.zod";
 
 export type ThreadsSnapshot = components["schemas"]["ThreadsSnapshot"];
+
+export const threadsLiveSchemas: SnapshotSchemas<ThreadsSnapshot> = {
+  snapshot: zThreadsSnapshot,
+  health: zWatchHealth,
+};
 
 /** What the thread lists ask of `/live/threads`: a window of the newest threads, which grows a page
  * at a time, and the filters it is read under. */
@@ -60,8 +66,11 @@ export function ThreadsLiveProvider({
     );
     return () => window.clearTimeout(timer);
   }, [searchInput, listing]);
-  const live = useLive<ThreadsSnapshot>(liveThreadsUrl(listing, openThreadId), "Threads", (snapshot) =>
-    snapshot.updates_connected ? null : "thread updates disconnected; showing the last snapshot"
+  const live = useLive<ThreadsSnapshot>(
+    liveThreadsUrl(listing, openThreadId),
+    "Threads",
+    threadsLiveSchemas,
+    (snapshot) => (snapshot.updates_connected ? null : "thread updates disconnected; showing the last snapshot")
   );
   return (
     <ThreadListingContext.Provider value={{ listing, setListing, searchInput, setSearchInput }}>

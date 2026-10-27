@@ -44,6 +44,7 @@ class Flag(StrEnum):
     CONNECTION_RENAMED = "connectionRenamed"
     MCP_LINKAGE_CHANGED = "mcpLinkageChanged"
     MCP_HEALTH_CHANGED = "mcpHealthChanged"
+    EGRESS_INVALID_FRAME = "egressInvalidFrame"
 
 
 class Scene(StrEnum):

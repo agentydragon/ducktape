@@ -827,6 +827,7 @@ ts_library(
         "//:node_modules/react",
         "//:node_modules/react-router",
         "//agentplane/app/frontend:live",
+        "//agentplane/app/frontend:live_schemas_generated",
         "//agentplane/app/frontend:schema",
     ],
 )

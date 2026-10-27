@@ -120,6 +120,7 @@ let inventoryDrops = false;
 let sharedFeed: "active" | "ended" | "failed" = "active";
 let sharedThread: Partial<ThreadView> = {};
 let eventSourceUrls: string[] = [];
+let sendThreadFrame: ((frame: MessageEvent) => void) | undefined;
 const TRACE_SEARCH_SETTINGS: TraceSearchSettings = {
   grafana_base_url: "https://grafana.test.invalid",
   tempo_datasource_uid: "tempo-test",
@@ -146,6 +147,7 @@ beforeEach(() => {
   sharedFeed = "active";
   sharedThread = {};
   eventSourceUrls = [];
+  sendThreadFrame = undefined;
   traceSearchSettings = TRACE_SEARCH_SETTINGS;
   langfuseSearchSettings = LANGFUSE_SEARCH_SETTINGS;
   dispatchWatches = stubWatchFetch().served;
@@ -173,6 +175,11 @@ beforeEach(() => {
       constructor(readonly url: string) {
         super();
         eventSourceUrls.push(url);
+        if (new URL(url, "http://test").pathname === "/live/threads") {
+          sendThreadFrame = (frame) => {
+            this.dispatchEvent(frame);
+          };
+        }
         queueMicrotask(() => {
           if (new URL(url, "http://test").pathname === "/threads/notices/stream") {
             this.dispatchEvent(
@@ -520,14 +527,45 @@ it("reports stale timing as unavailable and does not call a missing loading sand
   expect(loading.querySelector(".agentplane-composer-autosuspend")).toBeNull();
 });
 
-it.each([
-  ["a past deadline", "2026-01-01T11:59:00Z", "Autosuspend pending"],
-  ["an invalid deadline", "not-a-datetime", "Autosuspend timing unavailable"],
-])("handles %s without showing a negative countdown", async (_case, deadline, expected) => {
+it("handles a past deadline without showing a negative countdown", async () => {
   vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-01-01T12:00:00Z"));
-  sandboxes = [autosuspendSandbox(deadline)];
+  sandboxes = [autosuspendSandbox("2026-01-01T11:59:00Z")];
   const container = await render();
-  expect(container.querySelector(".agentplane-composer-autosuspend")?.textContent).toBe(expected);
+  expect(container.querySelector(".agentplane-composer-autosuspend")?.textContent).toBe("Autosuspend pending");
+});
+
+it("marks retained timing unavailable after an invalid deadline and recovers on a valid snapshot", async () => {
+  vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-01-01T12:00:00Z"));
+  sandboxes = [autosuspendSandbox("2026-01-01T12:12:00Z")];
+  const container = await render();
+  const hint = (): string | null | undefined =>
+    container.querySelector(".agentplane-composer-autosuspend")?.textContent;
+  expect(hint()).toBe("Sandbox autosuspends in ~12m");
+  const send = sendThreadFrame;
+  if (!send) throw new Error("Missing thread snapshot stream");
+  const streams = eventSourceUrls.length;
+  const snapshot = (deadline: string): MessageEvent =>
+    new MessageEvent("snapshot", {
+      data: JSON.stringify({
+        sandboxes: [autosuspendSandbox(deadline)],
+        threads: [{ ...THREAD, harness_state: "HARNESS_STATE_RUNNING", feed_status: sharedFeed }],
+        more: false,
+        archived_count: 0,
+        updates_connected: true,
+        watch: { fresh: true, stale_after_seconds: 90, refreshed_seconds_ago: { sandboxes: 0 } },
+      }),
+    });
+
+  await act(async () => {
+    send(snapshot("not-a-datetime"));
+  });
+  expect(hint()).toBe("Autosuspend timing unavailable");
+
+  await act(async () => {
+    send(snapshot("2026-01-01T12:13:00Z"));
+  });
+  expect(hint()).toBe("Sandbox autosuspends in ~13m");
+  expect(eventSourceUrls).toHaveLength(streams);
 });
 
 it.each([
