@@ -471,18 +471,6 @@ in
       "x-systemd.device-timeout=10s"
     ];
   };
-  fileSystems."/var/lib/llm-models-ssd" = {
-    device = "/dev/disk/by-path/virtio-pci-0000:08:03.0"; # virtio8: 1 TiB SSD (local-zfs) — model storage
-    fsType = "ext4";
-    autoFormat = true;
-    autoResize = true;
-    options = [
-      "nodev"
-      "nosuid"
-      "nofail"
-      "x-systemd.device-timeout=10s"
-    ];
-  };
   # virtio10: dedicated HDD volume for rebuildable compiler/Python caches.
   # The separate filesystem keeps their growth off root; cache paths stay stable via
   # bind mounts, so existing tools and the running desktop session need no reconfig.
@@ -633,8 +621,6 @@ in
     # Steam library mount (virtio1) must be user-writable; the fresh ext4 root
     # is created root:root, so chown it after the mount lands.
     "d /games 0755 agentydragon users -"
-    # Host inference experiments store reproducible model artifacts here.
-    "d /var/lib/llm-models-ssd 0755 agentydragon users -"
     # Dedicated cache volume mount and bind-mount targets.
     "d /var/cache/agentydragon 0755 agentydragon users -"
     "d /var/cache/agentydragon/sccache 0755 agentydragon users -"

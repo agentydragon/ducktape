@@ -221,16 +221,6 @@ resource "proxmox_virtual_environment_vm" "wyrm2" {
     size         = 1024
     file_format  = "raw"
   } # /tmp scratch space (HDD)
-  disk {
-    datastore_id = var.storage
-    interface    = "virtio8"
-    iothread     = true
-    discard      = "on"
-    size         = 1024
-    backup       = false
-    replicate    = false
-    file_format  = "raw"
-  } # SSD model storage (/var/lib/llm-models-ssd)
   # Hotplugged imperatively via `qm set 110 --virtio9 ...` on atlas (tofu can't add disks
   # under the ignore_changes below); this keeps the TF source in sync.
   # backup/replicate off — the WAL only buffers metrics not yet shipped to Mimir.
@@ -314,7 +304,7 @@ resource "proxmox_virtual_environment_vm" "wyrm2" {
 
   # CLEANUP(added 2026-08-05): Remove once the legacy Proxmox CSI scsi1/scsi2
   # attachments are deliberately detached from VM 110 and a refreshed plan
-  # reports only the declared scsi0 and virtio0-virtio8 disks. Although the CSI
+  # reports only the declared scsi0 and virtio disks. Although the CSI
   # driver was removed 2026-07-16, those two unmounted disks remain attached;
   # allowing tofu to reconcile the incomplete disk state would remap live disks.
   lifecycle {
