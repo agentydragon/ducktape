@@ -100,6 +100,11 @@ fn dry_run_merge_and_empty_delete_report_their_gate_contract() {
     assert_core(&report, "merge", "dry-run", "passed");
     assert!(fixture.modules.join("b.yaml").exists());
     write_text_file(&fixture.modules.join("ui/empty.yaml"), "members: []\n");
+    fixture.assert_rejected_unchanged(
+        &["modules", "delete", "ui/empty.yaml"],
+        &["graph compatibility mismatch"],
+    );
+    fixture.refresh_graph();
     let report = fixture.json(&["modules", "delete", "ui/empty.yaml"]);
     assert_core(&report, "delete", "applied", "not_required");
     assert_eq!(report["files_written"].as_array().unwrap().len(), 0);

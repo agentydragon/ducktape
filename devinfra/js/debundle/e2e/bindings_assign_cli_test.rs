@@ -17,11 +17,7 @@ fn module_readers_agree_on_invalid_yaml() {
     );
     fs::write(fixture.modules.join("a.yaml"), "null\n").unwrap();
 
-    for args in [
-        &["bindings", "list"][..],
-        &["spec", "selector-debt"][..],
-        &["modules", "merge", "--target", "b", "a"][..],
-    ] {
+    for args in [&["bindings", "list"][..], &["spec", "selector-debt"][..]] {
         let output = fixture.command(args);
         let stderr = String::from_utf8_lossy(&output.stderr);
         assert!(
@@ -31,6 +27,24 @@ fn module_readers_agree_on_invalid_yaml() {
         assert!(stderr.contains("a.yaml"), "{args:?}: {stderr}");
         assert!(stderr.contains("invalid type"), "{args:?}: {stderr}");
     }
+
+    // The saved graph now correctly rejects this mutation before it parses
+    // the edited module tree. Exercise the YAML parser contract separately by
+    // explicitly bypassing the gate and omitting the stale graph.
+    fixture.assert_rejected_unchanged(
+        &["modules", "merge", "--target", "b", "a"],
+        &["graph compatibility mismatch"],
+    );
+    let malformed = fixture.modules.join("a.yaml");
+    let before = fs::read(&malformed).unwrap();
+    let mut merge = fixture.process(&["modules", "merge", "--target", "b", "a", "--no-verify"]);
+    merge.env_remove("DEBUNDLE_GRAPH");
+    let output = merge.output().unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success());
+    assert!(stderr.contains("a.yaml"), "{stderr}");
+    assert!(stderr.contains("invalid type"), "{stderr}");
+    assert_eq!(fs::read(&malformed).unwrap(), before);
 }
 
 #[test]
@@ -311,6 +325,7 @@ fn move_and_unassign_annotations_preserve_only_intentionally_retained_modules() 
         let doc = module(&fixture, "dest.yaml");
         assert!(doc["annotations"]["a"].is_null());
         assert_eq!(doc["annotations"]["Readable"]["note"], "selector debt");
+        fixture.refresh_graph();
         fixture.json(&["bindings", "unassign", "Readable"]);
         assert!(
             !fixture.modules.join("dest.yaml").exists(),
@@ -346,6 +361,7 @@ fn batch_extraction_keeps_unmoved_members_and_does_not_rewrite_default_only_modu
     let empty = fixture.modules.join("empty.yaml");
     let before = fs::read(&empty).unwrap();
     fixture.json(&["bindings", "assign", "a:dest", "c:dest"]);
+    fixture.refresh_graph();
     for (path, names) in [
         ("home.yaml", vec!["b", "d"]),
         ("dest.yaml", vec!["e", "a", "c"]),
@@ -415,6 +431,7 @@ fn automatic_cleanup_preserves_module_notes_but_explicit_delete_can_remove_them(
             let sweep = fixture.json(&["modules", "list", "--auto-deletable"]);
             assert!(sweep["modules"].as_array().unwrap().is_empty());
             fixture.assert_runs("1\n");
+            fixture.refresh_graph();
             fixture.assert_success(&["modules", "delete", "src"]);
             assert!(!fixture.modules.join("src.yaml").exists());
             fixture.assert_runs("1\n");
