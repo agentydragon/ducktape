@@ -303,4 +303,16 @@ ts_library(
     ],
 )
 
+ts_library(
+    name = "live",
+    srcs = ["live.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/app/frontend:live",
+        "//agentplane/app/frontend:schema",
+    ],
+)
+
 check_vitest_specs()
