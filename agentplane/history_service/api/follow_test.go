@@ -477,8 +477,8 @@ func TestFollowSessionDoesNotReconnectAfterAWriteIsCanceledByItsLease(t *testing
 	}
 	select {
 	case err := <-done:
-		if got := status.Code(err); got != codes.Canceled {
-			t.Fatalf("FollowSession error = %v, want Canceled after its lease", err)
+		if got := status.Code(err); got != codes.DeadlineExceeded {
+			t.Fatalf("FollowSession error = %v, want DeadlineExceeded after its lease", err)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("the lease did not return FollowSession while its Send was blocked")
