@@ -154,7 +154,8 @@ resource "proxmox_virtual_environment_vm" "wyrm2" {
   }
 
   # Data disks — all on NVMe (local-zfs) unless noted.
-  # virtio0=/dev/vda, virtio1=/dev/vdb, ..., virtio11=/dev/vdl
+  # NixOS mounts these by PCI path (nix/nixos/hosts/wyrm2/default.nix); the
+  # guest's /dev/vdX letters shift when slots are added or skipped.
   disk {
     datastore_id = var.storage
     interface    = "virtio0"

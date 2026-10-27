@@ -409,40 +409,41 @@ in
   # Separate data disks (Proxmox virtio disks).
   # Existing data disks use autoFormat on first boot and autoResize to full size;
   # the cache volume is formatted explicitly before its first activation.
-  # virtio0=/dev/vda, virtio1=/dev/vdb, virtio2=/dev/vdc, virtio3=/dev/vdd,
-  # virtio4=/dev/vde, virtio7=/dev/vdh, virtio8=/dev/vdi,
-  # virtio9=/dev/vdj, virtio10=/dev/vdk, virtio11=/dev/vdl
+  # Name disks by PCI path, never /dev/vdX: the kernel assigns vdX letters in
+  # probe order, so hotplugged disks (and the unused virtio5 slot) shift them
+  # across reboots. Proxmox fixes each slot's PCI address (virtio0-4 are
+  # 06:0a-06:0e, virtio6-11 are 08:01-08:06).
   fileSystems."/var/local-path-provisioner" = {
-    device = "/dev/vda";
+    device = "/dev/disk/by-path/virtio-pci-0000:06:0a.0"; # virtio0
     fsType = "ext4";
     autoFormat = true;
     autoResize = true;
   };
-  # /dev/vdb (virtio1): 500GB SSD (local-zfs) — Steam library for the gaming seat.
+  # virtio1: 500GB SSD (local-zfs) — Steam library for the gaming seat.
   # Repurposed from the decommissioned Longhorn disk. Games + Proton prefixes must be
   # on SSD: the small-file prefix I/O crawls on the tank-hdd virtiofs share
   # (/mnt/tankshare). See nix/debug/wyrm2/direct_display_bringup/README.md.
   fileSystems."/games" = {
-    device = "/dev/vdb";
+    device = "/dev/disk/by-path/virtio-pci-0000:06:0b.0"; # virtio1
     fsType = "ext4";
     autoFormat = true;
     autoResize = true;
   };
-  # virtio2 (/dev/vdc) is OpenEBS LVM — managed as LVM VG below, not a filesystem mount
+  # virtio2 is OpenEBS LVM — managed as LVM VG below, not a filesystem mount
   fileSystems."/var/lib/containerd" = {
-    device = "/dev/vdd";
+    device = "/dev/disk/by-path/virtio-pci-0000:06:0d.0"; # virtio3
     fsType = "ext4";
     autoFormat = true;
     autoResize = true;
   };
   fileSystems."/home/agentydragon/.cache/bazel" = {
-    device = "/dev/vde"; # 300G SSD (local-zfs) — all Bazel caches
+    device = "/dev/disk/by-path/virtio-pci-0000:06:0e.0"; # virtio4: 300G SSD (local-zfs) — all Bazel caches
     fsType = "ext4";
     autoFormat = true;
     autoResize = true;
   };
   fileSystems."/tmp" = {
-    device = "/dev/vdh"; # 1T HDD (tank-hdd) — scratch space
+    device = "/dev/disk/by-path/virtio-pci-0000:08:02.0"; # virtio7: 1T HDD (tank-hdd) — scratch space
     fsType = "ext4";
     autoFormat = true;
     autoResize = true;
@@ -453,11 +454,11 @@ in
       "x-systemd.device-timeout=10s"
     ];
   };
-  # /dev/vdj (virtio9): 16G HDD (tank-hdd) — WAL of the alloy-node DaemonSet's hostPath
+  # virtio9: 16G HDD (tank-hdd) — WAL of the alloy-node DaemonSet's hostPath
   # (cluster/cdk8s/monitoring/alloy.py). Its own disk so a full /tmp can't stop the WAL
   # buffering through a home outage (30-day window, ~0.15 GB/day measured).
   fileSystems."/var/lib/alloy-node" = {
-    device = "/dev/vdj";
+    device = "/dev/disk/by-path/virtio-pci-0000:08:04.0"; # virtio9
     fsType = "ext4";
     autoFormat = true;
     autoResize = true;
@@ -469,7 +470,7 @@ in
     ];
   };
   fileSystems."/var/lib/llm-models-ssd" = {
-    device = "/dev/vdi"; # 1 TiB SSD (local-zfs) — model storage
+    device = "/dev/disk/by-path/virtio-pci-0000:08:03.0"; # virtio8: 1 TiB SSD (local-zfs) — model storage
     fsType = "ext4";
     autoFormat = true;
     autoResize = true;
@@ -480,7 +481,7 @@ in
       "x-systemd.device-timeout=10s"
     ];
   };
-  # /dev/vdk (virtio10): dedicated HDD volume for rebuildable compiler/Python caches.
+  # virtio10: dedicated HDD volume for rebuildable compiler/Python caches.
   # The separate filesystem keeps their growth off root; cache paths stay stable via
   # bind mounts, so existing tools and the running desktop session need no reconfig.
   fileSystems."/var/cache/agentydragon" = {
@@ -512,8 +513,8 @@ in
       "x-systemd.requires-mounts-for=/var/cache/agentydragon"
     ];
   };
-  # /dev/vdl (virtio11): dedicated HDD filesystem for kubelet state and
-  # disk-backed emptyDirs. Use the raw device path because a blank disk has no
+  # virtio11: dedicated HDD filesystem for kubelet state and
+  # disk-backed emptyDirs. Use the device's path because a blank disk has no
   # filesystem label yet; systemd's makefs option needs to reach the raw device.
   # This replaces the existing /var/lib/kubelet tree, so the initial move must
   # happen during node maintenance with pod mountpoints quiesced; do not activate
@@ -521,7 +522,7 @@ in
   # restarted afterwards: a running one keeps the old directory, and its mounts
   # never reach kubelet (cluster/docs/lessons_learned/2026_10_20_csi_plugin_stale_kubelet_mount.md).
   fileSystems."/var/lib/kubelet" = {
-    device = "/dev/vdl";
+    device = "/dev/disk/by-path/virtio-pci-0000:08:06.0"; # virtio11
     fsType = "ext4";
     autoFormat = true;
     autoResize = true;
@@ -567,8 +568,8 @@ in
   # "attribute already defined" error — so mkMerge the fixed services in here.
   systemd.services = lib.mkMerge [
     # OpenEBS LVM volume groups — idempotent oneshot services that create PV + VG.
-    #   openebs-proxmox-ssd: virtio2 (/dev/vdc) — 500GB NVMe (local-zfs)
-    #   openebs-proxmox-hdd: virtio6 (/dev/vdg) — 500GB HDD (tank-hdd)
+    #   openebs-proxmox-ssd: virtio2 — 500GB NVMe (local-zfs)
+    #   openebs-proxmox-hdd: virtio6 — 500GB HDD (tank-hdd)
     (lib.mapAttrs'
       (
         vg: dev:
@@ -607,8 +608,8 @@ in
         }
       )
       {
-        ssd = "/dev/vdc";
-        hdd = "/dev/vdg";
+        ssd = "/dev/disk/by-path/virtio-pci-0000:06:0c.0";
+        hdd = "/dev/disk/by-path/virtio-pci-0000:08:01.0";
       }
     )
     # Wyrm2's dedicated kubelet disk mounts are nofail so the workstation can
@@ -627,7 +628,7 @@ in
     "d /home/agentydragon/.cache/bazel/_bazel_agentydragon/cache/repos 0755 agentydragon users -"
     # Keep the dedicated scratch filesystem bounded without disrupting active files.
     "q /tmp 1777 root root 14d"
-    # Steam library mount (/dev/vdb) must be user-writable; the fresh ext4 root
+    # Steam library mount (virtio1) must be user-writable; the fresh ext4 root
     # is created root:root, so chown it after the mount lands.
     "d /games 0755 agentydragon users -"
     # Host inference experiments store reproducible model artifacts here.
