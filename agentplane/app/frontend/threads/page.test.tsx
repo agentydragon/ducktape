@@ -120,7 +120,7 @@ let inventoryDrops = false;
 let sharedFeed: "active" | "ended" | "failed" = "active";
 let sharedThread: Partial<ThreadView> = {};
 let eventSourceUrls: string[] = [];
-let sandboxInventorySource: EventTarget | undefined;
+let threadsSource: EventTarget | undefined;
 const TRACE_SEARCH_SETTINGS: TraceSearchSettings = {
   grafana_base_url: "https://grafana.test.invalid",
   tempo_datasource_uid: "tempo-test",
@@ -147,7 +147,7 @@ beforeEach(() => {
   sharedFeed = "active";
   sharedThread = {};
   eventSourceUrls = [];
-  sandboxInventorySource = undefined;
+  threadsSource = undefined;
   traceSearchSettings = TRACE_SEARCH_SETTINGS;
   langfuseSearchSettings = LANGFUSE_SEARCH_SETTINGS;
   dispatchWatches = stubWatchFetch().served;
@@ -175,7 +175,7 @@ beforeEach(() => {
       constructor(readonly url: string) {
         super();
         eventSourceUrls.push(url);
-        if (new URL(url, "http://test").pathname === "/live/sandboxes") sandboxInventorySource = this;
+        if (new URL(url, "http://test").pathname === "/live/threads") threadsSource = this;
         queueMicrotask(() => {
           if (new URL(url, "http://test").pathname === "/threads/notices/stream") {
             this.dispatchEvent(
@@ -534,15 +534,20 @@ it("marks retained timing unavailable after an invalid deadline and recovers on 
   vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-01-01T12:00:00Z"));
   sandboxes = [autosuspendSandbox("2026-01-01T12:12:00Z")];
   const container = await render();
-  const hint = container.querySelector(".agentplane-composer-autosuspend");
-  expect(hint?.textContent).toBe("Sandbox autosuspends in ~12m");
-  const source = sandboxInventorySource;
-  if (!source) throw new Error("Missing sandbox inventory stream");
+  const hint = (): string | null | undefined =>
+    container.querySelector(".agentplane-composer-autosuspend")?.textContent;
+  expect(hint()).toBe("Sandbox autosuspends in ~12m");
+  const source = threadsSource;
+  if (!source) throw new Error("Missing thread snapshot stream");
   const streams = eventSourceUrls.length;
   const snapshot = (deadline: string): MessageEvent =>
     new MessageEvent("snapshot", {
       data: JSON.stringify({
         sandboxes: [autosuspendSandbox(deadline)],
+        threads: [{ ...THREAD, harness_state: "HARNESS_STATE_RUNNING", feed_status: sharedFeed }],
+        more: false,
+        archived_count: 0,
+        updates_connected: true,
         watch: { fresh: true, stale_after_seconds: 90, refreshed_seconds_ago: { sandboxes: 0 } },
       }),
     });
@@ -550,12 +555,12 @@ it("marks retained timing unavailable after an invalid deadline and recovers on 
   await act(async () => {
     source.dispatchEvent(snapshot("not-a-datetime"));
   });
-  expect(hint?.textContent).toBe("Autosuspend timing unavailable");
+  expect(hint()).toBe("Autosuspend timing unavailable");
 
   await act(async () => {
     source.dispatchEvent(snapshot("2026-01-01T12:13:00Z"));
   });
-  expect(hint?.textContent).toBe("Sandbox autosuspends in ~13m");
+  expect(hint()).toBe("Sandbox autosuspends in ~13m");
   expect(eventSourceUrls).toHaveLength(streams);
 });
 
