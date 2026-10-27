@@ -431,12 +431,14 @@ A binding that cannot yet be stabilized records its blocker in a `note:`:
 
 ## Renaming or disabling a module
 
-Not a CLI operation — plain `mv` on the YAML file:
+Rename whole modules with the gated `modules merge --batch` workflow in
+<cli.md#whole-module-merge-batches>, using one source and a new target per entry.
+This retains attached claims and metadata and validates the whole batch before
+writing. Explicit `.yaml` targets preserve filename casing.
+
+To disable a module, a non-`.yaml` suffix makes the compiler skip the file:
 
 ```bash
-# Rename: the module path is re-derived from the new filename.
-mv $DEBUNDLE_MODULES/runtime/plugins.yaml $DEBUNDLE_MODULES/runtime/plugin_settings.yaml
-
 # Disable: any non-.yaml suffix makes the spec compiler skip the file.
 mv $DEBUNDLE_MODULES/runtime/plugins.yaml $DEBUNDLE_MODULES/runtime/plugins.yaml.disabled
 ```
