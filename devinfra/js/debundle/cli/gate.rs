@@ -31,7 +31,8 @@ use std::path::{Path, PathBuf};
 
 use ::gate::{BlockingSccEntry, CycleEdge};
 use analysis::{
-    DepKind, DependencyGraphReport, EdgeRoleReport, ModuleKey, Purity, SequencedSourceUnitCause,
+    CallbackFactoryBarrierReport, CallbackFactoryRejectionReport, DepKind, DependencyGraphReport,
+    EdgeRoleReport, ModuleKey, Purity, SequencedSourceUnitCause,
 };
 use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, Subcommand};
@@ -66,6 +67,9 @@ enum GateCommand {
     /// Just the cut edges for one blocking SCC. The actionable subset —
     /// spec authors read this to pick which back-edge to break.
     Cut(GateCutArgs),
+    /// Trace one binding's constraining promoted callback edges to a rejected
+    /// callback-factory guard when the report contains a supported witness.
+    Diagnose(GateDiagnoseArgs),
 }
 
 /// Paths for reading blocking SCCs. List/cut need only the cycles report;
@@ -149,6 +153,39 @@ pub struct GateCutArgs {
     pub format: Option<peel::OutputFormat>,
 }
 
+/// A bounded, source-backed trace for one requested binding. Paths are
+/// required explicitly so the query and its follow-up command do not depend
+/// on ambient Debundle environment variables.
+#[derive(Debug, ClapArgs)]
+pub struct GateDiagnoseArgs {
+    /// Binding whose constraining promoted callback dependencies to inspect.
+    pub binding: String,
+
+    /// Path to `dependency_graph.json`.
+    #[arg(long, required = true)]
+    pub graph: PathBuf,
+
+    /// Root of the YAML module spec tree used by `inspect-source`.
+    #[arg(long, required = true)]
+    pub modules: PathBuf,
+
+    /// Root used to resolve `source_location.source_path` values.
+    #[arg(long = "source-root", required = true)]
+    pub source_root: PathBuf,
+
+    /// Maximum traces to emit. Defaults to 5; `--all` opts into exhaustive output.
+    #[arg(long, conflicts_with = "all")]
+    pub limit: Option<usize>,
+
+    /// Emit every matching trace instead of the bounded default.
+    #[arg(long, conflicts_with = "limit")]
+    pub all: bool,
+
+    /// Output format. Default `text` on tty, `json` on pipe.
+    #[arg(long, value_enum)]
+    pub format: Option<peel::OutputFormat>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct GateListEntry {
     pub id: usize,
@@ -178,11 +215,506 @@ pub struct GateCutReport {
     pub cut: Vec<CycleEdge>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct GateDiagnoseReport {
+    pub query_binding: String,
+    pub returned_count: usize,
+    pub total_count: usize,
+    pub truncated: bool,
+    pub expansion: GateDiagnoseExpansion,
+    pub query_status: GateDiagnoseStatus,
+    pub coverage_scope: GateDiagnoseCoverageScope,
+    /// Coverage is local to these rows; it does not establish an only or
+    /// globally earliest cause.
+    pub traces: Vec<GateDiagnoseTrace>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GateDiagnoseStatus {
+    InconclusiveNoSupportedPromotedDependency,
+    LocalSupportedWitnessFound,
+    InconclusiveForSupportedGuardFamily,
+}
+
+impl GateDiagnoseStatus {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::InconclusiveNoSupportedPromotedDependency => {
+                "inconclusive_no_supported_promoted_dependency"
+            }
+            Self::LocalSupportedWitnessFound => "local_supported_witness_found",
+            Self::InconclusiveForSupportedGuardFamily => "inconclusive_for_supported_guard_family",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GateDiagnoseCoverageScope {
+    CallbackFactoryNamespaceMemberWriteGuardOnly,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GateDiagnoseExpansion {
+    Bounded,
+    All,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct GateDiagnoseTrace {
+    pub ownership_target: GateDiagnoseOwnershipTarget,
+    pub constraining_dependency: GateDiagnoseDependency,
+    pub call_site_source_location: Option<analysis::SourceLocation>,
+    pub coverage: GateDiagnoseCoverage,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub matched_contract: Option<analysis::CallbackFactoryContractReport>,
+    pub first_rejected_guard: GateDiagnoseGuard,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct GateDiagnoseOwnershipTarget {
+    pub binding: String,
+    pub source_unit: String,
+    pub module: ModulePath,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct GateDiagnoseDependency {
+    pub edge: String,
+    pub source_unit: String,
+    pub target_source_unit: String,
+    pub constrains_init_order: bool,
+    pub role: GateDiagnoseEdgeRole,
+    pub callee_source_unit: String,
+    pub binding: Option<Atom>,
+    pub edge_kind: DepKind,
+    pub statement_ordinal: SourceUnitOrdinal,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GateDiagnoseEdgeRole {
+    PromotedAtInit,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GateDiagnoseCoverage {
+    SupportedNamespaceMemberWrite,
+    InconclusiveUnsupportedGuard,
+    InconclusiveNoSupportedCallbackFactoryBarrier,
+    InconclusiveAmbiguousCallbackFactoryBarrierLink,
+    InconclusiveUnresolvedCallbackArgumentSource,
+    InconclusiveCallbackArgumentSourceMismatch,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GateDiagnoseGuardCode {
+    NoSupportedCallbackFactoryBarrier,
+    AmbiguousCallbackFactoryBarrierLink,
+    CallbackArgumentSourceUnresolved,
+    CallbackArgumentSourceMismatch,
+    NamespaceMemberWrite,
+    UnsupportedGuard,
+}
+
+impl GateDiagnoseGuardCode {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::NoSupportedCallbackFactoryBarrier => "no_supported_callback_factory_barrier",
+            Self::AmbiguousCallbackFactoryBarrierLink => "ambiguous_callback_factory_barrier_link",
+            Self::CallbackArgumentSourceUnresolved => "callback_argument_source_unresolved",
+            Self::CallbackArgumentSourceMismatch => "callback_argument_source_mismatch",
+            Self::NamespaceMemberWrite => "namespace_member_write",
+            Self::UnsupportedGuard => "unsupported_guard",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GateDiagnoseWitnessSelection {
+    FirstSourceUnitOrderDeterministicWithinUnit,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct GateDiagnoseGuard {
+    pub code: GateDiagnoseGuardCode,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub witness: Option<GateDiagnoseWitness>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct GateDiagnoseWitness {
+    pub source_unit: String,
+    pub statement_ordinal: SourceUnitOrdinal,
+    /// Raw parsed `Module.body` coordinate, resolved through the stored
+    /// SourceUnitOrdinal -> StatementId crosswalk.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parsed_statement_id: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<analysis::SourceLocation>,
+    pub receiver_binding: Atom,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub property: Option<String>,
+    pub witness_selection: GateDiagnoseWitnessSelection,
+    pub inspection_command: String,
+}
+
 pub fn run_gate_cli(args: GateArgs) -> Result<()> {
     match args.command {
         GateCommand::List(a) => run_list(a),
         GateCommand::Describe(a) => run_describe(a),
         GateCommand::Cut(a) => run_cut(a),
+        GateCommand::Diagnose(a) => run_diagnose(a),
+    }
+}
+
+fn run_diagnose(args: GateDiagnoseArgs) -> Result<()> {
+    let graph = crate::load_dependency_graph_report(&args.graph)?;
+    let limit = args.limit.unwrap_or(5);
+    if limit == 0 && !args.all {
+        anyhow::bail!("--limit must be greater than zero; use --all for exhaustive output");
+    }
+    let (returned, total_count, has_supported_write) =
+        diagnose_binding(&graph, &args, (!args.all).then_some(limit))?;
+    let report = GateDiagnoseReport {
+        query_binding: args.binding,
+        returned_count: returned.len(),
+        total_count,
+        truncated: returned.len() < total_count,
+        expansion: if args.all {
+            GateDiagnoseExpansion::All
+        } else {
+            GateDiagnoseExpansion::Bounded
+        },
+        query_status: if total_count == 0 {
+            GateDiagnoseStatus::InconclusiveNoSupportedPromotedDependency
+        } else if has_supported_write {
+            GateDiagnoseStatus::LocalSupportedWitnessFound
+        } else {
+            GateDiagnoseStatus::InconclusiveForSupportedGuardFamily
+        },
+        coverage_scope: GateDiagnoseCoverageScope::CallbackFactoryNamespaceMemberWriteGuardOnly,
+        traces: returned,
+    };
+    let format = peel::OutputFormat::resolve(args.format);
+    peel::print_report(&report, format, render_diagnose_text)
+        .context("writing gate diagnose output")
+}
+
+fn diagnose_binding(
+    graph: &DependencyGraphReport,
+    args: &GateDiagnoseArgs,
+    limit: Option<usize>,
+) -> Result<(Vec<GateDiagnoseTrace>, usize, bool)> {
+    let node_by_id: HashMap<&str, _> = graph
+        .nodes
+        .iter()
+        .map(|node| (node.id.as_str(), node))
+        .collect();
+    let module_by_key: HashMap<&ModuleKey, _> = graph
+        .quotient
+        .nodes
+        .iter()
+        .map(|module| (&module.key, module))
+        .collect();
+    let target_ids: BTreeSet<&str> = graph
+        .nodes
+        .iter()
+        .filter(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|binding| binding.binding.as_ref() == args.binding)
+        })
+        .map(|node| node.id.as_str())
+        .collect();
+    let mut promoted = graph
+        .edges
+        .iter()
+        .filter(|edge| {
+            edge.constrains_init_order
+                && target_ids.contains(edge.target.as_str())
+                && edge
+                    .binding
+                    .as_ref()
+                    .is_some_and(|b| b.as_ref() == args.binding)
+                && matches!(edge.role, Some(EdgeRoleReport::PromotedAtInit { .. }))
+        })
+        .collect::<Vec<_>>();
+    promoted.sort_by(|a, b| a.id.cmp(&b.id));
+
+    let mut traces = Vec::new();
+    let mut total_count = 0;
+    let mut has_supported_write = false;
+    for edge in promoted {
+        let target = node_by_id
+            .get(edge.target.as_str())
+            .copied()
+            .with_context(|| format!("edge {} has missing target {}", edge.id, edge.target))?;
+        let target_module = module_by_key
+            .get(&target.destination)
+            .copied()
+            .with_context(|| {
+                format!(
+                    "source unit {} refers to missing module {}",
+                    target.id, target.destination
+                )
+            })?
+            .path
+            .clone();
+        let call_site = node_by_id
+            .get(edge.source.as_str())
+            .copied()
+            .with_context(|| format!("edge {} has missing source {}", edge.id, edge.source))?;
+        let Some(EdgeRoleReport::PromotedAtInit { callee_source_unit }) = edge.role.as_ref() else {
+            unreachable!("filtered promoted role")
+        };
+
+        if call_site.callback_factory_barriers.is_empty() {
+            let trace = GateDiagnoseTrace {
+                ownership_target: GateDiagnoseOwnershipTarget {
+                    binding: args.binding.clone(),
+                    source_unit: target.id.clone(),
+                    module: target_module,
+                },
+                constraining_dependency: dependency_report(edge, callee_source_unit),
+                call_site_source_location: call_site.source_location.clone(),
+                coverage: GateDiagnoseCoverage::InconclusiveNoSupportedCallbackFactoryBarrier,
+                matched_contract: None,
+                first_rejected_guard: GateDiagnoseGuard {
+                    code: GateDiagnoseGuardCode::NoSupportedCallbackFactoryBarrier,
+                    witness: None,
+                },
+            };
+            total_count += 1;
+            if limit.is_none_or(|limit| traces.len() < limit) {
+                traces.push(trace);
+            }
+            continue;
+        }
+
+        if call_site.callback_factory_barriers.len() != 1 {
+            total_count += 1;
+            if limit.is_none_or(|limit| traces.len() < limit) {
+                traces.push(GateDiagnoseTrace {
+                    ownership_target: GateDiagnoseOwnershipTarget {
+                        binding: args.binding.clone(),
+                        source_unit: target.id.clone(),
+                        module: target_module,
+                    },
+                    constraining_dependency: dependency_report(edge, callee_source_unit),
+                    call_site_source_location: call_site.source_location.clone(),
+                    coverage: GateDiagnoseCoverage::InconclusiveAmbiguousCallbackFactoryBarrierLink,
+                    matched_contract: None,
+                    first_rejected_guard: GateDiagnoseGuard {
+                        code: GateDiagnoseGuardCode::AmbiguousCallbackFactoryBarrierLink,
+                        witness: None,
+                    },
+                });
+            }
+            continue;
+        }
+
+        let barrier = &call_site.callback_factory_barriers[0];
+        total_count += 1;
+        let callback_link =
+            barrier
+                .contract
+                .callback_source_units
+                .as_ref()
+                .map(|callback_source_units| {
+                    callback_source_units
+                        .iter()
+                        .any(|source| source.source_unit == *callee_source_unit)
+                });
+        has_supported_write |= callback_link == Some(true)
+            && matches!(
+                &barrier.rejection,
+                CallbackFactoryRejectionReport::NamespaceMemberWrite { .. }
+            );
+
+        // Summary status describes all matching promoted edges, including rows
+        // omitted from the returned page. Keep expensive witness materialization
+        // and the trace list itself bounded by the requested output limit.
+        if limit.is_some_and(|limit| traces.len() >= limit) {
+            continue;
+        }
+        if callback_link.is_none() {
+            traces.push(GateDiagnoseTrace {
+                ownership_target: GateDiagnoseOwnershipTarget {
+                    binding: args.binding.clone(),
+                    source_unit: target.id.clone(),
+                    module: target_module,
+                },
+                constraining_dependency: dependency_report(edge, callee_source_unit),
+                call_site_source_location: call_site.source_location.clone(),
+                coverage: GateDiagnoseCoverage::InconclusiveUnresolvedCallbackArgumentSource,
+                matched_contract: None,
+                first_rejected_guard: GateDiagnoseGuard {
+                    code: GateDiagnoseGuardCode::CallbackArgumentSourceUnresolved,
+                    witness: None,
+                },
+            });
+            continue;
+        }
+        if callback_link == Some(false) {
+            traces.push(GateDiagnoseTrace {
+                ownership_target: GateDiagnoseOwnershipTarget {
+                    binding: args.binding.clone(),
+                    source_unit: target.id.clone(),
+                    module: target_module,
+                },
+                constraining_dependency: dependency_report(edge, callee_source_unit),
+                call_site_source_location: call_site.source_location.clone(),
+                coverage: GateDiagnoseCoverage::InconclusiveCallbackArgumentSourceMismatch,
+                matched_contract: None,
+                first_rejected_guard: GateDiagnoseGuard {
+                    code: GateDiagnoseGuardCode::CallbackArgumentSourceMismatch,
+                    witness: None,
+                },
+            });
+            continue;
+        }
+        let (coverage, code, witness) = diagnose_barrier_witness(barrier, args)?;
+        traces.push(GateDiagnoseTrace {
+            ownership_target: GateDiagnoseOwnershipTarget {
+                binding: args.binding.clone(),
+                source_unit: target.id.clone(),
+                module: target_module,
+            },
+            constraining_dependency: dependency_report(edge, callee_source_unit),
+            call_site_source_location: call_site.source_location.clone(),
+            coverage,
+            matched_contract: Some(barrier.contract.clone()),
+            first_rejected_guard: GateDiagnoseGuard { code, witness },
+        });
+    }
+    Ok((traces, total_count, has_supported_write))
+}
+
+fn dependency_report(
+    edge: &analysis::DependencyEdgeReport,
+    callee_source_unit: &str,
+) -> GateDiagnoseDependency {
+    GateDiagnoseDependency {
+        edge: edge.id.clone(),
+        source_unit: edge.source.clone(),
+        target_source_unit: edge.target.clone(),
+        constrains_init_order: edge.constrains_init_order,
+        role: GateDiagnoseEdgeRole::PromotedAtInit,
+        callee_source_unit: callee_source_unit.to_string(),
+        binding: edge.binding.clone(),
+        edge_kind: edge.edge_kind,
+        statement_ordinal: edge.statement_ordinal,
+    }
+}
+
+fn diagnose_barrier_witness(
+    barrier: &CallbackFactoryBarrierReport,
+    args: &GateDiagnoseArgs,
+) -> Result<(
+    GateDiagnoseCoverage,
+    GateDiagnoseGuardCode,
+    Option<GateDiagnoseWitness>,
+)> {
+    match &barrier.rejection {
+        CallbackFactoryRejectionReport::NamespaceMemberWrite { witness } => {
+            Ok((
+                GateDiagnoseCoverage::SupportedNamespaceMemberWrite,
+                GateDiagnoseGuardCode::NamespaceMemberWrite,
+                Some(GateDiagnoseWitness {
+                    source_unit: witness.source_unit.clone(),
+                    statement_ordinal: witness.statement_ordinal,
+                    // Diagnose does not validate source inputs against the
+                    // graph fingerprint. Keep the parsed coordinate absent
+                    // rather than applying a possibly stale crosswalk.
+                    parsed_statement_id: None,
+                    source_location: witness.source_location.clone(),
+                    receiver_binding: witness.receiver_binding.clone(),
+                    property: witness.property.clone(),
+                    witness_selection:
+                        GateDiagnoseWitnessSelection::FirstSourceUnitOrderDeterministicWithinUnit,
+                    inspection_command: inspection_command(
+                        &witness.source_unit,
+                        &args.graph,
+                        &args.modules,
+                        &args.source_root,
+                    )?,
+                }),
+            ))
+        }
+        CallbackFactoryRejectionReport::UnsupportedGuard => Ok((
+            GateDiagnoseCoverage::InconclusiveUnsupportedGuard,
+            GateDiagnoseGuardCode::UnsupportedGuard,
+            None,
+        )),
+    }
+}
+
+fn inspection_command(
+    source_unit: &str,
+    graph: &Path,
+    modules: &Path,
+    source_root: &Path,
+) -> Result<String> {
+    let graph = std::fs::canonicalize(graph).context("resolving --graph for inspection command")?;
+    let modules =
+        std::fs::canonicalize(modules).context("resolving --modules for inspection command")?;
+    let source_root = std::fs::canonicalize(source_root)
+        .context("resolving --source-root for inspection command")?;
+    Ok(format!(
+        "debundle inspect-source --id {} --graph {} --modules {} --source-root {} --format json",
+        shell_quote(source_unit),
+        shell_quote(&graph.display().to_string()),
+        shell_quote(&modules.display().to_string()),
+        shell_quote(&source_root.display().to_string()),
+    ))
+}
+
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
+
+fn render_diagnose_text(report: &GateDiagnoseReport, out: &mut String) {
+    out.push_str(&format!(
+        "binding {}: returned {} of {} trace(s){}\n",
+        report.query_binding,
+        report.returned_count,
+        report.total_count,
+        if report.truncated { " (truncated)" } else { "" },
+    ));
+    out.push_str(&format!("  status: {}\n", report.query_status.as_str()));
+    for trace in &report.traces {
+        out.push_str(&format!(
+            "  {} in {} <- {} via {} [{}]\n",
+            trace.ownership_target.binding,
+            trace.ownership_target.module,
+            trace.constraining_dependency.source_unit,
+            trace.constraining_dependency.callee_source_unit,
+            trace.first_rejected_guard.code.as_str(),
+        ));
+        if let Some(contract) = &trace.matched_contract {
+            out.push_str(&format!(
+                "    contract {}.{}({} args; callbacks {:?})\n",
+                contract.namespace_binding,
+                contract.member,
+                contract.argument_count,
+                contract.callback_arguments,
+            ));
+        }
+        if let Some(witness) = &trace.first_rejected_guard.witness {
+            out.push_str(&format!(
+                "    write {}.{} at {:?}; inspect: {}\n",
+                witness.receiver_binding,
+                witness.property.as_deref().unwrap_or("<unknown>"),
+                witness.source_location,
+                witness.inspection_command,
+            ));
+        }
     }
 }
 

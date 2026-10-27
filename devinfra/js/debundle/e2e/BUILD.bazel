@@ -90,7 +90,10 @@ debundle_e2e_test(name = "empty_collection_timing_test")
 
 debundle_e2e_test(
     name = "retained_callback_factory_test",
-    deps = ["//devinfra/js/debundle:analysis"],
+    deps = [
+        "//devinfra/js/debundle:analysis",
+        "@crates//:serde_json",
+    ],
 )
 
 debundle_e2e_test(

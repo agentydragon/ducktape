@@ -6,7 +6,7 @@ are consumed by:
 - spec authors with `jq` poking at cycle / dependency-graph / atomic-group reports;
 - CLI tooling (top-level `debundle modules propose` / `atoms` /
   `coverage` / `describe` / `inspect-source --id` / `scc` / `cluster` /
-  `graph-summary`);
+  `graph-summary` / `gate diagnose`);
 - humans reading the files during debugging.
 
 This doc states the convention these files follow.
@@ -124,6 +124,7 @@ replay and pre-filtering inner-scope reads don't pay for themselves. See
 | ---------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- | ----------------------- |
 | Spec author with `jq`                                                                                                        | `dependency_graph.json`, `cycles.json`, `atomic_group_conflicts.json` | yes (Atom-only)         |
 | `debundle atoms` / `coverage` / `graph-summary` / `scc` / `cluster` / `describe` / `inspect-source --id` / `modules propose` | `dependency_graph.json`, source bytes + spec                          | yes (Atom-only)         |
+| `debundle gate diagnose <binding>`                                                                                           | `dependency_graph.json`, source bytes + module spec                   | yes (Atom-only)         |
 | `debundle bindings assign` / `bindings rename` / `modules merge`                                                             | spec YAMLs + `dependency_graph.json` (gate)                           | yes                     |
 | Materializer (`debundle run`)                                                                                                | spec + chunk bytes + everything in-process                            | N/A — always in-process |
 
@@ -197,6 +198,45 @@ stored once rather than copied into every caller. A direct reason's
 when the call crosses chunks. The table is absent when no source unit references
 an impure known-function call. Older reports without the table or
 `cause_ref` still deserialize.
+
+## Callback-factory barrier diagnostics
+
+`dependency_graph.json.nodes[].callback_factory_barriers[]` is optional and
+omitted for accepted calls. It records a matched retained callback-factory
+signature that the conservative analyzer rejected. The currently supported
+rejection is `rejection.code = "namespace_member_write"`; its `witness`
+identifies the offending receiver/property write, graph `source_unit` ref,
+`statement_ordinal`, and optional `source_location`. The
+`rejection.code = "unsupported_guard"` value preserves a rejected match whose
+cause is outside this write-witness family. This diagnostic field does not
+alter promotion or acceptance decisions.
+
+Each contract may include `callback_source_units`, a list of graph source-unit
+refs and their `statement_ordinal`s for callback arguments resolved directly
+through whole-chunk value flow. The field is omitted when the argument shape
+cannot be linked without inference. `gate diagnose` treats the contract as
+linked only when the promoted edge's `callee_source_unit` matches one of these
+refs; a mismatch or unresolved source remains inconclusive. Contract rows
+include only overloads applicable to the actual argument count and callback
+positions.
+
+`debundle gate diagnose` joins these rows to constraining edges tagged
+`role.kind = "promoted_at_init"`, returns bounded traces with counts and
+coverage status, and preserves the witness's graph source-unit reference and
+ordinal. It currently omits `parsed_statement_id` because the diagnose command
+does not read or validate its source input against the graph-generation
+fingerprint; consumers must not apply a possibly stale
+`SourceUnitOrdinal -> StatementId` crosswalk. The explicit-path inspection
+command remains available to inspect the graph source-unit reference using the
+supplied graph, module spec, and source root. `query_status` summarizes all
+uniquely linked candidate promoted edges even when returned traces are bounded; the
+trace list itself remains limited by `--limit` or the default. A local witness
+does not imply that it is the only or globally earliest cause. If a source
+unit has multiple candidate barriers, or the edge's callee source does not
+match a recorded callback root, `gate diagnose` marks the link inconclusive
+instead of cross-pairing a contract with a promoted callback edge. A write
+witness is selected by source-unit order and is deterministic within its source
+unit; it does not establish token order among writes in that unit.
 
 ## Module identity everywhere else: `ModulePath` / `ModuleRef`
 

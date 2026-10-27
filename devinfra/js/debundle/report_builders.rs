@@ -13,11 +13,15 @@ use analysis::reports::schema::LineRange;
 use analysis::reports::{atomic_group_key, module_id_from_key, module_key, source_unit_key};
 use analysis::{
     AtomicGraphReport, AtomicGroup, AtomicGroupEdgeReport, AtomicGroupReport, BindingId,
-    BindingReport, DepKind, DependencyEdgeReport, DependencyGraphReport, EdgeRoleReport,
-    ModuleDestinationKind, ModuleEntry, ModuleId, ModuleKey, ModuleQuotientReport, ModuleRole,
-    Purity, PurityCauseReport, QuotientEdgeReport, QuotientSccReport, SourceUnitClass,
-    SourceUnitReport,
+    BindingReport, CallbackFactoryBarrierRejection, CallbackFactoryBarrierReport,
+    CallbackFactoryCallbackSourceReport, CallbackFactoryContractReport,
+    CallbackFactoryRejectionReport, CallbackFactoryWriteWitnessReport, DepKind,
+    DependencyEdgeReport, DependencyGraphReport, EdgeRoleReport, ModuleDestinationKind,
+    ModuleEntry, ModuleId, ModuleKey, ModuleQuotientReport, ModuleRole, Purity, PurityCauseReport,
+    QuotientEdgeReport, QuotientSccReport, SourceUnitClass, SourceUnitReport,
 };
+use source_identity::SourceUnitOrdinal;
+use swc_atoms::Atom;
 
 use crate::assignment_analysis::AssignmentAnalysis;
 
@@ -126,6 +130,10 @@ fn build_source_unit_nodes_and_edges(
 ) -> (Vec<SourceUnitReport>, Vec<DependencyEdgeReport>) {
     let assignment = assignment_analysis.assignment();
     let dependency_graph = assignment_analysis.inputs().dependency_graph();
+    let source_units_by_ordinal = dependency_graph
+        .iter_nodes()
+        .map(|source_unit| (source_unit.statement_ordinal, source_unit))
+        .collect::<BTreeMap<SourceUnitOrdinal, _>>();
     let nodes = dependency_graph
         .iter_nodes()
         .map(|node| SourceUnitReport {
@@ -135,6 +143,60 @@ fn build_source_unit_nodes_and_edges(
             declared_bindings: binding_reports(assignment_analysis, node.declared.iter()),
             statement_kind: node.kind,
             purity: node.purity.clone(),
+            callback_factory_barriers: node
+                .callback_factory_barriers
+                .iter()
+                .map(|barrier| {
+                    let rejection = match &barrier.rejection {
+                        CallbackFactoryBarrierRejection::NamespaceMemberWrite { witness } => {
+                            let witness_source = source_units_by_ordinal
+                                .get(&witness.statement_ordinal)
+                                .expect(
+                                    "callback factory witness must identify a graph source unit",
+                                );
+                            CallbackFactoryRejectionReport::NamespaceMemberWrite {
+                                witness: CallbackFactoryWriteWitnessReport {
+                                    source_unit: source_unit_key(witness_source.id),
+                                    statement_ordinal: witness.statement_ordinal,
+                                    source_location: witness_source.source_location.clone(),
+                                    receiver_binding: Atom::from(witness.receiver_binding.as_str()),
+                                    property: witness.property.clone(),
+                                },
+                            }
+                        }
+                        CallbackFactoryBarrierRejection::UnsupportedGuard => {
+                            CallbackFactoryRejectionReport::UnsupportedGuard
+                        }
+                    };
+                    CallbackFactoryBarrierReport {
+                        contract: CallbackFactoryContractReport {
+                            namespace_binding: Atom::from(barrier.namespace_binding.as_str()),
+                            member: barrier.member.clone(),
+                            argument_count: barrier.argument_count,
+                            callback_arguments: barrier.callback_arguments.clone(),
+                            callback_source_units: barrier.callback_source_units.as_ref().map(
+                                |ordinals| {
+                                    ordinals
+                                        .iter()
+                                        .map(|ordinal| {
+                                            let source_unit = source_units_by_ordinal
+                                                .get(ordinal)
+                                                .expect(
+                                                    "callback source must identify a graph source unit",
+                                                );
+                                            CallbackFactoryCallbackSourceReport {
+                                                source_unit: source_unit_key(source_unit.id),
+                                                statement_ordinal: *ordinal,
+                                            }
+                                        })
+                                        .collect()
+                                },
+                            ),
+                        },
+                        rejection,
+                    }
+                })
+                .collect(),
             destination: module_key(assignment.of(node.id)),
         })
         .collect();

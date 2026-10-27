@@ -124,6 +124,7 @@ pub fn source_unit_report(
         declared_bindings,
         statement_kind: StatementKind::VarDecl,
         purity: Purity::Pure,
+        callback_factory_barriers: Vec::new(),
         destination,
     }
 }

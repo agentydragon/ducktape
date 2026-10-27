@@ -509,6 +509,7 @@ fn assemble_statement_facts(
     StatementFacts {
         ordinal,
         source_location,
+        callback_factory_barriers: Vec::new(),
         declared,
         local_bindings,
         var_declared,
