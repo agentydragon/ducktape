@@ -35,10 +35,14 @@ flowchart LR
         DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: merge plan awaiting review]
         DISPATCHER_QUEUE_OPTIONAL[Unscheduled: run without the queue]
     end
+    subgraph APP_TRANSPORT_TRACK[App service transports]
+        APP_HTTP_GRPC_BOUNDARY[In flight: app backends use native gRPC]
+    end
     subgraph APP_GO_TRACK[App Go port]
-        APP_GO_PORT_CATCHUP[In review: bring the Go app PR up to devel]
+        APP_GO_PORT_CATCHUP[In review: rebase Go app PR #12223 and pass CI]
         APP_GO_CUTOVER[Blocked: the Go app serves staging]
     end
+    APP_HTTP_GRPC_BOUNDARY --> APP_GO_PORT_CATCHUP
     APP_GO_TRACK -. leaves .-> APP_PYTHON_RETIRE[Blocked: delete the Python app runtime, section 14]
     FAKE_CLIENTS_TO_ENVTEST[Candidate: remaining fake API clients to envtest]
     APP_TEST_RUNNER_FIXTURES_GO[Candidate: app test runners use the Go Gateway and History ingress]
@@ -1890,16 +1894,13 @@ old paths.
 
 ## 14. App Go port
 
-[#11821](https://github.com/agentydragon/ducktape/pull/11821) (branch `codex/agentplane-app-go-rewrite`) replaces the
-Python runtime in `//agentplane/app:image` with a Go server: Huma's typed routes generate the frontend's OpenAPI client,
-while SSE, auth, telemetry and upstream-proxy routes stay plain `net/http` handlers. The manifests keep their shape,
-so merging it cuts staging over through image automation. The schema stays with the Python/Alembic
-`agentplane-app-migrate` init container until `APP_GOOSE_MIGRATIONS`. Findings below are from an audit of the branch
-against devel `6680ad2d` (2026-10-27).
+[#12223](https://github.com/agentydragon/ducktape/pull/12223) supersedes [#11821](https://github.com/agentydragon/ducktape/pull/11821) as the current Go app port. It replaces the Python runtime in `//agentplane/app:image` with a Go server: Huma's typed routes generate the frontend's OpenAPI client, while SSE, auth and telemetry stay in `net/http` handlers. The manifests keep their shape, so merging it cuts staging over through image automation. The schema stays with the Python/Alembic `agentplane-app-migrate` init container until `APP_GOOSE_MIGRATIONS`.
 
 ```mermaid
 flowchart LR
-    APP_GO_PORT_CATCHUP[In review: bring the Go app PR up to devel] --> APP_GO_CUTOVER[Blocked: the Go app serves staging]
+    APP_HTTP_GRPC_BOUNDARY[In flight: app backends use native gRPC] --> APP_GO_PORT_CATCHUP[In review: rebase Go app PR #12223 and pass CI]
+    APP_HTTP_GRPC_BOUNDARY --> APP_DISPATCHER_HTTP_SETTING_CLEANUP[Blocked: remove legacy Dispatcher URL setting after rollout]
+    APP_GO_PORT_CATCHUP[In review: rebase Go app PR #12223 and pass CI] --> APP_GO_CUTOVER[Blocked: the Go app serves staging]
     APP_GO_PORT_CATCHUP --> APP_GO_TEST_RETARGET[Blocked: app integration tests drive the Go server]
     APP_GO_PORT_CATCHUP --> APP_SYSTEM_TEST_CLIENT[Blocked: system-test client without Python app models]
     APP_GO_CUTOVER --> APP_GOOSE_MIGRATIONS[Blocked: Goose owns the app schema]
@@ -1909,33 +1910,32 @@ flowchart LR
     APP_GOOSE_MIGRATIONS --> APP_PYTHON_RETIRE
 ```
 
-### `APP_GO_PORT_CATCHUP` — the Go app PR, mergeable on current devel
+### `APP_HTTP_GRPC_BOUNDARY` — app service backends use native gRPC
 
-**In review: #11821 (Rai via Codex; last push 2026-10-26 00:43 UTC, head `2373fea4` on base `28850a2e`).** Its
-bazel-ci run failed with 54 `//agentplane/app` targets failing to build, most likely the frontend's
-`GET /frontend-config` call, which the Go schema lacks. Since that base, devel changed the app in ways the branch must
-absorb, and the port missed one feature already on its base:
+**In flight: Python app transport prerequisite (Codex; reported 2026-10-27; Actions, Connection and Session Dispatcher).** Keep the app's browser API as the BFF while calling Action Service, Connection Service and Session Dispatcher through their native gRPC APIs. Preserve the generated ProtoJSON and NDJSON browser contracts with explicit typed routes and narrow shared transport helpers; remove their generic service HTTP relays. Retain the public MCP OAuth callback's plain HTTP route and the direct service HTTP contracts available to external agent and automation callers. No full HTTP transcoder or gRPC-Web surface is part of this change.
 
-- **Tempo trace links (#11992, on the base):** `GET /frontend-config` and the `frontend_config` setting. The Go
-  loader decodes with `UnmarshalExact` and staging's `app-config` sets `frontend_config`, so the branch as is would
-  refuse staging's configuration and crash-loop. The k3s fixture sets no `frontend_config`, so set it there too, or
-  system tests miss this class of failure.
-- **Thread title generation removed (#12163):** drop `/threads/form`, `/threads/{thread_id}/auto-title`, the `titles`
-  package and its worker, `auto_title_on_first_message_default` and `title_generation`; move the Goose baseline from
-  Alembic `0036_auto_thread_titles` to `0037_drop_auto_thread_titles`.
-- **UUID-only routes (#12194):** a non-UUID Thread or Session ID segment answers 404. Huma on `ServeMux` still routes
-  `/threads/form` to `/threads/{thread_id}` and answers 422.
-- **Frontend:** ten files the branch edits also changed on devel (#12134, #12135, #12163, #12168), among them
-  `client.ts`, `harness.tsx`, `new_session_form.tsx` and `sandbox_page.test.tsx`. Call sites take the Go schema's names.
-- **Style:** `main.go` installs `slog.NewTextHandler`, where the [Go table](../../STYLE.md#go) requires JSON; Huma
-  needs its row in that table.
+Exit: focused `bbr test` coverage proves route-to-RPC mapping, request-bound operator bearer metadata, bounded watch startup, stream cancellation on browser/session shutdown, and the existing browser response contract for all three services. Keep the direct Actions CLI path on generated gRPC. Merge this Python prerequisite before the Go app cutover in `APP_GO_PORT_CATCHUP`; catch-up implementation and review can proceed in parallel.
 
-Exit: bazel-ci green on a head rebased onto devel, including the k3s system tests, which deploy
-`//agentplane/app:image` (the Go server) and drive it through `app/testing/client.py`.
+### `APP_DISPATCHER_HTTP_SETTING_CLEANUP` — remove the retired Dispatcher URL setting
+
+**Blocked on `APP_HTTP_GRPC_BOUNDARY` rollout.** The Python gRPC app no longer reads
+`session_dispatcher_http_url`, but `cluster/cdk8s/agentplane/app.py` still supplies it and the Python
+`Settings` schema accepts it for compatibility. After the Python gRPC image is deployed, remove the
+argument from the manifest; then remove the optional field from `Settings`. Its dated `CLEANUP`
+tombstone names this last-reader gate. Keep this cleanup independent of the Go port catch-up.
+
+Exit: neither the manifest nor the app settings schema contains `session_dispatcher_http_url`, and the
+tombstone is removed.
+
+### `APP_GO_PORT_CATCHUP` — rebase the Go app port and pass CI
+
+**In review: #12223 (Rai via Codex).** Its earlier audit against devel found the frontend configuration, removed title generation, UUID route matching, changed frontend call sites and logging style that needed catch-up; those fixes are now on the current PR. The separate Python gRPC boundary prerequisite above must merge before Go cutover. Catch-up can proceed while that prerequisite is reviewed; then rebase #12223 onto current devel, reconcile any resulting contract changes and run bazel-ci.
+
+Exit: bazel-ci is green on the rebased head, including the k3s system tests that deploy `//agentplane/app:image` (the Go server) and exercise it through `app/testing/client.py`.
 
 ### `APP_GO_CUTOVER` — the Go app serves staging
 
-**Blocked on `APP_GO_PORT_CATCHUP`.** Merging #11821 is the cutover: image automation publishes the Go
+**Blocked on `APP_GO_PORT_CATCHUP`.** Merging #12223 is the cutover: image automation publishes the Go
 `agentplane-app` image and the unchanged Deployment rolls to it. Alembic still owns the schema, so the database is
 untouched. Under the rollout rule it merges once the covering k3s system tests pass at its head, and the PR states the
 rollback: revert it, and the next devel build publishes the Python image again. Check after rollout: the app Pod is
@@ -1947,7 +1947,7 @@ Ready on staging's rendered configuration, and a logged-in browser loads the San
 **Blocked on `APP_GO_PORT_CATCHUP`; runs alongside the cutover.** Every test under `agentplane/app/` that uses the app
 `conftest.py` builds the Python app in process, so none covers the Go runtime. Retarget the ones that exercise real
 History, Electric, Gateway or PostgreSQL (`test_thread_browser`, `test_thread_window_browser`, `test_thread_sync`,
-`test_thread_debug`, `test_electric*`, `test_action_stream`, `test_notifications_stream`, `test_upstream_proxy`,
+`test_thread_debug`, `test_electric*`, `test_action_stream`, `test_native_facades`, `test_notifications_stream`,
 `test_history_gateway`, `test_bridge`, `test_shutdown`) to start the Go binary as a process, as `gateway_process` does
 for the Gateway. Port each remaining unit test's behavior to a Go test or drop it as Python-internal. One PR per test
 file or fixture group, each saying what it ported, retargeted or dropped. Exit: no app test imports the Python runtime.
@@ -1963,7 +1963,7 @@ as `action_service/settings.py` did after the Action port.
 
 ### `APP_GOOSE_MIGRATIONS` — Goose owns the app schema
 
-**Blocked on `APP_GO_CUTOVER`; a PR of its own.** #11821 already carries `app/go/migrations`: an idempotent Goose
+**Blocked on `APP_GO_CUTOVER`; a PR of its own.** #12223 already carries `app/go/migrations`: an idempotent Goose
 baseline that adopts a database stamped at the Alembic head, refuses unknown or partial schemas, and on a fresh
 database writes the Alembic stamp too, so the Python image stays a working rollback. The Go tests already migrate
 with it. Publish a Go migrator under the `agentplane-app-migrate` image name the init container already runs, so no

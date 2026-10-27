@@ -5,6 +5,8 @@ load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:grpc.bzl", "py_grpc_service_library")
+load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
 
@@ -40,6 +42,18 @@ proto_library(
         "@protobuf//:empty_proto",
         "@protobuf//:timestamp_proto",
     ],
+)
+
+py_proto_library_with_mypy_stubs(
+    name = "connection_service_pb2",
+    deps = [":connection_service_proto"],
+)
+
+py_grpc_service_library(
+    name = "connection_service_pb2_grpc",
+    async_only = True,
+    proto = ":connection_service_proto",
+    py_proto = ":connection_service_pb2",
 )
 
 ts_proto_library(

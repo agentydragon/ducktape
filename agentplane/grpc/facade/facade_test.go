@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"google.golang.org/grpc"
@@ -27,12 +28,22 @@ type dispatcher struct {
 	filter        *dispatcherpb.DispatchFilter
 	submitted     *dispatcherpb.SubmitInputRequest
 	cancelled     string
+	unaryStarted  chan struct{}
+	unaryCanceled chan struct{}
+	watchStarted  chan struct{}
+	watchCanceled chan struct{}
 }
 
 func (d *dispatcher) GetDispatch(ctx context.Context, request *dispatcherpb.GetDispatchRequest) (*dispatcherpb.GetDispatchResponse, error) {
 	d.mu.Lock()
 	d.authorization = metadata.ValueFromIncomingContext(ctx, "authorization")
 	d.mu.Unlock()
+	if d.unaryStarted != nil {
+		close(d.unaryStarted)
+		<-ctx.Done()
+		close(d.unaryCanceled)
+		return nil, status.FromContextError(ctx.Err()).Err()
+	}
 	if request.GetCommandId() == "missing" {
 		return nil, status.Error(codes.NotFound, "dispatch not found")
 	}
@@ -61,6 +72,12 @@ func (d *dispatcher) WatchDispatches(request *dispatcherpb.WatchDispatchesReques
 	d.mu.Lock()
 	d.filter = request.GetFilter()
 	d.mu.Unlock()
+	if d.watchStarted != nil {
+		close(d.watchStarted)
+		<-stream.Context().Done()
+		close(d.watchCanceled)
+		return status.FromContextError(stream.Context().Err()).Err()
+	}
 	for _, frame := range []*dispatcherpb.WatchDispatchesResponse{
 		{Frame: &dispatcherpb.WatchDispatchesResponse_Dispatch{Dispatch: &dispatcherpb.Dispatch{CommandId: "command-a"}}},
 		{Frame: &dispatcherpb.WatchDispatchesResponse_CaughtUp{CaughtUp: &dispatcherpb.CaughtUp{}}},
@@ -74,7 +91,11 @@ func (d *dispatcher) WatchDispatches(request *dispatcherpb.WatchDispatchesReques
 
 func serve(t *testing.T) (*dispatcher, string) {
 	t.Helper()
-	servicer := &dispatcher{}
+	return serveWithUnaryTimeout(t, 0, &dispatcher{})
+}
+
+func serveWithUnaryTimeout(t *testing.T, unaryTimeout time.Duration, servicer *dispatcher) (*dispatcher, string) {
+	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -85,13 +106,73 @@ func serve(t *testing.T) (*dispatcher, string) {
 	t.Cleanup(server.Stop)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	handler, err := NewHandler(ctx, listener.Addr().String(), dispatcherpb.RegisterSessionDispatcherHandlerFromEndpoint)
+	handler, err := NewHandler(ctx, listener.Addr().String(), unaryTimeout, dispatcherpb.RegisterSessionDispatcherHandlerFromEndpoint)
 	if err != nil {
 		t.Fatal(err)
 	}
 	facade := httptest.NewServer(handler)
 	t.Cleanup(facade.Close)
 	return servicer, facade.URL
+}
+
+func TestUnaryTimeoutCancelsRPC(t *testing.T) {
+	servicer := &dispatcher{unaryStarted: make(chan struct{}), unaryCanceled: make(chan struct{})}
+	_, facade := serveWithUnaryTimeout(t, 50*time.Millisecond, servicer)
+	response := get(t, facade+"/v1/dispatches/command-1", "Bearer token-1")
+	if response.StatusCode != http.StatusGatewayTimeout {
+		t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusGatewayTimeout)
+	}
+	select {
+	case <-servicer.unaryCanceled:
+	case <-time.After(time.Second):
+		t.Fatal("configured unary timeout did not cancel the gRPC call")
+	}
+}
+
+func TestUnaryTimeoutDoesNotBoundStreamAndRequestCancellationStillDoes(t *testing.T) {
+	const unaryTimeout = 50 * time.Millisecond
+	servicer := &dispatcher{watchStarted: make(chan struct{}), watchCanceled: make(chan struct{})}
+	_, facade := serveWithUnaryTimeout(t, unaryTimeout, servicer)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, facade+"/v1/dispatches:watch", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer token-1")
+	type result struct {
+		response *http.Response
+		err      error
+	}
+	completed := make(chan result, 1)
+	go func() {
+		response, requestErr := http.DefaultClient.Do(request)
+		completed <- result{response: response, err: requestErr}
+	}()
+	select {
+	case <-servicer.watchStarted:
+	case <-time.After(time.Second):
+		t.Fatal("server-streaming RPC did not start")
+	}
+	select {
+	case <-servicer.watchCanceled:
+		t.Fatal("unary timeout incorrectly bounded a streaming RPC")
+	case <-time.After(3 * unaryTimeout):
+	}
+	cancel()
+	select {
+	case <-servicer.watchCanceled:
+	case <-time.After(time.Second):
+		t.Fatal("HTTP request cancellation did not cancel the streaming RPC")
+	}
+	select {
+	case outcome := <-completed:
+		if outcome.response != nil {
+			_ = outcome.response.Body.Close()
+		}
+	case <-time.After(time.Second):
+		t.Fatal("HTTP request did not finish after cancellation")
+	}
 }
 
 func get(t *testing.T, url, authorization string) *http.Response {

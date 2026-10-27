@@ -214,8 +214,6 @@ async def test_product_lifecycle(mcp_client: Client, refunwrap_result: RefData) 
     )
     assert edit_results[0]["kind"] == "ok"
     # TODO: test batch edit (multiple items in one call)
-    # TODO: test editing due_type, clear_fields
-    # TODO: test that clear_fields nulls product_group while preserving other fields
 
     products = unwrap_result(await mcp_client.call_tool("products_list", {"detail": "full"}))
     our_product = [p for p in products if p["name"] == new_name]
@@ -272,6 +270,110 @@ async def test_products_edit_preserves_default_best_before_days_when_omitted(
     products = unwrap_result(await mcp_client.call_tool("products_list", {"detail": "full"}))
     our_product = next(p for p in products if p["name"] == product)
     assert int(our_product["default_best_before_days"]) == 42
+
+
+async def test_products_edit_serializes_values_and_resolves_references(
+    mcp_client: Client, refunwrap_result: RefData
+) -> None:
+    """Keep scalar assignments, omission, clearing, and reference resolution at the Grocy boundary."""
+    product_id = refunwrap_result.product_ids[0]
+    location_id = next(
+        row["id"]
+        for row in unwrap_result(await mcp_client.call_tool("locations_list", {}))
+        if row["name"] == refunwrap_result.location
+    )
+    quantity_unit_id = next(
+        row["id"]
+        for row in unwrap_result(await mcp_client.call_tool("quantity_units_list", {}))
+        if row["name"] == refunwrap_result.qu
+    )
+    product_group_id = next(
+        row["id"]
+        for row in unwrap_result(await mcp_client.call_tool("product_groups_list", {}))
+        if row["name"] == refunwrap_result.group
+    )
+
+    edit = unwrap_result(
+        await mcp_client.call_tool(
+            "products_edit",
+            {
+                "items": [
+                    {
+                        "product": product_id,
+                        "stock_qu": refunwrap_result.qu,
+                        "location": location_id,
+                        "purchase_qu": quantity_unit_id,
+                        "consume_qu": refunwrap_result.qu,
+                        "parent_product": refunwrap_result.product_ids[1],
+                        "product_group": refunwrap_result.group,
+                        "min_stock_amount": 0,
+                        "due_type": 2,
+                        "description": "Edited product description",
+                    }
+                ]
+            },
+        )
+    )
+    assert edit[0]["kind"] == "ok", edit
+
+    products = unwrap_result(await mcp_client.call_tool("products_list", {"detail": "full"}))
+    product = next(row for row in products if int(row["id"]) == product_id)
+    assert float(product["min_stock_amount"]) == 0
+    assert int(product["due_type"]) == 2
+    assert product["description"] == "Edited product description"
+    assert int(product["qu_id_stock"]) == int(quantity_unit_id)
+    assert int(product["location_id"]) == int(location_id)
+    assert int(product["qu_id_purchase"]) == int(quantity_unit_id)
+    assert int(product["qu_id_consume"]) == int(quantity_unit_id)
+    assert int(product["parent_product_id"]) == refunwrap_result.product_ids[1]
+    assert int(product["product_group_id"]) == int(product_group_id)
+
+    unrelated_edit = unwrap_result(
+        await mcp_client.call_tool(
+            "products_edit",
+            {"items": [{"product": product_id, "name": f"Edited-{refunwrap_result.suffix}", "description": None}]},
+        )
+    )
+    assert unrelated_edit[0]["kind"] == "ok", unrelated_edit
+
+    products = unwrap_result(await mcp_client.call_tool("products_list", {"detail": "full"}))
+    product = next(row for row in products if int(row["id"]) == product_id)
+    assert product["description"] == "Edited product description"
+    assert float(product["min_stock_amount"]) == 0
+    assert int(product["product_group_id"]) == int(product_group_id)
+
+    empty_description = unwrap_result(
+        await mcp_client.call_tool("products_edit", {"items": [{"product": product_id, "description": ""}]})
+    )
+    assert empty_description[0]["kind"] == "ok", empty_description
+    products = unwrap_result(await mcp_client.call_tool("products_list", {"detail": "full"}))
+    product = next(row for row in products if int(row["id"]) == product_id)
+    # Grocy normalizes an empty product description to null on read.
+    assert product["description"] is None
+
+    clear = unwrap_result(
+        await mcp_client.call_tool(
+            "products_edit",
+            {
+                "items": [
+                    {
+                        "product": product_id,
+                        "description": "clear_fields takes precedence",
+                        "product_group": refunwrap_result.group,
+                        "clear_fields": ["description", "product_group"],
+                    }
+                ]
+            },
+        )
+    )
+    assert clear[0]["kind"] == "ok", clear
+
+    products = unwrap_result(await mcp_client.call_tool("products_list", {"detail": "full"}))
+    product = next(row for row in products if int(row["id"]) == product_id)
+    assert product["description"] is None
+    assert product["product_group_id"] is None
+    assert float(product["min_stock_amount"]) == 0
+    assert int(product["due_type"]) == 2
 
 
 # -- entity_update PATCH semantics -------------------------------------------
@@ -405,6 +507,125 @@ async def test_stock_operations(mcp_client: Client, refunwrap_result: RefData) -
     # Verify edit landed via re-fetch
     entries = unwrap_result(await mcp_client.call_tool("stock_entries_list", {"entry_ids": [entry_id]}))
     assert float(entries[0]["entry"]["price"]) == 9.99
+
+
+async def test_stock_entry_edit_serializes_partial_updates(mcp_client: Client, refunwrap_result: RefData) -> None:
+    """Partial edits preserve stored values, serialize dates, and apply explicit clears last."""
+    product = refunwrap_result.products[0]
+    location = refunwrap_result.location
+    locations = unwrap_result(await mcp_client.call_tool("locations_list", {"detail": "full"}))
+    location_id = next(row["id"] for row in locations if row["name"] == location)
+    alternate_location = f"TestStockEdit-{refunwrap_result.suffix}"
+    alternate_result = unwrap_result(
+        await mcp_client.call_tool("locations_create", {"items": [{"name": alternate_location}]})
+    )
+    assert alternate_result[0]["kind"] == "ok", alternate_result
+    alternate_location_id = alternate_result[0]["created_object_id"]
+
+    added = unwrap_result(
+        await mcp_client.call_tool(
+            "stock_add", {"items": [{"product": product, "amount": 4, "qu": refunwrap_result.qu, "location": location}]}
+        )
+    )
+    assert added[0]["kind"] == "ok", added
+    entry_id = added[0]["entry_id"]
+
+    seeded = unwrap_result(
+        await mcp_client.call_tool(
+            "stock_entry_edit",
+            {
+                "items": [
+                    {
+                        "entry_id": entry_id,
+                        "best_before_date": "2035-06-07",
+                        "purchased_date": "2026-04-18",
+                        "price": 8.5,
+                        "location": alternate_location,
+                        "open": True,
+                        "note": "known stock-entry baseline",
+                    }
+                ]
+            },
+        )
+    )[0]
+    assert seeded["kind"] == "ok", seeded
+    seeded_entry = seeded["entry"]
+    assert seeded_entry["amount"] == 4.0
+    assert seeded_entry["best_before_date"] == "2035-06-07"
+    assert seeded_entry["purchased_date"] == "2026-04-18"
+    assert seeded_entry["price"] == 8.5
+    assert seeded_entry["location_name"] == alternate_location
+    assert seeded_entry["open"] is True
+    assert seeded_entry["note"] == "known stock-entry baseline"
+    assert seeded["changes"]["location_id"]["new"] == alternate_location_id
+
+    # Explicit nulls and omitted values both preserve the known non-null state.
+    unchanged = unwrap_result(
+        await mcp_client.call_tool(
+            "stock_entry_edit", {"items": [{"entry_id": entry_id, "price": None, "purchased_date": None, "note": None}]}
+        )
+    )[0]
+    assert unchanged["kind"] == "ok", unchanged
+    assert unchanged.get("changes") is None
+    assert unchanged["entry"] == seeded_entry
+
+    updated = unwrap_result(
+        await mcp_client.call_tool(
+            "stock_entry_edit",
+            {
+                "items": [
+                    {
+                        "entry_id": entry_id,
+                        "best_before_date": "2036-08-09",
+                        "price": 0,
+                        "location": location_id,
+                        "open": False,
+                    }
+                ]
+            },
+        )
+    )[0]
+    assert updated["kind"] == "ok", updated
+    updated_entry = updated["entry"]
+    assert updated_entry["amount"] == 4.0
+    assert updated_entry["best_before_date"] == "2036-08-09"
+    assert updated_entry["purchased_date"] == "2026-04-18"
+    assert updated_entry["price"] == 0.0
+    assert updated_entry["location_name"] == location
+    assert updated_entry["open"] is False
+    assert updated_entry["note"] == "known stock-entry baseline"
+    assert updated["changes"]["location_id"] == {"old": alternate_location_id, "new": location_id}
+
+    cleared = unwrap_result(
+        await mcp_client.call_tool(
+            "stock_entry_edit",
+            {
+                "items": [
+                    {
+                        "entry_id": entry_id,
+                        "price": 12.0,
+                        "purchased_date": "2026-04-19",
+                        "note": "cleared after assignment",
+                        "location": alternate_location,
+                        "clear_fields": ["price", "purchased_date", "note"],
+                    }
+                ]
+            },
+        )
+    )[0]
+    assert cleared["kind"] == "ok", cleared
+    cleared_entry = cleared["entry"]
+    assert cleared_entry["amount"] == 4.0
+    assert cleared_entry["best_before_date"] == "2036-08-09"
+    assert cleared_entry["open"] is False
+    assert cleared_entry["purchased_date"] is None
+    assert cleared_entry["price"] is None
+    assert cleared_entry["location_name"] == alternate_location
+    assert cleared_entry["note"] is None
+    assert cleared["changes"]["price"]["new"] is None
+    assert cleared["changes"]["purchased_date"]["new"] is None
+    assert cleared["changes"]["note"]["new"] is None
+    assert cleared["changes"]["location_id"]["new"] == alternate_location_id
 
 
 # -- stock_set: qu-optional when zeroing ------------------------------------

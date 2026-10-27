@@ -164,7 +164,7 @@ func serve(t *testing.T) *served {
 	if err != nil {
 		t.Fatal(err)
 	}
-	httpFacade, err := facade.NewHandler(t.Context(), listener.Addr().String(), pb.RegisterConnectionServiceHandlerFromEndpoint)
+	httpFacade, err := facade.NewHandler(t.Context(), listener.Addr().String(), 0, pb.RegisterConnectionServiceHandlerFromEndpoint)
 	if err != nil {
 		t.Fatal(err)
 	}

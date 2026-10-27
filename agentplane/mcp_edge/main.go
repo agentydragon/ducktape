@@ -107,7 +107,7 @@ func serve(ctx context.Context, c config, kubeConfig *rest.Config, kube kubernet
 	connection_servicepb.RegisterConnectionServiceServer(grpcServer, connections.NewService(connectionStore, gate, hub))
 	facadeContext, stopFacade := context.WithCancel(context.WithoutCancel(ctx))
 	defer stopFacade()
-	httpFacade, err := facade.NewHandler(facadeContext, listener.Addr().String(), connection_servicepb.RegisterConnectionServiceHandlerFromEndpoint)
+	httpFacade, err := facade.NewHandler(facadeContext, listener.Addr().String(), 0, connection_servicepb.RegisterConnectionServiceHandlerFromEndpoint)
 	if err != nil {
 		return err
 	}

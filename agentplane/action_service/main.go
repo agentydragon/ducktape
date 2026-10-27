@@ -445,7 +445,7 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 		operator_action_servicepb.RegisterOperatorActionServiceHandlerFromEndpoint,
 		web_push_servicepb.RegisterWebPushServiceHandlerFromEndpoint,
 	}
-	httpFacade, err := facade.NewHandler(facadeContext, listener.Addr().String(), registrations...)
+	httpFacade, err := facade.NewHandler(facadeContext, listener.Addr().String(), 0, registrations...)
 	if err != nil {
 		return err
 	}

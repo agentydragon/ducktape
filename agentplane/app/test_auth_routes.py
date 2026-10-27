@@ -39,7 +39,6 @@ from agentplane.app.testing.system_status import answering_system_status
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
-from agentplane.app.upstream_proxy import UpstreamProxy
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.sandboxes.testing.sandbox_namespace import TEMPLATE
@@ -76,7 +75,6 @@ def serve(
     content: ContentStore,
     electric_proxy: ElectricProxy,
     notifications: NotificationsOperatorClient,
-    dispatcher_http: UpstreamProxy,
 ) -> ServeApp:
     """The app as staging runs it -- a login and the token path on one port -- and its IdP."""
 
@@ -139,7 +137,6 @@ def serve(
                 operator_sessions=operator_sessions,
                 electric=electric_proxy,
                 notifications=notifications,
-                dispatcher_http=dispatcher_http,
                 system_status=answering_system_status(),
             )
             # The database pool belongs to this event loop, not a serving thread.

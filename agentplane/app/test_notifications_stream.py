@@ -32,7 +32,6 @@ from agentplane.app.testing.system_status import answering_system_status
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
-from agentplane.app.upstream_proxy import UpstreamProxy
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.notification_service import notifications_operator_pb2 as pb
 from agentplane.postgres.wakeups import WakeupListener
@@ -57,7 +56,6 @@ def app(
     content: ContentStore,
     electric_proxy: ElectricProxy,
     notifications: NotificationsOperatorClient,
-    dispatcher_http: UpstreamProxy,
     operator_sessions: OperatorSessionStore,
     database_updates: WakeupListener,
 ) -> FastAPI:
@@ -78,7 +76,6 @@ def app(
             operator_sessions=operator_sessions,
             electric=electric_proxy,
             notifications=notifications,
-            dispatcher_http=dispatcher_http,
             system_status=answering_system_status(),
         )
     )

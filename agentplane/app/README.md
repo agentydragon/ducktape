@@ -78,7 +78,7 @@ reads the feed state the same way. Sandbox lifecycle and Action review keep work
   desired-state grants, with expiry/revocation per binding; Flux-owned and Sandbox-controlled bindings
   are refused ([composition](../docs/egress_composition.md)).
   The egress decision stream is in `live.py`; an unreachable proxy leaves the binding views readable.
-- `action_policy.py`: Action Service's auto-approval list for a ServiceAccount, read through the operator federation.
+- `action_policy.py`: Action Service's auto-approval list for a ServiceAccount, read over gRPC with the operator federation.
   App-level `default_policy_sets` are combined with the selected preset's policy sets by the shared
   Sandbox inventory; Policy Controller materializes the resulting grants.
 - `threads/`: Threads over the History Service. The app's database holds each Thread's identity,
@@ -117,14 +117,17 @@ reads the feed state the same way. Sandbox lifecycle and Action review keep work
   The private Electric service reads PostgreSQL logical replication; app replicas do not retain
   per-listener thread copies. The scope read is a long poll held until the thread's first fold.
 - `system_status.py`: the System page's checks. `GET /system/status` probes, concurrently and each
-  within a 5-second budget, the gRPC health service of the Runner Gateway, History Service and egress
-  proxy admin port, the `/healthz` of the Action Service and Notification Service,
+  within a 5-second budget, the gRPC health service of the Runner Gateway, History Service, Action Service,
+  Connection Service, Notification Service and egress proxy admin port,
   plus Electric's `/v1/health`; a probe that fails or times out is `down` with its
   reason, never an error response. The Kubernetes API is not probed either; the freshness of the live
   views shows it.
 - `action_federation.py`: request-bound operator federation into the canonical Action Service.
-- `frontend/connections/connection_service_client.ts`: generated ConnectionService HTTP/NDJSON message adapters for the consent
-  page and OAuth-client settings; the service owns Connections and consent.
+- `grpc_stream.py`: shared gRPC deadlines and bearer handling for the generated operator-facing service
+  stubs, and the bounded opening/cleanup lifecycle for browser-relayed watches.
+- `frontend/connections/connection_service_client.ts`: generated ConnectionService ProtoJSON/NDJSON
+  message adapters for the consent page and OAuth-client settings; the app's BFF owns the browser HTTP
+  routes while the service owns Connections and consent.
 - `operator_sessions.py`: PostgreSQL browser identity and pending OAuth state, shared across replicas.
 - `database.py`: the declarative `Base` every table maps onto, and the app's one connection pool;
   `main.py` builds the pool and hands it to each store and to the database update listener.
@@ -150,23 +153,23 @@ call. Otherwise the browser keeps Retry and never Cancel after an unconfirmed re
 Dispatcher may have stored the command despite a lost reply.
 
 The browser follows the Dispatcher's later state of the commands it still holds as queued or delivering
-with `GET /upstream/dispatcher/v1/dispatches:watch?filter.sessionId=…&filter.commandIds=…`, the Dispatcher's
-`WatchDispatches` over its generated [HTTP/JSON facade](../docs/grpc_services.md#httpjson-facades):
-newline-delimited JSON of each of those commands' Dispatches, a `CaughtUp` frame, then a Dispatch whenever
-one changes. A command with no Dispatch by `CaughtUp` is shown as unknown, since the Dispatcher deletes a
-Sandbox's rows with it. A connection that ends is replaced by a new one, which sends the current Dispatches
-again. Queued and delivering are distinct from
+with `GET /upstream/dispatcher/v1/dispatches:watch?filter.sessionId=…&filter.commandIds=…`. The app's
+authenticated BFF opens the Dispatcher's generated gRPC `WatchDispatches` stream, then sends each frame
+to the browser as ProtoJSON newline-delimited JSON: those commands' Dispatches, a `CaughtUp` frame, then
+a Dispatch whenever one changes. A command with no Dispatch by `CaughtUp` is shown as unknown, since the
+Dispatcher deletes a Sandbox's rows with it. A connection that ends is replaced by a new one, which sends
+the current Dispatches again. Queued and delivering are distinct from
 runner admission, and neither admission nor `HARNESS_CONFIRMED` is presented as an effect. History
 remains the authority for command outcomes. The browser retains the command locally until History
 projects its admission or command row; the app adds no command queue. Deploy the Session Dispatcher
 and authorize the app ServiceAccount before rolling out an app image that requires this setting.
 
-`GET /upstream/dispatcher/…` relays a read of the facade as it is, with the app's Dispatcher token
-(`session_dispatcher_http_url`): the facade's status and body come back unchanged, and a watch streams
-unbuffered until the operator session ends, the app drains or the browser goes. It serves operator
-sessions and `GET` only: commands stay on the typed Thread routes, whose checks the Dispatcher does not
-make. Reads carry no Thread check, so an operator can read the Dispatches of any Session id. The
-facade's own authentication runs on every call.
+The `/upstream/dispatcher/…` BFF routes expose Dispatcher reads to an operator session and call typed
+gRPC methods with the app's rotating projected Dispatcher token. Unary routes return ProtoJSON; the
+watch keeps a bounded initial read before starting its streaming response and then relays frames until
+the operator session ends, the app drains or the browser goes. Reads carry no Thread check, so an
+operator can read the Dispatches of any Session id. Commands stay on the typed Thread routes, whose
+checks the Dispatcher does not make.
 
 The Sandbox page lists retained Sessions from History Thread summaries, so suspension or removal of a
 runner Pod does not clear the inventory. A row's status mark is derived from those last-observed History
@@ -436,9 +439,10 @@ requires explicit authority-replacement confirmation. Changing the ServiceAccoun
 confirmation. A fresh authorization can reconnect to the same ServiceAccount or choose another; no
 policy editing is offered.
 
-The page calls the generated ConnectionService facade through
+The page calls the app's authenticated BFF at
 `/upstream/connections/v1/operator/connection-enrollments/{handle}/preview` and `/decision`;
-the ConnectionService authorizes each request and keeps consent state. The decision carries the
+the app calls the Connection Service's generated gRPC API, which authorizes each request and keeps
+consent state. The decision carries the
 version the preview returned. The service pins the enrollment to the authenticated operator of the
 first preview, in whichever browser session, owns expiry, and records one decision: it refuses
 any decision after that, even a repeat after a lost response, so a lost answer means a fresh
@@ -462,12 +466,13 @@ ServiceAccount share receipts while submitted Actions preserve exact connection 
 
 ## Action review
 
-`/#/actions` renders Action Service receipts through the generated HTTP/JSON facade. The browser
+`/#/actions` renders Action Service receipts through the app's authenticated BFF. The browser
 lists and reads receipts under `/upstream/actions/v1/action-requests`, decides through
 `/upstream/actions/v1/operator/action-requests/{request_id}/decision`, and watches pending requests
-at `/upstream/actions/v1/action-requests:watch`. The proxy accepts only versioned `/v1/` paths and
-forwards the current operator session's federated bearer; browser cookies and credentials are not
-sent upstream. ProtoJSON uses lower-camel field names and symbolic enum names on the wire. The
+at `/upstream/actions/v1/action-requests:watch`. The BFF validates each route and calls the generated
+Action Service gRPC APIs with the current operator session's federated bearer; browser cookies and
+credentials are not sent upstream. Responses use ProtoJSON's lower-camel field names and symbolic
+enum names. The
 frontend converts generated messages into local presentation types while preserving caller
 arguments and execution results as their original JSON. A receipt names its caller ServiceAccount,
 whether a Pod or a Connection acting as it submitted it.
@@ -512,8 +517,9 @@ watch. Missing references, expiry and unsynced/unavailable Action policy stay vi
 Action Service does not hide bindings. The disclosure is read-only and does not calculate
 arbitrary Kubernetes RBAC. Existing Sandbox grant editing and live updates are unchanged.
 
-The browser reads and updates Connections through the generated facade under
+The browser reads and updates Connections through the app's authenticated BFF under
 `/upstream/connections/v1/operator/`: list, watch, rename, rebind, unbind, caller accounts, and consent.
+The app calls the generated Connection Service gRPC API and serializes its responses as ProtoJSON;
 `WatchConnections` streams NDJSON, replacing the snapshot after reconnect and applying
 upserts by Connection ID. Protobuf int64 versions stay decimal strings in the UI adapter and are
 sent back as `expectedVersion`; an `ABORTED` response refreshes the inventory and asks for review,
@@ -522,18 +528,19 @@ requires fresh OAuth authorization from the external client; the management rebi
 operator-authorized retarget of an existing token. Policy editing and deployment are outside this
 surface.
 
-The app routes ConnectionService HTTP/JSON calls through the separately configured
-`connection_service_url`; Action Service requests and MCP linkage continue to use
-`action_federation.service_url`. Staging and testing currently configure both endpoints to Actions.
-The Connection endpoint also has its own gRPC health probe.
+The app connects to the Connection Service through the separately configured `connection_service_url`
+and to the Action Service gRPC APIs through `action_federation.service_url`. The public MCP OAuth
+callback remains a narrow HTTP call to the Action Service. Staging and testing currently configure
+both service endpoints to Actions. Each service has its own gRPC health probe.
 
 The MCP servers tab lists the Action Service's OAuth-linked MCP server groups and links or
-disconnects each one. It follows independent generated facade watches for linkage and replica-local
-MCP health at `/upstream/actions/v1/operator/mcp-servers:watch` and
+disconnects each one. It follows independent gRPC `WatchMcpServers` and `WatchActionGroups` streams
+through the app's NDJSON BFF routes at `/upstream/actions/v1/operator/mcp-servers:watch` and
 `/upstream/actions/v1/action-groups:watch`. Both replay a bounded snapshot before upserts; the tab
 joins their latest states by group key/server ID without coupling their change rates. Link and
-disconnect use the generated `POST /upstream/actions/v1/operator/mcp-servers/{id}/linkage/start`
-and `.../linkage/disconnect` routes through the request-bound operator federation. The provider's
+disconnect use the app's `POST /upstream/actions/v1/operator/mcp-servers/{id}/linkage/start` and
+`.../linkage/disconnect` routes, which call the Operator Action Service with the request-bound
+operator bearer. The provider's
 registered redirect remains the public `GET /mcp-linkage/callback`; the app forwards its state and
 code to the Action Service's public callback and returns the browser to `/#/mcp-servers`. The Go callback's
 ProtoJSON response is not part of the browser contract. What a link authorizes and when a linked
@@ -602,7 +609,7 @@ applied again. **Grant policy sets** adds a binding naming the Sandbox and is, w
 launch pick (drawn from `GET /sandboxes/form`, the namespace's PolicySet names), the only write the tab makes.
 
 Below the bindings, **Auto-approve if** is the Action Service's own answer for that account, read through
-the generated facade (`/upstream/actions/v1/action-policy?subject.namespace=...&subject.name=...`, so an
+the app's authenticated BFF (`/upstream/actions/v1/action-policy?subject.namespace=...&subject.name=...`, so an
 operator session is required as for the Actions page): the `action_auto_approve` policies in the order the service
 walks them, each entry naming the binding, set and index a Decision's evidence names, and `synced`, false
 while the service's watch has not synced and nothing auto-decides. It is the resolution an admission would
@@ -654,7 +661,7 @@ one. Which lists the service enforces is its contract
 
 ## Action live updates and browser notifications
 
-`/#/actions` follows the Action Service's generated NDJSON watch at
+`/#/actions` follows the Action Service's gRPC `WatchActionRequests` through the app's NDJSON BFF at
 `/upstream/actions/v1/action-requests:watch`, replacing its old two-second timer poll. Watches send a
 bounded snapshot followed by upserts; reconnecting opens a new watch and replays a fresh snapshot.
 An unavailable watch is shown as disconnected rather than silently presenting stale state as live.

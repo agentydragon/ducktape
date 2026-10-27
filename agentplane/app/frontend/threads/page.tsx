@@ -2,7 +2,8 @@ import { Box, Group, Stack, Text } from "@mantine/core";
 import { type JSX, useEffect, useState } from "react";
 
 import { displayableError, getThread, harnessLabel, resumeSandbox, type SandboxView, type ThreadView } from "../client";
-import { useRequiredSandboxesLive, useRequiredThreadsLive } from "../live";
+import { useRequiredSandboxesLive } from "../sandboxes/live";
+import { useRequiredThreadsLive } from "./live";
 import { ChronologicalDebugProvider } from "./chronological_debug";
 import { ThreadTitle } from "./thread_title";
 import { ThreadStatusIndicator } from "./thread_status_indicator";
@@ -14,7 +15,8 @@ import { finishSessionCreate, withinSessionCreate } from "../tracing";
 import { useFrontendConfig } from "../frontend_config";
 import { appDocumentTitle, CONNECTING_TAB_STATUS, threadDocumentTitle } from "../tab_metadata";
 import { useThreadSync } from "./thread_sync";
-import { ThreadConversation, DEFAULT_COMPOSER_PLACEHOLDER } from "./conversation";
+import { ThreadConversation } from "./conversation";
+import { DEFAULT_COMPOSER_PLACEHOLDER } from "./composer";
 import "./page.css";
 import "./conversation.css";
 

@@ -10,7 +10,7 @@ from typing import Any
 from uuid import uuid4
 
 from agentplane.x.postgres_codex.executor import Executor
-from agentplane.x.postgres_codex.store import Owner, Store
+from agentplane.x.postgres_codex.store import KnownFailureError, Owner, Store
 
 
 def tool_definitions() -> list[dict[str, Any]]:
@@ -213,7 +213,7 @@ class CodeMode:
             raise ValueError(f"unsupported cell observation: {kind}")
         return items
 
-    async def execute(self, call: dict[str, Any]) -> list[dict[str, Any]]:
+    async def prepare_call(self, call: dict[str, Any]) -> dict[str, Any]:
         if call["name"] == "wait":
             arguments = json.loads(call["input"])
             if not isinstance(arguments, dict) or set(arguments) - {"cell_id", "yield_time_ms", "terminate"}:
@@ -224,45 +224,49 @@ class CodeMode:
             if arguments["cell_id"] not in {c["cell_id"] for c in state["cells"]}:
                 raise ValueError("wait requires a known live cell_id; no process session_id substitution")
             if arguments.get("terminate", False):
-                value = await self.request(
-                    {
-                        "method": "session/terminate",
-                        "sessionId": self.session_id,
-                        "cellId": self.native_cell(arguments["cell_id"]),
-                    }
-                )
-            else:
-                value = await self.request(
-                    {
-                        "method": "session/wait",
-                        "sessionId": self.session_id,
-                        "request": {
-                            "cell_id": self.native_cell(arguments["cell_id"]),
-                            "yield_time_ms": Executor.yield_ms(arguments, 1000),
-                        },
-                    }
-                )
-            outcome = value["outcome"]
-            return await self.observe(next(iter(outcome.values())))
+                return {
+                    "method": "session/terminate",
+                    "sessionId": self.session_id,
+                    "cellId": self.native_cell(arguments["cell_id"]),
+                }
+            return {
+                "method": "session/wait",
+                "sessionId": self.session_id,
+                "request": {
+                    "cell_id": self.native_cell(arguments["cell_id"]),
+                    "yield_time_ms": Executor.yield_ms(arguments, 1000),
+                },
+            }
+        if call["name"] != "exec":
+            raise ValueError("unsupported model tool")
         source = call["input"]
         yield_time_ms = 60000
         if source.startswith("// @exec:"):
             pragma, _, source = source.partition("\n")
-            yield_time_ms = Executor.yield_ms(json.loads(pragma[len("// @exec:") :]))
-        value = await self.request(
-            {
-                "method": "session/execute",
-                "sessionId": self.session_id,
-                "request": {
-                    "tool_call_id": call["call_id"],
-                    "source": source,
-                    "enabled_tools": tool_definitions(),
-                    "yield_time_ms": yield_time_ms,
-                    "max_output_tokens": 10000,
-                },
+            arguments = json.loads(pragma[len("// @exec:") :])
+            if not isinstance(arguments, dict):
+                raise ValueError("exec pragma requires an object")
+            yield_time_ms = Executor.yield_ms(arguments)
+        return {
+            "method": "session/execute",
+            "sessionId": self.session_id,
+            "request": {
+                "tool_call_id": call["call_id"],
+                "source": source,
+                "enabled_tools": tool_definitions(),
+                "yield_time_ms": yield_time_ms,
+                "max_output_tokens": 10000,
             },
-            execute=True,
-        )
+        }
+
+    async def execute(self, call: dict[str, Any]) -> list[dict[str, Any]]:
+        try:
+            request = await self.prepare_call(call)
+        except (ValueError, KeyError, TypeError) as error:
+            raise KnownFailureError({"reason": str(error), "call": call, "dispatched": False}) from error
+        value = await self.request(request, execute=call["name"] == "exec")
+        if call["name"] == "wait":
+            return await self.observe(next(iter(value["outcome"].values())))
         return await self.observe(value)
 
     async def interrupt(self) -> dict[str, Any]:

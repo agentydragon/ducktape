@@ -100,6 +100,7 @@ class Incarnation(_Wire):
 class Status(_Wire):
     incarnation: Incarnation | None = None
     operating_mode: OperatingMode | None = None
+    idle_suspend_at: AwareDatetime | None = None
     suspended_by: SuspendedBy | None = None
     suspended_at_wake_generation: int | None = None
     conditions: list[Condition] = Field(default_factory=list)

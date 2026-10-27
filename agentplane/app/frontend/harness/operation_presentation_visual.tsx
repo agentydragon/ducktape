@@ -3,7 +3,7 @@ import type { JSX } from "react";
 
 import { JsonBlock, TextBlock } from "../text_block";
 import { CodeBlock } from "../../../../util/frontend/code_block";
-import { CommandCallView, OutputBlock } from "../command_view";
+import { ShellCommandView, OutputBlock } from "../shell_command_view";
 
 const manifest = [
   "apiVersion: v1",
@@ -41,7 +41,7 @@ export function OperationPresentationVisual(): JSX.Element {
           clamp={false}
         />
         <JsonBlock heading="Recorded data" value={{ phase: "Running", replicas: 2 }} clamp={false} />
-        <CommandCallView
+        <ShellCommandView
           argv={["printf", "hello from argv", "line 2"]}
           notes={["Container app"]}
           releaseWhenFar

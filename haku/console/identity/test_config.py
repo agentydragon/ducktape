@@ -31,27 +31,13 @@ def _settings_from_yaml(config_file: Path) -> Settings:
     )
 
 
-def test_retired_tool_call_yaml_fields_are_ignored_by_settings_during_rollout(tmp_path) -> None:
+def test_settings_loads_identity_catalog(tmp_path) -> None:
     config_file = tmp_path / "console.yaml"
     config_file.write_text(
         """\
 access_profiles:
   - id: manual
-    auto_approval_policy: manual
-    in_process_server_ids: [gmail]
 default_access_profile_id: manual
-static_agents:
-  haku:
-    agent_id: 00000000-0000-0000-0000-000000000002
-    display_name: Haku
-    token: retired-token
-    operator_subject: retired-operator
-    access_profile_id: manual
-auto_approval_policies:
-  - id: manual
-    type: never
-mcp:
-  servers: {}
 """,
         encoding="utf-8",
     )
@@ -59,9 +45,7 @@ mcp:
     settings = _settings_from_yaml(config_file)
 
     assert settings.access_profiles[0].id == "manual"
-    assert not hasattr(settings, "auto_approval_policies")
-    assert not hasattr(settings, "mcp")
-    assert not hasattr(settings, "static_agents")
+    assert settings.default_access_profile_id == "manual"
 
 
 def test_profile_catalog_rejects_duplicates_and_missing_default() -> None:
@@ -71,9 +55,9 @@ def test_profile_catalog_rejects_duplicates_and_missing_default() -> None:
         ConsoleConfigFile.model_validate({**_CONFIG, "default_access_profile_id": "missing"})
 
 
-def test_profile_and_catalog_still_reject_unrecognized_fields() -> None:
+def test_profile_and_catalog_reject_unrecognized_fields() -> None:
     with pytest.raises(ValidationError):
-        ConsoleConfigFile.model_validate({**_CONFIG, "auto_approval_policy_typo": "manual"})
+        ConsoleConfigFile.model_validate({**_CONFIG, "access_profiles_typo": "manual"})
     with pytest.raises(ValidationError):
         ConsoleConfigFile.model_validate({**_CONFIG, "access_profiles": [{"id": "manual", "unexpected": True}]})
 

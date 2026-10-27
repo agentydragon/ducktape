@@ -30,6 +30,20 @@ py_library(
 )
 
 py_library(
+    name = "fake_action_service",
+    srcs = ["fake_action_service.py"],
+    deps = [
+        "//agentplane/action_service:action_service_pb2",
+        "//agentplane/action_service:action_service_pb2_grpc",
+        "//agentplane/app:grpc_stream",
+        "//agentplane/grpc:calls",
+        "//agentplane/grpc:serving",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
     name = "thread_test_support",
     srcs = ["thread_test_support.py"],
     visibility = ["//agentplane/app:__subpackages__"],
@@ -79,7 +93,6 @@ py_library(
         "//agentplane/app:notifications_operator_client",
         "//agentplane/app:operator_sessions",
         "//agentplane/app:sandbox_access",
-        "//agentplane/app:upstream_proxy",
         "//agentplane/app/threads:bridge",
         "//agentplane/app/threads:dispatcher_client",
         "//agentplane/app/threads:history_watch",

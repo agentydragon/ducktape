@@ -71,7 +71,7 @@ func (IssueSubject) isGitHubSubject()       {}
 func (BranchSubject) isGitHubSubject()      {}
 func (CommitSubject) isGitHubSubject()      {}
 
-// EventName is a GitHub webhook event name this service accepts.
+// EventName is a GitHub event selector this service accepts; some selectors name Agentplane observations.
 type EventName string
 
 const (
@@ -88,14 +88,19 @@ const (
 	EventWorkflowRun              EventName = "workflow_run"
 	EventWorkflowJob              EventName = "workflow_job"
 	EventIssues                   EventName = "issues"
+	// EventMergeabilityChanged is an Agentplane observation of a pull request's mergeability, not a GitHub webhook.
+	EventMergeabilityChanged EventName = "mergeability_changed"
 )
 
 var (
-	ciEvents    = []EventName{EventCheckRun, EventCheckSuite, EventStatus, EventWorkflowRun, EventWorkflowJob}
-	prEvents    = []EventName{EventPullRequest, EventIssueComment, EventPullRequestReview, EventPullRequestReviewComment}
-	issueEvents = []EventName{EventIssues, EventIssueComment}
-	refEvents   = []EventName{EventPush, EventCreate, EventDelete}
-	knownEvents = slices.Concat(ciEvents, prEvents, issueEvents, refEvents)
+	ciEvents        = []EventName{EventCheckRun, EventCheckSuite, EventStatus, EventWorkflowRun, EventWorkflowJob}
+	webhookPREvents = []EventName{EventPullRequest, EventIssueComment, EventPullRequestReview, EventPullRequestReviewComment}
+	prEvents        = slices.Concat(webhookPREvents, []EventName{EventMergeabilityChanged})
+	issueEvents     = []EventName{EventIssues, EventIssueComment}
+	refEvents       = []EventName{EventPush, EventCreate, EventDelete}
+	// knownEvents are GitHub webhook event names. The generated mergeability selector is deliberately excluded:
+	// it has its own identity and can never be decoded as a webhook delivery.
+	knownEvents = slices.Concat(ciEvents, webhookPREvents, issueEvents, refEvents)
 )
 
 // EventFilter selects one event name, and optionally some of its `action` values.
@@ -106,7 +111,7 @@ type EventFilter struct {
 }
 
 // EventIdentity names an entry's event within its source, which is how a redelivery is told from a new event:
-// an ActionsEvent, a GitHubEvent or a MessageEvent.
+// an ActionsEvent, a GitHubEvent, a GitHubMergeabilityEvent, a GitHubMergeabilitySnapshotEvent or a MessageEvent.
 type EventIdentity interface{ isEventIdentity() }
 
 type ActionsEvent struct {
@@ -122,15 +127,35 @@ type GitHubEvent struct {
 	Action       *string
 }
 
+// GitHubMergeabilityEvent is one Agentplane-generated observation of a pull request's mergeability.
+// Sequence is a durable, globally increasing generated-event sequence, not a GitHub delivery ID.
+type GitHubMergeabilityEvent struct {
+	AppID             int64
+	RepositoryID      int64
+	PullRequestNumber int64
+	Sequence          int64
+}
+
+// GitHubMergeabilitySnapshotEvent identifies a current conflicted snapshot sent to a joining subscriber. Version
+// changes when the snapshot's relevant state changes.
+type GitHubMergeabilitySnapshotEvent struct {
+	AppID             int64
+	RepositoryID      int64
+	PullRequestNumber int64
+	Version           int64
+}
+
 // MessageEvent is a message a workload sent to the inbox, with the sender the service authenticated.
 type MessageEvent struct {
 	MessageID uuid.UUID
 	Sender    ServiceAccount
 }
 
-func (ActionsEvent) isEventIdentity() {}
-func (GitHubEvent) isEventIdentity()  {}
-func (MessageEvent) isEventIdentity() {}
+func (ActionsEvent) isEventIdentity()                    {}
+func (GitHubEvent) isEventIdentity()                     {}
+func (GitHubMergeabilityEvent) isEventIdentity()         {}
+func (GitHubMergeabilitySnapshotEvent) isEventIdentity() {}
+func (MessageEvent) isEventIdentity()                    {}
 
 var (
 	repositoryPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
@@ -235,6 +260,9 @@ func (s GitHubSource) validate() error {
 	for _, filter := range filters {
 		if !slices.Contains(allowed, filter.Event) {
 			return invalid("event %q is not supported for this GitHub subject", filter.Event)
+		}
+		if filter.Event == EventMergeabilityChanged && filter.Actions != nil {
+			return invalid("event %q does not accept actions", filter.Event)
 		}
 		if filter.Actions == nil {
 			continue
@@ -440,6 +468,26 @@ func (e GitHubEvent) MarshalJSON() ([]byte, error) {
 		Event        EventName `json:"event"`
 		Action       *string   `json:"action"`
 	}{"github", e.AppID, e.DeliveryID, e.RepositoryID, e.Event, e.Action})
+}
+
+func (e GitHubMergeabilityEvent) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		Provider          string `json:"provider"`
+		AppID             int64  `json:"app_id"`
+		RepositoryID      int64  `json:"repository_id"`
+		PullRequestNumber int64  `json:"pull_request_number"`
+		Sequence          int64  `json:"sequence"`
+	}{"github_mergeability", e.AppID, e.RepositoryID, e.PullRequestNumber, e.Sequence})
+}
+
+func (e GitHubMergeabilitySnapshotEvent) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		Provider          string `json:"provider"`
+		AppID             int64  `json:"app_id"`
+		RepositoryID      int64  `json:"repository_id"`
+		PullRequestNumber int64  `json:"pull_request_number"`
+		SnapshotVersion   int64  `json:"snapshot_version"`
+	}{"github_mergeability_snapshot", e.AppID, e.RepositoryID, e.PullRequestNumber, e.Version})
 }
 
 type serviceAccountJSON struct {
@@ -663,6 +711,52 @@ func DecodeEventIdentity(data []byte) (EventIdentity, error) {
 		return GitHubEvent{
 			AppID: *wire.AppID, DeliveryID: *wire.DeliveryID, RepositoryID: *wire.RepositoryID,
 			Event: wire.Event, Action: wire.Action,
+		}, nil
+	case "github_mergeability":
+		var wire struct {
+			Provider          string `json:"provider"`
+			AppID             *int64 `json:"app_id"`
+			RepositoryID      *int64 `json:"repository_id"`
+			PullRequestNumber *int64 `json:"pull_request_number"`
+			Sequence          *int64 `json:"sequence"`
+		}
+		if err := decode(data, &wire); err != nil {
+			return nil, err
+		}
+		if err := errors.Join(
+			required("app_id", wire.AppID != nil),
+			required("repository_id", wire.RepositoryID != nil),
+			required("pull_request_number", wire.PullRequestNumber != nil),
+			required("sequence", wire.Sequence != nil),
+		); err != nil {
+			return nil, err
+		}
+		return GitHubMergeabilityEvent{
+			AppID: *wire.AppID, RepositoryID: *wire.RepositoryID,
+			PullRequestNumber: *wire.PullRequestNumber, Sequence: *wire.Sequence,
+		}, nil
+	case "github_mergeability_snapshot":
+		var wire struct {
+			Provider          string `json:"provider"`
+			AppID             *int64 `json:"app_id"`
+			RepositoryID      *int64 `json:"repository_id"`
+			PullRequestNumber *int64 `json:"pull_request_number"`
+			SnapshotVersion   *int64 `json:"snapshot_version"`
+		}
+		if err := decode(data, &wire); err != nil {
+			return nil, err
+		}
+		if err := errors.Join(
+			required("app_id", wire.AppID != nil),
+			required("repository_id", wire.RepositoryID != nil),
+			required("pull_request_number", wire.PullRequestNumber != nil),
+			required("snapshot_version", wire.SnapshotVersion != nil),
+		); err != nil {
+			return nil, err
+		}
+		return GitHubMergeabilitySnapshotEvent{
+			AppID: *wire.AppID, RepositoryID: *wire.RepositoryID,
+			PullRequestNumber: *wire.PullRequestNumber, Version: *wire.SnapshotVersion,
 		}, nil
 	case "message":
 		var wire struct {

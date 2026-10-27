@@ -395,7 +395,13 @@ export default function SnapshotDetailPage({ slug, initialSnapshot, initialTree 
                   <Text size="sm" fw={600} mb="xs">
                     File Browser
                   </Text>
-                  <FileTree nodes={tree.tree} onFileClick={handleFileClick} selectedPath={selectedFile?.path} />
+                  <FileTree
+                    nodes={tree.tree}
+                    onFileClick={(path) => {
+                      void handleFileClick(path);
+                    }}
+                    selectedPath={selectedFile?.path}
+                  />
                 </Box>
                 <Box style={{ overflowY: "auto", maxHeight: "70vh" }}>
                   {loadingFile ? (

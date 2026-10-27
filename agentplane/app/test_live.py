@@ -70,7 +70,6 @@ from agentplane.app.threads.runner_directory import RunnerDirectory
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
-from agentplane.app.upstream_proxy import UpstreamProxy
 from agentplane.egress.decisions import Outcome
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.history_service.client import HistoryServiceClient
@@ -110,6 +109,24 @@ async def test_the_index_projects_the_rows_a_listing_would_return(seeded: LiveIn
     """The push and the fetch share their projection; this is what says they still do."""
     assert seeded.sandbox_views() == [sandbox_view(view) for view in await inventory.list_sandboxes()]
     assert seeded.sandbox_view("runner-1") == sandbox_view(await inventory.get("runner-1"))
+
+
+async def test_sandbox_index_projects_and_clears_the_controller_idle_deadline(seeded: LiveIndex) -> None:
+    raw = seeded.sandboxes["runner-1"]
+    assert isinstance(raw, dict)
+    status = raw["status"]
+    assert isinstance(status, dict)
+    deadline = NOW + timedelta(minutes=15)
+    status["idleSuspendAt"] = deadline.isoformat()
+
+    view = seeded.sandbox_view("runner-1")
+    assert view is not None
+    assert view.idle_suspend_at == deadline
+
+    del status["idleSuspendAt"]
+    view = seeded.sandbox_view("runner-1")
+    assert view is not None
+    assert view.idle_suspend_at is None
 
 
 async def test_the_index_selects_the_bindings_a_request_would(
@@ -292,7 +309,6 @@ def app(
     tmp_path: Path,
     electric_http: httpx.AsyncClient,
     notifications: NotificationsOperatorClient,
-    dispatcher_http: UpstreamProxy,
     refused_address: str,
 ) -> FastAPI:
     """Neither test below reaches a database, a runner or the History Service -- the guard answers
@@ -325,7 +341,6 @@ def app(
             electric_http, content, event_logs=event_logs, thread_changes=database_updates.changes[Channel.THREADS]
         ),
         notifications=notifications,
-        dispatcher_http=dispatcher_http,
         system_status=answering_system_status(),
     )
 

@@ -27,6 +27,8 @@ a manifest sets it; remove one from the manifests first and the field after roll
 ## gRPC services
 
 Servicers, clients, auth, errors and server wiring follow [one pattern](docs/grpc_services.md).
+Service-to-service RPC uses native gRPC; browser HTTP and direct-client facades follow the
+[HTTP/gRPC boundary policy](docs/service_boundaries.md#http-and-grpc-boundaries).
 
 ## System overview diagram
 

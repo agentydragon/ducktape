@@ -154,7 +154,11 @@ class Settings(YamlFileSettings):
         default=7,
         ge=1,
         le=3650,
-        description="Days to retain raw GitHub deliveries (null retains indefinitely), their IDs/digests and subject links. Bounds replay and deduplication; inbox payloads retain their separate 30-day lifetime.",
+        description=(
+            "Days to retain raw GitHub deliveries (including IDs, digests and subject links) and generated "
+            "mergeability transitions; null retains both indefinitely. This bounds raw replay and deduplication. "
+            "Inbox payloads and current pull request snapshots have separate lifetimes."
+        ),
     )
     stale_inbox_confirmation_s: PositiveSeconds = Field(
         default=30, le=3600, description="Seconds between first and confirming unavailable UID-pinned Sandbox lookup."

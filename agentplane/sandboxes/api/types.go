@@ -135,6 +135,8 @@ type QuiesceAttempt struct {
 type SandboxStatus struct {
 	Volumes     *SandboxVolumes `json:"volumes,omitempty"`
 	Incarnation *Incarnation    `json:"incarnation,omitempty"`
+	// IdleSuspendAt is the controller's next attempt to suspend an idle Sandbox, when one is scheduled.
+	IdleSuspendAt *metav1.Time `json:"idleSuspendAt,omitempty"`
 	// The UID of the last incarnation whose runner sealed every Session, kept after it stops.
 	QuiescedIncarnation *string `json:"quiescedIncarnation,omitempty"`
 	// The latest Quiesce request, scoped to its runner incarnation, for the controller's retry deadline.

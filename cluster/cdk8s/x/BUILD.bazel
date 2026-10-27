@@ -1,0 +1,26 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "render_diff",
+    srcs = ["render_diff.py"],
+    deps = ["@pypi//pyyaml"],
+)
+
+py_binary(
+    name = "render_diff_bin",
+    main_module = "cluster.cdk8s.x.render_diff",
+    deps = [":render_diff"],
+)
+
+py_test(
+    name = "test_render_diff",
+    srcs = ["test_render_diff.py"],
+    data = ["@multitool//tools/kustomize"],
+    deps = [
+        ":render_diff",
+        "//:conftest",
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

@@ -102,7 +102,7 @@ func reportUnexpected(ctx context.Context, failed chan<- error, role string, err
 // serveFacade answers the Dispatcher's HTTP/JSON form on listener, forwarding each request over
 // loopback to the gRPC server so the servicer authenticates it.
 func serveFacade(ctx context.Context, listener net.Listener, grpcListener net.Listener, failed chan<- error) (*http.Server, error) {
-	handler, err := facade.NewHandler(ctx, net.JoinHostPort("127.0.0.1", strconv.Itoa(grpcListener.Addr().(*net.TCPAddr).Port)),
+	handler, err := facade.NewHandler(ctx, net.JoinHostPort("127.0.0.1", strconv.Itoa(grpcListener.Addr().(*net.TCPAddr).Port)), 0,
 		dispatcherpb.RegisterSessionDispatcherHandlerFromEndpoint)
 	if err != nil {
 		return nil, err

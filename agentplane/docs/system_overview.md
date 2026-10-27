@@ -16,7 +16,7 @@ flowchart LR
     sandboxctl[Sandbox Controller]
     k8s[Kubernetes API]
     app -->|session opens + commands| dispatcher
-    app -->|Dispatch watch for the browser, over HTTP/JSON| dispatcher
+    app -->|Dispatch watch for the browser: gRPC| dispatcher
     app -->|per-Sandbox Runner Proxy: live inventory + diagnostics| gateway
     dispatcher -->|queued opens + commands| gateway
     sandboxctl -->|Quiesce| gateway
@@ -216,8 +216,8 @@ flowchart LR
     mcp_servers((MCP servers))
 
     mcp_client -->|MCP over OAuth| edge
-    app -->|Action HTTP/JSON, NDJSON and MCP linkage| actions
-    app -->|ConnectionService facade + gRPC health| edge
+    app -->|Action RPCs: gRPC; MCP OAuth callback: HTTP| actions
+    app -->|ConnectionService RPCs and health: gRPC| edge
     edge -->|account scoped gRPC| actions
     actions -->|create + watch Pods| k8s
     actions -->|exec via Kubernetes API| workload

@@ -51,7 +51,6 @@ from agentplane.app.threads.runner_directory import RunnerDirectory
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
-from agentplane.app.upstream_proxy import UpstreamProxy
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.grpc.calls import dial
 from agentplane.grpc.serving import serving
@@ -89,8 +88,7 @@ class GatewayAccess:
     """The Runner Gateway an app process reaches."""
 
     target: str
-    dispatcher_http_url: str
-    # The app's projected token, for both the Dispatcher and the Runner proxy.
+    # The app's projected token, for the Runner proxy and the Dispatcher gRPC API.
     token_file: Path
 
 
@@ -286,12 +284,9 @@ async def _serve(
         if gateway is None:
             token_file = Path(directory) / "token"
             await asyncio.to_thread(token_file.write_text, "test-app-unused-token")
-            target, dispatcher_http_url = (
-                "test-unused-runner-gateway.invalid:8080",
-                "http://test-unused-dispatcher.invalid",
-            )
+            target = "test-unused-runner-gateway.invalid:8080"
         else:
-            token_file, target, dispatcher_http_url = gateway.token_file, gateway.target, gateway.dispatcher_http_url
+            token_file, target = gateway.token_file, gateway.target
         history = HistoryServiceClient(history_target, token_file=history_token_file, request_timeout_s=10)
         summaries = Summaries(history)
         event_logs = EventLogStore(engine, history_reader=history, summaries=summaries)
@@ -313,7 +308,6 @@ async def _serve(
                 base_url=electric_url or "http://test-unused-electric.invalid", timeout=65
             ) as electric_http,
             dial(target) as dispatcher_channel,
-            httpx.AsyncClient(base_url=dispatcher_http_url) as dispatcher_facade,
         ):
             namespace = SandboxNamespace(
                 name=sandboxes.namespace,
@@ -389,7 +383,6 @@ async def _serve(
                 content=content,
                 database_updates=database_updates,
                 operator_sessions=OperatorSessionStore(engine),
-                dispatcher_http=UpstreamProxy(dispatcher_facade, token_file),
                 notifications=NotificationsOperatorClient(
                     notifications_channel, token_file=Path(directory) / "notifications-token", request_timeout_s=1
                 ),

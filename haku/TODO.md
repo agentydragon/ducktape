@@ -47,12 +47,6 @@ slices over the deployed schema, not another identity migration:
   history as separate API + UI + audit slices. Distinguish revoking one binding/grant from disabling
   the Agent and all usable bindings. Keep names required, normalized, and globally unique; decide
   whether rename history is a product requirement before adding another reservation/audit table.
-- **`tools/list_changed` when an Agent's policy changes:** the policy graph is already per-Agent and
-  config-driven (`console/auto_approval.py`'s registry over the `auto_approval_policies` and
-  per-agent `auto_approval_policy:` keys in `cluster/cdk8s/haku/console_config.py`), and an Operator
-  can reassign an OAuth Agent's policy in Settings. What is missing is the notification: a connected
-  client enumerated its tool surface once, so an edit that moves a tool between pass-through and
-  approval-wrapped does not reach it until it reconnects.
 
 ## Console and authority consolidation
 

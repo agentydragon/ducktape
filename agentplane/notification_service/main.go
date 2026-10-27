@@ -240,7 +240,7 @@ func serve(ctx context.Context, c config, deps kubeDeps, listener net.Listener) 
 	// finish while draining.
 	facadeContext, stopFacade := context.WithCancel(context.WithoutCancel(ctx))
 	defer stopFacade()
-	agentFacade, err := facade.NewHandler(facadeContext, listener.Addr().String(), notificationspb.RegisterNotificationsHandlerFromEndpoint)
+	agentFacade, err := facade.NewHandler(facadeContext, listener.Addr().String(), 0, notificationspb.RegisterNotificationsHandlerFromEndpoint)
 	if err != nil {
 		return err
 	}

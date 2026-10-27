@@ -29,7 +29,8 @@ import {
 } from "../client";
 import { IdleSuspendField, IdleSuspendInput } from "./idle_suspend";
 import { ConfirmDelete, deletable, deleting, SuspendResume } from "./lifecycle";
-import { liveSandboxesUrl, useLive, type SandboxesSnapshot } from "../live";
+import { liveSandboxesUrl, type SandboxesSnapshot } from "./live";
+import { useLive } from "../live";
 import { MarkGlyph } from "../mark_glyph";
 import { placeholderSandboxName, sandboxNameError } from "./sandbox_name";
 import { podIp, sandboxStatusDetail, sandboxSummary } from "../sandbox_status";

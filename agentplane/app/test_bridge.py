@@ -53,7 +53,6 @@ from agentplane.app.threads.runner_directory import RunnerDirectory
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
-from agentplane.app.upstream_proxy import UpstreamProxy
 from agentplane.changes import ChangeSignal
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.grpc.calls import dial
@@ -303,7 +302,6 @@ async def app_url(
     history: History,
     electric_proxy: ElectricProxy,
     notifications: NotificationsOperatorClient,
-    dispatcher_http: UpstreamProxy,
     session_dispatcher: SessionDispatcherClient,
 ) -> AsyncIterator[str]:
     """The app served by uvicorn, with the one test Sandbox's runner behind the Gateway. The server
@@ -326,7 +324,6 @@ async def app_url(
         operator_sessions=operator_sessions,
         electric=electric_proxy,
         notifications=notifications,
-        dispatcher_http=dispatcher_http,
         system_status=answering_system_status(),
     )
     async with serve_app_in_loop(app) as origin:

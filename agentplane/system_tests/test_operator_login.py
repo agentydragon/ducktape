@@ -35,19 +35,22 @@ CREDENTIALS = OperatorCredentials(
 )
 
 
-def _missing_action_error(request: httpx.Request) -> dict[str, JsonValue]:
+def _missing_action_error(request: httpx.Request, *, python_bff: bool = False) -> dict[str, JsonValue]:
     UUID(request.url.path.removeprefix("/upstream/actions/v1/action-requests/"))
+    if python_bff:
+        return {"detail": {"code": "NOT_FOUND", "message": "unknown action request"}}
     return {"code": 5, "message": "not found", "details": []}
 
 
-async def test_federation_preflight_accepts_only_the_correlated_upstream_not_found() -> None:
+@pytest.mark.parametrize("python_bff", [False, True])
+async def test_federation_preflight_accepts_only_the_correlated_upstream_not_found(python_bff: bool) -> None:
     probes: list[httpx.Request] = []
 
     def respond(request: httpx.Request) -> httpx.Response:
         probes.append(request)
         assert request.method == "GET"
         assert request.url.host == "app.test.invalid"
-        return httpx.Response(404, json=_missing_action_error(request))
+        return httpx.Response(404, json=_missing_action_error(request, python_bff=python_bff))
 
     async with httpx.AsyncClient(base_url=APP, transport=httpx.MockTransport(respond)) as http:
         await verify_action_federation(http)

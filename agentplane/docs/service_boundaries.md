@@ -48,6 +48,34 @@ presentation state and projections, but those must not become hidden sources of 
 The Sandbox and SandboxTemplate Go API types and scheme live in [`sandboxes/api`](../sandboxes/api/types.go),
 so backend readers and the controller share the same typed Kubernetes contract.
 
+## HTTP and gRPC boundaries
+
+Translate at the client boundary. Agentplane services call backend RPCs over native gRPC, including
+when both processes expose HTTP listeners. A backend's HTTP/JSON facade is not an internal transport.
+
+The integration app owns the browser's HTTP/JSON and streaming boundary. It calls each backend's
+generated gRPC client with the credential that backend expects, and returns the generated message's
+ProtoJSON form or a UI-specific composition. The app never forwards browser cookies or browser-supplied upstream credentials. Backend authentication and authorization still run on every RPC; the app neither
+replaces that authority nor turns a browser session into a backend dependency.
+
+A service does not acquire an HTTP facade merely because it serves gRPC. A facade needs an explicit
+direct HTTP-client contract independent of the browser app. Existing published service HTTP APIs
+remain available to such clients: Notifications and egress rules have HTTP CLI consumers; Actions,
+Connections and Dispatcher also publish direct HTTP APIs. The Actions CLI itself uses native gRPC.
+Removing a published API requires its own caller/contract review; the app does not consume those
+facades. Agents and automation must remain able to use backend APIs while the app is unavailable.
+Consolidating their HTTP endpoints would require an independent API gateway, not routing them through
+the integration app.
+
+Use generated gateway handlers and protobuf messages instead of a handwritten HTTP-to-RPC
+transcoder or duplicate wire models. A language without a generated gateway may use small typed
+browser adapters over generated stubs. Each adapter preserves deadlines, cancellation, streaming
+status and the backend's authorization, with no automatic mutation retries. See the
+[gRPC implementation pattern](grpc_services.md#httpjson-facades).
+
+OAuth endpoints and callbacks, webhooks, MCP, Electric shapes, model APIs and telemetry protocols
+remain HTTP at their owning components. They are protocol endpoints, not alternate RPC transports.
+
 ## Ownership
 
 - **Integration app:** user-facing composition and interaction. As the requesting operator, it writes
