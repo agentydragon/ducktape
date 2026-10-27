@@ -192,7 +192,9 @@ async def test_start_session_disabled_tooltip(
     await view.capture(target=page.locator("#app"))
     await page.mouse.move(0, 0)
     await expect(tooltip).to_be_hidden()
-    await wrapper.focus()
+    await page.get_by_role("button", name="Close", exact=True).focus()
+    await page.keyboard.press("Tab")
+    await expect(wrapper).to_be_focused()
     await expect(tooltip).to_be_visible()
     await expect(tooltip).to_contain_text(reason)
 
