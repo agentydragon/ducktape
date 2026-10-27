@@ -1718,6 +1718,34 @@ fn global_mutation_path(
     }
 }
 
+fn stored_global_alias(
+    value: &ValueExpr,
+    names: &BTreeSet<&str>,
+    bindings: &BTreeSet<Id>,
+    include_prototypes: bool,
+) -> bool {
+    match global_mutation_path(value, names, bindings) {
+        GlobalMutationPath::Identity => true,
+        GlobalMutationPath::Prototype => include_prototypes,
+        GlobalMutationPath::Descendant => false,
+        GlobalMutationPath::Unrelated => match value {
+            ValueExpr::Alternatives(values) => values
+                .iter()
+                .any(|value| stored_global_alias(value, names, bindings, include_prototypes)),
+            ValueExpr::ObjectLiteral(_, properties) => properties
+                .iter()
+                .any(|(_, value)| stored_global_alias(value, names, bindings, include_prototypes)),
+            ValueExpr::Member(receiver, _, _) => {
+                stored_global_alias(receiver, names, bindings, include_prototypes)
+            }
+            ValueExpr::Call(_, args, _) | ValueExpr::New(_, args, _) => args
+                .iter()
+                .any(|value| stored_global_alias(value, names, bindings, include_prototypes)),
+            _ => false,
+        },
+    }
+}
+
 struct ExecutionIndex {
     owner: SourceUnitOrdinal,
     current: Option<u32>,
@@ -2631,16 +2659,23 @@ impl ExecutionIndex {
                         .flat_map(|callable| &callable.callback_result_writes),
                 )
                 .any(|write| {
-                    // A visible stored back-alias defeats the descendant
-                    // distinction even when its receiver is an ordinary object.
-                    if exposes_global_receiver(&write.value, &index.global_object_names) {
-                        return true;
-                    }
                     let path = global_mutation_path(
                         &write.receiver,
                         &index.global_object_names,
                         &bindings.0,
                     );
+                    // A visible stored back-alias defeats the descendant
+                    // distinction even when its receiver is an ordinary object.
+                    // Prototype values held by unrelated private objects do
+                    // not themselves expose or mutate a global-rooted path.
+                    if stored_global_alias(
+                        &write.value,
+                        &index.global_object_names,
+                        &bindings.0,
+                        path != GlobalMutationPath::Unrelated,
+                    ) {
+                        return true;
+                    }
                     match write.property.as_deref() {
                         Some("__proto__" | "prototype" | "constructor") => {
                             path != GlobalMutationPath::Unrelated

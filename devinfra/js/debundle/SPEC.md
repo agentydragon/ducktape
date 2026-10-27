@@ -787,9 +787,14 @@ A computed write to another object reached through a global property, such as
 Explicit `__proto__`, `prototype` and `constructor` writes still reject, as do
 computed writes on recognized global identity or constructor/prototype paths
 (including `window.parent`, `document.defaultView` and `Window.prototype`).
-Visible stored back-aliases and the other root-exposure guards remain rejecting.
+Stored direct/recognized identity back-aliases (including nested record values)
+remain rejecting. Storing a recognized prototype/constructor value on a
+global-rooted receiver also rejects; merely holding that value in an unrelated
+private object does not. The other root-exposure guards remain rejecting.
 The author must establish that an otherwise admitted descendant cannot alias
 the protected root or prototype surface; no host-property name proves this.
+Indirect aliases through untracked variables, calls or host fields still need
+the complete author audit; the path classifier does not prove their absence.
 The descendant write retains its normal execution effects and callback checks.
 
 Only protocol callback reentry is suppressed. Both operands and their existing

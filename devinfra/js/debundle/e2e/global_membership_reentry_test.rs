@@ -63,7 +63,7 @@ fn unasserted_host_membership_keeps_callback_reentry() {
 
 #[test]
 fn descendant_record_writes_do_not_mutate_the_global_root() {
-    let prefix = "globalThis.neutralCache = {};\nconst key = 'slot';\nfunction store(value) { globalThis.neutralCache[key] = value; }";
+    let prefix = "globalThis.neutralCache = {};\nconst key = 'slot';\nfunction store(value) { globalThis.neutralCache[key] = value; }\nclass Holder { constructor() { this.nativePrototype = Object.prototype; this.Native = Object; } }\nfunction save(window) { const holder = {}; holder.root = window; }";
     let source =
         format!("{prefix}\n{SOURCE}\nstore(7);\nconsole.log(globalThis.neutralCache.slot);\n");
     let mut opts = probe_opts(&source);
@@ -73,6 +73,8 @@ fn descendant_record_writes_do_not_mutate_the_global_root() {
             Member::new("supported"),
             Member::new("key"),
             Member::new("store"),
+            Member::new("Holder"),
+            Member::new("save"),
         ],
         &[
             "globalThis.neutralCache = {};",
@@ -123,6 +125,26 @@ fn explicit_descendant_prototype_writes_and_visible_back_aliases_keep_guards() {
         assert_conservative_probe(&source, &["key", "mutate"], &[&setup], "42\n");
     }
     let source = "function read() { return later; }\nlet later = 0;\nglobalThis.inspectState = read;\nconst key = 'slot';\nfunction mutate() { globalThis.neutralCache.root = globalThis; globalThis.neutralCache.root[key] = 1; }\nconst supported = 'feature' in globalThis;\nlater = 42;\nconsole.log(later);\n";
+    assert_conservative_probe(source, &["key", "mutate"], &[], "42\n");
+}
+
+#[test]
+fn stored_identity_paths_and_rooted_prototype_aliases_keep_guards() {
+    for value in [
+        "window.parent",
+        "document.defaultView",
+        "{ root: window.parent }",
+        "{ root: document.defaultView }",
+        "Object.prototype",
+        "{ root: Object.prototype }",
+        "Window.prototype",
+    ] {
+        let source = format!(
+            "function read() {{ return later; }}\nlet later = 0;\nglobalThis.inspectState = read;\nconst key = 'slot';\nfunction mutate() {{ globalThis.neutralCache.root = {value}; globalThis.neutralCache.root[key] = 1; }}\nconst supported = 'feature' in globalThis;\nlater = 42;\nconsole.log(later);\n"
+        );
+        assert_conservative_probe(&source, &["key", "mutate"], &[], "42\n");
+    }
+    let source = "function read() { return later; }\nlet later = 0;\nglobalThis.inspectState = read;\nconst key = 'slot';\nfunction mutate() { const holder = {}; holder.root = document.defaultView; holder.root[key] = 1; }\nconst supported = 'feature' in globalThis;\nlater = 42;\nconsole.log(later);\n";
     assert_conservative_probe(source, &["key", "mutate"], &[], "42\n");
 }
 
