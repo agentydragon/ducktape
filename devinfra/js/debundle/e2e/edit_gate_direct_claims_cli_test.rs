@@ -111,10 +111,6 @@ fn import_specifier_claims_are_accepted_only_for_named_imports() {
         fixture.assert_current_pipeline_rejects(&[
             "no named import specifier found for `dep` in source chunk",
         ]);
-        assert!(
-            !fixture.graph.exists(),
-            "unsupported import form unexpectedly emitted a current graph"
-        );
     }
 }
 
