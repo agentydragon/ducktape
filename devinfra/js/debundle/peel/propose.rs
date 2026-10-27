@@ -478,6 +478,8 @@ pub struct ModuleDecompositionOptions {
     pub strategy: ModuleDecompositionStrategy,
     pub coarsening: ModuleDecompositionCoarseningMode,
     pub preserve_selector_anchors: bool,
+    /// Include intact current named modules as one-fragment report rows.
+    pub include_unchanged: bool,
     pub coarsen_atomic_conflicts: bool,
     pub rejoin_original_modules: bool,
     pub rejoin_pair_attempt_limit: Option<usize>,
@@ -685,8 +687,24 @@ fn decompose_modules(
     occupied_paths.extend(existing_module_paths.iter().cloned());
     let mut candidate_source_unit_modules = source_unit_modules.clone();
     let mut refinements = Vec::new();
+    let mut split_module_count = 0;
     for (module_id, groups) in module_groups {
         if groups.len() < 2 {
+            if decomposition.include_unchanged
+                && !groups.is_empty()
+                && !(include_residual && module_id == residual_path)
+            {
+                let fragments = groups
+                    .into_iter()
+                    .map(|(source_unit_indices, _)| {
+                        module_decomposition_fragment(graph, module_id.clone(), source_unit_indices)
+                    })
+                    .collect();
+                refinements.push(ModuleDecomposition {
+                    module_id,
+                    fragments,
+                });
+            }
             continue;
         }
 
@@ -699,29 +717,20 @@ fn decompose_modules(
             } else {
                 next_fragment_path(&module_id, &mut occupied_paths)
             };
-            let mut fragment_source_unit_ids = Vec::with_capacity(source_unit_indices.len());
-            let mut binding_ids = BTreeSet::new();
-            for source_unit_idx in source_unit_indices {
+            for &source_unit_idx in &source_unit_indices {
                 candidate_source_unit_modules[source_unit_idx] = suggested_module_path.clone();
-                let node = &graph.nodes[source_unit_idx];
-                fragment_source_unit_ids.push(node.id.clone());
-                binding_ids.extend(
-                    node.declared_bindings
-                        .iter()
-                        .map(|binding| binding.binding.to_string()),
-                );
             }
-            fragment_source_unit_ids.sort();
-            fragments.push(ModuleDecompositionFragment {
+            fragments.push(module_decomposition_fragment(
+                graph,
                 suggested_module_path,
-                source_unit_ids: fragment_source_unit_ids,
-                binding_ids: binding_ids.into_iter().collect(),
-            });
+                source_unit_indices,
+            ));
         }
         refinements.push(ModuleDecomposition {
             module_id,
             fragments,
         });
+        split_module_count += 1;
     }
 
     let mut validation =
@@ -905,7 +914,7 @@ fn decompose_modules(
         && validation.cycles.is_empty()
         && validation.cross_rebinds.is_empty();
     let original_modules: BTreeSet<ModulePath> = source_unit_modules.into_iter().collect();
-    let unchanged_module_count = original_modules.len().saturating_sub(refinements.len());
+    let unchanged_module_count = original_modules.len().saturating_sub(split_module_count);
 
     Ok(ModuleDecompositionReport {
         strategy,
@@ -922,6 +931,30 @@ fn decompose_modules(
         cross_rebinds: validation.cross_rebinds,
         coarsening,
     })
+}
+
+fn module_decomposition_fragment(
+    graph: &DependencyGraphReport,
+    suggested_module_path: ModulePath,
+    source_unit_indices: Vec<usize>,
+) -> ModuleDecompositionFragment {
+    let mut source_unit_ids = Vec::with_capacity(source_unit_indices.len());
+    let mut binding_ids = BTreeSet::new();
+    for source_unit_idx in source_unit_indices {
+        let node = &graph.nodes[source_unit_idx];
+        source_unit_ids.push(node.id.clone());
+        binding_ids.extend(
+            node.declared_bindings
+                .iter()
+                .map(|binding| binding.binding.to_string()),
+        );
+    }
+    source_unit_ids.sort();
+    ModuleDecompositionFragment {
+        suggested_module_path,
+        source_unit_ids,
+        binding_ids: binding_ids.into_iter().collect(),
+    }
 }
 
 fn is_false(value: &bool) -> bool {

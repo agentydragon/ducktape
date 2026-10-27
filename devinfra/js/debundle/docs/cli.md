@@ -491,6 +491,13 @@ residual source units keep their current destination and are not split into
 suggestions, so a candidate can remain invalid when its conflict involves
 residual ownership.
 
+By default `modules` contains only existing modules that split into multiple
+fragments. Pass `--include-unchanged` to also report current named modules that
+the selected strategy leaves intact. Each is one fragment with its original
+module path and the source-unit and binding IDs needed to include it in a
+reviewed `modules refine` batch. This option does not change
+`unchanged_module_count` or add intact residual/entry groups.
+
 The command does not modify YAML. Review the reported source-unit and binding IDs,
 choose semantic module names for each suggested part, and assign the complete
 set of fragments together. Suggested `part-N` paths are temporary review aids,

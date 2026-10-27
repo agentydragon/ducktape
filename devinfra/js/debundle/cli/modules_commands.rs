@@ -94,6 +94,8 @@ enum ModulesNsCommand {
     /// imports and exports in the entry module. `--preserve-selector-anchors`
     /// resolves current claims using `--source-root` and keeps local
     /// intrinsic aliases and source_match member references together.
+    /// `--include-unchanged` adds one-fragment rows for current named modules
+    /// that the selected strategy leaves intact.
     Decompose(ModuleDecomposeArgs),
     /// List all modules in the spec with summary stats.
     ///
@@ -157,6 +159,10 @@ struct ModuleDecomposeArgs {
     /// resolved in-module referenced members.
     #[arg(long, requires = "source_root")]
     preserve_selector_anchors: bool,
+
+    /// Include unchanged current named modules as one-fragment report rows.
+    #[arg(long)]
+    include_unchanged: bool,
 }
 
 #[derive(Debug, ClapArgs)]
@@ -495,6 +501,7 @@ fn run_module_decompose(args: ModuleDecomposeArgs) -> Result<()> {
                 ModuleDecompositionCoarseningMode::None
             },
             preserve_selector_anchors: args.preserve_selector_anchors,
+            include_unchanged: args.include_unchanged,
             coarsen_atomic_conflicts: args.coarsen_atomic_conflicts,
             rejoin_original_modules: args.rejoin_original_modules,
             rejoin_pair_attempt_limit: args.rejoin_pair_attempt_limit,

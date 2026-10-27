@@ -174,6 +174,92 @@ console.log(new Widget().ready);
 }
 
 #[test]
+fn include_unchanged_reports_current_named_module_without_changing_default_count() {
+    let fixture = GraphFixture::new(
+        "const left = 1;\nconst right = 2;\nconst stable = 3;\nconsole.log(left + right + stable);\n",
+        &[
+            (
+                "split.yaml",
+                "members: [{selector: {binding: {name: left}}}, {selector: {binding: {name: right}}}]\n",
+            ),
+            (
+                "stable.yaml",
+                "members: [{selector: {binding: {name: stable}}}]\n",
+            ),
+        ],
+    );
+    let base_args = [
+        "modules",
+        "decompose",
+        "--atomic",
+        "--graph",
+        fixture.graph.to_str().unwrap(),
+        "--modules",
+        fixture.modules.to_str().unwrap(),
+    ];
+    let default = fixture.json(&base_args);
+    assert_eq!(default["modules"].as_array().unwrap().len(), 1, "{default}");
+    assert_eq!(default["modules"][0]["module_id"], "split", "{default}");
+
+    let mut include_unchanged_args = base_args.to_vec();
+    include_unchanged_args.push("--include-unchanged");
+    let report = fixture.json(&include_unchanged_args);
+    assert_eq!(
+        report["unchanged_module_count"],
+        default["unchanged_module_count"]
+    );
+    let stable = report["modules"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|module| module["module_id"] == "stable")
+        .expect("unchanged named module should be included");
+    assert_eq!(stable["fragments"].as_array().unwrap().len(), 1, "{report}");
+    assert_eq!(
+        stable["fragments"][0]["suggested_module_path"], "stable",
+        "{report}"
+    );
+    assert_eq!(
+        stable["fragments"][0]["source_unit_ids"],
+        json!([source_unit_id_for_binding(&fixture, "stable")]),
+        "{report}"
+    );
+    assert_eq!(
+        stable["fragments"][0]["binding_ids"],
+        json!(["stable"]),
+        "{report}"
+    );
+
+    let residual_source_unit = source_unit_id_for_line(&fixture, 4);
+    let mut include_residual_args = base_args.to_vec();
+    include_residual_args.push("--include-residual");
+    let residual_default = fixture.json(&include_residual_args);
+    include_residual_args.push("--include-unchanged");
+    let residual_with_unchanged = fixture.json(&include_residual_args);
+    let reports_residual_source = |report: &Value| {
+        report["modules"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|module| module["fragments"].as_array().unwrap())
+            .any(|fragment| {
+                fragment["source_unit_ids"]
+                    .as_array()
+                    .unwrap()
+                    .contains(&json!(residual_source_unit))
+            })
+    };
+    assert!(
+        !reports_residual_source(&residual_default),
+        "{residual_default}"
+    );
+    assert!(
+        !reports_residual_source(&residual_with_unchanged),
+        "{residual_with_unchanged}"
+    );
+}
+
+#[test]
 fn decomposition_coheres_anonymous_call_with_ambiguous_local_helper() {
     let fixture = ambiguous_decorator_fixture(true);
     let anonymous_source_unit = source_unit_id_for_line(&fixture, 5);
