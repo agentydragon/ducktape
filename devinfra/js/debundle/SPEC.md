@@ -431,7 +431,9 @@ and publication premise still requires the same independent source audit.
 
 Optional calls retain conservative callee, receiver and argument callback
 effects even when their value and short-circuit behavior cannot be inferred.
-They do not acquire assertions scoped to ordinary direct-call syntax.
+Known local return graphs keep their callable captures and a possible undefined
+result. Optional calls do not acquire assertions scoped to ordinary direct-call
+syntax.
 
 `chunk_export_purity.<defining chunk>.callback_factory_exports` lists named
 exports whose calls are audited to defer a single callback argument.

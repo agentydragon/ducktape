@@ -5,6 +5,7 @@ use debundle_e2e_support::*;
 const EAGER_PROVIDER: &str = "export function register(callback) { return callback(); }\nexport const api = { register };\nexport function get() { return api; }\n";
 
 fn assert_caught_tdz_and_rejected_split(expression: &str, provider: &str) {
+    eprintln!("optional call under test: {expression}");
     let statement =
         format!("try {{ observed = {expression}; }} catch (error) {{ observed = error.name; }}");
     let source = format!(
@@ -59,6 +60,74 @@ fn optional_proxy_lookup_and_returned_callback_protocols_remain_conservative() {
     for call in ["api.register?.(() => later)", "register?.(() => later)?.()"] {
         assert_caught_tdz_and_rejected_split(call, provider);
     }
+}
+
+#[test]
+fn optional_local_factory_preserves_returned_callback_reachability() {
+    let mut unexpected = Vec::new();
+    for (body, expression) in [
+        ("return () => callback();", "wrap?.(() => later)?.()"),
+        (
+            "return { run: () => callback() };",
+            "wrap?.(() => later)?.run()",
+        ),
+        (
+            "return { run: () => callback() };",
+            "wrap?.(() => later)?.['run']?.()",
+        ),
+        (
+            "return { get run() { return callback(); } };",
+            "wrap?.(() => later)?.run",
+        ),
+        ("return () => callback();", "wrap?.(...[() => later])?.()"),
+        ("return () => later;", "wrap?.(...[])?.()"),
+    ] {
+        if std::panic::catch_unwind(|| assert_local_optional_factory_tdz(body, expression)).is_err()
+        {
+            unexpected.push(expression);
+        }
+    }
+    assert!(
+        unexpected.is_empty(),
+        "unexpected local cases: {unexpected:#?}"
+    );
+}
+
+fn assert_local_optional_factory_tdz(body: &str, expression: &str) {
+    eprintln!("local optional call under test: {expression}");
+    let statement =
+        format!("try {{ observed = {expression}; }} catch (error) {{ observed = error.name; }}");
+    let source = format!(
+        "function wrap(callback) {{ {body} }}\nlet observed;\n{statement}\nconst later = 42;\nconsole.log(observed);\n"
+    );
+    let fixture = run_fixture(FixtureOpts::new(
+        &source,
+        vec![logical_module_with_anon(
+            "all",
+            &[
+                Member::new("wrap"),
+                Member::new("observed"),
+                Member::new("later"),
+            ],
+            &[&statement],
+        )],
+    ));
+    assert_preserved_entry_output(&fixture, "ReferenceError\n");
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            &source,
+            vec![
+                logical_module_with_anon(
+                    "effects/observed",
+                    &[Member::new("wrap"), Member::new("observed")],
+                    &[&statement],
+                ),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        ),
+        &["effects/observed", "values/later"],
+        &[],
+    );
 }
 
 #[test]

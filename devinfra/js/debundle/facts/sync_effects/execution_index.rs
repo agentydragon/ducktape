@@ -4252,6 +4252,20 @@ impl Visit for ExecutionIndex {
                 owner: self.owner,
                 plain_object_sources: false,
             });
+            if call.args.iter().any(|arg| arg.spread.is_some()) {
+                // Argument positions and the returned value are unmodeled for
+                // spread calls. Preserve the callee and argument capabilities
+                // through the opaque path, including callable return values.
+                self.record_source_protocol(
+                    CallKind::Call,
+                    ValueExpr::Alternatives(
+                        std::iter::once(ValueExpr::from_expr(&call.callee))
+                            .chain(call.args.iter().map(|arg| ValueExpr::from_expr(&arg.expr)))
+                            .collect(),
+                    ),
+                    call.span,
+                );
+            }
         }
         self.mark_opaque();
     }

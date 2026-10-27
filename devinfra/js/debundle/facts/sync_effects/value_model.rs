@@ -252,21 +252,31 @@ impl ValueExpr {
                 matches!(member.prop, MemberProp::Ident(_)),
             ),
             Expr::OptChain(chain) => match chain.base.as_ref() {
-                OptChainBase::Member(member)
-                    if matches!(member.obj.unwrap_parens(), Expr::Ident(_))
-                        && matches!(member.prop, MemberProp::Ident(_)) =>
-                {
+                OptChainBase::Call(call) if call.args.iter().all(|arg| arg.spread.is_none()) => {
+                    // Keep a known local call's returned callable reachable.
+                    // The undefined alternative overapproximates optional
+                    // short-circuiting without dropping the invocation path.
                     Self::Alternatives(vec![
                         Self::Undefined,
-                        Self::Member(
-                            Box::new(Self::from_expr(&member.obj)),
-                            static_prop(&member.prop),
-                            true,
+                        Self::Call(
+                            Box::new(Self::from_expr(&call.callee)),
+                            call.args
+                                .iter()
+                                .map(|arg| Self::from_expr(&arg.expr))
+                                .collect(),
+                            call.span.into(),
                         ),
                     ])
                 }
-                // Calls, computed keys and receiver chains retain the unknown
-                // publication fallback until their provenance is supported.
+                OptChainBase::Member(member) => Self::Alternatives(vec![
+                    Self::Undefined,
+                    Self::Member(
+                        Box::new(Self::from_expr(&member.obj)),
+                        static_prop(&member.prop),
+                        matches!(member.prop, MemberProp::Ident(_)),
+                    ),
+                ]),
+                // Spread calls have no modeled result shape.
                 _ => Self::Unknown,
             },
             Expr::Call(call) if call.args.iter().all(|arg| arg.spread.is_none()) => {
