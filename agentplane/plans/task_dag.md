@@ -503,9 +503,9 @@ Codex already runs one app-server and store per Runner, and Claude one process p
 ([harness process design](../docs/runner_delivery_and_harness_design.md#harness-process-store-and-session-identity));
 the recommendation covers what remains open around them.
 
-Future central Codex hosting through sandbox exec servers, including coexistence with local modes,
-is [deferred separately](task_freezer.md#codex_central_harness--central-codex-with-sandbox-exec-servers).
-It does not gate the current placement decision or separate tool memory containment.
+Central Codex hosting through Sandbox exec servers, including coexistence with local modes, is
+`HARNESS_PLACEMENT_DESIGN` in section 5. It does not gate the current placement decision or separate tool
+memory containment.
 
 Deliver a recommendation and proposed API shape for review; implementation and migration/retirement
 nodes follow only if selected. This does not unfreeze the broader runner durability redesign or
@@ -611,6 +611,8 @@ flowchart LR
     PLATFORM_SERVICE_NAMES_DESIGN -. related naming and transport choices .-> PLATFORM_SERVICE_ROUTING_DESIGN
     STRUCTURED_TOOL_OUTPUT[Unscheduled: tool results as ordered text and image parts]
     STRUCTURED_TOOL_OUTPUT -. multi-block output .-> CODEX_CODE_MODE_CELLS[Unscheduled: Codex code-mode cells as runner items]
+    CENTRAL_CODEX_SPIKE[Unscheduled: Codex outside the Sandbox drives its exec-server]
+    CENTRAL_CODEX_SPIKE --> HARNESS_PLACEMENT_DESIGN[Decision, unscheduled: where Codex's agent loop runs]
 ```
 
 ### `STRUCTURED_TOOL_OUTPUT` — tool results as ordered text and image parts
@@ -633,6 +635,27 @@ script and what it emitted) as runner items. Codex app-server has no `ThreadItem
 `openai/codex` main at `c7234c11` (2026-10-21), and core emits the call output only to hooks, so the runner sees
 only the nested `commandExecution`. Needs upstream support, or reading the rollout or the native frames. Multi-block
 cell output likely needs `STRUCTURED_TOOL_OUTPUT`.
+
+### `CENTRAL_CODEX_SPIKE` — a Codex app-server outside the Sandbox drives its exec-server
+
+**Unscheduled spike; operator asked for the research, 2026-10-27.** [Research](sampling_outside_sandboxes.md).
+In the k3s fixture, run the pinned Codex app-server in a control-plane Pod and `environment/add` one Sandbox's
+`codex exec-server`, reached through a Runner Gateway WebSocket tunnel over the runner's outbound connection.
+Drive a scripted GPT-6 code-mode turn: a cell running `tools.exec_command` and `tools.apply_patch`, a
+`view_image`, and AGENTS.md read from the Sandbox's workspace. Check that the Sandbox needs no LLM ingress
+grant, and whether a per-thread model provider token attributes spend to the Session. Measure nested-call
+latency against isolated-executor mode. Exit: the test, and its numbers in the research plan. Changes no
+deployed mode.
+
+### `HARNESS_PLACEMENT_DESIGN` — where Codex's agent loop runs
+
+**Decision, unscheduled; after `CENTRAL_CODEX_SPIKE`.** Alternatives: a harness Pod per Sandbox, outside it; one
+shared app-server for many Sandboxes; no change. Recommendation to review: a harness Pod per Sandbox, which keeps
+today's failure scope and per-Pod spend attribution and shares no `CODEX_HOME` between owners. The decision also
+names who owns the journal and recovery for a central harness (it meets the frozen
+`RUNNER_STATE_BOUNDARY_RETHINK`), the tunnel's authentication, interrupts and executor replacement, spend
+attribution, where memory lives, and how central and Sandbox-hosted modes coexist. Claude stays Sandbox-hosted:
+subscription use goes through its CLI, and 2.1.252 has no usable remote tool backend.
 
 ### `SANDBOX_FORM_TERMINOLOGY` — distinguish launch presets from runtime templates
 

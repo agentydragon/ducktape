@@ -25,6 +25,9 @@ operator decisions and proportional acceptance from the [low-priority freezer](t
 - [Task DAG](task_dag.md) — remaining work and proposed priorities, including unranked future
   harness-capability candidates, deployed acceptance, UI/history, and native recovery
 - [Driver-provided tools and background work](driver_tools_and_background.md) — deferred seam that must reuse the Action contracts
+- [Sampling outside Sandboxes](sampling_outside_sandboxes.md) — research on running Codex's agent loop in the
+  control plane with only exec servers in Sandboxes: what Codex already routes to an environment, code mode,
+  where AGENTS.md comes from, what it would enable and cost, and why Claude stays put; no direction chosen
 - [Claude RemoteIO transport](claude_remote_io.md) — evaluate an optional `--sdk-url` bridge through Agentplane egress, including compaction-summary value and recovery gates
 - [Agent access to external systems](external_access.md) — deferred delegated-versus-brokered access
   choices and broader authorization-system evaluation, separate from multiagent implementation

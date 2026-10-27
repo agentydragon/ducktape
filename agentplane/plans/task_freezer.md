@@ -277,30 +277,6 @@ On a selected model/effort capability gap. [Runtime control contract](../docs/ru
 
 Requires a fresh operator product/architecture decision. These alternatives are not prerequisites for service-owned input metadata or ordinary session history.
 
-### `CODEX_CENTRAL_HARNESS` — central Codex with sandbox exec servers
-
-**Deferred; operator-requested, 2026-10-25 PDT.** Revisit when central harness hosting is prioritized.
-Codex's [`exec-server`](https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/exec-server/README.md)
-may let the app-server run outside Agentplane Sandboxes, multiplexing native threads onto each
-Sandbox's execution environment. Keep harness placement and tool execution separate, with explicit
-operating modes that can coexist during a transition:
-
-- Sandbox-hosted harness with local tools (current behavior).
-- Sandbox-hosted Codex with a separately limited, supervised exec server.
-- Centrally hosted Codex with exec servers in the target Pod or VM Sandboxes.
-
-Before selecting central hosting, establish remote coverage for filesystem access, shell commands,
-patching, code-mode, MCP and other helpers; an exec server does not by itself prove that every
-workspace operation leaves the harness host. Define Session-to-Sandbox routing and identity for
-both model and tool traffic, preserve command/Event evidence and stored conversations, and account
-for cancellation, executor replacement and the failure scope of a shared central app-server.
-Centralization does not require retiring the other modes or moving existing durability ownership.
-This idea does not block separate tool memory containment inside today's Sandboxes.
-
-Claude Code has no demonstrated equivalent general remote execution backend; retain its local
-harness mode and assess any central-hosting alternative independently. Remote control of a Claude
-harness alone does not move its tool execution into another environment.
-
 ### `RUNNER_STATE_BOUNDARY_RETHINK` — should the runner own durable state?
 
 Choose whether command durability moves centrally and the runner becomes a thin adapter. Central-admission changes require this decision. Transport direction is settled separately by the [runner control stream](../docs/runner_control.md), which retains runner durability.
