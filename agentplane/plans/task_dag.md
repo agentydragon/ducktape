@@ -1536,6 +1536,7 @@ The Gateway serves `Connect` and proxies the runner's
 
 ```mermaid
 flowchart TD
+    RUNNER_CONTROL_TRANSPORT_DESIGN[Decision, unscheduled: runner listens versus reverse tunnel]
     PROXY_START_METHODS_DISPATCHER_ONLY[Candidate: narrow proxy command authorization]
     DISPATCHER_OWNERSHIP_IN_POSTGRES[Unscheduled: Dispatcher Sandbox ownership without the Kubernetes Lease]
 ```
@@ -1544,6 +1545,28 @@ The [service-boundary contract](../docs/service_boundaries.md) and [Runner Gatew
 describe the current proxy. Live `Runner.ListSessions` remains part of the app and Notification
 service caller contract. The separate destination-authority decision
 `DELIVERY_DESTINATION_AUTHORITY_DESIGN` (section 13) remains open.
+
+### `RUNNER_CONTROL_TRANSPORT_DESIGN` — consider making the runner a gRPC server again
+
+**Decision, unscheduled; operator, 2026-10-27 PDT: consider the alternative, no transport change selected.**
+Compare the current runner-initiated [reverse control stream](../docs/runner_control.md) with ordinary
+Gateway-to-runner gRPC on a private listener reachable only by authorized Gateway workloads. Evaluate
+Pod and KubeVirt guest reachability, ingress restrictions, mutual workload authentication and credential
+rotation, Sandbox/Pod incarnation checks, replica routing, connection loss, cancellation, and migration
+cost against the custom tunnel and connection-owner machinery that could be removed. Establish whether
+remote or NAT-bound runners are a real requirement. The initial recommendation is direct gRPC for a
+cluster-routable fleet, retaining outbound control if otherwise unreachable runners are required.
+
+Keep runner journal admission/execution ownership and History Event push independent of transport.
+Both choices must preserve command-ID deduplication when an admission reply is lost; reconnecting is
+not proof that a command failed or permission to repeat an uncertain native effect. Review consequences
+for [holder-owned Dispatcher delivery](dispatcher_gateway_merge.md) rather than assuming a connection
+holder still owns delivery with direct dialing.
+
+**Exit:** a reviewed comparison, recommendation and operator decision on retaining the tunnel or
+returning to a runner listener, with focused security/reconnect proof requirements and a cutover/rollback
+outline if changing transport. This evaluation has no prerequisites and does not gate existing work;
+implementation waits for that decision.
 
 ### `PROXY_START_METHODS_DISPATCHER_ONLY` — only the Dispatcher starts or continues work through the proxy
 
