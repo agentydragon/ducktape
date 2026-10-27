@@ -229,10 +229,40 @@ impl GraphFixture {
     }
 
     fn rerun(&self) -> TempDir {
+        let rerun = TempDir::new_in(self.run._root.path()).expect("create fresh output directory");
+        let out = self.run_current_spec(rerun.path());
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        rerun
+    }
+
+    /// Run validation against the current input spec, independent of the
+    /// saved graph used by CLI edit commands.
+    pub fn assert_current_pipeline_rejects(&self, diagnostics: &[&str]) {
+        let output_root = TempDir::new_in(self.run._root.path())
+            .expect("create current-spec validation output directory");
+        let out = self.run_current_spec(output_root.path());
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert_eq!(
+            out.status.code(),
+            Some(1),
+            "current spec should fail validation: {stderr}"
+        );
+        for diagnostic in diagnostics {
+            assert!(stderr.contains(diagnostic), "{stderr}");
+        }
+        assert!(
+            !output_root.path().join("app/main/entry.js").exists(),
+            "rejected current spec emitted an accepted app entry"
+        );
+    }
+
+    fn run_current_spec(&self, out_root: &Path) -> std::process::Output {
         let root = self.run._root.path();
-        let rerun = TempDir::new_in(root).expect("create fresh output directory");
-        let out_root = rerun.path();
-        let out = Command::new(debundler_path())
+        Command::new(debundler_path())
             .arg("run")
             .arg("--tree-config")
             .arg(root.join("spec_config.yaml"))
@@ -245,13 +275,7 @@ impl GraphFixture {
             .arg("--out-root")
             .arg(out_root)
             .output()
-            .unwrap();
-        assert!(
-            out.status.success(),
-            "{}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-        rerun
+            .unwrap()
     }
 
     pub fn dependency_graph(&self) -> DependencyGraphReport {
