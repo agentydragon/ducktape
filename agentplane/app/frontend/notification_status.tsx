@@ -105,11 +105,9 @@ export function NotificationStatus({
           try {
             setData(decodeSandboxNotificationStatus(message.data));
             setError(null);
-            return undefined;
           } catch (reason) {
             const failure = displayableError(reason);
             setError(failure);
-            return failure;
           }
         },
       },
