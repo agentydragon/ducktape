@@ -129,6 +129,7 @@ mod from_report_tests {
             declared_bindings: Vec::new(),
             statement_kind: StatementKind::VarDecl,
             purity: Purity::Pure,
+            callback_factory_barriers: Vec::new(),
             destination: crate::ModuleKey("residual".to_string()),
         }
     }

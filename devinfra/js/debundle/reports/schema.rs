@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use source_identity::SourceUnitOrdinal;
+use std::collections::BTreeSet;
 use swc_atoms::Atom;
 
 use crate::assignment_assembly::AtomicGroupConflict;
@@ -105,6 +106,54 @@ pub struct PurityCauseReport {
     pub purity: Purity,
 }
 
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct CallbackFactoryBarrierReport {
+    pub contract: CallbackFactoryContractReport,
+    pub rejection: CallbackFactoryRejectionReport,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct CallbackFactoryContractReport {
+    pub namespace_binding: Atom,
+    pub member: String,
+    pub argument_count: usize,
+    pub callback_arguments: BTreeSet<usize>,
+    /// Direct callback roots resolved through the value-flow model. Omitted
+    /// when those argument values cannot be linked without inference.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub callback_source_units: Option<Vec<CallbackFactoryCallbackSourceReport>>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct CallbackFactoryCallbackSourceReport {
+    /// `unit:N` graph reference; pair with `statement_ordinal` only through
+    /// the stored graph crosswalk.
+    pub source_unit: String,
+    pub statement_ordinal: SourceUnitOrdinal,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "code", rename_all = "snake_case")]
+pub enum CallbackFactoryRejectionReport {
+    NamespaceMemberWrite {
+        witness: CallbackFactoryWriteWitnessReport,
+    },
+    UnsupportedGuard,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct CallbackFactoryWriteWitnessReport {
+    /// `unit:N` graph reference. Resolve its parsed statement through
+    /// `statement_ordinal`; the two numeric coordinates are not interchangeable.
+    pub source_unit: String,
+    pub statement_ordinal: SourceUnitOrdinal,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
+    pub receiver_binding: Atom,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub property: Option<String>,
+}
+
 impl DependencyGraphReport {
     /// Resolve a [`ModuleKey`] to its module-table entry. The table
     /// (`quotient.nodes`) is the single source of truth for a module's
@@ -139,6 +188,11 @@ pub struct SourceUnitReport {
     /// any non-`Pure` verdict. A consumer wanting a boolean reads
     /// `purity.kind == "pure"`.
     pub purity: Purity,
+    /// Matched namespace callback-factory contracts rejected at top-level
+    /// calls in this source unit. Empty for accepted calls and unsupported
+    /// call families; rejected unsupported guards are reported explicitly.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub callback_factory_barriers: Vec<CallbackFactoryBarrierReport>,
     /// The module this source unit is assigned to, as an interned
     /// [`ModuleKey`]. Resolve to a path / residual flag via the module
     /// table (`quotient.nodes`).

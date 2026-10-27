@@ -15,7 +15,10 @@ use crate::facts::item_views::TopLevelItemView;
 use crate::facts::local_effect_targets::MetadataDecorateCall;
 use crate::facts::set_iterables::SetIterableProof;
 use crate::facts::source_unit_read_closure::SourceUnitReadClosure;
-use crate::facts::statement_facts::{StatementFacts, StatementKind, SynchronousCalls};
+use crate::facts::statement_facts::{
+    CallbackFactoryBarrierFact, CallbackFactoryBarrierRejection, StatementFacts, StatementKind,
+    SynchronousCalls,
+};
 use crate::facts::value_flow::{ChunkValueFlow, ValueOrigin, Values as FlowValues};
 use crate::purity::ChunkCodeGraph;
 use source_identity::SourceUnitOrdinal;
@@ -1792,7 +1795,7 @@ impl Executor<'_> {
         args: &[Values],
     ) -> Option<Values> {
         self.retained_callbacks(
-            self.index.retained_callback_calls.get(&site)?,
+            &self.index.retained_callback_calls.get(&site)?.call,
             expressions,
             args,
         )
@@ -1839,6 +1842,8 @@ impl Executor<'_> {
         let contract = RetainedCallbackCall {
             namespace_member: None,
             signatures,
+            argument_count: expressions.len(),
+            callback_argument_exprs: BTreeMap::new(),
         };
         let callbacks = self.retained_callbacks(&contract, expressions, args)?;
         // Independently exported aliases and already exposed callbacks keep
@@ -4185,6 +4190,34 @@ impl Executor<'_> {
     }
 }
 
+fn callback_source_units_for_signature(
+    callback_argument_exprs: &BTreeMap<usize, ValueExpr>,
+    signature: &spec::RetainedCallbackSignature,
+    flow: &ChunkValueFlow,
+) -> Option<BTreeSet<SourceUnitOrdinal>> {
+    let mut source_units = BTreeSet::new();
+    for position in &signature.callback_arguments {
+        let expression = callback_argument_exprs.get(position)?;
+        let values: BTreeSet<_> = match expression {
+            ValueExpr::Binding(binding) => flow.values_of_binding(binding).into_iter().collect(),
+            ValueExpr::Origin(origin) => BTreeSet::from([*origin]),
+            // Calls, object members and aggregate expressions can return or
+            // expose callbacks through paths this local witness does not link.
+            _ => return None,
+        };
+        if values.len() != 1 {
+            return None;
+        }
+        for value in values {
+            if !matches!(value, ValueOrigin::Function(_)) {
+                return None;
+            }
+            source_units.insert(*flow.callable_source_unit.get(&value)?);
+        }
+    }
+    Some(source_units)
+}
+
 /// Prove the narrow return-only wrapper shape using the same execution index
 /// as call promotion. Whole-chunk flow must contain exactly that function;
 /// aliases with unknown/reassigned targets and dynamic scopes remain opaque.
@@ -4206,6 +4239,59 @@ pub(crate) fn annotate_synchronous_calls(
 ) {
     let index =
         ExecutionIndex::collect(body, hints, Some(flow), proofs.graph.plain_array_bindings());
+    for candidate in index.retained_callback_calls.values() {
+        if candidate.caller.is_some() {
+            continue;
+        }
+        let Some((namespace, member)) = &candidate.call.namespace_member else {
+            continue;
+        };
+        if index
+            .audited_factory_members
+            .get(namespace)
+            .is_some_and(|members| members.contains(member))
+        {
+            continue;
+        }
+        let witness = index
+            .rejected_namespace_member_writes
+            .get(&(namespace.clone(), member.clone()))
+            .cloned();
+        for signature in candidate.call.signatures.iter().filter(|signature| {
+            // `retained_callback_invocation` already applies these guards to
+            // the parsed call. Keep them explicit here so a configured but
+            // inapplicable overload can never be reported as the match.
+            signature.argument_count == candidate.call.argument_count
+                && signature.callback_arguments.iter().all(|position| {
+                    *position < candidate.call.argument_count
+                        && candidate
+                            .call
+                            .callback_argument_exprs
+                            .contains_key(position)
+                })
+        }) {
+            let callback_source_units = callback_source_units_for_signature(
+                &candidate.call.callback_argument_exprs,
+                signature,
+                flow,
+            );
+            facts[candidate.owner.0]
+                .callback_factory_barriers
+                .push(CallbackFactoryBarrierFact {
+                    namespace_binding: namespace.0.to_string(),
+                    member: member.clone(),
+                    argument_count: signature.argument_count,
+                    callback_arguments: signature.callback_arguments.clone(),
+                    callback_source_units,
+                    rejection: match &witness {
+                        Some(witness) => CallbackFactoryBarrierRejection::NamespaceMemberWrite {
+                            witness: witness.clone(),
+                        },
+                        None => CallbackFactoryBarrierRejection::UnsupportedGuard,
+                    },
+                });
+        }
+    }
     // Every top-level call is executed by `top_calls`, regardless of whether
     // its result is retained. Keep an initializer's value only if a later
     // call may read it, directly or through another initializer/function.
