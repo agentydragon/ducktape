@@ -546,6 +546,9 @@ async def list_policy_sets(action_policy: ActionPolicy) -> list[ActionPolicySetV
     return await action_policy.list_policy_sets()
 
 
+# `{thread_id:uuid}`: the router, not only the handler, refuses a non-UUID segment, so a path no
+# route serves (such as a removed route an old browser tab still calls) answers 404 rather than a
+# UUID parse error from the nearest `{thread_id}` route.
 threads = APIRouter(prefix="/threads", tags=["threads"])
 
 
@@ -678,7 +681,7 @@ async def thread_notices_stream(
     )
 
 
-@threads.get("/{thread_id}")
+@threads.get("/{thread_id:uuid}")
 async def get_thread(store: Store, thread_id: UUID) -> ThreadView:
     view = await store.get_thread(thread_id)
     if view is None:
@@ -686,12 +689,12 @@ async def get_thread(store: Store, thread_id: UUID) -> ThreadView:
     return view
 
 
-@threads.patch("/{thread_id}")
+@threads.patch("/{thread_id:uuid}")
 async def rename_thread(store: Store, thread_id: UUID, body: ThreadRename) -> ThreadView:
     return await store.rename(thread_id, body.name)
 
 
-@threads.post("/{thread_id}/archive", status_code=status.HTTP_204_NO_CONTENT)
+@threads.post("/{thread_id:uuid}/archive", status_code=status.HTTP_204_NO_CONTENT)
 async def archive_thread(store: Store, bridge: runner_bridge.Bridge, inventory: Inventory, thread_id: UUID) -> None:
     thread = await store.get_thread(thread_id)
     if thread is None:
@@ -719,7 +722,7 @@ async def archive_thread(store: Store, bridge: runner_bridge.Bridge, inventory: 
     await store.archive(thread_id)
 
 
-@threads.post("/{thread_id}/unarchive", status_code=status.HTTP_204_NO_CONTENT)
+@threads.post("/{thread_id:uuid}/unarchive", status_code=status.HTTP_204_NO_CONTENT)
 async def unarchive_thread(store: Store, thread_id: UUID) -> None:
     await store.unarchive(thread_id)
 
@@ -783,7 +786,7 @@ async def _submission_target(
     return thread
 
 
-@threads.post("/{thread_id}/submit-input", response_model=CommandSubmissionResponse)
+@threads.post("/{thread_id:uuid}/submit-input", response_model=CommandSubmissionResponse)
 async def submit_input(
     store: Store, content: Content, bridge: runner_bridge.Bridge, thread_id: UUID, body: SubmitInputBody
 ) -> DispatchedCommand | ArchivedCommandAdmission:
@@ -812,7 +815,7 @@ async def submit_input(
     return DispatchedCommand(dispatch=MessageToDict(response.dispatch))
 
 
-@threads.post("/{thread_id}/change-model", response_model=CommandSubmissionResponse)
+@threads.post("/{thread_id:uuid}/change-model", response_model=CommandSubmissionResponse)
 async def change_model(
     store: Store,
     content: Content,
@@ -850,7 +853,7 @@ async def change_model(
     return DispatchedCommand(dispatch=MessageToDict(response.dispatch))
 
 
-@threads.post("/{thread_id}/change-reasoning-effort", response_model=CommandSubmissionResponse)
+@threads.post("/{thread_id:uuid}/change-reasoning-effort", response_model=CommandSubmissionResponse)
 async def change_reasoning_effort(
     store: Store, content: Content, bridge: runner_bridge.Bridge, thread_id: UUID, body: ChangeReasoningEffortBody
 ) -> DispatchedCommand | ArchivedCommandAdmission:
@@ -881,7 +884,7 @@ async def change_reasoning_effort(
     return DispatchedCommand(dispatch=MessageToDict(response.dispatch))
 
 
-@threads.post("/{thread_id}/interrupt-turn", response_model=InterruptSubmissionResponse)
+@threads.post("/{thread_id:uuid}/interrupt-turn", response_model=InterruptSubmissionResponse)
 async def interrupt_turn(
     store: Store, content: Content, bridge: runner_bridge.Bridge, thread_id: UUID, body: InterruptTurnBody
 ) -> InterruptResultSubmission | ArchivedCommandAdmission:
@@ -929,7 +932,7 @@ DecimalCursor = Annotated[str, Query(pattern=_DECIMAL), AfterValidator(_within_i
 DecimalCursorPath = Annotated[str, Path(pattern=_DECIMAL), AfterValidator(_within_int64)]
 
 
-@threads.get("/{thread_id}/evidence")
+@threads.get("/{thread_id:uuid}/evidence")
 async def thread_evidence(
     thread_id: UUID,
     content: Content,
@@ -949,7 +952,7 @@ async def thread_evidence(
     )
 
 
-@threads.get("/{thread_id}/evidence/{observation_cursor}/frames")
+@threads.get("/{thread_id:uuid}/evidence/{observation_cursor}/frames")
 async def thread_native_frames(
     thread_id: UUID,
     observation_cursor: DecimalCursorPath,
@@ -971,7 +974,7 @@ async def thread_native_frames(
     )
 
 
-@threads.get("/{thread_id}/observations/{cursor}")
+@threads.get("/{thread_id:uuid}/observations/{cursor}")
 async def thread_observation_entry(thread_id: UUID, cursor: int, event_logs: EventLogs) -> ArchivedObservationEntry:
     """The raw entry behind one listed observation, read only when a reader expands it."""
     entry = await event_logs.observation_entry(thread_id, cursor)
@@ -980,7 +983,7 @@ async def thread_observation_entry(thread_id: UUID, cursor: int, event_logs: Eve
     return entry
 
 
-@threads.get("/{thread_id}/observations")
+@threads.get("/{thread_id:uuid}/observations")
 async def thread_observations(
     thread_id: UUID,
     store: Store,
@@ -1004,7 +1007,7 @@ async def thread_observations(
     )
 
 
-@threads.get("/{thread_id}/events/stream")
+@threads.get("/{thread_id:uuid}/events/stream")
 async def thread_event_stream(
     store: Store,
     event_logs: EventLogs,

@@ -978,6 +978,20 @@ async def test_thread_sync_routes_authenticate_before_dispatch(client: httpx.Asy
     assert (await client.get(path, headers={"Authorization": ""})).status_code == 401
 
 
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/threads/form",
+        "/threads/form/observations",
+        "/threads/form/sync/scope",
+        "/sandboxes/live/sessions/form/opening",
+    ],
+)
+async def test_a_non_uuid_id_segment_matches_no_route(client: httpx.AsyncClient, path: str) -> None:
+    """A removed literal route an old browser tab still calls is not found, not a malformed ID."""
+    assert (await client.get(path)).status_code == 404
+
+
 @pytest.mark.usefixtures("operator_login")
 async def test_binding_revocation(client: httpx.AsyncClient, namespace: SandboxNamespace) -> None:
     """A runtime binding is revoked by deleting it; one the manifest declares would be re-applied, and

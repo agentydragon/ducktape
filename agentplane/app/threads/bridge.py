@@ -152,6 +152,6 @@ async def create_session(request: Request, bridge: Bridge, name: str, body: NewS
         return MessageToDict(opening)
 
 
-@router.get("/{session_id}/opening")
+@router.get("/{session_id:uuid}/opening")
 async def session_opening(bridge: Bridge, name: str, session_id: UUID) -> dict[str, object]:
     return MessageToDict(await bridge.session_opening(name, session_id))

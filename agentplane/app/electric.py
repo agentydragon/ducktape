@@ -302,7 +302,7 @@ class ElectricProxy:
         return ElectricStreamingResponse(response, headers)
 
 
-router = APIRouter(prefix="/threads/{thread_id}/sync", tags=["thread-sync"])
+router = APIRouter(prefix="/threads/{thread_id:uuid}/sync", tags=["thread-sync"])
 
 
 def electric_proxy(request: Request) -> ElectricProxy:
