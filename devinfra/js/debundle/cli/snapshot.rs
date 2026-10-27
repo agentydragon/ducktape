@@ -196,6 +196,10 @@ fn create(args: CreateArgs, current: CurrentRoots) -> Result<SnapshotOutcome> {
     let browser_inputs = if let Some(browser) = &spec.emit_browser_harness {
         let placed = &selector_source_root;
         let source = actual_input(placed, provenance, &current)?;
+        ensure!(
+            !staging.path().starts_with(fs::canonicalize(&source)?),
+            "snapshot destination must be outside the browser source tree"
+        );
         let mut extra = BTreeMap::new();
         for relative in source_files(&source)? {
             copy_supplemental(
@@ -480,7 +484,11 @@ fn verify(directory: &Path) -> Result<SnapshotOutcome> {
         &manifest.run.modules,
         &manifest.run.vendor_marks,
         &manifest.selector_source_root,
-    ] {
+    ]
+    .into_iter()
+    .chain(manifest.run.package_roots.values())
+    .chain(manifest.run.packages_root.iter())
+    {
         contained(&directory, path)?;
     }
     provenance.verify(&current)?;

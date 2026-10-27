@@ -223,6 +223,7 @@ fn browser_snapshot_replay_keeps_html_assets_and_summary_after_original_removal(
         "body { color: navy; }\n",
     )
     .unwrap();
+    fs::remove_dir_all(&fixture.out_root).unwrap();
     let original = Command::new(debundler_path())
         .args(["run", "--tree-config"])
         .arg(config)
@@ -244,6 +245,16 @@ fn browser_snapshot_replay_keeps_html_assets_and_summary_after_original_removal(
 
     let workers = TempDir::new().unwrap();
     let destination = workers.path().join("browser worker");
+    let nested_destination = fixture.root().join("snapshot/worker");
+    let nested = Command::new(debundler_path())
+        .args(["snapshot", "create", "--graph"])
+        .arg(fixture.report_root.join("main/dependency_graph.json"))
+        .arg("--destination")
+        .arg(&nested_destination)
+        .output()
+        .unwrap();
+    assert!(!nested.status.success());
+    assert!(!nested_destination.exists());
     let report = create(
         &fixture.report_root.join("main/dependency_graph.json"),
         &destination,
