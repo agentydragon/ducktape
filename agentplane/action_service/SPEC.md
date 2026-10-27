@@ -210,13 +210,13 @@ recovers it. Claimed work is never automatically replayed.
 ## Orchestration Actions (v1)
 
 A stopgap that lets agents start and drive other agents now; it is not the intended long-term
-design. An `orchestration_v1` group launches Session Sandboxes and opens and drives their Sessions
-with this service's own authority, on each request's Decision, and the Session Dispatcher trusts it
-as a caller. A launch writes the grants it names for its caller, the request's authenticated
+design. An `orchestration_v1` group launches Session Sandboxes and opens, drives and reads their
+Sessions with this service's own authority, on each request's Decision, and the Session Dispatcher
+and the History Service trust it as a caller. A launch writes the grants it names for its caller, the request's authenticated
 subject and never an argument: the Notification Service's `send_message` on the new Sandbox's
 inboxes, and an `argument_schema` auto-approval of this group's Actions on it. Both are pinned to
-the Sandbox's UID and deleted with it. Every Action on a Sandbox names its UID and is refused for
-any other incarnation. A repeated launch by the same caller with the same arguments adopts its
+the Sandbox's UID and deleted with it. Every Action on a Sandbox names its UID, is refused for any
+other incarnation and reads only that incarnation's Sessions. A repeated launch by the same caller with the same arguments adopts its
 Sandbox; any other launch of a taken name is refused, and a launch may not bind a PolicySet a
 Sandbox owns.
 

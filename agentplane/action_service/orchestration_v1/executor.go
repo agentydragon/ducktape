@@ -9,13 +9,14 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
+	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // Executor runs one orchestration_v1 group's Actions in this process. It acts with this service's own authority over
-// Sandboxes, PolicySets and the Session Dispatcher, which a request reaches only once it is decided: the Decision, the
+// Sandboxes, PolicySets, the Session Dispatcher and the History Service, which a request reaches only once it is decided: the Decision, the
 // operator's or a rule's, is what authorizes it. Launcher grants are bound to ExecutionRequest.Caller, which the
 // authenticated admission path sets and no argument can reach.
 type Executor struct {
@@ -25,12 +26,16 @@ type Executor struct {
 	presets    map[string]Preset
 	kube       client.Client
 	dispatcher dispatcherpb.SessionDispatcherClient
+	history    historypb.HistoryServiceClient
 	arguments  map[string]*jsonschema.Schema
 }
 
 // NewExecutor is the Executor of the group under key. kube reaches binding.Namespace with a scheme that holds Sandboxes,
 // PolicySets and PolicyBindings.
-func NewExecutor(group string, binding catalog.OrchestrationBinding, kube client.Client, dispatcher dispatcherpb.SessionDispatcherClient) (*Executor, error) {
+func NewExecutor(
+	group string, binding catalog.OrchestrationBinding, kube client.Client, dispatcher dispatcherpb.SessionDispatcherClient,
+	history historypb.HistoryServiceClient,
+) (*Executor, error) {
 	presets, err := parsePresets(binding.Presets)
 	if err != nil {
 		return nil, err
@@ -44,7 +49,8 @@ func NewExecutor(group string, binding catalog.OrchestrationBinding, kube client
 		arguments[action] = compiled
 	}
 	return &Executor{
-		group: group, binding: binding, presets: presets, kube: kube, dispatcher: dispatcher, arguments: arguments,
+		group: group, binding: binding, presets: presets, kube: kube, dispatcher: dispatcher, history: history,
+		arguments: arguments,
 	}, nil
 }
 
@@ -57,8 +63,8 @@ func refuse(kind, format string, args ...any) error {
 	return &refusal{kind: kind, message: fmt.Sprintf(format, args...)}
 }
 
-// Execute makes one attempt at request, holding the lease for as long as the attempt takes: a few API server and
-// Session Dispatcher calls, each bounded by its client.
+// Execute makes one attempt at request, holding the lease for as long as the attempt takes: a few API server, Session
+// Dispatcher and History Service calls, each bounded by its client.
 func (e *Executor) Execute(ctx context.Context, request store.ExecutionRequest, lease *worker.Lease) (store.ExecutionOutcome, error) {
 	return worker.Hold(ctx, lease, func(ctx context.Context) (store.ExecutionOutcome, error) {
 		return e.attempt(ctx, request)
@@ -105,6 +111,18 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest)
 			return store.ExecutionOutcome{}, err
 		}
 		return worker.Succeeded(e.command(ctx, action, args))
+	case actionGetSession:
+		var args getSessionArgs
+		if err := e.decode(action, request.Arguments, &args); err != nil {
+			return store.ExecutionOutcome{}, err
+		}
+		return worker.Succeeded(e.getSession(ctx, args))
+	case actionListSessions:
+		var args listSessionsArgs
+		if err := e.decode(action, request.Arguments, &args); err != nil {
+			return store.ExecutionOutcome{}, err
+		}
+		return worker.Succeeded(e.listSessions(ctx, args))
 	default:
 		// The catalog admitted it, so this is a roster that grew without a branch here.
 		return worker.Failed("unknown_action", fmt.Sprintf("this executor has no %q", action)), nil

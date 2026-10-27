@@ -49,7 +49,7 @@ type commandArgs struct {
 // openSession queues the Session's opening with the Session Dispatcher and answers with it. The app opens Sessions the
 // same way, and as it does, `{session_id}` in the working directory becomes the Session's ID.
 func (e *Executor) openSession(ctx context.Context, args openSessionArgs) (json.RawMessage, error) {
-	if err := e.requireSandbox(ctx, args.Sandbox); err != nil {
+	if _, err := e.requireSandbox(ctx, args.Sandbox); err != nil {
 		return nil, err
 	}
 	response, err := e.dispatcher.OpenSession(ctx, &dispatcherpb.OpenSessionRequest{
@@ -68,7 +68,7 @@ func (e *Executor) openSession(ctx context.Context, args openSessionArgs) (json.
 
 // command sends the Session command action names and answers with its Dispatch, or the interrupt's outcome.
 func (e *Executor) command(ctx context.Context, action string, args commandArgs) (json.RawMessage, error) {
-	if err := e.requireSandbox(ctx, args.Sandbox); err != nil {
+	if _, err := e.requireSandbox(ctx, args.Sandbox); err != nil {
 		return nil, err
 	}
 	command, session, sandbox, uid := args.CommandID, args.SessionID, args.Sandbox.Name, string(args.Sandbox.UID)
@@ -106,21 +106,21 @@ func (e *Executor) command(ctx context.Context, action string, args commandArgs)
 	return protoResult(answer)
 }
 
-// requireSandbox refuses a command for a Sandbox that is gone or is another incarnation than the one named. A grant
-// is pinned to one incarnation, and OpenSession takes the Sandbox by name alone, so this is what keeps it from reaching
+// requireSandbox reads the named incarnation, refusing a Sandbox that is gone or is another incarnation. A grant is
+// pinned to one incarnation, and OpenSession takes the Sandbox by name alone, so this is what keeps a call from reaching
 // a same-name replacement.
-func (e *Executor) requireSandbox(ctx context.Context, ref SandboxRef) error {
+func (e *Executor) requireSandbox(ctx context.Context, ref SandboxRef) (*sandboxapi.Sandbox, error) {
 	var sandbox sandboxapi.Sandbox
 	err := e.kube.Get(ctx, client.ObjectKey{Namespace: e.binding.Namespace, Name: ref.Name}, &sandbox)
 	switch {
 	case apierrors.IsNotFound(err):
-		return refuse("sandbox_not_found", "no Sandbox named %q exists", ref.Name)
+		return nil, refuse("sandbox_not_found", "no Sandbox named %q exists", ref.Name)
 	case err != nil:
-		return kubeError("reading the Sandbox", err)
+		return nil, kubeError("reading the Sandbox", err)
 	case sandbox.UID != ref.UID:
-		return refuse("sandbox_replaced", "Sandbox %q is no longer the incarnation %s", ref.Name, ref.UID)
+		return nil, refuse("sandbox_replaced", "Sandbox %q is no longer the incarnation %s", ref.Name, ref.UID)
 	}
-	return nil
+	return &sandbox, nil
 }
 
 // dispatcherError is err from the Session Dispatcher as the attempt's outcome. A call the Dispatcher refused, or one

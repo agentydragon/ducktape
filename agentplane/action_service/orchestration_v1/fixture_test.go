@@ -12,13 +12,16 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
+	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/proto"
 	corev1 "k8s.io/api/core/v1"
@@ -62,11 +65,12 @@ func TestMain(m *testing.M) {
 }
 
 // fixture is a namespace holding the default and an extra PolicySet, an Executor launching there, and the Session
-// Dispatcher it calls.
+// Dispatcher and History Service it calls.
 type fixture struct {
 	namespace  string
 	caller     store.ServiceAccount
 	dispatcher *recordingDispatcher
+	history    *fakeHistory
 	executor   *Executor
 }
 
@@ -88,18 +92,39 @@ func newFixture(t *testing.T) fixture {
 			t.Fatal(err)
 		}
 	}
-	dispatcher := &recordingDispatcher{}
+	dispatcher := &recordingDispatcher{openings: map[string]*dispatcherpb.SessionOpening{}}
+	history := &fakeHistory{summaries: map[string]*historypb.SessionSummary{}}
 	executor, err := NewExecutor(testGroup, catalog.OrchestrationBinding{
 		Description: "test orchestration", Namespace: namespace, DefaultPolicySets: []string{testDefaultPolicy},
 		Presets: json.RawMessage(testPresets),
-	}, kube, dispatcher.client(t))
+	}, kube,
+		dispatcherpb.NewSessionDispatcherClient(serve(t, func(s *grpc.Server) { dispatcherpb.RegisterSessionDispatcherServer(s, dispatcher) })),
+		historypb.NewHistoryServiceClient(serve(t, func(s *grpc.Server) { historypb.RegisterHistoryServiceServer(s, history) })))
 	if err != nil {
 		t.Fatal(err)
 	}
 	return fixture{
 		namespace: namespace, caller: store.ServiceAccount{Namespace: namespace, Name: "test-caller"},
-		dispatcher: dispatcher, executor: executor,
+		dispatcher: dispatcher, history: history, executor: executor,
 	}
+}
+
+// serve serves what register registers in memory until the test ends, and is a connection to it.
+func serve(t *testing.T, register func(*grpc.Server)) *grpc.ClientConn {
+	t.Helper()
+	listener := bufconn.Listen(1 << 20)
+	grpcServer := grpc.NewServer()
+	register(grpcServer)
+	go grpcServer.Serve(listener)
+	t.Cleanup(grpcServer.Stop)
+	connection, err := grpc.NewClient("passthrough:///test-peer",
+		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) { return listener.DialContext(ctx) }),
+		grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { connection.Close() })
+	return connection
 }
 
 // attempted is how one attempt ended.
@@ -158,31 +183,15 @@ func (a attempted) failure() string {
 	return failure.Kind
 }
 
-// recordingDispatcher is a Session Dispatcher that records each request and answers with a Dispatch of it, or with
-// refusal while that is set.
+// recordingDispatcher is a Session Dispatcher that records each command and answers with a Dispatch of it, or with
+// refusal while that is set. Its reads answer from the openings and Dispatches a test has it hold.
 type recordingDispatcher struct {
 	dispatcherpb.UnimplementedSessionDispatcherServer
-	mu       sync.Mutex
-	requests []proto.Message
-	refusal  error
-}
-
-// client serves the Dispatcher in memory until the test ends and is a client of it.
-func (d *recordingDispatcher) client(t *testing.T) dispatcherpb.SessionDispatcherClient {
-	t.Helper()
-	listener := bufconn.Listen(1 << 20)
-	grpcServer := grpc.NewServer()
-	dispatcherpb.RegisterSessionDispatcherServer(grpcServer, d)
-	go grpcServer.Serve(listener)
-	t.Cleanup(grpcServer.Stop)
-	connection, err := grpc.NewClient("passthrough:///test-dispatcher",
-		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) { return listener.DialContext(ctx) }),
-		grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { connection.Close() })
-	return dispatcherpb.NewSessionDispatcherClient(connection)
+	mu         sync.Mutex
+	requests   []proto.Message
+	refusal    error
+	openings   map[string]*dispatcherpb.SessionOpening
+	dispatches []*dispatcherpb.Dispatch
 }
 
 func (d *recordingDispatcher) record(request proto.Message) error {
@@ -225,9 +234,112 @@ func (d *recordingDispatcher) SubmitInput(_ context.Context, request *dispatcher
 	}}, nil
 }
 
+// hold has the Dispatcher hold opening, and dispatches after those it holds.
+func (d *recordingDispatcher) hold(opening *dispatcherpb.SessionOpening, dispatches ...*dispatcherpb.Dispatch) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if opening != nil {
+		d.openings[opening.GetSessionId()] = opening
+	}
+	d.dispatches = append(d.dispatches, dispatches...)
+}
+
+func (d *recordingDispatcher) GetSessionOpening(_ context.Context, request *dispatcherpb.GetSessionOpeningRequest) (*dispatcherpb.GetSessionOpeningResponse, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	opening, held := d.openings[request.GetSessionId()]
+	if !held {
+		return nil, status.Error(codes.NotFound, "dispatch not found")
+	}
+	return &dispatcherpb.GetSessionOpeningResponse{Opening: opening}, nil
+}
+
+// ListDispatches answers a Session's Dispatches, oldest first.
+func (d *recordingDispatcher) ListDispatches(_ context.Context, request *dispatcherpb.ListDispatchesRequest) (*dispatcherpb.ListDispatchesResponse, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	response := &dispatcherpb.ListDispatchesResponse{}
+	for _, dispatch := range d.dispatches {
+		if dispatch.GetSessionId() == request.GetFilter().GetSessionId() {
+			response.Dispatches = append(response.Dispatches, dispatch)
+		}
+	}
+	return response, nil
+}
+
 func (d *recordingDispatcher) InterruptTurn(_ context.Context, request *dispatcherpb.InterruptTurnRequest) (*dispatcherpb.InterruptTurnResponse, error) {
 	if err := d.record(request); err != nil {
 		return nil, err
 	}
 	return &dispatcherpb.InterruptTurnResponse{State: dispatcherpb.DeliveryState_DELIVERY_STATE_NO_OP}, nil
+}
+
+// fakeHistory is a History Service holding the summaries a test gives it, or refusing every read while refusal is set.
+type fakeHistory struct {
+	historypb.UnimplementedHistoryServiceServer
+	mu        sync.Mutex
+	summaries map[string]*historypb.SessionSummary
+	refusal   error
+}
+
+func (h *fakeHistory) hold(summaries ...*historypb.SessionSummary) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for _, summary := range summaries {
+		h.summaries[summary.GetSessionId()] = summary
+	}
+}
+
+func (h *fakeHistory) refuse(err error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.refusal = err
+}
+
+func (h *fakeHistory) GetSessionSummary(_ context.Context, request *historypb.GetSessionSummaryRequest) (*historypb.SessionSummary, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.refusal != nil {
+		return nil, h.refusal
+	}
+	summary, held := h.summaries[request.GetSessionId()]
+	if !held {
+		return nil, status.Error(codes.NotFound, "session history not found")
+	}
+	return summary, nil
+}
+
+// BatchGetSessionSummaries refuses more than 200 Sessions, as the History Service does.
+func (h *fakeHistory) BatchGetSessionSummaries(_ context.Context, request *historypb.BatchGetSessionSummariesRequest) (*historypb.BatchGetSessionSummariesResponse, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.refusal != nil {
+		return nil, h.refusal
+	}
+	if len(request.GetSessionIds()) > 200 {
+		return nil, status.Error(codes.InvalidArgument, "too many Sessions in one summary read")
+	}
+	response := &historypb.BatchGetSessionSummariesResponse{}
+	for _, id := range request.GetSessionIds() {
+		if summary, held := h.summaries[id]; held {
+			response.Summaries = append(response.Summaries, summary)
+		}
+	}
+	return response, nil
+}
+
+// FindSessions finds by Sandbox UID only, the one match the executor uses.
+func (h *fakeHistory) FindSessions(_ context.Context, request *historypb.FindSessionsRequest) (*historypb.FindSessionsResponse, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.refusal != nil {
+		return nil, h.refusal
+	}
+	response := &historypb.FindSessionsResponse{}
+	for id, summary := range h.summaries {
+		if summary.GetSandbox().GetUid() == request.GetSandboxUid() {
+			response.Sessions = append(response.Sessions, &historypb.SessionSandbox{SessionId: id, Sandbox: summary.GetSandbox()})
+		}
+	}
+	return response, nil
 }

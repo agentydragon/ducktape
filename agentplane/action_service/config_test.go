@@ -348,7 +348,7 @@ func TestTheDeployedReaderAccountsJSONEnvironmentIsRead(t *testing.T) {
 	}
 }
 
-func TestTheSessionDispatcherIsSetExactlyWhenAnOrchestrationGroupCallsIt(t *testing.T) {
+func TestTheOrchestrationPeersAreSetExactlyWhenAnOrchestrationGroupCallsThem(t *testing.T) {
 	const orchestration = `action_groups:
   test-orchestration:
     title: Test orchestration
@@ -357,21 +357,30 @@ func TestTheSessionDispatcherIsSetExactlyWhenAnOrchestrationGroupCallsIt(t *test
 `
 	const dispatcher = `session_dispatcher:
   target: test-dispatcher:8080
-  token_file: /test/token
+  token_file: /test/dispatcher-token
   request_timeout_s: 15
 `
-	c, err := loadTestConfig(t, requiredFile+orchestration+dispatcher)
+	const history = `history_service:
+  target: test-history:8080
+  token_file: /test/history-token
+  request_timeout_s: 10
+`
+	c, err := loadTestConfig(t, requiredFile+orchestration+dispatcher+history)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := (peer{Target: "test-dispatcher:8080", TokenFile: "/test/token", RequestTimeoutSeconds: 15}); c.SessionDispatcher == nil || *c.SessionDispatcher != want {
+	if want := (peer{Target: "test-dispatcher:8080", TokenFile: "/test/dispatcher-token", RequestTimeoutSeconds: 15}); c.SessionDispatcher == nil || *c.SessionDispatcher != want {
 		t.Errorf("session_dispatcher = %+v, want %+v", c.SessionDispatcher, want)
 	}
+	if want := (peer{Target: "test-history:8080", TokenFile: "/test/history-token", RequestTimeoutSeconds: 10}); c.HistoryService == nil || *c.HistoryService != want {
+		t.Errorf("history_service = %+v, want %+v", c.HistoryService, want)
+	}
 	for name, file := range map[string]string{
-		"an orchestration group without it":      orchestration,
-		"it without an orchestration group":      dispatcher,
-		"it without a timeout":                   orchestration + strings.Replace(dispatcher, "  request_timeout_s: 15\n", "", 1),
-		"a group launching in another namespace": strings.Replace(orchestration, "namespace: test-agentplane", "namespace: test-other", 1) + dispatcher,
+		"an orchestration group without the Dispatcher": orchestration + history,
+		"an orchestration group without History":        orchestration + dispatcher,
+		"the peers without an orchestration group":      dispatcher + history,
+		"a peer without a timeout":                      orchestration + dispatcher + strings.Replace(history, "  request_timeout_s: 10\n", "", 1),
+		"a group launching in another namespace":        strings.Replace(orchestration, "namespace: test-agentplane", "namespace: test-other", 1) + dispatcher + history,
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := loadTestConfig(t, requiredFile+file); err == nil {

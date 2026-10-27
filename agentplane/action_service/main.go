@@ -42,6 +42,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
+	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/connections"
 	"github.com/agentydragon/ducktape/agentplane/observability"
@@ -219,8 +220,11 @@ func offer(key string, group *catalog.Group, actions map[string]catalog.ActionDe
 }
 
 // orchestrationExecutors builds the Executor of each orchestration_v1 group, and gives the group the Actions it
-// offers. They reach the API server through kube and the Session Dispatcher through dispatcher.
-func orchestrationExecutors(groups *catalog.Catalog, kube *rest.Config, dispatcher dispatcherpb.SessionDispatcherClient) (map[string]worker.Executor, error) {
+// offers. They reach the API server through kube, and call the Session Dispatcher and the History Service.
+func orchestrationExecutors(
+	groups *catalog.Catalog, kube *rest.Config, dispatcher dispatcherpb.SessionDispatcherClient,
+	history historypb.HistoryServiceClient,
+) (map[string]worker.Executor, error) {
 	scheme := runtime.NewScheme()
 	for _, add := range []func(*runtime.Scheme) error{sandboxapi.AddToScheme, policyapi.AddToScheme} {
 		if err := add(scheme); err != nil {
@@ -240,11 +244,16 @@ func orchestrationExecutors(groups *catalog.Catalog, kube *rest.Config, dispatch
 		if err := offer(key, group, orchestrationv1.Actions()); err != nil {
 			return nil, err
 		}
-		if byGroup[key], err = orchestrationv1.NewExecutor(key, binding, kubeClient, dispatcher); err != nil {
+		if byGroup[key], err = orchestrationv1.NewExecutor(key, binding, kubeClient, dispatcher, history); err != nil {
 			return nil, fmt.Errorf("ActionGroup %s: %w", key, err)
 		}
 	}
 	return byGroup, nil
+}
+
+// dial connects to p as this service's workload.
+func dial(p peer) (*grpc.ClientConn, error) {
+	return bearer.Dial(p.Target, p.TokenFile, time.Duration(p.RequestTimeoutSeconds*float64(time.Second)))
 }
 
 // mcpExecutors builds the Executor of each MCP group, which withdraws the group's Actions until its server lists them:
@@ -355,15 +364,20 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 	if err != nil {
 		return err
 	}
-	// Set exactly when an orchestration_v1 group is configured.
-	if dispatcher := c.SessionDispatcher; dispatcher != nil {
-		timeout := time.Duration(dispatcher.RequestTimeoutSeconds * float64(time.Second))
-		connection, err := bearer.Dial(dispatcher.Target, dispatcher.TokenFile, timeout)
+	// Both are set exactly when an orchestration_v1 group is configured.
+	if c.SessionDispatcher != nil {
+		dispatcher, err := dial(*c.SessionDispatcher)
 		if err != nil {
 			return err
 		}
-		defer connection.Close()
-		orchestrators, err := orchestrationExecutors(c.ActionGroups, d.Kube, dispatcherpb.NewSessionDispatcherClient(connection))
+		defer dispatcher.Close()
+		history, err := dial(*c.HistoryService)
+		if err != nil {
+			return err
+		}
+		defer history.Close()
+		orchestrators, err := orchestrationExecutors(c.ActionGroups, d.Kube,
+			dispatcherpb.NewSessionDispatcherClient(dispatcher), historypb.NewHistoryServiceClient(history))
 		if err != nil {
 			return err
 		}

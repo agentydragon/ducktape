@@ -70,8 +70,10 @@ type config struct {
 	IntegratedConnectionService bool    `mapstructure:"integrated_connection_service"`
 	MaxWaitSeconds              float64 `mapstructure:"max_wait_seconds"`
 	DirectWaitSeconds           float64 `mapstructure:"direct_wait_seconds"`
-	// SessionDispatcher is where the orchestration_v1 groups send Session commands; set exactly when one is configured.
+	// SessionDispatcher is where the orchestration_v1 groups send Session commands, and HistoryService where they read
+	// Sessions; both are set exactly when one is configured.
 	SessionDispatcher *peer `mapstructure:"session_dispatcher"`
+	HistoryService    *peer `mapstructure:"history_service"`
 }
 
 // peer is a gRPC service this one calls as its workload, with its projected token for the peer's audience.
@@ -262,8 +264,8 @@ func (c *config) validate() error {
 	return nil
 }
 
-// validateOrchestration requires the Session Dispatcher exactly when an orchestration_v1 group calls it, and each such
-// group to launch where the policy index reads its launcher grants.
+// validateOrchestration requires the Session Dispatcher and the History Service exactly when an orchestration_v1 group
+// calls them, and each such group to launch where the policy index reads its launcher grants.
 func (c *config) validateOrchestration() error {
 	var orchestration bool
 	for key, group := range c.ActionGroups.Groups() {
@@ -274,13 +276,18 @@ func (c *config) validateOrchestration() error {
 			}
 		}
 	}
-	switch d := c.SessionDispatcher; {
-	case orchestration && d == nil:
-		return errors.New("session_dispatcher is required by the orchestration_v1 groups")
-	case !orchestration && d != nil:
-		return errors.New("session_dispatcher is set, but no orchestration_v1 group calls it")
-	case d != nil && (d.Target == "" || d.TokenFile == "" || !(d.RequestTimeoutSeconds > 0) || math.IsInf(d.RequestTimeoutSeconds, 0)):
-		return errors.New("session_dispatcher requires target, token_file and a finite positive request_timeout_s")
+	for _, called := range []struct {
+		key  string
+		peer *peer
+	}{{"session_dispatcher", c.SessionDispatcher}, {"history_service", c.HistoryService}} {
+		switch p := called.peer; {
+		case orchestration && p == nil:
+			return fmt.Errorf("%s is required by the orchestration_v1 groups", called.key)
+		case !orchestration && p != nil:
+			return fmt.Errorf("%s is set, but no orchestration_v1 group calls it", called.key)
+		case p != nil && (p.Target == "" || p.TokenFile == "" || !(p.RequestTimeoutSeconds > 0) || math.IsInf(p.RequestTimeoutSeconds, 0)):
+			return fmt.Errorf("%s requires target, token_file and a finite positive request_timeout_s", called.key)
+		}
 	}
 	return nil
 }

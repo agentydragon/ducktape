@@ -20,6 +20,8 @@ const (
 	actionInterruptTurn         = "interrupt_turn"
 	actionChangeModel           = "change_model"
 	actionChangeReasoningEffort = "change_reasoning_effort"
+	actionGetSession            = "get_session"
+	actionListSessions          = "list_sessions"
 )
 
 // grantSendMessage is the launcher grant of the Notification Service's send_message on the launched Sandbox's Session
@@ -30,6 +32,7 @@ const grantSendMessage = "send_message"
 // `sandbox`.
 var sandboxActions = []string{
 	actionOpenSession, actionSubmitInput, actionInterruptTurn, actionChangeModel, actionChangeReasoningEffort,
+	actionGetSession, actionListSessions,
 }
 
 // inputSchemas are the JSON Schemas of the Actions' arguments, by the name of the model they describe.
@@ -46,6 +49,8 @@ var argumentModels = map[string]string{
 	actionInterruptTurn:         "InterruptTurnArgs",
 	actionChangeModel:           "ChangeModelArgs",
 	actionChangeReasoningEffort: "ChangeReasoningEffortArgs",
+	actionGetSession:            "GetSessionArgs",
+	actionListSessions:          "ListSessionsArgs",
 }
 
 // schemas reads inputSchemas.
@@ -63,9 +68,9 @@ func schemas() map[string]map[string]any {
 
 // Actions is what an orchestration_v1 group offers, declared here rather than discovered from a backend.
 func Actions() map[string]catalog.ActionDefinition {
-	commandNote := fmt.Sprintf("Answers with the command's Dispatch once the Session Dispatcher has queued it, not once "+
-		"it ran; a suspended Sandbox with wake_on_send resumes for it. The Sandbox is the one %s returned, by name and "+
-		"UID.", actionLaunchSandbox)
+	sandboxNote := fmt.Sprintf("The Sandbox is the one %s returned, by name and UID.", actionLaunchSandbox)
+	commandNote := "Answers with the command's Dispatch once the Session Dispatcher has queued it, not once it ran; a " +
+		"suspended Sandbox with wake_on_send resumes for it. " + sandboxNote
 	definitions := map[string]catalog.ActionDefinition{
 		actionListLaunchPresets: {
 			Description: fmt.Sprintf("The reviewed launch presets, each as the %s and %s fields it stands for. Copy them "+
@@ -96,9 +101,8 @@ func Actions() map[string]catalog.ActionDefinition {
 			Annotations: &catalog.ToolAnnotations{ReadOnlyHint: new(false), DestructiveHint: new(false), IdempotentHint: new(true)},
 		},
 		actionInterruptTurn: {
-			Description: fmt.Sprintf("Interrupt a Session's running turn. Delivered at once rather than queued, so it "+
-				"reaches only a Ready Sandbox; answers with whether the runner admitted it or found nothing to do. The "+
-				"Sandbox is the one %s returned, by name and UID.", actionLaunchSandbox),
+			Description: "Interrupt a Session's running turn. Delivered at once rather than queued, so it reaches only a " +
+				"Ready Sandbox; answers with whether the runner admitted it or found nothing to do. " + sandboxNote,
 			Title:       new("Interrupt Session turn"),
 			Annotations: &catalog.ToolAnnotations{ReadOnlyHint: new(false), DestructiveHint: new(true), IdempotentHint: new(true)},
 		},
@@ -111,6 +115,21 @@ func Actions() map[string]catalog.ActionDefinition {
 			Description: "Change the reasoning effort of a Session's next turns. " + commandNote,
 			Title:       new("Change Session reasoning effort"),
 			Annotations: &catalog.ToolAnnotations{ReadOnlyHint: new(false), DestructiveHint: new(false), IdempotentHint: new(true)},
+		},
+		actionGetSession: {
+			Description: fmt.Sprintf("A Session in a launched Sandbox: whether the Sandbox is Ready; the Session as its "+
+				"history records it, including whether a turn runs (its ID is what %s takes), how the last one ended and "+
+				"since when the harness is idle; its opening; and its %d most recent commands' Dispatches, newest first. "+
+				"%s", actionInterruptTurn, recentDispatches, sandboxNote),
+			Title:       new("Get Session"),
+			Annotations: &catalog.ToolAnnotations{ReadOnlyHint: new(true), OpenWorldHint: new(false)},
+		},
+		actionListSessions: {
+			Description: fmt.Sprintf("Every Session a launched Sandbox has written, newest first, as %s reads each from "+
+				"its history. A Session is listed once its runner has written it; %s shows one still queued. %s",
+				actionGetSession, actionGetSession, sandboxNote),
+			Title:       new("List Sessions"),
+			Annotations: &catalog.ToolAnnotations{ReadOnlyHint: new(true), OpenWorldHint: new(false)},
 		},
 	}
 	inputs := schemas()

@@ -79,6 +79,37 @@
     "title": "ChangeReasoningEffortArgs",
     "type": "object"
   },
+  "GetSessionArgs": {
+    "additionalProperties": false,
+    "properties": {
+      "sandbox": {
+        "additionalProperties": false,
+        "description": "The Sandbox as launch_sandbox returned it: its name and the UID of that incarnation. A Sandbox deleted and launched again under the name is another one, and is refused.",
+        "properties": {
+          "name": {
+            "maxLength": 57,
+            "minLength": 1,
+            "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+            "type": "string"
+          },
+          "uid": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+            "type": "string"
+          }
+        },
+        "required": ["name", "uid"],
+        "type": "object"
+      },
+      "session_id": {
+        "description": "The Session's ID, as open_session was given it.",
+        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+        "type": "string"
+      }
+    },
+    "required": ["sandbox", "session_id"],
+    "title": "GetSessionArgs",
+    "type": "object"
+  },
   "InterruptTurnArgs": {
     "additionalProperties": false,
     "properties": {
@@ -153,7 +184,9 @@
             "submit_input",
             "interrupt_turn",
             "change_model",
-            "change_reasoning_effort"
+            "change_reasoning_effort",
+            "get_session",
+            "list_sessions"
           ],
           "type": "string"
         },
@@ -188,6 +221,32 @@
     },
     "required": ["name", "template"],
     "title": "LaunchArgs",
+    "type": "object"
+  },
+  "ListSessionsArgs": {
+    "additionalProperties": false,
+    "properties": {
+      "sandbox": {
+        "additionalProperties": false,
+        "description": "The Sandbox as launch_sandbox returned it: its name and the UID of that incarnation. A Sandbox deleted and launched again under the name is another one, and is refused.",
+        "properties": {
+          "name": {
+            "maxLength": 57,
+            "minLength": 1,
+            "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+            "type": "string"
+          },
+          "uid": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+            "type": "string"
+          }
+        },
+        "required": ["name", "uid"],
+        "type": "object"
+      }
+    },
+    "required": ["sandbox"],
+    "title": "ListSessionsArgs",
     "type": "object"
   },
   "NoArgs": {

@@ -9,15 +9,15 @@ leaves room for that replacement.
 An Action group that lets a caller launch Session Sandboxes and drive their Sessions: an MCP client
 such as claude.ai through the MCP edge, or an in-cluster agent with `agentplane actions`. Its
 Actions are `list_launch_presets`, `launch_sandbox`, `open_session`, `submit_input`,
-`interrupt_turn`, `change_model` and `change_reasoning_effort`.
+`interrupt_turn`, `change_model`, `change_reasoning_effort`, `get_session` and `list_sessions`.
 
 ## The contract
 
 **The Decision is the authority.** The executor acts with the Action Service's own account: it
-creates Sandboxes, PolicySets and PolicyBindings, and the Session Dispatcher trusts it as a caller,
-as it trusts the app acting for its operator. A request reaches that only once it is decided, by the
-operator or by an `action_auto_approve` rule the operator wrote, so each Action is an act the
-operator delegates. No backend checks the caller itself yet.
+creates Sandboxes, PolicySets and PolicyBindings, and the Session Dispatcher and the History Service
+trust it as a caller, as they trust the app acting for its operator. A request reaches that only
+once it is decided, by the operator or by an `action_auto_approve` rule the operator wrote, so each
+Action is an act the operator delegates. No backend checks the caller itself yet.
 
 **Launcher grants.** A launch names what its caller may then do to the new Sandbox without asking
 again: `send_message` to its Session inboxes, and any of this group's Actions that take the Sandbox.
@@ -27,8 +27,10 @@ by the Sandbox so that deleting it revokes them. The binding's subject is
 it. Approving a launch approves its grants, and a launch that names none gets none.
 
 **One incarnation.** Every Action on a Sandbox names it by name and UID, and a grant matches only
-that UID. The executor rereads the Sandbox before each call and refuses another incarnation, since
-`OpenSession` takes the Sandbox by name alone.
+that UID. Before each command and `get_session`, the executor rereads the Sandbox and refuses
+another incarnation, since `OpenSession` takes the Sandbox by name alone. `get_session` answers only
+for a Session that its opening or its history ties to that UID and neither ties to another;
+`list_sessions` finds Sessions by the UID alone, so it still lists them once the Sandbox is deleted.
 
 **Concrete fields.** A launch names its template, PolicySets, inbox tags and bootstrap, never a
 preset: what the operator approves is what runs. `list_launch_presets` answers with the reviewed
