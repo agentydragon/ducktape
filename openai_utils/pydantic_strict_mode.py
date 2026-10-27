@@ -14,27 +14,7 @@ class OpenAIStrictModeValidationError(ValueError):
 
 
 def validate_model(model_class: type[BaseModel]) -> None:
-    """Validate that a Pydantic model's JSON schema is OpenAI strict mode compatible.
-
-    Convenience function to validate arbitrary Pydantic models without subclassing
-    OpenAIStrictModeBaseModel. Use this for one-off validation or models you don't control.
-
-    Example:
-        from pydantic import BaseModel
-        from openai_utils.pydantic_strict_mode import validate_model
-
-        class MyModel(BaseModel):
-            name: str
-            count: int
-
-        validate_model(MyModel)  # Raises if incompatible
-
-    Args:
-        model_class: Pydantic BaseModel class to validate
-
-    Raises:
-        OpenAIStrictModeValidationError: If schema violates strict mode requirements
-    """
+    """Validate a Pydantic model without subclassing OpenAIStrictModeBaseModel."""
     schema = model_class.model_json_schema()
     validate_openai_strict_mode_schema(schema, model_class.__name__)
 
@@ -96,31 +76,12 @@ class OpenAIStrictModeBaseModel(BaseModel):
 
     @classmethod
     def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
-        """Validate schema when Pydantic finishes initializing the subclass.
-
-        This runs AFTER Pydantic's metaclass setup, so model_json_schema() works correctly.
-
-        Automatically validates that the schema is OpenAI strict mode compatible.
-
-        Raises:
-            OpenAIStrictModeValidationError: If schema violates strict mode requirements
-        """
+        """Validate after Pydantic initializes fields so model_json_schema() is available."""
         super().__pydantic_init_subclass__(**kwargs)
-        # Always validate - this is what this base class is for
         cls.validate_openai_strict_mode()
 
     @classmethod
     def validate_openai_strict_mode(cls) -> None:
-        """Validate that this model's JSON schema is OpenAI strict mode compatible.
-
-        This is called automatically via __pydantic_init_subclass__ when the class is defined.
-        Can also be called explicitly if needed.
-
-        Uses OpenAICompatibleSchema generator to produce the schema that will actually
-        be sent to OpenAI (with all fields in required, anyOf instead of oneOf, etc.).
-
-        Raises:
-            OpenAIStrictModeValidationError: If schema violates strict mode requirements
-        """
+        """Validate the schema generated for OpenAI requests."""
         schema = cls.model_json_schema(schema_generator=OpenAICompatibleSchema)
         validate_openai_strict_mode_schema(schema, cls.__name__)
