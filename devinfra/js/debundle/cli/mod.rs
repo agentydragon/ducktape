@@ -47,6 +47,7 @@ pub(crate) fn verify_graph_compatibility(
     selector_source_root: Option<&std::path::Path>,
     spec_root: Option<&std::path::Path>,
     graph_source_root: Option<&std::path::Path>,
+    graph_package_roots: &std::collections::BTreeMap<String, std::path::PathBuf>,
     tree_config: Option<&std::path::Path>,
 ) -> Result<()> {
     let graph = graph_provenance::read_graph_header(graph_path)?;
@@ -61,7 +62,7 @@ pub(crate) fn verify_graph_compatibility(
     let current = graph_provenance::CurrentRoots {
         spec: spec_root.map(std::path::Path::to_path_buf),
         source: graph_source_root.map(std::path::Path::to_path_buf),
-        packages: Default::default(),
+        packages: graph_package_roots.clone(),
     };
     if let Some(directory) = &provenance.modules_directory {
         let base = current
@@ -208,6 +209,9 @@ pub struct DebundleArgs {
     /// Distinct from the authoring commands' --source-root selector path.
     #[arg(long, global = true, env = "DEBUNDLE_GRAPH_SOURCE_ROOT")]
     graph_source_root: Option<std::path::PathBuf>,
+    /// Relocated package root used by graph compatibility; repeat for each package.
+    #[arg(long = "graph-package-root", global = true, value_name = "NAME=DIR")]
+    graph_package_roots: Vec<String>,
     #[command(subcommand)]
     command: DebundleCommand,
 }
@@ -255,10 +259,25 @@ enum DebundleCommand {
 }
 
 pub fn run_debundle_cli(args: DebundleArgs) -> Result<()> {
+    let graph_package_roots = args
+        .graph_package_roots
+        .iter()
+        .map(|mapping| {
+            let (name, path) = mapping.split_once('=').with_context(|| {
+                format!("--graph-package-root expects NAME=DIR, got {mapping:?}")
+            })?;
+            anyhow::ensure!(
+                !name.is_empty() && !path.is_empty(),
+                "--graph-package-root expects NAME=DIR, got {mapping:?}"
+            );
+            Ok((name.to_string(), std::path::PathBuf::from(path)))
+        })
+        .collect::<Result<std::collections::BTreeMap<_, _>>>()?;
     if let Err(error) = verify_mixed_graph_command(
         &args.command,
         args.spec_root.as_deref(),
         args.graph_source_root.as_deref(),
+        &graph_package_roots,
     ) {
         emit_graph_mismatch_json(&args.command, &error);
         return Err(error);
@@ -356,16 +375,22 @@ fn verify_mixed_graph_command(
     command: &DebundleCommand,
     spec_root: Option<&std::path::Path>,
     graph_source_root: Option<&std::path::Path>,
+    graph_package_roots: &std::collections::BTreeMap<String, std::path::PathBuf>,
 ) -> Result<()> {
     match command {
-        DebundleCommand::Bindings(args) => args.verify_graph(spec_root, graph_source_root),
-        DebundleCommand::Modules(args) => args.verify_graph(spec_root, graph_source_root),
+        DebundleCommand::Bindings(args) => {
+            args.verify_graph(spec_root, graph_source_root, graph_package_roots)
+        }
+        DebundleCommand::Modules(args) => {
+            args.verify_graph(spec_root, graph_source_root, graph_package_roots)
+        }
         DebundleCommand::Coverage(args) => verify_graph_compatibility(
             &args.common.dependency_graph_path,
             &args.common.modules_root,
             args.source_root.as_deref(),
             spec_root,
             graph_source_root,
+            graph_package_roots,
             None,
         ),
         DebundleCommand::GraphSummary(args) if args.include_proposals => {
@@ -375,6 +400,7 @@ fn verify_mixed_graph_command(
                 args.source_root.as_deref(),
                 spec_root,
                 graph_source_root,
+                graph_package_roots,
                 None,
             )
         }
@@ -384,6 +410,7 @@ fn verify_mixed_graph_command(
             args.source_root.as_deref(),
             spec_root,
             graph_source_root,
+            graph_package_roots,
             None,
         ),
         DebundleCommand::InspectSource(args) if args.id.is_some() => {
@@ -395,6 +422,7 @@ fn verify_mixed_graph_command(
                 args.source_root.as_deref(),
                 spec_root,
                 graph_source_root,
+                graph_package_roots,
                 None,
             )
         }

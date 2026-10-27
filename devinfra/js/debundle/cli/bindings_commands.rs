@@ -43,6 +43,7 @@ impl BindingsNs {
         &self,
         spec_root: Option<&std::path::Path>,
         graph_source_root: Option<&std::path::Path>,
+        graph_package_roots: &std::collections::BTreeMap<String, PathBuf>,
     ) -> Result<()> {
         let edit = match &self.command {
             BindingsNsCommand::Assign(args) => &args.edit,
@@ -56,6 +57,7 @@ impl BindingsNs {
                 edit.source_root.as_deref(),
                 spec_root,
                 graph_source_root,
+                graph_package_roots,
                 None,
             )?;
         }

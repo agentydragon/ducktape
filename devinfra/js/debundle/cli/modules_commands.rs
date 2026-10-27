@@ -56,16 +56,28 @@ impl ModulesNs {
         &self,
         spec_root: Option<&std::path::Path>,
         graph_source_root: Option<&std::path::Path>,
+        graph_package_roots: &std::collections::BTreeMap<String, PathBuf>,
     ) -> Result<()> {
         match &self.command {
-            ModulesNsCommand::Merge(args) => verify_edit(&args.edit, spec_root, graph_source_root),
-            ModulesNsCommand::Delete(args) => verify_edit(&args.edit, spec_root, graph_source_root),
+            ModulesNsCommand::Merge(args) => verify_edit(
+                &args.edit,
+                spec_root,
+                graph_source_root,
+                graph_package_roots,
+            ),
+            ModulesNsCommand::Delete(args) => verify_edit(
+                &args.edit,
+                spec_root,
+                graph_source_root,
+                graph_package_roots,
+            ),
             ModulesNsCommand::Propose(args) => crate::verify_graph_compatibility(
                 &args.common.dependency_graph_path,
                 &args.common.modules_root,
                 args.source_root.as_deref(),
                 spec_root,
                 graph_source_root,
+                graph_package_roots,
                 args.tree_config.as_deref(),
             ),
             ModulesNsCommand::Apply(args) => crate::verify_graph_compatibility(
@@ -74,6 +86,7 @@ impl ModulesNs {
                 Some(&args.source_root),
                 spec_root,
                 graph_source_root,
+                graph_package_roots,
                 args.tree_config.as_deref(),
             ),
             ModulesNsCommand::Refine(args) => crate::verify_graph_compatibility(
@@ -82,6 +95,7 @@ impl ModulesNs {
                 Some(&args.source_root),
                 spec_root,
                 graph_source_root,
+                graph_package_roots,
                 args.tree_config.as_deref(),
             ),
             ModulesNsCommand::Decompose(args) => crate::verify_graph_compatibility(
@@ -90,6 +104,7 @@ impl ModulesNs {
                 args.source_root.as_deref(),
                 spec_root,
                 graph_source_root,
+                graph_package_roots,
                 args.tree_config.as_deref(),
             ),
             _ => Ok(()),
@@ -101,6 +116,7 @@ fn verify_edit(
     edit: &crate::edit_gate::GraphEditArgs,
     spec_root: Option<&std::path::Path>,
     graph_source_root: Option<&std::path::Path>,
+    graph_package_roots: &std::collections::BTreeMap<String, PathBuf>,
 ) -> Result<()> {
     if let Some(graph) = &edit.dependency_graph_path {
         crate::verify_graph_compatibility(
@@ -109,6 +125,7 @@ fn verify_edit(
             edit.source_root.as_deref(),
             spec_root,
             graph_source_root,
+            graph_package_roots,
             None,
         )?;
     }
