@@ -3343,6 +3343,41 @@ spec:
             source:
               hostDevices:
                 - /dev/disk/by-id/ata-HGST_HUS726T4TALA6L1_V3H370PN
+      - deletionPolicy: Retain
+        name: wyrm2
+        nodeSelector:
+          kubernetes.io/hostname: wyrm2
+          storage.allegedly.works/piraeus-ready: "true"
+        patches:
+          - patch: |
+              apiVersion: v1
+              kind: ConfigMap
+              metadata:
+                name: reactor-config
+              data:
+                prometheus.toml: |
+                  [[prometheus]]
+                  enums = true
+                  address = "127.0.0.1:9942"
+            target:
+              kind: ConfigMap
+              name: reactor-config
+              version: v1
+        podTemplate:
+          spec:
+            dnsPolicy: ClusterFirstWithHostNet
+            hostNetwork: true
+            initContainers:
+              - $patch: delete
+                name: drbd-module-loader
+            volumes:
+              - $patch: delete
+                name: lib-modules
+              - $patch: delete
+                name: usr-src
+        properties:
+          - name: AutoplaceTarget
+            value: "false"
     monitoring:
       dashboard:
         enabled: false
