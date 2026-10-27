@@ -30,6 +30,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/keepalive"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -183,7 +184,13 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, listener, i
 	historypb.RegisterHistoryServiceServer(server, service)
 	healthServer := health.NewServer()
 	healthpb.RegisterHealthServer(server, healthServer)
-	ingressServer := grpc.NewServer(observability.GRPCServerOption())
+	ingressServer := grpc.NewServer(
+		observability.GRPCServerOption(),
+		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
+			MinTime:             30 * time.Second,
+			PermitWithoutStream: false,
+		}),
+	)
 	runneringresspb.RegisterRunnerIngressServer(ingressServer, &ingress.Service{
 		Principals: writerAuth, SandboxUIDs: ingress.NewServiceAccountSandboxUIDResolver(kube),
 		History: storage.NewStore(ingressDB, c.Ingress.SettleDeltas),

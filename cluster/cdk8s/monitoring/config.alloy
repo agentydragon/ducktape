@@ -125,6 +125,13 @@ mimir.rules.kubernetes "rules" {
 otelcol.receiver.otlp "agentplane" {
   grpc {
     endpoint = sys.env("OTLP_GRPC_LISTEN_ADDRESS")
+
+    keepalive {
+      enforcement_policy {
+        min_time              = "30s"
+        permit_without_stream = false
+      }
+    }
   }
   http {
     endpoint = sys.env("OTLP_HTTP_LISTEN_ADDRESS")

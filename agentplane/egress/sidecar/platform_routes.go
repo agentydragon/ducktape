@@ -8,12 +8,14 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/util/netlistener"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
@@ -32,6 +34,17 @@ type routeForwarder struct {
 }
 
 func bindPlatformRoutes(routes map[string]platformRouteConfig) ([]*platformRoute, error) {
+	return bindPlatformRoutesWithKeepalive(routes, keepalive.ClientParameters{
+		Time:                time.Minute,
+		Timeout:             10 * time.Second,
+		PermitWithoutStream: false,
+	})
+}
+
+func bindPlatformRoutesWithKeepalive(
+	routes map[string]platformRouteConfig,
+	keepaliveParameters keepalive.ClientParameters,
+) ([]*platformRoute, error) {
 	names := make([]string, 0, len(routes))
 	for name := range routes {
 		names = append(names, name)
@@ -45,7 +58,12 @@ func bindPlatformRoutes(routes map[string]platformRouteConfig) ([]*platformRoute
 			stopPlatformRoutes(started)
 			return nil, fmt.Errorf("listen for platform route %q: %w", name, err)
 		}
-		conn, err := grpc.NewClient(config.Upstream, observability.GRPCClientOption(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+		conn, err := grpc.NewClient(
+			config.Upstream,
+			observability.GRPCClientOption(),
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpc.WithKeepaliveParams(keepaliveParameters),
+		)
 		if err != nil {
 			_ = listener.Close()
 			stopPlatformRoutes(started)

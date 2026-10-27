@@ -27,6 +27,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/keepalive"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -232,7 +233,13 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 		WakeCallers: accountSet(c.WakeCallers), Sandboxes: catalog, Runner: runner,
 		Hub: hub, WatchLease: time.Duration(c.WatchLeaseSeconds) * time.Second,
 	}
-	server := grpc.NewServer(observability.GRPCServerOption())
+	server := grpc.NewServer(
+		observability.GRPCServerOption(),
+		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
+			MinTime:             30 * time.Second,
+			PermitWithoutStream: false,
+		}),
+	)
 	dispatcherpb.RegisterSessionDispatcherServer(server, service)
 	g.RegisterProxy(server)
 	g.RegisterRunnerControl(server)
