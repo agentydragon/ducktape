@@ -1,5 +1,5 @@
 {
-  "source_devel_commit": "424eefe254c61edba4c9d5eadfe80dc6a0c8bb95",
+  "source_devel_commit": "bddd9cd74d9cc1e3aaa80ba2662c633884ab761e",
   "measurement_source_devel_commit": "f24d1e727184d750f299bbe88b89880fe4865687",
   "window": [
     "2026-10-24T04:00:00Z",
@@ -12611,6 +12611,81 @@
   },
   "scope": "Read-only scan and separate bounded local/RBE experiments; no workflow reruns, production settings, test-policy changes, or scheduled monitoring.",
   "validation": {
+    "status": "pending final combined report browser review",
+    "report_sha256": "822bb21883c367f5641224f2f41ed4aa3e8cb725d463d3c971be88ae0d956174",
+    "numeric_checks": "Original frequency evidence unchanged; 3 fresh MCP runs of 12 cases each; historical source and current dispositions explicit"
+  },
+  "baseline_source_devel_commit": "424eefe254c61edba4c9d5eadfe80dc6a0c8bb95",
+  "disposition_followup": {
+    "reviewed_at_utc": "2026-10-27T21:03:57.676676+00:00",
+    "source_devel_commit": "bddd9cd74d9cc1e3aaa80ba2662c633884ab761e",
+    "scope": "Incident disposition corrections only; original frequency windows, denominators, and historical diagnoses retained. No fresh population census.",
+    "iptables": {
+      "pr": 12248,
+      "state": "merged",
+      "merge_commit": "4afc8bd33825831e4718cf7c0f3e8522427053e0",
+      "mechanism": "iptables -w 5 bounds real lock acquisition on check and append, append only for check exit 1; no fixed delay",
+      "real_lock_tests": 5,
+      "test_invocation": "20f274be-ad3c-48de-a767-bd718adf293d",
+      "exact_head_ci_invocation": "df2e4956-215a-5bd7-9642-ec3e0aa7490c",
+      "limit": "Mechanism and acceptance pass verified; no fleet recurrence effect measured"
+    },
+    "mcp_deadline": {
+      "fix_pr": 12189,
+      "fix_commit": "f0036950097ee1bac22cece2589d8f77d80017f4",
+      "measurement_pr": 12254,
+      "measurement_merge_commit": "4f4fd6f8b1c3f12c19dd347718c2323ce77b6122",
+      "fresh_full_suite_runs": [
+        {
+          "invocation": "402e9a99-9e56-4d2a-81c7-878f122a401b",
+          "run": 1,
+          "passed_cases": 12,
+          "total_cases": 12,
+          "pytest_s": 740.48,
+          "action_s": 783.0
+        },
+        {
+          "invocation": "0a0f8696-8c78-416b-8e9c-a2f4fef05df4",
+          "run": 1,
+          "passed_cases": 12,
+          "total_cases": 12,
+          "pytest_s": 601.82,
+          "action_s": 635.7
+        },
+        {
+          "invocation": "0a0f8696-8c78-416b-8e9c-a2f4fef05df4",
+          "run": 2,
+          "passed_cases": 12,
+          "total_cases": 12,
+          "pytest_s": 611.91,
+          "action_s": 642.7
+        }
+      ],
+      "focused_go_invocation": "3bf2b90e-72f2-4165-8ea6-bb67b3bc7b48",
+      "cached_test_results": false,
+      "attempts_per_run": 1,
+      "limit": "Selected 0/3 failures, unmatched pre/post conditions; no causal rate or elimination claim"
+    },
+    "dispatcher": {
+      "incident_invocation": "7d08c8f3-2186-5057-9b1f-08aa7a98a740",
+      "retained_wake_artifact_passed": true,
+      "companion_error": "fork/exec /bin/codex: no such file or directory",
+      "cause": "model_free image lacks Codex; child.Start failure killed companion, control socket absent during backoff, activation and quiesce stalled",
+      "activation_fix_pr": 12167,
+      "activation_fix_commit": "740823595a338139e747c4a048a817c06e61c2b8",
+      "activation_fix": "scripted harness image; refuse unstartable claim while retaining serving companion/control socket",
+      "same_source_retry_limit": "Admission and cleanup assertions passed; not evidence Codex could execute in model_free image",
+      "fresh_acceptance_invocation": "19325b64-2793-4f6e-8ab1-2211efd4cc38",
+      "fresh_scenarios_passed": 3,
+      "cleanup_pr": 12244,
+      "cleanup_pr_state": "open",
+      "cleanup_pr_head": "c1c5d90e28be6b677f43697ceadbaa0a463d4a5d",
+      "cleanup_helper_tests_passed": 3,
+      "cleanup_ci_invocation": "8a7e2bae-3abb-5145-841e-ccac57d27b13",
+      "cleanup_limit": "Preserves primary exception only if one exists; cited incident had none to preserve"
+    }
+  },
+  "baseline_validation": {
     "status": "passed and visually reviewed",
     "report_sha256": "066a37fc08c7910e07f59a64e229acfa019c041ddf7dc08af317862c9a2b7019",
     "numeric_checks": "exact head/check SHA association; percentile/count totals; 345 mainline IDs reconcile to target history; all 129 conclusive PR jobs covered; all 15 shard/control cases exactly once; 674 target pages checked against totalCount",

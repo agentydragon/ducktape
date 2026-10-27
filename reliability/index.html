@@ -277,14 +277,15 @@
         <div class="eyebrow">Ducktape · reliability refresh · 24–27 October 2026</div>
         <h1>Mainline is mostly green.<br />System-test failures still cost retries.</h1>
         <p class="lede">
-          Mainline full-suite CI failed in <strong>2/345 completed invocations (0.58%)</strong>. The latest day’s PR
-          Bazel attempts failed in <strong>29/129 conclusive attempts (22.5%)</strong>, largely catching source and
-          integration changes before merge. Five selected failed-and-retried runs recover on the same tested SHA with
-          explicit fresh passing results; that is evidence of inconsistency, not the repository’s flake rate.
+          Mainline full-suite CI failed in
+          <strong>2/345 completed invocations (0.58%)</strong>. The latest day’s PR Bazel attempts failed in
+          <strong>29/129 conclusive attempts (22.5%)</strong>, largely catching source and integration changes before
+          merge. Five selected failed-and-retried runs recover on the same tested SHA with explicit fresh passing
+          results; that is evidence of inconsistency, not the repository’s flake rate.
         </p>
         <p class="small">
           Window: 24 October 04:00 → 27 October 06:00 UTC, 2026. Job census: latest 24 hours plus earlier busy-window
-          samples. Source reviewed:
+          samples. Baseline source reviewed:
           <a href="https://github.com/agentydragon/ducktape/commit/424eefe254c61edba4c9d5eadfe80dc6a0c8bb95"
             >424eefe254c6</a
           >; profiling/spikes use the pinned <code>f24d1e727184</code> source tree. Source review includes changes after
@@ -306,10 +307,14 @@
         </div>
       </div>
       <div class="callout">
-        <strong>Act on a confirmed low-cost setup race:</strong> bound the iptables lock wait in the k3s fixture. The
-        newly observed MCP wait-deadline defect already has merged candidate fix
-        <a href="https://github.com/agentydragon/ducktape/pull/12189">#12189</a>; measure recurrence rather than propose
-        it again. Dispatcher startup/cleanup and bare pre-command timeouts retain explicit visibility boundaries.
+        <strong>27 October follow-up:</strong> the iptables fix is merged in
+        <a href="https://github.com/agentydragon/ducktape/pull/12248">#12248</a>. The corrected MCP deadline passed
+        three fresh full-suite runs, documented in
+        <a href="https://github.com/agentydragon/ducktape/pull/12254">#12254</a>. The dispatcher incident is explained
+        and its activation fix already merged in
+        <a href="https://github.com/agentydragon/ducktape/pull/12167">#12167</a>; cleanup error preservation remains
+        open in <a href="https://github.com/agentydragon/ducktape/pull/12244">#12244</a>. Frequency tables retain their
+        original window; these selected follow-ups do not measure a new failure rate.
       </div>
       <nav aria-label="Report navigation">
         <a href="#frequencies">Frequencies</a><a href="#culprits">Observed culprits</a
@@ -397,28 +402,36 @@
                 <td>{&#x27;PASSED&#x27;: 36, &#x27;FAILED&#x27;: 3}</td>
               </tr>
               <tr>
-                <td><code>//agentplane/system_tests:test_vm_sandbox_vm</code></td>
+                <td>
+                  <code>//agentplane/system_tests:test_vm_sandbox_vm</code>
+                </td>
                 <td>3 / 39</td>
                 <td>16</td>
                 <td>23</td>
                 <td>{&#x27;PASSED&#x27;: 36, &#x27;FAILED&#x27;: 3}</td>
               </tr>
               <tr>
-                <td><code>//cluster/validation:test_cluster_integration</code></td>
+                <td>
+                  <code>//cluster/validation:test_cluster_integration</code>
+                </td>
                 <td>2 / 32</td>
                 <td>10</td>
                 <td>22</td>
                 <td>{&#x27;PASSED&#x27;: 30, &#x27;FAILED&#x27;: 2}</td>
               </tr>
               <tr>
-                <td><code>//cluster/validation:test_generator_namespace</code></td>
+                <td>
+                  <code>//cluster/validation:test_generator_namespace</code>
+                </td>
                 <td>2 / 22</td>
                 <td>8</td>
                 <td>14</td>
                 <td>{&#x27;PASSED&#x27;: 20, &#x27;TIMED_OUT&#x27;: 2}</td>
               </tr>
               <tr>
-                <td><code>//agentplane/app/frontend/threads:projected_session_test</code></td>
+                <td>
+                  <code>//agentplane/app/frontend/threads:projected_session_test</code>
+                </td>
                 <td>2 / 23</td>
                 <td>17</td>
                 <td>6</td>
@@ -460,7 +473,9 @@
                 <td>{&#x27;PASSED&#x27;: 4, &#x27;TIMED_OUT&#x27;: 1}</td>
               </tr>
               <tr>
-                <td><code>//devinfra/js/debundle/e2e:conflict_diagnostics_scale_test</code></td>
+                <td>
+                  <code>//devinfra/js/debundle/e2e:conflict_diagnostics_scale_test</code>
+                </td>
                 <td>1 / 13</td>
                 <td>3</td>
                 <td>10</td>
@@ -479,44 +494,71 @@
         <h2>Observed failures and their mechanisms</h2>
         <h3>k3s setup: a real xtables lock conflict</h3>
         <p>
-          In <a href="https://app.buildbuddy.io/invocation/8cf4fdfe-2fc0-5d60-9d3d-3d0aabb87dd1">8cf4fdfe</a>, all ten
-          MCP cases error in one shared fixture. <code>K3s.start</code> checks then appends a NAT masquerade rule while
-          k3s/kube-proxy can also update iptables. The append exits 4 with “Can’t lock /run/xtables.lock”. Current
+          In
+          <a href="https://app.buildbuddy.io/invocation/8cf4fdfe-2fc0-5d60-9d3d-3d0aabb87dd1">8cf4fdfe</a>, all ten MCP
+          cases error in one shared fixture. <code>K3s.start</code> checks then appends a NAT masquerade rule while
+          k3s/kube-proxy can also update iptables. The append exits 4 with “Can’t lock /run/xtables.lock”. The baseline
           <a
             href="https://github.com/agentydragon/ducktape/blob/424eefe254c61edba4c9d5eadfe80dc6a0c8bb95/agentplane/system_tests/k3s/stack.py"
             >agentplane/system_tests/k3s/stack.py</a
           >
           invokes both commands without <code>-w</code> and treats every nonzero check as a missing rule. The same
           tested SHA later passes the MCP target from a fresh execution. Ten pytest setup errors are one target/fixture
-          failure.
+          failure. Follow-up:
+          <a href="https://github.com/agentydragon/ducktape/pull/12248">#12248</a>
+          now uses <code>iptables -w 5</code> on both operations and appends only when the check returns 1. This waits
+          on the real xtables lock and proceeds when it is available; five seconds bounds acquisition, rather than
+          imposing a five-second sleep. Five real-lock tests and the exact-head CI passed. No fleet recurrence reduction
+          has been measured.
         </p>
         <h3>MCP early wait: source defect, now a merged candidate fix</h3>
         <p>
-          <a href="https://app.buildbuddy.io/invocation/9ba054ed-664f-5a81-981e-3b365a5268d9">9ba054ed</a> fails the
-          Codex launcher’s <code>wait_for_turn(wait_seconds=1)</code> expectation;
-          <a href="https://app.buildbuddy.io/invocation/9a80d2fa-9d90-531c-b0a4-a3fad67ba017">9a80d2fa</a> explicitly
-          passes the target fresh on the identical tested SHA <code>a31e93dfa297fa3185e6f94bbefe3120c5b515a9</code>.
-          <a href="https://github.com/agentydragon/ducktape/pull/12189">#12189</a> references this exact incident and
-          changes the authorization/wait budget and propagated-deadline boundary. It merged after the window; current
-          source was reviewed. No post-fix recurrence reduction is measured.
+          <a href="https://app.buildbuddy.io/invocation/9ba054ed-664f-5a81-981e-3b365a5268d9">9ba054ed</a>
+          fails the Codex launcher’s
+          <code>wait_for_turn(wait_seconds=1)</code> expectation;
+          <a href="https://app.buildbuddy.io/invocation/9a80d2fa-9d90-531c-b0a4-a3fad67ba017">9a80d2fa</a>
+          explicitly passes the target fresh on the identical tested SHA
+          <code>a31e93dfa297fa3185e6f94bbefe3120c5b515a9</code>.
+          <a href="https://github.com/agentydragon/ducktape/pull/12189">#12189</a>
+          references this exact incident and changes the authorization/wait budget and propagated-deadline boundary. It
+          merged after the window; current source was reviewed. The follow-up at the exact merged tree executed three
+          fresh full MCP suites: 12/12 cases passed in each, with no cached test result and one attempt per run. The
+          focused Go wait tests also passed.
+          <a
+            href="https://github.com/agentydragon/ducktape/blob/4f4fd6f8b1c3f12c19dd347718c2323ce77b6122/agentplane/debug/2026_10_27_orchestration_wait_deadline_measurement.md"
+            >The measurement note</a
+          >
+          records the invocations and exclusions. Zero failures in three selected exposures verifies the corrected path
+          executes; unmatched pre/post runs do not estimate a causal failure-rate reduction.
         </p>
         <h3>Dispatcher: three distinct failures, one verified same-source recovery</h3>
         <p>
-          One revision fails an exact caller-set assertion after <code>actions</code> becomes a configured caller: a
-          source/test mismatch. An earlier revision stalls in the deployed ready/admission scenario for its 600s pytest
-          deadline. The recovered
-          <a href="https://app.buildbuddy.io/invocation/7d08c8f3-2186-5057-9b1f-08aa7a98a740">7d08c8f3</a> fails its
-          cleanup wait for <code>Ready.reason=Stopped</code> after the runner reports
-          <code>Codex executor startup: context deadline exceeded</code>; the traceback’s <code>finally</code> cleanup
-          can obscure the original path.
-          <a href="https://app.buildbuddy.io/invocation/786f259e-a8b7-5444-b806-a23f7ebf07eb">786f259e</a> passes
-          dispatcher fresh on identical tested SHA <code>1393bc64da85dc49a8ab37151920625b7e0d77c3</code>.
+          One revision fails an exact caller-set assertion after
+          <code>actions</code> becomes a configured caller: a source/test mismatch. An earlier revision stalls in the
+          deployed ready/admission scenario for its 600s pytest deadline. The recovered
+          <a href="https://app.buildbuddy.io/invocation/7d08c8f3-2186-5057-9b1f-08aa7a98a740">7d08c8f3</a>
+          fails its cleanup wait for <code>Ready.reason=Stopped</code> after the runner reports
+          <code>Codex executor startup: context deadline exceeded</code>. Its retained wake artifact reports
+          <code>passed: true</code>: there was no earlier scenario exception hidden in this particular failure.
+          <a href="https://app.buildbuddy.io/invocation/786f259e-a8b7-5444-b806-a23f7ebf07eb">786f259e</a>
+          passes dispatcher fresh on identical tested SHA
+          <code>1393bc64da85dc49a8ab37151920625b7e0d77c3</code>.
         </p>
         <p>
-          Existing artifacts include dispatcher-wake state and service/native diagnostics; the retrieved log narrows the
-          failure to runner activation/stop, but does not establish why the executor startup wedged or why stop did not
-          complete. The next missing discriminator is the Codex companion/app-server state at that activation failure
-          and the controller’s stop/finalizer state. Do not rebrand the whole set as one flake or raise its timeout.
+          Follow-up inspection found
+          <code>fork/exec /bin/codex: no such file or directory</code> in the companion diagnostics. The target selected
+          the <code>model_free</code> image, which lacked Codex. Failed child startup killed the companion, leaving its
+          control socket unavailable during restart backoff, so the runner could neither activate nor quiesce.
+          <a href="https://github.com/agentydragon/ducktape/pull/12167">#12167</a>
+          had already switched the test to the harness image and kept the companion serving when it refuses an
+          unstartable claim. The same-source retry proves admission and cleanup, not working Codex execution. A fresh
+          corrected-source replay passed all three dispatcher scenarios (<a
+            href="https://app.buildbuddy.io/invocation/19325b64-2793-4f6e-8ab1-2211efd4cc38"
+            >19325b64</a
+          >). The separate open
+          <a href="https://github.com/agentydragon/ducktape/pull/12244">#12244</a>
+          preserves an original scenario exception when cleanup also fails, and keeps cleanup-only failure fatal. Its
+          three cleanup-helper tests and exact-head CI passed; it is still awaiting review and merge.
         </p>
         <h3>VM OOM acceptance: three failures in a new contract</h3>
         <p>
@@ -542,22 +584,22 @@
         </p>
         <h3>Mainline and bare timeouts: different mechanisms</h3>
         <p>
-          <a href="https://app.buildbuddy.io/invocation/ec627215-7de7-5e7f-b251-bb2192236722">ec627215</a> fails before
-          the binary-diff test runs: a required CAS input <code>v1_plain</code> is “no longer available remotely”. No
-          failed-test log exists.
-          <a href="https://app.buildbuddy.io/invocation/7f06573b-2078-5a68-adcd-1cc0d8bf35f9">7f06573b</a> times out the
-          value-flow sharing scale test at 60.018s; worker records show about 60.84 CPU-seconds. A PR
+          <a href="https://app.buildbuddy.io/invocation/ec627215-7de7-5e7f-b251-bb2192236722">ec627215</a>
+          fails before the binary-diff test runs: a required CAS input
+          <code>v1_plain</code> is “no longer available remotely”. No failed-test log exists.
+          <a href="https://app.buildbuddy.io/invocation/7f06573b-2078-5a68-adcd-1cc0d8bf35f9">7f06573b</a>
+          times out the value-flow sharing scale test at 60.018s; worker records show about 60.84 CPU-seconds. A PR
           conflict-diagnostics scale timeout similarly uses about 61.14 CPU-seconds. These are active CPU-bound scale
           cases, not evidence of a common fixture-startup wedge; no timeout policy was changed.
         </p>
         <div id="timeout-findings">
           <p>
             The generator-namespace timeout
-            <a href="https://app.buildbuddy.io/invocation/0925c736-06ab-5cdb-921b-51371a833fba">0925c736</a> has a
-            64.23s remote execution interval, no usage samples, and a retained worker log ending after snapshot restore
-            with no workspace-drive attachment. A linked execution then succeeds in about 3.2s; the workflow’s later
-            attempt explicitly reports a fresh pass on the same source. Terraform’s 60.51s timeout also has no usage
-            samples; a co-failing litellm action has 14.72 CPU-seconds over 74.50s. These are distinct from the
+            <a href="https://app.buildbuddy.io/invocation/0925c736-06ab-5cdb-921b-51371a833fba">0925c736</a>
+            has a 64.23s remote execution interval, no usage samples, and a retained worker log ending after snapshot
+            restore with no workspace-drive attachment. A linked execution then succeeds in about 3.2s; the workflow’s
+            later attempt explicitly reports a fresh pass on the same source. Terraform’s 60.51s timeout also has no
+            usage samples; a co-failing litellm action has 14.72 CPU-seconds over 74.50s. These are distinct from the
             CPU-saturated Rust scale tests. The exact hosted preparation/startup stage is unavailable; retain the
             execution IDs and request host-stage traces rather than increase all small-test timeouts. Missing usage or
             attachment records alone do not prove a particular filesystem operation caused the delay.
@@ -585,10 +627,13 @@
             </thead>
             <tbody>
               <tr>
-                <td><a href="https://github.com/agentydragon/ducktape/actions/runs/40409596741">40409596741</a></td>
+                <td>
+                  <a href="https://github.com/agentydragon/ducktape/actions/runs/40409596741">40409596741</a>
+                </td>
                 <td><code>df9fc5c3ec2fc2ff5358ad4c5754cb2d4ae6bb45</code></td>
                 <td>
-                  <a href="https://app.buildbuddy.io/invocation/392b76a7-0804-5924-80fc-76f0fae14ba9">392b76a7</a> →
+                  <a href="https://app.buildbuddy.io/invocation/392b76a7-0804-5924-80fc-76f0fae14ba9">392b76a7</a>
+                  →
                   <a href="https://app.buildbuddy.io/invocation/ddfb6ec8-073d-5a8a-9032-4277274d5a8d">ddfb6ec8</a>
                 </td>
                 <td>
@@ -600,40 +645,55 @@
                 <td>84s</td>
               </tr>
               <tr>
-                <td><a href="https://github.com/agentydragon/ducktape/actions/runs/40295293319">40295293319</a></td>
+                <td>
+                  <a href="https://github.com/agentydragon/ducktape/actions/runs/40295293319">40295293319</a>
+                </td>
                 <td><code>eb800b6d082f03f863e1ec47668fb49bd397766d</code></td>
                 <td>
-                  <a href="https://app.buildbuddy.io/invocation/8cf4fdfe-2fc0-5d60-9d3d-3d0aabb87dd1">8cf4fdfe</a> →
+                  <a href="https://app.buildbuddy.io/invocation/8cf4fdfe-2fc0-5d60-9d3d-3d0aabb87dd1">8cf4fdfe</a>
+                  →
                   <a href="https://app.buildbuddy.io/invocation/7f0582c0-8b29-56ef-b612-a5fde1f89595">7f0582c0</a>
                 </td>
                 <td><code>//agentplane/system_tests:test_mcp</code> FAILED → PASSED (fresh)</td>
                 <td>126s</td>
               </tr>
               <tr>
-                <td><a href="https://github.com/agentydragon/ducktape/actions/runs/40366801197">40366801197</a></td>
+                <td>
+                  <a href="https://github.com/agentydragon/ducktape/actions/runs/40366801197">40366801197</a>
+                </td>
                 <td><code>6af628f2212a4c5c62e9ec6c811a7d34aaf697a3</code></td>
                 <td>
-                  <a href="https://app.buildbuddy.io/invocation/0925c736-06ab-5cdb-921b-51371a833fba">0925c736</a> →
+                  <a href="https://app.buildbuddy.io/invocation/0925c736-06ab-5cdb-921b-51371a833fba">0925c736</a>
+                  →
                   <a href="https://app.buildbuddy.io/invocation/5a19d48c-dd66-54af-9792-727a0b7698a7">5a19d48c</a>
                 </td>
-                <td><code>//cluster/validation:test_generator_namespace</code> TIMED_OUT → PASSED (fresh)</td>
+                <td>
+                  <code>//cluster/validation:test_generator_namespace</code>
+                  TIMED_OUT → PASSED (fresh)
+                </td>
                 <td>57s</td>
               </tr>
               <tr>
-                <td><a href="https://github.com/agentydragon/ducktape/actions/runs/40383976168">40383976168</a></td>
+                <td>
+                  <a href="https://github.com/agentydragon/ducktape/actions/runs/40383976168">40383976168</a>
+                </td>
                 <td><code>1393bc64da85dc49a8ab37151920625b7e0d77c3</code></td>
                 <td>
-                  <a href="https://app.buildbuddy.io/invocation/7d08c8f3-2186-5057-9b1f-08aa7a98a740">7d08c8f3</a> →
+                  <a href="https://app.buildbuddy.io/invocation/7d08c8f3-2186-5057-9b1f-08aa7a98a740">7d08c8f3</a>
+                  →
                   <a href="https://app.buildbuddy.io/invocation/786f259e-a8b7-5444-b806-a23f7ebf07eb">786f259e</a>
                 </td>
                 <td><code>//agentplane/system_tests:test_dispatcher</code> FAILED → PASSED (fresh)</td>
                 <td>3106s</td>
               </tr>
               <tr>
-                <td><a href="https://github.com/agentydragon/ducktape/actions/runs/40457828797">40457828797</a></td>
+                <td>
+                  <a href="https://github.com/agentydragon/ducktape/actions/runs/40457828797">40457828797</a>
+                </td>
                 <td><code>a31e93dfa297fa3185e6f94bbefe3120c5b515a9</code></td>
                 <td>
-                  <a href="https://app.buildbuddy.io/invocation/9ba054ed-664f-5a81-981e-3b365a5268d9">9ba054ed</a> →
+                  <a href="https://app.buildbuddy.io/invocation/9ba054ed-664f-5a81-981e-3b365a5268d9">9ba054ed</a>
+                  →
                   <a href="https://app.buildbuddy.io/invocation/9a80d2fa-9d90-531c-b0a4-a3fad67ba017">9a80d2fa</a>
                 </td>
                 <td><code>//agentplane/system_tests:test_mcp</code> FAILED → PASSED (fresh)</td>
@@ -664,44 +724,46 @@
             </thead>
             <tbody>
               <tr>
-                <td>A · Small confirmed setup fix</td>
+                <td>1 · Review cleanup error preservation</td>
                 <td>
-                  Bound iptables check/append waits in
-                  <a
-                    href="https://github.com/agentydragon/ducktape/blob/424eefe254c61edba4c9d5eadfe80dc6a0c8bb95/agentplane/system_tests/k3s/stack.py"
-                    >agentplane/system_tests/k3s/stack.py</a
-                  >; preserve fail-closed error handling.
+                  Review open
+                  <a href="https://github.com/agentydragon/ducktape/pull/12244">#12244</a>, whose required checks
+                  passed. Activation fix
+                  <a href="https://github.com/agentydragon/ducktape/pull/12167">#12167</a>
+                  is already merged; keep those two changes distinct.
                 </td>
                 <td>
-                  Avoid one repeated fixture/CI attempt when the observed contention recurs; no common-PR saving
-                  claimed. Hold/release the lock in a bounded real-iptables probe; verify missing-rule insertion and a
-                  stuck lock still fails.
-                </td>
-              </tr>
-              <tr>
-                <td>B · Measure the landed wait correction</td>
-                <td>
-                  <a href="https://github.com/agentydragon/ducktape/pull/12189">#12189</a> is merged; retain immediate
-                  backend-error, true expiry, caller cancellation and resume-token coverage.
-                </td>
-                <td>
-                  One observed same-source failure/recovery in this window. Replay full MCP acceptance with fresh
-                  executions and compare equal exposure; zero failures in a small sample is not elimination.
+                  Retains the primary traceback when both scenario and cleanup fail, while cleanup-only failure still
+                  fails the test. Diagnostic benefit is tested; no recurrence or common-PR time saving is assigned.
                 </td>
               </tr>
               <tr>
-                <td>C · Dispatcher activation/stop boundary</td>
+                <td>Completed · iptables locking</td>
                 <td>
-                  Read existing runner/companion/native and controller artifacts at the failed activation. Preserve the
-                  original exception when cleanup also fails.
+                  <a href="https://github.com/agentydragon/ducktape/pull/12248">#12248</a>
+                  merged the bounded lock wait and fail-closed check handling. Retain its real-lock contention and
+                  expiry tests.
                 </td>
                 <td>
-                  Potentially avoids 600–850s failed attempts plus rerun delay on affected heads, but no cause-specific
-                  saving is established. The missing executor and stop-stage evidence is a real boundary.
+                  Mechanism verified locally on RBE and full exact-head CI passed. Observe future comparable fixture
+                  exposures before claiming fewer retries; do not implement this fix again.
                 </td>
               </tr>
               <tr>
-                <td>D · Separate startup timeouts from scale CPU</td>
+                <td>Completed · deadline acceptance replay</td>
+                <td>
+                  <a href="https://github.com/agentydragon/ducktape/pull/12254">#12254</a>
+                  records three fresh full MCP passes on merged
+                  <a href="https://github.com/agentydragon/ducktape/pull/12189">#12189</a>. Retain backend-error,
+                  expiry, cancellation and resume-token coverage.
+                </td>
+                <td>
+                  Zero of three selected runs failed; all 36 pytest cases passed. This is bounded acceptance evidence,
+                  not elimination or a matched failure-rate comparison. A larger replay needs a new recurrence signal.
+                </td>
+              </tr>
+              <tr>
+                <td>2 · Separate startup timeouts from scale CPU</td>
                 <td>
                   Use retained execution/worker logs to classify each timeout before any size change. CPU-bound Rust
                   scale cases need a real native profiler; pre-command VM cases need hosted stage traces.
@@ -712,7 +774,7 @@
                 </td>
               </tr>
               <tr>
-                <td>E · Keep fast source feedback intact</td>
+                <td>3 · Keep fast source feedback intact</td>
                 <td>
                   Regenerate cdk8s outputs on the tested base, update every caller, and keep lint/type/semantic checks.
                   Fix UI subject selectors at their actual renderer.
@@ -733,8 +795,8 @@
       <section id="risks">
         <h2>Fragile-pattern scan: retained and retired leads</h2>
         <p>
-          These are source-only risks, not observed failure frequencies. Rechecked at the pinned source; no grep count
-          is used as a flake rate.
+          These source-only risks retain the baseline review at <code>424eefe254c6</code>; this disposition follow-up
+          does not re-audit them. No grep count is used as a flake rate.
         </p>
         <div class="scroll">
           <table>
@@ -862,15 +924,21 @@
                 </td>
               </tr>
               <tr>
-                <td>Visual focus <a href="https://github.com/agentydragon/ducktape/pull/9410">#9410</a></td>
                 <td>
-                  Historical capture fix retained. The old combined <code>:visual</code> target and 2/15 likely-flake
-                  rate are not comparable to current split targets or new UI semantics.
+                  Visual focus
+                  <a href="https://github.com/agentydragon/ducktape/pull/9410">#9410</a>
+                </td>
+                <td>
+                  Historical capture fix retained. The old combined
+                  <code>:visual</code> target and 2/15 likely-flake rate are not comparable to current split targets or
+                  new UI semantics.
                 </td>
               </tr>
               <tr>
                 <td>
-                  Runner fake <a href="https://github.com/agentydragon/ducktape/pull/8734">#8734</a> / orphaned Secret
+                  Runner fake
+                  <a href="https://github.com/agentydragon/ducktape/pull/8734">#8734</a>
+                  / orphaned Secret
                   <a href="https://github.com/agentydragon/ducktape/pull/8978">#8978</a>
                 </td>
                 <td>
@@ -890,7 +958,8 @@
                 <td>Native-journal diagnostic gap</td>
                 <td>
                   Old failed bridge outputs lacked a journal. Current system tests retain VM console/native artifacts
-                  via <a href="https://github.com/agentydragon/ducktape/pull/12140">#12140</a>. That is source/coverage
+                  via
+                  <a href="https://github.com/agentydragon/ducktape/pull/12140">#12140</a>. That is source/coverage
                   progress, not proof that every old artifact gap is repaired.
                 </td>
               </tr>
@@ -905,7 +974,8 @@
                 <td>Investigation tools</td>
                 <td>
                   History pagination/since cutoff and invocation-context artifact fixes remain in source. This scan
-                  found <code>bbapi target</code> stops at the first 12-target status page; direct GetTarget pagination
+                  found
+                  <code>bbapi target</code> stops at the first 12-target status page; direct GetTarget pagination
                   recovered all 8,691 verdicts. No source tooling patch is mixed into this report PR.
                 </td>
               </tr>
@@ -937,11 +1007,11 @@
         <p>
           PRs: full latest-day core job/attempt census; 129 conclusive Bazel attempts, 38 cancellations, no unfinished
           in-window Bazel attempts. 101 explicit test invocations and 28 log-confirmed no-affected-target selections.
-          Test verdict groups required <strong>674 additional GetTarget pages</strong>; each final group count was
-          checked against <code>totalCount</code>. Default CLI output was not accepted as complete. Failed target counts
-          overlap, and automatic shard/run attempts remain distinct from final target status.
-          <code>totalNumCached</code> and <code>totalRunCount</code> distinguish fully cached from
-          at-least-partly-executed verdicts.
+          Test verdict groups required
+          <strong>674 additional GetTarget pages</strong>; each final group count was checked against
+          <code>totalCount</code>. Default CLI output was not accepted as complete. Failed target counts overlap, and
+          automatic shard/run attempts remain distinct from final target status. <code>totalNumCached</code> and
+          <code>totalRunCount</code> distinguish fully cached from at-least-partly-executed verdicts.
         </p>
         <p>
           BuildBuddy’s default flake leaderboard is only a lead: its API defaults and absent successful-run fields
@@ -956,7 +1026,13 @@
           eligibility and notification delivery were not observed. Read-only transient API failures were retried once;
           available independent evidence was retained. Source after the window includes
           <a href="https://github.com/agentydragon/ducktape/pull/12189">#12189</a>, whose recurrence effect remains
-          unmeasured. Neither this report nor its branch is a hosted website or a configured monitoring schedule.
+          unmeasured. The 27 October disposition follow-up reviewed source
+          <a href="https://github.com/agentydragon/ducktape/commit/bddd9cd74d9cc1e3aaa80ba2662c633884ab761e"
+            >bddd9cd74d9c</a
+          >
+          and the separately identified open cleanup PR. It updates incident explanations and completed actions; it does
+          not refresh any frequency denominator. Neither this report nor its branch is a hosted website or a configured
+          monitoring schedule.
         </p>
       </section>
       <footer>
