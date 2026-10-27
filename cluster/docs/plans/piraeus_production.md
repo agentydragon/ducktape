@@ -72,36 +72,28 @@ stay on SSD. ActivityWatch moves to HDD. Every other model under
 and are deleted, not copied. All local-path claims on Wyrm2 eventually go.
 
 Atlas, read 2026-10-27: `local-zfs` (`rpool/data`) is a **single** 4 TB NVMe with
-no redundancy, 79% allocated, 584 GB available; `tank-hdd` (pool `tank`) is
-raidz2 over four 16 TB disks with about 27.9 TB available. A `piraeus-ssd-local`
-volume on Wyrm2 therefore has no redundancy below LINSTOR; `piraeus-hdd-local`
-survives two disk failures. Atlas's LVM `global_filter` rejects `/dev/zd*`, so the
-host never activates guest VGs.
+no redundancy (61% allocated, 1.27 TB available after `virtio8` was destroyed);
+`tank-hdd` (pool `tank`) is raidz2 over four 16 TB disks with about 27.9 TB
+available. A `piraeus-ssd-local` volume on Wyrm2 therefore has no redundancy
+below LINSTOR; `piraeus-hdd-local` survives two disk failures. Atlas's LVM
+`global_filter` rejects `/dev/zd*`, so the host never activates guest VGs.
 
-Done 2026-10-27: DRBD 9 on Wyrm2, the satellite enrolled, and sparse zvols
-`rpool/data/vm-110-piraeus-ssd` (150 GiB, 16 KiB) and `tank/vm-110-piraeus-hdd`
-(500 GiB, 64 KiB), both `primarycache=metadata`, hot-added as
-`virtio12`/`virtio13` with serials `piraeus-{ssd,hdd}`.
+Done 2026-10-27: DRBD 9 on Wyrm2, the satellite enrolled with `ssd` and `hdd`
+pools on sparse zvols `rpool/data/vm-110-piraeus-ssd` (150 GiB) and
+`tank/vm-110-piraeus-hdd` (500 GiB) with serials `piraeus-{ssd,hdd}`, lifecycle
+acceptance on each pool, Qwen, ActivityWatch and Ollama moved to
+`piraeus-{ssd,hdd}-local` claims, their old claims deleted, and the old model
+disk (`virtio8`) destroyed.
 
-Each remaining step needs the previous one; deletions need the owner's approval
-at the time.
+Remaining; deletions need the owner's approval at the time:
 
-1. **Pools.** `ssd` and `hdd` LVM_THIN pools on the Wyrm2 satellite from
-   `/dev/disk/by-id/virtio-piraeus-{ssd,hdd}`; the `piraeus-{ssd,hdd}-local`
-   classes then reach Wyrm2 and the replicated class stays OVH-only. Alert on
-   `tank` and `rpool` free space, which LINSTOR's thin accounting cannot see.
-2. **Acceptance.** Filesystem and Block lifecycle on each Wyrm2 pool: create,
-   attach, write, expand, detach and delete.
-3. **Moves.** Qwen: a `piraeus-ssd-local` claim replacing the static
-   `wyrm2-qwen38-iq4-ssd` PV; copy or re-download `UD-IQ4_XS`, then confirm
-   Ollama serves it. ActivityWatch: a `piraeus-hdd-local` claim; stop, copy,
-   switch and verify its history, keeping the old PV until the owner releases
-   it. Ollama gets a fresh empty `piraeus-hdd-local` claim and re-pulls on use.
-4. **Retirement**, each after its consumers are gone: the old model disk
-   (`virtio8`, 816 GB on `rpool`) and its mount; OpenEBS on Wyrm2 (`virtio2`,
-   `virtio6`, the VG setup units, the thin-autoextend `lvm.conf` stanza, the
-   `lvm-proxmox-*` classes and their CDI entries); `local-path-proxmox` and
-   `virtio0`, after inventorying what else is under `/var/local-path-provisioner`.
+- **Alert** on `tank` and `rpool` free space, which LINSTOR's thin accounting
+  cannot see.
+- **Retirement**, each after its consumers are gone: OpenEBS on Wyrm2
+  (`virtio2`, `virtio6`, the VG setup units, the thin-autoextend `lvm.conf`
+  stanza, the `lvm-proxmox-*` classes and their CDI entries); `local-path-proxmox`
+  and `virtio0`, after inventorying what else is under
+  `/var/local-path-provisioner`.
 
 ## Atlas reinstall (later, separate decision)
 
