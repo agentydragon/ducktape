@@ -14,7 +14,8 @@ import { finishSessionCreate, withinSessionCreate } from "../tracing";
 import { useFrontendConfig } from "../frontend_config";
 import { appDocumentTitle, CONNECTING_TAB_STATUS, threadDocumentTitle } from "../tab_metadata";
 import { useThreadSync } from "./thread_sync";
-import { ThreadConversation, DEFAULT_COMPOSER_PLACEHOLDER } from "./conversation";
+import { ThreadConversation } from "./conversation";
+import { DEFAULT_COMPOSER_PLACEHOLDER } from "./composer";
 import "./page.css";
 import "./conversation.css";
 

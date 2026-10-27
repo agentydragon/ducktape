@@ -1,7 +1,7 @@
-import { ActionIcon, Button, Group, Menu, Select, Stack, Text, Textarea } from "@mantine/core";
-import { IconDotsVertical, IconHistory, IconPlayerStop, IconSend } from "../icons";
+import { ActionIcon, Button, Group, Menu, Select, Stack, Text } from "@mantine/core";
+import { IconDotsVertical, IconHistory } from "../icons";
 import { intlFormatDistance } from "date-fns";
-import { type JSX, type KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
+import { type JSX, useCallback, useEffect, useState } from "react";
 
 import {
   displayableError,
@@ -31,6 +31,7 @@ import { TopbarActions } from "../topbar";
 import { langfuseSandboxTraceUrl } from "../langfuse_search";
 import { traceSearchUrl } from "../trace_search";
 import { type ThreadTabTitleStatus } from "../tab_metadata";
+import { ThreadComposer } from "./composer";
 import { VirtualizedHistory } from "./virtualized_history";
 
 /** The app's event-derived hint, not a measured provider send or cache hit. */
@@ -77,8 +78,6 @@ function ModelActivityHint({
   );
 }
 
-export const DEFAULT_COMPOSER_PLACEHOLDER = "Enter sends, Shift+Enter or Ctrl+Enter for a new line";
-
 interface ConversationBodyProps {
   threadId: string;
   entities: ThreadEntity[];
@@ -110,7 +109,6 @@ function ConversationBody({
   langfuseSearch,
   sandbox,
 }: ConversationBodyProps): JSX.Element {
-  const [draft, setDraft] = useState("");
   const [clock, setClock] = useState(() => Date.now());
   useEffect(() => {
     const timer = window.setInterval(() => setClock(Date.now()), 60_000);
@@ -226,36 +224,6 @@ function ConversationBody({
     </Stack>
   );
 
-  // Two Enters before the cleared draft renders would otherwise submit the same text twice, under
-  // two command ids. Guards one render, not the lifetime of any HTTP request or command.
-  const submitting = useRef(false);
-  useEffect(() => {
-    submitting.current = false;
-  }, [draft]);
-
-  function submit(): void {
-    if (!draft.trim() || !canSend || submitting.current) return;
-    submitting.current = true;
-    if (commands.submitInput(draft)) setDraft("");
-    else submitting.current = false;
-  }
-
-  function composerKey(event: KeyboardEvent<HTMLTextAreaElement>): void {
-    if (event.key !== "Enter") return;
-    event.preventDefault();
-    if (!(event.ctrlKey || event.metaKey || event.shiftKey)) {
-      submit();
-      return;
-    }
-    // Insert the newline by hand: the preventDefault above already swallowed whatever the browser
-    // would otherwise have done for Ctrl/Cmd/Shift+Enter, and setting a controlled value leaves the
-    // caret at the end, so put it back where the newline went.
-    const field = event.currentTarget;
-    const at = field.selectionStart;
-    setDraft(`${draft.slice(0, at)}\n${draft.slice(field.selectionEnd)}`);
-    requestAnimationFrame(() => field.setSelectionRange(at + 1, at + 1));
-  }
-
   return (
     <RetainedDisclosureProvider>
       <Stack
@@ -289,24 +257,16 @@ function ConversationBody({
             {commands.submissionError}
           </Text>
         )}
-        <Textarea
-          value={draft}
-          onChange={(event) => setDraft(event.currentTarget.value)}
-          aria-label="Message"
-          placeholder={composerPlaceholder}
-          autosize
-          minRows={
-            composerPlaceholder === DEFAULT_COMPOSER_PLACEHOLDER
-              ? 2
-              : composerPlaceholder.endsWith(DEFAULT_COMPOSER_PLACEHOLDER)
-                ? 4
-                : 3
-          }
-          maxRows={12}
-          disabled={!canSend}
-          onKeyDown={composerKey}
-        />
-        <Group className="agentplane-composer-controls" justify="space-between" gap="xs" wrap="nowrap" pb="xs">
+        <ThreadComposer
+          canSend={canSend}
+          running={running}
+          activeTurn={activeTurn}
+          canResumeSandbox={canResumeSandbox}
+          composerPlaceholder={composerPlaceholder}
+          onResumeSandbox={onResumeSandbox}
+          onSubmit={commands.submitInput}
+          onInterrupt={commands.interruptTurn}
+        >
           <Group className="agentplane-composer-settings" gap="xs" wrap="nowrap">
             <Select
               aria-label="Model"
@@ -396,30 +356,7 @@ function ConversationBody({
             idleSince={activeTurn ? null : thread.idle_since}
             className="agentplane-composer-model-activity"
           />
-          <Group className="agentplane-composer-send" gap="xs" wrap="nowrap">
-            {canResumeSandbox ? (
-              <Button size="xs" variant="light" onClick={onResumeSandbox}>
-                Resume Sandbox
-              </Button>
-            ) : (
-              <>
-                <ActionIcon
-                  size="lg"
-                  variant="light"
-                  color="red"
-                  aria-label="Interrupt"
-                  disabled={!running || !activeTurn}
-                  onClick={() => activeTurn && commands.interruptTurn(activeTurn)}
-                >
-                  <IconPlayerStop size={16} />
-                </ActionIcon>
-                <ActionIcon size="lg" aria-label="Send" disabled={!canSend || !draft.trim()} onClick={submit}>
-                  <IconSend size={16} />
-                </ActionIcon>
-              </>
-            )}
-          </Group>
-        </Group>
+        </ThreadComposer>
       </Stack>
     </RetainedDisclosureProvider>
   );
