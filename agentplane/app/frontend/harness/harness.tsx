@@ -594,6 +594,13 @@ function egressDecisions(): DecisionsSnapshot {
   return { watching: true, decisions: DECISIONS };
 }
 
+function egressFrame(): string {
+  if (flags.has("egressInvalidFrame")) {
+    return JSON.stringify({ watching: true, decisions: [{ host: "invalid.example.test" }] });
+  }
+  return JSON.stringify(egressDecisions());
+}
+
 const IDLE_THREAD = "5f1c4a2e-0000-4000-8000-000000000001";
 const UNNAMED_STOPPED_THREAD = "5f1c4a2e-0000-4000-8000-000000000000";
 const RUNNING_THREAD = "5f1c4a2e-0000-4000-8000-000000000002";
@@ -2404,7 +2411,8 @@ type Flag =
   | "pushBrowserAdded"
   | "connectionRenamed"
   | "mcpLinkageChanged"
-  | "mcpHealthChanged";
+  | "mcpHealthChanged"
+  | "egressInvalidFrame";
 const flags = new Set<Flag>();
 
 function actionGroups(): ActionGroupView[] {
@@ -3133,7 +3141,7 @@ class HarnessEventSource extends EventTarget {
       return;
     }
     if (/^\/live\/sandboxes\/[^/]+\/egress\/decisions$/.test(url.pathname)) {
-      this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(egressDecisions()) }));
+      this.dispatchEvent(new MessageEvent("snapshot", { data: egressFrame() }));
       return;
     }
     if (url.pathname === "/live/sandboxes") {

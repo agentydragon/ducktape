@@ -31,6 +31,7 @@ export interface StreamStatus {
 
 function standingAt(connection: StreamConnection, stalled: string | null, now: number): Standing {
   if (stalled !== null) return "stale";
+  if (connection.phase === "invalid") return "stale";
   if (connection.phase === "live") return "current";
   const off = now - connection.since;
   return off >= STALE_AFTER_MS ? "stale" : off >= DEGRADED_AFTER_MS ? "degraded" : "current";
@@ -81,6 +82,7 @@ export class StreamRegistry {
           : { name, connection, stalled, standing }
       );
       if (connection.phase === "live") continue;
+      if (connection.phase === "invalid") continue;
       for (const threshold of [DEGRADED_AFTER_MS, STALE_AFTER_MS]) {
         const until = connection.since + threshold - now;
         if (until > 0) next = Math.min(next, until);
@@ -143,8 +145,10 @@ function describe({ name, connection, stalled }: StreamStatus): string {
   if (connection.phase === "reconnecting") {
     parts.push(`attempt ${connection.attempt}`);
     if (connection.lastError !== null) parts.push(connection.lastError);
+  } else if (connection.phase === "invalid") {
+    parts.push(connection.lastError);
   }
-  if (stalled !== null) parts.push(`${stalled}; the server keeps retrying`);
+  if (stalled !== null) parts.push(stalled);
   return parts.join(" · ");
 }
 

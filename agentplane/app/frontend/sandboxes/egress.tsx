@@ -6,8 +6,11 @@ import { TimeAgo } from "../time_ago";
 import type { Decision } from "../client";
 import { type DecisionGroup, groupDecisions } from "./decision_groups";
 import { type DecisionsSnapshot, liveEgressDecisionsUrl } from "../live";
-import { followStream, type StreamConnection } from "../live_stream";
+import { zDecisionsSnapshot } from "../api/live_schema.zod";
+import { followStream, parseJsonFrame, type StreamConnection } from "../live_stream";
 import { useStreamStatus } from "../stream_status";
+
+const zDecisionsWatching = zDecisionsSnapshot.pick({ watching: true });
 
 /** The groups whose requests are listed, comma-separated; a group key has no comma in it. */
 const GROUPS_PARAM = "decision_groups";
@@ -196,22 +199,43 @@ function DecisionsTable({ decisions }: { decisions: Decision[] }): JSX.Element {
 }
 
 /** The sandbox's decisions as the proxy reports them: a snapshot per change, none while it is quiet. */
-function useEgressDecisions(name: string): { snapshot: DecisionsSnapshot | null } {
+function useEgressDecisions(name: string): { snapshot: DecisionsSnapshot | null; frameError: string | null } {
   const [snapshot, setSnapshot] = useState<DecisionsSnapshot | null>(null);
+  const [snapshotError, setSnapshotError] = useState<string | null>(null);
+  const [healthError, setHealthError] = useState<string | null>(null);
   const [connection, setConnection] = useState<StreamConnection>(() => ({ phase: "connecting", since: Date.now() }));
   useEffect(() => {
     setSnapshot(null);
+    setSnapshotError(null);
+    setHealthError(null);
     return followStream(liveEgressDecisionsUrl(name), {
       events: {
-        snapshot: (message) => setSnapshot(JSON.parse(message.data) as DecisionsSnapshot),
-        health: (message) =>
-          setSnapshot((current) => current && { ...current, ...(JSON.parse(message.data) as { watching: boolean }) }),
+        snapshot: (message) => {
+          const parsed = parseJsonFrame(zDecisionsSnapshot, message.data, "Egress snapshot");
+          if (!parsed.success) {
+            setSnapshotError(parsed.error);
+            return parsed.error;
+          }
+          setSnapshot(parsed.data);
+          setSnapshotError(null);
+          setHealthError(null);
+        },
+        health: (message) => {
+          const parsed = parseJsonFrame(zDecisionsWatching, message.data, "Egress health");
+          if (!parsed.success) {
+            setHealthError(parsed.error);
+            return parsed.error;
+          }
+          setSnapshot((current) => current && { ...current, watching: parsed.data.watching });
+          setHealthError(null);
+        },
       },
       onConnection: setConnection,
     });
   }, [name]);
-  useStreamStatus(`Egress decisions of ${name}`, connection);
-  return { snapshot };
+  const frameError = snapshotError ?? healthError;
+  useStreamStatus(`Egress decisions of ${name}`, connection, frameError);
+  return { snapshot, frameError };
 }
 
 /** What recently left the sandbox, or was refused, as the egress proxy reports it. */
@@ -220,6 +244,13 @@ export function EgressLog({ name }: { name: string }): JSX.Element {
   return (
     <Stack gap="xs">
       <Title order={5}>Recent decisions</Title>
+      {decisions.frameError !== null && (
+        <Text size="sm" c="red" role="alert">
+          An invalid egress update was ignored
+          {decisions.snapshot === null ? "; waiting for a valid snapshot" : "; showing the last valid log"} (
+          {decisions.frameError})
+        </Text>
+      )}
       {decisions.snapshot !== null && !decisions.snapshot.watching && (
         <Text size="sm" c="dimmed">
           Not hearing from the egress proxy about new decisions; this log may be behind.
