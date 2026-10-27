@@ -336,7 +336,10 @@ pub fn read_bytes(path: &Path) -> Result<Vec<u8>> {
     let bytes = fs::read(path).with_context(|| format!("reading {}", path.display()))?;
     if let Some(state) = active_capture() {
         let mut guard = state.lock().expect("capture lock");
-        if let Some(provenance) = guard.as_mut() {
+        {
+            let provenance = guard
+                .as_mut()
+                .context("graph capture ended before input read")?;
             let (root, relative) = provenance.classify(path)?;
             let entry = InputFile {
                 root,
@@ -369,7 +372,10 @@ pub fn read_to_string(path: &Path) -> Result<String> {
 pub fn record_absent(path: &Path) -> Result<()> {
     if let Some(state) = active_capture() {
         let mut guard = state.lock().expect("capture lock");
-        if let Some(provenance) = guard.as_mut() {
+        {
+            let provenance = guard
+                .as_mut()
+                .context("graph capture ended before absent-input check")?;
             let (root, path) = provenance.classify(path)?;
             provenance.absent_files.push(InputPath { root, path });
         }
@@ -385,7 +391,10 @@ pub fn record_chunk_source(
 ) -> Result<()> {
     if let Some(state) = active_capture() {
         let mut guard = state.lock().expect("capture lock");
-        if let Some(provenance) = guard.as_mut() {
+        {
+            let provenance = guard
+                .as_mut()
+                .context("graph capture ended before source mapping")?;
             let (root, path) = provenance.classify(input_file)?;
             provenance.chunk_sources.push(ChunkSource {
                 chunk_id: chunk_id.to_string(),
@@ -403,7 +412,10 @@ pub fn record_chunk_source(
 pub fn record_yaml_membership(directory: &Path, members: &[PathBuf]) -> Result<()> {
     if let Some(state) = active_capture() {
         let mut guard = state.lock().expect("capture lock");
-        if let Some(provenance) = guard.as_mut() {
+        {
+            let provenance = guard
+                .as_mut()
+                .context("graph capture ended before YAML membership check")?;
             let (root, relative_dir) = provenance.classify(directory)?;
             let mut relative_members = members
                 .iter()
