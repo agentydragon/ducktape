@@ -321,9 +321,9 @@ py_library(
         ":environment",
         ":notifications",
         ":telemetry",
-        "//agentplane/egress:platform_routes",
         "//agentplane/egress:resources",
         "//agentplane/egress:sidecar_config",
+        "//agentplane/egress/sidecar/configpb:config_pb2",
         "//agentplane/history_service:settings",
         "//agentplane/runner:configuration",
         "//agentplane/runner_gateway:api",
@@ -336,6 +336,7 @@ py_library(
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
+        "@pypi//protobuf",
     ],
 )
 
@@ -1217,13 +1218,14 @@ py_library(
         ":runner_gateway",
         ":sandbox_pod",
         ":telemetry",
-        "//agentplane/egress:platform_routes",
+        "//agentplane/egress/sidecar/configpb:config_pb2",
         "//agentplane/history_service:settings",
         "//agentplane/runner_gateway:api",
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "@pypi//cdk8s",
         "@pypi//constructs",
+        "@pypi//protobuf",
     ],
 )
 

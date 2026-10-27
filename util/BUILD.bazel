@@ -495,3 +495,13 @@ py_wheel(
     visibility = ["//visibility:public"],
     deps = [":network_monitor_pkg"],
 )
+
+py_library(
+    name = "protobuf_config",
+    srcs = ["protobuf_config.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//protobuf",
+        "@pypi//protovalidate",
+    ],
+)

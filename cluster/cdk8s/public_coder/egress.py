@@ -4,8 +4,7 @@ Only the relay holds the Pod-bound token. Credential values stay in the gateway'
 isolated namespace; the app receives canonical placeholders under its existing env names.
 """
 
-from pathlib import Path
-
+import protovalidate
 from agentplane_egresscredential_crds.works.allegedly.agentplane import (
     EgressCredentialSpecTargets,
     EgressCredentialSpecTargetsMethod,
@@ -20,6 +19,7 @@ from cdk8s_plus_34 import ServiceAccount, k8s
 from constructs import Construct
 
 from agentplane.egress import sidecar_config
+from agentplane.egress.sidecar.configpb import config_pb2
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import actions, egress
@@ -33,6 +33,10 @@ from cluster.cdk8s.providers.agentplane.policy_binding import PolicyBinding
 from cluster.cdk8s.providers.agentplane.policy_set import Rule
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.settings_file import PodWiring, SettingsFile
+from util.protobuf import message_dict
+
+# Generated message stubs import protobuf's own types.
+# gazelle:include_dep @pypi//protobuf
 
 NAMESPACE = "public-coder-agent"
 LABELS = {"app.kubernetes.io/name": NAMESPACE}
@@ -55,16 +59,15 @@ _SETTINGS_PATH = "/etc/agentplane-egress-sidecar/settings.yaml"
 
 def add_relay_settings(scope: Construct) -> PodWiring:
     """The relay's settings ConfigMap, and what the Pod needs to mount it."""
-    settings = sidecar_config.Settings(
-        proxy_host=GATEWAY.fqdn, proxy_port=GATEWAY.pod_port, token_file=Path(_TOKEN_DIR) / "token"
-    )
+    config = config_pb2.Config(proxy_host=GATEWAY.fqdn, proxy_port=GATEWAY.pod_port, token_file=f"{_TOKEN_DIR}/token")
+    protovalidate.validate(config)
     return SettingsFile(
         scope,
         "egress-sidecar-settings",
         metadata=ApiObjectMetadata(name=_SETTINGS_CONFIG_MAP, namespace=NAMESPACE),
-        content=yaml_config(settings),
+        content=yaml_config(message_dict(config)),
         path=_SETTINGS_PATH,
-    ).pod_wiring(volume_name=_SETTINGS_VOLUME, env=sidecar_config.Settings.config_file_env)
+    ).pod_wiring(volume_name=_SETTINGS_VOLUME, env=sidecar_config.CONFIG_FILE_ENV)
 
 
 def relay_container(settings: PodWiring) -> k8s.Container:

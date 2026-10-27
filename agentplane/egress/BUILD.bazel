@@ -116,10 +116,6 @@ py_library(
         "//cluster/cdk8s/agentplane:__pkg__",
         "//cluster/cdk8s/public_coder:__pkg__",
     ],
-    deps = [
-        ":platform_routes",
-        "@pypi//pydantic",
-    ],
 )
 
 py_test(
@@ -153,26 +149,17 @@ py_library(
     ],
 )
 
-py_library(
-    name = "platform_routes",
-    srcs = ["platform_routes.py"],
-    visibility = [
-        "//agentplane:__subpackages__",
-        "//cluster/cdk8s/agentplane:__pkg__",
-    ],
-    deps = ["@pypi//pydantic"],
-)
-
 py_test(
     name = "test_platform_routes",
     srcs = ["test_platform_routes.py"],
     data = ["//agentplane/egress/sidecar:egress-sidecar"],
     deps = [
         ":conftest",
-        ":platform_routes",
         "//:conftest",
+        "//agentplane/egress/sidecar/configpb:config_pb2",
         "//agentplane/egress/testing:sidecar_process",
         "@pypi//grpcio",
+        "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

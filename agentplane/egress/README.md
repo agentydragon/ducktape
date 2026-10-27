@@ -56,9 +56,9 @@ Also here:
 - `sidecar/configpb/config.proto`: the Go sidecar configuration schema, decoded with Buf's `protoyaml`
   and validated with `protovalidate`. Optional listener and port fields distinguish omission from an
   invalid explicit empty string or zero.
-- `sidecar_config.py` and `platform_routes.py`: Python settings and route models cdk8s renders each
-  Sandbox template's sidecar settings ConfigMap from. The process entry point and both forwarding
-  paths live in Go; `platform_routes.py` does not serve traffic.
+- `sidecar/configpb:config_pb2`: generated Python config and route messages used by cdk8s and process
+  tests. ConfigMap synthesis validates the same annotations as the Go runtime. `sidecar_config.py`
+  holds process/probe constants; omitted settings receive defaults in the Go loader.
 - `decisions_client.py` and `decisions.py`: the integration app's authenticated gRPC decisions
   stream client and browser projection, served by `EgressAdmin.WatchDecisions` on the admin listener.
 - `testing/`: the throwaway CAs and process launchers `test_proxy.py` runs the built binaries with.
