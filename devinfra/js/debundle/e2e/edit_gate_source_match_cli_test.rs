@@ -87,7 +87,7 @@ fn malformed_manual_claim_edits_are_refused_before_unassigning() {
         (
             "const alpha = {}; const gamma = 3; alpha.x = 1; alpha.x = 1;",
             "anonymous_statements: [{match: 'alpha.x = 1;'}]",
-            "anonymous statement selector matched 2 source statements",
+            "is ambiguous -- matched 2 top-level statements",
         ),
     ] {
         let fixture = GraphFixture::new(source, &[GAMMA]);
