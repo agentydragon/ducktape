@@ -161,7 +161,10 @@ agentplane_vitest_test(
 ts_library(
     name = "projected_session",
     srcs = [
+        "history_row_views.tsx",
         "projected_session.tsx",
+        "projected_session_view.tsx",
+        "virtualized_history.tsx",
     ],
     tsconfig = TSCONFIG,
     deps = [

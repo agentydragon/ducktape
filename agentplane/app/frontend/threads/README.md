@@ -4,7 +4,9 @@
 Thread list used there and in the sidebar. `thread_groups.ts`, `thread_notices.tsx`,
 the status indicator, and the Thread tab favicon belong with that navigation.
 
-`projected_session.tsx` presents the conversation and composer. `thread_commands.tsx`
+`projected_session.tsx` resolves the selected Thread and its live availability. `projected_session_view.tsx`
+connects synchronization with the composer and command delivery; `history_row_views.tsx` renders history rows,
+and `virtualized_history.tsx` owns their virtualization and scroll anchoring. `thread_commands.tsx`
 owns local delivery, retries, and command outcome presentation. `thread_sync.ts`
 defines the view-facing contract, and `thread_store.tsx` implements it with
 Electric. `thread_cards.tsx` renders bodies and cards, while `thread_evidence.tsx`

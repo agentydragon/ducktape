@@ -1,5 +1,5 @@
 /**
- * What `VirtualizedHistory` marks for inspection, for tests and for chasing a reader-position
+ * What `VirtualizedHistory` in `virtualized_history.tsx` marks for inspection, for tests and for chasing a reader-position
  * bug: User Timing marks for its scroll and layout decisions, and whether its layout has come
  * to rest. The Playwright harness installs the test-only mark collector before the app loads.
  */
