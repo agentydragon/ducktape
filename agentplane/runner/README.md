@@ -120,6 +120,12 @@ default ACL and private `.home` directory.
 
 ## Tests
 
+`//agentplane/runner:runner_test` and `//agentplane/runner/codex:codex_test` run with Go's race detector. The
+Codex router test drives parallel sessions through shared host, request, and thread routing state. The
+runner suite includes its journal, process, and session tests. `test_cgroups.py` uses the separate pure-Go
+`runner_cgroup_fixture` binary because it reruns that binary inside strict memory and PID limits; the
+production `//agentplane/runner/cmd:agentplane-runner` remains pure-Go as well.
+
 ### Native subagents
 
 Both launches enable native delegation: Codex multi-agent tools and Claude's `Agent`,

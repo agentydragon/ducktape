@@ -132,6 +132,9 @@ transaction, a group regaining health wakes it on its own replica, and losing or
 the listener wakes it too, so a commit made while the listener was down is still found. A failed
 re-read retries with exponential backoff; there is no periodic re-read.
 
+`//agentplane/action_service/worker:integration_test` runs with Go's race detector. Its concurrent-worker
+case holds five dispatch rows until two workers are waiting, then verifies each request runs once.
+
 ### Trusted read-only services
 
 `reader_accounts` (empty by default) allows named workload ServiceAccounts to read all Actions

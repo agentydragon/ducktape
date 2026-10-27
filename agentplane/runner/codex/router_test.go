@@ -2,7 +2,9 @@ package codex
 
 import (
 	"encoding/json"
+	"fmt"
 	"slices"
+	"sync"
 	"testing"
 )
 
@@ -68,4 +70,73 @@ func TestReleasedSessionReceivesNothingUntilHostedAgain(t *testing.T) {
 	router.Host("first")
 	assertRoute(t, router, `{"id":"turn-1","result":{"turn":{"id":"turn-1"}}}`, "first")
 	assertRoute(t, router, `{"method":"item/started","params":{"threadId":"thread-first"}}`, "first")
+}
+
+func TestRouterSupportsConcurrentSessions(t *testing.T) {
+	const (
+		sessionCount = 8
+		iterations   = 64
+		readerCount  = 4
+	)
+
+	router := NewRouter[string]()
+	start := make(chan struct{})
+	var ready sync.WaitGroup
+	var workers sync.WaitGroup
+	ready.Add(sessionCount + readerCount)
+	workers.Add(sessionCount + readerCount)
+
+	for session := range sessionCount {
+		host := fmt.Sprintf("session-%d", session)
+		go func() {
+			defer workers.Done()
+			ready.Done()
+			<-start
+			for i := range iterations {
+				requestID := fmt.Sprintf("resume-%d-%d", session, i)
+				threadID := fmt.Sprintf("thread-%d-%d", session, i)
+				router.Host(host)
+				if err := router.Sent(host, json.RawMessage(fmt.Sprintf(
+					`{"id":%q,"method":"thread/resume","params":{"threadId":%q}}`, requestID, threadID,
+				))); err != nil {
+					t.Errorf("Sent(%q) = %v", requestID, err)
+					return
+				}
+				response := json.RawMessage(fmt.Sprintf(
+					`{"id":%q,"result":{"thread":{"id":%q}}}`, requestID, threadID,
+				))
+				if got := router.Route(response); !slices.Equal(got, []string{host}) {
+					t.Errorf("Route(%s) = %v, want [%s]", response, got, host)
+					return
+				}
+				notification := json.RawMessage(fmt.Sprintf(
+					`{"method":"turn/started","params":{"threadId":%q}}`, threadID,
+				))
+				if got := router.Route(notification); !slices.Equal(got, []string{host}) {
+					t.Errorf("Route(%s) = %v, want [%s]", notification, got, host)
+					return
+				}
+			}
+			router.Release(host)
+		}()
+	}
+
+	for range readerCount {
+		go func() {
+			defer workers.Done()
+			ready.Done()
+			<-start
+			for range iterations * 2 {
+				_ = router.Hosts()
+				_ = router.Route(json.RawMessage(`{"method":"account/rateLimits/updated"}`))
+			}
+		}()
+	}
+
+	ready.Wait()
+	close(start)
+	workers.Wait()
+	if got := router.Hosts(); len(got) != 0 {
+		t.Fatalf("Hosts() after all sessions released = %v, want empty", got)
+	}
 }

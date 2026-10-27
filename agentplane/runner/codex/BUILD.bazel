@@ -29,6 +29,7 @@ go_test(
         "router_test.go",
     ],
     embed = [":codex"],
+    race = "on",
     deps = [
         "//agentplane/proto:event_go_proto",
         "//agentplane/runner/codex/protocol",
