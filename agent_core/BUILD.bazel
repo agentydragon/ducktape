@@ -163,6 +163,7 @@ py_test(
         "//openai_utils:model",
         "@pypi//httpx2",
         "@pypi//openai",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

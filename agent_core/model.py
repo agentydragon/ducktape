@@ -172,17 +172,17 @@ class ChatCompletionsAgentModel(AgentModelProto):
         if text:
             output.append(AssistantMessageOut(content=[OutputText(text=text)]))
 
-        output.extend(
-            [
+        for tool_call in message.tool_calls or []:
+            if tool_call.type != "function":
+                raise ValueError(f"Unsupported chat completion tool call type: {tool_call.type!r}")
+            output.append(
                 FunctionCallItem(
                     name=tool_call.function.name,
                     arguments=tool_call.function.arguments,
                     call_id=tool_call.id,
                     id=tool_call.id,
                 )
-                for tool_call in message.tool_calls or []
-            ]
-        )
+            )
 
         return AgentModelResult(id=response.id, usage=_chat_usage_to_response_usage(response.usage), output=output)
 
