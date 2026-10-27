@@ -14,8 +14,10 @@ import { finishSessionCreate, withinSessionCreate } from "../tracing";
 import { useFrontendConfig } from "../frontend_config";
 import { appDocumentTitle, CONNECTING_TAB_STATUS, threadDocumentTitle } from "../tab_metadata";
 import { useThreadSync } from "./thread_sync";
-import { SyncedThread, DEFAULT_COMPOSER_PLACEHOLDER } from "./projected_session_view";
-import "./projected_session.css";
+import { ThreadConversation } from "./conversation";
+import { DEFAULT_COMPOSER_PLACEHOLDER } from "./composer";
+import "./page.css";
+import "./conversation.css";
 
 /** Why the thread's sandbox cannot take commands, as the inventory last reported it; the composer's
  * dot says only "Sandbox unavailable". An absence reads as a deletion only from a current inventory:
@@ -47,12 +49,12 @@ function sandboxNotice(sandbox: SandboxView | undefined, inventoryFresh: boolean
   return `Last observed Sandbox and Pod: ${summary.label}. Showing retained Thread history; controls are disabled.`;
 }
 
-export interface ProjectedSessionProps {
+export interface ThreadPageProps {
   threadId: string;
   settingsOpen?: boolean;
 }
 
-export function ProjectedSession({ threadId, settingsOpen = false }: ProjectedSessionProps): JSX.Element {
+export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps): JSX.Element {
   const sync = useThreadSync();
   const threadsLive = useRequiredThreadsLive();
   const snapshotThread = threadsLive.snapshot?.threads.find((candidate) => candidate.id === threadId);
@@ -151,7 +153,7 @@ export function ProjectedSession({ threadId, settingsOpen = false }: ProjectedSe
         )}
         {thread && (
           <sync.Thread key={threadId} threadId={threadId}>
-            <SyncedThread
+            <ThreadConversation
               threadId={threadId}
               thread={thread}
               available={inventoryFresh && sandboxReady(sandbox)}

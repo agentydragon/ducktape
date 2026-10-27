@@ -114,7 +114,7 @@ func api(t *testing.T, reviews auth.TokenReviews, index *policy.Index) http.Hand
 	t.Cleanup(server.Stop)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	rulesFacade, err := facade.NewHandler(ctx, listener.Addr().String(), egressrulespb.RegisterEgressRulesHandlerFromEndpoint)
+	rulesFacade, err := facade.NewHandler(ctx, listener.Addr().String(), 0, egressrulespb.RegisterEgressRulesHandlerFromEndpoint)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -40,7 +40,6 @@ from agentplane.app.threads.dispatcher_client import SessionDispatcherClient
 from agentplane.app.threads.runner_directory import RunnerDirectory, SandboxNotReachableError
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
-from agentplane.app.upstream_proxy import UpstreamProxy
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.grpc.calls import ServiceError
 from agentplane.history_service.testing.history import History
@@ -141,7 +140,6 @@ def bare_app(
     reviewer: TokenReviewer,
     electric_proxy: ElectricProxy,
     notifications: NotificationsOperatorClient,
-    dispatcher_http: UpstreamProxy,
     event_logs: SeededEventLogStore,
     content: ContentStore,
 ) -> FastAPI:
@@ -164,7 +162,6 @@ def bare_app(
         database_updates=database_updates,
         operator_sessions=operator_sessions,
         notifications=notifications,
-        dispatcher_http=dispatcher_http,
         system_status=answering_system_status(),
     )
 
@@ -838,7 +835,6 @@ async def test_unanswered_service_command_is_a_504_and_cancels_its_rpc(
     content: ContentStore,
     electric_proxy: ElectricProxy,
     notifications: NotificationsOperatorClient,
-    dispatcher_http: UpstreamProxy,
 ) -> None:
     """Bound command admission at the public service RPC, without runner internals."""
     live_index.sandboxes["live"], live_index.pods["live"] = await namespace.runner("live")
@@ -861,7 +857,6 @@ async def test_unanswered_service_command_is_a_504_and_cancels_its_rpc(
             operator_sessions=operator_sessions,
             electric=electric_proxy,
             notifications=notifications,
-            dispatcher_http=dispatcher_http,
             system_status=answering_system_status(),
         )
         async with _agent_client(app, agent_auth) as http, asyncio.timeout(10):

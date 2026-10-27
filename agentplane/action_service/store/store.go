@@ -11,6 +11,8 @@ import (
 	"database/sql"
 	"errors"
 	"time"
+
+	"github.com/agentydragon/ducktape/agentplane/postgres/go"
 )
 
 // Channels the store notifies.
@@ -32,30 +34,16 @@ func New(db *sql.DB) *Store { return &Store{db: db} }
 func now() time.Time { return time.Now().UTC().Truncate(time.Microsecond) }
 
 func (s *Store) transaction(ctx context.Context, f func(*sql.Tx) error) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	if err := f(tx); err != nil {
-		return err
-	}
-	return tx.Commit()
+	return postgres.Transaction(ctx, s.db, sql.TxOptions{}, f)
 }
 
 // read runs f on one snapshot, so a request, its Decision, its Execution and its Events agree.
 func (s *Store) read(ctx context.Context, f func(*sql.Tx) error) error {
-	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	return f(tx)
+	return postgres.ReadTransaction(ctx, s.db, sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true}, f)
 }
 
 func notify(ctx context.Context, tx *sql.Tx, channel, payload string) error {
-	_, err := tx.ExecContext(ctx, "SELECT pg_notify($1, $2)", channel, payload)
-	return err
+	return postgres.Notify(ctx, tx, channel, payload)
 }
 
 // Errors the store distinguishes. Every failure of a request that is not one of these is the database's.

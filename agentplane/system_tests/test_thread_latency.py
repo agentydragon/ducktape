@@ -9,7 +9,7 @@ clock in the frame that ends it: Claude's `result` `duration_ms`, Codex's `turn/
 `turn.durationMs`. That span holds the model call and the proxies on its path. The ceiling is on the
 difference, the runner's and the app's share, since the model's leg alone varies by seconds.
 
-**The open.** The reads `thread_store.tsx` makes before it can show that answer, through the app's
+**The open.** The reads `electric_sync.tsx` makes before it can show that answer, through the app's
 sync proxy (`agentplane/app/electric.py`), each stage timed from sending its first request to
 reading its last body:
 
@@ -84,7 +84,7 @@ class Stage(StrEnum):
 COLD_CEILINGS = {Stage.SCOPE: 1.0, Stage.ENTITY_SHAPE: 5.0, Stage.TAIL: 2.0, Stage.BODY_SHAPE: 5.0, Stage.BODY: 2.0}
 WARM_CEILINGS = COLD_CEILINGS | {Stage.ENTITY_SHAPE: 1.0, Stage.BODY_SHAPE: 1.0}
 
-# The subsets `EpochWindow` in thread_store.tsx loads before it shows a thread, in the forms the
+# The subsets `EpochWindow` in electric_sync.tsx loads before it shows a thread, in the forms the
 # proxy admits; the tail is its `PAGE`.
 NEWEST_FIRST = "entity_index DESC"
 TAIL = SubsetRequest(order_by=NEWEST_FIRST, limit=30)
@@ -173,7 +173,7 @@ def _answers(tail: list[Row]) -> list[ThreadPayloadReference]:
 
 
 def _bodies(references: list[ThreadPayloadReference]) -> SubsetRequest:
-    """One read naming every body, as `bodySubset` in thread_store.tsx forms it."""
+    """One read naming every body, as `bodySubset` in electric_sync.tsx forms it."""
     return SubsetRequest(
         where=" OR ".join(
             f"(owner_id = ${2 * n - 1} AND generation = ${2 * n})" for n in range(1, len(references) + 1)

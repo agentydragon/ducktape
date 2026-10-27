@@ -151,9 +151,7 @@ async def electric(
 
 @pytest.fixture
 def gateway_access(gateway_service: GatewayProcess, app_token_file: Path) -> GatewayAccess:
-    return GatewayAccess(
-        target=gateway_service.target, dispatcher_http_url=gateway_service.http_url, token_file=app_token_file
-    )
+    return GatewayAccess(target=gateway_service.target, token_file=app_token_file)
 
 
 @asynccontextmanager

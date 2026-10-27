@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
+	"github.com/agentydragon/ducktape/agentplane/postgres/go"
 )
 
 // decisionsChannel is notified with every committed batch, to every replica listening.
@@ -112,7 +113,7 @@ func (s *Store) Append(ctx context.Context, records []decision.Record) error {
 			return err
 		}
 	}
-	if _, err := tx.ExecContext(ctx, "SELECT pg_notify($1, '')", decisionsChannel); err != nil {
+	if err := postgres.Notify(ctx, tx, decisionsChannel, ""); err != nil {
 		return err
 	}
 	return tx.Commit()

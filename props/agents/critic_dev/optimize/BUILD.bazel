@@ -48,6 +48,7 @@ py_test(
         "//:conftest",
         "//agent_core/testing:responses",
         "//props:conftest",
+        "//props/agents:conftest",
         "//props/agents/critic/testing:mocks",
         "//props/agents/critic_dev/testing:mocks",
         "//props/agents/critic_dev/testing:orchestration_fixtures",

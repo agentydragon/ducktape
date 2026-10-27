@@ -125,6 +125,7 @@ go_library(
     deps = [
         "//agentplane/grpc/facade",
         "//agentplane/observability",
+        "//agentplane/postgres/go:postgres",
         "//agentplane/runner_gateway/dispatcher",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",
         "//agentplane/runner_gateway/gateway",

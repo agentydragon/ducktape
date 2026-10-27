@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/observability"
+	"github.com/agentydragon/ducktape/agentplane/postgres/go"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
@@ -86,20 +87,11 @@ type Store struct {
 func NewStore(db *sql.DB, queueCap int) *Store { return &Store{DB: db, QueueCap: queueCap} }
 
 func transaction(ctx context.Context, db *sql.DB, f func(*sql.Tx) error) error {
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	if err := f(tx); err != nil {
-		return err
-	}
-	return tx.Commit()
+	return postgres.Transaction(ctx, db, sql.TxOptions{}, f)
 }
 
 func notify(ctx context.Context, tx *sql.Tx) error {
-	_, err := tx.ExecContext(ctx, "SELECT pg_notify($1, '')", NotifyChannel)
-	return err
+	return postgres.Notify(ctx, tx, NotifyChannel, "")
 }
 
 func sessionLock(ctx context.Context, tx *sql.Tx, sessionID string) error {

@@ -33,7 +33,7 @@ a field a harness adds sends every such call to the JSON view while the tests st
   (`threads/chronological_debug.tsx`'s "Observation N raw frames"). Worth revisiting whether this is a distinction worth
   keeping or whether it should just say "Event" everywhere a stored `Event` is meant.
 - **Bubble chrome and the user bubble's blue read as unnecessary decoration**: `.agentplane-user-bubble`
-  (`threads/projected_session.css` ~line 40) fills the operator's bubble with `var(--mantine-color-blue-light)`; feedback
+  (`threads/conversation.css` ~line 40) fills the operator's bubble with `var(--mantine-color-blue-light)`; feedback
   was grey would do, since role already reads from position (right-aligned) without needing a hue. More broadly,
   consider dropping bubble/card chrome across `EntityCard` altogether -- the user bubble's background, and the
   bordered card an opened tool call or reasoning step gets (`DisclosureCard` in `disclosure.tsx`) -- and distinguishing rows
@@ -53,7 +53,7 @@ tool's JSON); decide whether they also need inline markers or an approval-card w
 
 ## Durable local storage for thread windows
 
-`RetainedThreads` (`threads/thread_store.tsx`) keeps the last few left threads' rows, complete bodies and log
+`RetainedThreads` (`threads/electric_sync.tsx`) keeps the last few left threads' rows, complete bodies and log
 positions in memory, so it covers switching threads but not a reload or a second tab, which still read every
 row and body again. Consider persisting them in IndexedDB, keyed by thread, projection epoch, owner and
 generation, so a reload only catches up from the saved log position. It needs a size budget with eviction,
@@ -62,7 +62,7 @@ keeping thread content at rest in the browser.
 
 ## Bound reading thread bodies ahead by size
 
-A window reads the bodies of every row it holds (`PayloadShape.readAhead` in `threads/thread_store.tsx`), but a
+A window reads the bodies of every row it holds (`PayloadShape.readAhead` in `threads/electric_sync.tsx`), but a
 payload reference carries `chunk_count` and no byte size, so the only bound on a read ahead is 20 bodies per
 read. A large tool output is read, and kept in memory with its thread's retained window, whether or not it is
 ever opened. Consider putting `content_bytes`, which the payload manifest already stores, on the reference so the

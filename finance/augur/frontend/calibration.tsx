@@ -1,25 +1,39 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { CategoricalPanel } from "./categorical_chart";
 import { CleanTable, SurfacedTable } from "./calibration_tables";
-import { fetchCalibrationRun } from "./client";
+import {
+  type fetchAugurCalibrationInfo,
+  type fetchAugurCatalog,
+  type fetchAugurSettings,
+  fetchCalibrationRun,
+  type CalibrationRunResponse,
+} from "./client";
 import { toastFetchError } from "./lib/toast";
 import { MetricFanChart } from "./fan_chart";
 import { RolloutResultsSkeleton } from "./skeleton";
 import { SanityBandsPanel } from "./sanity_bands_panel";
-import { FAN_PERCENTILES, clampRolloutCount, clampFirstSeed } from "./input_helpers";
+import { FAN_PERCENTILES, clampRolloutCount, clampFirstSeed, type metricScaleFromSearch } from "./input_helpers";
 import { markFanRows } from "./data_helpers";
+
+type Catalog = Awaited<ReturnType<typeof fetchAugurCatalog>>;
+type Settings = Awaited<ReturnType<typeof fetchAugurSettings>>;
+type CalibrationInfo = Awaited<ReturnType<typeof fetchAugurCalibrationInfo>>;
+type Bootstrap = Omit<Catalog, keyof Settings> & Settings & { calibration: CalibrationInfo };
+type MetricScale = ReturnType<typeof metricScaleFromSearch>;
+type MetricFanChartProps = Parameters<typeof MetricFanChart>[0];
+type CalibrationFan = NonNullable<CalibrationRunResponse["markFans"]>[number];
 
 // `chartValue` ending in `Usd` makes the shared `MetricFanChart` axis/tooltip format these
 // issuer channels as currency.
-const MARK_METRIC = { value: "mark_usd_per_unit", chartValue: "markUsd", label: "Per-unit mark" };
+const MARK_METRIC = { value: "mark_usd_per_unit", chartValue: "markUsd", label: "Per-unit mark" } as const;
 const VALUATION_METRIC = {
   value: "company_valuation_usd",
   chartValue: "companyValuationUsd",
   label: "Company valuation",
-};
+} as const;
 
-function CalibrationForm({ catalog }) {
+function CalibrationForm({ catalog }: { catalog: CalibrationInfo }) {
   return (
     <aside className="min-w-0">
       <div className="augur-card">
@@ -37,7 +51,23 @@ function CalibrationForm({ catalog }) {
   );
 }
 
-function IssuerFanPanel({ fan, metric, title, description, metricScale, dataAttribute, emptyLabel }) {
+function IssuerFanPanel({
+  fan,
+  metric,
+  title,
+  description,
+  metricScale,
+  dataAttribute,
+  emptyLabel,
+}: {
+  fan: CalibrationFan;
+  metric: MetricFanChartProps["metric"];
+  title: string;
+  description: string;
+  metricScale: MetricScale;
+  dataAttribute: string;
+  emptyLabel: string;
+}) {
   const rows = useMemo(() => markFanRows(fan), [fan]);
   const percentiles = fan?.percentiles?.length ? fan.percentiles : FAN_PERCENTILES;
   return (
@@ -69,7 +99,7 @@ function IssuerFanPanel({ fan, metric, title, description, metricScale, dataAttr
   );
 }
 
-function CalibrationResults({ response, metricScale }) {
+function CalibrationResults({ response, metricScale }: { response: CalibrationRunResponse; metricScale: MetricScale }) {
   const { result, markFans, valuationFans } = response;
   return (
     <div className="min-w-0 space-y-5">
@@ -133,11 +163,25 @@ function CalibrationResults({ response, metricScale }) {
   );
 }
 
-export function CalibrationWorkspace({ bootstrap, rolloutCount, firstSeed, model, metricScale, sharedControlsSlot }) {
+export function CalibrationWorkspace({
+  bootstrap,
+  rolloutCount,
+  firstSeed,
+  model,
+  metricScale,
+  sharedControlsSlot,
+}: {
+  bootstrap: Bootstrap;
+  rolloutCount: number;
+  firstSeed: number;
+  model: string | null;
+  metricScale: MetricScale;
+  sharedControlsSlot: ReactNode;
+}) {
   const catalog = bootstrap.calibration ?? null;
 
-  const [response, setResponse] = useState(null);
-  const [runError, setRunError] = useState(null);
+  const [response, setResponse] = useState<CalibrationRunResponse | null>(null);
+  const [runError, setRunError] = useState<string | null>(null);
   // A run is in flight over already-rendered results (vs. the first load, which shows the skeleton).
   // Drives a subtle dim instead of tearing the page down — see the effect and render below.
   const [refreshing, setRefreshing] = useState(false);

@@ -33,13 +33,13 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/worker"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
+	"github.com/agentydragon/ducktape/agentplane/postgres/go"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/probes"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
-	_ "github.com/lib/pq"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
@@ -110,14 +110,8 @@ func run(ctx context.Context, c config) error {
 }
 
 func openDatabase(ctx context.Context, databaseURL string) (*sql.DB, error) {
-	db, err := sql.Open("postgres", databaseURL)
+	db, err := postgres.Open(ctx, databaseURL, databaseConnections, databaseConnections/2)
 	if err != nil {
-		return nil, err
-	}
-	db.SetMaxOpenConns(databaseConnections)
-	db.SetMaxIdleConns(databaseConnections / 2)
-	if err := db.PingContext(ctx); err != nil {
-		db.Close()
 		return nil, fmt.Errorf("Notification Service PostgreSQL unavailable: %w", err)
 	}
 	return db, nil
@@ -246,7 +240,7 @@ func serve(ctx context.Context, c config, deps kubeDeps, listener net.Listener) 
 	// finish while draining.
 	facadeContext, stopFacade := context.WithCancel(context.WithoutCancel(ctx))
 	defer stopFacade()
-	agentFacade, err := facade.NewHandler(facadeContext, listener.Addr().String(), notificationspb.RegisterNotificationsHandlerFromEndpoint)
+	agentFacade, err := facade.NewHandler(facadeContext, listener.Addr().String(), 0, notificationspb.RegisterNotificationsHandlerFromEndpoint)
 	if err != nil {
 		return err
 	}

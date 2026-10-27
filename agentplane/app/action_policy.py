@@ -6,15 +6,15 @@ the bindings that feed it are the app's own PolicyBinding view, which every read
 
 from __future__ import annotations
 
+# Generated service annotations need the grpcio typing dependency.
+# gazelle:include_dep @pypi//grpcio
 from collections.abc import Mapping
 from typing import Literal
-from urllib.parse import urlencode
 
-import anyio
-from google.protobuf.json_format import MessageToDict, Parse
+from google.protobuf.json_format import MessageToDict
 from pydantic import BaseModel, ConfigDict, Field
 
-from agentplane.action_service import action_service_pb2 as action_pb
+from agentplane.action_service import action_service_pb2 as action_pb, action_service_pb2_grpc
 from agentplane.action_service.models import PolicyKind, PolicySource
 from agentplane.action_service.policy_view import (
     ArgumentSchemaView,
@@ -26,7 +26,7 @@ from agentplane.action_service.policy_view import (
     PolicyView,
 )
 from agentplane.app.action_federation import UpstreamFailure
-from agentplane.app.upstream_proxy import UpstreamProxy
+from agentplane.app.grpc_stream import OperatorGrpcClient
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.policy_sets import POLICY_SETS_PLURAL
 from agentplane.sandboxes.action_policy_views import ActionPolicyReader
@@ -56,7 +56,7 @@ class ActionPolicyUnavailable(BaseModel):
     kind: Literal["unavailable"] = "unavailable"
     code: str = Field(
         description="A federation failure code (`operator_session_required`, `operator_federation_not_configured`, "
-        "`operator_reauthentication_required`, ...), or `upstream_request_failed` when a request itself failed."
+        "`operator_reauthentication_required`, ...), or `upstream_request_failed` when an Action Service RPC failed."
     )
     upstream: UpstreamFailure | None = Field(
         default=None, description="For `upstream_request_failed`: the request that failed, without secrets."
@@ -73,18 +73,18 @@ class ActionPolicyInventory(ActionPolicyReader):
         )
         return sorted(item["metadata"]["name"] for item in listed["items"])
 
-    async def for_subject(self, proxy: UpstreamProxy, bearer: str, subject: ServiceAccountRef) -> ActionPolicyView:
-        """The subject's policy from the generated Action Service facade."""
-        query = urlencode({"subject.namespace": subject.namespace, "subject.name": subject.name})
-        upstream = await proxy.open_request(
-            "GET", "v1/action-policy", query, bearer=bearer, headers={"Accept": "application/json"}
-        )
-        try:
-            upstream.raise_for_status()
-            response = Parse((await upstream.aread()).decode(), action_pb.GetActionPolicyResponse())
-        finally:
-            with anyio.CancelScope(shield=True):
-                await upstream.aclose()
+    async def for_subject(
+        self,
+        client: OperatorGrpcClient,
+        stub: action_service_pb2_grpc.ActionServiceStub,
+        bearer: str,
+        subject: ServiceAccountRef,
+    ) -> ActionPolicyView:
+        """The subject's policy from the Action Service's generated gRPC API."""
+        request = action_pb.GetActionPolicyRequest()
+        request.subject.namespace = subject.namespace
+        request.subject.name = subject.name
+        response = await client.unary(stub.GetActionPolicy, request, bearer_token=bearer)
         if not response.HasField("action_policy"):
             raise ValueError("Action Service returned no action policy")
         policy = response.action_policy

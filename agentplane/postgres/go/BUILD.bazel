@@ -1,0 +1,10 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+package(default_visibility = ["//agentplane:__subpackages__"])
+
+go_library(
+    name = "postgres",
+    srcs = ["postgres.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/postgres/go",
+    deps = ["@com_github_lib_pq//:pq"],
+)

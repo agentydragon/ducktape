@@ -16,6 +16,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/postgres/go"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
@@ -104,25 +105,12 @@ const notLabeled = "the ServiceAccount is missing or not labeled as an Action ca
 func now() time.Time { return time.Now().UTC().Truncate(time.Microsecond) }
 
 func (s *Store) transaction(ctx context.Context, f func(*sql.Tx) error) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	if err := f(tx); err != nil {
-		return err
-	}
-	return tx.Commit()
+	return postgres.Transaction(ctx, s.db, sql.TxOptions{}, f)
 }
 
 // read runs f on one snapshot, so a Connection and its grants agree.
 func (s *Store) read(ctx context.Context, f func(*sql.Tx) error) error {
-	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	return f(tx)
+	return postgres.ReadTransaction(ctx, s.db, sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true}, f)
 }
 
 // accountDocument is a ServiceAccount as the JSONB columns hold it.
@@ -331,8 +319,7 @@ func changeConnection(
 
 // notify wakes the readers of UpdatesChannel when tx commits.
 func notify(ctx context.Context, tx *sql.Tx) error {
-	_, err := tx.ExecContext(ctx, `SELECT pg_notify($1, '')`, UpdatesChannel)
-	return err
+	return postgres.Notify(ctx, tx, UpdatesChannel, "")
 }
 
 func requireVersion(c *connection, expected int64) error {

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import timedelta
@@ -16,9 +17,18 @@ import httpx2
 from authlib.integrations.starlette_client import OAuth
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Path, Query, Request, status
 from fastapi.responses import JSONResponse, RedirectResponse, Response, StreamingResponse
-from google.protobuf.json_format import MessageToDict
+from google.protobuf.json_format import MessageToDict, Parse, ParseError
+from google.protobuf.message import Message
 from pydantic import AfterValidator, AwareDatetime, BaseModel, ConfigDict, Field, field_validator
 
+from agentplane.action_service import (
+    action_service_pb2,
+    action_service_pb2_grpc,
+    operator_action_service_pb2,
+    operator_action_service_pb2_grpc,
+    web_push_service_pb2,
+    web_push_service_pb2_grpc,
+)
 from agentplane.action_service.policy_view import ActionPolicySetView
 from agentplane.app import auth_routes
 from agentplane.app.action_federation import (
@@ -31,6 +41,7 @@ from agentplane.app.action_policy import ActionPolicyInventory, ActionPolicyUnav
 from agentplane.app.database_updates import Channel
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy, router as electric_router
+from agentplane.app.grpc_stream import OperatorGrpcClient, messages, unary
 from agentplane.app.identity import CallerKind, TokenReviewer, require_caller
 from agentplane.app.live import (
     ActionPolicy,
@@ -78,9 +89,9 @@ from agentplane.app.threads.store import MAX_PAGE, InvalidPageTokenError, Thread
 from agentplane.app.threads.thread_view import ThreadView
 from agentplane.app.threads.view.content import CommandIdConflictError, ContentStore
 from agentplane.app.trace_relay import relay_traces
-from agentplane.app.upstream_proxy import UpstreamProxy, response_body
 from agentplane.egress.decisions_client import DecisionsClient
-from agentplane.grpc.calls import RefusedError, ServiceError
+from agentplane.grpc.calls import RefusedError, ServiceError, bearer
+from agentplane.mcp_edge import connection_service_pb2, connection_service_pb2_grpc
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.proto import command_pb2
 from agentplane.runner.harness import Harness
@@ -143,9 +154,12 @@ class AppServices:
     reviewer: TokenReviewer | None
     operator_actions: FederatedOperatorActions | None
     electric: ElectricProxy | None
-    dispatcher_http: UpstreamProxy
-    actions_http: UpstreamProxy | None
-    connection_http: UpstreamProxy | None
+    action_service: action_service_pb2_grpc.ActionServiceStub | None
+    operator_action_service: operator_action_service_pb2_grpc.OperatorActionServiceStub | None
+    web_push_service: web_push_service_pb2_grpc.WebPushServiceStub | None
+    operator_grpc: OperatorGrpcClient | None
+    mcp_callback_http: httpx.AsyncClient | None
+    connection_service: connection_service_pb2_grpc.ConnectionServiceStub | None
     frontend_config: FrontendConfig = field(default_factory=FrontendConfig)
     oauth: OAuth | None = field(init=False)
     drain: Drain = field(default_factory=Drain)
@@ -303,133 +317,704 @@ def _operator_relay(
 upstream_router = APIRouter(prefix="/upstream", tags=["upstream"])
 
 
-def _generated_facade_route_allowed(method: str, path: str) -> bool:
-    """Keep the proxy inside a service's versioned HTTP facade namespace."""
-    segments = path.split("/")
-    return (
-        method in {"GET", "POST", "PATCH", "DELETE"}
-        and path.startswith("v1/")
-        and all(segment not in {"", ".", ".."} for segment in segments)
-        and "\\" not in path
-    )
+def _protobuf_json(message: Message) -> dict[str, Any]:
+    return MessageToDict(message, always_print_fields_with_no_presence=True)
 
 
-@upstream_router.get("/dispatcher/{path:path}", dependencies=[OperatorLogin])
-async def dispatcher_upstream(
-    request: Request, services: Services, shutdown: Shutdown, updates: Updates, sessions: OperatorSessions, path: str
-) -> StreamingResponse:
-    """The Session Dispatcher's HTTP/JSON reads (`agentplane/runner_gateway/dispatcher/session_dispatcher.proto`), unchanged,
-    for as long as the operator session lasts. Its commands are not reachable here: they go through the
-    Thread routes, whose checks the Dispatcher does not make."""
+def _protobuf_response(message: Message) -> JSONResponse:
+    return JSONResponse(_protobuf_json(message), headers={"Cache-Control": "no-store"})
+
+
+def _protobuf_body[RequestMessage: Message](body: bytes, message_type: type[RequestMessage]) -> RequestMessage:
     try:
-        upstream = await services.dispatcher_http.open_get(path, request.url.query)
-    except httpx.RequestError as error:
-        raise upstream_http_error(error) from error
-    return StreamingResponse(
-        operator_relay(request, shutdown, updates, sessions, response_body(upstream), "Dispatcher", (httpx.HTTPError,)),
-        status_code=upstream.status_code,
-        media_type=upstream.headers.get("content-type"),
-        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
-    )
+        return Parse(body.decode(), message_type())
+    except (UnicodeDecodeError, ParseError) as error:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, {"code": "INVALID_ARGUMENT", "message": "Malformed protobuf JSON request body"}
+        ) from error
 
 
-async def _operator_facade_upstream(
-    request: Request,
-    client: UpstreamProxy | None,
-    label: str,
-    shutdown: Shutdown,
-    updates: Updates,
-    sessions: OperatorSessions,
-    caller: Caller,
-    path: str,
-) -> StreamingResponse:
-    """Forward a generated facade call with this session's federated operator token.
+def _grpc_http_error(error: ServiceError) -> HTTPException:
+    code = error.code
+    status_code = {
+        grpc.StatusCode.CANCELLED: 499,
+        grpc.StatusCode.INVALID_ARGUMENT: 400,
+        grpc.StatusCode.DEADLINE_EXCEEDED: status.HTTP_504_GATEWAY_TIMEOUT,
+        grpc.StatusCode.NOT_FOUND: status.HTTP_404_NOT_FOUND,
+        grpc.StatusCode.ALREADY_EXISTS: status.HTTP_409_CONFLICT,
+        grpc.StatusCode.PERMISSION_DENIED: status.HTTP_403_FORBIDDEN,
+        grpc.StatusCode.RESOURCE_EXHAUSTED: status.HTTP_429_TOO_MANY_REQUESTS,
+        grpc.StatusCode.FAILED_PRECONDITION: status.HTTP_400_BAD_REQUEST,
+        grpc.StatusCode.ABORTED: status.HTTP_409_CONFLICT,
+        grpc.StatusCode.UNAUTHENTICATED: status.HTTP_401_UNAUTHORIZED,
+        grpc.StatusCode.UNAVAILABLE: status.HTTP_503_SERVICE_UNAVAILABLE,
+        grpc.StatusCode.UNIMPLEMENTED: status.HTTP_501_NOT_IMPLEMENTED,
+    }.get(code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+    return HTTPException(status_code, {"code": code.name, "message": error.details or ""})
 
-    Each service has its own explicitly configured client. Backend HTTP mappings and
-    authorization control which generated calls are available; browser credentials are never
-    forwarded.
-    """
-    if client is None:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, f"{label} is not configured")
-    if not _generated_facade_route_allowed(request.method, path):
-        raise HTTPException(status.HTTP_404_NOT_FOUND, f"unknown {label} route")
+
+async def _operator_bearer(request: Request, caller: Caller) -> str:
     try:
-        bearer = await operator_action_token(request, caller)
-        headers = {
-            key: value
-            for key in ("accept", "content-type", "user-agent")
-            if (value := request.headers.get(key)) is not None
-        }
-        upstream = await client.open_request(
-            request.method,
-            path,
-            request.url.query,
-            bearer=bearer,
-            headers=headers,
-            content=await request.body() if request.method != "GET" else None,
-        )
+        return await operator_action_token(request, caller)
     except OperatorFederationError as error:
         raise HTTPException(error.status_code, {"code": str(error)}) from None
     except (httpx.HTTPStatusError, httpx.RequestError, httpx2.HTTPStatusError, httpx2.TransportError) as error:
         raise upstream_http_error(error) from error
-    if 300 <= upstream.status_code < 400:
-        await upstream.aclose()
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"{label} redirects are not accepted")
+
+
+async def _operator_unary[ResponseMessage: Message](
+    request: Request,
+    caller: Caller,
+    rpc: Callable[..., Awaitable[ResponseMessage]] | None,
+    message: Message,
+    *,
+    label: str,
+    extra_metadata: tuple[tuple[str, str], ...] = (),
+) -> JSONResponse:
+    client = app_services(request.app).operator_grpc
+    if client is None or rpc is None:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, f"{label} is not configured")
+    bearer = await _operator_bearer(request, caller)
+    try:
+        response = await client.unary(rpc, message, bearer_token=bearer, extra_metadata=extra_metadata)
+    except ServiceError as error:
+        raise _grpc_http_error(error) from error
+    except TimeoutError as error:
+        raise HTTPException(
+            status.HTTP_504_GATEWAY_TIMEOUT,
+            {"code": grpc.StatusCode.DEADLINE_EXCEEDED.name, "message": f"{label} deadline expired"},
+        ) from error
+    return _protobuf_response(response)
+
+
+async def _operator_watch[ResponseMessage: Message](
+    request: Request,
+    caller: Caller,
+    rpc: Callable[..., grpc.aio.UnaryStreamCall[Any, ResponseMessage]] | None,
+    message: Message,
+    *,
+    label: str,
+    shutdown: Shutdown,
+    updates: Updates,
+    sessions: OperatorSessions,
+) -> StreamingResponse:
+    client = app_services(request.app).operator_grpc
+    if client is None or rpc is None:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, f"{label} is not configured")
+    bearer = await _operator_bearer(request, caller)
+    try:
+        watch = await client.open_watch(rpc, message, bearer_token=bearer)
+    except ServiceError as error:
+        raise _grpc_http_error(error) from error
+    except TimeoutError as error:
+        raise HTTPException(
+            status.HTTP_504_GATEWAY_TIMEOUT,
+            {"code": grpc.StatusCode.DEADLINE_EXCEEDED.name, "message": f"{label} watch timed out"},
+        ) from error
+    except ConnectionError as error:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            {"code": grpc.StatusCode.UNAVAILABLE.name, "message": f"{label} ended the watch early"},
+        ) from error
+
+    async def ndjson() -> AsyncIterator[bytes]:
+        async for response in messages(watch):
+            yield json.dumps({"result": _protobuf_json(response)}, separators=(",", ":")).encode() + b"\n"
+
     return StreamingResponse(
         operator_relay(
             request,
             shutdown,
             updates,
             sessions,
-            response_body(upstream),
+            ndjson(),
             label,
-            (httpx.HTTPError, httpx2.TransportError, OperatorFederationError),
+            (ServiceError, ConnectionError, OSError, TimeoutError),
         ),
-        status_code=upstream.status_code,
-        media_type=upstream.headers.get("content-type"),
+        media_type="application/x-ndjson",
         headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
     )
 
 
-@upstream_router.api_route(
-    "/actions/{path:path}",
-    methods=["GET", "POST", "PATCH", "DELETE"],
-    dependencies=[OperatorLogin],
-    include_in_schema=False,
+def _dispatcher_filter(
+    session_id: str | None, sandbox: str | None, command_ids: list[str] | None
+) -> session_dispatcher_pb2.DispatchFilter | None:
+    if session_id is not None and sandbox is not None:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            {"code": "INVALID_ARGUMENT", "message": "filter.sessionId and filter.sandbox are mutually exclusive"},
+        )
+    if session_id is None and sandbox is None and not command_ids:
+        return None
+    result = session_dispatcher_pb2.DispatchFilter(command_ids=command_ids or [])
+    if session_id is not None:
+        result.session_id = session_id
+    elif sandbox is not None:
+        result.sandbox = sandbox
+    return result
+
+
+async def _dispatcher_read[ResponseMessage: Message](
+    bridge: runner_bridge.RunnerBridge, rpc: Callable[..., Awaitable[ResponseMessage]], message: Message
+) -> JSONResponse:
+    """Read Dispatcher data with FAILED_PRECONDITION translated as a gRPC service status."""
+    dispatcher = bridge.dispatcher
+    try:
+        response = await unary(
+            rpc, message, metadata=await bearer(dispatcher.token_file), timeout_s=dispatcher.request_timeout_s
+        )
+    except ServiceError as error:
+        raise _grpc_http_error(error) from error
+    except TimeoutError as error:
+        raise HTTPException(
+            status.HTTP_504_GATEWAY_TIMEOUT,
+            {"code": grpc.StatusCode.DEADLINE_EXCEEDED.name, "message": "Session Dispatcher deadline expired"},
+        ) from error
+    return _protobuf_response(response)
+
+
+def _check_query(request: Request, accepted: set[str]) -> None:
+    unexpected = set(request.query_params.keys()) - accepted
+    if unexpected:
+        field = min(unexpected)
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, {"code": "INVALID_ARGUMENT", "message": f"Unknown query parameter {field}"}
+        )
+
+
+@upstream_router.get(
+    "/connections/v1/operator/caller-service-accounts", dependencies=[OperatorLogin], include_in_schema=False
 )
-async def actions_upstream(
-    request: Request,
-    services: Services,
-    shutdown: Shutdown,
-    updates: Updates,
-    sessions: OperatorSessions,
-    caller: Caller,
-    path: str,
-) -> StreamingResponse:
-    """Relay the Action Service facade and MCP linkage callback calls from this operator session."""
-    return await _operator_facade_upstream(
-        request, services.actions_http, "Action facade", shutdown, updates, sessions, caller, path
+async def list_connection_callers(request: Request, services: Services, caller: Caller) -> JSONResponse:
+    _check_query(request, set())
+    client = services.connection_service
+    return await _operator_unary(
+        request,
+        caller,
+        client.ListCallerServiceAccounts if client else None,
+        connection_service_pb2.ListCallerServiceAccountsRequest(),
+        label="Connection Service",
     )
 
 
-@upstream_router.api_route(
-    "/connections/{path:path}",
-    methods=["GET", "POST", "PATCH", "DELETE"],
-    dependencies=[OperatorLogin],
-    include_in_schema=False,
+@upstream_router.get("/connections/v1/operator/connections", dependencies=[OperatorLogin], include_in_schema=False)
+async def list_connections(request: Request, services: Services, caller: Caller) -> JSONResponse:
+    _check_query(request, set())
+    client = services.connection_service
+    return await _operator_unary(
+        request,
+        caller,
+        client.ListConnections if client else None,
+        connection_service_pb2.ListConnectionsRequest(),
+        label="Connection Service",
+    )
+
+
+@upstream_router.get(
+    "/connections/v1/operator/connections:watch", dependencies=[OperatorLogin], include_in_schema=False
 )
-async def connections_upstream(
+async def watch_connections(
     request: Request,
     services: Services,
     shutdown: Shutdown,
     updates: Updates,
     sessions: OperatorSessions,
     caller: Caller,
-    path: str,
 ) -> StreamingResponse:
-    """Relay generated ConnectionService calls to the explicitly configured Connection endpoint."""
-    return await _operator_facade_upstream(
-        request, services.connection_http, "Connection facade", shutdown, updates, sessions, caller, path
+    _check_query(request, set())
+    client = services.connection_service
+    return await _operator_watch(
+        request,
+        caller,
+        client.WatchConnections if client else None,
+        connection_service_pb2.WatchConnectionsRequest(),
+        label="Connection Service",
+        shutdown=shutdown,
+        updates=updates,
+        sessions=sessions,
+    )
+
+
+@upstream_router.get(
+    "/connections/v1/operator/connections/{connection_id}", dependencies=[OperatorLogin], include_in_schema=False
+)
+async def get_connection(request: Request, services: Services, caller: Caller, connection_id: str) -> JSONResponse:
+    _check_query(request, set())
+    client = services.connection_service
+    return await _operator_unary(
+        request,
+        caller,
+        client.GetConnection if client else None,
+        connection_service_pb2.GetConnectionRequest(connection_id=connection_id),
+        label="Connection Service",
+    )
+
+
+@upstream_router.patch(
+    "/connections/v1/operator/connections/{connection_id}", dependencies=[OperatorLogin], include_in_schema=False
+)
+async def update_connection(request: Request, services: Services, caller: Caller, connection_id: str) -> JSONResponse:
+    _check_query(request, set())
+    message = _protobuf_body(await request.body() or b"{}", connection_service_pb2.UpdateConnectionRequest)
+    if message.connection_id and message.connection_id != connection_id:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            {"code": "INVALID_ARGUMENT", "message": "Path connection_id does not match the request body"},
+        )
+    message.connection_id = connection_id
+    client = services.connection_service
+    return await _operator_unary(
+        request, caller, client.UpdateConnection if client else None, message, label="Connection Service"
+    )
+
+
+@upstream_router.post(
+    "/connections/v1/operator/connections/{connection_id}/rebind", dependencies=[OperatorLogin], include_in_schema=False
+)
+async def rebind_connection(request: Request, services: Services, caller: Caller, connection_id: str) -> JSONResponse:
+    _check_query(request, set())
+    message = _protobuf_body(await request.body() or b"{}", connection_service_pb2.RebindConnectionRequest)
+    if message.connection_id and message.connection_id != connection_id:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            {"code": "INVALID_ARGUMENT", "message": "Path connection_id does not match the request body"},
+        )
+    message.connection_id = connection_id
+    client = services.connection_service
+    return await _operator_unary(
+        request, caller, client.RebindConnection if client else None, message, label="Connection Service"
+    )
+
+
+@upstream_router.post(
+    "/connections/v1/operator/connections/{connection_id}/unbind", dependencies=[OperatorLogin], include_in_schema=False
+)
+async def unbind_connection(request: Request, services: Services, caller: Caller, connection_id: str) -> JSONResponse:
+    _check_query(request, set())
+    message = _protobuf_body(await request.body() or b"{}", connection_service_pb2.UnbindConnectionRequest)
+    if message.connection_id and message.connection_id != connection_id:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            {"code": "INVALID_ARGUMENT", "message": "Path connection_id does not match the request body"},
+        )
+    message.connection_id = connection_id
+    client = services.connection_service
+    return await _operator_unary(
+        request, caller, client.UnbindConnection if client else None, message, label="Connection Service"
+    )
+
+
+@upstream_router.post(
+    "/connections/v1/operator/connection-enrollments/{handle}/preview",
+    dependencies=[OperatorLogin],
+    include_in_schema=False,
+)
+async def preview_connection_enrollment(
+    request: Request, services: Services, caller: Caller, handle: str
+) -> JSONResponse:
+    _check_query(request, set())
+    message = _protobuf_body(await request.body() or b"{}", connection_service_pb2.PreviewConnectionEnrollmentRequest)
+    if message.handle and message.handle != handle:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            {"code": "INVALID_ARGUMENT", "message": "Path handle does not match the request body"},
+        )
+    message.handle = handle
+    client = services.connection_service
+    return await _operator_unary(
+        request, caller, client.PreviewConnectionEnrollment if client else None, message, label="Connection Service"
+    )
+
+
+@upstream_router.post(
+    "/connections/v1/operator/connection-enrollments/{handle}/decision",
+    dependencies=[OperatorLogin],
+    include_in_schema=False,
+)
+async def decide_connection_enrollment(
+    request: Request, services: Services, caller: Caller, handle: str
+) -> JSONResponse:
+    _check_query(request, set())
+    message = _protobuf_body(await request.body() or b"{}", connection_service_pb2.DecideConnectionEnrollmentRequest)
+    if message.handle and message.handle != handle:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            {"code": "INVALID_ARGUMENT", "message": "Path handle does not match the request body"},
+        )
+    message.handle = handle
+    client = services.connection_service
+    return await _operator_unary(
+        request, caller, client.DecideConnectionEnrollment if client else None, message, label="Connection Service"
+    )
+
+
+@upstream_router.get("/dispatcher/v1/dispatches", dependencies=[OperatorLogin], include_in_schema=False)
+async def list_dispatches(
+    request: Request,
+    services: Services,
+    filter_session_id: Annotated[str | None, Query(alias="filter.sessionId")] = None,
+    filter_sandbox: Annotated[str | None, Query(alias="filter.sandbox")] = None,
+    filter_command_ids: Annotated[list[str] | None, Query(alias="filter.commandIds")] = None,
+) -> JSONResponse:
+    """List Dispatches through the typed SessionDispatcher stub."""
+    _check_query(request, {"filter.sessionId", "filter.sandbox", "filter.commandIds"})
+    message = session_dispatcher_pb2.ListDispatchesRequest()
+    dispatch_filter = _dispatcher_filter(filter_session_id, filter_sandbox, filter_command_ids)
+    if dispatch_filter is not None:
+        message.filter.CopyFrom(dispatch_filter)
+    return await _dispatcher_read(services.bridge, services.bridge.dispatcher.stub.ListDispatches, message)
+
+
+@upstream_router.get("/dispatcher/v1/dispatches/{command_id}", dependencies=[OperatorLogin], include_in_schema=False)
+async def get_dispatch(request: Request, services: Services, command_id: str) -> JSONResponse:
+    _check_query(request, set())
+    return await _dispatcher_read(
+        services.bridge,
+        services.bridge.dispatcher.stub.GetDispatch,
+        session_dispatcher_pb2.GetDispatchRequest(command_id=command_id),
+    )
+
+
+@upstream_router.get(
+    "/dispatcher/v1/sessions/{session_id}/opening", dependencies=[OperatorLogin], include_in_schema=False
+)
+async def get_session_opening(request: Request, services: Services, session_id: str) -> JSONResponse:
+    _check_query(request, set())
+    return await _dispatcher_read(
+        services.bridge,
+        services.bridge.dispatcher.stub.GetSessionOpening,
+        session_dispatcher_pb2.GetSessionOpeningRequest(session_id=session_id),
+    )
+
+
+@upstream_router.get("/dispatcher/v1/dispatches:watch", dependencies=[OperatorLogin], include_in_schema=False)
+async def watch_dispatches(
+    request: Request,
+    services: Services,
+    shutdown: Shutdown,
+    updates: Updates,
+    sessions: OperatorSessions,
+    filter_session_id: Annotated[str | None, Query(alias="filter.sessionId")] = None,
+    filter_sandbox: Annotated[str | None, Query(alias="filter.sandbox")] = None,
+    filter_command_ids: Annotated[list[str] | None, Query(alias="filter.commandIds")] = None,
+) -> StreamingResponse:
+    """Relay a typed Dispatch watch, with its rotating workload token and operator-session lifetime."""
+    _check_query(request, {"filter.sessionId", "filter.sandbox", "filter.commandIds"})
+    message = session_dispatcher_pb2.WatchDispatchesRequest()
+    dispatch_filter = _dispatcher_filter(filter_session_id, filter_sandbox, filter_command_ids)
+    if dispatch_filter is not None:
+        message.filter.CopyFrom(dispatch_filter)
+    client = services.bridge.dispatcher
+    try:
+        watch = await client.open_watch(client.stub.WatchDispatches, message)
+    except ServiceError as error:
+        raise _grpc_http_error(error) from error
+    except TimeoutError as error:
+        raise HTTPException(
+            status.HTTP_504_GATEWAY_TIMEOUT,
+            {"code": grpc.StatusCode.DEADLINE_EXCEEDED.name, "message": "Session Dispatcher watch timed out"},
+        ) from error
+    except ConnectionError as error:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            {"code": grpc.StatusCode.UNAVAILABLE.name, "message": "Session Dispatcher ended the watch early"},
+        ) from error
+
+    async def ndjson() -> AsyncIterator[bytes]:
+        async for response in messages(watch):
+            yield json.dumps({"result": _protobuf_json(response)}, separators=(",", ":")).encode() + b"\n"
+
+    return StreamingResponse(
+        operator_relay(
+            request,
+            shutdown,
+            updates,
+            sessions,
+            ndjson(),
+            "Session Dispatcher",
+            (ServiceError, ConnectionError, OSError, TimeoutError),
+        ),
+        media_type="application/x-ndjson",
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+    )
+
+
+def _action_states(states: list[str] | None) -> list[str]:
+    try:
+        for value in states or []:
+            action_service_pb2.ActionState.Value(value)
+    except ValueError as error:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, {"code": "INVALID_ARGUMENT", "message": "Unknown Action state"}
+        ) from error
+    return states or []
+
+
+@upstream_router.get("/actions/v1/action-requests", dependencies=[OperatorLogin], include_in_schema=False)
+async def list_action_requests(
+    request: Request,
+    services: Services,
+    caller: Caller,
+    state: Annotated[list[str] | None, Query()] = None,
+    idempotency_key: Annotated[str | None, Query(alias="idempotencyKey")] = None,
+    limit: Annotated[int | None, Query(ge=1, le=128)] = None,
+    after_id: Annotated[str | None, Query(alias="afterId")] = None,
+) -> JSONResponse:
+    message = action_service_pb2.ListActionRequestsRequest(state=_action_states(state))
+    if idempotency_key is not None:
+        message.idempotency_key = idempotency_key
+    if limit is not None:
+        message.limit = limit
+    if after_id is not None:
+        message.after_id = after_id
+    client = services.action_service
+    return await _operator_unary(
+        request, caller, client.ListActionRequests if client else None, message, label="Action Service"
+    )
+
+
+@upstream_router.get("/actions/v1/action-requests:history", dependencies=[OperatorLogin], include_in_schema=False)
+async def list_action_request_history(
+    request: Request,
+    services: Services,
+    caller: Caller,
+    limit: Annotated[int | None, Query(ge=1, le=100)] = None,
+    cursor: Annotated[str | None, Query()] = None,
+    include_auto_allowed: Annotated[bool | None, Query(alias="includeAutoAllowed")] = None,
+) -> JSONResponse:
+    message = action_service_pb2.ListActionRequestHistoryRequest()
+    if limit is not None:
+        message.limit = limit
+    if cursor is not None:
+        message.cursor = cursor
+    if include_auto_allowed is not None:
+        message.include_auto_allowed = include_auto_allowed
+    return await _operator_unary(
+        request,
+        caller,
+        services.action_service.ListActionRequestHistory if services.action_service else None,
+        message,
+        label="Action Service",
+    )
+
+
+@upstream_router.get("/actions/v1/action-requests/{request_id}", dependencies=[OperatorLogin], include_in_schema=False)
+async def get_action_request(request: Request, services: Services, caller: Caller, request_id: str) -> JSONResponse:
+    return await _operator_unary(
+        request,
+        caller,
+        services.action_service.GetActionRequest if services.action_service else None,
+        action_service_pb2.GetActionRequestRequest(request_id=request_id),
+        label="Action Service",
+    )
+
+
+@upstream_router.get("/actions/v1/action-requests:watch", dependencies=[OperatorLogin], include_in_schema=False)
+async def watch_action_requests(
+    request: Request,
+    services: Services,
+    shutdown: Shutdown,
+    updates: Updates,
+    sessions: OperatorSessions,
+    caller: Caller,
+    state: Annotated[list[str] | None, Query()] = None,
+) -> StreamingResponse:
+    client = services.action_service
+    return await _operator_watch(
+        request,
+        caller,
+        client.WatchActionRequests if client else None,
+        action_service_pb2.WatchActionRequestsRequest(state=_action_states(state)),
+        label="Action Service",
+        shutdown=shutdown,
+        updates=updates,
+        sessions=sessions,
+    )
+
+
+@upstream_router.get("/actions/v1/action-groups", dependencies=[OperatorLogin], include_in_schema=False)
+async def list_action_groups(request: Request, services: Services, caller: Caller) -> JSONResponse:
+    client = services.action_service
+    return await _operator_unary(
+        request,
+        caller,
+        client.ListActionGroups if client else None,
+        action_service_pb2.ListActionGroupsRequest(),
+        label="Action Service",
+    )
+
+
+@upstream_router.get("/actions/v1/action-groups:watch", dependencies=[OperatorLogin], include_in_schema=False)
+async def watch_action_groups(
+    request: Request,
+    services: Services,
+    shutdown: Shutdown,
+    updates: Updates,
+    sessions: OperatorSessions,
+    caller: Caller,
+) -> StreamingResponse:
+    client = services.action_service
+    return await _operator_watch(
+        request,
+        caller,
+        client.WatchActionGroups if client else None,
+        action_service_pb2.WatchActionGroupsRequest(),
+        label="Action Service",
+        shutdown=shutdown,
+        updates=updates,
+        sessions=sessions,
+    )
+
+
+@upstream_router.post(
+    "/actions/v1/operator/action-requests/{request_id}/decision", dependencies=[OperatorLogin], include_in_schema=False
+)
+async def decide_action_request(request: Request, services: Services, caller: Caller, request_id: str) -> JSONResponse:
+    message = _protobuf_body(await request.body() or b"{}", operator_action_service_pb2.DecideActionRequestRequest)
+    if message.request_id and message.request_id != request_id:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            {"code": "INVALID_ARGUMENT", "message": "Path request_id does not match the request body"},
+        )
+    message.request_id = request_id
+    client = services.operator_action_service
+    return await _operator_unary(
+        request, caller, client.DecideActionRequest if client else None, message, label="Operator Action Service"
+    )
+
+
+@upstream_router.get("/actions/v1/operator/mcp-servers:watch", dependencies=[OperatorLogin], include_in_schema=False)
+async def watch_mcp_servers(
+    request: Request,
+    services: Services,
+    shutdown: Shutdown,
+    updates: Updates,
+    sessions: OperatorSessions,
+    caller: Caller,
+) -> StreamingResponse:
+    client = services.operator_action_service
+    return await _operator_watch(
+        request,
+        caller,
+        client.WatchMcpServers if client else None,
+        operator_action_service_pb2.WatchMcpServersRequest(),
+        label="Operator Action Service",
+        shutdown=shutdown,
+        updates=updates,
+        sessions=sessions,
+    )
+
+
+@upstream_router.post(
+    "/actions/v1/operator/mcp-servers/{server_id}/linkage/start", dependencies=[OperatorLogin], include_in_schema=False
+)
+async def start_mcp_linkage(request: Request, services: Services, caller: Caller, server_id: str) -> JSONResponse:
+    message = _protobuf_body(await request.body() or b"{}", operator_action_service_pb2.StartMcpServerLinkageRequest)
+    if message.server_id and message.server_id != server_id:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            {"code": "INVALID_ARGUMENT", "message": "Path server_id does not match the request body"},
+        )
+    message.server_id = server_id
+    client = services.operator_action_service
+    return await _operator_unary(
+        request, caller, client.StartMcpServerLinkage if client else None, message, label="Operator Action Service"
+    )
+
+
+@upstream_router.post(
+    "/actions/v1/operator/mcp-servers/{server_id}/linkage/disconnect",
+    dependencies=[OperatorLogin],
+    include_in_schema=False,
+)
+async def disconnect_mcp_linkage(request: Request, services: Services, caller: Caller, server_id: str) -> JSONResponse:
+    client = services.operator_action_service
+    return await _operator_unary(
+        request,
+        caller,
+        client.DisconnectMcpServer if client else None,
+        operator_action_service_pb2.DisconnectMcpServerRequest(server_id=server_id),
+        label="Operator Action Service",
+    )
+
+
+@upstream_router.get("/actions/v1/operator/push/config", dependencies=[OperatorLogin], include_in_schema=False)
+async def get_push_config(request: Request, services: Services, caller: Caller) -> JSONResponse:
+    client = services.web_push_service
+    return await _operator_unary(
+        request,
+        caller,
+        client.GetPushConfig if client else None,
+        web_push_service_pb2.GetPushConfigRequest(),
+        label="Web Push Service",
+    )
+
+
+@upstream_router.get("/actions/v1/operator/push/subscriptions", dependencies=[OperatorLogin], include_in_schema=False)
+async def list_push_subscriptions(request: Request, services: Services, caller: Caller) -> JSONResponse:
+    client = services.web_push_service
+    return await _operator_unary(
+        request,
+        caller,
+        client.ListPushSubscriptions if client else None,
+        web_push_service_pb2.ListPushSubscriptionsRequest(),
+        label="Web Push Service",
+    )
+
+
+@upstream_router.get(
+    "/actions/v1/operator/push/subscriptions:watch", dependencies=[OperatorLogin], include_in_schema=False
+)
+async def watch_push_subscriptions(
+    request: Request,
+    services: Services,
+    shutdown: Shutdown,
+    updates: Updates,
+    sessions: OperatorSessions,
+    caller: Caller,
+) -> StreamingResponse:
+    client = services.web_push_service
+    return await _operator_watch(
+        request,
+        caller,
+        client.WatchPushSubscriptions if client else None,
+        web_push_service_pb2.WatchPushSubscriptionsRequest(),
+        label="Web Push Service",
+        shutdown=shutdown,
+        updates=updates,
+        sessions=sessions,
+    )
+
+
+@upstream_router.post("/actions/v1/operator/push/subscriptions", dependencies=[OperatorLogin], include_in_schema=False)
+async def create_push_subscription(request: Request, services: Services, caller: Caller) -> JSONResponse:
+    message = _protobuf_body(await request.body(), web_push_service_pb2.CreatePushSubscriptionRequest)
+    user_agent = request.headers.get("user-agent")
+    metadata = () if user_agent is None else (("grpcgateway-user-agent", user_agent[:300]),)
+    client = services.web_push_service
+    return await _operator_unary(
+        request,
+        caller,
+        client.CreatePushSubscription if client else None,
+        message,
+        label="Web Push Service",
+        extra_metadata=metadata,
+    )
+
+
+@upstream_router.delete(
+    "/actions/v1/operator/push/subscriptions", dependencies=[OperatorLogin], include_in_schema=False
+)
+async def delete_push_subscription(
+    request: Request, services: Services, caller: Caller, endpoint: Annotated[str, Query()]
+) -> JSONResponse:
+    client = services.web_push_service
+    return await _operator_unary(
+        request,
+        caller,
+        client.DeletePushSubscription if client else None,
+        web_push_service_pb2.DeletePushSubscriptionRequest(endpoint=endpoint),
+        label="Web Push Service",
     )
 
 
@@ -569,26 +1154,23 @@ mcp_callback_router = APIRouter(tags=["connections"])
 
 @mcp_callback_router.get("/mcp-linkage/callback")
 async def complete_mcp_linkage(state: str, code: str, services: Services) -> RedirectResponse:
-    """Bridge the provider's registered callback to the public Action Service callback."""
-    if services.actions_http is None:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Action facade is not configured")
+    """Bridge the provider's registered callback over the Action Service's narrow HTTP callback."""
+    if services.mcp_callback_http is None:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "MCP linkage callback is not configured")
     try:
-        upstream = await services.actions_http.open_request(
+        async with services.mcp_callback_http.stream(
             "GET",
-            "v1/mcp-linkage/callback",
-            str(httpx.QueryParams({"state": state, "code": code})),
-            bearer=None,
+            "/v1/mcp-linkage/callback",
+            params={"state": state, "code": code},
             headers={"accept": "application/json"},
-        )
+            follow_redirects=False,
+        ) as upstream:
+            if 300 <= upstream.status_code < 400:
+                raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Action callback redirects are not accepted")
+            if not 200 <= upstream.status_code < 300:
+                raise HTTPException(upstream.status_code, "MCP linkage callback failed")
     except (httpx.RequestError, httpx2.TransportError) as error:
         raise upstream_http_error(error) from error
-    try:
-        if 300 <= upstream.status_code < 400:
-            raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Action callback redirects are not accepted")
-        if not 200 <= upstream.status_code < 300:
-            raise HTTPException(upstream.status_code, "MCP linkage callback failed")
-    finally:
-        await upstream.aclose()
     return RedirectResponse("/#/mcp-servers?linked=1", status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -1095,9 +1677,12 @@ def create_app(
     operator_actions: FederatedOperatorActions | None = None,
     *,
     electric: ElectricProxy | None,
-    dispatcher_http: UpstreamProxy,
-    actions_http: UpstreamProxy | None = None,
-    connection_http: UpstreamProxy | None = None,
+    action_service: action_service_pb2_grpc.ActionServiceStub | None = None,
+    operator_action_service: operator_action_service_pb2_grpc.OperatorActionServiceStub | None = None,
+    web_push_service: web_push_service_pb2_grpc.WebPushServiceStub | None = None,
+    operator_grpc: OperatorGrpcClient | None = None,
+    mcp_callback_http: httpx.AsyncClient | None = None,
+    connection_service: connection_service_pb2_grpc.ConnectionServiceStub | None = None,
     event_logs: EventLogStore,
     content: ContentStore,
     database_updates: WakeupListener,
@@ -1110,6 +1695,11 @@ def create_app(
     and an app given neither answers 401 to everything but /healthz."""
     if set(catalog.harnesses) != set(Harness) or not any(catalog.harnesses.values()):
         raise ValueError(f"the model catalog needs every harness key and at least one offered model: {catalog=}")
+    if operator_grpc is None and any(
+        service is not None
+        for service in (action_service, operator_action_service, web_push_service, connection_service)
+    ):
+        raise ValueError("operator_grpc is required when an operator service stub is configured")
     configured_presets = presets or PresetCatalog()
     for thread_preset_name, thread_preset in configured_presets.threads.items():
         if thread_preset.model not in catalog.harnesses[thread_preset.harness]:
@@ -1170,9 +1760,12 @@ def create_app(
         reviewer=reviewer,
         operator_actions=operator_actions,
         electric=electric,
-        dispatcher_http=dispatcher_http,
-        actions_http=actions_http,
-        connection_http=connection_http,
+        action_service=action_service,
+        operator_action_service=operator_action_service,
+        web_push_service=web_push_service,
+        operator_grpc=operator_grpc,
+        mcp_callback_http=mcp_callback_http,
+        connection_service=connection_service,
         frontend_config=frontend_config if frontend_config is not None else FrontendConfig(),
     )
     app.state.services = services

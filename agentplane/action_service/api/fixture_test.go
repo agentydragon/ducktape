@@ -363,7 +363,7 @@ func serveWithPolicy(
 		t.Fatal(err)
 	}
 	httpFacade, err := facade.NewHandler(
-		t.Context(), listener.Addr().String(),
+		t.Context(), listener.Addr().String(), 0,
 		action_servicepb.RegisterActionServiceHandlerFromEndpoint,
 		operator_action_servicepb.RegisterOperatorActionServiceHandlerFromEndpoint,
 	)

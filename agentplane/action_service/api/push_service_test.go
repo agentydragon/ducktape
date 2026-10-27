@@ -75,7 +75,7 @@ func servePush(t *testing.T, s *served, configured bool) *pushServed {
 	if err != nil {
 		t.Fatal(err)
 	}
-	httpFacade, err := facade.NewHandler(t.Context(), listener.Addr().String(), web_push_servicepb.RegisterWebPushServiceHandlerFromEndpoint)
+	httpFacade, err := facade.NewHandler(t.Context(), listener.Addr().String(), 0, web_push_servicepb.RegisterWebPushServiceHandlerFromEndpoint)
 	if err != nil {
 		t.Fatal(err)
 	}

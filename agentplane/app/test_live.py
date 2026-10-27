@@ -70,7 +70,6 @@ from agentplane.app.threads.runner_directory import RunnerDirectory
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
-from agentplane.app.upstream_proxy import UpstreamProxy
 from agentplane.egress.decisions import Outcome
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.history_service.client import HistoryServiceClient
@@ -292,7 +291,6 @@ def app(
     tmp_path: Path,
     electric_http: httpx.AsyncClient,
     notifications: NotificationsOperatorClient,
-    dispatcher_http: UpstreamProxy,
     refused_address: str,
 ) -> FastAPI:
     """Neither test below reaches a database, a runner or the History Service -- the guard answers
@@ -325,7 +323,6 @@ def app(
             electric_http, content, event_logs=event_logs, thread_changes=database_updates.changes[Channel.THREADS]
         ),
         notifications=notifications,
-        dispatcher_http=dispatcher_http,
         system_status=answering_system_status(),
     )
 

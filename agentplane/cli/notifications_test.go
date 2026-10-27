@@ -122,7 +122,7 @@ func serveNotifications(t *testing.T, servicer *notificationsServer) string {
 	t.Cleanup(server.Stop)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	handler, err := facade.NewHandler(ctx, listener.Addr().String(), notificationspb.RegisterNotificationsHandlerFromEndpoint)
+	handler, err := facade.NewHandler(ctx, listener.Addr().String(), 0, notificationspb.RegisterNotificationsHandlerFromEndpoint)
 	if err != nil {
 		t.Fatal(err)
 	}

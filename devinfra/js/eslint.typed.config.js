@@ -24,6 +24,8 @@ export default [
     plugins: { "@typescript-eslint": tseslint, react, "react-hooks": reactHooks },
     rules: {
       "@typescript-eslint/no-floating-promises": "error",
+      "@typescript-eslint/no-misused-promises": "error",
+      "@typescript-eslint/await-thenable": "error",
     },
   },
 ];
