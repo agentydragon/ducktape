@@ -18,7 +18,7 @@ import mcp.types as mcp_types
 from fastmcp.dependencies import Depends
 from fastmcp.server import FastMCP
 from fastmcp.server.context import Context
-from pydantic import Field, WithJsonSchema, create_model
+from pydantic import Field, WithJsonSchema
 
 from mcp_infra.exec.docker.container_session import (
     make_container_lifespan,
@@ -39,7 +39,6 @@ from mcp_infra.exec.docker.types import (
     ResolvedExecInput,
 )
 from mcp_infra.exec.read_image import validate_and_encode_image
-from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from util.exec.models import CMD_DESCRIPTION, BaseExecResult, TimeoutMs, async_timer
 
 # URI template for file:// resource (file:///absolute/path format)
@@ -47,6 +46,8 @@ from util.exec.models import CMD_DESCRIPTION, BaseExecResult, TimeoutMs, async_t
 FILE_RESOURCE_URI_TEMPLATE = "file://{path*}"
 
 DockerExecCommand = Annotated[list[str], Field(description=CMD_DESCRIPTION)]
+# Keep runtime timeout bounds from TimeoutMs while exposing a plain integer schema to
+# strict tool-use providers that reject integer-bound keywords.
 DockerExecTimeout = Annotated[
     TimeoutMs,
     WithJsonSchema({"type": "integer"}),
@@ -86,55 +87,6 @@ def resolve_cwd(policy: CwdPolicy, requested_cwd: str | None) -> str | None:
             return requested_cwd
         case _:
             raise TypeError(f"Unknown CwdPolicy: {policy!r}")
-
-
-def _make_exec_input_model(
-    *, allow_user: bool, allow_env: bool, cwd_policy: CwdPolicy
-) -> type[OpenAIStrictModeBaseModel]:
-    """Build a schema model for exec input validation tests.
-
-    The registered tool uses native FastMCP function parameters; this helper keeps
-    the timeout validator independently testable.
-    """
-    fields: dict[str, Any] = {
-        "cmd": (
-            list[str],
-            Field(
-                description=(
-                    "Command array passed directly to Docker exec API (no shell). "
-                    "DO NOT include shell quotes around arguments - array elements are passed as-is. "
-                    "WRONG: ['sed', '-n', \"'1,10p'\", 'file'] (quotes in string). "
-                    "RIGHT: ['sed', '-n', '1,10p', 'file'] (no quotes). "
-                    "For shell features (pipes, globs), use: ['sh', '-c', 'sed -n 1,10p file | head']"
-                )
-            ),
-        ),
-        "timeout_ms": (
-            # ``TimeoutMs`` is ``Annotated[int, Field(gt=0, le=MAX_EXEC_TIMEOUT_MS)]``,
-            # which lands in the JSON Schema as ``exclusiveMinimum`` / ``maximum``.
-            # Anthropic's strict tool-use mode rejects integer constraints
-            # (``"For 'integer' type, properties exclusiveMinimum, maximum are not
-            # supported"``), so we override the schema to a plain ``{"type": "integer"}``
-            # while keeping the Pydantic runtime validators that ``TimeoutMs`` carries.
-            Annotated[TimeoutMs, WithJsonSchema({"type": "integer"})],
-            Field(description="Timeout in milliseconds; sends TERM (exit status becomes TimedOut)"),
-        ),
-    }
-    if isinstance(cwd_policy, ModelChooses):
-        fields["cwd"] = (str, Field(description="Working directory inside container"))
-    elif isinstance(cwd_policy, DefaultValue):
-        fields["cwd"] = (
-            str | None,
-            Field(default=None, description=f"Working directory inside container (None = {cwd_policy.value!s})"),
-        )
-    if allow_env:
-        fields["env"] = (
-            list[EnvVar] | None,
-            Field(description="Environment variables as ['NAME=value', ...] (None = inherit container env)"),
-        )
-    if allow_user:
-        fields["user"] = (str | None, Field(description="Username inside container (None = container default)"))
-    return create_model("ExecInput", __base__=OpenAIStrictModeBaseModel, **fields)
 
 
 class ContainerExecServer(FastMCP):

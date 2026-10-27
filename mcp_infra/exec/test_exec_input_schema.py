@@ -1,54 +1,104 @@
-"""Schema-shape and runtime-validation tests for the exec MCP tool's input model.
-
-The exec input model wraps ``timeout_ms`` in
-``Annotated[TimeoutMs, WithJsonSchema({"type": "integer"})]`` so the Pydantic
-runtime validators on ``TimeoutMs`` (``gt=0`` / ``le=MAX_EXEC_TIMEOUT_MS``) keep
-firing while the JSON Schema sent to Anthropic stays free of the integer-bound
-keys (``exclusiveMinimum`` / ``maximum``) that Anthropic strict tool-use mode
-rejects with ``"For 'integer' type, properties exclusiveMinimum, maximum are
-not supported"``. These tests pin both halves of that contract.
-"""
-
-from pathlib import Path
+"""Schema and runtime tests for the registered FastMCP exec tool."""
 
 import pytest
 import pytest_bazel
-from pydantic import BaseModel, ValidationError
+from fastmcp.client import Client
 
-from mcp_infra.exec.docker.server import _make_exec_input_model
-from mcp_infra.exec.docker.types import AlwaysSetTo
-from util.exec.models import MAX_EXEC_TIMEOUT_MS
+from mcp_infra.constants import WORKING_DIR
+from mcp_infra.exec.docker.server import ContainerExecServer
+from mcp_infra.exec.docker.types import AlwaysSetTo, ContainerExecServerConfig
+from util.exec.models import MAX_EXEC_TIMEOUT_MS, BaseExecResult, Exited
 
 
 @pytest.fixture
-def exec_input_cls() -> type[BaseModel]:
-    return _make_exec_input_model(allow_user=False, allow_env=False, cwd_policy=AlwaysSetTo(value=Path("/work")))
+def restricted_exec_server(async_docker_client, debian_slim_image) -> ContainerExecServer:
+    config = ContainerExecServerConfig(
+        image=debian_slim_image,
+        working_dir=WORKING_DIR,
+        allow_user_field=False,
+        allow_env_field=False,
+        cwd_policy=AlwaysSetTo(value=WORKING_DIR),
+    )
+    return ContainerExecServer(async_docker_client, config)
 
 
-def test_timeout_ms_schema_omits_integer_bounds(exec_input_cls: type[BaseModel]) -> None:
-    """Anthropic strict mode rejects exclusiveMinimum/maximum on integer types."""
-    schema = exec_input_cls.model_json_schema()
-    timeout_schema = schema["properties"]["timeout_ms"]
-    assert timeout_schema["type"] == "integer"
-    for forbidden in ("exclusiveMinimum", "exclusiveMaximum", "minimum", "maximum"):
-        assert forbidden not in timeout_schema, f"{forbidden} leaks into the strict-mode tool schema: {timeout_schema}"
+async def test_registered_exec_tool_timeout_schema_and_runtime(docker_exec_server: ContainerExecServer) -> None:
+    async with Client(docker_exec_server) as session:
+        tools = await session.list_tools()
+        exec_tool = next(tool for tool in tools if tool.name == ContainerExecServer.EXEC_TOOL_NAME)
+        timeout_schema = exec_tool.input_schema["properties"]["timeout_ms"]
+
+        assert timeout_schema["type"] == "integer"
+        for forbidden in ("exclusiveMinimum", "exclusiveMaximum", "minimum", "maximum"):
+            assert forbidden not in timeout_schema
+
+        for timeout_ms in (0, MAX_EXEC_TIMEOUT_MS + 1):
+            result = await session.call_tool(
+                ContainerExecServer.EXEC_TOOL_NAME,
+                {"cmd": ["true"], "timeout_ms": timeout_ms, "env": None, "user": None, "cwd": None},
+                raise_on_error=False,
+            )
+            assert result.is_error
+
+        result = await session.call_tool(
+            ContainerExecServer.EXEC_TOOL_NAME,
+            {"cmd": ["true"], "timeout_ms": MAX_EXEC_TIMEOUT_MS, "env": None, "user": None, "cwd": None},
+        )
+        assert not result.is_error
+        execution = BaseExecResult.model_validate(result.structured_content)
+        assert execution.exit == Exited(exit_code=0)
 
 
-def test_timeout_ms_runtime_rejects_zero(exec_input_cls: type[BaseModel]) -> None:
-    """gt=0 still fires at validation time even though it's hidden from the schema."""
-    with pytest.raises(ValidationError):
-        exec_input_cls(cmd=["true"], timeout_ms=0)
+async def test_registered_exec_tool_applies_exposed_env_and_user(docker_exec_server: ContainerExecServer) -> None:
+    async with Client(docker_exec_server) as session:
+        tools = await session.list_tools()
+        exec_tool = next(tool for tool in tools if tool.name == ContainerExecServer.EXEC_TOOL_NAME)
+        properties = exec_tool.input_schema["properties"]
+        assert {"env", "user"} <= properties.keys()
+
+        env_result = await session.call_tool(
+            ContainerExecServer.EXEC_TOOL_NAME,
+            {
+                "cmd": ["sh", "-c", "printf '%s' \"$EXEC_REAL_INPUT_TEST\""],
+                "timeout_ms": 10000,
+                "env": ["EXEC_REAL_INPUT_TEST=visible"],
+                "user": None,
+                "cwd": None,
+            },
+        )
+        assert not env_result.is_error
+        env_execution = BaseExecResult.model_validate(env_result.structured_content)
+        assert env_execution.stdout == "visible"
+
+        user_result = await session.call_tool(
+            ContainerExecServer.EXEC_TOOL_NAME,
+            {"cmd": ["id", "-u"], "timeout_ms": 10000, "env": None, "user": "65534", "cwd": None},
+        )
+        assert not user_result.is_error
+        user_execution = BaseExecResult.model_validate(user_result.structured_content)
+        assert user_execution.stdout == "65534\n"
 
 
-def test_timeout_ms_runtime_rejects_above_max(exec_input_cls: type[BaseModel]) -> None:
-    """le=MAX_EXEC_TIMEOUT_MS still fires at validation time."""
-    with pytest.raises(ValidationError):
-        exec_input_cls(cmd=["true"], timeout_ms=MAX_EXEC_TIMEOUT_MS + 1)
+async def test_registered_exec_tool_hides_unconfigured_fields_and_uses_fixed_cwd(
+    restricted_exec_server: ContainerExecServer,
+) -> None:
+    async with Client(restricted_exec_server) as session:
+        tools = await session.list_tools()
+        exec_tool = next(tool for tool in tools if tool.name == ContainerExecServer.EXEC_TOOL_NAME)
+        assert set(exec_tool.input_schema["properties"]) == {"cmd", "timeout_ms"}
 
+        result = await session.call_tool(ContainerExecServer.EXEC_TOOL_NAME, {"cmd": ["pwd"], "timeout_ms": 10000})
+        assert not result.is_error
+        execution = BaseExecResult.model_validate(result.structured_content)
+        assert execution.stdout == f"{WORKING_DIR}\n"
 
-def test_timeout_ms_runtime_accepts_in_range(exec_input_cls: type[BaseModel]) -> None:
-    instance = exec_input_cls(cmd=["true"], timeout_ms=1000)
-    assert instance.model_dump()["timeout_ms"] == 1000
+        for field_value in ({"env": ["EXEC_REAL_INPUT_TEST=hidden"]}, {"user": "65534"}):
+            rejected = await session.call_tool(
+                ContainerExecServer.EXEC_TOOL_NAME,
+                {"cmd": ["true"], "timeout_ms": 10000, **field_value},
+                raise_on_error=False,
+            )
+            assert rejected.is_error
 
 
 if __name__ == "__main__":
