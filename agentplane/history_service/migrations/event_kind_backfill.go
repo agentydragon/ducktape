@@ -45,7 +45,9 @@ func backfillEventKindBatch(ctx context.Context, db *sql.DB, after eventKindCurs
 	}
 	defer tx.Rollback()
 
-	rows, err := tx.QueryContext(ctx, `SELECT session_id::text, cursor, kind IS NULL, CASE WHEN kind IS NULL THEN payload END
+	// Selecting `session_id::text` would name that output column `session_id`, so ORDER BY would sort the text
+	// and Postgres would sort the whole table for every batch instead of reading the primary key.
+	rows, err := tx.QueryContext(ctx, `SELECT session_id, cursor, kind IS NULL, CASE WHEN kind IS NULL THEN payload END
 		FROM session_event WHERE (session_id, cursor) > ($1::uuid, $2)
 		ORDER BY session_id, cursor LIMIT $3 FOR UPDATE`, after.sessionID, after.cursor, eventKindBatchSize)
 	if err != nil {
