@@ -1307,7 +1307,7 @@ function dispatchReceipt(commandId: string, state: string, reason: string, updat
 }
 
 // A Dispatch as the watch carries it: proto-JSON leaves out what is unset, such as a reason or admission.
-function dispatchRow(commandId: string, state: string, reason: string | undefined, updatedAt: string) {
+function dispatchRow(commandId: string, state: string | number, reason: string | undefined, updatedAt: string) {
   return { commandId, sessionId: THREAD.id, state, reason, updatedAt };
 }
 
@@ -1350,6 +1350,27 @@ it("replaces a queued Dispatcher receipt with the failure its stream reports", a
   await vi.waitFor(() =>
     expect(pendingRow(container, waiting.commandId).querySelector('[data-stage="dispatch_failed"]')).not.toBeNull()
   );
+});
+
+it("shows a future numeric delivery state as unknown rather than a known Dispatcher outcome", async () => {
+  const waiting = message("future-delivery-state");
+  new LocalCommands(THREAD.id).remember(waiting);
+  vi.mocked(submitInput).mockResolvedValue({
+    kind: "dispatch",
+    dispatch: dispatchReceipt(
+      waiting.commandId,
+      "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
+      "sandbox_not_ready",
+      "2026-10-17T12:26:30Z"
+    ),
+  });
+
+  const container = await render();
+  await sendDispatches([dispatchRow(waiting.commandId, 999, undefined, "2026-10-17T12:26:35Z")]);
+
+  const row = pendingRow(container, waiting.commandId);
+  expect(row.querySelector('[data-stage="unknown"]')).not.toBeNull();
+  expect(progressLabel(container, waiting.commandId)).toBe("Outcome unknown: Unrecognized delivery state 999");
 });
 
 it("follows the dispatches of queued commands only until they settle", async () => {

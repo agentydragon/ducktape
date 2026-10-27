@@ -4,6 +4,7 @@ import {
   changeModel,
   changeReasoningEffort,
   CommandSubmissionRefused,
+  isUnknownDispatchState,
   interruptTurn,
   submitInput,
   type CommandSubmission,
@@ -133,11 +134,14 @@ export function useThreadCommands(threadId: string, entities: ThreadEntity[]): T
     return () => window.removeEventListener("online", redeliverFailed);
   }, [deliver, errors, store]);
   const watchedIds = local.commands
-    .filter(
-      (value) =>
-        value.dispatch?.state === DeliveryState.QUEUED_IN_DISPATCHER ||
-        value.dispatch?.state === DeliveryState.DELIVERING_TO_RUNNER
-    )
+    .filter((value) => {
+      const state = value.dispatch?.state;
+      return (
+        state === DeliveryState.QUEUED_IN_DISPATCHER ||
+        state === DeliveryState.DELIVERING_TO_RUNNER ||
+        isUnknownDispatchState(state)
+      );
+    })
     .map((value) => value.command.commandId);
   // Command IDs are UUIDs, so a comma joins them without ambiguity; the effect reopens the watch
   // only when the set changes.

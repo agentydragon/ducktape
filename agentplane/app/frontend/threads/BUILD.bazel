@@ -98,6 +98,7 @@ ts_library(
     deps = [
         ":client",
         ":local_commands",
+        "//:node_modules/@bufbuild/protobuf",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:watch_stream",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb",
