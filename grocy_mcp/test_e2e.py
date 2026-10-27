@@ -407,6 +407,125 @@ async def test_stock_operations(mcp_client: Client, refunwrap_result: RefData) -
     assert float(entries[0]["entry"]["price"]) == 9.99
 
 
+async def test_stock_entry_edit_serializes_partial_updates(mcp_client: Client, refunwrap_result: RefData) -> None:
+    """Partial edits preserve stored values, serialize dates, and apply explicit clears last."""
+    product = refunwrap_result.products[0]
+    location = refunwrap_result.location
+    locations = unwrap_result(await mcp_client.call_tool("locations_list", {"detail": "full"}))
+    location_id = next(row["id"] for row in locations if row["name"] == location)
+    alternate_location = f"TestStockEdit-{refunwrap_result.suffix}"
+    alternate_result = unwrap_result(
+        await mcp_client.call_tool("locations_create", {"items": [{"name": alternate_location}]})
+    )
+    assert alternate_result[0]["kind"] == "ok", alternate_result
+    alternate_location_id = alternate_result[0]["created_object_id"]
+
+    added = unwrap_result(
+        await mcp_client.call_tool(
+            "stock_add", {"items": [{"product": product, "amount": 4, "qu": refunwrap_result.qu, "location": location}]}
+        )
+    )
+    assert added[0]["kind"] == "ok", added
+    entry_id = added[0]["entry_id"]
+
+    seeded = unwrap_result(
+        await mcp_client.call_tool(
+            "stock_entry_edit",
+            {
+                "items": [
+                    {
+                        "entry_id": entry_id,
+                        "best_before_date": "2035-06-07",
+                        "purchased_date": "2026-04-18",
+                        "price": 8.5,
+                        "location": alternate_location,
+                        "open": True,
+                        "note": "known stock-entry baseline",
+                    }
+                ]
+            },
+        )
+    )[0]
+    assert seeded["kind"] == "ok", seeded
+    seeded_entry = seeded["entry"]
+    assert seeded_entry["amount"] == 4.0
+    assert seeded_entry["best_before_date"] == "2035-06-07"
+    assert seeded_entry["purchased_date"] == "2026-04-18"
+    assert seeded_entry["price"] == 8.5
+    assert seeded_entry["location_name"] == alternate_location
+    assert seeded_entry["open"] is True
+    assert seeded_entry["note"] == "known stock-entry baseline"
+    assert seeded["changes"]["location_id"]["new"] == alternate_location_id
+
+    # Explicit nulls and omitted values both preserve the known non-null state.
+    unchanged = unwrap_result(
+        await mcp_client.call_tool(
+            "stock_entry_edit", {"items": [{"entry_id": entry_id, "price": None, "purchased_date": None, "note": None}]}
+        )
+    )[0]
+    assert unchanged["kind"] == "ok", unchanged
+    assert unchanged.get("changes") is None
+    assert unchanged["entry"] == seeded_entry
+
+    updated = unwrap_result(
+        await mcp_client.call_tool(
+            "stock_entry_edit",
+            {
+                "items": [
+                    {
+                        "entry_id": entry_id,
+                        "best_before_date": "2036-08-09",
+                        "price": 0,
+                        "location": location_id,
+                        "open": False,
+                    }
+                ]
+            },
+        )
+    )[0]
+    assert updated["kind"] == "ok", updated
+    updated_entry = updated["entry"]
+    assert updated_entry["amount"] == 4.0
+    assert updated_entry["best_before_date"] == "2036-08-09"
+    assert updated_entry["purchased_date"] == "2026-04-18"
+    assert updated_entry["price"] == 0.0
+    assert updated_entry["location_name"] == location
+    assert updated_entry["open"] is False
+    assert updated_entry["note"] == "known stock-entry baseline"
+    assert updated["changes"]["location_id"] == {"old": alternate_location_id, "new": location_id}
+
+    cleared = unwrap_result(
+        await mcp_client.call_tool(
+            "stock_entry_edit",
+            {
+                "items": [
+                    {
+                        "entry_id": entry_id,
+                        "price": 12.0,
+                        "purchased_date": "2026-04-19",
+                        "note": "cleared after assignment",
+                        "location": alternate_location,
+                        "clear_fields": ["price", "purchased_date", "note"],
+                    }
+                ]
+            },
+        )
+    )[0]
+    assert cleared["kind"] == "ok", cleared
+    cleared_entry = cleared["entry"]
+    assert cleared_entry["amount"] == 4.0
+    assert cleared_entry["best_before_date"] == "2036-08-09"
+    assert cleared_entry["open"] is False
+    assert cleared_entry["purchased_date"] is None
+    assert cleared_entry["price"] is None
+    assert cleared_entry["location_name"] == alternate_location
+    assert cleared_entry["note"] is None
+    assert cleared["changes"]["price"]["new"] is None
+    assert cleared["changes"]["purchased_date"]["new"] is None
+    assert cleared["changes"]["note"]["new"] is None
+    assert cleared["changes"]["location_id"]["new"] == alternate_location_id
+
+
 # -- stock_set: qu-optional when zeroing ------------------------------------
 
 
