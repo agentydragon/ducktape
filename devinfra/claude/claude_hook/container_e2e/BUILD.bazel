@@ -84,6 +84,7 @@ oci_layout_rloc(
     name = "e2e_container",
     testonly = True,
     image = ":e2e_container_image",
+    tag = "e2e-container:pinned",
     visibility = ["//devinfra/claude:__subpackages__"],
 )
 

@@ -26,7 +26,9 @@ from util.bazel.runfiles import get_required_path
 from util.oci import OciImage, load_oci_image
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
-WAYBACK_PROXY_IMAGE = OciImage("_main/loom/wayback/proxy/image_info.rloc", "wayback-proxy:latest")
+WAYBACK_PROXY_IMAGE = OciImage(
+    "_main/loom/wayback/proxy/image_info.rloc", "wayback-proxy:latest", "_main/loom/wayback/proxy/image_info_ci_load.sh"
+)
 COMPOSE_RLOCATION = "_main/loom/wayback/proxy/compose.yaml"
 
 

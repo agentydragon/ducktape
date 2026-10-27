@@ -53,5 +53,6 @@ oci_layout_rloc(
     name = "gnome_shell_test",
     testonly = True,
     image = ":gnome_shell_test_image",
+    tag = "gnome-shell-test:pinned",
     visibility = ["//visibility:public"],
 )

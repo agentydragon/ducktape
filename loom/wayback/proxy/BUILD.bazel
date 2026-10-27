@@ -119,6 +119,7 @@ oci_layout_rloc(
     name = "image_info",
     testonly = True,
     image = ":image",
+    tag = "wayback-proxy:latest",
     visibility = ["//loom/gym:__pkg__"],
 )
 

@@ -71,6 +71,7 @@ class OciImage:
 
     rloc_file: str
     tag: str
+    load_script_rlocation: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -186,21 +187,14 @@ def load_oci_image(image: OciImage) -> str:
     `docker image inspect`, and once **inside** it, so the first waiter behind a loader finds the
     image already there and skips the load just done for it.
     """
-    layout_rloc = runfiles.get_required_path(image.rloc_file).read_text().strip()
-    oci_layout = runfiles.get_required_path(layout_rloc)
-    wanted = read_oci_layout_digest(oci_layout)
-    if _already_loaded(image.tag, wanted):
-        return image.tag
-    with tracer.start_as_current_span(f"load_oci_image({image.tag})"), _one_loader_at_a_time(image.tag):
-        if _already_loaded(image.tag, wanted):
-            return image.tag
+    if image.load_script_rlocation is None:
+        raise ValueError(f"No oci_load script for {image.tag}")
+    script = runfiles.get_required_path(image.load_script_rlocation)
+    with tracer.start_as_current_span(f"load_oci_image({image.tag})"):
         started = time.monotonic()
-        logger.info("Loading %s (%s) into the Docker daemon (pid %d)", image.tag, wanted[:19], os.getpid())
-        push_to_daemon(oci_layout, image.tag)
-        # Written after the push and recording what the daemon actually ended up with, so a crash
-        # mid-load leaves the older truth rather than a claim about bytes it never received.
-        _loaded_marker(image.tag).write_text(f"{wanted} {daemon_image_id(image.tag)}")
-        logger.info("Loaded %s in %.1fs", image.tag, time.monotonic() - started)
+        logger.info("Loading %s via bare oci_load (pid %d)", image.tag, os.getpid())
+        subprocess.run([str(script)], check=True)
+        logger.info("Loaded %s via bare oci_load in %.1fs", image.tag, time.monotonic() - started)
     return image.tag
 
 

@@ -9,7 +9,11 @@ from testcontainers.core.container import DockerContainer
 
 from util.oci import OciImage, load_oci_image
 
-_STATIC_IMAGE = OciImage("_main/haku/console/static_test_image.rloc", "haku-console-static:test")
+_STATIC_IMAGE = OciImage(
+    "_main/haku/console/static_test_image.rloc",
+    "haku-console-static:test",
+    "_main/haku/console/static_test_image_ci_load.sh",
+)
 
 
 def _wait_for_nginx(base_url: str) -> httpx.Response:

@@ -45,6 +45,7 @@ oci_load(
 oci_layout_rloc(
     name = "image_layout",
     image = ":image",
+    tag = "github-api-proxy:test",
 )
 
 py_test(

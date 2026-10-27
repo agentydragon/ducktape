@@ -66,6 +66,7 @@ oci_layout_rloc(
     name = "static_test_image",
     testonly = True,
     image = ":static_image",
+    tag = "agentplane-frontend:test",
 )
 
 py_library(

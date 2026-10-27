@@ -331,6 +331,7 @@ oci_layout_rloc(
     name = "static_test_image",
     testonly = True,
     image = ":static_image",
+    tag = "haku-console-static:test",
 )
 
 py_test(

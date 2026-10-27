@@ -28,7 +28,11 @@ from util.oci import OciImage, load_oci_image
 from util.testing.gnome import GnomeSession, capture_panel_menu, exec_output
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
-_GNOME_SHELL_TEST = OciImage("_main/gnome/test_image/gnome_shell_test.rloc", "gnome-shell-test:pinned")
+_GNOME_SHELL_TEST = OciImage(
+    "_main/gnome/test_image/gnome_shell_test.rloc",
+    "gnome-shell-test:pinned",
+    "_main/gnome/test_image/gnome_shell_test_ci_load.sh",
+)
 _EXTENSION_ZIP = "_main/finance/plaid/spend/gnome/plaid-spend-desktop.zip"
 _EXTENSION_UUID = "plaid-spend@allegedly.works"
 _FIXTURE_NAMES = (

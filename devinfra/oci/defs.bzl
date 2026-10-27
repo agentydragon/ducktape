@@ -1,6 +1,7 @@
 """OCI build helpers for this repository."""
 
 load("@aspect_bazel_lib//lib:paths.bzl", "to_rlocation_path")
+load("@rules_oci//oci:defs.bzl", "oci_load")
 load("//devinfra/python:defs.bzl", "py_library")
 
 def _oci_layout_rloc_impl(ctx):
@@ -16,25 +17,36 @@ def _oci_layout_rloc_impl(ctx):
         [out],
         transitive_files = ctx.attr.image[DefaultInfo].files,
     ).merge(ctx.attr.image[DefaultInfo].default_runfiles)
+    if ctx.attr.load_script:
+        runfiles = runfiles.merge(ctx.attr.load_script[DefaultInfo].default_runfiles)
     return [DefaultInfo(files = depset([out]), runfiles = runfiles)]
 
 _oci_layout_rloc = rule(
     implementation = _oci_layout_rloc_impl,
     attrs = {
         "image": attr.label(mandatory = True, allow_single_file = True),
+        "load_script": attr.label(allow_single_file = True),
     },
 )
 
-def oci_layout_rloc(name, image, visibility = None, testonly = False):
+def oci_layout_rloc(name, image, visibility = None, testonly = False, tag = None):
     """OCI image .rloc target: a single-line file naming the OCI layout directory.
 
     Prefer `oci_image_py`, which wraps this in a library carrying both the Python constant
     and the image itself. Reach for this directly only where the .rloc is consumed by
     something other than `load_oci_image`.
     """
+    if tag != None:
+        oci_load(
+            name = name + "_ci_load",
+            image = image,
+            repo_tags = [tag],
+            testonly = testonly,
+        )
     _oci_layout_rloc(
         name = name,
         image = image,
+        load_script = ":" + name + "_ci_load" if tag != None else None,
         visibility = visibility,
         testonly = testonly,
     )
@@ -43,7 +55,7 @@ _IMAGE_MODULE = """\"\"\"Auto-generated OciImage for a pre-built container image
 
 from util.oci import OciImage
 
-IMAGE = OciImage("{rloc}", "{tag}")
+IMAGE = OciImage("{rloc}", "{tag}", "{load_script}")
 """
 
 def _oci_image_py_src_impl(ctx):
@@ -58,6 +70,7 @@ def _oci_image_py_src_impl(ctx):
         # name, and this one is `_main/...` inside this repo but `ducktape+/...` from a
         # module that depends on it. A literal would be right in exactly one of the two.
         rloc = to_rlocation_path(ctx, ctx.file.rloc),
+        load_script = to_rlocation_path(ctx, ctx.file.load_script),
     ))
     return [DefaultInfo(files = depset([out]))]
 
@@ -66,6 +79,7 @@ _oci_image_py_src = rule(
     attrs = {
         "module": attr.string(mandatory = True),
         "rloc": attr.label(mandatory = True, allow_single_file = True),
+        "load_script": attr.label(mandatory = True, allow_single_file = True),
         "tag": attr.string(mandatory = True),
     },
 )
@@ -96,12 +110,14 @@ def oci_image_py(name, image, tag, visibility = None, testonly = False):
     oci_layout_rloc(
         name = name + "_rloc",
         image = image,
+        tag = tag,
         testonly = testonly,
     )
     _oci_image_py_src(
         name = name + "_src",
         module = name,
         rloc = ":" + name + "_rloc",
+        load_script = ":" + name + "_rloc_ci_load",
         tag = tag,
         testonly = testonly,
     )

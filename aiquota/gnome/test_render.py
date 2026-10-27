@@ -49,7 +49,11 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
 logger = logging.getLogger(__name__)
 
 
-_GNOME_SHELL_TEST = OciImage("_main/gnome/test_image/gnome_shell_test.rloc", "gnome-shell-test:pinned")
+_GNOME_SHELL_TEST = OciImage(
+    "_main/gnome/test_image/gnome_shell_test.rloc",
+    "gnome-shell-test:pinned",
+    "_main/gnome/test_image/gnome_shell_test_ci_load.sh",
+)
 _EXTENSION_ZIP = "_main/aiquota/gnome/aiquota.zip"
 _EXTENSION_UUID = "aiquota@allegedly.works"
 

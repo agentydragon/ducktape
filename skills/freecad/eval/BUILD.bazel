@@ -4,6 +4,7 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 oci_layout_rloc(
     name = "freecad_test",
     image = "@freecad_test_linux_amd64",
+    tag = "freecad-test:pinned",
 )
 
 py_library(

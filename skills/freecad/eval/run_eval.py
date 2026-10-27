@@ -24,7 +24,11 @@ from util.oci import OciImage, load_oci_image
 
 logger = logging.getLogger(__name__)
 
-FREECAD_TEST = OciImage("_main/skills/freecad/eval/freecad_test.rloc", "freecad-test:pinned")
+FREECAD_TEST = OciImage(
+    "_main/skills/freecad/eval/freecad_test.rloc",
+    "freecad-test:pinned",
+    "_main/skills/freecad/eval/freecad_test_ci_load.sh",
+)
 TASK_MD = "_main/skills/freecad/eval/baseplate/TASK.md"
 DOCKER_LAUNCHER = "_main/mcp_infra/exec/docker_launcher"
 

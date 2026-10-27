@@ -4,6 +4,7 @@ load("//devinfra/python:defs.bzl", "py_test")
 oci_layout_rloc(
     name = "image_layout",
     image = "@ducktape_cli_proxy_api//:image",
+    tag = "cli-proxy-api:test",
 )
 
 py_test(
