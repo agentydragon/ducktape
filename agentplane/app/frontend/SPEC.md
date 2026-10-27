@@ -1,8 +1,8 @@
 # Agentplane frontend
 
-## Session creation
+## Thread creation
 
-When Start session is disabled, hovering it or focusing its wrapper shows the current reason:
+When Create thread is disabled, hovering it or focusing its wrapper shows the current reason:
 Sandbox availability, an unconfirmed open attempt, opening in progress, or model availability.
 
 ## Thread names

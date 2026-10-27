@@ -1926,7 +1926,8 @@ absorb, and the port missed one feature already on its base:
 - **UUID-only routes (#12194):** a non-UUID Thread or Session ID segment answers 404. Huma on `ServeMux` still routes
   `/threads/form` to `/threads/{thread_id}` and answers 422.
 - **Frontend:** ten files the branch edits also changed on devel (#12134, #12135, #12163, #12168), among them
-  `client.ts`, `harness.tsx`, `new_session_form.tsx` and `sandbox_page.test.tsx`. Call sites take the Go schema's names.
+  `client.ts`, `harness.tsx`, `threads/new_thread_form.tsx` and
+  `sandbox_page.test.tsx`. Call sites take the Go schema's names.
 - **Style:** `main.go` installs `slog.NewTextHandler`, where the [Go table](../../STYLE.md#go) requires JSON; Huma
   needs its row in that table.
 

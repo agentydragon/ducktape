@@ -281,30 +281,30 @@ function tab(label: string): HTMLButtonElement {
   return found;
 }
 
-function newSession(): HTMLButtonElement {
-  const button = [...container.querySelectorAll("button")].find((node) => node.textContent === "New session");
-  if (!button) throw new Error("Missing new session button");
+function newThread(): HTMLButtonElement {
+  const button = [...container.querySelectorAll("button")].find((node) => node.textContent === "New thread");
+  if (!button) throw new Error("Missing new thread button");
   return button;
 }
 
-function startSession(): HTMLButtonElement {
+function createThreadButton(): HTMLButtonElement {
   const button = [...container.querySelectorAll("button")].find((node) =>
-    /Start session|Creating session/.test(node.textContent ?? "")
+    /Create thread|Creating thread/.test(node.textContent ?? "")
   );
-  if (!button) throw new Error("Missing start session button");
+  if (!button) throw new Error("Missing create thread button");
   return button;
 }
 
-async function startSessionTooltip(): Promise<Element | null> {
-  if (newSession().getAttribute("aria-expanded") !== "true") await act(async () => newSession().click());
-  await act(async () => startSession().parentElement!.focus());
+async function createThreadTooltip(): Promise<Element | null> {
+  if (newThread().getAttribute("aria-expanded") !== "true") await act(async () => newThread().click());
+  await act(async () => createThreadButton().parentElement!.focus());
   return document.querySelector('[role="tooltip"]');
 }
 
-/** Opens the launch form in place, as an operator does, and starts a Session from it. */
-async function launchSession(): Promise<void> {
-  if (newSession().getAttribute("aria-expanded") !== "true") await act(async () => newSession().click());
-  await act(async () => startSession().click());
+/** Opens the form in place, as an operator does, and creates a Thread from it. */
+async function submitNewThread(): Promise<void> {
+  if (newThread().getAttribute("aria-expanded") !== "true") await act(async () => newThread().click());
+  await act(async () => createThreadButton().click());
 }
 
 function labeledInput(label: string): HTMLInputElement {
@@ -325,9 +325,9 @@ async function choose(label: string, value: string): Promise<void> {
   await act(async () => option.click());
 }
 
-it("resets the launch form when navigating directly between sandbox routes", async () => {
+it("resets the creation form when navigating directly between sandbox routes", async () => {
   await render(async () => Response.json([]), undefined, false, true);
-  await act(async () => newSession().click());
+  await act(async () => newThread().click());
   await choose("Harness", "Codex");
   expect(labeledInput("Model").value).toBe("Codex Model");
   const instructions = container.querySelector('textarea[aria-label="Standing instructions"]');
@@ -523,7 +523,7 @@ it("preserves a Sandbox reasoning default through model loading and submits it o
   );
   await render(sessions);
   expect(labeledInput("Reasoning effort").value).toBe("high");
-  await launchSession();
+  await submitNewThread();
   expect((await postedBody(sessions)).spec.reasoningEffort).toBe("high");
 });
 
@@ -538,14 +538,14 @@ it("uses the configured preset working directory template and setup script for l
     Promise.resolve(request.method === "GET" ? Response.json([]) : Response.json({ detail: "stop" }, { status: 422 }))
   );
   await render(sessions);
-  await launchSession();
+  await submitNewThread();
   const body = await postedBody(sessions);
   expect(body.spec.cwd).toBe("/state/custom/{session_id}/work");
   expect(body.session_id).toMatch(/^[0-9a-f-]{36}$/);
   expect(body.setup_script).toBe("printf 'ready\\n'");
 });
 
-it("notes a Session's setup only until it completes", async () => {
+it("notes a Thread's setup only until it completes", async () => {
   live.snapshot.threads = [
     thread({ id: "legacy", harness_state: "HARNESS_STATE_STOPPED", setup_state: null }),
     thread({ id: "prepared", harness_state: "HARNESS_STATE_RUNNING", setup_state: "SETUP_STATE_SUCCEEDED" }),
@@ -573,7 +573,7 @@ it("lets a later Thread override the preset reasoning default locally", async ()
   );
   await render(sessions);
   await choose("Reasoning effort", "medium");
-  await launchSession();
+  await submitNewThread();
   expect((await postedBody(sessions)).spec.reasoningEffort).toBe("medium");
   expect((await postedBody(sessions)).spec.reasoningEffort).toBe("medium");
 });
@@ -594,7 +594,7 @@ function menuItem(text: string): HTMLElement {
 it("keeps retained History Threads visible through ready to suspended with no runner inventory read", async () => {
   const retained = thread({
     id: "retained-session",
-    name: "Previously active session",
+    name: "Previously active thread",
     harness_state: "HARNESS_STATE_RUNNING",
     feed_status: "active",
     active_turn_id: "turn-last-seen",
@@ -606,9 +606,9 @@ it("keeps retained History Threads visible through ready to suspended with no ru
     Promise.resolve(Response.json({ detail: "runner inventory must not be requested" }, { status: 503 }))
   );
   await render(sessions);
-  expect(container.textContent).toContain("Previously active session");
-  expect(startSession().disabled).toBe(false);
-  expect(sessionStatus("Previously active session")).toBe("Turn running · Runner feed active · harness running");
+  expect(container.textContent).toContain("Previously active thread");
+  expect(createThreadButton().disabled).toBe(false);
+  expect(sessionStatus("Previously active thread")).toBe("Turn running · Runner feed active · harness running");
 
   readySandbox.operating_mode = "Suspended";
   readySandbox.phase = "Suspended";
@@ -617,31 +617,31 @@ it("keeps retained History Threads visible through ready to suspended with no ru
 
   const retainedRow = () =>
     [...container.querySelectorAll("tbody tr")].find((candidate) =>
-      candidate.textContent?.includes("Previously active session")
+      candidate.textContent?.includes("Previously active thread")
     );
   const actionButton = () =>
     [...container.querySelectorAll("button")].find(
       (node) => node.getAttribute("aria-label") === "More actions for retained-session"
     );
   expect(retainedRow()).toBeDefined();
-  expect(sessionStatus("Previously active session")).toBe("Sandbox suspended");
-  expect(container.textContent).toContain("New sessions need a ready Sandbox");
-  expect(startSession().disabled).toBe(true);
-  expect((await startSessionTooltip())?.textContent).toContain("Resume it or enable wake on send");
+  expect(sessionStatus("Previously active thread")).toBe("Sandbox suspended");
+  expect(container.textContent).toContain("New threads need a ready Sandbox");
+  expect(createThreadButton().disabled).toBe(true);
+  expect((await createThreadTooltip())?.textContent).toContain("Resume it or enable wake on send");
   expect(sessions).not.toHaveBeenCalled();
 
   readySandbox.wake_on_send = true;
   await rerender();
-  expect(container.textContent).toContain("Starting a session will wake the Sandbox.");
-  expect(startSession().disabled).toBe(false);
+  expect(container.textContent).toContain("Creating a thread will wake the Sandbox.");
+  expect(createThreadButton().disabled).toBe(false);
   expect(sessions).not.toHaveBeenCalled();
 
   readySandbox.wake_on_send = false;
   await rerender();
-  expect(startSession().disabled).toBe(true);
+  expect(createThreadButton().disabled).toBe(true);
 
   const menuButton = actionButton();
-  if (!menuButton) throw new Error("Missing retained Session actions menu");
+  if (!menuButton) throw new Error("Missing retained Thread actions menu");
   await act(async () => menuButton.click());
   expect((menuItem("Wait for the active turn to finish before archiving") as HTMLButtonElement).disabled).toBe(true);
   await act(async () => menuButton.click());
@@ -654,7 +654,7 @@ it("keeps retained History Threads visible through ready to suspended with no ru
   live.snapshot.threads = [{ ...retained, harness_state: "HARNESS_STATE_STOPPED", active_turn_id: null }];
   await rerender();
   const stoppedMenuButton = actionButton();
-  if (!stoppedMenuButton) throw new Error("Missing retained Session actions menu after Sandbox deletion");
+  if (!stoppedMenuButton) throw new Error("Missing retained Thread actions menu after Sandbox deletion");
   await act(async () => stoppedMenuButton.click());
   await act(async () => menuItem("Archive").click());
   live.snapshot.threads = [{ ...retained, archived: true, harness_state: "HARNESS_STATE_STOPPED" }];
@@ -673,33 +673,33 @@ it("shows creation progress, prevents duplicate clicks, and does not retry faile
     request.method === "GET" ? Promise.resolve(Response.json([])) : pending
   );
   const onOpenThread = await render(sessions);
-  await launchSession();
-  expect(startSession().textContent).toContain("Creating session");
-  expect(startSession().disabled).toBe(true);
-  expect((await startSessionTooltip())?.textContent).toContain("A session is being opened");
-  await act(async () => startSession().click());
+  await submitNewThread();
+  expect(createThreadButton().textContent).toContain("Creating thread");
+  expect(createThreadButton().disabled).toBe(true);
+  expect((await createThreadTooltip())?.textContent).toContain("A thread is being created");
+  await act(async () => createThreadButton().click());
   expect(sessions.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(1);
   await act(async () => fail(Response.json({ detail: "session refused" }, { status: 422 })));
-  expect(startSession().disabled).toBe(true);
-  expect((await startSessionTooltip())?.textContent).toContain("Check Open status");
+  expect(createThreadButton().disabled).toBe(true);
+  expect((await createThreadTooltip())?.textContent).toContain("Check opening status");
   expect(container.textContent).toContain("session refused");
-  expect(container.textContent).toContain("Check Open status");
+  expect(container.textContent).toContain("Check opening status");
   expect(onOpenThread).not.toHaveBeenCalled();
 });
 
-it("explains model catalog loading and an empty catalog on the disabled start button", async () => {
+it("explains model catalog loading and an empty catalog on the disabled create button", async () => {
   presetDefaults = {};
   let deliverCatalog!: (response: Response) => void;
   modelCatalogResponse = new Promise((resolve) => {
     deliverCatalog = resolve;
   });
   await render(async () => Response.json([]));
-  await act(async () => newSession().click());
-  expect(startSession().disabled).toBe(true);
-  expect((await startSessionTooltip())?.textContent).toContain("Waiting for the model catalog");
+  await act(async () => newThread().click());
+  expect(createThreadButton().disabled).toBe(true);
+  expect((await createThreadTooltip())?.textContent).toContain("Waiting for the model catalog");
   await act(async () => deliverCatalog(Response.json(testModelCatalog([], []))));
-  expect(startSession().disabled).toBe(true);
-  expect((await startSessionTooltip())?.textContent).toContain("No models are available");
+  expect(createThreadButton().disabled).toBe(true);
+  expect((await createThreadTooltip())?.textContent).toContain("No models are available");
 });
 
 function button(label: string): HTMLButtonElement {
@@ -723,10 +723,10 @@ function lostOpen(): Mock<(request: Request) => Promise<Response>> {
 it("does not retry an Open the runner has not reported", async () => {
   const sessions = lostOpen();
   const onOpenThread = await render(sessions);
-  await launchSession();
+  await submitNewThread();
   const first = await postedBody(sessions);
   expect(sessionStorage.getItem("agentplane:pending-open:startup-test")).toBe(first.session_id);
-  await act(async () => button("Check Open status").click());
+  await act(async () => button("Check opening status").click());
   expect(onOpenThread).not.toHaveBeenCalled();
   expect(container.textContent).toContain("No runner Thread or Dispatcher opening is visible yet");
   expect(sessions.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(1);
@@ -738,10 +738,10 @@ it("does not retry an Open the runner has not reported", async () => {
 it("recovers a lost Open from its Thread without sending a second Open", async () => {
   const sessions = lostOpen();
   const onOpenThread = await render(sessions);
-  await launchSession();
+  await submitNewThread();
   const first = await postedBody(sessions);
   live.snapshot.threads = [thread({ id: first.session_id })];
-  await act(async () => button("Check Open status").click());
+  await act(async () => button("Check opening status").click());
   expect(onOpenThread).toHaveBeenCalledWith(first.session_id);
   expect(sessions.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(1);
   expect(sessionStorage.getItem("agentplane:pending-open:startup-test")).toBeNull();
@@ -759,7 +759,7 @@ it("resolves a queued Open from the live matching Thread projection exactly once
     });
   });
   const onOpenThread = await render(sessions);
-  await launchSession();
+  await submitNewThread();
   const sessionId = (await postedBody(sessions)).session_id as string;
   expect(container.textContent).toContain("Queued in Dispatcher");
   expect(onOpenThread).not.toHaveBeenCalled();
@@ -815,7 +815,7 @@ it("does not resolve a pending Open from an unrelated Thread or clear it on manu
 it("reload retains only the Session ID, never the Open spec or bootstrap", async () => {
   const sessions = lostOpen();
   await render(sessions);
-  await launchSession();
+  await submitNewThread();
   const original = await postedBody(sessions);
   expect(original.spec).toBeDefined();
   expect(sessionStorage.length).toBe(1);
@@ -824,12 +824,12 @@ it("reload retains only the Session ID, never the Open spec or bootstrap", async
   container.remove();
   await render(sessions);
   expect(container.textContent).toContain(original.session_id);
-  expect(startSession().disabled).toBe(true);
-  await act(async () => button("Check Open status").click());
+  expect(createThreadButton().disabled).toBe(true);
+  await act(async () => button("Check opening status").click());
   expect(sessions.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(1);
   await act(async () => button("Forget attempt").click());
   expect(sessionStorage.getItem("agentplane:pending-open:startup-test")).toBeNull();
-  expect(startSession().disabled).toBe(false);
+  expect(createThreadButton().disabled).toBe(false);
 });
 
 it("opens the client-minted Session ID returned by the opening", async () => {
@@ -845,13 +845,13 @@ it("opens the client-minted Session ID returned by the opening", async () => {
     });
   });
   const onOpenThread = await render(sessions);
-  await launchSession();
+  await submitNewThread();
   expect(onOpenThread).toHaveBeenCalledWith(publicId);
   expect((await postedBody(sessions)).session_id).toBe(publicId);
   expect(sessionStorage.getItem("agentplane:pending-open:startup-test")).toBeNull();
 });
 
-it("hides an archived thread's session by default, reveals it via Show archived, and unarchives it", async () => {
+it("hides an archived Thread by default, reveals it via Show archived, and unarchives it", async () => {
   live.snapshot.threads = [thread({ id: "existing-session", archived: true })];
   const archiveRequests: Request[] = [];
   await render(
@@ -869,7 +869,7 @@ it("hides an archived thread's session by default, reveals it via Show archived,
   const menuButton = [...container.querySelectorAll("button")].find(
     (node) => node.getAttribute("aria-label") === "More actions for existing-session"
   );
-  if (!menuButton) throw new Error("Missing per-session actions menu");
+  if (!menuButton) throw new Error("Missing per-thread actions menu");
   await act(async () => menuButton.click());
   await act(async () => menuItem("Unarchive").click());
 
@@ -878,7 +878,7 @@ it("hides an archived thread's session by default, reveals it via Show archived,
   ]);
 });
 
-it("allows archiving an idle Session while its harness is running", async () => {
+it("allows archiving an idle Thread while its harness is running", async () => {
   live.snapshot.threads = [thread({ id: "existing-session", harness_state: "HARNESS_STATE_RUNNING" })];
   const archiveRequests: Request[] = [];
   await render(
@@ -891,7 +891,7 @@ it("allows archiving an idle Session while its harness is running", async () => 
   const menuButton = [...container.querySelectorAll("button")].find(
     (node) => node.getAttribute("aria-label") === "More actions for existing-session"
   );
-  if (!menuButton) throw new Error("Missing per-session actions menu");
+  if (!menuButton) throw new Error("Missing per-thread actions menu");
   await act(async () => menuButton.click());
   const archiveItem = menuItem("Archive");
   expect(archiveItem).toBeInstanceOf(HTMLButtonElement);
@@ -905,18 +905,18 @@ it("allows archiving an idle Session while its harness is running", async () => 
 it.each([
   [{ active_turn_id: "turn-1" }, "Wait for the active turn to finish before archiving"],
   [{ setup_state: "SETUP_STATE_RUNNING" }, "Wait for setup to finish before archiving"],
-] as const)("blocks archiving when Session work is visible: %o", async (overrides, reason) => {
+] as const)("blocks archiving when Thread work is visible: %o", async (overrides, reason) => {
   live.snapshot.threads = [thread({ id: "existing-session", harness_state: "HARNESS_STATE_RUNNING", ...overrides })];
   await render(async () => Response.json({ detail: "History owns the Sandbox inventory" }, { status: 500 }));
   const menuButton = [...container.querySelectorAll("button")].find(
     (node) => node.getAttribute("aria-label") === "More actions for existing-session"
   );
-  if (!menuButton) throw new Error("Missing per-session actions menu");
+  if (!menuButton) throw new Error("Missing per-thread actions menu");
   await act(async () => menuButton.click());
   expect((menuItem(reason) as HTMLButtonElement).disabled).toBe(true);
 });
 
-it("defaults new sessions to an offered harness while retaining existing Claude threads", async () => {
+it("defaults new threads to an offered harness while retaining existing Claude threads", async () => {
   live.snapshot.threads = [thread({ id: "old-session", name: "Existing Claude" })];
   presetDefaults = { harness: "HARNESS_CODEX", model: "test-model" };
   const sessions = vi.fn<(request: Request) => Promise<Response>>(async (request) =>
@@ -936,7 +936,7 @@ it("defaults new sessions to an offered harness while retaining existing Claude 
   await act(async () => claude!.click());
   expect(harness.value).toBe("Codex");
   await act(async () => harness.click());
-  await launchSession();
+  await submitNewThread();
   expect((await postedBody(sessions)).spec.harness).toBe("HARNESS_CODEX");
 });
 
@@ -948,16 +948,16 @@ it("keeps lifecycle controls when History Thread summaries are unavailable", asy
   expect(container.textContent).toContain("History Thread summaries are unavailable (UNAUTHENTICATED)");
 });
 
-it("keeps the launch form closed until asked, and keeps what was entered when it is closed again", async () => {
+it("keeps the creation form closed until asked, and keeps what was entered when it is closed again", async () => {
   await render(async () => Response.json([]));
-  expect(newSession().getAttribute("aria-expanded")).toBe("false");
-  await act(async () => newSession().click());
-  expect(newSession().getAttribute("aria-expanded")).toBe("true");
+  expect(newThread().getAttribute("aria-expanded")).toBe("false");
+  await act(async () => newThread().click());
+  expect(newThread().getAttribute("aria-expanded")).toBe("true");
   await choose("Reasoning effort", "medium");
 
-  await act(async () => newSession().click());
-  expect(newSession().getAttribute("aria-expanded")).toBe("false");
-  await act(async () => newSession().click());
+  await act(async () => newThread().click());
+  expect(newThread().getAttribute("aria-expanded")).toBe("false");
+  await act(async () => newThread().click());
   expect(labeledInput("Reasoning effort").value).toBe("medium");
 });
 
@@ -987,7 +987,7 @@ it("offers Delete in the actions menu only for a suspended Sandbox", async () =>
   expect(document.body.textContent).toContain("Delete startup-test?");
 });
 
-it("links the Sandbox and its Sessions to their scoped Grafana trace searches", async () => {
+it("links the Sandbox and its Threads to their scoped Grafana trace searches", async () => {
   live.snapshot.threads = [thread({ id: "existing-session" })];
   await render(async () => Response.json([]));
   await act(async () => Promise.resolve());
@@ -1009,9 +1009,9 @@ it("links the Sandbox and its Sessions to their scoped Grafana trace searches", 
   const sessionMenuButton = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
     (node) => node.getAttribute("aria-label") === "More actions for existing-session"
   );
-  if (!sessionMenuButton) throw new Error("Missing Session actions menu");
+  if (!sessionMenuButton) throw new Error("Missing Thread actions menu");
   await act(async () => sessionMenuButton.click());
-  const sessionLink = menuItem("Find Session traces in Grafana");
+  const sessionLink = menuItem("Find Thread traces in Grafana");
   expect(sessionLink).toBeInstanceOf(HTMLAnchorElement);
   expect((sessionLink as HTMLAnchorElement).target).toBe("_blank");
   expect(new URL((sessionLink as HTMLAnchorElement).href).searchParams.get("panes")).toContain("span.session.id");
@@ -1036,11 +1036,11 @@ it("hides trace links when the app leaves trace search unconfigured", async () =
   const sessionMenuButton = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
     (node) => node.getAttribute("aria-label") === "More actions for existing-session"
   );
-  if (!sessionMenuButton) throw new Error("Missing Session actions menu");
+  if (!sessionMenuButton) throw new Error("Missing Thread actions menu");
   await act(async () => sessionMenuButton.click());
   expect(
     [...document.querySelectorAll('[role="menuitem"]')].some((node) =>
-      node.textContent?.includes("Find Session traces in Grafana")
+      node.textContent?.includes("Find Thread traces in Grafana")
     )
   ).toBe(false);
 });
@@ -1064,12 +1064,12 @@ it("hides Langfuse links independently when Langfuse search is unconfigured", as
 
 it("does not state a Session's status while Thread updates are not being heard", async () => {
   live.snapshot.threads = [
-    thread({ id: "quiet", name: "Quiet session", harness_state: "HARNESS_STATE_RUNNING", feed_status: "active" }),
+    thread({ id: "quiet", name: "Quiet thread", harness_state: "HARNESS_STATE_RUNNING", feed_status: "active" }),
   ];
   mutableSnapshot.updates_connected = false;
   try {
     await render(async () => Response.json([]));
-    expect(sessionStatus("Quiet session")).toBe("No live harness confirmed");
+    expect(sessionStatus("Quiet thread")).toBe("No live harness confirmed");
   } finally {
     mutableSnapshot.updates_connected = true;
   }

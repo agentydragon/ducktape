@@ -684,6 +684,38 @@ ts_library(
     ],
 )
 
+ts_library(
+    name = "new_thread_form",
+    srcs = ["new_thread_form.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:disclosure",
+        "//agentplane/proto:runner_pb",
+    ],
+)
+
+ts_library(
+    name = "sandbox_threads",
+    srcs = ["sandbox_threads.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":thread_status",
+        ":thread_status_indicator",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:icons",
+        "//agentplane/app/frontend:time_ago",
+        "//agentplane/app/frontend:trace_search",
+    ],
+)
+
 js_library(
     name = "thread_status_indicator_css",
     srcs = ["thread_status_indicator.css"],

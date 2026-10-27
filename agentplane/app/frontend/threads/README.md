@@ -1,7 +1,8 @@
 # Thread frontend
 
 `home.tsx` owns the Threads landing page, and `thread_list.tsx` owns the grouped
-Thread list used there and in the sidebar. `thread_groups.ts`, `thread_notices.tsx`,
+Thread list used there and in the sidebar. `sandbox_threads.tsx` and `new_thread_form.tsx`
+own the Thread list and creation form on a Sandbox. `thread_groups.ts`, `thread_notices.tsx`,
 the status indicator, and the Thread tab favicon belong with that navigation.
 
 `page.tsx` resolves the selected Thread and its live availability. `conversation.tsx`
