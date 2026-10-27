@@ -98,3 +98,43 @@ it("rejects malformed ProtoJSON, unknown delivery states, and snapshots without 
     )
   ).toThrow();
 });
+
+it("preserves numeric enum values from newer writers as explicit unknown variants", () => {
+  const states = decodeSessionNoticeStates(
+    JSON.stringify({
+      observedAt: "2026-10-27T18:00:00Z",
+      inboxes: [{ inboxId: "inbox-test", sessionId: "session-test", queued: 1, notice: 999, noticeWaitReason: 999 }],
+    })
+  );
+  expect(states.inboxes[0]?.notice).toEqual({ unknown: 999 });
+  expect(states.inboxes[0]?.noticeWaitReason).toEqual({ unknown: 999 });
+
+  const status = decodeSandboxNotificationStatus(
+    JSON.stringify({
+      observedAt: "2026-10-27T18:00:00Z",
+      inboxes: [
+        {
+          inbox: { id: "inbox-test", sessionId: "session-test" },
+          subscriptions: [
+            {
+              id: "subscription-test",
+              source: {
+                github: {
+                  repository: "owner/repository",
+                  subject: { branch: { name: "main" } },
+                  events: [{ event: 999 }],
+                },
+              },
+              expiresAt: "2026-11-03T18:00:00Z",
+              errorKind: 999,
+            },
+          ],
+        },
+      ],
+    })
+  );
+  expect(status.inboxes[0]?.subscriptions[0]).toMatchObject({
+    errorKind: { unknown: 999 },
+    source: { github: { events: [{ event: { unknown: 999 } }] } },
+  });
+});

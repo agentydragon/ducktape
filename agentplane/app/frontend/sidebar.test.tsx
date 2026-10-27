@@ -826,6 +826,11 @@ it("counts each listed thread's unprocessed notifications and flags failed deliv
       sandbox: "box",
       name: "Empty-inbox thread",
     }),
+    thread({
+      id: "00000000-0000-4000-8000-000000000005",
+      sandbox: "box",
+      name: "Future delivery state",
+    }),
   ];
   const { noticeUrls } = await render(threads, sandboxes, {
     notices: {
@@ -842,6 +847,7 @@ it("counts each listed thread's unprocessed notifications and flags failed deliv
         error: "runner unreachable",
       },
       "00000000-0000-4000-8000-000000000004": { notice: "NOTICE_PROGRESS_CONFIRMED" },
+      "00000000-0000-4000-8000-000000000005": { unacknowledged: 1, notice: { unknown: 999 } },
     },
   });
   await act(async () => {});
@@ -855,6 +861,10 @@ it("counts each listed thread's unprocessed notifications and flags failed deliv
   expect(badge("One unprocessed thread")).toEqual(["pending", "1"]);
   expect(badge("Delivery-failed thread")).toEqual(["error", "1"]);
   expect(badge("Empty-inbox thread")).toBeUndefined();
+  expect(badge("Future delivery state")).toEqual(["error", "1"]);
+  expect(
+    row("Future delivery state").querySelector(".agentplane-thread-list-row-notices")?.getAttribute("aria-label")
+  ).toContain("Unrecognized notification delivery state 999");
   // Viewing the list sends nothing back: only the agent acknowledges its inbox.
   expect(fetchMock.mock.calls.map(([request]) => request.method)).not.toContain("POST");
 });

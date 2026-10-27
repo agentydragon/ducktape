@@ -57,6 +57,8 @@ export function ThreadNoticeBadge({
   const queued = inboxes.reduce((sum, inbox) => sum + inbox.queued, 0);
   const unacknowledged = inboxes.reduce((sum, inbox) => sum + inbox.unacknowledged, 0);
   const error = inboxes.find((inbox) => inbox.error !== undefined)?.error;
+  const unknownProgress = inboxes.find(({ notice }) => typeof notice === "object")?.notice;
+  const unknownProgressValue = typeof unknownProgress === "object" ? unknownProgress.unknown : undefined;
   if (error === undefined && queued === 0 && unacknowledged === 0) return null;
   const sending = inboxes.some((inbox) => inbox.unacknowledged > 0 && inbox.notice !== "NOTICE_PROGRESS_CONFIRMED");
   const eligible = inboxes
@@ -65,11 +67,14 @@ export function ThreadNoticeBadge({
     .sort()[0];
   const lines = [
     error === undefined ? null : `Delivery failed: ${error}`,
+    unknownProgressValue === undefined ? null : `Unrecognized notification delivery state ${unknownProgressValue}`,
     unacknowledged === 0
       ? null
-      : sending
-        ? `${plural(unacknowledged, "notification")} being delivered to the agent`
-        : `${plural(unacknowledged, "notification")} delivered, not yet acknowledged by the agent`,
+      : unknownProgressValue !== undefined
+        ? `${plural(unacknowledged, "notification")} with an unrecognized delivery state`
+        : sending
+          ? `${plural(unacknowledged, "notification")} being delivered to the agent`
+          : `${plural(unacknowledged, "notification")} delivered, not yet acknowledged by the agent`,
     queued === 0
       ? null
       : `${plural(queued, "notification")} queued for the next notice` +
@@ -77,14 +82,15 @@ export function ThreadNoticeBadge({
     live ? null : "Notification status disconnected; this may be out of date.",
   ].filter((line): line is string => line !== null);
   const pending = queued + unacknowledged;
+  const hasError = error !== undefined || unknownProgressValue !== undefined;
   return (
     <Tooltip label={lines.join("\n")} multiline style={{ whiteSpace: "pre-line" }} withArrow>
       <Badge
         className="agentplane-thread-list-row-notices"
-        data-state={error === undefined ? "pending" : "error"}
+        data-state={hasError ? "error" : "pending"}
         variant="filled"
         // Muted: the count is the agent's backlog, not a call on the operator's attention.
-        color={error === undefined ? "gray.5" : "red.4"}
+        color={hasError ? "red.4" : "gray.5"}
         aria-label={lines.join(". ")}
         style={live ? undefined : { opacity: 0.5 }}
       >
