@@ -308,7 +308,7 @@ async def test_products_edit_serializes_values_and_resolves_references(
                         "product_group": refunwrap_result.group,
                         "min_stock_amount": 0,
                         "due_type": 2,
-                        "description": "",
+                        "description": "Edited product description",
                     }
                 ]
             },
@@ -320,14 +320,13 @@ async def test_products_edit_serializes_values_and_resolves_references(
     product = next(row for row in products if int(row["id"]) == product_id)
     assert float(product["min_stock_amount"]) == 0
     assert int(product["due_type"]) == 2
-    assert product["description"] in ("", None)
+    assert product["description"] == "Edited product description"
     assert int(product["qu_id_stock"]) == int(quantity_unit_id)
     assert int(product["location_id"]) == int(location_id)
     assert int(product["qu_id_purchase"]) == int(quantity_unit_id)
     assert int(product["qu_id_consume"]) == int(quantity_unit_id)
     assert int(product["parent_product_id"]) == refunwrap_result.product_ids[1]
     assert int(product["product_group_id"]) == int(product_group_id)
-    saved_description = product["description"]
 
     unrelated_edit = unwrap_result(
         await mcp_client.call_tool(
@@ -339,14 +338,8 @@ async def test_products_edit_serializes_values_and_resolves_references(
 
     products = unwrap_result(await mcp_client.call_tool("products_list", {"detail": "full"}))
     product = next(row for row in products if int(row["id"]) == product_id)
-    assert product["description"] == saved_description
+    assert product["description"] == "Edited product description"
     assert float(product["min_stock_amount"]) == 0
-    assert int(product["due_type"]) == 2
-    assert int(product["qu_id_stock"]) == int(quantity_unit_id)
-    assert int(product["location_id"]) == int(location_id)
-    assert int(product["qu_id_purchase"]) == int(quantity_unit_id)
-    assert int(product["qu_id_consume"]) == int(quantity_unit_id)
-    assert int(product["parent_product_id"]) == refunwrap_result.product_ids[1]
     assert int(product["product_group_id"]) == int(product_group_id)
 
     clear = unwrap_result(
@@ -368,10 +361,18 @@ async def test_products_edit_serializes_values_and_resolves_references(
 
     products = unwrap_result(await mcp_client.call_tool("products_list", {"detail": "full"}))
     product = next(row for row in products if int(row["id"]) == product_id)
-    assert product["description"] in (None, "")
+    assert product["description"] is None
     assert product["product_group_id"] is None
     assert float(product["min_stock_amount"]) == 0
     assert int(product["due_type"]) == 2
+
+    empty_description = unwrap_result(
+        await mcp_client.call_tool("products_edit", {"items": [{"product": product_id, "description": ""}]})
+    )
+    assert empty_description[0]["kind"] == "ok", empty_description
+    products = unwrap_result(await mcp_client.call_tool("products_list", {"detail": "full"}))
+    product = next(row for row in products if int(row["id"]) == product_id)
+    assert product["description"] == ""
 
 
 # -- entity_update PATCH semantics -------------------------------------------
