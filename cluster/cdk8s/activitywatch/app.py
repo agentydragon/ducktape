@@ -37,7 +37,10 @@ OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/activitywatch"
 _NAME = "activitywatch"
 _NAMESPACE = "activitywatch"
 _IMAGE = "git.allegedly.works/ducktape-ci/aw-server:unset"
-_DATA_CLAIM = "activitywatch-data"
+_DATA_CLAIM = "data"
+# CLEANUP(added 2026-10-27): Drop with the seed init container and _local_path_claim once
+#   the owner releases this claim (pruning disabled; deleted by hand).
+_LOCAL_PATH_CLAIM = "activitywatch-data"
 _SERVER_PORT = 5600
 _READONLY_CONFIG = ConfigMapArgs(
     name="activitywatch-readonly-proxy", namespace=_NAMESPACE, files=["default.conf=readonly-proxy.conf"]
@@ -159,6 +162,30 @@ def _bearer_proxy_container() -> k8s.Container:
     )
 
 
+def _seed_container() -> k8s.Container:
+    """Copy the history off the local-path claim into an empty Piraeus claim. `Recreate`
+    stops the old aw-server first, so the SQLite files are quiescent. The memory limit
+    exceeds the ~360 MB history: dirty page cache counts against it, and a smaller limit
+    OOMs before writeback to the DRBD device drains it."""
+    return k8s.Container(
+        name="seed-from-local-path",
+        image="busybox:1.38",
+        command=[
+            "/bin/sh",
+            "-ec",
+            "if [ ! -e /data/db.sqlite3 ]; then cp -a /local-path-data/. /data/; fi; ls -l /data",
+        ],
+        volume_mounts=[
+            k8s.VolumeMount(name="data", mount_path="/data"),
+            k8s.VolumeMount(name="local-path-data", mount_path="/local-path-data", read_only=True),
+        ],
+        resources=k8s.ResourceRequirements(
+            requests={"cpu": k8s.Quantity.from_string("10m"), "memory": k8s.Quantity.from_string("16Mi")},
+            limits={"memory": k8s.Quantity.from_string("1Gi")},
+        ),
+    )
+
+
 def _deployment(scope: Construct) -> None:
     k8s.KubeDeployment(
         scope,
@@ -178,11 +205,18 @@ def _deployment(scope: Construct) -> None:
                         fs_group=999, seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")
                     ),
                     node_selector={"topology.kubernetes.io/region": "proxmox"},
+                    init_containers=[_seed_container()],
                     containers=[_aw_server_container(), _readonly_proxy_container(), _bearer_proxy_container()],
                     volumes=[
                         k8s.Volume(
                             name="data",
                             persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(claim_name=_DATA_CLAIM),
+                        ),
+                        k8s.Volume(
+                            name="local-path-data",
+                            persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(
+                                claim_name=_LOCAL_PATH_CLAIM, read_only=True
+                            ),
                         ),
                         k8s.Volume(
                             name="readonly-proxy-config",
@@ -201,10 +235,23 @@ def _deployment(scope: Construct) -> None:
 def _data_claim(scope: Construct) -> None:
     k8s.KubePersistentVolumeClaim(
         scope,
+        "piraeus-data",
+        metadata=k8s.ObjectMeta(name=_DATA_CLAIM, namespace=_NAMESPACE),
+        spec=k8s.PersistentVolumeClaimSpec(
+            access_modes=["ReadWriteOnce"],
+            storage_class_name="piraeus-hdd-local",
+            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("10Gi")}),
+        ),
+    )
+
+
+def _local_path_claim(scope: Construct) -> None:
+    k8s.KubePersistentVolumeClaim(
+        scope,
         "data",
         # Kept when dropped from here: it stays the copy source until the owner releases it.
         metadata=k8s.ObjectMeta(
-            name=_DATA_CLAIM, namespace=_NAMESPACE, annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"}
+            name=_LOCAL_PATH_CLAIM, namespace=_NAMESPACE, annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"}
         ),
         spec=k8s.PersistentVolumeClaimSpec(
             access_modes=["ReadWriteOnce"],
@@ -290,6 +337,7 @@ def chart(app: App) -> Chart:
     _namespace(chart)
     _deployment(chart)
     _data_claim(chart)
+    _local_path_claim(chart)
     _service(chart, "readonly-service", service=_READONLY)
     # CLEANUP(added 2026-10-02): Remove once nothing resolves activitywatch-readonly.activitywatch.svc (consumers: cluster/k8s/authentik/app/blueprints/activitywatch-sso.yaml, applied by the separate authentik Kustomization).
     _service(chart, "legacy-readonly-service", service=replace(_READONLY, name="activitywatch-readonly"))
