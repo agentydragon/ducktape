@@ -12,14 +12,16 @@ BuildBuddy invocation `5ee65889-282f-598e-b84a-8d4e5c11e16a` first had a
 Firecracker startup failure (`/uploads/2ca84397-b2cf-46c5-9134-7c2b0c7a2d3b/blobs/d7ea69a29a6b244cba2a34b382b51e5f9dd59d88ede53036e599214a8eb2a0f6/498`):
 the VM API socket did not appear before its deadline. A later execution of the
 same action, `/uploads/fa502e18-a1fa-4164-93df-335fd2545d34/blobs/d7ea69a29a6b244cba2a34b382b51e5f9dd59d88ede53036e599214a8eb2a0f6/498`,
-ran from 20:07:31.001 to 20:08:34.647 UTC and hit its execution deadline.
+ran from 20:07:31.001 to 20:08:34.647 UTC and returned deadline-exceeded.
 Its VM log (`c760a2c397da4cd660e1de55fc84dbdec5ebc8d1012dd88b33bd42ee447cb27d/8210`)
 shows snapshot resume at 20:07:31.637 and the first
 `PATCH /drives/workspacefs` at 20:07:49.122: **17.485 seconds passed before
 the workspace was attached**. Pytest started at 20:08:01.413. Its XML records
 all 19 cases passing in 25.917 seconds; each case took at most 0.255 seconds,
-and the last test span ended at 20:08:27.329. The action remained alive until
-the 20:08:34.647 deadline. It consumed 42.67 CPU seconds and about 710 MB peak.
+and the last test span ended at 20:08:27.329. The nominal 60-second execution
+budget ended around 20:08:31.001; executor finalization continued until the
+action returned at 20:08:34.647. This interval cannot all be attributed to
+Python shutdown. It consumed 42.67 CPU seconds and about 710 MB peak.
 The log/XML artifacts are `6522e4876fdf10df471c2d5ea7e70c1125ca194e0bb7002125d7bf222b136c59/2134`
 and `46c8ddf23e4ab37fd570913f95ab41d06d99221a7d75ff4faaf47ed91a7b93ad/2704`.
 
