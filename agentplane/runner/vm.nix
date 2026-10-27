@@ -142,8 +142,12 @@ in
   # Serial console login, selected per environment by the Runner config's `environment.console_autologin`: the
   # ordinary login prompt where unset, a root shell without a prompt where set. The guest has no
   # account passwords, so without autologin an attach stops at the prompt.
-  systemd.services."serial-getty@ttyS0" = {
-    overrideStrategy = "asDropin";
+  #
+  # Set on the template, merged into NixOS's own drop-in: NixOS names every drop-in `overrides.conf`
+  # and an instance's drop-in hides the template's of the same name, so a `serial-getty@ttyS0` one
+  # drops NixOS's agetty for upstream's absent `/usr/bin/agetty`, which crash-loops on the console.
+  # ttyS0 is the guest's only serial getty.
+  systemd.services."serial-getty@" = {
     unitConfig.RequiresMountsFor = [ "${runtimeDir}/config" ];
     serviceConfig.ExecCondition = consoleAutologinIs false;
   };
