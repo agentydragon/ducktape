@@ -6,6 +6,7 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 py_test(
     name = "test_optimizer_two_iters",
     srcs = ["test_optimizer_two_iters.py"],
+    data = ["@tiktoken_o200k_base//file"],
     deps = [
         ":config",
         ":conftest",
@@ -21,6 +22,7 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
+        "@pypi//tiktoken",
     ],
 )
 
