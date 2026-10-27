@@ -1674,6 +1674,50 @@ fn global_receiver_path(value: &ValueExpr, names: &BTreeSet<&str>) -> bool {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum GlobalMutationPath {
+    Unrelated,
+    Descendant,
+    Identity,
+    Prototype,
+}
+
+// This classifies syntactic evidence only. A descendant is not proven
+// disjoint: its complete alias integrity remains the author's premise.
+fn global_mutation_path(
+    value: &ValueExpr,
+    names: &BTreeSet<&str>,
+    bindings: &BTreeSet<Id>,
+) -> GlobalMutationPath {
+    use GlobalMutationPath::*;
+    match value {
+        ValueExpr::Binding(id) if !bindings.contains(id) => match id.0.as_ref() {
+            name if names.contains(name) => Identity,
+            "document" => Descendant,
+            "Window" | "EventTarget" | "Object" | "Document" | "HTMLDocument" => Prototype,
+            _ => Unrelated,
+        },
+        ValueExpr::Member(receiver, property, _) => {
+            match global_mutation_path(receiver, names, bindings) {
+                Unrelated => Unrelated,
+                Prototype => Prototype,
+                Identity | Descendant => match property.as_deref() {
+                    Some(
+                        "__proto__" | "prototype" | "constructor" | "Window" | "EventTarget"
+                        | "Object" | "Document" | "HTMLDocument",
+                    ) => Prototype,
+                    Some(
+                        "globalThis" | "global" | "window" | "self" | "frames" | "top" | "parent"
+                        | "defaultView",
+                    ) => Identity,
+                    _ => Descendant,
+                },
+            }
+        }
+        _ => Unrelated,
+    }
+}
+
 struct ExecutionIndex {
     owner: SourceUnitOrdinal,
     current: Option<u32>,
@@ -2587,10 +2631,27 @@ impl ExecutionIndex {
                         .flat_map(|callable| &callable.callback_result_writes),
                 )
                 .any(|write| {
-                    global_receiver_path(&write.receiver, &index.global_object_names)
-                        && write.property.as_deref().is_none_or(|property| {
-                            matches!(property, "__proto__" | "prototype" | "constructor")
-                        })
+                    // A visible stored back-alias defeats the descendant
+                    // distinction even when its receiver is an ordinary object.
+                    if exposes_global_receiver(&write.value, &index.global_object_names) {
+                        return true;
+                    }
+                    let path = global_mutation_path(
+                        &write.receiver,
+                        &index.global_object_names,
+                        &bindings.0,
+                    );
+                    match write.property.as_deref() {
+                        Some("__proto__" | "prototype" | "constructor") => {
+                            path != GlobalMutationPath::Unrelated
+                                || global_receiver_path(&write.receiver, &index.global_object_names)
+                        }
+                        None => matches!(
+                            path,
+                            GlobalMutationPath::Identity | GlobalMutationPath::Prototype
+                        ),
+                        _ => false,
+                    }
                 });
             if index.dynamic_scope_owners.is_empty()
                 && !index.dynamic_global_member

@@ -773,8 +773,7 @@ host behavior is a strong per-probe author premise, not inferred builtin trust.
 Admission requires a listed literal string on the left of `in` and a direct,
 unshadowed listed root on the right (parentheses are transparent). Keys with
 unpaired surrogate code units cannot match the UTF-8 assertion and keep fallback.
-Parameters,
-block-local bindings, imported roots, aliases, other roots, effectful receivers
+Parameters, block-local bindings, imported roots, aliases, other roots, effectful receivers
 and nonliteral keys keep their conservative protocol behavior. Recognized
 root replacement, prototype writes, mutated Object intrinsics, dynamic global
 member access, dynamic scope or global-root publication/escape also disable
@@ -782,6 +781,16 @@ the certificate. An earlier discarded synchronous function IIFE may use the
 existing mechanically checked confined alias rule; its derived values cannot
 escape or touch the protected keys or prototype/identity surface. Unsupported
 or hidden alias/prototype mutations remain part of the author's audit burden.
+
+A computed write to another object reached through a global property, such as
+`globalThis.cache[key]`, does not alone identify a root/prototype mutation.
+Explicit `__proto__`, `prototype` and `constructor` writes still reject, as do
+computed writes on recognized global identity or constructor/prototype paths
+(including `window.parent`, `document.defaultView` and `Window.prototype`).
+Visible stored back-aliases and the other root-exposure guards remain rejecting.
+The author must establish that an otherwise admitted descendant cannot alias
+the protected root or prototype surface; no host-property name proves this.
+The descendant write retains its normal execution effects and callback checks.
 
 Only protocol callback reentry is suppressed. Both operands and their existing
 reads/effects are still evaluated and indexed in source order. Purity,

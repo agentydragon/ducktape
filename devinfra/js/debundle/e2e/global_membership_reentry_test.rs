@@ -61,6 +61,114 @@ fn unasserted_host_membership_keeps_callback_reentry() {
     expect_atomic_conflict_rejection(probe_opts(SOURCE), &["startup/probe", "state/value"], &[]);
 }
 
+#[test]
+fn descendant_record_writes_do_not_mutate_the_global_root() {
+    let prefix = "globalThis.neutralCache = {};\nconst key = 'slot';\nfunction store(value) { globalThis.neutralCache[key] = value; }";
+    let source =
+        format!("{prefix}\n{SOURCE}\nstore(7);\nconsole.log(globalThis.neutralCache.slot);\n");
+    let mut opts = probe_opts(&source);
+    opts.logical_modules[0] = logical_module_with_anon(
+        "startup/probe",
+        &[
+            Member::new("supported"),
+            Member::new("key"),
+            Member::new("store"),
+        ],
+        &[
+            "globalThis.neutralCache = {};",
+            "globalThis.addEventListener('neutral', read);",
+        ],
+    );
+    opts.non_reentrant_global_membership = &[("globalThis", "feature")];
+    let fixture = run_fixture(opts);
+    assert_preserved_entry_output(&fixture, "42\n7\n");
+    assert_probe_read(&fixture, false);
+}
+
+#[test]
+fn identity_and_prototype_paths_keep_dynamic_write_guards() {
+    for receiver in [
+        "globalThis",
+        "globalThis.window",
+        "globalThis.global",
+        "window.parent",
+        "globalThis.document.defaultView",
+        "document.defaultView",
+        "Window.prototype",
+        "globalThis.Window.prototype",
+        "EventTarget.prototype",
+        "globalThis.neutralCache.__proto__",
+        "globalThis.neutralCache.prototype.extra",
+    ] {
+        let source = format!(
+            "function read() {{ return later; }}\nlet later = 0;\nglobalThis.inspectState = read;\nconst key = 'slot';\nfunction mutate() {{ {receiver}[key] = 1; }}\nconst supported = 'feature' in globalThis;\nlater = 42;\nconsole.log(later);\n"
+        );
+        assert_conservative_probe(&source, &["key", "mutate"], &[], "42\n");
+    }
+}
+
+#[test]
+fn explicit_descendant_prototype_writes_and_visible_back_aliases_keep_guards() {
+    for property in ["__proto__", "prototype", "constructor"] {
+        let source = format!(
+            "function read() {{ return later; }}\nlet later = 0;\nglobalThis.inspectState = read;\nfunction mutate() {{ globalThis.neutralCache.{property} = {{}}; }}\nconst supported = 'feature' in globalThis;\nlater = 42;\nconsole.log(later);\n"
+        );
+        assert_conservative_probe(&source, &["mutate"], &[], "42\n");
+    }
+    for initializer in ["globalThis", "{ root: globalThis }"] {
+        let setup = format!("globalThis.neutralCache = {initializer};");
+        let source = format!(
+            "function read() {{ return later; }}\nlet later = 0;\nglobalThis.inspectState = read;\n{setup}\nconst key = 'slot';\nfunction mutate() {{ globalThis.neutralCache[key] = 1; }}\nconst supported = 'feature' in globalThis;\nlater = 42;\nconsole.log(later);\n"
+        );
+        assert_conservative_probe(&source, &["key", "mutate"], &[&setup], "42\n");
+    }
+    let source = "function read() { return later; }\nlet later = 0;\nglobalThis.inspectState = read;\nconst key = 'slot';\nfunction mutate() { globalThis.neutralCache.root = globalThis; globalThis.neutralCache.root[key] = 1; }\nconst supported = 'feature' in globalThis;\nlater = 42;\nconsole.log(later);\n";
+    assert_conservative_probe(source, &["key", "mutate"], &[], "42\n");
+}
+
+#[test]
+fn descendant_write_calls_keep_ordinary_callback_reads() {
+    let source = "function read() { return later; }\nlet later = 0;\nglobalThis.neutralCache = {};\nconst key = 'slot';\nfunction store() { globalThis.neutralCache[key] = read(); }\nstore();\nconst supported = 'feature' in globalThis;\nlater = 42;\nconsole.log(globalThis.neutralCache.slot, later);\n";
+    let members = [
+        Member::new("read"),
+        Member::new("later"),
+        Member::new("key"),
+        Member::new("store"),
+        Member::new("supported"),
+    ];
+    let statements = ["globalThis.neutralCache = {};", "store();", "later = 42;"];
+    let mut colocated = FixtureOpts::new(
+        source,
+        vec![logical_module_with_anon("all", &members, &statements)],
+    );
+    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    colocated.non_reentrant_global_membership = &[("globalThis", "feature")];
+    let fixture = run_fixture(colocated);
+    assert_preserved_entry_output(&fixture, "0 42\n");
+    let mut split = FixtureOpts::new(
+        source,
+        vec![
+            logical_module_with_anon(
+                "startup/probe",
+                &[
+                    Member::new("key"),
+                    Member::new("store"),
+                    Member::new("supported"),
+                ],
+                &["globalThis.neutralCache = {};", "store();"],
+            ),
+            logical_module_with_anon(
+                "state/value",
+                &[Member::new("read"), Member::new("later")],
+                &["later = 42;"],
+            ),
+        ],
+    );
+    split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    split.non_reentrant_global_membership = &[("globalThis", "feature")];
+    expect_atomic_conflict_rejection(split, &["startup/probe", "state/value"], &[]);
+}
+
 fn assert_probe_read(fixture: &Fixture, eager: bool) {
     let graph = fixture.dependency_graph();
     let source = source_unit_for_binding(&graph, "supported");
