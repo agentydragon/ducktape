@@ -2377,7 +2377,37 @@ impl ExecutionIndex {
                     &namespace_value_facts,
                 )
             };
-            let top_member_write = index
+            // Keep the original conservative admission predicate unchanged:
+            // a dynamic write to the namespace itself and any write through
+            // an alias still rejects the retained namespace contract.
+            let rejects_top_member_write =
+                |owner, receiver: &Option<Id>, property: &Option<String>| {
+                    receiver.as_ref().is_some_and(|receiver| {
+                        !property
+                            .as_ref()
+                            .is_some_and(|property| certified(owner, None, receiver, property))
+                            && ((receiver == id
+                                && property
+                                    .as_ref()
+                                    .is_none_or(|property| members.contains(property)))
+                                || aliases.contains(receiver)
+                                || receiver_aliases.contains(receiver))
+                    })
+                };
+            let top_member_write_rejected = index
+                .top_property_writes
+                .iter()
+                .enumerate()
+                .filter(|(owner, _)| !writes.contains(&SourceUnitOrdinal(*owner)))
+                .flat_map(|(owner, writes)| {
+                    writes
+                        .iter()
+                        .map(move |write| (SourceUnitOrdinal(owner), write))
+                })
+                .any(|(owner, (receiver, property))| {
+                    rejects_top_member_write(owner, receiver, property)
+                });
+            let top_member_write_witness = index
                 .top_property_writes
                 .iter()
                 .enumerate()
@@ -2388,28 +2418,20 @@ impl ExecutionIndex {
                         .map(move |write| (SourceUnitOrdinal(owner), write))
                 })
                 .find_map(|(owner, (receiver, property))| {
-                    receiver
-                        .as_ref()
-                        .is_some_and(|receiver| {
-                            !property
-                                .as_ref()
-                                .is_some_and(|property| certified(owner, None, receiver, property))
-                                && property
-                                    .as_ref()
-                                    .is_some_and(|property| members.contains(property))
-                                && (receiver == id
-                                    || aliases.contains(receiver)
-                                    || receiver_aliases.contains(receiver))
-                        })
-                        .then(|| {
-                            (
-                                owner,
-                                receiver.as_ref().expect("matched receiver"),
-                                property,
-                            )
-                        })
+                    (rejects_top_member_write(owner, receiver, property)
+                        && property
+                            .as_ref()
+                            .is_some_and(|property| members.contains(property)))
+                    .then(|| {
+                        (
+                            owner,
+                            receiver.as_ref().expect("matched receiver"),
+                            property,
+                        )
+                    })
                 });
-            if let Some((statement_ordinal, receiver_binding, property)) = &top_member_write {
+            if let Some((statement_ordinal, receiver_binding, property)) = &top_member_write_witness
+            {
                 let witness = CallbackFactoryWriteWitness {
                     statement_ordinal: *statement_ordinal,
                     receiver_binding: receiver_binding.0.to_string(),
@@ -2422,7 +2444,6 @@ impl ExecutionIndex {
                         .or_insert_with(|| witness.clone());
                 }
             }
-            let top_member_write = top_member_write.is_some();
             let destructuring_write = index.destructuring_member_writes.iter().any(|write| {
                 is_mutation_receiver(&write.receiver)
                     || write
@@ -2510,7 +2531,7 @@ impl ExecutionIndex {
                 .flatten()
                 .any(|value| value.may_publish_namespace(id, &aliases, &namespace_value_facts))
                 || index.exported_bindings.iter().any(is_namespace_or_alias);
-            !(top_member_write
+            !(top_member_write_rejected
                 || destructuring_write
                 || top_dynamic_write
                 || top_callback_result_write

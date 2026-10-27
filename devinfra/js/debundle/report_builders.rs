@@ -9,16 +9,16 @@ use rayon::prelude::*;
 use swc_ecma_ast::Id;
 
 use analysis::graph::EdgeRole;
-use analysis::reports::schema::LineRange;
+use analysis::reports::schema::{CallbackFactoryCallbackSourceReport, LineRange};
 use analysis::reports::{atomic_group_key, module_id_from_key, module_key, source_unit_key};
 use analysis::{
     AtomicGraphReport, AtomicGroup, AtomicGroupEdgeReport, AtomicGroupReport, BindingId,
     BindingReport, CallbackFactoryBarrierRejection, CallbackFactoryBarrierReport,
-    CallbackFactoryCallbackSourceReport, CallbackFactoryContractReport,
-    CallbackFactoryRejectionReport, CallbackFactoryWriteWitnessReport, DepKind,
-    DependencyEdgeReport, DependencyGraphReport, EdgeRoleReport, ModuleDestinationKind,
-    ModuleEntry, ModuleId, ModuleKey, ModuleQuotientReport, ModuleRole, Purity, PurityCauseReport,
-    QuotientEdgeReport, QuotientSccReport, SourceUnitClass, SourceUnitReport,
+    CallbackFactoryContractReport, CallbackFactoryRejectionReport,
+    CallbackFactoryWriteWitnessReport, DepKind, DependencyEdgeReport, DependencyGraphReport,
+    EdgeRoleReport, ModuleDestinationKind, ModuleEntry, ModuleId, ModuleKey, ModuleQuotientReport,
+    ModuleRole, Purity, PurityCauseReport, QuotientEdgeReport, QuotientSccReport, SourceUnitClass,
+    SourceUnitReport,
 };
 use source_identity::SourceUnitOrdinal;
 use swc_atoms::Atom;

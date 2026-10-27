@@ -924,7 +924,7 @@ fn same_source_unit_unrelated_callback_is_not_attributed_to_factory_barrier() {
 }
 
 #[test]
-fn unsupported_callback_factory_guard_is_explicitly_inconclusive() {
+fn dynamic_namespace_write_still_rejects_retention_and_is_inconclusive() {
     let rejected = run_rejection_fixture(
         FixtureOpts::new(
             "import { api } from './peer.js';\n\
