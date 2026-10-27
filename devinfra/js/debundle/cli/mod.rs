@@ -145,20 +145,34 @@ pub(crate) fn verify_graph_compatibility(
         .into());
     }
     provenance.verify(&current)?;
-    if let Some(root) = selector_source_root {
-        let source = provenance
-            .chunk_sources
-            .iter()
-            .find(|source| source.chunk_id == graph.chunk_id)
-            .with_context(|| {
-                format!(
-                    "graph {} lacks source mapping for chunk {}",
-                    graph_path.display(),
-                    graph.chunk_id
-                )
-            })?;
+    let source = provenance
+        .chunk_sources
+        .iter()
+        .find(|source| source.chunk_id == graph.chunk_id)
+        .with_context(|| {
+            format!(
+                "graph {} lacks source mapping for chunk {}",
+                graph_path.display(),
+                graph.chunk_id
+            )
+        })?;
+    let selector_path = if let Some(root) = selector_source_root {
         graph_provenance::validate_relative_path(&source.source_path)?;
-        let path = root.join(&source.source_path);
+        Some(root.join(&source.source_path))
+    } else {
+        // Legacy source-backed selectors search fallback roots when no flag is
+        // supplied. If that search finds a file, it must be the analyzed one.
+        // If it finds none, a graph/spec-only query can still proceed; a later
+        // source-backed selector read will fail in the resolver as before.
+        anonymous_resolution::resolve_source_file(
+            &source.source_path.to_string_lossy(),
+            None,
+            graph_path,
+            modules_root,
+        )
+        .ok()
+    };
+    if let Some(path) = selector_path {
         let expected_path =
             provenance.resolve(&source.input_file.root, &source.input_file.path, &current)?;
         let canonical_expected = graph_provenance::absolute(&expected_path)?;
