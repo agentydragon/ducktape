@@ -11,7 +11,7 @@ class IptablesCommandError(RuntimeError):
         self.command = command
         self.returncode = result.returncode
         super().__init__(
-            f"{command[:3]} exited {result.returncode}\nstderr:\n{result.stderr}\nstdout:\n{result.stdout}"
+            f"{command} exited {result.returncode}\nstderr:\n{result.stderr}\nstdout:\n{result.stdout}"
         )
 
 
