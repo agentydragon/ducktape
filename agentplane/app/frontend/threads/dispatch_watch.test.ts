@@ -3,9 +3,9 @@ import { create } from "@bufbuild/protobuf";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { CommandSchema, type Command } from "../../../proto/command_pb";
-import { DeliveryState, type Dispatch } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
+import { DeliveryState } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
 import { stubWatchFetch } from "../testing/watch";
-import { dispatchFromJson } from "./client";
+import { dispatchFromJson, type DispatchReceipt } from "./client";
 import { watchDispatches } from "./dispatch_watch";
 import { LocalCommands } from "./local_commands";
 
@@ -24,6 +24,7 @@ afterEach(() => {
   stop();
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 function queued(store: LocalCommands, commandId: string): Command {
@@ -43,13 +44,32 @@ function queued(store: LocalCommands, commandId: string): Command {
   return command;
 }
 
-function stateOf(store: LocalCommands, commandId: string): Dispatch["state"] | undefined {
+function stateOf(store: LocalCommands, commandId: string): DispatchReceipt["state"] | undefined {
   return store.getSnapshot().commands.find((value) => value.command.commandId === commandId)?.dispatch?.state;
 }
 
 // A Dispatch as gRPC-Gateway writes it: proto-JSON that leaves out the unset `reason` and `admission`.
-function dispatchFrame(commandId: string, state: string) {
+function dispatchFrame(commandId: string, state: string | number) {
   return { dispatch: { commandId, sessionId: SESSION, sandbox: "box", state, updatedAt: "2026-10-19T12:00:00Z" } };
+}
+
+function typedDispatchFrame(commandId: string) {
+  return {
+    dispatch: {
+      commandId,
+      sessionId: SESSION,
+      sandbox: "box",
+      sandboxUid: "box-incarnation",
+      operation: "OPERATION_SUBMIT_INPUT",
+      state: "DELIVERY_STATE_RUNNER_ADMITTED",
+      updatedAt: "2026-10-19T12:00:00Z",
+      admission: {
+        cursor: "9007199254740993",
+        origin: { sourceId: "runner", sequence: "9007199254740993" },
+        event: { commandAdmitted: { command: { commandId, submitInput: { text: commandId } } } },
+      },
+    },
+  };
 }
 
 async function settle(): Promise<void> {
@@ -71,6 +91,7 @@ it("asks for the Session's named commands and applies the rows it is sent", asyn
   expect(watch.url.searchParams.get("filter.sessionId")).toBe(SESSION);
   expect(watch.url.searchParams.getAll("filter.commandIds")).toEqual(["a", "b"]);
   expect(stateOf(store, "a")).toBe(DeliveryState.RUNNER_ADMITTED);
+  expect(store.getSnapshot().commands.find((value) => value.command.commandId === "a")?.dispatch?.updatedAt).toBeDefined();
 });
 
 it("calls a command it holds no row for unknown once the watch has caught up, as after Sandbox deletion", async () => {
@@ -106,15 +127,68 @@ it("judges what is missing by the rows of the current connection, not an earlier
   expect(stateOf(store, "a")).toBe(DeliveryState.UNKNOWN);
 });
 
-it("keeps applying frames after one it cannot read", async () => {
-  vi.spyOn(console, "warn").mockImplementation(() => undefined);
+it("decodes a generated ProtoJSON frame including a large int64 admission cursor", async () => {
   const store = new LocalCommands(SESSION);
   queued(store, "a");
   stop = watchDispatches(store, SESSION, ["a"]);
   await settle();
-  fetchMock.served[0].send({ dispatch: { commandId: "a" } });
+  fetchMock.served[0].send(typedDispatchFrame("a"));
+  await settle();
+
+  const admission = store.getSnapshot().commands.find((value) => value.command.commandId === "a")?.dispatch?.admission;
+  expect(admission?.cursor).toBe(9007199254740993n);
+  expect(admission?.event?.observation.case).toBe("commandAdmitted");
+});
+
+it("preserves an unknown numeric delivery state as a named variant across local storage", async () => {
+  const store = new LocalCommands(SESSION);
+  queued(store, "a");
+  stop = watchDispatches(store, SESSION, ["a"]);
+  await settle();
+  fetchMock.served[0].send(dispatchFrame("a", 999));
+  await settle();
+
+  expect(stateOf(store, "a")).toEqual({ unknown: 999 });
+  expect(store.getSnapshot().commands.find((value) => value.command.commandId === "a")?.dispatch?.reason).toBe(
+    "Unrecognized delivery state 999"
+  );
+  const restored = new LocalCommands(SESSION);
+  expect(stateOf(restored, "a")).toEqual({ unknown: 999 });
+});
+
+it("does not apply a later frame from a connection after a malformed or unknown-enum frame", async () => {
+  const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  const store = new LocalCommands(SESSION);
+  queued(store, "a");
+  stop = watchDispatches(store, SESSION, ["a"]);
+  await settle();
+  fetchMock.served[0].send(dispatchFrame("a", "DELIVERY_STATE_FUTURE_VALUE"));
   fetchMock.served[0].send(dispatchFrame("a", "DELIVERY_STATE_FAILED"));
   await settle();
 
-  expect(stateOf(store, "a")).toBe(DeliveryState.FAILED);
+  expect(stateOf(store, "a")).toBe(DeliveryState.QUEUED_IN_DISPATCHER);
+  expect(warning).toHaveBeenCalledWith(
+    "Session Dispatcher watch is reconnecting after a read error",
+    expect.any(String)
+  );
+});
+
+it.each([
+  ["a missing frame oneof", {}],
+  ["conflicting frame oneof members", { dispatch: { commandId: "a", sessionId: SESSION }, caughtUp: {} }],
+  ["a Dispatch with no service-required state", { dispatch: { commandId: "a", sessionId: SESSION } }],
+])("rejects %s before updating local state", async (_label, frame) => {
+  const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  const store = new LocalCommands(SESSION);
+  queued(store, "a");
+  stop = watchDispatches(store, SESSION, ["a"]);
+  await settle();
+  fetchMock.served[0].send(frame);
+  await settle();
+
+  expect(stateOf(store, "a")).toBe(DeliveryState.QUEUED_IN_DISPATCHER);
+  expect(warning).toHaveBeenCalledWith(
+    "Session Dispatcher watch is reconnecting after a read error",
+    expect.any(String)
+  );
 });

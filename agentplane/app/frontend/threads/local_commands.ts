@@ -2,10 +2,9 @@ import { create, equals, fromJson, toJson, type JsonValue } from "@bufbuild/prot
 
 import { CommandSchema, type Command } from "../../../proto/command_pb";
 import { EventEntrySchema, type EventEntry } from "../../../proto/event_log_pb";
+import { dispatchFromJson, dispatchToJson, type DispatchReceipt } from "./client";
 import {
-  DispatchSchema,
   InterruptTurnResponseSchema,
-  type Dispatch,
   type InterruptTurnResponse,
 } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
 
@@ -33,7 +32,7 @@ export interface LocalCommand {
   /** HTTP admission evidence can be ahead of the consumed Event prefix. It never advances it. */
   admission: EventEntry | null;
   /** Dispatcher state is durable queue evidence, not proof of a harness effect. */
-  dispatch: Dispatch | null;
+  dispatch: DispatchReceipt | null;
   /** Interrupt is an immediate RPC result, not a durable Dispatcher queue row. */
   interruptResult?: InterruptTurnResponse | null;
 }
@@ -61,12 +60,12 @@ function decode(text: string): LocalCommand {
   if (!command.commandId || !command.operation.case) throw new Error("Invalid locally retained Command");
   const admission = value.admission === null ? null : fromJson(EventEntrySchema, value.admission as JsonValue);
   if (admission) checkAdmission(command, admission);
-  let dispatch: Dispatch | null = null;
+  let dispatch: DispatchReceipt | null = null;
   if (value.dispatch !== undefined && value.dispatch !== null) {
     if (typeof value.dispatch !== "object" || Array.isArray(value.dispatch)) {
       throw new Error("Invalid locally retained Dispatcher state");
     }
-    dispatch = fromJson(DispatchSchema, value.dispatch as JsonValue);
+    dispatch = dispatchFromJson(value.dispatch);
     if (dispatch.commandId !== command.commandId || !dispatch.sessionId) {
       throw new Error("Invalid locally retained Dispatcher state");
     }
@@ -103,7 +102,7 @@ function encode(value: LocalCommand): string {
     attempted: value.attempted,
     command: value.command,
     admission: value.admission ? toJson(EventEntrySchema, value.admission) : null,
-    dispatch: value.dispatch ? toJson(DispatchSchema, value.dispatch) : null,
+    dispatch: value.dispatch ? dispatchToJson(value.dispatch) : null,
     interruptResult: value.interruptResult ? toJson(InterruptTurnResponseSchema, value.interruptResult) : null,
   });
 }
@@ -234,7 +233,7 @@ export class LocalCommands {
     this.reload();
   }
 
-  acknowledgeDispatch(command: PendingCommand, dispatch: Dispatch): void {
+  acknowledgeDispatch(command: PendingCommand, dispatch: DispatchReceipt): void {
     if (dispatch.commandId !== command.commandId) throw new Error("Dispatcher receipt has a different command id");
     if (dispatch.admission) {
       checkAdmission(command, dispatch.admission);
@@ -310,7 +309,7 @@ export class LocalCommands {
     this.reload();
   }
 
-  updateDispatch(commandId: string, dispatch: Dispatch): void {
+  updateDispatch(commandId: string, dispatch: DispatchReceipt): void {
     const stored = localStorage.getItem(this.key(commandId));
     if (stored === null) return;
     this.acknowledgeDispatch(decode(stored).command, dispatch);
