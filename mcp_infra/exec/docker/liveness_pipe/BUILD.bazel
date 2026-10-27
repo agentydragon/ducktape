@@ -1,0 +1,12 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary")
+
+go_binary(
+    name = "docker_exec_supervisor",
+    srcs = ["main.go"],
+    goarch = "amd64",
+    goos = "linux",
+    importpath = "github.com/agentydragon/ducktape/mcp_infra/exec/docker/liveness_pipe",
+    pure = "on",
+    visibility = ["//mcp_infra/exec:__subpackages__"],
+    deps = ["@org_golang_x_sys//unix"],
+)

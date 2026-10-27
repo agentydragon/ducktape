@@ -1,0 +1,9 @@
+# Docker exec process lifetime
+
+Each MCP session starts one container and stages a statically linked exec supervisor at its root. The image must be Linux/amd64 and allow a file to be written at `/`; session startup fails if these requirements are not met. The Bazel binary is explicitly built for Linux/amd64. Supporting another architecture requires a matching binary and image-based selection.
+
+Each tool call starts the supervisor with Docker exec stdin attached. The supervisor runs the requested argv directly in its own process group, with the configured environment, user, and working directory. The requested command receives `/dev/null` on stdin, as before. The supervisor forwards stdout and stderr separately and returns the command's exit code, including nonzero exits. A missing executable returns status 127 with an error on stderr.
+
+On timeout, caller cancellation, or stream collection failure, the client closes the exec stream. Docker closes the supervisor's stdin; EOF makes it kill and reap the command's ordinary same-group descendants. The client waits for Docker to report that the exec stopped and treats supervisor status 125 as cleanup failure. The leader remains unreaped while an ordinary child holds an output stream open, reserving the process-group ID until cleanup can safely signal it. A concurrent exec in the same container is unaffected. The client's shielded collector owns lazy Docker start until it settles, including cancellation before or after Docker accepts the start.
+
+Normal completion waits for the leader and inherited output streams. A background process that redirects both output streams can outlive a successful call. Processes that deliberately leave the process group are outside the termination guarantee; this is process-group cleanup, not adversarial containment. Session teardown still kills and removes the whole container.

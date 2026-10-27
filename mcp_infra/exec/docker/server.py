@@ -51,7 +51,7 @@ DockerExecCommand = Annotated[list[str], Field(description=CMD_DESCRIPTION)]
 DockerExecTimeout = Annotated[
     TimeoutMs,
     WithJsonSchema({"type": "integer"}),
-    Field(description="Timeout in milliseconds; sends TERM (exit status becomes TimedOut)"),
+    Field(description="Timeout in milliseconds; stops this exec's process group (exit status becomes TimedOut)"),
 ]
 DockerExecCwd = Annotated[str | None, Field(description="Working directory inside container")]
 DockerExecRequiredCwd = Annotated[str, Field(description="Working directory inside container")]
