@@ -103,6 +103,11 @@ the **pre-edit** snapshot and the next graph-backed edit requires another
 starting snapshot and one combined candidate. Graph-only historical views do
 not certify current input compatibility.
 
+`inspect-source --id unit:...` resolves that exact graph node without current
+module claims. It skips the authored module-scope check, allowing flat-spec
+graphs, while retaining captured-input, engine, and source identity checks.
+Other graph-backed selections and edits require the authored scope.
+
 Description reports include `module_proposals` and `module_proposal_diagnostics`
 only when proposal analysis runs. Their limits sections use the same field names.
 Proposals name their outgoing residual quotient-class dependencies with

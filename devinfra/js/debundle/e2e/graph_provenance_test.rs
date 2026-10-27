@@ -3,7 +3,9 @@
 use std::fs;
 use std::path::Path;
 
-use debundle_e2e_support::{GraphFixture, TreeFixture, debundler_path, run_tree_fixture};
+use debundle_e2e_support::{
+    FixtureOpts, GraphFixture, TreeFixture, debundler_path, run_fixture, run_tree_fixture,
+};
 use tempfile::TempDir;
 
 fn stderr(output: &std::process::Output) -> String {
@@ -18,6 +20,78 @@ fn assert_mismatch(fixture: &GraphFixture, expected: &str) -> serde_json::Value 
     assert_eq!(json["mismatch"]["reason"], expected);
     assert!(json["mismatch"]["regenerate_command"].is_array());
     json
+}
+
+#[test]
+fn flat_graph_unit_inspection_checks_source_without_module_tree_scope() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "const answer = 42; console.log(answer);\n",
+        vec![],
+    ));
+    let root = fixture.out_root.parent().unwrap().parent().unwrap();
+    let source_root = root.join("snapshot");
+    let source = source_root.join(format!("{}.js", fixture.chunk_id));
+    let modules = root.join("modules/main");
+    let graph = fixture
+        .report_root
+        .join(&fixture.chunk_id)
+        .join("dependency_graph.json");
+    let unit = fixture
+        .dependency_graph()
+        .nodes
+        .into_iter()
+        .find(|node| node.id.starts_with("unit:"))
+        .expect("flat fixture source unit")
+        .id;
+    let inspect = |selection: &str, selector_root: &Path| {
+        std::process::Command::new(debundler_path())
+            .arg("inspect-source")
+            .arg("--id")
+            .arg(selection)
+            .arg("--graph")
+            .arg(&graph)
+            .arg("--modules")
+            .arg(&modules)
+            .arg("--source-root")
+            .arg(selector_root)
+            .args(["--format", "json"])
+            .output()
+            .unwrap()
+    };
+    let output = inspect(&unit, &source_root);
+    assert!(output.status.success(), "{}", stderr(&output));
+    let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(
+        result["files"][0]["statements"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|statement| statement["source_unit_ids"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|id| id.as_str() == Some(unit.as_str())))
+    );
+
+    let output = inspect("answer", &source_root);
+    assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
+    let rejection: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(rejection["mismatch"]["reason"], "module_scope");
+
+    let wrong_root = TempDir::new().unwrap();
+    let wrong_source = wrong_root.path().join(format!("{}.js", fixture.chunk_id));
+    fs::create_dir_all(wrong_source.parent().unwrap()).unwrap();
+    fs::copy(&source, wrong_source).unwrap();
+    let output = inspect(&unit, wrong_root.path());
+    assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
+    let rejection: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(rejection["mismatch"]["reason"], "selector_source_root");
+
+    fs::write(&source, "const answer = 43; console.log(answer);\n").unwrap();
+    let output = inspect(&unit, &source_root);
+    assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
+    let rejection: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(rejection["mismatch"]["reason"], "file");
 }
 
 #[test]

@@ -737,19 +737,6 @@ impl GraphProvenance {
         }
         Ok(())
     }
-
-    pub fn regeneration_command(&self) -> String {
-        let command = self
-            .generation_command
-            .iter()
-            .map(|arg| shell_quote(arg))
-            .collect::<Vec<_>>()
-            .join(" ");
-        format!(
-            "cd {} && {command}",
-            shell_quote(&self.generation_cwd.to_string_lossy())
-        )
-    }
 }
 
 fn fresh_regeneration_output(previous: &Path) -> Result<PathBuf> {

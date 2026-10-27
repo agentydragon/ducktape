@@ -102,8 +102,12 @@ the current engine and translated input paths, and `regenerate_cwd` names the
 current spec root. The recipe selects an unused `-regenerated` sibling of the
 translated output directory, adding a numeric suffix if needed. Computing the
 recipe does not create or remove that directory.
-Flat-spec graphs have no authored module-tree scope and
-cannot authorize a YAML-tree edit or query.
+Flat-spec graphs have no authored module-tree scope and cannot authorize a
+YAML-tree edit or query. `inspect-source --id unit:...` can inspect one saved
+source unit from a flat graph: it does not resolve module claims, but still
+checks the captured engine and input fingerprints plus the exact source path
+and digest before loading source bytes. Other `--id` selections retain the
+module-scope check.
 `--no-verify` skips the post-edit assignment gate only; it does not skip
 the saved graph's baseline compatibility check when a graph is supplied.
 
