@@ -716,11 +716,10 @@ fn proposes_a_realizable_refinement_without_changing_the_spec() {
                 "middle.yaml",
                 "members: [{selector: {binding: {name: middle}}}]\n",
             ),
+            ("bad/part-1.yaml", "members: []\n"),
         ],
     );
     let unclaimed = fixture.modules.join("bad/part-1.yaml");
-    fs::create_dir_all(unclaimed.parent().unwrap()).unwrap();
-    fs::write(&unclaimed, "members: []\n").unwrap();
     let before = ["bad.yaml", "middle.yaml", "bad/part-1.yaml"]
         .into_iter()
         .map(|path| (path, std::fs::read(fixture.modules.join(path)).unwrap()))
