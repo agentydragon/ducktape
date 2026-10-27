@@ -82,7 +82,15 @@ async def test_app_hash_navigation(visual: VisualHarness, capture_name: str) -> 
         "slug": slug,
         "split": "valid",
         "created_at": "2026-01-01T00:00:00Z",
-        "true_positives": [],
+        "true_positives": [
+            {
+                "tp_id": "example-issue",
+                "rationale": "Example issue",
+                "occurrences": [
+                    {"occurrence_id": "example-occurrence", "locations": [{"file": "OTHER.md", "start_line": 1}]}
+                ],
+            }
+        ],
         "false_positives": [],
     }
     responses = {
@@ -121,7 +129,10 @@ async def test_app_hash_navigation(visual: VisualHarness, capture_name: str) -> 
         await view.page.get_by_role("link", name="Ground Truth", exact=True).click()
         await view.page.get_by_role("cell", name=slug, exact=True).click()
         await expect(view.page.get_by_role("heading", name=slug, exact=True)).to_be_visible()
-        await view.page.evaluate("slug => { window.location.hash = `/snapshots/${slug}?file=README.md`; }", slug)
+        await view.page.evaluate(
+            "slug => { window.location.hash = `/snapshots/${slug}/example-issue/example-occurrence?file=README.md`; }",
+            slug,
+        )
         await expect(view.page.get_by_text("# Routing example", exact=True)).to_be_visible()
         await view.capture("SnapshotHashQuery", target=view.page.locator(".mantine-AppShell-root"))
         await view.page.go_back()
