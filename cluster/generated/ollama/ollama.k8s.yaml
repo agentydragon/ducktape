@@ -10,66 +10,6 @@ spec: {}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  annotations:
-    kustomize.toolkit.fluxcd.io/prune: disabled
-  name: llm-models
-  namespace: ollama
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 350Gi
-  storageClassName: lvm-proxmox-hdd
----
-apiVersion: v1
-kind: PersistentVolume
-metadata:
-  annotations:
-    kustomize.toolkit.fluxcd.io/prune: disabled
-  name: wyrm2-qwen38-iq4-ssd
-spec:
-  accessModes:
-    - ReadWriteOnce
-  capacity:
-    storage: 90Gi
-  claimRef:
-    name: qwen38-iq4-ssd
-    namespace: ollama
-  local:
-    path: /var/lib/llm-models-ssd/Qwen3.8-Flash-Next-GGUF/UD-IQ4_XS
-  nodeAffinity:
-    required:
-      nodeSelectorTerms:
-        - matchExpressions:
-            - key: kubernetes.io/hostname
-              operator: In
-              values:
-                - wyrm2
-  persistentVolumeReclaimPolicy: Retain
-  storageClassName: ""
-  volumeMode: Filesystem
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  annotations:
-    kustomize.toolkit.fluxcd.io/prune: disabled
-  name: qwen38-iq4-ssd
-  namespace: ollama
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 90Gi
-  storageClassName: ""
-  volumeMode: Filesystem
-  volumeName: wyrm2-qwen38-iq4-ssd
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
   name: models
   namespace: ollama
 spec:
@@ -92,55 +32,6 @@ spec:
     requests:
       storage: 100Gi
   storageClassName: piraeus-ssd-local
----
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: copy-qwen38-iq4-v2
-  namespace: ollama
-spec:
-  backoffLimit: 2
-  template:
-    spec:
-      automountServiceAccountToken: false
-      containers:
-        - command:
-            - /bin/sh
-            - /scripts/copy-ssd-models.sh
-          image: busybox:1.38
-          name: copy
-          resources:
-            limits:
-              memory: 512Mi
-            requests:
-              cpu: 500m
-              memory: 64Mi
-          volumeMounts:
-            - mountPath: /scripts
-              name: scripts
-              readOnly: true
-            - mountPath: /ssd-models
-              name: ssd-models
-              readOnly: true
-            - mountPath: /ssd-models-new
-              name: ssd-models-new
-      nodeSelector:
-        kubernetes.io/hostname: wyrm2
-      restartPolicy: Never
-      securityContext:
-        seccompProfile:
-          type: RuntimeDefault
-      volumes:
-        - configMap:
-            name: gpt-oss-scripts
-          name: scripts
-        - name: ssd-models
-          persistentVolumeClaim:
-            claimName: qwen38-iq4-ssd
-            readOnly: true
-        - name: ssd-models-new
-          persistentVolumeClaim:
-            claimName: qwen38-iq4
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -289,14 +180,14 @@ spec:
       volumes:
         - name: ssd-models
           persistentVolumeClaim:
-            claimName: qwen38-iq4-ssd
+            claimName: qwen38-iq4
             readOnly: true
         - configMap:
             name: gpt-oss-scripts
           name: scripts
         - name: models
           persistentVolumeClaim:
-            claimName: llm-models
+            claimName: models
         - configMap:
             name: ollama-auth-proxy
           name: nginx-templates
@@ -407,7 +298,7 @@ subjects:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: setup-gpt-oss-v9
+  name: setup-gpt-oss-v10
   namespace: ollama
 spec:
   template:
@@ -491,10 +382,10 @@ spec:
           name: scripts
         - name: models
           persistentVolumeClaim:
-            claimName: llm-models
+            claimName: models
         - name: ssd-models
           persistentVolumeClaim:
-            claimName: qwen38-iq4-ssd
+            claimName: qwen38-iq4
 ---
 apiVersion: generators.external-secrets.io/v1alpha1
 kind: Password
