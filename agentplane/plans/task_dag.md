@@ -1477,7 +1477,7 @@ devel. A gate counts as legacy once its rollout is finished on staging or nothin
 reads it; the delta settlement flag stays (operator, 2026-10-13 PDT). Lane named per
 node; leftovers of in-flight work belong to the lane already changing that code. Upstream-gated
 tombstones with a verifiable condition in code (`keepingOffset` in
-`thread_store.tsx`, the jsdom pragma in `markdown.test.tsx`) need no node.
+`electric_sync.tsx`, the jsdom pragma in `markdown.test.tsx`) need no node.
 
 ```mermaid
 flowchart TD

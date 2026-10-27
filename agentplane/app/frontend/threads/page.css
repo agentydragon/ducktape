@@ -1,0 +1,26 @@
+/* The topbar heading: the thread's name and its Sandbox and harness beside it. The row wraps and clips
+   everything past its first line, so the label goes exactly when it does not fit beside the whole
+   name, and the name then takes the row. The More menu always lists both. */
+.agentplane-thread-heading {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--mantine-spacing-xs);
+  min-width: 0;
+  /* One line: the name's field (InlineName, size "sm"). Mantine scopes `--input-height-sm` to the
+     field's own wrapper, so the height is repeated here. */
+  height: calc(2.25rem * var(--mantine-scale));
+  /* Vertical only, so a focus ring at the row's end is not cut. */
+  overflow-y: clip;
+}
+
+.agentplane-thread-heading-name {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.agentplane-thread-heading-sandbox {
+  flex: none;
+  white-space: nowrap;
+}

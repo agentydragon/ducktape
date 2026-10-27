@@ -12,12 +12,12 @@ import { Home } from "./threads/home";
 import { SandboxPage } from "./sandboxes/sandbox_page";
 import { RoutedThreadsLiveProvider, SandboxesLiveProvider } from "./live";
 import { SandboxList } from "./sandboxes/list";
-import { ProjectedSession } from "./threads/projected_session";
+import { ThreadPage } from "./threads/page";
 import { Settings, type SettingsTab } from "./settings/dialog";
 import { Sidebar } from "./sidebar";
 import { SystemStatus } from "./system";
 import { ConnectionIndicator } from "./stream_status";
-import { electricThreadSync } from "./threads/thread_store";
+import { electricThreadSync } from "./threads/electric_sync";
 import { ThreadSyncContext } from "./threads/thread_sync";
 import { TopbarContext, TopbarTitle, type TopbarSlots } from "./topbar";
 import { appDocumentTitle } from "./tab_metadata";
@@ -79,7 +79,7 @@ function ActionRequestRoute(): JSX.Element {
 
 function ThreadRoute({ settingsOpen }: { settingsOpen: boolean }): JSX.Element {
   const threadId = required(useParams().threadId, "threadId");
-  return <ProjectedSession key={threadId} threadId={threadId} settingsOpen={settingsOpen} />;
+  return <ThreadPage key={threadId} threadId={threadId} settingsOpen={settingsOpen} />;
 }
 
 // Matches sidebar.css's phone breakpoint (max-width: 560px) from the other side.

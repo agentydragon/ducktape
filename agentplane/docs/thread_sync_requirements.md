@@ -51,12 +51,12 @@ for the current sync implementation.
 
 ## Sync semantics
 
-| ID  | Requirement                                                                                                                                | Source                                                                |
-| --- | ------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------- |
-| S1  | A body never renders content its **own reference does not name** — no showing a later revision's bytes under an older revision's metadata. | `thread_store.test.tsx`: bodies render as far as each reference spans |
-| S2  | Rows render in **thread order** whatever order they arrive in.                                                                             | P2, P4                                                                |
-| S3  | A reader can distinguish **"caught up"** from "still arriving", per whatever unit it subscribes in.                                        | The `view_state` catch-up gate                                        |
-| S4  | A revision to a row the reader **currently holds** always reaches it. No silent staleness.                                                 | P2, P3                                                                |
+| ID  | Requirement                                                                                                                                | Source                                                                 |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------- |
+| S1  | A body never renders content its **own reference does not name** — no showing a later revision's bytes under an older revision's metadata. | `electric_sync.test.tsx`: bodies render as far as each reference spans |
+| S2  | Rows render in **thread order** whatever order they arrive in.                                                                             | P2, P4                                                                 |
+| S3  | A reader can distinguish **"caught up"** from "still arriving", per whatever unit it subscribes in.                                        | The `view_state` catch-up gate                                         |
+| S4  | A revision to a row the reader **currently holds** always reaches it. No silent staleness.                                                 | P2, P3                                                                 |
 
 **S4 forbids the tail-only assumption.** Threads are usually edited near their tail. That is an
 observation about traffic and must not become an assumption in the protocol: an edit in the middle

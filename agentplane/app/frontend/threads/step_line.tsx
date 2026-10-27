@@ -17,7 +17,7 @@ const MARKS: Record<StepMark, { color: string; label: string }> = {
  * of what is behind it, and, when there is something to disclose, a disclosure that opens it below.
  * The preview remains in the sticky heading to identify the expanded content while scrolling.
  *
- * Styled by `.agentplane-step-*` in projected_session.css. */
+ * Styled by `.agentplane-step-*` in conversation.css. */
 export function StepLine({
   title,
   preview,

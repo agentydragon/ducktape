@@ -1712,7 +1712,7 @@ function statesRows(threadId: string, outcomes = false): Record<string, unknown>
       outcomes ? "Target turn already ended" : null
     ),
     // Admitted and still pending, so it renders inline as a pending message bubble rather than in
-    // the pending-commands box below -- see projected_session_view.tsx's pendingSentMessage.
+    // the pending-commands box below -- see conversation.tsx's pendingSentMessage.
     command(26, "queued-submit", "submit_input", "pending", null, "Continue past the failing test once it lands."),
     command(
       27,
