@@ -54,7 +54,7 @@ import { ACTION_RENDERERS } from "../actions/rendering/index";
 import type { McpLinkageView } from "../mcp_linkage_client";
 import type {
   GitHubSubject,
-  InboxNoticeState,
+  InboxNoticeStateProtoJson,
   InboxStatus,
   SandboxNotificationStatus,
   SubscriptionStatus,
@@ -77,11 +77,11 @@ localStorage.clear();
 // The visual harness freezes the wall clock before this bundle runs, so relative ages stay put.
 const NOW = Date.now();
 const HOUR = 3_600_000;
-type NoticeStateFixture = Omit<Partial<InboxNoticeState>, "notice" | "noticeWaitReason"> & {
+type NoticeStateFixture = Omit<Partial<InboxNoticeStateProtoJson>, "notice" | "noticeWaitReason"> & {
   // The wire is ProtoJSON: newer enum values are numbers. The normalized UI model represents them
   // as `{ unknown: number }` only after the generated decoder accepts the frame.
-  notice?: InboxNoticeState["notice"] | number;
-  noticeWaitReason?: InboxNoticeState["noticeWaitReason"] | number;
+  notice?: InboxNoticeStateProtoJson["notice"] | number;
+  noticeWaitReason?: InboxNoticeStateProtoJson["noticeWaitReason"] | number;
 };
 const NULL_SANDBOX_FIELDS = {
   binding: null,

@@ -137,6 +137,8 @@ export type InboxNoticeState = Override<
   RequiredJson<InboxNoticeStateJson, "inboxId" | "sessionId" | "queued" | "unacknowledged">,
   { notice?: NoticeProgress; noticeWaitReason?: NoticeWaitReason }
 >;
+/** Generated wire shape, before ProtoJSON numeric unknown enums become named UI variants. */
+export type InboxNoticeStateProtoJson = InboxNoticeStateJson;
 export type SessionNoticeStates = Override<
   RequiredJson<SessionNoticeStatesJson, "observedAt" | "inboxes">,
   {
