@@ -180,7 +180,7 @@ async def test_create_thread_disabled_tooltip(
             "name => sessionStorage.setItem(`agentplane:pending-open:${name}`, 'unconfirmed-session')", sandbox
         )
     await app.mount_app(f"/sandboxes/{sandbox}")
-    await page.get_by_role("button", name="New thread").click()
+    await page.get_by_role("button", name="New thread", exact=True).click()
     await expect(page.get_by_role("combobox", name="Model")).not_to_have_value("")
     button = page.get_by_role("button", name="Create thread", exact=True)
     await expect(button).to_be_disabled()
@@ -204,7 +204,7 @@ async def test_sandbox_create_thread_suspended(view: VisualPage, app: Agentplane
     await app.build(Scene.ADD_SUSPENDED_SANDBOXES)
     await app.mount_app("/sandboxes/idle-suspended-sandbox")
     await expect(view.page.get_by_text("Creating a thread will wake the Sandbox.", exact=False)).to_be_visible()
-    await view.page.get_by_role("button", name="New thread").click()
+    await view.page.get_by_role("button", name="New thread", exact=True).click()
     await expect(view.page.get_by_role("combobox", name="Model")).not_to_have_value("")
     await expect(view.page.get_by_role("button", name="Create thread")).to_be_enabled()
     await view.capture(target=view.page.locator("#app"))
@@ -313,7 +313,7 @@ async def test_sandbox(view: VisualPage, app: AgentplaneFixture) -> None:
     await expect(page.get_by_role("menuitem", name="Find Thread traces in Grafana")).to_be_visible()
     await view.capture(name=f"{view.capture_name}_thread_trace_menu")
 
-    await page.get_by_role("button", name="New thread").click()
+    await page.get_by_role("button", name="New thread", exact=True).click()
     await expect(page.get_by_role("combobox", name="Model")).not_to_have_value("")
     await expect(page.get_by_role("button", name="Create thread")).to_be_enabled()
     await view.capture(target=page.locator("#app"), name=f"{view.capture_name}_new_thread")

@@ -79,7 +79,7 @@ async def test_vm_console_to_threads_tab(view: VisualPage, app: AgentplaneFixtur
 
     await page.get_by_role("tab", name="Threads").click()
     await expect(page.get_by_role("tab", name="Threads")).to_have_attribute("aria-selected", "true")
-    await expect(page.get_by_role("button", name="New thread")).to_be_visible()
+    await expect(page.get_by_role("button", name="New thread", exact=True)).to_be_visible()
     await view.check(context="after changing from VM console to Threads")
     await view.capture(name="vm-console-to-threads", target=page.locator("#app"))
 
@@ -104,7 +104,7 @@ async def test_queued_session_open_follows_live_projection_and_survives_return(
     await app.queue_open_response()
     await app.mount_app("/sandboxes/ready-sandbox?tab=threads")
     page = view.page
-    await page.get_by_role("button", name="New thread").click()
+    await page.get_by_role("button", name="New thread", exact=True).click()
     await page.get_by_role("button", name="Create thread").click()
     pending = page.get_by_role("status").filter(has_text="Open attempt")
     await expect(pending).to_contain_text("Queued in Dispatcher")
@@ -282,7 +282,7 @@ async def capture_paused_claude_harness_picker(view: VisualPage, app: Agentplane
     await view.page.wait_for_selector('[role="option"][data-combobox-disabled]', state="attached")
     await view.check(context="fixture ready")
     page = view.page
-    await page.get_by_role("button", name="New thread").click()
+    await page.get_by_role("button", name="New thread", exact=True).click()
     harness = page.get_by_role("combobox", name="Harness")
     await expect(harness).to_have_value("Codex")
     await harness.click()
