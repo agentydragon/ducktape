@@ -465,6 +465,10 @@ fn provenance_roots(cli: &TransformCli) -> Result<(ProvenanceRoots, Option<PathB
     }
     .unwrap_or(std::env::current_dir()?);
     let mut packages = std::collections::BTreeMap::new();
+    anyhow::ensure!(
+        !cli.package_roots.contains_key("__packages_root__"),
+        "package name __packages_root__ is reserved for the shared packages root in graph provenance"
+    );
     for (name, root) in &cli.package_roots {
         packages.insert(name.clone(), graph_provenance::absolute(root)?);
     }
@@ -657,6 +661,27 @@ mod tests {
         report_dir_override: None,
         list_template_identifiers: false,
     };
+
+    #[test]
+    fn reserved_package_root_name_is_rejected() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let mut package_roots = HashMap::new();
+        package_roots.insert("__packages_root__".to_string(), temp.path().to_path_buf());
+        let cli = TransformCli {
+            spec_source: TransformSpecSource::Flat {
+                path: temp.path().join("spec.yaml"),
+            },
+            package_roots,
+            packages_root: Some(temp.path().to_path_buf()),
+        };
+        assert!(
+            provenance_roots(&cli)
+                .unwrap_err()
+                .to_string()
+                .contains("reserved")
+        );
+        Ok(())
+    }
 
     #[derive(Serialize)]
     struct AssetSummaryFixture<'a> {
