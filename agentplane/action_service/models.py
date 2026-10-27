@@ -1,17 +1,6 @@
-"""Shared Action Service policy and operator identity types."""
+"""Shared Action Service policy types."""
 
 from enum import StrEnum
-
-from pydantic import BaseModel, ConfigDict, Field
-
-
-class OperatorPrincipal(BaseModel):
-    """The human or BFF behind the operator surface, as its adapter verified them."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    issuer: str = Field(min_length=1)
-    subject: str = Field(min_length=1)
 
 
 class PolicyKind(StrEnum):

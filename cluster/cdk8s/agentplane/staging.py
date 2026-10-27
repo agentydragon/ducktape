@@ -439,7 +439,6 @@ ENV = Environment(
         oidc_session_secret_name=_OIDC_SESSION_SECRET,
     ),
     actions=ActionsProps(
-        integrated_connection_service=False,
         hostname=_ACTIONS_HOSTNAME,
         operator_oidc=_FEDERATION_TARGET,
         caller_service_account_namespaces=frozenset({STAGING_NAMESPACE, public_coder_egress.NAMESPACE}),

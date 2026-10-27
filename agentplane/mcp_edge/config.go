@@ -39,11 +39,11 @@ type config struct {
 }
 
 type oauthSettings struct {
-	// CLEANUP(added 2026-10-23): Drop these accepted keys after the GitOps OAuth secret no longer writes them.
-	// The integrated Action Service still consumes the same secret until the public route cutover.
-	ConfigURL                string `mapstructure:"config_url" yaml:"config_url"`
-	JWTSigningKeyFile        string `mapstructure:"jwt_signing_key_file" yaml:"jwt_signing_key_file"`
-	EncryptionKeyFile        string `mapstructure:"encryption_key_file" yaml:"encryption_key_file"`
+	// CLEANUP(added 2026-10-23): Drop these legacy FastMCP keys after the GitOps OAuth secret no longer writes them.
+	ConfigURL         string `mapstructure:"config_url" yaml:"config_url"`
+	JWTSigningKeyFile string `mapstructure:"jwt_signing_key_file" yaml:"jwt_signing_key_file"`
+	EncryptionKeyFile string `mapstructure:"encryption_key_file" yaml:"encryption_key_file"`
+	// The edge's active external OAuth settings follow.
 	UpstreamClientID         string `mapstructure:"upstream_client_id" yaml:"upstream_client_id"`
 	UpstreamClientSecretFile string `mapstructure:"upstream_client_secret_file" yaml:"upstream_client_secret_file"`
 	BaseURL                  string `mapstructure:"base_url" yaml:"base_url"`

@@ -9,9 +9,9 @@ explicit reason recorded in its design doc, not a silent exception.
 Agentplane is a set of separately deployable services, each useful without the others. Running an
 agent does not require running approvals; using approvals does not require running an agent.
 
-- The Action Service on its own is an MCP aggregator with operator approvals and auto-approval
-  policies. An external product (Claude.ai today) connects to its `/mcp` endpoint over OAuth and
-  never touches a Sandbox or runner.
+- The Action Service is an MCP aggregator with operator approvals and auto-approval policies. The
+  standalone MCP edge exposes it to external products (Claude.ai today) over OAuth, without
+  requiring a Sandbox or runner.
 - A runner session reaches Actions only when it asks for one; nothing in the runner requires the
   Action Service to be deployed.
 - The egress proxy fronts workloads that are not Agentplane sandboxes at all (for example the
@@ -175,9 +175,9 @@ that let an agent script MCP tools from code.
 ## Any MCP-capable product, no lock-in
 
 Agentplane's approvals and auto-approvals work for any LLM product that can talk to an MCP server,
-whoever makes it. The Action Service's `/mcp` endpoint uses standard MCP with OAuth discovery and
-dynamic client registration; an external Connection gets the same policies and operator review as
-a workload in a sandbox.
+whoever makes it. The standalone MCP edge uses standard MCP with OAuth discovery and dynamic client
+registration; an external Connection gets the same policies and operator review as a workload in a
+Sandbox.
 
 For agents Agentplane hosts itself, the runner drives native harnesses (Claude Code and Codex)
 through their own protocols, and model calls go through LiteLLM, so a harness is not tied to its

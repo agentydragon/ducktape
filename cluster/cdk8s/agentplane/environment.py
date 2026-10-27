@@ -118,16 +118,15 @@ class ActionsProps:
     """This environment's Actions settings and secret wiring."""
 
     operator_oidc: OperatorOidcSettings
-    integrated_connection_service: bool
     # Its own namespace included; the Action Service watches policies in its own.
     caller_service_account_namespaces: frozenset[str]
     mcp_servers: Mapping[Key, McpOAuthServer]
     action_groups: Mapping[Key, ActionGroup]
-    # Public origin for integrated MCP/OAuth or upstream client metadata; None omits public exposure.
+    # Public origin for upstream client metadata; None omits public exposure.
     hostname: str | None = None
     mcp_client_metadata: McpClientMetadataSettings | None = None
     web_push: WebPushProps | None = None
-    # Keys mounted from the agentplane-mcp-oauth Secret at /etc/agentplane-mcp; none mounts nothing.
+    # Keys for upstream MCP OAuth clients mounted for Action Service linkage; none mounts nothing.
     oauth_secret_items: Sequence[str] = ()
     # None omits the corresponding env var, volume, and mount.
     github_mcp_client_secret_name: str | None = None

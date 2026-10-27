@@ -53,7 +53,7 @@ func TestWhatADeploymentLeavesUnsetTakesItsDefault(t *testing.T) {
 		t.Fatal(err)
 	}
 	if c.DatabaseURL == "" || c.Host != "0.0.0.0" || c.Port != 8080 || len(c.ReaderAccounts) != 0 || c.operatorsEnabled() ||
-		c.PolicyResyncSeconds != 300 ||
+		c.PolicyResyncSeconds != 300 || c.IntegratedConnectionService ||
 		c.GitHubVisibility != (gitHubVisibility{APIBaseURL: "https://api.github.com", CacheTTLSeconds: 86400}) {
 		t.Errorf("settings: %+v", c)
 	}
@@ -306,26 +306,25 @@ func TestSettingsAreRefusedWithoutEchoingTheirValues(t *testing.T) {
 	}
 }
 
-const testOAuth = `{"config_url":"https://issuer.example/.well-known/openid-configuration","upstream_client_id":"test-client","upstream_client_secret_file":"/secret/client","base_url":"https://actions.example","integration_app_url":"https://app.example","jwt_signing_key_file":"/secret/jwt","encryption_key_file":"/secret/encryption","upstream_issuer":"https://issuer.example","upstream_subject":"test-upstream-subject","approving_operator":{"issuer":"https://operator.example","subject":"test-operator"}}`
-
-func TestOAuthSecretJSONAndNestedEnvironmentOverrides(t *testing.T) {
-	c, err := loadTestConfig(t, requiredFile, settingPrefix+"OAUTH="+testOAuth, settingPrefix+"OAUTH__UPSTREAM_CLIENT_ID=test-override")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if c.OAuth == nil || c.OAuth.UpstreamClientID != "test-override" || c.OAuth.ApprovingOperator.Subject != "test-operator" {
-		t.Fatal("OAuth Secret or its override was not read")
-	}
-	for _, raw := range []string{"never-print-this", "null", strings.Replace(testOAuth, `"upstream_client_id":"test-client"`, `"unknown":"never-print-this"`, 1)} {
-		_, err := loadTestConfig(t, requiredFile, settingPrefix+"OAUTH="+raw)
-		if err == nil || strings.Contains(err.Error(), "never-print-this") {
-			t.Fatalf("invalid OAuth Secret: %v", err)
+func TestRetiredIntegratedConnectionSettingCannotEnableServing(t *testing.T) {
+	for _, file := range []string{"", "integrated_connection_service: false\n"} {
+		c, err := loadTestConfig(t, requiredFile+file)
+		if err != nil || c.IntegratedConnectionService {
+			t.Fatalf("disabled legacy setting: config=%+v err=%v", c, err)
 		}
+	}
+	if _, err := loadTestConfig(t, requiredFile+"integrated_connection_service: true\n"); err == nil || !strings.Contains(err.Error(), "retired") {
+		t.Fatalf("accepted legacy setting enabled: %v", err)
 	}
 }
 
 func TestInvalidMCPWaitsAreRefused(t *testing.T) {
-	for _, file := range []string{"max_wait_seconds: -1\n", "direct_wait_seconds: .inf\n", "max_wait_seconds: .nan\n"} {
+	for _, file := range []string{
+		"max_wait_seconds: -1\n",
+		"max_wait_seconds: 181\n",
+		"direct_wait_seconds: .inf\n",
+		"max_wait_seconds: .nan\n",
+	} {
 		if _, err := loadTestConfig(t, requiredFile+file); err == nil {
 			t.Fatalf("accepted %s", file)
 		}

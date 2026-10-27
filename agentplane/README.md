@@ -2,15 +2,15 @@
 
 Agentplane runs coding agents in Kubernetes sandboxes and mediates what they do outside them:
 network egress with credentials substituted at the proxy, operator-approved or policy-approved
-Actions, and notifications. Its services are separately deployable; the Action Service alone is
-an MCP approval gateway for any MCP-capable LLM product.
+Actions, and notifications. Its services are separately deployable; the Action Service supplies
+the approval gateway for any MCP-capable LLM product, exposed externally through the standalone MCP edge.
 
 **Design principles:** [`docs/principles.md`](docs/principles.md). Check new designs against it.
 
 ## Services
 
 - [Action Service](action_service/README.md): ActionRequests, Decisions, auto-approval policies,
-  and an MCP endpoint over OAuth.
+  upstream MCP execution and the gRPC/HTTP APIs used by the MCP edge.
 - [MCP edge](mcp_edge/README.md): external Connection/OAuth authority and `/mcp`; forwards authenticated Actions calls over gRPC.
 - [Runner Gateway](runner_gateway/README.md): one process serving the runner control stream,
   authorized live Runner proxy and [Session Dispatcher](runner_gateway/dispatcher/README.md) durable queue.

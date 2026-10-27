@@ -12,9 +12,8 @@ from cdk8s_plus_34 import ConfigMap, Deployment, EnvValue, ServiceAccount, Volum
 from constructs import Construct
 from more_itertools import one
 
-from agentplane.action_service.models import OperatorPrincipal
-from agentplane.action_service.oauth_settings import OAuthSettings
 from agentplane.action_service.policies.resources import CALLER_LABEL
+from agentplane.mcp_edge.oauth_settings import OAuthSettings, OperatorPrincipal
 from agentplane.subjects import ServiceAccountRef
 from agentplane.system_tests import mcp_servers
 from agentplane.system_tests.k3s import dex, fixture_chart, mcp_fixture_servers

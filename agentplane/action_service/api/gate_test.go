@@ -189,8 +189,8 @@ func TestADrainingServiceRefusesEveryCall(t *testing.T) {
 	wantCode(t, "a Decision while draining", err, codes.Unavailable)
 }
 
-// The Gate admits the MCP edge's Connection service as it admits the operator service: an operator's call passes it
-// to the fixture's stub, which implements nothing, while a workload's is refused before any TokenReview.
+// The standalone MCP edge's ConnectionService uses this shared Gate: operators pass to the service, while workload
+// tokens are refused before Kubernetes TokenReview.
 func TestOnlyAnOperatorPassesTheGateToTheConnectionService(t *testing.T) {
 	reviews := &kubeapiserver.CountedReviews{TokenReviews: kube.TokenReviews()}
 	s := serveWith(t, reviews, &catalog.Catalog{})

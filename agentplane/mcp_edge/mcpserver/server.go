@@ -1,4 +1,4 @@
-// Package mcpserver serves the Action Service's MCP endpoint, /mcp, to callers on an external Connection: the Action
+// Package mcpserver serves the standalone edge's /mcp endpoint to callers on an external Connection: the Action
 // tools and the caller's direct tools over stateless Streamable HTTP. It reaches the Action Service only through its
 // workload API.
 package mcpserver

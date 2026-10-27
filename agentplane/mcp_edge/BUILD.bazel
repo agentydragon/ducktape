@@ -9,6 +9,12 @@ load("//devinfra/python:defs.bzl", "py_library")
 package(default_visibility = ["//agentplane:__subpackages__"])
 
 py_library(
+    name = "oauth_settings",
+    srcs = ["oauth_settings.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
     name = "settings",
     srcs = ["settings.py"],
     visibility = [
@@ -16,7 +22,7 @@ py_library(
         "//cluster/cdk8s:__subpackages__",
     ],
     deps = [
-        "//agentplane/action_service:oauth_settings",
+        ":oauth_settings",
         "//agentplane/action_service:operator_oidc_settings",
         "//util:yaml_file_settings",
         "@pypi//pydantic",

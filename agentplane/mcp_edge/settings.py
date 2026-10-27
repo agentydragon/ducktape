@@ -8,8 +8,8 @@ from typing import ClassVar
 from pydantic import Field, model_validator
 from pydantic_settings import SettingsConfigDict
 
-from agentplane.action_service.oauth_settings import OAuthSettings
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings
+from agentplane.mcp_edge.oauth_settings import OAuthSettings
 from util.yaml_file_settings import YamlFileSettings
 
 

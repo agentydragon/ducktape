@@ -10,8 +10,9 @@ when those contracts change.
 
 **For an agent, this is where a call to the outside world goes**, mediated rather than direct: an
 `ActionGroup` mounts one MCP server, mirrors its `tools/list` into the catalog, and this service
-initiates `tools/call` itself, so the harness never holds an MCP client of its own. Each call is
-then either auto-approved by a reviewed policy or held for the operator to decide. That is the same
+initiates `tools/call` itself, so the harness never holds an MCP client of its own. The standalone
+MCP edge exposes approved Actions to external MCP clients and forwards each call here. A call is
+either auto-approved by a reviewed policy or held for the operator to decide. That is the same
 role Haku Console's MCP endpoint serves for its agents — one function with two implementations,
 Console's being the one to retire, not two systems that happen to resemble each other.
 
@@ -141,22 +142,18 @@ identity is accepted only by those read handlers, not submission, cancellation, 
 authentication. Notifications uses this permission and verifies source ownership before exposing
 Action events to a subscriber. No delegated-owner field or alternate service endpoint exists.
 
-## Generic MCP frontend
+## External MCP frontend
 
-When `oauth` is configured, the Go service mounts stateless Streamable HTTP at `/mcp` and the OAuth
-protocol endpoints on the same HTTP listener. `/mcp` accepts only this authorization server's
-bearer tokens; each grant resolves to its Connection's currently bound, labeled ServiceAccount
-before a core call. Workload and operator API authentication remain separate. Missing or invalid
-bearers receive 401 with protected-resource metadata; authority outages receive 503. See the
-[HTTP edge](edge.go), [MCP handler](../mcp_edge/mcpserver/server.go), and
-[bearer verifier](../mcp_edge/authserver/tokens.go).
-The `basic` `PolicySet` controls Sandbox egress; it does not supply the OAuth bearer `/mcp` requires.
-The service authenticates and authorizes each request itself. Tests exercise workload credential
-substitution at the API boundary.
+The standalone [MCP edge](../mcp_edge/README.md) serves `/mcp` and OAuth protocol routes. It
+authenticates external bearers, resolves each Connection to its currently bound, labeled
+ServiceAccount, and calls this service with that workload identity. The Action Service does not
+serve `/mcp`, ConnectionService, or the external OAuth protocol. See the edge's
+[MCP handler](../mcp_edge/mcpserver/server.go) and [bearer verifier](../mcp_edge/authserver/tokens.go).
+The `basic` `PolicySet` controls Sandbox egress; it does not grant MCP edge authority.
 
 ### External OAuth
 
-The optional `oauth` settings enable the Go authorization server: discovery, dynamic client
+The MCP edge's optional `oauth` settings enable its Go authorization server: discovery, dynamic client
 registration (DCR), CIMD, authorization, token (code and refresh), revocation, and callback
 endpoints. It pins an upstream OIDC issuer, client, and operator subject; only a verified sign-in of
 that operator completes authorization. The consent page chooses a new Connection or a confirmed
@@ -173,7 +170,7 @@ grant; upstream account revocation is separate.
 
 Configure `base_url`, `integration_app_url`, `upstream_issuer`, `upstream_client_id`,
 `upstream_client_secret_file`, `upstream_subject`, and `approving_operator` in the optional `oauth`
-settings. See [Go OAuth configuration](config.go), the
+settings. See the edge's [Go OAuth configuration](../mcp_edge/config.go), the
 [authorization server](../mcp_edge/authserver/authserver.go), and the
 [ConnectionService contract](../mcp_edge/connection_service.proto).
 
@@ -222,13 +219,13 @@ or unknown one is an error result carrying the decision's note or reason, or the
 policy approves comes back as its tool's own answer from the one call. A receipt's `execution` has
 its state, error and timing but no result.
 
-MCP submission, receipt and result tools take one shared `wait` object (`wait_seconds`, 0 through this
-instance's `max_wait_seconds` setting, default 0; the setting defaults to 30 seconds;
+MCP submission, receipt and result tools take one shared `wait` object (`wait_seconds`, 0 through the
+MCP edge's `max_wait_seconds` setting, default 0; the setting defaults to 30 seconds;
 `wait_until`, `decision` or `terminal` default terminal) rather than two flat parameters each.
-Set `max_wait_seconds` in the Action Service settings file or with
-`AGENTPLANE_ACTIONS_MAX_WAIT_SECONDS`. Direct tool calls initially wait for
+Set the edge's `max_wait_seconds` in its settings file or with
+`AGENTPLANE_MCP_EDGE_MAX_WAIT_SECONDS`. Direct tool calls initially wait for the edge's
 `direct_wait_seconds` (30 seconds by default), capped by `max_wait_seconds`; configure it in the
-settings file or with `AGENTPLANE_ACTIONS_DIRECT_WAIT_SECONDS`.
+edge settings file or with `AGENTPLANE_MCP_EDGE_DIRECT_WAIT_SECONDS`.
 Waits use commit notifications rather than periodic queries. A deadline returns a receipt, not a
 cancellation. On an ambiguous response, reuse the original request/key; transport or notification
 failure must not prompt a new Action. Workload authorization is revalidated after a bounded wait,
@@ -259,7 +256,7 @@ names must be in its roster at startup.
 
 A call is submitted as decided-only with a server-minted idempotency key and the title
 `Direct tool call`. If no policy approves it, nothing is persisted; the MCP error gives the policy
-reasons and points at `request_action`. A decided call waits up to this instance's
+reasons and points at `request_action`. A decided call waits up to the MCP edge's
 `direct_wait_seconds` setting, capped by `max_wait_seconds`, and answers through the same MCP result
 formatter (see the [implementation](../mcp_edge/mcpserver/results.go)) as `get_action_result`, so an
 unfinished one names its request to keep waiting on. A configured name the caller's

@@ -8,7 +8,6 @@ go_library(
         "catalog.go",
         "errors.go",
         "gate.go",
-        "local_client.go",
         "mcp_servers.go",
         "operator_oidc.go",
         "operator_service.go",
@@ -142,19 +141,5 @@ go_test(
         "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//types/known/structpb",
         "@org_golang_google_protobuf//types/known/timestamppb",
-    ],
-)
-
-go_test(
-    name = "local_client_test",
-    srcs = ["local_client_test.go"],
-    embed = [":api"],
-    deps = [
-        "//agentplane/action_service:action_service_go_proto",
-        "//agentplane/action_service/store",
-        "//agentplane/workload_auth/go/auth",
-        "@org_golang_google_grpc//:grpc",
-        "@org_golang_google_grpc//codes",
-        "@org_golang_google_grpc//status",
     ],
 )

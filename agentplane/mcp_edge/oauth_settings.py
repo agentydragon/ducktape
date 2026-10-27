@@ -1,10 +1,17 @@
-"""Deployment pins for Action Service OAuth."""
+"""Deployment pins for the MCP edge's external OAuth server."""
 
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from agentplane.action_service.models import OperatorPrincipal
+
+class OperatorPrincipal(BaseModel):
+    """The operator identity whose upstream sign-in may approve an external Connection."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    issuer: str = Field(min_length=1)
+    subject: str = Field(min_length=1)
 
 
 class OAuthSettings(BaseModel):

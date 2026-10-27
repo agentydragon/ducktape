@@ -129,8 +129,8 @@ route described by `/openapi.json`. The receipt read has no `wait_seconds` or `w
 parameters.
 
 MCP tools retain their bounded `wait.wait_seconds` and `wait.wait_until` options. A receipt wait can
-return immediately or wait up to the Action Service instance's configured `max_wait_seconds` (30 seconds
-by default) for either a resolved Decision or an Execution outcome. Direct MCP tools initially wait for
+return immediately or wait up to the MCP edge's configured `max_wait_seconds` (30 seconds by default)
+for either a resolved Decision or an Execution outcome. Direct MCP tools initially wait for the edge's
 `direct_wait_seconds` (30 seconds by default), bounded by that same maximum, before returning a request
 ID for a still-running Action.
 
@@ -145,15 +145,14 @@ wait cancellation only releases the wait and never cancels or resubmits the Acti
 notification channel fails waiting explicitly; immediate reads remain available and there is no
 periodic state-query fallback.
 
-## Actions MCP frontend
+## MCP edge request path
 
-The in-process ConnectionService and OAuth frontend remain enabled while Actions is the live
-external edge. At the standalone edge cutover, `integrated_connection_service=false` removes
-ConnectionService from gRPC and its HTTP facade; Actions also requires OAuth configuration to be
-absent in that state, so it cannot issue or resolve external Connection tokens. The default is
-`true` until the separate cutover changes deployment configuration.
+The standalone MCP edge serves the external `/mcp` and OAuth protocol endpoints and owns
+ConnectionService. It resolves an external bearer to the Connection's currently bound
+ServiceAccount, then calls Action Service with that workload identity. Action Service does not
+serve the external MCP or OAuth endpoints.
 
-When OAuth is configured, the Action Service serves a generic MCP frontend in the same process, with the same catalog,
+The edge exposes a generic MCP frontend backed by Action Service, with the same catalog,
 admission, Decision, Execution, and receipt authority as its HTTP interface. Its fixed tools
 discover Actions, submit/cancel requests, read receipts and results, and page durable events. A result
 reads as the tool that ran answered, an MCP backend's own result exactly with every content block, and a
@@ -169,11 +168,12 @@ auto-approve it. A direct call is an ordinary Action with the same caller scope,
 it never waits for a human; one still running after a bounded wait answers with its request instead
 of its result.
 
-Every MCP HTTP request authenticates an access token issued by the local OAuth server.
-Reused MCP session identifiers confer no authority. Core calls and watch frames resolve the bearer
-against current admission and Connection state. Operator bearers, unexchanged credential placeholders,
-and caller-supplied identity/policy claims cannot acquire this authority. An Origin header does not
-grant authority or categorically disqualify a caller. Browser cookies are not authentication on this endpoint.
+Every MCP HTTP request authenticates an access token issued by the edge's OAuth server. Reused MCP
+session identifiers confer no authority. The edge resolves each bearer against the current grant
+and Connection state; the Action Service separately authenticates the workload identity used for
+its core calls. Operator bearers, unexchanged credential placeholders, and caller-supplied
+identity/policy claims cannot acquire this authority. An Origin header does not grant authority or
+categorically disqualify a caller. Browser cookies are not authentication on this endpoint.
 Clients may use DCR registration or HTTPS Client ID Metadata Documents (CIMD).
 Neither registration nor metadata discovery is authority. Consent binds one labeled caller
 ServiceAccount and named Connection to the validated authorization interaction and approving

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"net/url"
 	"os"
 	"regexp"
 	"strings"
@@ -19,7 +18,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
 	"github.com/agentydragon/ducktape/agentplane/action_service/push"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
-	sharedconfig "github.com/agentydragon/ducktape/agentplane/settings/go"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
@@ -64,12 +62,14 @@ type config struct {
 	MCPServers map[string]linkage.Server `mapstructure:"mcp_servers"`
 	// MCPClientMetadata is the client identity of the servers that use the shared Client ID Metadata Document.
 	MCPClientMetadata linkage.ClientMetadata `mapstructure:"mcp_client_metadata"`
-	// OAuth enables the external MCP edge. Its settings keep the Python deployment's keys until cutover.
-	OAuth *oauthSettings `mapstructure:"oauth"`
-	// IntegratedConnectionService keeps the legacy Connection API in this process until the edge cutover.
-	IntegratedConnectionService bool    `mapstructure:"integrated_connection_service"`
-	MaxWaitSeconds              float64 `mapstructure:"max_wait_seconds"`
-	DirectWaitSeconds           float64 `mapstructure:"direct_wait_seconds"`
+	// CLEANUP(added 2026-10-27): Accept the generated false value until it is removed from manifests after this image
+	// has rolled out. A true value is rejected; this binary does not serve the integrated Connection API.
+	IntegratedConnectionService bool `mapstructure:"integrated_connection_service"`
+	// CLEANUP(added 2026-10-27): Accept the generated value (up to 180 seconds) until it is removed after this image
+	// rolls out. The MCP edge owns caller waits; Action Service uses DirectWaitSeconds only for orchestration_v1.
+	MaxWaitSeconds float64 `mapstructure:"max_wait_seconds"`
+	// DirectWaitSeconds bounds orchestration_v1 Session operations.
+	DirectWaitSeconds float64 `mapstructure:"direct_wait_seconds"`
 	// SessionDispatcher is where the orchestration_v1 groups send Session commands, and HistoryService where they read
 	// Sessions; both are set exactly when one is configured.
 	SessionDispatcher *peer `mapstructure:"session_dispatcher"`
@@ -81,27 +81,6 @@ type peer struct {
 	Target                string  `mapstructure:"target"`
 	TokenFile             string  `mapstructure:"token_file"`
 	RequestTimeoutSeconds float64 `mapstructure:"request_timeout_s"`
-}
-
-// oauthSettings reads the existing Secret unchanged. The signing and encryption files and discovery
-// config URL belong to the retired FastMCP server; opaque Go tokens need none of them.
-// CLEANUP(added 2026-10-21): Remove ConfigURL, JWTSigningKeyFile and EncryptionKeyFile after
-//
-//	the staging Go cutover removes these fields from the shared OAuth Secret (port stage O).
-type oauthSettings struct {
-	ConfigURL                string `mapstructure:"config_url"`
-	UpstreamClientID         string `mapstructure:"upstream_client_id"`
-	UpstreamClientSecretFile string `mapstructure:"upstream_client_secret_file"`
-	BaseURL                  string `mapstructure:"base_url"`
-	IntegrationAppURL        string `mapstructure:"integration_app_url"`
-	JWTSigningKeyFile        string `mapstructure:"jwt_signing_key_file"`
-	EncryptionKeyFile        string `mapstructure:"encryption_key_file"`
-	UpstreamIssuer           string `mapstructure:"upstream_issuer"`
-	UpstreamSubject          string `mapstructure:"upstream_subject"`
-	ApprovingOperator        struct {
-		Issuer  string `mapstructure:"issuer"`
-		Subject string `mapstructure:"subject"`
-	} `mapstructure:"approving_operator"`
 }
 
 type gitHubVisibility struct {
@@ -117,7 +96,6 @@ func defaultConfig() config {
 			APIBaseURL: policies.GitHubAPIBaseURL, CacheTTLSeconds: policies.VisibilityTTL.Seconds(),
 		},
 		ActionGroups: &catalog.Catalog{}, MaxWaitSeconds: 30, DirectWaitSeconds: 30,
-		IntegratedConnectionService: true,
 	}
 }
 
@@ -152,13 +130,6 @@ func loadConfig() (config, error) {
 		if strings.HasPrefix(key, "mcp_servers.") {
 			settings.Set(key, settings.Get(key))
 		}
-	}
-	if raw := os.Getenv(settingPrefix + "OAUTH"); raw != "" {
-		var oauth map[string]any
-		if err := json.Unmarshal([]byte(raw), &oauth); err != nil || oauth == nil {
-			return config{}, errors.New("oauth must be a JSON object")
-		}
-		sharedconfig.SetJSONLeaves(settings, "oauth", oauth, settingPrefix)
 	}
 	// The deployed reader allowlist is a JSON environment value, as Pydantic reads it.
 	if raw := os.Getenv(settingPrefix + "READER_ACCOUNTS"); raw != "" {
@@ -229,30 +200,15 @@ func (c *config) validate() error {
 	if err := linkage.Validate(c.MCPServers, c.MCPClientMetadata); err != nil {
 		return err
 	}
+	if c.IntegratedConnectionService {
+		return errors.New("integrated_connection_service is retired")
+	}
+	if c.MaxWaitSeconds > 180 {
+		return errors.New("retired max_wait_seconds must not exceed 180")
+	}
 	for _, seconds := range []float64{c.MaxWaitSeconds, c.DirectWaitSeconds} {
 		if seconds < 0 || math.IsNaN(seconds) || math.IsInf(seconds, 0) {
 			return errors.New("MCP wait seconds must be finite and nonnegative")
-		}
-	}
-	if c.OAuth != nil {
-		if !c.IntegratedConnectionService {
-			return errors.New("oauth requires integrated_connection_service while Actions serves MCP")
-		}
-		o := c.OAuth
-		for _, value := range []string{o.UpstreamClientID, o.UpstreamClientSecretFile, o.UpstreamSubject, o.ApprovingOperator.Issuer, o.ApprovingOperator.Subject} {
-			if strings.TrimSpace(value) == "" {
-				return errors.New("oauth requires client, secret file, upstream subject and approving operator")
-			}
-		}
-		for _, value := range []string{o.BaseURL, o.IntegrationAppURL, o.UpstreamIssuer, o.ApprovingOperator.Issuer} {
-			parsed, err := url.Parse(value)
-			if err != nil || parsed.Host == "" || parsed.User != nil || parsed.Fragment != "" || (parsed.Scheme != "https" && !(parsed.Scheme == "http" && (parsed.Hostname() == "localhost" || parsed.Hostname() == "127.0.0.1" || parsed.Hostname() == "::1"))) {
-				return errors.New("oauth endpoints must use https or loopback http")
-			}
-		}
-		issuer, _ := url.Parse(o.BaseURL)
-		if issuer.Path != "" || issuer.RawQuery != "" {
-			return errors.New("oauth.base_url must be an origin")
 		}
 	}
 	if err := c.validateOrchestration(); err != nil {

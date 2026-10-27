@@ -135,7 +135,7 @@ retained history and the tentative Session-access rule family; its exact schema 
 administration remain open. The [external-access evaluation](external_access.md#compatibility-evaluation-github-kubernetes-http)
 already calls for comparing reusable authorization systems rather than inventing a universal broker.
 
-- External Action Service OAuth Connections act as an existing labeled SA selected by the operator
+- External MCP OAuth Connections act as an existing labeled SA selected by the operator
   at enrollment ([Connection authority](../mcp_edge/connections/store.go)). This is an explicit
   Connection-to-SA mapping, not an automatic one-SA-per-OAuth-client rule. GitOps defines static
   accounts such as `claude-ai` and their `PolicyBinding`s. Human/operator authentication remains

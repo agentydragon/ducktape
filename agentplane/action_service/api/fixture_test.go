@@ -148,7 +148,7 @@ type served struct {
 	client      action_servicepb.ActionServiceClient
 	// operators is the OperatorActionService client.
 	operators operator_action_servicepb.OperatorActionServiceClient
-	// connections calls the MCP edge's ConnectionService, which the Gate admits; this server implements none of it.
+	// connections is the MCP edge ConnectionService used to exercise this shared Gate's operator admission.
 	connections connection_servicepb.ConnectionServiceClient
 	// url is the base URL of the HTTP facade.
 	url string
@@ -356,7 +356,7 @@ func serveWithPolicy(
 	grpcServer := grpc.NewServer(grpc.ChainUnaryInterceptor(s.gate.UnaryInterceptor), grpc.ChainStreamInterceptor(s.gate.StreamInterceptor))
 	action_servicepb.RegisterActionServiceServer(grpcServer, NewService(s.store, updates, groups, s.gate, index, s.submissions(t)))
 	operator_action_servicepb.RegisterOperatorActionServiceServer(grpcServer, NewOperatorService(s.store, updates, s.gate, s.linkages))
-	// gRPC runs no interceptor for a service it does not serve, so a stub stands behind the Gate.
+	// The standalone MCP edge reuses this Gate; a stub keeps its method behind the auth interceptor here.
 	connection_servicepb.RegisterConnectionServiceServer(grpcServer, connection_servicepb.UnimplementedConnectionServiceServer{})
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

@@ -29,7 +29,7 @@ keys against the pinned ha-mcp's `ha_call_service` input schema.
 
 ## Executors that answer as MCP tools
 
-The [Go MCP frontend](../mcp_edge/mcpserver/results.go) renders outcomes per executor kind: it
+The [standalone MCP edge frontend](../mcp_edge/mcpserver/results.go) renders outcomes per executor kind: it
 relays an MCP group's stored `CallToolResult`, and returns a Sandbox group's result object as
 structured content and one text block. Unifying the executors behind MCP, with the Sandbox executor
 answering as an MCP tool and storing a `CallToolResult` too, would leave one result shape and remove

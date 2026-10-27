@@ -47,7 +47,6 @@ from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import database, notifications
 from cluster.cdk8s.agentplane.environment import Environment, OrchestrationProps
-from cluster.cdk8s.agentplane.mcp_routes import PUBLIC_PATHS
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.service_workload import ServiceWorkload, add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
@@ -67,7 +66,7 @@ _ACTIONS_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-action-service"
 _MIGRATE_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-action-service-migrate"
 _LABELS = {"app.kubernetes.io/name": NAME}
 
-# Where the Action Service reads the `oauth_secret_items` of `mcp_oauth_secret`.
+# Where the Action Service reads linked upstream MCP client credentials from the OAuth Secret.
 MCP_OAUTH_DIR = "/etc/agentplane-mcp"
 # The orchestration_v1 group's key, which its launcher grants' rules name.
 ORCHESTRATION_GROUP = "orchestration_v1"
@@ -309,11 +308,13 @@ class Actions(Construct):
             "host": "0.0.0.0",
             "port": self.service.pod_port,
             "token_audience": WORKLOAD_TOKEN_AUDIENCE,
-            "integrated_connection_service": props.integrated_connection_service,
+            # CLEANUP(added 2026-10-27): Keep false until the manifest key is removed after this image rolls out.
+            "integrated_connection_service": False,
             "operator_oidc": props.operator_oidc.model_dump(mode="json", exclude_unset=True),
             "policy_namespace": env.namespace,
             "caller_service_account_namespaces": sorted(props.caller_service_account_namespaces),
             "direct_wait_seconds": 30,
+            # CLEANUP(added 2026-10-27): Retain the legacy maximum until the new image rolls out and this key is removed.
             "max_wait_seconds": 180,
         }
         # These leaves come from the container's environment variables, not the settings file.
@@ -574,7 +575,7 @@ class Actions(Construct):
         return workload
 
     def _add_http_route(self, hostname: str) -> None:
-        # Public MCP/OAuth follows integrated ownership; upstream CIMD remains on Actions.
+        # Actions publishes only its upstream Client ID Metadata Document; the MCP edge owns /mcp and OAuth.
         client_metadata_paths = []
         client_metadata = self.env.actions.mcp_client_metadata
         if client_metadata is not None:
@@ -583,13 +584,9 @@ class Actions(Construct):
                 raise ValueError("mcp_client_metadata.url must use this Action Service's HTTPS hostname")
             assert metadata_url.path is not None
             client_metadata_paths.append(metadata_url.path)
-        paths = (
-            (*PUBLIC_PATHS, *sorted(set(client_metadata_paths)))
-            if self.env.actions.integrated_connection_service
-            else tuple(sorted(set(client_metadata_paths)))
-        )
+        paths = tuple(sorted(set(client_metadata_paths)))
         if not paths:
-            raise ValueError("Action Service hostname needs public MCP/OAuth or client metadata")
+            raise ValueError("Action Service hostname needs client metadata")
         https_route(
             self,
             "httproute",

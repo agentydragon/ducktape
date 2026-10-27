@@ -231,7 +231,6 @@ def environment(*, vm_sandboxes: bool, models: Models, app_origin: str = APP_ORI
         ),
         app=AppProps(origin=app_origin, oidc_issuer=DEX_ISSUER, reach_incluster_authentik=False, runner_zone=None),
         actions=ActionsProps(
-            integrated_connection_service=False,
             operator_oidc=operator_oidc,
             caller_service_account_namespaces=frozenset({NAMESPACE}),
             mcp_servers={},

@@ -29,7 +29,7 @@ another. Agent messaging and the test-tier split have finished; what they left i
 ```mermaid
 flowchart LR
     subgraph ACTION_TRACK[MCP edge extraction]
-        ACTION_MCP_EDGE_SPLIT[Active: retire Actions' integrated Connection ownership]
+        ACTION_MCP_EDGE_SPLIT[Active: remove Actions' integrated MCP serving path]
     end
     subgraph DISPATCH_TRACK[Dispatcher and Gateway merge]
         DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: merge plan awaiting review]
@@ -1784,7 +1784,7 @@ contract is [HTTP/JSON facades](../docs/grpc_services.md#httpjson-facades); what
 flowchart LR
     HISTORY_READS_FACADE[Candidate: History reads as a generated browser API]
     WEB_PUSH_SERVICE[Decision, unscheduled: Web Push as its own sender]
-    ACTION_MCP_EDGE_SPLIT[Active: retire Actions' integrated Connection ownership]
+    ACTION_MCP_EDGE_SPLIT[Active: remove Actions' integrated MCP serving path]
 ```
 
 ### `HISTORY_READS_FACADE` — History reads as a generated browser API
@@ -1795,19 +1795,19 @@ reads and replace the app's mirror models (`app/threads/view/content.py`,
 changed; a browser-facing watch could use `FollowSession` (section 11). Decide on purpose whether the app's Thread
 check on `thread_observations` (404 for a Session no Thread links) is kept or dropped.
 
-### `ACTION_MCP_EDGE_SPLIT` — finish the MCP edge handoff
+### `ACTION_MCP_EDGE_SPLIT` — remove the retired Action Service serving path
 
-**Active (Codex).** The Go port, Python retirement and legacy schema cleanup are complete. Staging's
-handoff configuration is merged (#11729, #11734): one edge replica serves the public MCP/OAuth routes and
-the app's Connection calls, and Actions' integrated ConnectionService is off
-(`integrated_connection_service: false`).
+**Active (Codex).** The standalone edge serves external MCP/OAuth and ConnectionService; Actions
+keeps upstream MCP linkage and CIMD. This source change removes Actions' integrated runtime and
+API registrations while retaining false-only/no-op settings for the old image's generated keys.
 
-Remaining outcome: deletion of Actions' integrated Connection/OAuth runtime and its six source tables.
-Detailed sequence and constraints: [MCP edge extraction](mcp_edge_extraction.md#remaining-work).
-The current token audience is `agentplane-egress`; a dedicated audience is a separate change.
-Actions retains its upstream CIMD endpoint and the app retains upstream OAuth callbacks.
-External-client reauthorization remains unverified; extraction preserves existing issuer URLs
-and copied token state rather than requiring another reauthorization.
+Remaining work: after the new image is observed running, remove the compatibility keys from
+generated manifests, deploy that config, then remove the parser fields in a later image. Preserve
+all database rows and schemas in this change; any later migration needs a separate verified
+ownership and retention plan. Detailed sequence and constraints:
+[MCP edge extraction](mcp_edge_extraction.md#remaining-work). The current token audience is
+`agentplane-egress`; a dedicated audience is a separate change. Actions retains its upstream CIMD
+endpoint and the app retains upstream OAuth callbacks.
 
 ### `WEB_PUSH_SERVICE` — Web Push as its own sender
 
@@ -1986,8 +1986,8 @@ app, checking each: `sandboxes/inventory.py`, `postgres/wakeups.py`, `history_se
 ## 15. Cleanups after the current tracks
 
 Dead code, transitional pieces and test leftovers each current track reports it will leave behind (census of the
-lanes, 2026-10-21). Removals that a track's own plan already lists stay there: the integrated Connection/OAuth runtime
-and its old tables in [MCP edge extraction](mcp_edge_extraction.md#remaining-work). The overview's graph is in
+lanes, 2026-10-21). Removals that a track's own plan already lists stay there: the compatibility
+settings and separately gated schema cleanup in [MCP edge extraction](mcp_edge_extraction.md#remaining-work). The overview's graph is in
 [Current tracks](#current-tracks-and-what-they-leave-behind). Fakes kept to inject faults the real API server cannot
 produce are named at the fake and are not cleanups.
 

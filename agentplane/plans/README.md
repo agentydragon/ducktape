@@ -36,8 +36,8 @@ operator decisions and proportional acceptance from the [low-priority freezer](t
   the transcript-read rule and archive split, discovery, Session creation and Sandbox launch
 - [Generated HTTP facades](grpc_http_facade.md) — what is left: History reads, the app-contract
   question, browser error codes, attribution, and direct browser access as a later option
-- [MCP edge extraction](mcp_edge_extraction.md) — retirement of Actions' integrated Connection/OAuth
-  ownership; staging's edge handoff is merged
+- [MCP edge extraction](mcp_edge_extraction.md) — removal of Actions' integrated serving path and
+  the remaining image-gated settings cleanup; database rows and schemas stay preserved
 - [Kubernetes API aggregation](api_aggregation_exploration.md) — held design exploration of serving
   agent-facing records through an extension apiserver, with RBAC via `SubjectAccessReview` as the
   cheaper route
