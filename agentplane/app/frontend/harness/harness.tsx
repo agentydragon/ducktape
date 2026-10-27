@@ -970,6 +970,20 @@ function withFailedTurn(thread: ThreadView): ThreadView {
     : thread;
 }
 
+function autosuspendCountdown(): void {
+  const sandbox = SANDBOXES.find((candidate) => candidate.name === "ready-sandbox");
+  if (!sandbox) throw new Error("Missing ready Sandbox fixture");
+  sandbox.idle_suspend_at = ago(-12 * 60_000);
+  mapThread = (thread) =>
+    thread.id === IDLE_THREAD
+      ? {
+          ...thread,
+          last_model_activity_at: ago(13 * 60_000 + 25_000),
+          idle_since: ago(13 * 60_000 + 5_000),
+        }
+      : thread;
+}
+
 let mapThread = (thread: ThreadView): ThreadView => thread;
 
 // A 32x32 checkerboard, 95 bytes: a real image, small enough to inline.
@@ -3287,6 +3301,7 @@ const visualHarness = {
   mountOperationPresentation(): void {
     mount(<OperationPresentationVisual />);
   },
+  autosuspendCountdown,
   addProvisioningSandbox,
   addSuspendedSandboxes,
   queueOpenResponse(): void {

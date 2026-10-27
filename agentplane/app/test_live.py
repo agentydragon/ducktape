@@ -111,6 +111,24 @@ async def test_the_index_projects_the_rows_a_listing_would_return(seeded: LiveIn
     assert seeded.sandbox_view("runner-1") == sandbox_view(await inventory.get("runner-1"))
 
 
+async def test_sandbox_index_projects_and_clears_the_controller_idle_deadline(seeded: LiveIndex) -> None:
+    raw = seeded.sandboxes["runner-1"]
+    assert isinstance(raw, dict)
+    status = raw["status"]
+    assert isinstance(status, dict)
+    deadline = NOW + timedelta(minutes=15)
+    status["idleSuspendAt"] = deadline.isoformat()
+
+    view = seeded.sandbox_view("runner-1")
+    assert view is not None
+    assert view.idle_suspend_at == deadline
+
+    del status["idleSuspendAt"]
+    view = seeded.sandbox_view("runner-1")
+    assert view is not None
+    assert view.idle_suspend_at is None
+
+
 async def test_the_index_selects_the_bindings_a_request_would(
     seeded: LiveIndex, egress: EgressAccess, namespace: SandboxNamespace
 ) -> None:

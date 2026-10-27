@@ -192,6 +192,11 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              idleSuspendAt:
+                description: IdleSuspendAt is the controller's next attempt to suspend
+                  an idle Sandbox, when one is scheduled.
+                format: date-time
+                type: string
               incarnation:
                 description: 'Incarnation is the Pod the Sandbox''s runner currently
                   runs in: its own Pod, or its VM''s
