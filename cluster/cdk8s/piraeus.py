@@ -52,6 +52,7 @@ _THIRD_NODE_SELECTOR = {_PIRAEUS_READY_LABEL: "true", "kubernetes.io/hostname": 
 _THIRD_NODE_DATA_DEVICE = "/dev/disk/by-id/nvme-INTEL_SSDPE2MX450G7_BTPF8256009U450RGN"
 _OPTIPLEX_SELECTOR = {_PIRAEUS_READY_LABEL: "true", "kubernetes.io/hostname": "optiplex"}
 _OPTIPLEX_DATA_DEVICE = "/dev/disk/by-partlabel/r-piraeus"
+_WYRM2_SELECTOR = {_PIRAEUS_READY_LABEL: "true", "kubernetes.io/hostname": "wyrm2"}
 _CONTROLLER_POD_SELECTOR = {"app.kubernetes.io/component": "linstor-controller"}
 _REACTOR_CONFIG_PATCH = get_required_path(own_repo_rlocation("cluster/cdk8s/piraeus-reactor-patch.yaml")).read_text()
 _DRBD_ALLOY_CONFIG = get_required_path(own_repo_rlocation("cluster/cdk8s/piraeus-drbd-metrics.alloy")).read_text()
@@ -68,7 +69,7 @@ kind: PodMonitor
 metadata:
   name: linstor-satellite
 """
-_TALOS_SATELLITE_PATCHES = [
+_SATELLITE_PATCHES = [
     {"target": {"version": "v1", "kind": "ConfigMap", "name": "reactor-config"}, "patch": _REACTOR_CONFIG_PATCH}
 ]
 _TALOS_SATELLITE_POD_TEMPLATE = {
@@ -93,6 +94,18 @@ _TALOS_SATELLITE_POD_TEMPLATE = {
             {"name": "etc-lvm-backup", "hostPath": {"path": "/var/etc/lvm/backup", "type": "DirectoryOrCreate"}},
             {"name": "etc-lvm-archive", "hostPath": {"path": "/var/etc/lvm/archive", "type": "DirectoryOrCreate"}},
         ],
+    }
+}
+
+# NixOS loads DRBD 9 itself (nix/nixos/modules/piraeus-host.nix), so only the
+# module loader goes; systemd and the host's LVM paths are ordinary Linux.
+_NIXOS_SATELLITE_POD_TEMPLATE = {
+    "spec": {
+        # DRBD uses the host network; NixOS workers also register their Nebula address.
+        "hostNetwork": True,
+        "dnsPolicy": "ClusterFirstWithHostNet",
+        "initContainers": [{"name": "drbd-module-loader", "$patch": "delete"}],
+        "volumes": [{"name": "lib-modules", "$patch": "delete"}, {"name": "usr-src", "$patch": "delete"}],
     }
 }
 
@@ -388,7 +401,7 @@ def cluster_chart(app: App) -> Chart:
                 {
                     "name": "ssd-first-node",
                     "nodeSelector": _FIRST_NODE_SELECTOR,
-                    "patches": _TALOS_SATELLITE_PATCHES,
+                    "patches": _SATELLITE_PATCHES,
                     "podTemplate": _TALOS_SATELLITE_POD_TEMPLATE,
                     # This selector becomes eligible only after the target rebuild config
                     # adds piraeus-ready=true following data evacuation and disk wipe.
@@ -411,7 +424,7 @@ def cluster_chart(app: App) -> Chart:
                     # Keep both the hostname and readiness label in the native selector.
                     # The source device is initialized only after a later cutover adds the label.
                     "nodeSelector": _NEXT_NODE_SELECTOR,
-                    "patches": _TALOS_SATELLITE_PATCHES,
+                    "patches": _SATELLITE_PATCHES,
                     "podTemplate": _TALOS_SATELLITE_POD_TEMPLATE,
                     "deletionPolicy": "Retain",
                     "storagePools": [
@@ -431,7 +444,7 @@ def cluster_chart(app: App) -> Chart:
                     # Keep both the hostname and readiness label in the native selector.
                     # The source device is initialized only after a later cutover adds the label.
                     "nodeSelector": _THIRD_NODE_SELECTOR,
-                    "patches": _TALOS_SATELLITE_PATCHES,
+                    "patches": _SATELLITE_PATCHES,
                     "podTemplate": _TALOS_SATELLITE_POD_TEMPLATE,
                     "deletionPolicy": "Retain",
                     "storagePools": [
@@ -451,7 +464,7 @@ def cluster_chart(app: App) -> Chart:
                     # The raw partition is Talos-owned. This selector remains inert
                     # until its parent disk and 112GiB size are verified after reimage.
                     "nodeSelector": _OPTIPLEX_SELECTOR,
-                    "patches": _TALOS_SATELLITE_PATCHES,
+                    "patches": _SATELLITE_PATCHES,
                     "podTemplate": _TALOS_SATELLITE_POD_TEMPLATE,
                     "deletionPolicy": "Retain",
                     "storagePools": [
@@ -473,7 +486,7 @@ def cluster_chart(app: App) -> Chart:
                     "nodeSelector": _HDD_FIRST_NODE_SELECTOR,
                     # Keep the longer external-command wait scoped to this HDD satellite.
                     "properties": [{"name": "ExtCmd/WaitTimeout", "value": "180000"}],
-                    "patches": _TALOS_SATELLITE_PATCHES,
+                    "patches": _SATELLITE_PATCHES,
                     "podTemplate": _TALOS_SATELLITE_POD_TEMPLATE,
                     "deletionPolicy": "Retain",
                     "storagePools": [
@@ -494,7 +507,7 @@ def cluster_chart(app: App) -> Chart:
                     # layout is accepted; piraeus-ready is enabled only afterward.
                     "nodeSelector": _HDD_NEXT_NODE_SELECTOR,
                     "properties": [{"name": "ExtCmd/WaitTimeout", "value": "180000"}],
-                    "patches": _TALOS_SATELLITE_PATCHES,
+                    "patches": _SATELLITE_PATCHES,
                     "podTemplate": _TALOS_SATELLITE_POD_TEMPLATE,
                     "deletionPolicy": "Retain",
                     "storagePools": [
@@ -515,7 +528,7 @@ def cluster_chart(app: App) -> Chart:
                     # layout is accepted; piraeus-ready is enabled only afterward.
                     "nodeSelector": _HDD_LAST_NODE_SELECTOR,
                     "properties": [{"name": "ExtCmd/WaitTimeout", "value": "180000"}],
-                    "patches": _TALOS_SATELLITE_PATCHES,
+                    "patches": _SATELLITE_PATCHES,
                     "podTemplate": _TALOS_SATELLITE_POD_TEMPLATE,
                     "deletionPolicy": "Retain",
                     "storagePools": [
@@ -529,6 +542,17 @@ def cluster_chart(app: App) -> Chart:
                             "source": {"hostDevices": [_HDD_LAST_NODE_DATA_DEVICE]},
                         }
                     ],
+                },
+                {
+                    "name": "wyrm2",
+                    # Diskless enrollment on NixOS ahead of wyrm2's own pools. The fence keeps
+                    # LINSTOR from placing tiebreakers or replicas of OVH resources here, across
+                    # the home/OVH link; lift it only with the placement policy for home pools.
+                    "nodeSelector": _WYRM2_SELECTOR,
+                    "properties": [{"name": "AutoplaceTarget", "value": "false"}],
+                    "patches": _SATELLITE_PATCHES,
+                    "podTemplate": _NIXOS_SATELLITE_POD_TEMPLATE,
+                    "deletionPolicy": "Retain",
                 },
             ],
             "storageClasses": [
