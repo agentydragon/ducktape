@@ -297,9 +297,9 @@ Asked one at a time; each open one has a default the plan assumes.
    learns templates and sets elsewhere.
 4. **No inbox for the caller in v1. Accepted by the operator, 2026-10-27 00:02 UTC:** replies are turn outcomes the
    caller reads. Rejected for v1: promoting `EXTERNAL_AGENT_INBOXES` so a worker can reach a caller unprompted.
-5. **`claude-ai` as the orchestrating account.** Default: yes, under the pending
-   [`CLAUDE_AI_SA`](task_dag.md#claude_ai_sa--review-the-external-callers-actual-authority) review. Alternative: a
-   second Connection bound to an account that holds only orchestration grants.
+5. **`claude-ai` as the orchestrating account. Accepted by the operator, 2026-10-27 00:03 UTC,** under the pending
+   [`CLAUDE_AI_SA`](task_dag.md#claude_ai_sa--review-the-external-callers-actual-authority) review. Rejected: a second
+   Connection bound to an account that holds only orchestration grants.
 6. **The executor inside the Action Service.** Default: yes. Alternative: its own service, which would then need
    the caller passed to it by Actions, a trust channel that does not exist.
 
