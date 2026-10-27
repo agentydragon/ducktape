@@ -25,7 +25,7 @@ from agentplane.runner_gateway.settings import Settings
 from agentplane.subjects import ServiceAccountRef
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 from util.net import listen_tcp
-from util.settings_contract import env_name, settings_file
+from util.settings_contract import env_name, validate_settings_fragment
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep @pypi//protobuf
@@ -217,26 +217,24 @@ async def run_gateway(
 
     binary = get_required_path(own_repo_rlocation(_GATEWAY_BINARY))
     log_path = undeclared_outputs_dir() / f"go-runner-gateway-{uuid4().hex}.log"
-    # The settings file as the cdk8s renderer writes it: its keys checked against the Python model.
+    # The settings file as the cdk8s renderer writes it: present keys and values checked against the model.
     # The database URL stays out of it, as in a deployment, where it is a Secret.
     with listen_tcp() as grpc_listener, listen_tcp() as http_listener:
-        settings = settings_file(
-            Settings,
-            {
-                "sandbox_namespace": namespace,
-                "runner_token_file": str(runner_proxy_token_file),
-                "kubeconfig": str(kubeconfig),
-                "listen_address": f"fd:{grpc_listener.socket.fileno()}",
-                "http_listen_address": f"fd:{http_listener.socket.fileno()}",
-                "proxy_port": grpc_listener.port,
-                "runner_control_target_template": f"{grpc_listener.host}:{grpc_listener.port}",
-                "dispatcher_audience": dispatcher_audience,
-                "gateway_audience": gateway_audience,
-                "runner_audience": runner_audience,
-                "dispatcher_callers": [f"{account.namespace}/{account.name}" for account in dispatcher_callers],
-                "gateway_callers": [f"{account.namespace}/{account.name}" for account in gateway_callers],
-            },
-        )
+        settings = {
+            "sandbox_namespace": namespace,
+            "runner_token_file": str(runner_proxy_token_file),
+            "kubeconfig": str(kubeconfig),
+            "listen_address": f"fd:{grpc_listener.socket.fileno()}",
+            "http_listen_address": f"fd:{http_listener.socket.fileno()}",
+            "proxy_port": grpc_listener.port,
+            "runner_control_target_template": f"{grpc_listener.host}:{grpc_listener.port}",
+            "dispatcher_audience": dispatcher_audience,
+            "gateway_audience": gateway_audience,
+            "runner_audience": runner_audience,
+            "dispatcher_callers": [f"{account.namespace}/{account.name}" for account in dispatcher_callers],
+            "gateway_callers": [f"{account.namespace}/{account.name}" for account in gateway_callers],
+        }
+        validate_settings_fragment(Settings, settings)
         with tempfile.TemporaryDirectory() as settings_dir, log_path.open("wb") as log_file:
             settings_path = Path(settings_dir) / "settings.yaml"
             settings_path.write_text(yaml.safe_dump(settings))

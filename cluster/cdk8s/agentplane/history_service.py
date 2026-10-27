@@ -38,7 +38,7 @@ from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, Ne
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
-from util.settings_contract import env_name, settings_file
+from util.settings_contract import env_name, validate_settings_fragment
 
 NAME = "history-service"
 TOKEN_AUDIENCE = "agentplane-history-service"
@@ -115,31 +115,26 @@ class HistoryService(Construct):
                 self, "history-service-account", NAME, namespace_name=env.namespace
             )
         )
+        content = {
+            "reader_accounts": [
+                reader.model_dump() for reader in sorted(callers, key=lambda reader: (reader.namespace, reader.name))
+            ],
+            "token_audience": TOKEN_AUDIENCE,
+            "listen_address": f"0.0.0.0:{endpoint.pod_port}",
+            "ingress": {
+                "token_audience": RUNNER_INGRESS_AUDIENCE,
+                # Sandboxes run in the environment's own namespace.
+                "writer_namespaces": [env.namespace],
+                "listen_address": f"0.0.0.0:{ingress.pod_port}",
+                "settle_deltas": env.settle_deltas,
+            },
+        }
+        validate_settings_fragment(Settings, content)
         config = SettingsFile(
             self,
             "config",
             metadata=ApiObjectMetadata(name=f"{NAME}-config", namespace=env.namespace),
-            content=yaml_config(
-                settings_file(
-                    Settings,
-                    {
-                        "reader_accounts": [
-                            reader.model_dump()
-                            for reader in sorted(callers, key=lambda reader: (reader.namespace, reader.name))
-                        ],
-                        "token_audience": TOKEN_AUDIENCE,
-                        "listen_address": f"0.0.0.0:{endpoint.pod_port}",
-                        "ingress": {
-                            "token_audience": RUNNER_INGRESS_AUDIENCE,
-                            # Sandboxes run in the environment's own namespace.
-                            "writer_namespaces": [env.namespace],
-                            "listen_address": f"0.0.0.0:{ingress.pod_port}",
-                            "settle_deltas": env.settle_deltas,
-                        },
-                    },
-                    supplied=[("database_url",)],
-                )
-            ),
+            content=yaml_config(content),
             path="/etc/agentplane-history-service/config.yaml",
         )
         # The History Service writes the `sandbox_service` database, so it connects as that

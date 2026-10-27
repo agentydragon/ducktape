@@ -57,7 +57,7 @@ from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
-from util.settings_contract import checked_value, env_name, settings_file
+from util.settings_contract import checked_value, env_name, validate_settings_fragment
 
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway:unset"
 _MIGRATION_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway-queue-migrate:unset"
@@ -193,20 +193,17 @@ class RunnerGateway(Construct):
         gateway_accounts = sorted(map(_account, proxy_callers))
         wake_accounts = sorted(map(_account, wake_callers))
         # Lists are file-only settings.
+        content = {
+            "dispatcher_callers": dispatcher_accounts,
+            "gateway_callers": gateway_accounts,
+            **({"wake_callers": wake_accounts} if wake_accounts else {}),
+        }
+        validate_settings_fragment(Settings, content)
         settings = SettingsFile(
             self,
             "settings",
             metadata=ApiObjectMetadata(name=f"{runner_gateway.NAME}-settings", namespace=namespace),
-            content=yaml_config(
-                settings_file(
-                    Settings,
-                    {
-                        "dispatcher_callers": dispatcher_accounts,
-                        "gateway_callers": gateway_accounts,
-                        **({"wake_callers": wake_accounts} if wake_accounts else {}),
-                    },
-                )
-            ),
+            content=yaml_config(content),
             path="/etc/agentplane-runner-gateway/settings/settings.yaml",
         )
         workload = add_service_workload(

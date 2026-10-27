@@ -66,10 +66,13 @@ how to regenerate: `cluster/AGENTS.md` § Generated manifests.
   migrates data (<../AGENTS.md> § Migrating stateful Flux Kustomizations).
 - **The service's `Settings` is its deployment contract.** Render flags, env vars and
   settings files through the binary's pydantic-settings model (`util/settings_contract.py`:
-  `cli_args`, `env_name`, `settings_file`, `checked_value`) so a renamed field fails at
-  synth. Callers validate data with `settings_file(...)`, then render it with
-  `config_format.yaml_config(...)` before passing the string to `SettingsFile`; that
-  construct only creates the ConfigMap and wires its mount and path env var. The code
+  `cli_args`, `env_name`, `validate_settings_fragment`, `checked_value`) so a renamed
+  field fails at synth. Callers check present fragment keys and values with
+  `validate_settings_fragment(...)`, then render the original mapping with
+  `config_format.yaml_config(...)` before passing the string to `SettingsFile`. Fragment
+  checks do not establish completeness or cross-field consistency; runtime settings
+  validation checks the effective file-plus-environment configuration. `SettingsFile`
+  only creates the ConfigMap and wires its mount and path env var. The code
   package owns `Settings` and its `config_file_env`; `cluster/cdk8s` owns where it runs.
   Nothing under `x/` or `haku/` imports `cluster/`. A project's `deploy/`
   may hold a props-driven construct (tested with synthetic props); the cluster's

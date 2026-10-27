@@ -32,7 +32,7 @@ from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME
 from cluster.cdk8s.settings_file import PodWiring, SettingsFile
-from util.settings_contract import settings_file
+from util.settings_contract import validate_settings_fragment
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _EGRESS_SIDECAR_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress-sidecar"
@@ -230,35 +230,29 @@ def add_sidecar_settings(
 ) -> SettingsFile:
     """The ConfigMap `name` holding the settings of the egress sidecar of one Pod template, which
     `pod_spec` mounts. Every Pod of a template gets the same file; nothing in it is per Pod."""
+    content = {
+        "proxy_host": egress.proxy(env.namespace).fqdn,
+        "proxy_port": egress.PROXY_PORT,
+        "readiness_listen_address": sidecar_config.READINESS_LISTEN_ADDRESS,
+        **({"listen_address": listen_address} if listen_address is not None else {}),
+        "token_file": f"{_EGRESS_TOKEN_DIR}/token",
+        "audience_token_files": {audience: audience_token_file(audience) for audience in _SUBSTITUTABLE_AUDIENCE_FILES},
+        **(
+            {
+                "platform_routes": {
+                    route: spec.model_dump(mode="json", exclude_none=True) for route, spec in platform_routes.items()
+                }
+            }
+            if platform_routes
+            else {}
+        ),
+    }
+    validate_settings_fragment(sidecar_config.Settings, content)
     return SettingsFile(
         scope,
         f"{name}-settings",
         metadata=ApiObjectMetadata(name=name, namespace=env.namespace),
-        content=yaml_config(
-            settings_file(
-                sidecar_config.Settings,
-                {
-                    "proxy_host": egress.proxy(env.namespace).fqdn,
-                    "proxy_port": egress.PROXY_PORT,
-                    "readiness_listen_address": sidecar_config.READINESS_LISTEN_ADDRESS,
-                    **({"listen_address": listen_address} if listen_address is not None else {}),
-                    "token_file": f"{_EGRESS_TOKEN_DIR}/token",
-                    "audience_token_files": {
-                        audience: audience_token_file(audience) for audience in _SUBSTITUTABLE_AUDIENCE_FILES
-                    },
-                    **(
-                        {
-                            "platform_routes": {
-                                route: spec.model_dump(mode="json", exclude_none=True)
-                                for route, spec in platform_routes.items()
-                            }
-                        }
-                        if platform_routes
-                        else {}
-                    ),
-                },
-            )
-        ),
+        content=yaml_config(content),
         path=_SIDECAR_SETTINGS_PATH,
     )
 

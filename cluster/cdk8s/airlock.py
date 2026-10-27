@@ -36,7 +36,7 @@ from cluster.cdk8s.providers.external_secrets.external_secret import (
 )
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
-from util.settings_contract import settings_file
+from util.settings_contract import validate_settings_fragment
 
 NAME = "airlock"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/airlock"
@@ -138,17 +138,16 @@ OAUTH_CONFIG = OAuthConfig(
         ),
     ],
 )
-_CONFIG_DATA = settings_file(
-    Settings,
-    {
-        "public_base_url": "https://airlock.allegedly.works",
-        "oidc_issuer": "https://auth.allegedly.works/application/o/airlock-server/",
-        "port": SERVICE.port.number,
-        "oauth": OAUTH_CONFIG.model_dump(mode="json", exclude_unset=True),
-    },
-    supplied=[("oidc_client_id",), ("oidc_client_secret",), ("oidc_session_secret",)],
+_CONFIG_DATA = {
+    "public_base_url": "https://airlock.allegedly.works",
+    "oidc_issuer": "https://auth.allegedly.works/application/o/airlock-server/",
+    "port": SERVICE.port.number,
+    "oauth": OAUTH_CONFIG.model_dump(mode="json", exclude_unset=True),
+}
+validate_settings_fragment(Settings, _CONFIG_DATA)
+CONFIG_MAP = ConfigMapArgs(
+    name="airlock-config", namespace=NAME, data={_CONFIG_FILE: yaml_config(_CONFIG_DATA)}
 )
-CONFIG_MAP = ConfigMapArgs(name="airlock-config", namespace=NAME, data={_CONFIG_FILE: yaml_config(_CONFIG_DATA)})
 
 
 def _probe(path: str, initial_delay_seconds: int, period_seconds: int) -> k8s.Probe:

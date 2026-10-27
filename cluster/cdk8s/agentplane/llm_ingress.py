@@ -38,7 +38,7 @@ from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
-from util.settings_contract import checked_value, env_name, settings_file
+from util.settings_contract import checked_value, env_name, validate_settings_fragment
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _NAME = "llm-ingress"
@@ -118,22 +118,19 @@ class LlmIngress(Construct):
             )
         )
         # Settings this deployment supplies as YAML rather than flags, so a list is a list.
+        content = {
+            "allowed_service_account_namespaces": [env.namespace],
+            "log_llm_requests": env.llm_ingress.log_llm_requests,
+            "models": [item.model_dump(mode="json") for item in env.llm_ingress.models],
+            "attribution": env.llm_ingress.attribution.model_dump(mode="json"),
+            **({} if catalog_map is None else {"codex_model_catalog_file": str(_CODEX_CATALOG_PATH)}),
+        }
+        validate_settings_fragment(Settings, content)
         settings = SettingsFile(
             self,
             "settings",
             metadata=ApiObjectMetadata(name=f"{_NAME}-settings", namespace=env.namespace),
-            content=yaml_config(
-                settings_file(
-                    Settings,
-                    {
-                        "allowed_service_account_namespaces": [env.namespace],
-                        "log_llm_requests": env.llm_ingress.log_llm_requests,
-                        "models": [item.model_dump(mode="json") for item in env.llm_ingress.models],
-                        "attribution": env.llm_ingress.attribution.model_dump(mode="json"),
-                        **({} if catalog_map is None else {"codex_model_catalog_file": str(_CODEX_CATALOG_PATH)}),
-                    },
-                )
-            ),
+            content=yaml_config(content),
             path="/etc/agentplane-llm-ingress/settings.yaml",
         )
         deployment = self._add_deployment(service_account, settings, catalog_map)

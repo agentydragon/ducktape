@@ -59,7 +59,7 @@ from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
-from util.settings_contract import env_name, settings_file
+from util.settings_contract import env_name, validate_settings_fragment
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 NAME = "actions"
@@ -318,15 +318,12 @@ class Actions(Construct):
             # CLEANUP(added 2026-10-27): Retain the legacy maximum until the new image rolls out and this key is removed.
             "max_wait_seconds": 180,
         }
-        # These leaves come from the container's environment variables, not the settings file.
-        supplied: list[tuple[str, ...]] = [("database_url",)]
         if props.web_push is not None:
             content["web_push"] = {
                 "subject": props.web_push.subject,
                 "public_base_url": props.web_push.public_base_url,
                 "allowed_push_hosts": list(props.web_push.allowed_push_hosts),
             }
-            supplied.append(("web_push", "private_key_pem"))
         if props.mcp_client_metadata is not None:
             content["mcp_client_metadata"] = props.mcp_client_metadata.model_dump(mode="json", exclude_unset=True)
         content["mcp_servers"] = {
@@ -348,11 +345,12 @@ class Actions(Construct):
         content["action_groups"] = {
             key: group.model_dump(mode="json", exclude_unset=True) for key, group in groups.items()
         }
+        validate_settings_fragment(Settings, content)
         settings = SettingsFile(
             self,
             "settings",
             metadata=ApiObjectMetadata(name="actions-settings", namespace=env.namespace),
-            content=yaml_config(settings_file(Settings, content, supplied=supplied)),
+            content=yaml_config(content),
             path="/etc/agentplane-actions/settings.yaml",
         )
         workload = self._add_workload(settings)

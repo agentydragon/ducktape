@@ -65,7 +65,7 @@ from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSec
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from cluster.cdk8s.secret_ref import SecretKey, SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
-from util.settings_contract import checked_value, env_name, settings_file
+from util.settings_contract import checked_value, env_name, validate_settings_fragment
 
 NAME = "aiquota"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/aiquota"
@@ -81,15 +81,13 @@ _CONFIG_HEADER = textwrap.dedent(
 
     """
 )
-_CONFIG = settings_file(
-    Config,
-    {
-        "cli_proxy_api": {"url": f"{cli_proxy_api_app.SERVICE.url}/v0/management"},
-        "claude": {"enabled": True},
-        "codex": {"enabled": True},
-        "zai": {"enabled": False},
-    },
-)
+_CONFIG = {
+    "cli_proxy_api": {"url": f"{cli_proxy_api_app.SERVICE.url}/v0/management"},
+    "claude": {"enabled": True},
+    "codex": {"enabled": True},
+    "zai": {"enabled": False},
+}
+validate_settings_fragment(Config, _CONFIG)
 CONFIG_CONFIG_MAP = ConfigMapArgs(
     name="aiquota-api-config", namespace=NAMESPACE, data={_CONFIG_PATH.name: _CONFIG_HEADER + tomli_w.dumps(_CONFIG)}
 )

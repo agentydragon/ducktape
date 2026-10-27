@@ -53,7 +53,7 @@ from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
-from util.settings_contract import checked_value, cli_args, env_name, settings_file
+from util.settings_contract import checked_value, cli_args, env_name, validate_settings_fragment
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 NAME = "app"
@@ -113,18 +113,15 @@ class App(Construct):
         self.oidc = oidc_secret(env.namespace)
 
         self._add_agent_service_account()
+        content = env.app_config.model_dump(mode="json", exclude_unset=True, exclude={"connection_service_url"})
+        validate_settings_fragment(Settings, content)
         config = SettingsFile(
             self,
             "config",
             metadata=ApiObjectMetadata(name="app-config", namespace=env.namespace),
             # The endpoint is delivered as an env var: an older app image ignores unknown env vars
             # while this manifest reaches the cluster before image automation publishes the new image.
-            content=yaml_config(
-                settings_file(
-                    Settings,
-                    env.app_config.model_dump(mode="json", exclude_unset=True, exclude={"connection_service_url"}),
-                )
-            ),
+            content=yaml_config(content),
             path="/etc/agentplane/config.yaml",
         )
         workload = self._add_workload(config)

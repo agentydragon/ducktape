@@ -57,7 +57,7 @@ from homeassistant.provisioner.endpoint import HomeAssistantEndpoint
 from homeassistant.provisioner.onboarding import settings as onboarding
 from homeassistant.provisioner.tokens import settings as tokens
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
-from util.settings_contract import env_name, settings_file
+from util.settings_contract import env_name, validate_settings_fragment
 from util.yaml_file_settings import YamlFileSettings
 
 _OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/home-assistant/app"
@@ -147,27 +147,12 @@ def _quantities(**values: str) -> dict[str, k8s.Quantity]:
     return {key: k8s.Quantity.from_string(value) for key, value in values.items()}
 
 
-def _settings_yaml(
-    settings: type[YamlFileSettings], content: dict[str, object], *, supplied: tuple[tuple[str, ...], ...] = ()
-) -> str:
-    """A provisioner's settings file, each key checked against `settings`; `supplied` names the
-    fields an env var completes."""
-    return yaml_config(settings_file(settings, content, supplied=supplied))
-
-
-def _settings_config_map(
-    scope: Construct,
-    name: str,
-    settings: type[YamlFileSettings],
-    content: dict[str, object],
-    *,
-    supplied: tuple[tuple[str, ...], ...] = (),
-) -> k8s.KubeConfigMap:
+def _settings_config_map(scope: Construct, name: str, content: dict[str, object]) -> k8s.KubeConfigMap:
     return k8s.KubeConfigMap(
         scope,
         name,
         metadata=k8s.ObjectMeta(name=name, namespace=_NAMESPACE),
-        data={"settings.yaml": _settings_yaml(settings, content, supplied=supplied)},
+        data={"settings.yaml": yaml_config(content)},
     )
 
 
@@ -192,15 +177,12 @@ def _backend_probe(*, initial_delay_seconds: int, period_seconds: int) -> k8s.Pr
 
 
 def _deployment(scope: Construct, configuration: ConfigMap, caddy_config: ConfigMap) -> None:
-    installer_settings = _settings_config_map(
-        scope,
-        "component-installer",
-        components.Settings,
-        {
-            "config_dir": _CONFIG_DIR,
-            "components": [component.model_dump(mode="json", exclude_defaults=True) for component in _COMPONENTS],
-        },
-    )
+    installer_content = {
+        "config_dir": _CONFIG_DIR,
+        "components": [component.model_dump(mode="json", exclude_defaults=True) for component in _COMPONENTS],
+    }
+    validate_settings_fragment(components.Settings, installer_content)
+    installer_settings = _settings_config_map(scope, "component-installer", installer_content)
     k8s.KubeDeployment(
         scope,
         "deployment",
@@ -314,32 +296,26 @@ def _deployment(scope: Construct, configuration: ConfigMap, caddy_config: Config
 
 # Rendered by the kustomization.yaml's configMapGenerator: the content hash in its name makes a
 # settings change a new template for the onboarding Job, which Flux then replaces and so re-runs.
+_ONBOARDING_SETTINGS_CONTENT = {
+    "endpoint": _ENDPOINT.model_dump(),
+    "owner_username": _OWNER_USERNAME,
+    "owner_display_name": "Home Assistant Local Administrator",
+    "http_config": onboarding.HttpConfig(
+        server_host=["127.0.0.1"],
+        server_port=_BACKEND.number,
+        cors_allowed_origins=["https://cast.home-assistant.io"],
+        use_x_forwarded_for=True,
+        trusted_proxies=["127.0.0.1/32"],
+        login_attempts_threshold=-1,
+        ip_ban_enabled=True,
+        ssl_profile="modern",
+        use_x_frame_options=True,
+    ).model_dump(),
+    "core_config": onboarding.CoreConfig(time_zone="America/Los_Angeles").model_dump(exclude_none=True),
+}
+validate_settings_fragment(onboarding.Settings, _ONBOARDING_SETTINGS_CONTENT)
 _ONBOARDING_SETTINGS = ConfigMapArgs(
-    name=_ONBOARDING,
-    namespace=_NAMESPACE,
-    data={
-        "settings.yaml": _settings_yaml(
-            onboarding.Settings,
-            {
-                "endpoint": _ENDPOINT.model_dump(),
-                "owner_username": _OWNER_USERNAME,
-                "owner_display_name": "Home Assistant Local Administrator",
-                "http_config": onboarding.HttpConfig(
-                    server_host=["127.0.0.1"],
-                    server_port=_BACKEND.number,
-                    cors_allowed_origins=["https://cast.home-assistant.io"],
-                    use_x_forwarded_for=True,
-                    trusted_proxies=["127.0.0.1/32"],
-                    login_attempts_threshold=-1,
-                    ip_ban_enabled=True,
-                    ssl_profile="modern",
-                    use_x_frame_options=True,
-                ).model_dump(),
-                "core_config": onboarding.CoreConfig(time_zone="America/Los_Angeles").model_dump(exclude_none=True),
-            },
-            supplied=(("owner_password",),),
-        )
-    },
+    name=_ONBOARDING, namespace=_NAMESPACE, data={"settings.yaml": yaml_config(_ONBOARDING_SETTINGS_CONTENT)}
 )
 
 
@@ -420,17 +396,13 @@ def _token_provisioner(scope: Construct) -> None:
             k8s.PolicyRule(api_groups=[""], resources=["secrets"], verbs=["create"]),
         ],
     )
-    settings = _settings_config_map(
-        scope,
-        _TOKEN_PROVISIONER,
-        tokens.Settings,
-        {
-            "endpoint": _ENDPOINT.model_dump(),
-            "owner_username": _OWNER_USERNAME,
-            "tokens": [token.model_dump(exclude_defaults=True) for token in _TOKENS],
-        },
-        supplied=(("owner_password",),),
-    )
+    content = {
+        "endpoint": _ENDPOINT.model_dump(),
+        "owner_username": _OWNER_USERNAME,
+        "tokens": [token.model_dump(exclude_defaults=True) for token in _TOKENS],
+    }
+    validate_settings_fragment(tokens.Settings, content)
+    settings = _settings_config_map(scope, _TOKEN_PROVISIONER, content)
     k8s.KubeRoleBinding(
         scope,
         "token-provisioner-binding",

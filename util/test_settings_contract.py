@@ -5,7 +5,7 @@ import pytest_bazel
 from pydantic import BaseModel, Field, SecretStr, ValidationError, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from util.settings_contract import checked_value, cli_args, env_name, settings_file
+from util.settings_contract import checked_value, cli_args, env_name, validate_settings_fragment
 
 
 class _Push(BaseModel):
@@ -105,45 +105,61 @@ def test_flags_render_kebab_case_in_call_order_after_type_checks() -> None:
         cli_args(_Settings, listen_prot=9090)
 
 
-def test_settings_file_checks_each_key_against_its_field() -> None:
+def test_settings_fragment_checks_each_present_key_and_value() -> None:
     content = {"allowed_namespaces": ["a", "b"], "servers": {"github": {"client_id": "id"}}}
-    assert settings_file(_Settings, content) is content
+    validate_settings_fragment(_Settings, content)
+    coercible = {"listen_port": "9090"}
+    validate_settings_fragment(_Settings, coercible)
+    assert coercible["listen_port"] == "9090"
     with pytest.raises(ValidationError):
-        settings_file(_Settings, {"listen_port": "not-a-port"})
+        validate_settings_fragment(_Settings, {"listen_port": "not-a-port"})
     with pytest.raises(KeyError):
-        settings_file(_Settings, {"allowed_namespace": ["a"]})
+        validate_settings_fragment(_Settings, {"allowed_namespace": ["a"]})
     with pytest.raises(KeyError):
-        settings_file(_Settings, {"servers": {"github": {"client": "id"}}})
+        validate_settings_fragment(_Settings, {"servers": {"github": {"client": "id"}}})
 
 
-def test_a_nested_model_another_source_completes_is_checked_only_for_what_is_present() -> None:
-    settings_file(_Settings, {"push": {"subject": "mailto:push@contract.test"}})
+def test_incomplete_nested_values_are_checked_only_for_what_is_present() -> None:
+    fragment = {"push": {"subject": "mailto:push@contract.test"}}
+    validate_settings_fragment(_Settings, fragment)
     with pytest.raises(ValidationError):
-        settings_file(_Settings, {"push": {"subject": 1}})
+        validate_settings_fragment(_Settings, {"push": {"subject": 1}})
+    with pytest.raises(ValidationError, match="private_key_pem"):
+        _Settings.model_validate(fragment)
     with pytest.raises(ValidationError, match="private_key_pem"):
         checked_value(_Settings, "push", {"subject": "mailto:push@contract.test"})
 
 
 def test_a_discriminated_union_member_is_checked_by_its_tag() -> None:
-    settings_file(_Catalog, {"backends": {"tana": {"url": "http://tana.test", "auth": {"kind": "bearer"}}}})
+    validate_settings_fragment(
+        _Catalog, {"backends": {"tana": {"url": "http://tana.test", "auth": {"kind": "bearer"}}}}
+    )
     with pytest.raises(KeyError, match="tokn"):
-        settings_file(_Catalog, {"backends": {"tana": {"url": "u", "auth": {"kind": "bearer", "tokn": "t"}}}})
+        validate_settings_fragment(
+            _Catalog, {"backends": {"tana": {"url": "u", "auth": {"kind": "bearer", "tokn": "t"}}}}
+        )
     with pytest.raises(KeyError, match="token"):
-        settings_file(_Catalog, {"backends": {"tana": {"url": "u", "auth": {"kind": "anonymous", "token": "t"}}}})
+        validate_settings_fragment(
+            _Catalog, {"backends": {"tana": {"url": "u", "auth": {"kind": "anonymous", "token": "t"}}}}
+        )
 
 
 def test_a_discriminated_union_declared_on_the_field_itself_is_checked_by_its_tag() -> None:
-    settings_file(_Gateway, {"auth": {"kind": "bearer"}})
+    validate_settings_fragment(_Gateway, {"auth": {"kind": "bearer"}})
     with pytest.raises(KeyError, match="tokn"):
-        settings_file(_Gateway, {"auth": {"kind": "bearer", "tokn": "t"}})
+        validate_settings_fragment(_Gateway, {"auth": {"kind": "bearer", "tokn": "t"}})
 
 
-def test_supplied_leaves_complete_the_file_so_its_cross_field_rules_run() -> None:
-    content = {"default": "tana", "backends": {"tana": {"url": "u", "auth": {"kind": "bearer"}}}}
-    supplied = [("backends", "tana", "auth", "token")]
-    assert settings_file(_Catalog, content, supplied=supplied) is content
+def test_fragments_skip_required_and_cross_field_validation_but_full_settings_do_not() -> None:
+    fragment = {"backends": {"tana": {"url": "u", "auth": {"kind": "bearer"}}}}
+    validate_settings_fragment(_CatalogSettings, fragment)
+    with pytest.raises(ValidationError, match="token"):
+        _CatalogSettings.model_validate(fragment)
+
+    content = {"default": "grocy", "backends": {"tana": {"url": "u", "auth": {"kind": "bearer", "token": "x" * 32}}}}
+    validate_settings_fragment(_CatalogSettings, content)
     with pytest.raises(ValidationError, match="not a backend"):
-        settings_file(_Catalog, {**content, "default": "grocy"}, supplied=supplied)
+        _CatalogSettings.model_validate(content)
 
 
 if __name__ == "__main__":

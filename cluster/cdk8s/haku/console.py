@@ -63,7 +63,7 @@ from cluster.cdk8s.settings_file import SettingsFile
 from haku.console.config import CONFIG_FILE_ENV
 from haku.console.identity.config import ConsoleConfigFile
 from haku.console.settings import Settings
-from util.settings_contract import env_name, settings_file
+from util.settings_contract import env_name
 
 NAMESPACE = "haku-console"
 NAME = "haku-console"
@@ -111,9 +111,6 @@ class Console(Construct):
     def __init__(self, scope: Construct, id: str) -> None:
         super().__init__(scope, id)
         self._secrets: dict[str, ISecret] = {}
-        # Settings-file leaves the Deployment supplies from Secrets, so validate the whole model
-        # with those paths supplied by the secret environment variables.
-        self._supplied: list[tuple[str, ...]] = []
 
         # Narrow runtime identity: claim/exec RBAC on the haku-sandbox pool
         # (haku/workspaces.py). No Secret, log, exec, or SandboxTemplate access outside that pool.
@@ -122,11 +119,14 @@ class Console(Construct):
         )
         self._add_rbac(service_account)
         env = self._container_env()
+        config_content = ConsoleConfigFile.model_validate(console_config.config()).model_dump(
+            mode="json", exclude_unset=True
+        )
         config = SettingsFile(
             self,
             "config",
             metadata=ApiObjectMetadata(name="config", namespace=NAMESPACE),
-            content=yaml_config(console_config.config()),
+            content=yaml_config(config_content),
             path="/etc/haku-console/config/config.yaml",
         )
         self._add_deployment(service_account, env, config)
@@ -186,7 +186,6 @@ class Console(Construct):
 
     def _from_secret(self, key: SecretKey, *path: str, optional: bool = False) -> tuple[str, EnvValue]:
         """The env var for the settings leaf at `path`, read from `key`."""
-        self._supplied.append(path)
         return env_name(Settings, *path), EnvValue.from_secret_value(
             SecretValue(secret=self._secret(key.secret.name), key=key.key), optional=optional
         )

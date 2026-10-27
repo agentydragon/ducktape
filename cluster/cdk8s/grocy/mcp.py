@@ -34,7 +34,7 @@ from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 from cluster.cdk8s.secret_ref import SecretKey, SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from grocy_mcp.mcp_types import CONFIG_FILE_ENV, ServerSettings
-from util.settings_contract import env_name, settings_file
+from util.settings_contract import env_name, validate_settings_fragment
 
 PINS_DIR = f"{HAND_WRITTEN_ROOT}/grocy/mcp-image-pins"
 _NAME = "grocy-mcp-server"
@@ -88,18 +88,15 @@ def _secret_settings(household: str) -> dict[tuple[str, ...], SecretKey]:
 
 def _config_map(household: str) -> ConfigMapArgs:
     """The settings file, whose content hash in the ConfigMap's name rolls the server on a change."""
-    settings = settings_file(
-        ServerSettings,
-        {
-            "grocy_url": f"https://{grocy.hostname(household)}",
-            "auth": {
-                "oidc_issuer": authentik.oidc_issuer(_application(household)),
-                "public_base_url": f"https://{_hostname(household)}",
-            },
-            "persistence": {"kind": "postgres"},
+    settings = {
+        "grocy_url": f"https://{grocy.hostname(household)}",
+        "auth": {
+            "oidc_issuer": authentik.oidc_issuer(_application(household)),
+            "public_base_url": f"https://{_hostname(household)}",
         },
-        supplied=_secret_settings(household).keys(),
-    )
+        "persistence": {"kind": "postgres"},
+    }
+    validate_settings_fragment(ServerSettings, settings)
     oidc = _oidc(household)
     header = (
         f"# Non-secret config for the {oidc.namespace} MCP server, mounted at {CONFIG_FILE_ENV}.\n"

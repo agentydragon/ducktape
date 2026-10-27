@@ -9,19 +9,13 @@ metadata without loading any settings in Python.
 
 from __future__ import annotations
 
-import copy
 import types
-from collections.abc import Iterable, Sequence
 from typing import Annotated, Any, TypeAliasType, Union, cast, get_args, get_origin
 
 from more_itertools import one
 from pydantic import BaseModel, Field, TypeAdapter
 from pydantic.fields import FieldInfo
 from pydantic_settings import SettingsConfigDict
-
-# Stands in for a leaf another source supplies when the whole file validates as its model.
-# At least 32 characters, so externally supplied signing secrets pass their minimum-length check.
-_SUPPLIED = "supplied-by-another-settings-source"
 
 
 def _resolve(annotation: Any) -> tuple[Any, str | None]:
@@ -126,9 +120,12 @@ def _discriminated(members: list[Any], discriminator: str | None, value: dict[st
 
 
 def _check_present(annotation: Any, value: Any) -> None:
-    """Validate what `value` carries of `annotation`. A nested model's remaining fields may come
-    from another source (a secret's env var completes `launch_routine`), so a mapping is checked key by
-    key against the model's fields rather than as a whole."""
+    """Check present values against their field annotations, recursing through model mappings.
+
+    Model mappings are checked field by field, so a fragment may omit required nested fields.
+    Completeness and cross-field rules remain the responsibility of full settings validation. This
+    does not normalize values.
+    """
     resolved, discriminator = _resolve(annotation)
     resolved = _without_none(resolved)
     members = _members(resolved)
@@ -145,24 +142,13 @@ def _check_present(annotation: Any, value: Any) -> None:
         TypeAdapter(annotation).validate_python(value)
 
 
-def settings_file(
-    model: type[BaseModel], content: dict[str, Any], *, supplied: Iterable[Sequence[str]] = ()
-) -> dict[str, Any]:
-    """`content` as the settings file's data, each key checked against the field it sets.
+def validate_settings_fragment(model: type[BaseModel], fragment: dict[str, Any]) -> None:
+    """Check each present fragment key and value against its model field annotation.
 
-    `supplied` names the paths of leaves another source completes (a Secret's env var); with
-    it the whole file also validates as `model` -- its cross-field rules included -- with a
-    placeholder string standing in for each of those leaves.
+    This checks field names and present values against their annotations without normalizing them.
+    Model mappings are checked field by field, so completeness and cross-field rules remain the
+    responsibility of the settings source that combines file and environment values and validates
+    the effective settings.
     """
-    for name, value in content.items():
+    for name, value in fragment.items():
         _check_present(_field_annotation(model, name), value)
-    supplied = list(supplied)
-    if supplied:
-        completed = copy.deepcopy(content)
-        for path in supplied:
-            node = completed
-            for key in path[:-1]:
-                node = node.setdefault(key, {})
-            node[path[-1]] = _SUPPLIED
-        model.model_validate(completed)
-    return content

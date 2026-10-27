@@ -33,7 +33,7 @@ from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
-from util.settings_contract import env_name, settings_file
+from util.settings_contract import env_name, validate_settings_fragment
 
 NAME = "notifications"
 WORKLOAD_CREDENTIAL = "agentplane-notifications-workload"
@@ -97,43 +97,36 @@ class Notifications(Construct):
         )
         variables = {"AGENTPLANE_NOTIFICATIONS_DATABASE_URL": database_url, **(container_env or {})}
         github = env.notifications_github
-        supplied: list[tuple[str, ...]] = [("database_url",)]
-        if github is not None:
-            supplied.extend([("github", "private_key"), ("github", "webhook_secret")])
+        content = {
+            "namespace": env.namespace,
+            "token_audience": TOKEN_AUDIENCE,
+            "operator_reader_account": "app",
+            "notice_debounce": {"quiet_seconds": 60, "max_wait_seconds": 120},
+            "actions": {
+                "url": f"http://{actions.fqdn}:{actions.port.number}",
+                "token_file": "/var/run/secrets/notifications/actions",
+            },
+            "runner_gateway": {
+                "control_target": gateway_control_target,
+                "token_file": "/var/run/secrets/notifications/gateway",
+            },
+            "history_service": {
+                "target": f"{history.fqdn}:{history.pod_port}",
+                "token_file": "/var/run/secrets/notifications/history",
+            },
+            "session_dispatcher": {
+                "target": f"{dispatcher.fqdn}:{dispatcher.port.number}",
+                "token_file": "/var/run/secrets/notifications/dispatcher",
+            },
+            "github": {"app_id": github.app_id} if github is not None else None,
+        }
+        validate_settings_fragment(Settings, content)
         settings = SettingsFile(
             self,
             "settings",
             metadata=ApiObjectMetadata(name=f"{NAME}-settings", namespace=env.namespace),
             path="/etc/agentplane-notifications/settings.yaml",
-            content=yaml_config(
-                settings_file(
-                    Settings,
-                    {
-                        "namespace": env.namespace,
-                        "token_audience": TOKEN_AUDIENCE,
-                        "operator_reader_account": "app",
-                        "notice_debounce": {"quiet_seconds": 60, "max_wait_seconds": 120},
-                        "actions": {
-                            "url": f"http://{actions.fqdn}:{actions.port.number}",
-                            "token_file": "/var/run/secrets/notifications/actions",
-                        },
-                        "runner_gateway": {
-                            "control_target": gateway_control_target,
-                            "token_file": "/var/run/secrets/notifications/gateway",
-                        },
-                        "history_service": {
-                            "target": f"{history.fqdn}:{history.pod_port}",
-                            "token_file": "/var/run/secrets/notifications/history",
-                        },
-                        "session_dispatcher": {
-                            "target": f"{dispatcher.fqdn}:{dispatcher.port.number}",
-                            "token_file": "/var/run/secrets/notifications/dispatcher",
-                        },
-                        "github": {"app_id": github.app_id} if github is not None else None,
-                    },
-                    supplied=supplied,
-                )
-            ),
+            content=yaml_config(content),
         )
         readiness = grpc_probe(port=endpoint.pod_port, initial_delay_seconds=3, period_seconds=10)
         liveness = grpc_probe(

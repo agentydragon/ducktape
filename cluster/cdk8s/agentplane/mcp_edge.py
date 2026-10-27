@@ -40,7 +40,7 @@ from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
-from util.settings_contract import env_name, settings_file
+from util.settings_contract import env_name, validate_settings_fragment
 
 NAME = "mcp-edge"
 _LABELS = {"app.kubernetes.io/name": NAME}
@@ -77,26 +77,20 @@ class McpEdge(Construct):
         if any(account.namespace not in props.caller_service_account_namespaces for account in props.mintable_accounts):
             raise ValueError("MCP edge mintable accounts must be in its caller namespaces")
 
+        content = {
+            "host": "0.0.0.0",
+            "port": self.endpoint.pod_port,
+            "actions_target": f"{actions.service(env.namespace).fqdn}:{actions.service(env.namespace).port.number}",
+            "operator_oidc": props.operator_oidc.model_dump(mode="json", exclude_unset=True),
+            "caller_service_account_namespaces": sorted(props.caller_service_account_namespaces),
+            "mintable_accounts": sorted(f"{account.namespace}/{account.name}" for account in props.mintable_accounts),
+        }
+        validate_settings_fragment(Settings, content)
         settings = SettingsFile(
             self,
             "settings",
             metadata=ApiObjectMetadata(name=f"{NAME}-settings", namespace=env.namespace),
-            content=yaml_config(
-                settings_file(
-                    Settings,
-                    {
-                        "host": "0.0.0.0",
-                        "port": self.endpoint.pod_port,
-                        "actions_target": f"{actions.service(env.namespace).fqdn}:{actions.service(env.namespace).port.number}",
-                        "operator_oidc": props.operator_oidc.model_dump(mode="json", exclude_unset=True),
-                        "caller_service_account_namespaces": sorted(props.caller_service_account_namespaces),
-                        "mintable_accounts": sorted(
-                            f"{account.namespace}/{account.name}" for account in props.mintable_accounts
-                        ),
-                    },
-                    supplied=[("database_url",)],
-                )
-            ),
+            content=yaml_config(content),
             path="/etc/agentplane-mcp-edge/settings.yaml",
         )
         variables = {env_name(Settings, "database_url"): database_url}
