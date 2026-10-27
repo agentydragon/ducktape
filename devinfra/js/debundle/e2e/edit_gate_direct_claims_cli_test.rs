@@ -72,41 +72,49 @@ fn missing_import_direct_claim_is_rejected_without_writes() {
 }
 
 #[test]
-fn import_specifier_source_claims_cover_each_import_form() {
-    for (source, full_run_succeeds) in [
-        (
-            "import { dep } from \"external-package\";\nconsole.log(dep);\n",
-            true,
-        ),
-        (
-            "import dep from \"external-package\";\nconsole.log(dep);\n",
-            false,
-        ),
-        (
-            "import * as dep from \"external-package\";\nconsole.log(dep);\n",
-            false,
-        ),
-    ] {
-        let modules = &[
+fn import_specifier_claims_are_accepted_only_for_named_imports() {
+    let named = GraphFixture::new(
+        "import { dep } from \"external-package\";\nconsole.log(dep);\n",
+        &[
             (
                 "alpha.yaml",
                 "members: [{selector: {binding: {name: dep, kind: import_specifier}}}]\n",
             ),
             EMPTY,
-        ];
-        let fixture = if full_run_succeeds {
-            GraphFixture::new(source, modules)
-        } else {
-            GraphFixture::rejected(source, modules)
-        };
-        assert!(fixture.graph.exists(), "analysis graph was not emitted");
-        if !full_run_succeeds {
-            fixture.assert_current_pipeline_rejects(&[
-                "no named import specifier found for `dep` in source chunk",
-            ]);
-        }
-        let report = fixture.json(MERGE);
-        assert_eq!(report["gate"], "passed", "{report}");
+        ],
+    );
+    let report = named.json(MERGE);
+    assert_eq!(report["gate"], "passed", "{report}");
+
+    for source in [
+        "import dep from \"external-package\";\nconsole.log(dep);\n",
+        "import * as dep from \"external-package\";\nconsole.log(dep);\n",
+    ] {
+        let stale_graph = GraphFixture::new(source, &[("alpha.yaml", "members: []\n"), EMPTY]);
+        fs::write(
+            stale_graph.modules.join("alpha.yaml"),
+            "members: [{selector: {binding: {name: dep, kind: import_specifier}}}]\n",
+        )
+        .unwrap();
+        stale_graph.assert_rejected_unchanged(MERGE, &["graph compatibility mismatch"]);
+
+        let fixture = GraphFixture::rejected(
+            source,
+            &[
+                (
+                    "alpha.yaml",
+                    "members: [{selector: {binding: {name: dep, kind: import_specifier}}}]\n",
+                ),
+                EMPTY,
+            ],
+        );
+        fixture.assert_current_pipeline_rejects(&[
+            "no named import specifier found for `dep` in source chunk",
+        ]);
+        assert!(
+            !fixture.graph.exists(),
+            "unsupported import form unexpectedly emitted a current graph"
+        );
     }
 }
 
