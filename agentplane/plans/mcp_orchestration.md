@@ -194,6 +194,15 @@ Actions with no resource model. P3 replaces each `argument_schema` rule with bac
 operator's preference for what those types look like: one verb-over-target family the backends share, not one
 bespoke rule each.
 
+Where the check runs (operator, 00:18 UTC: "send message, interrupt, open session might end up looking like rbac
+checked on the runner gateway side"): Session commands are checked in the Runner Gateway, whose Dispatcher already
+authorizes the caller of every command; history reads in History; inbox messages stay in Notifications. In the
+Gateway it is either a typed `PolicySet` rule the Gateway watches, as Notifications watches `session_inbox_access`, or
+Kubernetes RBAC itself: verbs such as `open-session`, `submit-input` and `interrupt` on a `sandboxes/sessions`
+subresource, checked with a `SubjectAccessReview` and granted by a Role naming the worker, bound through a
+`kubernetes_role_binding` rule. RBAC brings Kubernetes' own escalation check on who may bind what, but cannot pin a
+UID, so the Gateway would still compare the Sandbox's UID.
+
 ## Exposure
 
 **One Action group, `orchestration`, holds every operation**, as an executor kind in the Action Service beside the

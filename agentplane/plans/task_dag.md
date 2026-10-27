@@ -1293,7 +1293,8 @@ allowlisted. Do not extend that exception to agents or other services, except th
 until each of its operations has a caller grant. Design destination- and
 operation-scoped grants, delegated caller proof and the effect of revocation on queued work before
 general senders are admitted. Consider RBAC-backed permissions, but choose the authority with the
-multiagent model; the operator prefers verb-over-target rules to shape-matched auto-approval (2026-10-27,
+multiagent model; the operator prefers verb-over-target rules to shape-matched auto-approval and expects Session
+commands to be RBAC-checked in the Runner Gateway (2026-10-27,
 [orchestration](mcp_orchestration.md#shape-matched-approval-is-the-v1-expedient)). Include authorization before wake and any required execution-time recheck. The
 mandatory Sandbox UID fence is part of `DELIVERY_DESTINATION_CONTRACT`, independent of sender policy.
 
