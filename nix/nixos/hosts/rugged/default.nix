@@ -104,22 +104,24 @@ in
   # cluster/docs/inference/rugged_npu_driver.md
   hardware.cpu.intel.npu.enable = true;
 
-  # Separate btrfs subvolumes for containerd and local-path-provisioner storage.
-  # Create them before first boot with:
+  # Separate btrfs subvolume for containerd storage. Create it before first boot with:
   #   sudo mount -t btrfs /dev/mapper/cryptroot /mnt/btrfs-root
   #   sudo btrfs subvolume create /mnt/btrfs-root/@containerd
-  #   sudo btrfs subvolume create /mnt/btrfs-root/@local-path-provisioner
   #   sudo umount /mnt/btrfs-root
   fileSystems."/var/lib/containerd" = {
     device = "/dev/mapper/cryptroot";
     fsType = "btrfs";
     options = [ "subvol=@containerd" ];
   };
-  fileSystems."/var/local-path-provisioner" = {
-    device = "/dev/mapper/cryptroot";
-    fsType = "btrfs";
-    options = [ "subvol=@local-path-provisioner" ];
-  };
+
+  # Piraeus `ssd` pool: its own LUKS partition behind the shrunk root partition,
+  # unlocked after root is mounted by a keyfile on the encrypted root (never in
+  # the initrd, which sits unencrypted on the ESP). LINSTOR initializes the opened
+  # device as its LVM PV. `ducktape.piraeusHost` stays off: DRBD 9.2.16 fails to
+  # build against this host's 7.2 kernel (`struct sockaddr_unsized`, 2026-10-27).
+  environment.etc.crypttab.text = ''
+    piraeus-ssd /dev/disk/by-partlabel/rugged-piraeus /etc/keys/rugged-piraeus.key luks,nofail,x-systemd.device-timeout=10s
+  '';
 
   # Bluetooth
   hardware.bluetooth = {

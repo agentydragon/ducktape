@@ -139,7 +139,9 @@ testing this design; neither tested three-node two-copy movement or WAN boundari
       before admission.
 - [ ] **Laptop pools:** give each admitted laptop (iguana, rugged) an LVM
       physical volume as a Piraeus pool, so laptops work symmetrically with
-      Wyrm2. This replaces their `/var/local-path-provisioner` btrfs subvolumes.
+      Wyrm2. Rugged first, as an interim partition behind its shrunk root
+      ([procedure](../../../nix/nixos/hosts/rugged/plans/piraeus_partition.md));
+      full LVM layouts wait for each laptop's reinstall.
 - [ ] **Interoperability acceptance:** repeat Block/Filesystem lifecycle and recovery
       checks on NixOS, then test Talos/NixOS remote use and automatic movement within
       the approved placement domain. Preserve existing Talos service throughout.
