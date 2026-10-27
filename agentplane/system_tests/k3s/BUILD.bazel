@@ -555,6 +555,8 @@ py_test(
     tags = K3S_TAGS,
     deps = [
         ":iptables_rule",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
         "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

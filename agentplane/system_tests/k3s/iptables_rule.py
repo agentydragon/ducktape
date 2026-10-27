@@ -10,9 +10,7 @@ class IptablesCommandError(RuntimeError):
     def __init__(self, command: tuple[str, ...], result: subprocess.CompletedProcess[str]) -> None:
         self.command = command
         self.returncode = result.returncode
-        super().__init__(
-            f"{command} exited {result.returncode}\nstderr:\n{result.stderr}\nstdout:\n{result.stdout}"
-        )
+        super().__init__(f"{command} exited {result.returncode}\nstderr:\n{result.stderr}\nstdout:\n{result.stdout}")
 
 
 def ensure_rule(iptables: Path, *, table: str, chain: str, rule: tuple[str, ...]) -> None:

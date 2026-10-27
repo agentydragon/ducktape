@@ -35,8 +35,8 @@ from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_f
 
 from agentplane.system_tests.conftest import AGENT_SERVICE_ACCOUNT, AUDIENCE
 from agentplane.system_tests.k3s import block_storage, guest_logs, rendered_fixture, vm_sandboxes
-from agentplane.system_tests.k3s.iptables_rule import ensure_rule
 from agentplane.system_tests.k3s.bootstrap import Bootstrap
+from agentplane.system_tests.k3s.iptables_rule import ensure_rule
 from agentplane.testing import tls
 from util.bazel.runfiles import get_required_path
 from util.testing.undeclared_outputs import undeclared_outputs_dir

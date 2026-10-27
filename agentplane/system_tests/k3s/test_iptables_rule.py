@@ -22,7 +22,7 @@ def _fake_iptables(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, check_result
     binary.write_text(
         "#!/bin/sh\n"
         'printf "%s\\n" "$*" >> "$IPTABLES_COMMAND_LOG"\n'
-        'for argument do\n'
+        "for argument do\n"
         '  if [ "$argument" = "-C" ]; then exit "$IPTABLES_CHECK_RESULT"; fi\n'
         '  if [ "$argument" = "-A" ]; then exit 0; fi\n'
         "done\n"
@@ -92,9 +92,7 @@ def iptables_binary(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Path]:
 
 
 def _run_iptables(iptables: Path, *args: str) -> str:
-    result = subprocess.run(
-        [str(iptables), "-w", "5", *args], capture_output=True, text=True, check=False
-    )
+    result = subprocess.run([str(iptables), "-w", "5", *args], capture_output=True, text=True, check=False)
     if result.returncode:
         raise AssertionError(
             f"{result.args[:4]} exited {result.returncode}\nstderr:\n{result.stderr}\nstdout:\n{result.stdout}"
@@ -126,7 +124,7 @@ def _wait_for_helper_lock_fd(iptables: Path, chain: str) -> int:
                         continue
                     if (opened.st_dev, opened.st_ino) == (lock.st_dev, lock.st_ino):
                         return int(entry.name)
-            except (FileNotFoundError, PermissionError, ProcessLookupError):
+            except FileNotFoundError, PermissionError, ProcessLookupError:
                 continue
         time.sleep(0.02)
     raise AssertionError("helper's iptables check did not open the held xtables lock")
