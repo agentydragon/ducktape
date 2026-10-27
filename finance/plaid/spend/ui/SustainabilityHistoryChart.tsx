@@ -158,7 +158,7 @@ export function SustainabilityHistoryChart({
     [windows]
   );
   const chart = useMemo(() => {
-    const curveValues = visibleWindows.map(({ view, pointsByDate }) =>
+    const curveValues = visibleWindows.map(({ pointsByDate }) =>
       dates.map((date) => {
         const point = pointsByDate.get(date);
         return hasRates ? (point?.tax_adjusted_draw_rate ?? null) : (point?.annualized_spending_minor_units ?? null);
@@ -306,7 +306,18 @@ export function SustainabilityHistoryChart({
       instance.destroy();
       setTooltip(null);
     };
-  }, [amountLabel, amountPerRate, canPlot, chart, currency, dates, hasRates, portfolioMinorUnits, visibleWindows]);
+  }, [
+    amountLabel,
+    amountPerRate,
+    canPlot,
+    chart,
+    currency,
+    dates,
+    hasRates,
+    portfolioMinorUnits,
+    referenceDrawRates,
+    visibleWindows,
+  ]);
 
   return (
     <Paper component="section" aria-labelledby="sustainability-history-title" withBorder radius="lg" p="lg">

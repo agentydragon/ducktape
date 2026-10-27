@@ -723,7 +723,7 @@ export function SustainabilityPage() {
     dashboard?.windows.find((window) => window.window_days === dashboard.default_window_days) ??
     dashboard?.windows[0];
   useEffect(() => {
-    if (view && selectedWindowDays !== view.window_days) {
+    if (view?.window_days != null && selectedWindowDays !== view.window_days) {
       window.history.replaceState(window.history.state, "", windowHash(view.window_days));
     }
   }, [selectedWindowDays, view?.window_days]);

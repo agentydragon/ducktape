@@ -32,6 +32,7 @@ const reactProjects = [
   "airlock/frontend/**",
   "devinfra/claude/session_export/frontend/**",
   "finance/augur/frontend/**",
+  "finance/plaid/spend/ui/**",
   "haku/console/frontend/**",
   "props/frontend/**",
   "util/frontend/**",

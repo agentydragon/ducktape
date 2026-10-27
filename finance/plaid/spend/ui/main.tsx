@@ -1,19 +1,6 @@
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import {
-  Anchor,
-  Badge,
-  Box,
-  Burger,
-  Center,
-  Container,
-  Grid,
-  Group,
-  MantineProvider,
-  Menu,
-  Paper,
-  Tabs,
-} from "@mantine/core";
+import { Anchor, Box, Burger, Center, Container, Grid, Group, MantineProvider, Menu, Paper, Tabs } from "@mantine/core";
 import "@mantine/core/styles.css";
 import "./styles.css";
 

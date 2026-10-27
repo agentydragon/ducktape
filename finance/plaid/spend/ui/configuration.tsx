@@ -210,7 +210,7 @@ export function ConfigurationPage({
               </Text>
             </Group>
             <Text size="xs" c="dimmed" mt="xs" mb="md">
-              Limits are shown in minor units of each account's currency.
+              Limits are shown in minor units of each account&apos;s currency.
             </Text>
             <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
               {configuration.cards.map((card, index) => (
