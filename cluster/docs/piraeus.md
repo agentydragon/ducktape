@@ -45,8 +45,9 @@ peers) or backups for durability. Do not add a second Piraeus copy under an
 application that already replicates.
 
 The replicated class keeps copies and attachments within `hil-ovh`, never across
-the home/OVH link. Node-loss failover, resync and expansion are not yet accepted
-for it; see the [production plan](plans/piraeus_production.md).
+the home/OVH link. Node-loss failover is accepted
+([results](../debug/drbd_canary/failover/results.md)); expansion is not yet
+accepted for it; see the [production plan](plans/piraeus_production.md).
 
 ## Capacity policy
 
