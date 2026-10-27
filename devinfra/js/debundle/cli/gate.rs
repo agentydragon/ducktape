@@ -186,6 +186,16 @@ pub struct GateDiagnoseArgs {
     pub format: Option<peel::OutputFormat>,
 }
 
+/// Root paths that the command used to produce a diagnosis should forward to
+/// its generated `inspect-source` command. Consumers that do not run from a
+/// relocated bundle environment pass the empty default.
+#[derive(Debug, Clone, Default)]
+pub struct InspectionRoots {
+    pub spec_root: Option<PathBuf>,
+    pub graph_source_root: Option<PathBuf>,
+    pub graph_package_roots: BTreeMap<String, PathBuf>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct GateListEntry {
     pub id: usize,
@@ -364,23 +374,27 @@ pub struct GateDiagnoseWitness {
     pub inspection_command: String,
 }
 
-pub fn run_gate_cli(args: GateArgs) -> Result<()> {
+pub fn run_gate_cli(args: GateArgs, inspection_roots: InspectionRoots) -> Result<()> {
     match args.command {
         GateCommand::List(a) => run_list(a),
         GateCommand::Describe(a) => run_describe(a),
         GateCommand::Cut(a) => run_cut(a),
-        GateCommand::Diagnose(a) => run_diagnose(a),
+        GateCommand::Diagnose(a) => run_diagnose(a, inspection_roots),
     }
 }
 
-fn run_diagnose(args: GateDiagnoseArgs) -> Result<()> {
+fn run_diagnose(args: GateDiagnoseArgs, inspection_roots: InspectionRoots) -> Result<()> {
     let graph = crate::load_dependency_graph_report(&args.graph)?;
     let limit = args.limit.unwrap_or(5);
     if limit == 0 && !args.all {
         anyhow::bail!("--limit must be greater than zero; use --all for exhaustive output");
     }
-    let (returned, total_count, has_supported_write) =
-        diagnose_binding(&graph, &args, (!args.all).then_some(limit))?;
+    let (returned, total_count, has_supported_write) = diagnose_binding(
+        &graph,
+        &args,
+        &inspection_roots,
+        (!args.all).then_some(limit),
+    )?;
     let report = GateDiagnoseReport {
         query_binding: args.binding,
         returned_count: returned.len(),
@@ -409,6 +423,7 @@ fn run_diagnose(args: GateDiagnoseArgs) -> Result<()> {
 fn diagnose_binding(
     graph: &DependencyGraphReport,
     args: &GateDiagnoseArgs,
+    inspection_roots: &InspectionRoots,
     limit: Option<usize>,
 ) -> Result<(Vec<GateDiagnoseTrace>, usize, bool)> {
     let node_by_id: HashMap<&str, _> = graph
@@ -579,7 +594,7 @@ fn diagnose_binding(
             });
             continue;
         }
-        let (coverage, code, witness) = diagnose_barrier_witness(barrier, args)?;
+        let (coverage, code, witness) = diagnose_barrier_witness(barrier, args, inspection_roots)?;
         traces.push(GateDiagnoseTrace {
             ownership_target: GateDiagnoseOwnershipTarget {
                 binding: args.binding.clone(),
@@ -616,6 +631,7 @@ fn dependency_report(
 fn diagnose_barrier_witness(
     barrier: &CallbackFactoryBarrierReport,
     args: &GateDiagnoseArgs,
+    inspection_roots: &InspectionRoots,
 ) -> Result<(
     GateDiagnoseCoverage,
     GateDiagnoseGuardCode,
@@ -643,6 +659,7 @@ fn diagnose_barrier_witness(
                         &args.graph,
                         &args.modules,
                         &args.source_root,
+                        inspection_roots,
                     )?,
                 }),
             ))
@@ -660,6 +677,7 @@ fn inspection_command(
     graph: &Path,
     modules: &Path,
     source_root: &Path,
+    inspection_roots: &InspectionRoots,
 ) -> Result<String> {
     let graph = std::fs::canonicalize(graph).context("resolving --graph for inspection command")?;
     let modules =
@@ -669,8 +687,9 @@ fn inspection_command(
     let executable = std::env::current_exe()
         .context("resolving running debundle executable for inspection command")?;
     Ok(format!(
-        "{} inspect-source --id {} --graph {} --modules {} --source-root {} --format json",
+        "{}{}inspect-source --id {} --graph {} --modules {} --source-root {} --format json",
         shell_quote(&executable.display().to_string()),
+        inspection_root_args(inspection_roots),
         shell_quote(source_unit),
         shell_quote(&graph.display().to_string()),
         shell_quote(&modules.display().to_string()),
@@ -678,8 +697,64 @@ fn inspection_command(
     ))
 }
 
+fn inspection_root_args(roots: &InspectionRoots) -> String {
+    let mut args = Vec::new();
+    if let Some(spec_root) = &roots.spec_root {
+        args.push(format!(
+            "--spec-root {}",
+            shell_quote(&spec_root.display().to_string())
+        ));
+    }
+    if let Some(graph_source_root) = &roots.graph_source_root {
+        args.push(format!(
+            "--graph-source-root {}",
+            shell_quote(&graph_source_root.display().to_string())
+        ));
+    }
+    for (package, path) in &roots.graph_package_roots {
+        args.push(format!(
+            "--graph-package-root {}",
+            shell_quote(&format!("{}={}", package, path.display()))
+        ));
+    }
+    if args.is_empty() {
+        " ".to_owned()
+    } else {
+        format!(" {} ", args.join(" "))
+    }
+}
+
 fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
+}
+
+#[cfg(test)]
+mod inspection_command_tests {
+    use super::{InspectionRoots, inspection_root_args};
+    use std::collections::BTreeMap;
+    use std::path::PathBuf;
+
+    #[test]
+    fn inspection_roots_are_shell_quoted_with_spaces_and_sorted_package_roots() {
+        let roots = InspectionRoots {
+            spec_root: Some(PathBuf::from("spec root")),
+            graph_source_root: Some(PathBuf::from("graph source root")),
+            graph_package_roots: BTreeMap::from([
+                ("package one".to_owned(), PathBuf::from("package root one")),
+                ("package two".to_owned(), PathBuf::from("package root two")),
+            ]),
+        };
+
+        assert_eq!(
+            inspection_root_args(&roots),
+            concat!(
+                " --spec-root 'spec root' --graph-source-root 'graph source root' ",
+                "--graph-package-root 'package one=package root one' ",
+                "--graph-package-root 'package two=package root two' ",
+            )
+        );
+        assert_eq!(inspection_root_args(&InspectionRoots::default()), " ");
+    }
 }
 
 fn render_diagnose_text(report: &GateDiagnoseReport, out: &mut String) {

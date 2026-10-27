@@ -23,7 +23,7 @@ use peel::{AtomicGroupsArgs, GraphSummaryArgs, OutputFormat, PatchPlanArgs, prin
 use pipeline::{TransformArgs, TransformRunOptions, run_transform_cli};
 
 use crate::bindings_commands::BindingsNs;
-use crate::gate::{GateArgs, run_gate_cli};
+use crate::gate::{GateArgs, InspectionRoots, run_gate_cli};
 use crate::inspection_commands::{DescribeArgs, InspectSourceArgs};
 use crate::modules_commands::ModulesNs;
 use crate::scc_cluster::{ClusterArgs, SccArgs, run_cluster, run_scc};
@@ -331,7 +331,14 @@ pub fn run_debundle_cli(args: DebundleArgs) -> Result<()> {
         // already carry enough context in their bail messages (e.g.
         // "no blocking SCC with id ..."), and an outer wrap would
         // hide them since `main.rs` prints only the top context.
-        DebundleCommand::Gate(args) => run_gate_cli(args),
+        DebundleCommand::Gate(args) => run_gate_cli(
+            args,
+            InspectionRoots {
+                spec_root: args.spec_root.clone(),
+                graph_source_root: args.graph_source_root.clone(),
+                graph_package_roots: graph_package_roots.clone(),
+            },
+        ),
         DebundleCommand::Snapshot(snapshot_args) => snapshot::run(
             snapshot_args,
             graph_provenance::CurrentRoots {
