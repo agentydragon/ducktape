@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/google/uuid"
 )
 
@@ -154,7 +153,7 @@ func TestEntriesAreSummarizedByTheirLifecycleFieldsOnly(t *testing.T) {
 		},
 		{
 			"a message by its sender, never its body",
-			MessageEvent{MessageID: request, Sender: action.ServiceAccount{Namespace: "test-namespace", Name: "test-sender"}},
+			MessageEvent{MessageID: request, Sender: ServiceAccount{Namespace: "test-namespace", Name: "test-sender"}},
 			`{"body": "private", "from_session": "test-session"}`,
 			"Message from test-namespace/test-sender",
 		},

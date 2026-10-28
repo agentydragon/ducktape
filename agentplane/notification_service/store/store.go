@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/google/uuid"
 
 	"github.com/agentydragon/ducktape/agentplane/postgres/go"
@@ -39,7 +38,7 @@ type Quotas struct {
 // opened for. A Sandbox runs as the ServiceAccount of its own name, so a Sandbox recreated under a deleted one's
 // name is the same account but another incarnation, and the deleted one's inboxes are not its own.
 type Owner struct {
-	Account    action.ServiceAccount
+	Account    ServiceAccount
 	SandboxUID string
 }
 

@@ -10,7 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/action"
+	"github.com/agentydragon/ducktape/agentplane/action_service/store"
+
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
@@ -142,7 +143,7 @@ func TestTheSameLaunchAdoptsItsSandboxAndAnotherIsRefused(t *testing.T) {
 	if err := kube.Get(t.Context(), client.ObjectKey{Namespace: f.namespace, Name: "test-worker.launcher"}, &policyapi.PolicyBinding{}); err != nil {
 		t.Errorf("the same launch did not restore its launcher grant: %v", err)
 	}
-	other := action.ServiceAccount{Namespace: f.namespace, Name: "test-other-caller"}
+	other := store.ServiceAccount{Namespace: f.namespace, Name: "test-other-caller"}
 	if kind := f.attempt(t, other, actionLaunchSandbox, fmt.Sprintf(launch, `"test-extra-policy"`)).failure(); kind != "sandbox_exists" {
 		t.Errorf("another caller's launch of the name failed %q, want sandbox_exists", kind)
 	}

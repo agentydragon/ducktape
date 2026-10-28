@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/github"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
@@ -63,7 +62,7 @@ func TestCreateSubscriptionFollowsAnActionRequestAndAnAgentFindsItsInbox(t *test
 	}
 	// The Action Service was asked, as the caller, whether it may follow the request.
 	source := request.GetSource().GetActions()
-	want := actionsCall{owner: action.ServiceAccount{Namespace: testNamespace, Name: sandboxName}, requestID: uuid.MustParse(source.GetRequestId())}
+	want := actionsCall{owner: store.ServiceAccount{Namespace: testNamespace, Name: sandboxName}, requestID: uuid.MustParse(source.GetRequestId())}
 	if got := server.actions.asked(); len(got) != 1 || got[0] != want {
 		t.Errorf("Action Service asked %v, want %v", got, want)
 	}

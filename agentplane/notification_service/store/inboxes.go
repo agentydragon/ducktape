@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/google/uuid"
 )
 
@@ -101,7 +100,7 @@ func owned(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, owner Owner, lock
 }
 
 // ensureInbox is the owner's inbox for a destination Session, created if absent and returned locked for update.
-func (s *Store) ensureInbox(ctx context.Context, tx *sql.Tx, owner action.ServiceAccount, ref DestinationRef, sessionID string) (Inbox, error) {
+func (s *Store) ensureInbox(ctx context.Context, tx *sql.Tx, owner ServiceAccount, ref DestinationRef, sessionID string) (Inbox, error) {
 	written := now()
 	key := DestinationKey(ref, sessionID)
 	// Serialize only creation for an owner, to enforce the total destination quota.

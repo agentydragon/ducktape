@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/migrations"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
@@ -46,10 +45,10 @@ func newFixture(t *testing.T) fixture {
 }
 
 var (
-	caller      = CallerPrincipal{Account: action.ServiceAccount{Namespace: "test-namespace", Name: "test-caller"}}
-	otherCaller = CallerPrincipal{Account: action.ServiceAccount{Namespace: "test-namespace", Name: "test-other-caller"}}
+	caller      = CallerPrincipal{Account: ServiceAccount{Namespace: "test-namespace", Name: "test-caller"}}
+	otherCaller = CallerPrincipal{Account: ServiceAccount{Namespace: "test-namespace", Name: "test-other-caller"}}
 	operator    = OperatorPrincipal{Issuer: "https://issuer.test.example", Subject: "test-operator"}
-	reader      = ServiceReaderPrincipal{Account: action.ServiceAccount{Namespace: "test-namespace", Name: "test-reader"}}
+	reader      = ServiceReaderPrincipal{Account: ServiceAccount{Namespace: "test-namespace", Name: "test-reader"}}
 )
 
 // input is a submission named by its key. Copies change what they set.

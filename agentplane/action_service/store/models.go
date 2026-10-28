@@ -9,10 +9,15 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/google/uuid"
 )
+
+// ServiceAccount is comparable so ownership checks use namespace/name values, not protobuf pointer identity.
+type ServiceAccount struct {
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
+}
 
 // ActionIdentity names an Action by its group and name. It is stored as `action_request.action`.
 type ActionIdentity struct {
@@ -32,7 +37,7 @@ type Principal interface {
 
 // CallerPrincipal is a workload that proved one ServiceAccount.
 type CallerPrincipal struct {
-	Account action.ServiceAccount `json:"account"`
+	Account ServiceAccount `json:"account"`
 }
 
 // OperatorPrincipal is the human behind the operator surface, as its issuer verified them.
@@ -43,7 +48,7 @@ type OperatorPrincipal struct {
 
 // ServiceReaderPrincipal is an allowlisted workload that reads every owner's requests and changes none.
 type ServiceReaderPrincipal struct {
-	Account action.ServiceAccount
+	Account ServiceAccount
 }
 
 func (CallerPrincipal) isReadPrincipal()        {}
@@ -183,7 +188,7 @@ type ActionRequest struct {
 	Title       string
 	Description *string
 	// Caller is the ServiceAccount that submitted the request.
-	Caller action.ServiceAccount
+	Caller ServiceAccount
 	State  action_servicepb.ActionState
 	// Version counts the request's transitions from 1; an Event's sequence is the version it records.
 	Version   int64
@@ -267,7 +272,7 @@ type ExecutionRequest struct {
 	Action    ActionIdentity
 	// Arguments is a JSON object.
 	Arguments json.RawMessage
-	Caller    action.ServiceAccount
+	Caller    ServiceAccount
 }
 
 // ExecutionOutcome is the terminal outcome an executor delivers.
@@ -322,8 +327,8 @@ func bounded(field, value string, minLength, maxLength int) error {
 	return nil
 }
 
-func validateServiceAccount(a action.ServiceAccount) error {
-	if err := a.Validate(); err != nil {
+func validateServiceAccount(a ServiceAccount) error {
+	if err := a.validate(); err != nil {
 		return invalid("%s", err)
 	}
 	return nil
@@ -464,7 +469,7 @@ func (a *ActionIdentity) UnmarshalJSON(data []byte) error {
 	if err := decodeFields(data, (*plain)(a), "group", "name"); err != nil {
 		return err
 	}
-	return a.Validate()
+	return a.validate()
 }
 
 func (e *PolicyEvidence) UnmarshalJSON(data []byte) error {

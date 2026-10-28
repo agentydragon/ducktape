@@ -52,7 +52,6 @@ go_test(
     embed = [":mcpexec"],
     tags = ["requires_docker"],
     deps = [
-        "//agentplane/action",
         "//agentplane/action_service:action_service_go_proto",
         "//agentplane/action_service/catalog",
         "//agentplane/action_service/linkage",

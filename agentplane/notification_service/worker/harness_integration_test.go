@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/action"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
@@ -34,7 +33,7 @@ const (
 )
 
 // testOwner owns the inboxes: a Sandbox runs as the ServiceAccount of its own name.
-var testOwner = action.ServiceAccount{Namespace: testNamespace, Name: testSandbox}
+var testOwner = store.ServiceAccount{Namespace: testNamespace, Name: testSandbox}
 
 // testIncarnation is testOwner as the Sandbox the destinations name.
 var testIncarnation = store.Owner{Account: testOwner, SandboxUID: testSandboxUID}

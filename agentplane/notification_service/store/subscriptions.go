@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/google/uuid"
 )
 
@@ -201,7 +200,7 @@ func bindSource(ctx context.Context, tx *sql.Tx, source Source, access *GitHubAc
 //
 // access is the repository access a GitHub subscription was authorized under, which the caller has just read from
 // GitHub, and nil for any other source. A replay of a creation returns the subscription it made and writes no rows.
-func (s *Store) Subscribe(ctx context.Context, owner action.ServiceAccount, body Subscribe, access *GitHubAccessKey) (Subscription, error) {
+func (s *Store) Subscribe(ctx context.Context, owner ServiceAccount, body Subscribe, access *GitHubAccessKey) (Subscription, error) {
 	if err := body.Validate(); err != nil {
 		return Subscription{}, err
 	}

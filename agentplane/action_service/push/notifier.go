@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/SherClockHolmes/webpush-go"
-	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/observability"
@@ -280,7 +279,7 @@ func (n *Notifier) message(requests []store.ActionRequest, shown map[uuid.UUID]b
 	case len(left) > 0:
 		newest := left[len(left)-1]
 		return retract{
-			Kind: kindRetract, ActionID: newest.ID.String(), Outcome: strings.ReplaceAll(storedStateForPush(newest.State), "_", " "),
+			Kind: kindRetract, ActionID: newest.ID.String(), Outcome: stateWords(newest.State),
 		}, ledger
 	default:
 		return nil, nil
@@ -368,10 +367,6 @@ func deleteGone(ctx context.Context, conn *sql.Conn, subscription webpush.Subscr
 	return err
 }
 
-func storedStateForPush(state action_servicepb.ActionState) string {
-	text, known := action.StateStored(state)
-	if !known {
-		panic(fmt.Sprintf("unsupported Action state %v", state))
-	}
-	return text
+func stateWords(state action_servicepb.ActionState) string {
+	return strings.ReplaceAll(strings.TrimPrefix(strings.ToLower(state.String()), "action_state_"), "_", " ")
 }

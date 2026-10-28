@@ -5,14 +5,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/google/uuid"
 )
 
 func TestAMessageIdentityIsReadBackWithItsSender(t *testing.T) {
 	sent := MessageEvent{
 		MessageID: uuid.MustParse("5b0a6c51-8d7e-4f0a-9d2b-7c3e1f4a2b60"),
-		Sender:    action.ServiceAccount{Namespace: "test-namespace", Name: "test-sender"},
+		Sender:    ServiceAccount{Namespace: "test-namespace", Name: "test-sender"},
 	}
 	stored, err := json.Marshal(sent)
 	if err != nil {
@@ -115,10 +114,10 @@ func TestMessageEventKeepsItsPermissiveSenderWireShape(t *testing.T) {
 	for _, test := range []struct {
 		name   string
 		sender string
-		want   action.ServiceAccount
+		want   ServiceAccount
 	}{
-		{name: "missing namespace", sender: `{"name":"test-sender"}`, want: action.ServiceAccount{Name: "test-sender"}},
-		{name: "empty namespace", sender: `{"namespace":"","name":"test-sender"}`, want: action.ServiceAccount{Name: "test-sender"}},
+		{name: "missing namespace", sender: `{"name":"test-sender"}`, want: ServiceAccount{Name: "test-sender"}},
+		{name: "empty namespace", sender: `{"namespace":"","name":"test-sender"}`, want: ServiceAccount{Name: "test-sender"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			data := []byte(`{"provider":"message","message_id":"5b0a6c51-8d7e-4f0a-9d2b-7c3e1f4a2b60","sender":` + test.sender + `}`)

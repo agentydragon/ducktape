@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
@@ -70,7 +69,7 @@ func TestMain(m *testing.M) {
 // Dispatcher and History Service it calls.
 type fixture struct {
 	namespace  string
-	caller     action.ServiceAccount
+	caller     store.ServiceAccount
 	dispatcher *recordingDispatcher
 	history    *fakeHistory
 	executor   *Executor
@@ -106,7 +105,7 @@ func newFixture(t *testing.T) fixture {
 		t.Fatal(err)
 	}
 	return fixture{
-		namespace: namespace, caller: action.ServiceAccount{Namespace: namespace, Name: "test-caller"},
+		namespace: namespace, caller: store.ServiceAccount{Namespace: namespace, Name: "test-caller"},
 		dispatcher: dispatcher, history: history, executor: executor,
 	}
 }
@@ -138,7 +137,7 @@ type attempted struct {
 
 // attempt runs one attempt at action as caller. Execute is attempt under worker.Hold, whose lease only the worker
 // makes.
-func (f fixture) attempt(t *testing.T, caller action.ServiceAccount, action, arguments string) attempted {
+func (f fixture) attempt(t *testing.T, caller store.ServiceAccount, action, arguments string) attempted {
 	t.Helper()
 	outcome, err := f.executor.attempt(t.Context(), store.ExecutionRequest{
 		RequestID: uuid.New(), Action: store.ActionIdentity{Group: testGroup, Name: action},

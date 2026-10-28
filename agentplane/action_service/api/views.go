@@ -6,7 +6,6 @@ import (
 	"math"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -89,7 +88,7 @@ func jsonView(field string, document json.RawMessage, view interface{ UnmarshalJ
 }
 
 func requestView(request store.ActionRequest) (*action_servicepb.ActionRequest, error) {
-	_, ok := action.StateStored(request.State)
+	ok := validActionState(request.State)
 	if !ok {
 		return nil, fmt.Errorf("%w: state %q", errStoredRequest, request.State)
 	}
@@ -214,7 +213,7 @@ func executionView(execution *store.Execution) (*action_servicepb.Execution, err
 }
 
 func eventView(event store.Event) (*action_servicepb.ActionEvent, error) {
-	_, ok := action.StateStored(event.State)
+	ok := validActionState(event.State)
 	if !ok {
 		return nil, fmt.Errorf("%w: event state %q", errStoredRequest, event.State)
 	}
@@ -222,7 +221,7 @@ func eventView(event store.Event) (*action_servicepb.ActionEvent, error) {
 		return nil, fmt.Errorf("%w: event sequence %d", errStoredRequest, event.Sequence)
 	}
 	view := &action_servicepb.ActionEvent{Sequence: int32(event.Sequence), State: event.State, At: timestamppb.New(event.At)}
-	err := action.ValidateActor(event.Actor)
+	err := validateActionActor(event.Actor)
 	if err != nil {
 		return nil, fmt.Errorf("%w: event actor: %w", errStoredRequest, err)
 	}
@@ -234,9 +233,27 @@ func eventView(event store.Event) (*action_servicepb.ActionEvent, error) {
 // define are malformed.
 func requestedStates(states []action_servicepb.ActionState) ([]action_servicepb.ActionState, error) {
 	for _, state := range states {
-		if _, known := action.StateStored(state); !known {
+		if !validActionState(state) {
 			return nil, invalidRequest("state %v is not an action state", state)
 		}
 	}
 	return states, nil
+}
+
+func validActionState(state action_servicepb.ActionState) bool {
+	_, known := action_servicepb.ActionState_name[int32(state)]
+	return known && state != action_servicepb.ActionState_ACTION_STATE_UNSPECIFIED
+}
+
+func validateActionActor(actor *action_servicepb.Principal) error {
+	if actor == nil {
+		return nil
+	}
+	if caller := actor.GetCaller(); caller != nil && caller.GetNamespace() != "" && caller.GetName() != "" {
+		return nil
+	}
+	if operator := actor.GetOperator(); operator != nil && operator.GetIssuer() != "" && operator.GetSubject() != "" {
+		return nil
+	}
+	return fmt.Errorf("an Action actor needs a caller account or an operator issuer and subject")
 }

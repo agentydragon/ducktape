@@ -6,7 +6,6 @@ import (
 	"errors"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/google/uuid"
 )
 
@@ -27,7 +26,7 @@ type Claim struct {
 	// Inbox is the inbox as it was when claimed. Its counters move on, so anything that matters is read again
 	// by a fenced call.
 	Inbox
-	Owner action.ServiceAccount
+	Owner ServiceAccount
 	lease uuid.UUID
 	// staleCheckAt is the deadline of the recheck of an unavailable destination, as it was when claimed.
 	staleCheckAt *time.Time

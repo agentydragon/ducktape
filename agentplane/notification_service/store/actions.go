@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 )
 
@@ -39,9 +38,9 @@ func decodeActionActor(data json.RawMessage) (*action_servicepb.Principal, error
 		return nil, nil
 	}
 	var wire struct {
-		Account *action.ServiceAccount `json:"account"`
-		Issuer  *string                `json:"issuer"`
-		Subject *string                `json:"subject"`
+		Account *ServiceAccount `json:"account"`
+		Issuer  *string         `json:"issuer"`
+		Subject *string         `json:"subject"`
 	}
 	if err := decode(data, &wire); err != nil {
 		return nil, err
@@ -71,7 +70,7 @@ func (e *ActionEvent) UnmarshalJSON(data []byte) error {
 	); err != nil {
 		return err
 	}
-	state, known := action.StateFromStored(*wire.State)
+	state, known := actionStateFromStored(*wire.State)
 	if !known {
 		return fmt.Errorf("unknown Action state %q", *wire.State)
 	}
@@ -94,11 +93,11 @@ func (e ActionEvent) MarshalJSON() ([]byte, error) {
 	if e.At.Nanosecond() != 0 {
 		layout += ".000000"
 	}
-	state, known := action.StateStored(e.State)
+	state, known := storedActionState(e.State)
 	if !known {
 		return nil, fmt.Errorf("unknown Action state %v", e.State)
 	}
-	actor, err := action.EncodeStoredActor(e.Actor)
+	actor, err := encodeActionActor(e.Actor)
 	if err != nil {
 		return nil, err
 	}

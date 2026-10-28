@@ -6,7 +6,6 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/google/uuid"
 )
@@ -16,7 +15,7 @@ import (
 // filled.
 
 // insertRequest writes a pending request and the Event Python's insert listener records for it.
-func (f fixture) insertRequest(t *testing.T, id uuid.UUID, owner action.ServiceAccount, key string, stored storedRequest) {
+func (f fixture) insertRequest(t *testing.T, id uuid.UUID, owner ServiceAccount, key string, stored storedRequest) {
 	t.Helper()
 	f.exec(t, `
 		INSERT INTO action_request (id, idempotency_key, action, arguments, title, description, caller_namespace, caller_name,
@@ -33,7 +32,7 @@ var minimalRequest = storedRequest{
 	Title:     "test title",
 }
 
-func (f fixture) insertMinimalRequest(t *testing.T, owner action.ServiceAccount, key string) uuid.UUID {
+func (f fixture) insertMinimalRequest(t *testing.T, owner ServiceAccount, key string) uuid.UUID {
 	t.Helper()
 	id := uuid.New()
 	f.insertRequest(t, id, owner, key, minimalRequest)
@@ -142,11 +141,11 @@ func TestActorsPythonStoredAreReadAndWrittenBack(t *testing.T) {
 			if vector.Kind != "caller" {
 				return
 			}
-			actor, err := action.DecodeStoredActor(vector.Input)
+			actor, err := decodeStoredActor(vector.Input)
 			if err != nil {
 				t.Fatal(err)
 			}
-			owner := CallerPrincipal{Account: action.ServiceAccount{Namespace: actor.GetCaller().GetNamespace(), Name: actor.GetCaller().GetName()}}
+			owner := CallerPrincipal{Account: ServiceAccount{Namespace: actor.GetCaller().GetNamespace(), Name: actor.GetCaller().GetName()}}
 			written := f.submitInput(t, owner, input("go-"+vector.Name), Admission{RequestID: uuid.New()})
 			if _, err := f.Cancel(t.Context(), written.ID, owner); err != nil {
 				t.Fatal(err)

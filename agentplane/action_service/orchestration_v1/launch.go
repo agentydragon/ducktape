@@ -9,7 +9,6 @@ import (
 	"slices"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
@@ -59,13 +58,13 @@ func launcherName(sandbox string) string { return sandbox + ".launcher" }
 
 // launch creates the Sandbox args describe and writes its launcher grants for caller. A launch the same caller made
 // with the same arguments, whatever became of its attempt, is adopted and its grants completed.
-func (e *Executor) launch(ctx context.Context, caller action.ServiceAccount, args launchArgs) (Launched, error) {
+func (e *Executor) launch(ctx context.Context, caller store.ServiceAccount, args launchArgs) (Launched, error) {
 	for _, list := range [][]string{args.PolicySets, args.InboxTags, args.LauncherGrants} {
 		slices.Sort(list)
 	}
 	intent, err := json.Marshal(struct {
-		Caller action.ServiceAccount `json:"caller"`
-		Launch launchArgs            `json:"launch"`
+		Caller store.ServiceAccount `json:"caller"`
+		Launch launchArgs           `json:"launch"`
 	}{caller, args})
 	if err != nil {
 		return Launched{}, err
@@ -170,7 +169,7 @@ func isSandbox(owner metav1.OwnerReference) bool {
 
 // grant writes the launcher grants on sandbox for caller, when there are any: a PolicySet of their rules and a
 // PolicyBinding of it to caller. Both are owned by the Sandbox, so deleting it revokes them.
-func (e *Executor) grant(ctx context.Context, caller action.ServiceAccount, sandbox *sandboxapi.Sandbox, grants []string) error {
+func (e *Executor) grant(ctx context.Context, caller store.ServiceAccount, sandbox *sandboxapi.Sandbox, grants []string) error {
 	if len(grants) == 0 {
 		return nil
 	}

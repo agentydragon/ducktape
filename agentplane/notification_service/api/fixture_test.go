@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/inboxaccess"
@@ -112,7 +111,7 @@ func (r *fakeRunner) questions() []sandboxreader.Identity {
 }
 
 type actionsCall struct {
-	owner         action.ServiceAccount
+	owner         store.ServiceAccount
 	requestID     uuid.UUID
 	afterSequence int64
 }
@@ -124,7 +123,7 @@ type fakeActions struct {
 	calls []actionsCall
 }
 
-func (a *fakeActions) Events(_ context.Context, owner action.ServiceAccount, requestID uuid.UUID, afterSequence int64) ([]store.ActionEvent, error) {
+func (a *fakeActions) Events(_ context.Context, owner store.ServiceAccount, requestID uuid.UUID, afterSequence int64) ([]store.ActionEvent, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.calls = append(a.calls, actionsCall{owner: owner, requestID: requestID, afterSequence: afterSequence})

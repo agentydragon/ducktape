@@ -72,7 +72,6 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/action_service/sandbox",
     visibility = ["//agentplane/action_service:__subpackages__"],
     deps = [
-        "//agentplane/action",
         "//agentplane/action_service/catalog",
         "//agentplane/action_service/store",
         "//agentplane/action_service/worker",
@@ -102,7 +101,6 @@ go_test(
     embed = [":sandbox"],
     embedsrcs = ["golden.json"],
     deps = [
-        "//agentplane/action",
         "//agentplane/action_service/catalog",
         "//agentplane/action_service/store",
         "//agentplane/testing/kubeapiserver",

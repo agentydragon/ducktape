@@ -5,7 +5,6 @@ import (
 	"errors"
 	"slices"
 
-	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"google.golang.org/grpc/codes"
@@ -14,7 +13,7 @@ import (
 
 // subscribe creates the owner's subscription once the Session and the source are known to be the owner's to
 // follow. The source is authorized before anything is persisted, even when replay starts after the last event.
-func (s *Notifications) subscribe(ctx context.Context, owner action.ServiceAccount, body store.Subscribe) (store.Subscription, error) {
+func (s *Notifications) subscribe(ctx context.Context, owner store.ServiceAccount, body store.Subscribe) (store.Subscription, error) {
 	sandbox, err := s.destination(ctx, owner, body.DestinationRef)
 	if err != nil {
 		return store.Subscription{}, err
@@ -48,13 +47,13 @@ func (s *Notifications) subscribe(ctx context.Context, owner action.ServiceAccou
 
 // destination resolves the Sandbox the reference names to the exact incarnation, which must run as the owner. A
 // Sandbox outside the service's namespace, a missing or replaced one, and another account's are all not found.
-func (s *Notifications) destination(ctx context.Context, owner action.ServiceAccount, ref store.DestinationRef) (sandboxreader.Identity, error) {
+func (s *Notifications) destination(ctx context.Context, owner store.ServiceAccount, ref store.DestinationRef) (sandboxreader.Identity, error) {
 	view, err := s.sandbox(ctx, ref)
 	if err != nil {
 		return sandboxreader.Identity{}, err
 	}
 	// A Sandbox runs as the ServiceAccount of its own name.
-	if (action.ServiceAccount{Namespace: view.Identity.Namespace, Name: view.Identity.Name}) != owner {
+	if (store.ServiceAccount{Namespace: view.Identity.Namespace, Name: view.Identity.Name}) != owner {
 		return sandboxreader.Identity{}, errSandboxMissing
 	}
 	return view.Identity, nil

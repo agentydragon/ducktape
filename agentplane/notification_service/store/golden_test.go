@@ -7,7 +7,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	"google.golang.org/protobuf/proto"
@@ -126,7 +125,7 @@ func TestActionActorDecoderKeepsExplicitNullCompatibility(t *testing.T) {
 		{
 			name: "caller with null operator fields",
 			json: `{"account":{"namespace":"test-namespace","name":"test-caller"},"issuer":null,"subject":null}`,
-			want: &action_servicepb.Principal{Principal: &action_servicepb.Principal_Caller{Caller: action.ServiceAccount{Namespace: "test-namespace", Name: "test-caller"}.Proto()}},
+			want: &action_servicepb.Principal{Principal: &action_servicepb.Principal_Caller{Caller: ServiceAccount{Namespace: "test-namespace", Name: "test-caller"}.Proto()}},
 		},
 		{
 			name: "operator with null account",
@@ -142,7 +141,7 @@ func TestActionActorDecoderKeepsExplicitNullCompatibility(t *testing.T) {
 			if !proto.Equal(actor, test.want) {
 				t.Fatalf("actor = %#v, want %#v", actor, test.want)
 			}
-			written, err := action.EncodeStoredActor(actor)
+			written, err := encodeActionActor(actor)
 			if err != nil {
 				t.Fatal(err)
 			}

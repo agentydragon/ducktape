@@ -8,7 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/action"
+	"github.com/agentydragon/ducktape/agentplane/action_service/store"
+
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -134,10 +135,10 @@ func TestARefusedCreateSaysWhatTheAPIServerSaid(t *testing.T) {
 func TestAnotherCallersBoxOfThatNameIsNotReached(t *testing.T) {
 	for _, test := range []struct {
 		name   string
-		labels func(other action.ServiceAccount) map[string]string
+		labels func(other store.ServiceAccount) map[string]string
 	}{
-		{"another caller's box", func(other action.ServiceAccount) map[string]string { return boxLabels(other, "box", testTemplate) }},
-		{"a Pod no Action made", func(action.ServiceAccount) map[string]string { return map[string]string{nameLabel: "box"} }},
+		{"another caller's box", func(other store.ServiceAccount) map[string]string { return boxLabels(other, "box", testTemplate) }},
+		{"a Pod no Action made", func(store.ServiceAccount) map[string]string { return map[string]string{nameLabel: "box"} }},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			f := newFixture(t, nil)
@@ -164,7 +165,7 @@ func TestAListHoldsOnlyTheCallersBoxes(t *testing.T) {
 	f := newFixture(t, nil)
 	other := account(t, f.binding.Namespace, "test-other")
 	for _, caller := range []struct {
-		account action.ServiceAccount
+		account store.ServiceAccount
 		box     string
 	}{{f.caller, "mine"}, {other, "theirs"}} {
 		if _, err := f.inventory().Create(t.Context(), caller.account, caller.box, testTemplate); err != nil {

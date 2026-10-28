@@ -5,7 +5,6 @@ import (
 	"errors"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/inboxaccess"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
@@ -40,18 +39,18 @@ func NewNotifications(options Options) *Notifications {
 }
 
 // caller admits any workload of the namespaces the resolver serves. Its ServiceAccount is who it acts for.
-func (s *Notifications) caller(ctx context.Context) (action.ServiceAccount, error) {
+func (s *Notifications) caller(ctx context.Context) (store.ServiceAccount, error) {
 	principal, err := s.resolver.Resolve(ctx)
 	if err != nil {
-		return action.ServiceAccount{}, admissionRefused{err}
+		return store.ServiceAccount{}, admissionRefused{err}
 	}
-	return action.ServiceAccount{Namespace: principal.Account.Namespace, Name: principal.Account.Name}, nil
+	return store.ServiceAccount{Namespace: principal.Account.Namespace, Name: principal.Account.Name}, nil
 }
 
 // serve admits the caller, then runs handle for the account under the request timeout.
 func serve[Request, Response any](
 	ctx context.Context, s *Notifications, request *Request,
-	handle func(context.Context, action.ServiceAccount, *Request) (*Response, error),
+	handle func(context.Context, store.ServiceAccount, *Request) (*Response, error),
 ) (*Response, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
@@ -73,7 +72,7 @@ func serveOwned[Request, Response any](
 	ctx context.Context, s *Notifications, request *Request, none *Response,
 	handle func(context.Context, store.Owner, *Request) (*Response, error),
 ) (*Response, error) {
-	return serve(ctx, s, request, func(ctx context.Context, account action.ServiceAccount, request *Request) (*Response, error) {
+	return serve(ctx, s, request, func(ctx context.Context, account store.ServiceAccount, request *Request) (*Response, error) {
 		sandbox, err := s.sandbox(ctx, store.DestinationRef{Namespace: account.Namespace, Name: account.Name})
 		if errors.Is(err, errSandboxMissing) && none != nil {
 			return none, nil
@@ -89,7 +88,7 @@ func (s *Notifications) CreateSubscription(ctx context.Context, request *notific
 	return serve(ctx, s, request, s.createSubscription)
 }
 
-func (s *Notifications) createSubscription(ctx context.Context, owner action.ServiceAccount, request *notificationspb.CreateSubscriptionRequest) (*notificationspb.CreateSubscriptionResponse, error) {
+func (s *Notifications) createSubscription(ctx context.Context, owner store.ServiceAccount, request *notificationspb.CreateSubscriptionRequest) (*notificationspb.CreateSubscriptionResponse, error) {
 	body, err := subscribeBody(request)
 	if err != nil {
 		return nil, err

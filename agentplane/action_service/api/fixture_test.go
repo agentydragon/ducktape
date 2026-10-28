@@ -16,7 +16,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/informer"
@@ -79,7 +78,7 @@ var (
 )
 
 func principal(account auth.Account) store.CallerPrincipal {
-	return store.CallerPrincipal{Account: action.ServiceAccount{Namespace: account.Namespace, Name: account.Name}}
+	return store.CallerPrincipal{Account: store.ServiceAccount{Namespace: account.Namespace, Name: account.Name}}
 }
 
 func useAPIServer(server *kubeapiserver.Server) error {

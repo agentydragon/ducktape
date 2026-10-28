@@ -1,4 +1,4 @@
-package action
+package store
 
 import (
 	"encoding/json"
@@ -10,7 +10,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func TestStoredStatesRoundTrip(t *testing.T) {
+func TeststoredStateNamesRoundTrip(t *testing.T) {
 	pairs := []struct {
 		state action_servicepb.ActionState
 		text  string
@@ -26,23 +26,23 @@ func TestStoredStatesRoundTrip(t *testing.T) {
 		{action_servicepb.ActionState_ACTION_STATE_EXECUTION_UNKNOWN, "execution_unknown"},
 	}
 	for _, pair := range pairs {
-		state, ok := StateFromStored(pair.text)
+		state, ok := stateFromStored(pair.text)
 		if !ok || state != pair.state {
 			t.Errorf("stored %q decoded as %v, %v; want %v", pair.text, state, ok, pair.state)
 		}
-		if got, ok := StateStored(pair.state); !ok || got != pair.text {
+		if got, ok := stateStored(pair.state); !ok || got != pair.text {
 			t.Errorf("state %v stored as %q, %v; want %q", pair.state, got, ok, pair.text)
 		}
 	}
-	if len(StoredStates()) != len(pairs) {
-		t.Errorf("stored vocabulary has %d states, want %d", len(StoredStates()), len(pairs))
+	if len(storedStateNames()) != len(pairs) {
+		t.Errorf("stored vocabulary has %d states, want %d", len(storedStateNames()), len(pairs))
 	}
 	for _, state := range []action_servicepb.ActionState{action_servicepb.ActionState_ACTION_STATE_UNSPECIFIED, 99} {
-		if _, ok := StateStored(state); ok {
+		if _, ok := stateStored(state); ok {
 			t.Errorf("accepted state %v", state)
 		}
 	}
-	if _, ok := StateFromStored("future_state"); ok {
+	if _, ok := stateFromStored("future_state"); ok {
 		t.Error("accepted unknown stored state")
 	}
 }
@@ -54,16 +54,16 @@ func TestStoredActorRoundTrip(t *testing.T) {
 		nil,
 	}
 	for _, actor := range actors {
-		encoded, err := EncodeStoredActor(actor)
+		encoded, err := encodeStoredActor(actor)
 		if err != nil {
 			t.Fatal(err)
 		}
-		decoded, err := DecodeStoredActor(encoded)
+		decoded, err := decodeStoredActor(encoded)
 		if err != nil || !proto.Equal(decoded, actor) {
 			t.Errorf("actor %v encoded as %s decoded as %v, %v", actor, encoded, decoded, err)
 		}
 	}
-	if got, _ := EncodeStoredActor(nil); string(got) != "null" {
+	if got, _ := encodeStoredActor(nil); string(got) != "null" {
 		t.Errorf("nil actor encoded as %s", got)
 	}
 	for _, actor := range []*action_servicepb.Principal{
@@ -71,8 +71,8 @@ func TestStoredActorRoundTrip(t *testing.T) {
 		{Principal: &action_servicepb.Principal_Caller{Caller: &sandboxespb.ServiceAccount{Name: "test-caller"}}},
 		{Principal: &action_servicepb.Principal_Operator{Operator: &action_servicepb.Operator{Issuer: "issuer"}}},
 	} {
-		if err := ValidateActor(actor); !errors.Is(err, ErrInvalidActor) {
-			t.Errorf("ValidateActor(%v) = %v", actor, err)
+		if err := validateActor(actor); !errors.Is(err, errInvalidActor) {
+			t.Errorf("validateActor(%v) = %v", actor, err)
 		}
 	}
 }

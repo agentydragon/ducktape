@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 
-	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"google.golang.org/grpc/codes"
@@ -77,7 +76,7 @@ func (w *Worker) checkDestination(ctx context.Context, claim store.Claim) error 
 		return &staleDestinationError{staleUIDChanged}
 	}
 	// A Sandbox runs as the ServiceAccount of its own name.
-	if (action.ServiceAccount{Namespace: view.Identity.Namespace, Name: view.Identity.Name}) != claim.Owner {
+	if (store.ServiceAccount{Namespace: view.Identity.Namespace, Name: view.Identity.Name}) != claim.Owner {
 		return errOwnerMismatch
 	}
 	return nil

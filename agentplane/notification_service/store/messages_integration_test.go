@@ -5,7 +5,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 )
@@ -18,7 +17,7 @@ func messageQuotas() Quotas {
 }
 
 // message is a message from sender to the fixture owner's Sandbox, for the Session body names.
-func (f fixture) message(sender action.ServiceAccount, key, text string) Message {
+func (f fixture) message(sender ServiceAccount, key, text string) Message {
 	creation := body(key)
 	return Message{
 		Sender: sender, Recipient: f.owner, DestinationRef: creation.DestinationRef, SessionID: creation.SessionID,
@@ -43,7 +42,7 @@ func (f fixture) send(t *testing.T, message Message) SentMessage {
 	return sent
 }
 
-func (f fixture) sentMessage(t *testing.T, sender action.ServiceAccount, id uuid.UUID) SentMessage {
+func (f fixture) sentMessage(t *testing.T, sender ServiceAccount, id uuid.UUID) SentMessage {
 	t.Helper()
 	sent, err := f.SentMessage(t.Context(), sender, id)
 	if err != nil {
@@ -106,7 +105,7 @@ func TestAMessageIsAnEntryOfItsSessionsInboxThatItsSenderFollows(t *testing.T) {
 	}
 
 	for name, lookup := range map[string]struct {
-		sender action.ServiceAccount
+		sender ServiceAccount
 		id     uuid.UUID
 	}{"the recipient": {f.owner, sent.ID}, "another account": {newOwner(), sent.ID}, "an unknown ID": {sender, uuid.New()}} {
 		if _, err := f.SentMessage(t.Context(), lookup.sender, lookup.id); !errors.Is(err, ErrNotFound) {

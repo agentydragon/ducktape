@@ -14,7 +14,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/action"
 	actionpb "github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
@@ -35,7 +34,7 @@ const (
 )
 
 // testOwner owns the inboxes: a Sandbox runs as the ServiceAccount of its own name.
-var testOwner = action.ServiceAccount{Namespace: testNamespace, Name: testSandbox}
+var testOwner = store.ServiceAccount{Namespace: testNamespace, Name: testSandbox}
 
 // testIncarnation is testOwner as the Sandbox the destinations name.
 var testIncarnation = store.Owner{Account: testOwner, SandboxUID: testSandboxUID}
@@ -383,7 +382,7 @@ func TestEventsReturnsTheOwnersEventsAndRefusesAnotherAccount(t *testing.T) {
 		t.Errorf("events call = %+v", call)
 	}
 
-	_, err = f.source.Events(t.Context(), action.ServiceAccount{Namespace: testNamespace, Name: "another-sandbox"}, request, 0)
+	_, err = f.source.Events(t.Context(), store.ServiceAccount{Namespace: testNamespace, Name: "another-sandbox"}, request, 0)
 	requireFailure(t, err, store.FailureAccessDenied, "SourceNotOwnedError")
 }
 

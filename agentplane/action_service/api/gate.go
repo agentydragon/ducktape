@@ -5,7 +5,6 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"google.golang.org/grpc"
@@ -114,7 +113,7 @@ func (g *Gate) authenticate(ctx context.Context) (admission, error) {
 	case err != nil:
 		return admission{}, failure(ctx, err)
 	}
-	account := action.ServiceAccount{Namespace: workload.Account.Namespace, Name: workload.Account.Name}
+	account := store.ServiceAccount{Namespace: workload.Account.Namespace, Name: workload.Account.Name}
 	if _, reader := g.readers[workload.Account]; reader {
 		return admission{principal: store.ServiceReaderPrincipal{Account: account}}, nil
 	}

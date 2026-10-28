@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/migrations"
@@ -47,7 +46,7 @@ const awaitBound = 30 * time.Second
 const testGroup = "test-group"
 
 var (
-	caller   = store.CallerPrincipal{Account: action.ServiceAccount{Namespace: "test-namespace", Name: "test-caller"}}
+	caller   = store.CallerPrincipal{Account: store.ServiceAccount{Namespace: "test-namespace", Name: "test-caller"}}
 	operator = store.OperatorPrincipal{Issuer: "https://issuer.test.example", Subject: "test-operator"}
 )
 

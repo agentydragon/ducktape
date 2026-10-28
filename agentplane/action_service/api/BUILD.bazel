@@ -24,7 +24,6 @@ go_library(
         "//agentplane/mcp_edge:__subpackages__",
     ],
     deps = [
-        "//agentplane/action",
         "//agentplane/action_service:action_service_go_proto",
         "//agentplane/action_service:operator_action_service_go_proto",
         "//agentplane/action_service:web_push_service_go_proto",
@@ -99,7 +98,6 @@ go_test(
     embed = [":api"],
     tags = ["requires_docker"],
     deps = [
-        "//agentplane/action",
         "//agentplane/action_service:action_service_go_proto",
         "//agentplane/action_service:operator_action_service_go_proto",
         "//agentplane/action_service:web_push_service_go_proto",

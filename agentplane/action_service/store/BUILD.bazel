@@ -9,15 +9,16 @@ go_library(
         "cancel.go",
         "decisions.go",
         "executions.go",
+        "legacy_action.go",
         "models.go",
         "requests.go",
         "store.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/action_service/store",
     deps = [
-        "//agentplane/action",
         "//agentplane/action_service:action_service_go_proto",
         "//agentplane/postgres/go:postgres",
+        "//agentplane/proto:sandboxes_go_proto",
         "@com_github_google_uuid//:uuid",
         "@com_github_lib_pq//:pq",
     ],
@@ -28,13 +29,15 @@ go_test(
     srcs = [
         "golden_test.go",
         "golden_vectors_test.go",
+        "legacy_action_test.go",
     ],
     embed = [":store"],
     embedsrcs = ["golden.json"],
     deps = [
-        "//agentplane/action",
         "//agentplane/action_service:action_service_go_proto",
+        "//agentplane/proto:sandboxes_go_proto",
         "@com_github_google_uuid//:uuid",
+        "@org_golang_google_protobuf//proto",
     ],
 )
 
@@ -57,7 +60,6 @@ go_test(
     embedsrcs = ["golden.json"],
     tags = ["requires_docker"],
     deps = [
-        "//agentplane/action",
         "//agentplane/action_service:action_service_go_proto",
         "//agentplane/action_service/migrations",
         "//agentplane/postgres/go/wakeups",

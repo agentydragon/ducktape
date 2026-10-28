@@ -13,9 +13,14 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/google/uuid"
 )
+
+// ServiceAccount is comparable so ownership checks use namespace/name values, not protobuf pointer identity.
+type ServiceAccount struct {
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
+}
 
 // DestinationRef is the Sandbox a Session runs in, by the UID that tells it from a Sandbox recreated under
 // the same name. It is stored as `inbox.destination_ref` and inside a subscription's creation.
@@ -149,7 +154,7 @@ type GitHubMergeabilitySnapshotEvent struct {
 // MessageEvent is a message a workload sent to the inbox, with the sender the service authenticated.
 type MessageEvent struct {
 	MessageID uuid.UUID
-	Sender    action.ServiceAccount
+	Sender    ServiceAccount
 }
 
 func (ActionsEvent) isEventIdentity()                    {}
@@ -493,15 +498,15 @@ func (e GitHubMergeabilitySnapshotEvent) MarshalJSON() ([]byte, error) {
 
 func (e MessageEvent) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
-		Provider  string                `json:"provider"`
-		MessageID uuid.UUID             `json:"message_id"`
-		Sender    action.ServiceAccount `json:"sender"`
+		Provider  string         `json:"provider"`
+		MessageID uuid.UUID      `json:"message_id"`
+		Sender    ServiceAccount `json:"sender"`
 	}{"message", e.MessageID, e.Sender})
 }
 
 // serviceAccountJSON is the historical Notification event wire shape. Unlike the shared validated identity codec,
 // this stored-event reader accepts absent or empty namespace/name fields.
-type serviceAccountJSON action.ServiceAccount
+type serviceAccountJSON ServiceAccount
 
 // decode reads one JSON value into v, refusing fields v does not name, as the stored models do.
 func decode(data []byte, v any) error {
@@ -770,7 +775,7 @@ func DecodeEventIdentity(data []byte) (EventIdentity, error) {
 		if err := errors.Join(required("message_id", wire.MessageID != nil), required("sender", wire.Sender != nil)); err != nil {
 			return nil, err
 		}
-		return MessageEvent{MessageID: *wire.MessageID, Sender: action.ServiceAccount(*wire.Sender)}, nil
+		return MessageEvent{MessageID: *wire.MessageID, Sender: ServiceAccount(*wire.Sender)}, nil
 	default:
 		return nil, fmt.Errorf("unknown event provider %q", head.Provider)
 	}

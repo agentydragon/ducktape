@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 
-	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/policyview"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
@@ -16,7 +15,7 @@ import (
 // does, only while its ServiceAccount carries the caller label. An operator must name the account, and is also shown
 // each binding's diagnostics.
 func (s *Service) GetActionPolicy(ctx context.Context, request *action_servicepb.GetActionPolicyRequest) (*action_servicepb.GetActionPolicyResponse, error) {
-	var own *action.ServiceAccount
+	var own *store.ServiceAccount
 	viewer := policyview.Workload
 	switch principal := admitted(ctx).principal.(type) {
 	case store.CallerPrincipal:

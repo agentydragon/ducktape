@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/migrations"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
@@ -38,7 +37,7 @@ func TestMain(m *testing.M) {
 const awaitBound = 30 * time.Second
 
 var (
-	caller         = store.CallerPrincipal{Account: action.ServiceAccount{Namespace: "test-namespace", Name: "test-caller"}}
+	caller         = store.CallerPrincipal{Account: store.ServiceAccount{Namespace: "test-namespace", Name: "test-caller"}}
 	operator       = store.OperatorPrincipal{Issuer: "https://issuer.test.example", Subject: "test-operator"}
 	actionIdentity = store.ActionIdentity{Group: "test-group", Name: "test-action"}
 )

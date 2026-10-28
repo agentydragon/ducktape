@@ -13,7 +13,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
 
@@ -121,7 +120,7 @@ func (w *world) serve(rw http.ResponseWriter, r *http.Request, path string) bool
 }
 
 var (
-	testOwner       = action.ServiceAccount{Namespace: "test", Name: "owner"}
+	testOwner       = store.ServiceAccount{Namespace: "test", Name: "owner"}
 	testDestination = store.DestinationRef{Namespace: "test", Name: "sandbox", UID: "uid"}
 	// testIncarnation is testOwner as the Sandbox testDestination names.
 	testIncarnation = store.Owner{Account: testOwner, SandboxUID: testDestination.UID}

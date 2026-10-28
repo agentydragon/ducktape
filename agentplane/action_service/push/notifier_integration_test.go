@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/action"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
 	"github.com/google/uuid"
@@ -20,7 +19,7 @@ const awaitBound = 30 * time.Second
 
 var (
 	testOperator = store.OperatorPrincipal{Issuer: "https://issuer.test.example", Subject: "test-operator"}
-	testCaller   = store.CallerPrincipal{Account: action.ServiceAccount{Namespace: "test-namespace", Name: "test-caller"}}
+	testCaller   = store.CallerPrincipal{Account: store.ServiceAccount{Namespace: "test-namespace", Name: "test-caller"}}
 )
 
 // delivery is a Notifier's database, with the requests and subscriptions in it, and the push service it delivers to.
