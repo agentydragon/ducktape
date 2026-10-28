@@ -438,10 +438,13 @@ The source-derived local-class certificate is shared by purity classification
 and synchronous execution. Its class-shape gate excludes explicit constructors,
 inheritance, decorators, computed keys, static fields/blocks, and initializer
 expressions that might read or invoke user code. The accepted initializers are
-absent values, primitive literals, `!` of a numeric/boolean literal, deferred
-function/arrow allocation, and `new Set`/`Map`/`WeakSet`/`WeakMap` without
-arguments when the intrinsic binding is unshadowed. The latter reuses the
-existing no-argument built-in admission; it does not admit iterator arguments.
+absent values, primitive literals, `void 0` with a numeric zero literal
+operand, `!` of a numeric/boolean literal, deferred function/arrow allocation,
+and `new Set`/`Map`/`WeakSet`/`WeakMap` without arguments when the intrinsic
+binding is unshadowed. The latter reuses the existing no-argument built-in
+admission; it does not admit iterator arguments. `void` evaluates its operand
+before discarding the value, so calls, property reads, computed keys, and other
+non-literal operands remain excluded; see the [ECMAScript void operator](https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-void-operator).
 An ordinary getter's body is deferred and is not evaluated by construction.
 
 Purity requires an exact direct top-level `new` initializer after the class

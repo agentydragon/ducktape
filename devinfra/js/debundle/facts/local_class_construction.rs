@@ -140,6 +140,17 @@ fn safe_field_value(value: &Expr, shadowed: &BTreeSet<&'static str>) -> bool {
     match value.unwrap_parens() {
         Expr::Lit(Lit::Str(_) | Lit::Num(_) | Lit::Bool(_) | Lit::Null(_) | Lit::BigInt(_))
         | Expr::Arrow(_) => true,
+        // Unary `void` evaluates its operand first, so admit only the inert
+        // numeric literal form used to spell an absent field value.
+        Expr::Unary(unary)
+            if unary.op == UnaryOp::Void
+                && matches!(
+                    unary.arg.unwrap_parens(),
+                    Expr::Lit(Lit::Num(number)) if number.value == 0.0
+                ) =>
+        {
+            true
+        }
         Expr::Fn(function) => {
             function.function.decorators.is_empty()
                 && function
