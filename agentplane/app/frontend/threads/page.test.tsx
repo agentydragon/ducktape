@@ -529,9 +529,10 @@ it("explains every runner blocker and links sessions outside the loaded thread l
   ];
   const container = await render();
   const streams = eventSourceUrls.length;
-  const hint = container.querySelector<HTMLButtonElement>(".agentplane-composer-autosuspend");
-  expect(hint?.textContent).toBe("Autosuspend waiting: Turn running · +5");
-  await act(async () => hint?.click());
+  const hint = container.querySelector(".agentplane-composer-autosuspend");
+  expect(hint?.textContent).toBe("Sandbox in active use by Session 00000000 · Details");
+  expect(hint?.querySelector("a")?.getAttribute("href")).toBe(`/threads/${unlistedSession}`);
+  await act(async () => hint?.querySelector("button")?.click());
   const details = document.querySelector('[role="dialog"]');
   expect(details?.textContent).toContain("Setup running");
   expect(details?.textContent).toContain("Session starting");
@@ -540,6 +541,41 @@ it("explains every runner blocker and links sessions outside the loaded thread l
   expect(details?.querySelector(`a[href="/threads/${THREAD.id}"]`)?.textContent).toBe(THREAD.name);
   expect(details?.querySelector(`a[href="/threads/${unlistedSession}"]`)?.textContent).toBe("Session 00000000");
   expect(eventSourceUrls).toHaveLength(streams);
+});
+
+it.each([null, "2026-01-01T12:12:00Z"])(
+  "links the busy sibling from an idle thread even with a retained deadline (%s)",
+  async (deadline) => {
+    const sibling = { ...THREAD, id: "00000000-0000-4000-8000-000000000098", name: "Busy sibling" };
+    threadRows = [THREAD, sibling];
+    sharedFeed = "ended";
+    sandboxes = [
+      {
+        ...autosuspendSandbox(deadline),
+        autosuspend_blockers: [
+          { reason: "ActiveTurn", session_id: THREAD.id },
+          { reason: "ActiveTurn", session_id: sibling.id },
+        ],
+      },
+    ];
+    const container = await render();
+    const hint = container.querySelector(".agentplane-composer-autosuspend");
+    expect(hint?.textContent).toBe("Sandbox in active use by Busy sibling · Details");
+    expect(hint?.querySelector("a")?.getAttribute("href")).toBe(`/threads/${sibling.id}`);
+    expect(hint?.textContent).not.toContain("autosuspends in");
+  }
+);
+
+it("shows the current session's busy reason instead of a retained deadline", async () => {
+  sandboxes = [
+    {
+      ...autosuspendSandbox("2026-01-01T12:12:00Z"),
+      autosuspend_blockers: [{ reason: "ActiveTurn", session_id: THREAD.id }],
+    },
+  ];
+  const hint = (await render()).querySelector(".agentplane-composer-autosuspend");
+  expect(hint?.textContent).toBe("Autosuspend waiting: Turn running");
+  expect(hint?.querySelector("a")).toBeNull();
 });
 
 it.each([

@@ -105,43 +105,59 @@ function ModelActivityHint({
 function AutosuspendHint({
   hint,
   className,
+  threadId,
 }: {
   hint: ReturnType<typeof autosuspendHint>;
   className: string;
+  threadId: string;
 }): JSX.Element | null {
   const live = useRequiredThreadsLive();
   if (!hint) return null;
   const title = "Autosuspend waits until all sessions on this Sandbox are idle; new work resets the timer.";
   if (hint.blockers?.length) {
+    const sibling = hint.blockers.find((blocker) => blocker.session_id && blocker.session_id !== threadId);
+    const siblingId = sibling?.session_id;
+    const sessionName = (id: string) =>
+      live.snapshot?.threads.find((thread) => thread.id === id)?.name || `Session ${id.slice(0, 8)}`;
     return (
-      <Popover position="top-end" width={320} withinPortal>
-        <Popover.Target>
-          <UnstyledButton className={className} aria-label={hint.text} title="Show what keeps this Sandbox busy">
-            <Text component="span" size="xs" c="dimmed" td="underline">
-              {hint.text}
-            </Text>
-          </UnstyledButton>
-        </Popover.Target>
-        <Popover.Dropdown style={{ overflowWrap: "anywhere" }}>
-          <Stack gap="xs">
-            <Text size="xs">{title}</Text>
-            {hint.blockers.map((blocker) => (
-              <Text key={`${blocker.reason}:${blocker.session_id ?? ""}`} size="xs">
-                {AUTOSUSPEND_BLOCKER_LABELS[blocker.reason]}
-                {blocker.session_id && (
-                  <>
-                    {" · "}
-                    <Anchor component={Link} to={`/threads/${encodeURIComponent(blocker.session_id)}`} size="xs">
-                      {live.snapshot?.threads.find((thread) => thread.id === blocker.session_id)?.name ||
-                        `Session ${blocker.session_id.slice(0, 8)}`}
-                    </Anchor>
-                  </>
-                )}
+      <Text component="div" className={className} size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
+        {siblingId && (
+          <>
+            {"Sandbox in active use by "}
+            <Anchor component={Link} to={`/threads/${encodeURIComponent(siblingId)}`} size="xs">
+              {sessionName(siblingId)}
+            </Anchor>
+            {" · "}
+          </>
+        )}
+        <Popover position="top-end" width={320} withinPortal>
+          <Popover.Target>
+            <UnstyledButton aria-label="Show autosuspend blockers" title="Show what keeps this Sandbox busy">
+              <Text component="span" size="xs" c="dimmed" td="underline">
+                {siblingId ? "Details" : hint.text}
               </Text>
-            ))}
-          </Stack>
-        </Popover.Dropdown>
-      </Popover>
+            </UnstyledButton>
+          </Popover.Target>
+          <Popover.Dropdown style={{ overflowWrap: "anywhere" }}>
+            <Stack gap="xs">
+              <Text size="xs">{title}</Text>
+              {hint.blockers.map((blocker) => (
+                <Text key={`${blocker.reason}:${blocker.session_id ?? ""}`} size="xs">
+                  {AUTOSUSPEND_BLOCKER_LABELS[blocker.reason]}
+                  {blocker.session_id && (
+                    <>
+                      {" · "}
+                      <Anchor component={Link} to={`/threads/${encodeURIComponent(blocker.session_id)}`} size="xs">
+                        {sessionName(blocker.session_id)}
+                      </Anchor>
+                    </>
+                  )}
+                </Text>
+              ))}
+            </Stack>
+          </Popover.Dropdown>
+        </Popover>
+      </Text>
     );
   }
   return (
@@ -348,7 +364,13 @@ function ConversationBody({
           onResumeSandbox={onResumeSandbox}
           onSubmit={commands.submitInput}
           onInterrupt={commands.interruptTurn}
-          status={<AutosuspendHint hint={sandboxAutosuspend} className="agentplane-composer-autosuspend-mobile" />}
+          status={
+            <AutosuspendHint
+              threadId={threadId}
+              hint={sandboxAutosuspend}
+              className="agentplane-composer-autosuspend-mobile"
+            />
+          }
         >
           <Group className="agentplane-composer-settings" gap="xs" wrap="nowrap">
             <Select
@@ -434,7 +456,11 @@ function ConversationBody({
             </Menu>
           </TopbarActions>
           <Stack className="agentplane-composer-activity" align="flex-end" gap={0}>
-            <AutosuspendHint hint={sandboxAutosuspend} className="agentplane-composer-autosuspend" />
+            <AutosuspendHint
+              threadId={threadId}
+              hint={sandboxAutosuspend}
+              className="agentplane-composer-autosuspend"
+            />
             <ModelActivityHint
               at={thread.last_model_activity_at}
               age={activityAge}

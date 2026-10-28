@@ -996,7 +996,7 @@ function autosuspendBusy(): void {
   autosuspendCountdown();
   const sandbox = SANDBOXES.find((candidate) => candidate.name === "ready-sandbox");
   if (!sandbox) throw new Error("Missing ready Sandbox fixture");
-  sandbox.idle_suspend_at = null;
+  // Exercise busy facts taking precedence over a retained idle deadline.
   sandbox.autosuspend_blockers = [
     { reason: "ActiveTurn", session_id: RUNNING_THREAD },
     { reason: "Setup", session_id: UNNAMED_STOPPED_THREAD },

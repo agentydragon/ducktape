@@ -58,7 +58,7 @@ export function autosuspendHint(sandbox: SandboxView | undefined, fresh: boolean
   }
 
   const deadline = sandbox.idle_suspend_at;
-  if (sandbox.phase === "Running" && (deadline === null || deadline === undefined)) {
+  if (sandbox.phase === "Running") {
     const blockers = sandbox.autosuspend_blockers ?? [];
     const first = blockers[0];
     if (first) {
