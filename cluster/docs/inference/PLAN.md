@@ -1,6 +1,6 @@
 # Wyrm2 capability-first inference plan (WIP)
 
-Updated: 2026-09-26. The September 24 measurements and exact commands are in
+Updated: 2026-10-28 (inference evaluation evidence last updated 2026-09-26). The September 24 measurements and exact commands are in
 [runs/2026-09-24_qwen38_ssd/README.md](runs/2026-09-24_qwen38_ssd/README.md).
 
 ## Objective and decision
@@ -98,44 +98,24 @@ The V4.1 author reports ~5.1 tok/s on new content and ~21 on repeated content wi
 125.7 GiB RAM and PCIe 5 NVMe. A September 23 direct-I/O update reports ~8.9–10.0 tok/s on first-pass prompts.
 These are short-prompt, short-output external measurements. Wyrm2 has less RAM and a virtualized storage path;
 two-GPU scaling, reasoning quality, sustained changing expert working sets, and long-context behavior are unknown.
-Use the expanded VM model disk for the 502 GB checkpoint, archiving inactive checkpoints for working headroom.
+Any trial of this 502 GB checkpoint needs fresh placement and capacity review against
+Wyrm2's current Piraeus pools; do not assume the retired VM model disk is available.
 Keep every expert; caching changes placement, whereas dropping experts changes the model.
 
-## Storage recommendation
+## Superseded storage recommendation
 
-Subsequent September 24 inspection of Atlas confirmed that `virtio8` is
-`local-zfs:vm-110-disk-7`, backed by the 4 TB Sabrent NVMe in `rpool`.
-ZFS reported about 1.03 TB (956 GiB) available to datasets, shared with other VMs;
-the pool had about 1.22 TB physically free. These are different accounting figures,
-not additive capacity. The HDD share had about 27 TiB free.
-Root free space had increased to 105 GiB by this later check; the earlier disk-pressure
-observation above was not rechecked at that time.
+The September 24 expansion of the VM model disk to 1,024 GiB was an interim step,
+recorded in [PR #7893](https://github.com/agentydragon/ducktape/pull/7893). On
+2026-10-27, `virtio8` was destroyed during the Wyrm2 move to Piraeus. The current
+pool layout, model placement, and remaining storage work are tracked in the
+[Piraeus production plan](../plans/piraeus_production.md); use it to assess new
+model trials instead of the old `virtio8` capacity recommendation.
 
-| Storage                             | Current allocation | Proposed allocation | Reason                               |
-| ----------------------------------- | ------------------ | ------------------- | ------------------------------------ |
-| Bazel output/cache (`virtio4`)      | 150 GiB            | 250 GiB             | Only 4 GiB free at inspection        |
-| Root (`scsi0`)                      | 500 GiB            | 500 GiB             | 105 GiB free after cleanup           |
-| Games, containerd, Kubernetes disks | Existing           | Existing            | No expansion needed for this program |
-
-The model-volume change was applied online on September 24:
-**1,024 GiB at `/var/lib/llm-models-ssd`**, with about 515 GiB free and all existing
-models retained. Implementation and verification are in
-[PR #7893](https://github.com/agentydragon/ducktape/pull/7893).
-The VM was not rebooted and its running system generation and critical service PIDs
-were unchanged. The NixOS configuration was staged for the next normal boot;
-only the reviewed mount-related files were applied to the running system.
-Terraform currently ignores disk changes to protect legacy CSI attachments, so this
-grow used a targeted Proxmox resize rather than bootstrap. The PR also updates
-launcher defaults and the monitoring selector for the normal Flux rollout after merge.
-
-The operator is comfortable archiving or deleting unused models. Candidate archives
-are GLM-5.2 Colibri (358 GiB) and the July DeepSeek IQ2 checkpoint (86 GiB).
-Confirm they are unused, copy to HDD and verify before removing the SSD copies;
-retain small run records. With both archived, the 502 GB V4.1 checkpoint and three
-comparison checkpoints total roughly 770 GiB, fitting the expanded model filesystem.
-Use 400 GiB of pool-available SSD space as an operating headroom target, checking it
-before downloads. Existing disks are thin-provisioned: shrinking an empty allocation
-does not recover the nominal size as physical space.
+The same September table proposed growing the Bazel cache disk (`virtio4`) from
+150 to 250 GiB. Current Terraform and NixOS sources now declare 300 GiB for that
+disk ([Terraform](../../terraform/main/proxmox-vms.tf),
+[NixOS](../../../nix/nixos/hosts/wyrm2/default.nix)); the old proposed size is
+superseded.
 
 ## September 26 checkpoint and decision
 
