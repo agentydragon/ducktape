@@ -45,12 +45,25 @@ A schema change is a Goose file in `migrations/notifications/`. The baseline, `0
 database that the retired Alembic history left at revision `0010_drop_write_only_columns` and refuses one behind it;
 the migrator keeps the advisory lock key the Alembic runner took.
 
-Entry source identities are being moved from JSONB equality to explicit relational natural keys. The first
-expansion migration adds nullable columns and the serving writers dual-write them while the existing JSONB
-unique index continues to deduplicate. A follow-up offline backfill and index build will be rolled out after all
-writers understand these columns; it will not run in Pod init or hold serving readiness during the scan.
-To roll this expansion back, restore the previous service image and leave the additive columns in place; do not
-run the migration's `Down` section while any dual-writing replica remains.
+Entry source identities are being moved from JSONB equality to explicit relational natural keys. The expansion
+migration adds nullable columns and the serving writers dual-write them while the existing JSONB unique index
+continues to deduplicate. After every writer that predates the dual write has been rolled out, run the migrator
+image with `backfill-event-identities --writer-gate=notification-event-identity-dual-write-v1`; it resumes in short `(inbox_id, cursor)` batches, checks for legacy JSON
+shapes that collide under the natural key, validates the shape constraint, and builds the unique natural-key
+indexes concurrently. A collision stops the command with exact inbox/cursor groups, retaining every original
+entry and JSON document for explicit resolution. The command is separate from Pod init, so retained inboxes do
+not hold serving readiness while they are scanned. This phase keeps serving deduplication on JSONB; a later
+runtime release can switch readers after it observes the completed backfill/index phase. Keep the JSONB index
+until every old writer has drained and every reader has moved to relational keys.
+
+To roll back before the backfill/index command runs, restore the previous service image and leave the additive
+columns in place; do not run a migration's `Down` section while dual writers remain. If reverting after the
+command marks indexes ready, leave the columns, checkpoint and natural-key indexes in place as well. The previous
+image continues to use the JSONB key. After the rollback rollout settles, verify the previous API's reads, writes,
+replay deduplication and readiness. Only after no reader depends on relational keys should a later cleanup drop the
+natural-key indexes concurrently, then run the migration Down sections in reverse order. Before a later forward
+rollout, drain old writers and check for any unconverted rows; the backfill command stops with their inbox/cursors
+instead of silently cutting over.
 
 `00005_inbox_destination_expand.sql` adds nullable relational destination columns while the service continues to
 dual-write them and reads legacy `destination_ref` JSON when needed. After every Notification Service writer runs
