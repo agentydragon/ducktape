@@ -287,7 +287,10 @@ class FixtureCertificateIssuer:
             try:
                 self._reconcile_certificate(certificate)
             except BaseException as error:
-                self._set_certificate_failure(certificate, error)
+                if not self._set_certificate_failure(certificate, error):
+                    # The controller can delete a Certificate while this snapshot is being
+                    # reconciled. Its owner is gone, so skip it and keep serving later resources.
+                    continue
                 raise
 
     def _reconcile_issuers(self) -> None:
@@ -432,20 +435,29 @@ class FixtureCertificateIssuer:
                 "revision": 1,
             }
         }
-        self._custom.patch_namespaced_custom_object_status(
-            API_GROUP, API_VERSION, namespace, CERTIFICATE_PLURAL, name, ready_patch
-        )
+        if not self._patch_certificate_status(namespace, name, ready_patch):
+            return
         logger.info("issued test certificate %s/%s from requested Certificate.spec", namespace, name)
 
-    def _set_certificate_failure(self, certificate: dict[str, Any], error: BaseException) -> None:
+    def _patch_certificate_status(self, namespace: str, name: str, patch: dict[str, Any]) -> bool:
+        """Patch a Certificate status, returning false if its owner deleted it during this pass."""
         assert self._custom is not None
-        metadata = certificate["metadata"]
         try:
             self._custom.patch_namespaced_custom_object_status(
-                API_GROUP,
-                API_VERSION,
+                API_GROUP, API_VERSION, namespace, CERTIFICATE_PLURAL, name, patch
+            )
+        except ApiException as error:
+            if error.status == 404:
+                logger.debug("Certificate %s/%s was deleted during fixture issuance", namespace, name)
+                return False
+            raise
+        return True
+
+    def _set_certificate_failure(self, certificate: dict[str, Any], error: BaseException) -> bool:
+        metadata = certificate["metadata"]
+        try:
+            return self._patch_certificate_status(
                 metadata["namespace"],
-                CERTIFICATE_PLURAL,
                 metadata["name"],
                 {
                     "status": {
@@ -465,3 +477,4 @@ class FixtureCertificateIssuer:
             logger.exception(
                 "could not report fixture signer error for %s/%s", metadata.get("namespace"), metadata.get("name")
             )
+            return True

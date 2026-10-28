@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,18 +18,92 @@ import (
 
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	"github.com/agentydragon/ducktape/agentplane/runner/codexexecserver"
+	runnercontrol "github.com/agentydragon/ducktape/agentplane/runner/control"
 	executorcontrol "github.com/agentydragon/ducktape/agentplane/runner/executor/control"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 	executorpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/executor_gatewaypb"
 	controlpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
+	"github.com/coder/websocket"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
 const codexExecServerTestTimeout = 10 * time.Second
+
+func TestClosingExecutorStreamPreservesSiblingInSameEpoch(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		connection, err := websocket.Accept(w, request, nil)
+		if err != nil {
+			return
+		}
+		defer connection.CloseNow()
+		for {
+			kind, data, err := connection.Read(request.Context())
+			if err != nil {
+				return
+			}
+			if err := connection.Write(request.Context(), kind, data); err != nil {
+				return
+			}
+		}
+	}))
+	defer server.Close()
+	r := newExecutorLifecycleRunnerWithURL(t, "ws"+strings.TrimPrefix(server.URL, "http"), func(context.Context) (*supervision.Instance, error) {
+		return newTestExecutorInstance(&atomic.Int32{}), nil
+	}, nil)
+	ctx, cancel := context.WithTimeout(t.Context(), codexExecServerTestTimeout)
+	defer cancel()
+	frames := []chan *executorpb.ExecutorFrame{make(chan *executorpb.ExecutorFrame, 8), make(chan *executorpb.ExecutorFrame, 8)}
+	connections := make([]runnercontrol.ExecutorConnection, 0, 2)
+	for i, channelID := range []string{"7-1", "7-2"} {
+		send := func(frame *controlpb.RunnerFrame) error {
+			select {
+			case frames[i] <- frame.GetExecutor():
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+		connection := r.openExecutorConnection(ctx, 7, send, send)
+		defer connection.Close()
+		connections = append(connections, connection)
+		if err := connection.Route(&executorpb.ExecutorFrame{
+			ChannelId: channelID,
+			Frame:     &executorpb.ExecutorFrame_Open{Open: &executorpb.ExecutorOpen{SessionId: "session-" + channelID}},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case ready := <-frames[i]:
+			if !ready.GetReady().GetAccepted() {
+				t.Fatalf("executor %s readiness = %v", channelID, ready)
+			}
+		case <-ctx.Done():
+			t.Fatal("executor did not become ready")
+		}
+	}
+	connections[0].Close()
+	want := []byte{0, 1, 2, 255}
+	if err := connections[1].Route(&executorpb.ExecutorFrame{
+		ChannelId: "7-2",
+		Frame: &executorpb.ExecutorFrame_Message{Message: &executorpb.ExecutorMessage{
+			Opcode: executorpb.ExecutorMessage_OPCODE_BINARY, Payload: want,
+		}},
+	}); err != nil {
+		t.Fatalf("sibling stream closed: %v", err)
+	}
+	select {
+	case reply := <-frames[1]:
+		if message := reply.GetMessage(); message == nil || message.GetOpcode() != executorpb.ExecutorMessage_OPCODE_BINARY || string(message.GetPayload()) != string(want) {
+			t.Fatalf("sibling executor reply = %v, want binary echo %v", reply, want)
+		}
+	case <-ctx.Done():
+		t.Fatal("sibling executor stopped exchanging data after another stream closed")
+	}
+}
 
 func TestExecutorEnsureReturnsTypedCompanionRefusal(t *testing.T) {
 	r := newExecutorLifecycleRunner(t, func(context.Context) (*supervision.Instance, error) {
@@ -356,7 +432,7 @@ func TestExecutorRelayAdmissionClosesWhenRunnerQuiesces(t *testing.T) {
 	}
 
 	var workers sync.WaitGroup
-	err := r.startExecutorRelay(context.Background(), "1-1", 1, &executorpb.ExecutorOpen{SessionId: "session-1"},
+	err := r.startExecutorRelay(context.Background(), "1-1", &executorpb.ExecutorOpen{SessionId: "session-1"},
 		func(*controlpb.RunnerFrame) error { return nil },
 		func(*controlpb.RunnerFrame) error { return nil }, &workers)
 	if status.Code(err) != codes.FailedPrecondition {
@@ -427,6 +503,11 @@ func TestExecutorShutdownDrainsRelaysBeforeFencing(t *testing.T) {
 
 func newExecutorLifecycleRunner(t *testing.T, start func(context.Context) (*supervision.Instance, error), probe func(context.Context) error) *Runner {
 	t.Helper()
+	return newExecutorLifecycleRunnerWithURL(t, "ws://127.0.0.1:4599", start, probe)
+}
+
+func newExecutorLifecycleRunnerWithURL(t *testing.T, url string, start func(context.Context) (*supervision.Instance, error), probe func(context.Context) error) *Runner {
+	t.Helper()
 	dir := t.TempDir()
 	socket := filepath.Join(dir, "executor-control.sock")
 	companionCtx, cancelCompanion := context.WithCancel(context.Background())
@@ -438,7 +519,7 @@ func newExecutorLifecycleRunner(t *testing.T, start func(context.Context) (*supe
 		StateDir: t.TempDir(),
 		Codex:    &harness.LaunchConfig{Binary: "/bin/false"},
 		CodexExecServer: &codexexecserver.Config{
-			URL: "ws://127.0.0.1:4599", ContainerSocket: socket,
+			URL: url, ContainerSocket: socket,
 		},
 	}
 	adapters := codexexecserver.Adapters{Start: start, Probe: probe}

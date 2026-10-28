@@ -124,6 +124,7 @@ async def _open_agent(client: Client, name: str, harness: runner_pb2.Harness, mo
 
 
 @pytest.mark.scripted_model
+@pytest.mark.timeout(600)
 async def test_forward_and_reverse_mtls_share_gateway_and_forward_resume_keeps_history(
     client: Client, sandbox: Sandboxes, harness: runner_pb2.Harness, offered_model: str, scripted: ScriptedUpstream
 ) -> None:

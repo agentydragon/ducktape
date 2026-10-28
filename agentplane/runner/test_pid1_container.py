@@ -4,13 +4,20 @@ import asyncio
 import fcntl
 import json
 import os
+import shutil
 import time
 from pathlib import Path
 
 import pytest
 import pytest_bazel
 
-from agentplane.runner.configuration import Configuration, Endpoint, EnvironmentVariables, PodEnvironment
+from agentplane.runner.configuration import (
+    Configuration,
+    Endpoint,
+    EnvironmentVariables,
+    PodEnvironment,
+    RunnerTransportTLS,
+)
 from agentplane.runner.testing import launches
 from agentplane.runner.testing.gateway import Gateway
 from agentplane.runner.testing.process_fixtures import wait_for_exit
@@ -101,6 +108,24 @@ async def test_production_runner_selects_pid1(tmp_path: Path, gateway: Gateway, 
         "_main/agentplane/runner/supervision/runner_pid1_fixture_/runner_pid1_fixture"
     ).resolve()
     control = gateway.endpoint_for_sandbox("proof", "pid1-proof-uid")
+    host_tls_dir = tmp_path / "control-tls"
+    host_tls_dir.mkdir()
+    source_paths = {
+        "workload-cert.pem": Path(control.tls.cert_file),
+        "workload-key.pem": Path(control.tls.key_file),
+        "ca-cert.pem": Path(control.tls.ca_file),
+    }
+    for name, source in source_paths.items():
+        shutil.copyfile(source, host_tls_dir / name)
+    control = control.model_copy(
+        update={
+            "tls": RunnerTransportTLS(
+                cert_file="/proof/control-tls/workload-cert.pem",
+                key_file="/proof/control-tls/workload-key.pem",
+                ca_file="/proof/control-tls/ca-cert.pem",
+            )
+        }
+    )
     config = Configuration(
         version=2,
         state_dir="/proof/state",

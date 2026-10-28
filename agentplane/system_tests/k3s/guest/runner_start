@@ -4,10 +4,17 @@ set -eu
 # KubeVirt's virtiofs Secret mount cannot set a file mode. The production guest protects it with a
 # root-only parent; prove the native-agent account (uid 107) cannot read the runner's private key.
 test -r /run/agentplane/runner-tls/tls.key
-if su agent -s /bin/sh -c 'test ! -r /run/agentplane/runner-tls/tls.key'; then
+if systemd-run --quiet --wait --collect --uid=107 --gid=107 \
+	--unit="agentplane-runner-key-check-$$.service" \
+	/bin/sh -c 'test -r "$1" && exit 42; exit 0' sh /run/agentplane/runner-tls/tls.key; then
 	:
 else
-	echo "native agent can read the runner TLS private key" >&2
+	result=$?
+	if [ "$result" -eq 42 ]; then
+		echo "native agent can read the runner TLS private key" >&2
+	else
+		echo "cannot verify runner TLS private key isolation (systemd-run exited $result)" >&2
+	fi
 	exit 1
 fi
 

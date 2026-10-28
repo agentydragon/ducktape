@@ -9,6 +9,7 @@ var required = map[string]string{
 	"NAMESPACE":                 "agentplane",
 	"RUNNER_GATEWAY_TARGET":     "{sandbox}-control.{namespace}.svc:8080",
 	"RUNNER_GATEWAY_TOKEN_FILE": "/var/run/token",
+	"RUNNER_CERTIFICATE_ISSUER": "agentplane-runner-ca",
 }
 
 func setEnvironment(t *testing.T, environment map[string]string) {
@@ -28,6 +29,7 @@ func TestEverySettingComesFromTheEnvironment(t *testing.T) {
 	want := config{
 		Namespace: "agentplane", MetricsBindAddress: ":9090", HealthProbeBindAddress: ":9091",
 		RunnerGatewayTarget: "{sandbox}-control.{namespace}.svc:8080", RunnerGatewayTokenFile: "/var/run/token",
+		RunnerCertificateIssuer: "agentplane-runner-ca",
 	}
 	if c != want {
 		t.Fatalf("settings were not read: %+v", c)

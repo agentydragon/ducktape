@@ -183,7 +183,8 @@ budget remains authoritative across all of its native services.
 - Every forward unary call and direct executor stream is fenced with the Sandbox UID, incarnation
   UID, Runner boot ID and connection epoch. A stale epoch cannot authorize a call or clear a newer
   observer's readiness. `RunnerExec.Connect` carries one executor channel per stream; it uses the
-  existing Runner executor relay and its per-Runner channel and message limits.
+  existing Runner executor relay and its per-Runner channel and message limits. Closing one stream
+  leaves sibling executor channels running.
 - Reverse control writes are serialized and bounded. A write that exceeds its bound cancels that
   `Connect` stream so blocked writes and relayed calls can join before reconnect; reconnect never
   replays calls from the lost stream.

@@ -65,8 +65,8 @@ RUNNER_DISK_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-disk:unse
 _CONFIG_MAP_NAME = "runner-vm-config"
 _RUNNER_ENV_FILE = "runner.env"
 _WORKSPACE = "workspace"
-# The guest listens on nothing; a listed port keeps masquerade from forwarding every other port,
-# kubelet's probe of the relay's readiness port among them, to the guest.
+# A listed port keeps masquerade from forwarding every other port, including kubelet's probe of
+# the relay's readiness port. Forward mode also lists the Runner listener below.
 _UNUSED_GUEST_PORT = 22
 _RUNNER_PORT = 9090
 _RUNNER_TLS_PATH = "/run/agentplane/runner-tls"

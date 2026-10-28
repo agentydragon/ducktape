@@ -152,6 +152,7 @@ async def _configure_services(core: k8s.CoreV1Api, target: str) -> None:
     settings["ingress"]["sampler_accounts"] = [{"namespace": namespace(), "name": SERVICE}]
     history.data["config.yaml"] = yaml.safe_dump(settings)
     await core.replace_namespaced_config_map(history.metadata.name, namespace(), history)
+    await kubectl("rollout", "restart", "deployment/runner-gateway")
     await kubectl("rollout", "restart", "deployment/history-service")
     await asyncio.gather(
         kubectl("rollout", "status", "deployment/runner-gateway", "--timeout=180s"),
