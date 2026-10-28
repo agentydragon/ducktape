@@ -859,6 +859,8 @@ The [FinalizationRegistry constructor](https://tc39.es/ecma262/2025/multipage/ma
 checks callability, creates registry state and stores the callback through
 [`HostMakeJobCallback`](https://tc39.es/ecma262/2025/multipage/executable-code-and-execution-contexts.html#sec-hostmakejobcallback).
 The default non-browser host operation records the callback for later jobs.
+The [HTML host operation](https://html.spec.whatwg.org/multipage/webappapis.html#hostmakejobcallback)
+also records the callback and execution context without invoking it.
 
 ## Inferred returned-record construction timing
 

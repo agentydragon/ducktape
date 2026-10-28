@@ -268,8 +268,10 @@ known ordinary function origin or closure stores that callback through
 and returns an opaque value retaining its callback graph. The
 [constructor algorithm](https://tc39.es/ecma262/2025/multipage/managing-memory.html#sec-finalization-registry-constructor)
 checks callability and does not invoke the cleanup callback. The default host
-operation for non-browser runtimes records the callback. Later access or opaque
-consumption continues through the existing retained-value callback analysis.
+operation for non-browser runtimes records the callback; the
+[HTML host operation](https://html.spec.whatwg.org/multipage/webappapis.html#hostmakejobcallback)
+records the callback and execution context without invoking it. Later access or
+opaque consumption continues through the existing retained-value callback analysis.
 The call remains impure and uses `NativeHeapEffect::Opaque`; this supplies no
 purity, throw-freedom, or heap-locality claim.
 
