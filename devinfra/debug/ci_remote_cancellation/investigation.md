@@ -119,9 +119,13 @@ possibility; it neither establishes the hosted lease value nor proves this cause
 The failed build-ID cancellation targets a different invocation; it does not by
 itself explain the VM action linked to the test invocation.
 
-The earlier [action merging/hedging investigation](../buildbuddy_action_merge_hedge_hang.md)
+The earlier [action merging/hedging investigation](action_merge_hedge_hang.md)
 shows why execution identity and consumer ownership matter. Its different
 incident and older source snapshot do not establish this incident's cause.
+
+The [VM shutdown probe's CLI retry evidence](vm_shutdown_retry.md) records another
+case where a transport retry reused the inner invocation ID. Keep its outer
+attempts separate when interpreting execution indexes.
 
 ## Next evidence to collect
 

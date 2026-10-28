@@ -1,6 +1,10 @@
 # BuildBuddy action merging: a hedged execution's result never reaches the merged client
 
-**Status:** active; the upstream report is drafted below and not yet filed. Observed 2026-10-04/05.
+**Recorded status (2026-10-04/05):** active; the upstream report below was drafted
+and not yet filed. Current hosted behavior and filing status have not been rechecked.
+
+This is a separate incident relevant to the [cancellation investigation](investigation.md)
+through shared-action ownership and retry/hedge identity.
 
 ## Symptom
 

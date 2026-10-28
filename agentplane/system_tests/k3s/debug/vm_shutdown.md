@@ -20,9 +20,8 @@ bbr test //agentplane/system_tests:test_vm_sandbox_vm \
 ```
 
 [Invocation](https://app.buildbuddy.io/invocation/c7d1affd-a5eb-44f0-b09b-bf63ae1dcae4).
-The CLI retried after a log-stream `RST_STREAM INTERNAL_ERROR`, reusing the Bazel invocation ID.
-The first outer invocation was `1a92557f-ddde-49f6-b592-39f786569728`; the retry's outer invocation
-was `5e99e4f5-636f-46a9-a5be-b91d3859ca04`. These are not independent manual submissions.
+The [CLI retry and invocation identity evidence](../../../../devinfra/debug/ci_remote_cancellation/vm_shutdown_retry.md)
+is consolidated with the remote CI cancellation investigation.
 
 The timeline below comes specifically from the first TestRunner execution:
 
