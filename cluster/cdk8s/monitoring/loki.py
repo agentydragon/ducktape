@@ -267,8 +267,8 @@ def _promtail_values() -> dict[str, object]:
                 # 128Mi cap -> 23.8 TB physical reads for 66 MB logical, pegging the
                 # node's system disk at 94% util and starving co-located etcd's WAL
                 # fsync -> apiserver<->etcd latency -> NodeReady flaps). Keep the limit
-                # well above the tail working set. See
-                # cluster/debug/2026-06-10-etcd-io-contention/promtail-page-cache-etcd-starvation.md.
+                # well above the tail working set. See the historical measurements in
+                # cluster/docs/lessons_learned/2026_06_19_etcd_hdd_io_contention.md.
                 "memory": "256Mi",
             },
             "limits": {"cpu": "500m", "memory": "1Gi"},
@@ -311,8 +311,8 @@ def _promtail_journal_values() -> dict[str, object]:
                 "cpu": "50m",
                 # Keep memory well above the tail working set: with a tight cap, cgroup v2
                 # page-cache eviction thrashes the node disk and can starve co-located etcd
-                # (see the pod-log promtail and
-                # cluster/debug/2026-06-10-etcd-io-contention/).
+                # (see the pod-log promtail measurements in
+                # cluster/docs/lessons_learned/2026_06_19_etcd_hdd_io_contention.md).
                 "memory": "256Mi",
             },
             "limits": {"cpu": "500m", "memory": "512Mi"},
