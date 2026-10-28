@@ -49,6 +49,7 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
   const [sessionCursor, setSessionCursor] = useState<string | null>(null);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [versions, setVersions] = useState<SessionVersion[]>([]);
+  const [versionsSessionId, setVersionsSessionId] = useState<string | null>(null);
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
   const [events, setEvents] = useState<EventRecord[]>([]);
   const [eventCursor, setEventCursor] = useState<number | null>(null);
@@ -82,7 +83,10 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
     [machines]
   );
   const selectedSession = sessions.find((session) => session.id === selectedSessionId) ?? null;
-  const selectedVersion = versions.find((version) => version.id === selectedVersionId) ?? null;
+  const selectedVersion =
+    versionsSessionId === selectedSession?.id
+      ? (versions.find((version) => version.id === selectedVersionId) ?? null)
+      : null;
 
   useEffect(
     () => () => {
@@ -151,6 +155,7 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
     setLoadingMoreEvents(false);
     if (selectedSession === null) {
       setVersions([]);
+      setVersionsSessionId(null);
       setSelectedVersionId(null);
       setEvents([]);
       setEventCursor(null);
@@ -158,6 +163,7 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
     }
     const controller = new AbortController();
     setVersions([]);
+    setVersionsSessionId(null);
     setSelectedVersionId(null);
     setEvents([]);
     setEventCursor(null);
@@ -168,6 +174,7 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
       .then((items) => {
         if (controller.signal.aborted) return;
         setVersions(items);
+        setVersionsSessionId(selectedSession.id);
         const latest = items.find((version) => version.id === selectedSession.latest_version_id);
         setSelectedVersionId(latest?.id ?? items[0]?.id ?? null);
       })
@@ -184,9 +191,10 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
     eventPageRequest.current?.abort();
     eventPageRequest.current = null;
     setLoadingMoreEvents(false);
-    if (selectedSession === null || selectedVersionId === null) {
+    if (selectedSession === null || selectedVersionId === null || versionsSessionId !== selectedSession.id) {
       setEvents([]);
       setEventCursor(null);
+      setLoadingEvents(false);
       return;
     }
     const controller = new AbortController();
@@ -212,7 +220,7 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
       eventPageRequest.current?.abort();
       eventPageRequest.current = null;
     };
-  }, [api, selectedSession?.id, selectedVersionId]);
+  }, [api, selectedSession?.id, selectedVersionId, versionsSessionId]);
 
   useEffect(() => {
     relatedPageRequest.current?.abort();
