@@ -1,7 +1,8 @@
 """Serialize configuration models and source mappings at the ConfigMap text boundary.
 
-Only explicitly set model fields are emitted. Valid JSON is valid JSON5, so plain
-`json.dumps` output needs no JSON5-specific escaping.
+Unset model fields are excluded. cdk8s YAML formatting omits null mapping values;
+JSON preserves them. Valid JSON is valid JSON5, so plain `json.dumps` output needs
+no JSON5-specific escaping.
 """
 
 from __future__ import annotations

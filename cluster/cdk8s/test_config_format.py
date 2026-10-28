@@ -38,7 +38,9 @@ def test_nested_models_remain_typed_until_rendering(format: str) -> None:
     content: dict[str, Any] = {"peer": peer, "peers": [peer], "named_peers": {"worker": peer}}
     fragment = validate_settings_fragment(_Settings, content)
     rendered = yaml.safe_load(yaml_config(fragment)) if format == "yaml" else json.loads(json5_config(fragment))
-    expected = {"url": "http://peer.invalid/", "token_file": "file:/tokens/peer", "optional": None, "account": "app"}
+    expected: dict[str, Any] = {"url": "http://peer.invalid/", "token_file": "file:/tokens/peer", "account": "app"}
+    if format == "json5":
+        expected["optional"] = None
     assert rendered == {"peer": expected, "peers": [expected], "named_peers": {"worker": expected}}
     assert fragment is content
     assert content["peer"] is peer
@@ -53,11 +55,10 @@ def test_complete_model_uses_the_same_serialization_boundary(format: str) -> Non
     assert rendered == {"url": "http://peer.invalid/", "token_file": "file:/tokens/peer", "retries": 3}
 
 
-def test_yaml_none_exclusion_is_explicit_and_recursive() -> None:
+def test_yaml_keeps_cdk8s_null_omission() -> None:
     peer = _Peer(url=AnyHttpUrl("http://peer.invalid"), token_file=Path("/tokens/peer"), optional=None)
     assert yaml.safe_load(yaml_config({"peer": peer, "optional": None}, exclude_none=True)) == {
-        "peer": {"url": "http://peer.invalid/", "token_file": "file:/tokens/peer"},
-        "optional": None,
+        "peer": {"url": "http://peer.invalid/", "token_file": "file:/tokens/peer"}
     }
 
 
