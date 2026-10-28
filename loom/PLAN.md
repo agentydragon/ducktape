@@ -83,8 +83,7 @@ Current gym/Wayback operations remain with the local trackers linked below.
 8. **Gym contestants G2.** Compare the classical Loom pipeline, an
    agent-with-forecast-skill contestant, and the authored-program hybrid using
    paired proper-loss deltas over the same admissible task panel.
-9. **Archive-backed eval reliability.** Finish the limiter telemetry rollout
-   and panel rerun tracked in `gym/TODO.md`; keep the service design/status in
+9. **Archive-backed eval reliability.** Revive and validate the cache, and address its reliability follow-ups in
    `wayback/cache/PLAN.md`.
 
 ## Validation Norms
@@ -103,7 +102,8 @@ Current gym/Wayback operations remain with the local trackers linked below.
 - `README.md`: concise overview and gym invocation.
 - `gym/TODO.md`: active eval reliability and harness follow-ups.
 - `gym/k8s/README.md`: in-cluster eval run procedure and operational gotchas.
-- `wayback/cache/PLAN.md`: cache service design/status.
+- `wayback/cache/README.md`: cache service contract and parked status;
+  `wayback/cache/PLAN.md`: open follow-ups.
 - `docs/archive_org_apis.md`: Internet Archive API behavior notes.
 - `plans/market_harvest.md`: market source survey and harvest design.
 - `../finance/augur/docs/calibration.md` and `../finance/augur/docs/private_equity_model.md`:
