@@ -36,7 +36,7 @@ type Database struct {
 	container testcontainers.Container
 
 	mu sync.Mutex
-	// admin creates and drops the clones; nil until the first Clone.
+	// admin creates and drops the clones; nil until the first Clone or PrepareCloneTemplate.
 	admin  *sql.DB
 	clones int
 }
@@ -111,10 +111,25 @@ func (db *Database) Close() error {
 	return errors.Join(closeAdmin, terminate(db.container))
 }
 
-// Clone returns the URL of a database of the test's own, copied from the migrated one, which the test's cleanup
-// drops: it starts with the schema and no rows, so queries that span every row see only the test's, and its NOTIFY
-// channels reach only its own connections. A test package that clones connects to the migrated database only
-// through clones, since a copy needs it idle.
+// PrepareCloneTemplate snapshots the migrated database before integration tests mutate the shared database.
+// Clone remains lazy for callers that do not need isolated databases.
+func (db *Database) PrepareCloneTemplate(ctx context.Context) error {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+	if db.admin != nil {
+		return nil
+	}
+	admin, err := db.createTemplate(ctx)
+	if err != nil {
+		return err
+	}
+	db.admin = admin
+	return nil
+}
+
+// Clone returns the URL of a database copied from the migrated one, which the test's cleanup drops. The template
+// snapshot contains the migrated schema and whatever rows existed when it was prepared. Packages that also use the
+// shared database should call PrepareCloneTemplate before tests begin mutating that database.
 func (db *Database) Clone(t testing.TB) string {
 	t.Helper()
 	db.mu.Lock()
