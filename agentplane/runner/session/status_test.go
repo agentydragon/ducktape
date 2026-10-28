@@ -79,7 +79,7 @@ func TestObservationRetainsIdleBarrierBetweenAdmissionAndBatchCommit(t *testing.
 	if !status.Busy || len(blockers) != 1 || blockers[0].Reason != autosuspendActiveTurn {
 		t.Fatalf("pending-to-active transition lost idle barrier: %v, %v", status, blockers)
 	}
-	// Release explicitly, and replace the deferred close to keep failure cleanup safe.
+	// Release the batch; the deferred close also unblocks it if an assertion fails.
 	release <- struct{}{}
 	select {
 	case err := <-done:
