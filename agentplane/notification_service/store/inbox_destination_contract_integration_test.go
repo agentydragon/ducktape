@@ -128,7 +128,7 @@ func TestInboxDestinationContractGatesPopulatedRowsAndPreservesIdentity(t *testi
 	}
 	var migrationApplied bool
 	if err := db.QueryRowContext(ctx, `SELECT EXISTS (
-		SELECT 1 FROM notification_service_goose_version WHERE version_id = 16 AND is_applied
+		SELECT 1 FROM notification_service_goose_version WHERE version_id = 17 AND is_applied
 	)`).Scan(&migrationApplied); err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +155,7 @@ func TestInboxDestinationContractGatesPopulatedRowsAndPreservesIdentity(t *testi
 		t.Fatalf("contract migration error = %v, want populated unvalidated-proof gate", err)
 	}
 	if err := db.QueryRowContext(ctx, `SELECT EXISTS (
-		SELECT 1 FROM notification_service_goose_version WHERE version_id = 16 AND is_applied
+		SELECT 1 FROM notification_service_goose_version WHERE version_id = 17 AND is_applied
 	)`).Scan(&migrationApplied); err != nil {
 		t.Fatal(err)
 	}

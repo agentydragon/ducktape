@@ -59,7 +59,7 @@ func TestSubscriptionCreationContractRefusesPopulatedDatabaseWithoutProofsThenRe
 			t.Fatalf("contract migration error = %v, want populated database refusal for missing proof", err)
 		}
 		assertCreationContractExpansionRetained(t, g.db, subscription.ID, legacyJSON, protoBefore, providerBefore, true, 0)
-		assertLatestGooseVersion(t, g.db, 16)
+		assertLatestGooseVersion(t, g.db, 17)
 
 		if _, err := g.db.ExecContext(t.Context(), `ALTER TABLE subscription ADD CONSTRAINT subscription_creation_storage_pair
 			CHECK ((creation_proto IS NULL) = (source_provider IS NULL)) NOT VALID`); err != nil {
@@ -70,7 +70,7 @@ func TestSubscriptionCreationContractRefusesPopulatedDatabaseWithoutProofsThenRe
 			t.Fatalf("contract migration error = %v, want refusal for unvalidated proof", err)
 		}
 		assertCreationContractExpansionRetained(t, g.db, subscription.ID, legacyJSON, protoBefore, providerBefore, false, 1)
-		assertLatestGooseVersion(t, g.db, 16)
+		assertLatestGooseVersion(t, g.db, 17)
 
 		if _, err := g.db.ExecContext(t.Context(), `ALTER TABLE subscription VALIDATE CONSTRAINT subscription_creation_storage_pair`); err != nil {
 			t.Fatal(err)
@@ -79,7 +79,7 @@ func TestSubscriptionCreationContractRefusesPopulatedDatabaseWithoutProofsThenRe
 		if err := migrations.Up(t.Context(), g.db); err != nil {
 			t.Fatalf("apply contract after validated proofs: %v", err)
 		}
-		assertGooseVersionApplied(t, g.db, 17)
+		assertGooseVersionApplied(t, g.db, 18)
 		assertColumnExists(t, g.db, "subscription", "creation", false)
 		assertColumnExists(t, g.db, "subscription", "creation_proto", true)
 		assertColumnExists(t, g.db, "subscription", "source_provider", true)
