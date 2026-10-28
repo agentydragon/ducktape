@@ -165,6 +165,72 @@ fn unknown_computed_descriptor_key_remains_rejected() {
 }
 
 #[test]
+fn dynamic_legacy_accessor_method_remains_rejected() {
+    assert_effect_rejected(
+        "const methodName = globalThis.methodName || '__defineGetter__';\n\
+         Object.prototype[methodName]('weight', function() { return later; });\n",
+    );
+}
+
+#[test]
+fn descriptor_mutation_after_await_remains_rejected() {
+    let source = source(
+        "async function install() {\n\
+           await 0;\n\
+           Object.defineProperty(Object.prototype, 'weight', { configurable: true, get() { return later; } });\n\
+         }\n\
+         install();\n",
+        FACTORY,
+        "",
+        "Promise.resolve().then(() => console.log(command.record.weight));\n",
+        "",
+    );
+    assert_split_rejected(&source, &[]);
+}
+
+#[test]
+fn inherited_data_callback_remains_rejected() {
+    let source = source(
+        "Object.prototype.weight = () => later;\n",
+        FACTORY,
+        "",
+        "command.weight();\n",
+        "",
+    );
+    assert_split_rejected(&source, &[]);
+}
+
+#[test]
+fn derived_public_field_on_prototype_remains_rejected() {
+    let source = source(
+        "class Base { constructor() { return Object.prototype; } }\n\
+         class Install extends Base { weight = () => later; }\n\
+         new Install();\n",
+        FACTORY,
+        "",
+        "command.weight();\n",
+        "",
+    );
+    assert_split_rejected(&source, &[]);
+}
+
+#[test]
+fn nested_native_capability_passed_to_foreign_helper_remains_rejected() {
+    const MUTATOR: &str = "export function install(record) {\n\
+      record.native.defineProperty(record.target, 'weight', { configurable: true, get: record.callback });\n\
+    }\n";
+    let source = source(
+        "import { install } from './mutator.js';\n\
+         install({ native: Object, target: Object.prototype, callback: () => later });\n",
+        FACTORY,
+        "",
+        "",
+        "",
+    );
+    assert_split_rejected(&source, &[("static/mutator", MUTATOR)]);
+}
+
+#[test]
 fn special_proto_assignment_remains_rejected() {
     assert_effect_rejected("Object.prototype.__proto__ = { get weight() { return later; } };\n");
 }
