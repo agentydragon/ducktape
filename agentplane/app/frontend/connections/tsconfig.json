@@ -5,14 +5,6 @@
     "declaration": true,
     "sourceMap": true
   },
-  "include": [
-    "*.ts",
-    "*.tsx"
-  ],
-  "exclude": [
-    "*.test.tsx",
-    "fixture.ts",
-    "test_support.ts",
-    "*.d.ts"
-  ]
+  "include": ["*.ts", "*.tsx"],
+  "exclude": ["*.test.tsx", "fixture.ts", "test_support.ts", "*.d.ts"]
 }
