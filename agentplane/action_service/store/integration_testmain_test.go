@@ -125,19 +125,6 @@ func (f fixture) exec(t *testing.T, query string, args ...any) {
 	}
 }
 
-// dropActionStorageProofConstraints lets historical-row tests create the state that existed before the typed-only
-// cutover migration. Every fixture owns a fresh database, so this cannot affect another test.
-func (f fixture) dropActionStorageProofConstraints(t *testing.T) {
-	t.Helper()
-	for _, constraint := range []struct{ table, name string }{
-		{"action_request", "action_request_typed_identity_present"},
-		{"action_event", "action_event_actor_proto_present"},
-		{"action_decision", "action_decision_policy_evidence_proto_present"},
-	} {
-		f.exec(t, "ALTER TABLE "+constraint.table+" DROP CONSTRAINT IF EXISTS "+constraint.name)
-	}
-}
-
 func (f fixture) count(t *testing.T, query string, args ...any) int {
 	t.Helper()
 	var count int

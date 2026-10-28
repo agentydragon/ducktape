@@ -7,7 +7,6 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
-	"google.golang.org/protobuf/proto"
 )
 
 func TeststoredStateNamesRoundTrip(t *testing.T) {
@@ -47,24 +46,17 @@ func TeststoredStateNamesRoundTrip(t *testing.T) {
 	}
 }
 
-func TestStoredActorRoundTrip(t *testing.T) {
-	actors := []*action_servicepb.Principal{
+func TestValidateActor(t *testing.T) {
+	if err := validateActor(nil); err != nil {
+		t.Errorf("an absent actor is invalid: %v", err)
+	}
+	for _, actor := range []*action_servicepb.Principal{
 		{Principal: &action_servicepb.Principal_Caller{Caller: &sandboxespb.ServiceAccount{Namespace: "test-namespace", Name: "test-caller"}}},
 		{Principal: &action_servicepb.Principal_Operator{Operator: &action_servicepb.Operator{Issuer: "https://issuer.example", Subject: "subject-123"}}},
-		nil,
-	}
-	for _, actor := range actors {
-		encoded, err := encodeStoredActor(actor)
-		if err != nil {
-			t.Fatal(err)
+	} {
+		if err := validateActor(actor); err != nil {
+			t.Errorf("validateActor(%v) = %v", actor, err)
 		}
-		decoded, err := decodeStoredActor(encoded)
-		if err != nil || !proto.Equal(decoded, actor) {
-			t.Errorf("actor %v encoded as %s decoded as %v, %v", actor, encoded, decoded, err)
-		}
-	}
-	if got, _ := encodeStoredActor(nil); string(got) != "null" {
-		t.Errorf("nil actor encoded as %s", got)
 	}
 	for _, actor := range []*action_servicepb.Principal{
 		{},

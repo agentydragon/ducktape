@@ -165,56 +165,6 @@ func TestPolicyEvidenceRoundTripsStoredForms(t *testing.T) {
 	}
 }
 
-func TestActorsRoundTripStoredForms(t *testing.T) {
-	for _, vector := range loadGolden(t).Actors {
-		t.Run(vector.Name, func(t *testing.T) {
-			actor, err := decodeStoredActor(vector.Input)
-			if !vector.Valid {
-				if err == nil {
-					t.Errorf("accepted %s", vector.Input)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			if caller := actor.GetCaller() != nil; caller != (vector.Kind == "caller") {
-				t.Errorf("read a %T, want a %s", actor, vector.Kind)
-			}
-			written, err := encodeStoredActor(actor)
-			if err != nil {
-				t.Fatal(err)
-			}
-			sameJSON(t, written, vector.Stored)
-		})
-	}
-}
-
-func TestRecordedActorPreservesInvalidArgumentClassification(t *testing.T) {
-	for _, test := range []struct {
-		name      string
-		document  string
-		wantError error
-	}{
-		{name: "empty caller account", document: `{"account":{"namespace":"","name":"worker"}}`, wantError: ErrInvalid},
-		{name: "empty operator", document: `{"issuer":"issuer","subject":""}`, wantError: ErrInvalid},
-		{name: "unknown field", document: `{"issuer":"issuer","subject":"subject","extra":null}`},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			_, err := decodeRecordedActor([]byte(test.document))
-			if err == nil {
-				t.Fatalf("decodeRecordedActor accepted %s", test.document)
-			}
-			if test.wantError != nil && !errors.Is(err, test.wantError) {
-				t.Errorf("decodeRecordedActor error = %v, want %v", err, test.wantError)
-			}
-			if test.wantError == nil && errors.Is(err, ErrInvalid) {
-				t.Errorf("decodeRecordedActor error = %v, malformed JSON shape was classified as ErrInvalid", err)
-			}
-		})
-	}
-}
-
 func TestHistoryCursorsSatisfyStoredContract(t *testing.T) {
 	cursors := loadGolden(t).HistoryCursors
 	for _, vector := range cursors.Encoded {
