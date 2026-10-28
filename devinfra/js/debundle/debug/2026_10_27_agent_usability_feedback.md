@@ -2,7 +2,7 @@
 
 Remaining requests from the integrator and structural-ownership,
 selector/contract-authoring, and callback/effect-analysis workers, reviewed
-against Ducktape [`04ab7fe252`](https://github.com/agentydragon/ducktape/commit/04ab7fe252c3b11587ee20f8f61fd90131ab4506).
+against Ducktape [`0cc11cc362`](https://github.com/agentydragon/ducktape/commit/0cc11cc3621f041d5bd64b9fb43fac27e2ede86c).
 Examples are generic; no private source or diagnostic payload is included.
 
 ## A — Extend causal diagnostics beyond supported write witnesses
