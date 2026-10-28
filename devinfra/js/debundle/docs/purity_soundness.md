@@ -1086,5 +1086,13 @@ author-discharged. Missing reads require actual absence; setter-freedom would
 still admit an inherited callback-valued data property omitted from the retained
 instance graph. Assignments require successful ordinary own data property
 creation, including the absence of inherited interceptors or nonwritable data.
-All unsupported paths retain fallback; a failed runtime path clears the
-certificate before restoring deferred reachability.
+The ordinary executor still evaluates the selected initializer, wrapper and
+constructors. A typed certificate is minted only when the full return-only
+source proof succeeds and that exact execution completes without unknown calls,
+precision loss or uninitialized reads. The purity pass uses it to remove only
+the matching `impure_function_call` reason at that call span. Argument and
+callee effects, eager reads and every other purity reason remain. Any captured
+native-integrity evidence used by the proof stays in the resulting purity
+dependencies; no function-body or class-wide purity summary changes. A source
+or runtime fallback does not issue the certificate and retains conservative
+reachability.

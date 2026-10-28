@@ -96,6 +96,40 @@ fn fixture_opts<'a>(
     FixtureOpts::new(source, modules)
 }
 
+fn factory_effect_order_source(command: &str, holder: &str) -> String {
+    format!(
+        "function mutate(target, key, value) {{ target[key] = value; }}\n{holder}function create(record) {{ return new Holder(record); }}\nconst label = \"Example\";\nconst command = {command};\nconst commandAgain = {command};\nconst barrier = console.log(\"barrier\");\nconst later = 42;\nconsole.log(command.label, command.record.execute(), commandAgain.label, commandAgain.record.execute());\n"
+    )
+}
+
+fn factory_effect_order_opts<'a>(source: &'a str, annotated: bool) -> FixtureOpts<'a> {
+    let create = if annotated {
+        Member::new("create").with_retained_record_factory()
+    } else {
+        Member::new("create")
+    };
+    FixtureOpts::new(
+        source,
+        vec![
+            logical_module(
+                "callbacks/wrapped",
+                &[
+                    Member::new("mutate"),
+                    Member::new("Holder"),
+                    create,
+                    Member::new("command"),
+                    Member::new("commandAgain"),
+                ],
+            ),
+            logical_module(
+                "values/label",
+                &[Member::new("label"), Member::new("barrier")],
+            ),
+            logical_module("values/later", &[Member::new("later")]),
+        ],
+    )
+}
+
 fn assert_atomic_fallback(
     source: &str,
     callback_members: &[&'static str],
@@ -266,6 +300,80 @@ fn a_literal_constant_after_the_call_keeps_its_eager_tdz_dependency() {
         &["callbacks/wrapped", "values/label"],
         &["eager_use"],
     );
+}
+
+#[test]
+fn checked_factory_call_purity_is_site_specific_and_keeps_eager_reads() {
+    let holder = r#"class Holder {
+  constructor(record) { this.record = record; this.label = label; }
+}
+"#;
+    let source = factory_effect_order_source("create({ execute: () => later })", holder);
+    let fixture = run_fixture(factory_effect_order_opts(&source, true));
+    assert_preserved_entry_output(&fixture, "barrier\nExample 42 Example 42\n");
+
+    let graph = fixture.dependency_graph();
+    let command_nodes: Vec<_> = ["command", "commandAgain"]
+        .into_iter()
+        .map(|binding| {
+            graph
+                .nodes
+                .iter()
+                .find(|node| {
+                    node.declared_bindings
+                        .iter()
+                        .any(|declared| declared.binding == binding)
+                })
+                .unwrap_or_else(|| panic!("missing source unit for {binding}"))
+        })
+        .collect();
+    let label = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|declared| declared.binding == "label")
+        })
+        .expect("label source unit");
+    for command in &command_nodes {
+        assert!(command.purity.is_pure(), "{:?}", command.purity);
+        let execution = command
+            .synchronous_execution
+            .as_ref()
+            .expect("checked source execution");
+        assert!(execution.complete);
+        assert_eq!(execution.local_record_factory_uses.len(), 1);
+    }
+
+    let label_unit = label.id.as_str();
+    for command in &command_nodes {
+        let command_unit = command.id.as_str();
+        assert!(
+            graph.edges.iter().any(|edge| {
+                edge.source == command_unit
+                    && edge.target == label_unit
+                    && edge.edge_kind.to_string() == "eager_use"
+                    && edge.binding.as_deref() == Some("label")
+            }),
+            "constructor's eager lexical read must remain an init dependency: {:#?}",
+            graph.edges
+        );
+    }
+
+    // Without the author premises, the same generic provider call remains an
+    // ordering effect and cannot cross the barrier in a split graph.
+    expect_sequenced_cycle_rejection(
+        factory_effect_order_opts(&source, false),
+        &["callbacks/wrapped", "values/label"],
+    );
+
+    // The literal construction is a pure control with the same eager label
+    // read and deferred callback graph.
+    let literal =
+        factory_effect_order_source("{ label, record: { execute: () => later } }", holder);
+    let literal_fixture = run_fixture(factory_effect_order_opts(&literal, true));
+    assert_preserved_entry_output(&literal_fixture, "barrier\nExample 42 Example 42\n");
 }
 
 #[test]
@@ -515,4 +623,21 @@ fn provider_effects_keep_source_order_without_factory_effect_suppression() {
     ));
 
     assert_preserved_entry_output(&fixture, "before\nfactory\nafter factory\n148 0\n");
+}
+
+#[test]
+fn constructor_effects_are_not_removed_by_the_factory_call_certificate() {
+    let holder = r#"class Holder {
+  constructor(record) {
+    console.log("constructor");
+    this.record = record;
+    this.label = label;
+  }
+}
+"#;
+    let source = factory_effect_order_source("create({ execute: () => later })", holder);
+    expect_sequenced_cycle_rejection(
+        factory_effect_order_opts(&source, true),
+        &["callbacks/wrapped", "values/label"],
+    );
 }

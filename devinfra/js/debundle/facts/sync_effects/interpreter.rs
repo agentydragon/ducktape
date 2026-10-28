@@ -265,6 +265,14 @@ struct Executor<'a> {
     cache: BTreeMap<InvocationSignature, Outcome>,
 }
 
+/// The source proof selected for one exact factory call. Kept separate from
+/// report structs so downstream purity uses a typed proof result rather than
+/// reconstructing trust from serialized synchronous-execution output.
+struct CheckedLocalConstructorFactory {
+    call_span: Span,
+    checked_owners: BTreeSet<SourceUnitOrdinal>,
+}
+
 #[derive(Clone, Copy)]
 struct ValidatedMetadataDecoration {
     target_owner: SourceUnitOrdinal,
@@ -1983,7 +1991,7 @@ impl Executor<'_> {
     fn closed_local_constructor_factory_result(
         &self,
         fact: &StatementFacts,
-    ) -> Option<BTreeSet<SourceUnitOrdinal>> {
+    ) -> Option<CheckedLocalConstructorFactory> {
         if !matches!(fact.kind, StatementKind::VarDecl)
             || fact.declared.len() != 1
             || self.reachability.incomplete
@@ -2104,7 +2112,10 @@ impl Executor<'_> {
         for (class_key, _) in allocations.keys() {
             owners.insert(*self.index.class_owners.get(class_key)?);
         }
-        Some(owners)
+        Some(CheckedLocalConstructorFactory {
+            call_span: call.span,
+            checked_owners: owners,
+        })
     }
 
     fn closed_constructor_input(&self, value: &ValueExpr) -> bool {
@@ -5827,9 +5838,11 @@ pub(crate) fn annotate_synchronous_calls(
         *executor.record_factory_prototype_premises.borrow_mut() = Default::default();
         let annotated_record_factory = executor.annotated_record_factory(fact);
         executor.checking_record_factory_contract = annotated_record_factory.is_some();
-        executor.private_constructor_result_owners = executor
-            .closed_local_constructor_factory_result(fact)
-            .unwrap_or_default();
+        let checked_local_constructor_factory =
+            executor.closed_local_constructor_factory_result(fact);
+        executor.private_constructor_result_owners = checked_local_constructor_factory
+            .as_ref()
+            .map_or_else(BTreeSet::new, |proof| proof.checked_owners.clone());
         executor.checking_record_factory_contract = false;
         if executor.private_constructor_result_owners.is_empty() {
             *executor.record_factory_prototype_premises.borrow_mut() = Default::default();
@@ -6099,6 +6112,10 @@ pub(crate) fn annotate_synchronous_calls(
                 },
             );
         }
+        // The certificate is minted from the source proof above only after
+        // the ordinary executor has completed this exact initializer without
+        // falling back. It is consumed by analyze.rs to remove only the
+        // generic impure-callee reason at this call site.
         outcome.effects.callback_factory_uses = std::mem::take(&mut executor.proof_uses);
         outcome.effects.returned_record_uses =
             std::mem::take(&mut executor.returned_record_proof_uses);
@@ -6117,6 +6134,26 @@ pub(crate) fn annotate_synchronous_calls(
             std::mem::take(executor.native_integrity_uses.get_mut())
                 .into_iter()
                 .collect();
+        if !executor.private_constructor_result_owners.is_empty()
+            && outcome.complete
+            && !outcome.unknown_call
+            && outcome.effects.precision_losses.is_empty()
+            && outcome.effects.uninitialized_reads.is_empty()
+            && let Some(proof) = checked_local_constructor_factory
+        {
+            let mut dependencies = crate::analysis_inputs::ProofDependencies::default();
+            for usage in &outcome.effects.native_integrity_uses {
+                dependencies
+                    .value_inputs
+                    .extend(usage.value_input_refs.iter().cloned());
+            }
+            outcome.effects.local_record_factory_purity =
+                Some(crate::facts::LocalRecordFactoryPurityCertificate {
+                    call_span: proof.call_span,
+                    checked_owners: proof.checked_owners,
+                    dependencies,
+                });
+        }
         outcome.effects.native_integrity_witnesses = index.native_integrity_witnesses.clone();
         outcome.effects.native_receiver_certificates = index.native_receiver_certificates.clone();
         effects.push(outcome.effects);
