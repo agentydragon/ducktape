@@ -910,6 +910,11 @@ fn collect_binding_annotation_hints(
     annotation: &spec::BindingAnnotation,
     module: &Module,
 ) -> Result<()> {
+    if annotation.retained_record_factory {
+        assumptions
+            .retained_record_factories
+            .insert(binding.to_string());
+    }
     if annotation.initializer_purity == InitializerPurity::Pure {
         validate_initializer_purity_target(module, binding)?;
         assumptions

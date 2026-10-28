@@ -164,6 +164,28 @@ struct AppliedAccessor {
     setter: Values,
 }
 
+#[derive(Default)]
+struct RecordFactoryPrototypePremises {
+    constructor_fields: BTreeSet<(u32, String)>,
+    missing_input_fields: BTreeSet<(u32, String)>,
+}
+
+impl RecordFactoryPrototypePremises {
+    fn is_empty(&self) -> bool {
+        self.constructor_fields.is_empty() && self.missing_input_fields.is_empty()
+    }
+
+    fn properties(&self) -> Vec<String> {
+        self.constructor_fields
+            .iter()
+            .chain(&self.missing_input_fields)
+            .map(|(_, property)| property.clone())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    }
+}
+
 struct Executor<'a> {
     native_integrity_checks: RefCell<BTreeSet<NativeIntegrityCheck>>,
     native_prototype_property_checks: RefCell<BTreeMap<String, NativePrototypePropertyCheck>>,
@@ -197,6 +219,9 @@ struct Executor<'a> {
     /// Their synchronous effects still run; execution alone does not expose
     /// the wrapper or the classes' deferred callable members to the host.
     private_constructor_result_owners: BTreeSet<SourceUnitOrdinal>,
+    /// Exact source-checked receivers whose prototype premises the author supplies.
+    record_factory_prototype_premises: RefCell<RecordFactoryPrototypePremises>,
+    checking_record_factory_contract: bool,
     prior_effect_owners: BTreeSet<SourceUnitOrdinal>,
     accepted_deferred_global_writes: BTreeSet<SourceUnitOrdinal>,
     frozen_namespace_calls: BTreeSet<CallSite>,
@@ -333,6 +358,44 @@ impl Executor<'_> {
                 affected_roots,
             });
         false
+    }
+
+    fn constructor_field_prototype_absent(&self, class: u32, property: &str) -> bool {
+        if Self::standard_object_prototype_property(property) {
+            return false;
+        }
+        let premise = (class, property.to_owned());
+        if self.checking_record_factory_contract {
+            self.record_factory_prototype_premises
+                .borrow_mut()
+                .constructor_fields
+                .insert(premise);
+            return true;
+        }
+        self.record_factory_prototype_premises
+            .borrow()
+            .constructor_fields
+            .contains(&premise)
+            || self.object_prototype_property_absent(property)
+    }
+
+    fn input_field_prototype_absent(&self, object: u32, property: &str) -> bool {
+        if Self::standard_object_prototype_property(property) {
+            return false;
+        }
+        let premise = (object, property.to_owned());
+        if self.checking_record_factory_contract {
+            self.record_factory_prototype_premises
+                .borrow_mut()
+                .missing_input_fields
+                .insert(premise);
+            return true;
+        }
+        self.record_factory_prototype_premises
+            .borrow()
+            .missing_input_fields
+            .contains(&premise)
+            || self.object_prototype_property_absent(property)
     }
 
     /// Absence is stronger than getter-freedom: an inherited data value may
@@ -808,7 +871,7 @@ impl Executor<'_> {
             || Self::standard_object_prototype_property(property)
             || !self.index.plain_data_objects.contains(&object)
             || self.tainted_objects.contains(&object)
-            || !self.object_prototype_property_absent(property)
+            || !self.input_field_prototype_absent(object, property)
         {
             return false;
         }
@@ -1874,10 +1937,36 @@ impl Executor<'_> {
         }
     }
 
+    /// An author assertion is attached to the canonical top-level factory,
+    /// and only supplies premises at an exact, syntactically fresh call site.
+    fn annotated_record_factory(&self, fact: &StatementFacts) -> Option<(Id, Span)> {
+        let [(_, ValueExpr::Call(callee, args, site))] =
+            self.index.top_assignments[fact.ordinal.0].as_slice()
+        else {
+            return None;
+        };
+        let ValueExpr::Binding(factory) = callee.as_ref() else {
+            return None;
+        };
+        if args.len() != 1
+            || !self.top_bindings.contains(factory)
+            || !self
+                .index
+                .retained_record_factories
+                .contains(factory.0.as_ref())
+            || !self.index.literal_record_factory_calls.contains(site)
+        {
+            return None;
+        }
+        let call = self.index.top_calls[fact.ordinal.0]
+            .iter()
+            .find(|call| CallSite::from(call.span) == *site)?;
+        Some((factory.clone(), call.span))
+    }
+
     /// A locally checked constructor can retain callbacks in a fresh instance
-    /// without publishing them. This certifies the wrapper's whole return
-    /// expression before its source owner enters the reachability roots; the
-    /// ordinary executor still runs the wrapper and constructor afterward.
+    /// without publishing them. The ordinary executor still runs the wrapper
+    /// and constructor after this whole-return reachability proof.
     fn closed_local_constructor_factory_result(
         &self,
         fact: &StatementFacts,
@@ -2109,7 +2198,7 @@ impl Executor<'_> {
                 || (!properties
                     .iter()
                     .any(|(name, _)| name.as_deref() == Some(property))
-                    && !self.object_prototype_property_absent(property))
+                    && !self.input_field_prototype_absent(*object, property))
             {
                 return false;
             }
@@ -2950,7 +3039,7 @@ impl Executor<'_> {
                 || !constructor
                     .own_fields
                     .iter()
-                    .all(|property| self.object_prototype_property_absent(property))
+                    .all(|property| self.constructor_field_prototype_absent(key, property))
                 || self
                     .global_escaped_callbacks
                     .contains(&AbstractValue::ClassMembers(key)))
@@ -5619,6 +5708,8 @@ pub(crate) fn annotate_synchronous_calls(
         proof_uses: Vec::new(),
         returned_record_proof_uses: Vec::new(),
         private_constructor_result_owners: BTreeSet::new(),
+        record_factory_prototype_premises: RefCell::default(),
+        checking_record_factory_contract: false,
         prior_effect_owners: BTreeSet::new(),
         accepted_deferred_global_writes: BTreeSet::new(),
         frozen_namespace_calls: BTreeSet::new(),
@@ -5694,9 +5785,16 @@ pub(crate) fn annotate_synchronous_calls(
         executor.fallback_callback_sizes = None;
         executor.fallback_local_owners.clear();
         executor.returned_callback_owners.clear();
+        *executor.record_factory_prototype_premises.borrow_mut() = Default::default();
+        let annotated_record_factory = executor.annotated_record_factory(fact);
+        executor.checking_record_factory_contract = annotated_record_factory.is_some();
         executor.private_constructor_result_owners = executor
             .closed_local_constructor_factory_result(fact)
             .unwrap_or_default();
+        executor.checking_record_factory_contract = false;
+        if executor.private_constructor_result_owners.is_empty() {
+            *executor.record_factory_prototype_premises.borrow_mut() = Default::default();
+        }
         // A recognized metadata statement is a whole call expression. Its
         // eligibility proof is stable across this statement's preparatory
         // lanes, so use the same proof for reachability and call execution.
@@ -5880,6 +5978,7 @@ pub(crate) fn annotate_synchronous_calls(
             && (!outcome.complete || outcome.unknown_call)
         {
             let owners = std::mem::take(&mut executor.private_constructor_result_owners);
+            *executor.record_factory_prototype_premises.borrow_mut() = Default::default();
             executor.extend_reachable_owners(owners.into_iter().chain([fact.ordinal]));
             // The source proof normally makes this unreachable. If an actual
             // executor path fails, restore the current statement's omitted
@@ -5940,6 +6039,26 @@ pub(crate) fn annotate_synchronous_calls(
             let values = executor.evaluate(expression, &top_env, &top_captures);
             executor.exported_runtime_values.extend(values);
             executor.prefix_revision = executor.prefix_revision.wrapping_add(1);
+        }
+        if !executor.private_constructor_result_owners.is_empty()
+            && let Some((factory, span)) = annotated_record_factory
+            && !executor
+                .record_factory_prototype_premises
+                .borrow()
+                .is_empty()
+        {
+            outcome.effects.local_record_factory_uses.push(
+                crate::reports::schema::LocalRecordFactoryUse {
+                    factory_binding: factory.0.to_string(),
+                    prototype_properties: executor
+                        .record_factory_prototype_premises
+                        .borrow()
+                        .properties(),
+                    lexical_statement_ordinal: fact.ordinal,
+                    source_location: None,
+                    span,
+                },
+            );
         }
         outcome.effects.callback_factory_uses = std::mem::take(&mut executor.proof_uses);
         outcome.effects.returned_record_uses =

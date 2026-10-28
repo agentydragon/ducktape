@@ -203,6 +203,7 @@ pub struct CallbackFactoryWriteWitness {
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct SynchronousCalls {
+    pub local_record_factory_uses: Vec<crate::reports::schema::LocalRecordFactoryUse>,
     pub reads: BTreeSet<(Id, SourceUnitOrdinal)>,
     pub rebinds: BTreeSet<(Id, SourceUnitOrdinal)>,
     /// Bindings a synchronous callee can observe before their source-order

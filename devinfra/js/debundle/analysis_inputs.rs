@@ -238,6 +238,8 @@ pub struct NativeIntegrity {
 
 #[derive(Debug, Clone, Default)]
 pub struct AnalysisAssumptions {
+    /// Author prototype premises for source-checked local unary record factories.
+    pub retained_record_factories: BTreeSet<String>,
     /// Source-resolved author inputs for captured provider bindings. These are
     /// keyed by canonical IDs from the prepared entry AST and are distinct from
     /// inferred source facts and all purity/callback contracts.

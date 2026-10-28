@@ -29,6 +29,7 @@ pub struct Member {
     purity: Option<MemberPurity>,
     initializer_purity: Option<InitializerPurity>,
     effect: Option<MemberEffect>,
+    retained_record_factory: bool,
     no_sync_callback_members: Vec<String>,
     pub comment: Option<String>,
 }
@@ -347,6 +348,14 @@ impl Member {
         self
     }
 
+    /// Assert that this stable local function retains its fresh record argument
+    /// and defers its callback graph. See
+    /// `spec::BindingAnnotation::retained_record_factory`.
+    pub fn with_retained_record_factory(mut self) -> Self {
+        self.retained_record_factory = true;
+        self
+    }
+
     /// Assert that these calls store callback arguments without invoking them
     /// synchronously. See `spec::BindingAnnotation::no_sync_callback_members`.
     pub fn with_no_sync_callback_members(mut self, members: &[&str]) -> Self {
@@ -509,6 +518,7 @@ fn fixture_annotations(
             || member.purity.is_some()
             || member.initializer_purity.is_some()
             || member.effect.is_some()
+            || member.retained_record_factory
             || !member.no_sync_callback_members.is_empty()
         {
             annotations.insert(
@@ -517,6 +527,7 @@ fn fixture_annotations(
                     purity: member.purity.unwrap_or_default(),
                     initializer_purity: member.initializer_purity.unwrap_or_default(),
                     effect: member.effect.unwrap_or_default(),
+                    retained_record_factory: member.retained_record_factory,
                     no_sync_callback_members: member.no_sync_callback_members.clone(),
                     comment: member.comment.clone(),
                     ..Default::default()

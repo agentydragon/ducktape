@@ -165,6 +165,8 @@ debundle_e2e_test(
 
 debundle_e2e_test(name = "prototype_property_integrity_test")
 
+debundle_e2e_test(name = "local_record_factory_contract_test")
+
 debundle_e2e_test(name = "map_entry_callbacks_test")
 
 debundle_e2e_test(name = "from_entries_callback_storage_test")

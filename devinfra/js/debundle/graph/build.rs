@@ -106,6 +106,7 @@ pub fn build_dependency_graph_with(
             callback_factory_barriers: stmt.callback_factory_barriers.clone(),
             synchronous_execution: stmt.synchronous_calls.as_ref().map(|calls| {
                 crate::reports::schema::SynchronousExecutionReport {
+                    local_record_factory_uses: calls.local_record_factory_uses.clone(),
                     complete: calls.complete,
                     native_integrity_checks: calls.native_integrity_checks.clone(),
                     native_prototype_property_checks: calls

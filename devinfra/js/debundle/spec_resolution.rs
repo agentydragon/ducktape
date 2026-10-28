@@ -57,6 +57,8 @@ pub struct MemberRequest {
     /// Trust annotation for this binding's variable initializer only; it does
     /// not affect later uses of the resulting value.
     pub initializer_purity: InitializerPurity,
+    /// Author prototype premises for the source-checked local factory proof.
+    pub retained_record_factory: bool,
     /// Spec-level local-effect annotation. `TypescriptDecorateHelper`
     /// asserts that recognized calls to the bound helper mutate only
     /// their target class/prototype, so the analyzer can model a local
@@ -105,6 +107,7 @@ impl MemberRequest {
     pub fn has_analysis_assumptions(&self) -> bool {
         self.purity != MemberPurity::Default
             || self.initializer_purity != InitializerPurity::Default
+            || self.retained_record_factory
             || self.effect != MemberEffect::Default
             || !self.pure_members.is_empty()
             || !self.no_sync_callback_members.is_empty()
@@ -115,6 +118,11 @@ impl MemberRequest {
         assumptions: &mut AnalysisAssumptions,
         binding: &str,
     ) {
+        if self.retained_record_factory {
+            assumptions
+                .retained_record_factories
+                .insert(binding.to_string());
+        }
         if self.initializer_purity == InitializerPurity::Pure {
             assumptions
                 .declared_pure_initializers
@@ -272,6 +280,7 @@ pub fn build_members(
                 selector,
                 purity: MemberPurity::Default,
                 initializer_purity: InitializerPurity::Default,
+                retained_record_factory: false,
                 effect: MemberEffect::Default,
                 pure_members: Vec::new(),
                 no_sync_callback_members: Vec::new(),
@@ -300,6 +309,7 @@ pub fn build_members(
                 selector,
                 purity: MemberPurity::Default,
                 initializer_purity: InitializerPurity::Default,
+                retained_record_factory: false,
                 effect: MemberEffect::Default,
                 pure_members: Vec::new(),
                 no_sync_callback_members: Vec::new(),
@@ -363,6 +373,8 @@ fn merge_binding_annotation(
         }
         request.purity = annotation.purity;
     }
+
+    request.retained_record_factory |= annotation.retained_record_factory;
 
     if annotation.initializer_purity != InitializerPurity::Default {
         if request.initializer_purity != InitializerPurity::Default

@@ -418,6 +418,8 @@ pub struct NativeIntegrityUse {
 /// Completeness of the existing synchronous-effect inference, independent of purity.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SynchronousExecutionReport {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub local_record_factory_uses: Vec<LocalRecordFactoryUse>,
     /// Evaluated premises which failed; other eligibility conditions may also fail.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub native_integrity_checks: Vec<NativeIntegrityCheck>,
@@ -434,6 +436,18 @@ pub struct SynchronousExecutionReport {
     pub returned_record_uses: Vec<ReturnedRecordUseReport>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub author_host_contract_uses: Vec<HostNoReentryUse>,
+}
+
+/// A consumed author assertion on a local unary record-retaining factory.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct LocalRecordFactoryUse {
+    pub factory_binding: String,
+    /// Named prototype premises supplied by the author, not inferred integrity.
+    pub prototype_properties: Vec<String>,
+    pub lexical_statement_ordinal: SourceUnitOrdinal,
+    pub source_location: Option<SourceLocation>,
+    #[serde(skip)]
+    pub(crate) span: swc_common::Span,
 }
 
 /// A successful timing refinement that depends on an author host assertion.

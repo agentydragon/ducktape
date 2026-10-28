@@ -642,6 +642,28 @@ make them available as host accessors. Later invocation or publication of the
 result restores those capabilities. Unsupported constructor paths retain
 conservative reachability.
 
+A binding annotation `retained_record_factory: true` supplies only audited
+prototype premises for this source-checked local factory proof. The author
+asserts that missing input fields read by the checked constructors are actually
+absent along their prototype chains, and that instance assignments successfully
+create ordinary own data properties without interception. Getter-freedom alone
+is insufficient: an inherited data value can retain an unrepresented callback.
+This assertion can override conservative prototype-mutation census blockers;
+it does not declare the factory pure or native identities intact.
+
+Admission requires a direct unary call of the selected stable top-level hoisted
+factory with a fresh literal data record. The canonical AST check excludes
+assignment/sequence-wrapped records, spreads, computed keys, accessors,
+`__proto__`, and other eager calls. Nested dense arrays, literal values, inline
+callbacks and independently checked enum reads are supported. The ordinary
+source-checked return-only constructor proof and normal execution remain in
+force, including eager lexical reads, TDZ, argument evaluation, exposure checks,
+side effects and ordering. Only the exact checked constructor/property and
+input-object/missing-property pairs consume the assertion. Failed source proof
+or runtime admission restores conservative reachability and clears those pairs.
+Consumed author obligations appear in `synchronous_execution.local_record_factory_uses`,
+separately from inferred native integrity.
+
 An implicit local class constructor can also receive a source-derived
 construction certificate. The class must be a direct declaration in the same
 chunk, without inheritance, decorators, an explicit constructor, computed

@@ -1037,6 +1037,12 @@ pub struct AnonymousStatement {
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq, Default)]
 #[serde(deny_unknown_fields)]
 pub struct BindingAnnotation {
+    /// Audited prototype premises for a source-checked unary local constructor
+    /// factory: missing input fields are actually absent and instance assignments
+    /// successfully create ordinary own data properties. Source execution, eager reads and
+    /// effects remain checked; this does not imply purity or native integrity.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub retained_record_factory: bool,
     /// Spec-level purity annotation for the annotated binding.
     #[serde(default, skip_serializing_if = "is_default_member_purity")]
     pub purity: MemberPurity,

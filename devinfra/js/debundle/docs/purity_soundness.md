@@ -1064,3 +1064,21 @@ Source checks cannot establish the complete host or cross-chunk prototype
 surface: its integrity at each probe remains a strong author premise. The
 operator's existing impurity, operand reads/effects and possible throws remain;
 see the complete contract in [SPEC](../SPEC.md#audited-builtin-global-membership-probes).
+
+## Audited local constructor-factory prototype premises
+
+`retained_record_factory` is a binding-level author assertion, not a purity or
+native-integrity fact. Its bounded admission and proof-use report are specified
+in [SPEC.md](../SPEC.md). The canonical fresh-record call check matters because
+the execution value model can erase assignment targets or sequence prefixes.
+Source execution remains essential: nonreentry alone would not justify dropping
+a factory's eager lexical read or a class TDZ. The source-checked constructor
+proof admits only the existing private return-only allocation graph.
+
+Only exact constructor/property and input-object/missing-property pairs are
+author-discharged. Missing reads require actual absence; setter-freedom would
+still admit an inherited callback-valued data property omitted from the retained
+instance graph. Assignments require successful ordinary own data property
+creation, including the absence of inherited interceptors or nonwritable data.
+All unsupported paths retain fallback; a failed runtime path clears the
+certificate before restoring deferred reachability.

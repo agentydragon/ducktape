@@ -242,6 +242,79 @@ fn primitive_literal(expression: &Expr) -> bool {
     )
 }
 
+#[derive(Clone, Copy)]
+enum LiteralRecordPrimitive {
+    BigInt,
+    Other,
+}
+
+fn literal_record_primitive(expression: &Expr) -> Option<LiteralRecordPrimitive> {
+    match expression.unwrap_parens() {
+        Expr::Lit(Lit::BigInt(_)) => Some(LiteralRecordPrimitive::BigInt),
+        Expr::Lit(Lit::Str(_) | Lit::Bool(_) | Lit::Null(_) | Lit::Num(_)) => {
+            Some(LiteralRecordPrimitive::Other)
+        }
+        Expr::Unary(unary) => {
+            let operand = literal_record_primitive(&unary.arg)?;
+            match unary.op {
+                UnaryOp::Delete => None,
+                UnaryOp::Plus if matches!(operand, LiteralRecordPrimitive::BigInt) => None,
+                UnaryOp::Minus | UnaryOp::Tilde => Some(operand),
+                UnaryOp::Bang | UnaryOp::Void | UnaryOp::TypeOf | UnaryOp::Plus => {
+                    Some(LiteralRecordPrimitive::Other)
+                }
+            }
+        }
+        _ => None,
+    }
+}
+
+fn literal_record_factory_value(expression: &Expr) -> bool {
+    let expression = expression.unwrap_parens();
+    if literal_record_primitive(expression).is_some() {
+        return true;
+    }
+    match expression {
+        Expr::Object(object) => {
+            let mut names = BTreeSet::new();
+            object.props.iter().all(|property| {
+                let PropOrSpread::Prop(property) = property else {
+                    return false;
+                };
+                let Prop::KeyValue(pair) = property.as_ref() else {
+                    return false;
+                };
+                if matches!(pair.key, PropName::Computed(_)) {
+                    return false;
+                }
+                let Some(name) = object_data_property_name(&pair.key) else {
+                    return false;
+                };
+                names.insert(name) && literal_record_factory_value(&pair.value)
+            })
+        }
+        Expr::Array(array) => array.elems.iter().all(|element| {
+            element.as_ref().is_some_and(|element| {
+                element.spread.is_none() && literal_record_factory_value(&element.expr)
+            })
+        }),
+        Expr::Arrow(_) => true,
+        Expr::Fn(function) => {
+            function.function.decorators.is_empty()
+                && function
+                    .function
+                    .params
+                    .iter()
+                    .all(|parameter| parameter.decorators.is_empty())
+        }
+        Expr::Member(member) => {
+            matches!(member.obj.unwrap_parens(), Expr::Ident(_))
+                && static_prop(&member.prop).is_some()
+        }
+        _ => false,
+    }
+}
+
 fn value_without_user_code(expression: &Expr) -> bool {
     if primitive_constant(expression) {
         return true;
@@ -2476,6 +2549,7 @@ fn stored_global_alias(
 }
 
 struct ExecutionIndex {
+    retained_record_factories: BTreeSet<String>,
     owner: SourceUnitOrdinal,
     receiver_identity: ReceiverIdentityFacts,
     current: Option<u32>,
@@ -2510,6 +2584,9 @@ struct ExecutionIndex {
     async_callables: BTreeSet<u32>,
     callable_member_reads: BTreeMap<u32, Vec<(ValueExpr, Option<String>)>>,
     direct_call_members: BTreeSet<CallSite>,
+    /// Direct identifier calls with one fresh literal record argument. This
+    /// captures syntax only; semantic member-read admission is checked later.
+    literal_record_factory_calls: BTreeSet<CallSite>,
     member_write_sites: BTreeSet<CallSite>,
     primitive_data_properties: BTreeSet<(u32, String)>,
     from_entries_map_calls: BTreeMap<CallSite, FromEntriesMappedProof>,
@@ -2609,6 +2686,7 @@ struct ExecutionIndex {
 impl Default for ExecutionIndex {
     fn default() -> Self {
         Self {
+            retained_record_factories: BTreeSet::new(),
             owner: SourceUnitOrdinal(0),
             receiver_identity: ReceiverIdentityFacts::default(),
             current: None,
@@ -2643,6 +2721,7 @@ impl Default for ExecutionIndex {
             async_callables: BTreeSet::new(),
             callable_member_reads: BTreeMap::new(),
             direct_call_members: BTreeSet::new(),
+            literal_record_factory_calls: BTreeSet::new(),
             member_write_sites: BTreeSet::new(),
             primitive_data_properties: BTreeSet::new(),
             from_entries_map_calls: BTreeMap::new(),
@@ -3137,6 +3216,7 @@ impl ExecutionIndex {
             global_object_names: unshadowed_global_object_aliases(body),
             plain_array_bindings: plain_array_bindings.clone(),
             no_sync_callback_members: hints.assumptions.no_sync_callback_members.clone(),
+            retained_record_factories: hints.assumptions.retained_record_factories.clone(),
             host_promise_resolve: host_operations.is_some_and(|operations| {
                 operations.contains(&HostNoReentryOperation::PromiseResolve)
             }),
@@ -6449,6 +6529,15 @@ impl Visit for ExecutionIndex {
         }
         if self.current.is_none() {
             self.ordinary_top_call_sites.insert(call.span.into());
+        }
+        if let Callee::Expr(callee) = &call.callee
+            && matches!(callee.unwrap_parens(), Expr::Ident(_))
+            && let [argument] = call.args.as_slice()
+            && argument.spread.is_none()
+            && matches!(argument.expr.unwrap_parens(), Expr::Object(_))
+            && literal_record_factory_value(&argument.expr)
+        {
+            self.literal_record_factory_calls.insert(call.span.into());
         }
         if let Callee::Expr(callee) = &call.callee
             && let Expr::Member(member) = callee.unwrap_parens()
