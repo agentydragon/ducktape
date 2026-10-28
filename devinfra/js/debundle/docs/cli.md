@@ -301,16 +301,26 @@ file replacements are atomic; the batch is not a crash-atomic transaction.
 
 ## Name and identifier resolution
 
-Every command that takes a binding name (`<sym>`) accepts **either form**
-wherever the lookup is unambiguous:
+Binding names are resolved in the command's input view:
 
-- The _minified_ name from the chunk (e.g. `XOe`) — the stable
-  hygiene-aware identity.
-- The _readable_ name from the spec's `name:` field
-  (e.g. `PluginSettingsAccessor`).
+| Commands                                                                     | Accepted binding names                                                                                            |
+| ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Graph queries: `describe`, `inspect-source --id`, `cluster`, `scc --binding` | The saved graph's input binding or exported/readable name.                                                        |
+| Spec operations: `bindings rename`, `assign`, `unassign`, `comment`          | The current member's `selector.binding.name`, or source-match binding's `local`, or its explicit readable `name`. |
 
-If both forms could match different bindings, the command refuses with a
-list. Use the minified form to disambiguate.
+These names can differ. A source-match template may call a declaration
+`templateToken`, match the input binding `raw`, and export `readableValue`.
+Graph queries accept `raw` or `readableValue`; spec operations accept
+`templateToken` or `readableValue`. The template-local token is not inherently
+an input-bundle name. After an edit, a saved graph still reflects its pre-edit
+names until regeneration.
+
+Use `bindings list --modules <modules-dir>` to discover current editable
+identifiers; `--in <module-path>` limits the owner. Its `minified` field is the
+selector binding token for a member and the template-local token for a
+source-match binding. This command needs no saved graph. An ambiguous spec
+identifier is rejected with matching file/claim locations; choose an
+unambiguous identifier from that inventory.
 
 `describe` and `inspect-source --id` take any ID kind and dispatch on shape:
 bindings (minified or readable), module paths (`runtime/plugins`) or

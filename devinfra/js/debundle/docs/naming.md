@@ -69,7 +69,10 @@ Avoid guesses, generic names such as `processData` or `helper`, names that only
 encode a type, and long names that restate the full call signature. A minified
 name is preferable to a confident-sounding but unsupported name.
 
-Use the current rename operation, for example:
+Use `bindings list --modules <modules-dir> --in <module-path>` to find the
+current editable token or explicit readable name. The [identifier reference](cli.md#name-and-identifier-resolution)
+distinguishes these from graph binding names and source-template locals.
+Then rename that spec entry:
 
 ```sh
 debundle bindings rename --modules <modules-dir> <current-name> <new-name>

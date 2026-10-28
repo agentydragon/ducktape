@@ -80,7 +80,8 @@ enum BindingsNsCommand {
     Comment(BindingCommentArgs),
     /// List every binding in the spec with home module + filters.
     ///
-    /// Per-row: minified name, home module, readable name if any, and
+    /// Per-row: spec identifier (`minified`: selector binding or source-match
+    /// template local), home module, readable name if any, and
     /// `orphan` (sole member of its module) / `unrenamed` flags.
     List(BindingsListNsArgs),
     /// Rename a binding's readable `name:` without moving it.
@@ -146,7 +147,8 @@ struct BindingsRenameArgs {
     /// Modules tree root.
     #[arg(long = "modules", env = "DEBUNDLE_MODULES")]
     pub modules_root: PathBuf,
-    /// Current minified or readable name of the binding (must not contain `:`).
+    /// Current spec selector-binding, template-local, or explicit readable name
+    /// (must not contain `:`).
     pub original: String,
     /// New readable name (must not contain `:`).
     pub readable: String,

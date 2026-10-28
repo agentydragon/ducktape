@@ -4,9 +4,9 @@
 //!
 //! The shared invariants:
 //!
-//! * `<sym>` accepts either the minified `selector.binding.name` form
-//!   or the readable `name:` form. If both forms could match different
-//!   members, the operation refuses with a structured list.
+//! * `<sym>` resolves against the spec: `selector.binding.name`, a source-match
+//!   template-local identifier, or an explicit readable `name:`. Graph query
+//!   aliases are separate. Ambiguous spec identifiers produce a list of matches.
 //! * Mutating commands validate-by-default (atomic post-batch state)
 //!   and refuse on collision / atom-split rejection.
 //! * Edits use the canonical module schema; changed YAML is reserialized.
@@ -42,18 +42,20 @@ use crate::edit_gate::{
 };
 use crate::outcome::{GateOutcome, MutationOutcome};
 
-/// A chunk-top binding's public identity: the minified hygiene name
-/// (`selector.binding.name`, e.g. `_ab`) plus an optional readable
-/// `name:` the spec assigns (e.g. `parseUserId`).
+/// A spec binding identifier plus its optional readable `name:`.
+///
+/// The wire field `minified` holds `selector.binding.name` for members or the
+/// template-local identifier for source-match bindings; the latter need not
+/// equal the original bundle's binding name.
 ///
 /// Serializes internally-tagged so CLI JSON consumers can branch on
 /// `.kind` (`"minified"` | `"readable"`) and always read `.minified`.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum BindingName {
-    /// No readable name yet — still the minified hygiene identity.
+    /// No explicit readable name.
     Minified { minified: String },
-    /// Renamed: carries both the minified anchor and the readable name.
+    /// Carries the spec identifier and its explicit readable name.
     Readable { minified: String, name: String },
 }
 
@@ -65,7 +67,7 @@ impl BindingName {
         }
     }
 
-    /// The minified hygiene name (always present).
+    /// The spec selector-binding or template-local identifier.
     pub fn minified(&self) -> &str {
         match self {
             Self::Minified { minified } | Self::Readable { minified, .. } => minified,
@@ -84,8 +86,7 @@ impl BindingName {
         matches!(self, Self::Readable { .. })
     }
 
-    /// True when `query` matches either the minified or readable
-    /// spelling — the CLI's `<sym>` lookup rule.
+    /// Match a current spec identifier or explicit readable name.
     pub fn matches(&self, query: &str) -> bool {
         self.minified() == query || self.readable() == Some(query)
     }
@@ -205,7 +206,7 @@ fn source_match_readable(binding: &SourceMatchBinding) -> Option<String> {
     }
 }
 
-/// Find all members matching either the minified binding name or readable `name:`.
+/// Find spec bindings matching a selector-binding, template-local, or readable name.
 pub fn find_matches(modules_root: &Path, sym: &str) -> Result<Vec<BindingMatch>> {
     Ok(matches_in_docs(&load_module_docs(modules_root)?, sym))
 }
@@ -226,10 +227,15 @@ pub fn resolve_unambiguous(modules_root: &Path, sym: &str) -> Result<BindingMatc
 fn resolve_in_docs(modules_root: &Path, docs: &ModuleDocs, sym: &str) -> Result<BindingMatch> {
     let matches = matches_in_docs(docs, sym);
     match matches.len() {
-        0 => bail!(
-            "no binding named \"{sym}\" found under {}",
-            modules_root.display()
-        ),
+        0 => {
+            let modules_arg = modules_root.display().to_string();
+            let modules_arg = shlex::try_quote(&modules_arg)
+                .context("module path cannot be represented in a POSIX shell command")?;
+            bail!(
+                "no binding named \"{sym}\" found under {}\nList current spec identifiers with:\n  debundle bindings list --modules {modules_arg}",
+                modules_root.display()
+            );
+        }
         1 => Ok(matches.into_iter().next().unwrap()),
         _ => {
             let locations: Vec<String> = matches
@@ -329,7 +335,7 @@ pub struct RenameOutcome {
 
 /// Rename a single binding's readable `name:` without moving it.
 ///
-/// `original` accepts the minified or current readable form. `new`
+/// `original` accepts the current spec identifier or readable name. `new`
 /// must not collide with any other binding's readable name in the
 /// chunk (unless `no_verify`).
 pub fn rename_binding(
@@ -340,10 +346,7 @@ pub fn rename_binding(
     no_verify: bool,
 ) -> Result<RenameOutcome> {
     if original.contains(':') || new.contains(':') {
-        bail!(
-            "neither <original> nor <readable> may contain `:`; use --batch JSON for edge \
-             cases"
-        );
+        bail!("neither <original> nor <readable> may contain `:`");
     }
     let mut docs = load_module_docs(modules_root)?;
     let hit = resolve_in_docs(modules_root, &docs, original)?;

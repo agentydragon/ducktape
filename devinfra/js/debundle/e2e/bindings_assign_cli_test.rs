@@ -86,6 +86,46 @@ fn list_filters_cover_members_and_source_match_bindings() {
 }
 
 #[test]
+fn source_template_identifiers_have_a_spec_inventory_on_lookup_miss() {
+    let fixture = GraphFixture::new(
+        "const raw = 7; console.log(raw);",
+        &[(
+            "values.yaml",
+            "source_matches: [{match: 'const templateToken = 7;', bindings: [{local: templateToken, name: readableValue}]}]",
+        )],
+    );
+    let listed = fixture.json(&["bindings", "list"]);
+    assert_eq!(listed["bindings"][0]["minified"], "templateToken");
+    assert_eq!(listed["bindings"][0]["name"], "readableValue");
+    assert_eq!(
+        fixture.json(&["describe", "raw"])["source_units"],
+        fixture.json(&["describe", "readableValue"])["source_units"]
+    );
+    assert!(
+        !fixture
+            .command(&["describe", "templateToken"])
+            .status
+            .success()
+    );
+    fixture.assert_rejected_unchanged_without_graph(
+        &["bindings", "rename", "raw", "renamedValue"],
+        &["bindings list --modules", fixture.modules.to_str().unwrap()],
+    );
+    assert_eq!(
+        fixture.json(&[
+            "bindings",
+            "rename",
+            "templateToken",
+            "renamedValue",
+            "--dry-run"
+        ])["action"],
+        "dry-run"
+    );
+    fixture.json(&["bindings", "rename", "readableValue", "renamedValue"]);
+    fixture.assert_runs("7\n");
+}
+
+#[test]
 fn rename_members_and_source_match_shorthand_rekeys_annotations() {
     for selector in [
         "members: [{selector: {binding: {name: a}}}]",

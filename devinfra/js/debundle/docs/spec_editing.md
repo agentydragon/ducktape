@@ -23,7 +23,11 @@ operation-specific recipe.
    criteria. A current-source proof does not establish future stability.
 4. Apply the reviewed edit and retain its proposed-assignment gate result. Remove
    now-owned entries from the project's non-emitting rename/annotation patch
-   stream when applicable. Never edit the upstream bundle or generated output.
+   stream when applicable. Review attached comments/notes against current source
+   and gate evidence: stale ownership explanations can survive a correct move.
+   Transfer meaningful module comments before deleting empty shells; preserve
+   actual author contracts and selector-debt provenance. Never edit the upstream
+   bundle or generated output.
 5. Regenerate through the worker's adapter command, then run its uniqueness,
    runtime, and applicable CI checks. Record the results separately using
    [execution evidence](../skills/shared/workflow.md#execution-evidence).
@@ -38,6 +42,16 @@ is expected to fail after edits; it is not a post-edit gate.
 If source discovery becomes broad, return it to intake. If the destination is
 architecturally unclear, return it to the architect. Use [failure routing](../skills/shared/workflow.md#failure-routing)
 for graph and gate failures.
+
+## Inspect ownership before editing
+
+Start with a bounded `describe <module-path> --limit 20`, or pass known owner
+paths to `describe --batch owners.json --limit 20`. Then inspect specific
+bindings with `--direction incoming` and `--reason lazy_use` when looking for
+lazy consumers. These are filtered graph views, not a complete ownership or gate
+proof. Check the reported omitted counts and read the source behind candidate
+consumers; use `--all` for an intentional exhaustive artifact rather than as the
+first query over a high-fanout family.
 
 ## Workflow: reorganizing existing modules
 
