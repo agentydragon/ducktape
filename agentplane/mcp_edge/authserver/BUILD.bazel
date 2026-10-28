@@ -68,10 +68,10 @@ go_test(
     embed = [":authserver"],
     tags = ["requires_docker"],
     deps = [
-        "//agentplane/action_service/migrations",
         "//agentplane/mcp_edge:connection_service_go_proto",
         "//agentplane/mcp_edge/connections",
         "//agentplane/mcp_edge/mcpserver",
+        "//agentplane/mcp_edge/migrations",
         "//agentplane/proto:sandboxes_go_proto",
         "//agentplane/testing/postgres",
         "//agentplane/workload_auth/go/auth",
@@ -99,10 +99,10 @@ go_test(
     embed = [":authserver"],
     tags = ["requires_docker"],
     deps = [
-        "//agentplane/action_service/migrations",
         "//agentplane/mcp_edge:connection_service_go_proto",
         "//agentplane/mcp_edge/connections",
         "//agentplane/mcp_edge/mcpserver",
+        "//agentplane/mcp_edge/migrations",
         "//agentplane/proto:sandboxes_go_proto",
         "//agentplane/testing/postgres",
         "//agentplane/workload_auth/go/auth",
