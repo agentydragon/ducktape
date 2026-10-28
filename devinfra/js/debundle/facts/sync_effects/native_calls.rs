@@ -14,13 +14,20 @@ pub(super) enum CallReturn {
     Argument(usize),
     /// An opaque successful return retaining an input graph and its callbacks.
     DeferredArgument(usize),
+    /// A capability for descriptor entries captured from one exact ordinary
+    /// source object. It remains opaque except for the paired application.
+    OwnDescriptorMap,
+    /// `Object.defineProperties` returns its target when the call completes;
+    /// application effects have a separate input guard.
+    DefinedPropertiesTarget,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub(super) enum CallInputs {
     Primitives { min: usize, max: usize },
     FreshDataRecord,
-    OwnDescriptorLiteral,
+    OwnDescriptorRecord,
+    FreshDescriptorMapTarget,
     OrdinaryCallable,
 }
 
@@ -74,8 +81,14 @@ pub(super) fn native_call_model(
         }
         ("Object", Some("getOwnPropertyDescriptors"), CallKind::Call) => Some(NativeCallModel {
             intrinsic: IntrinsicRoot::Object,
-            inputs: CallInputs::OwnDescriptorLiteral,
-            returns: CallReturn::DeferredArgument(0),
+            inputs: CallInputs::OwnDescriptorRecord,
+            returns: CallReturn::OwnDescriptorMap,
+            heap_effect: NativeHeapEffect::Opaque,
+        }),
+        ("Object", Some("defineProperties"), CallKind::Call) => Some(NativeCallModel {
+            intrinsic: IntrinsicRoot::Object,
+            inputs: CallInputs::FreshDescriptorMapTarget,
+            returns: CallReturn::DefinedPropertiesTarget,
             heap_effect: NativeHeapEffect::Opaque,
         }),
         ("Object", Some("freeze"), CallKind::Call) => Some(NativeCallModel {

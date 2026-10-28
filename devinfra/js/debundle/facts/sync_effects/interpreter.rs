@@ -2,9 +2,9 @@
 
 use super::super::value_model::{
     AbstractValue, ArrayIteration, ArrayIterationMethod, CallSite, Captured, CapturedContext,
-    Context, DenseArray, FrozenNamespaceProof, ValueExpr, Values,
+    Context, DenseArray, FrozenNamespaceProof, OwnPropertyDescriptorSyntax, ValueExpr, Values,
 };
-use super::native_calls::{CallInputs, CallReturn, native_call_model};
+use super::native_calls::{CallInputs, CallReturn, NativeCallModel, native_call_model};
 use super::{
     Call, CallKind, Callable, CallbackResultWrite, ExecutionIndex, IntrinsicRoot, LocalConstructor,
     RetainedCallbackCall,
@@ -144,6 +144,26 @@ const MAX_SYNCHRONOUS_INVOCATIONS: usize = 256;
 // manufacturing capture snapshots that retain that cross product.
 const MAX_SYNCHRONOUS_CALLBACK_POOL: usize = 64;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum CapturedPropertyDescriptor {
+    Data(Values),
+    Accessor { getter: Values, setter: Values },
+}
+
+#[derive(Debug, Clone)]
+struct OwnDescriptorMapState {
+    source_object: u32,
+    valid: bool,
+    properties: BTreeMap<String, CapturedPropertyDescriptor>,
+    retained_values: Values,
+}
+
+#[derive(Debug, Clone, Default)]
+struct AppliedAccessor {
+    getter: Values,
+    setter: Values,
+}
+
 struct Executor<'a> {
     native_integrity_checks: RefCell<BTreeSet<NativeIntegrityCheck>>,
     native_prototype_property_checks: RefCell<BTreeMap<String, NativePrototypePropertyCheck>>,
@@ -188,6 +208,8 @@ struct Executor<'a> {
     changed_member_roots: BTreeSet<Id>,
     global_escaped_callbacks: Values,
     prefix_object_properties: BTreeMap<u32, BTreeMap<Option<String>, Values>>,
+    own_descriptor_maps: BTreeMap<CallSite, OwnDescriptorMapState>,
+    applied_accessors: BTreeMap<u32, BTreeMap<String, AppliedAccessor>>,
     dense_arrays: BTreeMap<u32, DenseArray>,
     ordinary_spread_copies: BTreeSet<u32>,
     array_iteration_depth: usize,
@@ -358,16 +380,221 @@ impl Executor<'_> {
         }
     }
 
-    /// A successful model lookup certifies the operation after its inputs
-    /// have evaluated. Both return values and call timing use these same
-    /// identity, mutation, and input guards; neither infers purity.
-    fn resolve_native_call(
+    /// Descriptor records need the whole ordinary prototype premise; private
+    /// constructors keep their separate property-specific absence checks.
+    fn ordinary_object_prototype_intact(&self) -> bool {
+        self.index.dynamic_scope_owners.is_empty()
+            && self.native_guard_intact(
+                NativeIntegrityGuard::OrdinaryObjectPrototype,
+                &[IntrinsicRoot::GlobalObject, IntrinsicRoot::Object],
+            )
+    }
+
+    fn descriptor_source_object(&self, values: &Values) -> Option<u32> {
+        let [AbstractValue::Origin(ValueOrigin::Object(object))] =
+            values.iter().collect::<Vec<_>>().as_slice()
+        else {
+            return None;
+        };
+        if self.tainted_objects.contains(object) {
+            return None;
+        }
+        let shape = self.index.own_descriptor_shapes.get(object)?;
+        let properties = self.prefix_object_properties.get(object)?;
+        let current_keys: BTreeSet<_> = properties.keys().cloned().collect();
+        let expected_keys: BTreeSet<_> = shape.keys().cloned().map(Some).collect();
+        (current_keys == expected_keys && properties.values().all(|values| !values.is_empty()))
+            .then_some(*object)
+    }
+
+    fn capture_own_descriptor_map(
+        &mut self,
+        site: CallSite,
+        args: &[Values],
+    ) -> Option<AbstractValue> {
+        let [source_values] = args else {
+            return None;
+        };
+        let source_object = self.descriptor_source_object(source_values)?;
+        let shape = self
+            .index
+            .own_descriptor_shapes
+            .get(&source_object)?
+            .clone();
+        let source_properties = self.prefix_object_properties.get(&source_object)?.clone();
+        let mut properties = BTreeMap::new();
+        for (name, syntax) in shape {
+            let descriptor = match syntax {
+                OwnPropertyDescriptorSyntax::Data => CapturedPropertyDescriptor::Data(
+                    source_properties.get(&Some(name.clone()))?.clone(),
+                ),
+                OwnPropertyDescriptorSyntax::Accessor { getter, setter } => {
+                    let stored = source_properties.get(&Some(name.clone()))?;
+                    let expected: BTreeSet<_> = getter.into_iter().chain(setter).collect();
+                    let mut callbacks = Values::new();
+                    for value in stored {
+                        let AbstractValue::Closure(key, _) = value else {
+                            return None;
+                        };
+                        if !expected.contains(key) {
+                            return None;
+                        }
+                        callbacks.insert(value.clone());
+                    }
+                    let callbacks_for = |key: Option<u32>| {
+                        key.map_or_else(Values::new, |key| {
+                            callbacks
+                                .iter()
+                                .filter(|value| {
+                                    matches!(value, AbstractValue::Closure(found, _) if *found == key)
+                                })
+                                .cloned()
+                                .collect()
+                        })
+                    };
+                    let getter_values = callbacks_for(getter);
+                    let setter_values = callbacks_for(setter);
+                    if (getter.is_some() && getter_values.is_empty())
+                        || (setter.is_some() && setter_values.is_empty())
+                    {
+                        return None;
+                    }
+                    CapturedPropertyDescriptor::Accessor {
+                        getter: getter_values,
+                        setter: setter_values,
+                    }
+                }
+            };
+            properties.insert(name, descriptor);
+        }
+        let mut retained_values = Values::new();
+        for descriptor in properties.values() {
+            match descriptor {
+                CapturedPropertyDescriptor::Data(values) => {
+                    retained_values.extend(values.iter().cloned());
+                }
+                CapturedPropertyDescriptor::Accessor { getter, setter } => {
+                    retained_values.extend(getter.iter().cloned());
+                    retained_values.extend(setter.iter().cloned());
+                }
+            }
+        }
+        match self.own_descriptor_maps.get_mut(&site) {
+            Some(existing) => {
+                if existing.source_object != source_object || existing.properties != properties {
+                    existing.valid = false;
+                    existing.retained_values.extend(retained_values);
+                }
+            }
+            None => {
+                self.own_descriptor_maps.insert(
+                    site,
+                    OwnDescriptorMapState {
+                        source_object,
+                        valid: true,
+                        properties,
+                        retained_values,
+                    },
+                );
+            }
+        }
+        Some(AbstractValue::OwnDescriptorMap(site))
+    }
+
+    fn invalidate_own_descriptor_map(&mut self, site: CallSite) {
+        if let Some(map) = self.own_descriptor_maps.get_mut(&site) {
+            map.valid = false;
+        }
+    }
+
+    fn descriptor_map_callbacks(&self, site: CallSite) -> Values {
+        self.own_descriptor_maps
+            .get(&site)
+            .map_or_else(Values::new, |map| map.retained_values.clone())
+    }
+
+    fn applied_getters(&self, receivers: &Values, property: Option<&str>) -> Values {
+        let mut getters = Values::new();
+        for value in receivers {
+            let AbstractValue::Origin(ValueOrigin::Object(object)) = value else {
+                continue;
+            };
+            let Some(accessors) = self.applied_accessors.get(object) else {
+                continue;
+            };
+            if let Some(property) = property {
+                if let Some(accessor) = accessors.get(property) {
+                    getters.extend(accessor.getter.iter().cloned());
+                }
+            } else {
+                getters.extend(
+                    accessors
+                        .values()
+                        .flat_map(|accessor| accessor.getter.iter().cloned()),
+                );
+            }
+        }
+        getters
+    }
+
+    fn apply_own_descriptor_map(&mut self, args: &[Values]) {
+        let [target_values, map_values] = args else {
+            return;
+        };
+        let [AbstractValue::Origin(ValueOrigin::Object(target))] =
+            target_values.iter().collect::<Vec<_>>().as_slice()
+        else {
+            return;
+        };
+        let [AbstractValue::OwnDescriptorMap(site)] =
+            map_values.iter().collect::<Vec<_>>().as_slice()
+        else {
+            return;
+        };
+        let Some(map) = self
+            .own_descriptor_maps
+            .get(site)
+            .filter(|map| map.valid)
+            .cloned()
+        else {
+            return;
+        };
+        let mut applied_accessors = BTreeMap::new();
+        let properties = self.prefix_object_properties.entry(*target).or_default();
+        let before = properties.clone();
+        for (name, descriptor) in map.properties {
+            match descriptor {
+                CapturedPropertyDescriptor::Data(values) => {
+                    properties.insert(Some(name), values);
+                }
+                CapturedPropertyDescriptor::Accessor { getter, setter } => {
+                    properties.insert(
+                        Some(name.clone()),
+                        if getter.is_empty() {
+                            BTreeSet::from([AbstractValue::Undefined])
+                        } else {
+                            unknown()
+                        },
+                    );
+                    applied_accessors.insert(name, AppliedAccessor { getter, setter });
+                }
+            }
+        }
+        if before != *properties {
+            self.prefix_revision = self.prefix_revision.wrapping_add(1);
+        }
+        if !applied_accessors.is_empty() {
+            self.applied_accessors.insert(*target, applied_accessors);
+        }
+    }
+
+    /// Return a native model only after proving the source-level intrinsic
+    /// identity. Input eligibility is checked separately.
+    fn exact_native_call_model(
         &self,
         kind: CallKind,
         callee: &ValueExpr,
-        expressions: &[ValueExpr],
-        args: &[Values],
-    ) -> Option<CallReturn> {
+    ) -> Option<NativeCallModel> {
         let (binding, receiver, member, global_this_qualified) = match callee {
             ValueExpr::Binding(binding) => (binding, binding.0.as_ref(), None, false),
             ValueExpr::Member(receiver, Some(member), true) => match receiver.as_ref() {
@@ -401,6 +628,20 @@ impl Executor<'_> {
             return None;
         }
         self.record_native_integrity_use(NativeIntegrityGuard::NativeCallIdentity);
+        Some(model)
+    }
+
+    /// A successful model lookup certifies the operation after its inputs
+    /// have evaluated. It does not infer purity or exception freedom.
+    fn resolve_native_call(
+        &self,
+        kind: CallKind,
+        callee: &ValueExpr,
+        expressions: &[ValueExpr],
+        args: &[Values],
+    ) -> Option<CallReturn> {
+        let model = self.exact_native_call_model(kind, callee)?;
+
         let admitted = match model.inputs {
             CallInputs::Primitives { min, max } => {
                 (min..=max).contains(&args.len())
@@ -418,11 +659,25 @@ impl Executor<'_> {
                 matches!(expressions, [ValueExpr::ObjectLiteral(object, _)]
                     if self.index.plain_data_objects.contains(object))
             }
-            CallInputs::OwnDescriptorLiteral => {
-                matches!((expressions, args), ([ValueExpr::ObjectLiteral(object, _)], [values])
-                    if self.index.own_descriptor_literal_inputs.contains(object)
-                        && !self.tainted_objects.contains(object)
-                        && values == &BTreeSet::from([AbstractValue::Origin(ValueOrigin::Object(*object))]))
+            CallInputs::OwnDescriptorRecord => {
+                matches!(args, [values]
+                    if self.descriptor_source_object(values).is_some()
+                        && self.ordinary_object_prototype_intact())
+            }
+            CallInputs::FreshDescriptorMapTarget => {
+                matches!(args, [target_values, map_values]
+                    if self.ordinary_object_prototype_intact()
+                        && matches!(target_values.iter().collect::<Vec<_>>().as_slice(),
+                            [AbstractValue::Origin(ValueOrigin::Object(target))]
+                                if self.index.plain_data_objects.contains(target)
+                                    && !self.tainted_objects.contains(target)
+                                    && self.prefix_object_properties.get(target)
+                                        .is_some_and(BTreeMap::is_empty)
+                                    && !self.applied_accessors.contains_key(target))
+                        && matches!(map_values.iter().collect::<Vec<_>>().as_slice(),
+                            [AbstractValue::OwnDescriptorMap(map_site)]
+                                if self.own_descriptor_maps.get(map_site)
+                                    .is_some_and(|map| map.valid)))
             }
             CallInputs::OrdinaryCallable => {
                 matches!(args, [values]
@@ -493,11 +748,17 @@ impl Executor<'_> {
         returns: CallReturn,
         args: &[Values],
         may_throw: bool,
+        site: CallSite,
     ) -> Values {
         let mut values = match returns {
             CallReturn::Unknown => unknown(),
             CallReturn::Primitive => BTreeSet::from([AbstractValue::NonCallable]),
             CallReturn::Argument(index) => args.get(index).cloned().unwrap_or_else(unknown),
+            CallReturn::OwnDescriptorMap => self
+                .capture_own_descriptor_map(site, args)
+                .map(|map| BTreeSet::from([map]))
+                .unwrap_or_else(unknown),
+            CallReturn::DefinedPropertiesTarget => args.first().cloned().unwrap_or_else(unknown),
             CallReturn::DeferredArgument(index) => {
                 let Some(argument) = args.get(index) else {
                     return unknown();
@@ -585,6 +846,7 @@ impl Executor<'_> {
             return None;
         };
         if self.tainted_objects.contains(object)
+            || self.applied_accessors.contains_key(object)
             || (!self.index.plain_data_objects.contains(object)
                 && !self.ordinary_spread_copies.contains(object))
         {
@@ -2145,6 +2407,7 @@ impl Executor<'_> {
         let mut callbacks = Values::new();
         let mut pending: Vec<_> = values.iter().cloned().collect();
         let mut visited_objects = BTreeSet::new();
+        let mut visited_descriptor_maps = BTreeSet::new();
         let mut expanded_escaped = false;
         while let Some(value) = pending.pop() {
             match &value {
@@ -2181,6 +2444,11 @@ impl Executor<'_> {
                         pending.extend(captured.values.iter().cloned());
                     }
                 }
+                AbstractValue::OwnDescriptorMap(site) => {
+                    if visited_descriptor_maps.insert(*site) {
+                        pending.extend(self.descriptor_map_callbacks(*site));
+                    }
+                }
                 AbstractValue::Origin(ValueOrigin::Object(object)) => {
                     if visited_objects.insert(*object)
                         && let Some(properties) = self.prefix_object_properties.get(object)
@@ -2190,6 +2458,15 @@ impl Executor<'_> {
                                 .values()
                                 .flat_map(|values| values.iter().cloned()),
                         );
+                    }
+                    if let Some(accessors) = self.applied_accessors.get(object) {
+                        pending.extend(accessors.values().flat_map(|accessor| {
+                            accessor
+                                .getter
+                                .iter()
+                                .chain(accessor.setter.iter())
+                                .cloned()
+                        }));
                     }
                 }
                 AbstractValue::GlobalObject | AbstractValue::Unknown if !expanded_escaped => {
@@ -2480,6 +2757,16 @@ impl Executor<'_> {
                             self.prefix_revision = self.prefix_revision.wrapping_add(1);
                         }
                     }
+                    AbstractValue::OwnDescriptorMap(site) => {
+                        self.invalidate_own_descriptor_map(site);
+                        self.taint_objects(&values);
+                        let callbacks = self.callback_values(&values);
+                        let before = self.global_escaped_callbacks.len();
+                        self.global_escaped_callbacks.extend(callbacks);
+                        if self.global_escaped_callbacks.len() != before {
+                            self.prefix_revision = self.prefix_revision.wrapping_add(1);
+                        }
+                    }
                     AbstractValue::Unknown
                     | AbstractValue::DeferredCallbacks(_)
                     | AbstractValue::ForeignDeferredRecord => {
@@ -2601,6 +2888,19 @@ impl Executor<'_> {
                                 .flat_map(|values| values.iter().cloned()),
                         );
                     }
+                    if let Some(accessors) = self.applied_accessors.get(&object) {
+                        pending.extend(accessors.values().flat_map(|accessor| {
+                            accessor
+                                .getter
+                                .iter()
+                                .chain(accessor.setter.iter())
+                                .cloned()
+                        }));
+                    }
+                }
+                AbstractValue::OwnDescriptorMap(site) => {
+                    self.invalidate_own_descriptor_map(site);
+                    pending.extend(self.descriptor_map_callbacks(site));
                 }
                 AbstractValue::Instance(_, captured)
                 | AbstractValue::DeferredCallbacks(captured) => {
@@ -2718,6 +3018,18 @@ impl Executor<'_> {
                     if let Some(properties) = self.prefix_object_properties.get(&object) {
                         pending.extend(properties.values().flatten().cloned());
                     }
+                    if let Some(accessors) = self.applied_accessors.get(&object) {
+                        pending.extend(accessors.values().flat_map(|accessor| {
+                            accessor
+                                .getter
+                                .iter()
+                                .chain(accessor.setter.iter())
+                                .cloned()
+                        }));
+                    }
+                }
+                AbstractValue::OwnDescriptorMap(site) => {
+                    pending.extend(self.descriptor_map_callbacks(site));
                 }
                 AbstractValue::Instance(_, captured)
                 | AbstractValue::DeferredCallbacks(captured) => {
@@ -2752,6 +3064,18 @@ impl Executor<'_> {
                     if let Some(properties) = self.prefix_object_properties.get(&object) {
                         pending.extend(properties.values().flatten().cloned());
                     }
+                    if let Some(accessors) = self.applied_accessors.get(&object) {
+                        pending.extend(accessors.values().flat_map(|accessor| {
+                            accessor
+                                .getter
+                                .iter()
+                                .chain(accessor.setter.iter())
+                                .cloned()
+                        }));
+                    }
+                }
+                AbstractValue::OwnDescriptorMap(site) => {
+                    pending.extend(self.descriptor_map_callbacks(site));
                 }
                 AbstractValue::DeferredCallbacks(captured) => {
                     pending.extend(captured.values.iter().cloned())
@@ -3641,6 +3965,12 @@ impl Executor<'_> {
                 let mut values = Values::new();
                 for object in objects {
                     match object {
+                        AbstractValue::OwnDescriptorMap(site) => {
+                            self.invalidate_own_descriptor_map(site);
+                            let callbacks = self.descriptor_map_callbacks(site);
+                            values.insert(self.deferred_callbacks(callbacks));
+                            values.insert(AbstractValue::Unknown);
+                        }
                         AbstractValue::ForeignDeferredRecord => {
                             values.insert(AbstractValue::ForeignDeferredRecord);
                         }
@@ -3770,7 +4100,22 @@ impl Executor<'_> {
                 if let Some(returns) =
                     self.resolve_native_call(CallKind::Call, callee, expressions, &args)
                 {
-                    return self.native_return_values(returns, &args, args_may_throw);
+                    return self.native_return_values(returns, &args, args_may_throw, *span);
+                }
+                if args.len() == 2
+                    && self.ordinary_object_prototype_intact()
+                    && self
+                        .exact_native_call_model(CallKind::Call, callee)
+                        .is_some_and(|model| {
+                            matches!(model.returns, CallReturn::DefinedPropertiesTarget)
+                        })
+                {
+                    // This is only a successful-result identity fact. The
+                    // call-timing lane still needs a live descriptor map and
+                    // an empty target, and falls back opaquely otherwise.
+                    let mut result = args[0].clone();
+                    result.insert(AbstractValue::Unavailable);
+                    return result;
                 }
                 if let Some(callbacks) = self.retained_factory_callbacks(*span, expressions, &args)
                 {
@@ -3867,7 +4212,12 @@ impl Executor<'_> {
                 if let Some(returns) =
                     self.resolve_native_call(CallKind::New, callee, args, &successful_args)
                 {
-                    return self.native_return_values(returns, &successful_args, args_may_throw);
+                    return self.native_return_values(
+                        returns,
+                        &successful_args,
+                        args_may_throw,
+                        *span,
+                    );
                 }
                 if self.index.retained_constructor_calls.contains_key(span) {
                     if targets.len() == 1 && targets.contains(&AbstractValue::Unavailable) {
@@ -4199,7 +4549,13 @@ impl Executor<'_> {
             certified_data_receivers.clear();
         }
         for expr in &callable.returns {
-            outcome.returns.extend(self.evaluate(expr, &env, &env));
+            let returned = self.evaluate(expr, &env, &env);
+            for value in &returned {
+                if let AbstractValue::OwnDescriptorMap(site) = value {
+                    self.invalidate_own_descriptor_map(*site);
+                }
+            }
+            outcome.returns.extend(returned);
         }
         if callable.may_fall_through {
             outcome.returns.insert(AbstractValue::Undefined);
@@ -4260,6 +4616,28 @@ impl Executor<'_> {
                 .frozen_namespace_calls
                 .contains(&CallSite::from(call.span))
         {
+            return;
+        }
+        if call.kind == CallKind::AccessorCalleeLookup {
+            let ValueExpr::Member(receiver, property, _) = &call.callee else {
+                unreachable!("accessor callee lookup always records a member");
+            };
+            let values = self.evaluate(receiver, env, captures);
+            for value in &values {
+                if let AbstractValue::OwnDescriptorMap(site) = value {
+                    self.invalidate_own_descriptor_map(*site);
+                }
+            }
+            let accessor_getters = self.applied_getters(&values, property.as_deref());
+            if accessor_getters.is_empty() {
+                return;
+            }
+            self.promote_raw_callbacks(&accessor_getters, outcome);
+            self.taint_objects(&values);
+            if self.array_iteration_depth > 0 {
+                self.array_iteration_unsupported = true;
+            }
+            outcome.unsupported(ExecutionOperation::MemberRead, call.owner, call.span);
             return;
         }
         if matches!(
@@ -4336,6 +4714,15 @@ impl Executor<'_> {
                 self.invoke_possible_callbacks(&[values], false, outcome);
                 return;
             }
+            for value in &values {
+                if let AbstractValue::OwnDescriptorMap(site) = value {
+                    self.invalidate_own_descriptor_map(*site);
+                }
+            }
+            let accessor_getters = self.applied_getters(&values, property.as_deref());
+            if !accessor_getters.is_empty() {
+                self.promote_raw_callbacks(&accessor_getters, outcome);
+            }
             let unsupported_local = values.iter().any(|value| match value {
                 AbstractValue::Origin(ValueOrigin::Object(object)) => {
                     self.tainted_objects.contains(object)
@@ -4366,7 +4753,7 @@ impl Executor<'_> {
                         })
                 }
                 _ => false,
-            });
+            }) || !accessor_getters.is_empty();
             if unsupported_local {
                 self.taint_objects(&values);
                 let selected = self.evaluate(&call.callee, env, captures);
@@ -4492,10 +4879,12 @@ impl Executor<'_> {
             return;
         }
         if !call.has_spread
-            && self
-                .resolve_native_call(call.kind, &call.callee, &call.args, &args)
-                .is_some()
+            && let Some(returns) =
+                self.resolve_native_call(call.kind, &call.callee, &call.args, &args)
         {
+            if matches!(returns, CallReturn::DefinedPropertiesTarget) {
+                self.apply_own_descriptor_map(&args);
+            }
             return;
         }
         if self.host_call_does_not_reenter(call) {
@@ -5240,6 +5629,8 @@ pub(crate) fn annotate_synchronous_calls(
         changed_member_roots,
         global_escaped_callbacks: Values::new(),
         prefix_object_properties: BTreeMap::new(),
+        own_descriptor_maps: BTreeMap::new(),
+        applied_accessors: BTreeMap::new(),
         dense_arrays: BTreeMap::new(),
         ordinary_spread_copies: BTreeSet::new(),
         array_iteration_depth: 0,

@@ -891,17 +891,34 @@ code outside the analyzed prefix, or host behavior.
 
 ## Ordinary own descriptor inspection
 
-A guarded direct `Object.getOwnPropertyDescriptors` call on an exact ordinary
-literal can defer its stored getter, setter and method bodies during inspection.
-The inferred Object identity/integrity premise and ordinary input shape are
-shared by call timing and successful-return analysis. Callee/argument effects
-and throws remain represented. The result retains the input object graph,
-current callback capabilities and an unknown value shape, without
-descriptor-value precision or a stronger retained-factory input contract. Later
-access, invocation, publication and writes use conservative fallback.
-This first primitive excludes aliases, computed/spread/prototype forms and
-native replacement. Descriptor application and imported-body specialization
-remain outside its contract.
+A guarded `Object.getOwnPropertyDescriptors` call can capture exact ordinary
+object-literal descriptors through the object's canonical identity, including
+a local binding or alias. The source must be untainted, and its current own-key
+set must still equal the indexed static shape. Statically known string and
+number keys are supported, including literal-computed data keys; computed
+method/accessor keys, spreads, decorators, `__proto__`, unknown/added keys,
+escaped or unsupported mutations, and native replacement remain conservative.
+Callee/argument effects and throws remain represented; inspection captures
+data-value identities and getter, setter and method callbacks without invoking
+accessors.
+
+The descriptor-map carrier has no general readable shape. The only modeled
+composition is a direct, guarded `Object.defineProperties` call using that live
+carrier and an untainted, currently empty fresh ordinary target. Captured data
+values and accessor callbacks are applied to the target's existing identity,
+so aliases observe the update. A repeated capture callsite with conflicting
+source identity or descriptor values is invalidated rather than joined. Map
+member access/mutation, return, escape or opaque consumption invalidates
+application but retains the callback graph. A copied accessor read promotes
+its getter; opaque target use retains getter, setter and method callbacks.
+With the exact unmodified native identity and intact Object prototype guards,
+the result expression may retain the first argument's target identity even
+when application eligibility is not proved; it also retains a possible throw.
+This result-shape fact does not authorize descriptor application or suppress
+the opaque timing/effect fallback.
+Returned/readable maps, arbitrary descriptor edits, `Object.assign`, imported
+wrapper bodies, general purity and exception-free behavior remain outside the
+contract.
 
 ## Inferred FinalizationRegistry callback retention
 

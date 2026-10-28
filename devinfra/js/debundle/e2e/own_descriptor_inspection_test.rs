@@ -93,12 +93,6 @@ fn descriptor_carrier_retains_later_calls_publication_and_writes() {
 fn descriptor_inspection_rejects_unknown_or_unsupported_inputs() {
     for (prefix, argument, members, statements) in [
         (
-            "const record = { get value() { return later; } };\n",
-            "record",
-            vec!["record"],
-            vec![],
-        ),
-        (
             "globalThis.saved = () => later;\n",
             "globalThis.record",
             vec![],
@@ -121,12 +115,6 @@ fn descriptor_inspection_rejects_unknown_or_unsupported_inputs() {
             "",
             "{ __proto__: null, get value() { return later; } }",
             vec![],
-            vec![],
-        ),
-        (
-            "let holder;\n",
-            "(holder = { get value() { return later; } })",
-            vec!["holder"],
             vec![],
         ),
     ] {
@@ -194,6 +182,377 @@ fn own_setter_descriptor_retains_its_deferred_body() {
         "{ set value(next) { globalThis.observed = next + later; } }",
         &["descriptors.value.set(8);"],
         &[],
+        &[],
+    );
+}
+
+#[test]
+fn captured_descriptors_apply_to_a_fresh_target_without_running_accessors() {
+    let source = r#"
+let getterCalls = 0;
+let methodCalls = 0;
+function wrap(record) {
+  const descriptors = Object.getOwnPropertyDescriptors(record);
+  const target = {};
+  return Object.defineProperties(target, descriptors);
+}
+const record = {
+  label: "copied",
+  get value() { getterCalls++; return this.label + ":" + later; },
+  make() { methodCalls++; return this.label + ":" + later; },
+};
+const result = wrap(record);
+const beforeGetterCalls = getterCalls;
+const beforeMethodCalls = methodCalls;
+const later = "ready";
+console.log(beforeGetterCalls, beforeMethodCalls, result.value, result.make(), getterCalls, methodCalls);
+"#;
+    let fixture = run_fixture(FixtureOpts::new(
+        source,
+        vec![
+            logical_module("wrapper", &[Member::new("wrap")]),
+            logical_module_with_anon(
+                "result",
+                &[
+                    Member::new("getterCalls"),
+                    Member::new("methodCalls"),
+                    Member::new("result"),
+                    Member::new("record"),
+                    Member::new("beforeGetterCalls"),
+                    Member::new("beforeMethodCalls"),
+                ],
+                &[
+                    "console.log(beforeGetterCalls, beforeMethodCalls, result.value, result.make(), getterCalls, methodCalls);",
+                ],
+            ),
+            logical_module("later", &[Member::new("later")]),
+        ],
+    ));
+    assert_preserved_entry_output(&fixture, "0 0 copied:ready copied:ready 1 1\n");
+}
+
+#[test]
+fn direct_descriptor_application_returns_its_target_identity() {
+    let source = "function wrap(record) { const descriptors = Object.getOwnPropertyDescriptors(record); return Object.defineProperties({}, descriptors); }\nconst result = wrap({ get value() { return later; }, method() { return later; } });\nconst later = 42;\nconsole.log(result.value, result.method());\n";
+    let fixture = run_fixture(FixtureOpts::new(
+        source,
+        vec![
+            logical_module("wrapper", &[Member::new("wrap")]),
+            logical_module("result", &[Member::new("result")]),
+            logical_module("later", &[Member::new("later")]),
+        ],
+    ));
+    assert_preserved_entry_output(&fixture, "42 42\n");
+}
+
+#[test]
+fn direct_descriptor_application_preserves_target_alias_identity() {
+    let source = "const descriptors = Object.getOwnPropertyDescriptors({ get value() { return later; }, method() { return later; } });\nconst target = {};\nconst result = Object.defineProperties(target, descriptors);\nconst alias = result;\nconst later = 42;\nconsole.log(result === target, alias === target, alias.value, alias.method());\n";
+    let fixture = run_fixture(FixtureOpts::new(
+        source,
+        vec![
+            logical_module("descriptors", &[Member::new("descriptors")]),
+            logical_module(
+                "target",
+                &[
+                    Member::new("target"),
+                    Member::new("result"),
+                    Member::new("alias"),
+                ],
+            ),
+            logical_module("later", &[Member::new("later")]),
+        ],
+    ));
+    assert_preserved_entry_output(&fixture, "true true 42 42\n");
+}
+
+#[test]
+fn direct_descriptor_application_retains_captured_accessor_for_stored_read() {
+    let source = "function wrap(record) { const descriptors = Object.getOwnPropertyDescriptors(record); return Object.defineProperties({}, descriptors); }\nconst result = wrap({ get value() { return Later; } });\nlet touched;\nlet observed;\ntry { touched = result.value; } catch (error) { observed = error.name; }\nclass Later {}\nconsole.log(observed);\n";
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module("wrapper", &[Member::new("wrap")]),
+                logical_module_with_anon(
+                    "result",
+                    &[
+                        Member::new("result"),
+                        Member::new("touched"),
+                        Member::new("observed"),
+                    ],
+                    &["try { touched = result.value; } catch (error) { observed = error.name; }"],
+                ),
+                logical_module("later", &[Member::new("Later")]),
+            ],
+        ),
+        &["later", "result"],
+        &["eager_use"],
+    );
+}
+
+#[test]
+fn copied_setter_assignment_retains_its_later_dependency() {
+    let source = "function wrap(record) { const descriptors = Object.getOwnPropertyDescriptors(record); const target = {}; Object.defineProperties(target, descriptors); return target; }\nconst result = wrap({ set value(next) { globalThis.observed = Later; } });\nconst alias = result;\nlet observed;\ntry { alias.value = 1; } catch (error) { observed = error.name; }\nclass Later {}\nconsole.log(observed);\n";
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module("wrapper", &[Member::new("wrap")]),
+                logical_module_with_anon(
+                    "result",
+                    &[
+                        Member::new("result"),
+                        Member::new("alias"),
+                        Member::new("observed"),
+                    ],
+                    &["try { alias.value = 1; } catch (error) { observed = error.name; }"],
+                ),
+                logical_module("later", &[Member::new("Later")]),
+            ],
+        ),
+        &["later", "result"],
+        &[],
+    );
+}
+
+#[test]
+fn direct_descriptor_application_retains_target_for_early_accessor_reads() {
+    let source = "function wrap(record) { const descriptors = Object.getOwnPropertyDescriptors(record); return Object.defineProperties({}, descriptors); }\nconst result = wrap({ get value() { return Later; } });\nlet observed;\ntry { result.value; } catch (error) { observed = error.name; }\nclass Later {}\nconsole.log(observed);\n";
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module("wrapper", &[Member::new("wrap")]),
+                logical_module_with_anon(
+                    "result",
+                    &[Member::new("result"), Member::new("observed")],
+                    &["try { result.value; } catch (error) { observed = error.name; }"],
+                ),
+                logical_module("later", &[Member::new("Later")]),
+            ],
+        ),
+        &["later", "result"],
+        &["eager_use"],
+    );
+}
+
+#[test]
+fn copied_accessor_reads_and_opaque_target_consumption_retain_dependencies() {
+    let wrapper = "function wrap(record) { const descriptors = Object.getOwnPropertyDescriptors(record); const target = {}; Object.defineProperties(target, descriptors); return target; }\n";
+    let reads_copied_accessor = format!(
+        "{wrapper}const result = wrap({{ get value() {{ return later; }}, method() {{ return later; }} }});\nconst observed = result.value;\nconst later = 42;\n"
+    );
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            &reads_copied_accessor,
+            vec![
+                logical_module("wrapper", &[Member::new("wrap")]),
+                logical_module("result", &[Member::new("result"), Member::new("observed")]),
+                logical_module("later", &[Member::new("later")]),
+            ],
+        ),
+        &["result", "later"],
+        &[],
+    );
+
+    let dynamic_read = format!(
+        "{wrapper}const result = wrap({{ get value() {{ return later; }} }});\nconst key = globalThis.key;\nconst observed = result[key];\nconst later = 42;\n"
+    );
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            &dynamic_read,
+            vec![
+                logical_module("wrapper", &[Member::new("wrap")]),
+                logical_module(
+                    "result",
+                    &[
+                        Member::new("result"),
+                        Member::new("key"),
+                        Member::new("observed"),
+                    ],
+                ),
+                logical_module("later", &[Member::new("later")]),
+            ],
+        ),
+        &["result", "later"],
+        &[],
+    );
+
+    let getter_as_callee = format!(
+        "{wrapper}const result = wrap({{ get value() {{ return later; }} }});\nresult.value();\nconst later = 42;\n"
+    );
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            &getter_as_callee,
+            vec![
+                logical_module_with_anon(
+                    "result",
+                    &[Member::new("wrap"), Member::new("result")],
+                    &["result.value();"],
+                ),
+                logical_module("later", &[Member::new("later")]),
+            ],
+        ),
+        &["result", "later"],
+        &[],
+    );
+
+    let opaque_consumption = format!(
+        "{wrapper}const result = wrap({{ get value() {{ return later; }}, method() {{ return later; }} }});\nglobalThis.consume(result);\nconst later = 42;\n"
+    );
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            &opaque_consumption,
+            vec![
+                logical_module_with_anon(
+                    "result",
+                    &[Member::new("wrap"), Member::new("result")],
+                    &["globalThis.consume(result);"],
+                ),
+                logical_module("later", &[Member::new("later")]),
+            ],
+        ),
+        &["result", "later"],
+        &[],
+    );
+}
+
+#[test]
+fn conflicting_descriptor_carrier_self_reference_terminates() {
+    let source = "function capture(record) { return Object.getOwnPropertyDescriptors(record); }\nconst first = capture({});\nconst second = capture({ first });\nObject.freeze(second);\nconsole.log('done');\n";
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    assert_preserved_entry_output(&fixture, "done\n");
+}
+
+#[test]
+fn descriptor_application_preserves_the_source_literal_capture_context() {
+    let source = "function makeRecord(read) { return { get value() { return read(); } }; }\nfunction wrap(record) { const descriptors = Object.getOwnPropertyDescriptors(record); const target = {}; Object.defineProperties(target, descriptors); return target; }\nconst record = makeRecord(() => later);\nconst result = wrap(record);\nconst observed = result.value;\nconst later = 42;\n";
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module("maker", &[Member::new("makeRecord")]),
+                logical_module("wrapper", &[Member::new("wrap")]),
+                logical_module_with_anon(
+                    "result",
+                    &[
+                        Member::new("record"),
+                        Member::new("result"),
+                        Member::new("observed"),
+                    ],
+                    &["const observed = result.value;"],
+                ),
+                logical_module("later", &[Member::new("later")]),
+            ],
+        ),
+        &["result", "later"],
+        &[],
+    );
+}
+
+#[test]
+fn descriptor_capture_falls_back_after_a_known_own_key_is_added() {
+    let source = "const record = { method() { return later; } };\n[0].forEach(() => { record.extra = 1; });\nconst descriptors = Object.getOwnPropertyDescriptors(record);\nconst target = {};\nObject.defineProperties(target, descriptors);\nconst later = 42;\n";
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon(
+                    "descriptor",
+                    &[
+                        Member::new("record"),
+                        Member::new("descriptors"),
+                        Member::new("target"),
+                    ],
+                    &["[0].forEach(() => { record.extra = 1; });"],
+                ),
+                logical_module("later", &[Member::new("later")]),
+            ],
+        ),
+        &["later"],
+        &["eager_use"],
+    );
+}
+
+#[test]
+fn descriptor_map_mutation_invalidates_application_but_keeps_callbacks() {
+    let source = "const descriptors = Object.getOwnPropertyDescriptors({ get value() { return later; }, method() { return later; } });\ndescriptors.extra = () => later;\nconst target = {};\nObject.defineProperties(target, descriptors);\nconst later = 42;\n";
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon(
+                    "descriptors",
+                    &[Member::new("descriptors"), Member::new("target")],
+                    &["descriptors.extra = () => later;"],
+                ),
+                logical_module("later", &[Member::new("later")]),
+            ],
+        ),
+        &["later"],
+        &["eager_use"],
+    );
+}
+
+#[test]
+fn descriptor_capture_accepts_an_assignment_of_a_fresh_ordinary_source() {
+    let source = "let record;\nconst descriptors = Object.getOwnPropertyDescriptors(record = { get value() { return later; } });\nconst later = 42;\nconsole.log(descriptors.value.get());\n";
+    let fixture = run_fixture(FixtureOpts::new(source, descriptor_modules()));
+    assert_preserved_entry_output(&fixture, "42\n");
+}
+
+#[test]
+fn copied_getter_read_invalidates_nested_dense_array_state() {
+    let source = "const items = [];\nfunction wrap(record) { const descriptors = Object.getOwnPropertyDescriptors(record); const target = {}; Object.defineProperties(target, descriptors); return target; }\nconst result = wrap({ items, get value() { this.items.push(1); return 0; } });\nconst touched = result.value;\nlet observed;\ntry { items.forEach(() => Later); } catch (error) { observed = error.name; }\nclass Later {}\nconsole.log(touched, observed);\n";
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module("wrapper", &[Member::new("wrap")]),
+                logical_module_with_anon(
+                    "result",
+                    &[
+                        Member::new("items"),
+                        Member::new("result"),
+                        Member::new("touched"),
+                        Member::new("observed"),
+                    ],
+                    &[
+                        "try { items.forEach(() => Later); } catch (error) { observed = error.name; }",
+                    ],
+                ),
+                logical_module("later", &[Member::new("Later")]),
+            ],
+        ),
+        &["later", "result"],
+        &[],
+    );
+}
+
+#[test]
+fn copied_getter_callee_runs_before_argument_effects() {
+    let source = "const items = [];\nfunction wrap(record) { const descriptors = Object.getOwnPropertyDescriptors(record); const target = {}; Object.defineProperties(target, descriptors); return target; }\nconst result = wrap({ items, get run() { this.items.push(1); return () => 0; } });\nlet observed;\ntry { result.run(items.forEach(() => Later)); } catch (error) { observed = error.name; }\nclass Later {}\nconsole.log(observed);\n";
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module("wrapper", &[Member::new("wrap")]),
+                logical_module_with_anon(
+                    "result",
+                    &[
+                        Member::new("items"),
+                        Member::new("result"),
+                        Member::new("observed"),
+                    ],
+                    &[
+                        "try { result.run(items.forEach(() => Later)); } catch (error) { observed = error.name; }",
+                    ],
+                ),
+                logical_module("later", &[Member::new("Later")]),
+            ],
+        ),
+        &["later", "result"],
         &[],
     );
 }

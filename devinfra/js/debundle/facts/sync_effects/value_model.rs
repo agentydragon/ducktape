@@ -92,6 +92,11 @@ pub(super) enum AbstractValue {
     InlineCallbackFactory,
     /// A fresh opaque return value retaining callbacks without publishing them.
     DeferredCallbacks(Captured<Values>),
+    /// Exact own-descriptor entries captured from one source-proved ordinary
+    /// object at a native call site. The executor may apply the certificate
+    /// through the paired defineProperties call; all other uses keep the
+    /// carrier opaque.
+    OwnDescriptorMap(CallSite),
     /// A foreign source factory's deferred object graph. Provider captures are
     /// retained in its imported summary; using this token activates the full
     /// conservative importer binding/callback pool, never foreign SWC IDs.
@@ -151,6 +156,17 @@ pub(super) struct FrozenNamespaceProof {
     pub(super) freeze_site: CallSite,
     pub(super) define_site: CallSite,
     pub(super) stored_bindings: BTreeSet<Id>,
+}
+
+/// Syntax-only shape of one statically named own property. Evaluated values
+/// stay in the executor's ordinary object identity store.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum OwnPropertyDescriptorSyntax {
+    Data,
+    Accessor {
+        getter: Option<u32>,
+        setter: Option<u32>,
+    },
 }
 
 #[derive(Debug, Clone)]

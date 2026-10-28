@@ -6,8 +6,8 @@ mod prototype_properties;
 use super::receiver_identity::ReceiverIdentityFacts;
 use super::value_model::{
     ArrayElement, ArrayIteration, ArrayIterationMethod, CallSite, ClassSurface, ClassValueFacts,
-    FromEntriesMappedProof, NamespaceValueFacts, ValueExpr, infer_namespace_aliases,
-    object_data_property_name, static_prop, static_property_name,
+    FromEntriesMappedProof, NamespaceValueFacts, OwnPropertyDescriptorSyntax, ValueExpr,
+    infer_namespace_aliases, object_data_property_name, static_prop, static_property_name,
 };
 use crate::analysis_inputs::{
     AnalysisInputs, NativeIntegrity, NativeIntrinsic as IntrinsicRoot, ResolvedBindingValueInput,
@@ -847,6 +847,7 @@ enum CallKind {
     ArraySpread,
     ObjectSpread,
     LocalMemberRead,
+    AccessorCalleeLookup,
     InProtocol,
     InstanceOfProtocol,
     DeepDestructuringProtocol,
@@ -2499,7 +2500,7 @@ struct ExecutionIndex {
     other_class_uses: BTreeSet<Id>,
     safe_class_target: Option<Id>,
     plain_data_objects: BTreeSet<u32>,
-    own_descriptor_literal_inputs: BTreeSet<u32>,
+    own_descriptor_shapes: BTreeMap<u32, BTreeMap<String, OwnPropertyDescriptorSyntax>>,
     null_proto_data_objects: BTreeSet<u32>,
     exact_object_spread_copies: BTreeSet<u32>,
     map_entry_arrays: BTreeSet<u32>,
@@ -2632,7 +2633,7 @@ impl Default for ExecutionIndex {
             other_class_uses: BTreeSet::new(),
             safe_class_target: None,
             plain_data_objects: BTreeSet::new(),
-            own_descriptor_literal_inputs: BTreeSet::new(),
+            own_descriptor_shapes: BTreeMap::new(),
             null_proto_data_objects: BTreeSet::new(),
             exact_object_spread_copies: BTreeSet::new(),
             map_entry_arrays: BTreeSet::new(),
@@ -4638,6 +4639,26 @@ impl ExecutionIndex {
         }
     }
 
+    fn record_accessor_callee_lookup(&mut self, member: &MemberExpr) {
+        self.record_call(Call {
+            kind: CallKind::AccessorCalleeLookup,
+            callee: ValueExpr::Member(
+                Box::new(ValueExpr::from_expr(&member.obj)),
+                static_prop(&member.prop),
+                matches!(member.prop, MemberProp::Ident(_)),
+            ),
+            args: Vec::new(),
+            span: member.span,
+            caller: self.current,
+            owner: self.owner,
+            plain_object_sources: false,
+            no_sync_arguments: false,
+            no_reentry_candidate: false,
+            no_reentry_record_candidate: false,
+            has_spread: false,
+        });
+    }
+
     fn record_source_protocol(&mut self, kind: CallKind, source: ValueExpr, span: Span) {
         self.record_call(Call {
             kind,
@@ -5063,6 +5084,99 @@ impl Visit for ExecutionIndex {
     fn visit_object_lit(&mut self, object: &ObjectLit) {
         if matches!(object.props.as_slice(), [PropOrSpread::Spread(_)]) {
             self.exact_object_spread_copies.insert(object.span.lo.0);
+        }
+        let mut descriptor_shape = BTreeMap::new();
+        let descriptorable = object.props.iter().all(|property| {
+            let PropOrSpread::Prop(property) = property else {
+                return false;
+            };
+            match property.as_ref() {
+                Prop::KeyValue(pair) => static_property_name(&pair.key).is_some_and(|name| {
+                    name != "__proto__"
+                        && descriptor_shape
+                            .insert(name, OwnPropertyDescriptorSyntax::Data)
+                            .is_none()
+                }),
+                Prop::Shorthand(ident) if ident.sym != "__proto__" => descriptor_shape
+                    .insert(ident.sym.to_string(), OwnPropertyDescriptorSyntax::Data)
+                    .is_none(),
+                Prop::Method(method)
+                    if method.function.decorators.is_empty()
+                        && !matches!(method.key, PropName::Computed(_)) =>
+                {
+                    static_property_name(&method.key).is_some_and(|name| {
+                        name != "__proto__"
+                            && descriptor_shape
+                                .insert(name, OwnPropertyDescriptorSyntax::Data)
+                                .is_none()
+                    })
+                }
+                Prop::Getter(getter)
+                    if getter.function.decorators.is_empty()
+                        && !matches!(getter.key, PropName::Computed(_)) =>
+                {
+                    let Some(name) =
+                        static_property_name(&getter.key).filter(|name| name != "__proto__")
+                    else {
+                        return false;
+                    };
+                    match descriptor_shape.get_mut(&name) {
+                        Some(OwnPropertyDescriptorSyntax::Accessor {
+                            getter: current_getter,
+                            ..
+                        }) if current_getter.is_none() => {
+                            *current_getter = Some(getter.function.span.lo.0);
+                            true
+                        }
+                        Some(_) => false,
+                        None => {
+                            descriptor_shape.insert(
+                                name,
+                                OwnPropertyDescriptorSyntax::Accessor {
+                                    getter: Some(getter.function.span.lo.0),
+                                    setter: None,
+                                },
+                            );
+                            true
+                        }
+                    }
+                }
+                Prop::Setter(setter)
+                    if setter.function.decorators.is_empty()
+                        && !matches!(setter.key, PropName::Computed(_)) =>
+                {
+                    let Some(name) =
+                        static_property_name(&setter.key).filter(|name| name != "__proto__")
+                    else {
+                        return false;
+                    };
+                    match descriptor_shape.get_mut(&name) {
+                        Some(OwnPropertyDescriptorSyntax::Accessor {
+                            setter: current_setter,
+                            ..
+                        }) if current_setter.is_none() => {
+                            *current_setter = Some(setter.function.span.lo.0);
+                            true
+                        }
+                        Some(_) => false,
+                        None => {
+                            descriptor_shape.insert(
+                                name,
+                                OwnPropertyDescriptorSyntax::Accessor {
+                                    getter: None,
+                                    setter: Some(setter.function.span.lo.0),
+                                },
+                            );
+                            true
+                        }
+                    }
+                }
+                _ => false,
+            }
+        });
+        if descriptorable {
+            self.own_descriptor_shapes
+                .insert(object.span.lo.0, descriptor_shape);
         }
         let mut null_prototype = 0;
         let static_data = object.props.iter().all(|property| match property {
@@ -6333,40 +6447,6 @@ impl Visit for ExecutionIndex {
                 );
             }
         }
-        // The native model receives ValueExpr, which reduces assignments to
-        // their RHS. Retain the exact literal-argument syntax here so an
-        // intervening publication/effect cannot acquire this fresh-input proof.
-        if let Callee::Expr(callee) = &call.callee
-            && let Expr::Member(member) = callee.unwrap_parens()
-            && matches!(member.obj.unwrap_parens(), Expr::Ident(id) if id.sym == "Object")
-            && matches!(&member.prop, MemberProp::Ident(id) if id.sym == "getOwnPropertyDescriptors")
-            && call.args.len() == 1
-            && call.args[0].spread.is_none()
-            && let Expr::Object(object) = call.args[0].expr.unwrap_parens()
-        {
-            let mut names = BTreeSet::new();
-            let ordinary = object.props.iter().all(|property| {
-                let PropOrSpread::Prop(property) = property else {
-                    return false;
-                };
-                let key = match property.as_ref() {
-                    Prop::Shorthand(id) => {
-                        return id.sym != "__proto__" && names.insert(id.sym.to_string());
-                    }
-                    Prop::KeyValue(pair) => &pair.key,
-                    Prop::Method(method) if method.function.decorators.is_empty() => &method.key,
-                    Prop::Getter(getter) if getter.function.decorators.is_empty() => &getter.key,
-                    Prop::Setter(setter) if setter.function.decorators.is_empty() => &setter.key,
-                    _ => return false,
-                };
-                !matches!(key, PropName::Computed(_))
-                    && static_property_name(key)
-                        .is_some_and(|name| name != "__proto__" && names.insert(name))
-            });
-            if ordinary {
-                self.own_descriptor_literal_inputs.insert(object.span.lo.0);
-            }
-        }
         if self.current.is_none() {
             self.ordinary_top_call_sites.insert(call.span.into());
         }
@@ -6490,6 +6570,11 @@ impl Visit for ExecutionIndex {
                 }
                 callee => callee.visit_with(self),
             }
+            if let Callee::Expr(callee) = &call.callee
+                && let Expr::Member(member) = callee.unwrap_parens()
+            {
+                self.record_accessor_callee_lookup(member);
+            }
             for (index, argument) in call.args.iter().enumerate() {
                 if callback_arguments.contains(&index) {
                     self.factory_callback_depth += 1;
@@ -6498,6 +6583,18 @@ impl Visit for ExecutionIndex {
                 } else {
                     argument.visit_with(self);
                 }
+            }
+            call.type_args.visit_with(self);
+        } else if let Callee::Expr(callee) = &call.callee
+            && let Expr::Member(member) = callee.unwrap_parens()
+        {
+            // A member callee is evaluated before any arguments. Keep a
+            // typed event at that point so an applied getter can invalidate
+            // receiver state before nested argument calls are analyzed.
+            callee.visit_with(self);
+            self.record_accessor_callee_lookup(member);
+            for argument in &call.args {
+                argument.visit_with(self);
             }
             call.type_args.visit_with(self);
         } else {

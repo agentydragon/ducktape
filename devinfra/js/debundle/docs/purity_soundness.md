@@ -180,29 +180,39 @@ and does not certify descendants or global-slot descriptors. Discharged census
 sites retain their initializer and producer provenance in
 `native_receiver_certificates`.
 
-## Ordinary own descriptor inspection
+## Ordinary own descriptor capture and application
 
-A direct `Object.getOwnPropertyDescriptors` call with one exact ordinary object
-literal argument has a shared native timing/return model. The canonical index
-requires static data, method, getter or setter properties with distinct names,
-without computed keys, spreads, decorators or `__proto__`. The Object binding
-must be undeclared and unshadowed, its source-derived native integrity intact,
-and the fresh input untainted. Assignment-wrapped literals and aliases remain
-outside this initial proof.
+The canonical index recognizes exact ordinary object-literal shapes with
+statically known string or number keys (including literal-computed data keys),
+without spreads, decorators or `__proto__`; computed method and accessor keys
+are not indexed. At capture time, the executor also
+requires an exact object identity, no prior taint, and equality between the
+literal's own-key set and the current identity-store key set. This admits a
+local binding or alias to that object; a known added key, an unknown key or an
+escaped/mutated source falls back. Tracked writes that only replace values keep
+their value-set overapproximation. The Object binding, native integrity and
+ordinary Object prototype guards must remain intact.
 
-Ordinary own descriptor inspection obtains descriptors without reading accessor
-values, so it does not invoke the stored getters, setters or methods. Callee
-and argument evaluation, eager argument effects and unavailable/throw paths
-retain their ordinary analysis. The successful return is an opaque retained
-carrier retaining the input object identity and a snapshot of its interned
-getter/method/setter captures, paired with an unknown value shape. Data-valued
-nested objects remain live through later writes; the callback snapshot preserves
-copied closures even if source properties change. It does not acquire the
-stronger ordinary input-graph contract used by retained callback factories. Later
-member use, invocation, publication, writes and opaque consumption retain the
-existing conservative callback fallback. The proof neither certifies the
-carrier as inert data nor models descriptor application, `Object.assign`, or an
-imported wrapper's body. It supplies no purity or exception-free claim.
+`Object.getOwnPropertyDescriptors` captures the current data-value identities
+and getter/setter callbacks without invoking accessors. Its carrier has no
+general readable descriptor-map shape. The sole composition modeled is a
+direct, unmodified `Object.defineProperties` call with that live carrier and an
+untainted, currently empty fresh ordinary target. It writes captured data
+values and distinct accessor callback metadata into the target's existing
+identity, so aliases observe the same result. A callsite whose repeated
+execution sees a conflicting source identity or descriptor values is
+invalidated rather than joined. Map member access or mutation, return, escape,
+or opaque consumption invalidates application while retaining its callback
+graph. Copied accessor reads promote their getter; opaque target use retains
+getter, setter and method callbacks. Data-valued object identities remain
+connected to later mutations. Under exact native identity and intact Object
+prototype guards, a result expression may retain argument 0's target identity
+even when application eligibility is not proved, and it also retains a
+possible throw. This return-shape fact does not authorize descriptor
+application or suppress opaque timing/effect fallback. The proof does not
+cover returned/readable maps,
+arbitrary descriptor edits, `Object.assign`, imported wrapper bodies, general
+purity or exception freedom.
 
 ## Source-composed returned records
 
