@@ -1,6 +1,9 @@
 --- a/internal/api/middleware/response_writer.go
 +++ b/internal/api/middleware/response_writer.go
-@@ -309 +308,0 @@
+@@ -308,3 +308,2 @@
+ 			close(w.chunkChannel)
 -			w.chunkChannel = nil
-@@ -315,0 +315 @@
+ 		}
+@@ -315 +314,2 @@
+ 		}
 +		w.chunkChannel = nil
