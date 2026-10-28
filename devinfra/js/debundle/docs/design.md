@@ -589,14 +589,21 @@ globalThis`) marks the bindings it flows into (transitively,
   write-after-write, and write-after-read order in both graph modes. Array
   member writes, method calls such as `push`, escaped arrays, unresolved
   callees, and inline or constructor calls whose bodies lack the graph's direct
-  call summary remain opaque heap barriers. A barrier depends on the current
-  array-content frontier and later array observations depend on that barrier;
-  the frontier resets there, so unknown operations do not materialize edges
-  against every array cell. These facts constrain scheduling only: they do not
-  reclassify calls as pure or establish a no-reentry/descriptor-integrity
-  premise. In particular, `trusted_dataflow_summaries` does not make an array
-  member write safe to summarize; absent a separate array-specific proof, it
-  remains an opaque barrier.
+  call summary remain opaque heap barriers. The shared synchronous-call
+  analysis also makes a source unit a heap barrier when it reports incomplete
+  execution effects, regardless of a purity hint. This reuses its canonical
+  precision-loss facts for observations through unsupported coercion or
+  property-access protocols and unresolved synchronous calls. Key enumeration
+  (`for-in`), optional calls, and tagged templates stay barriers when their
+  array effects are not represented precisely. A barrier depends on the
+  current array-content frontier and later array observations depend on that
+  barrier; the frontier resets there, so unknown operations do not materialize
+  edges against every array cell. These facts constrain scheduling only: they
+  do not reclassify calls as pure or establish a
+  no-reentry/descriptor-integrity premise. In particular,
+  `trusted_dataflow_summaries` does not make an array member write safe to
+  summarize; absent a separate array-specific proof, it remains an opaque
+  barrier.
 
   The bit is `dataflow_summarizable` in `facts/statement_facts.rs`. Only the
   bailing statements pay the conservative cost, so the mode is safe

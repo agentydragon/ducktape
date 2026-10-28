@@ -428,7 +428,17 @@ fn emit_array_content_order(
             &stmt.array_contents.writes.eager,
         );
         let mut opaque = stmt.array_contents.opaque.eager
-            || (!stmt.dataflow_summarizable && !stmt.purity.is_pure());
+            || (!stmt.dataflow_summarizable && !stmt.purity.is_pure())
+            // The shared synchronous interpreter owns call-target and
+            // protocol precision. If it cannot completely summarize this
+            // source unit, an otherwise-pure expression may still observe
+            // mutable array contents through coercion, a getter, or a
+            // callable that the array collector does not resolve. Keep one
+            // heap-frontier barrier instead of duplicating that resolver.
+            || stmt
+                .synchronous_calls
+                .as_ref()
+                .is_some_and(|calls| !calls.complete);
         // Function declarations are inert; only a recognized synchronous
         // at-init call inherits their first-order effects.
         for callee in &stmt.calls.eager {

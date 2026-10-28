@@ -108,9 +108,15 @@ modes.
 
 Array member writes, method calls such as `push`, escaped arrays, and calls
 whose callable body has no direct graph summary remain opaque heap barriers.
-They constrain the preceding array-content frontier and later array
-observations. These are scheduling dependencies only; they do not certify call
-purity, no-reentry, property-descriptor integrity, or prototype integrity.
+The shared synchronous-call analysis also makes a source unit an opaque heap
+barrier when it reports incomplete execution effects, regardless of a purity
+hint. This covers observations through unsupported coercion or property-access
+protocols, and unresolved synchronous calls, without duplicating the call
+analyzer. Key enumeration (`for-in`), optional calls, and tagged templates are
+also barriers when their array effects are not represented precisely. Barriers
+constrain the preceding array-content frontier and later array observations.
+These are scheduling dependencies only; they do not certify call purity,
+no-reentry, property-descriptor integrity, or prototype integrity.
 `trusted_dataflow_summaries` does not weaken these barriers. Unrecognized or
 ambiguous origins remain conservative rather than receiving a precise
 per-array ordering claim.

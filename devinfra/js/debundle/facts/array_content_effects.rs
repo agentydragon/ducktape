@@ -265,6 +265,21 @@ impl Visit for ArrayContentCollector<'_> {
         }
     }
 
+    fn visit_opt_call(&mut self, node: &OptCall) {
+        // Optional invocation can reach a callable whose captured heap effects
+        // are not represented by this source-unit summary.
+        self.record_opaque_call();
+        node.visit_children_with(self);
+    }
+
+    fn visit_tagged_tpl(&mut self, node: &TaggedTpl) {
+        // A tag is a call with an arbitrary protocol. The synchronous-call
+        // interpreter also records its precision loss; retain the barrier
+        // here for analyses that do not request that interpreter pass.
+        self.record_opaque_call();
+        node.visit_children_with(self);
+    }
+
     fn visit_new_expr(&mut self, node: &NewExpr) {
         // Constructors may read or mutate shared arrays through their body.
         // The shared graph call summary does not represent every `new`
@@ -281,6 +296,14 @@ impl Visit for ArrayContentCollector<'_> {
     }
 
     fn visit_for_of_stmt(&mut self, node: &ForOfStmt) {
+        self.record_array_expr(&node.right, true, false, true);
+        node.visit_children_with(self);
+    }
+
+    fn visit_for_in_stmt(&mut self, node: &ForInStmt) {
+        // Enumerating keys can observe array indices, including holes and
+        // keys installed through inherited properties. It is a heap read
+        // even though it has no MemberExpr in the source.
         self.record_array_expr(&node.right, true, false, true);
         node.visit_children_with(self);
     }
