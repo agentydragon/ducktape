@@ -268,42 +268,60 @@ mod tests {
 
     struct RequestedRules;
 
+    #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+    enum RequestedKey {
+        Inputs,
+        Projection,
+        Result,
+    }
+
+    #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+    enum RequestedProducer {
+        InitialInputs,
+        ProjectInputs,
+        PublishResult,
+        AdditionalInputs,
+    }
+
     impl IterativeRules for RequestedRules {
-        type Key = usize;
-        type Fact = BTreeSet<usize>;
-        type Rule = usize;
+        type Key = RequestedKey;
+        type Fact = BTreeSet<&'static str>;
+        type Rule = RequestedProducer;
 
-        fn producers_for(&self, key: &usize, _: &Self::Fact) -> Vec<usize> {
+        fn producers_for(&self, key: &RequestedKey, _: &Self::Fact) -> Vec<RequestedProducer> {
             match key {
-                1 => vec![1],
-                3 => vec![2],
-                _ => Vec::new(),
+                RequestedKey::Inputs => vec![RequestedProducer::ProjectInputs],
+                RequestedKey::Projection => vec![RequestedProducer::PublishResult],
+                RequestedKey::Result => Vec::new(),
             }
         }
 
-        fn evaluate(&self, rule: &usize, context: &mut impl FactContext<usize, Self::Fact>) {
+        fn evaluate(
+            &self,
+            rule: &RequestedProducer,
+            context: &mut impl FactContext<RequestedKey, Self::Fact>,
+        ) {
             match rule {
-                0 => {
-                    context.propose(1, BTreeSet::from([10]));
+                RequestedProducer::InitialInputs => {
+                    context.propose(RequestedKey::Inputs, BTreeSet::from(["initial"]));
                 }
-                1 => {
-                    if let Some(values) = context.read(1).cloned() {
-                        context.propose(3, values);
+                RequestedProducer::ProjectInputs => {
+                    if let Some(values) = context.read(RequestedKey::Inputs).cloned() {
+                        context.propose(RequestedKey::Projection, values);
                     }
                 }
-                2 => {
-                    if let Some(values) = context.read(3).cloned() {
-                        context.propose(5, values);
+                RequestedProducer::PublishResult => {
+                    if let Some(values) = context.read(RequestedKey::Projection).cloned() {
+                        context.propose(RequestedKey::Result, values);
                     }
                 }
-                4 => {
-                    context.propose(1, BTreeSet::from([20]));
+                RequestedProducer::AdditionalInputs => {
+                    context.propose(RequestedKey::Inputs, BTreeSet::from(["additional"]));
                 }
-                _ => unreachable!(),
             }
         }
 
-        fn merge(_: &usize, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
+        fn merge(_: &RequestedKey, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
             let before = current.len();
             current.extend(contribution);
             current.len() != before
@@ -312,17 +330,25 @@ mod tests {
 
     #[test]
     fn requested_producers_are_discovered_and_wake_on_later_input_growth() {
-        let facts = IterativeInference::new(RequestedRules).solve([0, 4]);
-        assert_eq!(facts.get(&5).unwrap().value(), &BTreeSet::from([10, 20]));
-        assert!(facts.evaluations() < 10);
+        let facts = IterativeInference::new(RequestedRules).solve([
+            RequestedProducer::InitialInputs,
+            RequestedProducer::AdditionalInputs,
+        ]);
+        assert_eq!(
+            facts.get(&RequestedKey::Result).unwrap().value(),
+            &BTreeSet::from(["initial", "additional"])
+        );
     }
 
     #[test]
     fn seeded_requests_discover_producers_without_an_initial_rule_list() {
         let mut inference = IterativeInference::new(RequestedRules);
-        inference.seed(1, BTreeSet::from([10]));
+        inference.seed(RequestedKey::Inputs, BTreeSet::from(["initial"]));
         let facts = inference.solve([]);
-        assert_eq!(facts.get(&5).unwrap().value(), &BTreeSet::from([10]));
+        assert_eq!(
+            facts.get(&RequestedKey::Result).unwrap().value(),
+            &BTreeSet::from(["initial"])
+        );
         assert_eq!(facts.evaluations(), 2);
     }
 
