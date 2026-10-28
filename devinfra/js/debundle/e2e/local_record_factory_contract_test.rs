@@ -73,7 +73,14 @@ fn fixture_opts<'a>(
         Member::new("prefix"),
         Member::new("command"),
     ];
-    callback_bindings.extend(callback_members.iter().map(|name| Member::new(name)));
+    let mut label_bindings = Vec::new();
+    for name in callback_members {
+        if *name == "label" {
+            label_bindings.push(Member::new(name));
+        } else {
+            callback_bindings.push(Member::new(name));
+        }
+    }
     let callbacks = if callback_statements.is_empty() {
         logical_module("callbacks/wrapped", &callback_bindings)
     } else {
@@ -81,10 +88,12 @@ fn fixture_opts<'a>(
     };
     let mut later_bindings = vec![Member::new("later")];
     later_bindings.extend(later_members.iter().map(|name| Member::new(name)));
-    FixtureOpts::new(
-        source,
-        vec![callbacks, logical_module("values/later", &later_bindings)],
-    )
+    let mut modules = vec![callbacks];
+    if !label_bindings.is_empty() {
+        modules.push(logical_module("values/label", &label_bindings));
+    }
+    modules.push(logical_module("values/later", &later_bindings));
+    FixtureOpts::new(source, modules)
 }
 
 fn assert_atomic_fallback(
@@ -93,6 +102,11 @@ fn assert_atomic_fallback(
     later_members: &[&'static str],
     callback_statements: &[&str],
 ) {
+    let expected_modules = if callback_members.contains(&"label") {
+        &["callbacks/wrapped", "values/label"][..]
+    } else {
+        &["callbacks/wrapped", "values/later"][..]
+    };
     expect_atomic_conflict_rejection(
         fixture_opts(
             source,
@@ -101,7 +115,7 @@ fn assert_atomic_fallback(
             later_members,
             callback_statements,
         ),
-        &["callbacks/wrapped", "values/later"],
+        expected_modules,
         &[],
     );
 }
@@ -165,13 +179,25 @@ fn initialized_primitive_const_property_keeps_the_constructor_result_deferred() 
     assert_module_exports(
         &fixture.out_root,
         "static/app/modules/callbacks/wrapped.js",
-        &["command", "label"],
-        &["later"],
+        &["command"],
+        &["label", "later"],
     );
     assert_module_source(
         &fixture.out_root,
         "static/app/modules/callbacks/wrapped.js",
-        &["const label", "function create", "const command"],
+        &["import { label", "function create", "const command"],
+        &["const label"],
+    );
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/values/label.js",
+        &["label"],
+        &[],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/values/label.js",
+        &["const label = \"Example\""],
         &[],
     );
 }
