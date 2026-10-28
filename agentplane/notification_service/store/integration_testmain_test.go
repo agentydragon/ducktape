@@ -45,6 +45,21 @@ func newFixture(t *testing.T, quotas Quotas) fixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Close() })
+	return fixtureForDatabase(t, db, quotas)
+}
+
+func newIsolatedFixture(t *testing.T, quotas Quotas) fixture {
+	t.Helper()
+	db, err := sql.Open("postgres", integrationDatabase.Clone(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	return fixtureForDatabase(t, db, quotas)
+}
+
+func fixtureForDatabase(t *testing.T, db *sql.DB, quotas Quotas) fixture {
+	t.Helper()
 	return fixture{Store: New(db, quotas), db: db, owner: newOwner(), sandboxUID: testSandboxUID}
 }
 

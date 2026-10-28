@@ -23,14 +23,14 @@ type ServiceAccount struct {
 }
 
 // DestinationRef is the Sandbox a Session runs in, by the UID that tells it from a Sandbox recreated under
-// the same name. It is stored in the inbox's normalized columns and in a subscription's creation record.
+// the same name. It is stored in the inbox's normalized columns and in a subscription's immutable typed creation.
 type DestinationRef struct {
 	Namespace string `json:"namespace"`
 	Name      string `json:"name"`
 	UID       string `json:"uid"`
 }
 
-// Subscribe is a subscription as its creation records it: `subscription.creation`, which an identical retry
+// Subscribe is a subscription's immutable creation configuration, which an identical retry
 // is compared with.
 type Subscribe struct {
 	DestinationRef DestinationRef

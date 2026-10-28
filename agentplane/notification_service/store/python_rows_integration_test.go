@@ -126,13 +126,17 @@ func TestInboxesPythonCreatedAreFoundByTheirDestinationKey(t *testing.T) {
 func TestSubscriptionsPythonCreatedAreReadAndFoundByTheirKey(t *testing.T) {
 	for _, vector := range loadGolden(t).Subscriptions {
 		t.Run(vector.Name, func(t *testing.T) {
-			f := newFixture(t, defaultQuotas())
+			f := newIsolatedFixture(t, defaultQuotas())
 			var sent Subscribe
 			if err := decode(vector.Input, &sent); err != nil {
 				t.Fatal(err)
 			}
 			inboxID := f.insertInbox(t, DestinationKey(sent.DestinationRef, sent.SessionID), sent.DestinationRef, sent.SessionID)
+			allowLegacySubscriptionCreationTestRows(t, t.Context(), f.db)
 			id := f.insertSubscription(t, inboxID, vector.Stored)
+			if err := BackfillSubscriptionCreations(t.Context(), f.db); err != nil {
+				t.Fatal(err)
+			}
 
 			read := f.get(t, id)
 			if read.InboxID != inboxID || read.IdempotencyKey != sent.IdempotencyKey || read.Version != 1 || read.Cancelled ||

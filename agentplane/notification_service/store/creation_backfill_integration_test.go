@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -11,8 +12,15 @@ import (
 	"github.com/lib/pq"
 )
 
-func TestSubscriptionCreationBackfillPreservesLegacyReadsAndIdempotency(t *testing.T) {
-	g := newGitHubFixture(t)
+func allowLegacySubscriptionCreationTestRows(t *testing.T, ctx context.Context, db *sql.DB) {
+	t.Helper()
+	if _, err := db.ExecContext(ctx, `ALTER TABLE subscription DROP CONSTRAINT subscription_creation_typed_required`); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSubscriptionCreationBackfillProducesTypedReadsAndPreservesIdempotency(t *testing.T) {
+	g := newIsolatedGitHubFixture(t)
 	actions := body("actions-before-backfill")
 	actionSubscription, err := g.Subscribe(t.Context(), g.owner, actions, nil)
 	if err != nil {
@@ -29,48 +37,27 @@ func TestSubscriptionCreationBackfillPreservesLegacyReadsAndIdempotency(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
+	actionsJSON, err := json.Marshal(actions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	githubJSON, err := json.Marshal(githubCreation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Simulate rows written before the typed dual-write release, retaining the original creation as rollback data.
+	allowLegacySubscriptionCreationTestRows(t, t.Context(), g.db)
 	for _, row := range []struct {
-		id       uuid.UUID
-		provider string
+		id   uuid.UUID
+		json []byte
 	}{
-		{actionSubscription.ID, "actions"},
-		{githubSubscription.ID, "github"},
+		{actionSubscription.ID, actionsJSON},
+		{githubSubscription.ID, githubJSON},
 	} {
-		var provider string
-		var hasTypedCreation bool
-		if err := g.db.QueryRowContext(t.Context(), `SELECT source_provider, creation_proto IS NOT NULL
-			FROM subscription WHERE id = $1`, row.id).Scan(&provider, &hasTypedCreation); err != nil {
+		if _, err := g.db.ExecContext(t.Context(), `UPDATE subscription
+			SET creation = $2::jsonb, creation_proto = NULL, source_provider = NULL WHERE id = $1`, row.id, string(row.json)); err != nil {
 			t.Fatal(err)
 		}
-		if provider != row.provider || !hasTypedCreation {
-			t.Fatalf("new subscription %s dual-write = (%q, typed %t), want provider %q and typed payload",
-				row.id, provider, hasTypedCreation, row.provider)
-		}
-	}
-
-	var actionsJSON, githubJSON []byte
-	if err := g.db.QueryRowContext(t.Context(), `UPDATE subscription SET creation_proto = NULL, source_provider = NULL
-		WHERE id = $1 RETURNING creation`, actionSubscription.ID).Scan(&actionsJSON); err != nil {
-		t.Fatal(err)
-	}
-	if err := g.db.QueryRowContext(t.Context(), `UPDATE subscription SET creation_proto = NULL, source_provider = NULL
-		WHERE id = $1 RETURNING creation`, githubSubscription.ID).Scan(&githubJSON); err != nil {
-		t.Fatal(err)
-	}
-
-	legacyActions, err := g.GetSubscription(t.Context(), g.incarnation(), actionSubscription.ID)
-	if err != nil || !sourcesEqual(legacyActions.Source, actions.Source) {
-		t.Fatalf("legacy Actions read = %+v, %v", legacyActions, err)
-	}
-	legacyGitHub, err := g.GetSubscription(t.Context(), g.incarnation(), githubSubscription.ID)
-	if err != nil || !sourcesEqual(legacyGitHub.Source, githubCreation.Source) {
-		t.Fatalf("legacy GitHub read = %+v, %v", legacyGitHub, err)
-	}
-	if replay, err := g.Subscribe(t.Context(), g.owner, actions, nil); err != nil || replay.ID != actionSubscription.ID {
-		t.Fatalf("legacy Actions idempotent replay = %+v, %v", replay, err)
-	}
-	if replay, err := g.Subscribe(t.Context(), g.owner, githubCreation, &access); err != nil || replay.ID != githubSubscription.ID {
-		t.Fatalf("legacy GitHub idempotent replay = %+v, %v", replay, err)
 	}
 
 	if err := BackfillSubscriptionCreations(t.Context(), g.db); err != nil {
@@ -95,6 +82,18 @@ func TestSubscriptionCreationBackfillPreservesLegacyReadsAndIdempotency(t *testi
 		if provider != row.provider || len(typed) == 0 || !unchanged {
 			t.Fatalf("subscription %s typed state = (%q, %d bytes, JSON unchanged %t), want provider %q, payload, unchanged JSON",
 				row.id, provider, len(typed), unchanged, row.provider)
+		}
+	}
+	for _, row := range []struct {
+		id     uuid.UUID
+		source Source
+	}{
+		{actionSubscription.ID, actions.Source},
+		{githubSubscription.ID, githubCreation.Source},
+	} {
+		stored, err := g.GetSubscription(t.Context(), g.incarnation(), row.id)
+		if err != nil || !sourcesEqual(stored.Source, row.source) {
+			t.Fatalf("typed subscription %s = %+v, %v; want source %+v", row.id, stored.Source, err, row.source)
 		}
 	}
 
@@ -125,6 +124,7 @@ func TestSubscriptionCreationBackfillPreservesLegacyReadsAndIdempotency(t *testi
 
 func TestSubscriptionCreationBackfillResumesAndRepairsCompletedCursor(t *testing.T) {
 	db, ctx := newDestinationBackfillDatabase(t)
+	allowLegacySubscriptionCreationTestRows(t, ctx, db)
 	const rowCount = subscriptionCreationBackfillBatchSize + 1
 	inboxID := insertSubscriptionBackfillInbox(t, ctx, db, "test-subscription-resume")
 	insertLegacyActionSubscriptions(t, ctx, db, inboxID, "test-subscription-resume", 1, rowCount, rowCount)
@@ -180,6 +180,7 @@ func TestSubscriptionCreationBackfillResumesAndRepairsCompletedCursor(t *testing
 
 func TestSubscriptionCreationBackfillRejectsInvalidAndPartialRows(t *testing.T) {
 	db, ctx := newDestinationBackfillDatabase(t)
+	allowLegacySubscriptionCreationTestRows(t, ctx, db)
 	inboxID := insertSubscriptionBackfillInbox(t, ctx, db, "test-subscription-invalid")
 	insertLegacyActionSubscriptions(t, ctx, db, inboxID, "test-subscription-invalid", 1, 1, 1)
 	if err := BackfillSubscriptionCreations(ctx, db); err == nil || !strings.Contains(err.Error(), "request_id") {
@@ -194,7 +195,7 @@ func TestSubscriptionCreationBackfillRejectsInvalidAndPartialRows(t *testing.T) 
 		t.Fatal("invalid legacy row was partially converted")
 	}
 
-	fixture := newFixture(t, defaultQuotas())
+	fixture := newIsolatedFixture(t, defaultQuotas())
 	subscription := fixture.subscribe(t, body("partial-typed-fields"))
 	_, err := fixture.db.ExecContext(t.Context(), `UPDATE subscription SET creation_proto = NULL WHERE id = $1`, subscription.ID)
 	requireConstraint(t, err, "23514", "subscription_creation_storage_pair")
@@ -202,6 +203,7 @@ func TestSubscriptionCreationBackfillRejectsInvalidAndPartialRows(t *testing.T) 
 
 func TestSubscriptionCreationBackfillUsesNativeUUIDKeysetAndBulkUpdateIndexes(t *testing.T) {
 	db, ctx := newDestinationBackfillDatabase(t)
+	allowLegacySubscriptionCreationTestRows(t, ctx, db)
 	const rowCount = 50_000
 	inboxID := insertSubscriptionBackfillInbox(t, ctx, db, "test-subscription-plan")
 	insertLegacyActionSubscriptions(t, ctx, db, inboxID, "test-subscription-plan", 1, rowCount, 0)
@@ -259,6 +261,70 @@ func TestBoundedSubscriptionCreationCandidatesLimitsSerializedBytes(t *testing.T
 	}
 	if len(selected) != 1 || total != subscriptionCreationBackfillBatchBytes+1 {
 		t.Fatalf("oversized valid row batch = (%d rows, %d bytes), want the first row alone", len(selected), total)
+	}
+}
+
+func TestSubscriptionCreationConstraintValidationValidatesPopulatedAndEmptyTables(t *testing.T) {
+	db, ctx := newDestinationBackfillDatabase(t)
+	owner := newOwner()
+	if _, err := New(db, defaultQuotas()).Subscribe(ctx, owner, body("validate-populated-subscription"), nil); err != nil {
+		t.Fatalf("create typed subscription for validation: %v", err)
+	}
+	if err := ValidateSubscriptionCreationConstraints(ctx, db); err != nil {
+		t.Fatalf("validate typed constraints with existing subscription: %v", err)
+	}
+	assertSubscriptionCreationConstraintsValidated(t, ctx, db)
+
+	emptyDB, ctx := newDestinationBackfillDatabase(t)
+	if got := countQuery(t, ctx, emptyDB, `SELECT count(*) FROM subscription`); got != 0 {
+		t.Fatalf("fresh validation database has %d subscriptions, want empty", got)
+	}
+	if err := ValidateSubscriptionCreationConstraints(ctx, emptyDB); err != nil {
+		t.Fatalf("validate typed constraints with no rows: %v", err)
+	}
+	assertSubscriptionCreationConstraintsValidated(t, ctx, emptyDB)
+}
+
+func TestSubscriptionCreationConstraintValidationRejectsInvalidRetainedRowsAndResumes(t *testing.T) {
+	db, ctx := newDestinationBackfillDatabase(t)
+	allowLegacySubscriptionCreationTestRows(t, ctx, db)
+	inboxID := insertSubscriptionBackfillInbox(t, ctx, db, "test-subscription-validation")
+	insertLegacyActionSubscriptions(t, ctx, db, inboxID, "test-subscription-validation", 1, 1, 0)
+	if _, err := db.ExecContext(ctx, `ALTER TABLE subscription ADD CONSTRAINT subscription_creation_typed_required
+		CHECK (creation_proto IS NOT NULL AND source_provider IS NOT NULL) NOT VALID`); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateSubscriptionCreationConstraints(ctx, db); err == nil || !strings.Contains(err.Error(), "subscription_creation_typed_required") {
+		t.Fatalf("validation error = %v, want typed-required violation", err)
+	}
+	var validated bool
+	if err := db.QueryRowContext(ctx, `SELECT convalidated FROM pg_constraint
+		WHERE conrelid = 'subscription'::regclass AND conname = 'subscription_creation_typed_required'`).Scan(&validated); err != nil {
+		t.Fatal(err)
+	}
+	if validated {
+		t.Fatal("typed-required constraint was marked validated despite a retained legacy row")
+	}
+
+	if err := BackfillSubscriptionCreations(ctx, db); err != nil {
+		t.Fatalf("backfill retained row before retrying validation: %v", err)
+	}
+	if err := ValidateSubscriptionCreationConstraints(ctx, db); err != nil {
+		t.Fatalf("resume validation after backfill: %v", err)
+	}
+	assertSubscriptionCreationConstraintsValidated(t, ctx, db)
+}
+
+func assertSubscriptionCreationConstraintsValidated(t *testing.T, ctx context.Context, db *sql.DB) {
+	t.Helper()
+	var validatedCount int
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM pg_constraint
+		WHERE conrelid = 'subscription'::regclass
+		AND conname = ANY($1::text[]) AND convalidated`, pq.Array(subscriptionCreationConstraints)).Scan(&validatedCount); err != nil {
+		t.Fatal(err)
+	}
+	if want := len(subscriptionCreationConstraints); validatedCount != want {
+		t.Fatalf("validated typed subscription constraints = %d, want %d", validatedCount, want)
 	}
 }
 

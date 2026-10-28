@@ -236,7 +236,17 @@ type harness struct {
 // newHarness starts from a database without the other tests' inboxes: the worker claims whichever inbox is due.
 func newHarness(t *testing.T, settings Settings) *harness {
 	t.Helper()
-	db, err := sql.Open("postgres", database.URL)
+	return newHarnessWithDatabaseURL(t, database.URL, settings)
+}
+
+func newIsolatedHarness(t *testing.T, settings Settings) *harness {
+	t.Helper()
+	return newHarnessWithDatabaseURL(t, database.Clone(t), settings)
+}
+
+func newHarnessWithDatabaseURL(t *testing.T, databaseURL string, settings Settings) *harness {
+	t.Helper()
+	db, err := sql.Open("postgres", databaseURL)
 	if err != nil {
 		t.Fatal(err)
 	}

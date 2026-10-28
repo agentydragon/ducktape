@@ -80,12 +80,23 @@ writer runs the dual-write release, run
 once against the service database. This resumable command uses short bounded batches, stores its UUID cursor with
 each batch, and preserves the JSON creation record as a rollback copy; it is not part of startup or readiness.
 
-To roll the application back, stop the backfill command and roll every replica to the previous service image while
-leaving the additive migration applied; that image ignores the extra columns and continues to use the retained JSON.
-Only run either migration's down step after no replica or backfill process uses its new columns, reversing later
-Notification migrations first. The typed creation migration does not remove creation JSON. After Flux settles,
-verify the previous service's readiness, inbox authorization, and read/write behavior before considering the rollback
-complete.
+`00009_subscription_creation_typed_only.sql` requires the backfill completion marker on a populated database. After
+the command reports completion, roll out the typed-only release to every reader and writer. It uses only the typed
+snapshot and leaves new `creation` JSON rows NULL; the JSON column remains as a rollback copy for rows created by
+earlier releases. The migration also replaces JSON-dependent source constraints with typed source constraints.
+After every writer runs the typed-only release, run
+`bb run //agentplane/notification_service/storage_backfill/subscription_creation_validate_cmd:notification-subscription-creation-validate -- --writer-gate=notification-subscription-creation-typed-only-v1`.
+This resumable command validates each typed constraint in its own transaction with a short lock wait. Run it even
+on an empty database so later writes have validated proofs; a later contract migration may use an empty-table
+fast path, but requires all four catalog proofs before dropping the retained JSON column on a populated database.
+
+Before the typed-only release, roll back to the dual-write release while retaining all additive migrations and
+columns; it prefers typed snapshots and can read rows written by the typed-only release. Do not roll back to an image
+that predates typed-snapshot support once `00009` is applied. Keep `00009` applied during code rollback, because its
+Down step requires every row to have a JSON creation again. After the rollback rollout settles, verify readiness,
+inbox authorization, and read/write behavior. A later contract migration may drop the unused JSON column only after
+all readers and writers use typed storage; until then, the typed-only migration retains it for the compatible
+dual-write rollback.
 
 The service reads the settings file and environment variables of [Configuration](#configuration). It takes no
 flags, and no `log_levels`; logs are JSON on stderr. `request_timeout_s` (default 15) bounds a call's backend work,

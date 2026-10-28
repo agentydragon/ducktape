@@ -46,6 +46,7 @@ func TestBackfillInboxDestinationsPreservesPythonRowsAndSubscriptionIdempotency(
 		t.Fatal(err)
 	}
 	subscriptionID := uuid.New()
+	allowLegacySubscriptionCreationTestRows(t, ctx, db)
 	if _, err := db.ExecContext(ctx, `INSERT INTO subscription (
 		id, inbox_id, idempotency_key, creation, version, actions_after_sequence, generation, cancelled, expires_at)
 		VALUES ($1, $2, $3, $4::jsonb, 1, $5, 0, false, $6)`,
@@ -54,7 +55,10 @@ func TestBackfillInboxDestinationsPreservesPythonRowsAndSubscriptionIdempotency(
 		t.Fatal(err)
 	}
 	store := New(db, defaultQuotas())
-	assertLegacyInboxReadableAndIdempotent(t, ctx, store, owner, ref, creation, inboxID)
+	if err := BackfillSubscriptionCreations(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	assertInboxReadableAndIdempotent(t, ctx, store, owner, ref, creation, inboxID)
 
 	if err := BackfillInboxDestinations(ctx, db); err != nil {
 		t.Fatal(err)
@@ -93,7 +97,7 @@ func TestBackfillInboxDestinationsPreservesPythonRowsAndSubscriptionIdempotency(
 	}
 }
 
-func assertLegacyInboxReadableAndIdempotent(
+func assertInboxReadableAndIdempotent(
 	t *testing.T, ctx context.Context, store *Store, owner ServiceAccount, ref DestinationRef, creation Subscribe, id uuid.UUID,
 ) {
 	t.Helper()
@@ -106,7 +110,7 @@ func assertLegacyInboxReadableAndIdempotent(
 	}
 }
 
-func TestSubscribeDualWritesNormalizedDestination(t *testing.T) {
+func TestSubscribeWritesNormalizedDestination(t *testing.T) {
 	db, ctx := newDestinationBackfillDatabase(t)
 	owner := ServiceAccount{Namespace: "test-namespace", Name: "test-destination-dual-write"}
 	ref := DestinationRef{Namespace: "test-namespace", Name: "test-sandbox", UID: "test-uid"}

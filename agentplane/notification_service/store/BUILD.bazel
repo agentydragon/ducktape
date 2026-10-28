@@ -8,6 +8,7 @@ go_library(
         "actions.go",
         "claims.go",
         "creation_backfill.go",
+        "creation_validation.go",
         "destination_backfill.go",
         "event_identity_backfill.go",
         "event_identity_runtime.go",

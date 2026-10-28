@@ -284,19 +284,23 @@ func (h *harness) insertGitHubSubscription(t *testing.T, inboxID uuid.UUID) uuid
 	h.exec(t, `INSERT INTO github_repository_access (app_id, installation_id, repository_id, generation) VALUES (1, 2, $1, 0)`, repositoryID)
 	h.exec(t, `INSERT INTO github_subject (repository_id, kind, subject_key, generation) VALUES ($1, 'pull_request', '1', 0)`, repositoryID)
 	id := uuid.New()
+	h.exec(t, `ALTER TABLE subscription DROP CONSTRAINT subscription_creation_typed_required`)
 	h.exec(t, `
 		INSERT INTO subscription (id, inbox_id, idempotency_key, creation, version, github_start_position, generation,
 			github_app_id, github_installation_id, github_repository_id, github_subject_kind, github_subject_key,
 			cancelled, expires_at, next_attempt)
 		VALUES ($1, $2, 'github', $3::jsonb, 1, 0, 0, 1, 2, $4, 'pull_request', '1', false, now() + interval '1 day', now())`,
 		id, inboxID, string(creation), repositoryID)
+	if err := store.BackfillSubscriptionCreations(t.Context(), h.db); err != nil {
+		t.Fatal(err)
+	}
 	return id
 }
 
 func TestGitHubSubscriptionsAreReadByTheGitHubProvider(t *testing.T) {
 	for _, enabled := range []bool{false, true} {
 		t.Run(fmt.Sprintf("provider enabled=%v", enabled), func(t *testing.T) {
-			h := newHarness(t, debounce(3600, 3600))
+			h := newIsolatedHarness(t, debounce(3600, 3600))
 			actions := h.subscribe(t, "first")
 			h.postponeSources(t)
 			github := h.insertGitHubSubscription(t, actions.InboxID)
