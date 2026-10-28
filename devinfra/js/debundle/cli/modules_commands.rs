@@ -272,7 +272,7 @@ struct ModuleDecomposeArgs {
 
 #[derive(Debug, ClapArgs)]
 struct ModulesRefineArgs {
-    /// JSON array of reviewed source-unit IDs and destination module paths; `-` reads stdin.
+    /// JSON array of reviewed source-unit IDs and extensionless destination module IDs; `-` reads stdin.
     #[arg(long)]
     batch: String,
 

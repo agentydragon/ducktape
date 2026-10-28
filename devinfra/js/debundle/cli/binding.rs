@@ -868,6 +868,19 @@ pub struct SourceUnitRefineOutcome {
     pub source_units_reassigned: usize,
 }
 
+fn validate_refine_module_id(module: &str) -> Result<()> {
+    let normalized = module.to_ascii_lowercase();
+    for extension in [".yaml", ".yml"] {
+        if normalized.ends_with(extension) {
+            let logical_id = &module[..module.len() - extension.len()];
+            bail!(
+                "module destination {module:?} looks like a YAML filename; use extensionless logical module ID {logical_id:?}"
+            );
+        }
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 enum SourceUnitClaimSlot {
     Member(usize),
@@ -906,6 +919,9 @@ pub fn run_source_unit_refine(
 ) -> Result<SourceUnitRefineOutcome> {
     if assignments.is_empty() {
         bail!("source unit assignment batch is empty");
+    }
+    for assignment in &assignments {
+        validate_refine_module_id(&assignment.module)?;
     }
 
     let dependency_graph = crate::load_dependency_graph_report(dependency_graph_path)?;

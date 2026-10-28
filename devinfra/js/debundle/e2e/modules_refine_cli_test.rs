@@ -146,6 +146,44 @@ fn moves_member_source_match_group_and_anonymous_claim_with_metadata() {
 }
 
 #[test]
+fn rejects_yaml_filenames_as_module_refine_destinations() {
+    let fixture = GraphFixture::new(
+        "const alpha = 1;\nconsole.log(alpha);\n",
+        &[
+            (
+                "home.yaml",
+                "members: [{selector: {binding: {name: alpha}}}]\n",
+            ),
+            ("existing.yaml", "members: []\n"),
+        ],
+    );
+    let unit_id = source_unit_for_binding(&fixture, "alpha");
+
+    for module in ["existing.yaml", "new.yaml", "new.yml"] {
+        let batch = write_batch(json!([{
+            "unit_id": unit_id.clone(),
+            "module": module,
+        }]));
+        let alternative = module
+            .strip_suffix(".yaml")
+            .or_else(|| module.strip_suffix(".yml"))
+            .unwrap();
+        let diagnostic = format!(
+            "module destination {module:?} looks like a YAML filename; use extensionless logical module ID {alternative:?}"
+        );
+        fixture.assert_rejected_unchanged(
+            &[
+                "modules",
+                "refine",
+                "--batch",
+                batch.path().join("refine.json").to_str().unwrap(),
+            ],
+            &[&diagnostic],
+        );
+    }
+}
+
+#[test]
 fn rejects_atom_split_without_changing_any_module_yaml() {
     let fixture = GraphFixture::atomic_pair();
     let batch = write_batch(json!([{
