@@ -2,15 +2,18 @@
 
 Tracking issue: [#5213](https://github.com/agentydragon/ducktape/issues/5213).
 
-The observed large burn is causally linked to Claude Desktop's cloud-mediated
-GitHub batch-status route. Wyrm2 uses the central exact-route block through
-a local relay. After repairing SSE buffering (#5699) and connection reuse
-(#5703), the operator confirmed Desktop works on September 6, 2026 and asked
-to wind down active debugging. Existing mitigation, capture, and metrics remain
-running. Review the next **1–2 weeks, September 13–20**, before closing #5213;
-the reliability result is not yet established. Rugged has a source opt-in but
-no verified rollout; the exact refresh trigger and upstream work remain partly
-unobserved. [Confirmation checklist and query window](acceptance_monitoring.md).
+The September 6 controlled block/reversal causally linked a major part of the
+observed burn to Claude Desktop's cloud-mediated GitHub batch-status route. The
+operator accepted Desktop functionality after the relay repairs and requested
+a one-to-two-week observation window. The October 10 review did not establish
+quota reliability: the seven-day and fourteen-day checkpoints both observed
+zero remaining points, and another zero was retained on October 5. The recent
+week's fresh-sample coverage was 96.99%. These account-level samples do not
+identify the caller; correlate the October 5 zero with Desktop/web use, the
+deployed relay and exact-route block, capture/request metrics, and exporter
+gaps before drawing a new conclusion. Keep #5213 open. Rugged's source opt-in
+has no verified live rollout, and the exact refresh trigger remains partly
+unobserved. See the [latest review and pickup checklist](acceptance_monitoring.md#latest-review-2026-10-10).
 
 - [Attribution and controlled block/reversal](attribution_2026_09_05.md):
   measurements, source evidence, competing explanations, and remaining experiments.
