@@ -130,6 +130,8 @@ report path and `module_graph.edges` with typed `edge_kinds` and
 `graph-summary` output when a metric needs that information. The entry uses the
 synthetic `anon_residual_sentinel` report path. Project-specific scripts and
 expectations belong in the project tree; keep only the generic method here.
+For `describe` metrics, use section totals or request `--all` when the metric
+needs complete dependency rows.
 
 Each check should have one named expectation and emit its measured value,
 verdict, and a bounded list of concrete violating edges or modules. RULE

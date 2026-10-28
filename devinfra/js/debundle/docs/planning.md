@@ -11,6 +11,8 @@ Planning is read-only; a query may evaluate a candidate's gate without applying 
 Start with `graph-summary`, then use `describe` and `inspect-source --id` before
 recommending an assignment. Use `coverage` for ownership and `atoms` for the
 complete source-unit groups that must move together.
+`describe` defaults to 20 rows per section. Check its truncation metadata and use
+`--all` when deriving a complete assignment or dependency closure from its rows.
 
 Choose the operation from the task chooser:
 

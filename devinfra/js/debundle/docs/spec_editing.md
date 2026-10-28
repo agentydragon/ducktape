@@ -210,7 +210,7 @@ and the destinations each member would land in.
 1. **Read the diagnostic.** It names the atom, lists each source unit's
    current and proposed module, and the `DepKind` causes (eager_use,
    rebind, sequenced, ...).
-2. **Inspect the atom.** Run `debundle describe <atom-id>` for graph
+2. **Inspect the atom.** Run `debundle describe <atom-id> --all` for graph
    context (which source units are in it, why they're co-bound), then
    `debundle inspect-source --id <atom-id>` to read the source.
 3. **List atoms broadly** if you need to triangulate:
