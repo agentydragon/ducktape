@@ -1071,6 +1071,12 @@ see the complete contract in [SPEC](../SPEC.md#audited-builtin-global-membership
 native-integrity fact. Its bounded admission and proof-use report are specified
 in [SPEC.md](../SPEC.md). The canonical fresh-record call check matters because
 the execution value model can erase assignment targets or sequence prefixes.
+An identifier-valued record property is admitted only when the canonical AST
+proves one simple top-level `const` with a direct primitive literal initializer,
+no source writes or dynamic-scope contamination, and a prefix value that is
+already initialized and exactly one primitive abstract value. The read remains
+part of normal eager execution, so TDZ and dependency ordering stay observable;
+aliases and nonliteral initializers retain fallback.
 Source execution remains essential: nonreentry alone would not justify dropping
 a factory's eager lexical read or a class TDZ. The source-checked constructor
 proof admits only the existing private return-only allocation graph.

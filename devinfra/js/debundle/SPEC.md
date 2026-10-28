@@ -660,7 +660,15 @@ Admission requires a direct unary call of the selected stable top-level hoisted
 factory with a fresh literal data record. The canonical AST check excludes
 assignment/sequence-wrapped records, spreads, computed keys, accessors,
 `__proto__`, and other eager calls. Nested dense arrays, literal values, inline
-callbacks and independently checked enum reads are supported. The ordinary
+callbacks and independently checked enum reads are supported. A record value
+may also be an identifier when it resolves to one simple top-level `const`
+declaration with a direct string, number, boolean, null, or BigInt literal
+initializer. That initializer must precede the call, the current prefix must
+contain exactly one primitive abstract value for the binding, and the binding
+must have no source writes or dynamic-scope contamination. The binding read
+still executes normally, retaining its eager dependency and TDZ behavior;
+object/function aliases and computed or otherwise nonliteral initializers are
+not admitted. The ordinary
 source-checked return-only constructor proof and normal execution remain in
 force, including eager lexical reads, TDZ, argument evaluation, exposure checks,
 side effects and ordering. Only the exact checked constructor/property and

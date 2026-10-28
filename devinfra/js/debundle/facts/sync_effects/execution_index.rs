@@ -275,6 +275,9 @@ fn literal_record_factory_value(expression: &Expr) -> bool {
         return true;
     }
     match expression {
+        // Binding reads remain source/effect checked by the interpreter's
+        // prefix-value proof; this is only syntax admission at the call site.
+        Expr::Ident(_) => true,
         Expr::Object(object) => {
             let mut names = BTreeSet::new();
             object.props.iter().all(|property| {
