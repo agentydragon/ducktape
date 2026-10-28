@@ -95,8 +95,6 @@ budget remains authoritative across all of its native services.
   Codex Session the app-server hosts. Interrupting one Session's turn leaves the others running. An
   app-server exit ends every hosted Session's harness: each records `HarnessExited` and, with an
   active turn, `PROCESS_LOST`, and resumes its thread when it next needs a harness.
-  A lost turn's completion and recovery report precede `HarnessExited`, so readers can end at
-  that exit without losing the turn's final evidence.
 - `OpenSession` with an unknown id durably reserves the session from `spec`; `spec.cwd` must be
   absolute. With a known id it confirms the reservation: the `spec` must equal the stored one.
   Opening never starts a harness. Later admitted execution work starts it in the background, and the
@@ -183,7 +181,8 @@ budget remains authoritative across all of its native services.
   in the Event log. Goose migrates stored request relationships before recovery. Terminal receipt
   facts remain in the Event referenced by the command’s terminal cursor.
   A process-lost active turn also triggers native reconciliation even if its input was already
-  confirmed. Completed idle sessions remain dormant. Interrupts neither start a harness nor prevent
+  confirmed. A lost turn's completion and recovery report precede `HarnessExited`, so readers can
+  end at that exit without losing the turn's final evidence. Completed idle sessions remain dormant. Interrupts neither start a harness nor prevent
   recovery required by other work; an admitted interrupt whose target ended is settled as a no-op.
 - Each `Runner` call is answered once, with its result or a gRPC status naming the cause.
   `ListSessions` and `Quiesce` answer as the RPCs of the same name do. `OpenSession` durably reserves

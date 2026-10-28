@@ -131,7 +131,8 @@ async def test_a_shared_app_server_crash_loses_every_hosted_turn_and_each_sessio
     for session in sessions.values():
         lost = await session.until(events.turn_completed)
         assert lost.event.turn_completed.status == event_pb2.TURN_STATUS_PROCESS_LOST
-        exited = events.of_kind(session.seen, "harness_exited")[-1]
+        exited = await session.until(events.is_kind("harness_exited"))
+        assert exited.cursor > lost.cursor
         assert not exited.event.harness_exited.stopped_by_runner
 
     await _submit_to_each(sessions, "input-2", "Reply with exactly: RESUMED_OK")
