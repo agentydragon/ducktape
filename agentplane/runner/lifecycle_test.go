@@ -376,6 +376,19 @@ func TestCloseWaitsForAdmissionAndPublishesAdmissionTransitions(t *testing.T) {
 	}
 }
 
+func TestCloseProgressesForEmptyRunner(t *testing.T) {
+	r := newBareRunner(t)
+	closeDone := make(chan error, 1)
+	go func() { closeDone <- r.Close() }()
+	if err := waitClose(t, closeDone); err != nil {
+		t.Fatalf("Close empty Runner: %v", err)
+	}
+	current, found, err := lifecycleRead[runnerRuntimeSpec](context.Background(), r.lifecycle.state, "runner")
+	if err != nil || !found || current.Stage != stageClosed {
+		t.Fatalf("empty Runner runtime after Close = %+v, found=%v err=%v; want CLOSED", current, found, err)
+	}
+}
+
 func TestJournalAndAcknowledgementChangesDoNotReviseRunnerInputs(t *testing.T) {
 	r, s := lifecycleTestSession(t)
 	before, found, err := lifecycleRead[runnerInputSpec](r.ctx, r.lifecycle.state, "runner")
