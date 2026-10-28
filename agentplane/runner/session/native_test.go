@@ -1,19 +1,32 @@
-package runner
+package session
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
+	"github.com/agentydragon/ducktape/agentplane/runner/bootstrap"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
 	"github.com/agentydragon/ducktape/agentplane/runner/journal"
+	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner/retained"
+	"github.com/agentydragon/ducktape/agentplane/runner/scripts"
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
+	"github.com/agentydragon/ducktape/agentplane/runner/workspace"
+	"github.com/cosi-project/runtime/pkg/controller"
+	cosiruntime "github.com/cosi-project/runtime/pkg/controller/runtime"
+	"github.com/cosi-project/runtime/pkg/resource/typed"
+	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
+	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
+	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
+	"go.uber.org/zap"
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
@@ -38,52 +51,106 @@ func (a frameTestAdapter) OnFrame(ctx context.Context, raw json.RawMessage, sequ
 	return a.onFrame(ctx, raw, sequence)
 }
 
-func frameTestSession(t *testing.T, command []string) (*Session, *supervision.ManagedProcess, *Runner) {
+func frameTestSession(t *testing.T, command []string) (*Session, *supervision.ManagedProcess, *Manager) {
+	return frameTestSessionWithController(t, command, false)
+}
+
+func frameTestSessionWithController(t *testing.T, command []string, controller bool) (*Session, *supervision.ManagedProcess, *Manager) {
 	t.Helper()
-	r, err := New(Config{StateDir: t.TempDir()})
+	ctx, cancel := context.WithCancel(context.Background())
+	root := t.TempDir()
+	store, err := retained.NewStore(filepath.Join(root, "sessions"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	record, err := retained.NewRecord(&runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CLAUDE, Cwd: t.TempDir(), Model: "test"}, "", nil)
+	resources := state.WrapCore(namespaced.NewState(inmem.Build))
+	engine, err := cosiruntime.NewRuntime(resources, zap.L())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := r.store.Write("session", record); err != nil {
-		t.Fatal(err)
-	}
-	dir, err := r.store.Directory("session")
+	var workers sync.WaitGroup
+	host := supervision.NewHost(ctx, resources, runnerlifecycle.Namespace, &workers, func(err error) {
+		if err != nil && !errors.Is(err, context.Canceled) {
+			t.Error(err)
+		}
+	})
+	bootstrapHost, err := bootstrap.NewHost(bootstrap.Config{}, bootstrap.Dependencies{Context: ctx, State: resources, Workers: &workers, Admission: func(ctx context.Context, _ runnerlifecycle.Desired, work func(context.Context) error) error {
+		return work(ctx)
+	}, OnError: func(err error) {
+		if err != nil {
+			t.Error(err)
+		}
+	}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	journal, err := journal.Open(context.Background(), filepath.Join(dir, "journal.sqlite"), record.EventSourceID)
+	launch := func(ctx context.Context, owner string, processConfig supervision.ProcessConfig) (*supervision.ManagedProcess, error) {
+		return host.Launch(ctx, owner, 0, supervision.NewSubprocessSupervisor(nil), processConfig)
+	}
+	scriptRunner, err := scripts.New(scripts.Config{LaunchProcess: launch})
 	if err != nil {
 		t.Fatal(err)
 	}
-	deps := r.sessions.dependencies
-	deps.destination = r.sessions.destination("session")
-	s := newSession(deps, "session", &record, journal)
-	p, err := r.launchProcess(context.Background(), sessionControllerName+"/"+s.id, r.supervisor, supervision.ProcessConfig{Command: command, Dir: record.CWD, Env: map[string]string{}})
+	m, err := NewManager(Config{Context: ctx, State: resources, Store: store, WorkspaceRoot: filepath.Dir(root), Scripts: scriptRunner, BootstrapHost: bootstrapHost, EnsureWorkspace: func(_ context.Context, cwd string) (string, error) { return workspace.Resolve(cwd, filepath.Dir(root)) }, LaunchProcess: launch, ResolveModelConfig: func(context.Context, runnerpb.Harness, string) (*int, error) { return nil, nil }, Destination: func(string) string { return "test-destination" }, PublishSeal: func(string, *journal.SealState) error { return nil }, PublishAck: func(string, retained.Acknowledgement) error { return nil }, OnChange: func() {}, OnError: func(err error) {
+		if err != nil && !errors.Is(err, context.Canceled) {
+			t.Error(err)
+		}
+	}, ReconcileConcurrency: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := engine.RegisterQController(host.Controller()); err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.RegisterController(&testAggregateController{}); err != nil {
+		t.Fatal(err)
+	}
+	if controller {
+		if err := engine.RegisterQController(m.Controller()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := runnerlifecycle.PublishDesired(ctx, resources, runnerlifecycle.Desired{}); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		if err := engine.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			t.Error(err)
+		}
+	}()
+	record, err := retained.NewRecord(&runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CLAUDE, Cwd: root, Model: "test"}, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := m.ReserveFresh(ctx, "session", func() error { return store.Write("session", record) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := host.Launch(ctx, ControllerName+"/"+s.id, 0, supervision.NewSubprocessSupervisor(nil), supervision.ProcessConfig{Command: command, Dir: root, Env: map[string]string{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.mu.Lock()
 	s.process = p
+	s.processID = p.ID()
+	s.mu.Unlock()
+	s.wake()
 	t.Cleanup(func() {
 		if err := p.Stop(context.Background()); err != nil {
 			t.Error(err)
 		}
-		r.cancel()
-		<-r.lifecycle.done
-		r.lifecycle.workers.Wait()
+		cancel()
+		<-done
+		workers.Wait()
 		s.work.Wait()
 		s.readers.Wait()
-		if err := journal.Close(); err != nil {
-			t.Error(err)
-		}
-		if err := r.owner.Close(); err != nil {
+		if err := m.Close(); err != nil {
 			t.Error(err)
 		}
 	})
-	return s, p, r
+	return s, p, m
 }
 
 func TestNativeReplyWaitsForTranslationCommit(t *testing.T) {
@@ -161,13 +228,8 @@ func TestDispatchKeepsUncertainNativeWritePendingAndDoesNotResend(t *testing.T) 
 	s.mu.Lock()
 	s.adapter = adapter
 	s.mu.Unlock()
-	// This primitive test drives dispatch directly, so it has no Session input
-	// for the controller to reconcile. Seed only its readiness observation.
-	if err := s.deps.state.Create(ctx,
-		lifecycleResourceFor(s.id, sessionRuntimeSpec{Phase: executionReady}),
-		state.WithCreateOwner(sessionControllerName)); err != nil {
-		t.Fatal(err)
-	}
+	// This primitive test drives dispatch directly; seed its readiness observation.
+	setRuntimeReady(t, nil, s)
 	if err := s.dispatch(ctx, command); err != nil {
 		t.Fatal(err)
 	}
@@ -292,13 +354,16 @@ func TestStdoutRetainsFinalFrameWithoutNewline(t *testing.T) {
 func TestConfirmationReplayKeepsTerminalReceipt(t *testing.T) {
 	ctx := context.Background()
 	journal := openTestJournal(t)
-	r := newLifecycleRunner(t, Config{StateDir: t.TempDir()})
+	store, err := retained.NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	resources := state.WrapCore(namespaced.NewState(inmem.Build))
 	record, err := retained.NewRecord(&runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CLAUDE, Cwd: t.TempDir(), Model: "test-model"}, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	deps := r.sessions.dependencies
-	deps.destination = r.sessions.destination("session-1")
+	deps := sessionDependencies{ctx: ctx, state: resources, store: store, publish: func(*Session, bool) {}, changed: func() {}, fail: func(err error) { t.Error(err) }}
 	s := newSession(deps, "session-1", &record, journal)
 	command := &commandpb.Command{CommandId: "input-1", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "hello"}}}
 	if _, _, err := journal.Admit(ctx, command, ""); err != nil {
@@ -345,13 +410,12 @@ func (a *rpcReconciliationAdapter) Reconcile(ctx context.Context, turn string, _
 }
 
 func TestInterruptedReconciliationLeavesStdoutFreeForHistoryRPC(t *testing.T) {
-	s, p, r := frameTestSession(t, []string{"/bin/sh", "-c", `while IFS= read -r line; do printf '%s\n' "$line"; done`})
+	s, p, m := frameTestSessionWithController(t, []string{"/bin/sh", "-c", `while IFS= read -r line; do printf '%s\n' "$line"; done`}, true)
 	adapter := &rpcReconciliationAdapter{session: s}
 	s.mu.Lock()
 	s.adapter = adapter
 	s.mu.Unlock()
-	registerTestSession(t, r, s)
-	setRuntimeReady(t, s)
+	setRuntimeReady(t, m, s)
 	if err := s.Emit(context.Background(), observation(&eventpb.TurnStarted{TurnId: "turn"}), nil); err != nil {
 		t.Fatal(err)
 	}
@@ -392,4 +456,79 @@ func openTestJournal(t *testing.T) *journal.Journal {
 		}
 	})
 	return journal
+}
+
+func TestMain(m *testing.M) {
+	if len(os.Args) > 1 && os.Args[1] == supervision.SupervisorMode {
+		os.Exit(supervision.SupervisorMain(os.Args[2:]))
+	}
+	os.Exit(m.Run())
+}
+
+func setRuntimeReady(t *testing.T, m *Manager, s *Session) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	ptr := componentResource(s.id, Runtime{}).Metadata()
+	if m == nil {
+		if err := s.deps.state.Create(ctx, componentResource(s.id, Runtime{Phase: Ready, ProcessID: s.processID}), state.WithCreateOwner(ControllerName)); err != nil {
+			t.Fatal(err)
+		}
+		s.mu.Lock()
+		s.processState = runnerpb.ProcessState_PROCESS_STATE_RUNNING
+		s.mu.Unlock()
+		return
+	}
+	_, err := safe.StateWatchFor[*typed.Resource[Runtime, componentExtension[Runtime]]](ctx, s.deps.state, ptr, state.WithEventTypes(state.Created, state.Updated))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = safe.StateUpdateWithConflicts(ctx, s.deps.state, ptr, func(value *typed.Resource[Runtime, componentExtension[Runtime]]) error {
+		value.TypedSpec().Phase = Ready
+		value.TypedSpec().ProcessID = s.processID
+		return nil
+	}, state.WithUpdateOwner(ControllerName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.mu.Lock()
+	s.processState = runnerpb.ProcessState_PROCESS_STATE_RUNNING
+	s.mu.Unlock()
+}
+
+// The test aggregate publishes only the Runner-wide gate needed by Session.
+type testAggregateController struct{}
+
+func (*testAggregateController) Name() string { return "test-aggregate" }
+func (*testAggregateController) Inputs() []controller.Input {
+	return []controller.Input{{Namespace: runnerlifecycle.Namespace, Type: runnerlifecycle.DesiredStateType, Kind: controller.InputWeak}}
+}
+
+func (*testAggregateController) Outputs() []controller.Output {
+	return []controller.Output{{Type: runnerlifecycle.AggregateStatusType, Kind: controller.OutputExclusive}}
+}
+
+func (*testAggregateController) Run(ctx context.Context, r controller.Runtime, _ *zap.Logger) error {
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-r.EventCh():
+		}
+		desired, found, err := runnerlifecycle.ReadDesired(ctx, r)
+		if err != nil {
+			return err
+		}
+		if !found {
+			continue
+		}
+		stage := runnerlifecycle.StageRunning
+		if desired.Mode != runnerlifecycle.Running {
+			stage = runnerlifecycle.Halting
+		}
+		if _, err := runnerlifecycle.WriteStatus(ctx, r, runnerlifecycle.Status{Generation: desired.Generation, Stage: stage}); err != nil {
+			return err
+		}
+		r.ResetRestartBackoff()
+	}
 }

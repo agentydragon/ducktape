@@ -14,6 +14,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/runner/codex/execserver"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
+	"github.com/agentydragon/ducktape/agentplane/runner/session"
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 	"go.uber.org/zap"
 )
@@ -326,7 +327,7 @@ func (f Configuration) compose(launchPath string) (Config, map[string]string, er
 		if f.DebugCheckpoint.Name == "" || f.DebugCheckpoint.CommandID == "" {
 			return Config{}, nil, errors.New("checkpoint name and command ID must be nonempty")
 		}
-		config.DebugCheckpoint = &DebugCheckpointConfig{Name: f.DebugCheckpoint.Name, CommandID: f.DebugCheckpoint.CommandID}
+		config.DebugCheckpoint = &session.DebugCheckpointConfig{Name: f.DebugCheckpoint.Name, CommandID: f.DebugCheckpoint.CommandID}
 	}
 	return config, environment, nil
 }

@@ -170,14 +170,14 @@ func TestIngressLoopPublishesSealedAcknowledgementToQuiesce(t *testing.T) {
 	runner, session := lifecycleTestSession(t)
 	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 	defer cancel()
-	if err := session.Emit(ctx, observation(&eventpb.HarnessStderr{Text: "retained"}), nil); err != nil {
+	if err := session.Emit(ctx, &eventpb.Event{Observation: &eventpb.Event_HarnessStderr{HarnessStderr: &eventpb.HarnessStderr{Text: "retained"}}}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := runner.Quiesce(ctx, &runnerpb.QuiesceRequest{}); err != nil {
 		t.Fatalf("accept quiesce: %v", err)
 	}
 	waitLifecycle(t, runner, func() bool { return runner.lifecycle.status().Stage == runnerlifecycle.Flushing }, "quiesce to seal the journal")
-	seal := session.journal.SealState()
+	seal := session.EventJournal().SealState()
 	if seal == nil || seal.Cursor == 0 {
 		t.Fatalf("journal seal = %+v, want a nonzero cursor", seal)
 	}
@@ -209,10 +209,10 @@ func TestIngressLoopPublishesSealedAcknowledgementToQuiesce(t *testing.T) {
 		t.Fatalf("ingress did not send its under-cursor acknowledgement: %v", ctx.Err())
 	}
 	waitLifecycle(t, runner, func() bool {
-		ack, found, err := lifecycleRead[ingressAckSpec](ctx, runner.lifecycle.state, session.id)
+		ack, found, err := lifecycleRead[ingressAckSpec](ctx, runner.lifecycle.state, session.ID())
 		return err == nil && found && ack.Cursor == seal.Cursor-1 && !ack.Sealed
 	}, "under-cursor ingress acknowledgement observation")
-	if ack, err := runner.store.ReadAcknowledgement(session.id); err != nil || ack == nil || ack.Cursor != seal.Cursor-1 || ack.Sealed {
+	if ack, err := runner.store.ReadAcknowledgement(session.ID()); err != nil || ack == nil || ack.Cursor != seal.Cursor-1 || ack.Sealed {
 		t.Fatalf("persisted under-cursor acknowledgement = %+v, err %v", ack, err)
 	}
 	if stage := runner.lifecycle.status().Stage; stage != runnerlifecycle.Flushing {
@@ -220,10 +220,10 @@ func TestIngressLoopPublishesSealedAcknowledgementToQuiesce(t *testing.T) {
 	}
 	close(service.releaseSeal)
 	waitLifecycle(t, runner, func() bool { return runner.lifecycle.status().Stage == runnerlifecycle.Quiesced }, "exact sealed ingress acknowledgement")
-	if ack, err := runner.store.ReadAcknowledgement(session.id); err != nil || ack == nil || ack.Cursor != seal.Cursor || !ack.Sealed {
+	if ack, err := runner.store.ReadAcknowledgement(session.ID()); err != nil || ack == nil || ack.Cursor != seal.Cursor || !ack.Sealed {
 		t.Fatalf("persisted sealed acknowledgement = %+v, err %v", ack, err)
 	}
-	if ack, found, err := lifecycleRead[ingressAckSpec](ctx, runner.lifecycle.state, session.id); err != nil || !found || ack.Cursor != seal.Cursor || !ack.Sealed {
+	if ack, found, err := lifecycleRead[ingressAckSpec](ctx, runner.lifecycle.state, session.ID()); err != nil || !found || ack.Cursor != seal.Cursor || !ack.Sealed {
 		t.Fatalf("COSI sealed acknowledgement = %+v, found %t, err %v", ack, found, err)
 	}
 	if err := <-service.result; err != nil {

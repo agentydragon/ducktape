@@ -1,4 +1,4 @@
-package runner
+package session
 
 import (
 	"bytes"
@@ -88,7 +88,7 @@ func (s *Session) startProcess(ctx context.Context, adapter harness.ProcessAdapt
 	if err != nil {
 		return err
 	}
-	process, err := s.deps.launchProcess(ctx, sessionControllerName+"/"+s.id, supervision.ProcessConfig{Command: command, Dir: cwd, Env: env})
+	process, err := s.deps.launchProcess(ctx, ControllerName+"/"+s.id, supervision.ProcessConfig{Command: command, Dir: cwd, Env: env})
 	if err != nil {
 		return err
 	}
@@ -242,7 +242,7 @@ func (s *Session) prepare(ctx context.Context, adapter harness.Adapter, pid int)
 // currently active turn.
 func (s *Session) dispatchControl(ctx context.Context) error {
 	phase := s.runtimeState().Phase
-	if phase != executionReady && phase != executionStopping {
+	if phase != Ready && phase != Stopping {
 		return nil
 	}
 	commands, err := s.journal.PendingCommands(ctx)
@@ -254,7 +254,7 @@ func (s *Session) dispatchControl(ctx context.Context) error {
 			continue
 		}
 		s.mu.Lock()
-		if s.runtimeState().Phase == executionHalted || operationDone(s.halting) || s.dispatched[command.CommandId] || s.controlDispatches[command.CommandId] != nil {
+		if s.runtimeState().Phase == Halted || operationDone(s.halting) || s.dispatched[command.CommandId] || s.controlDispatches[command.CommandId] != nil {
 			s.mu.Unlock()
 			continue
 		}

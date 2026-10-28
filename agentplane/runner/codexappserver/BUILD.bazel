@@ -9,7 +9,10 @@ go_library(
         "resources.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/runner/codexappserver",
-    visibility = ["//agentplane/runner:__pkg__"],
+    visibility = [
+        "//agentplane/runner:__pkg__",
+        "//agentplane/runner/session:__pkg__",
+    ],
     deps = [
         "//agentplane/proto:runner_go_proto",
         "//agentplane/runner/codex",

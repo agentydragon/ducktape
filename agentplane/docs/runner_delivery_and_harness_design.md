@@ -291,7 +291,7 @@ carry each Session's working directory, model, effort, developer instructions an
 map, whose `shell_environment_policy.set` gives a thread's tools its Session's notification
 destination. The Session record stores one Claude session ID or Codex thread ID, and a runner restart
 creates a new process and resumes the native conversation from that store. See
-[`session.go`](../runner/session.go), [`supervision/`](../runner/supervision/),
+[`session/`](../runner/session/), [`supervision/`](../runner/supervision/),
 [`retained/`](../runner/retained/), and the adapters ([Claude](../runner/claude/adapter.go),
 [Codex](../runner/codex/adapter.go)).
 
@@ -406,7 +406,7 @@ the possibly orphaned native data for reconciliation. A lost response after the 
 commit resolves by the same public ID. Claude's current adapter chooses a native ID before launch;
 that narrower path does not solve the harness-chosen-ID crash window in general. Specify the
 reservation/mapping format, native reconciliation proof, and failure status before implementation.
-Today [`Session.startHarness`](../runner/session.go) writes the native ID only after adapter handshake;
+Today [`Session.startHarness`](../runner/session/native.go) writes the native ID only after adapter handshake;
 [`CodexAdapter`](../runner/codex/adapter.go) starts a native thread during that handshake, and
 [`ClaudeAdapter`](../runner/claude/adapter.go) selects an ID before launch but also persists it afterward.
 Persisting Claude's chosen ID before launch can narrow its case; Codex still needs a proven recovery

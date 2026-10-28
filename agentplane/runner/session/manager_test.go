@@ -1,4 +1,4 @@
-package runner
+package session
 
 import (
 	"context"
@@ -9,14 +9,55 @@ import (
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	"github.com/agentydragon/ducktape/agentplane/runner/bootstrap"
 	"github.com/agentydragon/ducktape/agentplane/runner/journal"
+	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner/retained"
-	"github.com/cosi-project/runtime/pkg/resource/typed"
-	"github.com/cosi-project/runtime/pkg/safe"
+	"github.com/agentydragon/ducktape/agentplane/runner/scripts"
+	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
+	"github.com/agentydragon/ducktape/agentplane/runner/workspace"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
 	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
 )
+
+func withTestSessionFacilities(t *testing.T, config Config) Config {
+	t.Helper()
+	var workers sync.WaitGroup
+	host := supervision.NewHost(config.Context, config.State, runnerlifecycle.Namespace, &workers, func(err error) {
+		if err != nil {
+			t.Error(err)
+		}
+	})
+	launch := func(ctx context.Context, owner string, processConfig supervision.ProcessConfig) (*supervision.ManagedProcess, error) {
+		return host.Launch(ctx, owner, 0, supervision.NewSubprocessSupervisor(nil), processConfig)
+	}
+	var err error
+	config.Scripts, err = scripts.New(scripts.Config{LaunchProcess: launch})
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.BootstrapHost, err = bootstrap.NewHost(bootstrap.Config{}, bootstrap.Dependencies{
+		Context: config.Context, State: config.State, Workers: &workers,
+		Admission: func(ctx context.Context, _ runnerlifecycle.Desired, work func(context.Context) error) error {
+			return work(ctx)
+		},
+		OnError: func(err error) {
+			if err != nil {
+				t.Error(err)
+			}
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.LaunchProcess = launch
+	config.EnsureWorkspace = func(_ context.Context, cwd string) (string, error) {
+		return workspace.Resolve(cwd, config.WorkspaceRoot)
+	}
+	config.ResolveModelConfig = func(context.Context, runnerpb.Harness, string) (*int, error) { return nil, nil }
+	return config
+}
 
 func TestSessionManagerLoadsOneOwnerAndPublishesRecovery(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -39,28 +80,33 @@ func TestSessionManagerLoadsOneOwnerAndPublishesRecovery(t *testing.T) {
 	publishErrors := make(chan error, 16)
 	var publicationMu sync.Mutex
 	publications := map[string][]runnerpb.SetupState{}
-	publish := func(s *Session, _ bool) {
-		s.mu.Lock()
-		input := sessionInputSpec{Harness: s.record.Harness, Setup: s.setup}
-		s.mu.Unlock()
-		publicationMu.Lock()
-		publications[s.id] = append(publications[s.id], input.Setup)
-		publicationMu.Unlock()
-		err := safe.StateModify(ctx, resources, lifecycleResourceFor(s.id, input), func(current *typed.Resource[sessionInputSpec, lifecycleExtension[sessionInputSpec]]) error {
-			*current.TypedSpec() = input
-			return nil
-		}, state.WithUpdateOwner("runner-host"))
-		if err != nil {
-			publishErrors <- err
-		}
-	}
-	m := &sessionManager{
-		ctx: ctx, store: store, sessions: map[string]*Session{},
-		dependencies: sessionDependencies{ctx: ctx, state: resources, store: store, changed: func() {}, fail: func(err error) { publishErrors <- err }, publish: publish},
-		destination:  func(string) string { return "test-destination" },
-		publishSeal:  func(*Session) error { return nil },
-		publishAck:   func(string, retained.Acknowledgement) error { return nil },
-		publish:      publish, changed: func() {},
+	m, err := NewManager(withTestSessionFacilities(t, Config{
+		Context: ctx, State: resources, Store: store, WorkspaceRoot: filepath.Dir(root),
+		Destination: func(string) string { return "test-destination" },
+		PublishSeal: func(string, *journal.SealState) error { return nil },
+		PublishAck:  func(string, retained.Acknowledgement) error { return nil },
+		OnError: func(err error) {
+			if err != nil {
+				publishErrors <- err
+			}
+		},
+		OnChange: func() {
+			for _, id := range []string{"one-session", "fresh-session"} {
+				input, found, err := ReadInput(ctx, resources, id)
+				if err != nil {
+					publishErrors <- err
+				}
+				if found {
+					publicationMu.Lock()
+					publications[id] = append(publications[id], input.Setup)
+					publicationMu.Unlock()
+				}
+			}
+		},
+		ReconcileConcurrency: 1,
+	}))
+	if err != nil {
+		t.Fatal(err)
 	}
 	const loaders = 8
 	loaded := make([]*Session, loaders)
@@ -69,7 +115,7 @@ func TestSessionManagerLoadsOneOwnerAndPublishesRecovery(t *testing.T) {
 	workers.Add(1)
 	go func() {
 		defer workers.Done()
-		if err := m.startup(ctx); err != nil {
+		if err := m.Startup(ctx); err != nil {
 			loadErrors <- err
 		}
 	}()
@@ -77,7 +123,7 @@ func TestSessionManagerLoadsOneOwnerAndPublishesRecovery(t *testing.T) {
 		workers.Add(1)
 		go func() {
 			defer workers.Done()
-			s, err := m.load(ctx, "one-session")
+			s, err := m.Load(ctx, "one-session")
 			loaded[i] = s
 			if err != nil {
 				loadErrors <- err
@@ -105,7 +151,7 @@ func TestSessionManagerLoadsOneOwnerAndPublishesRecovery(t *testing.T) {
 			t.Fatalf("retained setup was published before recovery: %v", retainedPublications)
 		}
 	}
-	input, found, err := lifecycleRead[sessionInputSpec](ctx, resources, "one-session")
+	input, found, err := ReadInput(ctx, resources, "one-session")
 	if err != nil || !found || input.Setup != runnerpb.SetupState_SETUP_STATE_INTERRUPTED {
 		t.Fatalf("recovered setup was not published: %+v, found=%t, err=%v", input, found, err)
 	}
@@ -128,13 +174,13 @@ func TestSessionManagerLoadsOneOwnerAndPublishesRecovery(t *testing.T) {
 	}
 	competingLoad := make(chan loadResult, 1)
 	started := make(chan struct{})
-	fresh, err := m.reserveFresh(ctx, "fresh-session", func() error {
+	fresh, err := m.ReserveFresh(ctx, "fresh-session", func() error {
 		if err := store.Write("fresh-session", freshRecord); err != nil {
 			return err
 		}
 		go func() {
 			close(started)
-			s, err := m.load(ctx, "fresh-session")
+			s, err := m.Load(ctx, "fresh-session")
 			competingLoad <- loadResult{s, err}
 		}()
 		<-started
@@ -152,7 +198,7 @@ func TestSessionManagerLoadsOneOwnerAndPublishesRecovery(t *testing.T) {
 	if result.err != nil || result.session != fresh {
 		t.Fatalf("competing retained load did not share the fresh Session owner: %+v, fresh=%p", result, fresh)
 	}
-	input, found, err = lifecycleRead[sessionInputSpec](ctx, resources, "fresh-session")
+	input, found, err = ReadInput(ctx, resources, "fresh-session")
 	if err != nil || !found || input.Setup != runnerpb.SetupState_SETUP_STATE_RUNNING {
 		t.Fatalf("fresh setup was not published as running: %+v, found=%t, err=%v", input, found, err)
 	}
@@ -161,7 +207,7 @@ func TestSessionManagerLoadsOneOwnerAndPublishesRecovery(t *testing.T) {
 	if err := fresh.Emit(ctx, observation(&eventpb.SetupInterrupted{}), nil); err != nil {
 		t.Fatal(err)
 	}
-	publish(fresh, false)
+	m.publishSession(fresh, false)
 	if err := <-waitResult; err != nil {
 		t.Fatal(err)
 	}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
@@ -15,14 +14,10 @@ import (
 )
 
 const (
-	runnerInputType       = "RunnerInputs.agentplane"
-	sessionInputType      = "SessionInputs.agentplane"
-	sessionRuntimeType    = "SessionRuntimes.agentplane"
-	journalSealType       = "JournalSeals.agentplane"
-	ingressAckType        = "IngressAcks.agentplane"
-	operationResultType   = "NativeOperationResults.agentplane"
-	runnerControllerName  = "runner-lifecycle"
-	sessionControllerName = "session-lifecycle"
+	runnerInputType      = "RunnerInputs.agentplane"
+	journalSealType      = "JournalSeals.agentplane"
+	ingressAckType       = "IngressAcks.agentplane"
+	runnerControllerName = "runner-lifecycle"
 )
 
 // Specs contain scalar values and immutable time.Time values; no native handles or mutable references.
@@ -73,45 +68,6 @@ type runnerInputSpec struct {
 	Revision   uint64
 	Admissions int
 }
-type executionPhase uint8
-
-const (
-	executionDormant executionPhase = iota
-	executionPreparing
-	executionReady
-	executionStopping
-	executionHalted
-)
-
-type sessionRuntimeSpec struct {
-	Phase          executionPhase
-	Attempt        uint64
-	Resuming       bool
-	ProcessID      string
-	Generation     uint64
-	SetupAttempt   string
-	ProcessStopped bool
-	Error          string
-}
-type sessionInputSpec struct {
-	Harness           runnerpb.Harness
-	Demand            uint64
-	Cursor            uint64
-	SetupRequested    bool
-	Setup             runnerpb.SetupState
-	ActiveTurn        string
-	Pending           int
-	ProcessID         string
-	ProcessRunning    bool
-	Inspections       int
-	InspectionRunning bool
-	InspectionReady   bool
-}
-type operationResultSpec struct {
-	Session    string
-	Controller string
-	Done       bool
-}
 type journalSealSpec struct {
 	Present        bool
 	IncarnationUID string
@@ -124,15 +80,6 @@ type ingressAckSpec struct {
 
 func (runnerInputSpec) resourceType() resource.Type     { return runnerInputType }
 func (value runnerInputSpec) DeepCopy() runnerInputSpec { return value }
-
-func (sessionRuntimeSpec) resourceType() resource.Type        { return sessionRuntimeType }
-func (value sessionRuntimeSpec) DeepCopy() sessionRuntimeSpec { return value }
-
-func (sessionInputSpec) resourceType() resource.Type      { return sessionInputType }
-func (value sessionInputSpec) DeepCopy() sessionInputSpec { return value }
-
-func (operationResultSpec) resourceType() resource.Type         { return operationResultType }
-func (value operationResultSpec) DeepCopy() operationResultSpec { return value }
 
 func (journalSealSpec) resourceType() resource.Type     { return journalSealType }
 func (value journalSealSpec) DeepCopy() journalSealSpec { return value }

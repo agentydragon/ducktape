@@ -6,7 +6,10 @@ go_library(
     name = "workspace",
     srcs = ["workspace.go"],
     importpath = "github.com/agentydragon/ducktape/agentplane/runner/workspace",
-    visibility = ["//agentplane/runner:__pkg__"],
+    visibility = [
+        "//agentplane/runner:__pkg__",
+        "//agentplane/runner/session:__pkg__",
+    ],
     deps = [
         "//agentplane/runner/supervision",
         "@org_golang_x_sys//unix",

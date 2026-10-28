@@ -7,6 +7,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/runner/codex/execserver"
 	"github.com/agentydragon/ducktape/agentplane/runner/codexappserver"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/runner/session"
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
@@ -18,7 +19,7 @@ type runnerLifecycleController struct{ l *lifecycle }
 func (*runnerLifecycleController) Name() string { return runnerControllerName }
 func (*runnerLifecycleController) Inputs() []controller.Input {
 	var inputs []controller.Input
-	for _, kind := range []string{runnerlifecycle.DesiredStateType, runnerInputType, sessionInputType, sessionRuntimeType, operationResultType, journalSealType, ingressAckType, execserver.RuntimeType, codexappserver.RuntimeType, bootstrap.RuntimeType, supervision.DesiredStateType, supervision.StatusType} {
+	for _, kind := range []string{runnerlifecycle.DesiredStateType, runnerInputType, session.InputType, session.RuntimeType, journalSealType, ingressAckType, execserver.RuntimeType, codexappserver.RuntimeType, bootstrap.RuntimeType, supervision.DesiredStateType, supervision.StatusType} {
 		inputs = append(inputs, controller.Input{Namespace: runnerlifecycle.Namespace, Type: kind, Kind: controller.InputWeak})
 	}
 	return inputs
@@ -79,7 +80,7 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 		return err
 	}
 	for _, id := range ids {
-		if _, err := c.l.runner.sessions.load(ctx, id); err != nil {
+		if _, err := c.l.runner.sessions.Load(ctx, id); err != nil {
 			return err
 		}
 	}
@@ -87,13 +88,13 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 		current.Stage = runnerlifecycle.Halting
 		return write()
 	}
-	sessions := c.l.runner.sessions.inventory()
+	sessions := c.l.runner.sessions.Inventory()
 	for _, s := range sessions {
-		runtime, _, err := lifecycleRead[sessionRuntimeSpec](ctx, r, s.id)
+		runtime, _, err := session.ReadRuntime(ctx, r, s.ID())
 		if err != nil {
 			return err
 		}
-		if runtime.Phase != executionHalted {
+		if runtime.Phase != session.Halted {
 			return write()
 		}
 	}
@@ -104,7 +105,7 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 		}
 	}
 	for _, s := range sessions {
-		runtime, _, err := lifecycleRead[sessionRuntimeSpec](ctx, r, s.id)
+		runtime, _, err := session.ReadRuntime(ctx, r, s.ID())
 		if err != nil {
 			return err
 		}
@@ -176,7 +177,7 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 	// Process exit can finish an outstanding inspection. Keep its journal and
 	// controller alive until the resulting observations have been committed.
 	for _, s := range sessions {
-		input, _, err := lifecycleRead[sessionInputSpec](ctx, r, s.id)
+		input, _, err := session.ReadInput(ctx, r, s.ID())
 		if err != nil {
 			return err
 		}
@@ -190,7 +191,7 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 			return write()
 		}
 		for _, s := range sessions {
-			seal, _, err := lifecycleRead[journalSealSpec](ctx, r, s.id)
+			seal, _, err := lifecycleRead[journalSealSpec](ctx, r, s.ID())
 			if err != nil {
 				return err
 			}
@@ -223,11 +224,11 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 	}
 	current.Stage = runnerlifecycle.Flushing
 	for _, s := range sessions {
-		seal, _, err := lifecycleRead[journalSealSpec](ctx, r, s.id)
+		seal, _, err := lifecycleRead[journalSealSpec](ctx, r, s.ID())
 		if err != nil {
 			return err
 		}
-		ack, found, err := lifecycleRead[ingressAckSpec](ctx, r, s.id)
+		ack, found, err := lifecycleRead[ingressAckSpec](ctx, r, s.ID())
 		if err != nil {
 			return err
 		}

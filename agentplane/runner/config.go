@@ -16,6 +16,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/runner/codex/execserver"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
+	"github.com/agentydragon/ducktape/agentplane/runner/session"
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
@@ -56,7 +57,6 @@ type Endpoint struct {
 	Target string `json:"target"`
 	Bearer string `json:"bearer"`
 }
-type DebugCheckpointConfig struct{ Name, CommandID string }
 
 type Config struct {
 	StateDir                         string
@@ -67,7 +67,7 @@ type Config struct {
 	VMProcessPolicy                  *supervision.SystemdPolicy
 	CodexExecServer                  *execserver.Config
 	WorkspaceRoot, InitializationCwd string
-	DebugCheckpoint                  *DebugCheckpointConfig
+	DebugCheckpoint                  *session.DebugCheckpointConfig
 	HTTPClient                       *http.Client
 }
 

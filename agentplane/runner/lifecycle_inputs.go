@@ -1,26 +1,21 @@
 package runner
 
 import (
-	"context"
-	"fmt"
-
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
-	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/runner/journal"
 	"github.com/agentydragon/ducktape/agentplane/runner/retained"
-	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/typed"
 	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
 )
 
-func (l *lifecycle) publishSeal(s *Session) error {
+func (l *lifecycle) publishSeal(id string, seal *journal.SealState) error {
 	l.publishMu.Lock()
 	defer l.publishMu.Unlock()
 	value := journalSealSpec{}
-	if seal := s.journal.SealState(); seal != nil {
+	if seal != nil {
 		value = journalSealSpec{Present: true, IncarnationUID: seal.IncarnationUID, Cursor: seal.Cursor}
 	}
-	return publishLifecycle(l, s.id, value)
+	return publishLifecycle(l, id, value)
 }
 
 func (l *lifecycle) publishAck(id string, ack retained.Acknowledgement) error {
@@ -51,80 +46,4 @@ func (l *lifecycle) publishAdmissionState() {
 	input.Admissions = admissions
 	input.Revision++
 	l.runner.fail(publishLifecycle(l, "runner", input))
-}
-
-func (l *lifecycle) publishSession(s *Session, demand bool) {
-	l.publishMu.Lock()
-	defer l.publishMu.Unlock()
-	input, _, err := lifecycleRead[sessionInputSpec](l.runner.ctx, l.state, s.id)
-	if err != nil {
-		l.runner.fail(err)
-		return
-	}
-	if demand {
-		input.Demand++
-	}
-	s.mu.Lock()
-	input.Harness = s.record.Harness
-	input.SetupRequested = s.setupScript != nil
-	input.Setup, input.ActiveTurn, input.Pending, input.ProcessID = s.setup, s.activeTurn, len(s.pending), s.processID
-	input.ProcessRunning = s.process != nil && s.process.Running()
-	input.InspectionRunning = s.inspection != nil
-	input.Inspections = len(s.reconciliations)
-	input.InspectionReady = len(s.reconciliations) > 0 && s.reconciliations[0].ready
-	s.mu.Unlock()
-	input.Cursor = s.journal.LastCursor()
-	l.runner.fail(publishLifecycle(l, s.id, input))
-}
-
-func (s *Session) wake() {
-	s.mu.Lock()
-	loading := s.loading
-	s.mu.Unlock()
-	if !loading {
-		s.deps.publish(s, false)
-	}
-}
-func (s *Session) requestExecution() { s.deps.publish(s, true) }
-func (s *Session) runtimeState() sessionRuntimeSpec {
-	value, _, err := lifecycleRead[sessionRuntimeSpec](s.deps.ctx, s.deps.state, s.id)
-	if err != nil {
-		s.deps.fail(err)
-	}
-	return value
-}
-
-func (s *Session) readyLocked() bool {
-	current := s.runtimeState()
-	return !operationDone(s.halting) && (current.Phase == executionReady || current.Phase == executionStopping) && current.ProcessID == s.processID && s.process != nil && s.process.Running()
-}
-
-func (s *Session) executionClosed() bool {
-	desired, _, err := runnerlifecycle.ReadDesired(s.deps.ctx, s.deps.state)
-	if err != nil {
-		s.deps.fail(err)
-		return true
-	}
-	return desired.Mode != runnerlifecycle.Running || s.deps.store.Lameduck() || s.journal.SealState() != nil
-}
-
-func (s *Session) waitSetup(ctx context.Context) error {
-	s.mu.Lock()
-	pending := s.setup == runnerpb.SetupState_SETUP_STATE_RUNNING
-	s.mu.Unlock()
-	if !pending {
-		return nil
-	}
-	_, err := safe.StateWatchFor[*typed.Resource[sessionInputSpec, lifecycleExtension[sessionInputSpec]]](
-		ctx, s.deps.state, lifecycleResourceFor(s.id, sessionInputSpec{}).Metadata(),
-		state.WithEventTypes(state.Created, state.Updated),
-		state.WithCondition(func(value resource.Resource) (bool, error) {
-			input, ok := value.(*typed.Resource[sessionInputSpec, lifecycleExtension[sessionInputSpec]])
-			if !ok {
-				return false, fmt.Errorf("unexpected Session input resource %T", value)
-			}
-			return input.TypedSpec().Setup != runnerpb.SetupState_SETUP_STATE_RUNNING, nil
-		}),
-	)
-	return err
 }

@@ -9,6 +9,7 @@ go_library(
     visibility = [
         "//agentplane/runner:__pkg__",
         "//agentplane/runner/bootstrap:__pkg__",
+        "//agentplane/runner/session:__pkg__",
     ],
     deps = [
         "//agentplane/runner/supervision",

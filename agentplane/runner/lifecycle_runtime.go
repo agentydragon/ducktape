@@ -89,9 +89,6 @@ func newLifecycle(r *Runner, adapters *execserver.Adapters) (*lifecycle, error) 
 	if err := engine.RegisterController(&runnerLifecycleController{l: l}); err != nil {
 		return nil, err
 	}
-	if err := engine.RegisterQController(&sessionLifecycleController{l: l}); err != nil {
-		return nil, err
-	}
 	controllers := []controller.QController{l.processes.Controller()}
 	if r.codexExecServer != nil {
 		controllers = append(controllers, r.codexExecServer.Controller())
@@ -148,27 +145,14 @@ func (l *lifecycle) setDesiredState(mode runnerlifecycle.Mode, sealUID string) e
 	if mode == runnerlifecycle.Running && desiredState.Mode != runnerlifecycle.Running {
 		// Drop old execution requests while admission is still closed. Recovery
 		// publishes fresh demand after eligible journals have reopened.
-		l.publishMu.Lock()
-		for _, session := range l.runner.sessions.inventory() {
-			id := session.id
-			input, _, err := lifecycleRead[sessionInputSpec](l.runner.ctx, l.state, id)
-			if err != nil {
-				l.publishMu.Unlock()
-				return err
-			}
-			input.Demand = 0
-			if err := publishLifecycle(l, id, input); err != nil {
-				l.publishMu.Unlock()
-				return err
-			}
+		if err := l.runner.sessions.ResetDemand(); err != nil {
+			return err
 		}
 		if l.runner.codexAppServer != nil {
 			if err := l.runner.codexAppServer.ResetDemand(l.runner.ctx); err != nil {
-				l.publishMu.Unlock()
 				return err
 			}
 		}
-		l.publishMu.Unlock()
 		if l.runner.codexExecServer != nil {
 			if err := l.runner.codexExecServer.ResetDemand(l.runner.ctx); err != nil {
 				return err

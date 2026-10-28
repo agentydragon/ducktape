@@ -8,7 +8,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -17,12 +16,10 @@ import (
 
 	bootstrapcomponent "github.com/agentydragon/ducktape/agentplane/runner/bootstrap"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
-	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	controlpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
-	"github.com/cosi-project/runtime/pkg/state"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -67,36 +64,6 @@ func TestOpenSessionReservesLazilyAndIsIdempotent(t *testing.T) {
 	}
 }
 
-func TestSessionEnvironmentCarriesItsOwnDestination(t *testing.T) {
-	proxy := modelConfigServer(t)
-	workspace := t.TempDir()
-	config := lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false")
-	config.HarnessEnvironment = map[string]string{"TZ": "UTC"}
-	r := newLifecycleRunner(t, config)
-	want := map[string]string{
-		"session-1": `{"destination_ref":{"namespace":"test","name":"sandbox","uid":"sandbox-uid"},"session_id":"session-1"}`,
-		"session-2": `{"destination_ref":{"namespace":"test","name":"sandbox","uid":"sandbox-uid"},"session_id":"session-2"}`,
-	}
-	for id := range want {
-		if _, err := r.OpenSession(context.Background(), openLifecycleSession(id, filepath.Join(workspace, "project"))); err != nil {
-			t.Fatal(err)
-		}
-	}
-	for id, destination := range want {
-		session, err := r.sessions.load(context.Background(), id)
-		if err != nil {
-			t.Fatal(err)
-		}
-		environment := session.Session().Environment
-		if environment["AGENTPLANE_DESTINATION"] != destination {
-			t.Fatalf("%s environment = %v, want its destination %s", id, environment, destination)
-		}
-	}
-	if _, shared := r.config.HarnessEnvironment["AGENTPLANE_DESTINATION"]; shared {
-		t.Fatal("a Session's destination leaked into the runner-wide harness environment")
-	}
-}
-
 func TestInvalidInputAndStaleTurnNeverAdmitCommands(t *testing.T) {
 	proxy := modelConfigServer(t)
 	workspace := t.TempDir()
@@ -113,11 +80,11 @@ func TestInvalidInputAndStaleTurnNeverAdmitCommands(t *testing.T) {
 	if _, err := r.InterruptTurn(context.Background(), &runnerservicepb.InterruptTurnRequest{SessionId: "session-1", CommandId: "stale", TurnId: "not-active"}); status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("stale interrupt error = %v, want FailedPrecondition", err)
 	}
-	session := r.sessions.get("session-1")
-	if cursor := session.journal.LastCursor(); cursor != 0 {
+	session := r.sessions.Get("session-1")
+	if cursor := session.EventJournal().LastCursor(); cursor != 0 {
 		t.Fatalf("rejected commands advanced journal to %d", cursor)
 	}
-	if record, err := session.journal.GetCommand(context.Background(), "stale"); err != nil || record != nil {
+	if record, err := session.EventJournal().GetCommand(context.Background(), "stale"); err != nil || record != nil {
 		t.Fatalf("stale command record = %v, %v", record, err)
 	}
 }
@@ -132,12 +99,12 @@ func TestStartupFailureSettlesAdmissionAndReturnsToIdle(t *testing.T) {
 	if _, err := r.SubmitInput(context.Background(), &runnerservicepb.SubmitInputRequest{SessionId: "session-1", CommandId: "input-1", Text: "hello"}); err != nil {
 		t.Fatal(err)
 	}
-	session := r.sessions.get("session-1")
+	session := r.sessions.Get("session-1")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	for {
 		changed := r.changesSince()
-		record, err := session.journal.GetCommand(ctx, "input-1")
+		record, err := session.EventJournal().GetCommand(ctx, "input-1")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -154,13 +121,14 @@ func TestStartupFailureSettlesAdmissionAndReturnsToIdle(t *testing.T) {
 		case <-changed:
 		}
 	}
-	session.mu.Lock()
-	failure := session.failure
-	session.mu.Unlock()
-	if failure == nil {
-		t.Fatal("failed launch did not publish a failure cursor")
+	statusResponse, err := r.GetStatus(ctx, &runnerpb.GetStatusRequest{})
+	if err != nil {
+		t.Fatal(err)
 	}
-	entries, err := session.journal.Since(ctx, 0, 16)
+	if len(statusResponse.Sessions) != 1 || statusResponse.Sessions[0].FailureCursor == nil {
+		t.Fatalf("failed launch status did not publish a failure cursor: %v", statusResponse.Sessions)
+	}
+	entries, err := session.EventJournal().Since(ctx, 0, 16)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,80 +139,6 @@ func TestStartupFailureSettlesAdmissionAndReturnsToIdle(t *testing.T) {
 	}
 	if !commandFailed || !launchFailed {
 		t.Fatalf("failed startup did not settle both work and launch: command=%t launch=%t", commandFailed, launchFailed)
-	}
-}
-
-func TestRunnerFactsExposeBusyReasonsAndReturnToIdle(t *testing.T) {
-	// Facts project a supplied snapshot. Do not run controllers that can replace
-	// synthetic runtime values while the test switches from busy to idle.
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	store, err := retained.NewStore(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	r := &Runner{ctx: ctx, store: store, fatal: make(chan error, 1)}
-	r.lifecycle, err = newLifecycle(r, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	session := &Session{deps: sessionDependencies{ctx: r.ctx, state: r.lifecycle.state, store: store}, id: "session-1", pending: map[string]bool{}}
-	r.sessions = &sessionManager{ctx: r.ctx, store: store, sessions: map[string]*Session{session.id: session}}
-	if err := r.lifecycle.state.Create(ctx, lifecycleResourceFor(session.id, sessionRuntimeSpec{}), state.WithCreateOwner(sessionControllerName)); err != nil {
-		t.Fatal(err)
-	}
-	resetManualState := func() {
-		r.mu.Lock()
-		r.admissions = 0
-		r.mu.Unlock()
-		session.mu.Lock()
-		session.activeTurn = ""
-		session.pending = map[string]bool{}
-		session.setup = runnerpb.SetupState_SETUP_STATE_NOT_REQUIRED
-		session.mu.Unlock()
-		if err := setSessionRuntimePhaseForTest(r, session, executionDormant); err != nil {
-			t.Errorf("restore session runtime: %v", err)
-		}
-	}
-
-	session.mu.Lock()
-	session.activeTurn = "turn-1"
-	session.pending["command-1"] = true
-	session.setup = runnerpb.SetupState_SETUP_STATE_RUNNING
-	session.mu.Unlock()
-	setRuntimePhase(t, session, executionPreparing)
-	r.mu.Lock()
-	r.admissions = 1
-	r.mu.Unlock()
-
-	facts, err := r.facts()
-	if err != nil {
-		t.Fatal(err)
-	}
-	var got []string
-	for _, blocker := range facts.AutosuspendBlockers {
-		if blocker.SessionId == nil {
-			got = append(got, blocker.Reason)
-		} else {
-			got = append(got, *blocker.SessionId+":"+blocker.Reason)
-		}
-	}
-	want := []string{
-		"session-1:Activation", "session-1:ActiveTurn", "session-1:PendingCommand", "session-1:Setup",
-		"Admission",
-	}
-	if !reflect.DeepEqual(got, want) || !facts.SetupsRunning || facts.IdleSince != nil {
-		t.Fatalf("busy facts = (%v, setups=%t, idleSince=%v), want (%v, true, nil)", got, facts.SetupsRunning, facts.IdleSince, want)
-	}
-
-	resetManualState()
-
-	facts, err = r.facts()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(facts.AutosuspendBlockers) != 0 || facts.SetupsRunning || facts.IdleSince == nil {
-		t.Fatalf("idle facts = (%v, setups=%t, idleSince=%v), want no blockers, false, and an idle timestamp", facts.AutosuspendBlockers, facts.SetupsRunning, facts.IdleSince)
 	}
 }
 
@@ -376,6 +270,18 @@ func TestBootstrapAndSetupCompleteOnCloseAndDoNotRerun(t *testing.T) {
 	closeStarted = true
 	go func() { closeDone <- r.Close() }()
 	assertStillClosing(t, closeDone, "bootstrap")
+	facts, err := r.facts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var setupBlocker, bootstrapBlocker bool
+	for _, blocker := range facts.AutosuspendBlockers {
+		setupBlocker = setupBlocker || blocker.GetSessionId() == "session-1" && blocker.GetReason() == "Setup"
+		bootstrapBlocker = bootstrapBlocker || blocker.GetReason() == autosuspendBootstrap
+	}
+	if !setupBlocker || !bootstrapBlocker || !facts.SetupsRunning || facts.IdleSince != nil {
+		t.Fatalf("busy runner facts = %+v, want setup and bootstrap blockers without idle time", facts)
+	}
 	if err := os.WriteFile(bootstrapRelease, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -434,7 +340,7 @@ func TestBootstrapAndSetupCompleteOnCloseAndDoNotRerun(t *testing.T) {
 		settled, err := restarted.bootstrapHost.Settled(restarted.ctx)
 		return err == nil && settled
 	}, "reconstructed bootstrap outcome")
-	facts, err := restarted.facts()
+	facts, err = restarted.facts()
 	if err != nil || facts.Bootstrap != controlpb.RunnerFacts_BOOTSTRAP_SUCCEEDED {
 		t.Fatalf("restarted bootstrap state = %v, %v", facts, err)
 	}
@@ -519,7 +425,7 @@ func TestScriptOutputFailureStopsProcessAndReturnsCause(t *testing.T) {
 	failure := fmt.Errorf("bootstrap output storage failed")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	_, err := r.scripts.Run(ctx, sessionControllerName+"/test-session/setup", "printf output; exec sleep 1000", t.TempDir(), func(bool, []byte) error { return failure })
+	_, err := r.scripts.Run(ctx, "test-script-output-failure", "printf output; exec sleep 1000", t.TempDir(), func(bool, []byte) error { return failure })
 	if !errors.Is(err, failure) {
 		t.Fatalf("output failure was lost: %v", err)
 	}

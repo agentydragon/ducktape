@@ -13,6 +13,7 @@ go_library(
     visibility = [
         "//agentplane/runner:__pkg__",
         "//agentplane/runner/ingress:__pkg__",
+        "//agentplane/runner/session:__pkg__",
     ],
     deps = [
         "//agentplane/proto:command_go_proto",

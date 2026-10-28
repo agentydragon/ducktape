@@ -387,7 +387,7 @@ an explicit unresolved state when it cannot be resolved.
 
 ### Runner protocol and storage seams
 
-Today [`proto/runner.proto`](../proto/runner.proto), [`Session`](../runner/session.go), and
+Today [`proto/runner.proto`](../proto/runner.proto), [`Session`](../runner/session/session.go), and
 [`retained.Record`](../runner/retained/retained.go) couples a session to a launch spec, native persistence, process,
 and active turn, and `Attached`, the ingress announcement, carries that spec. The first
 implementation must separate the logical-session descriptor from execution ownership.

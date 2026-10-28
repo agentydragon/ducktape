@@ -1,7 +1,10 @@
-package runner
+package session
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"maps"
 	"path/filepath"
 	"sort"
 	"sync"
@@ -9,34 +12,72 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/runner/journal"
 	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 	"github.com/agentydragon/ducktape/agentplane/runner/workspace"
+	"github.com/cosi-project/runtime/pkg/controller"
+	"github.com/cosi-project/runtime/pkg/state"
 )
 
-// sessionManager owns the in-memory registry and reconstruction of durable
+// Manager owns the in-memory registry and reconstruction of durable
 // sessions. Runner's admission mutex remains the sole quiesce barrier.
-type sessionManager struct {
+type Manager struct {
 	ctx           context.Context
+	state         state.State
 	store         *retained.Store
 	workspaceRoot string
 	dependencies  sessionDependencies
 	destination   func(string) string
-	publishSeal   func(*Session) error
+	publishSeal   func(string, *journal.SealState) error
 	publishAck    func(string, retained.Acknowledgement) error
-	publish       func(*Session, bool)
 	changed       func()
+	fail          func(error)
+	workers       int
+	publishMu     sync.Mutex
 
 	mu       sync.Mutex
-	createMu sync.Mutex
 	loadMu   sync.Mutex
 	sessions map[string]*Session
 }
 
-func (m *sessionManager) get(id string) *Session {
+func NewManager(config Config) (*Manager, error) {
+	if config.Context == nil || config.State == nil || config.Store == nil || config.Destination == nil || config.Scripts == nil || config.BootstrapHost == nil || config.EnsureWorkspace == nil || config.LaunchProcess == nil || config.ResolveModelConfig == nil || config.PublishSeal == nil || config.PublishAck == nil || config.OnChange == nil || config.OnError == nil || config.ReconcileConcurrency <= 0 {
+		return nil, fmt.Errorf("invalid Session manager dependencies")
+	}
+	if config.Claude != nil {
+		copied := *config.Claude
+		config.Claude = &copied
+	}
+	if config.DebugCheckpoint != nil {
+		copied := *config.DebugCheckpoint
+		config.DebugCheckpoint = &copied
+	}
+	m := &Manager{
+		ctx: config.Context, state: config.State, store: config.Store,
+		workspaceRoot: config.WorkspaceRoot, destination: config.Destination,
+		publishSeal: config.PublishSeal, publishAck: config.PublishAck,
+		changed: config.OnChange, fail: config.OnError,
+		workers: config.ReconcileConcurrency, sessions: map[string]*Session{},
+	}
+	m.dependencies = sessionDependencies{
+		ctx: config.Context, state: config.State, store: config.Store,
+		claude: config.Claude, harnessEnvironment: maps.Clone(config.HarnessEnvironment),
+		debugCheckpoint: config.DebugCheckpoint, scripts: config.Scripts,
+		codexAppServer: config.CodexAppServer, bootstrapHost: config.BootstrapHost,
+		ensureWorkspace: config.EnsureWorkspace, launchProcess: config.LaunchProcess,
+		resolveModelConfig: config.ResolveModelConfig,
+		publish:            m.publishSession, publishOperation: m.publishOperation,
+		changed: config.OnChange, fail: config.OnError,
+	}
+	return m, nil
+}
+
+func (m *Manager) Controller() controller.QController { return &sessionLifecycleController{manager: m} }
+
+func (m *Manager) Get(id string) *Session {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.sessions[id]
 }
 
-func (m *sessionManager) inventory() []*Session {
+func (m *Manager) Inventory() []*Session {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	sessions := make([]*Session, 0, len(m.sessions))
@@ -47,17 +88,17 @@ func (m *sessionManager) inventory() []*Session {
 	return sessions
 }
 
-func (m *sessionManager) startup(ctx context.Context) error {
+func (m *Manager) Startup(ctx context.Context) error {
 	ids, err := m.store.SessionIDs()
 	if err != nil {
 		return err
 	}
 	for _, id := range ids {
-		s, err := m.load(ctx, id)
+		s, err := m.Load(ctx, id)
 		if err != nil {
 			return err
 		}
-		if err := m.resumeRecovered(s); err != nil {
+		if err := m.ResumeRecovered(s); err != nil {
 			return err
 		}
 	}
@@ -67,7 +108,7 @@ func (m *sessionManager) startup(ctx context.Context) error {
 // reserveFresh serializes the durable write with first ownership of its
 // journal. The admission callback may hold Runner.mu for the write but must
 // release it before returning, so publication never runs under that barrier.
-func (m *sessionManager) reserveFresh(ctx context.Context, id string, reserve func() error) (*Session, error) {
+func (m *Manager) ReserveFresh(ctx context.Context, id string, reserve func() error) (*Session, error) {
 	m.loadMu.Lock()
 	defer m.loadMu.Unlock()
 	if err := reserve(); err != nil {
@@ -77,14 +118,14 @@ func (m *sessionManager) reserveFresh(ctx context.Context, id string, reserve fu
 }
 
 // Retained records are reconciled before publishing any schedulable Session input.
-func (m *sessionManager) load(ctx context.Context, id string) (*Session, error) {
+func (m *Manager) Load(ctx context.Context, id string) (*Session, error) {
 	m.loadMu.Lock()
 	defer m.loadMu.Unlock()
 	return m.loadLocked(ctx, id, true)
 }
 
-func (m *sessionManager) loadLocked(ctx context.Context, id string, recoverRetained bool) (*Session, error) {
-	if s := m.get(id); s != nil {
+func (m *Manager) loadLocked(ctx context.Context, id string, recoverRetained bool) (*Session, error) {
+	if s := m.Get(id); s != nil {
 		return s, nil
 	}
 	record, err := m.store.Read(id)
@@ -122,7 +163,7 @@ func (m *sessionManager) loadLocked(ctx context.Context, id string, recoverRetai
 	m.mu.Lock()
 	m.sessions[id] = s
 	m.mu.Unlock()
-	if err := m.publishSeal(s); err != nil {
+	if err := m.publishSeal(s.id, s.journal.SealState()); err != nil {
 		return nil, err
 	}
 	ack, err := m.store.ReadAcknowledgement(id)
@@ -134,15 +175,15 @@ func (m *sessionManager) loadLocked(ctx context.Context, id string, recoverRetai
 			return nil, err
 		}
 	}
-	m.publish(s, false)
-	if err := m.reopen(ctx, s); err != nil {
+	m.publishSession(s, false)
+	if err := m.Reopen(ctx, s); err != nil {
 		return nil, err
 	}
 	m.changed()
 	return s, nil
 }
 
-func (m *sessionManager) resumeRecovered(s *Session) error {
+func (m *Manager) ResumeRecovered(s *Session) error {
 	if m.store.Lameduck() || s.journal.SealState() != nil {
 		return nil
 	}
@@ -160,7 +201,7 @@ func (m *sessionManager) resumeRecovered(s *Session) error {
 	return nil
 }
 
-func (m *sessionManager) reopen(ctx context.Context, s *Session) error {
+func (m *Manager) Reopen(ctx context.Context, s *Session) error {
 	uid, known := m.store.IncarnationUID()
 	seal := s.journal.SealState()
 	if !known || m.store.Lameduck() || seal == nil || seal.IncarnationUID == uid {
@@ -183,9 +224,34 @@ func (m *sessionManager) reopen(ctx context.Context, s *Session) error {
 	if err := m.publishAck(s.id, *ack); err != nil {
 		return err
 	}
-	if err := m.publishSeal(s); err != nil {
+	if err := m.publishSeal(s.id, s.journal.SealState()); err != nil {
 		return err
 	}
 	m.changed()
 	return nil
+}
+
+func (m *Manager) ResetDemand() error {
+	m.publishMu.Lock()
+	defer m.publishMu.Unlock()
+	for _, s := range m.Inventory() {
+		input, _, err := componentRead[Input](m.ctx, m.state, s.id)
+		if err != nil {
+			return err
+		}
+		input.Demand = 0
+		if err := publish(m.ctx, m.state, s.id, input); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (m *Manager) Close() error {
+	var errs []error
+	for _, s := range m.Inventory() {
+		s.work.Wait()
+		errs = append(errs, s.journal.Close())
+	}
+	return errors.Join(errs...)
 }

@@ -57,18 +57,18 @@ func (r *Runner) OpenSession(ctx context.Context, request *runnerservicepb.OpenS
 	}
 	// Serialize reservation identity, but never hold the quiesce barrier across the
 	// HTTP model lookup: quiesce can reject a late creation before its durable write.
-	r.sessions.createMu.Lock()
-	defer r.sessions.createMu.Unlock()
+	r.createMu.Lock()
+	defer r.createMu.Unlock()
 	exists, err := r.store.Exists(request.SessionId)
 	if err != nil {
 		return nil, rpcError(err)
 	}
 	if exists {
-		s, err := r.sessions.load(r.ctx, request.SessionId)
+		s, err := r.sessions.Load(r.ctx, request.SessionId)
 		if err != nil {
 			return nil, rpcError(err)
 		}
-		if !proto.Equal(s.attached().Spec, spec) {
+		if !proto.Equal(s.Attached().Spec, spec) {
 			return nil, status.Errorf(codes.AlreadyExists, "session %s exists with a different spec", request.GetSessionId())
 		}
 		if request.SetupScript != nil {
@@ -78,11 +78,11 @@ func (r *Runner) OpenSession(ctx context.Context, request *runnerservicepb.OpenS
 				value := hex.EncodeToString(hash[:])
 				selected = &value
 			}
-			if !equalString(s.record.SetupScriptSHA256, selected) {
+			if !equalString(s.SetupScriptSHA256(), selected) {
 				return nil, status.Error(codes.AlreadyExists, "session exists with a different setup script")
 			}
 		}
-		return &runnerservicepb.OpenSessionResponse{Attached: s.attached()}, nil
+		return &runnerservicepb.OpenSessionResponse{Attached: s.Attached()}, nil
 	}
 	budget, err := r.config.ResolveModelConfig(ctx, spec.Harness, spec.Model)
 	if err != nil {
@@ -93,7 +93,7 @@ func (r *Runner) OpenSession(ctx context.Context, request *runnerservicepb.OpenS
 		return nil, rpcError(err)
 	}
 	admitted := false
-	s, err := r.sessions.reserveFresh(r.ctx, request.SessionId, func() error {
+	s, err := r.sessions.ReserveFresh(r.ctx, request.SessionId, func() error {
 		r.mu.Lock()
 		if !r.lifecycle.accepting() {
 			r.mu.Unlock()
@@ -114,13 +114,10 @@ func (r *Runner) OpenSession(ctx context.Context, request *runnerservicepb.OpenS
 	}
 	if record.SetupScriptSHA256 != nil {
 		script := request.GetSetupScript()
-		s.mu.Lock()
-		s.setupScript = &script
-		s.mu.Unlock()
-		s.wake()
+		s.SetSetupScript(script)
 	}
 	r.changed()
-	return &runnerservicepb.OpenSessionResponse{Attached: s.attached()}, nil
+	return &runnerservicepb.OpenSessionResponse{Attached: s.Attached()}, nil
 }
 
 func equalString(a, b *string) bool { return a == nil && b == nil || a != nil && b != nil && *a == *b }
@@ -151,11 +148,11 @@ func (r *Runner) admit(id string, c *commandpb.Command) (*eventlogpb.EventEntry,
 	if !exists {
 		return nil, status.Error(codes.NotFound, "no such session")
 	}
-	s, err := r.sessions.load(r.ctx, id)
+	s, err := r.sessions.Load(r.ctx, id)
 	if err != nil {
 		return nil, rpcError(err)
 	}
-	entry, err := s.admit(r.ctx, c, lameduck)
+	entry, err := s.Admit(r.ctx, c, lameduck)
 	return entry, rpcError(err)
 }
 
@@ -195,50 +192,4 @@ func rpcError(err error) error {
 		return status.Error(codes.FailedPrecondition, err.Error())
 	}
 	return status.Error(codes.Unavailable, err.Error())
-}
-
-func (s *Session) admit(ctx context.Context, command *commandpb.Command, lameduck bool) (*eventlogpb.EventEntry, error) {
-	s.admitMu.Lock()
-	defer s.admitMu.Unlock()
-	old, err := s.journal.GetCommand(ctx, command.CommandId)
-	if err != nil {
-		return nil, err
-	}
-	closed := s.executionClosed()
-	if old == nil && (lameduck || closed) && command.GetInterruptTurn() == nil {
-		return nil, status.Error(codes.Aborted, "this Sandbox is quiesced")
-	}
-	expected := ""
-	if v := command.GetInterruptTurn(); v != nil {
-		expected = v.TurnId
-	}
-	entry, _, err := s.journal.Admit(ctx, command, expected)
-	if err != nil {
-		return nil, err
-	}
-	if old != nil {
-		if closed {
-			return entry, nil
-		}
-	}
-	if old != nil && old.TerminalCursor != nil {
-		return entry, nil
-	}
-	s.mu.Lock()
-	s.pending[command.CommandId] = true
-	ready := s.readyLocked()
-	s.mu.Unlock()
-	if command.GetInterruptTurn() != nil {
-		if ready {
-			s.requestExecution()
-		} else {
-			if err := s.NoopCommand(ctx, command.CommandId, "the harness is not ready to receive this interruption", nil); err != nil {
-				return nil, err
-			}
-		}
-	} else if !lameduck && !closed {
-		s.requestExecution()
-	}
-	s.deps.changed()
-	return entry, nil
 }

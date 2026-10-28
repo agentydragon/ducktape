@@ -23,20 +23,19 @@ acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays history
 - `lifecycle_runtime.go`, `lifecycle_resources.go`, and `lifecycle_inputs.go`: Runner COSI runtime
   wiring, Runner-specific typed resources, host input publication, and the adapter that supplies
   admitted process owners and generations to `supervision.Host` ([ownership](docs/lifecycle.md)).
-- `runner_controller.go` and `session_controller.go`: Runner-owned lifecycle controllers;
-  `bootstrap/controller.go` and `codexappserver/controller.go` own component lifecycles.
-- `operations.go`: owned asynchronous protocol/setup operations and completion routing.
+- `runner_controller.go`: Runner-wide aggregate lifecycle controller. `session/controller.go`,
+  `bootstrap/controller.go`, and `codexappserver/controller.go` own their component lifecycles.
 - `scripts/`: one-shot shell execution over supervised process streams. Each run samples
   `os.Environ` and overlays the configured harness environment; the caller owns operation admission
   and process ownership.
 - `bootstrap/`: the Sandbox one-shot operation host, COSI resources and controller, durable script
   selection, and append-only initialization log. Runner supplies state, admission, the shared worker
   barrier, and the script runner; the package owns no Runner coordinator.
-- `runner.go`: Runner construction, durable inventory, incarnation adoption and lifetime.
+- `runner.go`: Runner composition, incarnation adoption and aggregate lifetime.
 - `admission.go` and `status.go`: public admission and status/facts RPCs.
-- `session.go`: Session host state, readiness and recovery; `session_events.go` owns journal-backed
-  Event effects, and `session_native.go` owns harness preparation, dispatch and stream effects.
-- `session_setup.go`: the accepted one-shot Session setup effect.
+- `session/`: durable Session inventory, recovery, journal and native protocol effects, setup,
+  status projection, owned operation results, COSI input/runtime resources and controller. Runner
+  supplies the synchronous admission barrier and shared process, workspace and ingress facilities.
 - `codex/execserver/`: isolated executor configuration, COSI resources and controller, host-owned probe
   operations, native launch adapter, RPC probes and container ownership fencing
   ([execution modes](docs/codex_executor.md)). The package takes explicit process, state and admission

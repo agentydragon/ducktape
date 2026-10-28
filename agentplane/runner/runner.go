@@ -3,7 +3,6 @@ package runner
 import (
 	"context"
 	"errors"
-	"maps"
 	"path/filepath"
 	"sync"
 	"time"
@@ -16,6 +15,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/runner/scripts"
+	"github.com/agentydragon/ducktape/agentplane/runner/session"
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 	"github.com/agentydragon/ducktape/agentplane/runner/workspace"
 	"github.com/google/uuid"
@@ -37,7 +37,8 @@ type Runner struct {
 	store               *retained.Store
 	bootID              string
 	mu                  sync.Mutex
-	sessions            *sessionManager
+	sessions            *session.Manager
+	createMu            sync.Mutex
 	bootstrapHost       *bootstrap.Host
 	codexAppServer      *codexappserver.Host
 	codexExecServer     *execserver.Host
@@ -138,43 +139,44 @@ func newRunner(config Config, adapters *execserver.Adapters) (*Runner, error) {
 		return nil, err
 	}
 	r.lifecycle = lifecycle
-	r.sessions = newSessionManager(r)
+	if err := r.configureSessions(); err != nil {
+		cancel()
+		_ = owner.Close()
+		return nil, err
+	}
 	go lifecycle.run()
 	return r, nil
 }
 
-func newSessionManager(r *Runner) *sessionManager {
-	config, store, lifecycle := r.config, r.store, r.lifecycle
-	if config.Claude != nil {
-		claude := *config.Claude
-		config.Claude = &claude
-	}
-	if config.DebugCheckpoint != nil {
-		checkpoint := *config.DebugCheckpoint
-		config.DebugCheckpoint = &checkpoint
-	}
-	return &sessionManager{
-		ctx: r.ctx, store: store, workspaceRoot: config.WorkspaceRoot,
-		destination: config.Launch.Destination,
-		dependencies: sessionDependencies{
-			ctx: r.ctx, state: lifecycle.state, store: store,
-			claude: config.Claude, harnessEnvironment: maps.Clone(config.HarnessEnvironment),
-			debugCheckpoint: config.DebugCheckpoint, scripts: r.scripts, codexAppServer: r.codexAppServer,
-			bootstrapHost: r.bootstrapHost, ensureWorkspace: r.ensureWorkspace,
-			launchProcess: func(ctx context.Context, owner string, processConfig supervision.ProcessConfig) (*supervision.ManagedProcess, error) {
-				return r.launchProcess(ctx, owner, r.supervisor, processConfig)
-			},
-			resolveModelConfig: config.ResolveModelConfig,
-			publish:            lifecycle.publishSession,
-			publishOperation: func(id string, op *operation, done bool) {
-				lifecycle.operationResult(id, sessionControllerName, op, done)
-			},
-			changed: r.changed, fail: r.fail,
+func (r *Runner) configureSessions() error {
+	var err error
+	r.sessions, err = session.NewManager(session.Config{
+		Context:            r.ctx,
+		State:              r.lifecycle.state,
+		Store:              r.store,
+		WorkspaceRoot:      r.config.WorkspaceRoot,
+		Destination:        r.config.Launch.Destination,
+		Claude:             r.config.Claude,
+		HarnessEnvironment: r.config.HarnessEnvironment,
+		DebugCheckpoint:    r.config.DebugCheckpoint,
+		Scripts:            r.scripts,
+		CodexAppServer:     r.codexAppServer,
+		BootstrapHost:      r.bootstrapHost,
+		EnsureWorkspace:    r.ensureWorkspace,
+		LaunchProcess: func(ctx context.Context, owner string, cfg supervision.ProcessConfig) (*supervision.ManagedProcess, error) {
+			return r.launchProcess(ctx, owner, r.supervisor, cfg)
 		},
-		publishSeal: lifecycle.publishSeal, publishAck: lifecycle.publishAck,
-		publish: lifecycle.publishSession, changed: r.changed,
-		sessions: map[string]*Session{},
+		ResolveModelConfig:   r.config.ResolveModelConfig,
+		PublishSeal:          r.lifecycle.publishSeal,
+		PublishAck:           r.lifecycle.publishAck,
+		OnChange:             r.changed,
+		OnError:              r.fail,
+		ReconcileConcurrency: r.config.SessionReconcileConcurrency,
+	})
+	if err != nil {
+		return err
 	}
+	return r.lifecycle.engine.RegisterQController(r.sessions.Controller())
 }
 
 func (r *Runner) changed() {
@@ -205,7 +207,7 @@ func (r *Runner) fail(err error) {
 }
 
 func (r *Runner) Startup(ctx context.Context) error {
-	if err := r.sessions.startup(ctx); err != nil {
+	if err := r.sessions.Startup(ctx); err != nil {
 		return err
 	}
 	if r.bootstrapHost.Configured() {
@@ -218,8 +220,8 @@ func (r *Runner) Startup(ctx context.Context) error {
 }
 
 func (r *Runner) adoptIncarnation(ctx context.Context, uid string) error {
-	r.sessions.createMu.Lock()
-	defer r.sessions.createMu.Unlock()
+	r.createMu.Lock()
+	defer r.createMu.Unlock()
 	// A replacement incarnation can reconnect while the old one is still
 	// draining. Finish its native effects and seals before resetting demand;
 	// ingress acknowledgement belongs to the old incarnation and need not wait.
@@ -254,11 +256,11 @@ func (r *Runner) adoptIncarnation(ctx context.Context, uid string) error {
 	if err != nil {
 		return err
 	}
-	for _, s := range r.sessions.inventory() {
-		if err := r.sessions.reopen(ctx, s); err != nil {
+	for _, s := range r.sessions.Inventory() {
+		if err := r.sessions.Reopen(ctx, s); err != nil {
 			return err
 		}
-		if err := r.sessions.resumeRecovered(s); err != nil {
+		if err := r.sessions.ResumeRecovered(s); err != nil {
 			return err
 		}
 	}
@@ -334,10 +336,7 @@ func (r *Runner) Close() error {
 		<-r.lifecycle.done
 		r.lifecycle.workers.Wait()
 		var errs []error
-		for _, s := range r.sessions.inventory() {
-			s.work.Wait()
-			errs = append(errs, s.journal.Close())
-		}
+		errs = append(errs, r.sessions.Close())
 		if r.bootstrapHost != nil {
 			errs = append(errs, r.bootstrapHost.CloseLog())
 		}

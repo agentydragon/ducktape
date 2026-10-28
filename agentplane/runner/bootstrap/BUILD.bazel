@@ -9,7 +9,10 @@ go_library(
         exclude = ["*_test.go"],
     ),
     importpath = "github.com/agentydragon/ducktape/agentplane/runner/bootstrap",
-    visibility = ["//agentplane/runner:__pkg__"],
+    visibility = [
+        "//agentplane/runner:__pkg__",
+        "//agentplane/runner/session:__pkg__",
+    ],
     deps = [
         "//agentplane/proto:runner_go_proto",
         "//agentplane/runner/lifecycle",

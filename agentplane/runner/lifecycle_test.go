@@ -4,17 +4,20 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
+	"sync"
+	"syscall"
 	"testing"
 	"testing/synctest"
 	"time"
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
-	"github.com/agentydragon/ducktape/agentplane/runner/harness"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/runner/session"
 	controlpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
 	"github.com/cosi-project/runtime/pkg/resource/typed"
 	"github.com/cosi-project/runtime/pkg/safe"
@@ -25,100 +28,7 @@ import (
 
 const lifecycleTestTimeout = 10 * time.Second
 
-type preparationDuringQuiesceAdapter struct {
-	harness.Adapter
-	started chan struct{}
-	release chan struct{}
-	session *Session
-}
-
-func (a preparationDuringQuiesceAdapter) Handshake(context.Context) (string, error) {
-	close(a.started)
-	<-a.release
-	// A native reply can win the reply/cancellation race after cancellation is signaled.
-	return "test-native-session", nil
-}
-
-func (a preparationDuringQuiesceAdapter) Recover(ctx context.Context) error {
-	close(a.started)
-	<-a.release
-	return a.session.Emit(ctx, observation(&eventpb.HarnessStderr{Text: "test replayed response"}), nil)
-}
-
-func TestQuiesceDuringPreparationKeepsJournalWritable(t *testing.T) {
-	for _, phase := range []string{"handshake", "recovery"} {
-		t.Run(phase, func(t *testing.T) {
-			s, process, r := frameTestSession(t, []string{"/bin/cat"})
-			if err := r.store.AdoptIncarnation("test-incarnation"); err != nil {
-				t.Fatal(err)
-			}
-			registerTestSession(t, r, s)
-			setRuntimePhase(t, s, executionPreparing)
-			adapter := preparationDuringQuiesceAdapter{started: make(chan struct{}), release: make(chan struct{}), session: s}
-			t.Cleanup(func() {
-				select {
-				case <-adapter.release:
-				default:
-					close(adapter.release)
-				}
-			})
-			s.readers.Add(2)
-			go s.readStdout(process, adapter)
-			go s.readStderr(process)
-			preparing := make(chan context.Context, 1)
-			s.startOperation(&s.preparation, func(ctx context.Context) error {
-				preparing <- ctx
-				if phase == "recovery" {
-					return s.recoverAdapter(ctx, adapter)
-				}
-				return s.prepare(ctx, adapter, process.PID())
-			})
-			s.mu.Lock()
-			preparation := s.preparation
-			s.mu.Unlock()
-			ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
-			defer cancel()
-			select {
-			case <-adapter.started:
-			case <-ctx.Done():
-				t.Fatal("preparation did not start")
-			}
-			if _, err := r.SubmitInput(ctx, &runnerservicepb.SubmitInputRequest{SessionId: s.id, CommandId: "test-input", Text: "test input"}); err != nil {
-				t.Fatal(err)
-			}
-			if _, err := r.Quiesce(ctx, &runnerpb.QuiesceRequest{}); err != nil {
-				t.Fatal(err)
-			}
-			preparationCtx := <-preparing
-			select {
-			case <-preparationCtx.Done():
-			case <-ctx.Done():
-				t.Fatal("quiesce did not cancel preparation")
-			}
-			close(adapter.release)
-			select {
-			case <-preparation.done:
-			case <-ctx.Done():
-				t.Fatal("quiesce did not join preparation")
-			}
-			if _, err := s.journal.GetCommand(ctx, "test-input"); err != nil {
-				t.Fatalf("quiesce cancellation poisoned the admitted journal: %v; runtime=%+v", err, r.lifecycle.status())
-			}
-			waitLifecycle(t, r, func() bool { return r.lifecycle.status().Stage == runnerlifecycle.Flushing }, "quiesce to seal the admitted journal")
-			command, err := s.journal.GetCommand(ctx, "test-input")
-			if err != nil || command == nil || command.TerminalCursor == nil {
-				t.Fatalf("undispatched admission was not settled: command=%+v err=%v", command, err)
-			}
-			seal := s.journal.SealState()
-			if err := r.lifecycle.publishAck(s.id, retained.Acknowledgement{Cursor: seal.Cursor, Sealed: true}); err != nil {
-				t.Fatal(err)
-			}
-			waitLifecycle(t, r, func() bool { return r.lifecycle.status().Stage == runnerlifecycle.Quiesced }, "quiesce completion")
-		})
-	}
-}
-
-func lifecycleTestSession(t *testing.T) (*Runner, *Session) {
+func lifecycleTestSession(t *testing.T) (*Runner, *session.Session) {
 	t.Helper()
 	workspace := t.TempDir()
 	proxy := modelConfigServer(t)
@@ -126,7 +36,64 @@ func lifecycleTestSession(t *testing.T) (*Runner, *Session) {
 	if _, err := r.OpenSession(context.Background(), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
 		t.Fatal(err)
 	}
-	return r, r.sessions.get("session-1")
+	return r, r.sessions.Get("session-1")
+}
+
+func lifecycleTestBlockedSetup(t *testing.T) (*Runner, *session.Session, func()) {
+	t.Helper()
+	workspace := t.TempDir()
+	gate := filepath.Join(workspace, "setup-gate")
+	if err := syscall.Mkfifo(gate, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Linux opens a FIFO read/write without waiting for a peer. Keeping this
+	// handle open also lets teardown release a script that has not reached read.
+	pipe, err := os.OpenFile(gate, os.O_RDWR, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = pipe.Close() })
+	proxy := modelConfigServer(t)
+	r := newLifecycleRunner(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"))
+	var once sync.Once
+	release := func() {
+		once.Do(func() {
+			if _, err := pipe.WriteString("done\n"); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+	t.Cleanup(release)
+	request := openLifecycleSession("session-1", filepath.Join(workspace, "project"))
+	script := fmt.Sprintf("printf ready; IFS= read -r gate < %s", shellQuote(gate))
+	request.SetupScript = &script
+	if _, err := r.OpenSession(context.Background(), request); err != nil {
+		t.Fatal(err)
+	}
+	s := r.sessions.Get("session-1")
+	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
+	defer cancel()
+	var cursor uint64
+	for {
+		entries, err := s.EventJournal().Since(ctx, cursor, 128)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, entry := range entries {
+			cursor = entry.Cursor
+			if entry.Event.GetSetupOutput() != nil {
+				return r, s, release
+			}
+		}
+		if err := s.EventJournal().WaitBeyond(ctx, cursor); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func sessionStopping(r *Runner, s *session.Session) bool {
+	current, found, err := session.ReadRuntime(r.ctx, r.lifecycle.state, s.ID())
+	return err == nil && found && current.Phase == session.Stopping
 }
 
 func waitLifecycle(t *testing.T, r *Runner, predicate func() bool, want string) {
@@ -159,47 +126,6 @@ func waitClose(t *testing.T, done <-chan error) error {
 	}
 }
 
-func setRuntimeReady(t *testing.T, s *Session) {
-	t.Helper()
-	setRuntimePhase(t, s, executionReady)
-	s.mu.Lock()
-	s.processState = runnerpb.ProcessState_PROCESS_STATE_RUNNING
-	s.mu.Unlock()
-}
-
-func setRuntimePhase(t *testing.T, s *Session, phase executionPhase) {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(s.deps.ctx, lifecycleTestTimeout)
-	defer cancel()
-	ptr := lifecycleResourceFor(s.id, sessionRuntimeSpec{}).Metadata()
-	if _, err := safe.StateWatchFor[*typed.Resource[sessionRuntimeSpec, lifecycleExtension[sessionRuntimeSpec]]](ctx, s.deps.state, ptr,
-		state.WithEventTypes(state.Created, state.Updated)); err != nil {
-		t.Fatal(err)
-	}
-	_, err := safe.StateUpdateWithConflicts(ctx, s.deps.state, ptr, func(value *typed.Resource[sessionRuntimeSpec, lifecycleExtension[sessionRuntimeSpec]]) error {
-		current := value.TypedSpec()
-		current.Phase = phase
-		s.mu.Lock()
-		current.ProcessID = s.processID
-		s.mu.Unlock()
-		return nil
-	}, state.WithUpdateOwner(sessionControllerName))
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
-func setSessionRuntimePhaseForTest(r *Runner, s *Session, phase executionPhase) error {
-	ctx, cancel := context.WithTimeout(r.ctx, lifecycleTestTimeout)
-	defer cancel()
-	return modifyLifecycleForTest(ctx, r, s.id, sessionControllerName, func(current *sessionRuntimeSpec) {
-		current.Phase = phase
-		s.mu.Lock()
-		current.ProcessID = s.processID
-		s.mu.Unlock()
-	})
-}
-
 // The controller creates its output; COSI watches creation and retries version conflicts.
 func modifyLifecycleForTest[T lifecycleSpec[T]](ctx context.Context, r *Runner, id, owner string, modify func(*T)) error {
 	var zero T
@@ -215,54 +141,14 @@ func modifyLifecycleForTest[T lifecycleSpec[T]](ctx context.Context, r *Runner, 
 	return err
 }
 
-func registerTestSession(t *testing.T, r *Runner, s *Session) {
-	t.Helper()
-	r.sessions.mu.Lock()
-	if old := r.sessions.sessions[s.id]; old != nil && old != s {
-		r.sessions.mu.Unlock()
-		t.Fatalf("Session %q is already registered", s.id)
-	}
-	r.sessions.sessions[s.id] = s
-	r.sessions.mu.Unlock()
-
-	s.mu.Lock()
-	input := sessionInputSpec{
-		Setup: s.setup, ActiveTurn: s.activeTurn, Pending: len(s.pending),
-		ProcessID: s.processID, ProcessRunning: s.process != nil && s.process.Running(),
-		Inspections:     len(s.reconciliations),
-		InspectionReady: len(s.reconciliations) > 0 && s.reconciliations[0].ready,
-	}
-	s.mu.Unlock()
-	input.Cursor = s.journal.LastCursor()
-	if err := publishLifecycle(r.lifecycle, s.id, input); err != nil {
-		t.Fatal(err)
-	}
-}
-
 func TestCloseAfterQuiescePreservesSealAndWaitsForSetup(t *testing.T) {
-	r, s := lifecycleTestSession(t)
-	setupDone := make(chan struct{})
-	s.mu.Lock()
-	s.setup = runnerpb.SetupState_SETUP_STATE_RUNNING
-	s.mu.Unlock()
-	s.startOperation(&s.setupJob, func(ctx context.Context) error {
-		<-setupDone
-		return s.Emit(ctx, observation(&eventpb.SetupFinished{ExitCode: 0}), nil)
-	})
-	s.wake()
-	t.Cleanup(func() {
-		select {
-		case <-setupDone:
-		default:
-			close(setupDone)
-		}
-	})
+	r, s, finishSetup := lifecycleTestBlockedSetup(t)
 
 	if _, err := r.Quiesce(context.Background(), &runnerpb.QuiesceRequest{}); err != nil {
 		t.Fatalf("accept quiesce: %v", err)
 	}
 	waitLifecycle(t, r, func() bool {
-		return r.lifecycle.status().Stage == runnerlifecycle.Halting && s.runtimeState().Phase == executionStopping
+		return r.lifecycle.status().Stage == runnerlifecycle.Halting && sessionStopping(r, s)
 	}, "quiesce halt to wait at setup barrier")
 
 	closeDone := make(chan error, 1)
@@ -270,26 +156,26 @@ func TestCloseAfterQuiescePreservesSealAndWaitsForSetup(t *testing.T) {
 	waitLifecycle(t, r, func() bool {
 		desiredState := r.lifecycle.desiredState()
 		return desiredState.Mode == runnerlifecycle.Closing && desiredState.SealUID == "test-incarnation" &&
-			r.lifecycle.status().Stage == runnerlifecycle.Halting && s.runtimeState().Phase == executionStopping
+			r.lifecycle.status().Stage == runnerlifecycle.Halting && sessionStopping(r, s)
 	}, "Close to preserve the accepted seal while setup is running")
 	select {
 	case err := <-closeDone:
 		t.Fatalf("Close returned before setup completed: %v", err)
 	default:
 	}
-	if seal := s.journal.SealState(); seal != nil {
+	if seal := s.EventJournal().SealState(); seal != nil {
 		t.Fatalf("journal sealed before setup completed: %+v", seal)
 	}
 
-	close(setupDone)
+	finishSetup()
 	if err := waitClose(t, closeDone); err != nil {
 		t.Fatalf("Close after setup completion: %v", err)
 	}
-	seal := s.journal.SealState()
+	seal := s.EventJournal().SealState()
 	if seal == nil || seal.IncarnationUID != "test-incarnation" {
 		t.Fatalf("journal seal = %+v, want accepted incarnation", seal)
 	}
-	ack, err := r.store.ReadAcknowledgement(s.id)
+	ack, err := r.store.ReadAcknowledgement(s.ID())
 	if err != nil || ack != nil {
 		t.Fatalf("Close unexpectedly acknowledged ingress: ack=%+v err=%v", ack, err)
 	}
@@ -297,18 +183,18 @@ func TestCloseAfterQuiescePreservesSealAndWaitsForSetup(t *testing.T) {
 
 func TestQuiesceWaitsForExactSealedCursorAcknowledgement(t *testing.T) {
 	r, s := lifecycleTestSession(t)
-	if err := s.Emit(context.Background(), observation(&eventpb.HarnessStderr{Text: "kept"}), nil); err != nil {
+	if err := s.Emit(context.Background(), &eventpb.Event{Observation: &eventpb.Event_HarnessStderr{HarnessStderr: &eventpb.HarnessStderr{Text: "kept"}}}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := r.Quiesce(context.Background(), &runnerpb.QuiesceRequest{}); err != nil {
 		t.Fatalf("accept quiesce: %v", err)
 	}
 	waitLifecycle(t, r, func() bool { return r.lifecycle.status().Stage == runnerlifecycle.Flushing }, "quiesce to flush sealed journal")
-	seal := s.journal.SealState()
+	seal := s.EventJournal().SealState()
 	if seal == nil || seal.Cursor == 0 {
 		t.Fatalf("journal seal = %+v, want a nonzero cursor", seal)
 	}
-	if err := r.lifecycle.publishAck(s.id, retained.Acknowledgement{Cursor: seal.Cursor - 1, Sealed: true}); err != nil {
+	if err := r.lifecycle.publishAck(s.ID(), retained.Acknowledgement{Cursor: seal.Cursor - 1, Sealed: true}); err != nil {
 		t.Fatal(err)
 	}
 	facts, err := r.facts()
@@ -322,7 +208,7 @@ func TestQuiesceWaitsForExactSealedCursorAcknowledgement(t *testing.T) {
 		t.Fatalf("runtime after under-cursor acknowledgement = %v, want FLUSHING", current.Stage)
 	}
 
-	if err := r.lifecycle.publishAck(s.id, retained.Acknowledgement{Cursor: seal.Cursor, Sealed: true}); err != nil {
+	if err := r.lifecycle.publishAck(s.ID(), retained.Acknowledgement{Cursor: seal.Cursor, Sealed: true}); err != nil {
 		t.Fatal(err)
 	}
 	waitLifecycle(t, r, func() bool { return r.lifecycle.status().Stage == runnerlifecycle.Quiesced }, "exact sealed cursor acknowledgement")
@@ -344,21 +230,37 @@ func TestCloseWaitsForAdmissionAndPublishesAdmissionTransitions(t *testing.T) {
 	if err != nil || !found {
 		t.Fatalf("read RunnerInputs before admission: found=%v err=%v", found, err)
 	}
-	s.admitMu.Lock()
+	held, release := make(chan struct{}), make(chan struct{})
+	batchDone := make(chan error, 1)
+	var releaseOnce sync.Once
+	releaseBatch := func() { releaseOnce.Do(func() { close(release) }) }
+	t.Cleanup(releaseBatch)
+	go func() {
+		batchDone <- s.EventJournal().WithBatch(ctx, func(context.Context) error {
+			close(held)
+			<-release
+			return nil
+		})
+	}()
+	select {
+	case <-held:
+	case <-ctx.Done():
+		t.Fatal("journal transaction did not start")
+	}
 	inputDone := make(chan error, 1)
 	go func() {
-		_, err := r.SubmitInput(ctx, &runnerservicepb.SubmitInputRequest{SessionId: s.id, CommandId: "close-race", Text: "input"})
+		_, err := r.SubmitInput(ctx, &runnerservicepb.SubmitInputRequest{SessionId: s.ID(), CommandId: "close-race", Text: "input"})
 		inputDone <- err
 	}()
 	if err := watchLifecycle(ctx, r.lifecycle, "runner", func(input runnerInputSpec) (bool, error) {
 		return input.Admissions == 1, nil
 	}); err != nil {
-		s.admitMu.Unlock()
+		releaseBatch()
 		t.Fatalf("wait for held admission: %v", err)
 	}
 	during, found, err := lifecycleRead[runnerInputSpec](ctx, r.lifecycle.state, "runner")
 	if err != nil || !found || during.Revision != before.Revision+1 {
-		s.admitMu.Unlock()
+		releaseBatch()
 		t.Fatalf("RunnerInputs after admission start = %+v, found=%v err=%v; want one revision after %+v", during, found, err, before)
 	}
 
@@ -367,16 +269,19 @@ func TestCloseWaitsForAdmissionAndPublishesAdmissionTransitions(t *testing.T) {
 	if err := runnerlifecycle.WatchStatus(ctx, r.lifecycle.state, func(runtime runnerlifecycle.Status) (bool, error) {
 		return runtime.Stage == runnerlifecycle.Draining, nil
 	}); err != nil {
-		s.admitMu.Unlock()
+		releaseBatch()
 		t.Fatalf("wait for Close to drain admission: %v", err)
 	}
 	select {
 	case err := <-closeDone:
-		s.admitMu.Unlock()
+		releaseBatch()
 		t.Fatalf("Close returned while admission was held: %v", err)
 	default:
 	}
-	s.admitMu.Unlock()
+	releaseBatch()
+	if err := <-batchDone; err != nil {
+		t.Fatal(err)
+	}
 	if err := <-inputDone; status.Code(err) != codes.Aborted {
 		t.Fatalf("late input admission error = %v, want Aborted", err)
 	}
@@ -409,14 +314,14 @@ func TestJournalAndAcknowledgementChangesDoNotReviseRunnerInputs(t *testing.T) {
 		t.Fatalf("read RunnerInputs before journal update: found=%v err=%v", found, err)
 	}
 	changes := r.changesSince()
-	if _, err := s.recordEvent(r.ctx, observation(&eventpb.HarnessStderr{Text: "journal update"}), nil, nil); err != nil {
+	if err := s.Emit(r.ctx, &eventpb.Event{Observation: &eventpb.Event_HarnessStderr{HarnessStderr: &eventpb.HarnessStderr{Text: "journal update"}}}, nil); err != nil {
 		t.Fatal(err)
 	}
-	ack := retained.Acknowledgement{Cursor: s.journal.LastCursor()}
-	if err := r.store.WriteAcknowledgement(s.id, ack); err != nil {
+	ack := retained.Acknowledgement{Cursor: s.EventJournal().LastCursor()}
+	if err := r.store.WriteAcknowledgement(s.ID(), ack); err != nil {
 		t.Fatal(err)
 	}
-	if err := r.lifecycle.publishAck(s.id, ack); err != nil {
+	if err := r.lifecycle.publishAck(s.ID(), ack); err != nil {
 		t.Fatal(err)
 	}
 	r.changed() // Acknowledgement receipt still wakes observer-only consumers.
@@ -431,114 +336,13 @@ func TestJournalAndAcknowledgementChangesDoNotReviseRunnerInputs(t *testing.T) {
 	}
 }
 
-func TestPreparationCompletingAfterCloseCannotMakeSessionReady(t *testing.T) {
-	r, s := lifecycleTestSession(t)
-	setRuntimePhase(t, s, executionPreparing)
-	started, release, finished := make(chan struct{}), make(chan struct{}), make(chan struct{})
-	s.startOperation(&s.preparation, func(ctx context.Context) error {
-		close(started)
-		<-release
-		defer close(finished)
-		if ctx.Err() == nil {
-			return fmt.Errorf("preparation was not canceled during shutdown")
-		}
-		return nil
-	})
-	select {
-	case <-started:
-	case <-time.After(lifecycleTestTimeout):
-		t.Fatal("preparation did not start")
-	}
-	t.Cleanup(func() {
-		select {
-		case <-release:
-		default:
-			close(release)
-		}
-	})
-
-	closeDone := make(chan error, 1)
-	go func() { closeDone <- r.Close() }()
-	waitLifecycle(t, r, func() bool {
-		return r.lifecycle.desiredState().Mode == runnerlifecycle.Closing && r.lifecycle.status().Stage == runnerlifecycle.Halting && s.runtimeState().Phase == executionStopping
-	}, "Close to cancel and join preparation")
-	select {
-	case err := <-closeDone:
-		t.Fatalf("Close returned before preparation completed: %v", err)
-	default:
-	}
-	close(release)
-	if err := waitClose(t, closeDone); err != nil {
-		t.Fatalf("Close after preparation completed: %v", err)
-	}
-	select {
-	case <-finished:
-	default:
-		t.Fatal("Close returned without joining the preparation operation")
-	}
-	finalRuntime, found, err := lifecycleRead[sessionRuntimeSpec](context.Background(), r.lifecycle.state, s.id)
-	if err != nil || !found || finalRuntime.Phase != executionHalted {
-		t.Fatalf("Session runtime after late preparation completion = %+v, found=%t err=%v; want halted", finalRuntime, found, err)
-	}
-	s.mu.Lock()
-	preparation := s.preparation
-	s.mu.Unlock()
-	if preparation != nil {
-		t.Fatalf("preparation operation remained owned after Close: %+v", preparation)
-	}
-}
-
-func TestPreparationJoinsExitedProcessReadersBeforeReplacingAttachment(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		// COSI publishers and their resource watchers must share this bubble.
-		s, previous, _ := frameTestSession(t, []string{"/bin/true"})
-		if _, err := previous.Wait(context.Background()); err != nil {
-			t.Fatal(err)
-		}
-		// The OS process has exited, but its stdout callback still owns the
-		// attachment until its final journal writes and exit handling complete.
-		s.readers.Add(1)
-		returned := make(chan struct{})
-		var prepareErr error
-		go func() { prepareErr = s.ensureReady(context.Background()); close(returned) }()
-		synctest.Wait()
-		select {
-		case <-returned:
-			t.Error("preparation reached successor startup before the old reader completed")
-		default:
-		}
-		s.readers.Done()
-		synctest.Wait()
-		<-returned
-		if prepareErr == nil {
-			t.Fatal("expected the fixture's unconfigured harness to reject successor startup")
-		}
-	})
-}
-
 func TestNewIncarnationWaitsForTeardown(t *testing.T) {
-	r, s := lifecycleTestSession(t)
-	setupDone := make(chan struct{})
-	t.Cleanup(func() {
-		select {
-		case <-setupDone:
-		default:
-			close(setupDone)
-		}
-	})
-	s.mu.Lock()
-	s.setup = runnerpb.SetupState_SETUP_STATE_RUNNING
-	s.mu.Unlock()
-	s.startOperation(&s.setupJob, func(ctx context.Context) error {
-		<-setupDone
-		return s.Emit(ctx, observation(&eventpb.SetupFinished{ExitCode: 0}), nil)
-	})
-	s.wake()
+	r, s, finishSetup := lifecycleTestBlockedSetup(t)
 	if _, err := r.Quiesce(context.Background(), &runnerpb.QuiesceRequest{}); err != nil {
 		t.Fatal(err)
 	}
 	waitLifecycle(t, r, func() bool {
-		return r.lifecycle.status().Stage == runnerlifecycle.Halting && s.runtimeState().Phase == executionStopping
+		return r.lifecycle.status().Stage == runnerlifecycle.Halting && sessionStopping(r, s)
 	}, "halt waiting for setup")
 	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 	defer cancel()
@@ -552,7 +356,7 @@ func TestNewIncarnationWaitsForTeardown(t *testing.T) {
 	if r.lifecycle.desiredState().Mode != runnerlifecycle.Quiescing {
 		t.Fatal("new incarnation reopened execution during teardown")
 	}
-	close(setupDone)
+	finishSetup()
 	select {
 	case err := <-adopted:
 		if err != nil {
@@ -561,42 +365,11 @@ func TestNewIncarnationWaitsForTeardown(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("new incarnation waited for ingress acknowledgement")
 	}
-	if seal := s.journal.SealState(); seal != nil {
+	if seal := s.EventJournal().SealState(); seal != nil {
 		t.Fatalf("new incarnation did not reopen old seal: %+v", seal)
 	}
 	if !r.lifecycle.accepting() {
 		t.Fatal("new incarnation did not reopen admission")
-	}
-}
-
-func TestIdleProcessExitConsumesCompletedCommandDemand(t *testing.T) {
-	s, p, r := frameTestSession(t, []string{"/bin/sh", "-c", "cat >/dev/null"})
-	s.mu.Lock()
-	s.processID = "completed-command-process"
-	s.mu.Unlock()
-	registerTestSession(t, r, s)
-	waitLifecycle(t, r, func() bool {
-		_, found, _ := lifecycleRead[sessionRuntimeSpec](r.ctx, r.lifecycle.state, s.id)
-		return found
-	}, "initial Session runtime")
-	setRuntimeReady(t, s)
-	// Ordinary commands submitted to an already-ready process increment Demand
-	// without another preparation attempt. Both have completed before this exit.
-	s.requestExecution()
-	s.requestExecution()
-	if err := p.Stop(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	s.wake()
-	waitLifecycle(t, r, func() bool {
-		current := s.runtimeState()
-		return current.Phase == executionDormant && current.Attempt == 2
-	}, "idle process exit to consume completed demand")
-	s.mu.Lock()
-	preparation := s.preparation
-	s.mu.Unlock()
-	if preparation != nil {
-		t.Fatal("idle process exit started a successor without new work")
 	}
 }
 
@@ -610,7 +383,7 @@ func TestLifecycleWatchStopsWithRunner(t *testing.T) {
 	cancelRunner()
 	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 	defer cancel()
-	err = watchLifecycle(ctx, l, "never-created", func(sessionRuntimeSpec) (bool, error) { return false, nil })
+	err = watchLifecycle(ctx, l, "never-created", func(runnerInputSpec) (bool, error) { return false, nil })
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("watch after runner cancellation = %v, want context.Canceled", err)
 	}
@@ -626,8 +399,8 @@ func TestLifecycleWatchWaitsForResourceCreation(t *testing.T) {
 		}
 		done := make(chan error, 1)
 		go func() {
-			done <- watchLifecycle(ctx, l, "created-later", func(current sessionRuntimeSpec) (bool, error) {
-				return current.Phase == executionReady, nil
+			done <- watchLifecycle(ctx, l, "created-later", func(current runnerInputSpec) (bool, error) {
+				return current.Admissions == 1, nil
 			})
 		}()
 		synctest.Wait()
@@ -636,7 +409,7 @@ func TestLifecycleWatchWaitsForResourceCreation(t *testing.T) {
 			t.Fatalf("watch returned before resource creation: %v", err)
 		default:
 		}
-		if err := l.state.Create(ctx, lifecycleResourceFor("created-later", sessionRuntimeSpec{Phase: executionReady}), state.WithCreateOwner(sessionControllerName)); err != nil {
+		if err := l.state.Create(ctx, lifecycleResourceFor("created-later", runnerInputSpec{Admissions: 1}), state.WithCreateOwner("runner-host")); err != nil {
 			t.Fatal(err)
 		}
 		synctest.Wait()

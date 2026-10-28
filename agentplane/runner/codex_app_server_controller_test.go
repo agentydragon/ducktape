@@ -15,6 +15,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/runner/codexappserver"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
 	"github.com/agentydragon/ducktape/agentplane/runner/retained"
+	"github.com/agentydragon/ducktape/agentplane/runner/scripts"
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 )
 
@@ -176,6 +177,16 @@ func newCodexSynctestRunner(t *testing.T, stateDir string, startEffect func(cont
 	}
 	// Configure every native host before lifecycle controllers or their goroutines exist.
 	r.supervisor = supervision.NewSubprocessSupervisor(owner.File())
+	r.scripts, err = scripts.New(scripts.Config{
+		LaunchProcess: func(ctx context.Context, owner string, config supervision.ProcessConfig) (*supervision.ManagedProcess, error) {
+			return r.launchProcess(ctx, owner, r.supervisor, config)
+		},
+	})
+	if err != nil {
+		cancel()
+		_ = owner.Close()
+		t.Fatal(err)
+	}
 	adapters := execserver.Adapters{Start: startEffect, Probe: func(context.Context) error { return nil }}
 	lifecycle, err := newLifecycle(r, &adapters)
 	if err != nil {
@@ -184,7 +195,11 @@ func newCodexSynctestRunner(t *testing.T, stateDir string, startEffect func(cont
 		t.Fatal(err)
 	}
 	r.lifecycle = lifecycle
-	r.sessions = newSessionManager(r)
+	if err := r.configureSessions(); err != nil {
+		cancel()
+		_ = owner.Close()
+		t.Fatal(err)
+	}
 	go lifecycle.run()
 	if err := r.store.AdoptIncarnation("codex-synctest"); err != nil {
 		t.Fatal(err)

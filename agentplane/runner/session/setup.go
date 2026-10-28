@@ -1,4 +1,4 @@
-package runner
+package session
 
 import (
 	"context"
@@ -20,7 +20,7 @@ func (s *Session) runSetup(ctx context.Context, script string) error {
 		err = e
 		if err == nil {
 			var code int
-			code, err = s.deps.scripts.Run(ctx, sessionControllerName+"/"+s.id+"/setup", script, cwd, func(stdout bool, data []byte) error {
+			code, err = s.deps.scripts.Run(ctx, ControllerName+"/"+s.id+"/setup", script, cwd, func(stdout bool, data []byte) error {
 				out := &eventpb.SetupOutput{}
 				if stdout {
 					out.Stream = &eventpb.SetupOutput_Stdout{Stdout: data}

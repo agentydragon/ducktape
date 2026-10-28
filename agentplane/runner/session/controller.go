@@ -1,4 +1,4 @@
-package runner
+package session
 
 import (
 	"context"
@@ -17,37 +17,37 @@ import (
 	"go.uber.org/zap"
 )
 
-type sessionLifecycleController struct{ l *lifecycle }
+type sessionLifecycleController struct{ manager *Manager }
 
-func (*sessionLifecycleController) Name() string { return sessionControllerName }
+func (*sessionLifecycleController) Name() string { return ControllerName }
 func (c *sessionLifecycleController) Settings() controller.QSettings {
 	return controller.QSettings{
 		Inputs: []controller.Input{
-			{Namespace: runnerlifecycle.Namespace, Type: sessionInputType, Kind: controller.InputQPrimary},
+			{Namespace: runnerlifecycle.Namespace, Type: InputType, Kind: controller.InputQPrimary},
 			{Namespace: runnerlifecycle.Namespace, Type: runnerlifecycle.DesiredStateType, Kind: controller.InputQMapped},
 			{Namespace: runnerlifecycle.Namespace, Type: runnerlifecycle.AggregateStatusType, Kind: controller.InputQMapped},
 			{Namespace: runnerlifecycle.Namespace, Type: codexappserver.RuntimeType, Kind: controller.InputQMapped},
-			{Namespace: runnerlifecycle.Namespace, Type: operationResultType, Kind: controller.InputQMapped},
+			{Namespace: runnerlifecycle.Namespace, Type: OperationType, Kind: controller.InputQMapped},
 		},
-		Outputs:     []controller.Output{{Type: sessionRuntimeType, Kind: controller.OutputExclusive}},
-		Concurrency: optional.Some(uint(c.l.runner.config.SessionReconcileConcurrency)),
+		Outputs:     []controller.Output{{Type: RuntimeType, Kind: controller.OutputExclusive}},
+		Concurrency: optional.Some(uint(c.manager.workers)),
 	}
 }
 
 func (c *sessionLifecycleController) MapInput(ctx context.Context, _ *zap.Logger, r controller.QRuntime, ptr controller.ReducedResourceMetadata) ([]resource.Pointer, error) {
-	if ptr.Type() == operationResultType {
-		result, found, err := lifecycleRead[operationResultSpec](ctx, r, ptr.ID())
-		if err != nil || !found || result.Controller != sessionControllerName || result.Session == "" {
+	if ptr.Type() == OperationType {
+		result, found, err := componentRead[operationResult](ctx, r, ptr.ID())
+		if err != nil || !found || result.Controller != ControllerName || result.Session == "" {
 			return nil, err
 		}
-		return []resource.Pointer{resource.NewMetadata(runnerlifecycle.Namespace, sessionInputType, result.Session, resource.VersionUndefined)}, nil
+		return []resource.Pointer{resource.NewMetadata(runnerlifecycle.Namespace, InputType, result.Session, resource.VersionUndefined)}, nil
 	}
-	rows, err := safe.ReaderListAll[*typed.Resource[sessionInputSpec, lifecycleExtension[sessionInputSpec]]](ctx, r)
+	rows, err := safe.ReaderListAll[*typed.Resource[Input, componentExtension[Input]]](ctx, r)
 	if err != nil {
 		return nil, err
 	}
 	result := make([]resource.Pointer, 0, rows.Len())
-	rows.ForEach(func(row *typed.Resource[sessionInputSpec, lifecycleExtension[sessionInputSpec]]) {
+	rows.ForEach(func(row *typed.Resource[Input, componentExtension[Input]]) {
 		if ptr.Type() == codexappserver.RuntimeType && row.TypedSpec().Harness != runnerpb.Harness_HARNESS_CODEX {
 			return
 		}
@@ -57,15 +57,15 @@ func (c *sessionLifecycleController) MapInput(ctx context.Context, _ *zap.Logger
 }
 
 func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r controller.QRuntime, ptr resource.Pointer) error {
-	s := c.l.runner.sessions.get(ptr.ID())
+	s := c.manager.Get(ptr.ID())
 	if s == nil {
 		return nil
 	}
-	input, found, err := lifecycleRead[sessionInputSpec](ctx, r, s.id)
+	input, found, err := componentRead[Input](ctx, r, s.id)
 	if err != nil || !found {
 		return err
 	}
-	current, _, err := lifecycleRead[sessionRuntimeSpec](ctx, r, s.id)
+	current, _, err := componentRead[Runtime](ctx, r, s.id)
 	if err != nil {
 		return err
 	}
@@ -78,7 +78,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		return err
 	}
 	write := func() error {
-		changed, err := lifecycleWrite(ctx, r, s.id, current)
+		changed, err := componentWrite(ctx, r, s.id, current)
 		if changed {
 			s.deps.changed()
 		}
@@ -87,16 +87,16 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 	if desiredState.Mode == runnerlifecycle.Running && current.Generation != desiredState.Generation {
 		for _, slot := range []**operation{&s.halting, &s.sealing} {
 			if op, done := s.takeOperation(slot); done {
-				c.l.forgetOperation(op)
+				c.manager.forgetOperation(op)
 			}
 		}
-		current = sessionRuntimeSpec{Generation: desiredState.Generation, SetupAttempt: current.SetupAttempt}
+		current = Runtime{Generation: desiredState.Generation, SetupAttempt: current.SetupAttempt}
 	} else if current.Generation != desiredState.Generation {
 		current.Generation = desiredState.Generation
 		current.Error = ""
 	}
 	if op, done := s.takeOperation(&s.setupJob); done {
-		c.l.forgetOperation(op)
+		c.manager.forgetOperation(op)
 		if current.SetupAttempt == "" {
 			current.SetupAttempt = op.id
 		}
@@ -124,18 +124,18 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		}
 	}
 	if op, done := s.takeOperation(&s.preparation); done {
-		c.l.forgetOperation(op)
+		c.manager.forgetOperation(op)
 		s.mu.Lock()
 		processID := s.processID
 		live := s.process != nil && s.process.Running()
 		s.mu.Unlock()
-		if op.err == nil && live && desiredState.Mode == runnerlifecycle.Running && current.Phase == executionPreparing {
-			current.Phase, current.ProcessID = executionReady, processID
+		if op.err == nil && live && desiredState.Mode == runnerlifecycle.Running && current.Phase == Preparing {
+			current.Phase, current.ProcessID = Ready, processID
 			s.mu.Lock()
 			s.processState = runnerpb.ProcessState_PROCESS_STATE_RUNNING
 			s.mu.Unlock()
 		} else if desiredState.Mode == runnerlifecycle.Running {
-			current.Phase = executionDormant
+			current.Phase = Dormant
 			s.mu.Lock()
 			pending := len(s.pending)
 			s.mu.Unlock()
@@ -145,13 +145,13 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		}
 	}
 	if op, done := s.takeOperation(&s.dispatching); done {
-		c.l.forgetOperation(op)
+		c.manager.forgetOperation(op)
 		if op.err != nil {
 			return op.err
 		}
 	}
 	if op, done := s.takeOperation(&s.inspection); done {
-		c.l.forgetOperation(op)
+		c.manager.forgetOperation(op)
 		if op.err != nil {
 			return op.err
 		}
@@ -178,7 +178,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 	} else {
 		s.mu.Unlock()
 	}
-	if current.Phase != executionHalted {
+	if current.Phase != Halted {
 		if err := s.dispatchControl(ctx); err != nil {
 			return err
 		}
@@ -187,8 +187,8 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		if outer.Generation != desiredState.Generation || outer.Stage < runnerlifecycle.Halting {
 			return write()
 		}
-		if current.Phase != executionHalted {
-			current.Phase = executionStopping
+		if current.Phase != Halted {
+			current.Phase = Stopping
 			if err := write(); err != nil {
 				return err
 			}
@@ -207,14 +207,14 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 			settled := operationDone(halt) && len(s.controlDispatches) == 0
 			s.mu.Unlock()
 			if settled {
-				current.Phase = executionHalted
+				current.Phase = Halted
 				if err := write(); err != nil {
 					return err
 				}
 			}
 		}
 		if op, done := s.takeOperation(&s.stopping); done {
-			c.l.forgetOperation(op)
+			c.manager.forgetOperation(op)
 			if op.err != nil {
 				current.Error = op.err.Error()
 				if err := write(); err != nil {
@@ -224,7 +224,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 			}
 			current.ProcessStopped = true
 		}
-		if current.Phase == executionHalted && outer.Stage >= runnerlifecycle.Stopping && !current.ProcessStopped {
+		if current.Phase == Halted && outer.Stage >= runnerlifecycle.Stopping && !current.ProcessStopped {
 			s.mu.Lock()
 			shared := s.deps.codexAppServer != nil && s.record.Harness == runnerpb.Harness_HARNESS_CODEX
 			s.mu.Unlock()
@@ -241,7 +241,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 			}
 		}
 		if op, done := s.takeOperation(&s.sealing); done {
-			c.l.forgetOperation(op)
+			c.manager.forgetOperation(op)
 			if op.err != nil {
 				return op.err
 			}
@@ -249,12 +249,12 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		s.mu.Lock()
 		inspected := s.inspection == nil && len(s.reconciliations) == 0
 		s.mu.Unlock()
-		if current.Phase == executionHalted && current.ProcessStopped && inspected && outer.Stage >= runnerlifecycle.Sealing && desiredState.SealUID != "" && s.journal.SealState() == nil {
+		if current.Phase == Halted && current.ProcessStopped && inspected && outer.Stage >= runnerlifecycle.Sealing && desiredState.SealUID != "" && s.journal.SealState() == nil {
 			s.startOperation(&s.sealing, func(ctx context.Context) error {
 				if err := s.sealJournal(ctx); err != nil {
 					return err
 				}
-				return c.l.publishSeal(s)
+				return c.manager.publishSeal(s.id, s.journal.SealState())
 			})
 		}
 		return write()
@@ -264,8 +264,8 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 	processID := s.processID
 	pending := len(s.pending)
 	s.mu.Unlock()
-	if current.Phase == executionReady && (!processLive || processID != current.ProcessID) {
-		current.Phase = executionDormant
+	if current.Phase == Ready && (!processLive || processID != current.ProcessID) {
+		current.Phase = Dormant
 		if pending == 0 {
 			// Demand from commands completed by this process is already satisfied.
 			// Its exit must not turn an idle Session into a fresh startup request.
@@ -275,7 +275,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 	s.mu.Lock()
 	inspecting := s.inspection != nil || len(s.reconciliations) > 0
 	s.mu.Unlock()
-	if current.Phase == executionDormant && !inspecting && input.Demand > current.Attempt && !s.executionClosed() {
+	if current.Phase == Dormant && !inspecting && input.Demand > current.Attempt && !s.executionClosed() {
 		started, err := s.journal.HasStartedTurn(ctx)
 		if err != nil {
 			return err
@@ -283,7 +283,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		s.mu.Lock()
 		resuming := s.record.NativeSessionID != nil && started
 		s.mu.Unlock()
-		current.Phase, current.Attempt, current.Resuming = executionPreparing, input.Demand, resuming
+		current.Phase, current.Attempt, current.Resuming = Preparing, input.Demand, resuming
 		current.ProcessStopped = false
 		if err := write(); err != nil {
 			return err
@@ -319,7 +319,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 	blocked := s.inspection != nil || len(s.reconciliations) > 0 || s.dispatching != nil
 	adapter := s.adapter
 	s.mu.Unlock()
-	if current.Phase != executionReady || blocked || adapter == nil || adapter.BlocksCommandDispatch() {
+	if current.Phase != Ready || blocked || adapter == nil || adapter.BlocksCommandDispatch() {
 		return nil
 	}
 	commands, err := s.journal.PendingCommands(ctx)

@@ -14,6 +14,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/runner/journal"
 	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/runner/session"
 	"github.com/agentydragon/ducktape/agentplane/runner/stream"
 	controlpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
 	"google.golang.org/grpc"
@@ -255,27 +256,27 @@ func (r *Runner) ingressLoop(ctx context.Context, endpoint Endpoint) error {
 	defer func() { cancel(); pushes.Wait() }()
 	for {
 		changed := r.changesSince()
-		for _, s := range r.sessions.inventory() {
-			if active[s.id] {
+		for _, s := range r.sessions.Inventory() {
+			if active[s.ID()] {
 				continue
 			}
-			ack, err := r.store.ReadAcknowledgement(s.id)
+			ack, err := r.store.ReadAcknowledgement(s.ID())
 			if err != nil {
 				return err
 			}
 			if ack != nil && ack.Sealed {
 				continue
 			}
-			active[s.id] = true
+			active[s.ID()] = true
 			pushes.Add(1)
-			go func(s *Session) {
+			go func(s *session.Session) {
 				defer pushes.Done()
-				err := client.Deliver(authCtx, ingress.Source{ID: s.id, Announce: s.attached, Journal: s.journal})
+				err := client.Deliver(authCtx, ingress.Source{ID: s.ID(), Announce: s.Attached, Journal: s.EventJournal()})
 				if err != nil {
 					r.fail(err)
 				}
 				select {
-				case finished <- s.id:
+				case finished <- s.ID():
 				case <-ctx.Done():
 				}
 			}(s)

@@ -1,4 +1,4 @@
-package runner
+package session
 
 import (
 	"context"
@@ -23,7 +23,6 @@ import (
 const (
 	autosuspendActiveTurn     = "ActiveTurn"
 	autosuspendPendingCommand = "PendingCommand"
-	autosuspendSetup          = "Setup"
 	autosuspendActivation     = "Activation"
 )
 
@@ -345,4 +344,14 @@ func (s *Session) directory() string {
 		panic(err)
 	}
 	return directory
+}
+
+func (s *Session) ID() string                     { return s.id }
+func (s *Session) EventJournal() *journal.Journal { return s.journal }
+func (s *Session) SetupScriptSHA256() *string     { return s.record.SetupScriptSHA256 }
+func (s *Session) SetSetupScript(script string) {
+	s.mu.Lock()
+	s.setupScript = &script
+	s.mu.Unlock()
+	s.wake()
 }

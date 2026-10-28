@@ -1,4 +1,4 @@
-package runner
+package session
 
 import (
 	"context"

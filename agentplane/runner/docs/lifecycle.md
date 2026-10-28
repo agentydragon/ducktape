@@ -15,26 +15,28 @@ connections, or other native state.
 | ---------------------------------------- | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
 | Runner desired state and input           | Runner host                                     | Lifecycle mode, incarnation seal UID, generation, and active admission count.                               |
 | Runner runtime                           | Runner lifecycle controller                     | Runner-wide stage and terminal controller error.                                                            |
-| Session input                            | Session host                                    | Demand and snapshots of journal cursor, setup, process, active turn, and queued or running inspections.     |
-| Session runtime                          | Session QController                             | Execution phase, attempt, resume flag, process incarnation, and desired-state generation.                   |
+| Session input                            | `session.Manager` host                          | Demand and snapshots of journal cursor, setup, process, active turn, and queued or running inspections.     |
+| Session runtime                          | `session` QController                           | Execution phase, attempt, resume flag, process incarnation, and desired-state generation.                   |
 | Codex exec-server input and runtime      | Exec-server host and QController                | Demand, process intent, readiness/health deadlines, restart backoff and stop outcome.                       |
 | Process desired state                    | Requesting controller or `supervision.Host`     | Immutable owner, generation, start deadline and cleanup timeout for one launch.                             |
 | Process status                           | `supervision.Controller`                        | Launch, native exit, stopping and completed cleanup; a finalizer protects each execution domain.            |
 | Process input                            | `supervision.Host` (`supervision-host`)         | Revision-only wakeups for asynchronous launch, exit and stop observations.                                  |
 | Codex app-server input and runtime       | `codexappserver` host and QController           | Shared app-server demand, exec-server dependency deadline, process incarnation and stop outcome.            |
 | Bootstrap input and runtime              | Bootstrap host and QController                  | In-memory accepted demand and execution outcome; `request.json` and the event log remain durable authority. |
-| Operation result                         | Owning Runner, Session, or component host       | Wakes its controller after an asynchronous host operation completes.                                        |
+| Operation result                         | Owning Session or component host                | Wakes its controller after an asynchronous host operation completes.                                        |
 | Journal seal and ingress acknowledgement | Runner/transport host                           | In-memory mirrors of the durable journal seal and persisted ingress acknowledgement.                        |
 | Native process effects                   | `supervision.Controller` and `supervision.Host` | Start, observe and fence every Runner-managed native execution domain.                                      |
 | Protocol and journal effects             | Runner, Session, Codex app-server, and journal  | Handshake, frame routing, dispatch, interruption, inspection, sealing, and persistence.                     |
 
-The same-package `sessionManager` owns the Session registry, serialized creation and load,
-durable journal reconstruction, and startup recovery. It reconciles retained setup and turn state
+The `session.Manager` owns the Session registry, serialized durable reservation and load,
+journal reconstruction, component resources and controller, and startup recovery. It reconciles retained setup and turn state
 before publishing the first schedulable Session input. Its map mutex protects only registry access;
 publication and recovery run after releasing it. The Runner mutex remains the synchronous admission
 and quiesce barrier around accepting checks and durable reservation. Each Session holds its own
 context, store, journal, launch configuration, and narrow lifecycle publication capabilities;
-it reads lifecycle state directly instead of reaching through Runner.
+it reads lifecycle state directly instead of reaching through Runner. Runner registers the Manager's
+controller before starting the runtime. After aggregate shutdown and controller termination,
+`Manager.Close` joins Session operations and closes their journals.
 
 Controller roles cover Runner, Session, native process lifetime, Codex exec-server, Codex app-server, and Sandbox bootstrap. The reusable process-lifetime controller is supplied by `supervision/` and registered in the Runner's lifecycle engine. The `lifecycle/` package defines only the Runner-wide desired-state and aggregate-status resources, with typed COSI readers and writers shared by these controllers. The `bootstrap/` package owns its input, runtime, operation result, log, and one-shot effect while receiving the Runner's admission guard and shared process facilities explicitly.
 The renamed resource kinds are `RunnerDesiredStates.agentplane`,
@@ -45,7 +47,7 @@ The process controller names are `codex-exec-server-lifecycle` and
 `codex app-server` commands. Each controller exclusively writes its own runtime or status resource.
 Requesting controllers share the process desired-state output kind; protocol/setup workers publish
 their process intents through the supervision host as `supervision-host`. Runner-specific lifecycle
-input publication continues to use the explicit `runner-host` owner. The Session QController can reconcile up to
+input publication continues to use the explicit `runner-host` owner. The `session` QController can reconcile up to
 `session_reconcile_concurrency` Sessions at once (default 16); this controls reconcile workers,
 not how many Sessions can be admitted or stored. Shared service controllers use one reconcile worker;
 process attempts are keyed independently. Hosts publish input changes, process observations and
@@ -64,10 +66,9 @@ the native execution domain is fenced. Failed fencing retains the finalizer and 
 
 ## COSI conventions and package structure
 
-Runner runtime wiring, Runner-specific typed resources, host input publication, and asynchronous
-operation ownership stay in `lifecycle_runtime.go`, `lifecycle_resources.go`, `lifecycle_inputs.go`,
-and `operations.go`. Runner controllers have their own `*_controller.go` files, including resource
-specs specific to each controller. The generic native-process controller, its resources, host registry,
+Runner runtime wiring, Runner-specific typed resources and host input publication stay in
+`lifecycle_runtime.go`, `lifecycle_resources.go`, and `lifecycle_inputs.go`. Session resources,
+controller, operation results and journal effects live in `session/`. The generic native-process controller, its resources, host registry,
 and `ManagedProcess` wrapper live in `supervision/controller.go`, `process_resources.go`, `host.go`,
 and `managed_process.go`. The host keeps launch callbacks and native handles; COSI resources contain
 only comparable lifecycle values, never streams or environment values. Runner's `launchProcess` method
@@ -89,7 +90,7 @@ uses `runner-host`; process intent and input revisions published by `supervision
 journals retain the Runner observation notification.
 
 QControllers declare primary inputs, mapped dependencies, exclusive outputs, and concurrency. The
-Session QController maps Runner desired/runtime changes to every Session, app-server runtime changes
+`session` QController maps Runner desired/runtime changes to every Session, app-server runtime changes
 only to Codex Sessions, and operation results to their owning Session.
 Deadlines use COSI requeue scheduling rather than sleeping inside reconciliation. Operation results
 name their consuming controller explicitly, rather than deriving routing from operation names.

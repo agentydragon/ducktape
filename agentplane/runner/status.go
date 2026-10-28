@@ -9,6 +9,7 @@ import (
 	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/runner/bootstrap"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/runner/session"
 	controlpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -30,8 +31,8 @@ func (r *Runner) ListSessions(ctx context.Context, _ *runnerpb.ListSessionsReque
 		}
 	}
 	result := &runnerpb.ListSessionsResponse{}
-	for _, s := range r.sessions.inventory() {
-		a := s.attached()
+	for _, s := range r.sessions.Inventory() {
+		a := s.Attached()
 		result.Sessions = append(result.Sessions, &runnerpb.SessionSummary{SessionId: a.SessionId, Spec: a.Spec, LastCursor: a.LastCursor, HarnessState: a.HarnessState, ActiveTurnId: a.ActiveTurnId, SetupState: a.SetupState, LaunchOutcome: a.LaunchOutcome})
 	}
 	return result, nil
@@ -39,39 +40,12 @@ func (r *Runner) ListSessions(ctx context.Context, _ *runnerpb.ListSessionsReque
 
 func (r *Runner) GetStatus(_ context.Context, _ *runnerpb.GetStatusRequest) (*runnerpb.RunnerStatus, error) {
 	result := &runnerpb.RunnerStatus{RunnerBootId: r.bootID}
-	for _, s := range r.sessions.inventory() {
-		s.mu.Lock()
-		execution := runnerpb.SessionExecutionState_SESSION_EXECUTION_STATE_DORMANT
-		ready := s.readyLocked()
-		preparing := s.runtimeState().Phase == executionPreparing
-		if ready {
-			execution = runnerpb.SessionExecutionState_SESSION_EXECUTION_STATE_READY
-		}
-		if !ready && (preparing || s.processID != "" || len(s.pending) > 0) || s.setup == runnerpb.SetupState_SETUP_STATE_RUNNING {
-			execution = runnerpb.SessionExecutionState_SESSION_EXECUTION_STATE_PREPARING
-		}
-		if s.failure != nil {
-			execution = runnerpb.SessionExecutionState_SESSION_EXECUTION_STATE_FAILED
-		}
-		row := &runnerpb.SessionStatus{SessionId: s.id, ExecutionState: execution, NativeSessionId: s.record.NativeSessionID, FailureCursor: s.failure, Busy: s.activeTurn != "" || len(s.pending) > 0 || preparing || s.setup == runnerpb.SetupState_SETUP_STATE_RUNNING}
-		if s.activeTurn != "" {
-			value := s.activeTurn
-			row.ActiveTurnId = &value
-		}
-		if s.processID != "" {
-			id := s.processID
-			row.ProcessId = &id
-		}
-		if s.processID != "" && s.codexAppServer == nil {
-			process := &runnerpb.HarnessProcessStatus{ProcessId: s.processID, Harness: s.record.Harness, State: s.processState, AssignedSessionIds: []string{s.id}}
-			if s.process != nil && s.process.Running() {
-				pid := int64(s.process.PID())
-				process.Pid = &pid
-			}
+	for _, s := range r.sessions.Inventory() {
+		row, process := s.Status()
+		result.Sessions = append(result.Sessions, row)
+		if process != nil {
 			result.Processes = append(result.Processes, process)
 		}
-		result.Sessions = append(result.Sessions, row)
-		s.mu.Unlock()
 	}
 	if r.codexAppServer != nil {
 		if process := r.codexAppServer.Status(); process != nil {
@@ -82,13 +56,13 @@ func (r *Runner) GetStatus(_ context.Context, _ *runnerpb.GetStatusRequest) (*ru
 }
 
 func (r *Runner) facts() (*controlpb.RunnerFacts, error) {
-	sessions := r.sessions.inventory()
+	sessions := r.sessions.Inventory()
 	var blockers []*sandboxpb.AutosuspendBlocker
 	setup := false
 	for _, s := range sessions {
-		sessionBlockers := s.autosuspendBlockers()
+		sessionBlockers := s.AutosuspendBlockers()
 		for _, blocker := range sessionBlockers {
-			setup = setup || blocker.GetReason() == autosuspendSetup
+			setup = setup || blocker.GetReason() == session.AutosuspendSetup
 		}
 		blockers = append(blockers, sessionBlockers...)
 	}
@@ -156,44 +130,4 @@ func (r *Runner) facts() (*controlpb.RunnerFacts, error) {
 		}
 	}
 	return facts, nil
-}
-
-func (s *Session) attached() *runnerpb.Attached {
-	state := s.journal.RecoveryState()
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	harness := runnerpb.HarnessState_HARNESS_STATE_STOPPED
-	if s.process != nil && s.process.Running() {
-		harness = runnerpb.HarnessState_HARNESS_STATE_RUNNING
-	}
-	uid, known := s.deps.store.IncarnationUID()
-	var incarnation *string
-	if known {
-		incarnation = &uid
-	}
-	return &runnerpb.Attached{SessionId: s.id, Spec: s.record.Spec(), LastCursor: state.ThroughCursor, HarnessState: harness, ActiveTurnId: state.ActiveTurnID, SetupState: s.setup, LaunchOutcome: s.launch, IncarnationUid: incarnation}
-}
-
-func (s *Session) autosuspendBlockers() []*sandboxpb.AutosuspendBlocker {
-	preparing := s.runtimeState().Phase == executionPreparing
-	s.mu.Lock()
-	var blockers []*sandboxpb.AutosuspendBlocker
-	add := func(reason string) {
-		sessionID := s.id
-		blockers = append(blockers, &sandboxpb.AutosuspendBlocker{Reason: reason, SessionId: &sessionID})
-	}
-	if s.activeTurn != "" {
-		add(autosuspendActiveTurn)
-	}
-	if len(s.pending) > 0 {
-		add(autosuspendPendingCommand)
-	}
-	if preparing {
-		add(autosuspendActivation)
-	}
-	if s.setup == runnerpb.SetupState_SETUP_STATE_RUNNING {
-		add(autosuspendSetup)
-	}
-	s.mu.Unlock()
-	return blockers
 }
