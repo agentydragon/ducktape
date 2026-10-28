@@ -64,10 +64,10 @@ Destination = NebulaDestination | LanDestination
 class Target:
     destination: Destination
     user: str
-    identity_file: str
+    identity_file: Path
 
     def ssh_settings(self) -> TargetConfig:
-        return TargetConfig(host=self.destination.host, user=self.user, identity_file=Path(self.identity_file))
+        return TargetConfig(host=self.destination.host, user=self.user, identity_file=self.identity_file)
 
 
 @dataclass(frozen=True)
@@ -92,7 +92,7 @@ def _targets() -> tuple[Target, ...]:
         Target(
             LanDestination(HOME_LAN.switch, SWITCH_HOST_KEY),
             "agentplane",
-            f"{CONFIG_DIR}/keys-agentplane/home-switch-agentplane",
+            Path(CONFIG_DIR) / "keys-agentplane/home-switch-agentplane",
         ),
     )
 
@@ -102,7 +102,7 @@ def _targets_for(
 ) -> tuple[Target, ...]:
     """Build account targets whose identity paths share a directory and filename prefix."""
     return tuple(
-        Target(destination, user, f"{CONFIG_DIR}/{identity_directory}/{identity_prefix}-{user}") for user in users
+        Target(destination, user, Path(CONFIG_DIR) / identity_directory / f"{identity_prefix}-{user}") for user in users
     )
 
 

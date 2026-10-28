@@ -6986,7 +6986,7 @@ data:
       quiet_seconds: 60
       max_wait_seconds: 120
     actions:
-      url: http://actions.agentplane-staging.svc.cluster.local:8080
+      url: http://actions.agentplane-staging.svc.cluster.local:8080/
       token_file: /var/run/secrets/notifications/actions
     runner_gateway:
       control_target: "{sandbox}-control.{namespace}.svc:8080"

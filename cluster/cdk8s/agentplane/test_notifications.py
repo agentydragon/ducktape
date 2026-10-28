@@ -84,7 +84,7 @@ def test_notifications_use_the_configured_dispatcher(staging_manifests: list[dic
     settings = yaml.safe_load(config["data"]["settings.yaml"])
     actions = action_service.service(staging.ENV.namespace)
     assert settings["actions"] == {
-        "url": f"http://{actions.fqdn}:{actions.port.number}",
+        "url": f"http://{actions.fqdn}:{actions.port.number}/",
         "token_file": "/var/run/secrets/notifications/actions",
     }
     dispatcher = session_dispatcher.service(staging.ENV.namespace)

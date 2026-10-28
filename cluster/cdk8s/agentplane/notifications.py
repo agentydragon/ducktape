@@ -2,6 +2,7 @@
 receipts are read from the History Service."""
 
 from collections.abc import Mapping
+from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
@@ -16,9 +17,18 @@ from cdk8s_plus_34 import (
     RolePolicyRule,
 )
 from constructs import Construct
+from pydantic import AnyHttpUrl
 
 from agentplane.crd_group import GROUP
-from agentplane.notification_service.settings import TOKEN_AUDIENCE, Settings
+from agentplane.notification_service.settings import (
+    TOKEN_AUDIENCE,
+    ActionsSettings,
+    HistoryServiceSettings,
+    NoticeDebounceSettings,
+    RunnerGatewaySettings,
+    SessionDispatcherSettings,
+    Settings,
+)
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import database
@@ -101,23 +111,23 @@ class Notifications(Construct):
             "namespace": env.namespace,
             "token_audience": TOKEN_AUDIENCE,
             "operator_reader_account": "app",
-            "notice_debounce": {"quiet_seconds": 60, "max_wait_seconds": 120},
-            "actions": {
-                "url": f"http://{actions.fqdn}:{actions.port.number}",
-                "token_file": "/var/run/secrets/notifications/actions",
-            },
-            "runner_gateway": {
-                "control_target": gateway_control_target,
-                "token_file": "/var/run/secrets/notifications/gateway",
-            },
-            "history_service": {
-                "target": f"{history.fqdn}:{history.pod_port}",
-                "token_file": "/var/run/secrets/notifications/history",
-            },
-            "session_dispatcher": {
-                "target": f"{dispatcher.fqdn}:{dispatcher.port.number}",
-                "token_file": "/var/run/secrets/notifications/dispatcher",
-            },
+            "notice_debounce": NoticeDebounceSettings(quiet_seconds=60, max_wait_seconds=120).model_dump(
+                mode="json", exclude_unset=True
+            ),
+            "actions": ActionsSettings(
+                url=AnyHttpUrl(f"http://{actions.fqdn}:{actions.port.number}"),
+                token_file=Path("/var/run/secrets/notifications/actions"),
+            ).model_dump(mode="json", exclude_unset=True),
+            "runner_gateway": RunnerGatewaySettings(
+                control_target=gateway_control_target, token_file=Path("/var/run/secrets/notifications/gateway")
+            ).model_dump(mode="json", exclude_unset=True),
+            "history_service": HistoryServiceSettings(
+                target=f"{history.fqdn}:{history.pod_port}", token_file=Path("/var/run/secrets/notifications/history")
+            ).model_dump(mode="json", exclude_unset=True),
+            "session_dispatcher": SessionDispatcherSettings(
+                target=f"{dispatcher.fqdn}:{dispatcher.port.number}",
+                token_file=Path("/var/run/secrets/notifications/dispatcher"),
+            ).model_dump(mode="json", exclude_unset=True),
             "github": {"app_id": github.app_id} if github is not None else None,
         }
         settings = SettingsFile(
