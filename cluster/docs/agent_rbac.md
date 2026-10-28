@@ -205,10 +205,13 @@ Kustomization for the Policy Controller's RoleBinding management Role and RoleBi
 does not block the Agentplane app Kustomization. Keep an external delegation while its
 namespace is in the retained cleanup scopes, even if its catalog entry is removed.
 
-Kubernetes RBAC does not constrain a ClusterRole's `bind` permission to namespaced
-RoleBindings. Because the Policy Controller can create ClusterRoleBindings for assignable cluster
-grants, a compromised Policy Controller identity could bind any of its named ClusterRoles cluster-wide
-too. This is a delegation limit of its ServiceAccount's Kubernetes permissions.
+The Policy Controller's exact-name `bind` rules limit which assignable ClusterRoles it can grant,
+but not their subjects. Kubernetes RBAC cannot scope top-level ClusterRoleBinding creation by
+`resourceNames`; the controller's ClusterRoleBinding `create`, `patch`, and `delete` permissions
+are unscoped. A compromised controller identity could therefore bind an assignable ClusterRole to
+any subject and delete any ClusterRoleBinding. Generated names and labels guide normal
+reconciliation; they do not limit this ServiceAccount's authority. This cluster-wide binding
+authority is part of the current trusted-controller boundary.
 
 ### Shared deployment definitions and parity contract
 
