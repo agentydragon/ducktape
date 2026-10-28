@@ -1,8 +1,10 @@
+# gazelle:include_dep //util/testing:postgres_fixtures
 import base64
 import os
 import subprocess
 from collections.abc import Iterator
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 import pytest_bazel
@@ -22,7 +24,7 @@ from x.ai_session_archive.database import (
 from x.ai_session_archive.ingest import ArchiveSource, HarnessRoot, SnapshotIngestor, _record_timestamp
 from x.ai_session_archive.models import Harness
 from x.ai_session_archive.queries import get_session, list_events, list_sessions, list_versions
-from x.ai_session_archive.restic import ResticRepository
+from x.ai_session_archive.restic import ResticChange, ResticRepository
 
 pytest_plugins = ["util.testing.postgres_fixtures"]
 
@@ -196,7 +198,7 @@ def test_real_restic_import_retains_every_changed_and_deleted_version(
     same_metadata_snapshot = snapshots[-1]
     changes = repository.diff_snapshots(snapshots[-2].id, same_metadata_snapshot.id)
     assert any(
-        change.path.endswith("/main-session.jsonl") and change.modifier == "?" for change in changes
+        change.path.endswith("/main-session.jsonl") and change.modifier == "M" for change in changes
     ), [(change.path, change.modifier) for change in changes]
     report = ingestor.ingest()
     assert report.files_failed == 0
@@ -300,6 +302,29 @@ def test_postgres_file_transaction_rolls_back_and_retries(tmp_path: Path, postgr
     with factory() as db:
         assert db.scalar(select(func.count()).select_from(FileVersionRow)) == 1
         assert db.scalar(select(func.count()).select_from(RecordPayloadRow)) == 1
+
+
+def test_restic_question_modifier_is_an_indexable_content_change() -> None:
+    repository = ResticRepository(binary="unused", environment={})
+    path = "/home/archive/.claude/projects/project/session.jsonl"
+    with patch.object(
+        repository,
+        "_run",
+        return_value=b'{"message_type":"change","path":"/home/archive/.claude/projects/project/session.jsonl","modifier":"?"}\n',
+    ):
+        changes = repository.diff_snapshots("before", "after")
+    assert changes == [ResticChange(path=path, modifier="?")]
+
+    source = ArchiveSource(
+        machine_id="question-marker-test",
+        display_name="Question marker test",
+        restic=repository,
+        roots=(HarnessRoot(Harness.CLAUDE, "/home/archive/.claude"),),
+    )
+    ingestor = SnapshotIngestor(sessionmaker(), source)
+    entries = ingestor._changed_entries(changes)
+    assert entries[0][5] == "pending"
+    assert entries[0][1] == "?"
 
 
 @pytest.mark.parametrize(

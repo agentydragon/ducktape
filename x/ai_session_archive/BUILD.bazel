@@ -11,7 +11,10 @@ py_library(
     name = "database",
     srcs = ["database.py"],
     visibility = ["//visibility:public"],
-    deps = ["@pypi//sqlalchemy"],
+    deps = [
+        "@pypi//psycopg",
+        "@pypi//sqlalchemy",
+    ],
 )
 
 py_library(
@@ -44,26 +47,19 @@ py_library(
 )
 
 py_library(
-    name = "archive",
+    name = "cli",
+    srcs = ["cli.py"],
     deps = [
         ":database",
         ":ingest",
         ":models",
-        ":queries",
         ":restic",
     ],
-    visibility = ["//visibility:public"],
-)
-
-py_library(
-    name = "cli",
-    srcs = ["cli.py"],
-    deps = [":archive"],
 )
 
 py_binary(
     name = "ingest_cli",
-    data = ["//third_party/restic:restic"],
+    data = ["//third_party/restic"],
     main_module = "x.ai_session_archive.cli",
     visibility = ["//visibility:public"],
     deps = [":cli"],
@@ -72,16 +68,19 @@ py_binary(
 py_test(
     name = "test_ingest",
     srcs = ["test_ingest.py"],
-    data = ["//third_party/restic:restic"],
+    data = ["//third_party/restic"],
     requires_docker = True,
     deps = [
-        ":archive",
+        ":database",
+        ":ingest",
+        ":models",
+        ":queries",
+        ":restic",
+        "//:conftest",
         "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
-        "@pypi//psycopg",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
-        "@pypi//testcontainers",
     ],
 )

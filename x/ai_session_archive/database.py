@@ -1,3 +1,4 @@
+# gazelle:include_dep @pypi//psycopg
 """PostgreSQL schema and connection helpers for the session archive."""
 
 from collections.abc import Callable
