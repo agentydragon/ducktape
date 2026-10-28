@@ -7,8 +7,9 @@ switches a VM to the Pod backend.
 
 ## VM services
 
-Runner calls systemd's [D-Bus manager API](https://www.freedesktop.org/software/systemd/man/latest/org.freedesktop.systemd1.html)
-directly over its root-only `/run/systemd/private` socket, without a bus-daemon dependency.
+Runner uses [go-systemd's D-Bus bindings](https://github.com/coreos/go-systemd/tree/v22.7.0/dbus)
+over systemd's root-only `/run/systemd/private` socket, without a bus-daemon dependency. The
+bindings own connection setup, job completion tracking and property-change subscriptions.
 Every Claude process, shared Codex app-server, Codex exec-server, bootstrap/setup script
 and credentialed workspace helper is a transient `Type=exec` service. No supervisor subprocess or
 `systemd-run` helper is needed in a VM. Systemd creates the process with its resource and identity

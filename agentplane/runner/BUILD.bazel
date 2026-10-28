@@ -504,6 +504,7 @@ go_library(
         "//agentplane/runner/harness",
         "//agentplane/runner_gateway:runner_control_go_proto",
         "@com_github_coder_websocket//:websocket",
+        "@com_github_coreos_go_systemd_v22//dbus",
         "@com_github_cosi_project_runtime//pkg/controller",
         "@com_github_cosi_project_runtime//pkg/controller/runtime",
         "@com_github_cosi_project_runtime//pkg/resource",
@@ -584,6 +585,7 @@ go_test(
     pure = "on",
     tags = ["manual"],
     deps = [
+        "@com_github_coreos_go_systemd_v22//dbus",
         "@com_github_godbus_dbus_v5//:dbus",
         "@com_github_google_uuid//:uuid",
     ],

@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/godbus/dbus/v5"
+	systemd "github.com/coreos/go-systemd/v22/dbus"
 	"github.com/google/uuid"
 )
 
@@ -41,9 +41,9 @@ func TestSystemdKernelFixture(t *testing.T) {
 	if err := policy.prepare(config); err != nil {
 		t.Fatal(err)
 	}
-	policy.startTransient = func(c context.Context, bus *dbus.Conn, name string, props []systemdProperty) (dbus.ObjectPath, error) {
-		job, err := startTransientSystemdUnit(c, bus, name, props)
-		t.Logf("native launch enqueue: unit=%s job=%s error=%v kind=%s", name, job, err, systemdErrorKind(err))
+	policy.startTransient = func(c context.Context, bus *systemd.Conn, name string, props []systemd.Property, completion chan<- string) (int, error) {
+		job, err := bus.StartTransientUnitContext(c, name, "fail", props, completion)
+		t.Logf("native launch enqueue: unit=%s job=%d error=%v kind=%s", name, job, err, systemdErrorKind(err))
 		return job, err
 	}
 	dir, err := os.MkdirTemp("/tmp", "systemd-proof-")
@@ -56,10 +56,11 @@ func TestSystemdKernelFixture(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 70*time.Second)
 	defer cancel()
-	conn, err := connectSystemd()
+	conn, cancelConnection, err := openSystemdConnection()
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer cancelConnection()
 	defer conn.Close()
 
 	t.Run("workspace_created_as_agent", func(t *testing.T) {
@@ -84,17 +85,17 @@ func TestSystemdKernelFixture(t *testing.T) {
 	t.Run("streams_identity_and_resources", func(t *testing.T) {
 		p := startSystemdProof(t, ctx, policy, dir, "printf 'out:%s:%s:%s\\n' \"$(id -u)\" \"$(id -g)\" \"$PWD\"; printf 'err:%s\\n' \"$SENTINEL\" >&2; printf 'home:%s\\n' \"$HOME\"; test -z \"${AGENTPLANE_PARENT_ONLY_SENTINEL+x}\"; IFS= read -r line; printf 'input:%s\\n' \"$line\"")
 		stdout, stderr := readProofStreams(p)
-		props, err := systemdProperties(ctx, conn, p.systemd.name, serviceInterface)
+		props, err := conn.GetUnitTypePropertiesContext(ctx, p.systemd.name, "Service")
 		if err != nil {
 			t.Fatal(err)
 		}
 		for name, want := range map[string]any{"MemoryMax": uint64(policy.ProcessLimits.MemoryMaxBytes), "MemorySwapMax": uint64(0), "TasksMax": uint64(policy.ProcessLimits.PidsMax), "CPUQuotaPerSecUSec": uint64(policy.ProcessLimits.CPUQuotaMicros) * 10, "OOMPolicy": "continue", "Slice": workloadSlice} {
-			if props[name].Value() != want {
-				t.Fatalf("%s=%v want %v", name, props[name].Value(), want)
+			if props[name] != want {
+				t.Fatalf("%s=%v want %v", name, props[name], want)
 			}
 		}
 
-		group, ok := props["ControlGroup"].Value().(string)
+		group, ok := props["ControlGroup"].(string)
 		if !ok || group == "" {
 			t.Fatal("native service has no cgroup")
 		}
@@ -208,10 +209,10 @@ func TestSystemdKernelFixture(t *testing.T) {
 			launchCtx, launchCancel := context.WithCancel(ctx)
 			var launchName string
 			launches := 0
-			owned.startTransient = func(c context.Context, bus *dbus.Conn, name string, props []systemdProperty) (dbus.ObjectPath, error) {
+			owned.startTransient = func(c context.Context, bus *systemd.Conn, name string, props []systemd.Property, completion chan<- string) (int, error) {
 				launches++
 				launchName = name
-				job, err := startTransientSystemdUnit(c, bus, name, props)
+				job, err := bus.StartTransientUnitContext(c, name, "fail", props, completion)
 				if err != nil {
 					return job, err
 				}
@@ -242,30 +243,30 @@ func TestSystemdKernelFixture(t *testing.T) {
 		ownedName := policy.scope + uuid.NewString() + ".service"
 		unrelatedName := "agentplane-proof-unrelated-" + uuid.NewString() + ".service"
 		for _, name := range []string{ownedName, unrelatedName} {
-			if _, err := startTransientSystemdUnit(ctx, conn, name, proofUnitProperties("/bin/sleep", []string{"/bin/sleep", "60"}, workloadSlice)); err != nil {
+			if _, err := conn.StartTransientUnitContext(ctx, name, "fail", proofUnitProperties("/bin/sleep", []string{"/bin/sleep", "60"}, workloadSlice), nil); err != nil {
 				t.Fatal(err)
 			}
-			defer fenceSystemdUnit(context.Background(), conn, name)
+			defer fenceSystemdUnit(context.Background(), conn, name, true)
 		}
 		recovered := *policy
 		if err := recovered.prepare(config); err != nil {
 			t.Fatal(err)
 		}
 		assertSystemdProofEmpty(t, ctx, conn, ownedName)
-		props, err := systemdProperties(ctx, conn, unrelatedName, unitInterface)
+		props, err := conn.GetUnitPropertiesContext(ctx, unrelatedName)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if props["ActiveState"].Value() != "active" {
-			t.Fatalf("unrelated unit was stopped: %v", props["ActiveState"].Value())
+		if props["ActiveState"] != "active" {
+			t.Fatalf("unrelated unit was stopped: %v", props["ActiveState"])
 		}
 	})
 	t.Run("parent_death_graceful_cleanup", func(t *testing.T) {
 		parent := "agentplane-proof-parent-" + uuid.NewString() + ".service"
-		if _, err := startTransientSystemdUnit(ctx, conn, parent, proofUnitProperties("/bin/sleep", []string{"/bin/sleep", "60"}, "agentplane.slice")); err != nil {
+		if _, err := conn.StartTransientUnitContext(ctx, parent, "fail", proofUnitProperties("/bin/sleep", []string{"/bin/sleep", "60"}, "agentplane.slice"), nil); err != nil {
 			t.Fatal(err)
 		}
-		defer fenceSystemdUnit(context.Background(), conn, parent)
+		defer fenceSystemdUnit(context.Background(), conn, parent, true)
 		owned := *policy
 		owned.lifetimeUnit = parent
 		marker := filepath.Join(dir, "saved")
@@ -278,7 +279,7 @@ func TestSystemdKernelFixture(t *testing.T) {
 			t.Fatalf("readiness=%q", ready)
 		}
 		stdout, stderr := readProofStreams(p)
-		if err := systemdCall(ctx, conn, "KillUnit", parent, "main", int32(9)).Err; err != nil {
+		if err := conn.KillUnitWithTarget(ctx, parent, systemd.Main, int32(9)); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := p.Wait(ctx); err != nil {
@@ -362,33 +363,33 @@ func readProofStreams(p *Process) (<-chan string, <-chan string) {
 	return stdout, stderr
 }
 
-func assertSystemdProofEmpty(t *testing.T, ctx context.Context, conn *dbus.Conn, name string) {
+func assertSystemdProofEmpty(t *testing.T, ctx context.Context, conn *systemd.Conn, name string) {
 	t.Helper()
-	props, err := systemdProperties(ctx, conn, name, unitInterface)
+	props, err := conn.GetUnitPropertiesContext(ctx, name)
 	if systemdMissing(err) {
 		return
 	}
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state := props["ActiveState"].Value(); state != "inactive" && state != "failed" {
+	if state := props["ActiveState"]; state != "inactive" && state != "failed" {
 		t.Fatalf("unit %s still %v", name, state)
 	}
-	var processes []systemdUnitProcess
-	err = systemdCall(ctx, conn, "GetUnitProcesses", name).Store(&processes)
+	service, err := conn.GetUnitTypePropertiesContext(ctx, name, "Service")
 	if systemdMissing(err) {
 		return
 	}
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(processes) != 0 {
-		t.Fatalf("unit %s retains processes: %v", name, processes)
+	group, _ := service["ControlGroup"].(string)
+	if empty, err := systemdGroupEmpty(group); err != nil || !empty {
+		t.Fatalf("unit %s kernel domain still populated: empty=%v err=%v", name, empty, err)
 	}
 }
 
-func proofUnitProperties(executable string, args []string, slice string) []systemdProperty {
-	return []systemdProperty{property("Type", "exec"), property("ExecStartEx", []systemdExec{{executable, args, []string{"no-env-expand"}}}), property("Slice", slice), property("RemainAfterExit", true), property("CollectMode", "inactive"), property("KillMode", "control-group"), property("TimeoutStopUSec", uint64(stopGrace/time.Microsecond))}
+func proofUnitProperties(executable string, args []string, slice string) []systemd.Property {
+	return []systemd.Property{property("Type", "exec"), property("ExecStartEx", []systemdExec{{executable, args, []string{"no-env-expand"}}}), property("Slice", slice), property("RemainAfterExit", true), property("CollectMode", "inactive"), property("KillMode", "control-group"), property("TimeoutStopUSec", uint64(stopGrace/time.Microsecond))}
 }
 
 func assertKernelBudget(t *testing.T, group string, limits ResourceLimits) {

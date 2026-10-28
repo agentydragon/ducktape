@@ -313,7 +313,7 @@ require (
 require (
 	github.com/bmatcuk/doublestar/v4 v4.10.3 // indirect
 	github.com/cilium/ebpf v0.16.0 // indirect
-	github.com/coreos/go-systemd/v22 v22.7.0 // indirect
+	github.com/coreos/go-systemd/v22 v22.7.0
 	github.com/go-chi/chi/v5 v5.3.2 // indirect
 	github.com/godbus/dbus/v5 v5.1.0
 	github.com/google/jsonschema-go v0.4.3 // indirect

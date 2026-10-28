@@ -2265,6 +2265,7 @@ use_repo(
     "com_github_cheynewallace_tabby",
     "com_github_coder_websocket",
     "com_github_coreos_go_oidc_v3",
+    "com_github_coreos_go_systemd_v22",
     "com_github_cosi_project_runtime",
     "com_github_docker_docker",
     "com_github_dustin_go_humanize",

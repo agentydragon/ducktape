@@ -6,20 +6,19 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
+	systemd "github.com/coreos/go-systemd/v22/dbus"
 	"github.com/godbus/dbus/v5"
 )
 
 const (
-	workloadSlice      = "agentplane-workloads.slice"
-	executorSlice      = "agentplane-executors.slice"
-	runnerUnit         = "agentplane-runner.service"
-	systemdDestination = "org.freedesktop.systemd1"
-	managerInterface   = "org.freedesktop.systemd1.Manager"
-	unitInterface      = "org.freedesktop.systemd1.Unit"
-	serviceInterface   = "org.freedesktop.systemd1.Service"
+	workloadSlice = "agentplane-workloads.slice"
+	executorSlice = "agentplane-executors.slice"
+	runnerUnit    = "agentplane-runner.service"
 )
 
 // VMProcessPolicy describes systemd-owned containment, independently of a launch.
@@ -31,7 +30,7 @@ type VMProcessPolicy struct {
 	AggregateLimits, ProcessLimits ResourceLimits
 	scope                          string
 	lifetimeUnit                   string
-	startTransient                 func(context.Context, *dbus.Conn, string, []systemdProperty) (dbus.ObjectPath, error)
+	startTransient                 func(context.Context, *systemd.Conn, string, []systemd.Property, chan<- string) (int, error)
 }
 
 func (p *VMProcessPolicy) validateProcessLimits(limits ResourceLimits) error {
@@ -44,14 +43,6 @@ func (p *VMProcessPolicy) validateProcessLimits(limits ResourceLimits) error {
 	return nil
 }
 
-type systemdProperty struct {
-	Name  string
-	Value dbus.Variant
-}
-type systemdAuxUnit struct {
-	Name       string
-	Properties []systemdProperty
-}
 type systemdExec struct {
 	Path      string
 	Arguments []string
@@ -61,21 +52,16 @@ type systemdDeviceLimit struct {
 	Path  string
 	Limit uint64
 }
-type systemdUnitProcess struct {
-	Group   string
-	PID     uint32
-	Command string
+
+func property(name string, value any) systemd.Property {
+	return systemd.Property{Name: name, Value: dbus.MakeVariant(value)}
 }
 
-func property(name string, value any) systemdProperty {
-	return systemdProperty{name, dbus.MakeVariant(value)}
-}
-
-func (p *VMProcessPolicy) properties(limits ResourceLimits) ([]systemdProperty, error) {
+func (p *VMProcessPolicy) properties(limits ResourceLimits) ([]systemd.Property, error) {
 	if err := p.validateProcessLimits(limits); err != nil {
 		return nil, err
 	}
-	props := []systemdProperty{
+	props := []systemd.Property{
 		property("CPUQuotaPerSecUSec", uint64(limits.CPUQuotaMicros)*10), property("CPUQuotaPeriodUSec", cgroupCPUPeriodMicros),
 		property("MemoryMax", uint64(limits.MemoryMaxBytes)), property("MemorySwapMax", uint64(0)), property("TasksMax", uint64(limits.PidsMax)),
 	}
@@ -99,41 +85,31 @@ func (p *VMProcessPolicy) properties(limits ResourceLimits) ([]systemdProperty, 
 	return props, nil
 }
 
-// A direct authenticated manager peer avoids dbus-daemon's per-UID connection
-// limit. Like go-systemd's NewSystemdConnectionContext, this must not send Hello.
-func connectSystemd() (*dbus.Conn, error) {
-	conn, err := dbus.Dial("unix:path=/run/systemd/private")
+// The connection owns its lifetime independently of any Process.Start caller.
+// Bound authentication/setup, then retain the connection until fencing completes.
+func openSystemdConnection() (*systemd.Conn, context.CancelFunc, error) {
+	lifetime, cancel := context.WithCancel(context.Background())
+	timer := time.AfterFunc(30*time.Second, cancel)
+	conn, err := systemd.NewSystemdConnectionContext(lifetime)
+	if !timer.Stop() {
+		cancel()
+	}
+	if err == nil {
+		err = lifetime.Err()
+	}
 	if err != nil {
-		return nil, err
+		if conn != nil {
+			conn.Close()
+		}
+		cancel()
+		return nil, nil, err
 	}
-	if err := conn.Auth([]dbus.Auth{dbus.AuthExternal(strconv.Itoa(os.Getuid()))}); err != nil {
-		_ = conn.Close()
-		return nil, err
-	}
-	return conn, nil
-}
-
-func systemdManager(conn *dbus.Conn) dbus.BusObject {
-	return conn.Object(systemdDestination, dbus.ObjectPath("/org/freedesktop/systemd1"))
-}
-
-func systemdCall(ctx context.Context, conn *dbus.Conn, method string, args ...any) *dbus.Call {
-	return systemdManager(conn).CallWithContext(ctx, managerInterface+"."+method, 0, args...)
-}
-
-func systemdProperties(ctx context.Context, conn *dbus.Conn, name, iface string) (map[string]dbus.Variant, error) {
-	var path dbus.ObjectPath
-	if err := systemdCall(ctx, conn, "GetUnit", name).Store(&path); err != nil {
-		return nil, err
-	}
-	var props map[string]dbus.Variant
-	err := conn.Object(systemdDestination, path).CallWithContext(ctx, "org.freedesktop.DBus.Properties.GetAll", 0, iface).Store(&props)
-	return props, err
+	return conn, cancel, nil
 }
 
 func systemdMissing(err error) bool {
 	var e dbus.Error
-	return errors.As(err, &e) && (e.Name == "org.freedesktop.systemd1.NoSuchUnit" || e.Name == "org.freedesktop.systemd1.LoadFailed")
+	return errors.As(err, &e) && (e.Name == "org.freedesktop.systemd1.NoSuchUnit" || e.Name == "org.freedesktop.systemd1.LoadFailed" || e.Name == "org.freedesktop.DBus.Error.UnknownObject")
 }
 
 func (p *VMProcessPolicy) prepare(config Config) error {
@@ -154,10 +130,11 @@ func (p *VMProcessPolicy) prepare(config Config) error {
 	}
 	sum := sha256.Sum256([]byte(config.StateDir + "\x00" + config.Launch.Sandbox.UID))
 	p.scope = fmt.Sprintf("agentplane-native-%x-", sum[:8])
-	conn, err := connectSystemd()
+	conn, cancelConnection, err := openSystemdConnection()
 	if err != nil {
 		return err
 	}
+	defer cancelConnection()
 	defer conn.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -165,62 +142,65 @@ func (p *VMProcessPolicy) prepare(config Config) error {
 	if err != nil {
 		return err
 	}
-	if err := systemdCall(ctx, conn, "SetUnitProperties", p.Slice, true, props).Err; err != nil {
+	if err := conn.SetUnitPropertiesContext(ctx, p.Slice, true, props...); err != nil {
 		return err
 	}
-	var units []struct {
-		Name, Description, LoadState, ActiveState, SubState, Following string
-		Path                                                           dbus.ObjectPath
-		JobID                                                          uint32
-		JobType                                                        string
-		JobPath                                                        dbus.ObjectPath
-	}
-	if err := systemdCall(ctx, conn, "ListUnitsByPatterns", []string{}, []string{p.scope + "*.service"}).Store(&units); err != nil {
+	units, err := conn.ListUnitsByPatternsContext(ctx, []string{}, []string{p.scope + "*.service"})
+	if err != nil {
 		return err
 	}
 	for _, unit := range units {
-		service, err := systemdProperties(ctx, conn, unit.Name, serviceInterface)
+		service, err := conn.GetUnitTypePropertiesContext(ctx, unit.Name, "Service")
 		if err != nil {
 			return err
 		}
-		if service["Slice"].Value() != p.Slice {
+		if service["Slice"] != p.Slice {
 			continue
 		}
-		if err := fenceSystemdUnit(ctx, conn, unit.Name); err != nil {
+		if err := fenceSystemdUnit(ctx, conn, unit.Name, true); err != nil {
 			return fmt.Errorf("fence prior native unit %s: %w", unit.Name, err)
 		}
-		_ = systemdCall(ctx, conn, "ResetFailedUnit", unit.Name).Err
+		_ = conn.ResetFailedUnitContext(ctx, unit.Name)
 	}
 	return nil
 }
 
 // fenceSystemdUnit only returns after the entire unit execution domain is empty.
 // Stop completion and a vanished main PID are insufficient evidence on their own.
-func fenceSystemdUnit(ctx context.Context, conn *dbus.Conn, name string) error {
-	if err := systemdCall(ctx, conn, "StopUnit", name, "replace").Err; err != nil && !systemdMissing(err) {
+func fenceSystemdUnit(ctx context.Context, conn *systemd.Conn, name string, ordered bool) error {
+	// Capture the kernel domain before StopUnit can collect an inactive unit.
+	service, err := conn.GetUnitTypePropertiesContext(ctx, name, "Service")
+	if err != nil && !systemdMissing(err) {
+		return err
+	}
+	group, _ := service["ControlGroup"].(string)
+	unit, unitErr := conn.GetUnitPropertiesContext(ctx, name)
+	if unitErr != nil && !systemdMissing(unitErr) {
+		return unitErr
+	}
+	if unit["LoadState"] == "loaded" {
+		ordered = true
+	}
+	if !ordered {
+		return errors.New("native launch acceptance remains unknown after transport loss")
+	}
+	if _, err := conn.StopUnitContext(ctx, name, "replace", nil); err != nil && !systemdMissing(err) {
 		return err
 	}
 	ticker := time.NewTicker(20 * time.Millisecond)
 	defer ticker.Stop()
 	for {
-		props, err := systemdProperties(ctx, conn, name, unitInterface)
-		if systemdMissing(err) {
-			return nil
-		}
-		if err != nil {
+		props, err := conn.GetUnitPropertiesContext(ctx, name)
+		if err != nil && !systemdMissing(err) {
 			return err
 		}
-		state, _ := props["ActiveState"].Value().(string)
-		if state == "inactive" || state == "failed" {
-			var processes []systemdUnitProcess
-			err = systemdCall(ctx, conn, "GetUnitProcesses", name).Store(&processes)
-			if systemdMissing(err) {
-				return nil
-			}
+		state, _ := props["ActiveState"].(string)
+		if systemdMissing(err) || state == "inactive" || state == "failed" {
+			empty, err := systemdGroupEmpty(group)
 			if err != nil {
 				return err
 			}
-			if len(processes) == 0 {
+			if empty {
 				return nil
 			}
 		}
@@ -232,6 +212,27 @@ func fenceSystemdUnit(ctx context.Context, conn *dbus.Conn, name string) error {
 	}
 }
 
-func (p *VMProcessPolicy) identityProperties() []systemdProperty {
-	return []systemdProperty{property("User", strconv.FormatUint(uint64(p.AgentUID), 10)), property("Group", strconv.FormatUint(uint64(p.AgentGID), 10)), property("SetLoginEnvironment", false), property("NoNewPrivileges", true), property("CapabilityBoundingSet", uint64(0)), property("AmbientCapabilities", uint64(0))}
+// cgroup.events populated accounts for the entire subtree, including descendants
+// that escaped their leader's process group. A removed cgroup is also empty.
+func systemdGroupEmpty(group string) (bool, error) {
+	if group == "" {
+		return true, nil
+	}
+	data, err := os.ReadFile(filepath.Join("/sys/fs/cgroup", group, "cgroup.events"))
+	if errors.Is(err, os.ErrNotExist) {
+		return true, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if value, ok := strings.CutPrefix(line, "populated "); ok {
+			return value == "0", nil
+		}
+	}
+	return false, errors.New("native cgroup.events has no populated state")
+}
+
+func (p *VMProcessPolicy) identityProperties() []systemd.Property {
+	return []systemd.Property{property("User", strconv.FormatUint(uint64(p.AgentUID), 10)), property("Group", strconv.FormatUint(uint64(p.AgentGID), 10)), property("SetLoginEnvironment", false), property("NoNewPrivileges", true), property("CapabilityBoundingSet", uint64(0)), property("AmbientCapabilities", uint64(0))}
 }
