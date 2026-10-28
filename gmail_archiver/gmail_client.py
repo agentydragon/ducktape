@@ -281,7 +281,7 @@ class GmailClient:
         for batch in batches:
             pending_ids = list(batch)
 
-            def fetch_pending_batch(_batch: tuple[str, ...]) -> _MessageBatchAttempt[T]:
+            def fetch_pending_batch() -> _MessageBatchAttempt[T]:
                 nonlocal pending_ids
                 current_attempt = self._get_message_batch(pending_ids, message_format, parse_response)
 
@@ -298,7 +298,7 @@ class GmailClient:
                     for msg_id, (exception, _) in current_attempt.errors.items()
                     if _is_rate_limit_error(exception)
                 ]
-                return _MessageBatchAttempt(results.copy(), errors.copy(), individual_retry_ids.copy())
+                return current_attempt
 
             batch_attempt = Retrying(
                 retry=retry_if_result(lambda attempt: bool(attempt.rate_limit_errors)),
@@ -306,7 +306,7 @@ class GmailClient:
                 wait=_wait_for_message_batch,
                 before_sleep=_log_message_batch_retry,
                 retry_error_callback=_return_last_message_batch,
-            )(fetch_pending_batch, batch)
+            )(fetch_pending_batch)
 
             if batch_attempt.rate_limit_errors:
                 for remaining_batch in batches:

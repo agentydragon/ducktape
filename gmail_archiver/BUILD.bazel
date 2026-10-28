@@ -231,7 +231,20 @@ py_test(
         ":models",
         "//:conftest",
         "@pypi//google_api_python_client",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_gmail_inbox",
+    srcs = ["test_gmail_inbox.py"],
+    deps = [
+        ":gmail_client",
+        ":inbox",
+        ":models",
+        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//rich",
     ],
 )
