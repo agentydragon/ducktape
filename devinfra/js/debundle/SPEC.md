@@ -698,9 +698,9 @@ rounds where the verdict stays pure but learns another dependency. Empty
 dependency sets are omitted, preserving the existing `{ "kind": "pure" }`
 report shape. An author `pure_exports` assertion remains its own axiom and
 does not acquire captured-value references from unrelated inference. The
-dependency field records only the premise used by the purity proof; it does
-not assert that the initializer is pure, reentry-free, non-throwing, fresh, or
-available before its source executes.
+dependency field records the assumption used by that purity decision. The
+captured-object assertion itself does not declare the capture initializer pure,
+prevent callbacks or throws, or establish freshness or initialization order.
 
 At-init callback analysis also records possible implicit primitive conversions
 from arithmetic, relational and loose-equality operators, the left operand of
@@ -922,9 +922,10 @@ elsewhere in the analyzed program remain effective.
 The census records each input reference actually consumed by a receiver
 refinement. Those dependencies flow into successful native guards, native-call
 identity uses, inferred imported returned-record certificates and uses, and
-local-class heap certificates. The report associates each use with the source
-unit where the certified construction removes its opaque heap barrier. A
-source-only local-class proof carries no value-input use. The source digest
+the separate timing, purity and heap results for Set or local-class proofs.
+Heap reports associate each use with the source unit where the certified
+construction removes its opaque heap barrier. A source-only local-class proof
+carries no value-input use. The source digest
 binds the input to parsed bytes, but it does not establish the external runtime
 audit, code outside the analyzed prefix, or host behavior.
 
