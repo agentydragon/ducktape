@@ -9,6 +9,7 @@ go_library(
         "controller.go",
         "host.go",
         "managed_process.go",
+        "pid1.go",
         "process.go",
         "process_resources.go",
         "resources.go",

@@ -14,7 +14,7 @@ func configurationFixture(t *testing.T) (map[string]any, string, string) {
 	configPath, launchPath := filepath.Join(directory, "runner.json"), filepath.Join(directory, "launch.json")
 	writeJSONFixture(t, launchPath, map[string]any{"sandbox": map[string]string{"namespace": "test", "name": "sandbox", "uid": "sandbox-uid"}, "bootstrap": "echo initialized"})
 	value := map[string]any{
-		"environment": map[string]any{"kind": "pod"},
+		"environment": map[string]any{"kind": "pod", "supervision": "subprocess"},
 		"version":     2, "state_dir": filepath.Join(directory, "state"), "initialization_cwd": directory,
 		"control":               map[string]string{"target": "gateway.test:7100", "bearer": "control-placeholder"},
 		"ingress":               map[string]string{"target": "history.test:8081", "bearer": "ingress-placeholder"},
@@ -45,7 +45,7 @@ func TestConfigurationComposesBothIsolationModesWithoutOpeningState(t *testing.T
 			value, path, launchPath := configurationFixture(t)
 			switch kind {
 			case "pod-executor":
-				value["environment"] = map[string]any{"kind": "pod", "executor": map[string]any{"url": "ws://127.0.0.1:4501", "socket": "/run/test/executor.sock"}}
+				value["environment"] = map[string]any{"kind": "pod", "supervision": "subprocess", "executor": map[string]any{"url": "ws://127.0.0.1:4501", "socket": "/run/test/executor.sock"}}
 			case "vm-local", "vm-executor":
 				environment := configurationVMEnvironment()
 				if kind == "vm-executor" {
@@ -117,11 +117,13 @@ func TestConfigurationRejectsInvalidPolicyBeforeEnvironmentChanges(t *testing.T)
 		{"missing provider token", func(v map[string]any) { v["codex"].(map[string]string)["token_env"] = "ABSENT_PROVIDER_TOKEN" }},
 		{"missing environment", func(v map[string]any) { delete(v, "environment") }},
 		{"unknown environment", func(v map[string]any) { v["environment"] = map[string]any{"kind": "unknown"} }},
+		{"missing Pod supervision", func(v map[string]any) { v["environment"] = map[string]any{"kind": "pod"} }},
+		{"unknown Pod supervision", func(v map[string]any) { v["environment"] = map[string]any{"kind": "pod", "supervision": "unknown"} }},
 		{"partial container executor", func(v map[string]any) {
-			v["environment"] = map[string]any{"kind": "pod", "executor": map[string]any{"url": "ws://127.0.0.1:4501"}}
+			v["environment"] = map[string]any{"kind": "pod", "supervision": "subprocess", "executor": map[string]any{"url": "ws://127.0.0.1:4501"}}
 		}},
 		{"VM policy in Pod", func(v map[string]any) {
-			v["environment"] = map[string]any{"kind": "pod", "resources": validGuestResources()}
+			v["environment"] = map[string]any{"kind": "pod", "supervision": "subprocess", "resources": validGuestResources()}
 		}},
 		{"container policy in VM", func(v map[string]any) {
 			env := configurationVMEnvironment()

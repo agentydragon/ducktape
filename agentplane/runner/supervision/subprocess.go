@@ -27,6 +27,21 @@ type subprocessBackend struct {
 func (b *subprocessBackend) validate() error { return nil }
 
 func (b *subprocessBackend) start(ctx context.Context, p *Process) error {
+	waitOwnership.Lock()
+	if waitOwnership.pid1 {
+		waitOwnership.Unlock()
+		return errors.New("PID1 reaper owns child waits; subprocess supervision cannot be mixed with it")
+	}
+	waitOwnership.subprocess++
+	waitOwnership.Unlock()
+	launched := false
+	defer func() {
+		if !launched {
+			waitOwnership.Lock()
+			waitOwnership.subprocess--
+			waitOwnership.Unlock()
+		}
+	}()
 	stdinReader, stdinWriter, err := os.Pipe()
 	if err != nil {
 		return fmt.Errorf("create native stdin pipe: %w", err)
@@ -85,6 +100,7 @@ func (b *subprocessBackend) start(ctx context.Context, p *Process) error {
 	_ = reportWriter.Close()
 
 	b.cmd = cmd
+	launched = true
 	b.liveness = livenessWriter
 	p.attachStreams(stdinWriter, stdoutReader, stderrReader)
 	go b.reapSupervisor(p)
@@ -132,6 +148,9 @@ func (b *subprocessBackend) description(p *Process) string { return p.ExitDescri
 
 func (b *subprocessBackend) reapSupervisor(p *Process) {
 	err := b.cmd.Wait()
+	waitOwnership.Lock()
+	waitOwnership.subprocess--
+	waitOwnership.Unlock()
 	_ = p.CloseStdin()
 	// The container supervisor retains ownership until process-group cleanup completes.
 	if b.liveness != nil {

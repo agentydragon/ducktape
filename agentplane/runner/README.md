@@ -71,7 +71,7 @@ acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays history
 - `workspace/`: workspace path containment and creation. Runner supplies the configured helper
   launcher at the composition boundary, keeping process ownership and generation policy in Runner.
 - `supervision/`: the shared native-process API, COSI process resources and controller, host registry,
-  and private systemd/subprocess backends. Runner wires its `Host` and controller into the same COSI
+  and private systemd, PID1 and subprocess backends. Runner wires its `Host` and controller into the same COSI
   engine as its lifecycle controllers; the package owns streams, exit observation and
   execution-domain cleanup. `systemd/` contains the static guest units. See
   [supervision](docs/supervision.md).
@@ -255,8 +255,8 @@ harness or network I/O. One retained connection serves the single runner-session
 That SQLite transaction is not the native-execution fence: a runner owns its whole retained state
 directory through a nonblocking lifetime lock on the fixed `.agentplane-runner-owner` inode before
 opening a journal, dialing out, or launching a harness. A contender exits before it can serve state.
-In Pods the lock descriptor is inherited by the native-process supervisor, which retains it through
-process-group cleanup after Runner death. In VMs systemd owns native cgroups; a replacement acquires
+In production Pods Runner directly supervises natives as PID 1; the outer container runtime fences
+escaped descendants before replacement. Non-PID1 fixtures retain the subprocess supervisor. In VMs systemd owns native cgroups; a replacement acquires
 the lock and then fences prior owned services before opening Session stores or journals.
 See <SPEC.md#durability-and-restart> for storage, startup barriers and containment boundaries.
 

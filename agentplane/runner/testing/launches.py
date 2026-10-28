@@ -115,7 +115,7 @@ def runner_command(
     codex = codex_launch(endpoint) if harness == runner_pb2.HARNESS_CODEX else None
     config = Configuration(
         version=2,
-        environment=PodEnvironment(),
+        environment=PodEnvironment(supervision="subprocess"),
         state_dir=str(state_dir),
         initialization_cwd=str(state_dir),
         control=gateway,
@@ -167,9 +167,10 @@ def command(config: RunnerTestConfig, *, control: Endpoint, ingress: Endpoint) -
         if config.codex
         else None,
         environment=PodEnvironment(
+            supervision="subprocess",
             executor=ContainerExecutor(url=config.codex_executor_url, socket=str(config.codex_executor_socket))
             if config.codex_executor_url is not None
-            else None
+            else None,
         ),
         debug_checkpoint=DebugCheckpoint(name=config.debug_checkpoint[0], command_id=config.debug_checkpoint[1])
         if config.debug_checkpoint

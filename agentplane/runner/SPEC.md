@@ -324,16 +324,18 @@ harness's outcome. Tool names and argument shapes are the harness's own.
   sessions, opens a journal, dials out, runs initialization, or starts a harness. A contender that
   cannot take that lock exits without serving the directory. The normal runner shutdown releases
   ownership only after its sessions stop and their journals close.
-- In Pods the owner descriptor crosses the runner/harness boundary through a native-process
-  supervisor. Parent death sends `SIGTERM` to the native process group, allows five seconds for
-  native persistence, then force-stops the group. Leader exit immediately kills its remaining
-  group. The supervisor and any child retaining the descriptor exclude a replacement until they
-  exit. A process deliberately escaping that group and closing inherited descriptors is outside
-  that containment boundary. In the production Pod's private PID namespace, Runner runs as PID 1;
-  observed container-runtime exit supplies the outer fence for escaped descendants. Acquiring the
-  owner lock or observing a force-deleted Pod's API disappearance does not prove that fence.
-  Direct spawning without the trusted supervisor requires an explicit, proven prior-container
-  startup fence; [supervision](docs/supervision.md#pid-1-and-the-outer-fence) records that gate.
+- Production Pods explicitly select PID1 supervision and reject startup outside container PID 1.
+  Runner directly spawns natives in process groups and retains state ownership through cleanup.
+  One reaper owns direct-child exit statuses and adopted orphans; native leaders never compete
+  with an `exec.Cmd.Wait` goroutine. Leader exit kills its remaining group; completion waits until
+  the group disappears. Stop sends TERM, then KILL after its grace budget. Non-PID1 fixtures
+  explicitly select the internal subprocess supervisor, whose parent-liveness pipe and trusted
+  owner descriptor fence the native group after Runner death.
+  Both Pod backends require observed container-runtime exit to fence escaped process groups and
+  natives that close inherited descriptors. A lock acquisition or force-deleted Pod's API
+  disappearance does not prove that outer fence. Replacement after node loss or force deletion
+  requires a prior-container or external node/storage fence.
+  [Supervision](docs/supervision.md#pid-1-and-the-outer-fence) describes these boundaries.
 - In VMs every native launch is a systemd transient `Type=exec` service, bound to the Runner unit,
   with `Restart=no` and five-second stop grace. A condition requires the current Runner invocation's
   marker in its systemd-managed runtime directory; delayed requests from a previous invocation
@@ -376,7 +378,7 @@ harness's outcome. Tool names and argument shapes are the harness's own.
   remain pending and are never resent. Newly sent requests gate later input until their responses
   are recorded.
 - A runner that finds a session whose setup had started without a terminal event records
-  `SetupInterrupted`. It never executes that script again. The Pod inherited owner descriptor or VM startup fencing barrier prevents a replacement
+  `SetupInterrupted`. It never executes that script again. The Pod container-runtime fence or VM startup fencing barrier prevents a replacement
   from opening journals or running work while a surviving setup child remains.
 - A harness that exits on its own is reported the same way, as `HarnessExited` with the exit code
   instead of `HarnessLost`.

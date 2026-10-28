@@ -123,8 +123,9 @@ type ContainerExecutorConfiguration struct {
 }
 
 type PodEnvironmentConfiguration struct {
-	Kind     string                          `json:"kind"`
-	Executor *ContainerExecutorConfiguration `json:"executor"`
+	Kind        string                          `json:"kind"`
+	Supervision string                          `json:"supervision"`
+	Executor    *ContainerExecutorConfiguration `json:"executor"`
 }
 
 type VMExecutorConfiguration struct {
@@ -146,63 +147,68 @@ func (v VMEnvironmentConfiguration) policy(slice string, aggregate, process supe
 }
 
 // The environment selects resource ownership and executor transport together.
-func (f Configuration) resolveEnvironment() (*supervision.SystemdPolicy, *execserver.Config, *VMEnvironmentConfiguration, error) {
+func (f Configuration) resolveEnvironment() (*supervision.SystemdPolicy, *execserver.Config, *VMEnvironmentConfiguration, bool, error) {
 	var tag struct {
 		Kind string `json:"kind"`
 	}
 	if err := json.Unmarshal(f.Environment, &tag); err != nil {
-		return nil, nil, nil, fmt.Errorf("environment is required: %w", err)
+		return nil, nil, nil, false, fmt.Errorf("environment is required: %w", err)
 	}
 	var isolation *supervision.SystemdPolicy
 	var executor *execserver.Config
 	var vm *VMEnvironmentConfiguration
+	var podPID1 bool
 	switch tag.Kind {
 	case "pod":
 		var pod PodEnvironmentConfiguration
 		if err := DecodeStrict(f.Environment, &pod); err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, false, err
 		}
+		if pod.Supervision != "pid1" && pod.Supervision != "subprocess" {
+			return nil, nil, nil, false, errors.New("Pod supervision must explicitly select pid1 or subprocess")
+		}
+		podPID1 = pod.Supervision == "pid1"
 		if pod.Executor != nil {
 			executor = &execserver.Config{URL: pod.Executor.URL, ContainerSocket: pod.Executor.Socket}
 			if !filepath.IsAbs(pod.Executor.Socket) {
-				return nil, nil, nil, errors.New("container executor socket must be absolute")
+				return nil, nil, nil, false, errors.New("container executor socket must be absolute")
 			}
 		}
 	case "vm":
 		vm = &VMEnvironmentConfiguration{}
 		if err := DecodeStrict(f.Environment, vm); err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, false, err
 		}
 		if err := vm.Resources.Validate(); err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, false, err
 		}
 		if vm.AgentUID == 0 || vm.AgentGID == 0 || len(vm.BlockDevices) == 0 {
-			return nil, nil, nil, errors.New("VM supervision requires non-root UID/GID and block devices")
+			return nil, nil, nil, false, errors.New("VM supervision requires non-root UID/GID and block devices")
 		}
 		for _, path := range vm.BlockDevices {
 			if !filepath.IsAbs(path) {
-				return nil, nil, nil, errors.New("block device path must be absolute")
+				return nil, nil, nil, false, errors.New("block device path must be absolute")
 			}
 		}
 		isolation = vm.policy(supervision.WorkloadSlice, vm.Resources.Aggregate, vm.Resources.Process)
 		if (vm.Executor == nil) != (vm.Resources.Executor == nil) {
-			return nil, nil, nil, errors.New("executor endpoint and resource budget must be supplied together")
+			return nil, nil, nil, false, errors.New("executor endpoint and resource budget must be supplied together")
 		}
 		if vm.Executor != nil {
 			executor = &execserver.Config{URL: vm.Executor.URL, Isolation: vm.policy(supervision.ExecutorSlice, *vm.Resources.Executor, *vm.Resources.Executor)}
 		}
 	default:
-		return nil, nil, nil, fmt.Errorf("unknown environment kind %q", tag.Kind)
+		return nil, nil, nil, false, fmt.Errorf("unknown environment kind %q", tag.Kind)
 	}
 	if executor != nil {
 		if f.Codex == nil {
-			return nil, nil, nil, errors.New("executor requires Codex")
+			return nil, nil, nil, false, errors.New("executor requires Codex")
 		}
 		if err := executor.Validate(isolation); err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, false, err
 		}
 	}
-	return isolation, executor, vm, nil
+	return isolation, executor, vm, podPID1, nil
 }
 
 func readConfiguration(path string) (Configuration, error) {
@@ -293,7 +299,7 @@ func (f Configuration) compose(launchPath string) (Config, map[string]string, er
 	if err != nil {
 		return Config{}, nil, err
 	}
-	isolation, executor, _, err := f.resolveEnvironment()
+	isolation, executor, _, podPID1, err := f.resolveEnvironment()
 	if err != nil {
 		return Config{}, nil, err
 	}
@@ -318,6 +324,7 @@ func (f Configuration) compose(launchPath string) (Config, map[string]string, er
 		Claude:                      claude,
 		Codex:                       codex,
 		VMProcessPolicy:             isolation,
+		PodPID1:                     podPID1,
 		CodexExecServer:             executor,
 	}
 	if f.WorkspaceRoot != nil {

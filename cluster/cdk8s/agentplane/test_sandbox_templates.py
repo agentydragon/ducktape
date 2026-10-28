@@ -90,6 +90,7 @@ def test_runner_pod_gives_codex_a_private_executor_with_shared_paths(staging_man
     config = _runner_configuration(staging_manifests, pod)
     assert config["environment"] == {
         "kind": "pod",
+        "supervision": "pid1",
         "executor": {"url": "ws://127.0.0.1:4501", "socket": "/run/agentplane/executor/control.sock"},
     }
     assert executor["command"] == ["/run/agentplane/runner/bin/agentplane-executor"]

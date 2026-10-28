@@ -65,6 +65,7 @@ type Config struct {
 	HarnessEnvironment               map[string]string
 	Claude, Codex                    *harness.LaunchConfig
 	VMProcessPolicy                  *supervision.SystemdPolicy
+	PodPID1                          bool
 	CodexExecServer                  *execserver.Config
 	WorkspaceRoot, InitializationCwd string
 	DebugCheckpoint                  *session.DebugCheckpointConfig

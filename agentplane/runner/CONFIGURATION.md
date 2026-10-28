@@ -54,7 +54,8 @@ Runner environment changes or state ownership begins.
 
 `environment` has exactly one discriminator, `kind`:
 
-- `kind: "pod"`: optional `executor` with loopback `url` and absolute ownership `socket`.
+- `kind: "pod"`: required `supervision` (`pid1` for a private container PID namespace,
+  `subprocess` for non-PID1 fixtures), plus optional `executor` with loopback `url` and absolute ownership `socket`.
   Kubernetes owns the container resource limits.
 - `kind: "vm"`: required `resources`, non-root `agent_uid`/`agent_gid`, absolute `block_devices`,
   optional `console_autologin` (false when omitted), and optional `executor` with loopback `url`.

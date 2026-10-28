@@ -424,9 +424,10 @@ class RunnerTemplate(Construct):
             claude=Harness(binary="/bin/claude", base_url=llm_url, token_env="ANTHROPIC_AUTH_TOKEN"),
             codex=Harness(binary="/bin/codex", base_url=f"{llm_url}/v1", token_env="OPENAI_API_KEY"),
             environment=PodEnvironment(
+                supervision="pid1",
                 executor=ContainerExecutor(url=_EXECUTOR_URL, socket=_EXECUTOR_SOCKET)
                 if self.env.isolated_codex_executor
-                else None
+                else None,
             ),
         )
         ConfigMap(

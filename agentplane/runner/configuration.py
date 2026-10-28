@@ -172,6 +172,7 @@ class PodEnvironment(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     kind: Literal["pod"] = "pod"
+    supervision: Literal["pid1", "subprocess"]
     executor: ContainerExecutor | None = None
 
 

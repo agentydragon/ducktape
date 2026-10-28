@@ -33,7 +33,7 @@ func TestGuestResourcePropertiesModeValidatesSeedBeforeOutput(t *testing.T) {
 		func(v map[string]any) {
 			v["environment"].(map[string]any)["resources"].(map[string]any)["service_memory_max_bytes"] = 0
 		},
-		func(v map[string]any) { v["environment"] = map[string]any{"kind": "pod"} },
+		func(v map[string]any) { v["environment"] = map[string]any{"kind": "pod", "supervision": "subprocess"} },
 		func(v map[string]any) { v["unexpected"] = true },
 		func(v map[string]any) {
 			env := v["environment"].(map[string]any)

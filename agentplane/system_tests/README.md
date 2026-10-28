@@ -41,10 +41,10 @@ Fast offline driver tests cover login choreography (`test_operator_login`), star
 terminal-turn handling (`test_agent`). They create no Sandbox and do not prove that a deployed IdP,
 Agentplane, or harness is reachable. Operator login is setup for the MCP scenario.
 
-The lower-level `//agentplane/runner:test_pid1_container` runs the production Pod process backend
+The lower-level `//agentplane/runner:test_pid1_container` runs the direct PID1 and subprocess Pod backends
 as real container PID 1. It checks native exit, TERM, abrupt PID1 death, escaped descendants and
-replacement after observed runtime exit. It is a container containment prerequisite, not a
-Kubernetes replacement proof; the remaining startup-fence gate is in the Runner's
+replacement after observed runtime exit. The shared Sandbox template explicitly selects the direct PID1 backend
+for the Pod system tests. The outer replacement boundary is described in the Runner's
 [supervision contract](../runner/docs/supervision.md#pid-1-and-the-outer-fence).
 
 `Agent.run` returns only for `TURN_STATUS_COMPLETED`. Any other terminal status fails immediately

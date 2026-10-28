@@ -10,7 +10,7 @@ from agentplane.runner.configuration import Configuration, GuestResources, VMEnv
 def _configuration() -> dict[str, object]:
     return {
         "version": 2,
-        "environment": {"kind": "pod"},
+        "environment": {"kind": "pod", "supervision": "subprocess"},
         "state_dir": "/test/state",
         "initialization_cwd": "/test/workspaces",
         "control": {"target": "gateway.test:7100", "bearer": "control-placeholder"},
@@ -49,15 +49,42 @@ def test_runner_configuration_accepts_explicit_session_reconcile_concurrency() -
         {"harness_environment": {"values": {"": "value"}}},
         {"codex": {"binary": "/test/codex"}},
         {"environment": {"kind": "unknown"}},
-        {"environment": {"kind": "pod", "console_autologin": True}},
-        {"environment": {"kind": "pod", "executor": {"url": "ws://127.0.0.1:4501"}}},
-        {"environment": {"kind": "pod", "executor": {"url": "ws://0.0.0.0:4501", "socket": "/test/socket"}}},
-        {"environment": {"kind": "pod", "executor": {"url": "ws://127.0.0.1:0", "socket": "/test/socket"}}},
-        {"environment": {"kind": "pod", "executor": {"url": "ws://127.0.0.1:4501?", "socket": "/test/socket"}}},
-        {"environment": {"kind": "pod", "executor": {"url": "ws://127.0.0.1:4501", "socket": "relative"}}},
+        {"environment": {"kind": "pod"}},
+        {"environment": {"kind": "pod", "supervision": "unknown"}},
+        {"environment": {"kind": "pod", "supervision": "subprocess", "console_autologin": True}},
+        {"environment": {"kind": "pod", "supervision": "subprocess", "executor": {"url": "ws://127.0.0.1:4501"}}},
         {
             "environment": {
                 "kind": "pod",
+                "supervision": "subprocess",
+                "executor": {"url": "ws://0.0.0.0:4501", "socket": "/test/socket"},
+            }
+        },
+        {
+            "environment": {
+                "kind": "pod",
+                "supervision": "subprocess",
+                "executor": {"url": "ws://127.0.0.1:0", "socket": "/test/socket"},
+            }
+        },
+        {
+            "environment": {
+                "kind": "pod",
+                "supervision": "subprocess",
+                "executor": {"url": "ws://127.0.0.1:4501?", "socket": "/test/socket"},
+            }
+        },
+        {
+            "environment": {
+                "kind": "pod",
+                "supervision": "subprocess",
+                "executor": {"url": "ws://127.0.0.1:4501", "socket": "relative"},
+            }
+        },
+        {
+            "environment": {
+                "kind": "pod",
+                "supervision": "subprocess",
                 "executor": {"url": "ws://127.0.0.1:4501", "socket": "/test/socket", "root": "/test/cgroup"},
             }
         },

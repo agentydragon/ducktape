@@ -80,7 +80,7 @@ func guestResourceSystemdPropertiesWithMeminfo(configPath, meminfoPath string) (
 	if err != nil {
 		return nil, err
 	}
-	_, _, vm, err := file.resolveEnvironment()
+	_, _, vm, _, err := file.resolveEnvironment()
 	if err != nil {
 		return nil, fmt.Errorf("invalid VM environment: %w", err)
 	}
