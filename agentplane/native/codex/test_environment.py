@@ -35,7 +35,7 @@ async def test_shell_commands_see_the_agent_cli_environment(
 
         async with await openai_responses.await_next_request() as exchange:
             (call_output,) = exchange.request.function_call_outputs
-            lines = call_output.output.splitlines()
+            lines = call_output.text.splitlines()
             for name, value in agent_cli_environment.items():
                 assert f"{name}={value}" in lines, call_output.output
             stream = responses_sse.response_stream([responses_sse.Message("ENVIRONMENT_DONE")], model=MODEL)
