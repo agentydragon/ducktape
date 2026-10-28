@@ -7,6 +7,7 @@
 use super::*;
 use crate::analysis_inputs::ProofDependencies;
 use crate::facts::semantic_inference::{SemanticFacts, SemanticKey};
+use crate::inference::{IterativeContext, IterativeInference, IterativeRules};
 use std::sync::Arc;
 
 #[derive(Debug, Clone, Default)]
@@ -38,34 +39,29 @@ impl SetIterableShapes {
             item.as_module_item().visit_with(&mut scanner);
         }
 
-        let mut invalid = scanner.invalid;
-        let mut aliases_by_source = BTreeMap::<Id, Vec<Id>>::new();
+        let mut alias_neighbors = BTreeMap::<Id, BTreeSet<Id>>::new();
         for (alias, candidate) in &candidates {
             if let Some(source) = &candidate.source {
-                aliases_by_source
+                alias_neighbors
+                    .entry(alias.clone())
+                    .or_default()
+                    .insert(source.clone());
+                alias_neighbors
                     .entry(source.clone())
                     .or_default()
-                    .push(alias.clone());
+                    .insert(alias.clone());
             }
         }
-        let mut pending: Vec<_> = invalid.iter().cloned().collect();
-        while let Some(id) = pending.pop() {
-            let Some(candidate) = candidates.get(&id) else {
-                continue;
-            };
-            if let Some(source) = &candidate.source
-                && invalid.insert(source.clone())
-            {
-                pending.push(source.clone());
-            }
-            if let Some(aliases) = aliases_by_source.get(&id) {
-                for alias in aliases {
-                    if invalid.insert(alias.clone()) {
-                        pending.push(alias.clone());
-                    }
-                }
-            }
+        let rules: Vec<_> = alias_neighbors.keys().cloned().collect();
+        let adjacency = alias_neighbors
+            .into_iter()
+            .map(|(id, neighbors)| (id, neighbors.into_iter().collect()))
+            .collect();
+        let mut inference = IterativeInference::new(AliasInvalidationRules { adjacency });
+        for id in scanner.invalid {
+            inference.seed(id, ());
         }
+        let invalid: BTreeSet<_> = inference.solve(rules).into_values().into_keys().collect();
 
         let mut constructor_starts = scanner.direct_literal_calls;
         for (array, start) in scanner.alias_consumers {
@@ -80,6 +76,29 @@ impl SetIterableShapes {
             plain_data_bindings,
         ));
         Self { constructor_starts }
+    }
+}
+
+struct AliasInvalidationRules {
+    adjacency: BTreeMap<Id, Vec<Id>>,
+}
+
+impl IterativeRules for AliasInvalidationRules {
+    type Key = Id;
+    type Fact = ();
+    type Rule = Id;
+
+    fn evaluate(&self, id: &Id, context: &mut IterativeContext<'_, Self>) {
+        if context.read(id.clone()).is_none() {
+            return;
+        }
+        for neighbor in self.adjacency.get(id).into_iter().flatten() {
+            context.propose(neighbor.clone(), ());
+        }
+    }
+
+    fn merge(_key: &Self::Key, _current: &mut Self::Fact, _contribution: Self::Fact) -> bool {
+        false
     }
 }
 
@@ -418,6 +437,19 @@ mod tests {
         ));
         assert!(!proves_only_new(
             "const lookup = { key: 'token' }; function make(lookup) { return new Set([lookup.key]); }"
+        ));
+    }
+
+    #[test]
+    fn array_alias_invalidation_reaches_the_whole_chain() {
+        assert!(proves_only_new(
+            "const values = ['a'], alias = values, tail = alias; const unique = new Set(tail);"
+        ));
+        assert!(!proves_only_new(
+            "const values = ['a'], alias = values, tail = alias; values.push('b'); const unique = new Set(tail);"
+        ));
+        assert!(!proves_only_new(
+            "const values = ['a'], alias = values, tail = alias; tail.push('b'); const unique = new Set(values);"
         ));
     }
 }
