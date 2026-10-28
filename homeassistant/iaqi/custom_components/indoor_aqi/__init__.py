@@ -16,15 +16,12 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     Called once when HA loads our integration via YAML.
     We'll check if there's already an import-based entry; if not, create one.
     """
-    if DOMAIN not in config:
-        # No YAML config for indoor_aqi
-        return True
+    yaml_config = config.get(DOMAIN, {})
 
     # Check if we've already created an import-based entry
     current_entries = hass.config_entries.async_entries(DOMAIN)
     for entry in current_entries:
         if entry.source == config_entries.SOURCE_IMPORT:
-            yaml_config = config[DOMAIN]
             if entry.data != yaml_config:
                 _LOGGER.debug("IndoorAQI: updating the existing import entry from YAML.")
                 hass.config_entries.async_update_entry(entry, data=yaml_config)
@@ -33,6 +30,10 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
             else:
                 _LOGGER.debug("IndoorAQI: existing import entry already matches YAML.")
             return True
+
+    if DOMAIN not in config:
+        # No YAML config; do not create an import entry.
+        return True
 
     # Otherwise, create a new import-based config entry (which triggers config_flow.py)
     hass.async_create_task(
