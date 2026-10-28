@@ -102,9 +102,8 @@ Remote HTTP resolution is disabled by the converter. The named library exposes t
 `schema_files` at their producer-owned paths, so runtime consumers can import those JSON modules
 directly alongside the generated declarations.
 
-Keep the macro beside the schema producer when the producer also owns runtime consumers. Its target
-provides both the original JSON module and generated declarations without a wrapper or relocated
-copy:
+Declare the macro beside the schema producer; downstream consumers depend on that target and
+import the original JSON and generated types at their natural paths:
 
 ```starlark
 load("//devinfra/js:json_schema_js_library.bzl", "json_schema_js_library")
