@@ -12,6 +12,7 @@ So does the model backend (`MODEL_BACKEND`): a real model, the default, or one t
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import subprocess
 from collections.abc import AsyncIterator, Callable, Coroutine, Iterator, Sequence
@@ -28,11 +29,12 @@ from agentplane.app.sandbox_models import NewSandbox, SandboxView, sandbox_is_re
 from agentplane.app.testing.client import Client
 from agentplane.proto import runner_pb2
 from agentplane.runner.harness import Harness
-from agentplane.sandbox_resource import OperatingMode
+from agentplane.sandbox_resource import SANDBOX_LABEL, OperatingMode
 from agentplane.system_tests import native_artifacts, scripted_upstream
 from agentplane.system_tests.ollama_warmup import warm_ollama
 from util.net import Listener
 from util.testing.otel_tracing import configure_tracing
+from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 tracer = trace.get_tracer(__name__)
 
@@ -232,26 +234,92 @@ async def suspend_and_delete(client: Client, name: str, uid: UUID) -> None:
         cleanup.add_event("suspend.accepted")
         # Deletion admission reads effective mode, which the controller publishes after the spec write.
         delete_requested = False
-        async with asyncio.timeout(SANDBOX_READY_SECONDS), aclosing(client.sandbox_snapshots()) as snapshots:
-            async for snapshot in snapshots:
-                if not snapshot.watch.fresh:
-                    continue
-                view = next((view for view in snapshot.sandboxes if view.name == name), None)
-                if view is None:
-                    if delete_requested:
-                        cleanup.add_event("deleted")
-                        return
-                    continue
-                if view.uid != uid:
-                    raise SandboxNotReadyError(f"{name} has been replaced: expected {uid}, observed {view.uid}")
-                if not delete_requested and view.operating_mode is OperatingMode.SUSPENDED:
-                    cleanup.add_event("suspended")
-                    await client.delete_sandbox(name)
-                    cleanup.add_event("delete.accepted")
-                    # The delete response only accepts the request. Keep controllers and kubelet alive
-                    # until the finalizer has removed the VM/Pod and released its volumes.
-                    delete_requested = True
-            raise SandboxNotReadyError(f"{name}'s stream ended before observing deletion")
+        last_snapshot = None
+        try:
+            async with asyncio.timeout(SANDBOX_READY_SECONDS), aclosing(client.sandbox_snapshots()) as snapshots:
+                async for snapshot in snapshots:
+                    last_snapshot = snapshot
+                    if not snapshot.watch.fresh:
+                        continue
+                    view = next((view for view in snapshot.sandboxes if view.name == name), None)
+                    if view is None:
+                        if delete_requested:
+                            cleanup.add_event("deleted")
+                            return
+                        continue
+                    if view.uid != uid:
+                        raise SandboxNotReadyError(f"{name} has been replaced: expected {uid}, observed {view.uid}")
+                    if not delete_requested and view.operating_mode is OperatingMode.SUSPENDED:
+                        cleanup.add_event("suspended")
+                        await client.delete_sandbox(name)
+                        cleanup.add_event("delete.accepted")
+                        # The delete response only accepts the request. Keep controllers and kubelet alive
+                        # until the finalizer has removed the VM/Pod and released its volumes.
+                        delete_requested = True
+                raise SandboxNotReadyError(f"{name}'s stream ended before observing deletion")
+        except TimeoutError as error:
+            if os.environ.get(BASE_URL) and os.environ.get(NAMESPACE):
+                try:
+                    path = await _write_cleanup_diagnostics(client, name, last_snapshot)
+                    error.add_note(f"Sandbox cleanup diagnostics: {path}")
+                except Exception as diagnostic_error:
+                    error.add_note(f"Sandbox cleanup diagnostics failed: {diagnostic_error!r}")
+            raise
+
+
+async def _write_cleanup_diagnostics(client: Client, name: str, last_snapshot: Any) -> str:
+    """Capture the state and control logs when the effective suspend watch stops progressing."""
+
+    diagnostic: dict[str, Any] = {
+        "sandbox_name": name,
+        "last_live_snapshot": None if last_snapshot is None else last_snapshot.model_dump(mode="json"),
+    }
+
+    async def app_state(key: str, operation: Callable[[], Coroutine[Any, Any, Any]]) -> None:
+        try:
+            async with asyncio.timeout(10):
+                diagnostic[key] = (await operation()).model_dump(mode="json")
+        except Exception as error:
+            diagnostic[f"{key}_error"] = repr(error)
+
+    await asyncio.gather(
+        app_state("app_sandbox", lambda: client.sandbox(name)),
+        app_state("runner_status", lambda: client.runner_status(name)),
+    )
+
+    async def kubectl(*args: str) -> dict[str, Any]:
+        command = ["kubectl", "-n", namespace(), *args]
+        try:
+            result = await asyncio.to_thread(
+                subprocess.run, command, capture_output=True, text=True, check=False, timeout=10
+            )
+        except Exception as error:
+            return {"error": repr(error)}
+        return {"returncode": result.returncode, "stdout": result.stdout, "stderr": result.stderr}
+
+    resource, lease, pods, controller_logs, gateway_logs = await asyncio.gather(
+        kubectl("get", "sandbox", name, "-o", "json"),
+        kubectl("get", "lease", f"{name}-runner", "-o", "json"),
+        kubectl("get", "pods", "-l", f"{SANDBOX_LABEL}={name}", "-o", "json"),
+        kubectl("logs", "deployment/sandbox-controller", "--all-pods=true", "--tail=100", "--since=10m"),
+        kubectl("logs", "deployment/runner-gateway", "--all-pods=true", "--tail=100", "--since=10m"),
+    )
+    diagnostic["kubernetes_sandbox"] = resource
+    diagnostic["runner_lease"] = lease
+    diagnostic["sandbox_pods"] = pods
+    diagnostic["sandbox_controller_logs"] = controller_logs
+    diagnostic["runner_gateway_logs"] = gateway_logs
+    if pods.get("returncode") == 0:
+        try:
+            pod_names = [pod["metadata"]["name"] for pod in json.loads(pods["stdout"]).get("items", [])]
+        except KeyError, TypeError, ValueError:
+            pod_names = []
+        diagnostic["runner_logs"] = await asyncio.gather(
+            *(kubectl("logs", f"pod/{pod}", "-c", "runner", "--tail=100", "--since=10m") for pod in pod_names)
+        )
+    path = undeclared_outputs_dir() / f"sandbox-cleanup-{name}.json"
+    path.write_text(json.dumps(diagnostic, indent=2) + "\n")
+    return str(path)
 
 
 @pytest.fixture

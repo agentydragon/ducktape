@@ -55,6 +55,7 @@ py_library(
         "//agentplane/runner:harness",
         "//util:net",
         "//util/testing:otel_tracing",
+        "//util/testing:undeclared_outputs",
         "@pypi//opentelemetry_api",
         "@pypi//protobuf",
         "@pypi//pytest",
