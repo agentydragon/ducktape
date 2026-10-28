@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>CI latency · VM/MCP lifecycle profiles · 28 October 2026</title>
+    <title>CI latency · post-merge VM/MCP assessment · 28 October 2026</title>
     <style>
       :root {
         --ink: #17303b;
@@ -295,26 +295,265 @@
     <main>
       <header>
         <div class="eyebrow">
-          Ducktape · VM/MCP lifecycle profiles · 28 October 2026
+          Ducktape · post-merge CI assessment · 28 October 2026
         </div>
-        <h1>Remove unused exporter shutdown waits; preserve test isolation</h1>
+        <h1>VM gates the first two post-merge devel builds</h1>
         <p class="lede">
-          Three focused investigations produced separate candidates: about 60
-          seconds less MCP Pod cleanup, 15 seconds less VM guest cleanup, and
-          guest-image import overlapped with service startup. These are measured
-          phases, not additive CI feedback savings.
+          Two complete Bazel CI jobs passed with all three lifecycle changes. VM
+          gated both; MCP ran fresh in the second. Cleanup was shorter, but
+          differing source, image and cache state prevent a combined CI savings
+          claim.
         </p>
         <p class="small">
-          Lifecycle probes use inspected devel sources
-          <code>8a24059ba92d</code> and <code>9ab44ab64b6e</code>; each
-          experiment records its patch and publication head in
-          <a href="evidence.json">evidence.json</a>. The earlier 19-invocation
-          cost sample covers CI runs created 28 October 02:21:32–04:38:37 UTC at
-          mixed tested sources, not one post-fix cohort.
+          Measured devel sources <code>b126a369d2</code>,
+          <code>db1895b3e0</code>, <code>50bd44b472</code>, and
+          <code>feb464de80</code> are tracked separately. The prior controlled
+          interventions and broader historical cohorts remain below;
+          machine-readable clocks and limitations are in
+          <a href="evidence.json">evidence.json</a>.
         </p>
       </header>
+      <nav aria-label="Post-merge report navigation">
+        <a href="#post-merge-ci">Post-merge CI</a>
+        <a href="#vm-mcp-followup">Controlled pre-merge phases</a>
+        <a href="#prior-report">Earlier cohorts</a>
+      </nav>
+      <section id="post-merge-ci">
+        <h2>Two complete devel Bazel jobs after all three merges</h2>
+        <p>
+          The
+          <a
+            href="https://github.com/agentydragon/ducktape/actions/runs/40642731109/job/122664380752"
+            >first Bazel job</a
+          >
+          at
+          <a
+            href="https://github.com/agentydragon/ducktape/commit/50bd44b472e321c7fb2d50ace0ded24afee7c8b4"
+            ><code>50bd44b472</code></a
+          >
+          passed with Pod exporter cleanup, VM guest exporter cleanup, and the
+          final guest-image import order. It took 494s, with the VM action on
+          its critical path, but its MCP result came from cache. The
+          <a
+            href="https://github.com/agentydragon/ducktape/actions/runs/40643511593"
+            >next completed Bazel job</a
+          >
+          at
+          <a
+            href="https://github.com/agentydragon/ducktape/commit/feb464de80936d8d612007d60aeb425f7036e374"
+            ><code>feb464de80</code></a
+          >
+          ran both tests fresh: VM finished 80.39s after MCP and still gated the
+          Bazel command. That later source includes unrelated runner, debundle,
+          image-pin and artifact-pin changes, so the two jobs are observations
+          of actual CI, not a controlled estimate of the three fixes.
+        </p>
+        <div class="cards" aria-label="Latest post-merge CI summary">
+          <div class="card">
+            <span class="small">Latest Bazel CI job</span>
+            <strong class="metric num">509s</strong>
+            <span class="small">06:24:04–06:32:33 UTC; passed</span>
+          </div>
+          <div class="card">
+            <span class="small">Bazel critical path</span>
+            <strong class="metric num">421.43s</strong>
+            <span class="small"
+              >414.33s VM action; about 0.01% remote queue</span
+            >
+          </div>
+          <div class="card">
+            <span class="small">Originating RBE work</span>
+            <strong class="metric num">17</strong>
+            <span class="small">VM and MCP fresh; 3,561 CPU-s total</span>
+          </div>
+        </div>
+        <h3>Completed devel sweeps, separated by source and cache state</h3>
+        <div class="scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Tested devel source</th>
+                <th>GitHub queue / Bazel job / test step</th>
+                <th>Bazel profile / critical path</th>
+                <th>Originating RBE work</th>
+                <th>VM / MCP test</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/40640692452"
+                    ><code>b126a369d2</code></a
+                  ><br />Before all three
+                </td>
+                <td class="num">3s / 661s / 646s</td>
+                <td class="num">591.84s / 543.82s</td>
+                <td class="num">74 executions; 6,171 CPU-s</td>
+                <td class="num">450.87s fresh / 511.48s fresh; MCP critical</td>
+              </tr>
+              <tr>
+                <td>
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/40641625603"
+                    ><code>db1895b3e0</code></a
+                  ><br />Pod cleanup only
+                </td>
+                <td class="num">84s / 583s / 567s</td>
+                <td class="num">509.21s / 498.42s</td>
+                <td class="num">58 executions; 4,969 CPU-s</td>
+                <td class="num">444.10s fresh / 318.10s fresh; VM critical</td>
+              </tr>
+              <tr>
+                <td>
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/40642731109"
+                    ><code>50bd44b472</code></a
+                  ><br />All three merged
+                </td>
+                <td class="num">8s / 494s / 480s</td>
+                <td class="num">422.59s / 410.22s</td>
+                <td class="num">1 execution; 814 CPU-s</td>
+                <td class="num">407.49s fresh / cached; VM critical</td>
+              </tr>
+              <tr>
+                <td>
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/40643511593"
+                    ><code>feb464de80</code></a
+                  ><br />All three + unrelated changes
+                </td>
+                <td class="num">61s / 509s / 496s</td>
+                <td class="num">443.80s / 421.43s</td>
+                <td class="num">17 executions; 3,561 CPU-s</td>
+                <td class="num">412.68s fresh / 335.67s fresh; VM critical</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="small">
+          GitHub queue is run creation to Bazel job start; the test step
+          includes
+          <code>bbr</code> setup and finalization. Profiles cover only the Bazel
+          command, and critical paths are Bazel profile clocks. Execution and
+          CPU totals count originating RBE executions in each invocation, not
+          cached outputs. All four VM actions used the same observed worker;
+          that does not establish identical image snapshot state. The 36fd and
+          9e1 devel runs were canceled after newer pushes, so they are not
+          completed feedback samples. The whole workflow also includes release
+          and image jobs beyond the Bazel job measured here.
+        </p>
+        <div class="callout warning">
+          <strong>Observed feedback is not an intervention estimate.</strong>
+          The 661→583→494→509s jobs ran at different source heads and cache
+          states: originating execution counts were 74→58→1→17. MCP was cold at
+          b126, warm at db189, cached at 50bd, and fresh at feb. The 152s
+          first-to-latest job difference and 2,610 CPU-s difference include
+          cache reuse and unrelated source changes. The controlled pre-merge
+          phase findings below are the narrow evidence for each fix.
+        </div>
+        <h3>Fresh VM phase traces and the remaining gate</h3>
+        <div class="scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>VM phase or fixture</th>
+                <th>Pod-only <code>db189</code></th>
+                <th>All-three <code>50bd</code></th>
+                <th>Later all-three <code>feb</code></th>
+                <th>Reading</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Three guest cleanup spans</td>
+                <td class="num">50.54s</td>
+                <td class="num">36.05s</td>
+                <td class="num">34.94s</td>
+                <td>
+                  Both post-merge samples are about 15s shorter, consistent with
+                  the controlled guest-exporter result; shutdown and diagnostics
+                  still run.
+                </td>
+              </tr>
+              <tr>
+                <td>Three Sandbox Ready spans</td>
+                <td class="num">111.80s</td>
+                <td class="num">96.99s</td>
+                <td class="num">97.56s</td>
+                <td>
+                  Large remaining phase; the difference is not attributed to
+                  these fixes.
+                </td>
+              </tr>
+              <tr>
+                <td>Three scenario spans</td>
+                <td class="num">255.65s</td>
+                <td class="num">226.61s</td>
+                <td class="num">238.62s</td>
+                <td>
+                  Includes Ready, session and turn/command work; do not add to
+                  cleanup.
+                </td>
+              </tr>
+              <tr>
+                <td>Guest-root import / stack Ready</td>
+                <td class="num">0.3s / 102.7s</td>
+                <td class="num">47.9s / 111.5s</td>
+                <td class="num">34.4s / 101.1s</td>
+                <td>
+                  Image state differs; neither post-merge run isolates the
+                  import-order benefit.
+                </td>
+              </tr>
+              <tr>
+                <td>VM execution wall / CPU</td>
+                <td class="num">444.10s / 803.49 CPU-s</td>
+                <td class="num">407.49s / 814.04 CPU-s</td>
+                <td class="num">412.68s / 768.25 CPU-s</td>
+                <td>
+                  About 31–37s less wall, but source and fixture state differ.
+                  CPU moved in both directions; no compute saving established.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          In the later run, MCP finished at 06:30:43 UTC and VM at 06:32:04 UTC;
+          their RBE queue waits were only 0.059s and 0.063s. Its ten MCP cases
+          remained intact, with a warm 54.1s fixture stack and a 335.67s fresh
+          test action. At this source, a VM-only improvement is bounded by the
+          80.39s VM-versus-MCP finish gap before MCP becomes the next observed
+          gate, if other paths stay fixed. VM's 97.6s of guest Ready spans and
+          34.4s guest-root import make readiness, guest startup and image-state
+          matching the next measurement targets. These spans sit in different
+          sequential/nested phases and cannot simply be subtracted from CI
+          feedback.
+        </p>
+        <p class="small">
+          Source-pinned BuildBuddy invocations:
+          <a
+            href="https://app.buildbuddy.io/invocation/a4070d85-58b8-51b7-a0ab-3bb761d47575"
+            >b126</a
+          >,
+          <a
+            href="https://app.buildbuddy.io/invocation/15bab0ae-a3f3-5c5d-b1ab-b9b4aed40076"
+            >db189</a
+          >,
+          <a
+            href="https://app.buildbuddy.io/invocation/79bbe88d-97c9-500b-ba37-e11dfb5395e7"
+            >50bd</a
+          >,
+          <a
+            href="https://app.buildbuddy.io/invocation/7b0af96d-279b-535a-8349-e239958a4a6e"
+            >feb</a
+          >. Exact clocks, raw artifact digests, target cache flags, and
+          retrieval commands are in <a href="evidence.json">evidence.json</a>.
+        </p>
+      </section>
       <section id="vm-mcp-followup">
-        <h2>Lifecycle changes with coverage intact</h2>
+        <h2>Controlled pre-merge lifecycle measurements</h2>
         <div class="scroll">
           <table>
             <thead>
