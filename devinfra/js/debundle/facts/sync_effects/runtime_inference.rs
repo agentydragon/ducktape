@@ -339,7 +339,7 @@ impl RuntimeRules<'_, '_> {
         };
         let RuntimeRequest { state, operation } = *request;
         let queries = RuntimeQueries {
-            inputs: inputs,
+            inputs,
             point: point.clone(),
             next_child: Cell::new(0),
             context: RefCell::new(context),
