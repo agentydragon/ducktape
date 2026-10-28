@@ -135,7 +135,8 @@ class LlmIngress(Construct):
         )
         for model in content.models:
             protovalidate.validate(model)
-        protovalidate.validate(content.attribution)
+        if content.HasField("attribution"):
+            protovalidate.validate(content.attribution)
         settings = SettingsFile(
             self,
             "settings",
