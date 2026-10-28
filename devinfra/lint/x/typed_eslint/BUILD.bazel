@@ -1,5 +1,5 @@
 load("@aspect_rules_js//js:defs.bzl", "js_library")
-load("@npm_ducktape//:eslint/package_json.bzl", eslint_bin = "bin")
+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -14,11 +14,12 @@ js_library(
     ],
 )
 
-eslint_bin.eslint_binary(
-    name = "eslint",
-    data = [":config"],
-    fixed_args = [
-        "--config",
-        "\"$$JS_BINARY__RUNFILES\"/$(rlocationpath :config)",
-    ],
+bool_flag(
+    name = "enabled",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "typed",
+    flag_values = {":enabled": "true"},
 )

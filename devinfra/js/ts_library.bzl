@@ -25,7 +25,7 @@ compiler options. Handing `ts_project` the shared file directly would instead le
 declarations included — making each target's program the transitive closure.
 """
 
-load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
+load("@aspect_rules_ts//ts:defs.bzl", "ts_config", "ts_project")
 
 def ts_library(name, srcs, tsconfig, isolated_typecheck = False, deps = [], **kwargs):
     """A TypeScript library: type-checks its own sources and emits `.js` + `.d.ts`.
@@ -47,10 +47,21 @@ def ts_library(name, srcs, tsconfig, isolated_typecheck = False, deps = [], **kw
             targets wrapping generated declarations, and `//:node_modules/*` packages.
         **kwargs: Passed through to `ts_project` (`assets`, `data`, `testonly`, `tags`, …).
     """
+
+    # Expose the generated config and its extends closure through JsInfo. The
+    # stock ESLint aspect gathers deps, but the generated file alone has no JsInfo.
+    ts_config(
+        name = "_tsconfig_" + name,
+        src = ":tsconfig_%s.json" % name,
+        deps = [tsconfig],
+        tags = kwargs.get("tags", []),
+        testonly = kwargs.get("testonly", None),
+        visibility = ["//visibility:private"],
+    )
     ts_project(
         name = name,
         srcs = srcs,
-        deps = deps,
+        deps = deps + [":_tsconfig_" + name],
         extends = tsconfig,
         # Empty include/exclude so the written `files` array is the entire program.
         tsconfig = {
