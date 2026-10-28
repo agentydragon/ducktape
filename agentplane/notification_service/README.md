@@ -52,6 +52,18 @@ writers understand these columns; it will not run in Pod init or hold serving re
 To roll this expansion back, restore the previous service image and leave the additive columns in place; do not
 run the migration's `Down` section while any dual-writing replica remains.
 
+`00005_inbox_destination_expand.sql` adds nullable relational destination columns while the service continues to
+dual-write them and reads legacy `destination_ref` JSON when needed. After every Notification Service writer runs
+the dual-write release, run `bb run //agentplane/notification_service/storage_backfill/cmd:notification-destination-backfill -- --writer-gate=notification-destination-dual-write-v1`
+once against the service database. The command is resumable, uses short bounded batches, and preserves the JSON
+column; it is not part of service startup or readiness.
+
+To roll the application back, stop the backfill command and roll every replica to the previous service image while
+leaving the additive migration applied; that image ignores the extra columns and continues to use the retained JSON.
+Only run the migration's down step after no replica or backfill process uses the new columns, reversing any later
+Notification migrations first. After Flux settles, verify the previous service's readiness, inbox authorization,
+and read/write behavior before considering the rollback complete.
+
 The service reads the settings file and environment variables of [Configuration](#configuration). It takes no
 flags, and no `log_levels`; logs are JSON on stderr. `request_timeout_s` (default 15) bounds a call's backend work,
 and `watch_lease_s` (default 300) is how long a watch lasts before it ends with `reconnect_required`.
