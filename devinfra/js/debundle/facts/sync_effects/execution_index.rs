@@ -824,20 +824,18 @@ impl IterativeRules for MutationReceiverAliasRules<'_> {
 
     fn evaluate(&self, rule: &Self::Rule, context: &mut IterativeContext<'_, Self>) {
         let (target, value) = self.assignments[*rule];
-        let mut mentioned = BTreeSet::new();
-        value.bindings(&mut mentioned);
-        let receiver_aliases = mentioned
-            .into_iter()
-            .filter_map(|binding| context.read(binding.clone()).copied().map(|_| binding))
-            .collect::<BTreeSet<_>>();
-        if target != self.namespace
-            && value.may_be_namespace_mutation_receiver(
+        let receiver = if target != self.namespace {
+            let mut is_receiver_alias = |binding: &Id| context.read(binding.clone()).is_some();
+            value.may_be_namespace_mutation_receiver_with_alias_query(
                 self.namespace,
                 self.aliases,
-                &receiver_aliases,
+                &mut is_receiver_alias,
                 self.facts,
             )
-        {
+        } else {
+            false
+        };
+        if receiver {
             context.propose(target.clone(), true);
         }
     }
@@ -1936,7 +1934,7 @@ mod iterative_alias_closure_tests {
         infer_mutation_receiver_aliases,
     };
     use crate::analysis_inputs::NativeIntrinsic;
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet};
     use swc_common::SyntaxContext;
     use swc_ecma_ast::Id;
 
@@ -1963,6 +1961,52 @@ mod iterative_alias_closure_tests {
         );
 
         assert_eq!(aliases, BTreeSet::from([first, second]));
+    }
+
+    #[test]
+    fn receiver_alias_watchers_include_projected_data_members() {
+        let namespace = id("namespace");
+        let holder = id("holder");
+        let candidate = id("candidate");
+        let projected = id("projected");
+        let assignments = [
+            (
+                projected.clone(),
+                ValueExpr::Member(
+                    Box::new(ValueExpr::Binding(holder.clone())),
+                    Some("member".to_owned()),
+                    true,
+                ),
+            ),
+            (
+                holder.clone(),
+                ValueExpr::ObjectLiteral(
+                    7,
+                    vec![
+                        (
+                            Some("owner".to_owned()),
+                            ValueExpr::Binding(namespace.clone()),
+                        ),
+                        (
+                            Some("member".to_owned()),
+                            ValueExpr::Binding(candidate.clone()),
+                        ),
+                    ],
+                ),
+            ),
+            (candidate.clone(), ValueExpr::Unknown),
+        ];
+        let assignment_refs = assignments.iter().collect::<Vec<_>>();
+        let facts = NamespaceValueFacts::from_assignments(
+            BTreeMap::new(),
+            BTreeSet::from([7]),
+            &assignment_refs,
+        );
+
+        let aliases =
+            infer_mutation_receiver_aliases(&namespace, &assignment_refs, &BTreeSet::new(), &facts);
+
+        assert_eq!(aliases, BTreeSet::from([candidate, holder, projected]));
     }
 
     #[test]

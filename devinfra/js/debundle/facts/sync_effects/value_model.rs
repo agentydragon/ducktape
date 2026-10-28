@@ -713,16 +713,36 @@ impl ValueExpr {
         receiver_aliases: &BTreeSet<Id>,
         facts: &NamespaceValueFacts,
     ) -> bool {
+        self.may_be_namespace_mutation_receiver_with_alias_query(
+            id,
+            aliases,
+            &mut |binding| receiver_aliases.contains(binding),
+            facts,
+        )
+    }
+
+    pub(super) fn may_be_namespace_mutation_receiver_with_alias_query(
+        &self,
+        id: &Id,
+        aliases: &BTreeSet<Id>,
+        receiver_alias: &mut impl FnMut(&Id) -> bool,
+        facts: &NamespaceValueFacts,
+    ) -> bool {
         match self {
             Self::Binding(binding) => {
-                binding == id || aliases.contains(binding) || receiver_aliases.contains(binding)
+                binding == id || aliases.contains(binding) || receiver_alias(binding)
             }
             Self::Primitive(_) => false,
             Self::ObjectLiteral(_, properties) => properties
                 .iter()
                 .any(|(_, value)| value.carries_namespace(id, aliases)),
             Self::Alternatives(options) => options.iter().any(|value| {
-                value.may_be_namespace_mutation_receiver(id, aliases, receiver_aliases, facts)
+                value.may_be_namespace_mutation_receiver_with_alias_query(
+                    id,
+                    aliases,
+                    receiver_alias,
+                    facts,
+                )
             }),
             Self::Member(object, property, is_static) => {
                 if let Some(value) = property
@@ -730,10 +750,10 @@ impl ValueExpr {
                     .filter(|_| *is_static)
                     .and_then(|property| facts.own_data_member(object, property, id, aliases))
                 {
-                    return value.may_be_namespace_mutation_receiver(
+                    return value.may_be_namespace_mutation_receiver_with_alias_query(
                         id,
                         aliases,
-                        receiver_aliases,
+                        receiver_alias,
                         facts,
                     );
                 }
@@ -745,10 +765,10 @@ impl ValueExpr {
                 matches!(object.as_ref(), Self::Call(callee, _, _)
                     if Self::is_direct_namespace_member_callee(callee, id))
                     || matches!(object.as_ref(), Self::Unknown | Self::New(..))
-                    || object.may_be_namespace_mutation_receiver(
+                    || object.may_be_namespace_mutation_receiver_with_alias_query(
                         id,
                         aliases,
-                        receiver_aliases,
+                        receiver_alias,
                         facts,
                     )
             }
