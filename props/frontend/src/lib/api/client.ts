@@ -187,10 +187,7 @@ export async function fetchExampleDetail(snapshotSlug: string, exampleKind: Exam
   return unwrapApiResult(result, "Failed to fetch example detail");
 }
 
-// --- Overview ---
 // --- Ground truth snapshots ---
-// LLM request types
-// Container logs (from Loki)
 export async function fetchSnapshots() {
   const result = await api.GET("/api/gt/snapshots");
   return unwrapApiResult(result, "Failed to fetch snapshots");

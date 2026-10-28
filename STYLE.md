@@ -142,6 +142,7 @@ ts_library(
 
 - Bundlers take emitted `.js` (entry `main.js`). Every spec is a `vitest_test` (`//devinfra/js:vitest.bzl`; per-frontend wrapper `<frontend>/vitest.bzl`) run alone like any test. One `vitest_config` per package generates the config — never hand-write `vitest.config.*`; end the BUILD with `check_vitest_specs()`.
 - Never `js_library` for `.ts`/`.tsx` and never a whole-project `tsc_test` (files slip through unchecked). `js_library` is for `.js`/`.mjs` and generated declarations.
+- **Generated model types:** emit named types from the generator and import them directly from the generated module. Don't maintain schema lookup aliases or type-forwarding rosters in API clients; handwritten aliases should express meaningful projections or UI concepts.
 - **Gotchas:** generated `.ts` needs compiling (macros emitting TS take a `tsconfig`); every `.tsx` needs `//:node_modules/@types/react` (TS2742); whole-program tools (type-aware ESLint) need a `filegroup` of sources with `no_copy_to_bin`.
 
 ### Runfiles
