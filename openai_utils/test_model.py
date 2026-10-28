@@ -27,12 +27,12 @@ from openai_utils.model import (
 )
 
 
-def test_response_usage_serializes_required_cache_write_tokens() -> None:
+def test_response_usage_serializes_reported_cache_write_tokens() -> None:
     usage = ResponseUsage(
         input_tokens=0,
         output_tokens=1,
         total_tokens=1,
-        input_tokens_details=InputTokensDetails(cached_tokens=0),
+        input_tokens_details=InputTokensDetails(cached_tokens=0, cache_write_tokens=0),
         output_tokens_details=OutputTokensDetails(reasoning_tokens=0),
     )
 
@@ -51,6 +51,70 @@ def test_response_usage_serializes_required_cache_write_tokens() -> None:
 
     assert response.usage is not None
     assert response.usage.input_tokens_details.cache_write_tokens == 0
+
+
+@pytest.mark.parametrize(
+    ("sdk_input", "sdk_output", "expected_input", "expected_output"),
+    [
+        (None, None, None, None),
+        (
+            response_usage.InputTokensDetails.model_construct(),
+            response_usage.OutputTokensDetails.model_construct(),
+            InputTokensDetails(),
+            OutputTokensDetails(),
+        ),
+        (
+            response_usage.InputTokensDetails.model_construct(cache_write_tokens=2),
+            response_usage.OutputTokensDetails.model_construct(reasoning_tokens=None),
+            InputTokensDetails(cache_write_tokens=2),
+            OutputTokensDetails(),
+        ),
+        (
+            response_usage.InputTokensDetails(cached_tokens=0, cache_write_tokens=0),
+            response_usage.OutputTokensDetails(reasoning_tokens=0),
+            InputTokensDetails(cached_tokens=0, cache_write_tokens=0),
+            OutputTokensDetails(reasoning_tokens=0),
+        ),
+        (
+            response_usage.InputTokensDetails.model_construct(cached_tokens=3, cache_write_tokens=2, audio_tokens=1),
+            response_usage.OutputTokensDetails(reasoning_tokens=4),
+            InputTokensDetails(cached_tokens=3, cache_write_tokens=2, audio_tokens=1),
+            OutputTokensDetails(reasoning_tokens=4),
+        ),
+    ],
+    ids=["null", "empty", "partial", "zero", "positive"],
+)
+def test_response_usage_preserves_reported_details(
+    sdk_input: response_usage.InputTokensDetails | None,
+    sdk_output: response_usage.OutputTokensDetails | None,
+    expected_input: InputTokensDetails | None,
+    expected_output: OutputTokensDetails | None,
+) -> None:
+    # Compatible providers can omit fields required by the SDK's declared types.
+    usage = response_usage.ResponseUsage.model_construct(
+        input_tokens=10,
+        output_tokens=5,
+        total_tokens=15,
+        input_tokens_details=sdk_input,
+        output_tokens_details=sdk_output,
+    )
+
+    assert ResponseUsage.from_sdk(usage) == ResponseUsage(
+        input_tokens=10,
+        output_tokens=5,
+        total_tokens=15,
+        input_tokens_details=expected_input,
+        output_tokens_details=expected_output,
+    )
+
+
+def test_response_usage_preserves_omitted_details() -> None:
+    usage = response_usage.ResponseUsage.model_construct(input_tokens=10, output_tokens=5, total_tokens=15)
+
+    result = ResponseUsage.from_sdk(usage)
+
+    assert result.input_tokens_details is None
+    assert result.output_tokens_details is None
 
 
 def test_reasoning_content_item_stays_strict() -> None:

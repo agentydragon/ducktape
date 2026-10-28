@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import cast
+from typing import Any, cast
 
 import httpx2
 import pytest
@@ -15,10 +15,81 @@ from openai_utils.model import (
     FunctionCallItem,
     FunctionCallOutputItem,
     FunctionToolParam,
+    InputTokensDetails,
+    OutputTokensDetails,
     ReasoningItem,
+    ResponseUsage,
     SystemMessage,
     UserMessage,
 )
+
+
+@pytest.mark.parametrize(
+    ("details", "expected_input", "expected_output"),
+    [
+        ({}, None, None),
+        ({"prompt_tokens_details": None, "completion_tokens_details": None}, None, None),
+        ({"prompt_tokens_details": {}, "completion_tokens_details": {}}, InputTokensDetails(), OutputTokensDetails()),
+        (
+            {
+                "prompt_tokens_details": {"cache_write_tokens": 2},
+                "completion_tokens_details": {"reasoning_tokens": None},
+            },
+            InputTokensDetails(cache_write_tokens=2),
+            OutputTokensDetails(),
+        ),
+        (
+            {
+                "prompt_tokens_details": {"cached_tokens": 0, "cache_write_tokens": 0},
+                "completion_tokens_details": {"reasoning_tokens": 0},
+            },
+            InputTokensDetails(cached_tokens=0, cache_write_tokens=0),
+            OutputTokensDetails(reasoning_tokens=0),
+        ),
+        (
+            {
+                "prompt_tokens_details": {"cached_tokens": 3, "cache_write_tokens": 2, "audio_tokens": 1},
+                "completion_tokens_details": {"reasoning_tokens": 4},
+            },
+            InputTokensDetails(cached_tokens=3, cache_write_tokens=2, audio_tokens=1),
+            OutputTokensDetails(reasoning_tokens=4),
+        ),
+    ],
+    ids=["omitted", "null", "empty", "partial", "zero", "positive"],
+)
+async def test_chat_adapter_preserves_reported_usage(
+    details: dict[str, Any], expected_input: InputTokensDetails | None, expected_output: OutputTokensDetails | None
+) -> None:
+    def handler(_: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(
+            200,
+            json={
+                "id": "chatcmpl_test",
+                "object": "chat.completion",
+                "created": 1,
+                "model": "chat-model",
+                "choices": [
+                    {"index": 0, "message": {"role": "assistant", "content": "hello"}, "finish_reason": "stop"}
+                ],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15, **details},
+            },
+        )
+
+    async with AsyncOpenAI(
+        base_url="http://test/v1",
+        api_key="sk-test",
+        http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handler)),
+    ) as client:
+        model = ChatCompletionsAgentModel(client=client, model="chat-model")
+        result = await model.sample(model.prepare(AgentModelRequest(input=[UserMessage.text("hello")])))
+
+    assert result.usage == ResponseUsage(
+        input_tokens=10,
+        output_tokens=5,
+        total_tokens=15,
+        input_tokens_details=expected_input,
+        output_tokens_details=expected_output,
+    )
 
 
 async def test_chat_adapter_prepares_and_parses_tool_call() -> None:

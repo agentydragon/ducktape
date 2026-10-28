@@ -299,12 +299,18 @@ def _tool_choice_to_chat_tool_choice(tool_choice: ToolChoice) -> ChatCompletionT
 def _chat_usage_to_response_usage(usage: CompletionUsage | None) -> ResponseUsage | None:
     if usage is None:
         return None
-    cached_tokens = usage.prompt_tokens_details.cached_tokens if usage.prompt_tokens_details else None
-    reasoning_tokens = usage.completion_tokens_details.reasoning_tokens if usage.completion_tokens_details else None
     return ResponseUsage(
         input_tokens=usage.prompt_tokens,
         output_tokens=usage.completion_tokens,
         total_tokens=usage.total_tokens,
-        input_tokens_details=InputTokensDetails(cached_tokens=cached_tokens or 0),
-        output_tokens_details=OutputTokensDetails(reasoning_tokens=reasoning_tokens or 0),
+        input_tokens_details=InputTokensDetails.model_validate(
+            usage.prompt_tokens_details.model_dump(exclude_unset=True)
+        )
+        if usage.prompt_tokens_details is not None
+        else None,
+        output_tokens_details=OutputTokensDetails.model_validate(
+            usage.completion_tokens_details.model_dump(exclude_unset=True)
+        )
+        if usage.completion_tokens_details is not None
+        else None,
     )

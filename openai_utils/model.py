@@ -24,20 +24,17 @@ from openai_utils.types import ReasoningEffort, ReasoningParams, build_reasoning
 
 
 class InputTokensDetails(BaseModel):
-    """Token usage details for input (wrapped from OpenAI SDK)."""
+    """Provider-reported input counts; None means unreported."""
 
-    cached_tokens: int
-    # OpenAI's Responses API requires this even when no tokens were written to
-    # its prompt cache. Keeping a default preserves compatibility with
-    # OpenAI-compatible upstreams that omit it.
-    cache_write_tokens: int = 0
+    cached_tokens: int | None = None
+    cache_write_tokens: int | None = None
     model_config = ConfigDict(extra="allow")
 
 
 class OutputTokensDetails(BaseModel):
-    """Token usage details for output (wrapped from OpenAI SDK)."""
+    """Provider-reported output counts; None means unreported."""
 
-    reasoning_tokens: int
+    reasoning_tokens: int | None = None
     model_config = ConfigDict(extra="allow")
 
 
@@ -59,25 +56,7 @@ class ResponseUsage(BaseModel):
 
     @classmethod
     def from_sdk(cls, sdk_usage: sdk_usage_types.ResponseUsage) -> Self:
-        """Convert OpenAI SDK ResponseUsage to our wrapped type.
-
-        input_tokens_details and output_tokens_details may be None when using
-        non-OpenAI upstreams (e.g. llama-server).
-        """
-        input_details = sdk_usage.input_tokens_details
-        output_details = sdk_usage.output_tokens_details
-        return cls(
-            input_tokens=sdk_usage.input_tokens,
-            output_tokens=sdk_usage.output_tokens,
-            total_tokens=sdk_usage.total_tokens,
-            input_tokens_details=InputTokensDetails(
-                cached_tokens=input_details.cached_tokens if input_details else 0,
-                cache_write_tokens=input_details.cache_write_tokens if input_details else 0,
-            ),
-            output_tokens_details=OutputTokensDetails(
-                reasoning_tokens=output_details.reasoning_tokens if output_details else 0
-            ),
-        )
+        return cls.model_validate(sdk_usage.model_dump(exclude_unset=True))
 
 
 # ------------------------------
