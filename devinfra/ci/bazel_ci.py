@@ -143,10 +143,7 @@ def _run_bazel(
 def _race_targets(temp_dir: Path, test_query: Path) -> Path | None:
     """Write the in-scope Go test labels, or return None when there are none."""
     query = temp_dir / "go-test-query.txt"
-    query.write_text(
-        f'let go_tests = kind("go_test rule", {test_query.read_text().strip()}) in '
-        '$go_tests except attr("tags", "manual|live_openai_api", $go_tests)\n'
-    )
+    query.write_text(f'let go_tests = kind("go_test rule", {test_query.read_text().strip()}) in $go_tests\n')
     go_tests = _capture(["bazel", "query", f"--query_file={query}"])
     if not go_tests.strip():
         return None

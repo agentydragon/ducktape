@@ -119,7 +119,10 @@ def test_pr_target_selection(
     assert "--invocation_id=33333333-3333-3333-3333-333333333333" in race_args
     assert "--@io_bazel_rules_go//go/config:race" in race_args
     assert "--build_metadata=DISABLE_TARGET_TRACKING=true" in race_args
-    assert 'except attr("tags", "manual|live_openai_api"' in (tmp_path / "go-test-query.log").read_text()
+    go_test_query = (tmp_path / "go-test-query.log").read_text()
+    assert go_test_query.startswith('let go_tests = kind("go_test rule",')
+    assert go_test_query.endswith("in $go_tests\n")
+    assert 'except attr("tags"' not in go_test_query
 
 
 @pytest.mark.parametrize(
