@@ -241,8 +241,8 @@ In [CI invocation 1f9fca25](https://app.buildbuddy.io/invocation/1f9fca25-3dec-5
 `test_central_sampler_vm` reached successful setup, read the file created by setup through the
 VM executor, and passed PID 1, UID and cgroup checks. Retained `setup_finished` had exit code 0,
 but retained setup stdout was empty instead of `setup-on-executor`. The Pod variant passed.
-The VM timeline includes the runner disk and both guest images; the unused Pod runner layout
-is not on this execution path.
+The VM timeline includes the runner disk and both guest images. This run reached execution;
+it did not fail importing or starting an image.
 
 The old failure hook captured early setup/provider stalls, so this later assertion left no
 nested `process/read` reply evidence. The fixture now writes
