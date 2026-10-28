@@ -400,8 +400,8 @@ func (p *Process) readError() error {
 // each read's frames are committed in one batch per Session.
 func (c *Host) readStdout(p *Process) {
 	defer p.readers.Done()
-	buffer := make([]byte, 64*1024)
-	var pending []byte
+	buffer := make([]byte, supervision.ReadBatchBytes)
+	var framer harness.StdoutFramer
 	var readErr error
 	initializing := true
 	route := func(lines [][]byte) error {
@@ -432,33 +432,25 @@ func (c *Host) readStdout(p *Process) {
 	for {
 		n, err := p.process.Stdout().Read(buffer)
 		if n > 0 {
-			pending = append(pending, buffer[:n]...)
-			var lines [][]byte
-			for {
-				i := bytes.IndexByte(pending, '\n')
-				if i < 0 {
-					break
+			batch := framer.Feed(buffer[:n])
+			if batch.Err != nil && !batch.PendingTooLong {
+				readErr = batch.Err
+			} else {
+				readErr = route(batch.Lines)
+				if readErr == nil {
+					readErr = batch.Err
 				}
-				if i > harness.MaxFrameLineBytes {
-					readErr = errors.New("native frame exceeded the 64 MiB limit")
-					break
-				}
-				lines = append(lines, append([]byte(nil), bytes.TrimRight(pending[:i], "\r")...))
-				pending = pending[i+1:]
-			}
-			if readErr == nil {
-				readErr = route(lines)
-			}
-			if readErr == nil && len(pending) > harness.MaxFrameLineBytes {
-				readErr = errors.New("native frame exceeded the 64 MiB limit")
 			}
 			if readErr != nil {
 				break
 			}
 		}
 		if err != nil {
-			if err == io.EOF && len(pending) > 0 {
-				readErr = route([][]byte{bytes.TrimRight(pending, "\r")})
+			if err == io.EOF {
+				lines := framer.Finish()
+				if len(lines) > 0 {
+					readErr = route(lines)
+				}
 			}
 			if err != io.EOF && readErr == nil {
 				readErr = err

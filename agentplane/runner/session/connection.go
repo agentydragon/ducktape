@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"sync"
@@ -147,27 +146,21 @@ func (c *nativeConnection) deliverReplies() {
 
 func (c *nativeConnection) readStdout(process *supervision.ManagedProcess, receive func(context.Context, []byte) error) {
 	defer c.readers.Done()
-	buffer := make([]byte, 64*1024)
-	var pending []byte
+	buffer := make([]byte, supervision.ReadBatchBytes)
+	var framer harness.StdoutFramer
 	var readErr error
 	for {
 		n, err := process.Stdout().Read(buffer)
 		if n > 0 {
-			pending = append(pending, buffer[:n]...)
+			batch := framer.Feed(buffer[:n])
 			if e := c.deps.journal.WithBatch(c.deps.ctx, func(ctx context.Context) error {
-				for {
-					i := bytes.IndexByte(pending, '\n')
-					if i < 0 {
-						break
-					}
-					if i > harness.MaxFrameLineBytes {
-						return errors.New("native frame exceeded the 64 MiB limit")
-					}
-					line := append([]byte(nil), bytes.TrimRight(pending[:i], "\r")...)
-					pending = pending[i+1:]
+				for _, line := range batch.Lines {
 					if e := receive(ctx, line); e != nil {
 						return e
 					}
+				}
+				if batch.Err != nil && !batch.PendingTooLong {
+					return batch.Err
 				}
 				return nil
 			}); e != nil {
@@ -176,18 +169,28 @@ func (c *nativeConnection) readStdout(process *supervision.ManagedProcess, recei
 			}
 			c.deps.afterBatch()
 			c.deliverReplies()
-			if len(pending) > harness.MaxFrameLineBytes {
-				readErr = errors.New("native frame exceeded the 64 MiB limit")
+			if batch.Err != nil {
+				readErr = batch.Err
 				break
 			}
 		}
 		if err != nil {
-			if err == io.EOF && len(pending) > 0 {
-				if e := c.deps.journal.WithBatch(c.deps.ctx, func(ctx context.Context) error { return receive(ctx, bytes.TrimRight(pending, "\r")) }); e != nil {
-					readErr = e
-				} else {
-					c.deps.afterBatch()
-					c.deliverReplies()
+			if err == io.EOF {
+				lines := framer.Finish()
+				if len(lines) > 0 {
+					if e := c.deps.journal.WithBatch(c.deps.ctx, func(ctx context.Context) error {
+						for _, line := range lines {
+							if e := receive(ctx, line); e != nil {
+								return e
+							}
+						}
+						return nil
+					}); e != nil {
+						readErr = e
+					} else {
+						c.deps.afterBatch()
+						c.deliverReplies()
+					}
 				}
 			}
 			if err != io.EOF {

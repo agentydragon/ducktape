@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "harness",
@@ -6,6 +6,7 @@ go_library(
         "adapter.go",
         "native_request.go",
         "recovery.go",
+        "stdout_framer.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/runner/harness",
     visibility = [
@@ -17,4 +18,10 @@ go_library(
         "//agentplane/proto:event_go_proto",
         "//agentplane/proto:event_log_go_proto",
     ],
+)
+
+go_test(
+    name = "harness_test",
+    srcs = ["stdout_framer_test.go"],
+    embed = [":harness"],
 )
