@@ -1,10 +1,15 @@
 # Nix Home-Manager Migration Status
 
+Updated 2026-10-28. This page reflects flake declarations; it is not evidence that a
+host has activated a particular generation. The current flake pins nixpkgs and
+Home Manager to the 26.05 release. Common switch commands are maintained in
+[`nix/README.md`](../README.md).
+
 ## Current State
 
-Nix home-manager (flakes, nixpkgs 25.11) manages user-level configuration.
+Nix Home Manager manages user-level configuration.
 NixOS hosts inline home-manager through `nixos-rebuild`; standalone
-`homeConfigurations` remain for non-NixOS and test-only hosts. Ansible handles
+`homeConfigurations` cover non-NixOS, test, and web-session profiles. Ansible handles
 system-level setup on non-NixOS machines (apt packages, services, udev rules).
 
 ### Deployment
@@ -20,6 +25,7 @@ For standalone home-manager configs:
 ```bash
 home-manager switch --flake ~/code/ducktape#nixos-vm
 home-manager switch --impure --flake ~/code/ducktape#atlas
+home-manager switch --impure --flake ~/code/ducktape#claude-web
 ```
 
 ### Per-Host Status
@@ -27,15 +33,17 @@ home-manager switch --impure --flake ~/code/ducktape#atlas
 Ansible-role columns cross-checked against the playbooks (`ansible/{gpd,atlas}.yaml`)
 and `ansible/roles/`.
 
-| Host         | Nix status          | Ansible roles                                 | Notes                                           |
-| ------------ | ------------------- | --------------------------------------------- | ----------------------------------------------- |
-| **iguana**   | Inline via NixOS    | (NixOS-managed, no Ansible playbook)          | Fully NixOS (was Pop!\_OS "agentydragon")       |
-| **rugged**   | Inline via NixOS    | (NixOS-managed, no Ansible playbook)          | Fully NixOS tablet                              |
-| **wyrm2**    | Inline via NixOS    | (NixOS-managed, no Ansible playbook)          | Fully NixOS VM                                  |
-| **gecko**    | Inline via NixOS    | (NixOS-managed, no Ansible playbook)          | Headless CLI-only VM (Proxmox) for agents       |
-| **atlas**    | Standalone HM entry | `system_inspection_nopasswd`, `nebula`, `nix` | Minimal Proxmox host                            |
-| **nixos-vm** | Standalone HM entry | (test-only config, no Ansible playbook)       | Simplified standalone home-manager config       |
-| **gpd**      | No current output   | `gui`, `legacy_gui`, `laptop`                 | Still uses the `legacy_gui` role — last holdout |
+| Host           | Nix status            | Ansible roles                                 | Notes                                             |
+| -------------- | --------------------- | --------------------------------------------- | ------------------------------------------------- |
+| **iguana**     | Inline via NixOS      | (NixOS-managed, no Ansible playbook)          | Fully NixOS (was Pop!\_OS "agentydragon")         |
+| **rugged**     | Inline via NixOS      | (NixOS-managed, no Ansible playbook)          | Fully NixOS tablet                                |
+| **wyrm2**      | Inline via NixOS      | (NixOS-managed, no Ansible playbook)          | Fully NixOS VM                                    |
+| **gecko**      | Inline via NixOS      | (NixOS-managed, no Ansible playbook)          | Headless CLI-only VM (Proxmox) for agents         |
+| **agent-box**  | Inline custom HM      | (NixOS-managed, no Ansible playbook)          | Headless Codex profile under the `codex` user     |
+| **atlas**      | Standalone HM entry   | `system_inspection_nopasswd`, `nebula`, `nix` | Minimal Proxmox host                              |
+| **nixos-vm**   | Standalone HM entry   | (test-only config, no Ansible playbook)       | Simplified standalone Home Manager test config    |
+| **claude-web** | Standalone HM profile | (web container, no Ansible playbook)          | Portable headless Claude Code web-session profile |
+| **gpd**        | No current output     | `gui`, `legacy_gui`, `laptop`                 | Still uses the `legacy_gui` role — last holdout   |
 
 ### What Nix Manages
 

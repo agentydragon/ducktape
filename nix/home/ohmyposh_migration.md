@@ -4,6 +4,11 @@
 **Working Directory:** `/home/agentydragon/code/ducktape/nix/home`
 **Git Branch:** `devel`
 
+**Current status checked 2026-10-28:** Oh-My-Posh remains an opt-in prompt; the
+current zsh init defaults to Powerlevel10k. The cache explanation below is an
+unverified hypothesis from the original investigation, not a confirmed current
+bug or fix. It has not been reproduced against the currently pinned package.
+
 ## What We Accomplished
 
 ### Prompt Generator Selection
@@ -34,15 +39,17 @@ Evaluated alternatives to Powerlevel10k for shell prompts. Key finding: **Starsh
 
 1. **Incrementing integer on right prompt**: Caused by `RPROMPT = "%*"` in home.nix sessionVariables conflicting with Oh-My-Posh's rprompt. Fixed by `unset RPROMPT` in zsh-init.zsh.
 
-2. **Session segment always showing user@hostname**: Diagnosed as **stale cache** issue (see below).
+2. **Session segment always showing user@hostname**: The original investigation
+   suspected a stale-cache issue (see below); that diagnosis remains unverified.
 
 ## Incomplete Work / Open Threads
 
 ### Oh-My-Posh Cache Architecture Problem (HIGH PRIORITY)
 
-**Root cause analysis of user@hostname appearing unexpectedly:**
+**Unverified hypothesis for user@hostname appearing unexpectedly:**
 
-The Oh-My-Posh cache has a design flaw in config keying:
+The original investigation inspected a local upstream source checkout and reported this
+cache-key behavior:
 
 From `/code/github.com/JanDeDobbeleer/oh-my-posh/src/cache/init.go:49-50`:
 
@@ -58,12 +65,16 @@ base64String, found := cache.Get[string](cache.Session, configKey)
 // configKey is just "CONFIG" - no path in key
 ```
 
-**The bug:** Config is cached under key `CONFIG` per session ID, **not keyed by config file path**. If:
+**Proposed failure mode:** Config appeared to be cached under key `CONFIG` per session ID,
+**not keyed by config file path** in the inspected source. If that behavior applies to the
+currently pinned package and sessions share an ID, then:
 
 1. Shell A starts with config X → cached as `CONFIG`
 2. Shell B (inheriting `POSH_SESSION_ID`) starts with config Y → **reads cached config X**
 
-**Workaround applied:** `rm -rf ~/.cache/oh-my-posh/*` clears stale cache.
+**Manual workaround considered:** clearing the Oh-My-Posh cache was suggested during the
+original investigation. The repository does not apply this automatically, and this audit
+did not establish that clearing the cache was necessary or effective.
 
 **Potential permanent fixes:**
 
@@ -87,8 +98,6 @@ home-manager switch --impure --flake .#atlas
 # Test oh-my-posh prompt
 USE_OHMYPOSH=1 zsh -c 'source ~/.zshrc; oh-my-posh print primary --config ~/.config/oh-my-posh/config.json'
 
-# Clear oh-my-posh cache if stale config issues
-rm -rf ~/.cache/oh-my-posh/*
 ```
 
 ### Key Constraints

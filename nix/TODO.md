@@ -3,11 +3,12 @@
 ## Remote desktop to wyrm2 — xrdp-over-Nebula for now; Sunshine/Guac later
 
 GRD system Remote Login (PR #3424) is NixOS-blocked (dormant). The chosen-for-now
-path is **xrdp + Xfce over Nebula** (PR #3431, live on wyrm2): headless, pre-login,
-no auto-login, firewall-restricted to the `nebula1` trusted interface. Connect with
-`xfreerdp /v:10.42.0.20 /u:agentydragon /cert:tofu`, or the "wyrm2 (RDP)" desktop
-entry on rugged (PR #3435). Full RCA + security model + connection steps in
-`nix/debug/wyrm2/remote_desktop_wyrm2.md`.
+configuration is **xrdp + Xfce over Nebula** (PR #3431): headless, pre-login,
+no auto-login, firewall-restricted to the `nebula1` trusted interface. This audit
+did not verify the running service on wyrm2. The "wyrm2 (RDP)" desktop entry is
+configured on rugged (PR #3435); that host state was not checked either. Connect
+with `xfreerdp /v:10.42.0.20 /u:agentydragon /cert:tofu`. Full RCA + security
+model + connection steps in `nix/debug/wyrm2/remote_desktop_wyrm2.md`.
 
 Later options (not now): Sunshine/Moonlight (passwordless after one-time pairing,
 GPU/gaming, but needs a logged-in seat0 session); Guacamole via Authentik RAC
@@ -30,7 +31,8 @@ annoying.
 
 ## Nix PATH not available in non-interactive shells (mosh issue)
 
-**Problem:** On non-NixOS systems with nix installed, mosh fails to find nix-installed `mosh-server` because:
+**Reported problem:** On non-NixOS systems with Nix installed, mosh fails to find
+Nix-installed `mosh-server` because:
 
 1. mosh runs `mosh-server` via SSH in a **non-login, non-interactive shell**
 2. The nix installer only adds PATH setup to:
@@ -43,9 +45,15 @@ annoying.
 - mosh true color broken (mosh 1.4.0 required, but system has 1.3.2)
 - Any nix-installed binary unavailable when running commands via `ssh host 'command'`
 
-**Current workaround:** Added nix-daemon.sh sourcing to `programs.zsh.envExtra` in home.nix (writes to `~/.zshenv` which runs for ALL zsh invocations).
+**Current repository state:** The previous workaround claim is stale. The shared shell
+module currently sets `programs.zsh.envExtra` only to `skip_global_compinit=1`; no
+`nix-daemon.sh` sourcing is present in the repository. The non-interactive mosh behavior
+has not been rechecked on an affected host. Reproduce it before choosing a configuration
+or installer fix.
 
-**Proper fix:** The nix installer should add sourcing to `/etc/zsh/zshenv` instead of/in addition to `/etc/zsh/zshrc`. This is arguably a gap in nix's shell integration.
+**Possible fix:** The Nix installer could add sourcing to `/etc/zsh/zshenv` instead of/in
+addition to `/etc/zsh/zshrc`. Confirm the cause and scope before treating this as an
+installer defect.
 
 ## Wire wyrm2 GitHub SSH key
 
