@@ -80,3 +80,13 @@ extension zip come out of one `bazel build //aiquota:aiquota_wheel
 //aiquota/gnome:aiquota_zip` invocation, and `nix/packages/gnome-shell-aiquota.nix`
 consumes both via `artifacts.aiquota` and `artifacts.aiquota-extension`.
 Changing either asset changes the release identity and publishes both assets.
+
+## Bootstrap dependencies
+
+The shared [Bazel action](../../.github/actions/bb-remote/action.yml) invokes
+`bb remote` directly and selects runner/action images from `devinfra/image_pins.json`.
+Keep that bootstrap command independent of the standalone `bbr` wheel when
+changing CI prerequisites: an older pinned wheel cannot supply a newly added
+entry point. The wheel pin is in
+[`nix/artifact-pins.json`](../../nix/artifact-pins.json); interactive
+[`bbr`](../bbr.py) reads its repository defaults from `devinfra/bbr.json`.

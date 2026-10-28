@@ -36,8 +36,8 @@ Upstream should either:
 
 ## Status
 
-- Still present on upstream `main` as of 2026-03-07.
+- Still present in our pinned `aspect_rules_py` 1.12.1 on 2026-10-28. The
+  version-pinned upstream source still passes regexes through awk
+  double-quoted strings; see [`py_image_layer.bzl` at v1.12.1](https://github.com/aspect-build/rules_py/blob/v1.12.1/py/private/py_image_layer.bzl).
 - Upstream repo: <https://github.com/aspect-build/rules_py>
-- File: `py/private/py_image_layer.bzl`, `default_layer_groups` dict (lines ~48-54).
-- Our pinned version: 1.8.4.
 - The warning is cosmetic — matching behavior is correct.

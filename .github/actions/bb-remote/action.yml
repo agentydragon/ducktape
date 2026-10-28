@@ -1,11 +1,10 @@
 # Wrapper around `bb remote` that ensures --config=rbe is always passed.
 #
-# We use `bb remote` directly instead of `bbr` (devinfra/bbr.py) in CI to
-# avoid a chicken-and-egg: bbr reads the RBE image pin from
-# devinfra/image_pins.json, but CI workflows may need to build/push the RBE
-# image itself. This action centralizes the --config=rbe flag so individual
-# workflows don't forget it (without RBE, actions run in linux-sandbox on the
-# runner VM which lacks tools like cpio).
+# Direct `bb remote` keeps a bootstrap path independent of the pinned bbr wheel.
+# This action reads runner/action image pins from devinfra/image_pins.json;
+# interactive bbr reads its defaults from devinfra/bbr.json.
+# Centralize --config=rbe here so workflows do not fall back to linux-sandbox
+# on a runner VM lacking action tools such as cpio.
 #
 # Two modes, mutually exclusive:
 # - `args`:   `bb remote <args> --config=rbe --config=ci ...`
