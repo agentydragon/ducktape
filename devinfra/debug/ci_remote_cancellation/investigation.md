@@ -29,6 +29,11 @@ change is selected yet.
   control requeued and completed the action. However, the barrier case still
   completed a new 30-second action with retries disabled. Retry suppression
   alone does not solve continued work after cancellation.
+- A [client RPC trace](rpc_retry_trace.md) directly captured a child-only control
+  receiving terminal action `CANCELLED`, then starting a fresh same-action
+  `Execute` 105 ms after the original RPC closed. The replacement succeeded.
+  This confirms the retry mechanism in that control. Two further normal-path
+  probes reproduced the replacement but did not retain their trace artifacts.
 
 ## Cancellation ownership
 
@@ -116,6 +121,11 @@ worker lease response, operator logs, or confirmation from BuildBuddy.
 A short lease delay could allow an action to be queued and then run much longer
 on another worker. The observed +8.641-second queue time is consistent with that
 possibility; it neither establishes the hosted lease value nor proves this cause.
+
+The [traced control](rpc_retry_trace.md) started its retry after 105 ms, while
+the replacement's worker queue timestamp was about eight seconds later. Do not
+interpret the incident's queue offset as retry backoff or a direct measurement
+of how long the producer remained active.
 
 ## Competing explanations
 

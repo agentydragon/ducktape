@@ -7,6 +7,10 @@ is a separate control of the cancellation API's scope.
 
 Related evidence in this folder:
 
+- [RPC retry trace](rpc_retry_trace.md): a child-only control directly captured
+  terminal action `CANCELLED` followed 105 ms later by a fresh same-action
+  `Execute`; [selected evidence](rpc_retry_trace.json). Normal-path trace
+  artifacts were not retained.
 - [Retry-disabled comparison](retry_comparison.md): `--remote_retries=0`
   suppressed a plain-action requeue, but a different action released after
   cancellation still completed; [selected evidence](retry_comparison.json).

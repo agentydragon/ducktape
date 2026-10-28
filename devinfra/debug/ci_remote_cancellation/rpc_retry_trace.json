@@ -1,0 +1,263 @@
+{
+  "observed_on_utc": "2026-10-28",
+  "source_commit": "215af6378b9ddf23c12ce3d22f1a761f782454e7",
+  "bazel_version": "9.2.0",
+  "bb_cli_version": "5.0.466",
+  "remote_retries": "default",
+  "control": {
+    "mode": "child_only_cancellation_control",
+    "child_invocation_id": "90320f94-9886-4d6c-8998-ee98aa210de0",
+    "outer_invocation_id": "5c2bf3a3-8200-42a9-9c3c-99b2b6cdfe76",
+    "timeline": [
+      {
+        "at": "2026-10-28T04:07:24.585245+00:00",
+        "event": "sending_child_only_cancel",
+        "invocation_id": "90320f94-9886-4d6c-8998-ee98aa210de0"
+      },
+      {
+        "at": "2026-10-28T04:07:24.683058+00:00",
+        "event": "child_only_cancel_acknowledged",
+        "invocation_id": "90320f94-9886-4d6c-8998-ee98aa210de0",
+        "http_status": 200
+      },
+      {
+        "at": "2026-10-28T04:08:09.521779+00:00",
+        "event": "entry_exited",
+        "exit_code": 0
+      },
+      {
+        "at": "2026-10-28T04:08:10.273713+00:00",
+        "event": "cleanup_cancel",
+        "invocation_id": "90320f94-9886-4d6c-8998-ee98aa210de0",
+        "http_status": 200
+      },
+      {
+        "at": "2026-10-28T04:08:10.393684+00:00",
+        "event": "cleanup_cancel",
+        "invocation_id": "5c2bf3a3-8200-42a9-9c3c-99b2b6cdfe76",
+        "http_status": 200
+      }
+    ],
+    "raw_trace_sha256": "25fde1b17cdba920bd723927535ffe04a651533845ae8786967d614bf230210c",
+    "raw_trace_size_bytes": 8496,
+    "complete_log_entries": 8,
+    "incomplete_tail": false,
+    "execution_rpcs": [
+      {
+        "log_entry_index": 5,
+        "method": "build.bazel.remote.execution.v2.Execution/Execute",
+        "tool_invocation_id": "90320f94-9886-4d6c-8998-ee98aa210de0",
+        "action_id": "e628e36c8a053fc1229e902f03e322f1bbdd994a7603e6b40c594390b9e657f9",
+        "start_time": "2026-10-28T04:07:19.114000000Z",
+        "end_time": "2026-10-28T04:07:24.666000000Z",
+        "rpc_status_code": 0,
+        "request_action_digest": {
+          "hash": "e628e36c8a053fc1229e902f03e322f1bbdd994a7603e6b40c594390b9e657f9",
+          "size_bytes": 310
+        },
+        "skip_cache_lookup": true,
+        "terminal_operation": {
+          "name": "/uploads/9774338f-858a-4694-993e-441e9125e69c/blobs/e628e36c8a053fc1229e902f03e322f1bbdd994a7603e6b40c594390b9e657f9/310",
+          "done": true,
+          "execute_response_status_code": 1,
+          "stage": 4
+        }
+      },
+      {
+        "log_entry_index": 6,
+        "method": "build.bazel.remote.execution.v2.Execution/Execute",
+        "tool_invocation_id": "90320f94-9886-4d6c-8998-ee98aa210de0",
+        "action_id": "e628e36c8a053fc1229e902f03e322f1bbdd994a7603e6b40c594390b9e657f9",
+        "start_time": "2026-10-28T04:07:24.771000000Z",
+        "end_time": "2026-10-28T04:08:03.141000000Z",
+        "rpc_status_code": 0,
+        "request_action_digest": {
+          "hash": "e628e36c8a053fc1229e902f03e322f1bbdd994a7603e6b40c594390b9e657f9",
+          "size_bytes": 310
+        },
+        "skip_cache_lookup": true,
+        "terminal_operation": {
+          "name": "/uploads/c5bd4796-b1c5-40ef-99bf-d2ba27622417/blobs/e628e36c8a053fc1229e902f03e322f1bbdd994a7603e6b40c594390b9e657f9/310",
+          "done": true,
+          "execute_response_status_code": 0,
+          "action_exit_code": 0,
+          "stage": 4
+        }
+      }
+    ],
+    "completed_action": {
+      "execution_id": "/uploads/c5bd4796-b1c5-40ef-99bf-d2ba27622417/blobs/e628e36c8a053fc1229e902f03e322f1bbdd994a7603e6b40c594390b9e657f9/310",
+      "action_digest": {
+        "hash": "e628e36c8a053fc1229e902f03e322f1bbdd994a7603e6b40c594390b9e657f9",
+        "sizeBytes": "310"
+      },
+      "exit_code": 0,
+      "worker_metadata": {
+        "worker": "3e461a47-ed3e-4d87-850b-9768e10d565b",
+        "queuedTimestamp": "2026-10-28T04:07:32.921143834Z",
+        "workerStartTimestamp": "2026-10-28T04:07:32.979981832Z",
+        "workerCompletedTimestamp": "2026-10-28T04:08:03.101539707Z",
+        "inputFetchStartTimestamp": "2026-10-28T04:07:32.980562387Z",
+        "inputFetchCompletedTimestamp": "2026-10-28T04:07:33.019668499Z",
+        "executionStartTimestamp": "2026-10-28T04:07:33.019668839Z",
+        "executionCompletedTimestamp": "2026-10-28T04:08:03.060809882Z",
+        "outputUploadStartTimestamp": "2026-10-28T04:08:03.060810462Z",
+        "outputUploadCompletedTimestamp": "2026-10-28T04:08:03.101539098Z"
+      },
+      "output_files": [
+        {
+          "path": "bazel-out/k8-fastbuild/bin/active.txt",
+          "digest": {
+            "hash": "0637b4963caff388eeab2f716d4f22d1c5e9249542e82de926d432bf46aa0cf9",
+            "sizeBytes": "24"
+          }
+        }
+      ],
+      "verified_output": "active-action-completed\n"
+    }
+  },
+  "normal_path_capture_attempts": [
+    {
+      "mode": "normal_cancellation",
+      "child_invocation_id": "1e249ddc-4afd-4aa5-b088-047c4ad88f4c",
+      "outer_invocation_id": "cad03378-2b3c-4329-95c8-ca3d767d9750",
+      "timeline": [
+        {
+          "at": "2026-10-28T04:05:34.624248+00:00",
+          "event": "sending_entry_sigterm"
+        },
+        {
+          "at": "2026-10-28T04:05:34.838062+00:00",
+          "event": "entry_exited",
+          "exit_code": 130
+        },
+        {
+          "at": "2026-10-28T04:05:34.963487+00:00",
+          "event": "outer_and_child_cancellation_observed",
+          "outer_invocation_id": "cad03378-2b3c-4329-95c8-ca3d767d9750"
+        },
+        {
+          "at": "2026-10-28T04:06:14.232807+00:00",
+          "event": "cleanup_cancel",
+          "invocation_id": "1e249ddc-4afd-4aa5-b088-047c4ad88f4c",
+          "http_status": 200
+        },
+        {
+          "at": "2026-10-28T04:06:14.311599+00:00",
+          "event": "cleanup_cancel",
+          "invocation_id": "cad03378-2b3c-4329-95c8-ca3d767d9750",
+          "http_status": 200
+        }
+      ],
+      "outer_bes_event_count_at_artifact_lookup": 6,
+      "trace_artifact_found": false,
+      "completed_action": {
+        "execution_id": "/uploads/f9b2ea9d-5d70-44d6-a206-163a5a5c49e3/blobs/4ed53a7a52b12aa5df008b0e26ac4bbc5bf1621d368e7971c7809e4192705dc9/310",
+        "action_digest": {
+          "hash": "4ed53a7a52b12aa5df008b0e26ac4bbc5bf1621d368e7971c7809e4192705dc9",
+          "sizeBytes": "310"
+        },
+        "exit_code": 0,
+        "worker_metadata": {
+          "worker": "3e461a47-ed3e-4d87-850b-9768e10d565b",
+          "queuedTimestamp": "2026-10-28T04:05:43.036208299Z",
+          "workerStartTimestamp": "2026-10-28T04:05:43.116028733Z",
+          "workerCompletedTimestamp": "2026-10-28T04:06:13.234997139Z",
+          "inputFetchStartTimestamp": "2026-10-28T04:05:43.116656378Z",
+          "inputFetchCompletedTimestamp": "2026-10-28T04:05:43.157900127Z",
+          "executionStartTimestamp": "2026-10-28T04:05:43.157900437Z",
+          "executionCompletedTimestamp": "2026-10-28T04:06:13.196257069Z",
+          "outputUploadStartTimestamp": "2026-10-28T04:06:13.196257400Z",
+          "outputUploadCompletedTimestamp": "2026-10-28T04:06:13.234996819Z"
+        },
+        "output_files": [
+          {
+            "path": "bazel-out/k8-fastbuild/bin/active.txt",
+            "digest": {
+              "hash": "0637b4963caff388eeab2f716d4f22d1c5e9249542e82de926d432bf46aa0cf9",
+              "sizeBytes": "24"
+            }
+          }
+        ],
+        "verified_output": "active-action-completed\n"
+      }
+    },
+    {
+      "mode": "normal_cancellation_with_post_replacement_flush",
+      "child_invocation_id": "4edb5e0a-da07-4534-8324-6b0759c18ed2",
+      "outer_invocation_id": "3473cd6c-0f9a-46c8-a957-ce2b3c21071e",
+      "timeline": [
+        {
+          "at": "2026-10-28T04:10:12.261847+00:00",
+          "event": "sending_entry_sigterm"
+        },
+        {
+          "at": "2026-10-28T04:10:12.425580+00:00",
+          "event": "entry_exited",
+          "exit_code": 130
+        },
+        {
+          "at": "2026-10-28T04:10:12.513319+00:00",
+          "event": "outer_and_child_cancellation_observed",
+          "outer_invocation_id": "3473cd6c-0f9a-46c8-a957-ce2b3c21071e"
+        },
+        {
+          "at": "2026-10-28T04:10:20.816927+00:00",
+          "event": "replacement_observed_before_flush",
+          "execution_ids": [
+            "/uploads/f546305d-ddd9-44e0-8581-d00bf5b0677f/blobs/1e8722b90273bd5707a21f00b2df7dcfae286ed11b7c3619eeee1cf62bd48789/310"
+          ]
+        },
+        {
+          "at": "2026-10-28T04:10:21.061344+00:00",
+          "event": "flush_marker_uploaded_after_replacement",
+          "digest": "41c9638a1ac2d3b1cccac6da14cc362b199ca7ac181b954833ecd171c0debf54/42"
+        },
+        {
+          "at": "2026-10-28T04:10:51.769265+00:00",
+          "event": "cleanup_cancel",
+          "invocation_id": "4edb5e0a-da07-4534-8324-6b0759c18ed2",
+          "http_status": 200
+        },
+        {
+          "at": "2026-10-28T04:10:51.843060+00:00",
+          "event": "cleanup_cancel",
+          "invocation_id": "3473cd6c-0f9a-46c8-a957-ce2b3c21071e",
+          "http_status": 200
+        }
+      ],
+      "outer_bes_event_count_at_artifact_lookup": 6,
+      "trace_artifact_found": false,
+      "completed_action": {
+        "execution_id": "/uploads/f546305d-ddd9-44e0-8581-d00bf5b0677f/blobs/1e8722b90273bd5707a21f00b2df7dcfae286ed11b7c3619eeee1cf62bd48789/310",
+        "action_digest": {
+          "hash": "1e8722b90273bd5707a21f00b2df7dcfae286ed11b7c3619eeee1cf62bd48789",
+          "sizeBytes": "310"
+        },
+        "exit_code": 0,
+        "worker_metadata": {
+          "worker": "3e461a47-ed3e-4d87-850b-9768e10d565b",
+          "queuedTimestamp": "2026-10-28T04:10:20.650971046Z",
+          "workerStartTimestamp": "2026-10-28T04:10:20.711785782Z",
+          "workerCompletedTimestamp": "2026-10-28T04:10:50.838643937Z",
+          "inputFetchStartTimestamp": "2026-10-28T04:10:20.712402118Z",
+          "inputFetchCompletedTimestamp": "2026-10-28T04:10:20.752857531Z",
+          "executionStartTimestamp": "2026-10-28T04:10:20.752857871Z",
+          "executionCompletedTimestamp": "2026-10-28T04:10:50.798938574Z",
+          "outputUploadStartTimestamp": "2026-10-28T04:10:50.798938914Z",
+          "outputUploadCompletedTimestamp": "2026-10-28T04:10:50.838643628Z"
+        },
+        "output_files": [
+          {
+            "path": "bazel-out/k8-fastbuild/bin/active.txt",
+            "digest": {
+              "hash": "0637b4963caff388eeab2f716d4f22d1c5e9249542e82de926d432bf46aa0cf9",
+              "sizeBytes": "24"
+            }
+          }
+        ],
+        "verified_output": "active-action-completed\n"
+      }
+    }
+  ]
+}

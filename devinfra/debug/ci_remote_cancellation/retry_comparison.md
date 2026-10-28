@@ -123,6 +123,11 @@ VM action conclusively; there is no client Execute trace or server dispatch
 reason for these runs. The barrier counterexample establishes that new work can
 escape independently of enabling Bazel remote retries.
 
+The later [RPC trace control](rpc_retry_trace.md) directly observed the proposed
+`CANCELLED`-to-fresh-`Execute` sequence, with a 105 ms interval between calls.
+It deliberately retained the outer build; normal-path trace retention is still
+an attribution gap.
+
 Keep the two mechanisms distinct when choosing a change. A targeted treatment
 of `CANCELLED` retries could address the first, while cancellation sequencing or
 an invocation-level admission fence would need to address later new submissions.
