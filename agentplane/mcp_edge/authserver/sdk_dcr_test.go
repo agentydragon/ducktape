@@ -20,7 +20,7 @@ func TestPythonSDKRegistersAgainstProductionHandlers(t *testing.T) {
 			ResourceMetadataURL: server.ResourceMetadataURL(),
 		})
 	})
-	binary, err := runfiles.Rlocation("ducktape/agentplane/system_tests/dcr_probe_bin")
+	binary, err := runfiles.Rlocation("ducktape/agentplane/mcp_edge/authserver/sdk_dcr_client_bin")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -28,7 +28,7 @@ func TestPythonSDKRegistersAgainstProductionHandlers(t *testing.T) {
 	defer cancel()
 	output, err := exec.CommandContext(ctx, binary, h.url+resourcePath).CombinedOutput()
 	if err != nil {
-		t.Fatalf("registration-only SDK probe: %v\n%s", err, output)
+		t.Fatalf("registration-only SDK test: %v\n%s", err, output)
 	}
 	var registrations int
 	if err := h.db.QueryRowContext(t.Context(), `SELECT count(*) FROM oauth_registered_client`).Scan(&registrations); err != nil {

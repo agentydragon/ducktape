@@ -1,4 +1,33 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+
+py_library(
+    name = "dcr",
+    testonly = True,
+    srcs = ["dcr.py"],
+    deps = [
+        "@pypi//fastmcp_slim",
+        "@pypi//httpx2",
+        "@pypi//mcp",
+        "@pypi//mcp_types",
+        "@pypi//py_key_value_aio",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "sdk_dcr_client",
+    testonly = True,
+    srcs = ["sdk_dcr_client.py"],
+    deps = [":dcr"],
+)
+
+py_binary(
+    name = "sdk_dcr_client_bin",
+    testonly = True,
+    main_module = "agentplane.mcp_edge.authserver.sdk_dcr_client",
+    deps = [":sdk_dcr_client"],
+)
 
 go_library(
     name = "authserver",
@@ -35,7 +64,7 @@ go_test(
         "integration_testmain_test.go",
         "sdk_dcr_test.go",
     ],
-    data = ["//agentplane/system_tests:dcr_probe_bin"],
+    data = [":sdk_dcr_client_bin"],
     embed = [":authserver"],
     tags = ["requires_docker"],
     deps = [

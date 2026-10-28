@@ -196,8 +196,10 @@ distinct wake generations per authenticated caller per rolling minute.
 
 `test_mcp` and `test_dcr` run on a stack with Dex, the standalone MCP edge, `mcp-everything` and the
 Dex-backed OAuth MCP fixture (`system_test(mcp_fixtures = True)`), configured under test-only names
-([`mcp_servers.py`](mcp_servers.py)). `test_dcr` registers an MCP client with the edge OAuth server
-([`dcr.md`](dcr.md)); `test_mcp` continues to exercise Actions calling its upstream MCP fixtures. In
+([`mcp_servers.py`](mcp_servers.py)). `test_dcr` checks deployed discovery and public-client registration
+using plain HTTP; `//agentplane/mcp_edge/authserver:sdk_dcr_test` owns the real Python SDK contract
+against production handlers and PostgreSQL ([`dcr.md`](dcr.md)). `test_mcp` exercises Actions calling
+its upstream MCP fixtures. In
 `test_mcp` the scripted model runs one
 `agentplane --json actions …` command per turn, on each harness, and the scenario reads the printed
 receipt back from what the harness sent the model.

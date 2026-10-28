@@ -1,5 +1,5 @@
 load("//agentplane/system_tests:defs.bzl", "system_test")
-load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 # gazelle:exclude test_agent_messaging.py
 # gazelle:exclude test_dcr.py
@@ -395,36 +395,11 @@ system_test(
     mcp_fixtures = True,
     deps = [
         ":conftest",
-        ":dcr",
         "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
+        "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
-)
-
-py_library(
-    name = "dcr",
-    srcs = ["dcr.py"],
-    deps = [
-        "@pypi//fastmcp_slim",
-        "@pypi//httpx2",
-        "@pypi//mcp",
-        "@pypi//mcp_types",
-        "@pypi//py_key_value_aio",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
-    name = "dcr_probe",
-    srcs = ["dcr_probe.py"],
-    deps = [":dcr"],
-)
-
-py_binary(
-    name = "dcr_probe_bin",
-    main_module = "agentplane.system_tests.dcr_probe",
-    deps = [":dcr_probe"],
 )
 
 py_test(

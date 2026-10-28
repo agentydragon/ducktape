@@ -1,20 +1,23 @@
-# Smaller DCR fixture probe
+# Smaller DCR fixture
 
 ## Result and scope
 
 The real Python MCP SDK completes discovery and registration against the production
 Go OAuth and MCP handlers with PostgreSQL, without k3s. The probe reuses the existing
-auth-server integration fixture and the unchanged `system_tests/dcr.py` client.
+auth-server integration fixture and the unchanged SDK wire client, relocated from
+`system_tests/dcr.py` to `mcp_edge/authserver/dcr.py`.
 Both loopback and HTTPS redirect cases persist a registration in the real database.
 
 The upstream OIDC provider is the auth-server tests' fake, used for startup discovery.
 Registration stops before browser authorization, as the existing system scenario does.
 No Action Service, Sandbox, runner, Kubernetes API, or image deployment is exercised.
 
-The existing k3s test remains unchanged. This branch is an experiment, not an enabled
-CI speed improvement.
+The SDK component target owns the protocol assertions; the independent k3s smoke owns
+the built edge, configuration, Service/port-forward, discovery, and registration.
+See [coverage and limits](../../system_tests/dcr.md). A full sweep runs both targets;
+the expected benefit is narrower selection for ordinary SDK-helper changes.
 
-## Evidence
+## Initial probe evidence
 
 Base: `540bc64f8f82576662c217b94eecd18f69f25b0d`, with the local probe patch mirrored by
 `bbr`. BuildBuddy's commit field identifies that base, not a published candidate head.
@@ -49,20 +52,19 @@ bbr test //agentplane/mcp_edge/authserver:sdk_dcr_test \
   //agentplane/system_tests:test_dcr --nocache_test_results --test_output=errors
 ```
 
-## Proposed promotion
+## Dependency boundary
 
-Keep the SDK protocol assertions in the component test: challenge, metadata chain,
+The SDK protocol assertions stay in the component test: challenge, metadata chain,
 same-origin registration, JSON/201, persisted public-client fields, PKCE/state, and
-absence of a token. Keep an independent k3s HTTP smoke for the built edge, generated
+absence of a token. The independent k3s HTTP smoke checks the built edge, generated
 configuration, Service/port-forward, challenge, discovery, and a real registration.
-Do not copy the SDK helper into that smoke.
+It does not import or copy the SDK helper.
 
-Only `test_dcr.py` currently consumes `system_tests:dcr`; `test_mcp` has a separate
-operator OAuth flow. Removing `:dcr` from the smoke would let ordinary SDK-helper
-edits select the component test without selecting k3s. Production edge/image/config
+Before the split, only `test_dcr.py` consumed `system_tests:dcr`; `test_mcp` has a
+separate operator OAuth flow. The relocated helper now belongs only to the component
+target. Ordinary SDK-helper edits can select it without selecting k3s. Edge/image/config
 edits and broad CI triggers can still select the system tests. Keeping the current
 helper in both targets would add cost without establishing this dependency boundary.
 
-Before promotion, implement and run the independent smoke, verify affected-target
-selection for a helper-only edit, and measure the combined component/smoke cost.
-The probe alone does not establish those results.
+The initial timing probe alone does not establish affected-target selection or the
+combined component/smoke cost; those require validation of the promoted split.
