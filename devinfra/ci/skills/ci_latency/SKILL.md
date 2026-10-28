@@ -185,6 +185,14 @@ records are counted rather than assumed zero. A target's summary can retain
 old cached durations and aggregate many shards, so do not rank fresh cost from
 that field alone. Inspect the critical path before promising feedback savings.
 
+Before attributing costs to a landed optimization, verify the effective tested
+source contains it: `git merge-base --is-ancestor "$FIX_SHA" "$TESTED_SHA"`
+(exit 0: present; 1: absent; other: unavailable history). Use child invocation
+metadata and any runner-applied patch to establish the tested tree. A recent
+stacked PR may test an older base after the fix merged into devel. Stratify costs
+by fix presence and corroborate with case counts or phase events; chronological
+proximity alone is not a before/after comparison.
+
 `GetTarget` pages each status group separately (currently 12 targets per page).
 Check every `nextPageToken` before treating a listing as complete. For a cost
 shortlist, collect `GetExecution` first and fetch logs/XML only for selected
