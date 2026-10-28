@@ -6,7 +6,7 @@ Bazel's declared inputs. The config retains the ordinary rules and adds
 `no-floating-promises`, `no-misused-promises`, and `await-thenable`.
 
 ```sh
-bbr build //util/frontend/x/typed_eslint:good //util/frontend/x/typed_eslint:worker \
+bbr build //devinfra/lint/x/typed_eslint/fixtures:good //devinfra/lint/x/typed_eslint/fixtures:worker \
   --//devinfra/lint/x/typed_eslint:enabled
 ```
 
@@ -14,8 +14,8 @@ These valid TypeScript specimens should fail for their named promise rules;
 `manual` tags keep them out of wildcard builds.
 
 ```sh
-bbr build //util/frontend/x/typed_eslint:floating \
-  //util/frontend/x/typed_eslint:misused //util/frontend/x/typed_eslint:non_thenable \
+bbr build //devinfra/lint/x/typed_eslint/fixtures:floating \
+  //devinfra/lint/x/typed_eslint/fixtures:misused //devinfra/lint/x/typed_eslint/fixtures:non_thenable \
   --//devinfra/lint/x/typed_eslint:enabled --keep_going
 ```
 
@@ -27,5 +27,5 @@ rules_ts needs a new upstream patch, and callers need no additional lint source 
 The flag defaults to false. Existing whole-program typed lint tests remain enabled.
 There is one ESLint aspect and one set of report names in either mode.
 
-See [the investigation](../../../debug/typed_eslint_aspect.md) for commands, evidence, cost,
+See [the investigation](investigation.md) for commands, evidence, cost,
 and the remaining adoption gates.

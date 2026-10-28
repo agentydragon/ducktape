@@ -49,7 +49,7 @@ See the upstream [parser options](https://typescript-eslint.io/packages/parser/)
 
 ## Behavioral proof
 
-All five fixtures in `util/frontend/x/typed_eslint` are ordinary library targets. The three
+All five fixtures in `devinfra/lint/x/typed_eslint/fixtures` are ordinary library targets. The three
 negative targets are `manual` so wildcard builds do not fail on intentionally bad specimens.
 The generated dependency contract is produced by a Bazel write action.
 
@@ -67,14 +67,14 @@ The failures above were the intended rule diagnostics, with no parser or unresol
 
 ```sh
 # All five compile, with the normal default aspects still enabled.
-bbr build //util/frontend/x/typed_eslint:good //util/frontend/x/typed_eslint:worker \
-  //util/frontend/x/typed_eslint:floating //util/frontend/x/typed_eslint:misused \
-  //util/frontend/x/typed_eslint:non_thenable
+bbr build //devinfra/lint/x/typed_eslint/fixtures:good //devinfra/lint/x/typed_eslint/fixtures:worker \
+  //devinfra/lint/x/typed_eslint/fixtures:floating //devinfra/lint/x/typed_eslint/fixtures:misused \
+  //devinfra/lint/x/typed_eslint/fixtures:non_thenable
 
 # Expected failure: exactly the three negative specimens fail the new promise rules.
-bbr build //util/frontend/x/typed_eslint:good //util/frontend/x/typed_eslint:worker \
-  //util/frontend/x/typed_eslint:floating //util/frontend/x/typed_eslint:misused \
-  //util/frontend/x/typed_eslint:non_thenable \
+bbr build //devinfra/lint/x/typed_eslint/fixtures:good //devinfra/lint/x/typed_eslint/fixtures:worker \
+  //devinfra/lint/x/typed_eslint/fixtures:floating //devinfra/lint/x/typed_eslint/fixtures:misused \
+  //devinfra/lint/x/typed_eslint/fixtures:non_thenable \
   --//devinfra/lint/x/typed_eslint:enabled --keep_going
 ```
 
