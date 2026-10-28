@@ -7,6 +7,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
@@ -56,6 +57,9 @@ type Service struct {
 // maxFilterCommands bounds DispatchFilter.command_ids, the size of a Session's queue.
 const maxFilterCommands = 1000
 
+// watchWriteTimeout bounds how long a slow reader can hold a Dispatcher watch.
+const watchWriteTimeout = 5 * time.Second
+
 func inScope(filter *dispatcherpb.DispatchFilter, row *dispatcherpb.Dispatch) bool {
 	if filter == nil {
 		return false
@@ -90,8 +94,8 @@ func (s *Service) WatchDispatches(request *dispatcherpb.WatchDispatchesRequest, 
 	if lease <= 0 {
 		return status.Error(codes.Internal, "watch lease must be positive")
 	}
-	timer := time.NewTimer(lease)
-	defer timer.Stop()
+	leaseCtx, endLease := context.WithTimeout(ctx, lease)
+	defer endLease()
 	written := map[string]struct {
 		State  dispatcherpb.DeliveryState
 		Reason string
@@ -119,26 +123,35 @@ func (s *Service) WatchDispatches(request *dispatcherpb.WatchDispatchesRequest, 
 				if written[row.GetCommandId()] == key {
 					continue
 				}
-				if err := stream.Send(&dispatcherpb.WatchDispatchesResponse{
+				ended, err := sendWatchDispatch(leaseCtx, ctx, stream, &dispatcherpb.WatchDispatchesResponse{
 					Frame: &dispatcherpb.WatchDispatchesResponse_Dispatch{Dispatch: row},
-				}); err != nil {
+				})
+				if err != nil {
 					return err
+				}
+				if ended {
+					return nil
 				}
 				written[row.GetCommandId()] = key
 			}
 			if !caughtUp {
 				caughtUp = true
-				if err := stream.Send(&dispatcherpb.WatchDispatchesResponse{
+				ended, err := sendWatchDispatch(leaseCtx, ctx, stream, &dispatcherpb.WatchDispatchesResponse{
 					Frame: &dispatcherpb.WatchDispatchesResponse_CaughtUp{CaughtUp: &dispatcherpb.CaughtUp{}},
-				}); err != nil {
+				})
+				if err != nil {
 					return err
+				}
+				if ended {
+					return nil
 				}
 			}
 		}
 		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-timer.C:
+		case <-leaseCtx.Done():
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			return nil
 		case message := <-sub.failure:
 			return status.Error(codes.Unavailable, message)
@@ -148,6 +161,29 @@ func (s *Service) WatchDispatches(request *dispatcherpb.WatchDispatchesRequest, 
 		case <-sub.changed:
 			changed = true
 		}
+	}
+}
+
+func sendWatchDispatch(
+	leaseCtx, ctx context.Context,
+	stream grpc.ServerStreamingServer[dispatcherpb.WatchDispatchesResponse],
+	frame *dispatcherpb.WatchDispatchesResponse,
+) (bool, error) {
+	err := streaming.SendWithin(leaseCtx, watchWriteTimeout, stream.Send, frame)
+	switch {
+	case err == nil:
+		return false, nil
+	case ctx.Err() != nil:
+		return false, ctx.Err()
+	case leaseCtx.Err() != nil:
+		// The lease ended; the caller renews with a new authorized watch.
+		return true, nil
+	case errors.Is(err, streaming.ErrSendTimeout):
+		return false, status.Error(codes.DeadlineExceeded, "dispatcher watch write deadline expired")
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		return false, status.FromContextError(err).Err()
+	default:
+		return false, err
 	}
 }
 

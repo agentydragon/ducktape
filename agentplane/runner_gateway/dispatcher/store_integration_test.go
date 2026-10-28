@@ -441,6 +441,25 @@ func (w *collectedWatch) Send(frame *dispatcherpb.WatchDispatchesResponse) error
 	return nil
 }
 
+type blockedDispatchWatch struct {
+	grpc.ServerStream
+	ctx          context.Context
+	started      chan struct{}
+	finished     chan struct{}
+	release      <-chan struct{}
+	startOnce    sync.Once
+	finishedOnce sync.Once
+}
+
+func (w *blockedDispatchWatch) Context() context.Context { return w.ctx }
+
+func (w *blockedDispatchWatch) Send(*dispatcherpb.WatchDispatchesResponse) error {
+	w.startOnce.Do(func() { close(w.started) })
+	<-w.release
+	w.finishedOnce.Do(func() { close(w.finished) })
+	return nil
+}
+
 func TestWatchSendsMatchingDispatchesThenCaughtUp(t *testing.T) {
 	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+callerToken))
 	store := testStore(t, 5)
@@ -474,6 +493,65 @@ func TestWatchSendsMatchingDispatchesThenCaughtUp(t *testing.T) {
 	}
 	if want := []string{"watch-a", "watch-c", "caught-up"}; !slices.Equal(got, want) {
 		t.Fatalf("frames %v, want %v", got, want)
+	}
+}
+
+func TestWatchDispatchesEndsBlockedWriteOnLeaseOrCancellation(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		lease   time.Duration
+		cancel  bool
+		wantErr bool
+	}{
+		{name: "lease", lease: 30 * time.Millisecond},
+		{name: "caller cancellation", lease: time.Hour, cancel: true, wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			base := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+callerToken))
+			ctx, cancel := context.WithCancel(base)
+			defer cancel()
+			release := make(chan struct{})
+			stream := &blockedDispatchWatch{
+				ctx: ctx, started: make(chan struct{}), finished: make(chan struct{}), release: release,
+			}
+			service := &Service{
+				Store: testStore(t, 5), Auth: callerResolver(t), Callers: map[auth.Account]struct{}{caller: {}},
+				Hub:        &WatchHub{subscribers: map[*watchSubscription]struct{}{}, pending: map[string]*terminalAssembly{}, connected: true},
+				WatchLease: tc.lease,
+			}
+			request := &dispatcherpb.WatchDispatchesRequest{Filter: &dispatcherpb.DispatchFilter{
+				Scope: &dispatcherpb.DispatchFilter_SessionId{SessionId: "blocked-watch-session"},
+			}}
+			done := make(chan error, 1)
+			go func() { done <- service.WatchDispatches(request, stream) }()
+			select {
+			case <-stream.started:
+			case <-time.After(5 * time.Second):
+				t.Fatal("WatchDispatches did not reach its caught-up write")
+			}
+			if tc.cancel {
+				cancel()
+			}
+			select {
+			case err := <-done:
+				if tc.wantErr {
+					if !errors.Is(err, context.Canceled) {
+						t.Fatalf("WatchDispatches() = %v, want context.Canceled", err)
+					}
+				} else if err != nil {
+					t.Fatalf("WatchDispatches() = %v, want clean lease renewal", err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("lease or caller cancellation did not return the handler")
+			}
+
+			close(release)
+			select {
+			case <-stream.finished:
+			case <-time.After(5 * time.Second):
+				t.Fatal("the blocked Send did not finish after release")
+			}
+		})
 	}
 }
 

@@ -135,32 +135,40 @@ func TestSendWithinDoesNotAbortCompletedSend(t *testing.T) {
 	}
 }
 
-func TestRealGRPCFlowControlReleasesBlockedSendAfterDrain(t *testing.T) {
+func TestRealGRPCFlowControlReleasesBlockedSend(t *testing.T) {
 	for _, tc := range []struct {
-		name         string
-		transport    string
-		cancelClient bool
+		name          string
+		transport     string
+		cancelClient  bool
+		writeTimeout  time.Duration
+		expectTimeout bool
 	}{
 		{name: "native drain", transport: "native"},
 		{name: "facade drain", transport: "facade"},
 		{name: "facade client cancellation", transport: "facade", cancelClient: true},
+		{name: "native write timeout", transport: "native", writeTimeout: 250 * time.Millisecond, expectTimeout: true},
+		{name: "facade write timeout", transport: "facade", writeTimeout: 250 * time.Millisecond, expectTimeout: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			testRealGRPCFlowControlReleasesBlockedSend(t, tc.transport, tc.cancelClient)
+			testRealGRPCFlowControlReleasesBlockedSend(t, tc.transport, tc.cancelClient, tc.writeTimeout, tc.expectTimeout)
 		})
 	}
 }
 
-func testRealGRPCFlowControlReleasesBlockedSend(t *testing.T, transport string, cancelClient bool) {
+func testRealGRPCFlowControlReleasesBlockedSend(t *testing.T, transport string, cancelClient bool, writeTimeout time.Duration, expectTimeout bool) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	draining, drain := context.WithCancel(t.Context())
+	if writeTimeout <= 0 {
+		writeTimeout = 10 * time.Second
+	}
 	service := &flowControlService{
-		draining:    draining,
-		sendChange:  make(chan struct{}, 1),
-		handlerDone: make(chan error, 1),
+		draining:     draining,
+		writeTimeout: writeTimeout,
+		sendChange:   make(chan struct{}, 1),
+		handlerDone:  make(chan error, 1),
 	}
 	server := grpc.NewServer()
 	server.RegisterService(&flowControlServiceDesc, service)
@@ -231,13 +239,17 @@ func testRealGRPCFlowControlReleasesBlockedSend(t *testing.T, transport string, 
 	}
 	if cancelClient {
 		cancelRequest()
-	} else {
+	} else if !expectTimeout {
 		drain()
 	}
 
 	select {
 	case err := <-service.handlerDone:
-		if cancelClient {
+		if expectTimeout {
+			if status.Code(err) != codes.DeadlineExceeded {
+				t.Fatalf("handler error = %v, want DeadlineExceeded after the bounded write", err)
+			}
+		} else if cancelClient {
 			// Client cancellation may close the transport before the server context wins the SendWithin race.
 			if !errors.Is(err, context.Canceled) && status.Code(err) != codes.Canceled && status.Code(err) != codes.Unavailable {
 				t.Fatalf("handler error = %v, want cancellation or transport closure after client cancel", err)
@@ -246,7 +258,7 @@ func testRealGRPCFlowControlReleasesBlockedSend(t *testing.T, transport string, 
 			t.Fatalf("handler error = %v, want context.Canceled after drain", err)
 		}
 	case <-time.After(5 * time.Second):
-		t.Fatal("draining did not return the RPC handler")
+		t.Fatal("ending the blocked write did not return the RPC handler")
 	}
 	attempts := service.attempts.Load()
 	if service.overlappingWrites.Load() {
@@ -279,6 +291,7 @@ type flowControlServer interface {
 
 type flowControlService struct {
 	draining          context.Context
+	writeTimeout      time.Duration
 	sendChange        chan struct{}
 	handlerDone       chan error
 	attempts          atomic.Int64
@@ -316,7 +329,10 @@ func (s *flowControlService) Watch(stream grpc.ServerStream) (err error) {
 	}
 	frame := wrapperspb.Bytes([]byte(strings.Repeat("x", 1<<20)))
 	for {
-		if err := streaming.SendWithin(writeCtx, 10*time.Second, send, frame); err != nil {
+		if err := streaming.SendWithin(writeCtx, s.writeTimeout, send, frame); err != nil {
+			if errors.Is(err, streaming.ErrSendTimeout) {
+				return status.Error(codes.DeadlineExceeded, "flow-control write deadline expired")
+			}
 			return err
 		}
 	}

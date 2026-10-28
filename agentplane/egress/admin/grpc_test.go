@@ -331,3 +331,83 @@ func TestDrainEndsOpenWatches(t *testing.T) {
 		t.Fatalf("draining ended the stream with %v, want a clean end", err)
 	}
 }
+
+type blockedDecisionsWatch struct {
+	grpc.ServerStream
+	ctx          context.Context
+	started      chan struct{}
+	finished     chan struct{}
+	release      <-chan struct{}
+	startOnce    sync.Once
+	finishedOnce sync.Once
+}
+
+func (w *blockedDecisionsWatch) Context() context.Context { return w.ctx }
+
+func (w *blockedDecisionsWatch) Send(*egressadminpb.WatchDecisionsResponse) error {
+	w.startOnce.Do(func() { close(w.started) })
+	<-w.release
+	w.finishedOnce.Do(func() { close(w.finished) })
+	return nil
+}
+
+func TestWatchDecisionsEndsBlockedWriteOnLeaseDrainOrCancellation(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		end  string
+		want codes.Code
+	}{
+		{name: "lease", end: "lease", want: codes.OK},
+		{name: "drain", end: "drain", want: codes.OK},
+		{name: "caller cancellation", end: "cancel", want: codes.Canceled},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			lease := time.Hour
+			if tc.end == "lease" {
+				lease = 30 * time.Millisecond
+			}
+			changes := fakeChanges(func(_ context.Context, changed func() error) error {
+				return changed()
+			})
+			_, service := serveGRPC(t, ServiceOptions{Decisions: &changingDecisions{}, Changes: changes, WatchLease: lease})
+			base := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+readerToken))
+			ctx, cancel := context.WithCancel(base)
+			defer cancel()
+			release := make(chan struct{})
+			stream := &blockedDecisionsWatch{
+				ctx: ctx, started: make(chan struct{}), finished: make(chan struct{}), release: release,
+			}
+			done := make(chan error, 1)
+			go func() {
+				done <- service.WatchDecisions(&egressadminpb.WatchDecisionsRequest{Filter: unauthenticated}, stream)
+			}()
+			select {
+			case <-stream.started:
+			case <-time.After(5 * time.Second):
+				t.Fatal("WatchDecisions did not reach its initial write")
+			}
+
+			switch tc.end {
+			case "drain":
+				service.Drain()
+			case "cancel":
+				cancel()
+			}
+			select {
+			case err := <-done:
+				if got := status.Code(err); got != tc.want {
+					t.Fatalf("WatchDecisions() error = %v, code %s; want %s", err, got, tc.want)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("lease, drain, or cancellation did not return the handler")
+			}
+
+			close(release)
+			select {
+			case <-stream.finished:
+			case <-time.After(5 * time.Second):
+				t.Fatal("the blocked Send did not finish after release")
+			}
+		})
+	}
+}

@@ -24,6 +24,7 @@ go_library(
     deps = [
         ":dispatcher_notification_go_proto",
         ":session_dispatcher_go_proto",
+        "//agentplane/grpc/streaming",
         "//agentplane/observability",
         "//agentplane/postgres/go:postgres",
         "//agentplane/proto:command_go_proto",
