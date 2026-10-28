@@ -1,0 +1,65 @@
+# wyrm2: missing monitor audio output
+
+2026-10-27. Current playback recovered; the original device holder is unproven.
+
+## Failure and evidence
+
+YouTube video played in Chrome without sound from the AORUS FV43U monitor.
+Selecting the monitor in GNOME's output chooser reverted to “Speakers.”
+
+At 15:07:26 PDT, the user's PipeWire failed to open the display GPU's audio
+device. WirePlumber then failed to create its output node:
+
+```text
+pipewire[520424]: spa.alsa: 'hdmi:1': playback open failed: Device or resource busy
+pipewire[520424]: mod.adapter: ... can't get format: Device or resource busy
+wireplumber[520425]: s-monitors: Failed to create alsa_output.pci-0000_01_00.1.hdmi-stereo: Object activation aborted: PipeWire proxy destroyed
+```
+
+Before recovery, the card's selected profile was `output:hdmi-stereo`, its
+DisplayPort route was available and unmuted, and the configured default was
+`alsa_output.pci-0000_01_00.1.hdmi-stereo`. That output node was absent.
+The only output node was the QEMU virtual analog device at PCI `08:0c.0`.
+While YouTube played, `wpctl status`, `pw-link -l`, and `pw-dump` showed Chrome's
+two audio channels connected to that virtual device. Chrome was unmuted.
+
+The hardware still detected the monitor: `/proc/asound/card1/eld#0.0` reported
+`monitor_present=1`, `eld_valid=1`, `monitor_name=AORUS FV43U`, DisplayPort,
+and stereo LPCM support. At the initial inspection, all playback PCMs were
+closed; no process was still holding the display audio PCM device.
+
+The installed WirePlumber 0.5.14 script
+`share/wireplumber/scripts/monitors/alsa.lua`, lines 358–367, logs a failed
+node activation without scheduling a retry in that callback. The observed
+failed output remained absent until its profile was recreated.
+
+## Recovery and verification
+
+With the display GPU's WirePlumber device ID verified as 43:
+
+```sh
+wpctl set-profile 43 0
+wpctl set-profile 43 1
+```
+
+This recreated the monitor output as node 87. It became the default
+automatically, and Chrome's existing stream moved to its HDMI playback ports.
+`/proc/asound/card1/pcm3p/sub0/status` then reported `RUNNING`, owned by
+PipeWire PID 520424. The user confirmed sound from the monitor. Node IDs are
+ephemeral; inspect `wpctl status` before repeating these commands.
+
+## Original contention: remaining uncertainty
+
+The GDM greeter had its own PipeWire PID 3339 and WirePlumber PID 3344 until
+15:07:44, overlapping the user's failed activation by about 18 seconds.
+Greeter/user audio contention is a plausible trigger, but the journal does
+not identify the process holding the PCM device at 15:07:26. No historical
+file-descriptor capture exists to prove that owner.
+
+The user's audio services had already been running since 08:47, before the
+graphical login. The account also belongs to the `audio` group. These facts
+are relevant to investigating cross-session device access, but do not prove
+the original holder. No persistent configuration change was made. If this
+recurs, capture `/proc/asound/card1/pcm3p/sub0/status` and privileged
+`fuser -v /dev/snd/*` while the device is busy, together with both sessions'
+audio logs, before recreating the profile.
