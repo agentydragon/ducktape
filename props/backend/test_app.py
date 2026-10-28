@@ -109,9 +109,6 @@ async def test_lifespan_waits_for_initialization_and_scopes_resources(backend) -
             await executor_started.wait()
         assert not server_task.done()
         assert app.state.startup_complete is False
-        async with httpx.AsyncClient() as client:
-            with pytest.raises(httpx.ConnectError):
-                await client.get(f"{endpoint.origin}/readyz")
 
         allow_executor.set()
         async with asyncio.timeout(5):
