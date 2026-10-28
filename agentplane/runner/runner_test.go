@@ -544,7 +544,7 @@ func TestScriptOutputFailureStopsProcessAndReturnsCause(t *testing.T) {
 	failure := fmt.Errorf("bootstrap output storage failed")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	_, err := r.runScript(ctx, "printf output; exec sleep 1000", t.TempDir(), func(bool, []byte) error { return failure })
+	_, err := r.runScript(ctx, sessionControllerName+"/test-session/setup", "printf output; exec sleep 1000", t.TempDir(), func(bool, []byte) error { return failure })
 	if !errors.Is(err, failure) {
 		t.Fatalf("output failure was lost: %v", err)
 	}

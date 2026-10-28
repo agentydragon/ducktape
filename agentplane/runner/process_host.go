@@ -7,6 +7,9 @@ import (
 	"sync"
 
 	"github.com/cosi-project/runtime/pkg/controller"
+	"github.com/cosi-project/runtime/pkg/resource/typed"
+	"github.com/cosi-project/runtime/pkg/safe"
+	"github.com/cosi-project/runtime/pkg/state"
 )
 
 // processInstance is the generic handle for one native execution domain. It
@@ -95,11 +98,29 @@ func newProcessHost(l *lifecycle) *processHost {
 // request records the callback before publishing desired state. The callback
 // is immutable for an ID, even if a controller retries with a fresh closure.
 func (h *processHost) request(ctx context.Context, r controller.QRuntime, id string, spec processDesiredStateSpec, launch processLaunch) error {
-	if h == nil || h.l == nil {
-		return errors.New("process host is not configured")
-	}
 	if r == nil {
 		return errors.New("process desired-state writer is not configured")
+	}
+	return h.register(ctx, r, id, spec, launch, func() error {
+		_, err := lifecycleWrite(ctx, r, id, spec)
+		return err
+	})
+}
+
+// Native protocol/setup workers publish their intent through the host boundary.
+// They wait for the same controller as callers which publish from reconciliation.
+func (h *processHost) requestNative(ctx context.Context, id string, spec processDesiredStateSpec, launch processLaunch) error {
+	return h.register(ctx, h.l.state, id, spec, launch, func() error {
+		return safe.StateModify(ctx, h.l.state, lifecycleResourceFor(id, spec), func(r *typed.Resource[processDesiredStateSpec, lifecycleExtension[processDesiredStateSpec]]) error {
+			*r.TypedSpec() = spec
+			return nil
+		}, state.WithUpdateOwner("runner-host"))
+	})
+}
+
+func (h *processHost) register(ctx context.Context, reader controller.Reader, id string, spec processDesiredStateSpec, launch processLaunch, publish func() error) error {
+	if h == nil || h.l == nil {
+		return errors.New("process host is not configured")
 	}
 	if id == "" {
 		return errors.New("process ID is required")
@@ -125,7 +146,7 @@ func (h *processHost) request(ctx context.Context, r controller.QRuntime, id str
 		return fmt.Errorf("process %q desired state is immutable", id)
 	}
 
-	current, found, err := lifecycleRead[processDesiredStateSpec](ctx, r, id)
+	current, found, err := lifecycleRead[processDesiredStateSpec](ctx, reader, id)
 	if err != nil {
 		if newEntry {
 			delete(h.entries, id)
@@ -147,7 +168,7 @@ func (h *processHost) request(ctx context.Context, r controller.QRuntime, id str
 		return fmt.Errorf("process %q desired state was already destroyed", id)
 	}
 
-	if _, err := lifecycleWrite(ctx, r, id, spec); err != nil {
+	if err := publish(); err != nil {
 		delete(h.entries, id)
 		return err
 	}

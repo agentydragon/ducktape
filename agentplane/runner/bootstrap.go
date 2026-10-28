@@ -157,7 +157,7 @@ func (r *Runner) runBootstrap(ctx context.Context) error {
 	if cwd == "" {
 		cwd = r.config.StateDir
 	}
-	code, err := r.runScript(ctx, *script, cwd, func(stdout bool, data []byte) error {
+	code, err := r.runScript(ctx, bootstrapControllerName, *script, cwd, func(stdout bool, data []byte) error {
 		stream := runnerpb.InitializationStream_INITIALIZATION_STREAM_STDERR
 		if stdout {
 			stream = runnerpb.InitializationStream_INITIALIZATION_STREAM_STDOUT

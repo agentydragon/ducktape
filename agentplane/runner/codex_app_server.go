@@ -19,7 +19,6 @@ import (
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
-	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -34,20 +33,19 @@ type codexAppServer struct {
 	// Session creating it.
 	handshakeMu sync.Mutex
 
-	mu                   sync.Mutex
-	current              *codexAppServerProcess
-	startOwner           *Session
-	startOwnerGeneration uint64
-	starting             *operation
-	stopping             *operation
-	startGeneration      uint64
-	stopEffect           func(context.Context) error
+	mu                          sync.Mutex
+	current                     *codexAppServerProcess
+	initializingOwner           *Session
+	initializingOwnerGeneration uint64
+	initializing                *operation
+	draining                    *operation
+	initializationGeneration    uint64
+	drainEffect                 func(context.Context) error
 }
 
 // codexAppServerProcess is one incarnation of the shared app-server.
 type codexAppServerProcess struct {
-	id          string
-	process     *supervision.Process
+	process     *managedProcess
 	router      *codex.Router[*Session]
 	hostingMu   sync.Mutex
 	exiting     bool
@@ -100,7 +98,7 @@ func (c *codexAppServer) host(ctx context.Context, s *Session) (*codexAppServerP
 		if runtime.Phase == codexAppServerReady {
 			c.mu.Lock()
 			p := c.current
-			if p != nil && p.id == runtime.ProcessID && p.host(s) {
+			if p != nil && p.process.id == runtime.ProcessID && p.host(s) {
 				ready = p
 				c.mu.Unlock()
 				return true, nil
@@ -126,7 +124,7 @@ func (c *codexAppServer) host(ctx context.Context, s *Session) (*codexAppServerP
 }
 
 // request records a new startup demand while holding the same synchronous gate used by Close and
-// Quiesce. The controller rechecks RunnerDesiredState before it starts the native process.
+// Quiesce. The controller claims initialization under the same admission gate.
 func (c *codexAppServer) request(s *Session) (uint64, error) {
 	r := c.runner
 	r.mu.Lock()
@@ -142,9 +140,9 @@ func (c *codexAppServer) request(s *Session) (uint64, error) {
 	}
 	c.mu.Lock()
 	if c.current == nil || !c.current.process.Running() {
-		if c.startOwner == nil || c.startOwnerGeneration != desiredState.Generation {
-			c.startOwner = s
-			c.startOwnerGeneration = desiredState.Generation
+		if c.initializingOwner == nil || c.initializingOwnerGeneration != desiredState.Generation {
+			c.initializingOwner = s
+			c.initializingOwnerGeneration = desiredState.Generation
 		}
 	}
 	c.mu.Unlock()
@@ -152,31 +150,31 @@ func (c *codexAppServer) request(s *Session) (uint64, error) {
 	defer r.lifecycle.publishMu.Unlock()
 	input, found, err := lifecycleRead[codexAppServerInputSpec](r.ctx, r.lifecycle.state, codexAppServerResourceID)
 	if err != nil {
-		c.clearStartOwner(s)
+		c.clearInitializingOwner(s)
 		return 0, err
 	}
 	if !found {
-		c.clearStartOwner(s)
+		c.clearInitializingOwner(s)
 		return 0, errors.New("Codex input is not initialized")
 	}
 	input.Demand++
 	if err := publishLifecycle(r.lifecycle, codexAppServerResourceID, input); err != nil {
-		c.clearStartOwner(s)
+		c.clearInitializingOwner(s)
 		return 0, err
 	}
 	return input.Demand, nil
 }
 
-func (c *codexAppServer) clearStartOwner(owner *Session) {
+func (c *codexAppServer) clearInitializingOwner(owner *Session) {
 	c.mu.Lock()
-	if c.startOwner == owner {
-		c.startOwner = nil
-		c.startOwnerGeneration = 0
+	if c.initializingOwner == owner {
+		c.initializingOwner = nil
+		c.initializingOwnerGeneration = 0
 	}
 	c.mu.Unlock()
 }
 
-func (c *codexAppServer) start(ctx context.Context, owner *Session) error {
+func (c *codexAppServer) initialize(ctx context.Context, owner *Session) error {
 	startup, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
 	command, err := codex.ServerCommand(c.launch)
@@ -198,19 +196,16 @@ func (c *codexAppServer) start(ctx context.Context, owner *Session) error {
 	if err != nil {
 		return err
 	}
-	process, err := c.runner.supervisor.NewProcess(supervision.ProcessConfig{Command: command, Dir: c.store, Env: env})
+	process, err := c.runner.launchProcess(startup, codexAppServerControllerName, c.runner.supervisor, supervision.ProcessConfig{Command: command, Dir: c.store, Env: env})
 	if err != nil {
 		return err
 	}
 	p := &codexAppServerProcess{
-		id: uuid.NewString(), process: process, router: codex.NewRouter[*Session](),
+		process: process, router: codex.NewRouter[*Session](),
 		initialized: make(chan error, 1), ended: make(chan struct{}),
 	}
 	if owner != nil {
 		p.router.Host(owner)
-	}
-	if err := process.Start(startup); err != nil {
-		return err
 	}
 	c.mu.Lock()
 	c.current = p
@@ -238,19 +233,27 @@ func (c *codexAppServer) start(ctx context.Context, owner *Session) error {
 		err = process.WriteLine(startup, string(initialized))
 	}
 	if err != nil {
-		stopErr := process.Stop(context.WithoutCancel(startup), 5*time.Second)
+		stopErr := process.Stop(context.WithoutCancel(startup))
+		if stopErr != nil {
+			return errors.Join(fmt.Errorf("Codex app-server startup failed: %w; %s", err, process.ExitDescription()), stopErr, p.readError())
+		}
 		<-p.ended
-		return errors.Join(fmt.Errorf("Codex app-server startup failed: %w; %s", err, process.ExitDescription()), stopErr, p.readError())
+		return errors.Join(fmt.Errorf("Codex app-server startup failed: %w; %s", err, process.ExitDescription()), p.readError())
 	}
 	return nil
 }
 
 // waitReaders closes ended only after stdout has journaled every hosted Session's exit and stderr has
-// delivered its remaining diagnostics. COSI waits for this observation before replacing the process.
+// delivered its remaining diagnostics. The app lifecycle controller waits for this before fencing Runner.
 func (c *codexAppServer) waitReaders(p *codexAppServerProcess) {
 	p.readers.Wait()
+	cleanupErr := p.process.waitStopped(c.runner.ctx)
+	if cleanupErr != nil {
+		p.recordReadError(cleanupErr)
+		c.runner.fail(cleanupErr)
+	}
 	c.mu.Lock()
-	if c.current == p {
+	if c.current == p && cleanupErr == nil {
 		c.current = nil
 	}
 	close(p.ended)
@@ -269,7 +272,7 @@ func (c *codexAppServer) publishExit(p *codexAppServerProcess) {
 	}
 	if err == nil {
 		input.ExitGeneration++
-		input.ExitProcessID = p.id
+		input.ExitProcessID = p.process.id
 		if readerErr := p.readError(); readerErr != nil {
 			input.ExitError = readerErr.Error()
 		} else {
@@ -380,12 +383,12 @@ func (c *codexAppServer) readStdout(p *codexAppServerProcess) {
 	if readErr != nil {
 		p.recordReadError(readErr)
 		c.runner.fail(readErr)
-		if err := p.process.Stop(context.Background(), 5*time.Second); err != nil {
+		if err := p.process.Stop(context.Background()); err != nil {
 			p.recordReadError(err)
 			c.runner.fail(err)
 		}
 	}
-	code, err := p.process.Wait(context.Background())
+	code, err := p.process.Wait(c.runner.ctx)
 	if err != nil {
 		p.recordReadError(err)
 		c.runner.fail(err)
@@ -408,7 +411,7 @@ func (c *codexAppServer) readStderr(p *codexAppServerProcess) {
 			text := string(bytes.ToValidUTF8(buffer[:n], []byte("�")))
 			hosts := p.router.Hosts()
 			if len(hosts) == 0 {
-				zap.L().Info("Codex app-server stderr", zap.String("process", p.id), zap.String("text", text))
+				zap.L().Info("Codex app-server stderr", zap.String("process", p.process.id), zap.String("text", text))
 			}
 			for _, s := range hosts {
 				if e := s.Emit(c.runner.ctx, observation(&eventpb.HarnessStderr{Text: text}), nil); e != nil {
@@ -428,10 +431,10 @@ func (c *codexAppServer) readStderr(p *codexAppServerProcess) {
 	}
 }
 
-// stopProcess is the low-level physical stop primitive. The COSI controller owns its policy and phase.
-func (c *codexAppServer) stopProcess(ctx context.Context) error {
+// drainProcess requests COSI to stop the process, then drains its protocol readers before the app-server is settled.
+func (c *codexAppServer) drainProcess(ctx context.Context) error {
 	c.mu.Lock()
-	effect := c.stopEffect
+	effect := c.drainEffect
 	p := c.current
 	c.mu.Unlock()
 	if effect != nil {
@@ -440,14 +443,17 @@ func (c *codexAppServer) stopProcess(ctx context.Context) error {
 	if p == nil {
 		return nil
 	}
-	err := p.process.Stop(ctx, 5*time.Second)
+	err := p.process.Stop(ctx)
+	if err != nil {
+		return errors.Join(err, p.readError())
+	}
 	<-p.ended
 	if p.process.Running() {
-		return errors.Join(err, p.readError(), errors.New("Codex app-server remained running after its readers exited"))
+		return errors.Join(p.readError(), errors.New("Codex app-server remained running after its readers exited"))
 	}
 	// A native process may report a nonzero exit code after SIGTERM. Once Wait and both readers settle,
 	// that exit status does not mean the Runner failed to fence the process.
-	return errors.Join(err, p.readError())
+	return p.readError()
 }
 
 // status describes the running app-server and the Sessions it hosts.
@@ -470,17 +476,17 @@ func (c *codexAppServer) status() *runnerpb.HarnessProcessStatus {
 	switch runtime.Phase {
 	case codexAppServerReady:
 		state = runnerpb.ProcessState_PROCESS_STATE_RUNNING
-	case codexAppServerStopping:
+	case codexAppServerDraining:
 		state = runnerpb.ProcessState_PROCESS_STATE_STOPPING
 	}
 	status := &runnerpb.HarnessProcessStatus{ProcessId: runtime.ProcessID, Harness: runnerpb.Harness_HARNESS_CODEX, State: state}
-	if p != nil && p.id == runtime.ProcessID {
+	if p != nil && p.process.id == runtime.ProcessID {
 		for _, s := range p.router.Hosts() {
 			status.AssignedSessionIds = append(status.AssignedSessionIds, s.id)
 		}
 	}
 	slices.Sort(status.AssignedSessionIds)
-	if p != nil && p.id == runtime.ProcessID && p.process.Running() {
+	if p != nil && p.process.id == runtime.ProcessID && p.process.Running() {
 		pid := int64(p.process.PID())
 		status.Pid = &pid
 	}

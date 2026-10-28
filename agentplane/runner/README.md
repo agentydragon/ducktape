@@ -25,13 +25,14 @@ acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays history
 - `runner_controller.go`, `session_controller.go`, `codex_exec_server_controller.go`, `codex_app_server_controller.go`,
   and `bootstrap_controller.go`: one lifecycle controller per file.
 - `process_controller.go` and `process_host.go`: COSI process intents, native lifetime observations
-  and finalizer-protected cleanup. Codex exec-server uses this shared controller for launch and stop.
+  and finalizer-protected cleanup for every Runner-managed process. `managed_process.go` gives
+  protocol and setup workers stream access and observation waits through the same controller.
 - `operations.go`: owned asynchronous protocol/setup operations and completion routing.
 - `bootstrap.go`: durable bootstrap selection and the one-shot script effect.
 - `runner.go`: Runner construction, durable inventory, incarnation adoption and lifetime.
 - `admission.go` and `status.go`: public admission and status/facts RPCs.
 - `session.go`: Session host state, readiness and recovery; `session_events.go` owns journal-backed
-  Event effects, and `session_native.go` owns native process, dispatch and stream effects.
+  Event effects, and `session_native.go` owns harness preparation, dispatch and stream effects.
 - `session_setup.go`: the accepted one-shot Session setup effect.
 - `codex_exec_server.go`: isolated Codex execution operations, RPC probes and container ownership fencing
   ([execution modes](docs/codex_executor.md)).
@@ -47,8 +48,8 @@ acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays history
   Transactions use `database/sql` with the cgo-free SQLite driver. Outcomes and all
   coalesced command receipts commit together; publication and startup handshake replies follow commit.
 - `supervision/`: the shared native-process API and its private systemd/subprocess backends.
-  Runner prepares supervision while holding state ownership; controllers launch through the
-  selected supervisor. The package owns streams, exit observation and execution-domain cleanup.
+  Runner prepares supervision while holding state ownership; the process controller launches through
+  the selected supervisor. The package owns streams, exit observation and execution-domain cleanup.
   `systemd/` contains the static guest units. See [supervision](docs/supervision.md).
 - `claude/` and `codex/`: harness-specific launch, frame translation and native
   history readers. They depend on the shared adapter contract and recovery types in

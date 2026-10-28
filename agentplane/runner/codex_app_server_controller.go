@@ -29,9 +29,9 @@ type codexAppServerPhase uint8
 
 const (
 	codexAppServerStopped codexAppServerPhase = iota
-	codexAppServerStarting
+	codexAppServerInitializing
 	codexAppServerReady
-	codexAppServerStopping
+	codexAppServerDraining
 )
 
 type codexAppServerRuntimeSpec struct {
@@ -110,9 +110,9 @@ func (c *codexAppServerLifecycleController) Reconcile(ctx context.Context, _ *za
 		return write()
 	}
 
-	// Consume completed native effects before making any policy decision. The slot remains owned until
-	// the result is observed here, so a second start or stop cannot overlap an uncertain operation.
-	if op, done := c.l.takeHostOperation(&server.mu, &server.starting); done {
+	// Consume completed protocol initialization and drain operations before making any policy decision.
+	// Their slots stay owned until observed here, so these operations cannot overlap.
+	if op, done := c.l.takeHostOperation(&server.mu, &server.initializing); done {
 		if op.err != nil {
 			current.Phase = codexAppServerStopped
 			current.ProcessID = ""
@@ -121,23 +121,23 @@ func (c *codexAppServerLifecycleController) Reconcile(ctx context.Context, _ *za
 		} else {
 			server.mu.Lock()
 			p := server.current
-			generation := server.startGeneration
-			server.startOwner = nil
-			server.startOwnerGeneration = 0
+			generation := server.initializationGeneration
+			server.initializingOwner = nil
+			server.initializingOwnerGeneration = 0
 			live := p != nil && p.process.Running()
 			server.mu.Unlock()
 			if live && desiredState.Mode == runnerRunning && generation == desiredState.Generation {
 				current.Phase = codexAppServerReady
-				current.ProcessID = p.id
+				current.ProcessID = p.process.id
 				current.Attempt = input.Demand
 				current.Error = ""
 				current.StopError = ""
 				current.ExecServerReadyDeadline = time.Time{}
 			} else if live {
-				// A start admitted under an older RunnerDesiredState may finish physically, but cannot publish
-				// readiness. Shutdown will stop it after every Session has halted.
-				current.Phase = codexAppServerStarting
-				current.ProcessID = p.id
+				// Initialization admitted under an older RunnerDesiredState may finish physically, but cannot
+				// publish readiness. Shutdown will drain it after every Session has halted.
+				current.Phase = codexAppServerInitializing
+				current.ProcessID = p.process.id
 			} else {
 				current.Phase = codexAppServerStopped
 				current.ProcessID = ""
@@ -145,7 +145,7 @@ func (c *codexAppServerLifecycleController) Reconcile(ctx context.Context, _ *za
 			}
 		}
 	}
-	if op, done := c.l.takeHostOperation(&server.mu, &server.stopping); done {
+	if op, done := c.l.takeHostOperation(&server.mu, &server.draining); done {
 		current.Phase = codexAppServerStopped
 		current.ProcessID = ""
 		current.StopError = ""
@@ -154,15 +154,15 @@ func (c *codexAppServerLifecycleController) Reconcile(ctx context.Context, _ *za
 			current.StopError = op.err.Error()
 		}
 	}
-	var starting, stopping *operation
+	var initializing, draining *operation
 	var p *codexAppServerProcess
 	server.mu.Lock()
-	starting = server.starting
-	stopping = server.stopping
+	initializing = server.initializing
+	draining = server.draining
 	server.mu.Unlock()
 	if input.ExitGeneration > current.ExitGeneration {
 		current.ExitGeneration = input.ExitGeneration
-		if current.ProcessID == input.ExitProcessID && starting == nil && stopping == nil {
+		if current.ProcessID == input.ExitProcessID && initializing == nil && draining == nil {
 			current.Phase = codexAppServerStopped
 			current.ProcessID = ""
 			current.Error = input.ExitError
@@ -175,10 +175,10 @@ func (c *codexAppServerLifecycleController) Reconcile(ctx context.Context, _ *za
 	}
 	if desiredState.Mode == runnerRunning && current.Generation != desiredState.Generation {
 		server.mu.Lock()
-		inactive := server.starting == nil && server.stopping == nil && server.current == nil
-		if inactive && server.startOwnerGeneration != desiredState.Generation {
-			server.startOwner = nil
-			server.startOwnerGeneration = 0
+		inactive := server.initializing == nil && server.draining == nil && server.current == nil
+		if inactive && server.initializingOwnerGeneration != desiredState.Generation {
+			server.initializingOwner = nil
+			server.initializingOwnerGeneration = 0
 		}
 		server.mu.Unlock()
 		if inactive {
@@ -202,65 +202,65 @@ func (c *codexAppServerLifecycleController) Reconcile(ctx context.Context, _ *za
 			return write()
 		}
 		if current.StopError != "" {
-			// A failed physical stop leaves ownership uncertain. Preserve that evidence and block
-			// both duplicate stop attempts and Runner's transition into executor fencing.
+			// A failed COSI process stop leaves ownership uncertain. Preserve that evidence and block
+			// repeated drains and Runner's transition into executor fencing.
 			return write()
 		}
 		server.mu.Lock()
-		starting = server.starting
-		stopping = server.stopping
+		initializing = server.initializing
+		draining = server.draining
 		p = server.current
 		server.mu.Unlock()
-		if starting != nil {
-			if starting.cancel != nil {
-				starting.cancel()
+		if initializing != nil {
+			if initializing.cancel != nil {
+				initializing.cancel()
 			}
 			return write()
 		}
-		if stopping != nil {
-			current.Phase = codexAppServerStopping
+		if draining != nil {
+			current.Phase = codexAppServerDraining
 			if p != nil {
-				current.ProcessID = p.id
+				current.ProcessID = p.process.id
 			}
 			return write()
 		}
 		if p == nil {
 			server.mu.Lock()
-			if server.current == nil && server.starting == nil && server.stopping == nil {
-				server.startOwner = nil
-				server.startOwnerGeneration = 0
+			if server.current == nil && server.initializing == nil && server.draining == nil {
+				server.initializingOwner = nil
+				server.initializingOwnerGeneration = 0
 			}
 			server.mu.Unlock()
 			current.Phase = codexAppServerStopped
 			current.ProcessID = ""
 			return write()
 		}
-		current.Phase = codexAppServerStopping
-		current.ProcessID = p.id
+		current.Phase = codexAppServerDraining
+		current.ProcessID = p.process.id
 		if err := write(); err != nil {
 			return err
 		}
-		c.l.startHostOperation(&server.mu, &server.stopping, codexAppServerControllerName, server.stopProcess)
+		c.l.startHostOperation(&server.mu, &server.draining, codexAppServerControllerName, server.drainProcess)
 		return nil
 	}
 
 	server.mu.Lock()
-	starting = server.starting
-	stopping = server.stopping
+	initializing = server.initializing
+	draining = server.draining
 	p = server.current
 	server.mu.Unlock()
-	if starting != nil || stopping != nil {
+	if initializing != nil || draining != nil {
 		return write()
 	}
 	if p != nil {
 		if p.process.Running() {
-			if current.Phase == codexAppServerReady && current.ProcessID == p.id {
+			if current.Phase == codexAppServerReady && current.ProcessID == p.process.id {
 				if current.Attempt < input.Demand {
 					current.Attempt = input.Demand
 				}
 				return write()
 			}
-			// A physically live process remains owned by the in-flight start/stop state machine.
+			// A physically live process remains owned by the in-flight initialization/drain sequence.
 			return write()
 		}
 		select {
@@ -308,7 +308,7 @@ func (c *codexAppServerLifecycleController) Reconcile(ctx context.Context, _ *za
 		}
 		if !found || executor.Phase != codexExecServerReady {
 			current.Generation = desiredState.Generation
-			current.Phase = codexAppServerStarting
+			current.Phase = codexAppServerInitializing
 			current.ProcessID = ""
 			if current.ExecServerReadyDeadline.IsZero() {
 				current.Error = ""
@@ -323,7 +323,7 @@ func (c *codexAppServerLifecycleController) Reconcile(ctx context.Context, _ *za
 		current.ExecServerReadyDeadline = time.Time{}
 	}
 
-	current.Phase = codexAppServerStarting
+	current.Phase = codexAppServerInitializing
 	current.Generation = desiredState.Generation
 	current.Attempt = input.Demand
 	current.ExecServerReadyDeadline = time.Time{}
@@ -333,8 +333,8 @@ func (c *codexAppServerLifecycleController) Reconcile(ctx context.Context, _ *za
 		return err
 	}
 
-	// Runner.mu is the synchronous admission barrier shared with Close and Quiesce. Once the slot is
-	// claimed under that barrier, a concurrent desired state change waits until the native effect is admitted.
+	// Runner.mu is the synchronous admission barrier shared with Close and Quiesce. The managed-process
+	// API honors cancellation when publishing process intent; this slot serializes the Codex initialization handshake.
 	c.l.runner.mu.Lock()
 	latest := c.l.desiredState()
 	if latest != desiredState || latest.Mode != runnerRunning {
@@ -342,21 +342,21 @@ func (c *codexAppServerLifecycleController) Reconcile(ctx context.Context, _ *za
 		return nil
 	}
 	server.mu.Lock()
-	if server.starting != nil || server.current != nil {
+	if server.initializing != nil || server.current != nil {
 		server.mu.Unlock()
 		c.l.runner.mu.Unlock()
 		return nil
 	}
-	owner := server.startOwner
-	if server.startOwnerGeneration != latest.Generation {
+	owner := server.initializingOwner
+	if server.initializingOwnerGeneration != latest.Generation {
 		owner = nil
 	}
-	server.startOwner = nil
-	server.startOwnerGeneration = 0
-	server.startGeneration = latest.Generation
+	server.initializingOwner = nil
+	server.initializingOwnerGeneration = 0
+	server.initializationGeneration = latest.Generation
 	server.mu.Unlock()
-	c.l.startHostOperation(&server.mu, &server.starting, codexAppServerControllerName, func(ctx context.Context) error {
-		return server.start(ctx, owner)
+	c.l.startHostOperation(&server.mu, &server.initializing, codexAppServerControllerName, func(ctx context.Context) error {
+		return server.initialize(ctx, owner)
 	})
 	c.l.runner.mu.Unlock()
 	return nil

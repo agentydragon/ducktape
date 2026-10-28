@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/cosi-project/runtime/pkg/controller"
+	"github.com/cosi-project/runtime/pkg/resource"
 	"go.uber.org/zap"
 )
 
@@ -12,7 +13,7 @@ type runnerLifecycleController struct{ l *lifecycle }
 func (*runnerLifecycleController) Name() string { return runnerControllerName }
 func (*runnerLifecycleController) Inputs() []controller.Input {
 	var inputs []controller.Input
-	for _, kind := range []string{runnerDesiredStateType, runnerInputType, sessionInputType, sessionRuntimeType, operationResultType, journalSealType, ingressAckType, codexExecServerRuntimeType, codexAppServerRuntimeType, bootstrapRuntimeType} {
+	for _, kind := range []string{runnerDesiredStateType, runnerInputType, sessionInputType, sessionRuntimeType, operationResultType, journalSealType, ingressAckType, codexExecServerRuntimeType, codexAppServerRuntimeType, bootstrapRuntimeType, processDesiredStateType, processStatusType} {
 		inputs = append(inputs, controller.Input{Namespace: lifecycleNamespace, Type: kind, Kind: controller.InputWeak})
 	}
 	return inputs
@@ -140,6 +141,26 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 	}
 	if !c.l.runner.bootstrapSettled() {
 		return write()
+	}
+	// Owner-level completion cannot substitute for the native cleanup barrier.
+	// Include scripts and workspace helpers, and preserve a failed fence even if
+	// a protocol reader already reported the leader's exit.
+	processes, err := r.List(ctx, resource.NewMetadata(lifecycleNamespace, processDesiredStateType, "", resource.VersionUndefined))
+	if err != nil {
+		return err
+	}
+	for _, process := range processes.Items {
+		status, found, err := lifecycleRead[processStatusSpec](ctx, r, process.Metadata().ID())
+		if err != nil {
+			return err
+		}
+		if status.StopError != "" {
+			current.Error = status.StopError
+			return write()
+		}
+		if !found || status.Phase != processExited || !process.Metadata().Finalizers().Empty() {
+			return write()
+		}
 	}
 	// Process exit can finish an outstanding inspection. Keep its journal and
 	// controller alive until the resulting observations have been committed.

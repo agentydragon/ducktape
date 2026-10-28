@@ -496,7 +496,7 @@ func TestIdleProcessExitConsumesCompletedCommandDemand(t *testing.T) {
 	// without another preparation attempt. Both have completed before this exit.
 	s.requestExecution()
 	s.requestExecution()
-	if err := p.Stop(context.Background(), time.Second); err != nil {
+	if err := p.Stop(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	s.wake()

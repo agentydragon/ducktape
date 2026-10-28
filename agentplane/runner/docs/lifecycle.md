@@ -17,14 +17,15 @@ connections, or other native state.
 | Session input                            | Runner/Session host                            | Demand and snapshots of journal cursor, setup, process, active turn, and queued or running inspections. |
 | Session runtime                          | Session QController                            | Execution phase, attempt, resume flag, process incarnation, and desired-state generation.               |
 | Codex exec-server input and runtime      | Exec-server host and QController               | Demand, process intent, readiness/health deadlines, restart backoff and stop outcome.                   |
-| Process desired state                    | Requesting lifecycle controller                | Immutable owner, generation, start deadline and cleanup timeout for one launch.                         |
+| Process desired state                    | Requesting controller or Runner process host   | Immutable owner, generation, start deadline and cleanup timeout for one launch.                         |
 | Process status                           | Process QController                            | Launch, native exit, stopping and completed cleanup; a finalizer protects each execution domain.        |
 | Process input                            | Process host                                   | Revision-only wakeups for asynchronous launch, exit and stop observations.                              |
 | Codex app-server input and runtime       | App-server host and QController                | Shared app-server demand, exec-server dependency deadline, process incarnation and stop outcome.        |
 | Bootstrap input and runtime              | Runner host and Bootstrap QController          | Accepted one-shot bootstrap demand and its running or terminal outcome.                                 |
 | Operation result                         | Runner/Session host                            | Wakes the owning controller when an asynchronous host operation completes.                              |
 | Journal seal and ingress acknowledgement | Runner/transport host                          | In-memory mirrors of the durable journal seal and persisted ingress acknowledgement.                    |
-| Native process and journal effects       | Runner, Session, Codex app-server, and journal | Startup, dispatch, interruption, process exit, inspection, sealing, and persistence.                    |
+| Native process effects                   | Process QController and native host            | Start, observe and fence every Runner-managed native execution domain.                                  |
+| Protocol and journal effects             | Runner, Session, Codex app-server, and journal | Handshake, frame routing, dispatch, interruption, inspection, sealing, and persistence.                 |
 
 Controller roles cover Runner, Session, native process lifetime, Codex exec-server, Codex app-server, and Sandbox bootstrap.
 The renamed resource kinds are `RunnerDesiredStates.agentplane`,
@@ -32,7 +33,9 @@ The renamed resource kinds are `RunnerDesiredStates.agentplane`,
 `CodexAppServerInputs.agentplane`, and `CodexAppServerRuntimes.agentplane`.
 The process controller names are `codex-exec-server-lifecycle` and
 `codex-app-server-lifecycle`, matching the upstream `codex exec-server` and
-`codex app-server` commands. Each controller exclusively writes its own runtime or status resource. Requesting controllers share the process desired-state output kind and own their individual attempt resources. The Session QController can reconcile up to
+`codex app-server` commands. Each controller exclusively writes its own runtime or status resource.
+Requesting controllers share the process desired-state output kind; protocol/setup workers publish
+their attempts through the explicit `runner-host` owner. The Session QController can reconcile up to
 `session_reconcile_concurrency` Sessions at once (default 16); this controls reconcile workers,
 not how many Sessions can be admitted or stored. Shared service controllers use one reconcile worker;
 process attempts are keyed independently. Hosts publish input changes, process observations and
@@ -56,7 +59,10 @@ operation ownership in `lifecycle_runtime.go`, `lifecycle_resources.go`, `lifecy
 and `operations.go`. Controllers have their own `*_controller.go` files, including resource specs
 where specific to that controller. `process_controller.go` and `process_host.go` own one-shot
 native lifetime and its asynchronous observations. Launch callbacks and native handles stay in the
-host registry; COSI resources contain no streams or environment values. Admission and status have
+host registry; COSI resources contain no streams or environment values. `managed_process.go` lets
+protocol/setup workers request native execution and observe it through that same controller. It
+exposes streams, not a second backend lifecycle. Completed attempts are released through resource
+teardown; canceling an observation does not stop execution. Admission and status have
 separate files.
 
 Resources use upstream [`typed.Resource`](https://github.com/cosi-project/runtime/blob/v1.16.2/pkg/resource/typed/typed_resource.go).
@@ -115,11 +121,13 @@ exit also triggers cleanup; a successor requires a new intent after the old atte
 Start/stop callbacks are never retried by reconciliation. A failed fence retains its intent and
 finalizer and fails Runner shutdown. Probe operations remain with the exec-server controller.
 
-The Codex app-server controller waits for an exec-server-ready observation before starting the one app-server.
+The Codex app-server controller waits for an exec-server-ready observation before initializing the one app-server.
 Concurrent Session requests share startup and its 30-second exec-server dependency deadline. Its host
 retains the initial Session for startup-frame journaling and records process exit only after both
-readers and every hosted Session's exit observations settle. Shutdown consumes the stop operation's
-result before reporting Stopped, including when the process pointer was already cleared by readers.
+readers and every hosted Session's exit observations settle. Its initialization and drain operations
+coordinate protocol work around the generic process controller's start and cleanup observations.
+Shutdown consumes the drain result before reporting Stopped, including when the process pointer was
+already cleared by readers. A failed fence retains the process attachment and prevents a successor.
 
 ## Quiesce and close
 
@@ -139,6 +147,8 @@ Codex exec-server controller to fence the configured exec-server. Each stage adv
 outcomes; there is no central shutdown worker. It waits for any outstanding inspections after
 process stop so process exit can resolve native RPC waiters and the resulting observations can be
 committed before sealing. Bootstrap also finishes before sealing or close can complete.
+Every remaining process intent must also report completed cleanup with no finalizers. This includes
+setup scripts and workspace helpers and preserves stop failures independently of protocol progress.
 
 For Quiesce, each journal then fails commands that were never dispatched and seals at its final
 cursor under the current incarnation UID. The Runner advances to `FLUSHING` only after every seal is

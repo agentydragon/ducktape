@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"maps"
-	"time"
 
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
@@ -17,7 +16,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/runner/codex"
 	harness "github.com/agentydragon/ducktape/agentplane/runner/harness"
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
-	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -88,17 +86,14 @@ func (s *Session) startProcess(ctx context.Context, adapter harness.ProcessAdapt
 	if err != nil {
 		return err
 	}
-	process, err := s.runner.supervisor.NewProcess(supervision.ProcessConfig{Command: command, Dir: cwd, Env: env})
+	process, err := s.runner.launchProcess(ctx, sessionControllerName+"/"+s.id, s.runner.supervisor, supervision.ProcessConfig{Command: command, Dir: cwd, Env: env})
 	if err != nil {
-		return err
-	}
-	if err := process.Start(ctx); err != nil {
 		return err
 	}
 	s.mu.Lock()
 	s.process = process
 	s.adapter = adapter
-	s.processID = uuid.NewString()
+	s.processID = process.id
 	s.nativeStop = stopNone
 	s.mu.Unlock()
 	s.readers.Add(2)
@@ -109,8 +104,10 @@ func (s *Session) startProcess(ctx context.Context, adapter harness.ProcessAdapt
 		s.nativeStop = stopStartupFailure
 		s.processState = runnerpb.ProcessState_PROCESS_STATE_STOPPING
 		s.mu.Unlock()
-		stopErr := process.Stop(context.WithoutCancel(ctx), 5*time.Second)
-		s.readers.Wait()
+		stopErr := process.Stop(context.WithoutCancel(ctx))
+		if stopErr == nil {
+			s.readers.Wait()
+		}
 		return errors.Join(fmt.Errorf("harness startup failed: %w; %s", err, process.ExitDescription()), stopErr)
 	}
 	return nil
@@ -139,7 +136,7 @@ func (s *Session) startOnCodexServer(ctx context.Context) error {
 	s.mu.Lock()
 	s.process = p.process
 	s.codexAppServer = p
-	s.processID = p.id
+	s.processID = p.process.id
 	s.mu.Unlock()
 	server.handshakeMu.Lock()
 	err = s.prepare(ctx, adapter, p.process.PID())
@@ -458,7 +455,7 @@ func (s *Session) deliverReplies() {
 	}
 }
 
-func (s *Session) readStdout(process *supervision.Process, adapter harness.Adapter) {
+func (s *Session) readStdout(process *managedProcess, adapter harness.Adapter) {
 	defer s.readers.Done()
 	buffer := make([]byte, 64*1024)
 	var pending []byte
@@ -511,7 +508,7 @@ func (s *Session) readStdout(process *supervision.Process, adapter harness.Adapt
 	}
 	if readErr != nil {
 		s.runner.fail(readErr)
-		if err := process.Stop(context.Background(), 5*time.Second); err != nil {
+		if err := process.Stop(context.Background()); err != nil {
 			s.runner.fail(err)
 		}
 	}
@@ -524,7 +521,7 @@ func (s *Session) readStdout(process *supervision.Process, adapter harness.Adapt
 	}
 }
 
-func (s *Session) readStderr(process *supervision.Process) {
+func (s *Session) readStderr(process *managedProcess) {
 	defer s.readers.Done()
 	buffer := make([]byte, 4096)
 	for {

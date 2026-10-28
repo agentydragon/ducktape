@@ -330,10 +330,13 @@ func (r *Runner) reopen(ctx context.Context, s *Session) error {
 }
 
 func (r *Runner) ensureWorkspace(ctx context.Context, cwd string) (string, error) {
-	return EnsureWorkspace(ctx, cwd, r.config.WorkspaceRoot, r.workspaceSupervisor)
+	if r.workspaceSupervisor == nil {
+		return EnsureWorkspace(ctx, cwd, r.config.WorkspaceRoot, nil)
+	}
+	return EnsureWorkspace(ctx, cwd, r.config.WorkspaceRoot, r)
 }
 
-func (r *Runner) runScript(ctx context.Context, script, cwd string, output func(bool, []byte) error) (int, error) {
+func (r *Runner) runScript(ctx context.Context, owner, script, cwd string, output func(bool, []byte) error) (int, error) {
 	env := map[string]string{}
 	for _, entry := range os.Environ() {
 		key, value, ok := strings.Cut(entry, "=")
@@ -344,11 +347,8 @@ func (r *Runner) runScript(ctx context.Context, script, cwd string, output func(
 	for key, value := range r.config.HarnessEnvironment {
 		env[key] = value
 	}
-	process, err := r.supervisor.NewProcess(supervision.ProcessConfig{Command: []string{"/bin/sh", "-eu"}, Dir: cwd, Env: env})
+	process, err := r.launchProcess(ctx, owner, r.supervisor, supervision.ProcessConfig{Command: []string{"/bin/sh", "-eu"}, Dir: cwd, Env: env})
 	if err != nil {
-		return 0, err
-	}
-	if err := process.Start(ctx); err != nil {
 		return 0, err
 	}
 	var readers errgroup.Group
@@ -362,14 +362,14 @@ func (r *Runner) runScript(ctx context.Context, script, cwd string, output func(
 				n, err := stream.reader.Read(buffer)
 				if n > 0 {
 					if e := output(stream.stdout, append([]byte(nil), buffer[:n]...)); e != nil {
-						return errors.Join(e, process.Stop(context.Background(), stopGrace))
+						return errors.Join(e, process.Stop(context.Background()))
 					}
 				}
 				if err == io.EOF {
 					return nil
 				}
 				if err != nil {
-					return errors.Join(err, process.Stop(context.Background(), stopGrace))
+					return errors.Join(err, process.Stop(context.Background()))
 				}
 			}
 		})
@@ -381,7 +381,7 @@ func (r *Runner) runScript(ctx context.Context, script, cwd string, output func(
 	closeErr := process.CloseStdin()
 	code, waitErr := process.Wait(ctx)
 	if waitErr != nil {
-		waitErr = errors.Join(waitErr, process.Stop(context.WithoutCancel(ctx), 5*time.Second))
+		waitErr = errors.Join(waitErr, process.Stop(context.WithoutCancel(ctx)))
 	}
 	return code, errors.Join(writeErr, closeErr, waitErr, readers.Wait())
 }

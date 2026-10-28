@@ -36,7 +36,7 @@ func ResolveWorkspace(cwd, workspaceRoot string) (string, error) {
 
 // EnsureWorkspace returns cwd after creating any missing path components. Existing
 // directories and their contents retain their original ownership.
-func EnsureWorkspace(ctx context.Context, cwd, workspaceRoot string, supervisor *supervision.Supervisor) (string, error) {
+func EnsureWorkspace(ctx context.Context, cwd, workspaceRoot string, runner *Runner) (string, error) {
 	resolved, err := ResolveWorkspace(cwd, workspaceRoot)
 	if err != nil {
 		return "", err
@@ -51,7 +51,7 @@ func EnsureWorkspace(ctx context.Context, cwd, workspaceRoot string, supervisor 
 	if !errors.Is(err, os.ErrNotExist) {
 		return "", fmt.Errorf("inspect workspace path %s: %w", resolved, err)
 	}
-	if supervisor == nil {
+	if runner == nil {
 		if workspaceRoot == "" {
 			if err := os.MkdirAll(resolved, 0o770); err != nil {
 				return "", fmt.Errorf("create workspace path %s: %w", resolved, err)
@@ -71,6 +71,9 @@ func EnsureWorkspace(ctx context.Context, cwd, workspaceRoot string, supervisor 
 		}
 		return ResolveWorkspace(resolved, workspaceRoot)
 	}
+	if runner.workspaceSupervisor == nil {
+		return "", errors.New("isolated workspace helper requires a configured process supervisor")
+	}
 	if workspaceRoot == "" {
 		return "", errors.New("an isolated harness workspace requires a configured workspace root")
 	}
@@ -88,15 +91,12 @@ func EnsureWorkspace(ctx context.Context, cwd, workspaceRoot string, supervisor 
 		return "", fmt.Errorf("locate runner executable for workspace creation: %w", err)
 	}
 	command := append([]string{executable, workspaceMode, root}, parts...)
-	process, err := supervisor.NewProcess(supervision.ProcessConfig{
+	process, err := runner.launchProcess(ctx, "workspace-helper", runner.workspaceSupervisor, supervision.ProcessConfig{
 		Command: command,
 		Dir:     root,
 		Env:     map[string]string{},
 	})
 	if err != nil {
-		return "", err
-	}
-	if err := process.Start(ctx); err != nil {
 		return "", fmt.Errorf("start workspace helper: %w", err)
 	}
 	stdoutDone := make(chan struct{})
@@ -110,14 +110,22 @@ func EnsureWorkspace(ctx context.Context, cwd, workspaceRoot string, supervisor 
 		close(stderrDone)
 	}()
 	if err := process.CloseStdin(); err != nil {
-		_ = process.Stop(context.Background(), stopGrace)
-		return "", err
+		stopErr := process.Stop(context.Background())
+		if stopErr == nil {
+			<-stdoutDone
+			<-stderrDone
+		}
+		return "", errors.Join(err, stopErr)
 	}
 	code, waitErr := process.Wait(ctx)
 	if waitErr != nil {
 		description := process.BackendDescription()
-		_ = process.Stop(context.Background(), stopGrace)
-		return "", fmt.Errorf("wait workspace helper (%s): %w", description, waitErr)
+		stopErr := process.Stop(context.Background())
+		if stopErr == nil {
+			<-stdoutDone
+			<-stderrDone
+		}
+		return "", errors.Join(fmt.Errorf("wait workspace helper (%s): %w", description, waitErr), stopErr)
 	}
 	<-stdoutDone
 	<-stderrDone

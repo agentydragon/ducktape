@@ -36,7 +36,7 @@ func (a frameTestAdapter) OnFrame(ctx context.Context, raw json.RawMessage, sequ
 	return a.onFrame(ctx, raw, sequence)
 }
 
-func frameTestSession(t *testing.T, command []string) (*Session, *supervision.Process) {
+func frameTestSession(t *testing.T, command []string) (*Session, *managedProcess) {
 	t.Helper()
 	r, err := New(Config{StateDir: t.TempDir()})
 	if err != nil {
@@ -58,16 +58,13 @@ func frameTestSession(t *testing.T, command []string) (*Session, *supervision.Pr
 		t.Fatal(err)
 	}
 	s := newSession(r, "session", &record, journal)
-	p, err := r.supervisor.NewProcess(supervision.ProcessConfig{Command: command, Dir: record.CWD, Env: map[string]string{}})
+	p, err := r.launchProcess(context.Background(), sessionControllerName+"/"+s.id, r.supervisor, supervision.ProcessConfig{Command: command, Dir: record.CWD, Env: map[string]string{}})
 	if err != nil {
-		t.Fatal(err)
-	}
-	if err := p.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	s.process = p
 	t.Cleanup(func() {
-		if err := p.Stop(context.Background(), time.Second); err != nil {
+		if err := p.Stop(context.Background()); err != nil {
 			t.Error(err)
 		}
 		r.cancel()

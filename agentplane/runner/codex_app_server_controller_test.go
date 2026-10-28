@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -41,7 +42,7 @@ func TestCodexJoinedStartupSurvivesTransientExecutorFailure(t *testing.T) {
 	}, "transient executor startup failure")
 	delayExecutorRetry(t, r)
 	waitCodex(t, r, func(current codexAppServerRuntimeSpec) bool {
-		return current.Phase == codexAppServerStarting && !current.ExecServerReadyDeadline.IsZero()
+		return current.Phase == codexAppServerInitializing && !current.ExecServerReadyDeadline.IsZero()
 	}, "Codex waiting for executor readiness")
 	startHostWaiter()
 	joined := waitCodexDemand(t, r, 2)
@@ -106,7 +107,7 @@ func TestCodexExecutorReadinessDeadlineConsumesJoinedDemand(t *testing.T) {
 			t.Fatal("executor startup did not begin")
 		}
 		initial := codexAppServerRuntime(t, r)
-		if initial.Phase != codexAppServerStarting || initial.ExecServerReadyDeadline.IsZero() {
+		if initial.Phase != codexAppServerInitializing || initial.ExecServerReadyDeadline.IsZero() {
 			t.Fatalf("Codex initial dependency state = %+v, want a 30s executor wait", initial)
 		}
 		if remaining := initial.ExecServerReadyDeadline.Sub(time.Now()); remaining != codexAppServerDependencyBudget {
@@ -142,68 +143,95 @@ func TestCodexExecutorReadinessDeadlineConsumesJoinedDemand(t *testing.T) {
 	})
 }
 
-func TestCodexFailedStopBlocksRunnerFencing(t *testing.T) {
-	r := newCodexOnlyRunner(t)
+func TestCodexFailedDrainBlocksRunnerFencing(t *testing.T) {
+	r := newCodexOnlyRunner(t, codexAppServerTestLaunch(t))
 	entered, release := make(chan struct{}), make(chan struct{})
 	var releaseOnce sync.Once
 	releaseStop := func() { releaseOnce.Do(func() { close(release) }) }
 	t.Cleanup(releaseStop)
-	stopFailure := errors.New("fake Codex process would not stop")
+	stopFailure := errors.New("Codex app-server stop was rejected")
 	r.codexAppServer.mu.Lock()
-	r.codexAppServer.current = &codexAppServerProcess{
-		id:      "test-process",
-		process: newControllerTestProcess(t),
-		router:  codex.NewRouter[*Session](),
-	}
-	r.codexAppServer.stopEffect = func(context.Context) error {
+	r.codexAppServer.drainEffect = func(context.Context) error {
 		close(entered)
 		<-release
 		return stopFailure
 	}
 	r.codexAppServer.mu.Unlock()
-	setCodexRuntime(t, r, codexAppServerRuntimeSpec{
-		Phase: codexAppServerReady, Generation: r.lifecycle.desiredState().Generation, Attempt: 1, ProcessID: "test-process",
-	})
+	if _, err := r.codexAppServer.request(nil); err != nil {
+		t.Fatalf("request Codex app-server: %v", err)
+	}
+	ready := waitCodex(t, r, func(current codexAppServerRuntimeSpec) bool {
+		return current.Phase == codexAppServerReady && current.ProcessID != ""
+	}, "Codex app-server initialization")
+	r.codexAppServer.mu.Lock()
+	server := r.codexAppServer.current
+	r.codexAppServer.mu.Unlock()
+	if server == nil || server.process.id != ready.ProcessID {
+		t.Fatalf("Codex app-server process = %+v, want runtime ID %q", server, ready.ProcessID)
+	}
 
 	closed := make(chan error, 1)
-	go func() { closed <- r.Close() }()
+	closeDone := make(chan struct{})
+	t.Cleanup(func() {
+		releaseStop()
+		timer := time.NewTimer(lifecycleTestTimeout)
+		defer timer.Stop()
+		select {
+		case <-closeDone:
+		case <-timer.C:
+			r.cancel()
+			<-closeDone
+		}
+	})
+	go func() {
+		defer close(closeDone)
+		closed <- r.Close()
+	}()
 	select {
 	case <-entered:
 	case <-time.After(lifecycleTestTimeout):
-		t.Fatal("COSI did not start the Codex stop operation")
+		t.Fatal("COSI did not start the Codex drain operation")
 	}
 	waitLifecycle(t, r, func() bool { return r.lifecycle.status().Stage >= stageStopping }, "Runner stopping barrier")
 	if stage := r.lifecycle.status().Stage; stage >= stageFencing {
-		t.Fatalf("Runner crossed fencing while Codex stop was unresolved: stage=%d", stage)
+		t.Fatalf("Runner crossed fencing while Codex drain was unresolved: stage=%d", stage)
 	}
 	select {
 	case err := <-closed:
-		t.Fatalf("Runner Close returned before Codex stop settled: %v", err)
+		t.Fatalf("Runner Close returned before Codex drain settled: %v", err)
 	default:
 	}
 
 	releaseStop()
 	if err := waitClose(t, closed); err == nil || !errors.Is(err, stopFailure) && !strings.Contains(err.Error(), stopFailure.Error()) {
-		t.Fatalf("Runner Close = %v, want Codex stop failure", err)
+		t.Fatalf("Runner Close = %v, want Codex drain failure", err)
 	}
 	failed := waitCodex(t, r, func(current codexAppServerRuntimeSpec) bool {
 		return current.Phase == codexAppServerStopped && current.StopError != ""
-	}, "Codex stop failure")
+	}, "Codex drain failure")
 	if !strings.Contains(failed.StopError, stopFailure.Error()) {
 		t.Errorf("Codex StopError = %q, want %q", failed.StopError, stopFailure)
 	}
 	if stage := r.lifecycle.status().Stage; stage >= stageFencing {
-		t.Errorf("Runner crossed fencing after failed Codex stop: stage=%d", stage)
+		t.Errorf("Runner crossed fencing after failed Codex drain: stage=%d", stage)
+	}
+	if err := server.process.Stop(context.Background()); err != nil {
+		t.Fatalf("stop COSI-owned process after failed app-server drain: %v", err)
+	}
+	select {
+	case <-server.ended:
+	case <-time.After(lifecycleTestTimeout):
+		t.Fatal("Codex app-server readers did not finish after managed process cleanup")
 	}
 	forceStopTestRunner(t, r)
 }
 
 func TestCodexExitSnapshotRejectsLateSessionAttachment(t *testing.T) {
+	r := newCodexOnlyRunner(t, harness.LaunchConfig{Binary: "/bin/false"})
 	owner := &Session{id: "already-hosted"}
 	late := &Session{id: "late-attachment"}
 	p := &codexAppServerProcess{
-		id:      "test-process",
-		process: newControllerTestProcess(t),
+		process: newManagedTestProcess(t, r),
 		router:  codex.NewRouter[*Session](),
 	}
 	p.router.Host(owner)
@@ -226,9 +254,9 @@ func TestCodexExitSnapshotRejectsLateSessionAttachment(t *testing.T) {
 	}
 }
 
-func newCodexOnlyRunner(t *testing.T) *Runner {
+func newCodexOnlyRunner(t *testing.T, launch harness.LaunchConfig) *Runner {
 	t.Helper()
-	r, err := New(Config{StateDir: t.TempDir(), Codex: &harness.LaunchConfig{Binary: "/bin/false"}})
+	r, err := New(Config{StateDir: t.TempDir(), Codex: &launch})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -249,6 +277,16 @@ func newCodexOnlyRunner(t *testing.T) *Runner {
 		forceStopTestRunner(t, r)
 	})
 	return r
+}
+
+func codexAppServerTestLaunch(t *testing.T) harness.LaunchConfig {
+	t.Helper()
+	binary := filepath.Join(t.TempDir(), "codex-app-server")
+	script := "#!/bin/sh\nIFS= read -r request\nprintf '%s\\n' '{\"id\":\"agentplane-initialize\",\"result\":{}}'\ncat >/dev/null\n"
+	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return harness.LaunchConfig{Binary: binary, BaseURL: "https://codex.example.invalid/v1", Token: "codex-test-token"}
 }
 
 func newCodexSynctestRunner(t *testing.T, stateDir string, startEffect func(context.Context) (*processInstance, error)) *Runner {
@@ -371,11 +409,6 @@ func waitCodexDemand(t *testing.T, r *Runner, want uint64) uint64 {
 	}
 }
 
-func setCodexRuntime(t *testing.T, r *Runner, current codexAppServerRuntimeSpec) {
-	t.Helper()
-	updateLifecycleValueForTest(t, r, codexAppServerResourceID, codexAppServerControllerName, current)
-}
-
 func delayExecutorRetry(t *testing.T, r *Runner) {
 	t.Helper()
 	current := r.codexExecServer.runtimeState()
@@ -418,22 +451,21 @@ func sessionIDs(sessions []*Session) []string {
 	return ids
 }
 
-func newControllerTestProcess(t *testing.T) *supervision.Process {
+func newManagedTestProcess(t *testing.T, r *Runner) *managedProcess {
 	t.Helper()
-	process, err := supervision.NewSubprocessSupervisor(nil).NewProcess(supervision.ProcessConfig{
+	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
+	defer cancel()
+	process, err := r.launchProcess(ctx, codexAppServerControllerName, r.supervisor, supervision.ProcessConfig{
 		Command: []string{"/bin/sleep", "60"},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
-	defer cancel()
-	if err := process.Start(ctx); err != nil {
-		t.Fatal(err)
-	}
 	t.Cleanup(func() {
-		if err := process.Stop(context.Background(), 0); err != nil {
-			t.Error(err)
+		if process.Running() {
+			if err := process.Stop(context.Background()); err != nil {
+				t.Error(err)
+			}
 		}
 	})
 	return process

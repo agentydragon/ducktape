@@ -3,13 +3,13 @@ package runner
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
-	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 	"go.uber.org/zap"
 )
 
@@ -28,7 +28,7 @@ type Session struct {
 	mu                                                     sync.Mutex
 	admitMu                                                sync.Mutex
 	writeMu                                                sync.Mutex
-	process                                                *supervision.Process
+	process                                                *managedProcess
 	adapter                                                harness.Adapter
 	processID                                              string
 	processState                                           runnerpb.ProcessState
@@ -111,6 +111,9 @@ func (s *Session) ensureReady(ctx context.Context) error {
 	previous, shared := s.process, s.codexAppServer != nil
 	s.mu.Unlock()
 	if previous != nil && !shared && !previous.Running() {
+		if _, err := previous.Wait(ctx); err != nil {
+			return fmt.Errorf("previous harness cleanup failed: %w", err)
+		}
 		// The exited process may still be recording frames and clearing its
 		// attachment. Join those callbacks before installing a successor.
 		s.readers.Wait()
@@ -281,8 +284,8 @@ func (s *Session) stopProcess(ctx context.Context) error {
 	process := s.process
 	shared := s.codexAppServer != nil
 	s.mu.Unlock()
-	if !shared && process != nil && process.Running() {
-		if err := process.Stop(ctx, 5*time.Second); err != nil {
+	if !shared && process != nil {
+		if err := process.Stop(ctx); err != nil {
 			return err
 		}
 	}
