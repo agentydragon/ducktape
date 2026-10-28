@@ -714,6 +714,18 @@ fn classify_callee_call(
     ) {
         return all_args_pure(args, shadowed, local_shadowed, declared_pure, graph);
     }
+    // During bottom-up effect extraction, inferred local/imported calls are
+    // represented as obligations in the same finite closure. Keep this after
+    // author trust, fluent, and namespace gates so their established priority
+    // and argument handling remain unchanged.
+    if let Expr::Ident(ident) = callee_expr
+        && !local_shadowed.contains(ident.sym.as_ref())
+        && graph
+            .record_purity_call_obligation(ident.sym.as_ref(), call_span)
+            .is_some()
+    {
+        return all_args_pure(args, shadowed, local_shadowed, declared_pure, graph);
+    }
     // Chunk-local function declaration: consult the per-chunk
     // function-body purity cache. `Pure` callee + Pure args → Pure;
     // non-Pure callee contributes one reason at this call site. Copying its

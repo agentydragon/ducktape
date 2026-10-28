@@ -11,23 +11,19 @@
 //! for each imported function binding — the map fed to that module's
 //! [`ChunkCodeGraph::build_full`] (`imported_purities`).
 //!
-//! ## Algorithm — greatest fixpoint
+//! ## Algorithm — bottom-up effect closure
 //!
-//! A verdict moves from optimistic `Pure` toward `NotPure`; pure verdicts may
-//! also gain a finite set of author-input dependencies. Each round rebuilds
-//! every module's `ChunkCodeGraph` with imported purities from the current
-//! export summaries. It demotes newly impure exports and unions dependencies
-//! into still-pure exports, so both changes are monotone and the iteration
-//! converges. Starting optimistic is what lets a function that is pure except
-//! for calling a same-cycle peer stay `Pure`.
+//! Canonical body classification emits direct effects, proof dependencies,
+//! and exact obligations to inferred local/imported functions. A single typed
+//! worklist across all participating modules propagates finite effects through
+//! those obligations. Pure is projected only after closure, so recursive pure
+//! components remain pure without optimistic verdicts.
 //!
 //! Soundness is conservative by construction: an import whose target module or
 //! export is absent (external/vendor module not analyzed, a non-function
 //! export, an unresolved re-export) simply gets no entry, so the call stays
-//! `unknown_call` exactly as before. The oracle only ever *removes*
-//! false-impurity; it never asserts purity it did not derive from a body.
+//! `unknown_call` exactly as before. Pinned assertions remain trusted axioms.
 
-use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
@@ -46,7 +42,8 @@ use crate::facts::{
     ChunkValueFlow, TopLevelItemView, compute_shadowed_globals, top_level_item_views,
 };
 use crate::purity::{
-    ChunkCodeGraph, Purity, collect_plain_array_bindings, collect_plain_data_bindings,
+    ChunkCodeGraph, Purity, PurityEffectRules, PurityMode, collect_plain_array_bindings,
+    collect_plain_data_bindings,
 };
 
 /// Stable key identifying a module in the program (the chunk name).
@@ -192,9 +189,7 @@ impl<'a> ModulePurityFacts<'a> {
     }
 }
 
-/// Merge one inferred function-body verdict into an optimistic export summary.
-/// Still-pure summaries retain every consumed proof dependency; a newly
-/// impure body demotes the summary and terminates further updates.
+#[cfg(test)]
 fn merge_inferred_export_purity(current: &Arc<Purity>, inferred: &Purity) -> Option<Purity> {
     if !current.is_pure() {
         return None;
@@ -219,18 +214,16 @@ pub fn resolve_imported_purities(
     callable_summaries: &ResolvedCallableSummaries,
 ) -> BTreeMap<ModuleKey, BTreeMap<String, Arc<Purity>>> {
     // Only exported verdicts read by a named/default import can affect the
-    // returned maps or another module's fixpoint inputs. Namespace member
-    // calls are intentionally outside this oracle. Avoid value-flow analysis
-    // of modules whose bodies cannot contribute an inferred verdict.
+    // returned maps or another module's closure. Namespace member calls are
+    // intentionally outside this oracle.
     let required: BTreeSet<_> = modules
         .values()
         .flat_map(|facts| facts.imports.values())
         .map(|target| (target.module.clone(), target.export.clone()))
         .collect();
-    let mut export_purity: BTreeMap<(ModuleKey, String), Arc<Purity>> = BTreeMap::new();
-
-    // Author-asserted axioms: pinned Pure, exempt from demotion below.
+    // Author-asserted axioms stay pinned Pure, even when no source body exists.
     let mut pinned: BTreeSet<(ModuleKey, String)> = BTreeSet::new();
+    let mut export_purity: BTreeMap<(ModuleKey, String), Arc<Purity>> = BTreeMap::new();
     for (module, export_names) in asserted_pure {
         for export_name in export_names {
             let known_export = modules
@@ -251,21 +244,35 @@ pub fn resolve_imported_purities(
         }
     }
 
-    // Asserted exports need no inference, but their validation above must run
-    // even when no import consumes them. Keep structural facts only for the
-    // remaining providers; they do not change across fixpoint rounds.
+    // Establish module-qualified function identities before extracting any
+    // bodies, so imports become exact edges in one program-wide effect graph.
+    let function_keys_by_module: BTreeMap<_, _> = modules
+        .iter()
+        .map(|(module, facts)| {
+            let views = top_level_item_views(facts.body);
+            (
+                module.clone(),
+                ChunkCodeGraph::inferred_function_keys(&views, module, PurityMode::Export),
+            )
+        })
+        .collect();
+    let inferred_export_keys: BTreeMap<_, _> = required
+        .iter()
+        .filter(|slot| !pinned.contains(*slot))
+        .filter_map(|(module, export)| {
+            let local = modules.get(module)?.exports.get(export)?;
+            let function = function_keys_by_module.get(module)?.get(local)?;
+            Some(((module.clone(), export.clone()), function.clone()))
+        })
+        .collect();
+
+    // Authoritative source/native/captured-input facts are fixed before this
+    // one effects closure starts. Declared chunk-local purity hints remain
+    // absent from export mode, as before.
     let progress = std::env::var_os("DUCKTAPE_DEBUNDLE_PROGRESS").is_some();
     let mut prepared = BTreeMap::new();
     for (key, facts) in modules {
-        let inferred_exports: Vec<_> = facts
-            .exports
-            .iter()
-            .filter(|(export, _)| {
-                let slot = (key.clone(), (*export).clone());
-                required.contains(&slot) && !pinned.contains(&slot)
-            })
-            .collect();
-        if inferred_exports.is_empty() {
+        if !inferred_export_keys.keys().any(|(module, _)| module == key) {
             continue;
         }
         if progress {
@@ -295,19 +302,7 @@ pub fn resolve_imported_purities(
             ..Default::default()
         };
         let facts_prepared = facts.prepare(&inputs);
-        // Discover function exports before optimistically seeding them. Other
-        // exports stay unresolved, unless explicitly asserted above.
-        let graph = facts.build_graph(&facts_prepared, &BTreeMap::new());
-        let mut has_function_exports = false;
-        for (export, local) in inferred_exports {
-            if graph.function_purity(local).is_some() {
-                export_purity.insert((key.clone(), export.clone()), Arc::new(Purity::pure()));
-                has_function_exports = true;
-            }
-        }
-        if has_function_exports {
-            prepared.insert(key, facts_prepared);
-        }
+        prepared.insert(key.clone(), facts_prepared);
         if progress {
             eprintln!(
                 "[debundle progress] chunk={key} phase=prepare_cross_module_purity state=end"
@@ -315,69 +310,70 @@ pub fn resolve_imported_purities(
         }
     }
 
-    struct ExportRules<'a, 'ast> {
-        modules: &'a BTreeMap<ModuleKey, ModulePurityFacts<'ast>>,
-        prepared: &'a BTreeMap<&'a ModuleKey, PreparedModulePurityFacts<'ast>>,
-        slots: BTreeSet<(ModuleKey, String)>,
-        pinned: &'a BTreeSet<(ModuleKey, String)>,
+    let mut bodies = BTreeMap::new();
+    let no_declared_pure = BTreeSet::new();
+    let no_declared_pure_members = BTreeMap::new();
+    for (module, prepared_facts) in &prepared {
+        let facts = &modules[module];
+        let imported_targets: BTreeMap<_, _> = facts
+            .imports
+            .iter()
+            .filter_map(|(local, target)| {
+                inferred_export_keys
+                    .get(&(target.module.clone(), target.export.clone()))
+                    .map(|key| (local.clone(), key.clone()))
+            })
+            .collect();
+        let imported_purities: BTreeMap<_, _> = facts
+            .imports
+            .iter()
+            .filter(|(_, target)| pinned.contains(&(target.module.clone(), target.export.clone())))
+            .map(|(local, _)| (local.clone(), Arc::new(Purity::pure())))
+            .collect();
+        let mut locate = |span: Span| {
+            let (source_path, index) = facts.source.as_ref()?;
+            let (start_line, end_line, start_column) =
+                index.line_range_and_start_column_for_span(span)?;
+            Some(SourceLocation {
+                source_path: source_path.clone(),
+                start_line,
+                end_line,
+                start_column: Some(start_column),
+            })
+        };
+        let shape_inputs = crate::purity::PurityShapeInputs {
+            shadowed: &prepared_facts.shadowed,
+            declared_pure_new: &no_declared_pure,
+            declared_pure_members: &no_declared_pure_members,
+            imported_purities: &imported_purities,
+            fluent_bindings: &no_declared_pure,
+            set_iterable_proof: &prepared_facts.set_iterable_proof,
+            local_class_construction_proof: &prepared_facts.local_class_construction_proof,
+            plain_data_bindings: &prepared_facts.plain_data_bindings,
+            plain_array_bindings: &prepared_facts.plain_array_bindings,
+        };
+        let call_context = crate::purity::PurityCallContext {
+            module,
+            mode: PurityMode::Export,
+            declared_pure: &no_declared_pure,
+            imported_targets: &imported_targets,
+        };
+        let transfers = ChunkCodeGraph::effect_transfers(
+            &prepared_facts.views,
+            &shape_inputs,
+            &call_context,
+            Some(&mut locate),
+        );
+        bodies.extend(transfers);
     }
-    impl IterativeRules for ExportRules<'_, '_> {
-        type Key = (ModuleKey, String);
-        type Fact = Arc<Purity>;
-        type Rule = ModuleKey;
-
-        fn evaluate(
-            &self,
-            module: &ModuleKey,
-            context: &mut impl FactContext<Self::Key, Self::Fact>,
-        ) {
-            let facts = &self.modules[module];
-            let imported = facts
-                .imports
-                .iter()
-                .filter_map(|(local, target)| {
-                    context
-                        .read((target.module.clone(), target.export.clone()))
-                        .cloned()
-                        .map(|purity| (local.clone(), purity))
-                })
-                .collect();
-            let graph = facts.build_graph(&self.prepared[&module], &imported);
-            for (export, local) in &facts.exports {
-                let key = (module.clone(), export.clone());
-                if !self.slots.contains(&key) || self.pinned.contains(&key) {
-                    continue;
-                }
-                if let Some(purity) = graph.function_purity(local) {
-                    context.propose(key, purity.clone());
-                }
-            }
+    // Every module-qualified function body shares this one finite effects
+    // store/worklist, including mutually recursive imports across modules.
+    let solved = PurityEffectRules::new(bodies).solve_to_purities();
+    for (slot, function) in inferred_export_keys {
+        if let Some(purity) = solved.get(&function) {
+            export_purity.insert(slot, purity.clone());
         }
-
-        fn merge(_: &Self::Key, current: &mut Arc<Purity>, contribution: Arc<Purity>) -> bool {
-            if let Some(next) = merge_inferred_export_purity(current, &contribution) {
-                *current = Arc::new(next);
-                true
-            } else {
-                false
-            }
-        }
     }
-    let producers = prepared
-        .keys()
-        .map(|key| (*key).clone())
-        .collect::<Vec<_>>();
-    let rules = ExportRules {
-        modules,
-        prepared: &prepared,
-        slots: export_purity.keys().cloned().collect(),
-        pinned: &pinned,
-    };
-    let mut inference = IterativeInference::new(rules);
-    for (key, purity) in export_purity {
-        inference.seed(key, purity);
-    }
-    let export_purity = inference.solve(producers).into_values();
 
     modules
         .iter()
@@ -993,6 +989,89 @@ mod tests {
             &ResolvedCallableSummaries::default(),
         );
         assert!(!resolved["a"]["wrap"].is_pure());
+    }
+
+    #[test]
+    fn mutually_recursive_imported_functions_close_without_optimistic_seeds() {
+        let a = parse("import { right } from 'b'; export function left() { return right(); }");
+        let b = parse("import { left } from 'a'; export function right() { return left(); }");
+        let modules = BTreeMap::from([
+            (
+                "a".to_string(),
+                facts(&a, &[("right", "b", "right")], &[("left", "left")]),
+            ),
+            (
+                "b".to_string(),
+                facts(&b, &[("left", "a", "left")], &[("right", "right")]),
+            ),
+        ]);
+
+        let resolved = resolve_imported_purities(
+            &modules,
+            &BTreeMap::new(),
+            &ResolvedCallableSummaries::default(),
+        );
+
+        assert!(resolved["a"]["right"].is_pure());
+        assert!(resolved["b"]["left"].is_pure());
+    }
+
+    #[test]
+    fn impurity_in_mutually_recursive_imports_has_finite_cause_chains() {
+        let a = parse("import { right } from 'b'; export function left() { return right(); }");
+        let b =
+            parse("import { left } from 'a'; export function right() { left(); globalSink(); }");
+        let modules = BTreeMap::from([
+            (
+                "a".to_string(),
+                facts(&a, &[("right", "b", "right")], &[("left", "left")]),
+            ),
+            (
+                "b".to_string(),
+                facts(&b, &[("left", "a", "left")], &[("right", "right")]),
+            ),
+        ]);
+
+        let resolved = resolve_imported_purities(
+            &modules,
+            &BTreeMap::new(),
+            &ResolvedCallableSummaries::default(),
+        );
+
+        let right = &resolved["a"]["right"];
+        let left = &resolved["b"]["left"];
+        assert!(!right.is_pure());
+        assert!(!left.is_pure());
+        assert_finite_causes(right);
+        assert_finite_causes(left);
+    }
+
+    fn assert_finite_causes(root: &Arc<Purity>) {
+        fn visit(
+            purity: &Arc<Purity>,
+            active: &mut BTreeSet<usize>,
+            completed: &mut BTreeSet<usize>,
+        ) {
+            let identity = Arc::as_ptr(purity) as usize;
+            assert!(
+                !active.contains(&identity),
+                "purity cause graph contains a cycle"
+            );
+            if !completed.insert(identity) {
+                return;
+            }
+            active.insert(identity);
+            if let Purity::NotPure { reasons } = purity.as_ref() {
+                for reason in reasons {
+                    if let Some(cause) = &reason.cause {
+                        visit(cause, active, completed);
+                    }
+                }
+            }
+            active.remove(&identity);
+        }
+
+        visit(root, &mut BTreeSet::new(), &mut BTreeSet::new());
     }
 
     #[test]

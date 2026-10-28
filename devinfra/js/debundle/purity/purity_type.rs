@@ -248,24 +248,6 @@ impl PurityReason {
     }
 }
 
-/// The knowledge order is optimistic purity, growing input dependencies, then
-/// terminal impurity. Retain the first impurity witness: recursively appending
-/// explanations after demotion would grow without adding semantic information.
-pub(crate) fn join_purity(current: &mut Arc<Purity>, contribution: Arc<Purity>) -> bool {
-    if !current.is_pure() {
-        return false;
-    }
-    let next = current
-        .as_ref()
-        .clone()
-        .worst(contribution.as_ref().clone());
-    if **current == next {
-        return false;
-    }
-    *current = Arc::new(next);
-    true
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
