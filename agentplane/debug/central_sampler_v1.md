@@ -204,7 +204,7 @@ execution or History assertion was reached. The retained guest console also show
 connection dropping during the fixture's Gateway restart.
 
 The [VM rerun with sampler diagnostics](https://app.buildbuddy.io/invocation/a736ad69-e27c-46c9-b150-dbfd3dffb5ba)
-reproduced the first-provider timeout. Its retained session diagnostic artifact shows
+reproduced the first-provider timeout. Its retained `central-sampler-stalled-session.json` shows
 the Sandbox Ready and connected, but sampler setup interrupted exactly ten seconds after it
 started, with no provider or executor boundary records. The sampler stderr reports
 `context deadline exceeded`. The guest console places executor reconciliation at 21:11:38.096Z
@@ -234,3 +234,19 @@ reports PID 1 `systemd`, executor UID 107, a native service under `agentplane-ex
 successful setup, and `terminal_cursor == folded_through == 163`. The test exercised mocked-model
 sampling, real remote execution, and retained/folded History. This validates that VM scenario;
 one passing run does not establish the frequency of the earlier startup failure.
+
+## VM setup stdout missing from retained events
+
+In [CI invocation 1f9fca25](https://app.buildbuddy.io/invocation/1f9fca25-3dec-528a-96d0-9fdcff5b2c67),
+`test_central_sampler_vm` reached successful setup, read the file created by setup through the
+VM executor, and passed PID 1, UID and cgroup checks. Retained `setup_finished` had exit code 0,
+but retained setup stdout was empty instead of `setup-on-executor`. The Pod variant passed.
+The VM timeline includes the runner disk and both guest images; the unused Pod runner layout
+is not on this execution path.
+
+The old failure hook captured early setup/provider stalls, so this later assertion left no
+nested `process/read` reply evidence. The fixture now writes
+`central-sampler-session-diagnostics.json` for this mismatch too, retaining full History events
+and their boundary-record request/reply bodies. That evidence must distinguish an empty
+exec-server reply from loss after the sampler receives a chunk before choosing a backend fix.
+The stdout assertion remains unchanged.
