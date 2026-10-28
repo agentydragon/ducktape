@@ -73,7 +73,7 @@ go_test(
         "entry_native_content_contract_integration_test.go",
         "event_identity_contract_integration_test.go",
         "event_identity_storage_integration_test.go",
-        "event_native_content_writer_only_integration_test.go",
+        "event_native_content_constraints_integration_test.go",
         "github_commit_integration_test.go",
         "github_commit_migration_integration_test.go",
         "github_ingest_integration_test.go",

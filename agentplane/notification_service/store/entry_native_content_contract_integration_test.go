@@ -2,9 +2,9 @@ package store
 
 import (
 	"bytes"
-	"context"
 	"database/sql"
-	"strings"
+	"encoding/json"
+	"reflect"
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/migrations"
@@ -26,109 +26,15 @@ var nativeContentContractConstraints = []string{
 	"entry_owned_legacy_content_absent",
 }
 
-func TestNativeContentContractFreshEmptyDatabaseValidatesAndRetiresCleanup(t *testing.T) {
+func TestFinalSchemaRetainsNativeContentAndBinarySnapshots(t *testing.T) {
 	db, ctx := newStorageIntegrationDatabase(t)
-	resetNotificationSchema(t, db)
-	if err := migrations.UpTo(ctx, db, 22); err != nil {
-		t.Fatalf("build predecessor schema through migration 00022: %v", err)
-	}
-	if got := countQuery(t, ctx, db, `SELECT count(*) FROM entry`); got != 0 {
-		t.Fatalf("fresh entry table has %d rows, want none", got)
-	}
-	assertNativeContentContractProofs(t, db, 10, 1)
-
-	if err := migrations.Up(ctx, db); err != nil {
-		t.Fatalf("apply native-content contract to fresh database: %v", err)
-	}
-	assertGooseVersionApplied(t, db, 23)
-	assertTableExists(t, db, "notification_entry_legacy_cleanup", false)
-	assertColumnExists(t, db, "entry", "event", false)
-	assertColumnExists(t, db, "entry", "payload", true)
-	assertColumnExists(t, db, "subscription", "creation_proto", true)
-	assertColumnExists(t, db, "notice", "runner_entry", true)
-	assertNativeContentContractProofs(t, db, 10, 10)
-}
-
-func TestNativeContentContractRefusesPopulatedDatabaseWithoutAllProofs(t *testing.T) {
-	tests := []struct {
-		name      string
-		mutate    func(*testing.T, *sql.DB)
-		wantError string
-	}{
-		{
-			name: "missing content proof",
-			mutate: func(t *testing.T, db *sql.DB) {
-				dropNativeContentContractConstraint(t, db, "entry_action_content_shape")
-			},
-			wantError: "requires all ten native-content constraints",
-		},
-		{
-			name: "unvalidated legacy absence proof",
-			mutate: func(t *testing.T, db *sql.DB) {
-				dropNativeContentContractConstraint(t, db, "entry_owned_legacy_content_absent")
-				if _, err := db.ExecContext(t.Context(), `ALTER TABLE entry ADD CONSTRAINT entry_owned_legacy_content_absent
-					CHECK (identity_provider IS NULL OR identity_provider NOT IN ('actions', 'github_mergeability', 'message') OR payload IS NULL) NOT VALID`); err != nil {
-					t.Fatalf("replace proof with NOT VALID check: %v", err)
-				}
-			},
-			wantError: "requires all ten native-content constraints to be validated",
-		},
-		{
-			name: "cleanup is not terminal",
-			mutate: func(t *testing.T, db *sql.DB) {
-				if _, err := db.ExecContext(t.Context(), `UPDATE notification_entry_legacy_cleanup SET phase = 'scanned' WHERE singleton`); err != nil {
-					t.Fatalf("set incomplete cleanup phase: %v", err)
-				}
-			},
-			wantError: "cleanup phase is scanned, want cleaned",
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			db, ctx, f, subscription := newNativeContentContractDatabase(t)
-			seedNativeActionContentContractEntry(t, f, subscription)
-			prepareNativeContentContractProofs(t, db, "cleaned")
-			test.mutate(t, db)
-			before := f.read(t, subscription.InboxID, 0)
-			var proofCountBefore, validatedProofCountBefore int
-			if err := db.QueryRowContext(ctx, `SELECT count(*), count(*) FILTER (WHERE convalidated)
-				FROM pg_constraint WHERE conrelid = 'entry'::regclass AND conname = ANY($1::text[])`,
-				pq.Array(nativeContentContractConstraints)).Scan(&proofCountBefore, &validatedProofCountBefore); err != nil {
-				t.Fatal(err)
-			}
-			var phaseBefore string
-			if err := db.QueryRowContext(ctx, `SELECT phase FROM notification_entry_legacy_cleanup WHERE singleton`).Scan(&phaseBefore); err != nil {
-				t.Fatal(err)
-			}
-
-			err := migrations.Up(ctx, db)
-			if err == nil || !strings.Contains(err.Error(), test.wantError) {
-				t.Fatalf("contract migration error = %v, want %q", err, test.wantError)
-			}
-			assertLatestGooseVersion(t, db, 22)
-			assertTableExists(t, db, "notification_entry_legacy_cleanup", true)
-			assertColumnExists(t, db, "entry", "payload", true)
-			assertColumnExists(t, db, "entry", "event", false)
-			assertNativeContentContractProofs(t, db, proofCountBefore, validatedProofCountBefore)
-			var phaseAfter string
-			if err := db.QueryRowContext(ctx, `SELECT phase FROM notification_entry_legacy_cleanup WHERE singleton`).Scan(&phaseAfter); err != nil || phaseAfter != phaseBefore {
-				t.Fatalf("cleanup phase after rejected contract = %q, err = %v; want %q", phaseAfter, err, phaseBefore)
-			}
-			after := f.read(t, subscription.InboxID, 0)
-			assertNativeContentContractPage(t, after, before, 1)
-		})
-	}
-}
-
-func TestNativeContentContractRetainsNativeContentAndBinarySnapshots(t *testing.T) {
-	db, ctx, f, subscription := newNativeContentContractDatabase(t)
+	f := fixtureForDatabase(t, db, defaultQuotas())
+	subscription := f.subscribe(t, body("native-content-final-contract"))
 	payloads := appendNativeContentContractEntries(t, f, subscription)
 	_, runnerEntry := goldenRunnerEntry(t, "origin")
 	if _, err := db.ExecContext(ctx, `INSERT INTO notice
 		(inbox_id, command_id, through_cursor, text, attempted, admitted, confirmed, runner_cursor, runner_entry)
-		VALUES ($1, $2, 4, 'notice', false, false, false, 4, $3)`,
-		subscription.InboxID, uuid.New(), runnerEntry); err != nil {
+		VALUES ($1, $2, 4, 'notice', false, false, false, 4, $3)`, subscription.InboxID, uuid.New(), runnerEntry); err != nil {
 		t.Fatalf("seed runner notice checkpoint: %v", err)
 	}
 	var creationProtoBefore []byte
@@ -140,24 +46,34 @@ func TestNativeContentContractRetainsNativeContentAndBinarySnapshots(t *testing.
 		t.Fatal(err)
 	}
 	if len(creationProtoBefore) == 0 || len(runnerEntryBefore) == 0 {
-		t.Fatal("expected populated subscription and runner protobuf snapshots before contract")
+		t.Fatal("expected populated subscription and runner protobuf snapshots")
 	}
 	before := f.read(t, subscription.InboxID, 0)
-	prepareNativeContentContractProofs(t, db, "cleaned")
+	assertNativeContentContractProofs(t, db)
+	assertColumnExists(t, db, "entry", "event", false)
+	assertColumnExists(t, db, "entry", "payload", true)
+	assertColumnExists(t, db, "subscription", "creation_proto", true)
+	assertColumnExists(t, db, "notice", "runner_entry", true)
+	assertTableExists(t, db, "notification_entry_legacy_cleanup", false)
 
 	if err := migrations.Up(ctx, db); err != nil {
-		t.Fatalf("apply native-content contract after cleanup proofs: %v", err)
+		t.Fatalf("repeat full migration on the completed schema: %v", err)
 	}
-	assertGooseVersionApplied(t, db, 23)
-	assertTableExists(t, db, "notification_entry_legacy_cleanup", false)
-	assertColumnExists(t, db, "entry", "payload", true)
-	assertColumnExists(t, db, "entry", "event", false)
-	assertNativeContentContractProofs(t, db, 10, 10)
-
+	assertNativeContentContractProofs(t, db)
 	after := f.read(t, subscription.InboxID, 0)
-	assertNativeContentContractPage(t, after, before, len(payloads))
-	for i, want := range payloads {
-		sameJSON(t, after.Entries[i].Payload, []byte(want))
+	assertNativeContentContractPage(t, after, before)
+	if len(after.Entries) != len(payloads) {
+		t.Fatalf("entries after repeat migration = %d, want %d", len(after.Entries), len(payloads))
+	}
+	var gotPayload, wantPayload any
+	if err := json.Unmarshal(after.Entries[3].Payload, &gotPayload); err != nil {
+		t.Fatalf("decode retained GitHub webhook payload %s: %v", after.Entries[3].Payload, err)
+	}
+	if err := json.Unmarshal([]byte(payloads[3]), &wantPayload); err != nil {
+		t.Fatalf("decode seeded GitHub webhook payload %s: %v", payloads[3], err)
+	}
+	if !reflect.DeepEqual(gotPayload, wantPayload) {
+		t.Fatalf("retained GitHub webhook payload = %s, want JSON value %#v", after.Entries[3].Payload, wantPayload)
 	}
 	if got := countQuery(t, ctx, db, `SELECT count(*) FROM entry WHERE identity_provider IN ('actions', 'github_mergeability', 'message') AND payload IS NOT NULL`); got != 0 {
 		t.Fatalf("owned entries with legacy JSON payload = %d, want none", got)
@@ -186,33 +102,6 @@ func TestNativeContentContractRetainsNativeContentAndBinarySnapshots(t *testing.
 		t.Fatalf("binary snapshots changed: subscription=%t runner=%t",
 			bytes.Equal(creationProtoAfter, creationProtoBefore), bytes.Equal(runnerEntryAfter, runnerEntryBefore))
 	}
-
-	// The retired command reads this checkpoint before it can update entries. Its first database access now fails.
-	var stalePhase string
-	if err := db.QueryRowContext(ctx, `SELECT phase FROM notification_entry_legacy_cleanup WHERE singleton`).Scan(&stalePhase); err == nil {
-		t.Fatal("retired cleanup checkpoint remains queryable")
-	}
-	if got := countQuery(t, ctx, db, `SELECT count(*) FROM entry`); got != len(payloads) {
-		t.Fatalf("entries after stale cleanup checkpoint read = %d, want %d", got, len(payloads))
-	}
-}
-
-func newNativeContentContractDatabase(t *testing.T) (*sql.DB, context.Context, fixture, Subscription) {
-	t.Helper()
-	db, ctx := newStorageIntegrationDatabase(t)
-	resetNotificationSchema(t, db)
-	if err := migrations.UpTo(ctx, db, 22); err != nil {
-		t.Fatalf("build predecessor schema through migration 00022: %v", err)
-	}
-	f := fixtureForDatabase(t, db, defaultQuotas())
-	subscription := f.subscribe(t, body("native-content-contract"))
-	return db, ctx, f, subscription
-}
-
-func seedNativeActionContentContractEntry(t *testing.T, f fixture, subscription Subscription) {
-	t.Helper()
-	action := model.ActionsEvent{RequestID: subscription.Source.(model.ActionsSource).RequestID, Sequence: 1}
-	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, action, entryPayloadForTest(t, action))
 }
 
 func appendNativeContentContractEntries(t *testing.T, f fixture, subscription Subscription) []string {
@@ -240,26 +129,7 @@ func appendNativeContentContractEntries(t *testing.T, f fixture, subscription Su
 	return payloads
 }
 
-func prepareNativeContentContractProofs(t *testing.T, db *sql.DB, phase string) {
-	t.Helper()
-	for _, constraint := range nativeContentContractConstraints {
-		if _, err := db.ExecContext(t.Context(), `ALTER TABLE entry VALIDATE CONSTRAINT `+constraint); err != nil {
-			t.Fatalf("validate %s: %v", constraint, err)
-		}
-	}
-	if _, err := db.ExecContext(t.Context(), `UPDATE notification_entry_legacy_cleanup SET phase = $1 WHERE singleton`, phase); err != nil {
-		t.Fatalf("set cleanup phase %q: %v", phase, err)
-	}
-}
-
-func dropNativeContentContractConstraint(t *testing.T, db *sql.DB, constraint string) {
-	t.Helper()
-	if _, err := db.ExecContext(t.Context(), `ALTER TABLE entry DROP CONSTRAINT `+constraint); err != nil {
-		t.Fatalf("drop %s: %v", constraint, err)
-	}
-}
-
-func assertNativeContentContractProofs(t *testing.T, db *sql.DB, wantCount, wantValidated int) {
+func assertNativeContentContractProofs(t *testing.T, db *sql.DB) {
 	t.Helper()
 	var count, validated int
 	if err := db.QueryRowContext(t.Context(), `SELECT count(*), count(*) FILTER (WHERE convalidated)
@@ -267,20 +137,22 @@ func assertNativeContentContractProofs(t *testing.T, db *sql.DB, wantCount, want
 		pq.Array(nativeContentContractConstraints)).Scan(&count, &validated); err != nil {
 		t.Fatal(err)
 	}
-	if count != wantCount || validated != wantValidated {
-		t.Fatalf("native-content constraints = %d (%d validated), want %d (%d validated)", count, validated, wantCount, wantValidated)
+	if count != len(nativeContentContractConstraints) || validated != count {
+		t.Fatalf("native-content constraints = %d (%d validated), want %d validated", count, validated, len(nativeContentContractConstraints))
 	}
 }
 
-func assertNativeContentContractPage(t *testing.T, got, want InboxPage, entryCount int) {
+func assertNativeContentContractPage(t *testing.T, got, want InboxPage) {
 	t.Helper()
-	if len(got.Entries) != entryCount || len(want.Entries) != entryCount {
-		t.Fatalf("entry counts after contract = %d (before %d), want %d", len(got.Entries), len(want.Entries), entryCount)
+	if len(got.Entries) != len(want.Entries) {
+		t.Fatalf("entry counts after repeat migration = %d (before %d), want equal", len(got.Entries), len(want.Entries))
 	}
 	for i := range want.Entries {
 		requireEqual(t, got.Entries[i].Cursor, want.Entries[i].Cursor)
 		requireEqual(t, got.Entries[i].Event, want.Entries[i].Event)
-		sameJSON(t, got.Entries[i].Payload, want.Entries[i].Payload)
+		if !bytes.Equal(got.Entries[i].Payload, want.Entries[i].Payload) {
+			t.Fatalf("entry %d payload changed: %s before, %s after", got.Entries[i].Cursor, want.Entries[i].Payload, got.Entries[i].Payload)
+		}
 		requireEqual(t, got.Entries[i].SubscriptionIDs, want.Entries[i].SubscriptionIDs)
 	}
 }

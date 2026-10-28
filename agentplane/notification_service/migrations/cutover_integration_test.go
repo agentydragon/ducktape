@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"reflect"
@@ -16,7 +17,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/migrations"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/storagepb"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
-	_ "github.com/lib/pq"
+	"github.com/lib/pq"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -59,11 +60,13 @@ func TestUpCutoverPreservesRetainedRowsAndIsIdempotent(t *testing.T) {
 	if err := migrations.Up(ctx, db); err != nil {
 		t.Fatalf("upgrade populated version-8 database: %v", err)
 	}
+	assertLatestGooseVersion(t, ctx, db, 9)
 	assertPreservedRows(t, ctx, db)
 
 	if err := migrations.Up(ctx, db); err != nil {
 		t.Fatalf("repeat upgrade: %v", err)
 	}
+	assertLatestGooseVersion(t, ctx, db, 9)
 	assertPreservedRows(t, ctx, db)
 }
 
@@ -79,6 +82,8 @@ func TestUpFailurePreservesRowsAndCanBeRetriedAfterRepair(t *testing.T) {
 	if err := migrations.Up(ctx, db); err == nil {
 		t.Fatal("upgrade accepted an unknown historical Action state")
 	}
+	assertLatestGooseVersion(t, ctx, db, 8)
+	assertGooseVersionNotApplied(t, ctx, db, 9)
 	assertLegacyEntryStillPresent(t, ctx, db, fixtureInboxID, 1)
 
 	if _, err := db.ExecContext(ctx, `UPDATE entry SET payload = $3::jsonb WHERE inbox_id = $1 AND cursor = $2`,
@@ -89,6 +94,7 @@ func TestUpFailurePreservesRowsAndCanBeRetriedAfterRepair(t *testing.T) {
 	if err := migrations.Up(ctx, db); err != nil {
 		t.Fatalf("retry upgrade after repair: %v", err)
 	}
+	assertLatestGooseVersion(t, ctx, db, 9)
 	assertColumn(t, ctx, db, "entry", "event", false)
 	var provider, requestID string
 	var sequence int64
@@ -100,6 +106,59 @@ func TestUpFailurePreservesRowsAndCanBeRetriedAfterRepair(t *testing.T) {
 	}
 	if provider != "actions" || requestID != fixtureRequestID || sequence != 1 || state != int32(action_servicepb.ActionState_ACTION_STATE_FAILED) {
 		t.Fatalf("repaired row identity/content = (%q, %q, %d, %d)", provider, requestID, sequence, state)
+	}
+}
+
+func TestUpRetriesAfterFinalContractCommitsButGooseHistoryWriteFails(t *testing.T) {
+	db := newVersion8Database(t)
+	seedInbox(t, db, fixtureInboxID, 1, 0)
+	seedLegacyEntry(t, db, fixtureInboxID, 1,
+		`{"provider":"actions","request_id":"`+fixtureRequestID+`","sequence":1}`,
+		`{"actor":null,"at":"2026-10-20T03:56:03Z","sequence":1,"state":"succeeded"}`)
+	ctx, cancel := migrationContext(t, 4*time.Minute)
+	defer cancel()
+
+	if _, err := db.ExecContext(ctx, `CREATE FUNCTION reject_applied_notification_v9() RETURNS trigger
+		LANGUAGE plpgsql AS $$ BEGIN
+			IF NEW.version_id = 9 AND NEW.is_applied THEN
+				RAISE EXCEPTION USING ERRCODE = 'P9999', MESSAGE = 'test rejects applied migration 9';
+			END IF;
+			RETURN NEW;
+		END $$`); err != nil {
+		t.Fatalf("install history-write fault: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `CREATE TRIGGER reject_applied_notification_v9
+		BEFORE INSERT OR UPDATE ON notification_service_goose_version
+		FOR EACH ROW WHEN (NEW.version_id = 9 AND NEW.is_applied)
+		EXECUTE FUNCTION reject_applied_notification_v9()`); err != nil {
+		t.Fatalf("install version 9 history trigger: %v", err)
+	}
+	var historyWriteFailure *pq.Error
+	if err := migrations.Up(ctx, db); !errors.As(err, &historyWriteFailure) || string(historyWriteFailure.Code) != "P9999" {
+		t.Fatalf("upgrade error = %v, want injected version 9 history-write failure", err)
+	}
+	assertLatestGooseVersion(t, ctx, db, 8)
+	assertGooseVersionNotApplied(t, ctx, db, 9)
+	assertColumn(t, ctx, db, "entry", "event", false)
+	assertActionContent(t, ctx, db, 1, action_servicepb.ActionState_ACTION_STATE_SUCCEEDED, "", "", "", "", "")
+
+	if _, err := db.ExecContext(ctx, `DROP TRIGGER reject_applied_notification_v9 ON notification_service_goose_version`); err != nil {
+		t.Fatalf("remove version 9 history trigger: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `DROP FUNCTION reject_applied_notification_v9()`); err != nil {
+		t.Fatalf("remove history-write fault: %v", err)
+	}
+	if err := migrations.Up(ctx, db); err != nil {
+		t.Fatalf("retry after the completed contract's history write failed: %v", err)
+	}
+	assertLatestGooseVersion(t, ctx, db, 9)
+	assertActionContent(t, ctx, db, 1, action_servicepb.ActionState_ACTION_STATE_SUCCEEDED, "", "", "", "", "")
+	var rows int
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM entry WHERE inbox_id = $1`, fixtureInboxID).Scan(&rows); err != nil {
+		t.Fatal(err)
+	}
+	if rows != 1 {
+		t.Fatalf("entries after history-write retry = %d, want 1", rows)
 	}
 }
 
@@ -128,6 +187,7 @@ func TestConcurrentUpCallsConvergeOnTheSameCutover(t *testing.T) {
 			t.Fatalf("concurrent upgrade: %v", err)
 		}
 	}
+	assertLatestGooseVersion(t, ctx, first, 9)
 
 	assertColumn(t, ctx, first, "entry", "event", false)
 	var count int
@@ -156,6 +216,7 @@ func TestUpBackfillsAStagingScaleIdentityCohort(t *testing.T) {
 	if err := migrations.Up(ctx, db); err != nil {
 		t.Fatalf("upgrade %d-row populated database: %v", cohortRows, err)
 	}
+	assertLatestGooseVersion(t, ctx, db, 9)
 
 	var total, identified, first, last, payloads int
 	if err := db.QueryRowContext(ctx, `SELECT count(*), count(*) FILTER (WHERE identity_provider = 'actions'
@@ -193,6 +254,31 @@ func openDatabase(t *testing.T, dbURL string) *sql.DB {
 func migrationContext(t *testing.T, timeout time.Duration) (context.Context, context.CancelFunc) {
 	t.Helper()
 	return context.WithTimeout(t.Context(), timeout)
+}
+
+func assertLatestGooseVersion(t *testing.T, ctx context.Context, db *sql.DB, want int64) {
+	t.Helper()
+	var got int64
+	if err := db.QueryRowContext(ctx, `SELECT COALESCE(max(version_id), 0)
+		FROM notification_service_goose_version WHERE is_applied`).Scan(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Fatalf("latest applied Goose migration = %d, want %d", got, want)
+	}
+}
+
+func assertGooseVersionNotApplied(t *testing.T, ctx context.Context, db *sql.DB, version int64) {
+	t.Helper()
+	var applied bool
+	if err := db.QueryRowContext(ctx, `SELECT EXISTS (
+		SELECT 1 FROM notification_service_goose_version WHERE version_id = $1 AND is_applied
+	)`, version).Scan(&applied); err != nil {
+		t.Fatal(err)
+	}
+	if applied {
+		t.Fatalf("Goose migration %d is marked applied after failed upgrade", version)
+	}
 }
 
 func seedLegacyRetainedRows(t *testing.T, db *sql.DB) {

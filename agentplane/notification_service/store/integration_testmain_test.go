@@ -51,18 +51,6 @@ func newStorageIntegrationDatabase(t *testing.T) (*sql.DB, context.Context) {
 	return db, t.Context()
 }
 
-// newEventIdentityWriterOnlyFixture retains the compatibility schema used by tests that exercise legacy event
-// and payload JSON alongside the native relational fields before init cleanup (00019) and the final contracts (00020–00023) retire them.
-func newEventIdentityWriterOnlyFixture(t *testing.T) fixture {
-	t.Helper()
-	db, ctx := newStorageIntegrationDatabase(t)
-	resetNotificationSchema(t, db)
-	if err := migrations.UpTo(ctx, db, 18); err != nil {
-		t.Fatalf("build pre-contract schema through migration 00018: %v", err)
-	}
-	return fixtureForDatabase(t, db, defaultQuotas())
-}
-
 func explainLines(ctx context.Context, tx *sql.Tx, query string, args ...any) (string, error) {
 	rows, err := tx.QueryContext(ctx, "EXPLAIN (COSTS OFF) "+query, args...)
 	if err != nil {
@@ -124,54 +112,6 @@ func fixtureForDatabase(t *testing.T, db *sql.DB, quotas Quotas) fixture {
 
 func newOwner() model.ServiceAccount {
 	return model.ServiceAccount{Namespace: "test-namespace", Name: "owner-" + uuid.NewString()}
-}
-
-// insertBackfilledEntry stores the native event JSON a prior writer created alongside the relational identity
-// that the identity backfill has populated before the relational-reader release.
-func insertBackfilledEntry(t *testing.T, db *sql.DB, inboxID uuid.UUID, cursor int64, eventJSON []byte, payload string) {
-	t.Helper()
-	event, err := backfill.DecodeHistoricalEventIdentity(eventJSON)
-	if err != nil {
-		t.Fatal(err)
-	}
-	columns, err := eventIdentityStorageFor(event)
-	if err != nil {
-		t.Fatal(err)
-	}
-	args := append([]any{inboxID, cursor, string(eventJSON), payload}, columns.args()...)
-	_, err = db.ExecContext(t.Context(), `INSERT INTO entry (inbox_id, cursor, event, payload, created_at,
-		identity_provider, actions_request_id, actions_sequence,
-		github_app_id, github_delivery_id, github_repository_id, github_event, github_action,
-		github_pull_request_number, github_mergeability_sequence, github_snapshot_version, github_observation_sequence,
-		message_id, message_sender_namespace, message_sender_name)
-		VALUES ($1, $2, $3::jsonb, $4::jsonb, now(), $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`, args...)
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
-// insertContentBackfilledEntry models a retained non-expired row after both identity and content backfills.
-func insertContentBackfilledEntry(t *testing.T, db *sql.DB, inboxID uuid.UUID, cursor int64, eventJSON []byte, payload string) {
-	t.Helper()
-	event, err := backfill.DecodeHistoricalEventIdentity(eventJSON)
-	if err != nil {
-		t.Fatal(err)
-	}
-	content, err := storagecodec.EntryContentStorageFor(event, json.RawMessage(payload))
-	if err != nil {
-		t.Fatal(err)
-	}
-	insertBackfilledEntry(t, db, inboxID, cursor, eventJSON, payload)
-	values := content.Args()
-	placeholders := make([]string, len(values))
-	for i := range placeholders {
-		placeholders[i] = fmt.Sprintf("$%d", i+3)
-	}
-	query := `UPDATE entry SET (` + storagecodec.EntryContentReadColumns + `) = (` + strings.Join(placeholders, ", ") + `)
-		WHERE inbox_id = $1 AND cursor = $2`
-	if _, err := db.ExecContext(t.Context(), query, append([]any{inboxID, cursor}, values...)...); err != nil {
-		t.Fatal(err)
-	}
 }
 
 // insertContractedHistoricalEntry decodes a Python identity fixture and stores its current relational form.

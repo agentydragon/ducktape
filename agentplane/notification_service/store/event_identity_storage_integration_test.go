@@ -14,7 +14,7 @@ import (
 )
 
 func TestNativeEntryContentRejectsIncompleteAndWrongSourceRows(t *testing.T) {
-	f := newEventIdentityWriterOnlyFixture(t)
+	f := newIsolatedFixture(t, defaultQuotas())
 	subscription := f.subscribe(t, body("native-content-shape"))
 	action := model.ActionsEvent{RequestID: uuid.New(), Sequence: 1}
 	mergeability := model.GitHubMergeabilityEvent{AppID: 1, RepositoryID: 2, PullRequestNumber: 3, Sequence: 1}
@@ -23,24 +23,28 @@ func TestNativeEntryContentRejectsIncompleteAndWrongSourceRows(t *testing.T) {
 		f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, entryPayloadForTest(t, event))
 	}
 	checks := []struct {
-		name, update, constraint string
-		cursor                   int
+		name, update, constraint, code string
+		cursor                         int
 	}{
-		{"null provider with content", `UPDATE entry SET identity_provider = NULL WHERE inbox_id = $1 AND cursor = $2`, "", 1},
-		{"wrong source", `UPDATE entry SET message_body = 'hello' WHERE inbox_id = $1 AND cursor = $2`, "entry_message_content_source", 1},
-		{"null actor kind", `UPDATE entry SET action_actor_kind = NULL, action_actor_namespace = 'ns', action_actor_name = 'name', action_actor_issuer = NULL, action_actor_subject = NULL WHERE inbox_id = $1 AND cursor = $2`, "entry_action_content_shape", 1},
-		{"empty caller namespace", `UPDATE entry SET action_actor_kind = 'caller', action_actor_namespace = '', action_actor_name = 'name', action_actor_issuer = NULL, action_actor_subject = NULL WHERE inbox_id = $1 AND cursor = $2`, "entry_action_actor_length", 1},
-		{"null mergeability residual", `UPDATE entry SET mergeability_observed_at_submicro_nanos = NULL WHERE inbox_id = $1 AND cursor = $2`, "entry_mergeability_content_shape", 2},
-		{"null mergeability state", `UPDATE entry SET mergeability_previous = NULL WHERE inbox_id = $1 AND cursor = $2`, "entry_mergeability_content_shape", 2},
-		{"partial merge commit", `UPDATE entry SET merge_commit_sha = 'sha' WHERE inbox_id = $1 AND cursor = $2`, "entry_mergeability_content_shape", 2},
-		{"oversize message", `UPDATE entry SET message_body = repeat('x', 262145) WHERE inbox_id = $1 AND cursor = $2`, "entry_message_body_bytes", 3},
-		{"long source session", `UPDATE entry SET message_from_session = repeat('x', 201) WHERE inbox_id = $1 AND cursor = $2`, "entry_message_from_session_length", 3},
+		{"null provider with content", `UPDATE entry SET identity_provider = NULL WHERE inbox_id = $1 AND cursor = $2`, "", "23502", 1},
+		{"wrong source", `UPDATE entry SET message_body = 'hello' WHERE inbox_id = $1 AND cursor = $2`, "entry_message_content_source", "", 1},
+		{"null actor kind", `UPDATE entry SET action_actor_kind = NULL, action_actor_namespace = 'ns', action_actor_name = 'name', action_actor_issuer = NULL, action_actor_subject = NULL WHERE inbox_id = $1 AND cursor = $2`, "entry_action_content_shape", "", 1},
+		{"empty caller namespace", `UPDATE entry SET action_actor_kind = 'caller', action_actor_namespace = '', action_actor_name = 'name', action_actor_issuer = NULL, action_actor_subject = NULL WHERE inbox_id = $1 AND cursor = $2`, "entry_action_actor_length", "", 1},
+		{"null mergeability residual", `UPDATE entry SET mergeability_observed_at_submicro_nanos = NULL WHERE inbox_id = $1 AND cursor = $2`, "entry_mergeability_content_shape", "", 2},
+		{"null mergeability state", `UPDATE entry SET mergeability_previous = NULL WHERE inbox_id = $1 AND cursor = $2`, "entry_mergeability_content_shape", "", 2},
+		{"partial merge commit", `UPDATE entry SET merge_commit_sha = 'sha' WHERE inbox_id = $1 AND cursor = $2`, "entry_mergeability_content_shape", "", 2},
+		{"oversize message", `UPDATE entry SET message_body = repeat('x', 262145) WHERE inbox_id = $1 AND cursor = $2`, "entry_message_body_bytes", "", 3},
+		{"long source session", `UPDATE entry SET message_from_session = repeat('x', 201) WHERE inbox_id = $1 AND cursor = $2`, "entry_message_from_session_length", "", 3},
 	}
 	for _, check := range checks {
 		t.Run(check.name, func(t *testing.T) {
 			_, err := f.db.ExecContext(t.Context(), check.update, subscription.InboxID, check.cursor)
 			var refused *pq.Error
-			if !errors.As(err, &refused) || string(refused.Code) != "23514" || (check.constraint != "" && string(refused.Constraint) != check.constraint) {
+			wantCode := check.code
+			if wantCode == "" {
+				wantCode = "23514"
+			}
+			if !errors.As(err, &refused) || string(refused.Code) != wantCode || (check.constraint != "" && string(refused.Constraint) != check.constraint) {
 				t.Fatalf("update error = %v, want constraint %s", err, check.constraint)
 			}
 		})
@@ -167,7 +171,7 @@ func TestAppendEventWritesEverySourceIdentityWithoutCollapsingGitHubAction(t *te
 }
 
 func TestEventReadersAndReplayDedupUseRelationalIdentity(t *testing.T) {
-	f := newEventIdentityWriterOnlyFixture(t)
+	f := newIsolatedFixture(t, defaultQuotas())
 	subscription := f.subscribe(t, body("identity-runtime"))
 	requestID := uuid.New()
 	deliveryID := uuid.New()
@@ -186,13 +190,7 @@ func TestEventReadersAndReplayDedupUseRelationalIdentity(t *testing.T) {
 	for _, event := range events {
 		f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, entryPayloadForTest(t, event))
 	}
-	// Make one legacy copy disagree with the relational identity so this test proves that new reads and retries
-	// use the populated columns even before init drops the legacy column.
-	legacyEvent, err := marshalHistoricalEventIdentity(model.ActionsEvent{RequestID: requestID, Sequence: 999})
-	if err != nil {
-		t.Fatal(err)
-	}
-	f.exec(t, `UPDATE entry SET event = $3::jsonb WHERE inbox_id = $1 AND cursor = $2`, subscription.InboxID, 1, string(legacyEvent))
+	// Reads and retry deduplication use the final relational identity columns.
 	page := f.read(t, subscription.InboxID, 0)
 	if len(page.Entries) != len(events) {
 		t.Fatalf("read %d entries, want %d", len(page.Entries), len(events))
