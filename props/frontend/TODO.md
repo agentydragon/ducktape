@@ -2,7 +2,7 @@
 
 ## Active Work
 
-- [ ] **Statistics Integration** — per-file statistics and further integration with stats views
+- [ ] **Statistics Integration** — credit distribution charts, per-file statistics, integration with stats views
 - [ ] **Critique navigation/filtering** — filter by issue type (TP/FP/critique), keyboard shortcuts
 - [ ] **Polish** — keyboard shortcuts (j/k), responsive design, loading states, search/filter in file tree
 
