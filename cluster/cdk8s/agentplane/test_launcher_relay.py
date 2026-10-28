@@ -160,6 +160,64 @@ def test_injects_relay_idempotently(tmp_path: Path, policy: dict) -> None:
     assert not compute.get("volumeMounts")
 
 
+@pytest.mark.parametrize("with_existing_init", [False, True])
+def test_keeps_filesystem_daemons_until_compute_exits(tmp_path: Path, policy: dict, with_existing_init: bool) -> None:
+    resource = launcher()
+    daemons = [
+        {
+            "name": f"virtiofs-{volume}",
+            "image": "launcher:test",
+            "command": ["/usr/libexec/virtiofsd"],
+            "args": [f"--socket-path=/sockets/{volume}.sock", f"--shared-dir=/{volume}", "--sandbox=none"],
+            "volumeMounts": [{"name": volume, "mountPath": f"/{volume}"}],
+            "resources": {"requests": {"memory": "1M"}, "limits": {"memory": "80M"}},
+            "securityContext": {"runAsUser": 107, "runAsNonRoot": True, "capabilities": {"drop": ["ALL"]}},
+        }
+        for volume in ["state", "workspace"]
+    ]
+    unrelated = {"name": "virtiofs-unrelated", "image": "other:test", "command": ["/bin/other"]}
+    container_path = {
+        "name": "virtiofs-config",
+        "image": "launcher:test",
+        "command": ["/usr/libexec/virtiofsd"],
+        "args": ["--shared-dir=/config"],
+    }
+    resource["spec"]["containers"][0]["readinessProbe"] = {"exec": {"command": ["/usr/bin/virt-probe"]}}
+    original_compute = deepcopy(resource["spec"]["containers"][0])
+    existing_init = (
+        [
+            {"name": name, "image": "launcher:test", "command": ["/bin/copy"]}
+            for name in ["container-disk-copy", "prepare-paths"]
+        ]
+        if with_existing_init
+        else []
+    )
+    resource["spec"]["containers"].extend([daemons[0], unrelated, container_path, daemons[1]])
+    if with_existing_init:
+        resource["spec"]["initContainers"] = existing_init
+    volumes = (
+        *({"name": volume, "persistentVolumeClaim": {"claimName": volume}} for volume in ["state", "workspace"]),
+        {"name": "config", "containerPath": {"path": "/config"}},
+    )
+
+    first = apply(tmp_path, policy, resource, vmi_volumes=volumes)
+    assert first.ok, first.stdout
+    mutated = one(first.mutated_resources)
+    spec = mutated["spec"]
+    assert one(c for c in spec["containers"] if c["name"] == "compute") == original_compute
+    assert one(c for c in spec["containers"] if c["name"] == unrelated["name"]) == unrelated
+    assert one(c for c in spec["containers"] if c["name"] == container_path["name"]) == container_path
+    assert not any(c["name"] in {d["name"] for d in daemons} for c in spec["containers"])
+    assert spec["initContainers"][: len(existing_init)] == existing_init
+    assert {c["name"]: c for c in spec["initContainers"][len(existing_init) :]} == {
+        daemon["name"]: {**daemon, "restartPolicy": "Always"} for daemon in daemons
+    }
+
+    second = apply(tmp_path, policy, deepcopy(mutated), vmi_volumes=volumes)
+    assert second.ok, second.stdout
+    assert second.mutated_resources == first.mutated_resources
+
+
 @pytest.mark.parametrize(
     "forgery",
     [

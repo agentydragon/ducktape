@@ -4505,6 +4505,7 @@ spec:
       mutate:
         patchStrategicMerge:
           spec:
+            +(initContainers): []
             automountServiceAccountToken: false
             containers:
               - env:
@@ -4584,6 +4585,59 @@ spec:
                   name: launcher-relay-egress-sidecar
                 name: egress-sidecar-settings
       name: inject-relay
+    - context:
+        - name: vmiOwner
+          variable:
+            default: {}
+            jmesPath: request.object.metadata.ownerReferences[?kind=='VirtualMachineInstance' && apiVersion=='kubevirt.io/v1' && controller==`true`] | [0]
+        - apiCall:
+            urlPath: /apis/kubevirt.io/v1/namespaces/{{request.namespace}}/virtualmachineinstances/{{vmiOwner.name || 'missing'}}
+          name: vmi
+        - name: vmOwner
+          variable:
+            default: {}
+            jmesPath: vmi.metadata.ownerReferences[?kind=='VirtualMachine' && apiVersion=='kubevirt.io/v1' && controller==`true`] | [0]
+        - apiCall:
+            urlPath: /apis/kubevirt.io/v1/namespaces/{{request.namespace}}/virtualmachines/{{vmOwner.name || 'missing'}}
+          name: vm
+        - name: sandbox
+          variable:
+            default: {}
+            jmesPath: vm.metadata.ownerReferences[?kind=='Sandbox' && apiVersion=='agentplane.allegedly.works/v1alpha1' && controller==`true`] | [0]
+        - apiCall:
+            urlPath: /api/v1/namespaces/{{request.namespace}}/serviceaccounts/{{sandbox.name || 'missing'}}
+          name: account
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - agentplane-staging
+              operations:
+                - CREATE
+              selector:
+                matchLabels:
+                  kubevirt.io: virt-launcher
+      mutate:
+        foreach:
+          - list: request.object.spec.containers
+            order: Descending
+            patchesJson6902: |-
+              - op: add
+                path: /spec/initContainers/-
+                value: {{ merge(element, `{"restartPolicy":"Always"}`) }}
+              - op: remove
+                path: /spec/containers/{{elementIndex}}
+            preconditions:
+              all:
+                - key: "{{ element.command[0] || '' }}"
+                  operator: Equals
+                  value: /usr/libexec/virtiofsd
+                - key: "{{ contains(vmi.spec.volumes[?persistentVolumeClaim].join('', ['virtiofs-', name]), element.name) }}"
+                  operator: Equals
+                  value: true
+      name: keep-virtiofs-through-guest-shutdown
     - context:
         - name: vmiOwner
           variable:

@@ -14,6 +14,10 @@ PolicyBinding grants. The policy admits a launcher only when KubeVirt's controll
 VMI of a live VirtualMachine controlled by one of our Sandboxes, and that same Sandbox controls the
 ServiceAccount.
 
+PVC-backed virtiofs daemons run as native sidecars, after KubeVirt's existing initializers. They stay
+alive until compute exits, allowing the guest to close journals and unmount state during shutdown.
+ContainerPath daemons remain ordinary containers because KubeVirt reconciles them there.
+
 Failure scope: the policy registers its own webhook, narrowed by match conditions to this namespace's
 launcher creates and updates of Pods carrying the token volume. With Kyverno down, only VM Sandboxes
 fail to start; nothing else in the namespace or the cluster waits on it.
@@ -35,6 +39,11 @@ from kyverno_clusterpolicy_crds.io.kyverno import (
     ClusterPolicySpecRulesMatchAnyResourcesOperations,
     ClusterPolicySpecRulesMatchAnyResourcesSelector,
     ClusterPolicySpecRulesMutate,
+    ClusterPolicySpecRulesMutateForeach,
+    ClusterPolicySpecRulesMutateForeachOrder,
+    ClusterPolicySpecRulesMutateForeachPreconditions,
+    ClusterPolicySpecRulesMutateForeachPreconditionsAll,
+    ClusterPolicySpecRulesMutateForeachPreconditionsAllOperator,
     ClusterPolicySpecValidationFailureAction,
     ClusterPolicySpecWebhookConfiguration,
     ClusterPolicySpecWebhookConfigurationMatchConditions,
@@ -225,6 +234,8 @@ class LauncherRelayPolicy(ClusterPolicy):
                                 "automountServiceAccountToken": False,
                                 **pull_secrets,
                                 "containers": [relay],
+                                # The subsequent daemon move appends without disturbing existing init order.
+                                "+(initContainers)": [],
                                 "volumes": [
                                     one(v for v in pod_spec["volumes"] if v["name"] == token_volume),
                                     {
@@ -234,6 +245,49 @@ class LauncherRelayPolicy(ClusterPolicy):
                                 ],
                             }
                         }
+                    ),
+                ),
+                ClusterPolicySpecRules(
+                    name="keep-virtiofs-through-guest-shutdown",
+                    match=launchers,
+                    context=_context(),
+                    mutate=ClusterPolicySpecRulesMutate(
+                        foreach=[
+                            ClusterPolicySpecRulesMutateForeach(
+                                # KubeVirt names each filesystem daemon virtiofs-<volume>. Keep the
+                                # complete container, including its security/resource constraints.
+                                list="request.object.spec.containers",
+                                order=ClusterPolicySpecRulesMutateForeachOrder.DESCENDING,
+                                # ContainerPath daemons must remain ordinary containers for
+                                # KubeVirt's MissingContainerPathContainers reconciliation check.
+                                preconditions=ClusterPolicySpecRulesMutateForeachPreconditions(
+                                    all=[
+                                        ClusterPolicySpecRulesMutateForeachPreconditionsAll(
+                                            key="{{ element.command[0] || '' }}",
+                                            operator=ClusterPolicySpecRulesMutateForeachPreconditionsAllOperator.EQUALS,
+                                            value="/usr/libexec/virtiofsd",
+                                        ),
+                                        ClusterPolicySpecRulesMutateForeachPreconditionsAll(
+                                            key=(
+                                                "{{ contains(vmi.spec.volumes[?persistentVolumeClaim]."
+                                                "join('', ['virtiofs-', name]), element.name) }}"
+                                            ),
+                                            operator=ClusterPolicySpecRulesMutateForeachPreconditionsAllOperator.EQUALS,
+                                            value=True,
+                                        ),
+                                    ]
+                                ),
+                                # Reverse indexed removals keep positions valid. Appending preserves
+                                # completed initializers, unlike strategic merge's prepend behavior.
+                                patches_json6902=(
+                                    "- op: add\n"
+                                    "  path: /spec/initContainers/-\n"
+                                    '  value: {{ merge(element, `{"restartPolicy":"Always"}`) }}\n'
+                                    "- op: remove\n"
+                                    "  path: /spec/containers/{{elementIndex}}"
+                                ),
+                            )
+                        ]
                     ),
                 ),
                 ClusterPolicySpecRules(

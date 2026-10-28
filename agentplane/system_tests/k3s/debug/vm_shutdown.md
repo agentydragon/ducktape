@@ -98,3 +98,25 @@ stack teardown now requires the exact guest shutdown-complete console payload fo
 launcher incarnation. The marker follows runner exit and both successful unmounts; existing test
 failures retain diagnostics without adding another teardown assertion. Launcher compute and
 virt-handler logs are retained alongside consoles to distinguish orderly shutdown from a forced kill.
+
+## Journal close after ACPI reception
+
+Adding ACPI handling alone exposes a second shutdown dependency. With the correct action installed
+at `/etc/acpi/poweroff`, PID1 receives the event and SIGTERM reaches the runner, but its journal
+close blocks until the external grace period expires. The scenario assertions still pass; the new
+shutdown assertion correctly rejects this forced cleanup.
+
+A temporary Go `runtime/pprof` goroutine dump in
+[invocation `58f790a6`](https://app.buildbuddy.io/invocation/58f790a6-5d13-4592-8360-68a57d0da653)
+locates the blocked operation. The journal acquires its mutex and returns its reserved SQL connection;
+`sql.DB.Close()` then enters `sqlite3_close_v2`, SQLite's Unix file close, and Linux `close(2)`. Five
+seconds later that same syscall is still blocked. This excludes waiting for a journal reader or the
+journal mutex in that execution. The temporary probe is absent from the implementation.
+
+KubeVirt v1.8.2 generates its virtiofs daemons as ordinary launcher containers, with no termination
+ordering relative to compute. The state filesystem must remain served until the runner closes its
+journal and the guest unmounts it. Kubernetes native sidecars provide that lifecycle ordering:
+`initContainers` with `restartPolicy: Always` stop after ordinary containers. Conversion must preserve
+existing initialization order, daemon resources and security settings. Restrict it to PVC-backed
+daemons: KubeVirt's `MissingContainerPathContainers` reconciliation requires ContainerPath daemons
+to remain in the ordinary container list.

@@ -134,7 +134,11 @@ as in a Pod; both harnesses, Git and `findmnt` are pinned in the root disk.
 The guest loads the ACPI button/evdev drivers and runs BusyBox `acpid`. On a power-button event,
 PID1 stops restarting the runner, requests its orderly SIGTERM shutdown and waits for exit, then
 stops its helpers, syncs and unmounts the workspace and state before powering off. KubeVirt's
-shutdown grace period and the controller's wait for actual deletion remain in place.
+shutdown grace period and the controller's wait for actual deletion remain in place. The shared
+launcher admission policy keeps PVC-backed virtiofs daemons running as native sidecars until compute
+exits; otherwise Pod termination can stop the state filesystem while the guest closes its journals.
+Existing KubeVirt initializers run before these daemons; ContainerPath daemons retain their ordinary
+container placement for KubeVirt reconciliation.
 
 `test_vm_sandbox_vm` also drives the real Codex app-server to run a memory-exhausting shell command
 through its isolated exec-server. The allocator touches memory beyond the configured executor
