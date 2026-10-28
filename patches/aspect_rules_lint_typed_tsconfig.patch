@@ -14,16 +14,7 @@
  
      # Add the config file along with any deps it has on npm packages
      if "gather_files_from_js_providers" in dir(js_lib_helpers):
-@@ -108,6 +115,8 @@
-         patch: output file for patch (optional). If provided, uses run_patcher instead of run/run_shell.
-         target: the aspect target, used to reuse bin-tree inputs already produced by the target
-         args: additional command-line arguments to pass to eslint
-+        use_tsconfig: Supply the target's tsconfig and extends inputs, and expose
-+            its path in BAZEL_ESLINT_TSCONFIG for a type-aware ESLint config.
-     """
-     file_inputs = [ctx.attr._workaround_17660]
- 
-@@ -192,14 +201,20 @@
+@@ -192,14 +199,20 @@
          return []
  
      files_to_lint = filter_srcs(ctx.rule)
@@ -46,7 +37,7 @@
  
      if len(files_to_lint) == 0:
          noop_lint_action(ctx, outputs)
-@@ -219,8 +234,8 @@
+@@ -219,8 +232,8 @@
      )
  
      # TODO(alex): if we run with --fix, this will report the issues that were fixed. Does a machine reader want to know about them?
@@ -57,7 +48,7 @@
  
      # We could probably use https://www.npmjs.com/package/@microsoft/eslint-formatter-sarif instead.
      # However it probably requires the user to install this and pass it to us.
-@@ -229,7 +244,7 @@
+@@ -229,7 +242,7 @@
  
      return [info]
  
@@ -66,7 +57,7 @@
      """A factory function to create a linter aspect.
  
      Args:
-@@ -242,6 +257,8 @@
+@@ -242,6 +255,8 @@
          configs: label(s) of the eslint config file(s)
          rule_kinds: which [kinds](https://bazel.build/query/language#kind) of rules should be visited by the aspect
          args: additional command-line arguments to pass to eslint
@@ -75,7 +66,7 @@
      """
  
      # syntax-sugar: allow a single config file in addition to a list
-@@ -281,6 +298,7 @@
+@@ -281,6 +296,7 @@
              "_rule_kinds": attr.string_list(
                  default = rule_kinds,
              ),
