@@ -4146,6 +4146,9 @@ impl Visit for ExecutionIndex {
         self.callable_spans.insert(setter.span.lo.0, setter.span);
         // Object-literal setters are not represented by a `Function` node in
         // SWC, so their bodies lack a per-Callable prefix summary.
+        // Accessor bodies retain the enclosing callable here; source order
+        // cannot distinguish their deferred captured writes from local writes.
+        self.receiver_identity.unsupported(self.current);
         self.unindexed_accessor_owners.insert(self.owner);
         self.setter_owners
             .entry(static_property_name(&setter.key))
@@ -4156,6 +4159,9 @@ impl Visit for ExecutionIndex {
 
     fn visit_getter_prop(&mut self, getter: &GetterProp) {
         self.callable_spans.insert(getter.span.lo.0, getter.span);
+        // Accessor bodies retain the enclosing callable here; source order
+        // cannot distinguish their deferred captured writes from local writes.
+        self.receiver_identity.unsupported(self.current);
         self.unindexed_accessor_owners.insert(self.owner);
         getter.visit_children_with(self);
     }

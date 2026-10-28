@@ -302,3 +302,29 @@ function update(value, branch) {
 }"#,
     );
 }
+
+#[test]
+fn an_earlier_getter_can_rebind_the_receiver_after_initialization() {
+    assert_unsafe_receiver_rejected(
+        r#"function update(value, branch) {
+  const trigger = { get value() { receiver = globalThis.slot; return 0; } };
+  var receiver = {};
+  trigger.value;
+  receiver.flag = true;
+  return receiver;
+}"#,
+    );
+}
+
+#[test]
+fn an_earlier_setter_can_rebind_the_receiver_after_initialization() {
+    assert_unsafe_receiver_rejected(
+        r#"function update(value, branch) {
+  const trigger = { set value(value) { receiver = globalThis.slot; } };
+  var receiver = {};
+  trigger.value = value;
+  receiver.flag = true;
+  return receiver;
+}"#,
+    );
+}
