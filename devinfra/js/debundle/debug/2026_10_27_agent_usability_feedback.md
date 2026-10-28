@@ -6,19 +6,25 @@ and workflow lessons [#12551], audit progress [#12549], exact-input checkpoints
 source witnesses [#12572], and bounded proposal consumer evidence [#12578]. All
 passed hosted CI and merged. Standalone optimized-build and adapter-input
 preparation guidance also landed in [#12588].
+Audit probes now reuse immutable input preparation while rerunning the
+contract-dependent analysis and validation [#12600]. The measured improvement
+and reproducible optimized-build recipe live in the
+[contract-audit performance note](../perf/contract_audit.md).
 
 ## Remaining adoption work
 
 - Complete full-pipeline validation through a consuming project's canonical
   adapter before repinning it. The isolated naming pilot passed dry-run/apply,
   annotation/selector/template preservation and source-only validation. Its
-  full audit baseline rejected before probes or checkpoint creation. The
-  unchanged-spec control and canonical adapter reproduced the rejection; the
-  original tool pin passed the same adapter with cached results. Preserve that
-  pin and investigate the engine/spec acceptance conflict before adoption.
-  These controls do not identify the analysis defect or establish fresh
-  execution under the original pin. Source-only success does not establish
-  full acceptance or runtime behavior.
+  full audit baseline rejected before probes or checkpoint creation. Those
+  initial controls used an older consuming-project checkout and are historical
+  evidence. On the current committed source/spec pair, a fresh canonical
+  adapter execution passes with the working pin; a newer engine rejects five
+  atomic groups. Preserve the working pin while tracing the changed ordering
+  facts to their source. An impurity diagnostic alone does not prove impurity
+  changed between engines. Candidate acceptance, regenerated-output equality,
+  and runtime behavior still need validation; source-only success does not
+  establish them.
 - Use the new observed-consumer metadata in a source-reviewed ownership round
   before adding ranking or component/style heuristics. Current readers/modules
   are evidence for review, not inferred semantic owners. Numeric names or small
@@ -50,3 +56,4 @@ owners rather than in this Debundle feature list.
 [#12572]: https://github.com/agentydragon/ducktape/pull/12572
 [#12578]: https://github.com/agentydragon/ducktape/pull/12578
 [#12588]: https://github.com/agentydragon/ducktape/pull/12588
+[#12600]: https://github.com/agentydragon/ducktape/pull/12600
