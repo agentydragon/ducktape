@@ -416,6 +416,32 @@ it("opens the Kubernetes status items that have an unmet condition and no others
 it("refreshes the runner snapshot and replaces old process and Session details", async () => {
   let status: RunnerStatusView = {
     runner_boot_id: "boot-before-refresh",
+    lifecycle: {
+      desired_mode: "RUNNER_LIFECYCLE_MODE_QUIESCING",
+      desired_generation: "7",
+      progress_generation: "7",
+      progress_available: true,
+      progress_current: true,
+      stage: "RUNNER_LIFECYCLE_STAGE_FLUSHING",
+      error: "",
+      blocker: {
+        kind: "RUNNER_LIFECYCLE_BLOCKER_KIND_INGRESS_ACKNOWLEDGEMENT",
+        error: "",
+        resource_type: "IngressAcknowledgements.agentplane",
+        resource_id: "session-before-refresh",
+        process_id: "",
+        resource_present: true,
+        admissions: "0",
+        journal_seal_present: true,
+        journal_seal_uid: "incarnation-before-refresh",
+        expected_journal_seal_uid: "incarnation-before-refresh",
+        journal_seal_cursor: "12",
+        acknowledgement_present: true,
+        acknowledgement_sealed: true,
+        acknowledgement_cursor: "11",
+        finalizers_pending: false,
+      },
+    },
     processes: [
       {
         process_id: "process-before-refresh",
@@ -446,9 +472,22 @@ it("refreshes the runner snapshot and replaces old process and Session details",
   );
   await act(async () => tab("Status").click());
   await vi.waitFor(() => expect(container.textContent).toContain("session-before-refresh"));
+  expect(container.textContent).toContain("Desired generation 7 · Progress · Flushing history");
+  expect(container.textContent).toContain("Blocked at History acknowledgement");
+  expect(container.textContent).toContain("Acknowledged cursor · 11 of 12 · sealed yes");
 
   status = {
     runner_boot_id: "boot-after-refresh",
+    lifecycle: {
+      desired_mode: "RUNNER_LIFECYCLE_MODE_CLOSING",
+      desired_generation: "8",
+      progress_generation: "8",
+      progress_available: true,
+      progress_current: true,
+      stage: "RUNNER_LIFECYCLE_STAGE_CLOSED",
+      error: "",
+      blocker: null,
+    },
     processes: [
       {
         process_id: "process-after-refresh",
@@ -476,6 +515,8 @@ it("refreshes the runner snapshot and replaces old process and Session details",
   if (!refresh) throw new Error("missing Refresh button");
   await act(async () => refresh.click());
   await vi.waitFor(() => expect(container.textContent).toContain("boot-after-refresh"));
+  expect(container.textContent).toContain("Progress · Closed");
+  expect(container.textContent).not.toContain("Blocked at History acknowledgement");
   expect(container.textContent).toContain("process-after-refresh");
   expect(container.textContent).toContain("session-after-refresh");
   expect(container.textContent).toContain("PID not started");

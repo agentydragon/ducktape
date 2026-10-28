@@ -1,7 +1,13 @@
 import { Accordion, Badge, Button, Group, Paper, Stack, Table, Text, Title } from "@mantine/core";
 import { type JSX, type ReactNode, useEffect, useState } from "react";
 
-import type { RunnerStatusView, SandboxView, ThreadView } from "../schema";
+import type {
+  RunnerLifecycleBlockerView,
+  RunnerLifecycleView,
+  RunnerStatusView,
+  SandboxView,
+  ThreadView,
+} from "../schema";
 import { displayableError } from "../client";
 import { getRunnerStatus } from "./client";
 import { harnessLabel } from "../model_catalog";
@@ -307,6 +313,159 @@ function executionStateLabel(state: RunnerStatusView["sessions"][number]["execut
   }
 }
 
+function lifecycleModeLabel(mode: RunnerLifecycleView["desired_mode"]): string {
+  switch (mode) {
+    case "RUNNER_LIFECYCLE_MODE_RUNNING":
+      return "Running";
+    case "RUNNER_LIFECYCLE_MODE_QUIESCING":
+      return "Quiescing";
+    case "RUNNER_LIFECYCLE_MODE_CLOSING":
+      return "Closing";
+    case "RUNNER_LIFECYCLE_MODE_UNSPECIFIED":
+      return "Unknown";
+  }
+}
+
+function lifecycleStageLabel(stage: RunnerLifecycleView["stage"]): string {
+  switch (stage) {
+    case "RUNNER_LIFECYCLE_STAGE_RUNNING":
+      return "Running";
+    case "RUNNER_LIFECYCLE_STAGE_DRAINING":
+      return "Draining admissions";
+    case "RUNNER_LIFECYCLE_STAGE_HALTING":
+      return "Halting Sessions";
+    case "RUNNER_LIFECYCLE_STAGE_STOPPING":
+      return "Stopping processes";
+    case "RUNNER_LIFECYCLE_STAGE_FENCING":
+      return "Fencing processes";
+    case "RUNNER_LIFECYCLE_STAGE_SEALING":
+      return "Sealing journals";
+    case "RUNNER_LIFECYCLE_STAGE_FLUSHING":
+      return "Flushing history";
+    case "RUNNER_LIFECYCLE_STAGE_QUIESCED":
+      return "Quiesced";
+    case "RUNNER_LIFECYCLE_STAGE_CLOSED":
+      return "Closed";
+    case "RUNNER_LIFECYCLE_STAGE_UNSPECIFIED":
+      return "Unknown";
+  }
+}
+
+function lifecycleBlockerLabel(kind: RunnerLifecycleBlockerView["kind"]): string {
+  switch (kind) {
+    case "RUNNER_LIFECYCLE_BLOCKER_KIND_ADMISSIONS":
+      return "command admission";
+    case "RUNNER_LIFECYCLE_BLOCKER_KIND_SESSION_HALT":
+      return "Session halt";
+    case "RUNNER_LIFECYCLE_BLOCKER_KIND_SESSION_PROCESS":
+      return "Session process stop";
+    case "RUNNER_LIFECYCLE_BLOCKER_KIND_CODEX_APP_SERVER":
+      return "Codex app-server stop";
+    case "RUNNER_LIFECYCLE_BLOCKER_KIND_CODEX_EXEC_SERVER":
+      return "Codex exec-server fence";
+    case "RUNNER_LIFECYCLE_BLOCKER_KIND_BOOTSTRAP":
+      return "Sandbox bootstrap";
+    case "RUNNER_LIFECYCLE_BLOCKER_KIND_PROCESS_CLEANUP":
+      return "native process cleanup";
+    case "RUNNER_LIFECYCLE_BLOCKER_KIND_SESSION_INSPECTION":
+      return "Session inspection";
+    case "RUNNER_LIFECYCLE_BLOCKER_KIND_JOURNAL_SEAL":
+      return "Session journal seal";
+    case "RUNNER_LIFECYCLE_BLOCKER_KIND_INGRESS_ACKNOWLEDGEMENT":
+      return "History acknowledgement";
+    case "RUNNER_LIFECYCLE_BLOCKER_KIND_UNSPECIFIED":
+      return "unknown barrier";
+  }
+}
+
+function RunnerLifecycleCard({ lifecycle }: { lifecycle: RunnerLifecycleView }): JSX.Element {
+  const blocker = lifecycle.blocker;
+  const stage = lifecycleStageLabel(lifecycle.stage);
+  const progress = !lifecycle.progress_available
+    ? `Progress not published for generation ${lifecycle.desired_generation}.`
+    : lifecycle.progress_current
+      ? `Progress · ${stage}`
+      : `Last progress · generation ${lifecycle.progress_generation} · ${stage}`;
+
+  return (
+    <Paper data-testid="runner-lifecycle" withBorder p="sm" radius="md">
+      <Stack gap={4}>
+        <Group justify="space-between" wrap="wrap" gap="xs">
+          <Title order={6}>Lifecycle</Title>
+          <Badge>{lifecycleModeLabel(lifecycle.desired_mode)}</Badge>
+        </Group>
+        <Text size="sm">
+          Desired generation {lifecycle.desired_generation} · {progress}
+        </Text>
+        {lifecycle.progress_available && !lifecycle.progress_current && (
+          <Text size="xs" c="orange">
+            Waiting for progress from the desired generation.
+          </Text>
+        )}
+        {blocker && (
+          <>
+            <Text size="sm" c="orange">
+              Blocked at {lifecycleBlockerLabel(blocker.kind)}
+              {blocker.resource_id && ` · ${blocker.resource_id}`}
+            </Text>
+            {blocker.resource_type && (
+              <Text size="xs" c="dimmed">
+                Resource · {blocker.resource_type} · {blocker.resource_present ? "present" : "missing"}
+              </Text>
+            )}
+            {blocker.process_id && (
+              <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
+                Process · {blocker.process_id}
+              </Text>
+            )}
+            {blocker.error && (
+              <Text size="sm" c="red" style={{ overflowWrap: "anywhere" }}>
+                Resource error · {blocker.error}
+              </Text>
+            )}
+            {blocker.kind === "RUNNER_LIFECYCLE_BLOCKER_KIND_ADMISSIONS" && (
+              <Text size="xs" c="dimmed">
+                In-flight admissions · {blocker.admissions}
+              </Text>
+            )}
+            {blocker.kind === "RUNNER_LIFECYCLE_BLOCKER_KIND_JOURNAL_SEAL" && (
+              <Text size="xs" c="dimmed">
+                Journal seal · {blocker.journal_seal_present ? blocker.journal_seal_uid || "present" : "not present"}
+                {blocker.expected_journal_seal_uid && ` · expected ${blocker.expected_journal_seal_uid}`}
+              </Text>
+            )}
+            {blocker.kind === "RUNNER_LIFECYCLE_BLOCKER_KIND_INGRESS_ACKNOWLEDGEMENT" && (
+              <Text size="xs" c="dimmed">
+                {blocker.acknowledgement_present
+                  ? `Acknowledged cursor · ${blocker.acknowledgement_cursor} of ${blocker.journal_seal_cursor} · sealed ${blocker.acknowledgement_sealed ? "yes" : "no"}`
+                  : `No acknowledgement · final cursor ${blocker.journal_seal_cursor}`}
+              </Text>
+            )}
+            {blocker.kind === "RUNNER_LIFECYCLE_BLOCKER_KIND_INGRESS_ACKNOWLEDGEMENT" &&
+              blocker.expected_journal_seal_uid &&
+              blocker.journal_seal_uid !== blocker.expected_journal_seal_uid && (
+                <Text size="xs" c="dimmed">
+                  Journal seal · {blocker.journal_seal_present ? blocker.journal_seal_uid || "present" : "not present"}
+                  {` · expected ${blocker.expected_journal_seal_uid}`}
+                </Text>
+              )}
+            {blocker.finalizers_pending && (
+              <Text size="xs" c="dimmed">
+                Native process cleanup finalizer is still present.
+              </Text>
+            )}
+          </>
+        )}
+        {lifecycle.error && lifecycle.error !== blocker?.error && (
+          <Text size="sm" c="red" style={{ overflowWrap: "anywhere" }}>
+            Lifecycle error · {lifecycle.error}
+          </Text>
+        )}
+      </Stack>
+    </Paper>
+  );
+}
+
 type RunnerDiagnosticsState =
   | { kind: "loading" }
   | { kind: "available"; value: RunnerStatusView; observedAt: string }
@@ -352,7 +511,7 @@ function RunnerDiagnostics({
         <div>
           <Title order={5}>Runner diagnostics</Title>
           <Text size="xs" c="dimmed">
-            Read-only snapshot of process and Session state reported by the runner.
+            Read-only snapshot of Runner lifecycle, process, and Session state.
           </Text>
         </div>
         <Button
@@ -385,6 +544,13 @@ function RunnerDiagnostics({
             Snapshot read <TimeAgo value={state.observedAt} />
           </Text>
           <Text size="sm">Runner boot ID · {state.value.runner_boot_id}</Text>
+          {state.value.lifecycle ? (
+            <RunnerLifecycleCard lifecycle={state.value.lifecycle} />
+          ) : (
+            <Text size="sm" c="dimmed">
+              Lifecycle progress is not reported by this runner.
+            </Text>
+          )}
           {state.value.processes.length === 0 ? (
             <Text size="sm" c="dimmed">
               No harness processes reported.

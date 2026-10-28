@@ -2784,6 +2784,32 @@ routes.push(
     /^\/sandboxes\/([^/]+)\/runner-status$/,
     () => ({
       runner_boot_id: "visual-runner-boot-01",
+      lifecycle: {
+        desired_mode: "RUNNER_LIFECYCLE_MODE_QUIESCING",
+        desired_generation: "3",
+        progress_generation: "3",
+        progress_available: true,
+        progress_current: true,
+        stage: "RUNNER_LIFECYCLE_STAGE_FLUSHING",
+        error: "",
+        blocker: {
+          kind: "RUNNER_LIFECYCLE_BLOCKER_KIND_INGRESS_ACKNOWLEDGEMENT",
+          error: "",
+          resource_type: "IngressAcknowledgements.agentplane",
+          resource_id: "ready-session",
+          process_id: "",
+          resource_present: true,
+          admissions: "0",
+          journal_seal_present: true,
+          journal_seal_uid: "visual-incarnation-01",
+          expected_journal_seal_uid: "visual-incarnation-01",
+          journal_seal_cursor: "19",
+          acknowledgement_present: true,
+          acknowledgement_sealed: true,
+          acknowledgement_cursor: "18",
+          finalizers_pending: false,
+        },
+      },
       processes: [
         {
           process_id: "visual-claude-process-01",

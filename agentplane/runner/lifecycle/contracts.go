@@ -52,10 +52,50 @@ type Desired struct {
 
 func (value Desired) DeepCopy() Desired { return value }
 
+// Blocker identifies the first unmet predicate in the aggregate Runner barrier. It is written with
+// the corresponding Stage and describes the resources the controller just inspected; it is not an
+// independent lifecycle state machine.
+type BlockerKind uint8
+
+const (
+	NoBlocker BlockerKind = iota
+	AdmissionsPending
+	SessionHaltPending
+	SessionProcessPending
+	CodexAppServerPending
+	CodexExecServerPending
+	BootstrapPending
+	ProcessCleanupPending
+	SessionInspectionPending
+	JournalSealPending
+	IngressAcknowledgementPending
+)
+
+type Blocker struct {
+	Kind                   BlockerKind
+	Error                  string
+	ResourceType           string
+	ResourceID             string
+	ProcessID              string
+	ResourcePresent        bool
+	Admissions             uint64
+	JournalSealPresent     bool
+	JournalSealUID         string
+	ExpectedJournalSealUID string
+	JournalSealCursor      uint64
+	AcknowledgementPresent bool
+	AcknowledgementSealed  bool
+	AcknowledgementCursor  uint64
+	FinalizersPending      bool
+}
+
+func (value Blocker) DeepCopy() Blocker { return value }
+
 type Status struct {
 	Generation uint64
 	Stage      Stage
 	Error      string
+	Blocker    Blocker
 }
 
 func (value Status) DeepCopy() Status { return value }

@@ -38,7 +38,7 @@ func (r *Runner) ListSessions(ctx context.Context, _ *runnerpb.ListSessionsReque
 	return result, nil
 }
 
-func (r *Runner) GetStatus(_ context.Context, _ *runnerpb.GetStatusRequest) (*runnerpb.RunnerStatus, error) {
+func (r *Runner) GetStatus(ctx context.Context, _ *runnerpb.GetStatusRequest) (*runnerpb.RunnerStatus, error) {
 	result := &runnerpb.RunnerStatus{RunnerBootId: r.bootID}
 	for _, s := range r.sessions.Inventory() {
 		row, process := s.Status()
@@ -52,7 +52,115 @@ func (r *Runner) GetStatus(_ context.Context, _ *runnerpb.GetStatusRequest) (*ru
 			result.Processes = append(result.Processes, process)
 		}
 	}
+	desired, desiredFound, err := runnerlifecycle.ReadDesired(ctx, r.lifecycle.state)
+	if err != nil {
+		return nil, rpcError(err)
+	}
+	progress, progressFound, err := runnerlifecycle.ReadStatus(ctx, r.lifecycle.state)
+	if err != nil {
+		return nil, rpcError(err)
+	}
+	result.Lifecycle = runnerLifecycleStatus(desired, desiredFound, progress, progressFound)
 	return result, nil
+}
+
+func runnerLifecycleStatus(desired runnerlifecycle.Desired, desiredFound bool, progress runnerlifecycle.Status, progressFound bool) *runnerpb.RunnerLifecycleStatus {
+	current := desiredFound && progressFound && desired.Generation == progress.Generation
+	status := &runnerpb.RunnerLifecycleStatus{
+		DesiredMode:        runnerLifecycleMode(desired.Mode, desiredFound),
+		DesiredGeneration:  desired.Generation,
+		ProgressGeneration: progress.Generation,
+		ProgressAvailable:  progressFound,
+		ProgressCurrent:    current,
+		Stage:              runnerLifecycleStage(progress.Stage, progressFound),
+	}
+	if current {
+		status.Error = progress.Error
+		if progress.Blocker.Kind != runnerlifecycle.NoBlocker {
+			status.Blocker = runnerLifecycleBlocker(progress.Blocker)
+		}
+	}
+	return status
+}
+
+func runnerLifecycleMode(mode runnerlifecycle.Mode, found bool) runnerpb.RunnerLifecycleMode {
+	if !found {
+		return runnerpb.RunnerLifecycleMode_RUNNER_LIFECYCLE_MODE_UNSPECIFIED
+	}
+	switch mode {
+	case runnerlifecycle.Running:
+		return runnerpb.RunnerLifecycleMode_RUNNER_LIFECYCLE_MODE_RUNNING
+	case runnerlifecycle.Quiescing:
+		return runnerpb.RunnerLifecycleMode_RUNNER_LIFECYCLE_MODE_QUIESCING
+	case runnerlifecycle.Closing:
+		return runnerpb.RunnerLifecycleMode_RUNNER_LIFECYCLE_MODE_CLOSING
+	default:
+		return runnerpb.RunnerLifecycleMode_RUNNER_LIFECYCLE_MODE_UNSPECIFIED
+	}
+}
+
+func runnerLifecycleStage(stage runnerlifecycle.Stage, found bool) runnerpb.RunnerLifecycleStage {
+	if !found {
+		return runnerpb.RunnerLifecycleStage_RUNNER_LIFECYCLE_STAGE_UNSPECIFIED
+	}
+	switch stage {
+	case runnerlifecycle.StageRunning:
+		return runnerpb.RunnerLifecycleStage_RUNNER_LIFECYCLE_STAGE_RUNNING
+	case runnerlifecycle.Draining:
+		return runnerpb.RunnerLifecycleStage_RUNNER_LIFECYCLE_STAGE_DRAINING
+	case runnerlifecycle.Halting:
+		return runnerpb.RunnerLifecycleStage_RUNNER_LIFECYCLE_STAGE_HALTING
+	case runnerlifecycle.Stopping:
+		return runnerpb.RunnerLifecycleStage_RUNNER_LIFECYCLE_STAGE_STOPPING
+	case runnerlifecycle.Fencing:
+		return runnerpb.RunnerLifecycleStage_RUNNER_LIFECYCLE_STAGE_FENCING
+	case runnerlifecycle.Sealing:
+		return runnerpb.RunnerLifecycleStage_RUNNER_LIFECYCLE_STAGE_SEALING
+	case runnerlifecycle.Flushing:
+		return runnerpb.RunnerLifecycleStage_RUNNER_LIFECYCLE_STAGE_FLUSHING
+	case runnerlifecycle.Quiesced:
+		return runnerpb.RunnerLifecycleStage_RUNNER_LIFECYCLE_STAGE_QUIESCED
+	case runnerlifecycle.Closed:
+		return runnerpb.RunnerLifecycleStage_RUNNER_LIFECYCLE_STAGE_CLOSED
+	default:
+		return runnerpb.RunnerLifecycleStage_RUNNER_LIFECYCLE_STAGE_UNSPECIFIED
+	}
+}
+
+func runnerLifecycleBlocker(blocker runnerlifecycle.Blocker) *runnerpb.RunnerLifecycleBlocker {
+	kind := runnerpb.RunnerLifecycleBlockerKind_RUNNER_LIFECYCLE_BLOCKER_KIND_UNSPECIFIED
+	switch blocker.Kind {
+	case runnerlifecycle.AdmissionsPending:
+		kind = runnerpb.RunnerLifecycleBlockerKind_RUNNER_LIFECYCLE_BLOCKER_KIND_ADMISSIONS
+	case runnerlifecycle.SessionHaltPending:
+		kind = runnerpb.RunnerLifecycleBlockerKind_RUNNER_LIFECYCLE_BLOCKER_KIND_SESSION_HALT
+	case runnerlifecycle.SessionProcessPending:
+		kind = runnerpb.RunnerLifecycleBlockerKind_RUNNER_LIFECYCLE_BLOCKER_KIND_SESSION_PROCESS
+	case runnerlifecycle.CodexAppServerPending:
+		kind = runnerpb.RunnerLifecycleBlockerKind_RUNNER_LIFECYCLE_BLOCKER_KIND_CODEX_APP_SERVER
+	case runnerlifecycle.CodexExecServerPending:
+		kind = runnerpb.RunnerLifecycleBlockerKind_RUNNER_LIFECYCLE_BLOCKER_KIND_CODEX_EXEC_SERVER
+	case runnerlifecycle.BootstrapPending:
+		kind = runnerpb.RunnerLifecycleBlockerKind_RUNNER_LIFECYCLE_BLOCKER_KIND_BOOTSTRAP
+	case runnerlifecycle.ProcessCleanupPending:
+		kind = runnerpb.RunnerLifecycleBlockerKind_RUNNER_LIFECYCLE_BLOCKER_KIND_PROCESS_CLEANUP
+	case runnerlifecycle.SessionInspectionPending:
+		kind = runnerpb.RunnerLifecycleBlockerKind_RUNNER_LIFECYCLE_BLOCKER_KIND_SESSION_INSPECTION
+	case runnerlifecycle.JournalSealPending:
+		kind = runnerpb.RunnerLifecycleBlockerKind_RUNNER_LIFECYCLE_BLOCKER_KIND_JOURNAL_SEAL
+	case runnerlifecycle.IngressAcknowledgementPending:
+		kind = runnerpb.RunnerLifecycleBlockerKind_RUNNER_LIFECYCLE_BLOCKER_KIND_INGRESS_ACKNOWLEDGEMENT
+	}
+	return &runnerpb.RunnerLifecycleBlocker{
+		Kind: kind, Error: blocker.Error, ResourceType: blocker.ResourceType,
+		ResourceId: blocker.ResourceID, ProcessId: blocker.ProcessID,
+		ResourcePresent: blocker.ResourcePresent, Admissions: blocker.Admissions,
+		JournalSealPresent: blocker.JournalSealPresent, JournalSealUid: blocker.JournalSealUID,
+		ExpectedJournalSealUid: blocker.ExpectedJournalSealUID, JournalSealCursor: blocker.JournalSealCursor,
+		AcknowledgementPresent: blocker.AcknowledgementPresent,
+		AcknowledgementSealed:  blocker.AcknowledgementSealed,
+		AcknowledgementCursor:  blocker.AcknowledgementCursor, FinalizersPending: blocker.FinalizersPending,
+	}
 }
 
 func (r *Runner) facts() (*controlpb.RunnerFacts, error) {

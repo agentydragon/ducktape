@@ -341,6 +341,8 @@ async def test_sandbox_status(view: VisualPage, app: AgentplaneFixture) -> None:
     await view.page.get_by_text("dormant-session", exact=True).wait_for(state="visible")
     await view.page.get_by_text("ready-session", exact=True).wait_for(state="visible")
     await view.page.get_by_text("PID 18001", exact=True).wait_for(state="visible")
+    await view.page.get_by_text("Blocked at History acknowledgement", exact=True).wait_for(state="visible")
+    await view.page.get_by_text("Acknowledged cursor · 18 of 19 · sealed yes", exact=True).wait_for(state="visible")
     sessions = page.get_by_role("heading", name="Sessions", exact=True)
     native_session = page.get_by_text("visual-native-session-01")
     dormant_session = page.get_by_text("dormant-session", exact=True)

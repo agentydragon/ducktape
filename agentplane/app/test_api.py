@@ -1147,6 +1147,27 @@ async def test_runner_status_preserves_topology_and_exact_failure_cursor(
         assert sandbox == "live"
         return runner_pb2.RunnerStatus(
             runner_boot_id="runner-boot",
+            lifecycle=runner_pb2.RunnerLifecycleStatus(
+                desired_mode=runner_pb2.RUNNER_LIFECYCLE_MODE_QUIESCING,
+                desired_generation=8,
+                progress_generation=8,
+                progress_available=True,
+                progress_current=True,
+                stage=runner_pb2.RUNNER_LIFECYCLE_STAGE_FLUSHING,
+                blocker=runner_pb2.RunnerLifecycleBlocker(
+                    kind=runner_pb2.RUNNER_LIFECYCLE_BLOCKER_KIND_INGRESS_ACKNOWLEDGEMENT,
+                    resource_type="IngressAcknowledgements.agentplane",
+                    resource_id="ready",
+                    resource_present=True,
+                    journal_seal_present=True,
+                    journal_seal_uid="incarnation-8",
+                    expected_journal_seal_uid="incarnation-8",
+                    journal_seal_cursor=17,
+                    acknowledgement_present=True,
+                    acknowledgement_sealed=True,
+                    acknowledgement_cursor=16,
+                ),
+            ),
             processes=[
                 runner_pb2.HarnessProcessStatus(
                     process_id="spawn-a",
@@ -1189,6 +1210,11 @@ async def test_runner_status_preserves_topology_and_exact_failure_cursor(
     assert body["sessions"][1]["execution_state"] == "SESSION_EXECUTION_STATE_PREPARING"
     assert body["sessions"][2]["failure_cursor"] == str(2**63 + 1)
     assert body["sessions"][2]["process_id"] is None
+    assert body["lifecycle"]["desired_generation"] == "8"
+    assert body["lifecycle"]["progress_generation"] == "8"
+    assert body["lifecycle"]["blocker"]["resource_type"] == "IngressAcknowledgements.agentplane"
+    assert body["lifecycle"]["blocker"]["journal_seal_cursor"] == "17"
+    assert body["lifecycle"]["blocker"]["acknowledgement_cursor"] == "16"
 
 
 async def test_unreachable_runner_status_reports_unavailable(

@@ -18,6 +18,14 @@ timing as unavailable; a Sandbox that has not appeared yet shows no autosuspend 
 and turn completion remain separate signals; when their relative ages match and their timestamps are
 within a minute, the composer combines them while keeping the exact idle timestamp on hover.
 
+## Sandbox Runner diagnostics
+
+The Status tab shows the Runner's desired lifecycle mode and generation alongside the aggregate
+controller's published stage. When progress belongs to the desired generation, it also shows the
+controller's first unmet barrier and its resource/process identity, available admission count,
+journal seal identity, acknowledgement cursor, and surfaced lifecycle error. When progress belongs
+to an older generation, it is labeled as last progress and its blocker and error are withheld.
+
 ## Thread history scrolling
 
 A thread's conversation can grow long, include messages of different heights, and change while

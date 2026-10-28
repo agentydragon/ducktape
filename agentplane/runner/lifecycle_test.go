@@ -126,6 +126,55 @@ func waitClose(t *testing.T, done <-chan error) error {
 	}
 }
 
+func runnerLifecycleSnapshot(t *testing.T, r *Runner) *runnerpb.RunnerLifecycleStatus {
+	t.Helper()
+	response, err := r.GetStatus(context.Background(), &runnerpb.GetStatusRequest{})
+	if err != nil {
+		t.Fatalf("GetStatus: %v", err)
+	}
+	if response.Lifecycle == nil {
+		t.Fatal("GetStatus omitted lifecycle status")
+	}
+	return response.Lifecycle
+}
+
+func TestRunnerLifecycleStatusOmitsStaleBlockerAndError(t *testing.T) {
+	resourceError := "resource failure"
+	current := runnerLifecycleStatus(
+		runnerlifecycle.Desired{Mode: runnerlifecycle.Quiescing, Generation: 8}, true,
+		runnerlifecycle.Status{
+			Generation: 8,
+			Stage:      runnerlifecycle.Halting,
+			Blocker: runnerlifecycle.Blocker{
+				Kind:  runnerlifecycle.SessionHaltPending,
+				Error: resourceError,
+			},
+		}, true,
+	)
+	if current.Blocker == nil || current.Blocker.Error != resourceError {
+		t.Fatalf("current blocker error was not projected: %+v", current)
+	}
+
+	status := runnerLifecycleStatus(
+		runnerlifecycle.Desired{Mode: runnerlifecycle.Quiescing, Generation: 9}, true,
+		runnerlifecycle.Status{
+			Generation: 8,
+			Stage:      runnerlifecycle.Flushing,
+			Error:      "old lifecycle error",
+			Blocker: runnerlifecycle.Blocker{
+				Kind:  runnerlifecycle.IngressAcknowledgementPending,
+				Error: "old resource error",
+			},
+		}, true,
+	)
+	if status.ProgressCurrent || status.Error != "" || status.Blocker != nil {
+		t.Fatalf("stale progress exposed as current: %+v", status)
+	}
+	if status.ProgressGeneration != 8 || status.Stage != runnerpb.RunnerLifecycleStage_RUNNER_LIFECYCLE_STAGE_FLUSHING {
+		t.Fatalf("stale progress snapshot = %+v, want last stage and generation", status)
+	}
+}
+
 // Hold the real journal transaction so an admission remains in flight.
 func holdJournalBatch(t *testing.T, ctx context.Context, s *session.Session) func() {
 	t.Helper()
@@ -199,8 +248,15 @@ func TestCloseAfterQuiescePreservesSealAndWaitsForSetup(t *testing.T) {
 		t.Fatalf("accept quiesce: %v", err)
 	}
 	waitLifecycle(t, r, func() bool {
-		return r.lifecycle.status().Stage == runnerlifecycle.Halting && sessionStopping(r, s)
+		current := r.lifecycle.status()
+		return current.Stage == runnerlifecycle.Halting && current.Blocker.Kind == runnerlifecycle.SessionHaltPending && sessionStopping(r, s)
 	}, "quiesce halt to wait at setup barrier")
+	blocked := runnerLifecycleSnapshot(t, r)
+	if !blocked.ProgressCurrent || blocked.Stage != runnerpb.RunnerLifecycleStage_RUNNER_LIFECYCLE_STAGE_HALTING ||
+		blocked.Blocker == nil || blocked.Blocker.Kind != runnerpb.RunnerLifecycleBlockerKind_RUNNER_LIFECYCLE_BLOCKER_KIND_SESSION_HALT ||
+		blocked.Blocker.ResourceId != s.ID() || blocked.Blocker.ResourceType != session.RuntimeType || !blocked.Blocker.ResourcePresent {
+		t.Fatalf("GetStatus while setup blocks halt = %+v", blocked)
+	}
 
 	closeDone := make(chan error, 1)
 	go func() { closeDone <- r.Close() }()
@@ -221,6 +277,10 @@ func TestCloseAfterQuiescePreservesSealAndWaitsForSetup(t *testing.T) {
 	finishSetup()
 	if err := waitClose(t, closeDone); err != nil {
 		t.Fatalf("Close after setup completion: %v", err)
+	}
+	closed := runnerLifecycleSnapshot(t, r)
+	if closed.Stage != runnerpb.RunnerLifecycleStage_RUNNER_LIFECYCLE_STAGE_CLOSED || closed.Blocker != nil {
+		t.Fatalf("GetStatus after setup resolution = %+v, want CLOSED without a blocker", closed)
 	}
 	seal := s.EventJournal().SealState()
 	if seal == nil || seal.IncarnationUID != "test-incarnation" {
@@ -248,6 +308,20 @@ func TestQuiesceWaitsForExactSealedCursorAcknowledgement(t *testing.T) {
 	if err := r.lifecycle.publishAck(s.ID(), retained.Acknowledgement{Cursor: seal.Cursor - 1, Sealed: true}); err != nil {
 		t.Fatal(err)
 	}
+	waitLifecycle(t, r, func() bool {
+		current := r.lifecycle.status()
+		return current.Stage == runnerlifecycle.Flushing && current.Blocker.Kind == runnerlifecycle.IngressAcknowledgementPending &&
+			current.Blocker.AcknowledgementPresent && current.Blocker.AcknowledgementCursor == seal.Cursor-1
+	}, "publish the under-cursor acknowledgement blocker")
+	blocked := runnerLifecycleSnapshot(t, r)
+	if !blocked.ProgressCurrent || blocked.Stage != runnerpb.RunnerLifecycleStage_RUNNER_LIFECYCLE_STAGE_FLUSHING ||
+		blocked.Blocker == nil || blocked.Blocker.Kind != runnerpb.RunnerLifecycleBlockerKind_RUNNER_LIFECYCLE_BLOCKER_KIND_INGRESS_ACKNOWLEDGEMENT ||
+		blocked.Blocker.ResourceId != s.ID() || blocked.Blocker.ResourceType != ingressAckType ||
+		!blocked.Blocker.ResourcePresent || !blocked.Blocker.AcknowledgementPresent || !blocked.Blocker.AcknowledgementSealed ||
+		blocked.Blocker.AcknowledgementCursor != seal.Cursor-1 || blocked.Blocker.JournalSealCursor != seal.Cursor ||
+		!blocked.Blocker.JournalSealPresent {
+		t.Fatalf("GetStatus under-cursor acknowledgement = %+v", blocked)
+	}
 	facts, err := r.facts()
 	if err != nil {
 		t.Fatal(err)
@@ -263,6 +337,10 @@ func TestQuiesceWaitsForExactSealedCursorAcknowledgement(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitLifecycle(t, r, func() bool { return r.lifecycle.status().Stage == runnerlifecycle.Quiesced }, "exact sealed cursor acknowledgement")
+	quiesced := runnerLifecycleSnapshot(t, r)
+	if quiesced.Stage != runnerpb.RunnerLifecycleStage_RUNNER_LIFECYCLE_STAGE_QUIESCED || quiesced.Blocker != nil {
+		t.Fatalf("GetStatus after exact acknowledgement = %+v, want QUIESCED without a blocker", quiesced)
+	}
 	facts, err = r.facts()
 	if err != nil {
 		t.Fatal(err)

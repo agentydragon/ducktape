@@ -159,6 +159,73 @@ message RunnerStatus {
   repeated HarnessProcessStatus processes = 1;
   repeated SessionStatus sessions = 2;
   string runner_boot_id = 3;
+  RunnerLifecycleStatus lifecycle = 4;
+}
+
+enum RunnerLifecycleMode {
+  RUNNER_LIFECYCLE_MODE_UNSPECIFIED = 0;
+  RUNNER_LIFECYCLE_MODE_RUNNING = 1;
+  RUNNER_LIFECYCLE_MODE_QUIESCING = 2;
+  RUNNER_LIFECYCLE_MODE_CLOSING = 3;
+}
+
+enum RunnerLifecycleStage {
+  RUNNER_LIFECYCLE_STAGE_UNSPECIFIED = 0;
+  RUNNER_LIFECYCLE_STAGE_RUNNING = 1;
+  RUNNER_LIFECYCLE_STAGE_DRAINING = 2;
+  RUNNER_LIFECYCLE_STAGE_HALTING = 3;
+  RUNNER_LIFECYCLE_STAGE_STOPPING = 4;
+  RUNNER_LIFECYCLE_STAGE_FENCING = 5;
+  RUNNER_LIFECYCLE_STAGE_SEALING = 6;
+  RUNNER_LIFECYCLE_STAGE_FLUSHING = 7;
+  RUNNER_LIFECYCLE_STAGE_QUIESCED = 8;
+  RUNNER_LIFECYCLE_STAGE_CLOSED = 9;
+}
+
+enum RunnerLifecycleBlockerKind {
+  RUNNER_LIFECYCLE_BLOCKER_KIND_UNSPECIFIED = 0;
+  RUNNER_LIFECYCLE_BLOCKER_KIND_ADMISSIONS = 1;
+  RUNNER_LIFECYCLE_BLOCKER_KIND_SESSION_HALT = 2;
+  RUNNER_LIFECYCLE_BLOCKER_KIND_SESSION_PROCESS = 3;
+  RUNNER_LIFECYCLE_BLOCKER_KIND_CODEX_APP_SERVER = 4;
+  RUNNER_LIFECYCLE_BLOCKER_KIND_CODEX_EXEC_SERVER = 5;
+  RUNNER_LIFECYCLE_BLOCKER_KIND_BOOTSTRAP = 6;
+  RUNNER_LIFECYCLE_BLOCKER_KIND_PROCESS_CLEANUP = 7;
+  RUNNER_LIFECYCLE_BLOCKER_KIND_SESSION_INSPECTION = 8;
+  RUNNER_LIFECYCLE_BLOCKER_KIND_JOURNAL_SEAL = 9;
+  RUNNER_LIFECYCLE_BLOCKER_KIND_INGRESS_ACKNOWLEDGEMENT = 10;
+}
+
+// The aggregate Runner controller's first unmet lifecycle predicate, with the live COSI resource
+// identity and scalar facts it inspected. This is diagnostic output, not a separate state machine.
+message RunnerLifecycleBlocker {
+  RunnerLifecycleBlockerKind kind = 1;
+  string resource_type = 2;
+  string resource_id = 3;
+  string process_id = 4;
+  bool resource_present = 5;
+  uint64 admissions = 6;
+  bool journal_seal_present = 7;
+  string journal_seal_uid = 8;
+  string expected_journal_seal_uid = 9;
+  uint64 journal_seal_cursor = 10;
+  bool acknowledgement_present = 11;
+  bool acknowledgement_sealed = 12;
+  uint64 acknowledgement_cursor = 13;
+  bool finalizers_pending = 14;
+  // Error from the resource named by this blocker, when that resource reports one.
+  string error = 15;
+}
+
+message RunnerLifecycleStatus {
+  RunnerLifecycleMode desired_mode = 1;
+  uint64 desired_generation = 2;
+  uint64 progress_generation = 3;
+  bool progress_available = 4;
+  bool progress_current = 5;
+  RunnerLifecycleStage stage = 6;
+  string error = 7;
+  RunnerLifecycleBlocker blocker = 8;
 }
 
 enum ProcessState {

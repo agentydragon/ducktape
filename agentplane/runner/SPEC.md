@@ -164,9 +164,16 @@ budget remains authoritative across all of its native services.
   connection after any loss, and serves the `Runner` service to the gateway through it. It accepts
   no network connections.
 - `OpenSession` answers with the session's `Attached` snapshot: the spec, setup and harness states,
-  `last_cursor`, and the active turn id as of that position. `GetStatus` returns one in-memory
-  snapshot with a runner boot UUID, each harness process (its per-spawn UUID and the Sessions it
-  hosts), and session execution and busy state.
+  `last_cursor`, and the active turn id as of that position. `GetStatus` returns one snapshot with a
+  runner boot UUID, each harness process (its per-spawn UUID and the Sessions it hosts), session
+  execution and busy state, and the Runner lifecycle intent and aggregate progress. Lifecycle
+  progress includes the desired and published generations, stage, and—when progress matches the
+  desired generation—the first unmet barrier captured by the aggregate controller at the predicate
+  it is waiting on. The blocker names its COSI resource and process when available; journal blockers
+  include the expected seal identity and acknowledgement/seal cursors, and native cleanup blockers
+  report pending finalizers. This is a snapshot of the controller's existing barrier evaluation,
+  not a second status calculation. Stale progress is shown as last progress without its blocker or
+  error.
 - Delivered commands are client-chosen and idempotent; the runner serializes them with the session
   lock and deduplicates by `command_id`. A delivered command is answered from the journal:
   its `CommandAdmitted` entry, also when the command was already journaled with the same payload,

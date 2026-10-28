@@ -251,7 +251,65 @@ class RunnerSessionView(BaseModel):
     busy: bool
 
 
+class RunnerLifecycleBlockerView(BaseModel):
+    kind: Literal[
+        "RUNNER_LIFECYCLE_BLOCKER_KIND_UNSPECIFIED",
+        "RUNNER_LIFECYCLE_BLOCKER_KIND_ADMISSIONS",
+        "RUNNER_LIFECYCLE_BLOCKER_KIND_SESSION_HALT",
+        "RUNNER_LIFECYCLE_BLOCKER_KIND_SESSION_PROCESS",
+        "RUNNER_LIFECYCLE_BLOCKER_KIND_CODEX_APP_SERVER",
+        "RUNNER_LIFECYCLE_BLOCKER_KIND_CODEX_EXEC_SERVER",
+        "RUNNER_LIFECYCLE_BLOCKER_KIND_BOOTSTRAP",
+        "RUNNER_LIFECYCLE_BLOCKER_KIND_PROCESS_CLEANUP",
+        "RUNNER_LIFECYCLE_BLOCKER_KIND_SESSION_INSPECTION",
+        "RUNNER_LIFECYCLE_BLOCKER_KIND_JOURNAL_SEAL",
+        "RUNNER_LIFECYCLE_BLOCKER_KIND_INGRESS_ACKNOWLEDGEMENT",
+    ]
+    error: str
+    resource_type: str
+    resource_id: str
+    process_id: str
+    resource_present: bool
+    admissions: str
+    journal_seal_present: bool
+    journal_seal_uid: str
+    expected_journal_seal_uid: str
+    journal_seal_cursor: str
+    acknowledgement_present: bool
+    acknowledgement_sealed: bool
+    acknowledgement_cursor: str
+    finalizers_pending: bool
+
+
+class RunnerLifecycleView(BaseModel):
+    desired_mode: Literal[
+        "RUNNER_LIFECYCLE_MODE_UNSPECIFIED",
+        "RUNNER_LIFECYCLE_MODE_RUNNING",
+        "RUNNER_LIFECYCLE_MODE_QUIESCING",
+        "RUNNER_LIFECYCLE_MODE_CLOSING",
+    ]
+    desired_generation: str
+    progress_generation: str
+    progress_available: bool
+    progress_current: bool
+    stage: Literal[
+        "RUNNER_LIFECYCLE_STAGE_UNSPECIFIED",
+        "RUNNER_LIFECYCLE_STAGE_RUNNING",
+        "RUNNER_LIFECYCLE_STAGE_DRAINING",
+        "RUNNER_LIFECYCLE_STAGE_HALTING",
+        "RUNNER_LIFECYCLE_STAGE_STOPPING",
+        "RUNNER_LIFECYCLE_STAGE_FENCING",
+        "RUNNER_LIFECYCLE_STAGE_SEALING",
+        "RUNNER_LIFECYCLE_STAGE_FLUSHING",
+        "RUNNER_LIFECYCLE_STAGE_QUIESCED",
+        "RUNNER_LIFECYCLE_STAGE_CLOSED",
+    ]
+    error: str
+    blocker: RunnerLifecycleBlockerView | None = None
+
+
 class RunnerStatusView(BaseModel):
     runner_boot_id: str
     processes: list[HarnessProcessView]
     sessions: list[RunnerSessionView]
+    lifecycle: RunnerLifecycleView | None = None
