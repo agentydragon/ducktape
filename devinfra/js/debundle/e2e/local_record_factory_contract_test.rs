@@ -363,9 +363,10 @@ fn checked_factory_call_purity_is_site_specific_and_keeps_eager_reads() {
 
     // Without the author premises, the same generic provider call remains an
     // ordering effect and cannot cross the barrier in a split graph.
-    expect_sequenced_cycle_rejection(
+    expect_atomic_conflict_rejection(
         factory_effect_order_opts(&source, false),
-        &["callbacks/wrapped", "values/label"],
+        &["callbacks/wrapped", "values/label", "values/later"],
+        &["sequenced"],
     );
 
     // The literal construction is a pure control with the same eager label
@@ -636,8 +637,9 @@ fn constructor_effects_are_not_removed_by_the_factory_call_certificate() {
 }
 "#;
     let source = factory_effect_order_source("create({ execute: () => later })", holder);
-    expect_sequenced_cycle_rejection(
+    expect_atomic_conflict_rejection(
         factory_effect_order_opts(&source, true),
-        &["callbacks/wrapped", "values/label"],
+        &["callbacks/wrapped", "values/label", "values/later"],
+        &["sequenced"],
     );
 }
