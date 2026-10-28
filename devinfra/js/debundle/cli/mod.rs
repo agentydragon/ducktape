@@ -425,6 +425,12 @@ fn run_debundle_cli(args: DebundleArgs, invocation: Option<ResolvedInvocation>) 
         }
     }
     let graph_package_roots = pipeline::collect_package_roots(args.graph_package_roots)?;
+    let describe_query = match &args.command {
+        DebundleCommand::Describe(describe_args) => {
+            Some(inspection_commands::validate_describe_query(describe_args)?)
+        }
+        _ => None,
+    };
     let source_context = match verify_mixed_graph_command(
         &args.command,
         args.spec_root.as_deref(),
@@ -472,9 +478,11 @@ fn run_debundle_cli(args: DebundleArgs, invocation: Option<ResolvedInvocation>) 
         DebundleCommand::GraphSummary(args) => {
             inspection_commands::run_graph_summary(args, source_context.as_ref())
         }
-        DebundleCommand::Describe(describe_args) => {
-            inspection_commands::run_describe(describe_args, source_context)
-        }
+        DebundleCommand::Describe(describe_args) => inspection_commands::run_describe(
+            describe_args,
+            source_context,
+            describe_query.expect("Describe query was validated before graph preflight"),
+        ),
         DebundleCommand::InspectSource(args) => {
             inspection_commands::run_inspect_source(args, source_context.as_ref())
         }

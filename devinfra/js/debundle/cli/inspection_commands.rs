@@ -80,6 +80,11 @@ pub(super) struct DescribeArgs {
     pub format: Option<OutputFormat>,
 }
 
+pub(super) struct ValidatedDescribeQuery {
+    ids: Vec<String>,
+    selections: Vec<SelectionKind>,
+}
+
 /// Args for `debundle inspect-source`.
 #[derive(Debug, ClapArgs)]
 pub(super) struct InspectSourceArgs {
@@ -305,6 +310,22 @@ fn describe_ids(args: &DescribeArgs) -> Result<Vec<String>> {
     }
 }
 
+pub(super) fn validate_describe_query(args: &DescribeArgs) -> Result<ValidatedDescribeQuery> {
+    if args.limit == Some(0) {
+        bail!("--limit must be greater than zero; use --all for exhaustive results");
+    }
+    let ids = describe_ids(args)?;
+    let selections = ids
+        .iter()
+        .enumerate()
+        .map(|(index, id)| {
+            dispatch_id_selection(id, &args.common.modules_root)
+                .with_context(|| format!("describing item {} ({id:?})", index + 1))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    Ok(ValidatedDescribeQuery { ids, selections })
+}
+
 fn resolve_id_as_module_path(id: &str, modules_root: &std::path::Path) -> Result<Option<String>> {
     let module_id = id.strip_suffix(".yaml").unwrap_or(id);
     let candidate = modules_root.join(format!("{module_id}.yaml"));
@@ -336,19 +357,9 @@ fn resolve_id_as_module_path(id: &str, modules_root: &std::path::Path) -> Result
 pub(super) fn run_describe(
     args: DescribeArgs,
     source_context: Option<VerifiedGraphSourceContext>,
+    validated: ValidatedDescribeQuery,
 ) -> Result<()> {
-    if args.limit == Some(0) {
-        bail!("--limit must be greater than zero; use --all for exhaustive results");
-    }
-    let ids = describe_ids(&args)?;
-    let selections = ids
-        .iter()
-        .enumerate()
-        .map(|(index, id)| {
-            dispatch_id_selection(id, &args.common.modules_root)
-                .with_context(|| format!("describing item {} ({id:?})", index + 1))
-        })
-        .collect::<Result<Vec<_>>>()?;
+    let ValidatedDescribeQuery { ids, selections } = validated;
     let mut session = ExplainSession::load(
         args.common.clone(),
         args.source_root.clone(),

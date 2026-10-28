@@ -270,6 +270,26 @@ fn cluster_and_shared_queries_reject_unknown_typed_prefixes_before_graph_work() 
         assert!(String::from_utf8_lossy(&out.stderr).contains("logical:7"));
     }
 
+    let zero_limit = fixture.command(&[
+        "describe",
+        "alpha",
+        "--limit",
+        "0",
+        "--graph",
+        missing_graph,
+        "--format",
+        "json",
+    ]);
+    assert_eq!(zero_limit.status.code(), Some(1));
+    let zero_limit: Value = serde_json::from_slice(&zero_limit.stdout).unwrap();
+    assert_eq!(zero_limit["reason"], "query_failed");
+    assert!(
+        zero_limit["message"]
+            .as_str()
+            .unwrap()
+            .contains("--limit must be greater than zero")
+    );
+
     let typed = fixture.command(&[
         "inspect-source",
         "--id",
