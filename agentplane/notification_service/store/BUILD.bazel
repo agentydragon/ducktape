@@ -7,6 +7,7 @@ go_library(
     srcs = [
         "actions.go",
         "claims.go",
+        "creation_backfill.go",
         "destination_backfill.go",
         "event_identity_backfill.go",
         "event_identity_storage.go",
@@ -62,6 +63,7 @@ go_test(
     srcs = [
         "actions_integration_test.go",
         "claims_integration_test.go",
+        "creation_backfill_integration_test.go",
         "destination_backfill_integration_test.go",
         "event_identity_backfill_integration_test.go",
         "event_identity_storage_integration_test.go",
