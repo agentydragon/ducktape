@@ -668,3 +668,41 @@ fn captured_input_cannot_override_a_set_replacement_that_calls_a_later_callback(
         &[],
     );
 }
+
+#[test]
+fn inferred_pure_imports_keep_captured_inputs_through_two_modules() {
+    let provider = "var captured = globalThis.runtimeSettings.state;\nObject.assign(captured, { ready: true });\nexport function make() { return new Set(['ready']); }\n";
+    let middle = "import { make } from './peer.js';\nexport function forward() { return make(); }\nexport function unrelated() { return 7; }\n";
+    let chunks = [("static/peer", provider), ("static/middle", middle)];
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import './opaque.js';\nimport { forward, unrelated } from './middle.js';\nconst collection = forward();\nconst number = unrelated();\nconsole.log(collection.size, number);\n",
+            vec![],
+        )
+        .with_extra_chunks(&chunks)
+        .with_extra_files(OPAQUE_FILES)
+        .with_value_inputs("static/peer", vec![captured_input(provider)]),
+    );
+    assert_preserved_entry_output(&fixture, "1 7\n");
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let nodes = graph["nodes"].as_array().unwrap();
+    let node_for = |binding| {
+        nodes
+            .iter()
+            .find(|node| {
+                node["declared_bindings"]
+                    .as_array()
+                    .is_some_and(|names| names.iter().any(|name| name["binding"] == binding))
+            })
+            .expect("source unit for inferred import call")
+    };
+    let collection = node_for("collection");
+    assert_eq!(collection["purity"]["kind"], "pure", "{collection}");
+    assert!(
+        input_refs(&collection["purity"]["dependencies"]["value_inputs"]),
+        "the actual import fixpoint must preserve the provider's required input: {collection}"
+    );
+    let unrelated = node_for("number");
+    assert_eq!(unrelated["purity"]["kind"], "pure", "{unrelated}");
+    assert!(unrelated["purity"]["dependencies"].is_null(), "{unrelated}");
+}
