@@ -91,14 +91,17 @@ def runner_command(
     *,
     state_dir: Path,
     gateway: Endpoint,
+    ingress: Endpoint,
     test_debug_checkpoint: tuple[str, str] | None = None,
     bootstrap: str | None = None,
     codex_binary: Path | None = None,
     harness_env: Sequence[str] = (),
     runner_binary: Path | None = None,
 ) -> list[str]:
-    """The runner as its own process, configured like `config` is, dialing `gateway` for both its
-    control stream and its ingress. The Sandbox's files go beside `state_dir`."""
+    """The runner as its own process with a scripted control peer and real History ingress.
+
+    The Sandbox's files go beside `state_dir`.
+    """
     if harness not in (runner_pb2.HARNESS_CLAUDE, runner_pb2.HARNESS_CODEX):
         raise ValueError(f"unsupported {harness=}")
     launch_file = state_dir.parent / "launch.json"
@@ -119,7 +122,7 @@ def runner_command(
         state_dir=str(state_dir),
         initialization_cwd=str(state_dir),
         control=gateway,
-        ingress=gateway,
+        ingress=ingress,
         platform_instructions=PLATFORM_INSTRUCTIONS,
         harness_environment=EnvironmentVariables(inherit=inherited, values=values),
         claude=Harness(binary=str(claude.binary), base_url=claude.base_url, token_env="ANTHROPIC_AUTH_TOKEN")

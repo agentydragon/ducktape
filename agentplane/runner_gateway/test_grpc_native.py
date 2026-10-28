@@ -2,7 +2,7 @@
 
 import asyncio
 import shlex
-from collections.abc import AsyncIterator, Callable
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
@@ -15,22 +15,17 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 
 from agentplane.grpc.calls import ServiceError
 from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
-from agentplane.proto.sandboxes_pb2 import SandboxDestination, ServiceAccount
+from agentplane.proto.sandboxes_pb2 import SandboxDestination
 from agentplane.runner import runner_service_pb2
 from agentplane.runner.testing import events, launches
 from agentplane.runner.testing.config import RunnerTestConfig
 from agentplane.runner.testing.process import RunningRunner
 from agentplane.runner_gateway.client import SandboxControlClient, SandboxRunner
-from agentplane.runner_gateway.testing.runner_peer import runner_peer
+from agentplane.runner_gateway.testing.gateway_process import GatewayProcess
+from agentplane.sandboxes.testing.kubernetes import SandboxCluster
 from agentplane.testing.scripted_model import ScriptedModel, Text
 
 # gazelle:include_dep @pypi//protobuf
-
-DESTINATION = SandboxDestination(
-    owner=ServiceAccount(namespace="testing", name="native-runner"),
-    sandbox="native-runner",
-    sandbox_uid="native-runner-uid",
-)
 
 
 @pytest.fixture
@@ -45,9 +40,9 @@ def config(config: RunnerTestConfig, bootstrap: str | None) -> RunnerTestConfig:
 
 
 @pytest.fixture
-async def remote(runner: RunningRunner, token_file: Path) -> AsyncIterator[SandboxControlClient]:
-    async with runner_peer(token_file, runner=runner) as endpoint:
-        yield endpoint.client()
+def remote(sandbox_control: SandboxControlClient, runner: RunningRunner) -> SandboxControlClient:
+    """The app-authenticated Runner client routed through the deployed Go Gateway."""
+    return sandbox_control
 
 
 async def inspect(runner: SandboxRunner, session_id: str) -> runner_pb2.SessionSummary:
@@ -55,11 +50,11 @@ async def inspect(runner: SandboxRunner, session_id: str) -> runner_pb2.SessionS
 
 
 async def submit_input(
-    remote: SandboxControlClient, session_id: str, command: command_pb2.Command
+    remote: SandboxControlClient, destination: SandboxDestination, session_id: str, command: command_pb2.Command
 ) -> event_log_pb2.EventEntry:
     assert command.WhichOneof("operation") == "submit_input"
     response: runner_service_pb2.SubmitInputResponse = await remote.runner_unary(
-        DESTINATION,
+        destination,
         lambda stub: stub.SubmitInput,
         runner_service_pb2.SubmitInputRequest(
             session_id=session_id, command_id=command.command_id, text=command.submit_input.text
@@ -70,15 +65,20 @@ async def submit_input(
 
 
 async def complete_turn(
-    remote: SandboxControlClient, local: RunningRunner, model: ScriptedModel, session_id: str, command_id: str
+    remote: SandboxControlClient,
+    local: RunningRunner,
+    destination: SandboxDestination,
+    model: ScriptedModel,
+    session_id: str,
+    command_id: str,
 ) -> list[event_log_pb2.EventEntry]:
     command = command_pb2.Command(command_id=command_id, submit_input=command_pb2.SubmitInput(text="Reply: GRPC_OK"))
-    receipt = await submit_input(remote, session_id, command)
+    receipt = await submit_input(remote, destination, session_id, command)
     assert receipt.event.command_admitted.command == command
     assert receipt.origin.source_id
     assert receipt.origin.sequence > 0
     # Neither admission nor exact receipt replay waits for model completion.
-    assert await submit_input(remote, session_id, command) == receipt
+    assert await submit_input(remote, destination, session_id, command) == receipt
     request = await model.request()
     assert launches.PLATFORM_INSTRUCTIONS in request.system_text
     assert "Test task guidance." in request.system_text
@@ -98,22 +98,46 @@ async def complete_turn(
 async def wait_for_entries(
     runner: RunningRunner, session_id: str, after: int, complete: Callable[[list[event_log_pb2.EventEntry]], bool]
 ) -> list[event_log_pb2.EventEntry]:
-    """Wait for acknowledged ingress entries through a public runner observation."""
+    """Wait for committed entries through History's authenticated reader and change watch."""
     entries: list[event_log_pb2.EventEntry] = []
     cursor = after
-    async with asyncio.timeout(20):
-        while True:
-            new_entries = runner.entries(session_id, cursor)
-            entries.extend(new_entries)
-            if complete(entries):
-                return entries
-            if new_entries:
-                cursor = new_entries[-1].cursor
-            await runner.gateway.ingress.wait_beyond(session_id, cursor)
+    watch = None
+    try:
+        async with asyncio.timeout(20):
+            while True:
+                new_entries = await runner.history_entries(session_id, cursor)
+                entries.extend(new_entries)
+                if complete(entries):
+                    return entries
+                if new_entries:
+                    cursor = new_entries[-1].cursor
+                if watch is None:
+                    watch = runner.history.follow_session(session_id=session_id, after_cursor=cursor)
+                try:
+                    changed = await anext(watch)
+                except StopAsyncIteration:
+                    await watch.aclose()
+                    watch = None
+                    continue
+                if changed.HasField("reconnect_required"):
+                    await watch.aclose()
+                    watch = None
+                    continue
+                if changed.HasField("caught_up") and changed.through_cursor <= cursor:
+                    continue
+    finally:
+        if watch is not None:
+            await watch.aclose()
 
 
 async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
-    token_file: Path, model: ScriptedModel, spec: runner_pb2.SessionSpec, workspace: Path, runner: RunningRunner
+    remote: SandboxControlClient,
+    sandbox: SandboxCluster,
+    gateway_service: GatewayProcess,
+    model: ScriptedModel,
+    spec: runner_pb2.SessionSpec,
+    workspace: Path,
+    runner: RunningRunner,
 ) -> None:
     bootstrap_marker = workspace / "bootstrap-runs"
     setup_marker = workspace / "setup-runs"
@@ -127,107 +151,98 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
         f"while [ ! -e {shlex.quote(str(setup_release_marker))} ]; do sleep 0.01; done; "
         f"printf S >> {shlex.quote(str(setup_marker))}"
     )
-    async with runner_peer(token_file, runner=runner) as endpoint:
-        remote = endpoint.client()
-        destination = remote.runner(DESTINATION)
-        requested = uuid4()
-        created = await destination.open_session(session_id=requested, spec=launch_spec, setup_script=setup_script)
-        session = created.session_id
-        assert not (await destination.status()).processes
-        async for attempt in AsyncRetrying(
-            stop=stop_after_delay(15),
-            wait=wait_fixed(0.05),
-            retry=retry_if_exception_type(AssertionError),
-            reraise=True,
-        ):
-            with attempt:
-                assert setup_started_marker.exists()
-        opened = await inspect(destination, session)
-        assert opened.setup_state == runner_pb2.SETUP_STATE_RUNNING
-        status = await destination.status()
-        assert not status.processes
-        (preparing,) = [row for row in status.sessions if row.session_id == session]
-        assert preparing.execution_state == runner_pb2.SESSION_EXECUTION_STATE_PREPARING
-        setup_release_marker.touch()
-        async for attempt in AsyncRetrying(
-            stop=stop_after_delay(15),
-            wait=wait_fixed(0.05),
-            retry=retry_if_exception_type(AssertionError),
-            reraise=True,
-        ):
-            with attempt:
-                opened = await inspect(destination, session)
-                assert opened.setup_state == runner_pb2.SETUP_STATE_SUCCEEDED
-        assert opened.setup_state == runner_pb2.SETUP_STATE_SUCCEEDED
-        assert session in opened.spec.instructions
-        assert (
-            await destination.open_session(session_id=requested, spec=launch_spec, setup_script=setup_script)
-        ).spec == opened.spec
-        assert (await destination.list_sessions())[0].spec == opened.spec
-        # The runner refuses a retry whose spec differs from the one it recorded.
-        different_spec = runner_pb2.SessionSpec()
-        different_spec.CopyFrom(launch_spec)
-        different_spec.instructions = "Different task"
-        with pytest.raises(ServiceError) as refused:
-            await destination.open_session(session_id=requested, spec=different_spec, setup_script=setup_script)
-        assert refused.value.code == grpc.StatusCode.ALREADY_EXISTS
-        assert str(refused.value) == f"ALREADY_EXISTS: session {session} exists with a different spec"
-        assert bootstrap_marker.read_text() == "B"
-        assert setup_marker.read_text() == "S"
-        status = await destination.status()
-        assert not status.processes
-        (dormant,) = [row for row in status.sessions if row.session_id == session]
-        assert dormant.execution_state == runner_pb2.SESSION_EXECUTION_STATE_DORMANT
-        entries = await complete_turn(remote, runner, model, session, "grpc-notice")
-        (started,) = events.of_kind(entries, "harness_started")
-        assert not started.event.harness_started.resumed
-        active = await destination.status()
-        (active_session,) = [row for row in active.sessions if row.session_id == session]
-        native_session_id = active_session.native_session_id
-        assert native_session_id
-        assert len(active.processes) == 1
-        await runner.restart()
-        await wait_for_entries(
-            runner,
-            session,
-            entries[-1].cursor,
-            lambda tail: any(events.kind(entry) == "harness_exited" for entry in tail),
-        )
-        assert (await inspect(destination, session)).harness_state == runner_pb2.HARNESS_STATE_STOPPED
-        stopped = await destination.status()
-        assert not stopped.processes
-        (stopped_session,) = [row for row in stopped.sessions if row.session_id == session]
-        assert stopped_session.native_session_id == native_session_id
-        assert stopped_session.execution_state == runner_pb2.SESSION_EXECUTION_STATE_DORMANT
-    # Recreate the control peer, then let the next admitted input resume the retained conversation.
-    async with runner_peer(token_file, runner=runner) as restarted_endpoint:
-        restarted = restarted_endpoint.client()
-        destination = restarted.runner(DESTINATION)
-        resumed_entries = await complete_turn(restarted, runner, model, session, "grpc-resumed")
-        resumed_starts = events.of_kind(resumed_entries, "harness_started")
-        assert len(resumed_starts) == 1
-        assert resumed_starts[0].event.harness_started.resumed
-        resumed = await destination.status()
-        (resumed_session,) = [row for row in resumed.sessions if row.session_id == session]
-        assert resumed_session.native_session_id == native_session_id
-        assert len(resumed.processes) == 1
-        assert (await destination.list_sessions())[0].spec == opened.spec
-        invalid_spec = runner_pb2.SessionSpec()
-        invalid_spec.CopyFrom(launch_spec)
-        invalid_spec.model = ""
-        with pytest.raises(ServiceError) as invalid:
-            await destination.open_session(session_id=uuid4(), spec=invalid_spec)
-        assert invalid.value.code == grpc.StatusCode.INVALID_ARGUMENT
+    destination = remote.runner(sandbox.destination)
+    requested = uuid4()
+    created = await destination.open_session(session_id=requested, spec=launch_spec, setup_script=setup_script)
+    session = created.session_id
+    assert not (await destination.status()).processes
+    async for attempt in AsyncRetrying(
+        stop=stop_after_delay(15), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError), reraise=True
+    ):
+        with attempt:
+            assert setup_started_marker.exists()
+    opened = await inspect(destination, session)
+    assert opened.setup_state == runner_pb2.SETUP_STATE_RUNNING
+    status = await destination.status()
+    assert not status.processes
+    (preparing,) = [row for row in status.sessions if row.session_id == session]
+    assert preparing.execution_state == runner_pb2.SESSION_EXECUTION_STATE_PREPARING
+    setup_release_marker.touch()
+    async for attempt in AsyncRetrying(
+        stop=stop_after_delay(15), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError), reraise=True
+    ):
+        with attempt:
+            opened = await inspect(destination, session)
+            assert opened.setup_state == runner_pb2.SETUP_STATE_SUCCEEDED
+    assert opened.setup_state == runner_pb2.SETUP_STATE_SUCCEEDED
+    assert session in opened.spec.instructions
+    assert (
+        await destination.open_session(session_id=requested, spec=launch_spec, setup_script=setup_script)
+    ).spec == opened.spec
+    assert (await destination.list_sessions())[0].spec == opened.spec
+    # The runner refuses a retry whose spec differs from the one it recorded.
+    different_spec = runner_pb2.SessionSpec()
+    different_spec.CopyFrom(launch_spec)
+    different_spec.instructions = "Different task"
+    with pytest.raises(ServiceError) as refused:
+        await destination.open_session(session_id=requested, spec=different_spec, setup_script=setup_script)
+    assert refused.value.code == grpc.StatusCode.ALREADY_EXISTS
+    assert str(refused.value) == f"ALREADY_EXISTS: session {session} exists with a different spec"
+    assert bootstrap_marker.read_text() == "B"
+    assert setup_marker.read_text() == "S"
+    status = await destination.status()
+    assert not status.processes
+    (dormant,) = [row for row in status.sessions if row.session_id == session]
+    assert dormant.execution_state == runner_pb2.SESSION_EXECUTION_STATE_DORMANT
+    entries = await complete_turn(remote, runner, sandbox.destination, model, session, "grpc-notice")
+    (started,) = events.of_kind(entries, "harness_started")
+    assert not started.event.harness_started.resumed
+    active = await destination.status()
+    (active_session,) = [row for row in active.sessions if row.session_id == session]
+    native_session_id = active_session.native_session_id
+    assert native_session_id
+    assert len(active.processes) == 1
+    await runner.restart()
+    await wait_for_entries(
+        runner, session, entries[-1].cursor, lambda tail: any(events.kind(entry) == "harness_exited" for entry in tail)
+    )
+    assert (await inspect(destination, session)).harness_state == runner_pb2.HARNESS_STATE_STOPPED
+    stopped = await destination.status()
+    assert not stopped.processes
+    (stopped_session,) = [row for row in stopped.sessions if row.session_id == session]
+    assert stopped_session.native_session_id == native_session_id
+    assert stopped_session.execution_state == runner_pb2.SESSION_EXECUTION_STATE_DORMANT
+    # The restarted process reconnects through the Gateway before the next routed call.
+    await gateway_service.wait_for_runner(remote, sandbox.destination)
+    resumed_entries = await complete_turn(remote, runner, sandbox.destination, model, session, "grpc-resumed")
+    destination = remote.runner(sandbox.destination)
+    resumed_starts = events.of_kind(resumed_entries, "harness_started")
+    assert len(resumed_starts) == 1
+    assert resumed_starts[0].event.harness_started.resumed
+    resumed = await destination.status()
+    (resumed_session,) = [row for row in resumed.sessions if row.session_id == session]
+    assert resumed_session.native_session_id == native_session_id
+    assert len(resumed.processes) == 1
+    assert (await destination.list_sessions())[0].spec == opened.spec
+    invalid_spec = runner_pb2.SessionSpec()
+    invalid_spec.CopyFrom(launch_spec)
+    invalid_spec.model = ""
+    with pytest.raises(ServiceError) as invalid:
+        await destination.open_session(session_id=uuid4(), spec=invalid_spec)
+    assert invalid.value.code == grpc.StatusCode.INVALID_ARGUMENT
     assert bootstrap_marker.read_text() == "B"
     assert setup_marker.read_text() == "S"
 
 
-async def test_runner_command_does_not_create_unknown_session(remote: SandboxControlClient) -> None:
-    runner = remote.runner(DESTINATION)
+async def test_runner_command_does_not_create_unknown_session(
+    remote: SandboxControlClient, sandbox: SandboxCluster
+) -> None:
+    runner = remote.runner(sandbox.destination)
     unknown = str(uuid4())
     with pytest.raises(ServiceError) as commanded:
         await submit_input(
             remote,
+            sandbox.destination,
             unknown,
             command_pb2.Command(command_id="unknown-notice", submit_input=command_pb2.SubmitInput(text="no creation")),
         )
@@ -236,9 +251,9 @@ async def test_runner_command_does_not_create_unknown_session(remote: SandboxCon
 
 
 async def test_failed_setup_reports_command_failure(
-    remote: SandboxControlClient, runner: RunningRunner, spec: runner_pb2.SessionSpec
+    remote: SandboxControlClient, sandbox: SandboxCluster, runner: RunningRunner, spec: runner_pb2.SessionSpec
 ) -> None:
-    destination = remote.runner(DESTINATION)
+    destination = remote.runner(sandbox.destination)
     created = await destination.open_session(session_id=uuid4(), spec=spec, setup_script="exit 42")
     async for attempt in AsyncRetrying(
         stop=stop_after_delay(15), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError), reraise=True
@@ -249,6 +264,7 @@ async def test_failed_setup_reports_command_failure(
     assert opened.setup_state == runner_pb2.SETUP_STATE_FAILED
     receipt = await submit_input(
         remote,
+        sandbox.destination,
         created.session_id,
         command_pb2.Command(command_id="after-failed-setup", submit_input=command_pb2.SubmitInput(text="not run")),
     )
@@ -264,8 +280,8 @@ async def test_failed_setup_reports_command_failure(
     assert "setup" in failure.event.command_failed.reason
 
 
-async def test_invalid_launch_never_creates(remote: SandboxControlClient) -> None:
-    runner = remote.runner(DESTINATION)
+async def test_invalid_launch_never_creates(remote: SandboxControlClient, sandbox: SandboxCluster) -> None:
+    runner = remote.runner(sandbox.destination)
     invalid_specs = [runner_pb2.SessionSpec(), runner_pb2.SessionSpec(harness=runner_pb2.HARNESS_CODEX, model="m")]
     for invalid in invalid_specs:
         with pytest.raises(ServiceError) as rejected:
@@ -276,9 +292,9 @@ async def test_invalid_launch_never_creates(remote: SandboxControlClient) -> Non
 
 @pytest.mark.parametrize("bootstrap", ["exit 42"])
 async def test_failed_bootstrap_reports_failure_when_input_arrives(
-    remote: SandboxControlClient, runner: RunningRunner, spec: runner_pb2.SessionSpec
+    remote: SandboxControlClient, sandbox: SandboxCluster, runner: RunningRunner, spec: runner_pb2.SessionSpec
 ) -> None:
-    destination = remote.runner(DESTINATION)
+    destination = remote.runner(sandbox.destination)
     opened = await destination.open_session(session_id=uuid4(), spec=spec)
     status = await destination.status()
     assert not status.processes
@@ -287,6 +303,7 @@ async def test_failed_bootstrap_reports_failure_when_input_arrives(
 
     admission = await submit_input(
         remote,
+        sandbox.destination,
         opened.session_id,
         command_pb2.Command(command_id="after-failed-bootstrap", submit_input=command_pb2.SubmitInput(text="not run")),
     )

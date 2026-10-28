@@ -1,32 +1,28 @@
-"""The production client sends its per-Sandbox identity to the generated Runner API."""
+"""The production client routes through the authenticated Go Runner Gateway."""
 
-from pathlib import Path
-
+import pytest
 import pytest_bazel
 
-from agentplane.proto.sandboxes_pb2 import SandboxDestination, ServiceAccount
-from agentplane.runner_gateway.testing.runner_peer import runner_peer
+from agentplane.grpc.calls import ServiceError
+from agentplane.proto.sandboxes_pb2 import SandboxDestination
+from agentplane.runner.testing.process import RunningRunner
+from agentplane.runner_gateway.client import SandboxControlClient
+from agentplane.sandboxes.testing.kubernetes import SandboxCluster
 
 # gazelle:include_dep @pypi//protobuf
 
 
-async def test_runner_client_sends_bearer_and_complete_sandbox_identity(tmp_path: Path) -> None:
-    destination = SandboxDestination(
-        owner=ServiceAccount(namespace="testing", name="native-runner"),
-        sandbox="native-runner",
-        sandbox_uid="native-runner-uid",
-    )
-    async with runner_peer(tmp_path / "caller-token", record_metadata=True, token="test-client-token") as endpoint:
-        assert await endpoint.client().list_sessions(destination) == []
+async def test_runner_client_routes_with_complete_sandbox_identity(
+    sandbox: SandboxCluster, sandbox_control: SandboxControlClient, runner: RunningRunner
+) -> None:
+    assert await sandbox_control.list_sessions(sandbox.destination) == []
 
-    assert len(endpoint.peer.metadata_calls) == 1
-    method, metadata = endpoint.peer.metadata_calls[0]
-    assert method == "ListSessions"
-    assert metadata["authorization"] == ("Bearer test-client-token",)
-    assert metadata["x-agentplane-sandbox"] == ("native-runner",)
-    assert metadata["x-agentplane-sandbox-uid"] == ("native-runner-uid",)
-    assert metadata["x-agentplane-sandbox-owner-namespace"] == ("testing",)
-    assert metadata["x-agentplane-sandbox-owner-name"] == ("native-runner",)
+    stale = SandboxDestination()
+    stale.CopyFrom(sandbox.destination)
+    stale.sandbox_uid = "stale-sandbox-incarnation"
+    with pytest.raises(ServiceError) as rejected:
+        await sandbox_control.list_sessions(stale)
+    assert rejected.value.code.name == "NOT_FOUND"
 
 
 if __name__ == "__main__":

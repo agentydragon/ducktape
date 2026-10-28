@@ -8,13 +8,14 @@ import json
 import os
 import shlex
 import shutil
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from pathlib import Path
 from typing import Any
 
 import pytest
 import pytest_bazel
 
+from agentplane.history_service.testing.go_service import GoHistoryService
 from agentplane.native.codex.testing import model_catalog
 from agentplane.native.codex.testing.responses import OpenAIResponses
 from agentplane.proto import event_pb2, runner_pb2
@@ -195,9 +196,10 @@ async def test_runner_death_interrupts_bootstrap_without_rerunning_it(
 
 
 @pytest.fixture
-def driver(gateway: Gateway) -> RunnerDriver:
+async def driver(gateway: Gateway, history_service: GoHistoryService) -> AsyncIterator[RunnerDriver]:
     """Drives whichever runner process holds the newest connection to `gateway`."""
-    return RunnerDriver(gateway)
+    async with RunnerDriver(gateway, history_service.reader) as started:
+        yield started
 
 
 @pytest.fixture

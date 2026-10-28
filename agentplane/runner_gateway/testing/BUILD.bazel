@@ -6,21 +6,6 @@ package(
 )
 
 py_library(
-    name = "runner_peer",
-    srcs = ["runner_peer.py"],
-    deps = [
-        "//agentplane/grpc:serving",
-        "//agentplane/proto:runner_pb2",
-        "//agentplane/runner:runner_service_pb2",
-        "//agentplane/runner:runner_service_pb2_grpc",
-        "//agentplane/runner/testing:process",
-        "//agentplane/runner_gateway:client",
-        "@pypi//grpcio",
-        "@pypi//protobuf",
-    ],
-)
-
-py_library(
     name = "gateway_process",
     srcs = ["gateway_process.py"],
     data = [

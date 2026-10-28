@@ -13,9 +13,11 @@ from pathlib import Path
 
 import pytest
 
+from agentplane.history_service.testing.go_service import WRITER, GoHistoryService
 from agentplane.native.claude.testing.messages import AnthropicMessages
 from agentplane.native.codex.testing.responses import OpenAIResponses
 from agentplane.proto import runner_pb2
+from agentplane.runner.configuration import Endpoint
 from agentplane.runner.testing import launches
 from agentplane.runner.testing.gateway import Gateway
 
@@ -90,10 +92,15 @@ def runner_environment(home: Path) -> dict[str, str]:
 
 @pytest.fixture
 async def start_runner(
-    harness: runner_pb2.Harness, endpoint: AnthropicMessages | OpenAIResponses, tmp_path: Path, gateway: Gateway
+    harness: runner_pb2.Harness,
+    endpoint: AnthropicMessages | OpenAIResponses,
+    tmp_path: Path,
+    gateway: Gateway,
+    history_service: GoHistoryService,
 ) -> AsyncIterator[Callable[..., Awaitable[RunnerProcess]]]:
     """Start a runner process on the test's state directory; it returns once the runner is connected."""
     started: list[RunnerProcess] = []
+    ingress = Endpoint(target=history_service.ingress_target, bearer=await history_service.writer_token(WRITER))
 
     async def start(
         *,
@@ -111,6 +118,7 @@ async def start_runner(
                 endpoint.origin,
                 state_dir=tmp_path / "state",
                 gateway=gateway.endpoint,
+                ingress=ingress,
                 test_debug_checkpoint=test_debug_checkpoint,
                 bootstrap=bootstrap,
                 codex_binary=codex_binary,

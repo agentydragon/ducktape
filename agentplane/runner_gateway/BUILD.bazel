@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//agentplane/runner/testing:exec_properties.bzl", "NATIVE_RUNNER_EXEC_PROPERTIES")
+load("//agentplane/runner/testing:exec_properties.bzl", "NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 load("//devinfra/python:grpc.bzl", "py_grpc_service_library")
 load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
@@ -56,21 +56,42 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
+        ":client",
+        "//agentplane/app/testing:runner_gateway",
+        "//agentplane/history_service/testing:fixtures",
         "//agentplane/runner/testing:failure_journal",
         "//agentplane/runner/testing:fixtures",
+        "//agentplane/runner/testing:process",
+        "//agentplane/testing:kubernetes_apiserver_fixtures",
+        "//util/testing:postgres_fixtures",
         "@pypi//pytest",
     ],
 )
 
 py_test(
     name = "test_client",
+    size = "medium",
     srcs = ["test_client.py"],
+    data = [
+        "@agentplane_codex_cli_linux_x64//:files",  # keep: runner config selects the pinned native harness
+        "@claude_code_cli_linux_x64//:claude",  # keep: runner config selects the pinned native harness
+    ],
+    exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
+    requires_docker = True,
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
     deps = [
+        ":client",
         ":conftest",
         "//:conftest",
+        "//agentplane/grpc:calls",
         "//agentplane/proto:sandboxes_pb2",
-        "//agentplane/runner_gateway/testing:runner_peer",
+        "//agentplane/runner/testing:process",
+        "//agentplane/sandboxes/testing:kubernetes",
         "@pypi//protobuf",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -83,7 +104,8 @@ py_test(
         "@agentplane_codex_cli_linux_x64//:files",  # keep: both pinned native harnesses
         "@claude_code_cli_linux_x64//:claude",  # keep: both pinned native harnesses
     ],
-    exec_properties = NATIVE_RUNNER_EXEC_PROPERTIES,
+    exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
+    requires_docker = True,
     target_compatible_with = [
         # keep: pinned native harness platforms
         "@platforms//cpu:x86_64",
@@ -103,7 +125,8 @@ py_test(
         "//agentplane/runner/testing:events",
         "//agentplane/runner/testing:launches",
         "//agentplane/runner/testing:process",
-        "//agentplane/runner_gateway/testing:runner_peer",
+        "//agentplane/runner_gateway/testing:gateway_process",
+        "//agentplane/sandboxes/testing:kubernetes",
         "//agentplane/testing:scripted_model",
         "@pypi//grpcio",
         "@pypi//more_itertools",

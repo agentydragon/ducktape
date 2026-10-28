@@ -4,14 +4,21 @@ runner's control stream, and each session's Events as its ingress committed them
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import asynccontextmanager
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
+from contextlib import aclosing, asynccontextmanager
+from typing import Self
 
 import grpc
 import pytest
 
+from agentplane.grpc.calls import ServiceError
+from agentplane.history_service import history_service_pb2
+from agentplane.history_service.client import HistoryServiceClient
+from agentplane.history_service.settled_cursors import unstored_ranges
+from agentplane.history_service.testing.go_service import WRITER, GoHistoryService
 from agentplane.proto import event_log_pb2, runner_pb2
 from agentplane.runner import runner_service_pb2
+from agentplane.runner.configuration import Endpoint
 from agentplane.runner.testing.config import RunnerTestConfig
 from agentplane.runner.testing.gateway import Gateway
 from agentplane.runner.testing.process import RunningRunner
@@ -46,11 +53,16 @@ class SessionFollow:
     session has nothing more to run: its harness exited or its setup or launch failed. A command
     submitted through this follow may wake a dormant session and continue the same event stream."""
 
-    def __init__(self, gateway: Gateway, attached: runner_pb2.Attached, after_cursor: int) -> None:
+    def __init__(
+        self, gateway: Gateway, history: HistoryServiceClient, attached: runner_pb2.Attached, after_cursor: int
+    ) -> None:
         self._gateway = gateway
+        self._history = history
         self.attached = attached
         self.seen: list[event_log_pb2.EventEntry] = []
         self._cursor = after_cursor
+        self._pending: list[event_log_pb2.EventEntry] = []
+        self._watch: AsyncGenerator[history_service_pb2.FollowSessionResponse] | None = None
         self._ended = (
             attached.harness_state == runner_pb2.HARNESS_STATE_STOPPED
             and attached.setup_state != runner_pb2.SETUP_STATE_RUNNING
@@ -95,11 +107,31 @@ class SessionFollow:
         )
 
     async def next_entry(self) -> event_log_pb2.EventEntry:
-        ingress = self._gateway.ingress
         session_id = self.attached.session_id
-        while not (page := ingress.since(session_id, self._cursor)):
-            if (sealed := ingress.sealed.get(session_id)) is not None and self._cursor >= sealed:
-                raise SessionSealedError(sealed)
+        while not self._pending:
+            try:
+                page = await self._history.read_session_events(session_id, after_cursor=self._cursor, limit=1000)
+            except ServiceError as error:
+                if error.code != grpc.StatusCode.NOT_FOUND:
+                    raise
+                # OpenSession can be acknowledged before its first ingress push binds the History row.
+                await _wait_for_history_session(self._history, session_id)
+                continue
+            self._pending.extend(page.entries)
+            if self._pending:
+                break
+            # Settlements and operator removals cover cursors without an Event. Move the source
+            # cursor across only a contiguous reported range; never infer coverage from a short page.
+            for first, last in unstored_ranges(page):
+                if first <= self._cursor + 1 and last > self._cursor:
+                    self._cursor = last
+            if page.HasField("feed_state") and page.feed_state.HasField("sealed"):
+                seal_cursor = page.feed_state.sealed.cursor
+                if self._cursor < seal_cursor:
+                    raise RuntimeError(
+                        f"History sealed {session_id} at {seal_cursor} with an uncovered cursor after {self._cursor}"
+                    )
+                raise SessionSealedError(seal_cursor)
             # Process exit can precede activation's command settlement. Read through the
             # runner's current published cursor once that work finishes, even if ingress lags.
             if self._ended and self._cursor >= self.attached.last_cursor:
@@ -115,8 +147,8 @@ class SessionFollow:
                 summary = next(row for row in summaries.sessions if row.session_id == session_id)
                 if summary.harness_state == runner_pb2.HARNESS_STATE_STOPPED and self._cursor >= summary.last_cursor:
                     raise StreamClosedError
-            await ingress.wait_beyond(session_id, self._cursor)
-        entry = page[0]
+            await self._wait_for_history_change()
+        entry = self._pending.pop(0)
         event = entry.event
         self._cursor = entry.cursor
         self.seen.append(entry)
@@ -129,6 +161,41 @@ class SessionFollow:
         if event.HasField("setup_interrupted") or event.HasField("harness_launch_failed"):
             self._ended = True
         return entry
+
+    async def _wait_for_history_change(self) -> None:
+        while True:
+            if self._watch is None:
+                self._watch = self._history.follow_session(
+                    session_id=self.attached.session_id, after_cursor=self._cursor
+                )
+            try:
+                response = await anext(self._watch)
+            except StopAsyncIteration:
+                await self._watch.aclose()
+                self._watch = None
+                continue
+            except ServiceError as error:
+                await self._watch.aclose()
+                self._watch = None
+                if error.code != grpc.StatusCode.NOT_FOUND:
+                    raise
+                await _wait_for_history_session(self._history, self.attached.session_id)
+                return
+            if response.HasField("reconnect_required"):
+                await self._watch.aclose()
+                self._watch = None
+                continue
+            # FollowSession's opening snapshot closes the read/subscribe race. If it only reports
+            # the cursor we already read, retain the stream and wait for a raw ingress change.
+            if response.HasField("caught_up") and response.through_cursor <= self._cursor:
+                continue
+            return
+
+    async def close(self) -> None:
+        """Cancel the follower's long-lived History watch."""
+        if self._watch is not None:
+            await self._watch.aclose()
+            self._watch = None
 
     async def until(
         self, accept: Callable[[event_log_pb2.EventEntry], bool], *, timeout_s: float = 60
@@ -148,8 +215,10 @@ class SessionFollow:
 
 
 class RunnerDriver:
-    def __init__(self, gateway: Gateway) -> None:
+    def __init__(self, gateway: Gateway, history: HistoryServiceClient) -> None:
         self.gateway = gateway
+        self.history = history
+        self._followers: list[SessionFollow] = []
 
     async def attach(
         self,
@@ -175,33 +244,68 @@ class RunnerDriver:
                 setup_state=summary.setup_state,
                 launch_outcome=summary.launch_outcome,
             )
-            return SessionFollow(self.gateway, attached, after_cursor)
+            return self._follow(attached, after_cursor)
         runner = await self.gateway.control.runner()
         opening = runner_service_pb2.OpenSessionRequest(session_id=session_id, spec=spec)
         if setup_script is not None:
             opening.setup_script = setup_script
         attached = (await runner.OpenSession(opening)).attached
-        return SessionFollow(self.gateway, attached, after_cursor)
+        return self._follow(attached, after_cursor)
+
+    def _follow(self, attached: runner_pb2.Attached, after_cursor: int) -> SessionFollow:
+        follow = SessionFollow(self.gateway, self.history, attached, after_cursor)
+        self._followers.append(follow)
+        return follow
 
     async def list_sessions(self) -> list[runner_pb2.SessionSummary]:
         runner = await self.gateway.control.runner()
         return list((await runner.ListSessions(runner_pb2.ListSessionsRequest())).sessions)
 
     async def quiesce(self) -> runner_pb2.QuiesceResponse:
-        """Request quiesce, then wait until the runner has sealed and the ingress has every Session."""
+        """Request quiesce, then verify History committed every acknowledged Session seal."""
         runner = await self.gateway.control.runner()
         response = await runner.Quiesce(runner_pb2.QuiesceRequest())
-        sessions = await runner.ListSessions(runner_pb2.ListSessionsRequest())
-        for session in sessions.sessions:
-            await self.gateway.ingress.wait_sealed(session.session_id)
         await self.gateway.control.wait_for_facts(
             runner_control_pb2.RunnerFacts(quiesce_stage=runner_control_pb2.RunnerFacts.QUIESCE_STAGE_QUIESCED)
         )
+        sessions = await runner.ListSessions(runner_pb2.ListSessionsRequest())
+        for session in sessions.sessions:
+            page = await self.history.read_session_events(session.session_id, after_cursor=0, limit=1)
+            if not page.HasField("feed_state") or not page.feed_state.HasField("sealed"):
+                raise RuntimeError(f"Runner acknowledged quiesce without a History seal for {session.session_id}")
+            if page.feed_state.sealed.cursor != session.last_cursor:
+                raise RuntimeError(
+                    f"History sealed {session.session_id} at {page.feed_state.sealed.cursor}, "
+                    f"but runner reports cursor {session.last_cursor}"
+                )
         return response
+
+    async def close(self) -> None:
+        """Close all follower watches created by this driver."""
+        await asyncio.gather(*(follower.close() for follower in self._followers))
+        self._followers.clear()
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(self, *_exc: object) -> None:
+        await self.close()
 
 
 @asynccontextmanager
-async def running(config: RunnerTestConfig, gateway: Gateway) -> AsyncIterator[RunningRunner]:
-    """Start the Go executable on this state directory and test Gateway."""
-    async with RunningRunner(config, gateway) as runner:
+async def running(
+    config: RunnerTestConfig, gateway: Gateway, history_service: GoHistoryService
+) -> AsyncIterator[RunningRunner]:
+    """Start the Go executable against a scriptable control peer and real History ingress."""
+    ingress = Endpoint(target=history_service.ingress_target, bearer=await history_service.writer_token(WRITER))
+    async with RunningRunner(config, gateway, history=history_service.reader, ingress_endpoint=ingress) as runner:
         yield runner
+
+
+async def _wait_for_history_session(history: HistoryServiceClient, session_id: str) -> None:
+    """Wait for ingress to bind the Session row; this wake belongs to raw History, not its fold."""
+    while True:
+        async with aclosing(history.watch_session_openings(after_position=0)) as openings:
+            async for opened in openings:
+                if str(opened.session_id) == session_id:
+                    return

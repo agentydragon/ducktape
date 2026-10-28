@@ -59,7 +59,6 @@ from agentplane.grpc.calls import dial
 from agentplane.grpc.serving import serving
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.fold.models import ThreadCheckpoint, ThreadEntity, ThreadPayloadChunk
-from agentplane.history_service.testing.go_service import GoHistoryService
 from agentplane.history_service.testing.history import History
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
@@ -91,14 +90,15 @@ async def failed_bridge_state(
 ) -> AsyncIterator[None]:
     """Preserve each service's cursor and admission state when an app-level bridge case fails.
 
-    The `runner` fixture keeps the native history files and journal.
+    The `runner` fixture retains the harness-owned history and runner state on failure.
     """
     yield
     if (evidence := FailureEvidence.for_failed_call(request)) is None:
         return
     state: dict[str, Any] = {}
-    for session_id, entries in runner.gateway.ingress.committed.items():
-        observed: dict[str, Any] = {"runner_cursor": entries[-1].cursor if entries else 0}
+    for session in await local_runners.client(SANDBOX).list_sessions():
+        session_id = session.session_id
+        observed: dict[str, Any] = {"runner_cursor": session.last_cursor}
         state[session_id] = observed
         try:
             async with asyncio.timeout(5):
@@ -245,15 +245,6 @@ async def read_until(lines: AsyncIterator[str], key: str) -> list[SseMessage]:
 def register_attached_sessions() -> bool:
     # The local runner pushes its history to the History Service ingress; the app only reads it.
     return True
-
-
-@pytest.fixture
-async def history_client(
-    runner: RunningRunner, sandbox: SandboxCluster, history_service: GoHistoryService
-) -> AsyncIterator[HistoryServiceClient]:
-    # The History Service reads what the Sandbox's runner pushes to its ingress, as deployed.
-    async with history_service.ingest(runner, writer=sandbox.owner):
-        yield history_service.reader
 
 
 @pytest.fixture
@@ -501,7 +492,7 @@ async def _interrupt_and_recover(
     session = await _runner_session(runners, thread_id)
     turn_id = session.active_turn_id
     assert turn_id
-    existing = runner.entries(thread_id)
+    existing = await runner.history_entries(thread_id)
     before = existing[-1].cursor if existing else 0
     if mode == "kill":
         await _kill_harness(runners, thread_id)
@@ -540,7 +531,7 @@ async def _wait_for_conversation_reconciliation(
         with attempt:
             reports = [
                 entry
-                for entry in runner.entries(thread_id, after=before)
+                for entry in await runner.history_entries(thread_id, after=before)
                 if entry.event.HasField("conversation_reconciled")
                 and entry.event.conversation_reconciled.turn_id == turn_id
             ]
@@ -987,28 +978,27 @@ async def test_history_openings_give_a_session_the_app_did_not_start_a_thread(
 
 async def test_open_and_inputs_reach_the_runner_while_history_lags(
     sandbox: SandboxCluster,
-    runner: RunningRunner,
     local_runners: RunnerDirectory,
     event_logs: SeededEventLogStore,
     content: ContentStore,
     model: ScriptedModel,
     spec: runner_pb2.SessionSpec,
     session_dispatcher: SessionDispatcherClient,
+    history: History,
 ) -> None:
     """The Dispatcher opens the Session and delivers its inputs, before and after a harness kill, while
     History's ingress is held back."""
-    async with runner.gateway.ingress.forwarding_paused():
-        bridge = RunnerBridge(
-            runners=local_runners, event_logs=event_logs, content=content, dispatcher=session_dispatcher
-        )
-        opened = await bridge.create_session(SANDBOX, uuid4(), spec)
-        thread_id = UUID(opened.session_id)
-        await delivered_opening(session_dispatcher, thread_id)
-        (runner_session,) = await local_runners.client(SANDBOX).list_sessions()
-        assert runner_session.session_id == opened.session_id
-        opened_cursor = runner_session.last_cursor
-        assert opened_cursor == 0
-
+    bridge = RunnerBridge(runners=local_runners, event_logs=event_logs, content=content, dispatcher=session_dispatcher)
+    opened = await bridge.create_session(SANDBOX, uuid4(), spec)
+    thread_id = UUID(opened.session_id)
+    await delivered_opening(session_dispatcher, thread_id)
+    await history.service.settled(thread_id, lambda _summary: True)
+    (runner_session,) = [
+        row for row in await local_runners.client(SANDBOX).list_sessions() if row.session_id == opened.session_id
+    ]
+    opened_cursor = runner_session.last_cursor
+    assert opened_cursor == 0
+    async with history.fence_ingress(thread_id):
         seed = await admitted(
             session_dispatcher, await _submit_input(bridge, thread_id, sandbox.uid, "seed-before-archive", "SEED")
         )
@@ -1034,8 +1024,31 @@ async def test_open_and_inputs_reach_the_runner_while_history_lags(
         )
         assert receipt.admission.cursor > opened_cursor
         await model.reply(await model.request(), Text("CONTINUED"))
-        # History never saw any of it.
+        control_cursor = 0
+        async for attempt in AsyncRetrying(
+            stop=stop_after_delay(20), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
+        ):
+            with attempt:
+                (summary,) = await local_runners.client(SANDBOX).list_sessions()
+                assert summary.last_cursor > receipt.admission.cursor
+                assert not summary.active_turn_id
+                control_cursor = summary.last_cursor
+        # Runner progress is visible through the control stream while the ingress transaction
+        # waits on the History row; the app archive remains behind until the lock is released.
         assert await event_logs.last_cursor(thread_id) == 0
+
+    async for attempt in AsyncRetrying(
+        stop=stop_after_delay(20), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
+    ):
+        with attempt:
+            (summary,) = await local_runners.client(SANDBOX).list_sessions()
+            assert summary.last_cursor == control_cursor
+            assert await event_logs.read_watermark(thread_id) == control_cursor
+            assert await event_logs.last_cursor(thread_id) == control_cursor
+            archived = await event_logs.events(thread_id, limit=1000)
+            assert seed.admission in archived
+            assert receipt.admission in archived
+            assert len([entry for entry in archived if entry.event.HasField("turn_completed")]) == 2
 
 
 if __name__ == "__main__":

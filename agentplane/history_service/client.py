@@ -64,6 +64,34 @@ class HistoryServiceClient:
             history_service_pb2.ReadSessionEventsRequest(session_id=session_id, after_cursor=after_cursor, limit=limit),
         )
 
+    async def follow_session(
+        self, session_id: str, *, after_cursor: int = 0
+    ) -> AsyncGenerator[history_service_pb2.FollowSessionResponse]:
+        """Yield committed raw history until the server asks the caller to reconnect."""
+        if not session_id or after_cursor < 0:
+            raise ValueError("invalid session history cursor")
+        request = history_service_pb2.FollowSessionRequest(
+            session_id=session_id, after_cursor=after_cursor, follow=True
+        )
+        call = self.stub.FollowSession(request, metadata=await bearer(self.token_file))
+        handshake: float | None = self.request_timeout_s
+        try:
+            while True:
+                try:
+                    async with asyncio.timeout(handshake):
+                        response = await call.read()
+                except grpc.aio.AioRpcError as error:
+                    raise_status(error)
+                handshake = None
+                if response is grpc.aio.EOF:
+                    raise ConnectionError("History Service ended the raw history follow without planned renewal")
+                assert isinstance(response, history_service_pb2.FollowSessionResponse)
+                yield response
+                if response.HasField("reconnect_required"):
+                    return
+        finally:
+            call.cancel()
+
     async def read_session_observations(
         self, session_id: str, *, before_cursor: int | None = None, after_cursor: int | None = None, limit: int = 30
     ) -> history_service_pb2.ReadSessionObservationsResponse:
@@ -133,7 +161,7 @@ class HistoryServiceClient:
         async for _ in self._watch(history_service_pb2.WatchSessionSummariesRequest()):
             yield
 
-    async def watch_session_openings(self, *, after_position: int) -> AsyncIterator[SessionOpened]:
+    async def watch_session_openings(self, *, after_position: int) -> AsyncGenerator[SessionOpened]:
         """Yield each Session recorded after `after_position`, in recording order, until planned renewal,
         which returns; anything else raises."""
         request = history_service_pb2.WatchSessionSummariesRequest(opened_after=after_position)

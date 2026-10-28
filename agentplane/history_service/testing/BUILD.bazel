@@ -77,7 +77,6 @@ py_library(
         "//agentplane/history_service:runner_ingress_pb2_grpc",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:runner_pb2",
-        "//agentplane/runner/testing:process",
         "//agentplane/testing:go_process",
         "//agentplane/testing:kubernetes_apiserver",
         "//util:net",

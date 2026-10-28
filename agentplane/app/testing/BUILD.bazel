@@ -300,6 +300,10 @@ py_library(
 py_library(
     name = "runner_gateway",
     srcs = ["runner_gateway.py"],
+    visibility = [
+        "//agentplane/app:__subpackages__",
+        "//agentplane/runner_gateway:__pkg__",
+    ],
     deps = [
         "//agentplane:crd_group",
         "//agentplane:sandbox_resource",

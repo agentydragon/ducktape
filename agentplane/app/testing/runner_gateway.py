@@ -17,7 +17,7 @@ from agentplane.app.live import LiveIndex
 from agentplane.app.threads.dispatcher_client import SessionDispatcherClient
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.grpc.calls import bearer, dial
-from agentplane.history_service.testing.go_service import WRITER
+from agentplane.history_service.testing.go_service import WRITER, GoHistoryService
 from agentplane.runner.configuration import Endpoint
 from agentplane.runner.testing.config import RunnerTestConfig
 from agentplane.runner.testing.failure_journal import FailureEvidence
@@ -125,16 +125,20 @@ async def runner(
     request: pytest.FixtureRequest,
     config: RunnerTestConfig,
     runner_gateway: Gateway,
+    history_service: GoHistoryService,
     sandbox: SandboxCluster,
     gateway_service: GatewayProcess,
     sandbox_control: SandboxControlClient,
 ) -> AsyncIterator[RunningRunner]:
     """The production Go runner as `sandbox`'s, taking control through the Go Runner Gateway; it still
-    pushes its journal to `runner_gateway`, which tests forward to History. Failed tests retain its
-    native evidence."""
+    pushes its journal directly to the Go History Service ingress. Failed tests retain native
+    evidence."""
     control = Endpoint(target=gateway_service.target, bearer=await sandbox.pod_token(RUNNER_AUDIENCE))
+    ingress = Endpoint(target=history_service.ingress_target, bearer=await history_service.writer_token(sandbox.owner))
     launched = replace(config, launch=replace(config.launch, sandbox=sandbox.identity))
-    async with RunningRunner(launched, runner_gateway, control_endpoint=control) as started:
+    async with RunningRunner(
+        launched, runner_gateway, history=history_service.reader, control_endpoint=control, ingress_endpoint=ingress
+    ) as started:
         await gateway_service.wait_for_runner(sandbox_control, sandbox.destination)
         yield started
         if (evidence := FailureEvidence.for_failed_call(request)) is not None:

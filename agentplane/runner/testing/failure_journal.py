@@ -1,4 +1,4 @@
-"""Native runner evidence preserved for a test whose call phase failed.
+"""Runner evidence preserved for a test whose call phase failed.
 
 The shared `runner` fixture calls `FailureEvidence.preserve_runner` before shutting its runner down, so
 every conftest registering that fixture also imports `pytest_runtest_makereport`, which exposes the
@@ -71,24 +71,24 @@ class FailureEvidence:
                 if source.exists():
                     shutil.copytree(source, self.directory / session_id / dialect / history, dirs_exist_ok=True)
 
-    async def capture_native_journal(self, runner: RunningRunner) -> None:
-        """Write a bounded snapshot of each session's native journal."""
+    async def capture_history_archive(self, runner: RunningRunner) -> None:
+        """Write a bounded snapshot of the History Service archive for each session."""
         sessions: dict[str, list[dict[str, object]]] = {}
         for directory in (runner.state_dir / "sessions").glob("*"):
-            entries = runner.entries(directory.name)[:512]
+            entries = (await runner.history_entries(directory.name))[:512]
             sessions[directory.name] = [MessageToDict(entry, preserving_proto_field_name=True) for entry in entries]
-        self.write_json("native-journal.json", sessions)
+        self.write_json("history-archive.json", sessions)
 
     async def preserve_runner(self, runner: RunningRunner) -> None:
-        """Keep the runner's native history files and journal snapshot.
+        """Keep the runner's native history files and its History Service archive snapshot.
 
-        Each capture degrades on its own, so a broken history copy still leaves the journal.
+        Each capture is isolated, so a native history copy failure still leaves the archive snapshot.
         """
         try:
             self.copy_native_history(runner)
         except Exception:
             logger.warning("native history capture into %s failed", self.directory, exc_info=True)
         try:
-            await self.capture_native_journal(runner)
+            await self.capture_history_archive(runner)
         except Exception:
-            logger.warning("native journal capture into %s failed", self.directory, exc_info=True)
+            logger.warning("History archive capture into %s failed", self.directory, exc_info=True)

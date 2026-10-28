@@ -172,6 +172,17 @@ class History:
             text("SELECT 1 FROM session_projection_lease WHERE session_id = :id FOR UPDATE"), {"id": session_id}
         )
 
+    @asynccontextmanager
+    async def fence_ingress(self, session_id: UUID) -> AsyncIterator[None]:
+        """Hold the History row the runner ingress updates, until the caller leaves the context."""
+        async with self.engine.begin() as connection:
+            row = await connection.execute(
+                text("SELECT 1 FROM session_history WHERE id = :id FOR UPDATE"), {"id": session_id}
+            )
+            if row.first() is None:
+                raise ValueError(f"open Session {session_id} before fencing its ingress")
+            yield
+
     async def announce_fold_commit(self) -> None:
         """Commit the notice a fold commit sends, without folding anything."""
         async with self.sessions.begin() as session:

@@ -299,7 +299,7 @@ async def test_a_frame_goes_out_per_change_with_health_through_the_quiet(seeded:
 @pytest.fixture
 def app(
     inventory: SandboxAccess,
-    gateway: SandboxControlClient,
+    sandbox_control: SandboxControlClient,
     egress: EgressAccess,
     decisions: DecisionsClient,
     live_index: LiveIndex,
@@ -324,7 +324,10 @@ def app(
     return create_app(
         inventory,
         RunnerBridge(
-            runners=RunnerDirectory(live_index, gateway), event_logs=event_logs, content=content, dispatcher=dispatcher
+            runners=RunnerDirectory(live_index, sandbox_control),
+            event_logs=event_logs,
+            content=content,
+            dispatcher=dispatcher,
         ),
         ThreadStore(engine, summaries),
         TEST_MODELS,

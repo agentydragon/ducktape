@@ -24,6 +24,7 @@ py_library(
     visibility = [
         "//agentplane/app:__subpackages__",
         "//agentplane/history_service:__subpackages__",
+        "//agentplane/runner/testing:__pkg__",
     ],
     deps = [
         "//agentplane/grpc:calls",

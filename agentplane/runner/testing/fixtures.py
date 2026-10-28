@@ -13,9 +13,11 @@ from typing import Any, cast
 
 import pytest
 
+from agentplane.history_service.testing.go_service import WRITER, GoHistoryService
 from agentplane.native.claude.testing.messages import AnthropicMessages
 from agentplane.native.codex.testing.responses import OpenAIResponses
 from agentplane.proto import runner_pb2
+from agentplane.runner.configuration import Endpoint
 from agentplane.runner.testing import launches
 from agentplane.runner.testing.config import RunnerTestConfig
 from agentplane.runner.testing.driver import RunnerDriver
@@ -78,10 +80,13 @@ def config(harness: runner_pb2.Harness, endpoint: ModelEndpoint, tmp_path: Path)
 
 @pytest.fixture
 async def runner(
-    request: pytest.FixtureRequest, config: RunnerTestConfig, runner_gateway: Gateway
+    request: pytest.FixtureRequest, config: RunnerTestConfig, runner_gateway: Gateway, history_service: GoHistoryService
 ) -> AsyncIterator[RunningRunner]:
-    """The production Go runner; failed tests retain its native evidence."""
-    async with RunningRunner(config, runner_gateway) as started:
+    """The production Go runner, pushing its journal to the Go History Service ingress."""
+    ingress = Endpoint(target=history_service.ingress_target, bearer=await history_service.writer_token(WRITER))
+    async with RunningRunner(
+        config, runner_gateway, history=history_service.reader, ingress_endpoint=ingress
+    ) as started:
         yield started
         if (evidence := FailureEvidence.for_failed_call(request)) is not None:
             await evidence.preserve_runner(started)
@@ -99,6 +104,7 @@ def gateway(runner_gateway: Gateway) -> Gateway:
 
 
 @pytest.fixture
-def driver(runner: RunningRunner) -> RunnerDriver:
+async def driver(runner: RunningRunner, history_service: GoHistoryService) -> AsyncIterator[RunnerDriver]:
     """Drive the running Go executable through its control tunnel."""
-    return RunnerDriver(runner.gateway)
+    async with RunnerDriver(runner.gateway, history_service.reader) as started:
+        yield started

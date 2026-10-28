@@ -56,7 +56,6 @@ from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.history import History
 from agentplane.postgres.wakeups import WakeupListener
-from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.sandbox_resource import SANDBOXES_PLURAL
 from agentplane.sandboxes.testing.sandbox_namespace import SandboxNamespace
 from agentplane.subjects import ServiceAccountRef
@@ -96,7 +95,6 @@ def direct_federation() -> bool:
 async def review(
     db_url: str,
     inventory: SandboxAccess,
-    gateway: SandboxControlClient,
     bridge: RunnerBridge,
     store: ThreadStore,
     database_updates: WakeupListener,

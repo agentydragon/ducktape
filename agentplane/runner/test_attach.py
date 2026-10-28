@@ -151,7 +151,10 @@ async def test_seal_stops_the_running_harness_and_ends_live_followers(
     await model.reply(await model.request(), Text("SEED_OK"))
     await first.until(events.turn_completed)
     await driver.quiesce()
-    seal = driver.gateway.ingress.sealed["seal-1"]
+    page = await driver.history.read_session_events("seal-1", limit=1)
+    assert page.HasField("feed_state")
+    assert page.feed_state.HasField("sealed")
+    seal = page.feed_state.sealed.cursor
     with pytest.raises(SessionSealedError) as sealed:
         await first.until(lambda _: False)
     assert sealed.value.cursor == seal == first.cursor

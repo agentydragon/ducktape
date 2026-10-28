@@ -48,7 +48,6 @@ flowchart LR
     APP_HTTP_GRPC_BOUNDARY --> APP_GO_PORT_CATCHUP
     APP_GO_TRACK -. leaves .-> APP_PYTHON_RETIRE[Blocked: delete the Python app runtime, section 14]
     FAKE_CLIENTS_TO_ENVTEST[Candidate: remaining fake API clients to envtest]
-    APP_TEST_RUNNER_FIXTURES_GO[Candidate: app test runners use the Go Gateway and History ingress]
     RUNNER_LAYERING_VM[Paused: layered VM guest, section 7] --> K3S_TEST_GUEST_RETIRE[Blocked: delete the k3s test guest]
     ACTION_TRACK -. after .-> REFACTOR_COHERENCE_AUDIT[Candidate: whole-refactor coherence audit, section 9]
     DISPATCH_TRACK -. after .-> REFACTOR_COHERENCE_AUDIT
@@ -1965,7 +1964,6 @@ produce are named at the fake and are not cleanups.
 ```mermaid
 flowchart LR
     FAKE_CLIENTS_TO_ENVTEST[Candidate: remaining fake API clients to envtest]
-    APP_TEST_RUNNER_FIXTURES_GO[Candidate: app test runners use the Go Gateway and History ingress]
     RUNNER_LAYERING_VM[Paused: layered VM guest, section 7] --> K3S_TEST_GUEST_RETIRE[Blocked: delete the k3s test guest]
 ```
 
@@ -1979,21 +1977,6 @@ Go `clientfake` or `kubernetes/fake`: `notification_service/api/fixture_test.go`
 `runner_gateway/dispatcher/sandbox_kubernetes_test.go`, `sandboxes/sandboxreader/reader_test.go`.
 
 One PR per file. Exit: each reads from `testing/kubeapiserver`, or keeps only a fault it injects, named at the fake.
-
-### `APP_TEST_RUNNER_FIXTURES_GO` — app tests reach runners through the Go Gateway and History ingress
-
-**Candidate; left by the app bridge test split.** Two Python stand-ins remain in app tests:
-
-- `runner_gateway/testing/runner_peer.py`, a runner peer with no Gateway authentication, Sandbox lookup or fencing,
-  used by the app conftest's `gateway` and `runners` fixtures, `test_history_gateway`'s
-  `test_runner_client_does_not_fall_back_after_peer_stops`, and `runner_gateway`'s `test_client` and
-  `test_grpc_native`.
-- `runner/testing/gateway.py`'s `IngressStore`: the native runner pushes its journal there and the tests forward it
-  to History.
-
-Exit: those users go through the Go Gateway's runner proxy (`sandbox_control` in `app/testing/runner_gateway.py`),
-the runner fixtures push straight to `GoHistoryService`'s ingress, and both stand-ins are deleted. The app
-`conftest.py` users may instead leave with `APP_GO_TEST_RETARGET` or `APP_PYTHON_RETIRE` (section 14).
 
 ### `K3S_TEST_GUEST_RETIRE` — delete the k3s test guest
 

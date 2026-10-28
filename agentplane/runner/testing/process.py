@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Self
 from uuid import uuid4
 
+from agentplane.history_service.client import HistoryServiceClient
 from agentplane.proto import event_log_pb2, runner_pb2
 from agentplane.runner import runner_service_pb2_grpc
 from agentplane.runner.configuration import Endpoint
@@ -25,13 +26,15 @@ class RunningRunner:
         config: RunnerTestConfig,
         gateway: Gateway,
         *,
+        history: HistoryServiceClient,
+        ingress_endpoint: Endpoint,
         control_endpoint: Endpoint | None = None,
-        ingress_endpoint: Endpoint | None = None,
     ) -> None:
         self.config = config
         self.gateway = gateway
+        self.history = history
         self.control_endpoint = control_endpoint or gateway.endpoint
-        self.ingress_endpoint = ingress_endpoint or gateway.endpoint
+        self.ingress_endpoint = ingress_endpoint
         self.process: asyncio.subprocess.Process
         self.log_path = undeclared_outputs_dir() / f"go-runner-{uuid4().hex}.log"
 
@@ -111,8 +114,16 @@ class RunningRunner:
     async def control(self) -> runner_service_pb2_grpc.RunnerAsyncStub:
         return await self.gateway.control.runner()
 
-    def entries(self, session_id: str, after: int = 0) -> list[event_log_pb2.EventEntry]:
-        return self.gateway.ingress.since(session_id, after)
+    async def history_entries(self, session_id: str, after: int = 0) -> list[event_log_pb2.EventEntry]:
+        """Read the runner's committed entries back from its configured History Service."""
+        entries: list[event_log_pb2.EventEntry] = []
+        cursor = after
+        while True:
+            page = await self.history.read_session_events(session_id, after_cursor=cursor, limit=1000)
+            entries.extend(page.entries)
+            if len(page.entries) < 1000:
+                return entries
+            cursor = page.entries[-1].cursor
 
     async def crash(self) -> None:
         status = await (await self.control()).GetStatus(runner_pb2.GetStatusRequest())

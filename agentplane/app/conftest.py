@@ -79,7 +79,6 @@ from agentplane.runner.testing.failure_journal import pytest_runtest_makereport
 from agentplane.runner.testing.fixtures import config, endpoint, harness, model, runner_gateway, spec, workspace
 from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2_grpc
-from agentplane.runner_gateway.testing.runner_peer import Endpoint, runner_peer
 from agentplane.sandboxes.inventory import SandboxInventory
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
 from agentplane.sandboxes.testing.sandbox_namespace import SandboxNamespace
@@ -239,9 +238,8 @@ async def namespace(api_server: KubernetesApiServer) -> SandboxNamespace:
 
 
 @pytest.fixture
-def runners(live_index: LiveIndex, gateway: SandboxControlClient) -> RunnerDirectory:
-    """The runners `live_index` shows, dialled on a port nothing listens on."""
-    return RunnerDirectory(live_index, gateway)
+def runners(live_index: LiveIndex, sandbox_control: SandboxControlClient) -> RunnerDirectory:
+    return RunnerDirectory(live_index, sandbox_control)
 
 
 @pytest.fixture
@@ -273,23 +271,12 @@ def bridge(
 
 
 @pytest.fixture
-async def gateway_endpoint(tmp_path: Path) -> AsyncIterator[Endpoint]:
-    async with runner_peer(tmp_path / "sandbox-token") as endpoint:
-        yield endpoint
-
-
-@pytest.fixture
 def inventory(namespace: SandboxNamespace) -> SandboxAccess:
     return SandboxAccess(
         SandboxInventory(namespace=namespace.name, custom_objects=namespace.custom_objects, core_v1=namespace.core_v1),
         default_policy_sets=frozenset(),
         caller=namespace.account("app"),
     )
-
-
-@pytest.fixture
-def gateway(gateway_endpoint: Endpoint) -> SandboxControlClient:
-    return gateway_endpoint.client()
 
 
 # The agent's credential, and what a test client carries: the app's other one is an OIDC session
