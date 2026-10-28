@@ -582,7 +582,9 @@ globalThis`) marks the bindings it flows into (transitively,
     `globalThis.tag` but the summary only sees `Binding(g)`.
 
   The graph also keeps an identity-based `ArrayContents(origin)` timeline for
-  observed array literals. It follows aliases through the chunk value-flow
+  tracked array literals. Allocation itself initializes that content cell, so
+  a later opaque barrier remains connected even if unsupported syntax hides
+  every read or mutation. It follows aliases through the chunk value-flow
   facts and promotes first-order reads from directly invoked chunk functions,
   including pure readers that the S-chain intentionally omits. Per-array
   last-writer and readers-since-write frontiers preserve read-after-write,

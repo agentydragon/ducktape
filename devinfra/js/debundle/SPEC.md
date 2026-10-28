@@ -101,10 +101,12 @@ The browser writer materializes those decisions without rediscovering entries.
 
 The dependency graph preserves source order for content observations on array
 literal identities that the chunk value-flow analysis can track, including
-aliases and reads promoted from directly invoked chunk functions. This ordering
-also applies to pure readers: call purity does not make an observed array's
-contents immutable. It is emitted in both strict and dataflow-aware S-chain
-modes.
+aliases and reads promoted from directly invoked chunk functions. Allocation
+initializes a content cell for each tracked array origin, so opaque barriers
+remain connected even when a later operation observes or mutates the array
+through an unsupported protocol. This ordering also applies to pure readers:
+call purity does not make an observed array's contents immutable. It is emitted
+in both strict and dataflow-aware S-chain modes.
 
 Array member writes, method calls such as `push`, escaped arrays, and calls
 whose callable body has no direct graph summary remain opaque heap barriers.

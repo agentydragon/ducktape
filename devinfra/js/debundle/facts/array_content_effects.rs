@@ -199,6 +199,14 @@ impl LazyBoundary for ArrayContentCollector<'_> {
 }
 
 impl Visit for ArrayContentCollector<'_> {
+    fn visit_array_lit(&mut self, node: &ArrayLit) {
+        // Materialization initializes this fresh identity's contents. Keep an
+        // allocation cell even when all later observations use an unsupported
+        // protocol and therefore cannot name a precise array read.
+        self.record(&BTreeSet::from([node.span.lo.0]), false, true, false);
+        node.visit_children_with(self);
+    }
+
     fn visit_member_expr(&mut self, node: &MemberExpr) {
         self.record_member_read(node);
         self.visit_member_children(node);
