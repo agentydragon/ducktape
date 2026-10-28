@@ -7,6 +7,10 @@ is a separate control of the cancellation API's scope.
 
 Related evidence in this folder:
 
+- [Producer-stop witness](producer_stop_witness.md): one normal zero-retry build
+  finished and its original Java server accepted another command; the blocked-
+  analysis case retained no stop receipt. [Selected evidence](producer_stop_witness.json).
+
 - [RPC retry trace](rpc_retry_trace.md): a child-only control directly captured
   terminal action `CANCELLED` followed 105 ms later by a fresh same-action
   `Execute`; [selected evidence](rpc_retry_trace.json). Normal-path trace

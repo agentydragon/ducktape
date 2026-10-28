@@ -2,8 +2,10 @@
 
 **Status: open, 2026-10-28 UTC.** Explain why a VM test action associated with a
 canceled CI job ran to completion, determine the remote producer's actual stop
-latency, and establish whether that action still had a live consumer. No runtime
-change is selected yet.
+latency, and establish whether that action still had a live consumer. CI now
+disables remote retries as a partial mitigation
+([#12468](https://github.com/agentydragon/ducktape/pull/12468)); a complete
+cancellation fix remains open.
 
 ## What is established
 
@@ -34,6 +36,12 @@ change is selected yet.
   `Execute` 105 ms after the original RPC closed. The replacement succeeded.
   This confirms the retry mechanism in that control. Two further normal-path
   probes reproduced the replacement but did not retain their trace artifacts.
+
+- The [producer-stop witness](producer_stop_witness.md) positively confirmed
+  that a normal single-action build with zero retries finished: its client exited
+  and a subsequent info command completed on the same Java server. The receipt
+  reached the controller within 2.302 seconds of its entry signal. An attempt with blocked
+  analysis retained no stop receipt and remains inconclusive.
 
 ## Cancellation ownership
 
@@ -164,8 +172,9 @@ attempts separate when interpreting execution indexes.
    active execution is observed, capture outer/child cancellation, and verify
    continued worker execution using cached results and output. Still missing is
    positive evidence of outer command termination from outside the canceled
-   process group. A missing heartbeat alone could be a transport failure; an
-   idle reusable VM or Bazel server is not active build work. The
+   process group across blocked-analysis cases. The [new witness](producer_stop_witness.md)
+   closes that gap for one single-action zero-retry run, but not the gated case.
+   A missing heartbeat alone could be a transport failure; an idle reusable VM or Bazel server is not active build work. The
    [retry comparison](retry_comparison.md) supports retries for the plain requeue
    but leaves new submissions possible. Trace the initiating Execute/dispatch
    and physical outer stop to separate these mechanisms. Retain clock uncertainty.

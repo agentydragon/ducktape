@@ -1,0 +1,674 @@
+{
+  "schema_version": 1,
+  "date_utc": "2026-10-28",
+  "source_commit": "a545ff9a7fa99efc1d78c015e4fb750c701687d0",
+  "bazel_version": "9.2.0",
+  "cli_version": "5.0.466",
+  "inspected_buildbuddy_source_commit": "a04caa741548187c77dc991c8d8384c6788e24a9",
+  "hosted_buildbuddy_version_and_lease": "unconfirmed",
+  "receipt_payload_format": "producer-stop-v1:<child UUID>:<phase>",
+  "cases": [
+    {
+      "child_invocation_id": "eae39ea8-9fb9-4bb3-a633-91aef6bbbff4",
+      "outer_invocation_id": "c68710d2-fd7e-4811-abc8-cb5faef92164",
+      "mode": "control",
+      "case": "gated",
+      "controller_events": [
+        {
+          "at": "2026-10-28T04:57:49.804375+00:00",
+          "monotonic": 84957.724896537,
+          "event": "prepared",
+          "child_invocation_id": "eae39ea8-9fb9-4bb3-a633-91aef6bbbff4",
+          "mode": "control",
+          "case": "gated",
+          "source_commit": "a545ff9a7fa99efc1d78c015e4fb750c701687d0"
+        },
+        {
+          "at": "2026-10-28T04:58:45.931496+00:00",
+          "monotonic": 85013.852063603,
+          "event": "active_and_watcher_ready",
+          "outer_invocation_id": "c68710d2-fd7e-4811-abc8-cb5faef92164",
+          "execution_ids": [
+            "/uploads/e0781f08-462c-4ed4-a855-49ef566868cd/blobs/b88a910281e4df0c5eb0c254baf3381c1393cd3a0084af11b3d6422499faa862/310"
+          ]
+        },
+        {
+          "at": "2026-10-28T04:58:46.166442+00:00",
+          "monotonic": 85014.086977385,
+          "event": "marker_uploaded",
+          "phase": "control_interrupt",
+          "digest": "617459cca89d80c4390c409c1c81395b4a801989a54a161b5c613b1fdcdecbc3/71"
+        },
+        {
+          "at": "2026-10-28T04:58:46.166614+00:00",
+          "monotonic": 85014.087126666,
+          "event": "positive_control_interrupt_requested"
+        },
+        {
+          "at": "2026-10-28T04:59:16.674475+00:00",
+          "monotonic": 85044.59499166,
+          "event": "probe_error",
+          "error_type": "TimeoutExpired",
+          "detail": "Command '['/nix/store/mfs4dhck38bjrhs5srgjghx0fjjj4c3v-bb-5.0.466/bin/bb', 'download', '6709675aae4ab0600c2dd43080d783254f10a87e7b47e64f7a9495fac22d139c/67', '--output_file=/tmp/ci-producer-stop-2026-10-28/eae39ea8-9fb9-4bb3-a633-91aef6bbbff4/marker-"
+        },
+        {
+          "at": "2026-10-28T04:59:16.914923+00:00",
+          "monotonic": 85044.835441201,
+          "event": "cleanup_cancel",
+          "invocation_id": "eae39ea8-9fb9-4bb3-a633-91aef6bbbff4",
+          "http_status": 200
+        },
+        {
+          "at": "2026-10-28T04:59:16.994924+00:00",
+          "monotonic": 85044.915445614,
+          "event": "cleanup_cancel",
+          "invocation_id": "c68710d2-fd7e-4811-abc8-cb5faef92164",
+          "http_status": 200
+        }
+      ],
+      "outer_retained_files": [],
+      "remote_retries_options": ["0", "0", "0", "0"],
+      "private_source_sha256": {
+        "remote.py": "079044bcf77d9e43e54819991dfcf4e3f3b566128df88cfc2a9d03a7d48e9b92",
+        "controller.py": "c8872a5a40749389eb71ca1c91af73633cb67d28d7abc82c19fa14ebe27e5a7e",
+        "gate.py": "7b2125c9726826edb01642ab190731d9492ce762f045fc764e2da4305604bc99",
+        "gate.bzl": "b2a27b88e9cd16e5a8256baa73c8a885174c685a8d9f979b55ff34109cbbe5fc"
+      },
+      "outcome": {
+        "completed": false,
+        "reason": "Control wait and a CAS download timed out; excluded from successful channel calibration."
+      },
+      "not_found_receipt_checks": {}
+    },
+    {
+      "child_invocation_id": "ec425559-57f6-4b3f-984c-866073e91af0",
+      "outer_invocation_id": "c408503a-2dca-4269-9134-188227ccc721",
+      "mode": "control",
+      "case": "gated",
+      "controller_events": [
+        {
+          "at": "2026-10-28T05:00:55.259672+00:00",
+          "monotonic": 85143.180192795,
+          "event": "prepared",
+          "child_invocation_id": "ec425559-57f6-4b3f-984c-866073e91af0",
+          "mode": "control",
+          "case": "gated",
+          "source_commit": "a545ff9a7fa99efc1d78c015e4fb750c701687d0"
+        },
+        {
+          "at": "2026-10-28T05:01:37.583886+00:00",
+          "monotonic": 85185.504413265,
+          "event": "active_and_watcher_ready",
+          "outer_invocation_id": "c408503a-2dca-4269-9134-188227ccc721",
+          "execution_ids": [
+            "/uploads/54ad782b-2f09-48a0-8d5e-a069736ed8e8/blobs/b6a2fbd7ddb4619780128551c9601edc00ca77d5e5a327134751743630cb12d8/310"
+          ]
+        },
+        {
+          "at": "2026-10-28T05:01:37.828473+00:00",
+          "monotonic": 85185.749015412,
+          "event": "marker_uploaded",
+          "phase": "control_interrupt",
+          "digest": "ee906609a22f3d49d59d05d09686ee2e5c0029575920c732071a19a38a1ebe8d/71"
+        },
+        {
+          "at": "2026-10-28T05:01:37.828588+00:00",
+          "monotonic": 85185.749100732,
+          "event": "positive_control_kill_requested"
+        },
+        {
+          "at": "2026-10-28T05:01:38.896944+00:00",
+          "monotonic": 85186.81745633,
+          "event": "receipt_observed",
+          "phase": "client_exited",
+          "digest": "14c54699ffc3dbb825d3e55b48dd12b676d615a4c450d74761a813d723c907b8/67"
+        },
+        {
+          "at": "2026-10-28T05:01:39.317899+00:00",
+          "monotonic": 85187.238411745,
+          "event": "receipt_observed",
+          "phase": "server_exited",
+          "digest": "0422b1e05a580c0256ef78fc2ccab0f801ed269f85fe597c3f03295d3d285b79/67"
+        },
+        {
+          "at": "2026-10-28T05:01:39.956755+00:00",
+          "monotonic": 85187.877259833,
+          "event": "receipt_observed",
+          "phase": "observer_done",
+          "digest": "76543bec221922a94a4995ec42ff0fd2f7a29ce5b338e8ef5a205e47f8a79342/67"
+        },
+        {
+          "at": "2026-10-28T05:01:43.932591+00:00",
+          "monotonic": 85191.853127697,
+          "event": "entry_exited",
+          "exit_code": 0
+        },
+        {
+          "at": "2026-10-28T05:01:44.241432+00:00",
+          "monotonic": 85192.161948331,
+          "event": "cleanup_cancel",
+          "invocation_id": "ec425559-57f6-4b3f-984c-866073e91af0",
+          "http_status": 200
+        },
+        {
+          "at": "2026-10-28T05:01:44.369085+00:00",
+          "monotonic": 85192.289607621,
+          "event": "cleanup_cancel",
+          "invocation_id": "c408503a-2dca-4269-9134-188227ccc721",
+          "http_status": 200
+        }
+      ],
+      "outer_retained_files": [
+        {
+          "name": "bazel.log",
+          "sha256": "358134c6749da1e1c8c21d168f6230d526f1c4b8f37de822a31446317835206b",
+          "size_bytes": 805
+        },
+        {
+          "name": "watcher-events.jsonl",
+          "sha256": "0555630f8aafe4b767b42cfde409d4bcaf19625169dfebac3e1ee4295a4d827b",
+          "size_bytes": 924
+        }
+      ],
+      "remote_retries_options": ["0", "0", "0", "0"],
+      "private_source_sha256": {
+        "remote.py": "a1db9960360b069a3c28b8a57c315bd2436c8b9918e234316e2a2b3305453e3d",
+        "controller.py": "a25877c7dbb4ce6c49960c3278bc424d41f4174c9708d6fc416940d007fcdbb5",
+        "gate.py": "7b2125c9726826edb01642ab190731d9492ce762f045fc764e2da4305604bc99",
+        "gate.bzl": "b2a27b88e9cd16e5a8256baa73c8a885174c685a8d9f979b55ff34109cbbe5fc"
+      },
+      "outcome": {
+        "entry_exit_code": 0,
+        "observed_receipts": {
+          "client_exited": "2026-10-28T05:01:38.896896+00:00",
+          "server_exited": "2026-10-28T05:01:39.317855+00:00",
+          "observer_done": "2026-10-28T05:01:39.956714+00:00"
+        },
+        "new_execution_records": [],
+        "positive_producer_stop_witness": true
+      },
+      "remote_watcher_events": [
+        {
+          "at": "2026-10-28T05:01:24.266797+00:00",
+          "monotonic": 135810.714854981,
+          "event": "watcher_ready",
+          "watcher": {
+            "pid": 29909,
+            "ppid": 1,
+            "pgid": 29908,
+            "sid": 29908,
+            "start_ticks": 13581071
+          },
+          "client": {
+            "pid": 29891,
+            "ppid": 29890,
+            "pgid": 29890,
+            "sid": 29890,
+            "start_ticks": 13581060
+          },
+          "server": {
+            "pid": 29906,
+            "ppid": 1,
+            "pgid": 29906,
+            "sid": 29906,
+            "start_ticks": 13581068
+          }
+        },
+        {
+          "at": "2026-10-28T05:01:37.867323+00:00",
+          "monotonic": 135824.315358407,
+          "event": "positive_control_kill_sent"
+        },
+        {
+          "at": "2026-10-28T05:01:37.892018+00:00",
+          "monotonic": 135824.340042724,
+          "event": "client_pidfd_readable"
+        },
+        {
+          "at": "2026-10-28T05:01:38.196454+00:00",
+          "monotonic": 135824.644475343,
+          "event": "server_pidfd_readable"
+        },
+        {
+          "at": "2026-10-28T05:01:38.792609+00:00",
+          "monotonic": 135825.240632362,
+          "event": "observer_done"
+        },
+        {
+          "at": "2026-10-28T05:01:38.794096+00:00",
+          "monotonic": 135825.242104241,
+          "event": "probe_cleanup_shutdown_started"
+        }
+      ],
+      "not_found_receipt_checks": {
+        "observer_error": {
+          "not_found_responses": 3,
+          "first_response_saved_at": "2026-10-28T05:01:36.858783+00:00",
+          "last_response_saved_at": "2026-10-28T05:01:39.545929+00:00"
+        },
+        "observer_done": {
+          "not_found_responses": 1,
+          "first_response_saved_at": "2026-10-28T05:01:38.286749+00:00",
+          "last_response_saved_at": "2026-10-28T05:01:38.286749+00:00"
+        },
+        "info_unconfirmed": {
+          "not_found_responses": 2,
+          "first_response_saved_at": "2026-10-28T05:01:38.135289+00:00",
+          "last_response_saved_at": "2026-10-28T05:01:39.472742+00:00"
+        },
+        "server_exited": {
+          "not_found_responses": 1,
+          "first_response_saved_at": "2026-10-28T05:01:37.978405+00:00",
+          "last_response_saved_at": "2026-10-28T05:01:37.978405+00:00"
+        },
+        "same_server_idle": {
+          "not_found_responses": 2,
+          "first_response_saved_at": "2026-10-28T05:01:38.057342+00:00",
+          "last_response_saved_at": "2026-10-28T05:01:39.397212+00:00"
+        },
+        "client_exited": {
+          "not_found_responses": 1,
+          "first_response_saved_at": "2026-10-28T05:01:37.904789+00:00",
+          "last_response_saved_at": "2026-10-28T05:01:37.904789+00:00"
+        }
+      }
+    },
+    {
+      "child_invocation_id": "ac648165-ec92-4138-943f-17c49026f596",
+      "outer_invocation_id": "96c2cba2-507f-4c5e-9231-8b19602d337b",
+      "mode": "normal",
+      "case": "gated",
+      "controller_events": [
+        {
+          "at": "2026-10-28T05:03:16.270442+00:00",
+          "monotonic": 85284.190973222,
+          "event": "prepared",
+          "child_invocation_id": "ac648165-ec92-4138-943f-17c49026f596",
+          "mode": "normal",
+          "case": "gated",
+          "source_commit": "a545ff9a7fa99efc1d78c015e4fb750c701687d0"
+        },
+        {
+          "at": "2026-10-28T05:03:48.556360+00:00",
+          "monotonic": 85316.476875123,
+          "event": "active_and_watcher_ready",
+          "outer_invocation_id": "96c2cba2-507f-4c5e-9231-8b19602d337b",
+          "execution_ids": [
+            "/uploads/6a19728a-2528-4627-8ee0-4454d12ae906/blobs/47290b996b9bad63cef5e0eeac414f53e3ab2c42ff4636715440fb91622f13c6/310"
+          ]
+        },
+        {
+          "at": "2026-10-28T05:03:48.556432+00:00",
+          "monotonic": 85316.476938592,
+          "event": "sending_entry_sigterm",
+          "entry_pid": 832022
+        },
+        {
+          "at": "2026-10-28T05:03:49.170968+00:00",
+          "monotonic": 85317.091485537,
+          "event": "entry_exited",
+          "exit_code": 130
+        },
+        {
+          "at": "2026-10-28T05:03:49.256781+00:00",
+          "monotonic": 85317.1772936,
+          "event": "outer_and_child_cancellation_observed"
+        },
+        {
+          "at": "2026-10-28T05:04:45.160575+00:00",
+          "monotonic": 85373.081103363,
+          "event": "cleanup_cancel",
+          "invocation_id": "ac648165-ec92-4138-943f-17c49026f596",
+          "http_status": 200
+        },
+        {
+          "at": "2026-10-28T05:04:45.238472+00:00",
+          "monotonic": 85373.158997149,
+          "event": "cleanup_cancel",
+          "invocation_id": "96c2cba2-507f-4c5e-9231-8b19602d337b",
+          "http_status": 200
+        }
+      ],
+      "outer_retained_files": [],
+      "remote_retries_options": ["0", "0", "0", "0"],
+      "private_source_sha256": {
+        "remote.py": "a5a5d5414e2c56ed10db9b053036fd315c93438669f7ddb5cde0fcf09000b8f9",
+        "controller.py": "1f3f3c487be6ff4bd20dc230bc9ced9ebbcdae5f34c892eab91149ad20446edc",
+        "gate.py": "7b2125c9726826edb01642ab190731d9492ce762f045fc764e2da4305604bc99",
+        "gate.bzl": "b2a27b88e9cd16e5a8256baa73c8a885174c685a8d9f979b55ff34109cbbe5fc"
+      },
+      "outcome": {
+        "entry_exit_code": 130,
+        "observed_receipts": {},
+        "gate_released_after_client_exit_busy_receipt": false,
+        "new_execution_records": [],
+        "positive_producer_stop_witness": false
+      },
+      "recorded_process_identities": {
+        "client": {
+          "pid": 27726,
+          "ppid": 27725,
+          "pgid": 27725,
+          "sid": 27725,
+          "start_ticks": 13608454
+        },
+        "server": {
+          "pid": 27743,
+          "ppid": 1,
+          "pgid": 27743,
+          "sid": 27743,
+          "start_ticks": 13608460
+        }
+      },
+      "not_found_receipt_checks": {
+        "server_alive_after_client_exit": {
+          "not_found_responses": 69,
+          "first_response_saved_at": "2026-10-28T05:03:49.485889+00:00",
+          "last_response_saved_at": "2026-10-28T05:04:44.291890+00:00"
+        },
+        "info_unconfirmed": {
+          "not_found_responses": 69,
+          "first_response_saved_at": "2026-10-28T05:03:49.715086+00:00",
+          "last_response_saved_at": "2026-10-28T05:04:44.520157+00:00"
+        },
+        "same_server_idle": {
+          "not_found_responses": 69,
+          "first_response_saved_at": "2026-10-28T05:03:49.642299+00:00",
+          "last_response_saved_at": "2026-10-28T05:04:44.442198+00:00"
+        },
+        "observer_done": {
+          "not_found_responses": 69,
+          "first_response_saved_at": "2026-10-28T05:03:49.860427+00:00",
+          "last_response_saved_at": "2026-10-28T05:04:44.670488+00:00"
+        },
+        "client_exited": {
+          "not_found_responses": 69,
+          "first_response_saved_at": "2026-10-28T05:03:49.333311+00:00",
+          "last_response_saved_at": "2026-10-28T05:04:44.139656+00:00"
+        },
+        "server_command_busy_after_client_exit": {
+          "not_found_responses": 69,
+          "first_response_saved_at": "2026-10-28T05:03:49.567653+00:00",
+          "last_response_saved_at": "2026-10-28T05:04:44.364502+00:00"
+        },
+        "observer_error": {
+          "not_found_responses": 70,
+          "first_response_saved_at": "2026-10-28T05:03:47.968694+00:00",
+          "last_response_saved_at": "2026-10-28T05:04:44.592633+00:00"
+        },
+        "server_exited": {
+          "not_found_responses": 69,
+          "first_response_saved_at": "2026-10-28T05:03:49.409964+00:00",
+          "last_response_saved_at": "2026-10-28T05:04:44.212185+00:00"
+        }
+      }
+    },
+    {
+      "child_invocation_id": "dde2a084-ad16-4f06-9b5a-c220c2578a8e",
+      "outer_invocation_id": "9ab90295-86a2-4d8f-8666-8165ac3e3923",
+      "mode": "normal",
+      "case": "ungated",
+      "controller_events": [
+        {
+          "at": "2026-10-28T05:07:16.583426+00:00",
+          "monotonic": 85524.503947293,
+          "event": "prepared",
+          "child_invocation_id": "dde2a084-ad16-4f06-9b5a-c220c2578a8e",
+          "mode": "normal",
+          "case": "ungated",
+          "source_commit": "a545ff9a7fa99efc1d78c015e4fb750c701687d0"
+        },
+        {
+          "at": "2026-10-28T05:07:59.155543+00:00",
+          "monotonic": 85567.076064013,
+          "event": "active_and_watcher_ready",
+          "outer_invocation_id": "9ab90295-86a2-4d8f-8666-8165ac3e3923",
+          "execution_ids": [
+            "/uploads/7334bfdc-956e-41ae-af5c-15fc0260116c/blobs/903761e4401b9050a69219330ec6ff616c245b58dea669a92e3f105798f73d92/310"
+          ]
+        },
+        {
+          "at": "2026-10-28T05:07:59.155657+00:00",
+          "monotonic": 85567.076165213,
+          "event": "sending_entry_sigterm",
+          "entry_pid": 854226
+        },
+        {
+          "at": "2026-10-28T05:07:59.421014+00:00",
+          "monotonic": 85567.341538025,
+          "event": "entry_exited",
+          "exit_code": 130
+        },
+        {
+          "at": "2026-10-28T05:07:59.513668+00:00",
+          "monotonic": 85567.434181415,
+          "event": "outer_and_child_cancellation_observed"
+        },
+        {
+          "at": "2026-10-28T05:08:00.652809+00:00",
+          "monotonic": 85568.573318392,
+          "event": "receipt_observed",
+          "phase": "client_exited",
+          "digest": "bdd4f688827e14bc3bb1ede6a7efd891b0fe776a02daa75cd96db5b86110eb60/67"
+        },
+        {
+          "at": "2026-10-28T05:08:01.026335+00:00",
+          "monotonic": 85568.946840459,
+          "event": "receipt_observed",
+          "phase": "server_alive_after_client_exit",
+          "digest": "5f9e294a3940db2d235f15825619636ff432e7c8bcda70cfbe7f9b38d31ce114/84"
+        },
+        {
+          "at": "2026-10-28T05:08:01.456801+00:00",
+          "monotonic": 85569.377312019,
+          "event": "receipt_observed",
+          "phase": "same_server_idle",
+          "digest": "c2fcb3d9a79060a6020605edc735f38d903f1f91fa905ebaab99473117bfc145/70"
+        },
+        {
+          "at": "2026-10-28T05:08:02.050068+00:00",
+          "monotonic": 85569.970574139,
+          "event": "receipt_observed",
+          "phase": "observer_done",
+          "digest": "00b823faf9c64f976f3a325ae3f205fed3f7bfebb2ec1eacad10dda71a51d134/67"
+        },
+        {
+          "at": "2026-10-28T05:08:02.377845+00:00",
+          "monotonic": 85570.298364562,
+          "event": "cleanup_cancel",
+          "invocation_id": "dde2a084-ad16-4f06-9b5a-c220c2578a8e",
+          "http_status": 200
+        },
+        {
+          "at": "2026-10-28T05:08:02.461150+00:00",
+          "monotonic": 85570.381683199,
+          "event": "cleanup_cancel",
+          "invocation_id": "9ab90295-86a2-4d8f-8666-8165ac3e3923",
+          "http_status": 200
+        }
+      ],
+      "outer_retained_files": [
+        {
+          "name": "bazel.log",
+          "sha256": "cec5a52c39d24932e22317de3dd4bee093f6ee7fc4a98cd57ced6d1877ecb154",
+          "size_bytes": 1152
+        },
+        {
+          "name": "info.stderr",
+          "sha256": "f0e5a99f9115b303a0e672896f888ec4de657bc876fe574dc5939de4f2cbb545",
+          "size_bytes": 58
+        },
+        {
+          "name": "info.stdout",
+          "sha256": "0b3d1512e2179373f7d8bcd4538fbf5cd223af8be6af0e570498cd5161c7f658",
+          "size_bytes": 5
+        },
+        {
+          "name": "peek.stderr",
+          "sha256": "52dc056d724633f5769195142c603569c4310a0ffba275575a6b59dfbef3575f",
+          "size_bytes": 58
+        },
+        {
+          "name": "peek.stdout",
+          "sha256": "0b3d1512e2179373f7d8bcd4538fbf5cd223af8be6af0e570498cd5161c7f658",
+          "size_bytes": 5
+        },
+        {
+          "name": "watcher-events.jsonl",
+          "sha256": "71a2e2c6367f0833f677858d007bc9532e0841c29f82e0423b8d4ae7a6092d43",
+          "size_bytes": 1171
+        }
+      ],
+      "remote_retries_options": ["0", "0", "0", "0"],
+      "private_source_sha256": {
+        "remote.py": "43788b3875cf57e3ba0fe564ddcb205fb1f3d31b8aff78d910b2522b84119fc7",
+        "controller.py": "1f3f3c487be6ff4bd20dc230bc9ced9ebbcdae5f34c892eab91149ad20446edc",
+        "gate.py": "7b2125c9726826edb01642ab190731d9492ce762f045fc764e2da4305604bc99",
+        "gate.bzl": "b2a27b88e9cd16e5a8256baa73c8a885174c685a8d9f979b55ff34109cbbe5fc"
+      },
+      "outcome": {
+        "entry_exit_code": 130,
+        "observed_receipts": {
+          "client_exited": "2026-10-28T05:08:00.652762+00:00",
+          "server_alive_after_client_exit": "2026-10-28T05:08:01.026283+00:00",
+          "same_server_idle": "2026-10-28T05:08:01.456714+00:00",
+          "observer_done": "2026-10-28T05:08:02.050000+00:00"
+        },
+        "gate_released_after_client_exit_busy_receipt": false,
+        "new_execution_records": [],
+        "positive_producer_stop_witness": true
+      },
+      "remote_watcher_events": [
+        {
+          "at": "2026-10-28T05:07:47.756166+00:00",
+          "monotonic": 135981.144208862,
+          "event": "watcher_ready",
+          "watcher": {
+            "pid": 3992,
+            "ppid": 1,
+            "pgid": 3991,
+            "sid": 3991,
+            "start_ticks": 13598114
+          },
+          "client": {
+            "pid": 3974,
+            "ppid": 3973,
+            "pgid": 3973,
+            "sid": 3973,
+            "start_ticks": 13598109
+          },
+          "server": {
+            "pid": 3990,
+            "ppid": 1,
+            "pgid": 3990,
+            "sid": 3990,
+            "start_ticks": 13598113
+          }
+        },
+        {
+          "at": "2026-10-28T05:08:00.009543+00:00",
+          "monotonic": 135993.397529273,
+          "event": "client_pidfd_readable"
+        },
+        {
+          "at": "2026-10-28T05:08:00.751287+00:00",
+          "monotonic": 135994.139267112,
+          "event": "nonblocking_same_server_info",
+          "returncode": 0,
+          "original_server_alive": true
+        },
+        {
+          "at": "2026-10-28T05:08:00.770222+00:00",
+          "monotonic": 135994.158193189,
+          "event": "same_server_info_started"
+        },
+        {
+          "at": "2026-10-28T05:08:00.841398+00:00",
+          "monotonic": 135994.229380698,
+          "event": "same_server_info_returned",
+          "returncode": 0,
+          "same_pid": true,
+          "same_start_ticks": true,
+          "original_server_alive": true
+        },
+        {
+          "at": "2026-10-28T05:08:01.450105+00:00",
+          "monotonic": 135994.838094208,
+          "event": "observer_done"
+        },
+        {
+          "at": "2026-10-28T05:08:01.451466+00:00",
+          "monotonic": 135994.839434108,
+          "event": "probe_cleanup_shutdown_started"
+        }
+      ],
+      "recorded_process_identities": {
+        "client": {
+          "pid": 3974,
+          "ppid": 3973,
+          "pgid": 3973,
+          "sid": 3973,
+          "start_ticks": 13598109
+        },
+        "server": {
+          "pid": 3990,
+          "ppid": 1,
+          "pgid": 3990,
+          "sid": 3990,
+          "start_ticks": 13598113
+        }
+      },
+      "remote_client_wait_status": 34,
+      "not_found_receipt_checks": {
+        "client_exited": {
+          "not_found_responses": 1,
+          "first_response_saved_at": "2026-10-28T05:07:59.589583+00:00",
+          "last_response_saved_at": "2026-10-28T05:07:59.589583+00:00"
+        },
+        "server_command_busy_after_client_exit": {
+          "not_found_responses": 2,
+          "first_response_saved_at": "2026-10-28T05:07:59.818122+00:00",
+          "last_response_saved_at": "2026-10-28T05:08:01.102032+00:00"
+        },
+        "server_alive_after_client_exit": {
+          "not_found_responses": 1,
+          "first_response_saved_at": "2026-10-28T05:07:59.742369+00:00",
+          "last_response_saved_at": "2026-10-28T05:07:59.742369+00:00"
+        },
+        "server_exited": {
+          "not_found_responses": 2,
+          "first_response_saved_at": "2026-10-28T05:07:59.665206+00:00",
+          "last_response_saved_at": "2026-10-28T05:08:00.725206+00:00"
+        },
+        "info_unconfirmed": {
+          "not_found_responses": 2,
+          "first_response_saved_at": "2026-10-28T05:07:59.981949+00:00",
+          "last_response_saved_at": "2026-10-28T05:08:01.541168+00:00"
+        },
+        "observer_done": {
+          "not_found_responses": 1,
+          "first_response_saved_at": "2026-10-28T05:08:00.140772+00:00",
+          "last_response_saved_at": "2026-10-28T05:08:00.140772+00:00"
+        },
+        "observer_error": {
+          "not_found_responses": 3,
+          "first_response_saved_at": "2026-10-28T05:07:58.814414+00:00",
+          "last_response_saved_at": "2026-10-28T05:08:01.624131+00:00"
+        },
+        "same_server_idle": {
+          "not_found_responses": 1,
+          "first_response_saved_at": "2026-10-28T05:07:59.901245+00:00",
+          "last_response_saved_at": "2026-10-28T05:07:59.901245+00:00"
+        }
+      },
+      "signal_to_idle_receipt_upper_bound_seconds": 2.3011468059994513
+    }
+  ],
+  "limits": [
+    "One successful channel calibration and two normal-path observations; no shutdown distribution.",
+    "Missing receipts do not distinguish process survival from observer or VM teardown.",
+    "Same-server info completion witnesses command-lock release, not physical child-action termination.",
+    "The gated normal case withheld its release marker; no later-action success was tested in that case.",
+    "The 2.3 second upper bound uses one controller monotonic clock and includes receipt publication and polling."
+  ]
+}
