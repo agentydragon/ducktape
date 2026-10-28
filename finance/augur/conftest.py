@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from finance.augur.api.config import Config, load_augur_config
@@ -19,13 +21,13 @@ _PRIVATE_HOLDING_A = IssuerId("private_holding_a")
 
 
 @pytest.fixture(autouse=True)
-def _augur_evidence_dir(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch) -> None:
+def _augur_evidence_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Point AUGUR_EVIDENCE_DIR at a synthetic evidence set for every test.
 
     The augur server reads exogenous evidence from AUGUR_EVIDENCE_DIR (the git-synced dir in
     prod); any test that exercises the server — the calibration endpoint, the visual goldens —
     needs it set (read lazily per request), so mirror prod and always provide it here."""
-    evidence_dir = tmp_path_factory.mktemp("augur_evidence")
+    evidence_dir = tmp_path / "evidence"
     write_synthetic_evidence(evidence_dir)
     monkeypatch.setenv("AUGUR_EVIDENCE_DIR", str(evidence_dir))
 
