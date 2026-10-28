@@ -140,8 +140,10 @@ and creates `notification_message_legacy_cleanup`; the offline command scans nat
 bounded row/estimated-byte batches, clears legacy JSON/protobuf for retained Messages while preserving body and
 optional sender text, and clears all Message content inside the expired prefix. It validates both new proofs and
 the existing text-shape/body/sender constraints outside Pod init, then records `cleaned`. Do not drop the JSON or
-protobuf columns until every database reports `cleaned`. The next contract retires this command and its checkpoint;
-after cleanup, roll back only to a TEXT-only-compatible release and keep migration `00020` applied.
+protobuf content before every database reports `cleaned`. The shared `payload` JSONB column remains for native
+GitHub events, and `typed_payload` BYTEA remains for Actions and Mergeability; the next contract retires only this
+cleanup command, checkpoint, and its temporary proof constraints. After cleanup, roll back only to a
+TEXT-only-compatible release and keep migration `00020` applied.
 
 Keep the typed-capable dual-write release as the minimum rollback version; an older reader that depends on
 non-GitHub `entry.payload` cannot read Action or mergeability entries written by this release. Before migration `00015`, rollback
