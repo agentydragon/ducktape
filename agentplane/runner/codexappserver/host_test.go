@@ -39,7 +39,29 @@ type fixture struct {
 	runDone chan error
 }
 
+// waitSubscriptionContext stops Host after its readiness predicate has run and
+// before it enters the notification select. This makes the missed-wake window
+// observable without changing production code.
+type waitSubscriptionContext struct {
+	context.Context
+	parked  chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (c *waitSubscriptionContext) Done() <-chan struct{} {
+	c.once.Do(func() {
+		close(c.parked)
+		<-c.release
+	})
+	return c.Context.Done()
+}
+
 func newFixture(t *testing.T) *fixture {
+	return newFixtureWithOnChange(t, nil)
+}
+
+func newFixtureWithOnChange(t *testing.T, onChange func()) *fixture {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	f := &fixture{ctx: ctx, cancel: cancel, store: state.WrapCore(namespaced.NewState(inmem.Build)), runDone: make(chan error, 1)}
@@ -73,7 +95,7 @@ func newFixture(t *testing.T) *fixture {
 			}
 			return effect(ctx)
 		},
-		Admission: admit, OnError: func(err error) { t.Errorf("app-server host: %v", err) },
+		Admission: admit, OnError: func(err error) { t.Errorf("app-server host: %v", err) }, OnChange: onChange,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -136,35 +158,45 @@ func (*aggregateController) Reconcile(ctx context.Context, _ *zap.Logger, r cont
 }
 
 func TestDesiredChangeWakesHostWithoutRuntimeWrite(t *testing.T) {
-	f := newFixture(t)
+	initialRuntimeObserved := make(chan struct{})
+	var observedOnce sync.Once
+	f := newFixtureWithOnChange(t, func() { observedOnce.Do(func() { close(initialRuntimeObserved) }) })
+	select {
+	case <-initialRuntimeObserved:
+	case <-time.After(5 * time.Second):
+		t.Fatal("initial app-server runtime was not observed")
+	}
 	f.host.mu.Lock()
 	f.host.initializing = &operation{done: make(chan struct{})}
 	f.host.mu.Unlock()
 	ctx, cancel := context.WithTimeout(f.ctx, 5*time.Second)
 	defer cancel()
+	// RequestLocked uses the ordinary context. The wrapper's Done method is
+	// reached only by waitFor, after it reads the Running Desired state.
+	requestAdmission := f.host.deps.RequestAdmission
+	f.host.deps.RequestAdmission = func(_ context.Context, effect func(context.Context) error) error {
+		return requestAdmission(ctx, effect)
+	}
+	parked := make(chan struct{})
+	release := make(chan struct{})
+	waitCtx := &waitSubscriptionContext{Context: ctx, parked: parked, release: release}
+	var releaseOnce sync.Once
+	releaseWait := func() { releaseOnce.Do(func() { close(release) }) }
+	defer releaseWait()
 	result := make(chan error, 1)
-	go func() { _, err := f.host.Host(ctx, nil); result <- err }()
-	deadline := time.After(5 * time.Second)
-	for {
-		input, _, err := ReadInput(f.ctx, f.store)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if input.Demand > 0 {
-			break
-		}
-		select {
-		case <-time.After(time.Millisecond):
-		case <-deadline:
-			t.Fatal("host demand was not admitted")
-		}
+	go func() { _, err := f.host.Host(waitCtx, nil); result <- err }()
+	select {
+	case <-parked:
+	case <-ctx.Done():
+		t.Fatal("host did not reach readiness wait")
 	}
 	if err := lifecycle.PublishDesired(f.ctx, f.store, lifecycle.Desired{Mode: lifecycle.Quiescing, Generation: 2}); err != nil {
 		t.Fatal(err)
 	}
+	releaseWait()
 	select {
 	case err := <-result:
-		if err == nil || !strings.Contains(err.Error(), "not accepting") {
+		if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			t.Fatalf("host wait after Quiesce = %v", err)
 		}
 	case <-ctx.Done():
