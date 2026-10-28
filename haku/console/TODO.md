@@ -30,14 +30,3 @@ The browser login flow is fixed in #3516/#3519 except for:
 Nothing at head uses pgvector, but the 0135 baseline still creates a `halfvec` column on a fresh
 database, so CNPG (`cluster/cdk8s/haku/database.py`) and the test fixtures keep provisioning it.
 Drop it, with the `agentplane/indexing:vector_type` import, when a new baseline replaces 0135.
-
-## MCP schema catalog extraction (schema audit G)
-
-Have `mcp/export_tool_schemas.py` reflect each server once and emit argument and result catalogs in
-one Bazel action; the two current actions independently construct servers and call `tools/list`.
-Share the frontend catalog traversal in `mcp_tool_schema.ts` and `mcp_tool_result_schema.ts` while
-keeping result selection, null-result omission, envelope unwrapping, and contextual errors explicit.
-Done: both artifacts remain separately addressable through their producer libraries, existing
-argument/result schema tests and frontend typechecks pass, and malformed/unrepresentable schemas
-still fail eagerly. Preserve the documented recursive-schema approximation rather than treating the
-frontend catalog as an unmodified copy of advertised schemas.

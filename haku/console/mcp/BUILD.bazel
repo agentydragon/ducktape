@@ -15,11 +15,12 @@ py_library(
         "//x/google_mcp_server:gmail",
         "//x/google_mcp_server:google_calendar",
         "@pypi//fastmcp_slim",
+        "@pypi//mcp_types",
     ],
 )
 
-# Prints the exact tools/list input schemas for the frontend's generated MCP
-# argument validators and types.
+# Reflects each server once for both frontend catalogs. Keep each JSON output directly addressable
+# by the producer-owned schema library that generates its declaration and import path.
 py_binary(
     name = "export_tool_schemas_bin",
     main_module = "haku.console.mcp.export_tool_schemas",
@@ -27,30 +28,25 @@ py_binary(
 )
 
 genrule(
-    name = "tool_arguments_schema",
-    outs = ["tool_arguments.schema.json"],
-    cmd = "$(location :export_tool_schemas_bin) > $@",
-    tools = [":export_tool_schemas_bin"],
-    visibility = ["//haku/console/frontend:__pkg__"],
-)
-
-genrule(
-    name = "tool_results_schema",
-    outs = ["tool_results.schema.json"],
-    cmd = "$(location :export_tool_schemas_bin) --results > $@",
+    name = "tool_schema_catalogs",
+    outs = [
+        "tool_arguments.schema.json",
+        "tool_results.schema.json",
+    ],
+    cmd = "$(location :export_tool_schemas_bin) --arguments-output $(@D)/tool_arguments.schema.json --results-output $(@D)/tool_results.schema.json",
     tools = [":export_tool_schemas_bin"],
     visibility = ["//haku/console/frontend:__pkg__"],
 )
 
 json_schema_js_library(
     name = "tool_arguments",
-    schema = ":tool_arguments_schema",
+    schema = ":tool_arguments.schema.json",
     visibility = ["//haku/console/frontend:__pkg__"],
 )
 
 json_schema_js_library(
     name = "tool_results",
-    schema = ":tool_results_schema",
+    schema = ":tool_results.schema.json",
     visibility = ["//haku/console/frontend:__pkg__"],
 )
 
@@ -63,6 +59,7 @@ py_test(
         "//:conftest",
         "//haku/console:conftest",
         "@pypi//jsonschema",
+        "@pypi//mcp_types",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//referencing",

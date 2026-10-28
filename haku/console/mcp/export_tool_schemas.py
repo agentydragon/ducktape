@@ -4,8 +4,8 @@ The MCP ``tools/list`` response is the source of truth for JSON-Schema-expressib
 *and* result structure. This exporter builds the FastMCP servers whose tools the console renders
 and reflects them through an in-memory ``Client``, so FastMCP's normal protocol middleware runs
 before the schemas reach the generated frontend catalogs; execution-only Python validators can
-still impose stricter cross-field rules. Two catalogs are emitted, selected by ``main()``'s
-``--results`` flag: ``McpToolArguments`` and ``McpToolResults``.
+still impose stricter cross-field rules. One reflection emits both catalogs: ``McpToolArguments``
+and ``McpToolResults``.
 
 The retired `haku_routine` request wrapper is represented by its Pydantic argument/result models
 so existing approval rows remain renderable. No Console-owned MCP execution backend is reflected.
@@ -26,13 +26,16 @@ outside the reflected catalog, so their result widgets stay hand-authored.
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import json
-import sys
 from collections.abc import Mapping
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, cast
 
 from fastmcp import Client, FastMCP
+from mcp_types import Tool
 
 from grocy_mcp.batch_tools import build_batch_tools_mcp
 from grocy_mcp.client import GrocyClient
@@ -107,6 +110,12 @@ _SCHEMA_MAP_KEYWORDS = {"properties"}
 _SCHEMA_ARRAY_KEYWORDS = frozenset({"allOf", "anyOf", "oneOf"})
 _SCHEMA_VALUE_KEYWORDS = frozenset({"additionalProperties", "items"})
 _FORBIDDEN_REFERENCE_KEYWORDS = {"$defs", "$ref", "definitions"}
+
+
+@dataclass(frozen=True)
+class McpToolSchemas:
+    arguments: dict[str, Any]
+    results: dict[str, Any]
 
 
 class _InertCollaborator:
@@ -258,36 +267,62 @@ def _frontend_schema(schema: Mapping[str, Any], path: str) -> dict[str, Any]:
     return unwrapped
 
 
-async def build_mcp_tool_arguments_schema() -> dict[str, Any]:
-    """Return one deterministic JSON Schema catalog keyed by server then tool."""
+def _server_tool_schema(properties: dict[str, Any]) -> dict[str, Any]:
+    return {"type": "object", "additionalProperties": False, "properties": properties, "required": list(properties)}
 
-    server_properties: dict[str, Any] = {}
+
+def _check_allowlisted_tools(server_id: str, properties: dict[str, Any], allowlist: set[str] | None) -> None:
+    if allowlist is not None and set(properties) != allowlist:
+        missing = ", ".join(sorted(allowlist - set(properties)))
+        raise ValueError(f"{server_id} is missing allowlisted preview tools: {missing}")
+
+
+def _build_tool_arguments(server_id: str, tools: list[Tool], allowlist: set[str] | None) -> dict[str, Any]:
+    properties: dict[str, Any] = {}
+    for tool in tools:
+        if allowlist is not None and tool.name not in allowlist:
+            continue
+        input_schema = tool.input_schema
+        if not isinstance(input_schema, dict):
+            raise ValueError(f"{server_id}.{tool.name} published a non-object input schema")
+        properties[tool.name] = _frontend_schema(input_schema, f"$.properties.{server_id}.properties.{tool.name}")
+
+    _check_allowlisted_tools(server_id, properties, allowlist)
+    return _server_tool_schema(properties)
+
+
+def _build_tool_results(server_id: str, tools: list[Tool], allowlist: set[str] | None) -> dict[str, Any]:
+    properties: dict[str, Any] = {}
+    for tool in tools:
+        if allowlist is not None and tool.name not in allowlist:
+            continue
+        output_schema = tool.output_schema
+        if output_schema is None:
+            continue
+        if not isinstance(output_schema, dict):
+            raise ValueError(f"{server_id}.{tool.name} published a non-object output schema")
+        schema = _frontend_schema(output_schema, f"$.properties.{server_id}.properties.{tool.name}")
+        if schema.get("type") == "null":
+            continue  # `-> None` return: nothing structured to render
+        properties[tool.name] = schema
+
+    # Check after dropping absent and null outputs, matching the result catalog's selection policy.
+    _check_allowlisted_tools(server_id, properties, allowlist)
+    return _server_tool_schema(properties)
+
+
+async def build_mcp_tool_schemas() -> McpToolSchemas:
+    """Reflect each server once and return its argument and structured-result catalogs."""
+
+    argument_servers: dict[str, Any] = {}
+    result_servers: dict[str, Any] = {}
     for server_id, server in build_schema_servers().items():
         allowlist = _SERVER_TOOL_ALLOWLIST.get(server_id)
         async with Client(server) as client:
             tools = sorted(await client.list_tools(), key=lambda tool: tool.name)
 
-        tool_properties: dict[str, Any] = {}
-        for tool in tools:
-            if allowlist is not None and tool.name not in allowlist:
-                continue
-            input_schema = tool.input_schema
-            if not isinstance(input_schema, dict):
-                raise ValueError(f"{server_id}.{tool.name} published a non-object input schema")
-            tool_properties[tool.name] = _frontend_schema(
-                input_schema, f"$.properties.{server_id}.properties.{tool.name}"
-            )
-
-        if allowlist is not None and set(tool_properties) != set(allowlist):
-            missing = ", ".join(sorted(allowlist - set(tool_properties)))
-            raise ValueError(f"{server_id} is missing allowlisted preview tools: {missing}")
-
-        server_properties[server_id] = {
-            "type": "object",
-            "additionalProperties": False,
-            "properties": tool_properties,
-            "required": list(tool_properties),
-        }
+        argument_servers[server_id] = _build_tool_arguments(server_id, tools, allowlist)
+        result_servers[server_id] = _build_tool_results(server_id, tools, allowlist)
 
     routine_argument_schema = _frontend_schema(
         LaunchRoutineArguments.model_json_schema(), "$.properties.haku_routine.properties.launch_routine"
@@ -295,110 +330,47 @@ async def build_mcp_tool_arguments_schema() -> dict[str, Any]:
     # This schema is retained only for historical approval rows. Match the closed object shape
     # formerly published by FastMCP even though the stored request model ignores extra fields.
     routine_argument_schema["additionalProperties"] = False
-    server_properties["haku_routine"] = {
-        "type": "object",
-        "additionalProperties": False,
-        "properties": {"launch_routine": routine_argument_schema},
-        "required": ["launch_routine"],
-    }
-
-    return {
-        "$schema": _DRAFT_2020_12,
-        "title": "McpToolArguments",
-        "type": "object",
-        "additionalProperties": False,
-        "properties": server_properties,
-        "required": list(server_properties),
-    }
-
-
-async def build_mcp_tool_results_schema() -> dict[str, Any]:
-    """Return one deterministic JSON Schema catalog of each tool's advertised output schema.
-
-    The output-side mirror of :func:`build_mcp_tool_arguments_schema`. Every reflected server's
-    tools carry trusted return types — the in-process servers' ducktape Pydantic models and
-    ``grocy-sf``'s custom batch tools (also ducktape Pydantic models in ``grocy_mcp.mcp_types``) —
-    so the ``outputSchema`` FastMCP derives from them is a reliable single source of truth. The
-    grocy-sf OpenAPI tools are not reflected here at all: the exporter builds only the batch tools,
-    and grocy-sf strips output schemas from its OpenAPI tools at runtime anyway
-    (``grocy_mcp/server.py``) because Grocy's response shapes are unreliable. ``grocy-sf`` is
-    limited to ``_SERVER_TOOL_ALLOWLIST`` just like its argument schemas; ``get_system_info`` (an
-    OpenAPI tool with no batch counterpart) therefore has no generated result schema and its widget
-    stays hand-authored. FastMCP publishes an output schema for every tool (a ``-> None`` return is
-    wrapped as a null ``{result: null}``); such null results have no structured value to render, so
-    they are omitted and a server's result tool set is a subset of its argument tool set.
-    """
-
-    server_properties: dict[str, Any] = {}
-    for server_id, server in build_schema_servers().items():
-        allowlist = _SERVER_TOOL_ALLOWLIST.get(server_id)
-        async with Client(server) as client:
-            tools = sorted(await client.list_tools(), key=lambda tool: tool.name)
-
-        tool_properties: dict[str, Any] = {}
-        for tool in tools:
-            if allowlist is not None and tool.name not in allowlist:
-                continue
-            output_schema = tool.output_schema
-            if output_schema is None:
-                continue
-            if not isinstance(output_schema, dict):
-                raise ValueError(f"{server_id}.{tool.name} published a non-object output schema")
-            schema = _frontend_schema(output_schema, f"$.properties.{server_id}.properties.{tool.name}")
-            if schema.get("type") == "null":
-                continue  # `-> None` return: nothing structured to render
-            tool_properties[tool.name] = schema
-
-        if allowlist is not None and set(tool_properties) != set(allowlist):
-            missing = ", ".join(sorted(allowlist - set(tool_properties)))
-            raise ValueError(f"{server_id} is missing allowlisted preview tools: {missing}")
-
-        server_properties[server_id] = {
-            "type": "object",
-            "additionalProperties": False,
-            "properties": tool_properties,
-            "required": list(tool_properties),
-        }
+    argument_servers["haku_routine"] = _server_tool_schema({"launch_routine": routine_argument_schema})
 
     routine_result_schema = _frontend_schema(
         LaunchRoutineResult.model_json_schema(mode="serialization"),
         "$.properties.haku_routine.properties.launch_routine",
     )
-    server_properties["haku_routine"] = {
-        "type": "object",
-        "additionalProperties": False,
-        "properties": {"launch_routine": routine_result_schema},
-        "required": ["launch_routine"],
-    }
+    result_servers["haku_routine"] = _server_tool_schema({"launch_routine": routine_result_schema})
 
-    return {
-        "$schema": _DRAFT_2020_12,
-        "title": "McpToolResults",
-        "type": "object",
-        "additionalProperties": False,
-        "properties": server_properties,
-        "required": list(server_properties),
-    }
+    return McpToolSchemas(
+        arguments={
+            "$schema": _DRAFT_2020_12,
+            "title": "McpToolArguments",
+            "type": "object",
+            "additionalProperties": False,
+            "properties": argument_servers,
+            "required": list(argument_servers),
+        },
+        results={
+            "$schema": _DRAFT_2020_12,
+            "title": "McpToolResults",
+            "type": "object",
+            "additionalProperties": False,
+            "properties": result_servers,
+            "required": list(result_servers),
+        },
+    )
 
 
-async def export_mcp_tool_schemas_json() -> str:
-    return json.dumps(await build_mcp_tool_arguments_schema(), indent=2, sort_keys=True) + "\n"
-
-
-async def export_mcp_tool_results_json() -> str:
-    return json.dumps(await build_mcp_tool_results_schema(), indent=2, sort_keys=True) + "\n"
+def _write_schema(path: Path, schema: dict[str, Any]) -> None:
+    path.write_text(json.dumps(schema, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 async def _main() -> None:
-    # The same exporter serves both frontend catalogs: the arguments catalog by default, the
-    # results catalog with `--results`; the owner package declares each output separately.
-    match sys.argv[1:]:
-        case ["--results"]:
-            print(await export_mcp_tool_results_json(), end="")
-        case []:
-            print(await export_mcp_tool_schemas_json(), end="")
-        case _:
-            raise SystemExit(f"unexpected arguments: {' '.join(sys.argv[1:])}")
+    parser = argparse.ArgumentParser(description="Export both Haku Console MCP schema catalogs")
+    parser.add_argument("--arguments-output", required=True, type=Path)
+    parser.add_argument("--results-output", required=True, type=Path)
+    outputs = parser.parse_args()
+
+    schemas = await build_mcp_tool_schemas()
+    _write_schema(outputs.arguments_output, schemas.arguments)
+    _write_schema(outputs.results_output, schemas.results)
 
 
 def main() -> None:

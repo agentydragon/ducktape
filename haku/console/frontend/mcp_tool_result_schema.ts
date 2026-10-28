@@ -6,53 +6,28 @@
 // describe the same contract; like the argument side, this is the only boundary where the experimental
 // z.fromJSONSchema API is used.
 
-import { z } from "zod";
+import type { z } from "zod";
 
 import type { McpToolResults } from "../mcp/tool_results";
 import mcpToolResultsSchema from "../mcp/tool_results.schema.json";
-import { objectProperties } from "./mcp_tool_schema";
-
-type JsonSchema = Parameters<typeof z.fromJSONSchema>[0];
+import { compileToolSchemaCatalog, type CompiledToolSchema, type JsonSchema } from "./mcp_tool_schema";
 
 export type McpToolResultServerId = Extract<keyof McpToolResults, string>;
 export type McpToolResultName<S extends McpToolResultServerId> = Extract<keyof McpToolResults[S], string>;
 export type McpToolResultFor<S extends McpToolResultServerId, T extends McpToolResultName<S>> = McpToolResults[S][T];
 
-type CompiledResultSchema = {
-  serverId: string;
-  toolName: string;
-  schema: z.ZodType;
-};
-
-function compileResultCatalog(): CompiledResultSchema[] {
-  // `as unknown as JsonSchema` (rather than the plain `as JsonSchema` the argument catalog uses):
-  // grocy-sf's nested array-of-union result schemas widen the JSON module's inferred type past what
-  // TS considers structurally overlapping with JsonSchema, though the value is valid JSON Schema.
-  const servers = objectProperties(mcpToolResultsSchema as unknown as JsonSchema, "MCP tool result schema catalog");
-  const compiled: CompiledResultSchema[] = [];
-
-  for (const [serverId, serverSchema] of Object.entries(servers)) {
-    const tools = objectProperties(serverSchema, `MCP server result schema ${serverId}`);
-    for (const [toolName, toolSchema] of Object.entries(tools)) {
-      try {
-        compiled.push({ serverId, toolName, schema: z.fromJSONSchema(toolSchema) });
-      } catch (error) {
-        const detail = error instanceof Error ? error.message : String(error);
-        throw new Error(`Cannot build result validator for MCP tool ${serverId}.${toolName}: ${detail}`, {
-          cause: error,
-        });
-      }
-    }
-  }
-
-  if (compiled.length === 0) throw new Error("MCP tool result schema catalog contains no tools");
-  return compiled;
-}
-
 // Eagerly compile the whole catalog, not just tools that currently have result widgets, so a newly
 // advertised output schema that Zod cannot represent fails tests and startup rather than quietly
 // weakening a result preview.
-export const mcpToolResultSchemas: readonly CompiledResultSchema[] = Object.freeze(compileResultCatalog());
+export const mcpToolResultSchemas: readonly CompiledToolSchema[] = Object.freeze(
+  compileToolSchemaCatalog(mcpToolResultsSchema as unknown as JsonSchema, {
+    catalogContext: "MCP tool result schema catalog",
+    serverContext: (serverId) => `MCP server result schema ${serverId}`,
+    compilationError: (serverId, toolName, detail) =>
+      `Cannot build result validator for MCP tool ${serverId}.${toolName}: ${detail}`,
+    emptyCatalogError: "MCP tool result schema catalog contains no tools",
+  })
+);
 
 export function mcpToolResultSchema<S extends McpToolResultServerId, T extends McpToolResultName<S>>(
   serverId: S,
