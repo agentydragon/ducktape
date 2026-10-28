@@ -357,11 +357,9 @@ py_test(
     tags = ["visual"],
     deps = [
         ":database",
-        ":models",
         ":web",
         ":web_settings",
         "//:conftest",
-        "//util/bazel:runfiles",
         "//util/testing:asgi",
         "//util/testing:frontend_visual",
         "//util/testing:undeclared_outputs",
