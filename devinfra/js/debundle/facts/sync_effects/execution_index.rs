@@ -4586,65 +4586,128 @@ impl ExecutionIndex {
             .union(&index.inline_callback_factory_imports)
             .cloned()
             .collect();
-        loop {
-            let factory_members = index.audited_factory_members.clone();
-            let legacy_factory_members = index.callback_factory_members.clone();
-            let no_reentry_members = index.no_reentry_members.clone();
-            let no_reentry_record_members = index.no_reentry_record_members.clone();
-            // The fresh result is private until these adjacent writes finish.
-            // Only currently admitted factories can establish that provenance;
-            // removing a producer must invalidate proofs depending on its result.
-            let (fresh_writes, instance_field_writes) = if index.dynamic_scope_owners.is_empty() {
+        // Candidate rejection grows to closure. No provisional admission is
+        // exported: removing a factory can invalidate fresh-result writes used
+        // by another candidate in the next evaluation.
+        type Members = BTreeMap<Id, BTreeSet<String>>;
+        #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+        enum Rejected {
+            Factory(Id),
+            NoReentry(Id),
+            NoReentryRecord(Id),
+        }
+        struct NamespaceRules<'a, Fresh, Keep> {
+            factories: &'a Members,
+            legacy: &'a Members,
+            no_reentry: &'a Members,
+            records: &'a Members,
+            independent: &'a Members,
+            fresh: &'a Fresh,
+            keep: &'a Keep,
+        }
+        impl<Fresh, Keep> IterativeRules for NamespaceRules<'_, Fresh, Keep>
+        where
+            Fresh: Fn(&Members) -> (BTreeSet<SourceUnitOrdinal>, BTreeSet<SourceUnitOrdinal>),
+            Keep: Fn(&Id, &BTreeSet<String>, &BTreeSet<SourceUnitOrdinal>) -> bool,
+        {
+            type Key = Rejected;
+            type Fact = ();
+            type Rule = ();
+            fn evaluate(&self, _: &(), context: &mut IterativeContext<'_, Self>) {
+                let legacy: Members = self
+                    .legacy
+                    .iter()
+                    .filter(|(id, _)| context.read(Rejected::Factory((*id).clone())).is_none())
+                    .map(|(id, members)| (id.clone(), members.clone()))
+                    .collect();
+                let (writes, _) = (self.fresh)(&legacy);
+                for (id, members) in self.factories {
+                    let key = Rejected::Factory(id.clone());
+                    if context.read(key.clone()).is_none() && !(self.keep)(id, members, &writes) {
+                        context.propose(key, ());
+                    }
+                }
+                for id in self.legacy.keys() {
+                    if !self.factories.contains_key(id) {
+                        context.propose(Rejected::Factory(id.clone()), ());
+                    }
+                }
+                for (candidates, record) in [(self.no_reentry, false), (self.records, true)] {
+                    for (id, members) in candidates {
+                        let key = if record {
+                            Rejected::NoReentryRecord(id.clone())
+                        } else {
+                            Rejected::NoReentry(id.clone())
+                        };
+                        if context.read(key.clone()).is_none()
+                            && (!self
+                                .independent
+                                .get(id)
+                                .is_some_and(|independent| members.is_subset(independent))
+                                || !(self.keep)(id, members, &writes))
+                        {
+                            context.propose(key, ());
+                        }
+                    }
+                }
+            }
+            fn merge(_: &Rejected, _: &mut (), _: ()) -> bool {
+                false
+            }
+        }
+        let derive_fresh = |legacy: &Members| {
+            if index.dynamic_scope_owners.is_empty() {
                 fresh_value_writes(
                     &fresh_steps,
                     &namespace_value_facts,
                     &factory_imports,
-                    &legacy_factory_members,
+                    legacy,
                 )
             } else {
                 (BTreeSet::new(), BTreeSet::new())
-            };
-            index.fresh_instance_field_writes = instance_field_writes;
-            let keep_audited_members = |id: &Id, members: &BTreeSet<String>| {
+            }
+        };
+        let keep_audited =
+            |id: &Id, members: &BTreeSet<String>, writes: &BTreeSet<SourceUnitOrdinal>| {
                 if namespace_family.is_empty() {
-                    keep_namespace(id, members, &fresh_writes)
+                    keep_namespace(id, members, writes)
                 } else {
-                    // Import names do not establish distinct object identities.
-                    // Fallback must also certify every potentially aliasing root.
+                    // Imported names do not establish distinct object identities.
                     namespace_family
                         .iter()
-                        .all(|root| keep_namespace(root, &family_audited_members, &fresh_writes))
+                        .all(|root| keep_namespace(root, &family_audited_members, writes))
                 }
             };
-            index
-                .audited_factory_members
-                .retain(|id, members| keep_audited_members(id, members));
-            index
-                .callback_factory_members
-                .retain(|id, _| index.audited_factory_members.contains_key(id));
-            index.no_reentry_members.retain(|id, members| {
-                index
-                    .namespace_privacy
-                    .members
-                    .get(id)
-                    .is_some_and(|independent| members.is_subset(independent))
-                    && keep_audited_members(id, members)
-            });
-            index.no_reentry_record_members.retain(|id, members| {
-                index
-                    .namespace_privacy
-                    .members
-                    .get(id)
-                    .is_some_and(|independent| members.is_subset(independent))
-                    && keep_audited_members(id, members)
-            });
-            if index.audited_factory_members.len() == factory_members.len()
-                && index.no_reentry_members.len() == no_reentry_members.len()
-                && index.no_reentry_record_members.len() == no_reentry_record_members.len()
-            {
-                break;
-            }
-        }
+        let completed = IterativeInference::new(NamespaceRules {
+            factories: &index.audited_factory_members,
+            legacy: &index.callback_factory_members,
+            no_reentry: &index.no_reentry_members,
+            records: &index.no_reentry_record_members,
+            independent: &index.namespace_privacy.members,
+            fresh: &derive_fresh,
+            keep: &keep_audited,
+        })
+        .solve([()]);
+        let retained_legacy: Members = index
+            .callback_factory_members
+            .iter()
+            .filter(|(id, _)| completed.get(&Rejected::Factory((*id).clone())).is_none())
+            .map(|(id, members)| (id.clone(), members.clone()))
+            .collect();
+        let (_, instance_field_writes) = derive_fresh(&retained_legacy);
+        index.fresh_instance_field_writes = instance_field_writes;
+        index
+            .audited_factory_members
+            .retain(|id, _| completed.get(&Rejected::Factory(id.clone())).is_none());
+        index.callback_factory_members = retained_legacy;
+        index
+            .no_reentry_members
+            .retain(|id, _| completed.get(&Rejected::NoReentry(id.clone())).is_none());
+        index.no_reentry_record_members.retain(|id, _| {
+            completed
+                .get(&Rejected::NoReentryRecord(id.clone()))
+                .is_none()
+        });
         index.rejected_namespace_member_writes = namespace_member_write_witnesses.into_inner();
         index.rejected_namespace_dynamic_property_writes =
             namespace_dynamic_property_write_witnesses.into_inner();
