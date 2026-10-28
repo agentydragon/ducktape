@@ -716,6 +716,17 @@ specs can omit the flag when `--modules` already names that chunk's tree.
 `landable_today` means the proposed source-unit set has no outgoing residual-class
 dependency and its anonymous source units are addressable. It does not guarantee a
 structural selector can be synthesized or that the final edit passes the gate.
+Proposal rows also expose bounded `observed_consumers` metadata for incoming
+raw edges entering added source units. Read the `value_reads`, `writes`, and
+`scheduling_or_promoted_context` views as observed source-unit/module evidence,
+not as inferred semantic ownership. Each view reports its total and omitted
+source-unit, module, and edge counts; inspect the listed raw edges and source
+before choosing a destination. Consumers already in the resulting proposal
+class, including existing members of an extension or merge, are excluded.
+Promoted edges appear in their read/write view and in the context view.
+Rebind endpoints are co-located in the current quotient model, so `writes` can
+be empty even when the graph has a raw write edge from a source unit currently
+assigned elsewhere.
 `modules apply` claims reviewed residual bindings with proven `source_matches:`
 selectors. It requires `--graph`, `--modules`, and `--source-root` (or their
 environment variables), and accepts a JSON batch of this shape:

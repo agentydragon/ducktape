@@ -168,6 +168,11 @@ enum ModulesNsCommand {
     /// `modules apply` (see docs/cli.md). With `--source-root`, JSON rows
     /// carry `landable_today`, `unaddressable_anonymous_source_unit_ids`, and
     /// `landability_notes` from full-JS-AST selector uniqueness.
+    /// Rows also carry bounded `observed_consumers` evidence: incoming value
+    /// reads, writes, and scheduling/promoted edges to added source units, with
+    /// source units, current modules, raw edges, and total/omitted counts.
+    /// Consumers already in the resulting proposal class are excluded. This
+    /// evidence does not infer semantic ownership.
     /// `landable_today` is `false` both for proposals with unaddressable
     /// anonymous statements and for `blocked_residual_dependency`
     /// proposals (outgoing constraining edges into other residual classes)

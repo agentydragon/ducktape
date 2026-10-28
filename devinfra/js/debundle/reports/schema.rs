@@ -304,7 +304,7 @@ impl SourceUnitReport {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct DependencyEdgeReport {
     pub id: String,
     pub source: String,

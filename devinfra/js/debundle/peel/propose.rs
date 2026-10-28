@@ -45,8 +45,9 @@ use anyhow::{Context, Result};
 use serde::Serialize;
 
 use analysis::{
-    DependencyGraph, DependencyGraphReport, LineRange, ModuleAssignment, ModuleDestinationKind,
-    ModuleId, SourceUnitClass, SourceUnitReport, StatementKind,
+    DepKind, DependencyEdgeReport, DependencyGraph, DependencyGraphReport, EdgeRoleReport,
+    LineRange, ModuleAssignment, ModuleDestinationKind, ModuleId, SourceUnitClass,
+    SourceUnitReport, StatementKind,
 };
 use anonymous_resolution::{
     ModuleNeutralReferenceMeaning, ResolvedLocalMemberOrigin, ResolvedLocalMemberReference,
@@ -69,6 +70,10 @@ use crate::quotient::{
 /// proposer. One named constant so the planner verbs and the
 /// internal rebuild paths can't drift apart.
 pub const DEFAULT_SIZE_CAP_LINES: usize = 10_000;
+
+const MAX_OBSERVED_CONSUMER_SOURCE_UNITS: usize = 8;
+const MAX_OBSERVED_CONSUMER_MODULES: usize = 8;
+const MAX_OBSERVED_CONSUMER_EDGES: usize = 12;
 
 #[derive(Debug, Clone)]
 pub struct ProposalOptions {
@@ -311,6 +316,37 @@ pub struct ProposalSizeBucketCount {
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct ObservedConsumers {
+    /// Value reads from source units outside this proposal's resulting quotient class.
+    pub value_reads: ConsumerEvidence,
+    /// Rebinding writes from source units outside this proposal's resulting quotient class.
+    pub writes: ConsumerEvidence,
+    /// Scheduling constraints and promoted-at-init edges. A promoted read or
+    /// write also appears in its value-read or write category.
+    pub scheduling_or_promoted_context: ConsumerEvidence,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct ConsumerEvidence {
+    pub total_source_units: usize,
+    pub omitted_source_units: usize,
+    pub source_units: Vec<ObservedConsumerSourceUnit>,
+    pub total_modules: usize,
+    pub omitted_modules: usize,
+    pub modules: Vec<String>,
+    pub total_edges: usize,
+    pub omitted_edges: usize,
+    /// Original directed graph edges (`source` consumes or constrains `target`).
+    pub edges: Vec<DependencyEdgeReport>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct ObservedConsumerSourceUnit {
+    pub source_unit_id: String,
+    pub current_module: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct ModuleProposal {
     pub proposed_module_id: String,
     pub source_unit_ids: Vec<String>,
@@ -318,6 +354,9 @@ pub struct ModuleProposal {
     /// anonymous side-effect statements, which appear under
     /// `anonymous_statement_source_unit_ids` instead.
     pub binding_ids: Vec<String>,
+    /// Bounded incoming graph evidence for the source units this proposal adds.
+    /// These observed consumers are context for source review, not inferred owners.
+    pub observed_consumers: ObservedConsumers,
     /// Anonymous side-effect statements (source_units with empty
     /// `declared_bindings`) in this cell. Lane workers materialize
     /// these via `anonymous_statements:` entries quoting the
@@ -2339,6 +2378,8 @@ fn emit_proposals(
     size_cap_lines: usize,
     context: &ProposalContext,
 ) -> Vec<ModuleProposal> {
+    let incoming_consumers = IncomingConsumerIndex::build(graph);
+
     // Candidate classes: every live class that either has source_units or
     // carries module labels. We skip classes whose only members are
     // spec-module source_units with no residual extensions (= pre-existing
@@ -2426,6 +2467,7 @@ fn emit_proposals(
                 edges,
                 graph,
                 context,
+                &incoming_consumers,
             )
         })
         .collect();
@@ -2517,6 +2559,148 @@ struct CandidateEdgeStats {
     to_active: usize,
     /// The active module paths `to_active` edges target.
     active_targets: BTreeSet<ModulePath>,
+}
+
+struct IncomingConsumerIndex<'a> {
+    by_target: HashMap<&'a str, Vec<&'a DependencyEdgeReport>>,
+    source_modules: HashMap<&'a str, &'a analysis::ModuleEntry>,
+}
+
+impl<'a> IncomingConsumerIndex<'a> {
+    fn build(graph: &'a DependencyGraphReport) -> Self {
+        let mut by_target: HashMap<&str, Vec<&DependencyEdgeReport>> = HashMap::new();
+        for edge in &graph.edges {
+            by_target
+                .entry(edge.target.as_str())
+                .or_default()
+                .push(edge);
+        }
+        let modules_by_key: HashMap<&str, &analysis::ModuleEntry> = graph
+            .quotient
+            .nodes
+            .iter()
+            .map(|module| (module.key.as_str(), module))
+            .collect();
+        let source_modules = graph
+            .nodes
+            .iter()
+            .map(|source_unit| {
+                let module = modules_by_key
+                    .get(source_unit.destination.as_str())
+                    .copied()
+                    .expect("source unit destination must exist in graph modules");
+                (source_unit.id.as_str(), module)
+            })
+            .collect();
+        Self {
+            by_target,
+            source_modules,
+        }
+    }
+}
+
+fn observed_consumers_for(
+    target_source_unit_idxs: &[usize],
+    proposal_class_source_unit_idxs: &[usize],
+    graph: &DependencyGraphReport,
+    incoming: &IncomingConsumerIndex<'_>,
+) -> ObservedConsumers {
+    let candidate_source_units: BTreeSet<&str> = proposal_class_source_unit_idxs
+        .iter()
+        .map(|&idx| graph.nodes[idx].id.as_str())
+        .collect();
+    let mut value_reads = Vec::new();
+    let mut writes = Vec::new();
+    let mut scheduling_or_promoted_context = Vec::new();
+
+    for &target_idx in target_source_unit_idxs {
+        let target_id = graph.nodes[target_idx].id.as_str();
+        for edge in incoming.by_target.get(target_id).into_iter().flatten() {
+            if candidate_source_units.contains(edge.source.as_str()) {
+                continue;
+            }
+            let promoted = matches!(&edge.role, Some(EdgeRoleReport::PromotedAtInit { .. }));
+            match edge.edge_kind {
+                DepKind::EagerUse | DepKind::LazyUse | DepKind::HoistedUse => {
+                    value_reads.push(*edge);
+                    if promoted {
+                        scheduling_or_promoted_context.push(*edge);
+                    }
+                }
+                DepKind::EagerRebind | DepKind::LazyRebind | DepKind::DeferredRebind => {
+                    writes.push(*edge);
+                    if promoted {
+                        scheduling_or_promoted_context.push(*edge);
+                    }
+                }
+                DepKind::Sequenced | DepKind::CoDeclaration | DepKind::LocalEffect => {
+                    scheduling_or_promoted_context.push(*edge);
+                }
+            }
+        }
+    }
+
+    ObservedConsumers {
+        value_reads: consumer_evidence(&value_reads, incoming),
+        writes: consumer_evidence(&writes, incoming),
+        scheduling_or_promoted_context: consumer_evidence(
+            &scheduling_or_promoted_context,
+            incoming,
+        ),
+    }
+}
+
+fn consumer_evidence(
+    edges: &[&DependencyEdgeReport],
+    incoming: &IncomingConsumerIndex<'_>,
+) -> ConsumerEvidence {
+    let mut source_units = BTreeMap::new();
+    for edge in edges {
+        let current_module = incoming
+            .source_modules
+            .get(edge.source.as_str())
+            .expect("dependency edge source must exist in graph nodes")
+            .path
+            .to_string();
+        source_units.insert(
+            edge.source.clone(),
+            ObservedConsumerSourceUnit {
+                source_unit_id: edge.source.clone(),
+                current_module,
+            },
+        );
+    }
+    let modules: BTreeSet<String> = source_units
+        .values()
+        .map(|source_unit| source_unit.current_module.clone())
+        .collect();
+    let mut sorted_edges = edges.to_vec();
+    sorted_edges.sort_by(|left, right| left.id.cmp(&right.id));
+
+    let total_source_units = source_units.len();
+    let total_modules = modules.len();
+    let total_edges = sorted_edges.len();
+    ConsumerEvidence {
+        total_source_units,
+        omitted_source_units: total_source_units.saturating_sub(MAX_OBSERVED_CONSUMER_SOURCE_UNITS),
+        source_units: source_units
+            .into_values()
+            .take(MAX_OBSERVED_CONSUMER_SOURCE_UNITS)
+            .collect(),
+        total_modules,
+        omitted_modules: total_modules.saturating_sub(MAX_OBSERVED_CONSUMER_MODULES),
+        modules: modules
+            .into_iter()
+            .take(MAX_OBSERVED_CONSUMER_MODULES)
+            .collect(),
+        total_edges,
+        omitted_edges: total_edges.saturating_sub(MAX_OBSERVED_CONSUMER_EDGES),
+        edges: sorted_edges
+            .into_iter()
+            .take(MAX_OBSERVED_CONSUMER_EDGES)
+            .cloned()
+            .collect(),
+    }
 }
 
 /// Build a `ProposalDiagnostic(ExceedsSizeCap)` for every
@@ -2625,6 +2809,7 @@ fn build_proposal(
     edges: CandidateEdgeStats,
     graph: &DependencyGraphReport,
     context: &ProposalContext,
+    incoming_consumers: &IncomingConsumerIndex<'_>,
 ) -> ModuleProposal {
     // Labels arrive sorted (BTreeSet over canonical `ModulePath`).
     // Convert to wire strings once, at this boundary; identity logic
@@ -2741,6 +2926,12 @@ fn build_proposal(
         proposed_module_id,
         source_unit_ids,
         binding_ids: binding_ids.into_iter().collect(),
+        observed_consumers: observed_consumers_for(
+            source_unit_idxs.as_slice(),
+            all_source_unit_idxs.as_slice(),
+            graph,
+            incoming_consumers,
+        ),
         anonymous_statement_source_unit_ids: anonymous_source_unit_ids,
         size_lines_estimate: size_lines,
         source_line_range: line_range.into_array(),

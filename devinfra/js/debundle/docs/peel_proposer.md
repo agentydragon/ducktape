@@ -72,6 +72,20 @@ Anonymous-statement addressability and residual dependency status still
 control `landable_today`. It is a graph-readiness signal; applying still
 requires proven selectors and a passing post-edit gate.
 
+Each proposal also carries bounded `observed_consumers` evidence for raw edges
+entering its added source-unit set. `value_reads` and `writes` classify the
+edge kind; `scheduling_or_promoted_context` contains scheduling edges and
+promoted-at-init edges (a promoted read or write appears in both views). Each
+view lists distinct source units with their current module, distinct modules,
+and supporting raw edges, along with total and omitted counts. Edges from a
+source unit in the proposal's resulting quotient class are excluded, including
+existing members of an extension or merge. This is source-backed context, not a
+semantic ownership or merge decision; review the source before choosing a
+module boundary. In the current graph, rebind edges co-locate their endpoints
+in the quotient class, so `writes` can be empty even when a raw cross-module
+write edge appears in the graph; the category does not imply that a writer can
+be split from its target.
+
 ## Where To Look
 
 - `peel/propose.rs`: report assembly and proposal rendering.
