@@ -83,6 +83,9 @@ async def test_authenticated_browser_reads_archived_transcript(playwright_driver
                 ]
             )
             page = await context.new_page()
+            browser_errors: list[str] = []
+            page.on("pageerror", lambda error: browser_errors.append(str(error)))
+            page.on("console", lambda message: browser_errors.append(message.text) if message.type == "error" else None)
             api_responses: list[tuple[str, int]] = []
             page.on(
                 "response",
@@ -97,18 +100,36 @@ async def test_authenticated_browser_reads_archived_transcript(playwright_driver
                 capture_name="authenticated_archived_transcript",
             )
             await page.goto(origin, wait_until="domcontentloaded")
-            await expect(page.get_by_role("heading", name="Local agent sessions")).to_be_visible()
+            try:
+                await expect(page.get_by_role("heading", name="Local agent sessions")).to_be_visible()
+            except AssertionError:
+                output_dir = undeclared_outputs_dir()
+                (output_dir / "browser-startup-errors.json").write_text(
+                    json.dumps(
+                        {"url": page.url, "body": await page.locator("body").inner_text(), "errors": browser_errors},
+                        indent=2,
+                    )
+                )
+                await page.screenshot(path=output_dir / "browser-startup.png")
+                raise
             await expect(page.get_by_text("Atlas", exact=True).first).to_be_visible()
 
             transcript = page.locator('[aria-label="Session transcript"]')
-            await expect(page.get_by_role("button", name="Review archived conversation")).to_be_visible()
+            await expect(page.get_by_role("link", name="Review archived conversation")).to_be_visible()
             await expect(transcript.get_by_role("heading", name="Review archived conversation")).to_be_visible()
             await expect(transcript).to_contain_text("Latest transcript from the archived version.")
 
             version_picker = page.get_by_label("Captured version")
-            await version_picker.select_option(str(older_id))
+            await page.goto(f"{origin}/sessions/{session_id}?version={older_id}", wait_until="domcontentloaded")
             await expect(transcript).to_contain_text("Earlier transcript capture.")
+            await expect(version_picker).to_have_value(str(older_id))
             await version_picker.select_option(str(latest_id))
+            await expect(transcript).to_contain_text("Latest transcript from the archived version.")
+            await page.go_back()
+            await expect(transcript).to_contain_text("Earlier transcript capture.")
+            await page.go_forward()
+            await expect(transcript).to_contain_text("Latest transcript from the archived version.")
+            await page.reload(wait_until="domcontentloaded")
             await expect(transcript).to_contain_text("Latest transcript from the archived version.")
             await expect(transcript).to_contain_text("This JSONL line could not be parsed")
             malformed_record = transcript.locator('[data-event-ordinal="3"]')
@@ -117,14 +138,14 @@ async def test_authenticated_browser_reads_archived_transcript(playwright_driver
 
             related = page.locator('[aria-label="Related sessions"]')
             await expect(related).to_contain_text("Review subagent notes")
-            await related.get_by_role("button", name="Review subagent notes").click()
+            await related.get_by_role("link", name="Review subagent notes").click()
             await expect(transcript.get_by_role("heading", name="Review subagent notes")).to_be_visible()
             await expect(transcript).to_contain_text("Child answer loaded from archived records.")
             await expect(related).to_contain_text("Parent inferred from Claude subagent path")
             await expect(related).to_contain_text("Review archived conversation")
 
             session_list = page.locator('[aria-label="Session list"]')
-            await session_list.get_by_role("button", name="Inspect conflicting Codex metadata").click()
+            await session_list.get_by_role("link", name="Inspect conflicting Codex metadata").click()
             await expect(transcript).to_contain_text("Conflicting native session IDs")
             await expect(transcript).to_contain_text("Native session ID candidates: thread-child-a, thread-child-b")
             await expect(transcript).to_contain_text("Conflicting Codex parent_thread_id values")
@@ -133,7 +154,7 @@ async def test_authenticated_browser_reads_archived_transcript(playwright_driver
             )
             await expect(transcript).to_contain_text("Parent session could not be resolved to a captured session.")
 
-            await session_list.get_by_role("button", name="Review archived conversation", exact=False).click()
+            await session_list.get_by_role("link", name="Review archived conversation", exact=False).click()
             await expect(transcript).to_contain_text("Latest transcript from the archived version.")
             malformed_record = transcript.locator('[data-event-ordinal="3"]')
             await malformed_record.locator("details").first.locator("summary").first.click()

@@ -45,7 +45,7 @@ Codex display names are imported separately from each retained snapshot's `/.cod
 
 The browser frontend lives in `//x/ai_session_archive/frontend:bundle`. Its Bazel output is the portable `dist/` directory (`index.html`, `main.js`, and source maps) mounted by the archive web server.
 
-The browser selects a session at `/sessions/<session-id>` and keeps the machine, harness, and captured-version choices in the URL query string. These links can be opened directly or reloaded after sign-in; session and version changes participate in browser history. An unknown session ID stays on its URL and shows a load error.
+The browser selects a session at `/sessions/<session-id>` and keeps the machine, harness, and captured-version choices in the URL query string. Session rows and related sessions are links that can be opened in a new tab; session and version changes participate in browser history. The page can be reloaded after sign-in. An unknown session ID stays on its URL and shows a load error; an unavailable version shows an explicit unavailable state without displaying another capture.
 
 `//x/ai_session_archive:web_image` packages the owner-authenticated read API with the frontend bundle in its Bazel runfiles; `//x/ai_session_archive:web_bin` does the same for local runs. Set `AI_SESSION_ARCHIVE_DATABASE_URL`, `AI_SESSION_ARCHIVE_PUBLIC_BASE_URL`, `AI_SESSION_ARCHIVE_OIDC_ISSUER`, `AI_SESSION_ARCHIVE_OIDC_CLIENT_ID`, `AI_SESSION_ARCHIVE_OIDC_CLIENT_SECRET`, `AI_SESSION_ARCHIVE_OIDC_SESSION_SECRET`, and `AI_SESSION_ARCHIVE_OIDC_ALLOWED_SUBJECT`. `AI_SESSION_ARCHIVE_FRONTEND_DIR` is an optional override for a separately provisioned frontend directory. The only unauthenticated endpoint is `/healthz`.
 

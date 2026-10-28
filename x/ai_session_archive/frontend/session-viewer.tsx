@@ -16,7 +16,7 @@ import {
   Text,
   Title,
 } from "@mantine/core";
-import { useLocation, useNavigate, useParams } from "react-router";
+import { Link, useLocation, useNavigate, useParams } from "react-router";
 
 import { harnessLabel, httpApi, type SessionBrowserApi } from "./api";
 import { recordLabel, RecordContent, rawRecordText } from "./event-content";
@@ -163,12 +163,15 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
   sessionScopeRef.current = sessionScope;
   const selectedSession =
     sessions.find((session) => session.id === sessionId) ?? (fetchedSession?.id === sessionId ? fetchedSession : null);
+  const requestedVersionUnavailable =
+    requestedVersionId !== null &&
+    versionsSessionId === selectedSession?.id &&
+    !versions.some((version) => version.id === requestedVersionId);
   const selectedVersionId =
     versionsSessionId === selectedSession?.id
-      ? (versions.find((version) => version.id === requestedVersionId)?.id ??
-        versions.find((version) => version.id === selectedSession.latest_version_id)?.id ??
-        versions[0]?.id ??
-        null)
+      ? requestedVersionId !== null
+        ? (versions.find((version) => version.id === requestedVersionId)?.id ?? null)
+        : (versions.find((version) => version.id === selectedSession.latest_version_id)?.id ?? versions[0]?.id ?? null)
       : null;
   const eventScope = `${sessionId ?? ""}\u0000${selectedVersionId ?? ""}`;
   const eventScopeRef = useRef(eventScope);
@@ -505,9 +508,11 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
     }
   };
 
-  const navigateToSession = (targetId: string): void => {
-    search.delete("version");
-    navigate(`/sessions/${encodeURIComponent(targetId)}?${search.toString()}`);
+  const sessionPath = (targetId: string): string => {
+    const params = new URLSearchParams(location.search);
+    params.delete("version");
+    const query = params.toString();
+    return `/sessions/${encodeURIComponent(targetId)}${query ? `?${query}` : ""}`;
   };
 
   const changeFilter = (name: "machine" | "harness", value: string): void => {
@@ -609,7 +614,7 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
                       session={session}
                       machineName={machineNames.get(session.machine_id) ?? session.machine_id}
                       selected={session.id === sessionId}
-                      onSelect={() => navigateToSession(session.id)}
+                      to={sessionPath(session.id)}
                     />
                   ))}
                 </Stack>
@@ -695,16 +700,24 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
                   <NativeSelect
                     label="Captured version"
                     aria-label="Captured version"
-                    value={selectedVersionId ?? ""}
+                    value={requestedVersionUnavailable ? (requestedVersionId ?? "") : (selectedVersionId ?? "")}
                     onChange={(event) => changeVersion(event.currentTarget.value)}
-                    disabled={loadingVersions || versions.length === 0}
+                    disabled={loadingVersions || (versions.length === 0 && !requestedVersionUnavailable)}
                     data={
-                      versions.length === 0
-                        ? [{ value: "", label: loadingVersions ? "Loading versions…" : "No captured versions" }]
-                        : versions.map((version) => ({
-                            value: version.id,
-                            label: `${version.id === selectedSession.latest_version_id ? "Latest captured · " : ""}${formatDateTime(version.captured_at)} · ${formatBytes(version.byte_size)}`,
-                          }))
+                      loadingVersions
+                        ? [{ value: "", label: "Loading versions…" }]
+                        : [
+                            ...(requestedVersionUnavailable
+                              ? [{ value: requestedVersionId ?? "", label: "Requested capture unavailable" }]
+                              : []),
+                            ...versions.map((version) => ({
+                              value: version.id,
+                              label: `${version.id === selectedSession.latest_version_id ? "Latest captured · " : ""}${formatDateTime(version.captured_at)} · ${formatBytes(version.byte_size)}`,
+                            })),
+                            ...(versions.length === 0 && !requestedVersionUnavailable
+                              ? [{ value: "", label: "No captured versions" }]
+                              : []),
+                          ]
                     }
                   />
                   {selectedVersion !== null && (
@@ -730,7 +743,7 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
                           Parent
                         </Text>
                         {selectedSession.parent_session_id !== null && parentSession !== null ? (
-                          <Button variant="subtle" size="xs" onClick={() => navigateToSession(parentSession.id)}>
+                          <Button component={Link} to={sessionPath(parentSession.id)} variant="subtle" size="xs">
                             {parentSession.title || "Untitled parent session"}
                           </Button>
                         ) : selectedSession.parent_session_id !== null ? (
@@ -770,7 +783,7 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
                         </Text>
                         {childSessions.map((child) => (
                           <Group key={child.id} gap="xs" wrap="wrap">
-                            <Button variant="subtle" size="xs" onClick={() => navigateToSession(child.id)}>
+                            <Button component={Link} to={sessionPath(child.id)} variant="subtle" size="xs">
                               {child.title || "Untitled child session"}
                             </Button>
                             {parentLinkLabel(child.parent_link_kind) !== null && (
@@ -799,7 +812,22 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
                   </Stack>
                 </Paper>
               )}
-              {selectedVersion === null && !loadingVersions ? (
+              {requestedVersionUnavailable ? (
+                <Center h={180}>
+                  <Stack align="center" gap="xs" maw={480}>
+                    <Text size="sm" fw={600}>
+                      Requested capture unavailable
+                    </Text>
+                    <Text size="sm" c="dimmed" ta="center">
+                      This captured version is not available for this session. Choose another version or view the
+                      current capture.
+                    </Text>
+                    <Button variant="light" size="xs" onClick={() => changeVersion("")}>
+                      View current capture
+                    </Button>
+                  </Stack>
+                </Center>
+              ) : selectedVersion === null && !loadingVersions ? (
                 <Center h={180}>
                   <Stack align="center" gap="xs" maw={480}>
                     <Text size="sm" fw={600}>
@@ -941,21 +969,22 @@ function SessionRow({
   session,
   machineName,
   selected,
-  onSelect,
+  to,
 }: {
   session: SessionSummary;
   machineName: string;
   selected: boolean;
-  onSelect: () => void;
+  to: string;
 }): JSX.Element {
   return (
     <Button
+      component={Link}
+      to={to}
       variant={selected ? "light" : "subtle"}
       color={selected ? "blue" : "gray"}
       fullWidth
       justify="flex-start"
-      onClick={onSelect}
-      aria-pressed={selected}
+      aria-current={selected ? "page" : undefined}
       styles={{
         root: { height: "auto", padding: "8px", textAlign: "left" },
         label: { display: "block", width: "100%" },

@@ -49,7 +49,7 @@ async def test_inferred_subagent_parent_link(visual: VisualHarness, capture_name
         capture_name=capture_name,
     ) as view:
         page = view.page
-        await page.get_by_role("button", name="Inspect a local transcript").click()
+        await page.get_by_role("link", name="Inspect a local transcript").click()
         related = page.locator('[aria-label="Related sessions"]')
         await expect(related).to_contain_text("Parent inferred from Claude subagent path")
         await expect(related).to_contain_text("Inferred Claude parent · session 12ab")
