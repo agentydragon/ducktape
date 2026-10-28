@@ -306,7 +306,7 @@ fn pure_optional_reader_precedes_later_array_write() {
 #[test]
 fn pure_tagged_template_reader_precedes_later_array_write() {
     let fixture = run_fixture(FixtureOpts::new(
-        "const values = [];\nfunction tag(_strings, before) { return before; }\nconst first = tag`${values.length}`;\nvalues.push(42);\nconsole.log(first);\n",
+        "const values = [];\nfunction tag() { return values.length; }\nconst first = tag``;\nvalues.push(42);\nconsole.log(first);\n",
         vec![
             logical_module("values", &[Member::new("values")]),
             logical_module(
