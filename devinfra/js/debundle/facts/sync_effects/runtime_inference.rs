@@ -8,7 +8,6 @@ use crate::facts::statement_facts::SynchronousCalls;
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use source_identity::SourceUnitOrdinal;
 use std::cell::{Cell, RefCell};
-use std::rc::Rc;
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 enum RuntimeKey {
@@ -25,10 +24,10 @@ enum RuntimeRule {
 }
 
 enum RuntimeFact {
-    Prefix(Rc<ExecutionState>),
+    Prefix(Box<ExecutionState>),
     Effects(Box<SynchronousCalls>),
-    Request(Rc<RuntimeRequest>),
-    Result(Rc<RuntimeResult>),
+    Request(Box<RuntimeRequest>),
+    Result(Box<RuntimeResult>),
 }
 
 /// The path identifies an occurrence within its parent's transfer, rather than
@@ -47,7 +46,6 @@ enum OperationKind {
 }
 
 pub(super) enum RuntimeOperation {
-    Owner(SourceUnitOrdinal),
     Evaluate {
         expression: ValueExpr,
         environment: Context,
@@ -69,69 +67,62 @@ pub(super) enum RuntimeOperation {
 
 #[derive(Clone)]
 pub(super) enum RuntimeValue {
-    Effects(Box<SynchronousCalls>),
     Values(Values),
     Outcome(Box<Outcome>),
 }
 
 struct RuntimeRequest {
-    state: Rc<ExecutionState>,
+    state: ExecutionState,
     operation: RuntimeOperation,
 }
 
 pub(super) struct RuntimeResult {
-    pub(super) state: Rc<ExecutionState>,
+    pub(super) state: ExecutionState,
     pub(super) value: RuntimeValue,
 }
 
-/// Query access lasts for one transfer attempt. A missing child suspends that
-/// attempt: no later request is admitted and none of its scratch state escapes.
-/// A retry starts from the immutable input and reuses settled earlier children.
-/// Invocation counts and revisions are consequently charged in semantic state,
-/// independent of how often the worklist revisits the parent.
-pub(super) struct RuntimeQueries<'query> {
+/// Transfers consume settled inputs and cannot send information back to their
+/// predecessors. Evaluate these acyclic children immediately on the same fact
+/// context, then retire their single-consumer payloads. Growing fact families
+/// continue to use the dependency worklist. This avoids replaying a parent or
+/// retaining every heap snapshot for a long, flat sequence of source calls.
+pub(super) struct RuntimeQueries<'source, 'query> {
+    inputs: &'query ExecutionInputs<'source>,
     point: ProgramPoint,
     next_child: Cell<usize>,
-    suspended: Cell<bool>,
     context: RefCell<&'query mut dyn FactContext<RuntimeKey, RuntimeFact>>,
 }
 
-impl RuntimeQueries<'_> {
-    pub(super) fn suspended(&self) -> bool {
-        self.suspended.get()
-    }
-
+impl RuntimeQueries<'_, '_> {
     pub(super) fn request(
         &self,
-        state: &ExecutionState,
+        state: ExecutionState,
         operation: RuntimeOperation,
-    ) -> Option<Rc<RuntimeResult>> {
-        if self.suspended() {
-            return None;
-        }
+    ) -> RuntimeResult {
         let kind = match &operation {
             RuntimeOperation::Evaluate { .. } => OperationKind::Evaluate,
             RuntimeOperation::Invoke { .. } => OperationKind::Invoke,
             RuntimeOperation::Call { .. } => OperationKind::Call,
-            RuntimeOperation::Owner(_) => unreachable!("owners are prefix roots"),
         };
         let ordinal = self.next_child.get();
         self.next_child.set(ordinal + 1);
         let mut point = self.point.clone();
         point.path.push((kind, ordinal));
         let mut context = self.context.borrow_mut();
-        if let Some(RuntimeFact::Result(result)) = context.read(RuntimeKey::Result(point.clone())) {
-            return Some(Rc::clone(result));
-        }
         context.propose(
-            RuntimeKey::Request(point),
-            RuntimeFact::Request(Rc::new(RuntimeRequest {
-                state: Rc::new(state.clone()),
-                operation,
-            })),
+            RuntimeKey::Request(point.clone()),
+            RuntimeFact::Request(Box::new(RuntimeRequest { state, operation })),
         );
-        self.suspended.set(true);
-        None
+        RuntimeRules {
+            inputs: self.inputs,
+            owner_count: 0,
+        }
+        .transfer(&point, &mut **context);
+        let Some(RuntimeFact::Result(result)) = context.take_final(RuntimeKey::Result(point))
+        else {
+            unreachable!("a transfer with settled inputs produces a terminal result");
+        };
+        *result
     }
 }
 
@@ -199,69 +190,49 @@ impl RuntimeRules<'_, '_> {
         owner: SourceUnitOrdinal,
         context: &mut impl FactContext<RuntimeKey, RuntimeFact>,
     ) {
-        let Some(RuntimeFact::Prefix(state)) = context.read(RuntimeKey::Prefix(owner)) else {
+        let Some(RuntimeFact::Prefix(state)) = context.take_final(RuntimeKey::Prefix(owner)) else {
             return;
         };
-        let state = Rc::clone(state);
-        let point = ProgramPoint {
-            owner,
-            path: Vec::new(),
+        let queries = RuntimeQueries {
+            inputs: self.inputs,
+            point: ProgramPoint {
+                owner,
+                path: Vec::new(),
+            },
+            next_child: Cell::new(0),
+            context: RefCell::new(context),
         };
-        context.propose(
-            RuntimeKey::Request(point.clone()),
-            RuntimeFact::Request(Rc::new(RuntimeRequest {
-                state,
-                operation: RuntimeOperation::Owner(owner),
-            })),
-        );
-        let Some(RuntimeFact::Result(result)) = context.read(RuntimeKey::Result(point)) else {
-            return;
-        };
-        let result = Rc::clone(result);
-        let RuntimeValue::Effects(effects) = &result.value else {
-            unreachable!("owner transfers produce synchronous effects");
-        };
+        let mut executor = Executor::new(self.inputs, *state, queries);
+        let effects = executor.execute_owner(owner);
+        let state = executor.into_state();
         context.propose(
             RuntimeKey::Effects(owner),
-            RuntimeFact::Effects(effects.clone()),
+            RuntimeFact::Effects(Box::new(effects)),
         );
         context.propose(
             RuntimeKey::Prefix(SourceUnitOrdinal(owner.0 + 1)),
-            RuntimeFact::Prefix(Rc::clone(&result.state)),
+            RuntimeFact::Prefix(Box::new(state)),
         );
     }
 
     fn transfer(
         &self,
         point: &ProgramPoint,
-        context: &mut impl FactContext<RuntimeKey, RuntimeFact>,
+        context: &mut dyn FactContext<RuntimeKey, RuntimeFact>,
     ) {
-        let Some(RuntimeFact::Request(request)) = context.read(RuntimeKey::Request(point.clone()))
+        let Some(RuntimeFact::Request(request)) =
+            context.take_final(RuntimeKey::Request(point.clone()))
         else {
             return;
         };
-        let request = Rc::clone(request);
-        if let Some(RuntimeFact::Result(result)) = context.read(RuntimeKey::Result(point.clone())) {
-            // The operation is immutable. Forward newly grown request/proof
-            // dependencies without spending another semantic expansion.
-            let result = Rc::clone(result);
-            context.propose(
-                RuntimeKey::Result(point.clone()),
-                RuntimeFact::Result(result),
-            );
-            return;
-        }
         let queries = RuntimeQueries {
+            inputs: self.inputs,
             point: point.clone(),
             next_child: Cell::new(0),
-            suspended: Cell::new(false),
             context: RefCell::new(context),
         };
-        let mut executor = Executor::new(self.inputs, request.state.as_ref().clone(), queries);
+        let mut executor = Executor::new(self.inputs, request.state, queries);
         let value = match &request.operation {
-            RuntimeOperation::Owner(owner) => {
-                RuntimeValue::Effects(Box::new(executor.execute_owner(*owner)))
-            }
             RuntimeOperation::Evaluate {
                 expression,
                 environment,
@@ -291,15 +262,10 @@ impl RuntimeRules<'_, '_> {
                 RuntimeValue::Outcome(outcome)
             }
         };
-        let Some(state) = executor.into_settled_state() else {
-            return;
-        };
+        let state = executor.into_state();
         context.propose(
             RuntimeKey::Result(point.clone()),
-            RuntimeFact::Result(Rc::new(RuntimeResult {
-                state: Rc::new(state),
-                value,
-            })),
+            RuntimeFact::Result(Box::new(RuntimeResult { state, value })),
         );
     }
 }
@@ -315,7 +281,7 @@ pub(super) fn infer_synchronous_execution(
     });
     inference.seed(
         RuntimeKey::Prefix(SourceUnitOrdinal(0)),
-        RuntimeFact::Prefix(Rc::new(initial)),
+        RuntimeFact::Prefix(Box::new(initial)),
     );
     let mut facts = inference.solve([]).into_values();
     (0..owner_count)

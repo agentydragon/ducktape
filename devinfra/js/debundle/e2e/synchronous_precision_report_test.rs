@@ -139,6 +139,23 @@ fn large_callback_pool_reports_the_actual_pool_bound() {
 }
 
 #[test]
+fn wide_acyclic_execution_below_the_expansion_bound_remains_complete() {
+    let mut source = String::new();
+    let mut calls = String::new();
+    for index in 0..240 {
+        source.push_str(&format!("function step{index}() {{ return 3; }}\n"));
+        calls.push_str(&format!("step{index}();"));
+    }
+    source.push_str(&format!("function factory() {{ {calls} return 3; }}\nconst result = factory();\nconsole.log(result);\n"));
+    let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+    assert_entry_output(&fixture, "3\n");
+    assert_eq!(
+        execution(&fixture, "result"),
+        serde_json::json!({"complete": true, "precision_losses": []})
+    );
+}
+
+#[test]
 fn wide_acyclic_execution_reports_the_actual_expansion_bound() {
     let mut source = String::new();
     let mut calls = String::new();

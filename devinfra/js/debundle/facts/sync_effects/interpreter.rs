@@ -230,7 +230,7 @@ pub(super) struct ExecutionInputs<'source> {
     needed_bindings: BTreeSet<Id>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub(super) struct ExecutionState {
     native_integrity_checks: RefCell<BTreeSet<NativeIntegrityCheck>>,
     native_prototype_property_checks: RefCell<BTreeMap<String, NativePrototypePropertyCheck>>,
@@ -294,7 +294,7 @@ pub(super) struct ExecutionState {
 pub(super) struct Executor<'source, 'rule> {
     inputs: &'rule ExecutionInputs<'source>,
     state: ExecutionState,
-    queries: RuntimeQueries<'rule>,
+    queries: RuntimeQueries<'source, 'rule>,
 }
 
 /// The source proof selected for one exact factory call. Kept separate from
@@ -314,7 +314,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     pub(super) fn new(
         inputs: &'rule ExecutionInputs<'source>,
         state: ExecutionState,
-        queries: RuntimeQueries<'rule>,
+        queries: RuntimeQueries<'source, 'rule>,
     ) -> Self {
         Self {
             inputs,
@@ -323,14 +323,16 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
     }
 
-    pub(super) fn into_settled_state(self) -> Option<ExecutionState> {
-        (!self.queries.suspended()).then_some(self.state)
+    pub(super) fn into_state(self) -> ExecutionState {
+        self.state
     }
 
-    fn request(&mut self, operation: RuntimeOperation) -> Option<RuntimeValue> {
-        let result = self.queries.request(&self.state, operation)?;
-        self.state = result.state.as_ref().clone();
-        Some(result.value.clone())
+    fn request(&mut self, operation: RuntimeOperation) -> RuntimeValue {
+        let result = self
+            .queries
+            .request(std::mem::take(&mut self.state), operation);
+        self.state = result.state;
+        result.value
     }
 
     /// The abstract callback-factory value also represents namespace members
@@ -4245,16 +4247,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn evaluate(&mut self, expr: &ValueExpr, env: &Context, captures: &Context) -> Values {
-        if self.queries.suspended() {
-            return Values::new();
-        }
-        let Some(result) = self.request(RuntimeOperation::Evaluate {
+        let result = self.request(RuntimeOperation::Evaluate {
             expression: expr.clone(),
             environment: env.clone(),
             captures: captures.clone(),
-        }) else {
-            return Values::new();
-        };
+        });
         let RuntimeValue::Values(values) = result else {
             unreachable!("expression transfers produce values");
         };
@@ -4815,17 +4812,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         captured: Option<CapturedContext>,
         fresh_checked_constructor: bool,
     ) -> Outcome {
-        if self.queries.suspended() {
-            return Outcome::default();
-        }
-        let Some(result) = self.request(RuntimeOperation::Invoke {
+        let result = self.request(RuntimeOperation::Invoke {
             callable: key,
             arguments: args,
             captured,
             fresh_checked_constructor,
-        }) else {
-            return Outcome::default();
-        };
+        });
         let RuntimeValue::Outcome(outcome) = result else {
             unreachable!("invocation transfers produce outcomes");
         };
@@ -5120,17 +5112,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         captures: &Context,
         outcome: &mut Outcome,
     ) {
-        if self.queries.suspended() {
-            return;
-        }
-        let Some(result) = self.request(RuntimeOperation::Call {
+        let result = self.request(RuntimeOperation::Call {
             call: call.clone(),
             environment: env.clone(),
             captures: captures.clone(),
             outcome: Box::new(outcome.clone()),
-        }) else {
-            return;
-        };
+        });
         let RuntimeValue::Outcome(result) = result else {
             unreachable!("call transfers produce outcomes");
         };
