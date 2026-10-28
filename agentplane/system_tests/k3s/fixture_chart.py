@@ -43,8 +43,9 @@ from agentplane.action_service.catalog import ActionGroup
 from agentplane.action_service.sandbox.binding import PodExecutorBinding
 from agentplane.app.settings import AppSettingsConfig
 from agentplane.runner.configuration import GuestResources, ResourceLimits
+from agentplane.sandboxes.kubernetes_grants import RoleBindingGrant, RoleRef
 from agentplane.subjects import ServiceAccountRef
-from agentplane.system_tests import launch_preset, probe_credential, runtime_grant, send_grant
+from agentplane.system_tests import launch_preset, probe_credential, runner_key, runtime_grant, send_grant
 from agentplane.system_tests.k3s import block_storage, dex, fixture_database
 from agentplane.system_tests.k3s.namespaces import CREDENTIALS_NAMESPACE, NAMESPACE
 from agentplane.system_tests.k3s.rendered_fixture import LocalModel, Models, PublicLiteLLM
@@ -81,6 +82,7 @@ from cluster.cdk8s.agentplane.environment import (
     OrchestrationProps,
     ReplicaProfile,
 )
+from cluster.cdk8s.agentplane.runner_key_file import KeyFile
 from cluster.cdk8s.model_selections import HarnessRoutes, model_configs
 from cluster.cdk8s.providers.agentplane.egress_credential import EgressCredential, Source
 from cluster.cdk8s.providers.agentplane.policy_set import PolicySet, Rule
@@ -208,7 +210,7 @@ def environment(*, vm_sandboxes: bool, models: Models, app_origin: str = APP_ORI
         replicas=_ONE_REPLICA,
         app_config=AppSettingsConfig(
             models=app_settings.model_catalog(routes),
-            default_policy_sets=set(egress.DEFAULT_POLICIES),
+            default_policy_sets={*egress.DEFAULT_POLICIES, runner_key.POLICY_SET},
             connection_service_url=AnyHttpUrl(MCP_EDGE_SERVICE.url),
             thread_presets={launch_preset.THREAD_PRESET: launch_preset.thread_preset(model=GPT6_LUNA_RESPONSES.id)},
             sandbox_presets={
@@ -452,6 +454,14 @@ def build_chart(
         image_pull_secret_name=None,
         trust_mounts=sandbox_pod.egress_proxy_mounts(),
         control_service=control,
+        key_files=(
+            KeyFile(
+                secret_name=runner_key.SECRET_NAME,
+                mount_path=runner_key.MOUNT_PATH,
+                file_name=runner_key.FILE_NAME,
+                env_var=runner_key.ENV_VAR,
+            ),
+        ),
     )
     sandbox_controller.SandboxController(
         chart,
@@ -544,6 +554,27 @@ def build_chart(
     )
     if isinstance(models, PublicLiteLLM):
         add_secret(chart, _LITELLM_KEY_SECRET, {"api-key": key}, namespace=env.egress.credentials_namespace)
+    add_secret(chart, runner_key.SECRET_NAME, {runner_key.FILE_NAME: runner_key.INITIAL_VALUE})
+    add_secret(chart, runner_key.UNRELATED_SECRET_NAME, {runner_key.FILE_NAME: "synthetic-unrelated-key"})
+    k8s.KubeRole(
+        chart,
+        "runner-key-reader",
+        metadata=k8s.ObjectMeta(name=runner_key.ROLE_NAME, namespace=NAMESPACE),
+        rules=[
+            k8s.PolicyRule(
+                api_groups=[""], resources=["secrets"], resource_names=[runner_key.SECRET_NAME], verbs=["get"]
+            )
+        ],
+    )
+    key_grant = RoleBindingGrant(
+        kind="RoleBinding", namespace=NAMESPACE, role_ref=RoleRef(kind="Role", name=runner_key.ROLE_NAME)
+    )
+    PolicySet(
+        chart,
+        "runner-key-policy",
+        metadata=ApiObjectMetadata(name=runner_key.POLICY_SET, namespace=NAMESPACE),
+        rules=access.rules_for_grants([key_grant]),
+    )
     tool_config_grant = sandbox_pod.tool_config_grant(NAMESPACE)
     PolicySet(
         chart,
@@ -576,7 +607,11 @@ def build_chart(
         chart, "policy-controller", env, placement=None, registry_secret_name=None, memory_limit=None
     )
     policy_controller_rbac.PolicyControllerRbac(
-        chart, "policy-controller-rbac", env, account=controller.account, assignable_grants=[tool_config_grant]
+        chart,
+        "policy-controller-rbac",
+        env,
+        account=controller.account,
+        assignable_grants=[tool_config_grant, key_grant],
     )
     return FixtureChart(
         chart=chart,

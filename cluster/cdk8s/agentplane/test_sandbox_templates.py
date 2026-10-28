@@ -15,6 +15,7 @@ from more_itertools import one
 
 from agentplane.crd_group import GROUP
 from agentplane.runner.configuration import CONFIG_FILE, LAUNCH_FILE, Configuration
+from cluster.cdk8s import agent_access_profiles
 from cluster.cdk8s.agentplane import sandbox_pod, staging
 from cluster.cdk8s.agentplane.runner_sandbox import RunnerTemplate
 from cluster.cdk8s.pod_policy import workload_kind
@@ -82,7 +83,12 @@ def test_runner_pod_gives_codex_a_private_executor_with_shared_paths(staging_man
     assert pod["restartPolicy"] == "Always"
     assert pod["securityContext"]["runAsUser"] == pod["securityContext"]["runAsGroup"] == 1000
     assert executor["securityContext"] == runner["securityContext"]
-    assert [container["name"] for container in pod["containers"]] == ["runner", "codex-executor", "egress-sidecar"]
+    assert [container["name"] for container in pod["containers"]] == [
+        "runner",
+        "key-file-sync",
+        "codex-executor",
+        "egress-sidecar",
+    ]
     assert runner["args"] == ["--config", CONFIG_FILE, "--launch-file", LAUNCH_FILE]
     config = _runner_configuration(staging_manifests, pod)
     assert config["environment"] == {
@@ -130,9 +136,9 @@ def test_runner_pod_gives_codex_a_private_executor_with_shared_paths(staging_man
 
     executor_mount_names = set(executor_mounts.values())
     assert executor_mounts["/run/agentplane/config/kubeconfig"] == "tool-config"
-    # The executor shares the BuildBuddy key, which `bbr` in a Codex shell needs; the runner's own
-    # config and the sidecar's token are its alone.
-    assert "buildbuddy-api-key" in executor_mount_names
+    # The executor shares the BuildBuddy key file, which `bbr` in a Codex shell needs; the runner's
+    # own config and the sidecar's token are its alone.
+    assert "runner-key-0" in executor_mount_names
     assert executor_mount_names.isdisjoint({"egress-token", "runner-config"})
     executor_env = {variable["name"]: variable["value"] for variable in executor["env"]}
     runner_env = {variable["name"]: variable["value"] for variable in runner["env"]}
@@ -177,16 +183,18 @@ def test_environment_cannot_configure_resources_for_a_disabled_executor() -> Non
         _runner_pod(isolated_executor=False, runner_resources=resources, executor_resources=resources)
 
 
-def test_pod_template_projects_the_buildbuddy_key_to_runner_and_executor(
+def test_pod_template_refreshes_the_buildbuddy_key_for_runner_and_executor(
     staging_manifests: list[dict[str, Any]],
 ) -> None:
-    """The canonical key reaches the runner container and its isolated executor, and by name the harness
-    children the runner spawns (agentplane/docs/buildbuddy_remote_auth.md). The egress sidecar, which
-    holds a Session's bearers, gets neither. Every launch preset names this one template."""
+    """The sync container fetches the canonical key into a shared memory volume used by the runner,
+    executor and their harness children (agentplane/docs/buildbuddy_remote_auth.md). The egress
+    sidecar, which holds a Session's bearers, gets neither the file nor its path. Every launch preset
+    names this one template."""
     presets = yaml.safe_load(_by_name(staging_manifests, "ConfigMap", "app-config")["data"]["config.yaml"])[
         "sandbox_presets"
     ]
     assert {preset["template"] for preset in presets.values()} == {staging.POD_TEMPLATE}
+    assert all(agent_access_profiles.BUILDBUDDY_KEY_POLICY in preset["policy_sets"] for preset in presets.values())
     key_copies = [
         doc
         for doc in staging_manifests
@@ -203,15 +211,35 @@ def test_pod_template_projects_the_buildbuddy_key_to_runner_and_executor(
 
     pod = one(_templates(staging_manifests))["spec"]["pod"]["spec"]
     containers = {container["name"]: container for container in pod["containers"]}
-    secret = next(volume for volume in pod["volumes"] if volume["name"] == "buildbuddy-api-key")
-    assert secret["secret"] == {"secretName": "buildbuddy-api-key", "defaultMode": 288}
+    config_volume = next(volume for volume in pod["volumes"] if volume["name"] == "runner-config")
+    config_map = _by_name(staging_manifests, "ConfigMap", config_volume["configMap"]["name"])
+    key_files = json.loads(config_map["data"]["key-files.json"])
+    assert key_files == [
+        {
+            "namespace": staging.ENV.namespace,
+            "secret_name": "buildbuddy-api-key",
+            "secret_key": "api-key",
+            "mount_path": "/run/buildbuddy",
+            "file_name": "api-key",
+        }
+    ]
+    key_volume = next(volume for volume in pod["volumes"] if volume["name"] == "runner-key-0")
+    assert key_volume["emptyDir"] == {"medium": "Memory", "sizeLimit": "1Mi"}
     for name in ("runner", "codex-executor"):
-        mount = next(mount for mount in containers[name]["volumeMounts"] if mount["name"] == "buildbuddy-api-key")
-        assert mount == {"name": "buildbuddy-api-key", "mountPath": "/run/buildbuddy", "readOnly": True}
+        mount = next(mount for mount in containers[name]["volumeMounts"] if mount["name"] == "runner-key-0")
+        assert mount == {"name": "runner-key-0", "mountPath": "/run/buildbuddy"}
         key_file = next(env for env in containers[name]["env"] if env["name"] == "BBR_BUILDBUDDY_API_KEY_FILE")
         assert key_file["value"] == "/run/buildbuddy/api-key"
+    sync = containers["key-file-sync"]
+    assert sync["args"] == ["--config", "/run/agentplane/config/key-files.json", "--interval-seconds", "60"]
+    assert sync["readinessProbe"]["exec"]["command"] == ["sh", "-ec", "test -s /run/buildbuddy/api-key"]
+    assert any(mount["mountPath"] == "/run/agentplane/config/key-files.json" for mount in sync["volumeMounts"])
+    assert any(mount["mountPath"] == "/run/agentplane/config/kubeconfig" for mount in sync["volumeMounts"])
+    sync_env = {variable["name"]: variable["value"] for variable in sync["env"]}
+    assert sync_env["KUBECONFIG"] == "/run/agentplane/config/kubeconfig"
+    assert sync_env["HTTPS_PROXY"] == sync_env["HTTP_PROXY"] == "http://127.0.0.1:3128"
     sidecar = containers["egress-sidecar"]
-    assert all(mount["name"] != "buildbuddy-api-key" for mount in sidecar["volumeMounts"])
+    assert all(mount["name"] != "runner-key-0" for mount in sidecar["volumeMounts"])
     assert all(env["name"] != "BBR_BUILDBUDDY_API_KEY_FILE" for env in sidecar.get("env", []))
     config = _runner_configuration(staging_manifests, pod)
     assert "BBR_BUILDBUDDY_API_KEY_FILE" in config["harness_environment"]["inherit"]
@@ -257,6 +285,11 @@ def test_runner_tool_config_role_is_scoped_to_the_canonical_map(staging_manifest
     role = _by_name(staging_manifests, "Role", "agentplane-sandbox-tool-config-reader")
     assert role["rules"] == [
         {"apiGroups": [""], "resourceNames": ["sandbox-tool-config"], "resources": ["configmaps"], "verbs": ["get"]}
+    ]
+
+    key_role = _by_name(staging_manifests, "Role", agent_access_profiles.BUILDBUDDY_KEY_ROLE)
+    assert key_role["rules"] == [
+        {"apiGroups": [""], "resourceNames": ["buildbuddy-api-key"], "resources": ["secrets"], "verbs": ["get"]}
     ]
 
     volumes = one(_templates(staging_manifests))["spec"]["pod"]["spec"]["volumes"]

@@ -318,6 +318,7 @@ def test_public_diagnostics_select_cluster_reader_and_share_haku_reads(
         for name in selected
         if catalog[name]["role_ref"]["kind"] == "Role"
     } == {
+        ("agentplane-staging", "buildbuddy-key-reader"),
         ("haku-console", "agent-haku-console-metadata-reader"),
         ("clickhouse", "agent-clickhouse-diagnostics-reader"),
         ("ducktape-flux", "ducktape-flux-reader"),

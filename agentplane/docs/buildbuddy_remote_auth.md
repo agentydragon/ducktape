@@ -1,20 +1,26 @@
 # BuildBuddy hosted remote-run authentication
 
-The staging direct-key stopgap and the limitations of placeholder-only authentication for
+Staging's runner key-file path and the limitations of placeholder-only authentication for
 BuildBuddy-hosted runs. The implemented proxy transport contract is
 [the egress specification](../egress/SPEC.md); request-body rewriting below is an unselected
-alternative, not a prerequisite for the staging stopgap.
+alternative, not a prerequisite for the staging runner key file.
 
-## Staging-only direct-key stopgap
+## Staging runner key file
 
-The staging runner SandboxTemplate (`runner-ducktape`, `cluster/cdk8s/agentplane/staging.py`) projects the existing canonical BuildBuddy key through
-ESO into its **workload container only**. The launcher consumes the projected file via
-`BBR_BUILDBUDDY_API_KEY_FILE` for real `bbr` runs.
-The existing BuildBuddy egress policy still limits the sandbox's destination hosts. This does **not** keep the key secret from agent-controlled sandbox code or the
-BuildBuddy-hosted runner: `bb remote` embeds it in the hosted Bazel command. It must not be
-represented as credential isolation, and the egress sidecar does not mount
-it. Revoking the canonical key affects all its consumers; this change does not introduce
-a new key or a new credential lifecycle.
+Staging copies the existing canonical BuildBuddy key into the namespace with ESO. Both `runner-ducktape`
+and `runner-vm` use the shared `agentplane-key-file-sync` utility to fetch it through the Sandbox
+ServiceAccount and the existing proxied Kubernetes API route. The Pod writes it into a memory-backed
+volume; the VM writes it under `/run`. Both refresh every minute, so Secret rotation reaches running
+Sandboxes without replacing their Pod or VM. Both runner types expose the stable path through
+`BBR_BUILDBUDDY_API_KEY_FILE` for real `bbr` runs. The reference metadata is public, while Secret
+contents stay out of Pod and VM ConfigMaps. Staging's `buildbuddy-key` PolicySet grants `get` on only
+the `buildbuddy-api-key` Secret.
+
+The existing BuildBuddy egress policy still limits the Sandbox's destination hosts. The key is
+available to agent-controlled code in the Sandbox, and the Pod egress sidecar does not mount it. It
+must not be represented as credential isolation. The key is also available to the BuildBuddy-hosted
+runner: `bb remote` embeds it in the hosted Bazel command. Revoking the canonical key affects all its
+consumers; this change does not introduce a new key or a new credential lifecycle.
 
 ## Validation and execution policy
 

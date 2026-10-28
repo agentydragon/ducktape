@@ -3,7 +3,7 @@ adds its environment-only objects to what it returns; that is what generate_mani
 disk) and the tests (synthesize it in memory via `cdk8s.Testing`) build.
 
 The caller names the Pod execution environment the chart offers and the image it runs
-(`runner_name`, `runner_image`), plus any Secret a runner workload reads as a file
+(`runner_name`, `runner_image`), plus any Secret a runner harness reads as a file
 (`runner_key_files`); the chart itself takes a side in none of that.
 """
 
@@ -29,6 +29,7 @@ from cluster.cdk8s.agentplane import (
     notifications,
     runner_gateway,
     runner_gateway_workload,
+    runner_key_file,
     runner_sandbox,
     sandbox_controller,
     sandbox_pod,
@@ -67,7 +68,7 @@ def environment_chart(
     db: database.DbProps,
     runner_name: str,
     runner_image: str,
-    runner_key_files: Sequence[runner_sandbox.KeyFile] = (),
+    runner_key_files: Sequence[runner_key_file.KeyFile] = (),
 ) -> Chart:
     """The shared objects. The fleet rules attach as a synth-time validation, so a caller
     may keep adding objects to the returned chart and they are still checked."""

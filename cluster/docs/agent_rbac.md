@@ -146,6 +146,17 @@ This widens the original `haku-sandbox`-only perimeter (<../../haku/PLAN.md>) to
 diagnostics; the structural fences (read-only verbs, no secret material, mitmproxy egress) are
 unchanged. Haku's full enforcement inventory: <../../haku/docs/security.md>.
 
+### Runner BuildBuddy key
+
+Staging's `buildbuddy-key` PolicySet grants only `get` on the named
+`buildbuddy-api-key` Secret through `buildbuddy-key-reader`. All staging runner
+presets select it so the Pod/VM sync utility can refresh its local key file.
+The shared access-profile catalog also binds that same Role to the three static
+Haku identities, keeping static and managed Haku permissions equal. Namespace
+diagnostics and the legacy `claude-ai` and `haku-agent` accounts gain no Secret read.
+Key-file exposure and rotation are described in
+[BuildBuddy remote authentication](../../agentplane/docs/buildbuddy_remote_auth.md).
+
 ### 5. claude-ai (OAuth Connections in agentplane-staging) — diagnostics, Coinbase key
 
 The `claude-ai` ServiceAccount in `agentplane-staging` is the principal for Connections

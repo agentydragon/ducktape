@@ -1,0 +1,11 @@
+"""Synthetic Secret and file references for disposable runner rotation fixtures."""
+
+SECRET_NAME = "test-runner-key"
+UNRELATED_SECRET_NAME = "test-unrelated-key"
+POLICY_SET = "test-runner-key"
+ROLE_NAME = "test-runner-key-reader"
+ENV_VAR = "BBR_BUILDBUDDY_API_KEY_FILE"
+MOUNT_PATH = "/run/test-runner-key"
+FILE_NAME = "api-key"
+INITIAL_VALUE = "synthetic-key-before-rotation"
+ROTATED_VALUE = "synthetic-key-after-rotation"

@@ -374,6 +374,11 @@ py_library(
 )
 
 py_library(
+    name = "runner_key_file",
+    srcs = ["runner_key_file.py"],
+)
+
+py_library(
     name = "runner_sandbox",
     srcs = ["runner_sandbox.py"],
     deps = [
@@ -384,6 +389,7 @@ py_library(
         ":llm_ingress",
         ":notifications",
         ":platform_routes",
+        ":runner_key_file",
         ":runner_vm",
         ":sandbox_pod",
         ":telemetry",
@@ -408,6 +414,7 @@ py_library(
         ":launcher_relay",
         ":llm_ingress",
         ":platform_routes",
+        ":runner_key_file",
         ":sandbox_pod",
         ":telemetry",
         "//agentplane:crd_group",
@@ -622,6 +629,7 @@ py_library(
         ":app_settings",
         ":egress",
         ":egress_staging_credentials",
+        ":staging_grants",
         "//agentplane/app:action_federation_settings",
         "//agentplane/app:presets",
         "//agentplane/app:sandbox_models",
@@ -694,6 +702,7 @@ py_library(
         ":notifications",
         ":runner_gateway",
         ":runner_gateway_workload",
+        ":runner_key_file",
         ":runner_sandbox",
         ":sandbox_controller",
         ":sandbox_pod",
@@ -730,6 +739,7 @@ py_library(
         ":notifications",
         ":policy_controller",
         ":policy_controller_rbac",
+        ":runner_key_file",
         ":runner_sandbox",
         ":sandbox_pod",
         ":staging_config",

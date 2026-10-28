@@ -17,6 +17,8 @@ so image-pins/ covers them too.
 
 from __future__ import annotations
 
+import json
+import shlex
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -50,6 +52,7 @@ from cluster.cdk8s.agentplane import (
     telemetry,
 )
 from cluster.cdk8s.agentplane.environment import Environment
+from cluster.cdk8s.agentplane.runner_key_file import KeyFile
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy, isolate_ingress
 from cluster.cdk8s.service_ref import Pods, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
@@ -85,41 +88,16 @@ _EXECUTOR_SOCKET = f"{_EXECUTOR_DIR}/control.sock"
 _EXECUTOR_URL = "ws://127.0.0.1:4501"
 _EXECUTOR_CONTAINER_NAME = "codex-executor"
 _CONFIG_VOLUME = "runner-config"
+_KEY_FILE_CONFIG_PATH = "/run/agentplane/config/key-files.json"
+_KEY_FILE_SYNC_CONTAINER_NAME = "key-file-sync"
 # The bearers a Session presents: the placeholders the agentplane-workload and the notifications
 # EgressCredentials derive from their names, which the egress proxy substitutes.
 _WORKLOAD_PLACEHOLDER = "agentplane-credential-agentplane-workload"
 _NOTIFICATIONS_PLACEHOLDER = "agentplane-credential-agentplane-notifications-workload"
 
 
-@dataclass(frozen=True)
-class KeyFile:
-    """One Secret a runner's workload containers read as a file: the Secret to project, where to mount
-    it, the key's file there, and the environment variable naming that file for the runner and for the
-    harness children it spawns. A deployment's caller supplies these (staging's BuildBuddy key is one);
-    the template never names a credential itself, and never projects one into the egress sidecar, which
-    holds a Session's own bearers."""
-
-    secret_name: str
-    mount_path: str
-    file_name: str
-    env_var: str
-
-    @property
-    def path(self) -> str:
-        return f"{self.mount_path}/{self.file_name}"
-
-    def volume(self) -> k8s.Volume:
-        return k8s.Volume(
-            name=self.secret_name,
-            # 0440: readable through the workload's fsGroup, never world-readable.
-            secret=k8s.SecretVolumeSource(secret_name=self.secret_name, default_mode=288),
-        )
-
-    def mount(self) -> k8s.VolumeMount:
-        return k8s.VolumeMount(name=self.secret_name, mount_path=self.mount_path, read_only=True)
-
-    def env(self) -> k8s.EnvVar:
-        return k8s.EnvVar(name=self.env_var, value=self.path)
+def _key_file_volume_name(index: int) -> str:
+    return f"runner-key-{index}"
 
 
 @dataclass(frozen=True)
@@ -263,6 +241,7 @@ class RunnerSandbox(Construct):
                 ),
                 platform_instructions=platform_instructions(env, egress_api_service=egress_api_service),
                 harness_env=template.agent_cli_env,
+                key_files=key_files,
             )
 
     def add_platform_resources(self) -> None:
@@ -281,10 +260,11 @@ class RunnerSandbox(Construct):
 
 class RunnerTemplate(Construct):
     """One Pod execution environment: the runner Pod and storage wiring, as SandboxTemplate `name`, on
-    image `image`. `key_files` are the caller's Secrets to project into its workload containers; the
-    egress sidecar holds a Session's bearers and gets none of them. Isolated Codex execution adds a
-    companion container with its own PID namespace. A deployment adds one of these per execution
-    environment it offers, and names it in the launch presets its app config publishes."""
+    image `image`. `key_files` are Secrets refreshed through the Sandbox's proxied Kubernetes
+    identity into a shared memory volume; the egress sidecar holds a Session's bearers and gets none
+    of them. Isolated Codex execution adds a companion container with its own PID namespace. A
+    deployment adds one of these per execution environment it offers, and names it in the launch
+    presets its app config publishes."""
 
     def __init__(
         self,
@@ -332,6 +312,49 @@ class RunnerTemplate(Construct):
             *self.trust_mounts,
         ]
 
+    def _key_file_mounts(self) -> list[k8s.VolumeMount]:
+        return [
+            k8s.VolumeMount(name=_key_file_volume_name(index), mount_path=mount_path)
+            for index, mount_path in enumerate(dict.fromkeys(key.mount_path for key in self.key_files))
+        ]
+
+    def _key_file_volumes(self) -> list[k8s.Volume]:
+        return [
+            k8s.Volume(
+                name=_key_file_volume_name(index),
+                empty_dir=k8s.EmptyDirVolumeSource(medium="Memory", size_limit=k8s.Quantity.from_string("1Mi")),
+            )
+            for index, _ in enumerate(dict.fromkeys(key.mount_path for key in self.key_files))
+        ]
+
+    def _key_file_sync_container(self) -> k8s.Container:
+        ready = " && ".join(f"test -s {shlex.quote(key.path)}" for key in self.key_files)
+        return k8s.Container(
+            name=_KEY_FILE_SYNC_CONTAINER_NAME,
+            image=f"{self.image}:{_PLACEHOLDER_TAG}",
+            command=["agentplane-key-file-sync"],
+            args=["--config", _KEY_FILE_CONFIG_PATH, "--interval-seconds", "60"],
+            env=sandbox_pod.workload_environment(self.env, sandbox_pod.egress_env()),
+            security_context=sandbox_pod.workload_security_context(),
+            resources=k8s.ResourceRequirements(
+                requests={"cpu": k8s.Quantity.from_string("10m"), "memory": k8s.Quantity.from_string("32Mi")},
+                limits={"cpu": k8s.Quantity.from_string("100m"), "memory": k8s.Quantity.from_string("64Mi")},
+            ),
+            readiness_probe=k8s.Probe(
+                exec=k8s.ExecAction(command=["sh", "-ec", ready]),
+                period_seconds=2,
+                timeout_seconds=2,
+                failure_threshold=1,
+            ),
+            volume_mounts=[
+                *sandbox_pod.egress_mounts(),
+                k8s.VolumeMount(
+                    name=_CONFIG_VOLUME, mount_path=_KEY_FILE_CONFIG_PATH, sub_path="key-files.json", read_only=True
+                ),
+                *self._key_file_mounts(),
+            ],
+        )
+
     def _isolated_executor_mounts(self) -> list[k8s.VolumeMount]:
         return [
             k8s.VolumeMount(name=_HOME_VOLUME_NAME, mount_path=_HOME_DIR),
@@ -367,7 +390,8 @@ class RunnerTemplate(Construct):
             working_dir=_STATE_DIR,
             security_context=sandbox_pod.workload_security_context(),
             env=sandbox_pod.workload_environment(
-                self.env, [*sandbox_pod.egress_env(), *(key.env() for key in self.key_files)]
+                self.env,
+                [*sandbox_pod.egress_env(), *(k8s.EnvVar(name=key.env_var, value=key.path) for key in self.key_files)],
             ),
             resources=self.executor_resources
             or k8s.ResourceRequirements(
@@ -380,7 +404,7 @@ class RunnerTemplate(Construct):
                 *self._execution_mounts(),
                 *self._isolated_executor_mounts(),
                 *sandbox_pod.platform_control_mounts(),
-                *(key.mount() for key in self.key_files),
+                *self._key_file_mounts(),
             ],
         )
 
@@ -420,11 +444,16 @@ class RunnerTemplate(Construct):
                 else None
             ),
         )
+        config_map_data = {"runner.json": config.model_dump_json(exclude_none=True)}
+        if self.key_files:
+            config_map_data["key-files.json"] = json.dumps(
+                [key_file.runtime_config(self.env.namespace) for key_file in self.key_files]
+            )
         ConfigMap(
             self,
             "runner-config",
             metadata=ApiObjectMetadata(name=self.config_map_name, namespace=self.env.namespace),
-            data={"runner.json": config.model_dump_json(exclude_none=True)},
+            data=config_map_data,
         )
         return k8s.Container(
             name="runner",
@@ -444,7 +473,7 @@ class RunnerTemplate(Construct):
                             self.env.namespace, "agentplane-runner", endpoint=platform_routes.telemetry_endpoint()
                         ).items()
                     ),
-                    *(key.env() for key in self.key_files),
+                    *(k8s.EnvVar(name=key.env_var, value=key.path) for key in self.key_files),
                     # On the container and not just on the harness children the runner spawns.
                     *sandbox_pod.egress_env(),
                     *(k8s.EnvVar(name=name, value=value) for name, value in self.agent_cli_env.items()),
@@ -467,7 +496,7 @@ class RunnerTemplate(Construct):
                 k8s.VolumeMount(name=_CONFIG_VOLUME, mount_path=CONFIG_FILE, sub_path="runner.json", read_only=True),
                 *(self._isolated_executor_mounts() if self.env.isolated_codex_executor else []),
                 *sandbox_pod.platform_control_mounts(),
-                *(key.mount() for key in self.key_files),
+                *self._key_file_mounts(),
             ],
         )
 
@@ -496,7 +525,10 @@ class RunnerTemplate(Construct):
                 self.env,
                 workload=self._runner_container(),
                 sidecar_settings=sidecar_settings,
-                additional_workloads=([self._executor_container()] if self.env.isolated_codex_executor else []),
+                additional_workloads=[
+                    *([self._key_file_sync_container()] if self.key_files else []),
+                    *([self._executor_container()] if self.env.isolated_codex_executor else []),
+                ],
                 # Let LINSTOR's storage-pool topology place the strict-local HDD claims.
                 workload_volumes=[
                     k8s.Volume(
@@ -513,7 +545,7 @@ class RunnerTemplate(Construct):
                         if self.env.isolated_codex_executor
                         else []
                     ),
-                    *(key.volume() for key in self.key_files),
+                    *self._key_file_volumes(),
                 ],
                 sidecar_resources=self.sidecar_resources,
                 image_pull_secret_name=self.image_pull_secret_name,

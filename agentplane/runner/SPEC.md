@@ -49,6 +49,16 @@ guaranteed. If the native leader exits, the supervisor still kills all remaining
 releasing state ownership. `ProcessConfig.ResourceLimits` can override a leaf
 budget for an isolated process purpose, while the parent aggregate remains authoritative.
 
+## Runner key files
+
+Templates may supply public Secret references and destinations in `key-files.json`.
+The shared sync utility fetches them with the Sandbox's Kubernetes identity, atomically
+replaces each complete file with mode `0440`, and refreshes every minute. A failed refresh
+retains the previous file and retries within ten seconds without logging Secret contents.
+VM files belong to the harness group; Pod files use the shared workload identity. The
+harness receives the stable path through its explicit environment allowlist. Key values
+are readable by agent-controlled code; this is not credential isolation.
+
 ## Initialization
 
 - The Sandbox's launch file (`--launch-file`, written by the Sandbox controller) carries the

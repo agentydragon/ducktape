@@ -10,7 +10,8 @@
 # 107 can write there. The runner runs as root; harness children run as that 107 user.
 #
 # The runner's configuration, launch file and CA bundle arrive on three read-only KubeVirt ConfigMap
-# disks, mounted under /run/agentplane and linked to the paths the runner reads.
+# disks, mounted under /run/agentplane and linked to the paths the runner reads. Harness keys are
+# fetched from Kubernetes through the egress relay and refreshed on a timer.
 #
 # The runner and the `agentplane` command are not in this closure. They arrive on the read-only
 # runner disk (//agentplane/runner:disk_image), a second containerDisk mounted at /run/agentplane/runner, so a new
@@ -35,6 +36,10 @@ let
     sandbox = "launch";
     trust = "trust";
   };
+  # Public Secret reference and file metadata; key contents stay out of the ConfigMap.
+  keyFilesFile = "${runtimeDir}/config/key-files.json";
+  keyFetchEnvironmentFile = "${runtimeDir}/config/key-fetch.env";
+  keyFileSync = import ./key_file_sync.nix { inherit pkgs; };
   # virtiofsd's identity (above); the Go runner runs harnesses as this user.
   agentUser = "agent";
   agentId = 107;
@@ -280,12 +285,35 @@ in
     serviceConfig.ExecStart = "${pkgs.systemd}/bin/systemd-tmpfiles --create --prefix=${workspaceDir}";
   };
 
+  systemd.services.agentplane-key-files = {
+    description = "Refresh runner harness key files from Kubernetes Secrets";
+    wantedBy = [ "multi-user.target" ];
+    before = [ "agentplane-runner.service" ];
+    wants = [ "network-online.target" ];
+    after = [ "network-online.target" ];
+    unitConfig.RequiresMountsFor = [ "${runtimeDir}/config" ];
+    serviceConfig = {
+      Type = "simple";
+      EnvironmentFile = keyFetchEnvironmentFile;
+      ExecStartPre = "${keyFileSync}/bin/agentplane-key-file-sync --config ${keyFilesFile} --group-id ${toString agentId} --once";
+      ExecStart = "${keyFileSync}/bin/agentplane-key-file-sync --config ${keyFilesFile} --group-id ${toString agentId} --interval-seconds 60";
+      Restart = "on-failure";
+      # Keep the runner's dependency job pending while a failed initial fetch is retried.
+      RestartMode = "direct";
+      RestartSec = "10s";
+    };
+  };
+
   systemd.services.agentplane-runner = {
     description = "Agentplane native harness runner";
     wantedBy = [ "multi-user.target" ];
-    requires = [ "agentplane-workspace.service" ];
+    requires = [
+      "agentplane-workspace.service"
+      "agentplane-key-files.service"
+    ];
     after = [
       "agentplane-workspace.service"
+      "agentplane-key-files.service"
       "network.target"
     ];
     unitConfig.RequiresMountsFor = [

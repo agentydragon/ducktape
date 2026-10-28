@@ -25,6 +25,7 @@ pkgs: with pkgs; [
   jq
   openssl
   kubectl # the sandbox's own Kubernetes identity, through the egress proxy
+  (import ../runner/key_file_sync.nix { inherit pkgs; })
 
   # FULL python3, never `python3Minimal`, whose missing `json`/`shutil` broke the Haku image's
   # scripts. nixpkgs marks it EXTERNALLY-MANAGED, so a run installs packages into a

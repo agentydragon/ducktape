@@ -8,7 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart, Duration
-from cdk8s_plus_34 import DeploymentStrategy, PercentOrAbsolute, ServiceAccount
+from cdk8s_plus_34 import DeploymentStrategy, PercentOrAbsolute, Role, RolePolicyRule, Secret, ServiceAccount, k8s
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
@@ -76,7 +76,7 @@ from cluster.cdk8s.agentplane.environment import (
 )
 from cluster.cdk8s.agentplane.generation import ManifestLayout
 from cluster.cdk8s.agentplane.namespaces import STAGING_NAMESPACE
-from cluster.cdk8s.agentplane.runner_sandbox import KeyFile
+from cluster.cdk8s.agentplane.runner_key_file import KeyFile
 from cluster.cdk8s.agentplane.sandbox_pod import SECRET_NAME as SANDBOX_SECRET_NAME, TOOL_CONFIG_GRANT
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
@@ -170,9 +170,9 @@ _CONNECTION_SERVICE = mcp_edge.service(STAGING_NAMESPACE)
 # the published tag. Live Sandboxes and presets name this template, so it keeps the name it shipped with.
 POD_TEMPLATE = "runner-ducktape"
 _RUNNER_IMAGE = "git.allegedly.works/ducktape-ci/runner-ducktape"
-# The canonical BuildBuddy key, projected into the runner's workload containers for real `bbr` runs and
-# named there for the harnesses it spawns (agentplane/docs/buildbuddy_remote_auth.md's stopgap). ESO
-# copies the secret below; the egress policy still bounds where the key can travel.
+# The canonical BuildBuddy key, made available to Pod and VM harnesses for real `bbr` runs
+# (agentplane/docs/buildbuddy_remote_auth.md). ESO copies the Secret below; the egress policy bounds
+# where the key can travel.
 _BUILDBUDDY_KEY = KeyFile(
     secret_name="buildbuddy-api-key",
     mount_path="/run/buildbuddy",
@@ -556,6 +556,27 @@ def chart(app: App) -> Chart:
         runner_image=_RUNNER_IMAGE,
         runner_key_files=(_BUILDBUDDY_KEY,),
     )
+    Role(
+        chart,
+        "buildbuddy-key-reader-role",
+        metadata=ApiObjectMetadata(name=agent_access_profiles.BUILDBUDDY_KEY_ROLE, namespace=ENV.namespace),
+        rules=[
+            RolePolicyRule(
+                resources=[Secret.from_secret_name(chart, "buildbuddy-key-secret", _BUILDBUDDY_KEY.secret_name)],
+                verbs=["get"],
+            )
+        ],
+    )
+    k8s.KubeRoleBinding(
+        chart,
+        "buildbuddy-key-reader-binding",
+        metadata=k8s.ObjectMeta(name="buildbuddy-key-reader", namespace=ENV.namespace),
+        role_ref=agent_access_profiles.role_ref(agent_access_profiles.BUILDBUDDY_KEY_POLICY),
+        subjects=[
+            subject.k8s()
+            for subject in agent_access_profiles.profile_subjects(agent_access_profiles.BUILDBUDDY_KEY_POLICY)
+        ],
+    )
     NetworkPolicy(
         chart,
         "networkpolicy-app-to-mcp-edge",
@@ -563,8 +584,8 @@ def chart(app: App) -> Chart:
         endpoint_selector=app_component.service(ENV.namespace).pods.selector,
         egress=[_CONNECTION_SERVICE.egress()],
     )
-    # Reuse the canonical key via ESO; do not grant the sandbox ServiceAccount get-secrets RBAC. The
-    # runner template projects `_BUILDBUDDY_KEY` into its workload containers only.
+    # Reuse the canonical key via ESO. Both runner types fetch only this named Secret through the
+    # Sandbox's API identity using the `buildbuddy-key` PolicySet.
     credential_external_secret(
         chart,
         namespace=STAGING_NAMESPACE,

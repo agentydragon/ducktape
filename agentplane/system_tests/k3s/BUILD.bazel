@@ -1,4 +1,5 @@
 load("@rules_oci//oci:defs.bzl", "oci_image")
+load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//agentplane/system_tests/k3s:defs.bzl", "K3S_BINARY", "K3S_EXEC_PROPERTIES", "K3S_TAGS", "K3S_VM_IMAGES")
 load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
@@ -15,8 +16,30 @@ oci_image(
         "//third_party/debian_slim:cacerts",
         "@trixie_e2e//:flat",
         ":runner_cli_link",
+        ":runner_key_tools",
     ],
     user = "1000:1000",
+)
+
+# The shared sync utility runs unchanged in the Pod and Debian VM test images.
+pkg_files(
+    name = "runner_key_tool_files",
+    srcs = [
+        "//agentplane/runner:key_file_sync.py",
+        "@kubectl_linux_amd64//file",
+    ],
+    attributes = pkg_attributes(mode = "0755"),
+    renames = {
+        "//agentplane/runner:key_file_sync.py": "agentplane-key-file-sync",
+        "@kubectl_linux_amd64//file": "kubectl",
+    },
+)
+
+pkg_tar(
+    name = "runner_key_tools",
+    srcs = [":runner_key_tool_files"],
+    package_dir = "/usr/bin",
+    visibility = ["//agentplane/system_tests/k3s/guest:__pkg__"],
 )
 
 # **Deviation:** production appends the runner disk's bin to PATH (agentplane/runner/image.nix). Here
@@ -253,8 +276,10 @@ py_library(
         "//agentplane/crds:egresscredential",
         "//agentplane/crds:policyset",
         "//agentplane/runner:configuration",
+        "//agentplane/sandboxes:kubernetes_grants",
         "//agentplane/system_tests:launch_preset",
         "//agentplane/system_tests:probe_credential",
+        "//agentplane/system_tests:runner_key",
         "//agentplane/system_tests:runtime_grant",
         "//agentplane/system_tests:send_grant",
         "//cluster/cdk8s:agent_access_profiles",
@@ -277,6 +302,7 @@ py_library(
         "//cluster/cdk8s/agentplane:policy_controller_rbac",
         "//cluster/cdk8s/agentplane:runner_gateway",
         "//cluster/cdk8s/agentplane:runner_gateway_workload",
+        "//cluster/cdk8s/agentplane:runner_key_file",
         "//cluster/cdk8s/agentplane:runner_sandbox",
         "//cluster/cdk8s/agentplane:runner_vm",
         "//cluster/cdk8s/agentplane:sandbox_controller",

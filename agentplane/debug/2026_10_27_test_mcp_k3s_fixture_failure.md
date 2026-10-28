@@ -1,0 +1,9 @@
+# `test_mcp` k3s fixture image-pull failure, 2026-10-27
+
+PR [#12186](https://github.com/agentydragon/ducktape/pull/12186) has one red CI target: [`//agentplane/system_tests:test_mcp`](https://app.buildbuddy.io/invocation/0e01783b-07e0-5657-8df4-37d2a344bcd4) in [CI run 40612862293](https://github.com/agentydragon/ducktape/actions/runs/40612862293/job/122569670151). All 12 collected cases errored while the shared k3s fixture waited for Deployments to become Available. Its pod events show pulls for imported images tagged `:unset`. No MCP assertion ran; the key-rotation targets passed.
+
+Two focused runs, [39ce0c6b](https://app.buildbuddy.io/invocation/39ce0c6b-d3cd-4627-88f4-81c13fbd806e) and [725a877d](https://app.buildbuddy.io/invocation/725a877d-8fed-443b-97b6-351c9accd066), also failed during fixture setup. The second followed a temporary split of runner-image imports; the split did not avoid the failure and was reverted. The focused k3s logs record `EvictionThresholdMet` while reclaiming ephemeral storage, pod evictions, and then `NodeHasNoDiskPressure`. Disk pressure is confirmed for that attempt. The logs also show pulls for `:unset` images, but do not show image GC deleting imported tags, so that causal link remains a hypothesis.
+
+A historical [stack-ready run](https://app.buildbuddy.io/invocation/e4349127-8db0-55e3-bd40-5e3917e9c8de) reached readiness in 70 seconds. Its warm image-import conditions make it a limited comparison, not a reproduction of the cold failure.
+
+The next useful diagnostic is one focused run on a clean remote executor with nodefs/imagefs measurements and kubelet image-GC events captured across image import and pod creation, plus the imported containerd image references before and after the imports. No product fix has been established, and no MCP assertion ran in the failed attempts.

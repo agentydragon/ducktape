@@ -8,6 +8,7 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 # gazelle:exclude test_launch_presets.py
 # gazelle:exclude test_mcp.py
 # gazelle:exclude test_session_instructions.py
+# gazelle:exclude test_runner_key_rotation.py
 # gazelle:exclude test_storage.py
 # gazelle:exclude test_suspend_resume.py
 # gazelle:exclude test_thread_stream.py
@@ -605,4 +606,28 @@ py_library(
         "//util/testing:undeclared_outputs",
         "@pypi//protobuf",
     ],
+)
+
+system_test(
+    name = "test_runner_key_rotation",
+    srcs = ["test_runner_key_rotation.py"],
+    k3s = "model_free",
+    vm_sandboxes = "ci",
+    deps = [
+        ":cluster",
+        ":conftest",
+        ":runner_key",
+        "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
+        "//agentplane:crd_group",
+        "//agentplane/app/testing:client",
+        "//agentplane/runner:harness",
+        "//util/testing:undeclared_outputs",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "runner_key",
+    srcs = ["runner_key.py"],
 )

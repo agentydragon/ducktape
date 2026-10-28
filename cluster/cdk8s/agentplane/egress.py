@@ -217,9 +217,9 @@ def _egress_credentials(scope: Construct, *, namespace: str) -> None:
         "egresscredential-agentplane-workload",
         metadata=ApiObjectMetadata(name="agentplane-workload", namespace=namespace),
         description=(
-            "The calling Sandbox Pod's short-lived, Pod-bound workload identity for first-party "
-            "Agentplane destinations. It conveys no LiteLLM credential or operator, Agent, or "
-            "Thread authority."
+            "The calling Sandbox's short-lived workload identity for first-party Agentplane destinations. "
+            "Its projected token is held by the egress relay, in the Sandbox Pod or VM launcher. It conveys "
+            "no LiteLLM credential or operator, Agent, or Thread authority."
         ),
         source=Source.authenticated_workload_token(),
         targets=[
@@ -233,8 +233,8 @@ def _egress_credentials(scope: Construct, *, namespace: str) -> None:
         "egresscredential-notifications-workload",
         metadata=ApiObjectMetadata(name=notifications.WORKLOAD_CREDENTIAL, namespace=namespace),
         description=(
-            "The calling Sandbox Pod's short-lived, Pod-bound identity minted specifically for the "
-            "Agentplane Notifications API audience."
+            "The calling Sandbox's short-lived identity minted specifically for the Agentplane Notifications "
+            "API audience. Its projected token is held by the egress relay, in the Sandbox Pod or VM launcher."
         ),
         source=Source.projected_workload_token(audience=notifications.TOKEN_AUDIENCE),
         targets=[
@@ -315,7 +315,7 @@ def _egress_credentials(scope: Construct, *, namespace: str) -> None:
         "egresscredential-kubernetes-workload",
         metadata=ApiObjectMetadata(name=KUBERNETES_CREDENTIAL, namespace=namespace),
         description=(
-            "The calling Sandbox Pod's own ServiceAccount, minted for the Kubernetes API server "
+            "The calling Sandbox's own ServiceAccount, minted for the Kubernetes API server "
             "rather than for this proxy. Requests carrying it are authorized by the API server "
             "as that account and by nothing here: what the sandbox may do is the RBAC bound to "
             "it, and this proxy adds only the rule's hosts, methods and paths on top."

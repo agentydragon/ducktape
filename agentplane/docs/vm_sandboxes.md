@@ -12,14 +12,16 @@ the template is [`runner_vm.py`](../../cluster/cdk8s/agentplane/runner_vm.py) an
 This document holds the constraints that bite an editor of those files, and the alternatives that
 lost.
 
-## Credentials stay outside the guest
+## Workload identity and credentials
 
 - KubeVirt derives a launcher's ServiceAccount from a VMI `serviceAccount` volume and automounts its
   token. That volume presents the credential to the guest, so a VM never has one.
   The launcher policy sets the account and disables automount instead.
-- The projected tokens are mounted into the relay container and nowhere else in the launcher Pod:
-  not `compute`, not the disk helpers. The guest sees only the public config disk, the trust disk and
-  placeholder bearers; real upstream credentials stay at the egress gateway.
+- The projected workload tokens are mounted into the relay container and nowhere else in the launcher
+  Pod: not `compute`, not the disk helpers. The guest has no projected ServiceAccount token; it uses
+  its kubeconfig and the relay to request narrowly granted resources. Proxy-managed upstream
+  credentials stay at the egress gateway. The staging BuildBuddy key is an explicit exception: the
+  shared key-file sync utility fetches it into the runner's `/run` for `bbr`.
 - A launcher is admitted only when KubeVirt's controller creates it for a live VMI of a live
   VirtualMachine controlled by one of our Sandboxes, and the same Sandbox controls the ServiceAccount.
   Each link is read live and UID-checked: labels and annotations never select an identity.
@@ -56,6 +58,11 @@ lost.
   `/run/agentplane/<disk>`, and `systemd-tmpfiles` links the files the runner reads into
   `/run/agentplane`. A file keeps its ConfigMap's mode, which must stay world-readable: harnesses
   run as uid 107 and read the CA bundle and kubeconfig.
+- Runner key files stay out of the ConfigMap. Before Runner starts, the guest fetches each declared
+  Secret key through its proxied Kubernetes API identity, writes it under `/run` with mode `0440`
+  for uid/gid 107, and refreshes it every minute. Staging grants `get` on only the BuildBuddy Secret
+  through the `buildbuddy-key` PolicySet, so key rotation reaches a running VM without replacing it.
+  See [BuildBuddy remote authentication](buildbuddy_remote_auth.md) for the exposure boundary.
 - The runner and the `agentplane` command are not in the guest image. They arrive on the runner disk,
   a read-only erofs on a second `containerDisk` (`//agentplane/runner:disk_image`, [`runner/BUILD.bazel`](../runner/BUILD.bazel)),
   mounted at `/run/agentplane/runner`, and the harness `PATH` lists its `bin` after the system

@@ -211,6 +211,10 @@ class K3s:
                 # The runner Pod mounts the runner disk image as an image volume (beta, off by default in 1.34).
                 "--kube-apiserver-arg",
                 "feature-gates=ImageVolume=true",
+                # Sandbox tools use the Talos audience (egress.KUBERNETES_AUDIENCE) through the shared template.
+                # Keep k3s's default audiences for its own components and accept that projected token too.
+                "--kube-apiserver-arg",
+                "api-audiences=https://kubernetes.default.svc.cluster.local,k3s,https://localhost:7445",
                 "--kubelet-arg",
                 "feature-gates=ImageVolume=true",
             ],

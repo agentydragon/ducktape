@@ -33,6 +33,8 @@ from cluster.cdk8s.plaid_mcp import db, pgweb as plaid_pgweb, spend
 from cluster.cdk8s.providers.agentplane.policy_set import Rule
 
 RBAC_GROUP = "rbac.authorization.k8s.io"
+BUILDBUDDY_KEY_POLICY = "buildbuddy-key"
+BUILDBUDDY_KEY_ROLE = "buildbuddy-key-reader"
 COINBASE_POLICY = "coinbase"
 PLAID_DIAGNOSTICS_POLICY = "plaid-diagnostics"
 
@@ -109,6 +111,9 @@ def catalog() -> dict[str, KubernetesGrant]:
         "haku-sandbox-write": RoleBindingGrant(
             kind="RoleBinding", namespace="haku-sandbox", role_ref=RoleRef(kind="Role", name="haku-sandbox-admin")
         ),
+        BUILDBUDDY_KEY_POLICY: RoleBindingGrant(
+            kind="RoleBinding", namespace="agentplane-staging", role_ref=RoleRef(kind="Role", name=BUILDBUDDY_KEY_ROLE)
+        ),
         **_namespace_read_grants(),
         PLAID_DIAGNOSTICS_POLICY: RoleBindingGrant(
             kind="RoleBinding",
@@ -172,6 +177,7 @@ PUBLIC_GRANTS = (*SHARED_DIAGNOSTICS, *PUBLIC_INVENTORY, "cluster-diagnostics")
 # RBAC from the resolved assignable grants.
 POLICY_SETS = {
     "shared-diagnostics": SHARED_DIAGNOSTICS,
+    BUILDBUDDY_KEY_POLICY: (BUILDBUDDY_KEY_POLICY,),
     "public-inventory": PUBLIC_INVENTORY,
     "cluster-diagnostics": ("cluster-diagnostics",),
     "haku-sandbox-write": ("haku-sandbox-write",),
@@ -260,7 +266,7 @@ STATIC_GRANTS = {
         "public-coder-volsync-status",
     ),
     # Preserve redundant narrow inventory bindings; Coinbase access is explicitly approved.
-    "haku": (*SHARED_DIAGNOSTICS, *PUBLIC_INVENTORY, *HAKU_EXTRAS, "coinbase-credentials"),
+    "haku": (*SHARED_DIAGNOSTICS, *PUBLIC_INVENTORY, *HAKU_EXTRAS, "coinbase-credentials", BUILDBUDDY_KEY_POLICY),
 }
 
 

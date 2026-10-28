@@ -133,6 +133,7 @@ pkg_tar(
         ":root_init",
         "//agentplane/system_tests/k3s:runner_claude_harness",
         "//agentplane/system_tests/k3s:runner_codex_harness",
+        "//agentplane/system_tests/k3s:runner_key_tools",
         "@trixie_vm_guest//:flat",
     ],
 )

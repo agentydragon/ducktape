@@ -11,6 +11,8 @@ load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
 
 package(default_visibility = ["//visibility:public"])
 
+exports_files(["key_file_sync.py"])
+
 alias(
     name = "main_bin",
     actual = "//agentplane/runner/cmd:agentplane-runner",
@@ -597,6 +599,23 @@ py_test(
         ":conftest",
         "//:conftest",
         "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "key_file_sync",
+    srcs = ["key_file_sync.py"],
+)
+
+py_test(
+    name = "test_key_file_sync",
+    srcs = ["test_key_file_sync.py"],
+    deps = [
+        ":conftest",
+        ":key_file_sync",
+        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

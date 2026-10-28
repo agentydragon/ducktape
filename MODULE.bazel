@@ -524,6 +524,7 @@ apt.install(
     packages = [
         "curl",
         "git",
+        "python3",
     ],
     suites = [
         "trixie",
@@ -641,6 +642,7 @@ apt.install(
         "busybox-static",
         "e2fsprogs",
         "git",
+        "python3",
         "util-linux",
     ],
     suites = [

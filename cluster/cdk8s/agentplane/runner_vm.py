@@ -1,19 +1,20 @@
 """The runner's VM SandboxTemplate: the runner on the NixOS guest (agentplane/runner/vm.nix), in a
 KubeVirt VM the Sandbox Controller makes from `spec.vm` (agentplane/sandbox_controller/SPEC.md § VMs).
 
-The guest gets what a runner Pod's container gets, as the disks vm.nix reads by serial: the public
-launch config (platform instructions included) and kubeconfig, the egress trust bundle, the runner
-and `agentplane` command on their own read-only disk, and the Sandbox-owned workspace disk, which
-survives VM replacements. The controller attaches its PVC and
-adds the state PVC as the virtiofs filesystem named after the state volume, along with the Sandbox's
-own launch file as one more disk. The egress relay the guest dials at the masquerade gateway is the launcher policy's
-(launcher_relay.py); the VM carries the runner Pods' labels, so the runner fence applies to its
-launcher.
+The guest receives the public launch config (platform instructions included) and kubeconfig, the
+egress trust bundle, the runner and `agentplane` command on their own read-only disk, and the
+Sandbox-owned workspace disk, which survives VM replacements. Runner key files are fetched through
+the guest's proxied Kubernetes API identity and refreshed without replacing the VM. The controller
+attaches the state PVC as the virtiofs filesystem named after the state volume, along with the
+Sandbox's own launch file as one more disk. The egress relay the guest dials at the masquerade
+gateway is the launcher policy's (launcher_relay.py); the VM carries the runner Pods' labels, so the
+runner fence applies to its launcher.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+import json
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from cdk8s import ApiObject, ApiObjectMetadata, JsonPatch
@@ -45,6 +46,7 @@ from agentplane.runner.configuration import (
 )
 from cluster.cdk8s.agentplane import launcher_relay, llm_ingress, platform_routes, sandbox_pod, telemetry
 from cluster.cdk8s.agentplane.environment import Environment
+from cluster.cdk8s.agentplane.runner_key_file import KeyFile
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.kubevirt.virtual_machine import container_disk_template
 
@@ -53,6 +55,8 @@ _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-vm:unset"  # image-p
 RUNNER_DISK_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-disk:unset"  # image-pins/ sets the tag
 _CONFIG_MAP_NAME = "runner-vm-config"
 _RUNNER_ENV_FILE = "runner.env"
+_KEY_FETCH_ENV_FILE = "key-fetch.env"
+_KEY_FILES_FILE = "key-files.json"
 _WORKSPACE = "workspace"
 # The guest listens on nothing; a listed port keeps masquerade from forwarding every other port,
 # kubelet's probe of the relay's readiness port among them, to the guest.
@@ -82,6 +86,7 @@ class RunnerVmTemplate(Construct):
         workspace_volume: dict[str, Any],
         platform_instructions: str,
         harness_env: Mapping[str, str],
+        key_files: Sequence[KeyFile] = (),
     ) -> None:
         super().__init__(scope, id)
         namespace = env.namespace
@@ -116,6 +121,7 @@ class RunnerVmTemplate(Construct):
                     **network,
                     **env.sandbox_workload_env,
                     **harness_env,
+                    **{key_file.env_var: key_file.path for key_file in key_files},
                     "HOME": "/state/workspaces/.home",
                     "USER": "agent",
                     "LOGNAME": "agent",
@@ -158,6 +164,10 @@ class RunnerVmTemplate(Construct):
                     ).items()
                 )
             ),
+            _KEY_FETCH_ENV_FILE: "".join(
+                f'{name}="{value}"\n' for name, value in sorted({**network, "KUBECONFIG": KUBECONFIG}.items())
+            ),
+            _KEY_FILES_FILE: json.dumps([key_file.runtime_config(namespace) for key_file in key_files]),
         }
         ConfigMap(
             self, "config", metadata=ApiObjectMetadata(name=_CONFIG_MAP_NAME, namespace=namespace), data=config_map_data

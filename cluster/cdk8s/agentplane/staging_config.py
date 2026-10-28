@@ -248,6 +248,10 @@ def config(
         for name in presets:
             cfg.sandbox_presets[name].inbox_tags = [group]
             cfg.sandbox_presets[name].policy_sets += [send_to(group)]
+    # Every staging runner template exposes the same key file to its harnesses. Keep the VM's
+    # API-backed refresh path available to those same Sandboxes through the exact-name grant.
+    for sandbox_preset in cfg.sandbox_presets.values():
+        sandbox_preset.policy_sets.append(agent_access_profiles.BUILDBUDDY_KEY_POLICY)
     # A new staging Sandbox suspends after 15 idle minutes and wakes for a message (operator, 2026-10-24).
     cfg.new_sandbox_defaults = NewSandboxDefaults(wake_on_send=True, idle_suspend_after_seconds=15 * 60)
     return cfg
