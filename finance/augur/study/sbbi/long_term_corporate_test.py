@@ -13,8 +13,6 @@ README.
 from __future__ import annotations
 
 import asyncio
-import tempfile
-from collections.abc import Iterator
 from pathlib import Path
 
 import numpy as np
@@ -45,11 +43,15 @@ KNOWN_SHORTFALL_POINTS = (0.0, 0.5)
 
 
 @pytest.fixture(scope="module")
-def reproduced() -> Iterator[dict[int, float]]:
-    with tempfile.TemporaryDirectory() as raw:
-        directory = Path(raw)
-        asyncio.run(snapshot_evidence(directory, EVIDENCE))
-        yield reproduce(directory)
+def evidence_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    directory = tmp_path_factory.mktemp("corporate_evidence")
+    asyncio.run(snapshot_evidence(directory, EVIDENCE))
+    return directory
+
+
+@pytest.fixture(scope="module")
+def reproduced(evidence_dir: Path) -> dict[int, float]:
+    return reproduce(evidence_dir)
 
 
 def test_the_published_series_was_read_correctly(reproduced: dict[int, float]) -> None:
@@ -88,16 +90,15 @@ def test_the_sleeve_runs_slightly_under_the_published_series(reproduced: dict[in
     assert low <= shortfall <= high, f"sleeve runs {shortfall:+.2f} points a year against the published series"
 
 
-def test_the_data_prefers_the_maturity_the_monograph_documents(reproduced: dict[int, float]) -> None:
+def test_the_data_prefers_the_maturity_the_monograph_documents(
+    reproduced: dict[int, float], evidence_dir: Path
+) -> None:
     """The anti-fitting guard. Maturity 10 lands Trinity's all-bond row on its published value
     almost exactly and is wrong; the actual return series rejects it. Asserted as an ordering
     rather than an optimum, because the fit is flat between 20 and 25 and pinning an argmin
     there would be pinning noise."""
 
-    with tempfile.TemporaryDirectory() as raw:
-        directory = Path(raw)
-        asyncio.run(snapshot_evidence(directory, EVIDENCE))
-        errors = {m: tracking_error(reproduce(directory, maturity_years=m)) for m in (5.0, 10.0, 15.0)}
+    errors = {m: tracking_error(reproduce(evidence_dir, maturity_years=m)) for m in (5.0, 10.0, 15.0)}
 
     documented = tracking_error(reproduced)
     for maturity, error in errors.items():
