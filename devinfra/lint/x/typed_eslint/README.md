@@ -24,3 +24,6 @@ declaration. `worker` extends a separate config with WebWorker types. Neither pa
 a lint source filegroup. The experimental rules_lint patch stages the generated config and its
 extended configs, exposes its path through `BAZEL_ESLINT_TSCONFIG`, and gives typed reports
 distinct names so the normal and experimental aspects can run together.
+
+See [the investigation](../../../debug/typed_eslint_aspect.md) for proof, real-target coverage,
+observed cost, and the remaining adoption gates.
